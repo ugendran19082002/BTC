@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MethodReport, reportCsv, shows, sortRows } from '@/components/report/MethodReport';
 import type { EntryTf, MethodReportResponse, MethodReportRow, MethodReportSection } from '@/types/entry';
@@ -31,7 +31,14 @@ const report = (): MethodReportResponse => ({
       : sec('single', quiet, row(0, 'All 3 methods', { n: null }))])),
 });
 
-beforeEach(() => { localStorage.clear(); getMethodReport.mockReset(); getMethodReport.mockResolvedValue(report()); });
+// "Today" is the IST day: the clock is pinned to 10:00 IST, 2 Oct 2026 (only Date is faked -- the polling still runs).
+const TODAY = { from: '2026-10-02', to: '2026-10-02' };
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(Date.UTC(2026, 9, 2, 4, 30));
+  localStorage.clear(); getMethodReport.mockReset(); getMethodReport.mockResolvedValue(report());
+});
+afterEach(() => vi.useRealTimers());
 
 const ways = async () => within(await screen.findByRole('tablist', { name: 'Way' }));
 const openWithout = async () => fireEvent.click((await ways()).getByRole('tab', { name: /Without timeframe chain/ }));
@@ -163,10 +170,10 @@ describe('the Methods report', () => {
   it('[critical] every signal counts by default -- gate-off ones too -- and says how many were', async () => {
     render(<MethodReport />);
     await screen.findByRole('table', { name: 'With the timeframe chain' });
-    expect(getMethodReport).toHaveBeenLastCalledWith(null, false);
+    expect(getMethodReport).toHaveBeenLastCalledWith(null, false, TODAY);
     expect(screen.getByText(/4 signals taken with a gate off/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('switch', { name: /Only signals with every gate on/ }));
-    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith(null, true));
+    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith(null, true, TODAY));
   });
 
   it('[critical] nothing recorded says so, rather than a table of zeros', async () => {
@@ -174,7 +181,7 @@ describe('the Methods report', () => {
     for (const s of empty.sections) { s.rows = s.rows.map((r) => ({ ...r, signals: 0, trades: 0 })); s.total = { ...s.total, signals: 0, trades: 0 }; }
     getMethodReport.mockResolvedValue(empty);
     render(<MethodReport />);
-    expect(await screen.findByRole('status')).toHaveTextContent('No TRADE signals recorded yet');
+    expect(await screen.findByRole('status')).toHaveTextContent('No TRADE signals on today');
   });
 
   it('the pieces: the filter rule and the sort', () => {
@@ -189,5 +196,29 @@ describe('the Methods report', () => {
     const lines = reportCsv(report()).split('\r\n');
     expect(lines[0]).toBe('section,timeframe,no,method,signals,trades,wins,losses,win_pct,profit_pts,loss_pts,net_pts,profit_r,loss_r,net_r');
     expect(lines).toHaveLength(1 + 8 * (rows.length + 1));
+  });
+
+  it('[critical] the dates default to today, every time the tab opens', async () => {
+    const { unmount } = render(<MethodReport />);
+    await screen.findByRole('table', { name: 'With the timeframe chain' });
+    expect(getMethodReport).toHaveBeenLastCalledWith(null, false, TODAY);
+    expect(screen.getByRole('button', { name: /today/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /today/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'last 7 days' }));
+    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith(null, false, { from: '2026-09-26', to: '2026-10-02' }));
+    unmount();
+    render(<MethodReport />);
+    await screen.findByRole('table', { name: 'With the timeframe chain' });
+    expect(getMethodReport).toHaveBeenLastCalledWith(null, false, TODAY); // not remembered: never a stale day
+  });
+
+  it('[critical] "all time" asks for every signal, and the sections say which days they count', async () => {
+    render(<MethodReport />);
+    await screen.findByRole('table', { name: 'With the timeframe chain' });
+    expect(screen.getByText(/today · 3 methods/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /today/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'all time' }));
+    await waitFor(() => expect(getMethodReport).toHaveBeenLastCalledWith(null, false, null));
+    expect(await screen.findByText(/all time · 3 methods/)).toBeInTheDocument();
   });
 });

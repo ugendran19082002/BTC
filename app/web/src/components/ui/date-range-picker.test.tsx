@@ -89,3 +89,21 @@ describe('choosing a range', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
+
+describe('all time, where a screen asks for it', () => {
+  it('[critical] the P&L picker has no "all time" -- its value is always a range', () => {
+    render(<DateRangePicker value={{ from: TODAY, to: TODAY }} onChange={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /today/ }));
+    expect(screen.queryByRole('button', { name: 'all time' })).toBeNull();
+  });
+
+  it('with allowAll, null reads "all time", and the preset hands back null', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<DateRangePicker allowAll value={null} onChange={onChange} />);
+    expect(screen.getByRole('button', { name: /all time/ })).toBeInTheDocument();
+    rerender(<DateRangePicker allowAll value={{ from: TODAY, to: TODAY }} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: /today/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'all time' }));
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
+});
