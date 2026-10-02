@@ -1,6 +1,5 @@
 # harvested option-chain cache - regenerate with research/harvest.py / harvester/harvest_chain.py
 cache/
-chain/
 btc_daily.json
 __pycache__/
 *.pyc
