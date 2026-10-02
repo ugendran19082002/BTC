@@ -405,16 +405,46 @@ export async function workingRows(): Promise<(PaperRow & { id: number })[]> {
   return open.map((x) => ({ id: Number(x.id), ...rowOf(x) }));
 }
 
-/** A row written back after grading: every field a grader moves. */
-export async function saveGraded(id: number, r: PaperRow): Promise<void> {
-  await query(
+/** A setup's fill, as the graders write it: the moment a signal is "in the trade". */
+export type SetupFill = {
+  method: string; mode: 'mtf' | 'single'; tf: Tf; dir: 1 | -1; triggerAt: number;
+  entryLo: number; entryHi: number; stop: number; tp1: number; tp2: number | null; tp3: number | null;
+  status: PaperRow['status']; filledAt: number; fillPrice: number;
+};
+const fillListeners: ((f: SetupFill) => void)[] = [];
+/**
+ * Be told each time a setup is filled -- the perp traded into its zone -- by
+ * either grader, the live tape's or the candles'. Signal strategies that enter
+ * "in the trade" enter here (strategy/runner.ts `onSetupFilled`), so they take
+ * exactly the trades the signal history counts.
+ */
+export function onSetupFilled(fn: (f: SetupFill) => void): () => void {
+  fillListeners.push(fn);
+  return () => { const i = fillListeners.indexOf(fn); if (i >= 0) fillListeners.splice(i, 1); };
+}
+
+/** A row written back after grading: every field a grader moves. `was` is its status before, to tell a fill. */
+export async function saveGraded(id: number, r: PaperRow, was?: PaperRow['status']): Promise<void> {
+  const filled = was === 'open' && r.filledAt !== null && r.fillPrice !== null;
+  const res = await query(
     `UPDATE entry_setups SET status = $2, filled_at = $3, fill_price = $4, exit_at = $5, exit_price = $6, r_net = $7, graded_to = $8,
             tp1_at = $9, tp2_at = $10, tp3_at = $11, runner = $12, runner_end = $13, expire_why = $14
-      WHERE id = $1`,
+      WHERE id = $1
+  RETURNING method, mode, tf, dir, trigger_at, entry_lo, entry_hi, stop, tp1, tp2, tp3`,
     [id, r.status, r.filledAt, r.fillPrice, r.exitAt, r.exitPrice, r.rNet, r.gradedTo,
       r.tp1At ?? null, r.tp2At ?? null, r.tp3At ?? null, r.runner ?? null, r.runnerEnd ?? null, r.expireWhy ?? null],
   );
   bumpDataVersion();
+  const x = res.rows[0] as (DbRow & { method: string; mode: string }) | undefined;
+  if (filled && x) {
+    const fill: SetupFill = {
+      method: x.method, mode: x.mode as SetupFill['mode'], tf: x.tf, dir: Number(x.dir) === 1 ? 1 : -1, triggerAt: Number(x.trigger_at),
+      entryLo: x.entry_lo, entryHi: x.entry_hi, stop: x.stop, tp1: x.tp1, tp2: x.tp2 ?? null, tp3: x.tp3 ?? null,
+      status: r.status, filledAt: r.filledAt!, fillPrice: r.fillPrice!,
+    };
+    // Told, never awaited: a listener must not hold the grade lock, nor a failing one stop the grading.
+    for (const fn of fillListeners) { try { fn(fill); } catch { /* a listener's problem, not the grader's */ } }
+  }
 }
 
 const rowOf = (x: DbRow): PaperRow => ({
@@ -434,7 +464,7 @@ async function gradeSetupsNow(bars1m: readonly Candle[]): Promise<number> {
     const after = gradeRow(before, bars1m);
     if (after.gradedTo === before.gradedTo) continue;
     if (after.status !== before.status) moved++;
-    await saveGraded(id, after);
+    await saveGraded(id, after, before.status);
   }
   return moved;
 }

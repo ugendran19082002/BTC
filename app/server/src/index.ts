@@ -21,7 +21,7 @@ import { bookHeatSchema, flushBookHeat, startBookHeat } from './market/book-heat
 import { annotationsSchema } from './market/chart-annotations.js';
 import { recordTrendPaper, trendPaperSchema } from './strategy/trend-paper.js';
 import { noteError } from './observability/errors.js';
-import { entrySchema, gradeSetups, recordSetups } from './entry/paper.js';
+import { entrySchema, gradeSetups, onSetupFilled, recordSetups } from './entry/paper.js';
 import { gatesSchema } from './entry/gates.js';
 import { alertSettings, alertsSchema, sendEntryAlert, wanted } from './entry/alerts.js';
 import { allReads } from './entry/engine.js';
@@ -102,6 +102,11 @@ app.log.info(`strategy schema: ${strategies.applied.length
  */
 const runner = new StrategyRunner(strategies);
 runner.start();
+/*
+ * A signal "in the trade": the paper log's graders (live tape, or the candles as the backstop) report each
+ * fill the moment they write it, and signal strategies that enter at the zone -- the default -- sell their leg.
+ */
+onSetupFilled((f) => { void runner.onSetupFilled(f).catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'signal-strategy', message: `zone entry not taken: ${e.message}` })); });
 
 app.log.info(
   desk.mode === 'live'

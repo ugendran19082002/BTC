@@ -6,6 +6,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { LogTable } from '@/components/strategy/LogTable';
+import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { stamp } from '@/lib/format';
 import { time12 } from '@/lib/time';
@@ -171,6 +172,12 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
           );
         })}
       </div>
+
+      {/* Every trade they took, or would have: SL, TGT, exit, result and money. */}
+      {data && (data.signalTrades?.length ?? 0) > 0 && (
+        <SignalTradeHistory trades={(data.signalTrades ?? []).filter((t) => ids.has(t.strategyId) || !data.strategies.some((s) => s.id === t.strategyId))}
+                            strategies={data.strategies} />
+      )}
 
       {runs.length > 0 && (
         <div className="mt-2">

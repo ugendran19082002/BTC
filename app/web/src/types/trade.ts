@@ -80,7 +80,7 @@ export type Trade = {
     /** A signal strategy's trade: the signal it traded. */
     signal?: TradeSignal | null;
     /** A signal strategy's trade: its real exits, the signal's SL and TGT on the BTC perp. */
-    underlying?: { dir: 1 | -1; stop: number | null; target: number | null; source: string } | null;
+    underlying?: { dir: 1 | -1; stop: number | null; target: number | null; source: string; entry?: number | null } | null;
     entry: { type: 'limit' | 'market'; limitPrice?: number; timeoutMs: number; marketFallback: boolean };
     takeProfitPrice: number | null;
     stopPrice: number | null;

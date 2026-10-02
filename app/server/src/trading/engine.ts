@@ -240,7 +240,11 @@ export type TradePlan = {
    * The premium stop resting at Delta stays as the backstop: this watch lives in
    * this process, and a stop must still work when the process does not.
    */
-  underlying?: { dir: 1 | -1; stop: number | null; target: number | null; source: string };
+  underlying?: {
+    dir: 1 | -1; stop: number | null; target: number | null; source: string;
+    /** The perp's price when the trade was entered: the zone fill, or the last trade at the signal. For the labels. */
+    entry?: number | null;
+  };
   /**
    * The signal a signal strategy traded: which method, which way of reading,
    * which timeframe, which direction, and its candle (epoch seconds). For the

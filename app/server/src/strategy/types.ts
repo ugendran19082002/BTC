@@ -267,7 +267,21 @@ export type SignalRule = {
   target: 'tp1' | 'tp2' | 'tp3';
   /** At most this many of its trades open at once; a signal past it is written down and not taken. */
   maxOpen: number;
+  /**
+   * When the option is sold (2 Oct 2026):
+   *
+   *   zone    when the perp trades into the signal's entry zone -- the moment
+   *           the signal history says "in the trade". Signals that never fill
+   *           are never traded, so the strategy takes exactly the trades the
+   *           record counts. The default, and absent reads as it.
+   *   signal  the moment the signal is written, before the perp reaches the
+   *           zone -- sooner, but it also trades the ones that never fill.
+   */
+  enterOn?: SignalEntry;
 };
+export type SignalEntry = 'zone' | 'signal';
+/** The default: enter "in the trade". */
+export const entersOn = (rule: Pick<SignalRule, 'enterOn'>): SignalEntry => rule.enterOn ?? 'zone';
 export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
 /** "At most open at once" is typed, 1 to this. */
@@ -628,6 +642,7 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   if (!Array.isArray(r.methods) || r.methods.length === 0) bad.push('Pick at least one method whose signals to take.');
   else if (r.methods.some((m) => !ids.has(m))) bad.push(`No such method: ${r.methods.filter((m) => !ids.has(m)).join(', ')}.`);
   if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') bad.push('The target must be TGT1, TGT2 or TGT3.');
+  if (r.enterOn !== undefined && r.enterOn !== 'zone' && r.enterOn !== 'signal') bad.push('Enter at the entry zone or at the signal.');
   if (!Number.isInteger(r.maxOpen) || (r.maxOpen ?? 0) < 1 || (r.maxOpen ?? 0) > MAX_SIGNAL_OPEN) {
     bad.push(`At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
   }

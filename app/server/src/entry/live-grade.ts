@@ -69,7 +69,7 @@ export function gradeLive(tape: Tape | null): Promise<number> {
       const gradedTo = Math.max(row.gradedTo, changed ? minute : minute - 60);
       if (!changed && gradedTo === row.gradedTo) continue;
       if (after.status !== row.status) moved++;
-      await saveGraded(id, { ...after, gradedTo });
+      await saveGraded(id, { ...after, gradedTo }, row.status);
     }
     for (const id of cursors.keys()) if (!seen.has(id)) cursors.delete(id);
     return moved;

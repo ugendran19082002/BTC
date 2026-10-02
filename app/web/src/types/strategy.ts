@@ -145,12 +145,14 @@ export type SignalRule = {
   target: SignalTarget;
   /** At most this many of its trades open at once. */
   maxOpen: number;
+  /** When the option is sold: when the perp reaches the entry zone ("in the trade", the default), or at the signal. */
+  enterOn?: 'zone' | 'signal';
 };
 
 /** The leg a signal is sold as: a BUY sells the put, a SELL the call. */
 export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');
 
-export const DEFAULT_SIGNAL_RULE: SignalRule = { mode: 'mtf', tf: '5m', tfs: ['5m'], methods: [], target: 'tp1', maxOpen: 1 };
+export const DEFAULT_SIGNAL_RULE: SignalRule = { mode: 'mtf', tf: '5m', tfs: ['5m'], methods: [], target: 'tp1', maxOpen: 1, enterOn: 'zone' };
 
 /**
  * The timeframes a rule without the chain takes: `tfs`, or the one `tf` it was saved with. An empty `tfs` is
@@ -208,6 +210,24 @@ export type SignalRun = {
   status: SignalRunStatus; detail: string; tradeId: string | null; at: number;
 };
 
+/** A signal strategy's trade, for the history (server: strategy/store.ts `SignalTrade`). */
+export type SignalTrade = {
+  id: number; strategyId: string; at: number; method: string; mode: string; tf: string; dir: 1 | -1;
+  status: 'placed' | 'would-place'; detail: string; tradeId: string | null;
+  /** The signal's own plan on the BTC perp. */
+  levels: { entryLo: number; entryHi: number; stop: number; tp1: number; tp2: number | null; tp3: number | null } | null;
+  /** What the paper log saw on the perp: open (waiting at the zone), filled, tp1, stop, timeout, expired. */
+  perp: { status: string; fillPrice: number | null; filledAt: number | null; exitPrice: number | null; exitAt: number | null } | null;
+  /** A real order's option. */
+  option: {
+    side: string; strike: number | null; size: number; open: boolean;
+    entry: number | null; exit: number | null; pnlUsd: number; exitReason: string | null;
+    perpStop: number | null; perpTarget: number | null;
+    /** The perp's price when it was entered. */
+    perpEntry?: number | null;
+  } | null;
+};
+
 export type StrategyStatus = {
   today: string;
   schedulerOn: boolean;
@@ -221,6 +241,8 @@ export type StrategyStatus = {
   runs: StrategyRun[];
   /** The latest signals the signal strategies took, or wrote down; absent on an older server. */
   signalRuns?: SignalRun[];
+  /** The signal strategies' trades, newest first, with their levels and outcomes; absent on an older server. */
+  signalTrades?: SignalTrade[];
 };
 
 export const DEFAULT_CONFIG: StrategyConfig = {

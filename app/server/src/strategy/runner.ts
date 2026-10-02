@@ -6,8 +6,11 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
-import { exitAsk, exitRules, exitValueAt, legOfSignal, minutesForward, minutesOf, signalMatches, time12, type Strategy } from './types.js';
+import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minutesForward, minutesOf, signalMatches, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
+import type { SetupFill } from '../entry/paper.js';
+import { METHODS } from '../entry/methods.js';
+import { liveLtp } from '../market/flow.js';
 import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyExitStepper } from './exit-steps.js';
 
@@ -50,6 +53,11 @@ import { StrategyExitStepper } from './exit-steps.js';
 
 /** Often enough that the grace window has many chances; rarely enough to be dull. */
 const TICK_MS = 20_000;
+/**
+ * A fill the graders report this long after it printed is not entered: the candle grader can report one a
+ * minute or more late, when the tape was down, and a late option entry is a different trade.
+ */
+export const ZONE_FILL_FRESH_MS = 90_000;
 /** A signal strategy's entry rests at most this long; whatever is still unfilled then is cancelled. */
 export const SIGNAL_ENTRY_MS = 5 * 60_000;
 
@@ -78,6 +86,12 @@ export function inSignalWindow(s: Strategy, nowMs: number): boolean {
   if (!s.config.weekdays.includes(istWeekday(nowMs))) return false;
   const from = minutesOf(s.config.entryTime);
   return minutesForward(from, istMinutes(nowMs)) < minutesForward(from, minutesOf(s.config.exitTime));
+}
+
+/** The perp's last trade, when fresh: what a signal entered at, for the labels. */
+function perpNow(): number | null {
+  const l = liveLtp();
+  return l && Date.now() - l.at <= 15_000 ? l.price : null;
 }
 
 export class StrategyRunner {
@@ -199,7 +213,8 @@ export class StrategyRunner {
     const due = open.filter((t) => now >= exitMomentFor(s.config.exitTime, openedAtOf(t, now)));
     if (!due.length) return;
     for (const t of due) {
-      await svc.close(t.state.tradeId);
+      // Said on the close, so the exit alert and the screens say why: not "manual exit".
+      await svc.close(t.state.tradeId, undefined, `the strategy's exit time, ${time12(s.config.exitTime)}`);
     }
     // A signal strategy's trades belong to their signals, not to a day: the close is said on each signal's row.
     if (s.config.trigger === 'signal') {
@@ -336,12 +351,43 @@ export class StrategyRunner {
     if (!this.armed()) return;
     for (const s of await this.store.all()) {
       if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
+      // The ones that enter at the signal; the rest wait for the perp to reach the zone (`onSetupFilled`).
+      if (entersOn(s.config.signal) !== 'signal') continue;
       if (!signalMatches(s.config.signal, r)) continue;
-      await this.takeSignal(s, r).catch((e) => this.note(s, 'signal', e));
+      await this.takeSignal(s, r, null).catch((e) => this.note(s, 'signal', e));
     }
   }
 
-  private async takeSignal(s: Strategy, r: MethodRead): Promise<void> {
+  /**
+   * A signal "in the trade": the perp traded into its entry zone, as the paper
+   * log graded it (entry/paper.ts `onSetupFilled`). Every switched-on signal
+   * strategy that enters at the zone -- the default -- and takes this signal
+   * sells its leg now. In turn with the signals, through the same queue.
+   */
+  onSetupFilled(f: SetupFill): Promise<void> {
+    const mine = this.signalQueue.then(() => this.onSetupFilledNow(f));
+    this.signalQueue = mine.catch(() => {});
+    return mine;
+  }
+
+  private async onSetupFilledNow(f: SetupFill): Promise<void> {
+    if (!this.armed()) return;
+    const m = METHODS.find((x) => x.id === f.method);
+    // The signal as it was written: the same identity (and so the same claim) as the signal itself.
+    const r = {
+      id: f.method, n: m?.n ?? 0, name: m?.name ?? f.method, mode: f.mode, tf: f.tf,
+      dir: f.dir === 1 ? 'long' : 'short', state: 'TRADE', triggerTime: f.triggerAt,
+      plan: { entryLo: f.entryLo, entryHi: f.entryHi, stop: f.stop, tp1: f.tp1, tp2: f.tp2, tp3: f.tp3 },
+    } as unknown as MethodRead;
+    for (const s of await this.store.all()) {
+      if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
+      if (entersOn(s.config.signal) !== 'zone') continue;
+      if (!signalMatches(s.config.signal, r)) continue;
+      await this.takeSignal(s, r, f).catch((e) => this.note(s, 'signal', e));
+    }
+  }
+
+  private async takeSignal(s: Strategy, r: MethodRead, fill: SetupFill | null): Promise<void> {
     const now = this.now();
     if (!inSignalWindow(s, now)) return;              // outside its days or hours: not its signal
     const rule = s.config.signal!;
@@ -352,6 +398,19 @@ export class StrategyRunner {
     const said = `#${r.n} ${r.name} ${dir === 1 ? 'BUY' : 'SELL'}`;
     const finish = (status: Parameters<StrategyStore['finishSignal']>[2], detail: string, tradeId: string | null = null) =>
       this.store.finishSignal(s.id, key, status, `${said} | ${detail}`, tradeId);
+
+    if (fill) {
+      // In the trade -- but not one that is already over, nor a fill reported too late to follow.
+      if (fill.status !== 'filled') {
+        await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} and was out (${fill.status === 'tp1' ? 'TGT1' : fill.status === 'stop' ? 'SL' : fill.status}) in the same moment`);
+        return;
+      }
+      const ago = now - fill.filledAt * 1_000;
+      if (ago > ZONE_FILL_FRESH_MS) {
+        await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round(ago / 1_000)}s ago -- too late to enter`);
+        return;
+      }
+    }
 
     const svc = tradingService();
     // Every trade of its own not yet finished -- a working entry included: one resting at the offer, not yet
@@ -382,10 +441,12 @@ export class StrategyRunner {
         lots: chosen.lots, ask: chosen.ask, cancelAfterMs: SIGNAL_ENTRY_MS,
       }),
       // The signal's own levels, on the perp: the trade's real exits. The premium stop stays at Delta as the backstop.
-      underlying: { dir, stop: plan.stop, target, source: 'BTC perp' },
+      underlying: { dir, stop: plan.stop, target, source: 'BTC perp', entry: fill?.fillPrice ?? perpNow() },
       signal: { method: r.id, n: r.n, name: r.name, mode: r.mode, tf: r.tf, dir, triggerTime: r.triggerTime! },
     };
-    const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}`;
+    const perpIn = args.underlying.entry;
+    const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
+      + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}`;
 
     if (!s.config.liveOrders) {
       const p = await svc.wouldPlace(args);

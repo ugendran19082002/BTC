@@ -98,7 +98,7 @@ export function describeStrategy(c: StrategyConfig): string {
     return `From ${time12(c.entryTime)} to ${time12(c.exitTime)} IST on ${describeDays(c.weekdays)}, takes the TRADE signals of `
       + `${n === 0 ? 'no method yet' : `${n} method${n === 1 ? '' : 's'}`} ${way}: a BUY sells a put, a SELL a call, `
       + `${describeStrike(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'}, at most ${r.maxOpen} open at once. `
-      + `It ${describeEntry(c)}, then exits when the BTC perp reaches the signal's SL or ${signalTargetLabel(r.target)}; `
+      + `When ${(r.enterOn ?? 'zone') === 'zone' ? 'the BTC perp trades into the signal\'s entry zone' : 'the signal is written'} it ${describeEntry(c)}, then exits when the BTC perp reaches the signal's SL or ${signalTargetLabel(r.target)}; `
       + `on the option itself (the backstop) it ${describeExit(c)}; whatever is open closes at ${time12(c.exitTime)}. `
       + (c.liveOrders ? 'Live orders ON: it places real orders.' : 'Live orders off: it only writes down what it would sell.');
   }

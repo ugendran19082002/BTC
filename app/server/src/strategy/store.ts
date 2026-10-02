@@ -238,6 +238,8 @@ export type SignalTrade = {
     side: string; strike: number | null; size: number; open: boolean;
     entry: number | null; exit: number | null; pnlUsd: number; exitReason: string | null;
     perpStop: number | null; perpTarget: number | null;
+    /** The perp's price when it was entered: the zone fill, or the last trade at the signal. */
+    perpEntry: number | null;
   } | null;
 };
 type SignalTradeRow = SignalRunRow & {
@@ -263,7 +265,7 @@ const signalTradeFrom = (r: SignalTradeRow): SignalTrade => ({
     size: Number(r.t_state.entrySize ?? 0), open: Number(r.t_position ?? 0) !== 0,
     entry: n(r.t_state.entryAvgPrice), exit: n(r.t_state.exitAvgPrice), pnlUsd: Number(r.t_state.realisedPnl ?? 0),
     exitReason: r.t_state.exitReason ?? null,
-    perpStop: n(r.t_plan.underlying?.stop), perpTarget: n(r.t_plan.underlying?.target),
+    perpStop: n(r.t_plan.underlying?.stop), perpTarget: n(r.t_plan.underlying?.target), perpEntry: n(r.t_plan.underlying?.entry),
   },
 });
 

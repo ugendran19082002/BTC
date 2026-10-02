@@ -107,10 +107,26 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
 
           {tab === 'trade' && (
             <>
+              {/*
+                When the option is sold. At the zone is what the signal history
+                calls "in the trade": a signal the perp never reaches is never
+                traded, so the strategy takes the trades the record counts.
+              */}
+              <Stack label="Enter" className="mb-3">
+                <Segmented
+                  label="enter on"
+                  value={rule.enterOn ?? 'zone'}
+                  onChange={(v) => setRule('enterOn', v)}
+                  options={[
+                    { v: 'zone', label: 'In the trade', note: 'When the BTC perp trades into the signal’s entry zone — the fill the signal history counts. A signal that never fills is never traded. Recommended.' },
+                    { v: 'signal', label: 'At the signal', note: 'The moment the signal is written, before the perp reaches the zone — sooner, but it also trades the signals that never fill.' },
+                  ]}
+                />
+              </Stack>
               <EntryPriceFields c={c} set={set} err={err} allowSet={false} />
               <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
-                Sent within seconds of the candle that makes the signal, once. Still unfilled {SIGNAL_ENTRY_MIN} minutes
-                later, it is cancelled — a late fill on a signal is a different trade.
+                Sent once, within a second of {(rule.enterOn ?? 'zone') === 'zone' ? 'the perp reaching the zone' : 'the candle that makes the signal'}.
+                Still unfilled {SIGNAL_ENTRY_MIN} minutes later, it is cancelled — a late fill on a signal is a different trade.
               </p>
 
               {/*

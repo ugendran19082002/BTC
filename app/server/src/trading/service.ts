@@ -651,7 +651,8 @@ export class TradingService {
   }
 
   /** Buy back at the market: `lots` of it, or all of it when none is given. */
-  close(tradeId: string, lots?: number) { return this.engine.closeNow(tradeId, 'manual exit', lots); }
+  /** Close one trade, or `lots` of it. `reason` is written on the close and said in the exit alert. */
+  close(tradeId: string, lots?: number, reason = 'manual exit') { return this.engine.closeNow(tradeId, reason, lots); }
   /** What closing that many would book. Sends nothing. */
   previewClose(tradeId: string, lots?: number) { return this.engine.previewClose(tradeId, lots); }
   /** Sell more of what an open trade holds, under the same trade. */

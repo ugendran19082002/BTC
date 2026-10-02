@@ -85,7 +85,7 @@ const signal = (o: Partial<MethodRead> = {}): MethodRead => ({
 });
 
 const config = {
-  trigger: 'signal', signal: { mode: 'single', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 1 },
+  trigger: 'signal', signal: { mode: 'single', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 1, enterOn: 'signal' },
   liveOrders: false,
   entryTime: '09:00', exitTime: '17:00', lots: 1, legs: 'both',
   strikeRule: 'premium', premium: { mode: 'atMost', usd: 20, fallbackUsd: null },
@@ -147,7 +147,7 @@ test('[critical] live orders on: a BUY sells the put, with the signal\'s perp SL
   const t = await one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [run.trade_id]);
   assert.equal(t!.plan.optionSide, 'PE');
   assert.equal(t!.plan.strategyId, 'sig-bo');
-  assert.deepEqual(t!.plan.underlying, { dir: 1, stop: 84_600, target: 85_500, source: 'BTC perp' });
+  assert.deepEqual(t!.plan.underlying, { dir: 1, stop: 84_600, target: 85_500, source: 'BTC perp', entry: null });
   assert.ok(t!.plan.stopPrice > 18, 'the premium stop, the backstop at Delta, is on the plan as well');
 });
 
@@ -172,7 +172,7 @@ test('[critical] a SELL sells the call', async () => {
   assert.equal(run.status, 'placed', run.detail);
   const t = await one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [run.trade_id]);
   assert.equal(t!.plan.optionSide, 'CE');
-  assert.deepEqual(t!.plan.underlying, { dir: -1, stop: 85_400, target: 84_500, source: 'BTC perp' });
+  assert.deepEqual(t!.plan.underlying, { dir: -1, stop: 85_400, target: 84_500, source: 'BTC perp', entry: null });
 });
 
 // ------------------------------------------------------------ filled, then closed at the end of its window
@@ -292,7 +292,7 @@ test('[critical] renamed: its open position, its order history and the order det
   assert.equal(stored!.plan.strategyName, 'Sig BO');
   // and the signal it traded, for the labels
   assert.deepEqual(detail.body.trade.plan.signal, { method: 'breakout', n: 1, name: 'Breakout', mode: 'single', tf: '5m', dir: 1, triggerTime: stored!.plan.signal.triggerTime });
-  assert.deepEqual(detail.body.trade.plan.underlying, { dir: 1, stop: 84_600, target: 85_500, source: 'BTC perp' });
+  assert.deepEqual(detail.body.trade.plan.underlying, { dir: 1, stop: 84_600, target: 85_500, source: 'BTC perp', entry: null });
 });
 
 // ------------------------------------------------------------ at most N open, with live orders off
@@ -331,4 +331,76 @@ test('a deleted strategy\'s trades keep the name they were placed under', async 
   await app.inject({ method: 'DELETE', url: '/api/strategies/sig-bo', headers: cookie });
   const history = await api('GET', '/api/trade/history');
   assert.equal(history.body.trades.find((t: any) => t.tradeId === closed.trade_id).plan.strategyName, 'Sig BO');
+});
+
+// ------------------------------------------------------------ the trade history
+
+test('[critical] the trade history: the signal\'s perp levels, the paper log\'s verdict, and a real order\'s option, exit and money', async () => {
+  const r = await api('GET', '/api/strategies');
+  const trades: any[] = r.body.signalTrades;
+  const sold = trades.find((t) => t.strategyId === 'sig-bo-sell' && t.status === 'placed');
+  assert.ok(sold, JSON.stringify(trades).slice(0, 400));
+  assert.equal(sold.dir, -1);
+  assert.equal(sold.option.side, 'CE');
+  assert.equal(sold.option.strike, CALL);
+  assert.equal(sold.option.perpStop, 85_400);
+  assert.equal(sold.option.perpTarget, 84_500);
+
+  const closed = trades.find((t) => t.status === 'placed' && t.option?.exitReason);
+  assert.ok(closed, 'the one bought back at the end of its window');
+  assert.equal(closed.option.open, false);
+  assert.ok(closed.option.exit > 0);
+  assert.equal(typeof closed.option.pnlUsd, 'number');
+
+  const would = trades.find((t) => t.strategyId === 'sig-cap' && t.status === 'would-place' && t.perp?.status === 'stop');
+  assert.ok(would, 'a would-sell, with what the paper log saw on the perp');
+  assert.deepEqual(would.levels, { entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: null, tp3: null });
+  assert.equal(would.option, null, 'nothing was sold');
+  assert.ok(!trades.some((t) => t.status === 'skipped'), 'only what was sold, or would have been');
+});
+
+// ------------------------------------------------------------ entering "in the trade"
+
+test('[critical] enter at the zone (the default): nothing at the signal; the option sold the moment the paper log grades the fill', async () => {
+  const zone = { ...config, signal: { mode: 'single', tf: '15m', methods: ['breakout'], target: 'tp2', maxOpen: 5 }, liveOrders: true };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig zone', config: zone })).status, 200);
+  assert.equal((await strategyStore().get('sig-zone'))!.config.signal!.enterOn, 'zone', 'saved as the default');
+  await api('POST', '/api/strategies/sig-zone/enabled', { enabled: true });
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  const s = signal({ tf: '15m' });
+  await runner.onSignal(s);
+  assert.equal((await runsOf('sig-zone')).length, 0, 'the signal alone sells nothing');
+
+  // the paper log writes the signal, then the real grader sees the perp trade into the zone
+  const { recordSetups, saveGraded, onSetupFilled, workingRows } = await import('../../src/entry/paper.js');
+  const off = onSetupFilled((f) => { void runner.onSetupFilled(f); });
+  await recordSetups([s], Date.now());
+  const row = (await workingRows()).find((x) => x.tf === '15m' && x.triggerAt === s.triggerTime)!;
+  const filledAt = Math.floor(Date.now() / 1000);
+  await saveGraded(row.id, { ...row, status: 'filled', filledAt, fillPrice: 84_990 }, 'open');
+  const run = await until(async () => (await runsOf('sig-zone')).at(-1), (x) => x?.status === 'placed', 'the zone entry');
+  const t = await one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [run!.trade_id]);
+  assert.equal(t!.plan.optionSide, 'PE');
+  assert.deepEqual(t!.plan.underlying, { dir: 1, stop: 84_600, target: 85_900, source: 'BTC perp', entry: 84_990 }, 'TGT2, and the perp entry the fill');
+  assert.match(run!.detail, /perp filled 84990 · perp SL 84600 · TGT 85900/);
+  off();
+});
+
+test('[critical] at the zone: a fill reported late, or already out, is written down and not entered', async () => {
+  const fill = (o: Partial<import('../../src/entry/paper.js').SetupFill>) => ({
+    method: 'breakout', mode: 'single' as const, tf: '15m' as const, dir: 1 as const, triggerAt: trigger += 300,
+    entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: 85_900, tp3: null,
+    status: 'filled' as const, filledAt: Math.floor(clock / 1000), fillPrice: 84_990, ...o,
+  });
+  await runner.onSetupFilled(fill({ filledAt: Math.floor(clock / 1000) - 300 }));
+  assert.match((await runsOf('sig-zone')).at(-1)!.detail, /filled at 84990 300s ago -- too late to enter/);
+  await runner.onSetupFilled(fill({ status: 'stop' }));
+  assert.match((await runsOf('sig-zone')).at(-1)!.detail, /was out \(SL\) in the same moment/);
+  // a strategy that enters at the signal does not enter again at the fill
+  const n = (await runsOf('sig-multi')).length;
+  await runner.onSetupFilled(fill({ tf: '5m' }));
+  assert.equal((await runsOf('sig-multi')).length, n);
+  await api('POST', '/api/strategies/sig-zone/enabled', { enabled: false });
 });

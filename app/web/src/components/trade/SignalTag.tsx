@@ -33,7 +33,8 @@ export function SignalTag({ plan, className }: { plan: Trade['plan'] | undefined
       {u && (u.stop !== null || u.target !== null) && (
         <span className="rounded bg-muted px-1.5 py-px text-[10.5px] tabular-nums text-muted-foreground" aria-label="perp exits"
               title="The trade's real exits: when the BTC perp's last trade reaches either, the desk buys the option back. The option's own target and stop rest at Delta as the backstop.">
-          perp SL <span className="text-[var(--down)]">{btc(u.stop)}</span> · TGT <span className="text-[var(--up)]">{btc(u.target)}</span>
+          {u.entry != null && <>perp entry <span className="text-foreground">{btc(u.entry)}</span> · </>}
+          {u.entry != null ? 'SL' : 'perp SL'} <span className="text-[var(--down)]">{btc(u.stop)}</span> · TGT <span className="text-[var(--up)]">{btc(u.target)}</span>
         </span>
       )}
     </span>

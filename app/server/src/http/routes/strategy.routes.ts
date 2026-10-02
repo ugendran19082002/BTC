@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { noteError } from '../../observability/errors.js';
 import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
@@ -123,6 +124,7 @@ function cleanSignal(raw: unknown): SignalRule {
     methods: Array.isArray(r.methods) ? [...new Set(r.methods.map(String))] : [],
     target: (r.target ?? 'tp1') as SignalRule['target'],
     maxOpen: r.maxOpen === undefined ? 1 : Math.trunc(Number(r.maxOpen)),
+    enterOn: (r.enterOn ?? 'zone') as SignalRule['enterOn'],
   };
 }
 
@@ -192,7 +194,11 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       // Each signal a signal strategy saw, and what became of it.
       signalRuns: await s.signalRuns(60),
       // The signal strategies' trades, with the signal's perp levels, the paper log's verdict and the option's money.
-      signalTrades: await s.signalTrades(100),
+      // Never the reason the list fails: an unreadable history is an empty one, and an entry in the error log.
+      signalTrades: await s.signalTrades(100).catch((e: Error) => {
+        noteError({ source: 'server', level: 'warn', where: 'signal-trades', message: `signal trade history not read: ${e.message}` });
+        return [];
+      }),
     };
   });
 
