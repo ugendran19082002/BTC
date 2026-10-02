@@ -416,10 +416,17 @@ export class StrategyRunner {
     // Every trade of its own not yet finished -- a working entry included: one resting at the offer, not yet
     // filled, is still a trade, and counting only positions let a second signal place a second order.
     // And, with live orders off, every "would sell" whose signal is still in play in the paper log.
-    const open = (await svc.openTrades()).filter((t) => t.plan.strategyId === s.id).length
-      + await this.store.wouldBeOpen(s.id);
+    /*
+     * And, with live orders OFF, every "would sell" still in play in the paper log. Only then: with live orders
+     * on, the would-sells written down while they were off are not trades -- counting them blocked real
+     * orders ("already 15 open" with a handful of positions, 2 Oct 2026).
+     */
+    const live = (await svc.openTrades()).filter((t) => t.plan.strategyId === s.id).length;
+    const paper = s.config.liveOrders ? 0 : await this.store.wouldBeOpen(s.id);
+    const open = live + paper;
     if (open >= rule.maxOpen) {
-      await finish('skipped', `already ${open} of its trade${open === 1 ? '' : 's'} open (at most ${rule.maxOpen})`);
+      const parts = [live ? `${live} live` : null, paper ? `${paper} would-sell` : null].filter(Boolean).join(' + ');
+      await finish('skipped', `already ${open} of its trade${open === 1 ? '' : 's'} open${parts ? ` (${parts})` : ''} -- at most ${rule.maxOpen}`);
       return;
     }
 

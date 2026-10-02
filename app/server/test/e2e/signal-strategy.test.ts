@@ -442,3 +442,28 @@ test('[critical] two different signals, the same strike: both sold, each its own
   assert.deepEqual(plans.map((p) => p!.plan.underlying.stop), [84_600, 84_500], 'each signal its own SL');
   await api('POST', '/api/strategies/sig-same-strike/enabled', { enabled: false });
 });
+
+test('[critical] option TP and SL at 0: nothing is placed on the option, no alarm -- the perp levels are its only exits', async () => {
+  const bare = { ...config, signal: { ...config.signal, maxOpen: 5 }, liveOrders: true, takeProfitPct: 0, stopLossPct: 0 };
+  // As live: the desk has BTC's price, so a trade with no option stop is priced by where Delta would close it out.
+  tradingService().noteSpot(85_000);
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig bare', config: bare })).status, 200);
+  await api('POST', '/api/strategies/sig-bare/enabled', { enabled: true });
+  const sym = `C-BTC-${CALL}-${EXPIRY}`;
+  paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  const before = (await paper().getOpenOrders(sym)).filter((o) => o.reduceOnly).length;
+  await runner.onSignal(signal({ dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1.25 } }));
+  const run = (await runsOf('sig-bare')).at(-1)!;
+  assert.equal(run.status, 'placed', run.detail);
+  const t = await until(
+    () => one<{ plan: any; state: any; position: number }>('SELECT plan, state, position FROM trades WHERE trade_id = $1', [run.trade_id]),
+    (x) => x?.position !== 0, 'the call filled');
+  assert.equal(t!.plan.takeProfitPrice, null, 'no option target asked, none planned');
+  assert.equal(t!.plan.stopPrice, null, 'no option stop asked, none planned');
+  assert.deepEqual(t!.plan.underlying.stop, 85_400, 'the perp SL is its exit');
+  await new Promise((r) => setTimeout(r, 1_500));
+  assert.equal((await paper().getOpenOrders(sym)).filter((o) => o.reduceOnly).length, before, 'nothing new resting on the option');
+  const st = await one<{ state: any }>('SELECT state FROM trades WHERE trade_id = $1', [run.trade_id]);
+  assert.equal(st!.state.alarm ?? null, null, 'no "unprotected" alarm: it asked for no option stop');
+  await api('POST', '/api/strategies/sig-bare/enabled', { enabled: false });
+});

@@ -353,7 +353,10 @@ export function precheck(input: PrecheckInput): PrecheckResult {
     }
     const room = limits.maxDailyLossUsd + Math.min(0, input.dayPnlUsd);
     if (input.worstCaseLossUsd > room) {
-      add('DAILY_LOSS_LIMIT', `Worst case $${input.worstCaseLossUsd.toFixed(0)} exceeds the $${room.toFixed(0)} left in today's loss budget.`);
+      add('DAILY_LOSS_LIMIT', Number.isFinite(input.worstCaseLossUsd)
+        ? `Worst case $${input.worstCaseLossUsd.toFixed(0)} exceeds the $${room.toFixed(0)} left in today's loss budget.`
+        // No option stop, and no BTC price yet to work out where Delta would close it: refused, not guessed.
+        : 'The worst case cannot be priced yet: no option stop, and no BTC price to work out the close-out. Set a stop, or wait for the price.');
     }
   }
 
