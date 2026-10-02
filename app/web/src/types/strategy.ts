@@ -224,8 +224,12 @@ export type SignalTrade = {
     side: string; strike: number | null; size: number; open: boolean;
     entry: number | null; exit: number | null; pnlUsd: number; exitReason: string | null;
     perpStop: number | null; perpTarget: number | null;
-    /** The perp's price when it was entered. */
+    /** The perp's price as the option filled in; `perpEntryApprox`: the perp that minute (a trade from before it was kept). */
     perpEntry?: number | null;
+    perpEntryApprox?: boolean;
+    /** The perp's price as the option was bought back; `perpExitApprox`: the perp that minute. */
+    perpExit?: number | null;
+    perpExitApprox?: boolean;
     /** When the option filled in, and when it was last bought back (epoch ms). */
     entryAt?: number | null; exitAt?: number | null;
   } | null;

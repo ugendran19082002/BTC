@@ -13,7 +13,12 @@ export function signalWords(s: NonNullable<NonNullable<Trade['plan']>['signal']>
   return `#${s.n} ${s.name} · ${s.dir === 1 ? 'BUY' : 'SELL'} · ${s.mode === 'mtf' ? '5m + TF chain' : s.tf}`;
 }
 
-export function SignalTag({ plan, className }: { plan: Trade['plan'] | undefined; className?: string }) {
+export function SignalTag({ plan, perpExit = null, className }: {
+  plan: Trade['plan'] | undefined;
+  /** The perp as the option was bought back, on a closed trade. */
+  perpExit?: number | null;
+  className?: string;
+}) {
   const s = plan?.signal;
   const u = plan?.underlying;
   if (!s && !u) return null;
@@ -33,7 +38,11 @@ export function SignalTag({ plan, className }: { plan: Trade['plan'] | undefined
       {u && (u.stop !== null || u.target !== null) && (
         <span className="rounded bg-muted px-1.5 py-px text-[10.5px] tabular-nums text-muted-foreground" aria-label="perp exits"
               title="The trade's real exits: when the BTC perp's last trade reaches either, the desk buys the option back. The option's own target and stop rest at Delta as the backstop.">
-          {u.entry != null && <>perp entry <span className="text-foreground">{btc(u.entry)}</span> · </>}
+          {u.entry != null && (
+            <>perp entry <span className="text-foreground" title={u.entryApprox ? 'The perp over the minute the option filled: this trade was placed before the exact point was kept.' : 'The perp the moment the option filled.'}>
+              {u.entryApprox ? '≈' : ''}{btc(u.entry)}</span>
+              {perpExit != null && <> → exit <span className="text-foreground">{btc(perpExit)}</span></>} · </>
+          )}
           {u.entry != null ? 'SL' : 'perp SL'} <span className="text-[var(--down)]">{btc(u.stop)}</span> · TGT <span className="text-[var(--up)]">{btc(u.target)}</span>
         </span>
       )}

@@ -215,7 +215,7 @@ function OrderRow({ order }: { order: OrderRecord }) {
             {reason && <span className={cn('text-[11px] font-medium', REASON_TONE[reason])}>{reason}</span>}
             {/* Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */}
             <OriginTag origin={order.plan?.origin} strategyName={order.plan?.strategyName ?? null} strategyId={order.plan?.strategyId ?? null} />
-            <SignalTag plan={order.plan} />
+            <SignalTag plan={order.plan} perpExit={order.position === 0 ? (order.perpExit ?? null) : null} />
           </span>
           <span className="mt-0.5 block text-[11.5px] text-muted-foreground">{order.outcome}</span>
           {/* Why the desk closed it, when it was the desk's decision: "BTC perp at 84,590 reached the signal's stop 84,600". */}

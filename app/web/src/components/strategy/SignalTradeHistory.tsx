@@ -144,10 +144,10 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
       ) : (
         <>
           <div className="overflow-x-auto rounded-lg border border-solid border-border">
-            <table aria-label="signal trades" className="w-full min-w-[860px] border-collapse text-[11.5px] tabular-nums">
+            <table aria-label="signal trades" className="w-full min-w-[960px] border-collapse text-[11.5px] tabular-nums">
               <thead>
                 <tr className="bg-muted text-left text-[10.5px] uppercase tracking-[0.4px] text-muted-foreground">
-                  {['Signal', 'Option', 'Perp entry', 'Option entry', 'Perp SL', 'Perp TGT', 'Exit', 'Result', 'P&L'].map((h) => (
+                  {['Signal', 'Option', 'Perp entry', 'Option entry', 'Perp SL', 'Perp TGT', 'Perp exit', 'Option exit', 'Result', 'P&L'].map((h) => (
                     <th key={h} scope="col" className="px-2 py-1.5 font-medium">{h}</th>
                   ))}
                 </tr>
@@ -202,6 +202,9 @@ function Row({ t, name }: { t: SignalTrade; name: string }) {
   const tgt = t.option?.perpTarget ?? t.levels?.tp1 ?? null;
   const [said] = t.detail.split(' | ');
   const perpEntry = t.option ? (t.option.perpEntry ?? null) : (t.perp?.fillPrice ?? null);
+  const perpExit = t.option ? (t.option.perpExit ?? null) : (t.perp?.exitPrice ?? null);
+  const approx = (on: boolean | undefined) => (on ? '≈' : '');
+  const APPROX = 'The perp over that minute: this trade was placed before the exact point was kept.';
   const entryAt = t.option ? (t.option.entryAt ?? null) : (t.perp?.filledAt ?? null);
   const exitAt = t.option ? (t.option.exitAt ?? null) : (t.perp?.exitAt ?? null);
   return (
@@ -216,10 +219,14 @@ function Row({ t, name }: { t: SignalTrade; name: string }) {
           ? <>{t.option.side} {btc(t.option.strike)} ×{t.option.size}</>
           : <span className="text-[var(--dim)]">{t.dir === 1 ? 'PE' : 'CE'} · would sell</span>}
       </td>
-      <td className="whitespace-nowrap px-2 py-1.5" aria-label="perp entry">
-        {btc(perpEntry)}
+      <td className="whitespace-nowrap px-2 py-1.5" aria-label="perp entry"
+          title={t.option?.perpEntryApprox ? APPROX : t.option ? 'The perp the moment the option filled.' : 'Where the paper log filled it on the perp.'}>
+        {perpEntry !== null
+          ? <>{approx(t.option?.perpEntryApprox)}{btc(perpEntry)}</>
+          : <span className="text-[var(--dim)]">{t.option ? '—' : t.perp?.status === 'open' ? 'waiting' : t.perp?.status === 'expired' ? 'never filled' : '—'}</span>}
         {t.levels && <div className="text-[10.5px] text-[var(--dim)]">zone {btc(t.levels.entryLo)}–{btc(t.levels.entryHi)}</div>}
         {!t.option && <When at={entryAt} />}
+        {t.option && perpEntry !== null && <When at={entryAt} />}
       </td>
       <td className="whitespace-nowrap px-2 py-1.5" aria-label="option entry">
         {t.option ? opt(t.option.entry) : <span className="text-[var(--dim)]">—</span>}
@@ -238,9 +245,13 @@ function Row({ t, name }: { t: SignalTrade; name: string }) {
           </div>
         )}
       </td>
-      <td className="whitespace-nowrap px-2 py-1.5" aria-label="exit">
-        {t.option ? opt(o.price) : btc(o.price)}
-        {hit === null && <When at={exitAt} />}
+      <td className="whitespace-nowrap px-2 py-1.5" aria-label="perp exit" title={t.option?.perpExitApprox ? APPROX : undefined}>
+        {perpExit !== null ? <>{approx(t.option?.perpExitApprox)}{btc(perpExit)}</> : <span className="text-[var(--dim)]">—</span>}
+        {perpExit !== null && <When at={exitAt} />}
+      </td>
+      <td className="whitespace-nowrap px-2 py-1.5" aria-label="option exit">
+        {t.option ? opt(t.option.exit) : <span className="text-[var(--dim)]">—</span>}
+        {t.option && t.option.exit !== null && hit === null && <When at={exitAt} />}
       </td>
       <td className={cn('px-2 py-1.5', TONE[o.tone])} title={t.option?.exitReason ?? undefined}>{o.word}</td>
       <td className={cn('whitespace-nowrap px-2 py-1.5', t.option ? (t.option.pnlUsd > 0 ? 'text-[var(--up)]' : t.option.pnlUsd < 0 ? 'text-[var(--down)]' : '') : 'text-[var(--dim)]')}>
@@ -260,7 +271,7 @@ function SkippedRow({ t, name }: { t: SignalTrade; name: string }) {
         <div className="text-[10.5px] text-[var(--dim)]">{t.mode === 'mtf' ? '5m + TF chain' : t.tf} · {name}</div>
         <div className="text-[10.5px] text-[var(--dim)]">signal {stamp(t.at)}</div>
       </td>
-      <td colSpan={8} className="px-2 py-1.5" aria-label="why not taken">
+      <td colSpan={9} className="px-2 py-1.5" aria-label="why not taken">
         <span className={cn('mr-1.5 rounded px-1.5 py-px text-[10.5px] font-semibold uppercase',
           t.status === 'failed' ? 'bg-[var(--down)]/12 text-[var(--down)]' : 'bg-muted text-muted-foreground')}>
           {t.status}

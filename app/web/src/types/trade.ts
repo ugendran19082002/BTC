@@ -65,6 +65,9 @@ export type Trade = {
   } | null;
   /** Why the desk last closed it, in its words, when it was the desk's decision (the perp level, the stop watch, the exit time). */
   exitReason?: string | null;
+  /** The BTC perp's last trade as the option's first entry fill and last exit fill landed (signal trades). */
+  perpEntry?: number | null;
+  perpExit?: number | null;
   updatedAt: number;
   plan?: {
     lots: number;
@@ -80,7 +83,11 @@ export type Trade = {
     /** A signal strategy's trade: the signal it traded. */
     signal?: TradeSignal | null;
     /** A signal strategy's trade: its real exits, the signal's SL and TGT on the BTC perp. */
-    underlying?: { dir: 1 | -1; stop: number | null; target: number | null; source: string; entry?: number | null } | null;
+    underlying?: {
+      dir: 1 | -1; stop: number | null; target: number | null; source: string;
+      /** The perp's price as the option filled in; `entryApprox`: the perp that minute, for a trade from before it was kept. */
+      entry?: number | null; entryApprox?: boolean;
+    } | null;
     entry: { type: 'limit' | 'market'; limitPrice?: number; timeoutMs: number; marketFallback: boolean };
     takeProfitPrice: number | null;
     stopPrice: number | null;
