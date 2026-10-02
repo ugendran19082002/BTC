@@ -589,6 +589,17 @@ export function valueArea(xs: readonly Candle[], step = 25): { poc: number; vah:
   return { poc: (poc + 0.5) * step, vah: (keys[hi]! + 1) * step, val: keys[lo]! * step };
 }
 
+/**
+ * The bars' own length, in seconds, from the newest two. Windows measured in
+ * time are counted in these, so a method reads the same clock on 3m as on 5m
+ * (1 Oct 2026 audit: the opening range and the initial balance were counted
+ * as 6 and 12 bars -- five-minute bars -- and so never formed on any other
+ * timeframe; the report showed them at zero there).
+ */
+const barSec = (bars: readonly Candle[]) => (bars.length > 1 ? bars[bars.length - 1]!.time - bars[bars.length - 2]!.time : 300);
+/** How many bars of `sec` make `span` seconds: a whole number of at least one, or null (the window does not fit this timeframe). */
+const barsIn = (span: number, sec: number) => (sec > 0 && Number.isInteger(span / sec) && span / sec >= 1 ? span / sec : null);
+
 /** Sessions, UTC: Asia from 00:00, London from 07:00, New York from 13:30. */
 export const SESSIONS = { asia: 0, london: 7 * 3600, ny: 13.5 * 3600 } as const;
 type Session = keyof typeof SESSIONS;
@@ -644,7 +655,9 @@ const trap = ({ bars, a }: DetectInput): Setup | null => {
 const orb = (s: Session) => ({ bars, a }: DetectInput): Setup | null => {
   const b = last(bars), t0 = sessionStart(b.time, s);
   const or = bars.filter((x) => x.time >= t0 && x.time < t0 + 1800), after = bars.filter((x) => x.time >= t0 + 1800 && x.time <= b.time);
-  if (or.length !== 6 || !after.length || after.length > 24) return null;
+  // The range's 30 minutes in this timeframe's bars, and the first close out within two hours of it.
+  const need = barsIn(1800, barSec(bars));
+  if (need === null || or.length !== need || !after.length || b.time >= t0 + 1800 + 2 * 3600) return null;
   const hi = hiOf(or), lo = loOf(or);
   const dir: 1 | -1 | 0 = b.close > hi ? 1 : b.close < lo ? -1 : 0;
   if (dir === 0) return null;
@@ -748,7 +761,8 @@ export function weekVwap(h1: readonly Candle[] | undefined, t: number): number |
 
 /** 21. Anchored VWAP (the week's): price comes back to it from the trend's side and turns away. */
 const anchoredVwap = ({ bars, a, ctx }: DetectInput): Setup | null => {
-  const b = last(bars), v = weekVwap(ctx.frames['1h'], b.time + 300);
+  // As of this bar's close, whatever its length (it was a five-minute bar's, +300 s, on every timeframe).
+  const b = last(bars), v = weekVwap(ctx.frames['1h'], b.time + barSec(bars));
   if (v === null) return null;
   const before = bars.slice(-24, -3), recent = bars.slice(-3);
   for (const dir of [1, -1] as const) {
@@ -972,7 +986,9 @@ const monthReclaim = ({ bars, a, ctx }: DetectInput): Setup | null => {
 const ibBreak = ({ bars, a }: DetectInput): Setup | null => {
   const b = last(bars), d0 = b.time - (b.time % DAY);
   const ib = bars.filter((x) => x.time >= d0 && x.time < d0 + 3600), after = bars.filter((x) => x.time >= d0 + 3600 && x.time <= b.time);
-  if (ib.length !== 12 || !after.length || after.length > 48) return null;
+  // The first hour in this timeframe's bars, and the break within four hours of it.
+  const need = barsIn(3600, barSec(bars));
+  if (need === null || ib.length !== need || !after.length || b.time >= d0 + 3600 + 4 * 3600) return null;
   const hi = hiOf(ib), lo = loOf(ib);
   const dir: 1 | -1 | 0 = b.close > hi ? 1 : b.close < lo ? -1 : 0;
   if (dir === 0 || after.slice(0, -1).some((x) => (dir === 1 ? x.close > hi : x.close < lo))) return null;
@@ -988,7 +1004,7 @@ const ibBreak = ({ bars, a }: DetectInput): Setup | null => {
 const ibFail = ({ bars, a }: DetectInput): Setup | null => {
   const b = last(bars), d0 = b.time - (b.time % DAY);
   const ib = bars.filter((x) => x.time >= d0 && x.time < d0 + 3600);
-  if (ib.length !== 12 || b.time < d0 + 3600 + 900) return null;
+  if (ib.length !== barsIn(3600, barSec(bars)) || b.time < d0 + 3600 + 900) return null;
   const s = breakReclaim(bars, a, hiOf(ib), loOf(ib), 'initial balance');
   return s && { ...s, targets: [{ price: (hiOf(ib) + loOf(ib)) / 2, why: 'initial-balance middle' }] };
 };

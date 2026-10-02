@@ -99,7 +99,7 @@ export function recordText(r: EntryRecord | null): string {
 }
 
 const GATE_SHORT: Record<string, string> = {
-  data: 'Data', spread: 'Spread', stop: 'Stop', rr: 'R:R', htf: 'HTF', 'big-move': 'Big move', em: 'Exp. move', settle: 'Settle', method: 'Method',
+  data: 'Data', plan: 'Plan', spread: 'Spread', stop: 'Stop', rr: 'R:R', htf: 'HTF', 'big-move': 'Big move', em: 'Exp. move', settle: 'Settle', method: 'Method',
 };
 /** A gate's verdict as a tick: ✓ passed, ✗ refused, – not read / not part of this mode. */
 export const gateTick = (g: Pick<EntryGate, 'ok'>) => (g.ok === true ? '✓' : g.ok === false ? '✗' : '–');

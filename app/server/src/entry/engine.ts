@@ -47,6 +47,32 @@ export const STOP_BUFFER_ATR = 0.25;
 /** A stop nearer than this many ATRs is inside the noise; further, too wide to be worth it. */
 export const STOP_MIN_ATR = 0.3;
 export const STOP_MAX_ATR = 2.5;
+/**
+ * The furthest the price may be from the entry zone, in ATRs, for a setup to
+ * still be in play (1 Oct 2026 audit: 445 TRADEs in six months sat over 2 ATR
+ * away -- a move that had happened, waiting for a return that rarely came).
+ */
+export const PLAN_MAX_AWAY_ATR = 2;
+
+/**
+ * Why a plan cannot be traded at `px`, in words, or null when it can.
+ *
+ * Three things the levels alone can get wrong (the 1 Oct 2026 audit replayed
+ * all 81 methods over six months and found each): the stop on the winning
+ * side of the entry -- two liquidity-sweep longs with the stop above the fill,
+ * passed because risk is measured as a distance; TGT1 already reached by the
+ * price -- 980 TRADEs, each written down at once as "expired, ran to TGT1
+ * without it"; and the zone more than PLAN_MAX_AWAY_ATR from the price.
+ */
+export function planProblem(plan: Pick<Plan, 'entryLo' | 'entryHi' | 'stop' | 'tp1'>, dir: 1 | -1, px: number, a: number): string | null {
+  const edge = fillOf(plan, dir);
+  if (!((edge - plan.stop) * dir > 0)) return `the stop ${fmt(plan.stop)} is on the wrong side of the ${fmt(edge)} entry`;
+  if (!((plan.tp1 - px) * dir > 0)) return `the price ${fmt(px)} has already reached TGT1 ${fmt(plan.tp1)} -- the move happened without the trade`;
+  const away = dir === 1 ? px - plan.entryHi : plan.entryLo - px;
+  if (away > PLAN_MAX_AWAY_ATR * a) return `the entry is ${(away / a).toFixed(1)} ATR from the price -- the setup is behind it`;
+  return null;
+}
+
 /** The newest closed 1m candle may be at most this old, in seconds. */
 export const DATA_MAX_AGE_SEC = 180;
 /** The perpetual's spread above this, as a percentage of price, is too wide to enter. */
@@ -278,6 +304,12 @@ function gatesOf(i: {
   g('data', 'Data fresh', `newest ${dataTf} candle ≤ ${Math.round(maxAge / 60)} min old`,
     Number.isFinite(age) ? `${(age / 60).toFixed(1)} min old` : `no ${dataTf} candles`, age <= maxAge,
     Number.isFinite(age) ? `the newest ${dataTf} candle is ${Math.round(age / 60)} min old` : `no ${dataTf} candles`);
+
+  // The plan against the price now: the live trade where it is fresh, else the entry timeframe's last close.
+  const px = ctx.ltp && ctx.now - ctx.ltp.at <= LTP_FRESH_MS ? ctx.ltp.price : i.bars[i.bars.length - 1]!.close;
+  const problem = planProblem(plan, dir, px, a);
+  g('plan', 'Plan valid', `stop on the losing side, TGT1 not yet reached, entry within ${PLAN_MAX_AWAY_ATR} ATR of the price`,
+    problem === null ? 'valid' : 'not valid', problem === null, problem);
 
   g('spread', 'Spread', `perp spread ≤ ${SPREAD_MAX_PCT}%`,
     ctx.spreadPct === null ? 'not read' : `${ctx.spreadPct.toFixed(3)}%`,
