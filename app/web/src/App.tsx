@@ -52,6 +52,7 @@ const StrikeAnalysis = lazy(() => import('@/components/desk/StrikeAnalysis').the
 const PositionsCard = lazy(() => import('@/components/trade/PositionsCard').then((m) => ({ default: m.PositionsCard })));
 const AccountCard = lazy(() => import('@/components/trade/AccountCard').then((m) => ({ default: m.AccountCard })));
 const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m) => ({ default: m.OrdersPanel })));
+const SignalStrategiesCard = lazy(() => import('@/components/strategy/SignalStrategiesCard').then((m) => ({ default: m.SignalStrategiesCard })));
 const StrategyPanel = lazy(() => import('@/components/strategy/StrategyPanel').then((m) => ({ default: m.StrategyPanel })));
 const SettingsPanel = lazy(() => import('@/components/desk/SettingsPanel').then((m) => ({ default: m.SettingsPanel })));
 const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
@@ -588,6 +589,15 @@ export default function App() {
               />
             </ErrorBoundary>
           )}
+
+          {/*
+            The signal strategies, beside the methods that make the signals
+            (2 Oct 2026): the same strategies as the Strategy tab, the ones that
+            enter on a signal, with their switches and the last signals taken.
+          */}
+          <ErrorBoundary where="Signal strategies">
+            <SignalStrategiesCard onOpenStrategyTab={() => setTab('strategy')} />
+          </ErrorBoundary>
 
           {/*
             The full board, at the bottom of the Live screen (22 Sep 2026) rather

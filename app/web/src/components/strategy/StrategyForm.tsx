@@ -62,8 +62,10 @@ const SIGNAL_TAKE_MIN = 5;
 const WEEKEND = [0, 6];
 const LAST_MINUTE = hhmmOf(minutesOf(SETTLEMENT) - 1);
 
-export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd, spot }: {
+export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd, spot, startOnSignal = false }: {
   editing: Strategy | null;
+  /** A new strategy opened from the Live screen: already a signal strategy, on its Signals tab. */
+  startOnSignal?: boolean;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onSaved: () => void;
@@ -71,8 +73,8 @@ export function StrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd,
   spot?: number | null;
 }) {
   const [name, setName] = useState(editing?.name ?? '');
-  const [c, setC] = useState<StrategyConfig>(editing?.config ?? DEFAULT_CONFIG);
-  const [tab, setTab] = useState<FormTab>('when');
+  const [c, setC] = useState<StrategyConfig>(editing?.config ?? (startOnSignal ? asSignalConfig(DEFAULT_CONFIG, true) : DEFAULT_CONFIG));
+  const [tab, setTab] = useState<FormTab>(!editing && startOnSignal ? 'signal' : 'when');
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string[]>([]);
   const [readAll, setReadAll] = useState(false);
