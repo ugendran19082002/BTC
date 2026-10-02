@@ -219,12 +219,12 @@ describe('the SL and TGT on the BTC perp, from the live signal', () => {
     expect(box).toHaveTextContent('BTC perp 85,010');
   });
 
-  it('target and how many at once are chosen on Entry & exit; the option exits are the backstop', () => {
+  it('target and how many at once are chosen on Entry & exit; the option exits are optional', () => {
     show(signalStrategy());
     tab('Entry & exit');
     expect(screen.getByText(/Still unfilled 5 minutes\s+later, it is cancelled/)).toBeInTheDocument();
     expect(screen.getByLabelText('exits on the BTC perp')).toHaveTextContent(/the signal's own levels on the BTC perpetual/);
-    expect(screen.getByText(/Option TP \/ SL — the backstop at Delta/)).toBeInTheDocument();
+    expect(screen.getByText(/Option TP \/ SL — optional, placed at Delta only when set/)).toBeInTheDocument();
     // the entry is still priced the same way: at the offer, at the bid after 5 s
     expect(screen.getByRole('radio', { name: 'Offer' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByLabelText('cross after seconds')).toHaveValue('5');
@@ -390,20 +390,24 @@ describe('the method list: profitable by a rule you can see, and filtered by res
 });
 
 describe('the exits: the perp first, the option as the backstop', () => {
-  it('[critical] the order is said; a new strategy starts with a backstop stop', () => {
+  it('[critical] a new strategy puts NOTHING on the option: target and stop off until you set them', async () => {
     show(null);
     tab('Entry & exit');
-    expect(screen.getByLabelText('exit order')).toHaveTextContent(/BTC perp SL \/ TGT.*Checked first.*Option TP \/ SL.*resting at Delta/);
-    expect(screen.getByLabelText('Stop loss percent')).toHaveValue('200');
-    expect(screen.queryByText(/No option stop/)).toBeNull();
+    expect(screen.getByLabelText('exit order')).toHaveTextContent(/BTC perp SL \/ TGT.*Checked first.*Option TP \/ SL.*only if you set them/);
+    expect(screen.getByLabelText('Take profit percent')).toHaveValue('0');
+    expect(screen.getByLabelText('Stop loss percent')).toHaveValue('0');
+    expect(screen.getByText(/Option stop off — nothing is placed on the option/)).toBeInTheDocument();
+    // not the clock strategy's "runs to settlement" warning: a signal trade has the perp's exits
+    expect(screen.queryByText(/No target and no stop/)).toBeNull();
+    expect(screen.getByText(/no option target or stop is placed/)).toBeInTheDocument();
   });
 
-  it('[critical] with the option stop off it says what that means, and one tap sets a backstop', () => {
+  it('[critical] with the option stop off it says what that means; a stop is added only when asked', () => {
     show(signalStrategy({}, { stopLossPct: 0 }));
     tab('Entry & exit');
-    expect(screen.getByText(/No option stop: if the desk cannot see the perp/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Set a backstop stop at \+200%/ }));
-    expect(screen.queryByText(/No option stop/)).toBeNull();
+    expect(screen.getByText(/Option stop off — nothing is placed on the option/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Add one: \+200%/ }));
+    expect(screen.queryByText(/Option stop off/)).toBeNull();
     expect(screen.getByLabelText('Stop loss percent')).toHaveValue('200');
   });
 });

@@ -87,6 +87,12 @@ function ladderWords(r: ExitRule): string {
 }
 
 /** One sentence covering the whole rule, for the list and the form header. */
+/** Whether any option exit is set -- now or by a time step. Off is nothing placed at Delta. */
+const hasOptionExit = (c: StrategyConfig) => {
+  const { target, stop } = exitRules(c);
+  return [target, stop].some((r) => r.value > 0 || r.steps.some((st) => st.value > 0));
+};
+
 /** "TGT1", "TGT2 (else TGT1)". */
 export const signalTargetLabel = (t: 'tp1' | 'tp2' | 'tp3') => (t === 'tp1' ? 'TGT1' : `TGT${t.slice(2)} (else TGT1)`);
 
@@ -99,7 +105,8 @@ export function describeStrategy(c: StrategyConfig): string {
       + `${n === 0 ? 'no method yet' : `${n} method${n === 1 ? '' : 's'}`} ${way}: a BUY sells a put, a SELL a call, `
       + `${describeStrike(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'}, at most ${r.maxOpen} open at once. `
       + `When ${(r.enterOn ?? 'zone') === 'zone' ? 'the BTC perp trades into the signal\'s entry zone' : 'the signal is written'} it ${describeEntry(c)}, then exits when the BTC perp reaches the signal's SL or ${signalTargetLabel(r.target)}; `
-      + `on the option itself (the backstop) it ${describeExit(c)}; whatever is open closes at ${time12(c.exitTime)}. `
+      + (hasOptionExit(c) ? `on the option itself it ${describeExit(c)}; ` : 'no option target or stop is placed; ')
+      + `whatever is open closes at ${time12(c.exitTime)}. `
       + (c.liveOrders ? 'Live orders ON: it places real orders.' : 'Live orders off: it only writes down what it would sell.');
   }
   const legs = c.legs === 'both' ? 'a call and a put' : `a ${c.legs === 'CE' ? 'call' : 'put'}`;

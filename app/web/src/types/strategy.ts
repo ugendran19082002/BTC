@@ -174,9 +174,16 @@ export function asSignalConfig(c: StrategyConfig, fresh: boolean): StrategyConfi
     trigger: 'signal',
     signal: c.signal ?? { ...DEFAULT_SIGNAL_RULE },
     liveOrders: c.liveOrders ?? false,
-    // A new one starts with a backstop stop on the option: +200%, three times the entry. The perp's SL is the real
-    // exit; this is what limits the loss while the desk cannot see the perp. Off is a choice, said on the form.
-    ...(fresh ? { lots: 1, stopMode: 'pct' as const, stopLossPct: c.stopLossPct > 0 ? c.stopLossPct : 2, stopSteps: [] } : {}),
+    /*
+     * A new one: one lot, and NO option target or stop (owner, 2 Oct 2026: "the option TGT / SL only when I
+     * give them; not otherwise"). Its exits are the signal's, on the perp; an option exit is placed at Delta
+     * only when one is typed in. Nothing is put on the option by default.
+     */
+    ...(fresh ? {
+      lots: 1,
+      targetMode: 'pct' as const, takeProfitPct: 0, takeProfitPoints: 0, takeProfitAt: 0, targetSteps: [],
+      stopMode: 'pct' as const, stopLossPct: 0, stopLossPoints: 0, stopLossAt: 0, stopSteps: [],
+    } : {}),
   };
 }
 
