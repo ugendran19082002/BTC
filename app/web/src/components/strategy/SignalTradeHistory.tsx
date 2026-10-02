@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import type { SignalTrade, Strategy } from '@/types/strategy';
 import { usePersisted } from '@/hooks/usePersisted';
 import { signedInr, stamp, usdToInr } from '@/lib/format';
@@ -17,7 +18,7 @@ import { cn } from '@/lib/utils';
  * shows. The filters are kept in this browser.
  */
 
-type Show = 'all' | 'live' | 'paper' | 'open' | 'won' | 'lost' | 'skipped';
+type Show = 'all' | 'live' | 'live-open' | 'live-closed' | 'paper' | 'open' | 'won' | 'lost' | 'skipped';
 
 /** A trade -- sold, or written down as one -- rather than a signal not taken. */
 export const isTrade = (t: SignalTrade) => t.status === 'placed' || t.status === 'would-place';
@@ -26,6 +27,9 @@ export const isTrade = (t: SignalTrade) => t.status === 'placed' || t.status ===
 const TABS: { v: Show; label: string; test: (t: SignalTrade) => boolean }[] = [
   { v: 'all', label: 'All', test: isTrade },
   { v: 'live', label: 'Live orders', test: (t) => t.status === 'placed' },
+  // A live order still holding (or its entry still working), and one bought back.
+  { v: 'live-open', label: 'Live open', test: (t) => t.status === 'placed' && Boolean(t.option?.open) },
+  { v: 'live-closed', label: 'Live closed', test: (t) => t.status === 'placed' && t.option !== null && !t.option.open },
   { v: 'paper', label: 'Would sell', test: (t) => t.status === 'would-place' },
   { v: 'open', label: 'Open', test: (t) => isTrade(t) && outcomeOf(t).tone === 'open' },
   { v: 'won', label: 'Won', test: (t) => isTrade(t) && outcomeOf(t).tone === 'up' },
@@ -34,6 +38,45 @@ const TABS: { v: Show; label: string; test: (t: SignalTrade) => boolean }[] = [
 ];
 /** Rows a page holds. */
 export const PAGE = 10;
+
+/** The columns a person can sort by, and the value each is sorted on. Blank values always last. */
+export type SortKey = 'time' | 'signal' | 'option' | 'perpEntry' | 'optionEntry' | 'sl' | 'tgt' | 'perpExit' | 'optionExit' | 'result' | 'pnl';
+type Sort = { key: SortKey; asc: boolean };
+const COLUMNS: { key: SortKey; label: string }[] = [
+  { key: 'signal', label: 'Signal' }, { key: 'option', label: 'Option' }, { key: 'perpEntry', label: 'Perp entry' },
+  { key: 'optionEntry', label: 'Option entry' }, { key: 'sl', label: 'Perp SL' }, { key: 'tgt', label: 'Perp TGT' },
+  { key: 'perpExit', label: 'Perp exit' }, { key: 'optionExit', label: 'Option exit' }, { key: 'result', label: 'Result' },
+  { key: 'pnl', label: 'P&L' },
+];
+export function sortValue(t: SignalTrade, key: SortKey): number | string | null {
+  switch (key) {
+    case 'time': return t.at;
+    case 'signal': return t.detail.split(' | ')[0]!.toLowerCase();
+    case 'option': return t.option?.strike ?? null;
+    case 'perpEntry': return t.option ? (t.option.perpEntry ?? null) : (t.perp?.fillPrice ?? null);
+    case 'optionEntry': return t.option?.entry ?? null;
+    case 'sl': return t.option?.perpStop ?? t.levels?.stop ?? null;
+    case 'tgt': return t.option?.perpTarget ?? t.levels?.tp1 ?? null;
+    case 'perpExit': return t.option ? (t.option.perpExit ?? null) : (t.perp?.exitPrice ?? null);
+    case 'optionExit': return t.option?.exit ?? null;
+    case 'result': return isTrade(t) ? outcomeOf(t).word : t.status;
+    case 'pnl': return t.option && !t.option.open ? t.option.pnlUsd : null;
+  }
+}
+export function sortTrades(rows: readonly SignalTrade[], s: Sort): SignalTrade[] {
+  return [...rows].sort((a, b) => {
+    const x = sortValue(a, s.key), y = sortValue(b, s.key);
+    if (x === null || y === null) return x === y ? b.at - a.at : x === null ? 1 : -1;   // blanks last, either way
+    const d = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+    return (s.asc ? d : -d) || b.at - a.at;
+  });
+}
+/** Everything a row says, lower-cased, for the search box: the signal, strategy, timeframe, option, result and why. */
+function haystack(t: SignalTrade, name: string): string {
+  return [t.detail, name, t.method, t.mode === 'mtf' ? 'chain' : t.tf, t.status,
+    t.option ? `${t.option.side} ${t.option.strike ?? ''} ${t.option.exitReason ?? ''}` : (t.dir === 1 ? 'pe' : 'ce'),
+    isTrade(t) ? outcomeOf(t).word : ''].join(' ').toLowerCase();
+}
 type Outcome = { word: string; tone: 'up' | 'down' | 'open' | 'quiet'; at: number | null; price: number | null };
 
 const btc = (n: number | null | undefined) => (n === null || n === undefined ? '—' : Math.round(n).toLocaleString('en-US'));
@@ -78,14 +121,21 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
   const nameOf = (id: string) => strategies.find((s) => s.id === id)?.name ?? id;
   const ids = [...new Set(trades.map((t) => t.strategyId))];
 
-  const mine = useMemo(() => trades.filter((t) => who === 'all' || t.strategyId === who), [trades, who]);
+  const [query, setQuery] = usePersisted<string>('signal-trades:search', '');
+  const [sort, setSort] = usePersisted<Sort>('signal-trades:sort', { key: 'time', asc: false });
+  const q = query.trim().toLowerCase();
+  const mine = useMemo(() => trades.filter((t) => (who === 'all' || t.strategyId === who)
+    && (!q || q.split(/\s+/).every((w) => haystack(t, nameOf(t.strategyId)).includes(w)))),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [trades, who, q, strategies]);
   const tab = TABS.find((x) => x.v === show) ?? TABS[0]!;
-  const rows = useMemo(() => mine.filter(tab.test), [mine, tab]);
+  const rows = useMemo(() => sortTrades(mine.filter(tab.test), sort), [mine, tab, sort]);
+  const sortBy = (key: SortKey) => setSort((cur) => (cur.key === key ? { key, asc: !cur.asc } : { key, asc: key === 'signal' || key === 'result' }));
   const count = (x: (typeof TABS)[number]) => mine.filter(x.test).length;
   const [page, setPage] = useState(0);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   // A filter changed, or the list shrank: back to a page that exists.
-  useEffect(() => { setPage(0); }, [show, who]);
+  useEffect(() => { setPage(0); }, [show, who, q, sort.key, sort.asc]);
   useEffect(() => { if (page > pages - 1) setPage(pages - 1); }, [page, pages]);
   const shown = rows.slice(page * PAGE, (page + 1) * PAGE);
   const totals = useMemo(() => {
@@ -106,7 +156,12 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-[13.5px] font-semibold text-foreground">Trade history</h3>
         <div className="flex flex-wrap items-center gap-1.5">
-          <div role="group" aria-label="which trades" className="flex gap-1">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="search trades"
+                   placeholder="Search method, strike, strategy…" className="h-8 w-56 pl-7 text-[12px]" />
+          </div>
+          <div role="group" aria-label="which trades" className="flex flex-wrap gap-1">
             {TABS.map((x) => (
               <button key={x.v} type="button" aria-pressed={tab.v === x.v} onClick={() => setShow(x.v)} className={chip(tab.v === x.v)}>
                 {x.label} <span className="tabular-nums text-[var(--dim)]">{count(x)}</span>
@@ -140,7 +195,7 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
 
       {rows.length === 0 ? (
         <p className="m-0 rounded-lg border border-dashed border-[var(--line)] px-3 py-3 text-[12px] text-muted-foreground">
-          Nothing here yet{tab.v === 'all' ? '' : ` under ${tab.label}`}.
+          {q ? `Nothing matches “${query.trim()}”${tab.v === 'all' ? '' : ` under ${tab.label}`}.` : `Nothing here yet${tab.v === 'all' ? '' : ` under ${tab.label}`}.`}
         </p>
       ) : (
         <>
@@ -148,9 +203,27 @@ export function SignalTradeHistory({ trades, strategies }: { trades: readonly Si
             <table aria-label="signal trades" className="w-full min-w-[960px] border-collapse text-[11.5px] tabular-nums">
               <thead>
                 <tr className="bg-muted text-left text-[10.5px] uppercase tracking-[0.4px] text-muted-foreground">
-                  {['Signal', 'Option', 'Perp entry', 'Option entry', 'Perp SL', 'Perp TGT', 'Perp exit', 'Option exit', 'Result', 'P&L'].map((h) => (
-                    <th key={h} scope="col" className="px-2 py-1.5 font-medium">{h}</th>
-                  ))}
+                  {COLUMNS.map((c) => {
+                    const on = sort.key === c.key || (c.key === 'signal' && sort.key === 'time');
+                    const dirOf = sort.key === c.key ? (sort.asc ? 'ascending' : 'descending') : 'none';
+                    return (
+                      <th key={c.key} scope="col" className="px-2 py-1.5 font-medium" aria-sort={dirOf as 'ascending' | 'descending' | 'none'}>
+                        <button type="button" onClick={() => sortBy(c.key)} aria-label={`sort by ${c.label}`}
+                                className={cn('m-0 inline-flex appearance-none items-center gap-0.5 border-0 bg-transparent p-0 font-[inherit] uppercase tracking-[0.4px]',
+                                  on ? 'text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                          {c.label}
+                          {sort.key === c.key && (sort.asc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                        </button>
+                        {c.key === 'signal' && (
+                          <button type="button" onClick={() => sortBy('time')} aria-label="sort by time"
+                                  className={cn('m-0 ml-1.5 inline-flex appearance-none items-center gap-0.5 border-0 bg-transparent p-0 font-[inherit] normal-case tracking-normal',
+                                    sort.key === 'time' ? 'text-foreground' : 'text-[var(--dim)] hover:text-foreground')}>
+                            time{sort.key === 'time' && (sort.asc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                          </button>
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>

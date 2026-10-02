@@ -478,7 +478,7 @@ function exits(plan: TradePlan): string {
 }
 
 const hasPerpExits = (plan: TradePlan) => Boolean(plan.underlying && (plan.underlying.stop !== null || plan.underlying.target !== null));
-const btc = (n: number | null) => (n === null ? '—' : Math.round(n).toLocaleString('en-US'));
+const btc = (n: number | null) => (n === null ? '—' : price(n));
 
 /** The signal a signal strategy traded: "#1 Breakout BUY · 15m, without the chain". */
 function signalLine(plan: TradePlan): string | null {
@@ -582,22 +582,17 @@ export function missedEntryAlert(
 
 // -------------------------------------------------------------- formatting
 
-/** Quoted option prices: at least one decimal, at most two, as Delta shows them. */
-const price = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+/** Prices -- the option's and the perp's -- always to two decimals (owner, 2 Oct 2026): 90.00, 100.50, 84,612.37. */
+const price = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const qty = (n: number) => n.toLocaleString('en-US');
 
 /** Rupees to the paisa, signed -- the one number every sign and icon is decided from. */
 const rupees = (usdAmount: number) => Math.round(usdAmount * USDINR * 100) / 100;
 
-/**
- * Rupees main, dollars small, at the desk's own rate -- the same as the screen.
- * Whole rupees once there are enough of them; paise only when the amount is
- * small enough that rounding would hide it.
- */
+/** Rupees main, dollars small, at the desk's own rate -- always to the paisa, two decimals. */
 function inr(usdAmount: number): string {
   const r = Math.abs(rupees(usdAmount));
-  const digits = r < 10 ? 2 : 0;
-  return `₹${r.toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+  return `₹${r.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 const usd = (usdAmount: number) => `$${Math.abs(usdAmount).toFixed(2)}`;

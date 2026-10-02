@@ -34,7 +34,7 @@ test('[critical] between the levels nothing happens; the perp at the stop buys t
   const s = await r.engine.poll(id);
   assert.equal(s?.position, 0, 'closed when the perp reached 84,000');
   const why = r.store.peek(id)!.events.find((e) => e.t === 'exit_submitted') as { reason?: string };
-  assert.match(why.reason ?? '', /BTC perp at 84000 reached the signal's stop 84000/);
+  assert.match(why.reason ?? '', /BTC perp at 84,000\.00 reached the signal's stop 84,000\.00/);
 });
 
 test('[critical] the perp at the target books it', async () => {
@@ -42,7 +42,7 @@ test('[critical] the perp at the target books it', async () => {
   perp.price = 86_050;
   const s = await r.engine.poll(id);
   assert.equal(s?.position, 0);
-  assert.match((r.store.peek(id)!.events.find((e) => e.t === 'exit_submitted') as { reason?: string }).reason ?? '', /target 86000/);
+  assert.match((r.store.peek(id)!.events.find((e) => e.t === 'exit_submitted') as { reason?: string }).reason ?? '', /target 86,000\.00/);
 });
 
 test('[critical] a SELL is the mirror: a short call stopped as the perp rises, booked as it falls', async () => {

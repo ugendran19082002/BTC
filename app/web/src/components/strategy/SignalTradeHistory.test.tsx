@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { outcomeOf, SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
+import { outcomeOf, SignalTradeHistory, sortTrades } from '@/components/strategy/SignalTradeHistory';
 import { DEFAULT_CONFIG, type SignalTrade, type Strategy } from '@/types/strategy';
 
 /** The signal strategies' trade history: the signal, the option, the perp SL and TGT, the exit, the result, the money. */
@@ -118,7 +118,7 @@ describe('the tabs', () => {
   it('[critical] each with its count; Skipped lists the signals not taken, with why -- and they are in no trade figure', () => {
     render(<SignalTradeHistory trades={[LIVE_WON, LIVE_OPEN, trade({}), LOST, SKIP, REFUSED]} strategies={strategies} />);
     const labels = within(screen.getByRole('group', { name: 'which trades' })).getAllByRole('button').map((b) => b.textContent);
-    expect(labels).toEqual(['All 4', 'Live orders 2', 'Would sell 2', 'Open 1', 'Won 2', 'Lost 1', 'Skipped 2']);
+    expect(labels).toEqual(['All 4', 'Live orders 2', 'Live open 1', 'Live closed 1', 'Would sell 2', 'Open 1', 'Won 2', 'Lost 1', 'Skipped 2']);
     expect(screen.getByLabelText('history totals')).toHaveTextContent('4 trades · 2 won · 1 lost · 1 open');
 
     fireEvent.click(screen.getByRole('button', { name: /^Skipped/ }));
@@ -151,5 +151,59 @@ describe('the perp points', () => {
     expect(within(a!).getByLabelText('perp exit')).toHaveTextContent(/^≈84,500/);
     expect(within(b!).getByLabelText('perp entry')).toHaveTextContent(/^waitingzone/);
     expect(within(c!).getByLabelText('perp entry')).toHaveTextContent(/^never filledzone/);
+  });
+});
+
+describe('search, sort, and the live tabs', () => {
+  const rowsText = () => within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row').slice(1).map((r) => r.textContent ?? '');
+
+  it('[critical] Live open and Live closed split the live orders', () => {
+    render(<SignalTradeHistory trades={[LIVE_WON, LIVE_OPEN, trade({})]} strategies={strategies} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Live open/ }));
+    expect(rowsText()).toHaveLength(1);
+    expect(rowsText()[0]).toMatch(/PE 84,000 ×2/);
+    fireEvent.click(screen.getByRole('button', { name: /^Live closed/ }));
+    expect(rowsText()).toHaveLength(1);
+    expect(rowsText()[0]).toMatch(/CE 86,000 ×1/);
+  });
+
+  it('[critical] search: by method, strike, strategy or result -- every word must match; kept across a refresh', () => {
+    const { unmount } = render(<SignalTradeHistory trades={[LIVE_WON, LIVE_OPEN, trade({}), LOST]} strategies={strategies} />);
+    const box = screen.getByLabelText('search trades');
+    fireEvent.change(box, { target: { value: '#6 bos' } });   // the method (the strategy "BOS chain" matches 'bos' alone)
+    expect(rowsText()).toHaveLength(1);
+    fireEvent.change(box, { target: { value: '86000' } });      // a strike
+    expect(rowsText()).toHaveLength(1);
+    fireEvent.change(box, { target: { value: 'breakout sl' } });
+    expect(rowsText()).toHaveLength(1);                     // the one stopped out
+    fireEvent.change(box, { target: { value: 'nothing-like-this' } });
+    expect(screen.getByText(/Nothing matches “nothing-like-this”/)).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: 'BOS chain' } });  // the strategy's name
+    unmount();
+    render(<SignalTradeHistory trades={[LIVE_WON, LIVE_OPEN, trade({}), LOST]} strategies={strategies} />);
+    expect(screen.getByLabelText('search trades')).toHaveValue('BOS chain');
+  });
+
+  it('[critical] click a header to sort, again to reverse; blanks stay last; time is the default, newest first', () => {
+    const a = { ...LIVE_WON, id: 31, at: AT + 3_000, option: { ...LIVE_WON.option!, pnlUsd: -0.2 } };
+    const b = { ...LIVE_WON, id: 32, at: AT + 2_000, option: { ...LIVE_WON.option!, pnlUsd: 0.5 } };
+    const c = { ...LIVE_OPEN, id: 33, at: AT + 1_000 };                 // open: no P&L yet
+    render(<SignalTradeHistory trades={[c, b, a]} strategies={strategies} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Live orders/ }));
+    const pnl = () => rowsText().map((t) => t.match(/[+\-−]₹[\d.]+|—$/)?.[0]?.replace('−', '-'));
+    expect(pnl()).toEqual(['-₹17.00', '+₹42.50', '—']);           // time, newest first
+    fireEvent.click(screen.getByRole('button', { name: 'sort by P&L' }));
+    expect(screen.getByRole('columnheader', { name: /P&L/ })).toHaveAttribute('aria-sort', 'descending');
+    expect(pnl()).toEqual(['+₹42.50', '-₹17.00', '—']);
+    fireEvent.click(screen.getByRole('button', { name: 'sort by P&L' }));
+    expect(pnl()).toEqual(['-₹17.00', '+₹42.50', '—']);           // reversed; the open one still last
+    fireEvent.click(screen.getByRole('button', { name: 'sort by time' }));
+    expect(pnl()).toEqual(['-₹17.00', '+₹42.50', '—']);           // back to newest first
+  });
+
+  it('sortTrades: numbers by value, words alphabetically, blanks last both ways', () => {
+    const x = [trade({ id: 1, at: 1, levels: { ...levels, stop: 300 } }), trade({ id: 2, at: 2, levels: null, perp: null }), trade({ id: 3, at: 3, levels: { ...levels, stop: 100 } })];
+    expect(sortTrades(x, { key: 'sl', asc: true }).map((t) => t.id)).toEqual([3, 1, 2]);
+    expect(sortTrades(x, { key: 'sl', asc: false }).map((t) => t.id)).toEqual([1, 3, 2]);
   });
 });

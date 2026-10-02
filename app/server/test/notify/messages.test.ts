@@ -38,9 +38,9 @@ test('an entry fill says what was sold, how much, at what price, and what it pai
   assert.ok(a);
   assert.equal(a.key, 't1:entry');
   assert.match(a.text, /SOLD BTC 80,000 CE/);
-  assert.match(a.text, /Filled <b>100<\/b> of 100 @ <b>100\.5<\/b>/);
+  assert.match(a.text, /Filled <b>100<\/b> of 100 @ <b>100\.50<\/b>/);
   // 100.5 x 100 contracts x 0.001 BTC = $10.05, at 85 = 854.25
-  assert.match(a.text, /Premium collected: <b>₹854<\/b> \(\$10\.05\)/);
+  assert.match(a.text, /Premium collected: <b>₹854\.25<\/b> \(\$10\.05\)/);
   assert.match(a.text, /🎯 Target 90\.0/);
   assert.match(a.text, /🛑 Stop 110\.0/);
   assert.match(a.text, /06:59 IST/);
@@ -58,7 +58,7 @@ test('every piece of one entry shares a key, so the phone gets one message rathe
   const [, first, second] = alerts([submitted(), fill('entry', 60, 100.5), fill('entry', 40, 99.5)]);
   assert.equal(first?.key, second?.key);
   // the second carries the whole entry, at the size-weighted average
-  assert.match(second!.text, /Filled <b>100<\/b> of 100 @ <b>100\.1<\/b> avg/);
+  assert.match(second!.text, /Filled <b>100<\/b> of 100 @ <b>100\.10<\/b> avg/);
 });
 
 test('an entry cancelled part-filled replaces "still working" with what actually happened', () => {
@@ -75,9 +75,9 @@ test('a target fill is announced as a win with booked P&L, on its own key', () =
   assert.ok(a);
   assert.equal(a.key, 't1:exit');
   assert.match(a.text, /✅ <b>TARGET HIT · BTC 80,000 CE<\/b>/);
-  assert.match(a.text, /Bought back <b>100<\/b> @ <b>90\.0<\/b>  \(entry 100\.5\)/);
+  assert.match(a.text, /Bought back <b>100<\/b> @ <b>90\.00<\/b>  \(entry 100\.50\)/);
   // (100.5 - 90) x 100 x 0.001 = $1.05, at 85 = 89.25
-  assert.match(a.text, /🟢 P&amp;L: <b>\+₹89<\/b> \(\+\$1\.05\)/);
+  assert.match(a.text, /🟢 P&amp;L: <b>\+₹89\.25<\/b> \(\+\$1\.05\)/);
   assert.match(a.text, /Position is <b>flat<\/b>/);
 });
 
@@ -86,7 +86,7 @@ test('a stop-loss fill is announced as a loss, with the minus sign on both curre
   assert.ok(a);
   assert.match(a.text, /🛑 <b>STOP-LOSS HIT/);
   // (100.5 - 110) x 100 x 0.001 = -$0.95, at 85 = -80.75
-  assert.match(a.text, /🔴 P&amp;L: <b>-₹81<\/b> \(-\$0\.95\)/);
+  assert.match(a.text, /🔴 P&amp;L: <b>-₹80\.75<\/b> \(-\$0\.95\)/);
 });
 
 /*
@@ -101,10 +101,10 @@ test('[critical] a target that fills in pieces says how many of how many, and th
     plan,
   );
   assert.match(first!.text, /🎯 <b>TARGET PART-FILLED · BTC 80,000 CE<\/b>/);
-  assert.match(first!.text, /Bought back <b>200<\/b> of 425 @ <b>0\.7<\/b>/);
-  assert.match(second!.text, /Bought back <b>203<\/b> of 425 @ <b>0\.7<\/b>/, 'the total so far, said as a total');
+  assert.match(first!.text, /Bought back <b>200<\/b> of 425 @ <b>0\.70<\/b>/);
+  assert.match(second!.text, /Bought back <b>203<\/b> of 425 @ <b>0\.70<\/b>/, 'the total so far, said as a total');
   // (12 - 0.7) x 203 x 0.001 = $2.2939, at 85 = 194.98 -- the +₹195 of the real alert
-  assert.match(second!.text, /Booked so far: <b>\+₹195<\/b> \(\+\$2\.29\)/);
+  assert.match(second!.text, /Booked so far: <b>\+₹194\.98<\/b> \(\+\$2\.29\)/);
   assert.match(second!.text, /Still short <b>222<\/b> — target resting at 0\.7/);
   assert.doesNotMatch(second!.text, /TARGET HIT/, 'not hit: 222 are still short');
   assert.equal(first!.key, second!.key, 'and one key, so pieces close together are one message');
@@ -114,7 +114,7 @@ test('the piece that closes the position is the target hit', () => {
   const plan = planFor(ceProduct(), { takeProfitPrice: 0.7, stopPrice: null });
   const a = last([submitted(425), fill('entry', 425, 12), fill('take_profit', 203, 0.7), fill('take_profit', 222, 0.7)], plan);
   assert.match(a!.text, /✅ <b>TARGET HIT/);
-  assert.match(a!.text, /Bought back <b>425<\/b> @ <b>0\.7<\/b>/);
+  assert.match(a!.text, /Bought back <b>425<\/b> @ <b>0\.70<\/b>/);
   assert.doesNotMatch(a!.text, / of 425/);
   assert.match(a!.text, /Position is <b>flat<\/b>/);
 });
@@ -220,9 +220,9 @@ test('[critical] an add says how many more were sold, why, and what the whole po
   assert.ok(added);
   assert.equal(added.key, 't1:add:add-1', 'its own message, not a rewrite of the morning entry');
   assert.match(added.text, /➕ <b>ADDED · BTC 80,000 CE<\/b>/);
-  assert.match(added.text, /Sold <b>425<\/b> more of 425 @ <b>7\.0<\/b>/);
+  assert.match(added.text, /Sold <b>425<\/b> more of 425 @ <b>7\.00<\/b>/);
   assert.match(added.text, /Because the CE target bought back 425/);
-  assert.match(added.text, /Now short <b>850<\/b> @ <b>11\.0<\/b> avg/);
+  assert.match(added.text, /Now short <b>850<\/b> @ <b>11\.00<\/b> avg/);
   assert.match(added.text, /🎯 Target 0\.7/);
 });
 
@@ -276,8 +276,8 @@ test('[critical] a signal strategy\'s trade: the signal, its SL and TGT on the B
   };
   const entry = last([submitted(), fill('entry', 100, 100.5)], plan)!;
   assert.match(entry.text, /📡 Signal <b>#1 Breakout<\/b> BUY · 15m, without the chain/);
-  assert.match(entry.text, /📈 BTC perp  🛑 SL <b>84,600<\/b>   🎯 TGT <b>85,500<\/b>/);
-  assert.match(entry.text, /Option backstop: 🎯 Target 90\.0   🛑 Stop 110\.0/);
+  assert.match(entry.text, /📈 BTC perp  🛑 SL <b>84,600\.00<\/b>   🎯 TGT <b>85,500\.00<\/b>/);
+  assert.match(entry.text, /Option backstop: 🎯 Target 90\.00   🛑 Stop 110\.00/);
   assert.match(entry.text, /strategy “Breakout &lt;PE&gt;”/, 'named, and escaped');
 
   const out = last([

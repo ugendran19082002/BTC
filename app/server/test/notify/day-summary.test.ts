@@ -42,21 +42,21 @@ test('the summary adds the day up: premium, gross, charges, and net', () => {
   assert.match(a.text, /All positions closed · LIVE/);
   assert.match(a.text, /Trades: <b>2<\/b> · ✅ 1 won · 🔻 1 lost/);
   // (100.5 + 50) x 100 x 0.001 = $15.05, at 85 = 1,279.25
-  assert.match(a.text, /Premium collected: <b>₹1,279<\/b> \(\$15\.05\)/);
+  assert.match(a.text, /Premium collected: <b>₹1,279\.25<\/b> \(\$15\.05\)/);
   // 1.05 - 1.00 = $0.05, at 85 = 4.25
   assert.match(a.text, /Gross P&amp;L: <b>\+₹4\.25<\/b> \(\+\$0\.05\)/);
   // 3.5% of premium on both sides of both trades, plus 18% GST:
   // (0.35175 + 0.315 + 0.175 + 0.21) x 1.18 = $1.241065, at 85 = 105.49
-  assert.match(a.text, /Charges \(est\.\): -₹105 \(-\$1\.24\)/);
+  assert.match(a.text, /Charges \(est\.\): -₹105\.49 \(-\$1\.24\)/);
   // and that turns a small win into a loss, which is the reason the line exists
-  assert.match(a.text, /🔴 <b>Net P&amp;L: -₹101 \(-\$1\.19\)<\/b>/);
+  assert.match(a.text, /🔴 <b>Net P&amp;L: -₹101\.24 \(-\$1\.19\)<\/b>/);
   assert.match(a.text, /17:29 IST · charges are estimates/);
 });
 
 test('each trade gets one line saying how it ended, in the order they were opened', () => {
   const a = daySummaryFor([LOSS, WIN], ctx())!;
-  const win = a.text.indexOf('✅ BTC 80,000 CE · 100 @ 100.5 → 90.0 · +₹89');
-  const loss = a.text.indexOf('🛑 BTC 77,000 PE · 100 @ 50.0 → 60.0 · -₹85');
+  const win = a.text.indexOf('✅ BTC 80,000 CE · 100 @ 100.50 → 90.00 · +₹89.25');
+  const loss = a.text.indexOf('🛑 BTC 77,000 PE · 100 @ 50.00 → 60.00 · -₹85.00');
   assert.ok(win > 0, a.text);
   assert.ok(loss > win, a.text);
 });
@@ -87,7 +87,7 @@ test('a position closed on Delta without a fill is listed, and left out of the t
   const a = daySummaryFor([WIN, offDesk], ctx())!;
   assert.match(a.text, /closed on Delta · P&amp;L unknown/);
   assert.match(a.text, /1 trade closed on Delta without a fill — not in the P&amp;L totals/);
-  assert.match(a.text, /Gross P&amp;L: <b>\+₹89<\/b>/);
+  assert.match(a.text, /Gross P&amp;L: <b>\+₹89\.25<\/b>/);
 });
 
 test('orders still resting with no position are mentioned', () => {

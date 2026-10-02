@@ -1711,9 +1711,11 @@ export class TradeEngine {
     const hitStop = u.stop !== null && (px.price - u.stop) * u.dir <= 0;
     const hitTarget = !hitStop && u.target !== null && (px.price - u.target) * u.dir >= 0;
     if (!hitStop && !hitTarget) return rec;
+    // Two decimals, grouped: the reason is read in the alert and on the screens, not parsed for maths.
+    const p2 = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const why = hitStop
-      ? `${u.source} at ${px.price} reached the signal's stop ${u.stop}`
-      : `${u.source} at ${px.price} reached the signal's target ${u.target}`;
+      ? `${u.source} at ${p2(px.price)} reached the signal's stop ${p2(u.stop!)}`
+      : `${u.source} at ${p2(px.price)} reached the signal's target ${p2(u.target!)}`;
     await this.closeNowInner(rec.state.tradeId, why);
     return await this.d.store.get(rec.state.tradeId) ?? rec;
   }
