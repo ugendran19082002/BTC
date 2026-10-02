@@ -53,7 +53,8 @@ describe('signal strategies on the Live screen', () => {
     fireEvent.click(screen.getByRole('button', { name: /New signal strategy/ }));
     expect(await screen.findByRole('tab', { name: /^Signals/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('radio', { name: 'With the timeframe chain' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: /^Sell/ }));
+    expect(screen.queryByRole('radiogroup', { name: 'legs' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: /^Strike & lots/ }));
     expect(screen.getByLabelText('lots')).toHaveValue('1');
     expect(screen.getByRole('switch', { name: /^Live orders/ })).toHaveAttribute('aria-checked', 'false');
   });

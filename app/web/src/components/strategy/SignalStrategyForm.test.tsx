@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { matchingSignals, profitableIds } from '@/components/strategy/SignalRuleEditor';
 import { DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, type SignalRule, type Strategy } from '@/types/strategy';
@@ -72,7 +73,7 @@ const signalStrategy = (rule: Partial<SignalRule> = {}, over: Partial<Strategy['
   strategy({ trigger: 'signal', signal: { ...DEFAULT_SIGNAL_RULE, methods: ['breakout'], ...rule }, liveOrders: false, lots: 1, ...over });
 
 const show = (s: Strategy | null) =>
-  render(<StrategyForm editing={s} open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
+  render(<SignalStrategyForm editing={s} open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
 const tab = (name: string) => fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}`) }));
 const radio = (group: string, name: string | RegExp) =>
   fireEvent.click(within(screen.getByRole('radiogroup', { name: group })).getByRole('radio', { name }));
@@ -87,39 +88,47 @@ beforeEach(() => {
   getEntryBoard.mockResolvedValue(BOARD);
 });
 
-describe('choosing to enter on a signal', () => {
-  it('[critical] a new strategy switched to signals: a Signals tab, one lot, live orders off', () => {
+describe('a form of its own: only what a signal strategy has', () => {
+  it('[critical] a new one opens on Signals: four tabs, one lot, live orders off -- nothing a clock strategy has', () => {
     show(null);
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['When', 'Sell', 'Entry & exit']);
-    radio('trigger', 'On a signal');
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['When', 'Signals', 'Sell', 'Entry & exit']);
+    expect(screen.getByRole('dialog', { name: 'New signal strategy' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Signals', 'Strike & lots', 'Entry & exit', 'When']);
+    expect(screen.getByRole('tab', { name: 'Signals' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('switch', { name: /Live orders/ })).toHaveAttribute('aria-checked', 'false');
+    // none of the clock strategy's settings
+    expect(screen.queryByRole('radiogroup', { name: 'trigger' })).toBeNull();
+    tab('Strike & lots');
+    expect(screen.getByLabelText('lots')).toHaveValue('1');
+    expect(screen.queryByRole('radiogroup', { name: 'legs' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'By open interest' })).toBeNull();
+    tab('Entry & exit');
+    expect(screen.queryByRole('radio', { name: 'My price' })).toBeNull();
+    tab('When');
     expect(screen.getByRole('button', { name: /^Take signals from:/ })).toBeInTheDocument();
     expect(screen.queryByLabelText('late entry window')).toBeNull();
-    const live = screen.getByRole('switch', { name: /Live orders/ });
-    expect(live).toHaveAttribute('aria-checked', 'false');
-    tab('Sell');
-    expect(screen.getByLabelText('lots')).toHaveValue('1');
+    expect(screen.queryByText('Trade monitoring')).toBeNull();
   });
 
-  it('[critical] the leg is the signal\'s: BUY sells the PE, SELL the CE -- no legs to choose', () => {
+  it('[critical] the leg is the signal\'s: BUY sells the PE, SELL the CE -- and the strike by premium or by strike', () => {
     show(signalStrategy());
-    tab('Sell');
-    expect(screen.queryByRole('radiogroup', { name: 'legs' })).toBeNull();
+    tab('Strike & lots');
     const legs = screen.getByLabelText('leg from the signal');
     expect(legs).toHaveTextContent(/BUY signal → sells PE/);
     expect(legs).toHaveTextContent(/SELL signal → sells CE/);
-    // the strike rule is the one every strategy uses
-    expect(screen.getByRole('radio', { name: 'By premium' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'At least' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'At most' })).toBeInTheDocument();
+    radio('strike rule', 'By strike');
+    fireEvent.click(screen.getByRole('button', { name: 'one strike further out' }));
+    expect(screen.getByRole('status', { name: 'which strike' })).toHaveTextContent('OTM 1');
+    expect(screen.getByLabelText('lots')).toHaveValue('1');
+    expect(screen.getByText('Lots per signal')).toBeInTheDocument();
   });
 
-  it('an existing strategy keeps its lots when switched to signals and back', () => {
-    show(strategy({ lots: 7 }));
-    radio('trigger', 'On a signal');
-    radio('trigger', 'At a time');
-    tab('Sell');
-    expect(screen.getByLabelText('lots')).toHaveValue('7');
-    expect(screen.getByRole('radiogroup', { name: 'legs' })).toBeInTheDocument();
+  it('the clock strategy\'s form has none of it: no signals, no live-orders switch', () => {
+    render(<StrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} />);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['When', 'Sell', 'Entry & exit']);
+    expect(screen.queryByRole('radiogroup', { name: 'trigger' })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /Live orders/ })).toBeNull();
   });
 });
 
@@ -190,6 +199,7 @@ describe('the SL and TGT on the BTC perp, from the live signal', () => {
   it('target and how many at once are chosen on Entry & exit; the option exits are the backstop', () => {
     show(signalStrategy());
     tab('Entry & exit');
+    expect(screen.getByText(/Still unfilled 5 minutes\s+later, it is cancelled/)).toBeInTheDocument();
     expect(screen.getByLabelText('exits on the BTC perp')).toHaveTextContent(/the signal's own levels on the BTC perpetual/);
     expect(screen.getByText(/Backstop on the option at Delta/)).toBeInTheDocument();
     // the entry is still priced the same way: at the offer, at the bid after 5 s
