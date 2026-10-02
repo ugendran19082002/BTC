@@ -137,9 +137,14 @@ export type MethodReport = {
  * report (1 Oct 2026). `everyGate` keeps only setups taken with every hard
  * gate on -- the rules as designed, as `entryRecord`'s totals count them.
  * `tf` narrows the section without the chain to one timeframe; with the chain
- * the entry is always 5m.
+ * the entry is always 5m. `range` keeps the signals first seen inside it.
  */
-export async function methodReport(tf: Tf | null = null, everyGate = false): Promise<MethodReport> {
+export async function methodReport(
+  tf: Tf | null = null,
+  everyGate = false,
+  /** Signals first seen in [from, to), epoch ms -- the day a signal appeared is its day. Null: all of them. */
+  range: { from: number; to: number } | null = null,
+): Promise<MethodReport> {
   await entrySchema();
   await methodsSchema();
   const methods = await rows<{ id: string; n: number | null; name: string }>(
@@ -158,8 +163,9 @@ export async function methodReport(tf: Tf | null = null, everyGate = false): Pro
             coalesce(-sum(r_net) FILTER (WHERE status IN ('tp1', 'stop', 'timeout') AND r_net <= 0), 0) AS loss_r
        FROM entry_setups
       WHERE (NOT $1::boolean OR cardinality(gates_off) = 0)
+        AND ($2::bigint IS NULL OR first_seen >= $2) AND ($3::bigint IS NULL OR first_seen < $3)
       GROUP BY method, mode, tf`,
-    [everyGate],
+    [everyGate, range?.from ?? null, range?.to ?? null],
   );
   const num = (v: string | number | null | undefined) => Number(v ?? 0);
   type Sums = Omit<MethodReportRow, 'n' | 'method' | 'name' | 'winPct' | 'netPts' | 'netR'>;
@@ -191,4 +197,25 @@ export async function methodReport(tf: Tf | null = null, everyGate = false): Pro
     sections: [sectionOf('mtf', () => true), sectionOf('single', (t) => tf === null || t === tf)],
     singleByTf: Object.fromEntries(SINGLE_TFS.map((t) => [t, sectionOf('single', (x) => x === t)])),
   };
+}
+
+const IST_MS = 5.5 * 3_600_000;
+const DAY_MS = 86_400_000;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * IST calendar days, `YYYY-MM-DD`, as the half-open window [from 00:00, the day
+ * after `to` 00:00) in epoch ms; null when either is missing. Malformed, a day
+ * that does not exist, or `from` after `to`: an error in words.
+ */
+export function istDayRange(from?: string, to?: string): { from: number; to: number } | null | { error: string } {
+  if (!from && !to) return null;
+  if (!from || !to) return { error: 'from and to go together: both IST days, YYYY-MM-DD' };
+  if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) return { error: 'from and to must be IST days, YYYY-MM-DD' };
+  const a = Date.parse(`${from}T00:00:00Z`), b = Date.parse(`${to}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || new Date(a).toISOString().slice(0, 10) !== from || new Date(b).toISOString().slice(0, 10) !== to) {
+    return { error: 'no such day' };
+  }
+  if (a > b) return { error: 'from must be on or before to' };
+  return { from: a - IST_MS, to: b + DAY_MS - IST_MS };
 }

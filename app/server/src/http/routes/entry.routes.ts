@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { SINGLE_TFS, VIEW_ONLY_TFS, entryBoard, timeframeRows, type TimeframeRow } from '../../entry/engine.js';
 import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
-import { methodReport } from '../../entry/catalogue.js';
+import { istDayRange, methodReport } from '../../entry/catalogue.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
 import { cachedSignalPage, clearPreview, clearRangeOf, clearSignals, clockKeyOf, exportSignals, recentClears, isOutcomeFilter, isSignalSort, setupClocks, signalsCsv, type SignalQuery } from '../../entry/signals.js';
@@ -120,12 +120,15 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
   });
 
   // The report: every method, with the chain and without it -- signals, trades, wins, losses, win rate, profit, loss and net.
-  app.get('/api/entry/report', async (req) => {
-    const { tf, gates } = (req.query ?? {}) as { tf?: string; gates?: string };
+  // `from` / `to`: IST days (YYYY-MM-DD), the signals first seen in them; neither, every signal.
+  app.get('/api/entry/report', async (req, reply) => {
+    const { tf, gates, from, to } = (req.query ?? {}) as { tf?: string; gates?: string; from?: string; to?: string };
     const one = tf && (SINGLE_TFS as readonly string[]).includes(tf) ? (tf as Tf) : null;
     // Every signal, as in the history; `gates=on` keeps only those taken with every hard gate on.
     const everyGate = gates === 'on';
-    return { tf: one, everyGate, ...(await methodReport(one, everyGate)) };
+    const range = istDayRange(from, to);
+    if (range && 'error' in range) { reply.code(400); return { error: range.error }; }
+    return { tf: one, everyGate, from: range ? from : null, to: range ? to : null, ...(await methodReport(one, everyGate, range)) };
   });
 
   // Each method's paper record, with the chain and without it, and the latest setups written.

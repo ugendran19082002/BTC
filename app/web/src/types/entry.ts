@@ -195,6 +195,8 @@ export type MethodReportSection = {
 };
 export type MethodReportResponse = {
   tf: EntryTf | null; everyGate?: boolean; sections: MethodReportSection[];
+  /** The IST days the signals were first seen on, when a range was asked for. */
+  from?: string | null; to?: string | null;
   /** Without the chain, one section per timeframe (3m-4h): the report's timeframe tabs. */
   singleByTf: Partial<Record<EntryTf, MethodReportSection>>;
 };

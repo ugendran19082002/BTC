@@ -61,13 +61,20 @@ export function describeRange(value: DateRangeValue, today = istToday()): string
   return `${fmt.format(toDate(value.from))} – ${fmt.format(toDate(value.to))}`;
 }
 
-export function DateRangePicker({
-  value, onChange, className,
-}: {
-  value: DateRangeValue;
-  onChange: (v: DateRangeValue) => void;
-  className?: string;
-}) {
+/**
+ * `allowAll`: a screen that can also mean "every day" (the Methods report) gets
+ * an "all time" preset, and `null` is that value. Off, as on the P&L, the value
+ * is always a range.
+ */
+type PickerProps =
+  | { value: DateRangeValue; onChange: (v: DateRangeValue) => void; allowAll?: false; className?: string }
+  | { value: DateRangeValue | null; onChange: (v: DateRangeValue | null) => void; allowAll: true; className?: string };
+
+export const ALL_TIME_LABEL = 'all time';
+
+export function DateRangePicker(props: PickerProps) {
+  const { value, className } = props;
+  const onChange = props.onChange as (v: DateRangeValue | null) => void;
   const [open, setOpen] = useState(false);
   const today = istToday();
 
@@ -76,8 +83,8 @@ export function DateRangePicker({
   // is held here and only handed over once both ends exist.
   const [draft, setDraft] = useState<DateRange | undefined>();
   useEffect(() => {
-    if (open) setDraft({ from: toDate(value.from), to: toDate(value.to) });
-  }, [open, value.from, value.to]);
+    if (open) setDraft(value ? { from: toDate(value.from), to: toDate(value.to) } : undefined);
+  }, [open, value?.from, value?.to]);
 
   const pick = (next: DateRange | undefined) => {
     setDraft(next);
@@ -98,15 +105,28 @@ export function DateRangePicker({
         )}
       >
         <CalendarDays className="h-3.5 w-3.5 flex-none text-muted-foreground" />
-        {describeRange(value, today)}
+        {value ? describeRange(value, today) : ALL_TIME_LABEL}
       </PopoverTrigger>
 
       <PopoverContent className="flex w-auto gap-3 p-3">
         {/* The presets are the interface; the calendar is the escape hatch. */}
         <div className="flex w-[7.5rem] flex-none flex-col gap-0.5 border-r border-border pr-3">
+          {props.allowAll && (
+            <button
+              type="button"
+              onClick={() => { onChange(null); setOpen(false); }}
+              className={cn(
+                'rounded-md px-2 py-1.5 text-left text-[12.5px] text-muted-foreground',
+                'hover:bg-accent hover:text-foreground',
+                value === null && 'bg-muted text-foreground',
+              )}
+            >
+              {ALL_TIME_LABEL}
+            </button>
+          )}
           {PRESETS.map((p) => {
             const r = p.range(today);
-            const active = r.from === value.from && r.to === value.to;
+            const active = value !== null && r.from === value.from && r.to === value.to;
             return (
               <button
                 key={p.label}
@@ -128,7 +148,7 @@ export function DateRangePicker({
           mode="range"
           selected={draft}
           onSelect={pick}
-          defaultMonth={toDate(value.from)}
+          defaultMonth={toDate(value?.from ?? today)}
           // The desk has no orders from the future, so neither has this.
           disabled={{ after: toDate(today) }}
           numberOfMonths={1}

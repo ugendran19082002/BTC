@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { methodReport, methodsSchema } from '../../src/entry/catalogue.js';
+import { istDayRange, methodReport, methodsSchema } from '../../src/entry/catalogue.js';
 import { entrySchema } from '../../src/entry/paper.js';
 import { METHODS } from '../../src/entry/methods.js';
 import { closePool, query } from '../../src/db/pool.js';
@@ -81,4 +81,33 @@ test('[critical] without the chain, one section per timeframe -- and they add up
   }
   const sum = (k: 'trades' | 'netPts' | 'signals') => Object.values(singleByTf).reduce((a, s) => a + s!.total[k], 0);
   assert.deepEqual([sum('signals'), sum('trades'), sum('netPts')], [all!.total.signals, all!.total.trades, all!.total.netPts]);
+});
+
+test('[critical] a date range keeps the signals first seen on those IST days -- the edges to the minute', async () => {
+  const at = (iso: string) => Date.parse(iso);
+  const seen = (ms: number, exit: number) => query(
+    `INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, rr, status, graded_to,
+                               fill_price, exit_price, r_net)
+     VALUES ('bos', 'mtf', '5m', 1, $1, $2, 100, 101, 90, 120, 1.5, 'tp1', 0, 84000, $3, 1)`, [trigger++, ms, exit]);
+  await seen(at('2026-09-30T18:29:00Z'), 84_001); // 23:59 IST, 30 Sep
+  await seen(at('2026-09-30T18:30:00Z'), 84_010); // 00:00 IST, 1 Oct
+  await seen(at('2026-10-01T18:29:59Z'), 84_100); // 23:59:59 IST, 1 Oct
+  await seen(at('2026-10-01T18:30:00Z'), 85_000); // 00:00 IST, 2 Oct
+  const bos = async (from?: string, to?: string) => {
+    const r = istDayRange(from, to);
+    assert.ok(!(r && 'error' in r));
+    return (await methodReport(null, false, r as { from: number; to: number } | null)).sections[0]!.rows.find((x) => x.method === 'bos')!;
+  };
+  assert.deepEqual([(await bos('2026-10-01', '2026-10-01')).trades, (await bos('2026-10-01', '2026-10-01')).netPts], [2, 110], '1 Oct IST: the 00:00 and the 23:59:59');
+  assert.equal((await bos('2026-09-30', '2026-09-30')).netPts, 1);
+  assert.equal((await bos('2026-09-30', '2026-10-02')).trades, 4, 'a range of days');
+  assert.equal((await bos()).trades, 4, 'no range: every signal');
+});
+
+test('the range is checked: both ends, real days, in order', () => {
+  assert.equal(istDayRange(), null);
+  assert.deepEqual(istDayRange('2026-10-01', '2026-10-01'), { from: Date.parse('2026-09-30T18:30:00Z'), to: Date.parse('2026-10-01T18:30:00Z') });
+  for (const [f, t] of [['2026-10-01', undefined], ['2026-10-1', '2026-10-02'], ['2026-02-30', '2026-03-01'], ['2026-10-02', '2026-10-01']] as const) {
+    assert.ok('error' in (istDayRange(f, t) as object), `${f} .. ${t} refused`);
+  }
 });

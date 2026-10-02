@@ -58,11 +58,13 @@ export const clearHistory = (r: ClearRange) => post<ClearAnswer>('/api/entry/sig
 
 /**
  * The Methods report: every method with the timeframe chain and without it; `tf` narrows the section without it.
- * Every signal counts, as in the history; `everyGate` keeps only those taken with every hard gate on.
+ * Every signal counts, as in the history; `everyGate` keeps only those taken with every hard gate on; `range`, the IST days.
  */
-export function getMethodReport(tf: EntryTf | null = null, everyGate = false) {
+export function getMethodReport(tf: EntryTf | null = null, everyGate = false, range: { from: string; to: string } | null = null) {
   const p = new URLSearchParams();
   if (tf) p.set('tf', tf);
   if (everyGate) p.set('gates', 'on');
+  // IST days, YYYY-MM-DD: the signals first seen on them. Absent: every signal.
+  if (range) { p.set('from', range.from); p.set('to', range.to); }
   return json<MethodReportResponse>(`/api/entry/report${p.size ? `?${p}` : ''}`);
 }
