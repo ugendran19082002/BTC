@@ -357,7 +357,9 @@ test('[critical] the trade history: the signal\'s perp levels, the paper log\'s 
   assert.ok(would, 'a would-sell, with what the paper log saw on the perp');
   assert.deepEqual(would.levels, { entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: null, tp3: null });
   assert.equal(would.option, null, 'nothing was sold');
-  assert.ok(!trades.some((t) => t.status === 'skipped'), 'only what was sold, or would have been');
+  const skipped = trades.find((t) => t.strategyId === 'sig-cap' && t.status === 'skipped');
+  assert.match(skipped.detail, /already 2 of its trades open/, 'and what was not taken, with why');
+  assert.ok(!trades.some((t) => t.status === 'claimed'));
 });
 
 // ------------------------------------------------------------ entering "in the trade"

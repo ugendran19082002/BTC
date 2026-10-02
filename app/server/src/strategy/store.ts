@@ -231,7 +231,8 @@ type SignalRunRow = {
  */
 export type SignalTrade = {
   id: number; strategyId: string; at: number; method: string; mode: string; tf: string; dir: 1 | -1;
-  status: 'placed' | 'would-place'; detail: string; tradeId: string | null;
+  /** placed / would-place are trades; skipped, refused and failed are signals not taken, with the reason in `detail`. */
+  status: Exclude<SignalRunStatus, 'claimed'>; detail: string; tradeId: string | null;
   levels: { entryLo: number; entryHi: number; stop: number; tp1: number; tp2: number | null; tp3: number | null } | null;
   perp: { status: string; fillPrice: number | null; filledAt: number | null; exitPrice: number | null; exitAt: number | null } | null;
   option: {
@@ -444,7 +445,8 @@ export class StrategyStore {
 
   /**
    * The signal strategies' trades, newest first: every signal sold (or, with
-   * live orders off, that would have been), with the signal's levels on the
+   * live orders off, that would have been) -- and every one not taken, with
+   * why (skipped, refused, failed) -- with the signal's levels on the
    * perp, what the paper log saw happen on the perp, and -- for a real order --
    * the option's fill, exit, why it closed and the money.
    */
@@ -459,7 +461,7 @@ export class StrategyStore {
          LEFT JOIN entry_setups e
            ON e.method = r.method AND e.mode = r.mode AND e.tf = r.tf AND e.dir = r.dir
           AND e.trigger_at = split_part(r.signal_key, '|', 5)::bigint
-        WHERE r.status IN ('placed', 'would-place') AND ($2::text IS NULL OR r.strategy_id = $2)
+        WHERE r.status <> 'claimed' AND ($2::text IS NULL OR r.strategy_id = $2)
         ORDER BY r.at DESC LIMIT $1`,
       [limit, strategyId ?? null],
     );

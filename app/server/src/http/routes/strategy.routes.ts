@@ -195,7 +195,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       signalRuns: await s.signalRuns(60),
       // The signal strategies' trades, with the signal's perp levels, the paper log's verdict and the option's money.
       // Never the reason the list fails: an unreadable history is an empty one, and an entry in the error log.
-      signalTrades: await s.signalTrades(100).catch((e: Error) => {
+      signalTrades: await s.signalTrades(300).catch((e: Error) => {
         noteError({ source: 'server', level: 'warn', where: 'signal-trades', message: `signal trade history not read: ${e.message}` });
         return [];
       }),
