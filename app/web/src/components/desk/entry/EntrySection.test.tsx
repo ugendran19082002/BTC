@@ -127,8 +127,10 @@ describe('the entry section, side by side', () => {
     render(<EntrySection desk={desk} />);
     const without = await panel(/12 methods · without timeframe/);
     const withTf = screen.getByRole('region', { name: /12 methods \+ timeframe/ });
-    expect(within(withTf).getByRole('table', { name: 'with timeframe methods' }).querySelectorAll('tbody tr')).toHaveLength(12);
-    expect(within(without).getByRole('table', { name: 'without timeframe methods' }).querySelectorAll('tbody tr')).toHaveLength(12);
+    // Waited for, both: the second panel's rows can land a render after the first panel appears (a race the
+    // full suite under load lost, 2 Oct 2026).
+    await waitFor(() => expect(within(withTf).getByRole('table', { name: 'with timeframe methods' }).querySelectorAll('tbody tr')).toHaveLength(12));
+    await waitFor(() => expect(within(without).getByRole('table', { name: 'without timeframe methods' }).querySelectorAll('tbody tr')).toHaveLength(12));
     expect(await screen.findByText(/1 trade · 1 wait · 22 no trade/)).toBeInTheDocument();
   });
 
