@@ -219,6 +219,9 @@ const OPTION_SIDE = (contractType: string) =>
 /** The edit refusals that mean the order left the book, from Delta's own table. */
 const GONE_CODES = new Set(['open_order_not_found', 'order_already_filled']);
 
+/** How long a client id that the contract's history did not hold is left before that search is made again. */
+const DEEP_RETRY_MS = 30_000;
+
 export class DeltaExchange implements ExchangePort {
   private products = new Map<string, ProductSpec>();
 
@@ -409,18 +412,34 @@ export class DeltaExchange implements ExchangePort {
   }
 
   async getOrderHistory(symbol: string, limit = 50): Promise<ExchangeOrder[]> {
-    // Filtered here as well as in the query: this endpoint has ignored one
-    // filter already (see getOrderByClientId), and a venue's filter is a
-    // request, not a guarantee.
+    /*
+     * One contract's history. Delta documents `product_ids` for this endpoint (not `product_symbols`, which the
+     * desk sent alone until 3 Oct 2026 and which may be ignored -- then the "contract's history" was the account's
+     * newest orders, filtered here). Both are sent; the id when the product is known. Filtered here as well:
+     * this endpoint has ignored one filter already (see getOrderByClientId), and a filter is a request.
+     */
+    const product = await this.getProduct(symbol).catch(() => null);
+    const ids = product?.productId ? `product_ids=${product.productId}&` : '';
     const rows = await this.call<DeltaOrder[]>({
       method: 'GET', path: '/v2/orders/history',
-      query: `?product_symbols=${encodeURIComponent(symbol)}&page_size=${Math.max(1, Math.min(200, limit))}`,
+      query: `?${ids}product_symbols=${encodeURIComponent(symbol)}&page_size=${Math.max(1, Math.min(200, limit))}`,
     }).catch(refusedRead);
     return rows.map(toOrder).filter((o) => o.symbol === symbol);
   }
 
+  /** When each client id last missed the deep search, so a missing order cannot spend the quota every second. */
+  private readonly deepMiss = new Map<string, number>();
+
   async getOrderByClientId(clientOrderId: string, symbol?: string): Promise<ExchangeOrder | null> {
     const cid = encodeURIComponent(clientOrderId);
+    /*
+     * Delta's own lookup by client id (`GET /v2/orders/client_order_id/{id}`, in its docs): one call, open or
+     * filled. Its forum reports it answering "not found" for some cancelled orders, so a miss -- or any refusal --
+     * falls through to the searches below rather than meaning "no such order".
+     */
+    const direct = await this.call<DeltaOrder>({ method: 'GET', path: `/v2/orders/client_order_id/${cid}` }).catch(() => null);
+    if (direct && !Array.isArray(direct) && direct.client_order_id === clientOrderId) return toOrder(direct);
+
     const live = await this.call<DeltaOrder[]>({
       method: 'GET', path: '/v2/orders', query: `?client_order_id=${cid}&states=open,pending`,
     }).catch(refusedRead);
@@ -446,11 +465,20 @@ export class DeltaExchange implements ExchangePort {
      * Not in the account's newest twenty: on a busy account a target that filled minutes ago is already past
      * them, and the desk went on reading the trade as open with its target gone -- three trades on the 88,800 CE
      * held "open" until a restart found the contract flat (2 Oct 2026). The contract's own history is searched
-     * deeper: `product_symbols` is a filter this endpoint honours (the startup check finds fills this way).
+     * deeper, by the contract's product id (the filter Delta documents).
      */
     if (!symbol) return null;
+    // Ten units of Delta's 20,000 per five minutes each time: a miss is not asked again for half a minute.
+    const missed = this.deepMiss.get(clientOrderId);
+    if (missed !== undefined && Date.now() - missed < DEEP_RETRY_MS) return null;
     const theirs = await this.getOrderHistory(symbol, 200).catch(() => [] as ExchangeOrder[]);
-    return theirs.find((o) => o.clientOrderId === clientOrderId) ?? null;
+    const found = theirs.find((o) => o.clientOrderId === clientOrderId) ?? null;
+    if (found) this.deepMiss.delete(clientOrderId);
+    else {
+      this.deepMiss.set(clientOrderId, Date.now());
+      if (this.deepMiss.size > 500) this.deepMiss.clear();
+    }
+    return found;
   }
 
   /**

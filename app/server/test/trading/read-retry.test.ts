@@ -220,35 +220,75 @@ test('only a 404 on the id lookup means the venue never issued it', async () => 
   await assert.rejects(new DeltaExchange(creds).getOrderById('1'), ExchangeUnavailable);
 });
 
-test('the contract\'s order history is filtered here, whatever the venue does with the filter', async () => {
+/** A transport that answers by URL: the first pattern the request matches. Counts what was asked. */
+function routes(table: [RegExp, unknown][]) {
+  const seen: string[] = [];
+  globalThis.fetch = (async (url: string | URL) => {
+    const u = String(url);
+    seen.push(u);
+    const hit = table.find(([re]) => re.test(u));
+    if (!hit) return new Response(JSON.stringify({ success: false, error: { code: 'not_found' } }), { status: 404 });
+    return new Response(JSON.stringify({ success: true, result: hit[1] }), { status: 200 });
+  }) as typeof fetch;
+  return seen;
+}
+const product = (symbol: string, id: number) => ({
+  id, symbol, contract_type: symbol.startsWith('C') ? 'call_options' : 'put_options', tick_size: '0.1',
+  contract_value: '0.001', state: 'live', strike_price: '88800', settlement_time: '2026-10-03T12:00:00Z',
+  underlying_asset: { symbol: 'BTC' }, product_specs: {},
+});
+
+test('the contract\'s order history is asked by the product id Delta documents, and filtered here regardless', async () => {
   const row = (id: number, sym: string) => ({
     id, client_order_id: `c${id}`, product_id: 1, product_symbol: sym, side: 'sell', order_type: 'limit_order',
     size: 10, unfilled_size: 0, limit_price: '25', state: 'closed', average_fill_price: '25', reduce_only: false,
     created_at: '2026-09-14T02:46:58Z', updated_at: '2026-09-14T02:47:15Z',
   });
-  const seen = answers({ status: 200, body: { success: true, result: [row(1, 'C-BTC-78800-140926'), row(2, 'P-BTC-75200-140926')] } });
+  const seen = routes([
+    [/\/v2\/products\/C-BTC-78800-140926/, product('C-BTC-78800-140926', 4242)],
+    [/\/v2\/orders\/history/, [row(1, 'C-BTC-78800-140926'), row(2, 'P-BTC-75200-140926')]],
+  ]);
   const got = await new DeltaExchange(creds).getOrderHistory('C-BTC-78800-140926', 50);
   assert.deepEqual(got.map((o) => o.orderId), ['1'], 'the other contract\'s order is dropped');
-  assert.match(seen[0]!, /product_symbols=C-BTC-78800-140926/);
+  const asked = seen.find((u) => u.includes('/v2/orders/history'))!;
+  assert.match(asked, /product_ids=4242/, 'the documented filter');
+  assert.match(asked, /product_symbols=C-BTC-78800-140926/);
 });
 
 test('[critical] a filled target past the account\'s newest twenty is found in its contract\'s history (2 Oct 2026)', async () => {
   const filled = {
-    id: 99, client_order_id: '409261789344005840T1', product_id: 1, product_symbol: 'C-BTC-88800-031026',
+    id: 99, client_order_id: '409261789344005840T1', product_id: 7, product_symbol: 'C-BTC-88800-031026',
     side: 'buy', order_type: 'limit_order', size: 3, unfilled_size: 0, limit_price: '4', state: 'closed',
     average_fill_price: '4', reduce_only: true, created_at: '2026-10-02T12:45:00Z', updated_at: '2026-10-02T15:10:00Z',
   };
   const other = { ...filled, id: 1, client_order_id: 'someone-else', product_symbol: 'C-BTC-86400-031026' };
-  const seen = answers(
-    { status: 200, body: { success: true, result: [] } },                                    // not resting
-    { status: 200, body: { success: true, result: Array.from({ length: 20 }, () => other) } }, // newest twenty: not there
-    { status: 200, body: { success: true, result: [other, filled] } },                         // the contract's history
-  );
-  const o = await new DeltaExchange(creds).getOrderByClientId('409261789344005840T1', 'C-BTC-88800-031026');
+  const seen = routes([
+    // Delta's direct lookup does not have it (its forum: some closed orders answer "not found")
+    [/\/v2\/products\/C-BTC-88800-031026/, product('C-BTC-88800-031026', 7)],
+    [/\/v2\/orders\/history\?product_ids=7/, [other, filled]],
+    [/\/v2\/orders\/history\?client_order_id/, Array.from({ length: 20 }, () => other)],
+    [/\/v2\/orders\?client_order_id/, []],
+  ]);
+  const ex = new DeltaExchange(creds);
+  const o = await ex.getOrderByClientId('409261789344005840T1', 'C-BTC-88800-031026');
   assert.equal(o?.orderId, '99');
   assert.equal(o?.filledSize, 3, 'the fill, to be absorbed');
-  assert.match(seen[2]!, /\/v2\/orders\/history\?product_symbols=C-BTC-88800-031026/);
-  // without the contract, as before: not found
-  answers({ status: 200, body: { success: true, result: [] } }, { status: 200, body: { success: true, result: [other] } });
-  assert.equal(await new DeltaExchange(creds).getOrderByClientId('409261789344005840T1'), null);
+  assert.ok(seen.some((u) => /\/v2\/orders\/client_order_id\/409261789344005840T1/.test(u)), 'Delta\'s own lookup tried first');
+
+  // a miss in the contract's history is not asked again inside thirty seconds: ten units of the quota each time
+  const deep = () => seen.filter((u) => /history\?product_ids/.test(u)).length;
+  const before = deep();
+  assert.equal(await ex.getOrderByClientId('not-anywhere', 'C-BTC-88800-031026'), null);
+  assert.equal(await ex.getOrderByClientId('not-anywhere', 'C-BTC-88800-031026'), null);
+  assert.equal(deep() - before, 1, 'searched once, then held off');
+});
+
+test('[critical] Delta\'s direct lookup by client id answers first, in one call, when it has the order', async () => {
+  const o = { id: 5, client_order_id: 'cid-5', product_id: 7, product_symbol: 'C-BTC-88800-031026', side: 'buy',
+    order_type: 'limit_order', size: 3, unfilled_size: 3, limit_price: '4', state: 'open', average_fill_price: null,
+    reduce_only: true, created_at: '2026-10-02T12:45:00Z', updated_at: '2026-10-02T12:45:00Z' };
+  const seen = routes([[/\/v2\/orders\/client_order_id\/cid-5/, o]]);
+  const got = await new DeltaExchange(creds).getOrderByClientId('cid-5', 'C-BTC-88800-031026');
+  assert.equal(got?.orderId, '5');
+  assert.equal(seen.length, 1, 'nothing else asked');
 });
