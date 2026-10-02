@@ -226,6 +226,8 @@ export function istDayRange(from?: string, to?: string): { from: number; to: num
   if (!from || !to) return { error: 'from and to go together: IST days (YYYY-MM-DD) or minutes (YYYY-MM-DDTHH:MM)' };
   const a = istMoment(from), b = istMoment(to);
   if (!a || !b) return { error: 'from and to must be IST days (YYYY-MM-DD) or minutes (YYYY-MM-DDTHH:MM) that exist' };
-  if (a.at > b.at) return { error: 'from must be on or before to' };
+  // Against the END of \`to\`: "today 08:45 to today" (the whole of today) is a range, though 08:45 is after
+  // the day's first minute -- compared with its start, the screen's 8:45 AM to 11:59 PM was refused (2 Oct 2026).
+  if (a.at >= b.at + b.span) return { error: 'from must be on or before to' };
   return { from: a.at, to: b.at + b.span };
 }

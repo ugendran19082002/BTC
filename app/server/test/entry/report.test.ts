@@ -137,3 +137,13 @@ test('[critical] the report counts signals by the minute they appeared', async (
   const mss = (await methodReport(null, false, r)).sections[0]!.rows.find((x) => x.method === 'mss')!;
   assert.equal(mss.trades, 2, '09:00 and 17:30:59 in; 08:59:59 and 17:31 out');
 });
+
+test('[critical] from a minute of a day to that whole day: "today 8:45 AM to 11:59 PM" is a range (2 Oct 2026 bug)', () => {
+  // The screen sends the bare day for an end at 11:59 PM; that day's start is before 08:45, its end is not.
+  assert.deepEqual(istDayRange('2026-10-02T08:45', '2026-10-02'), { from: Date.parse('2026-10-02T03:15:00Z'), to: Date.parse('2026-10-02T18:30:00Z') });
+  // still refused: a start after the whole of the end
+  assert.ok('error' in (istDayRange('2026-10-03T00:00', '2026-10-02') as object));
+  assert.ok('error' in (istDayRange('2026-10-02T10:01', '2026-10-02T10:00') as object));
+  // the same minute is a one-minute range
+  assert.deepEqual(istDayRange('2026-10-02T10:00', '2026-10-02T10:00'), { from: Date.parse('2026-10-02T04:30:00Z'), to: Date.parse('2026-10-02T04:31:00Z') });
+});
