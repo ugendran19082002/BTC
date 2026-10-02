@@ -504,11 +504,21 @@ export class DeltaExchange implements ExchangePort {
   }
 
   async getBalanceUsd(): Promise<number> {
-    const rows = await this.call<{ asset_symbol?: string; available_balance?: string }[]>({
+    return (await this.getWalletUsd()).available;
+  }
+
+  /**
+   * The USD wallet: `balance` is what Delta's app shows as the FNO wallet / account value, `available_balance`
+   * what is free to trade. The margin in use is the difference -- Delta's own figure. The screen estimated it
+   * from the positions until 2 Oct 2026 and said $13.36 where Delta said $8.48.
+   */
+  async getWalletUsd(): Promise<{ balance: number; available: number }> {
+    const rows = await this.call<{ asset_symbol?: string; available_balance?: string; balance?: string }[]>({
       method: 'GET', path: '/v2/wallet/balances',
     });
     const usd = rows.find((b) => b.asset_symbol === 'USD' || b.asset_symbol === 'USDT');
-    return num(usd?.available_balance ?? null) ?? 0;
+    const available = num(usd?.available_balance ?? null) ?? 0;
+    return { balance: num(usd?.balance ?? null) ?? available, available };
   }
 
   /** Product metadata does not change during a session, so it is fetched once. */

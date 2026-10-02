@@ -138,7 +138,7 @@ describe('picking the methods', () => {
     tab('Signals');
     const list = await screen.findByRole('list', { name: 'methods' });
     expect(within(list).getAllByRole('checkbox')).toHaveLength(4);
-    await waitFor(() => expect(within(list).getByText(/67% · 12t ·/)).toBeInTheDocument());
+    await waitFor(() => expect(list).toHaveTextContent(/67% win · 12t · \+900 pts/));
     expect(within(list).getByText('+900 pts')).toBeInTheDocument();
     expect(screen.getByText(/0 of 4 picked/)).toBeInTheDocument();
     expect(getMethodReport).toHaveBeenCalledWith(null);
@@ -203,7 +203,7 @@ describe('picking the methods', () => {
     getMethodReport.mockResolvedValue({ ...REPORT, sections: [section('mtf', [{ ...row('breakout', 15, 5, -379), winPct: 33.333333333333336 }]), section('single', [])] });
     show(signalStrategy({ methods: [] }));
     tab('Signals');
-    expect(await screen.findByText(/33% · 15t ·/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('list', { name: 'methods' })).toHaveTextContent(/33% win · 15t ·/));
   });
 });
 
@@ -355,8 +355,8 @@ describe('"pick profitable" over the timeframes picked', () => {
 
   it('[critical] each method shows its record on every timeframe picked, under the sum', async () => {
     await pickOn(['15m', '1h']);
-    expect(await screen.findByLabelText('#11 by timeframe')).toHaveTextContent('15m +300 (6t) · 1h -400 (6t)');
-    expect(screen.getByLabelText('#1 by timeframe')).toHaveTextContent('15m +50 (5t) · 1h —');
+    expect(await screen.findByLabelText('#11 by timeframe')).toHaveTextContent('15m 67% +300 (6t) · 1h 17% -400 (6t)');
+    expect(screen.getByLabelText('#1 by timeframe')).toHaveTextContent('15m 60% +50 (5t) · 1h —');
   });
 });
 

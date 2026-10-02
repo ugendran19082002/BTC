@@ -277,7 +277,9 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
                         {rec && rec.trades > 0
                           ? (
                             <>
-                              {Math.round(rec.winPct ?? 0)}% · {rec.trades}t ·{' '}
+                              <span title={rule.mode === 'single' && tfs.length > 1 ? `Over ${tfs.join(' + ')} together` : undefined}>
+                                {Math.round(rec.winPct ?? 0)}% win
+                              </span> · {rec.trades}t ·{' '}
                               <span className={rec.netPts > 0 ? 'text-[var(--up)]' : rec.netPts < 0 ? 'text-[var(--down)]' : ''}>
                                 {pts(rec.netPts)} pts
                               </span>
@@ -298,7 +300,13 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
                             {i > 0 && ' · '}
                             {tf}{' '}
                             {row && row.trades > 0
-                              ? <span className={row.netPts > 0 ? 'text-[var(--up)]' : row.netPts < 0 ? 'text-[var(--down)]' : ''}>{pts(row.netPts)} ({row.trades}t)</span>
+                              ? (
+                                <>
+                                  <span className="text-foreground">{Math.round((row.wins / row.trades) * 100)}%</span>{' '}
+                                  <span className={row.netPts > 0 ? 'text-[var(--up)]' : row.netPts < 0 ? 'text-[var(--down)]' : ''}>{pts(row.netPts)}</span>
+                                  {' '}({row.trades}t)
+                                </>
+                              )
                               : <span className="text-[var(--dim)]">—</span>}
                           </span>
                         ))}

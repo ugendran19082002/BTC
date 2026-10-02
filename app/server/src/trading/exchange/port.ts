@@ -51,6 +51,11 @@ export interface ExchangePort {
   getOpenOrders(symbol?: string): Promise<ExchangeOrder[]>;
   getPositions(): Promise<ExchangePosition[]>;
   getBalanceUsd(): Promise<number>;
+  /**
+   * The wallet as the exchange states it: the balance (Delta's "Wallet balance" / FNO wallet) and what of it is
+   * free. Optional: an exchange without it leaves the screen to its own estimate of the margin in use.
+   */
+  getWalletUsd?(): Promise<{ balance: number; available: number }>;
   getProduct(symbol: string): Promise<ProductSpec | null>;
   /**
    * Leverage is a property of the product on Delta, not of the order, so it is

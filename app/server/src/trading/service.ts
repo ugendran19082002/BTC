@@ -820,6 +820,15 @@ export class TradingService {
    */
   private balanceCache: { usd: number; at: number } | null = null;
 
+  /** Delta's wallet balance and what is free, cached as the balance is; null where the exchange cannot say. */
+  private walletCache: { v: { balance: number; available: number } | null; at: number } | null = null;
+  async walletForDisplay(now = Date.now()): Promise<{ balance: number; available: number } | null> {
+    if (this.walletCache && now - this.walletCache.at < BALANCE_TTL_MS) return this.walletCache.v;
+    const v = this.exchange.getWalletUsd ? await this.exchange.getWalletUsd().catch(() => this.walletCache?.v ?? null) : null;
+    this.walletCache = { v, at: now };
+    return v;
+  }
+
   async balanceForDisplay(now = Date.now()): Promise<number> {
     if (this.balanceCache && now - this.balanceCache.at < BALANCE_TTL_MS) return this.balanceCache.usd;
     const usd = await this.balance();

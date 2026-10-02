@@ -174,3 +174,24 @@ describe('the short cap, visible before it refuses', () => {
     expect(document.querySelector('[aria-label="short cap"]')?.textContent).toContain('0');
   });
 });
+
+describe("Delta's own wallet, when it gives it", () => {
+  const short = (size: number) => ({
+    id: 'P-BTC-86000', symbol: 'P-BTC-86000-031026', position: -size, entryAvgPrice: 38.1,
+    plan: { leverage: 200 }, live: { liquidationPrice: 255.96 },
+  }) as unknown as TradeStatus['open'][number];
+
+  it('[critical] Total is Delta\'s wallet balance, Used is balance less available -- not the estimate (2 Oct 2026)', () => {
+    // Delta's app: FNO wallet $34.75, available $26.27. The estimate from 18 contracts said $13.36 held.
+    render(<AccountCard status={status({ balanceUsd: 26.27, walletUsd: 34.75, marginUsedUsd: 8.48, open: [short(18)] })} />);
+    expect(row('Total').getByText('$34.75')).toBeInTheDocument();
+    expect(row('Total').getByText('₹2,954')).toBeInTheDocument();
+    expect(row('Available').getByText('$26.27')).toBeInTheDocument();
+    expect(row('Used for positions').getByText('$8.48')).toBeInTheDocument();
+  });
+
+  it('paper, or an exchange that does not say: the estimate, as before', () => {
+    render(<AccountCard status={status({ balanceUsd: 100.62, walletUsd: null, marginUsedUsd: null })} />);
+    expect(row('Total').getByText('$100.62')).toBeInTheDocument();
+  });
+});

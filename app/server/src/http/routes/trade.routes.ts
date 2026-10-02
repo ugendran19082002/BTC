@@ -371,9 +371,10 @@ export function registerTradeRoutes(app: FastifyInstance) {
   app.get('/api/trade/status', async () => svc.status());
 
   async function statusNow() {
-    const [balance, positions] = await Promise.all([
+    const [balance, positions, wallet] = await Promise.all([
       svc.balanceForDisplay().catch(() => null),
       svc.positionsForDisplay().catch(() => []),
+      svc.walletForDisplay().catch(() => null),
     ]);
     const trades = await forScreens(await svc.openTrades());
     // Both cached at the server for under a second, so this costs nothing per poll.
@@ -406,6 +407,12 @@ export function registerTradeRoutes(app: FastifyInstance) {
         ? `Close ${trades.length} open position${trades.length === 1 ? '' : 's'} first.`
         : svc.canGoLive ? null : 'No Delta credentials configured on the server.',
       balanceUsd: balance,
+      /**
+       * Delta's own wallet: the balance its app shows (FNO wallet / account value), and the margin in use --
+       * the balance less what is free. Null where the exchange does not say (paper); the screen then estimates.
+       */
+      walletUsd: wallet?.balance ?? null,
+      marginUsedUsd: wallet ? Math.max(0, wallet.balance - wallet.available) : null,
       positions,
       open,
       /** Every open position added up, so the tab can say it in one number. */

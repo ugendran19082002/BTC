@@ -19,10 +19,16 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
   const booked = status.realisedTodayUsd ?? 0;
   const today = status.today ?? { realisedUsd: booked, unrealisedUsd: unrealised, chargesUsd: 0, netUsd: booked + unrealised };
   const held = status.positions.reduce((n, p) => n + Math.abs(p.size), 0);
-  const heldMargin = heldMarginOf(status);
-  // Available is Delta's figure; the used part is an estimate, so the sum is
-  // only as good as the estimate -- and unknown when the estimate is.
-  const total = heldMargin === null || status.balanceUsd === null ? null : status.balanceUsd + heldMargin;
+  /*
+   * Delta's own figures where it gives them: the wallet balance its app shows, and the margin in use (the balance
+   * less what is free). Until 2 Oct 2026 the used part was always an estimate from the positions -- $13.36 where
+   * Delta said $8.48 -- and the total, built on it, was $4.88 over Delta's. The estimate stays for paper only.
+   */
+  const fromDelta = status.walletUsd != null && status.marginUsedUsd != null;
+  const heldMargin = fromDelta ? status.marginUsedUsd! : heldMarginOf(status);
+  const total = fromDelta
+    ? status.walletUsd!
+    : heldMargin === null || status.balanceUsd === null ? null : status.balanceUsd + heldMargin;
 
   const limit = status.limits.maxDailyLossUsd;
   const lost = Math.max(0, -booked);
@@ -42,7 +48,9 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
       <dl className="m-0 grid gap-2">
         <KV
           label={<span className="font-semibold text-foreground">Total</span>}
-          hint={'Available plus what open positions hold. Delta calls this "Wallet Balance". The held part is estimated, so Delta\'s screen is the authority.'}
+          hint={fromDelta
+            ? 'Delta\'s wallet balance -- the same number as its app\'s FNO wallet.'
+            : 'Available plus what open positions hold. The held part is estimated (paper), so Delta\'s screen is the authority.'}
         >
           <Money value={total} strong />
         </KV>
@@ -51,7 +59,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
         </KV>
         <KV
           label={<>Used for positions <span className="ml-1 text-[11px] text-[var(--dim)]">{held > 0 ? `${held} contract${held === 1 ? '' : 's'}` : 'none'}</span></>}
-          hint="Margin locked while positions are open. It comes back when they close. Estimated."
+          hint={fromDelta ? 'Margin locked by open positions and orders, as Delta reports it: wallet balance less available.' : 'Margin locked while positions are open. It comes back when they close. Estimated.'}
         >
           <Money value={heldMargin} />
         </KV>

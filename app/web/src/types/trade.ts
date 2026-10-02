@@ -184,6 +184,10 @@ export type TradeStatus = {
   /** Why it cannot be thrown right now, if it cannot. */
   switchBlockedBy: string | null;
   balanceUsd: number | null;
+  /** Delta's wallet balance (its app's FNO wallet / account value); null where the exchange does not say. */
+  walletUsd?: number | null;
+  /** Delta's margin in use: the wallet balance less what is available. */
+  marginUsedUsd?: number | null;
   /** Every open position added up. */
   unrealisedPnlUsd?: number;
   /** Booked since 05:30 IST, in USD. */
