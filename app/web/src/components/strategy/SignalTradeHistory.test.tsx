@@ -76,26 +76,26 @@ describe('the signal trade history', () => {
     // the totals are over every page, not just this one
     expect(screen.getByLabelText('history totals')).toHaveTextContent('23 trades · 23 won');
     // a filter goes back to page 1
-    fireEvent.click(screen.getByRole('button', { name: 'Would sell' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Would sell/ }));
     expect(screen.getByRole('navigation', { name: 'trade history pages' })).toHaveTextContent('page 1 of 3');
   });
 
   it('[critical] the totals follow the filter: won, lost, open, win rate, live P&L', () => {
     render(<SignalTradeHistory trades={[LIVE_WON, LIVE_OPEN, trade({}), LOST]} strategies={strategies} />);
     expect(screen.getByLabelText('history totals')).toHaveTextContent('4 trades · 2 won · 1 lost · 1 open · win rate 67% · live P&L +₹1.15');
-    fireEvent.click(screen.getByRole('button', { name: 'Would sell' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Would sell/ }));
     expect(screen.getByLabelText('history totals')).toHaveTextContent('2 trades · 1 won · 1 lost · 0 open · win rate 50%');
-    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    fireEvent.click(screen.getByRole('button', { name: /^All/ }));
     fireEvent.change(screen.getByLabelText('which strategy'), { target: { value: 'other' } });
     expect(screen.getByLabelText('history totals')).toHaveTextContent('1 trade · 0 won · 0 lost · 1 open');
   });
 
   it('[critical] the filters are kept across a refresh', () => {
     const { unmount } = render(<SignalTradeHistory trades={[LIVE_WON, trade({})]} strategies={strategies} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Live orders' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Live orders/ }));
     unmount();
     render(<SignalTradeHistory trades={[LIVE_WON, trade({})]} strategies={strategies} />);
-    expect(screen.getByRole('button', { name: 'Live orders' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Live orders/ })).toHaveAttribute('aria-pressed', 'true');
     expect(within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row')).toHaveLength(2);
   });
 
@@ -107,5 +107,34 @@ describe('the signal trade history', () => {
     expect(outcomeOf({ ...LIVE_WON, option: { ...LIVE_WON.option!, exitReason: "BTC perp at 85410 reached the signal's stop 85400", pnlUsd: -0.01 } }))
       .toMatchObject({ word: 'perp SL', tone: 'down' });
     expect(outcomeOf({ ...LIVE_WON, option: { ...LIVE_WON.option!, exitReason: 'closed at 5:29 PM, the end of its window' } }).word).toBe('window end');
+  });
+});
+
+describe('the tabs', () => {
+  const SKIP = trade({ id: 9, status: 'skipped', detail: '#55 Pulled wall BUY | already 2 of its trades open (at most 2)', perp: null, levels: null });
+  const REFUSED = trade({ id: 10, status: 'refused', detail: '#11 Order flow BUY | refused: Last quote is 7.6s old.', perp: null, levels: null });
+
+  it('[critical] each with its count; Skipped lists the signals not taken, with why -- and they are in no trade figure', () => {
+    render(<SignalTradeHistory trades={[LIVE_WON, LIVE_OPEN, trade({}), LOST, SKIP, REFUSED]} strategies={strategies} />);
+    const labels = within(screen.getByRole('group', { name: 'which trades' })).getAllByRole('button').map((b) => b.textContent);
+    expect(labels).toEqual(['All 4', 'Live orders 2', 'Would sell 2', 'Open 1', 'Won 2', 'Lost 1', 'Skipped 2']);
+    expect(screen.getByLabelText('history totals')).toHaveTextContent('4 trades · 2 won · 1 lost · 1 open');
+
+    fireEvent.click(screen.getByRole('button', { name: /^Skipped/ }));
+    expect(screen.getByLabelText('history totals')).toHaveTextContent('2 signals not taken');
+    const why = screen.getAllByLabelText('why not taken').map((c) => c.textContent);
+    expect(why).toEqual(['skippedalready 2 of its trades open (at most 2)', 'refusedrefused: Last quote is 7.6s old.']);
+
+    fireEvent.click(screen.getByRole('button', { name: /^Won/ }));
+    expect(within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row')).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button', { name: /^Lost/ }));
+    expect(screen.getByLabelText('history totals')).toHaveTextContent('1 trade · 0 won · 1 lost');
+  });
+
+  it('the counts follow the strategy picked', () => {
+    render(<SignalTradeHistory trades={[LIVE_WON, LIVE_OPEN, SKIP]} strategies={strategies} />);
+    fireEvent.change(screen.getByLabelText('which strategy'), { target: { value: 'other' } });
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveTextContent('All 1');
+    expect(screen.getByRole('button', { name: /^Skipped/ })).toHaveTextContent('Skipped 0');
   });
 });
