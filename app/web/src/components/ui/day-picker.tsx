@@ -29,7 +29,8 @@ const WITH_YEAR = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'num
 /** "Today · Fri 2 Oct", "Yesterday · Thu 1 Oct", "Mon 28 Sept" (the year only when it is not this one). */
 export function describeDay(day: string, today = istToday()): string {
   const fmt = day.slice(0, 4) === today.slice(0, 4) ? DISPLAY : WITH_YEAR;
-  const text = fmt.format(toDate(day));
+  // One shape with the year or without: the formatter puts a comma after the weekday only with it.
+  const text = fmt.format(toDate(day)).replace(',', '');
   if (day === today) return `Today · ${text}`;
   if (day === shift(today, -1)) return `Yesterday · ${text}`;
   return text;
