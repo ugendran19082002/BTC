@@ -135,7 +135,10 @@ export type SignalTarget = 'tp1' | 'tp2' | 'tp3';
 export type SignalRule = {
   /** With the timeframe chain (entry on 5m), or without it on `tf`. */
   mode: 'mtf' | 'single';
+  /** The one timeframe a rule was saved with before there could be several; `tfs` is read when present. */
   tf: SignalTf;
+  /** Without the chain, every timeframe it takes signals on. */
+  tfs?: SignalTf[];
   /** Method ids whose TRADE signals it takes. */
   methods: string[];
   /** The signal's target the trade exits at; TGT2/TGT3 fall back to TGT1 where the signal has none. */
@@ -147,7 +150,13 @@ export type SignalRule = {
 /** The leg a signal is sold as: a BUY sells the put, a SELL the call. */
 export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');
 
-export const DEFAULT_SIGNAL_RULE: SignalRule = { mode: 'mtf', tf: '5m', methods: [], target: 'tp1', maxOpen: 1 };
+export const DEFAULT_SIGNAL_RULE: SignalRule = { mode: 'mtf', tf: '5m', tfs: ['5m'], methods: [], target: 'tp1', maxOpen: 1 };
+
+/** The timeframes a rule without the chain takes: `tfs`, or the one `tf` it was saved with (server: `ruleTfs`). */
+export const ruleTfs = (rule: Pick<SignalRule, 'tf' | 'tfs'>): SignalTf[] => (rule.tfs?.length ? rule.tfs : [rule.tf]);
+
+/** "5m", "5m + 1h", or "with the chain" -- how a rule's timeframes are said. */
+export const ruleTfWords = (rule: SignalRule): string => (rule.mode === 'mtf' ? 'with the chain' : `on ${ruleTfs(rule).join(' + ')}`);
 
 /**
  * A config switched to signals: its rule, live orders off, and one lot -- a

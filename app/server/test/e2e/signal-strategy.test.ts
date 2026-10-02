@@ -219,6 +219,26 @@ test('the list carries each signal run in the shape the screen reads', async () 
   assert.deepEqual(Object.keys(m.body.methods[0]).sort(), ['group', 'id', 'n', 'name', 'sl', 'summary']);
 });
 
+// ------------------------------------------------------------ several timeframes
+
+test('[critical] without the chain on 5m and 1h: both timeframes taken, 15m not -- saved in the desk\'s order', async () => {
+  const multi = { ...config, signal: { ...config.signal, tfs: ['1h', '5m', '1h'], maxOpen: 100 }, liveOrders: false };
+  const r = await api('POST', '/api/strategies', { name: 'Sig multi', config: multi });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual((await strategyStore().get('sig-multi'))!.config.signal!.tfs, ['5m', '1h']);
+  const bad = await api('POST', '/api/strategies', { name: 'Sig multi bad', config: { ...multi, signal: { ...multi.signal, tfs: ['5m', '2h'] } } });
+  assert.ok(bad.body.problems.some((p: string) => /Pick a timeframe/.test(p)));
+  await api('POST', '/api/strategies/sig-multi/enabled', { enabled: true });
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  await runner.onSignal(signal({ tf: '5m' }));
+  await runner.onSignal(signal({ tf: '1h' }));
+  await runner.onSignal(signal({ tf: '15m' }));
+  assert.deepEqual((await runsOf('sig-multi')).map((x) => x.signal_key.split('|')[2]), ['5m', '1h']);
+  await api('POST', '/api/strategies/sig-multi/enabled', { enabled: false });
+});
+
 // ------------------------------------------------------------ what it does not take
 
 test('another method, another timeframe, another way: not its signal -- nothing written', async () => {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Bot, Loader2, Pencil, Plus } from 'lucide-react';
 import { getStrategies, saveStrategy, setStrategyEnabled } from '@/api/strategy';
-import type { SignalRunStatus, Strategy, StrategyStatus } from '@/types/strategy';
+import { ruleTfWords, type SignalRunStatus, type Strategy, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
@@ -28,7 +28,7 @@ export function signalLine(s: Strategy): string {
   const r = c.signal;
   if (!r) return '';
   return [
-    `${r.methods.length} method${r.methods.length === 1 ? '' : 's'} ${r.mode === 'mtf' ? 'with the chain' : `on ${r.tf}`}`,
+    `${r.methods.length} method${r.methods.length === 1 ? '' : 's'} ${ruleTfWords(r)}`,
     'BUY → PE · SELL → CE',
     describeStrike(c).split(' — ')[0]!,
     `${c.lots} lot${c.lots === 1 ? '' : 's'}`,

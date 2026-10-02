@@ -1,4 +1,5 @@
 import { strikeLabel, type StrategyConfig } from '@/types/strategy';
+import { ruleTfWords } from '@/types/strategy';
 import { time12, wrapsMidnight } from '@/lib/time';
 import { exitRules, exitWords, type ExitRule } from '@/lib/strategy-exits';
 
@@ -93,7 +94,7 @@ export function describeStrategy(c: StrategyConfig): string {
   if (c.trigger === 'signal' && c.signal) {
     const r = c.signal;
     const n = r.methods.length;
-    const way = r.mode === 'mtf' ? 'with the timeframe chain' : `without the chain, on ${r.tf}`;
+    const way = r.mode === 'mtf' ? 'with the timeframe chain' : `without the chain, ${ruleTfWords(r)}`;
     return `From ${time12(c.entryTime)} to ${time12(c.exitTime)} IST on ${describeDays(c.weekdays)}, takes the TRADE signals of `
       + `${n === 0 ? 'no method yet' : `${n} method${n === 1 ? '' : 's'}`} ${way}: a BUY sells a put, a SELL a call, `
       + `${describeStrike(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'}, at most ${r.maxOpen} open at once. `

@@ -98,7 +98,11 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
       say('signalMethods', 'A signal strategy needs its signals: the way, the timeframe and at least one method.');
     } else {
       if (r.mode !== 'mtf' && r.mode !== 'single') say('signalMode', 'Pick with the timeframe chain or without it.');
-      if (r.mode === 'single' && !SIGNAL_TFS.includes(r.tf)) say('signalTf', `Pick a timeframe: ${SIGNAL_TFS.join(', ')}.`);
+      if (r.mode === 'single') {
+        const tfs = r.tfs ?? [r.tf];
+        if (tfs.length === 0) say('signalTf', 'Pick at least one timeframe.');
+        else if (tfs.some((t) => !SIGNAL_TFS.includes(t))) say('signalTf', `Pick a timeframe: ${SIGNAL_TFS.join(', ')}.`);
+      }
       if (!Array.isArray(r.methods) || r.methods.length === 0) say('signalMethods', 'Pick at least one method whose signals to take.');
       if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') say('signalTarget', 'The target must be TGT1, TGT2 or TGT3.');
       if (!Number.isInteger(r.maxOpen) || r.maxOpen < 1 || r.maxOpen > MAX_SIGNAL_OPEN) {

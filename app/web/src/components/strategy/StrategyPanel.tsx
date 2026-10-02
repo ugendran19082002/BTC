@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Copy, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { cloneStrategy, deleteStrategy, getStrategies, setScheduler, setStrategyEnabled } from '@/api/strategy';
-import type { SignalRunStatus, Strategy, StrategyStatus } from '@/types/strategy';
+import { ruleTfWords, type SignalRunStatus, type Strategy, type StrategyStatus } from '@/types/strategy';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Button } from '@/components/ui/button';
 import { StrategyForm } from '@/components/strategy/StrategyForm';
@@ -34,7 +34,7 @@ function summarise(s: Strategy): string {
   const sig = c.trigger === 'signal' ? c.signal : undefined;
   const parts = [
     sig
-      ? `on signal: ${sig.methods.length} method${sig.methods.length === 1 ? '' : 's'} ${sig.mode === 'mtf' ? 'with the chain' : `on ${sig.tf}`}, BUY → PE · SELL → CE`
+      ? `on signal: ${sig.methods.length} method${sig.methods.length === 1 ? '' : 's'} ${ruleTfWords(sig)}, BUY → PE · SELL → CE`
       : c.legs === 'both' ? 'CE + PE' : c.legs,
     // The rule that picks the strike, whichever one it is. It used to read the
     // premium rule out loud whatever `strikeRule` said, so a strategy selling
