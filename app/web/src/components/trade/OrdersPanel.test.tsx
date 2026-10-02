@@ -291,3 +291,26 @@ describe('the detail', () => {
     await waitFor(() => expect(screen.getByText('3 of 10 filled')).toBeInTheDocument());
   });
 });
+
+describe('why a closed trade ended', () => {
+  it('[critical] a perp SL close reads "perp SL hit", not "closed manually" -- the desk closes it at market', async () => {
+    show([order({
+      exitBy: 'perp-sl',
+      fills: [
+        { orderId: '1', role: 'entry', side: 'sell', size: 1, price: 16, ts: OPENED },
+        { orderId: '2', role: 'exit', side: 'buy', size: 1, price: 30, ts: OPENED + 208_000 },
+      ],
+    })]);
+    expect(await screen.findByText('perp SL hit')).toBeInTheDocument();
+    expect(screen.queryByText('closed manually')).toBeNull();
+  });
+
+  it('a close by hand still says so; an older server is read from the filling order', async () => {
+    show([
+      order({ exitBy: 'manual', fills: [{ orderId: '1', role: 'entry', side: 'sell', size: 1, price: 16, ts: OPENED }, { orderId: '2', role: 'exit', side: 'buy', size: 1, price: 12, ts: OPENED + 1 }] }),
+      order({ symbol: 'P-BTC-78800-090926' }),
+    ]);
+    expect(await screen.findByText('closed manually')).toBeInTheDocument();
+    expect(screen.getByText('target hit')).toBeInTheDocument();
+  });
+});

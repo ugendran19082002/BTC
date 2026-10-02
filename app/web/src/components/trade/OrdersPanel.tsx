@@ -42,9 +42,22 @@ const STATUS_TONE: Record<OrderStatus, string> = {
   cancelled: 'text-muted-foreground',
 };
 
-/** Why a closed trade ended, from the fill that closed it -- not from the plan. */
+/** What each exit is called on the row. */
+const EXIT_WORDS = {
+  'perp-sl': 'perp SL hit', 'perp-tgt': 'perp TGT hit', 'option-tgt': 'target hit', 'option-sl': 'stop hit',
+  'window-end': 'closed at exit time', manual: 'closed manually',
+} as const;
+
+/**
+ * Why a closed trade ended.
+ *
+ * The server names it (`exitBy`), from the desk's own close reason first: a close the desk sends -- the perp's
+ * SL or TGT, its option-stop watch, the exit time -- is a market buy-back whatever the reason, so reading only
+ * the filling order called a perp SL hit "closed manually" (2 Oct 2026). An older server: the filling order.
+ */
 function exitReason(order: OrderRecord): string | null {
   if (order.status !== 'completed' || order.position !== 0) return null;
+  if (order.exitBy) return EXIT_WORDS[order.exitBy];
   const closing = [...order.fills].reverse().find((f) => f.side === 'buy');
   switch (closing?.role) {
     case 'take_profit': return 'target hit';
@@ -57,6 +70,9 @@ function exitReason(order: OrderRecord): string | null {
 const REASON_TONE: Record<string, string> = {
   'target hit': 'text-[var(--up)]',
   'stop hit': 'text-[var(--down)]',
+  'perp TGT hit': 'text-[var(--up)]',
+  'perp SL hit': 'text-[var(--down)]',
+  'closed at exit time': 'text-muted-foreground',
   'closed manually': 'text-muted-foreground',
 };
 

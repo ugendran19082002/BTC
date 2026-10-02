@@ -353,6 +353,20 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
             </span></>
           )}
         </span>
+        {/*
+          A target or stop asked for and not resting at Delta, said with Delta's reason. It showed only "none",
+          and a trade that asked for a 1.90 target looked the same as one that asked for nothing (2 Oct 2026).
+        */}
+        {trade.onBook && ((trade.plan?.takeProfitPrice != null && trade.onBook.target == null)
+          || (trade.plan?.stopPrice != null && trade.onBook.stop == null)) && (
+          <span className="basis-full text-[var(--warn)]" role="note" aria-label="exits not on the book">
+            {[
+              trade.plan?.takeProfitPrice != null && trade.onBook.target == null ? `Target ${price(trade.plan.takeProfitPrice)}` : null,
+              trade.plan?.stopPrice != null && trade.onBook.stop == null ? `Stop ${price(trade.plan.stopPrice)}` : null,
+            ].filter(Boolean).join(' and ')} asked for — not resting at Delta
+            {trade.protectionProblem ? `: ${trade.protectionProblem}` : '; the desk places it again on its next check.'}
+          </span>
+        )}
         {trade.live?.liquidationPrice != null && (
           <span title="Delta closes the position at this price, stop or no stop.">
             Liquidation <span className="tabular-nums text-[var(--warn)]">{price(trade.live.liquidationPrice)}</span>

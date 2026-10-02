@@ -71,3 +71,29 @@ test('[critical] two trades on one contract: each card shows its own target and 
   const hand = { ...order('x', 'stop_limit', 150), clientOrderId: null };
   assert.equal(tradeView(noStop, [], 0.001, quote(CE, 20, 30), 86_000, [hand]).onBook!.stop, 150);
 });
+
+test('[critical] a perp SL close is named as one -- not "manual", though the desk closes at market -- from the state or the journal', async () => {
+  const rec = await shortAt(38.1);
+  const closed = (state: object, events: unknown[] = []) => ({
+    ...rec,
+    state: { ...rec.state, position: 0, exitSize: rec.state.entrySize, exitWinner: 'manual', ...state },
+    events: [...rec.events, ...events],
+  }) as typeof rec;
+  const why = "BTC perp at 86,010.00 reached the signal's stop 86,019.00";
+  assert.equal(tradeView(closed({ exitReason: why })).exitBy, 'perp-sl', 'from the state');
+  // a trade closed before the state kept the reason: the journal still has it
+  const old = tradeView(closed({ exitReason: undefined }, [{ t: 'exit_submitted', clientOrderId: 'x', reason: why, at: 1 }]));
+  assert.equal(old.exitBy, 'perp-sl');
+  assert.equal(old.exitReason, why);
+  assert.equal(tradeView(closed({ exitReason: 'manual exit' })).exitBy, 'manual', 'a close by hand is still one');
+  assert.equal(tradeView(closed({ exitReason: null, exitWinner: 'take_profit' })).exitBy, 'option-tgt');
+  assert.equal(tradeView(rec).exitBy, null, 'open: no exit yet');
+});
+
+test('[critical] a target Delta would not take is said, with why -- until one is placed', async () => {
+  const rec = await shortAt(38.1);
+  const failed = { ...rec, events: [...rec.events, { t: 'protection_failed', reason: 'take_profit: reduce only order would exceed position', at: 2 }] } as typeof rec;
+  assert.equal(tradeView(failed).protectionProblem, 'take_profit: reduce only order would exceed position');
+  const placedSince = { ...failed, events: [...failed.events, { t: 'protection_placed', takeProfit: 'x', stopLoss: null, size: 2, at: 3 }] } as typeof rec;
+  assert.equal(tradeView(placedSince).protectionProblem, null, 'placed since: no problem now');
+});

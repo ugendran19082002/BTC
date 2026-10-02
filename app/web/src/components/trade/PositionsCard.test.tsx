@@ -277,8 +277,11 @@ describe('what the resting exits are worth', () => {
 
   it('says nothing about money for an exit that is not on the book', () => {
     render(<PositionsCard trades={[resting({ onBook: { target: 0.8, stop: null } })]} />);
-    expect(screen.getByText(/^Stop/).closest('span')).toHaveTextContent('Stop none');
-    expect(screen.getByText(/^Stop/).closest('span')).not.toHaveTextContent('lose');
+    const stop = screen.getByTitle(/The resting stop/);
+    expect(stop).toHaveTextContent('Stop none');
+    expect(stop).not.toHaveTextContent('lose');
+    // and, asked for and not there, it is said
+    expect(screen.getByLabelText('exits not on the book')).toHaveTextContent(/^Stop .* asked for — not resting at Delta/);
   });
 
   it('[critical] shows the price alone when the money cannot be worked out', () => {
@@ -830,3 +833,17 @@ describe('an add that cannot walk', () => {
   });
 });
 
+
+describe('an exit asked for and not resting at Delta', () => {
+  it('[critical] said, with Delta\'s reason -- not just "Target none"', () => {
+    render(<PositionsCard trades={[trade({ plan: { ...trade().plan!, stopPrice: null }, onBook: { target: null, stop: null },
+      protectionProblem: 'take_profit: reduce only order would exceed position' })]} />);
+    expect(screen.getByLabelText('exits not on the book'))
+      .toHaveTextContent('Target 0.50 asked for — not resting at Delta: take_profit: reduce only order would exceed position');
+  });
+
+  it('nothing said when the target is resting, or none was asked for', () => {
+    render(<PositionsCard trades={[trade(), trade({ tradeId: 't2', plan: { ...trade().plan!, takeProfitPrice: null, stopPrice: null }, onBook: { target: null, stop: null } })]} />);
+    expect(screen.queryByLabelText('exits not on the book')).toBeNull();
+  });
+});

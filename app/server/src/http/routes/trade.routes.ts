@@ -10,7 +10,7 @@ import {
 import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
 import { fillChargesUsd, tradeCharges } from '../../trading/charges.js';
 import { netIfClosedAt } from '../../trading/close-preview.js';
-import type { ExchangeOrder, ExchangePosition, Quote } from '../../trading/types.js';
+import type { ExchangeOrder, ExchangePosition, Quote, TradeEvent } from '../../trading/types.js';
 import { midOf } from '../../trading/money.js';
 import {
   ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
@@ -19,6 +19,7 @@ import { refuse } from '../refuse.js';
 import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
 import { parseCloseBody, type CloseBody } from '../close-body.js';
 import { strategyStore } from './strategy.routes.js';
+import { exitByOf } from '../../strategy/store.js';
 import { perpAtMinutes } from '../../market/perp-minute.js';
 
 /**
@@ -196,8 +197,32 @@ export const tradeView = (
   const toCloseUsd = mark !== null && r.state.position !== 0
     ? fillChargesUsd({ price: mark, contracts: r.state.position, contractValue, spot }).totalUsd
     : 0;
+  /*
+   * Why it was closed, in the desk's words -- from the trade's state, or for a trade closed before the state
+   * kept it, from the journal's last close -- and which exit that was. A close the desk sends is a market
+   * order whatever the reason, so the filling order alone said "closed manually" over a perp SL hit (2 Oct 2026).
+   */
+  const lastReason = r.state.exitReason
+    ?? ([...(r.events ?? [])].reverse()
+      .find((e): e is Extract<TradeEvent, { t: 'exit_submitted' }> => e.t === 'exit_submitted' && Boolean((e as { reason?: string }).reason))
+      ?.reason)
+    ?? null;
+  const closed = r.state.position === 0 && r.state.exitSize > 0;
+  /*
+   * The last time the exchange would not take this trade's target or stop, and why -- when nothing has been
+   * placed since. A trade that asked for a target and has none resting showed only "Target none"; the reason
+   * (Delta's refusal) sat in the journal where no screen read it (2 Oct 2026).
+   */
+  let protectionProblem: string | null = null;
+  for (const e of r.events ?? []) {
+    if (e.t === 'protection_failed') protectionProblem = e.reason;
+    else if (e.t === 'protection_placed') protectionProblem = null;
+  }
   return {
     ...r.state,
+    protectionProblem,
+    exitReason: lastReason,
+    exitBy: closed ? exitByOf(lastReason, r.state.exitWinner ?? null) : null,
     charges: { entryUsd: charges.entryUsd, exitUsd: charges.exitUsd, paidUsd: charges.totalUsd, toCloseUsd },
     /** Booked P&L after every charge paid so far. For a closed trade, what it really made. */
     netRealisedUsd: r.state.realisedPnl - charges.totalUsd,

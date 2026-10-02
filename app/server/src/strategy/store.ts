@@ -266,6 +266,7 @@ export type SignalTrade = {
   } | null;
 };
 type SignalTradeRow = SignalRunRow & {
+  t_reason: string | null;
   t_position: number | null; t_plan: Record<string, any> | null; t_state: Record<string, any> | null;
   p_status: string | null; entry_lo: number | null; entry_hi: number | null; stop: number | null;
   tp1: number | null; tp2: number | null; tp3: number | null;
@@ -314,11 +315,11 @@ const signalTradeFrom = (r: SignalTradeRow): SignalTrade => ({
     side: String(r.t_plan.optionSide), strike: n(r.t_plan.expect?.strike),
     size: Number(r.t_state.entrySize ?? 0), open: Number(r.t_position ?? 0) !== 0,
     entry: n(r.t_state.entryAvgPrice), exit: n(r.t_state.exitAvgPrice), pnlUsd: Number(r.t_state.realisedPnl ?? 0),
-    exitReason: r.t_state.exitReason ?? null,
+    exitReason: r.t_state.exitReason ?? r.t_reason ?? null,
     optionTarget: n(r.t_plan.takeProfitPrice), optionStop: n(r.t_plan.stopPrice),
-    exitBy: Number(r.t_position ?? 0) !== 0 || !Number(r.t_state.exitSize ?? 0) ? null : exitByOf(r.t_state.exitReason ?? null, r.t_state.exitWinner ?? null),
+    exitBy: Number(r.t_position ?? 0) !== 0 || !Number(r.t_state.exitSize ?? 0) ? null : exitByOf(r.t_state.exitReason ?? r.t_reason ?? null, r.t_state.exitWinner ?? null),
     // Exact first: the perp as the option's exit filled; else the price in the desk's close reason.
-    perpExit: n(r.t_state.perpExit) ?? perpInReason(r.t_state.exitReason ?? null),
+    perpExit: n(r.t_state.perpExit) ?? perpInReason(r.t_state.exitReason ?? r.t_reason ?? null),
     perpStop: n(r.t_plan.underlying?.stop), perpTarget: n(r.t_plan.underlying?.target), perpEntry: n(r.t_state.perpEntry) ?? n(r.t_plan.underlying?.entry),
     ...fillTimes(r.t_state.fills),
   },
@@ -499,6 +500,10 @@ export class StrategyStore {
     const xs = await rows<SignalTradeRow>(
       `SELECT r.id, r.strategy_id, r.signal_key, r.method, r.mode, r.tf, r.dir, r.status, r.detail, r.trade_id, r.at,
               t.position AS t_position, t.plan AS t_plan, t.state AS t_state,
+              -- the journal's last close reason, for a trade closed before the state kept it
+              (SELECT ev.event->>'reason' FROM trade_events ev
+                WHERE ev.trade_id = r.trade_id AND ev.event->>'t' = 'exit_submitted' AND ev.event->>'reason' IS NOT NULL
+                ORDER BY ev.seq DESC LIMIT 1) AS t_reason,
               e.status AS p_status, e.entry_lo, e.entry_hi, e.stop, e.tp1, e.tp2, e.tp3,
               e.fill_price, e.filled_at, e.exit_price, e.exit_at
          FROM strategy_signal_runs r

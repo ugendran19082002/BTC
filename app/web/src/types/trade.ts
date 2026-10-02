@@ -65,6 +65,10 @@ export type Trade = {
   } | null;
   /** Why the desk last closed it, in its words, when it was the desk's decision (the perp level, the stop watch, the exit time). */
   exitReason?: string | null;
+  /** The last time the exchange would not take this trade's target or stop, and why; null once one was placed since. */
+  protectionProblem?: string | null;
+  /** Which exit closed it, named by the server from the close reason and the filling order. Null while open. */
+  exitBy?: 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'manual' | null;
   /** The BTC perp's last trade as the option's first entry fill and last exit fill landed (signal trades). */
   perpEntry?: number | null;
   perpExit?: number | null;
