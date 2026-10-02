@@ -56,10 +56,13 @@ test('[critical] two trades on one contract: the day\'s open P&L is the Open P&L
   const svc = tradingService();
   const paper = svc.paper()!;
   const symbol = 'P-BTC-84000-031026';
-  paper.addProduct({ symbol, productId: 9101, underlying: 'BTC', optionSide: 'PE', strike: 84_000, expiryTs: Math.floor(Date.now() / 1000) + 86_400, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+  // Once: computed twice, a second could tick between the product and the order, and the desk rightly
+  // refused it ("expiry does not match") -- the flake this test had.
+  const expiryTs = Math.floor(Date.now() / 1000) + 86_400;
+  paper.addProduct({ symbol, productId: 9101, underlying: 'BTC', optionSide: 'PE', strike: 84_000, expiryTs, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
   paper.setQuote({ symbol, bid: 20, ask: 20.5, bidSize: 5_000, askSize: 5_000, mark: 20.2, ts: Date.now() });
   // two strategies on one strike, as decision 0011 allows
-  const place = (strategyId: string) => svc.place({ symbol, optionSide: 'PE', strike: 84_000, expiryTs: Math.floor(Date.now() / 1000) + 86_400, lots: 2, minPremiumUsd: 1, stopLossPct: 3, limitPrice: 20, strategyId, origin: 'strategy' });
+  const place = (strategyId: string) => svc.place({ symbol, optionSide: 'PE', strike: 84_000, expiryTs, lots: 2, minPremiumUsd: 1, stopLossPct: 3, limitPrice: 20, strategyId, origin: 'strategy' });
   for (const r of [await place('acct-a'), await place('acct-b')]) assert.ok(r.ok, JSON.stringify((r as any).precheck ?? (r as any).state?.note ?? r).slice(0, 600));
   for (let i = 0; i < 40 && (await svc.openTrades()).filter((t) => t.state.position !== 0).length < 2; i++) await new Promise((r) => setTimeout(r, 150));
   // the price moves against the short: each trade is down
