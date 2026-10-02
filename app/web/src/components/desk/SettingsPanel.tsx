@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { TelegramLogCard } from '@/components/desk/TelegramLogCard';
 import { Loader2 } from 'lucide-react';
 import {
   getAutoTrade, setAutoTrade, type AutoTradeSettings as AutoTrade, type AutoTradeState,
@@ -29,6 +30,7 @@ export function SettingsPanel() {
       <BestPickSwitchesCard />
       <AutoTradeLimitsCard />
       <LevelsCard />
+      <TelegramLogCard />
       <p className="m-0 px-1 text-[11.5px] leading-relaxed text-[var(--dim)]">
         The only switches here that place orders are the best pick's, above. Each strategy has its own, on its
         form. The rest of this screen sets the range those work inside.

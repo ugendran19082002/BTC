@@ -50,6 +50,8 @@ export type TelegramOptions = {
   now?: () => number;
   /** Where a message that could not be delivered is written down. */
   onError?: (message: string, context: Record<string, unknown>) => void;
+  /** Told of every message: sent, failed (with Telegram's reason), or held back as a repeat -- the Telegram log. */
+  onResult?: (r: { key: string; text: string; status: 'sent' | 'failed' | 'repeat'; error: string | null; at: number }) => void;
 };
 
 type Reply = { ok: boolean; status: number; description: string; retryAfter?: number };
@@ -145,6 +147,7 @@ export class TelegramNotifier {
       if (since < quiet) {
         this.held += 1;
         try { this.o.onRepeat?.(key, since); } catch { /* a reporter that throws is not the trade's problem */ }
+        this.tell({ key, text: held.text, status: 'repeat', error: null, at: now });
         return;
       }
     }
@@ -153,6 +156,7 @@ export class TelegramNotifier {
     void this.send(held.text).then((ok) => {
       // Nothing was said, so nothing is being repeated: let the next one go.
       if (!ok && this.said.get(key)?.at === now) this.said.delete(key);
+      this.tell({ key, text: held.text, status: ok ? 'sent' : 'failed', error: ok ? null : this.lastFailure, at: this.now() });
     });
   }
 
@@ -160,6 +164,13 @@ export class TelegramNotifier {
   private forget(now: number): void {
     if (this.said.size < 64) return;
     for (const [k, v] of this.said) if (now - v.at > Math.max(this.repeatMs, HOUR_MS)) this.said.delete(k);
+  }
+
+  /** Telegram's words for the last message it would not take. */
+  private lastFailure: string | null = null;
+
+  private tell(r: Parameters<NonNullable<TelegramOptions['onResult']>>[0]): void {
+    try { this.o.onResult?.(r); } catch { /* a log that throws is not the alert's problem */ }
   }
 
   private async deliver(text: string): Promise<boolean> {
@@ -181,6 +192,7 @@ export class TelegramNotifier {
       // fail the same way every time, so it is reported once instead.
       const retryable = reply.status === 0 || reply.status === 429 || reply.status >= 500;
       if (!retryable || attempt === MAX_ATTEMPTS) {
+        this.lastFailure = `${reply.description}${reply.status ? ` (HTTP ${reply.status})` : ''}`;
         this.report(`telegram alert not delivered: ${reply.description}`, { status: reply.status, attempts: attempt });
         return false;
       }

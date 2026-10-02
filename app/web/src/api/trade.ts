@@ -197,3 +197,10 @@ export function getOrderHistory(opts: { from?: string; to?: string; status?: str
   if (opts.status) q.set('status', opts.status);
   return json<OrderHistory>(`/api/trade/history?${q}`);
 }
+
+/** One Telegram message the desk tried to send, and what became of it. */
+export type TelegramLogEntry = { id: number; at: number; key: string; status: 'sent' | 'failed' | 'repeat'; text: string; error: string | null };
+/** The Telegram log, newest first; `status` narrows it. */
+export const getTelegramLog = (status?: TelegramLogEntry['status'], limit = 200) =>
+  json<{ configured: boolean; on: boolean; entries: TelegramLogEntry[] }>(
+    `/api/telegram/log?limit=${limit}${status ? `&status=${status}` : ''}`);

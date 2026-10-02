@@ -20,6 +20,7 @@ import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { candles } from '../market/delta.js';
 import { liveLtp } from '../market/flow.js';
+import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
@@ -138,6 +139,8 @@ export class TradingService {
       ? new TelegramNotifier({
           ...config.telegram,
           onError: (message, context) => noteError({ source: 'server', level: 'warn', message, where: 'telegram', context }),
+          // Every message, as it went: the Telegram log (notify/telegram-log.ts).
+          onResult: (r) => { void logTelegram(r); },
         })
       : null;
     const creds = credsFromEnv();

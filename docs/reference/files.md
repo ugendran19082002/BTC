@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-411 files listed, 192 test files counted below, images and lockfiles left out.
+415 files listed, 196 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 111 |
-| `app/web` | 81 |
+| `app/server` | 112 |
+| `app/web` | 84 |
 
 ## `(root)`
 
@@ -188,6 +188,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [best-trade-alert.ts](../../app/server/src/notify/best-trade-alert.ts) | "The best pick changed", said once: the rule for when a new pick is announced (a different strike, at most N times a contract, above the floor), and the message it is announced with. |
 | [messages.ts](../../app/server/src/notify/messages.ts) | What a fill, and a finished day, look like on a phone. |
+| [telegram-log.ts](../../app/server/src/notify/telegram-log.ts) | Every Telegram message the desk tried to send, and what became of it (2 Oct 2026, owner: "check the last Telegram alerts"): sent, failed with Telegram's reason, or held back as a repeat of the same... |
 | [telegram.ts](../../app/server/src/notify/telegram.ts) | Telegram, as somewhere to put alerts -- and nothing more. |
 
 ## `app/server/src/observability/`
@@ -234,7 +235,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [delta.ts](../../app/server/src/trading/exchange/delta.ts) | The real account. |
 | [paper.ts](../../app/server/src/trading/exchange/paper.ts) | An exchange you can lie to. |
-| [port.ts](../../app/server/src/trading/exchange/port.ts) | Move an order that is already on the book. |
+| [port.ts](../../app/server/src/trading/exchange/port.ts) | `null` when the exchange has never heard of it -- which, after a timeout, is the answer that says the order never landed. |
 
 ## `app/web/`
 
@@ -297,6 +298,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [ChainTable.tsx](../../app/web/src/components/chain/ChainTable.tsx) | Why a strike carries the pick mark. |
+| [ColumnPicker.tsx](../../app/web/src/components/chain/ColumnPicker.tsx) | Which columns the board shows, one at a time. |
+| [columns.ts](../../app/web/src/components/chain/columns.ts) | The board's columns, as data. |
 
 ## `app/web/src/components/desk/`
 
@@ -309,6 +312,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [PriceChart.tsx](../../app/web/src/components/desk/PriceChart.tsx) | The price chart: candles, and the market context the engine found, drawn on the candles themselves -- structure, liquidity, OB / FVG, levels, premium / discount, sessions, VWAP, candle tags, the bo... |
 | [SettingsPanel.tsx](../../app/web/src/components/desk/SettingsPanel.tsx) | Every number the desk works to, in one screen. |
 | [StrikeAnalysis.tsx](../../app/web/src/components/desk/StrikeAnalysis.tsx) | Everything known about one strike, on one screen, before any order exists. |
+| [TelegramLogCard.tsx](../../app/web/src/components/desk/TelegramLogCard.tsx) | Every Telegram message the desk tried to send, and what became of it: sent, failed with Telegram's reason, or held back as a repeat of the same words (2 Oct 2026, owner: "check the last Telegram al... |
 | [TodayPnl.tsx](../../app/web/src/components/desk/TodayPnl.tsx) | Today's P&L, always in the header. |
 | [signal-export.ts](../../app/web/src/components/desk/signal-export.ts) | The signal history as a spreadsheet. |
 | [signal-track.ts](../../app/web/src/components/desk/signal-track.ts) | Where a call got to, between its trigger and its target. |

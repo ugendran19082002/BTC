@@ -21,6 +21,7 @@ import { parseCloseBody, type CloseBody } from '../close-body.js';
 import { strategyStore } from './strategy.routes.js';
 import { exitByOf } from '../../strategy/store.js';
 import { perpAtMinutes } from '../../market/perp-minute.js';
+import { telegramLog } from '../../notify/telegram-log.js';
 
 /**
  * The order desk.
@@ -880,6 +881,19 @@ export function registerTradeRoutes(app: FastifyInstance) {
     if (typeof b.on !== 'boolean') { reply.code(400); return { error: 'on must be true or false' }; }
     await svc.setAlertsOn(b.on);
     return { ok: true, alerts: { configured: svc.notifier !== null, on: svc.alertsOn } };
+  });
+
+  /*
+   * The Telegram log: every message the desk tried to send -- sent, failed with Telegram's reason, or held back
+   * as a repeat -- newest first. `status` narrows it; whether Telegram is set up and switched on rides along.
+   */
+  app.get('/api/telegram/log', async (req) => {
+    const q = (req.query ?? {}) as { limit?: string; status?: string };
+    const status = q.status === 'sent' || q.status === 'failed' || q.status === 'repeat' ? q.status : undefined;
+    return {
+      configured: svc.notifier !== null, on: svc.alertsOn,
+      entries: await telegramLog(Number(q.limit ?? 100) || 100, status),
+    };
   });
 
   /** Move the stop or the target on a position that is already open. */

@@ -185,3 +185,21 @@ test('a message Telegram refused starts no quiet period -- the next one must sti
   assert.equal(calls.length, 2, 'nothing arrived the first time, so it is not a repeat');
   assert.equal(n.repeatsHeld, 0);
 });
+
+test('[critical] every message is told: sent, failed with Telegram\'s reason, or held back as a repeat -- the Telegram log', async () => {
+  const results: { key: string; status: string; error: string | null; text: string }[] = [];
+  const { n } = make([
+    { status: 200, body: { ok: true } },
+    { status: 403, body: { ok: false, description: 'Forbidden: bot was blocked by the user' } },
+  ], { onResult: (r) => results.push(r) });
+  n.notify({ key: 't1:entry', text: 'SOLD 3 PE' });
+  await n.drain();
+  n.notify({ key: 't2:entry', text: 'SOLD 3 CE' });
+  await n.drain();
+  await new Promise((r) => setTimeout(r, 10));
+  n.notify({ key: 't1:entry', text: 'SOLD 3 PE' });                  // the same words again, inside the quiet period
+  await n.drain();
+  assert.deepEqual(results.map((r) => [r.key, r.status]), [['t1:entry', 'sent'], ['t2:entry', 'failed'], ['t1:entry', 'repeat']]);
+  assert.match(results[1]!.error!, /bot was blocked by the user \(HTTP 403\)/);
+  assert.equal(results[0]!.text, 'SOLD 3 PE');
+});

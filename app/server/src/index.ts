@@ -25,6 +25,7 @@ import { entrySchema, gradeSetups, onSetupFilled, recordSetups } from './entry/p
 import { gatesSchema } from './entry/gates.js';
 import { alertSettings, alertsSchema, sendEntryAlert, wanted } from './entry/alerts.js';
 import { allReads } from './entry/engine.js';
+import { telegramLogSchema } from './notify/telegram-log.js';
 import { pruneSignals, recordSignals, signalsSchema } from './entry/signals.js';
 import { methodsSchema } from './entry/catalogue.js';
 import { readEntryContext } from './entry/read.js';
@@ -61,6 +62,7 @@ await trendPaperSchema();
 await entrySchema();
 await gatesSchema();
 await alertsSchema();
+await telegramLogSchema();
 await signalsSchema();
 await methodsSchema();
 const strategies = await initStrategyStore();
