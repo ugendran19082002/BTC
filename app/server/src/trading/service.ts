@@ -170,7 +170,7 @@ export class TradingService {
       tradingEnabled: true,
       feedHealthy: () => this.feedOk,
       dayPnlUsd: () => this.store.realisedSince(startOfDayIst()),
-      spot: () => this.lastSpot,
+      spot: () => this.currentSpot(),
       // The option's own candles, for a stop the strategy asked to watch on
       // the close rather than on the touch.
       candles: (symbol, startSec, endSec, resolution) => candles(symbol, startSec, endSec, resolution),
@@ -244,7 +244,7 @@ export class TradingService {
     const now = Date.now();
     const dayStart = startOfDayIst(now);
     const summary = daySummaryFor(await this.store.between(dayStart, now + 1), {
-      mode: this.currentMode, dayStart, at: now, spot: this.lastSpot, workingOrders,
+      mode: this.currentMode, dayStart, at: now, spot: this.currentSpot(), workingOrders,
     });
     if (summary && this.alertsOn) this.notifier?.notify(summary);
   }
@@ -600,7 +600,7 @@ export class TradingService {
       }) ?? 0;
     }
     const chargesUsd = (await this.store.between(dayStart, now + 1))
-      .reduce((n, rec) => n + tradeCharges(rec.state, { spot: this.lastSpot, since: dayStart }).totalUsd, 0);
+      .reduce((n, rec) => n + tradeCharges(rec.state, { spot: this.currentSpot(), since: dayStart }).totalUsd, 0);
     return { realisedUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
   }
 
@@ -743,6 +743,23 @@ export class TradingService {
   noteSpot(spot: number | null) { if (spot && spot > 0) this.lastSpot = spot; }
 
   /**
+   * BTC's price for the desk's own arithmetic -- a trade's worst case with no stop, charges, the margin a short
+   * needs: the perp's last trade off the live socket when fresh, else the last price a screen noted.
+   *
+   * It was only ever the last price a screen noted (the Live screen's board), so after a restart, until someone
+   * opened that screen, there was none: a signal trade with no option stop was refused -- "the worst case cannot
+   * be priced yet" -- eight minutes after a deploy, with the desk's own feed live the whole time (2 Oct 2026).
+   */
+  private currentSpot(): number | null {
+    const l = liveLtp();
+    if (l && l.price > 0 && Date.now() - l.at <= 15_000) {
+      this.lastSpot = l.price;
+      return l.price;
+    }
+    return this.lastSpot;
+  }
+
+  /**
    * Positions for the screen, cached for under a second.
    *
    * The desk polls this once a second so the mark and the P&L tick; without a
@@ -800,7 +817,7 @@ export class TradingService {
   }
 
   quote(symbol: string) { return this.exchange.getQuote(symbol); }
-  get spot() { return this.lastSpot; }
+  get spot() { return this.currentSpot(); }
   product(symbol: string) { return this.exchange.getProduct(symbol); }
   positions() { return this.exchange.getPositions(); }
   async balance() {
@@ -930,11 +947,12 @@ export class TradingService {
    * from nothing is exactly the decoration this is meant to avoid.
    */
   get shortCeilingContracts(): number | null {
-    if (this.lastSpot === null || this.lastBalance === null) return null;
+    const spot = this.currentSpot();
+    if (spot === null || this.lastBalance === null) return null;
     // Premium 0: the fee is a fraction of it, and this is a capacity figure
     // rather than the cost of one particular option.
     const per = fundsRequiredPerContract({
-      spot: this.lastSpot, premium: 0, leverage: DEFAULT_LEVERAGE,
+      spot, premium: 0, leverage: DEFAULT_LEVERAGE,
     });
     if (!(per > 0)) return null;
     return Math.floor(this.lastBalance / per) + this.lastShortContracts;

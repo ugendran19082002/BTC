@@ -77,3 +77,18 @@ test('[critical] two trades on one contract: the day\'s open P&L is the Open P&L
   assert.ok(Math.abs(t.netUsd - (t.realisedUsd + st.unrealisedPnlUsd - t.chargesUsd)) < 1e-9, 'Net today = Booked + Open P&L - Charges, on the card\'s own figures');
   assert.equal(st.realisedTodayUsd, t.realisedUsd, 'one "booked today", whichever field the screen reads');
 });
+
+test('[critical] the desk has BTC\'s price from its own live feed -- no screen has to be opened after a restart', async () => {
+  // 2 Oct 2026: eight minutes after a deploy a no-stop signal trade was refused, "no BTC price", feed live all along.
+  const { useFlowSocket } = await import('../../src/market/flow.js');
+  const { FlowSocket } = await import('../../src/market/flow-socket.js');
+  const now = Date.now();
+  const s = new FlowSocket({ now: () => now });
+  s.receive(JSON.stringify({ type: 'all_trades', symbol: 'BTCUSD', price: '86123.5', size: 1, timestamp: now * 1000, buyer_role: 'taker', seller_role: 'maker' }));
+  useFlowSocket(s);
+  try {
+    assert.equal(tradingService().spot, 86_123.5, 'the perp\'s last trade, fresh');
+  } finally {
+    useFlowSocket(null);
+  }
+});

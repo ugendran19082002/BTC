@@ -231,3 +231,24 @@ test('the contract\'s order history is filtered here, whatever the venue does wi
   assert.deepEqual(got.map((o) => o.orderId), ['1'], 'the other contract\'s order is dropped');
   assert.match(seen[0]!, /product_symbols=C-BTC-78800-140926/);
 });
+
+test('[critical] a filled target past the account\'s newest twenty is found in its contract\'s history (2 Oct 2026)', async () => {
+  const filled = {
+    id: 99, client_order_id: '409261789344005840T1', product_id: 1, product_symbol: 'C-BTC-88800-031026',
+    side: 'buy', order_type: 'limit_order', size: 3, unfilled_size: 0, limit_price: '4', state: 'closed',
+    average_fill_price: '4', reduce_only: true, created_at: '2026-10-02T12:45:00Z', updated_at: '2026-10-02T15:10:00Z',
+  };
+  const other = { ...filled, id: 1, client_order_id: 'someone-else', product_symbol: 'C-BTC-86400-031026' };
+  const seen = answers(
+    { status: 200, body: { success: true, result: [] } },                                    // not resting
+    { status: 200, body: { success: true, result: Array.from({ length: 20 }, () => other) } }, // newest twenty: not there
+    { status: 200, body: { success: true, result: [other, filled] } },                         // the contract's history
+  );
+  const o = await new DeltaExchange(creds).getOrderByClientId('409261789344005840T1', 'C-BTC-88800-031026');
+  assert.equal(o?.orderId, '99');
+  assert.equal(o?.filledSize, 3, 'the fill, to be absorbed');
+  assert.match(seen[2]!, /\/v2\/orders\/history\?product_symbols=C-BTC-88800-031026/);
+  // without the contract, as before: not found
+  answers({ status: 200, body: { success: true, result: [] } }, { status: 200, body: { success: true, result: [other] } });
+  assert.equal(await new DeltaExchange(creds).getOrderByClientId('409261789344005840T1'), null);
+});

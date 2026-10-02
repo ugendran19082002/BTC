@@ -34,7 +34,11 @@ export interface ExchangePort {
   ): Promise<ExchangeOrder>;
   /** `null` when the exchange has never heard of it -- which, after a timeout,
    * is the answer that says the order never landed. */
-  getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null>;
+  /**
+   * One of our orders by its client id, resting or done. `symbol`, when the caller knows the contract, lets a
+   * venue search that contract's history -- deeper than an account-wide search reaches (see DeltaExchange).
+   */
+  getOrderByClientId(clientOrderId: string, symbol?: string): Promise<ExchangeOrder | null>;
   /**
    * By the exchange's own id, from the acknowledgement. The lookup that cannot
    * be foiled by a client-id filter: once the venue has said "order 1535451705",

@@ -1021,7 +1021,7 @@ export class TradeEngine {
       ['stop_loss', rec.state.protection.stopLoss],
     ] as const;
     const found = await Promise.all(
-      legs.map(([, cid]) => (cid ? this.exchange.getOrderByClientId(cid).catch(() => null) : null)),
+      legs.map(([, cid]) => (cid ? this.exchange.getOrderByClientId(cid, rec.plan.symbol).catch(() => null) : null)),
     );
     for (const [i, [role]] of legs.entries()) {
       const o = found[i];
@@ -1084,7 +1084,7 @@ export class TradeEngine {
             // Filled or cancelled since the read a moment ago. That is the
             // order doing what it was sent to do, not a fault: read it again
             // now, so the fill is on the record this poll rather than next.
-            const gone = await this.exchange.getOrderByClientId(entryId).catch(() => null);
+            const gone = await this.exchange.getOrderByClientId(entryId, rec.plan.symbol).catch(() => null);
             if (gone) rec = await this.absorb(rec, gone, 'entry');
           } else if (moved) {
             rec = await this.absorb(rec, moved, 'entry');
@@ -1099,7 +1099,7 @@ export class TradeEngine {
       rec = await this.commit(rec, { t: 'entry_timeout', at: this.now() });
       await this.exchange.cancelOrder(entry).catch((e) => this.note('cancel entry', entry, e));
       this.entryDeadline.delete(tradeId);
-      const after = await this.exchange.getOrderByClientId(entryId).catch(() => null);
+      const after = await this.exchange.getOrderByClientId(entryId, rec.plan.symbol).catch(() => null);
       if (after) rec = await this.absorb(rec, after, 'entry');
       rec = await this.commit(rec, { t: 'entry_cancelled', remaining: entry.size - (after?.filledSize ?? entry.filledSize), at: this.now() });
 
@@ -1468,7 +1468,7 @@ export class TradeEngine {
     if (!order.clientOrderId) return true;
     let after: ExchangeOrder | null;
     try {
-      after = await this.exchange.getOrderByClientId(order.clientOrderId);
+      after = await this.exchange.getOrderByClientId(order.clientOrderId, order.symbol);
     } catch {
       // Could not ask is not gone. Until 1 Oct 2026 a failed read counted as a
       // confirmed cancel, which is the one answer this method exists to rule out.
@@ -1518,7 +1518,7 @@ export class TradeEngine {
       if (!all && role === winner) continue;
       let o: ExchangeOrder | null;
       try {
-        o = await this.exchange.getOrderByClientId(cid);
+        o = await this.exchange.getOrderByClientId(cid, rec.plan.symbol);
       } catch (e) {
         this.note('cancel sibling', { orderId: cid, symbol: rec.plan.symbol }, e);
         unconfirmed.push(role === 'take_profit' ? 'target' : 'stop');
@@ -1580,10 +1580,10 @@ export class TradeEngine {
     if (!rec) return null;
     if (rec.state.position !== 0) return rec.state;
 
-    const order = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry')).catch(() => null);
+    const order = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry'), rec.plan.symbol).catch(() => null);
     if (order && (order.status === 'open' || order.status === 'partial')) {
       await this.exchange.cancelOrder(order).catch((e) => this.note('cancel entry', order, e));
-      const after = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry')).catch(() => null);
+      const after = await this.exchange.getOrderByClientId(clientId(tradeId, 'entry'), rec.plan.symbol).catch(() => null);
       if (after) rec = await this.absorb(rec, after, 'entry');
     }
     this.entryDeadline.delete(tradeId);
@@ -1847,7 +1847,7 @@ export class TradeEngine {
     if (this.now() - closing.submittedAt < CLOSE_FOLLOW_UP_MS) return rec;
     let order: ExchangeOrder | null;
     try {
-      order = await this.exchange.getOrderByClientId(closing.clientOrderId);
+      order = await this.exchange.getOrderByClientId(closing.clientOrderId, rec.plan.symbol);
     } catch {
       return rec;                                        // unknown is not gone: ask again next poll
     }

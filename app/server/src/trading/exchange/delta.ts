@@ -419,7 +419,7 @@ export class DeltaExchange implements ExchangePort {
     return rows.map(toOrder).filter((o) => o.symbol === symbol);
   }
 
-  async getOrderByClientId(clientOrderId: string): Promise<ExchangeOrder | null> {
+  async getOrderByClientId(clientOrderId: string, symbol?: string): Promise<ExchangeOrder | null> {
     const cid = encodeURIComponent(clientOrderId);
     const live = await this.call<DeltaOrder[]>({
       method: 'GET', path: '/v2/orders', query: `?client_order_id=${cid}&states=open,pending`,
@@ -440,7 +440,17 @@ export class DeltaExchange implements ExchangePort {
       method: 'GET', path: '/v2/orders/history', query: `?client_order_id=${cid}&page_size=20`,
     }).catch(refusedRead);
     const old = past.find((r) => r.client_order_id === clientOrderId);
-    return old ? toOrder(old) : null;
+    if (old) return toOrder(old);
+
+    /*
+     * Not in the account's newest twenty: on a busy account a target that filled minutes ago is already past
+     * them, and the desk went on reading the trade as open with its target gone -- three trades on the 88,800 CE
+     * held "open" until a restart found the contract flat (2 Oct 2026). The contract's own history is searched
+     * deeper: `product_symbols` is a filter this endpoint honours (the startup check finds fills this way).
+     */
+    if (!symbol) return null;
+    const theirs = await this.getOrderHistory(symbol, 200).catch(() => [] as ExchangeOrder[]);
+    return theirs.find((o) => o.clientOrderId === clientOrderId) ?? null;
   }
 
   /**
