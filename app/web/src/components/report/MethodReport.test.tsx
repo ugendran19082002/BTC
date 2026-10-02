@@ -203,7 +203,7 @@ describe('the Methods report', () => {
     expect(lines).toHaveLength(1 + 8 * (rows.length + 1));
   });
 
-  it('[critical] the dates default to today, every time the tab opens', async () => {
+  it('[critical] the dates start at today, and once chosen are kept across a refresh', async () => {
     const { unmount } = render(<MethodReport />);
     await screen.findByRole('table', { name: 'With the timeframe chain' });
     expect(getMethodReport).toHaveBeenLastCalledWith(null, false, TODAY);
@@ -214,7 +214,8 @@ describe('the Methods report', () => {
     unmount();
     render(<MethodReport />);
     await screen.findByRole('table', { name: 'With the timeframe chain' });
-    expect(getMethodReport).toHaveBeenLastCalledWith(null, false, TODAY); // not remembered: never a stale day
+    // remembered (owner, 2 Oct 2026: "set once, a refresh must not change it")
+    expect(getMethodReport).toHaveBeenLastCalledWith(null, false, { from: '2026-09-26', to: '2026-10-02' });
   });
 
   it('[critical] "all time" asks for every signal, and the sections say which days they count', async () => {
