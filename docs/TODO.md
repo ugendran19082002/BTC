@@ -205,10 +205,13 @@ Still open:
   one-lot test. The take-profit was "conventional" too, until 9 Sep.
 - [ ] **One live test of a stepped exit** with one lot: a stage moving a real
   Delta target / stop in place.
+- [x] **Reconcile against Delta order history and direct client ID** (3 Oct
+  2026): direct client ID endpoint first (`/v2/orders/client_order_id/{id}`),
+  open book second, recent history third, and deep contract history by numeric
+  `product_ids` with 30s rate throttle. Tested in `read-retry.test.ts`.
 - [ ] **Execution controls not used yet**: `post_only`, `time_in_force: ioc`,
-  `trail_amount`, bracket orders; and reconciling against
-  `/v2/orders/history` as well as the open book. Each needs a live test of its
-  own. See [reference/delta-api.md](reference/delta-api.md).
+  `trail_amount`, bracket orders. Each needs a live test of its own. See
+  [reference/delta-api.md](reference/delta-api.md).
 - [ ] **The two premium floors differ**: 5 in the trading gate, 15 as the chain's
   default filter. One is a gate and one a view; decide whether they should be
   one number.
