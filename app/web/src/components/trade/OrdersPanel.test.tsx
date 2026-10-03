@@ -58,6 +58,7 @@ const show = (trades: OrderRecord[]) => {
 beforeEach(() => {
   vi.setSystemTime(Date.UTC(2026, 8, 9, 12, 0));
   history.mockReset();
+  localStorage.clear();
 });
 afterEach(() => vi.useRealTimers());
 
@@ -314,3 +315,137 @@ describe('why a closed trade ended', () => {
     expect(screen.getByText('target hit')).toBeInTheDocument();
   });
 });
+
+describe('best practice tabs: win, loss, new, open', () => {
+  it('shows Win, Loss, and New tabs with counts and filters correctly', async () => {
+    show([
+      order({ tradeId: 'w1', symbol: 'P-BTC-84000-031026', realisedPnl: 2, status: 'completed' }),
+      order({ tradeId: 'l1', symbol: 'C-BTC-85000-031026', realisedPnl: -1, status: 'completed' }),
+      order({ tradeId: 'o1', symbol: 'P-BTC-84200-031026', status: 'pending', position: -3, realisedPnl: 0 }),
+      order({ tradeId: 'n1', symbol: 'C-BTC-85200-031026', status: 'pending', position: 0, realisedPnl: 0, outcome: 'working on the book' }),
+    ]);
+
+    // Check tab counts rendered
+    expect(await screen.findByRole('radio', { name: /Win · 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Loss · 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Open · 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /New · 1/ })).toBeInTheDocument();
+
+    // Click Win tab: only profitable completed trade is shown
+    fireEvent.click(screen.getByRole('radio', { name: /Win · 1/ }));
+    expect(await screen.findByText(/84,000/)).toBeInTheDocument();
+    expect(screen.queryByText(/85,000/)).toBeNull();
+    expect(screen.queryByText(/84,200/)).toBeNull();
+
+    // Click Loss tab: only losing completed trade is shown
+    fireEvent.click(screen.getByRole('radio', { name: /Loss · 1/ }));
+    expect(await screen.findByText(/85,000/)).toBeInTheDocument();
+    expect(screen.queryByText(/84,000/)).toBeNull();
+
+    // Click New tab: only working order waiting on book is shown
+    fireEvent.click(screen.getByRole('radio', { name: /New · 1/ }));
+    expect(await screen.findByText(/85,200/)).toBeInTheDocument();
+    expect(screen.queryByText(/84,000/)).toBeNull();
+  });
+});
+
+describe('search filtering', () => {
+  it('filters rows by strike, rule, or symbol and clears', async () => {
+    show([
+      order({ tradeId: 't1', symbol: 'P-BTC-84200-031026', outcome: 'short 3', plan: { ...order().plan!, strategyName: 'Mid-range rejection' } }),
+      order({ tradeId: 't2', symbol: 'C-BTC-85200-031026', outcome: 'short 5', plan: { ...order().plan!, strategyName: 'Liquidity sweep' } }),
+    ]);
+
+    await waitFor(() => expect(screen.getByText(/84,200/)).toBeInTheDocument());
+    expect(screen.getByText(/85,200/)).toBeInTheDocument();
+
+    const searchInput = screen.getByPlaceholderText(/Search strike, symbol, strategy/);
+    fireEvent.change(searchInput, { target: { value: 'Mid-range' } });
+
+    expect(await screen.findByText(/84,200/)).toBeInTheDocument();
+    expect(screen.queryByText(/85,200/)).toBeNull();
+
+    // Clear search button
+    const clearBtn = screen.getByLabelText('Clear search');
+    fireEvent.click(clearBtn);
+
+    expect(await screen.findByText(/85,200/)).toBeInTheDocument();
+    expect(screen.getByText(/84,200/)).toBeInTheDocument();
+  });
+});
+
+describe('pagination and page limit', () => {
+  it('paginates according to selected limit and switches pages', async () => {
+    const list = Array.from({ length: 12 }, (_, i) =>
+      order({ tradeId: `trade-${i}`, symbol: `P-BTC-${84000 + i * 100}-031026` }),
+    );
+    show(list);
+
+    // Default limit is 10, so 10 rows on page 1, and 2 pages total
+    await waitFor(() => {
+      const statusEl = screen.getByLabelText('pagination status');
+      expect(statusEl.textContent).toContain('Showing 1–10 of 12 orders');
+    });
+    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();
+
+    // Change limit to 5
+    const limit5Btn = screen.getByRole('button', { name: '5' });
+    fireEvent.click(limit5Btn);
+
+    await waitFor(() => {
+      const statusEl = screen.getByLabelText('pagination status');
+      expect(statusEl.textContent).toContain('Showing 1–5 of 12 orders');
+    });
+
+    // Click Next page
+    const nextBtn = screen.getByRole('button', { name: 'Next' });
+    fireEvent.click(nextBtn);
+
+    await waitFor(() => {
+      const statusEl = screen.getByLabelText('pagination status');
+      expect(statusEl.textContent).toContain('Showing 6–10 of 12 orders');
+    });
+  });
+});
+
+describe('amount and row PnL displays', () => {
+  it('displays WIN / LOSS badges, trade amounts, and both INR and USD values', async () => {
+    show([
+      order({
+        tradeId: 'w-trade',
+        symbol: 'P-BTC-84000-031026',
+        status: 'completed',
+        position: 0,
+        entrySize: 3,
+        entryAvgPrice: 15,
+        exitAvgPrice: 10,
+        realisedPnl: 0.015,
+        netRealisedUsd: 0.015,
+      }),
+      order({
+        tradeId: 'l-trade',
+        symbol: 'C-BTC-85000-031026',
+        status: 'completed',
+        position: 0,
+        entrySize: 3,
+        entryAvgPrice: 15,
+        exitAvgPrice: 20,
+        realisedPnl: -0.015,
+        netRealisedUsd: -0.015,
+      }),
+    ]);
+
+    expect(await screen.findByText('WIN')).toBeInTheDocument();
+    expect(screen.getByText('LOSS')).toBeInTheDocument();
+
+    // Check entry price and trade amount on row
+    expect(screen.getAllByText(/Entry/)[0]).toBeInTheDocument();
+    expect(screen.getAllByText(/Amt/)[0]).toBeInTheDocument();
+
+    // Check USD PnL is displayed alongside INR (using signedUsd format)
+    expect(screen.getByText('+$0.015')).toBeInTheDocument();
+    expect(screen.getByText('−$0.015')).toBeInTheDocument();
+  });
+});
+
+

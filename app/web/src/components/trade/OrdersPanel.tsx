@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { usePersisted } from '@/hooks/usePersisted';
-import { ChevronRight, Download } from 'lucide-react';
+import { ChevronRight, Download, Search, X } from 'lucide-react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { getOrderHistory } from '@/api/trade';
 import type { OrderRecord, OrderStatus } from '@/types/trade';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { KV } from '@/components/ui/kv';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DateRangePicker, istToday } from '@/components/ui/date-range-picker';
@@ -41,6 +43,33 @@ const STATUS_TONE: Record<OrderStatus, string> = {
   rejected: 'text-[var(--down)]',
   cancelled: 'text-muted-foreground',
 };
+
+/** Filter tabs for best-practice trade desk navigation. */
+export type OrderFilterTab =
+  | 'all'
+  | 'open'
+  | 'win'
+  | 'loss'
+  | 'new'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled';
+
+const TABS: {
+  key: OrderFilterTab;
+  label: string;
+  tone?: 'up' | 'down' | 'warn';
+  hint: string;
+}[] = [
+  { key: 'all', label: 'All', hint: 'All orders in range' },
+  { key: 'open', label: 'Open', tone: 'warn', hint: 'Active positions in market' },
+  { key: 'win', label: 'Win', tone: 'up', hint: 'Profitable closed trades' },
+  { key: 'loss', label: 'Loss', tone: 'down', hint: 'Losing closed trades' },
+  { key: 'new', label: 'New', hint: 'Working orders waiting to fill on book' },
+  { key: 'completed', label: 'Done', hint: 'All completed trades' },
+  { key: 'rejected', label: 'Rejected', hint: 'Rejected orders' },
+  { key: 'cancelled', label: 'Cancelled', hint: 'Cancelled orders' },
+];
 
 /** What each exit is called on the row. */
 const EXIT_WORDS = {
@@ -101,61 +130,329 @@ function summarise(rows: OrderRecord[]) {
 
 export function OrdersPanel() {
   const [range, setRange] = usePersisted('orders:range', { from: istToday(), to: istToday() });
-  const [status, setStatus] = usePersisted<OrderStatus | 'all'>('orders:status', 'all');
+  const [savedStatus, setSavedStatus] = usePersisted<string>('orders:status', 'all');
+  const [pageSize, setPageSize] = usePersisted<number>('orders:pageSize', 10);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const { from, to } = range;
 
+  // Normalize status in case 'pending' was persisted by previous version
+  const activeTab: OrderFilterTab = savedStatus === 'pending' ? 'open' : (savedStatus as OrderFilterTab);
+
   const { data, loading } = usePoll(
-    () => getOrderHistory({ from, to, status: status === 'all' ? undefined : status }),
+    () => getOrderHistory({ from, to }),
     10_000,
-    { deps: [from, to, status] },
+    { deps: [from, to] },
   );
   const rows = data?.trades ?? [];
 
-  return (
-    <CollapsibleCard id="orders" title="Orders" right={
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8"
-            aria-label="Download CSV"
-            disabled={rows.length === 0}
-            onClick={() => downloadCsv(`orders-${from}-to-${to}.csv`, toCsv(rows, CSV_COLUMNS))}
-          >
-            <Download className="h-3.5 w-3.5" />
-            CSV
-          </Button>
-        }>
+  // Compute breakdown counts across all orders for the current range
+  const counts = useMemo(() => {
+    let openCount = 0;
+    let winCount = 0;
+    let lossCount = 0;
+    let newCount = 0;
+    let completedCount = 0;
+    let rejectedCount = 0;
+    let cancelledCount = 0;
 
+    for (const r of rows) {
+      if (r.status === 'pending') {
+        if (r.position !== 0) openCount++;
+        else newCount++;
+      } else if (r.status === 'completed') {
+        completedCount++;
+        const net = netOf(r);
+        if (net > 0) winCount++;
+        else if (net < 0) lossCount++;
+      } else if (r.status === 'rejected') {
+        rejectedCount++;
+      } else if (r.status === 'cancelled') {
+        cancelledCount++;
+      }
+    }
+
+    return {
+      all: rows.length,
+      open: openCount,
+      win: winCount,
+      loss: lossCount,
+      new: newCount,
+      completed: completedCount,
+      rejected: rejectedCount,
+      cancelled: cancelledCount,
+    };
+  }, [rows]);
+
+  // Filter rows by active tab
+  const filteredByTab = useMemo(() => {
+    switch (activeTab) {
+      case 'open':
+        // Active open positions (or all pending if position is zero and no new orders exist)
+        return rows.filter((r) => r.status === 'pending' && (r.position !== 0 || counts.new === 0));
+      case 'win':
+        return rows.filter((r) => r.status === 'completed' && netOf(r) > 0);
+      case 'loss':
+        return rows.filter((r) => r.status === 'completed' && netOf(r) < 0);
+      case 'new':
+        return rows.filter((r) => r.status === 'pending' && r.position === 0);
+      case 'completed':
+        return rows.filter((r) => r.status === 'completed');
+      case 'rejected':
+        return rows.filter((r) => r.status === 'rejected');
+      case 'cancelled':
+        return rows.filter((r) => r.status === 'cancelled');
+      case 'all':
+      default:
+        return rows;
+    }
+  }, [rows, activeTab, counts.new]);
+
+  // Apply search query across symbol, strategy, rules, outcome, and notes
+  const displayedRows = useMemo(() => {
+    if (!search.trim()) return filteredByTab;
+    const q = search.toLowerCase().trim();
+    return filteredByTab.filter((r) => {
+      const whyEnded = exitReason(r)?.toLowerCase() ?? '';
+      return (
+        r.symbol.toLowerCase().includes(q) ||
+        contractLabel(r.symbol).toLowerCase().includes(q) ||
+        (r.optionSide && r.optionSide.toLowerCase().includes(q)) ||
+        (r.plan?.strategyName && r.plan.strategyName.toLowerCase().includes(q)) ||
+        (r.plan?.strategyId && r.plan.strategyId.toLowerCase().includes(q)) ||
+        (r.plan?.signal?.name && r.plan.signal.name.toLowerCase().includes(q)) ||
+        (r.plan?.signal?.method && r.plan.signal.method.toLowerCase().includes(q)) ||
+        (r.outcome && r.outcome.toLowerCase().includes(q)) ||
+        (r.exitReason && r.exitReason.toLowerCase().includes(q)) ||
+        whyEnded.includes(q) ||
+        (r.plan?.origin && r.plan.origin.toLowerCase().includes(q)) ||
+        r.tradeId.toLowerCase().includes(q) ||
+        (r.note && r.note.toLowerCase().includes(q))
+      );
+    });
+  }, [filteredByTab, search]);
+
+  // Pagination calculation
+  const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(displayedRows.length / pageSize)) : 1;
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const startIndex = pageSize > 0 ? (currentPage - 1) * pageSize : 0;
+  const endIndex = pageSize > 0 ? Math.min(startIndex + pageSize, displayedRows.length) : displayedRows.length;
+  const paginatedRows = pageSize > 0 ? displayedRows.slice(startIndex, endIndex) : displayedRows;
+
+  const handleTabChange = (val: string) => {
+    if (!val) return;
+    setSavedStatus(val);
+    setPage(1);
+  };
+
+  const handleDateChange = (newRange: typeof range) => {
+    setRange(newRange);
+    setPage(1);
+  };
+
+  return (
+    <CollapsibleCard
+      id="orders"
+      title="Orders"
+      right={
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8"
+          aria-label="Download CSV"
+          disabled={displayedRows.length === 0}
+          onClick={() => downloadCsv(`orders-${from}-to-${to}.csv`, toCsv(displayedRows, CSV_COLUMNS))}
+        >
+          <Download className="h-3.5 w-3.5" />
+          CSV
+        </Button>
+      }
+    >
       <div className="mb-2.5">
-        <DateRangePicker value={range} onChange={setRange} />
+        <DateRangePicker value={range} onChange={handleDateChange} />
       </div>
 
+      {/* Tabs: All, Open, Win, Loss, New, Done, Rejected, Cancelled */}
       <ToggleGroup
         type="single"
-        value={status}
-        onValueChange={(v) => v && setStatus(v as OrderStatus | 'all')}
-        className="mb-2.5 flex"
+        value={activeTab}
+        onValueChange={handleTabChange}
+        className="mb-2.5 flex flex-wrap gap-1"
       >
-        <ToggleGroupItem value="all">All{rows.length ? ` · ${rows.length}` : ''}</ToggleGroupItem>
-        {(['completed', 'pending', 'rejected', 'cancelled'] as const).map((s) => (
-          <ToggleGroupItem key={s} value={s}>
-            {STATUS_LABEL[s]}{data?.counts[s] ? ` · ${data.counts[s]}` : ''}
-          </ToggleGroupItem>
-        ))}
+        {TABS.map((t) => {
+          const tabCount = counts[t.key] ?? 0;
+          const fullLabel = `${t.label}${tabCount > 0 ? ` · ${tabCount}` : ''}`;
+          return (
+            <ToggleGroupItem
+              key={t.key}
+              value={t.key}
+              title={t.hint}
+              aria-label={fullLabel}
+              className={cn(
+                'flex items-center gap-1.5',
+                t.tone === 'up' && 'hover:text-[var(--up)] data-[state=on]:text-[var(--up)]',
+                t.tone === 'down' && 'hover:text-[var(--down)] data-[state=on]:text-[var(--down)]',
+                t.tone === 'warn' && 'hover:text-[var(--warn)] data-[state=on]:text-[var(--warn)]',
+              )}
+            >
+              {t.tone === 'up' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--up)]" />}
+              {t.tone === 'down' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--down)]" />}
+              {t.tone === 'warn' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--warn)]" />}
+              <span>{t.label}</span>
+              {tabCount > 0 && <span className="opacity-70">· {tabCount}</span>}
+            </ToggleGroupItem>
+          );
+        })}
       </ToggleGroup>
 
-      <RangeSummary rows={rows} />
+      {/* Search and Table Page Limit Toolbar */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="relative min-w-[200px] max-w-sm flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search strike, symbol, strategy, rule, ID..."
+            className="h-8 pl-8 pr-7 text-[12px]"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setPage(1);
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+              aria-label="Clear search"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
 
-      {rows.length === 0 ? (
-        <p className="m-0 py-4 text-center text-[13px] text-muted-foreground">
-          {loading ? 'Loading…'
-            : from === to
-              ? (from === istToday() ? 'No orders today.' : `No orders on ${from}.`)
-              : `No orders from ${from} to ${to}.`}
-        </p>
+        {/* Page limit selector (5, 10, 15, 25, All, default 10) */}
+        <div className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+          <span className="text-[var(--dim)]">Limit:</span>
+          <div className="inline-flex rounded-md border border-border bg-muted/60 p-0.5" role="group" aria-label="Page limit">
+            {[5, 10, 15, 25, 0].map((limit) => (
+              <button
+                key={limit}
+                type="button"
+                onClick={() => {
+                  setPageSize(limit);
+                  setPage(1);
+                }}
+                className={cn(
+                  'rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
+                  (pageSize === limit || (limit === 0 && pageSize === 0))
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {limit === 0 ? 'All' : limit}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <RangeSummary rows={displayedRows} />
+
+      {displayedRows.length === 0 ? (
+        <div className="py-6 text-center text-[13px] text-muted-foreground">
+          {loading ? (
+            'Loading…'
+          ) : search ? (
+            <div className="flex flex-col items-center gap-1.5">
+              <span>No orders matching "{search}"</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11.5px]"
+                onClick={() => {
+                  setSearch('');
+                  setPage(1);
+                }}
+              >
+                Clear search
+              </Button>
+            </div>
+          ) : from === to ? (
+            from === istToday() ? 'No orders today.' : `No orders on ${from}.`
+          ) : (
+            `No orders from ${from} to ${to}.`
+          )}
+        </div>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {rows.map((r) => <OrderRow key={r.tradeId} order={r} />)}
+          {paginatedRows.map((r) => (
+            <OrderRow key={r.tradeId} order={r} />
+          ))}
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {displayedRows.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-[12px] text-muted-foreground">
+          <div aria-label="pagination status">
+            Showing <span className="font-mono text-foreground">{displayedRows.length === 0 ? 0 : startIndex + 1}</span>–
+            <span className="font-mono text-foreground">{endIndex}</span> of{' '}
+            <span className="font-mono text-foreground">{displayedRows.length}</span> orders
+            {displayedRows.length !== rows.length && (
+              <span className="ml-1 text-[11px] text-[var(--dim)]">({rows.length} total)</span>
+            )}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-[11px]"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Prev
+              </Button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+                const isNear = Math.abs(p - currentPage) <= 1;
+                const isEnd = p === 1 || p === totalPages;
+                if (totalPages > 7 && !isNear && !isEnd) {
+                  if (p === 2 || p === totalPages - 1) {
+                    return <span key={p} className="px-1 text-[11px] text-[var(--dim)]">…</span>;
+                  }
+                  return null;
+                }
+                return (
+                  <Button
+                    key={p}
+                    size="sm"
+                    variant={p === currentPage ? 'default' : 'outline'}
+                    className={cn(
+                      'h-7 min-w-7 px-1.5 text-[11px]',
+                      p === currentPage && 'bg-[var(--accent)] font-semibold text-white',
+                    )}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </Button>
+                );
+              })}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-[11px]"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </CollapsibleCard>
@@ -213,6 +510,14 @@ function OrderRow({ order }: { order: OrderRecord }) {
   const stillOpen = order.position !== 0;
   const ifClosed = stillOpen ? order.live?.netIfClosedUsd ?? null : null;
 
+  // Contracts and trade amount (notional / premium)
+  const contracts = order.entrySize || Math.abs(order.position);
+  const contractVal = 0.001;
+  const premiumUsd = order.entryAvgPrice !== null && contracts > 0
+    ? order.entryAvgPrice * contracts * contractVal
+    : null;
+  const premiumInr = premiumUsd !== null ? usdToInr(premiumUsd) : null;
+
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen} className="rounded-lg border border-border bg-muted">
       <Collapsible.Trigger className="flex w-full appearance-none items-start gap-2 border-0 bg-transparent p-3 text-left font-[inherit]">
@@ -223,35 +528,79 @@ function OrderRow({ order }: { order: OrderRecord }) {
             <span className={cn('text-[11px] font-medium uppercase tracking-[0.5px]', STATUS_TONE[order.status])}>
               {STATUS_LABEL[order.status]}
             </span>
+            {!stillOpen && order.status === 'completed' && net !== 0 && (
+              <Badge tone={net > 0 ? 'ok' : 'danger'} className="px-1.5 py-0 text-[9.5px] font-semibold tracking-wider">
+                {net > 0 ? 'WIN' : 'LOSS'}
+              </Badge>
+            )}
             {reason && <span className={cn('text-[11px] font-medium', REASON_TONE[reason])}>{reason}</span>}
             {/* Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */}
             <OriginTag origin={order.plan?.origin} strategyName={order.plan?.strategyName ?? null} strategyId={order.plan?.strategyId ?? null} />
             <SignalTag plan={order.plan} perpExit={order.position === 0 ? (order.perpExit ?? null) : null} />
           </span>
-          <span className="mt-0.5 block text-[11.5px] text-muted-foreground">{order.outcome}</span>
+
+          {/* Subline with Outcome, Entry/Exit prices, and Trade Amount */}
+          <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11.5px] text-muted-foreground">
+            <span>{order.outcome}</span>
+            {order.entryAvgPrice !== null && (
+              <span>
+                Entry <span className="font-mono text-foreground">{price(order.entryAvgPrice)}</span>
+              </span>
+            )}
+            {order.exitAvgPrice !== null && (
+              <span>
+                Exit <span className="font-mono text-foreground">{price(order.exitAvgPrice)}</span>
+              </span>
+            )}
+            {premiumInr !== null && premiumUsd !== null && premiumUsd > 0 && (
+              <span title="Total premium value (size × price × contract value)">
+                Amt <span className="font-mono text-foreground">{inr(premiumInr)}</span>
+                <span className="ml-0.5 text-[10.5px] text-[var(--dim)]">(${premiumUsd.toFixed(2)})</span>
+              </span>
+            )}
+          </div>
+
           {/* Why the desk closed it, when it was the desk's decision: "BTC perp at 84,590 reached the signal's stop 84,600". */}
           {order.exitReason && <span className="mt-0.5 block text-[11px] text-[var(--dim)]">{order.exitReason}</span>}
         </span>
+
+        {/* Row PnL & Timestamp */}
         <span className="flex-none text-right">
           {stillOpen ? (
             ifClosed !== null ? (
-              <span
-                className={cn('block text-[13px] font-semibold tabular-nums', toneClass(ifClosed))}
-                title="What you keep if you close now, after Delta's charges in and out."
-              >
-                {signedInr(usdToInr(ifClosed))}
-                <span className="ml-1 text-[10.5px] font-normal text-[var(--dim)]">if closed now</span>
-              </span>
+              <div>
+                <span
+                  className={cn('block text-[13px] font-semibold tabular-nums', toneClass(ifClosed))}
+                  title="What you keep if you close now, after Delta's charges in and out."
+                >
+                  {signedInr(usdToInr(ifClosed))}
+                  <span className="ml-1 text-[10.5px] font-normal text-[var(--dim)]">if closed now</span>
+                </span>
+                <span className="block text-[11px] tabular-nums text-[var(--dim)]">
+                  {signedUsd(ifClosed)}
+                </span>
+              </div>
             ) : chargesOf(order) > 0 && (
               // no price yet: say what has been paid, plainly, rather than calling it a loss
               <span className="block text-[12px] tabular-nums text-muted-foreground">
                 charges {inr(usdToInr(chargesOf(order)))}
               </span>
             )
-          ) : net !== 0 && (
-            <span className={cn('block text-[13px] font-semibold tabular-nums', toneClass(net))}>
-              {signedInr(usdToInr(net))}
-            </span>
+          ) : (
+            <div>
+              {net !== 0 ? (
+                <span className={cn('block text-[13px] font-semibold tabular-nums', toneClass(net))}>
+                  {signedInr(usdToInr(net))}
+                </span>
+              ) : (
+                <span className="block text-[13px] font-semibold tabular-nums text-foreground">
+                  ₹0.00
+                </span>
+              )}
+              <span className="block text-[11px] tabular-nums text-[var(--dim)]">
+                {signedUsd(net)}
+              </span>
+            </div>
           )}
           <span className="block text-[11px] text-[var(--dim)]">{stamp(order.updatedAt)}</span>
         </span>
@@ -265,6 +614,12 @@ function OrderRow({ order }: { order: OrderRecord }) {
           <KV label="Contracts">{contractsLine(order)}</KV>
           <KV label="Sold at">{price(order.entryAvgPrice)}</KV>
           <KV label="Bought back at">{price(order.exitAvgPrice)}</KV>
+          {premiumInr !== null && premiumUsd !== null && premiumUsd > 0 && (
+            <KV label="Trade amount" hint="Total premium value at entry.">
+              <span>{inr(premiumInr)}</span>
+              <span className="ml-1 text-[11px] text-[var(--dim)]">({signedUsd(premiumUsd)})</span>
+            </KV>
+          )}
           <KV label="Target">{price(order.plan?.takeProfitPrice)}</KV>
           <KV label="Stop">{price(order.plan?.stopPrice)}</KV>
           <KV label="Leverage">{order.plan?.leverage ? `${order.plan.leverage}x` : '—'}</KV>
@@ -274,12 +629,16 @@ function OrderRow({ order }: { order: OrderRecord }) {
                 <>
                   <KV label="Bought back so far">{`${order.exitSize} of ${order.entrySize}`}</KV>
                   <KV label="Booked so far" hint="The part already bought back, before charges.">
-                    {signedInr(usdToInr(order.realisedPnl))}
+                    <span>{signedInr(usdToInr(order.realisedPnl))}</span>
+                    <span className="ml-1 text-[11px] text-[var(--dim)]">({signedUsd(order.realisedPnl)})</span>
                   </KV>
                 </>
               )}
               <KV label="Price now">{price(order.live?.markPrice)}</KV>
-              <KV label="P&L now">{signedInr(usdToInr(order.live?.unrealisedPnl))}</KV>
+              <KV label="P&L now">
+                <span>{signedInr(usdToInr(order.live?.unrealisedPnl))}</span>
+                <span className="ml-1 text-[11px] text-[var(--dim)]">({signedUsd(order.live?.unrealisedPnl)})</span>
+              </KV>
               <KV label="Charges paid" hint="Delta's fee plus 18% GST on the fills so far.">
                 {order.charges ? inr(usdToInr(order.charges.paidUsd)) : '—'}
               </KV>
@@ -287,16 +646,23 @@ function OrderRow({ order }: { order: OrderRecord }) {
                 {order.charges ? inr(usdToInr(order.charges.toCloseUsd)) : '—'}
               </KV>
               <KV label="If closed now" hint="What you keep if you close now, after Delta's charges in and out.">
-                {signedInr(usdToInr(ifClosed))}
+                <span>{signedInr(usdToInr(ifClosed))}</span>
+                <span className="ml-1 text-[11px] text-[var(--dim)]">({signedUsd(ifClosed)})</span>
               </KV>
             </>
           ) : (
             <>
-              <KV label="Gross P&L">{signedInr(usdToInr(order.realisedPnl))}</KV>
+              <KV label="Gross P&L">
+                <span>{signedInr(usdToInr(order.realisedPnl))}</span>
+                <span className="ml-1 text-[11px] text-[var(--dim)]">({signedUsd(order.realisedPnl)})</span>
+              </KV>
               <KV label="Charges" hint="Delta's fee plus 18% GST on this trade's fills.">
                 {order.charges ? signedInr(usdToInr(-order.charges.paidUsd)) : '—'}
               </KV>
-              <KV label="Net P&L">{signedInr(usdToInr(net))}</KV>
+              <KV label="Net P&L">
+                <span>{signedInr(usdToInr(net))}</span>
+                <span className="ml-1 text-[11px] text-[var(--dim)]">({signedUsd(net)})</span>
+              </KV>
             </>
           )}
         </dl>
@@ -389,3 +755,4 @@ const CSV_COLUMNS = [
   { header: 'net pnl inr', value: (r: OrderRecord) => usdToInr(netOf(r)) },
   { header: 'note', value: (r: OrderRecord) => r.note },
 ] as const;
+
