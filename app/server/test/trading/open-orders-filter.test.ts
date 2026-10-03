@@ -98,6 +98,7 @@ test('the filter is still sent, so a venue that honours it sends less', async ()
   await ex.getOpenOrders(PE);
   assert.ok(seen[0]!.includes('product_symbol='), 'the query should still ask');
   assert.ok(seen[0]!.includes('states=open,pending'));
+  assert.ok(seen[0]!.includes('page_size=100'), 'must request page_size=100 to avoid Delta 10-order default cutoff');
 });
 
 test('an unknown symbol gets nothing rather than everything', async () => {

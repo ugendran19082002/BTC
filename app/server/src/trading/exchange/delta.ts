@@ -479,7 +479,7 @@ export class DeltaExchange implements ExchangePort {
     if (direct && !Array.isArray(direct) && direct.client_order_id === clientOrderId) return toOrder(direct);
 
     const live = await this.call<DeltaOrder[]>({
-      method: 'GET', path: '/v2/orders', query: `?client_order_id=${cid}&states=open,pending`,
+      method: 'GET', path: '/v2/orders', query: `?client_order_id=${cid}&states=open,pending&page_size=100`,
     }).catch(refusedRead);
     const hit = live.find((r) => r.client_order_id === clientOrderId);
     if (hit) return toOrder(hit);
@@ -537,11 +537,17 @@ export class DeltaExchange implements ExchangePort {
    * payload is smaller -- but the answer is filtered here regardless, because
    * a venue's filter is a request, not a guarantee.
    *
+   * Delta's default page size is 10. Without `page_size=100`, only the first 10
+   * open orders across the entire account were returned, hiding any symbols past
+   * the 10th order and causing phantom "Target not resting at Delta" retries.
+   *
    * `PaperExchange` filters correctly, which is exactly why no test caught
    * this. See docs/decisions/0002-simulator-is-not-the-venue.md.
    */
   async getOpenOrders(symbol?: string): Promise<ExchangeOrder[]> {
-    const q = symbol ? `?states=open,pending&product_symbol=${encodeURIComponent(symbol)}` : '?states=open,pending';
+    const q = symbol
+      ? `?states=open,pending&page_size=100&product_symbol=${encodeURIComponent(symbol)}`
+      : '?states=open,pending&page_size=100';
     const rows = await this.call<DeltaOrder[]>({ method: 'GET', path: '/v2/orders', query: q });
     const orders = rows.map(toOrder);
     return symbol === undefined ? orders : orders.filter((o) => o.symbol === symbol);
