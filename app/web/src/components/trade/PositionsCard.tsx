@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { Clock, Loader2, Pencil, Plus, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Clock, Loader2, Pencil, Plus, Search, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { cancelAdd, cancelTrade, closeTrade, reconcileTrade } from '@/api/trade';
 import type { Trade } from '@/types/trade';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
 import { OriginTag } from '@/components/trade/OriginTag';
 import { SignalTag } from '@/components/trade/SignalTag';
@@ -40,9 +42,120 @@ const STATUS: Record<Trade['phase'], string> = {
 
 const isWorking = (t: Trade) => t.position === 0 && !['flat', 'aborted'].includes(t.phase);
 
+const tradeNetUsd = (t: Trade): number | null => {
+  return t.live?.netIfClosedUsd ?? t.live?.unrealisedPnl ?? null;
+};
+
+export type PositionFilterTab = 'all' | 'win' | 'loss' | 'wait';
+
+interface PositionTabDef {
+  key: PositionFilterTab;
+  label: string;
+  tone?: 'up' | 'down' | 'warn';
+  hint: string;
+}
+
+const POSITION_TABS: PositionTabDef[] = [
+  { key: 'all', label: 'All', hint: 'All open positions and working orders' },
+  { key: 'win', label: 'Win', tone: 'up', hint: 'Positions in profit after charges' },
+  { key: 'loss', label: 'Loss', tone: 'down', hint: 'Positions in drawdown' },
+  { key: 'wait', label: 'Wait', tone: 'warn', hint: 'Orders waiting on book or break-even' },
+];
+
 export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChanged?: () => void }) {
+  const [activeTab, setActiveTab] = useState<PositionFilterTab>('all');
+  const [search, setSearch] = useState('');
+
   const working = trades.filter(isWorking);
   const held = trades.filter((t) => t.position !== 0);
+
+  // Tab counts for running positions
+  const counts = useMemo(() => {
+    let winCount = 0;
+    let lossCount = 0;
+    let waitCount = 0;
+
+    for (const t of held) {
+      const net = tradeNetUsd(t);
+      if (net === null || net === 0) {
+        waitCount++;
+      } else if (net > 0) {
+        winCount++;
+      } else {
+        lossCount++;
+      }
+    }
+
+    waitCount += working.length;
+
+    return {
+      all: held.length + working.length,
+      win: winCount,
+      loss: lossCount,
+      wait: waitCount,
+    };
+  }, [held, working]);
+
+  // Filter working orders
+  const filteredWorking = useMemo(() => {
+    if (activeTab === 'win' || activeTab === 'loss') return [];
+    if (!search.trim()) return working;
+    const q = search.toLowerCase().trim();
+    return working.filter((t) =>
+      t.symbol.toLowerCase().includes(q) ||
+      contractLabel(t.symbol).toLowerCase().includes(q) ||
+      t.optionSide.toLowerCase().includes(q) ||
+      (t.plan?.strategyName && t.plan.strategyName.toLowerCase().includes(q))
+    );
+  }, [working, activeTab, search]);
+
+  // Filter held running open positions
+  const filteredHeld = useMemo(() => {
+    let list = held;
+    if (activeTab === 'win') {
+      list = held.filter((t) => {
+        const net = tradeNetUsd(t);
+        return net !== null && net > 0;
+      });
+    } else if (activeTab === 'loss') {
+      list = held.filter((t) => {
+        const net = tradeNetUsd(t);
+        return net !== null && net < 0;
+      });
+    } else if (activeTab === 'wait') {
+      list = held.filter((t) => {
+        const net = tradeNetUsd(t);
+        return net === null || net === 0;
+      });
+    }
+
+    if (!search.trim()) return list;
+    const q = search.toLowerCase().trim();
+    return list.filter((t) =>
+      t.symbol.toLowerCase().includes(q) ||
+      contractLabel(t.symbol).toLowerCase().includes(q) ||
+      t.optionSide.toLowerCase().includes(q) ||
+      (t.plan?.strategyName && t.plan.strategyName.toLowerCase().includes(q)) ||
+      (t.plan?.origin && t.plan.origin.toLowerCase().includes(q)) ||
+      t.tradeId.toLowerCase().includes(q)
+    );
+  }, [held, activeTab, search]);
+
+  // Active tab net P&L summary
+  const activeTabPnl = useMemo(() => {
+    if (activeTab === 'wait') return null;
+    const list = activeTab === 'all'
+      ? held
+      : activeTab === 'win'
+        ? held.filter((t) => (tradeNetUsd(t) ?? 0) > 0)
+        : held.filter((t) => (tradeNetUsd(t) ?? 0) < 0);
+
+    const totalUsd = list.reduce((acc, t) => acc + (tradeNetUsd(t) ?? 0), 0);
+    return {
+      usd: totalUsd,
+      inr: usdToInr(totalUsd),
+    };
+  }, [activeTab, held]);
 
   if (working.length === 0 && held.length === 0) {
     return (
@@ -58,14 +171,14 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
         <CloseAllButton trades={trades} onChanged={onChanged} />
       </div>
 
-      {working.length > 0 && (
+      {filteredWorking.length > 0 && (
         <CollapsibleCard
           id="orders-waiting"
           title="Orders waiting"
-          right={<span className="text-[11px] text-muted-foreground">{working.length}</span>}
+          right={<span className="text-[11px] text-muted-foreground">{filteredWorking.length}</span>}
         >
           <div className="flex flex-col gap-2">
-            {working.map((t) => <WorkingRow key={t.tradeId} trade={t} onChanged={onChanged} />)}
+            {filteredWorking.map((t) => <WorkingRow key={t.tradeId} trade={t} onChanged={onChanged} />)}
           </div>
         </CollapsibleCard>
       )}
@@ -76,9 +189,111 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
           title="Open positions"
           right={<span className="text-[11px] text-muted-foreground">{held.length}</span>}
         >
-          <div className="flex flex-col gap-2">
-            {held.map((t) => <PositionRow key={t.tradeId} trade={t} onChanged={onChanged} />)}
+          {/* Running open position filter tabs: ALL, WIN, LOSS, WAIT with counts and subtotal */}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <ToggleGroup
+                type="single"
+                value={activeTab}
+                onValueChange={(val) => {
+                  if (val) setActiveTab(val as PositionFilterTab);
+                }}
+                className="flex flex-wrap gap-1"
+              >
+                {POSITION_TABS.map((t) => {
+                  const tabCount = counts[t.key] ?? 0;
+                  const fullLabel = `${t.label} · ${tabCount}`;
+                  return (
+                    <ToggleGroupItem
+                      key={t.key}
+                      value={t.key}
+                      title={t.hint}
+                      aria-label={fullLabel}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1 text-[12px] font-medium transition-colors',
+                        t.tone === 'up' && 'hover:text-[var(--up)] data-[state=on]:bg-[var(--up)]/15 data-[state=on]:text-[var(--up)] data-[state=on]:border-[var(--up)]/30',
+                        t.tone === 'down' && 'hover:text-[var(--down)] data-[state=on]:bg-[var(--down)]/15 data-[state=on]:text-[var(--down)] data-[state=on]:border-[var(--down)]/30',
+                        t.tone === 'warn' && 'hover:text-[var(--warn)] data-[state=on]:bg-[var(--warn)]/15 data-[state=on]:text-[var(--warn)] data-[state=on]:border-[var(--warn)]/30',
+                      )}
+                    >
+                      {t.tone === 'up' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--up)]" />}
+                      {t.tone === 'down' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--down)]" />}
+                      {t.tone === 'warn' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--warn)]" />}
+                      <span>{t.label}</span>
+                      <span
+                        className={cn(
+                          'rounded-full px-1.5 py-0.2 text-[10.5px] font-semibold tabular-nums',
+                          t.tone === 'up' ? 'bg-[var(--up)]/20 text-[var(--up)]' :
+                          t.tone === 'down' ? 'bg-[var(--down)]/20 text-[var(--down)]' :
+                          t.tone === 'warn' ? 'bg-[var(--warn)]/20 text-[var(--warn)]' :
+                          'bg-muted-foreground/15 text-foreground/80'
+                        )}
+                      >
+                        {tabCount}
+                      </span>
+                    </ToggleGroupItem>
+                  );
+                })}
+              </ToggleGroup>
+
+              {activeTabPnl && held.length > 1 && (
+                <div
+                  className={cn(
+                    'text-[12px] font-medium tabular-nums ml-1',
+                    activeTabPnl.usd > 0 ? 'text-[var(--up)]' : activeTabPnl.usd < 0 ? 'text-[var(--down)]' : 'text-foreground'
+                  )}
+                >
+                  <span>
+                    {activeTab === 'win' ? 'Win total: ' : activeTab === 'loss' ? 'Loss total: ' : 'Total: '}
+                    {signedInr(activeTabPnl.inr)}
+                  </span>
+                  <span className="ml-1 opacity-75 text-[11px]">({signedUsd(activeTabPnl.usd)})</span>
+                </div>
+              )}
+
+              {activeTab === 'wait' && counts.wait > 0 && held.length > 1 && (
+                <div className="text-[12px] font-medium tabular-nums text-[var(--warn)] ml-1">
+                  {counts.wait} waiting
+                </div>
+              )}
+            </div>
+
+            {held.length >= 4 && (
+              <div className="relative w-36 sm:w-44">
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter strike, rule..."
+                  className="h-8 pl-7 pr-6 text-[11.5px]"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+
+          {filteredHeld.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {filteredHeld.map((t) => <PositionRow key={t.tradeId} trade={t} onChanged={onChanged} />)}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed border-border py-5 text-center text-[12.5px] text-muted-foreground">
+              {activeTab === 'loss' && 'No positions in drawdown 🎉 — all open positions are in profit or break-even.'}
+              {activeTab === 'win' && 'No positions in profit yet.'}
+              {activeTab === 'wait' && 'No waiting positions.'}
+              {activeTab === 'all' && (search ? 'No positions match your filter.' : 'No open positions.')}
+            </div>
+          )}
         </CollapsibleCard>
       )}
     </div>

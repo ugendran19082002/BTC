@@ -316,8 +316,8 @@ describe('why a closed trade ended', () => {
   });
 });
 
-describe('best practice tabs: win, loss, new, open', () => {
-  it('shows Win, Loss, and New tabs with counts and filters correctly', async () => {
+describe('best practice tabs: win, loss, wait, open', () => {
+  it('shows Win, Loss, and Wait tabs with counts and filters correctly', async () => {
     show([
       order({ tradeId: 'w1', symbol: 'P-BTC-84000-031026', realisedPnl: 2, status: 'completed' }),
       order({ tradeId: 'l1', symbol: 'C-BTC-85000-031026', realisedPnl: -1, status: 'completed' }),
@@ -329,7 +329,7 @@ describe('best practice tabs: win, loss, new, open', () => {
     expect(await screen.findByRole('radio', { name: /Win · 1/ })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Loss · 1/ })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Open · 1/ })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /New · 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Wait · 1/ })).toBeInTheDocument();
 
     // Click Win tab: only profitable completed trade is shown
     fireEvent.click(screen.getByRole('radio', { name: /Win · 1/ }));
@@ -342,8 +342,8 @@ describe('best practice tabs: win, loss, new, open', () => {
     expect(await screen.findByText(/85,000/)).toBeInTheDocument();
     expect(screen.queryByText(/84,000/)).toBeNull();
 
-    // Click New tab: only working order waiting on book is shown
-    fireEvent.click(screen.getByRole('radio', { name: /New · 1/ }));
+    // Click Wait tab: only working order waiting on book is shown
+    fireEvent.click(screen.getByRole('radio', { name: /Wait · 1/ }));
     expect(await screen.findByText(/85,200/)).toBeInTheDocument();
     expect(screen.queryByText(/84,000/)).toBeNull();
   });

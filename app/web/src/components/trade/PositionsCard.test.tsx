@@ -847,3 +847,56 @@ describe('an exit asked for and not resting at Delta', () => {
     expect(screen.queryByLabelText('exits not on the book')).toBeNull();
   });
 });
+
+describe('open positions tabs: all, win, loss, wait with counts', () => {
+  it('shows All, Win, Loss, Wait tabs with counts and filters open positions correctly', async () => {
+    const winTrade = trade({
+      tradeId: 'w1',
+      symbol: 'P-BTC-84000-031026',
+      live: { markPrice: 10, unrealisedPnl: 0.5, liquidationPrice: 200, netIfClosedUsd: 0.4, decayed: 0.5 },
+    });
+    const lossTrade = trade({
+      tradeId: 'l1',
+      symbol: 'C-BTC-85000-031026',
+      live: { markPrice: 20, unrealisedPnl: -0.3, liquidationPrice: 250, netIfClosedUsd: -0.35, decayed: -0.3 },
+    });
+    const waitTrade = working({
+      tradeId: 'wait1',
+      symbol: 'P-BTC-83000-031026',
+      position: 0,
+      phase: 'entry_pending',
+    });
+
+    render(<PositionsCard trades={[winTrade, lossTrade, waitTrade]} />);
+
+    // Check tabs with counts
+    expect(screen.getByRole('radio', { name: /All · 3/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Win · 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Loss · 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Wait · 1/ })).toBeInTheDocument();
+
+    // Click Win tab: only win trade is shown
+    fireEvent.click(screen.getByRole('radio', { name: /Win · 1/ }));
+    expect(screen.getByText(/84,000/)).toBeInTheDocument();
+    expect(screen.queryByText(/85,000/)).toBeNull();
+    expect(screen.queryByText(/83,000/)).toBeNull();
+
+    // Click Loss tab: only loss trade is shown
+    fireEvent.click(screen.getByRole('radio', { name: /Loss · 1/ }));
+    expect(screen.getByText(/85,000/)).toBeInTheDocument();
+    expect(screen.queryByText(/84,000/)).toBeNull();
+    expect(screen.queryByText(/83,000/)).toBeNull();
+
+    // Click Wait tab: only waiting order is shown
+    fireEvent.click(screen.getByRole('radio', { name: /Wait · 1/ }));
+    expect(screen.getByText(/83,000/)).toBeInTheDocument();
+    expect(screen.queryByText(/84,000/)).toBeNull();
+    expect(screen.queryByText(/85,000/)).toBeNull();
+
+    // Click All tab: all are shown
+    fireEvent.click(screen.getByRole('radio', { name: /All · 3/ }));
+    expect(screen.getByText(/84,000/)).toBeInTheDocument();
+    expect(screen.getByText(/85,000/)).toBeInTheDocument();
+    expect(screen.getByText(/83,000/)).toBeInTheDocument();
+  });
+});

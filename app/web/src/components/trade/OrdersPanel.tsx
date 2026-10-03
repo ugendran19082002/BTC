@@ -47,10 +47,11 @@ const STATUS_TONE: Record<OrderStatus, string> = {
 /** Filter tabs for best-practice trade desk navigation. */
 export type OrderFilterTab =
   | 'all'
-  | 'open'
   | 'win'
   | 'loss'
+  | 'wait'
   | 'new'
+  | 'open'
   | 'completed'
   | 'rejected'
   | 'cancelled';
@@ -62,10 +63,10 @@ const TABS: {
   hint: string;
 }[] = [
   { key: 'all', label: 'All', hint: 'All orders in range' },
-  { key: 'open', label: 'Open', tone: 'warn', hint: 'Active positions in market' },
   { key: 'win', label: 'Win', tone: 'up', hint: 'Profitable closed trades' },
   { key: 'loss', label: 'Loss', tone: 'down', hint: 'Losing closed trades' },
-  { key: 'new', label: 'New', hint: 'Working orders waiting to fill on book' },
+  { key: 'wait', label: 'Wait', tone: 'warn', hint: 'Orders waiting on book or pending' },
+  { key: 'open', label: 'Open', tone: 'warn', hint: 'Active positions in market' },
   { key: 'completed', label: 'Done', hint: 'All completed trades' },
   { key: 'rejected', label: 'Rejected', hint: 'Rejected orders' },
   { key: 'cancelled', label: 'Cancelled', hint: 'Cancelled orders' },
@@ -174,10 +175,11 @@ export function OrdersPanel() {
 
     return {
       all: rows.length,
-      open: openCount,
       win: winCount,
       loss: lossCount,
+      wait: newCount,
       new: newCount,
+      open: openCount,
       completed: completedCount,
       rejected: rejectedCount,
       cancelled: cancelledCount,
@@ -189,11 +191,12 @@ export function OrdersPanel() {
     switch (activeTab) {
       case 'open':
         // Active open positions (or all pending if position is zero and no new orders exist)
-        return rows.filter((r) => r.status === 'pending' && (r.position !== 0 || counts.new === 0));
+        return rows.filter((r) => r.status === 'pending' && (r.position !== 0 || counts.wait === 0));
       case 'win':
         return rows.filter((r) => r.status === 'completed' && netOf(r) > 0);
       case 'loss':
         return rows.filter((r) => r.status === 'completed' && netOf(r) < 0);
+      case 'wait':
       case 'new':
         return rows.filter((r) => r.status === 'pending' && r.position === 0);
       case 'completed':
@@ -206,7 +209,7 @@ export function OrdersPanel() {
       default:
         return rows;
     }
-  }, [rows, activeTab, counts.new]);
+  }, [rows, activeTab, counts.wait]);
 
   // Apply search query across symbol, strategy, rules, outcome, and notes
   const displayedRows = useMemo(() => {
@@ -272,16 +275,16 @@ export function OrdersPanel() {
         <DateRangePicker value={range} onChange={handleDateChange} />
       </div>
 
-      {/* Tabs: All, Open, Win, Loss, New, Done, Rejected, Cancelled */}
+      {/* Tabs: All, Win, Loss, Wait, Open, Done, Rejected, Cancelled */}
       <ToggleGroup
         type="single"
-        value={activeTab}
+        value={activeTab === 'new' ? 'wait' : activeTab}
         onValueChange={handleTabChange}
         className="mb-2.5 flex flex-wrap gap-1"
       >
         {TABS.map((t) => {
           const tabCount = counts[t.key] ?? 0;
-          const fullLabel = `${t.label}${tabCount > 0 ? ` · ${tabCount}` : ''}`;
+          const fullLabel = `${t.label} · ${tabCount}`;
           return (
             <ToggleGroupItem
               key={t.key}
@@ -289,17 +292,27 @@ export function OrdersPanel() {
               title={t.hint}
               aria-label={fullLabel}
               className={cn(
-                'flex items-center gap-1.5',
-                t.tone === 'up' && 'hover:text-[var(--up)] data-[state=on]:text-[var(--up)]',
-                t.tone === 'down' && 'hover:text-[var(--down)] data-[state=on]:text-[var(--down)]',
-                t.tone === 'warn' && 'hover:text-[var(--warn)] data-[state=on]:text-[var(--warn)]',
+                'flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium transition-colors',
+                t.tone === 'up' && 'hover:text-[var(--up)] data-[state=on]:bg-[var(--up)]/15 data-[state=on]:text-[var(--up)] data-[state=on]:border-[var(--up)]/30',
+                t.tone === 'down' && 'hover:text-[var(--down)] data-[state=on]:bg-[var(--down)]/15 data-[state=on]:text-[var(--down)] data-[state=on]:border-[var(--down)]/30',
+                t.tone === 'warn' && 'hover:text-[var(--warn)] data-[state=on]:bg-[var(--warn)]/15 data-[state=on]:text-[var(--warn)] data-[state=on]:border-[var(--warn)]/30',
               )}
             >
               {t.tone === 'up' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--up)]" />}
               {t.tone === 'down' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--down)]" />}
               {t.tone === 'warn' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--warn)]" />}
               <span>{t.label}</span>
-              {tabCount > 0 && <span className="opacity-70">· {tabCount}</span>}
+              <span
+                className={cn(
+                  'rounded-full px-1.5 py-0.2 text-[10.5px] font-semibold tabular-nums',
+                  t.tone === 'up' ? 'bg-[var(--up)]/20 text-[var(--up)]' :
+                  t.tone === 'down' ? 'bg-[var(--down)]/20 text-[var(--down)]' :
+                  t.tone === 'warn' ? 'bg-[var(--warn)]/20 text-[var(--warn)]' :
+                  'bg-muted-foreground/15 text-foreground/80'
+                )}
+              >
+                {tabCount}
+              </span>
             </ToggleGroupItem>
           );
         })}
