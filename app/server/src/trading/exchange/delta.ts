@@ -222,12 +222,46 @@ const GONE_CODES = new Set(['open_order_not_found', 'order_already_filled']);
 /** How long a client id that the contract's history did not hold is left before that search is made again. */
 const DEEP_RETRY_MS = 30_000;
 
+/**
+ * A refusal that is an expected query or cancellation result rather than a fault.
+ *
+ * Looking up an order that does not exist returns `order_not_found` or 404:
+ * that is a lookup miss, not an outage or bug. Cancelling an order that is
+ * already filled or cancelled returns `open_order_not_found` or `order_already_filled`:
+ * that is the desired state achieved. Neither belongs in the error log.
+ * See docs/decisions/0005-error-log-only-what-needs-fixing.md.
+ */
+function isExpectedRefusal(
+  req: { method: string; path: string },
+  e: DeltaRefused,
+  custom?: (e: DeltaRefused) => boolean,
+): boolean {
+  if (custom?.(e)) return true;
+  if (
+    req.method === 'GET'
+    && req.path.startsWith('/v2/orders')
+    && (e.code === 'order_not_found' || e.code === 'not_found' || e.status === 404)
+  ) {
+    return true;
+  }
+  if (
+    req.method === 'DELETE'
+    && req.path === '/v2/orders'
+    && (GONE_CODES.has(e.code) || e.code === 'order_not_found' || e.status === 404)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export class DeltaExchange implements ExchangePort {
   private products = new Map<string, ProductSpec>();
 
   constructor(private readonly creds: Creds | null) {}
 
-  private async call<T>(reqIn: Parameters<typeof signed>[1]): Promise<T> {
+  private async call<T>(
+    reqIn: Parameters<typeof signed>[1] & { quietRefusal?: (e: DeltaRefused) => boolean },
+  ): Promise<T> {
     /*
      * A read that fails for Delta's reasons is safe to ask again: it changes
      * nothing. So a GET gets a shorter timeout and one quiet retry, for no
@@ -250,19 +284,21 @@ export class DeltaExchange implements ExchangePort {
           await pause(300);
           continue;
         }
-        noteError({
-          source: 'exchange',
-          // A read that failed on Delta's side twice is still Delta's trouble,
-          // and the poll asks again within a second: worth seeing, not an alarm.
-          level: isRead && retryableRead(e) ? 'warn' : 'error',
-          message: (e as Error).message,
-          code: e instanceof DeltaRefused ? e.code : (e as Error).name,
-          stack: (e as Error).stack ?? null,
-          where: `${req.method} ${req.path}`,
-          // the body can carry a size and a price, both of which help; the
-          // signing headers never reach here, and redact() catches the rest
-          context: { body: req.body ?? null, attempts: attempt },
-        });
+        if (!(e instanceof DeltaRefused && isExpectedRefusal(req, e, reqIn.quietRefusal))) {
+          noteError({
+            source: 'exchange',
+            // A read that failed on Delta's side twice is still Delta's trouble,
+            // and the poll asks again within a second: worth seeing, not an alarm.
+            level: isRead && retryableRead(e) ? 'warn' : 'error',
+            message: (e as Error).message,
+            code: e instanceof DeltaRefused ? e.code : (e as Error).name,
+            stack: (e as Error).stack ?? null,
+            where: `${req.method} ${req.path}`,
+            // the body can carry a size and a price, both of which help; the
+            // signing headers never reach here, and redact() catches the rest
+            context: { body: req.body ?? null, attempts: attempt },
+          });
+        }
         // Being asked to wait is not an outage, but for anything that takes risk
         // it has to behave like one: hold off rather than push through.
         if (e instanceof RateLimited) throw new ExchangeUnavailable(e.message);
@@ -403,9 +439,11 @@ export class DeltaExchange implements ExchangePort {
     const row = await this.call<DeltaOrder | null>({
       method: 'GET', path: `/v2/orders/${encodeURIComponent(orderId)}`,
     }).catch((e: unknown) => {
-      // Delta answers 404 for an id it has never issued; that is the one
-      // refusal that does mean "no such order".
-      if (e instanceof DeltaRefused && e.status === 404) return null;
+      // Delta answers 404 or order_not_found for an id it has never issued;
+      // that is the refusal that does mean "no such order".
+      if (e instanceof DeltaRefused && (e.status === 404 || e.code === 'not_found' || e.code === 'order_not_found')) {
+        return null;
+      }
       return refusedRead(e);
     });
     return row ? toOrder(row) : null;

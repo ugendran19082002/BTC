@@ -292,3 +292,18 @@ test('[critical] Delta\'s direct lookup by client id answers first, in one call,
   assert.equal(got?.orderId, '5');
   assert.equal(seen.length, 1, 'nothing else asked');
 });
+
+test('[critical] order_not_found refusal on direct client id lookup falls through quietly', async () => {
+  globalThis.fetch = (async (url: string | URL) => {
+    const u = String(url);
+    if (u.includes('/v2/orders/client_order_id/missing-cid')) {
+      return new Response(JSON.stringify({ success: false, error: { code: 'order_not_found' } }), { status: 400 });
+    }
+    return new Response(JSON.stringify({ success: true, result: [] }), { status: 200 });
+  }) as typeof fetch;
+
+  const ex = new DeltaExchange(creds);
+  const o = await ex.getOrderByClientId('missing-cid');
+  assert.equal(o, null, 'order_not_found on direct lookup is an expected miss, not a crash');
+});
+
