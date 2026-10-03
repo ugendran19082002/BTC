@@ -586,9 +586,12 @@ export class TradingService {
    * by the sampler for the line -- so the number on the header and the last
    * point on the graph can never be two different numbers.
    */
-  async todayFigures(now = Date.now()): Promise<Omit<MtmSample, 'at' | 'day'>> {
+  async todayFigures(now = Date.now()): Promise<Omit<MtmSample, 'at' | 'day'> & { lossUsd: number; profitUsd: number }> {
     const dayStart = startOfDayIst(now);
-    const realisedUsd = await this.store.realisedSince(dayStart);
+    const breakdown = await this.store.realisedBreakdownSince(dayStart);
+    const realisedUsd = breakdown.realisedUsd;
+    const lossUsd = breakdown.lossUsd;
+    const profitUsd = breakdown.profitUsd;
     const positions = await this.positionsForDisplay(now);
     let unrealisedUsd = 0;
     for (const rec of await this.openTrades()) {
@@ -604,7 +607,7 @@ export class TradingService {
     }
     const chargesUsd = (await this.store.between(dayStart, now + 1))
       .reduce((n, rec) => n + tradeCharges(rec.state, { spot: this.currentSpot(), since: dayStart }).totalUsd, 0);
-    return { realisedUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
+    return { realisedUsd, lossUsd, profitUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
   }
 
   /**

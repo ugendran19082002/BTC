@@ -422,6 +422,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
         bySymbol.get(r.state.symbol) ?? null, svc.spot,
         restingBy.get(r.state.symbol) ?? null,
       ));
+    const today = await svc.todayFigures();
     return {
       mode: svc.mode,
       /** True only when a real order would reach the real exchange. */
@@ -452,13 +453,15 @@ export function registerTradeRoutes(app: FastifyInstance) {
        */
       alerts: { configured: svc.notifier !== null, on: svc.alertsOn },
       /** Booked today, in USD. The daily-loss gate reads this; now so can you. */
-      realisedTodayUsd: await svc.store.realisedSince(startOfDayIst()),
+      realisedTodayUsd: today.realisedUsd,
+      /** Losses booked today, in USD. */
+      lossTodayUsd: today.lossUsd,
       /**
        * The day so far, in one place, for the header: booked, still open, and
        * Delta's charges on every fill since 05:30 IST. `netUsd` is the number
        * that matters -- what the day has actually made if it closed right now.
        */
-      today: await svc.todayFigures(),
+      today,
       // The limit in force, which is set from the balance rather than fixed.
       limits: {
         ...DEFAULT_LIMITS,

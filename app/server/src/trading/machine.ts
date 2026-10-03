@@ -286,11 +286,20 @@ export const replay = (init: TradeState, events: TradeEvent[]): TradeState =>
  * day's "Booked" summed every trade updated today, whole).
  */
 export function realisedSinceOf(s: TradeState, since: number): number {
+  return realisedBreakdownSinceOf(s, since).realisedUsd;
+}
+
+export function realisedBreakdownSinceOf(s: TradeState, since: number): { realisedUsd: number; profitUsd: number; lossUsd: number } {
   const entry = averageOf(s.fills, (f) => f.role === 'entry').avg;
-  if (entry === null) return 0;
-  return s.fills
-    .filter((f) => isExit(f.role) && f.ts >= since)
-    .reduce((n, f) => n + (entry - f.price) * f.size * (s.contractValue ?? 0.001), 0);
+  if (entry === null) return { realisedUsd: 0, profitUsd: 0, lossUsd: 0 };
+  let profitUsd = 0;
+  let lossUsd = 0;
+  for (const f of s.fills.filter((f) => isExit(f.role) && f.ts >= since)) {
+    const pnl = (entry - f.price) * f.size * (s.contractValue ?? 0.001);
+    if (pnl > 0) profitUsd += pnl;
+    else if (pnl < 0) lossUsd += Math.abs(pnl);
+  }
+  return { realisedUsd: profitUsd - lossUsd, profitUsd, lossUsd };
 }
 
 export function recompute(s: TradeState): TradeState {

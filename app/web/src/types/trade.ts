@@ -196,8 +196,10 @@ export type TradeStatus = {
   unrealisedPnlUsd?: number;
   /** Booked since 05:30 IST, in USD. */
   realisedTodayUsd?: number;
+  /** Losses booked since 05:30 IST, in USD. */
+  lossTodayUsd?: number;
   /** The day so far, since 05:30 IST: booked, still open, Delta's charges, and the net of all three. */
-  today?: { realisedUsd: number; unrealisedUsd: number; chargesUsd: number; netUsd: number };
+  today?: { realisedUsd: number; unrealisedUsd: number; chargesUsd: number; netUsd: number; lossUsd?: number; profitUsd?: number };
   positions: ExchangePosition[];
   open: Trade[];
   alarms: { tradeId: string; message: string; at: number }[];

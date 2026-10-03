@@ -18,6 +18,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
   const unrealised = status.unrealisedPnlUsd ?? 0;
   const booked = status.realisedTodayUsd ?? 0;
   const today = status.today ?? { realisedUsd: booked, unrealisedUsd: unrealised, chargesUsd: 0, netUsd: booked + unrealised };
+  const lossToday = today.lossUsd ?? status.lossTodayUsd ?? (booked < 0 ? Math.abs(booked) : 0);
   const held = status.positions.reduce((n, p) => n + Math.abs(p.size), 0);
   /*
    * Delta's own figures where it gives them: the wallet balance its app shows, and the margin in use (the balance
@@ -72,6 +73,11 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
         <KV label="Booked today" hint="Trades closed since 05:30 IST.">
           <Money value={today.realisedUsd} signed />
         </KV>
+        {lossToday > 0 && (
+          <KV label="Loss today" hint="Total losses from trades closed since 05:30 IST.">
+            <Money value={-lossToday} signed />
+          </KV>
+        )}
         {today.chargesUsd > 0 && (
           <KV label="Charges today" hint="Delta's fee plus 18% GST on every fill today.">
             <Money value={-today.chargesUsd} signed />

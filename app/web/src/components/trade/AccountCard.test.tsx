@@ -78,6 +78,14 @@ describe('the money, in both currencies', () => {
     expect(row('Net today').getByText('+₹340').className).toContain('--up');
   });
 
+  it('shows loss today when losses were booked today', () => {
+    render(<AccountCard status={status({
+      unrealisedPnlUsd: 0,
+      today: { realisedUsd: 4.25, unrealisedUsd: 0, chargesUsd: 0.25, netUsd: 4, lossUsd: 0.75 },
+    })} />);
+    expect(row('Loss today').getByText('−₹63.75').className).toContain('--down');
+  });
+
   it('says nothing at all before the server has answered', () => {
     const { container } = render(<AccountCard status={null} />);
     expect(container).toBeEmptyDOMElement();

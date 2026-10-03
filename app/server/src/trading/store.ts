@@ -2,7 +2,7 @@ import type { TradeRecord, TradeStore } from './engine.js';
 import type { MtmSample } from './pnl-history.js';
 import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
 import { query, rows, tx } from '../db/pool.js';
-import { recompute, realisedSinceOf } from './machine.js';
+import { recompute, realisedBreakdownSinceOf } from './machine.js';
 import type { TradeEvent, TradeState } from './types.js';
 
 /**
@@ -185,10 +185,26 @@ export class PgTradeStore implements TradeStore {
    * same reason hydrate does: a row written under a wrong calculation would
    * otherwise keep feeding the gate a wrong number.
    */
+  /** Booked from `fromMs` on: breakdown of profit, loss and net realised P&L in USD. */
+  async realisedBreakdownSince(fromMs: number): Promise<{ realisedUsd: number; profitUsd: number; lossUsd: number }> {
+    const found = await rows<{ state: TradeState }>('SELECT state FROM trades WHERE updated_at >= $1', [fromMs]);
+    return found.reduce(
+      (acc, r) => {
+        const b = realisedBreakdownSinceOf(r.state, fromMs);
+        return {
+          realisedUsd: acc.realisedUsd + b.realisedUsd,
+          profitUsd: acc.profitUsd + b.profitUsd,
+          lossUsd: acc.lossUsd + b.lossUsd,
+        };
+      },
+      { realisedUsd: 0, profitUsd: 0, lossUsd: 0 },
+    );
+  }
+
   /** Booked from `fromMs` on: only the exit fills since then (`realisedSinceOf`); a trade with one was updated since. */
   async realisedSince(fromMs: number): Promise<number> {
-    const found = await rows<{ state: TradeState }>('SELECT state FROM trades WHERE updated_at >= $1', [fromMs]);
-    return found.reduce((n, r) => n + realisedSinceOf(r.state, fromMs), 0);
+    const b = await this.realisedBreakdownSince(fromMs);
+    return b.realisedUsd;
   }
 
   /** One reading of the day. Ignored if a reading already sits at that millisecond. */
