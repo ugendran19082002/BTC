@@ -30,7 +30,12 @@ export function reportError(r: BrowserReport): void {
     const now = Date.now();
     if (last !== undefined && now - last < QUIET_MS) return;
     sent.set(key, now);
-    if (sent.size > 200) sent.clear();
+    // Prune stale entries instead of clearing everything: a burst of 200
+    // distinct errors used to drop all fingerprints, including ones that
+    // should still be deduped.
+    if (sent.size > 200) {
+      for (const [k, t] of sent) { if (now - t >= QUIET_MS) sent.delete(k); }
+    }
 
     // A failure inside the reporter must not be reported.
     if (reporting) return;

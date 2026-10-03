@@ -202,7 +202,7 @@ test('an unmarked reply is logged, so forgetting to mark one makes noise rather 
 
 test('[critical] a deliberate 500 is still logged: the mark cannot hide a fault', () => {
   // "I meant to" is a claim about a 4xx. Nothing means to fail.
-  assert.equal(worthLogging(500, true), false, 'documenting today’s behaviour');
+  assert.equal(worthLogging(500, true), true, 'a 5xx is always a fault, however it happened');
 });
 
 test('success is never an error', () => {

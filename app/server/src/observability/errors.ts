@@ -135,7 +135,11 @@ export class ErrorLog {
 
   constructor() {
     this.ready = migrate(MIGRATIONS).then(() => {});
-    this.queue = this.ready.catch(() => {});
+    // Prune once on boot: the write counter resets on restart, so an
+    // already-full table used to wait another 50 writes before pruning.
+    this.queue = this.ready
+      .then(() => this.prune())
+      .catch(() => {});
   }
 
   /** Never throws, and never waits. A logger that can fail is worse than no logger. */

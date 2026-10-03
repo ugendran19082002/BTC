@@ -49,5 +49,8 @@ export const wasRefusal = (reply: FastifyReply): boolean =>
 export function worthLogging(statusCode: number, deliberate: boolean): boolean {
   if (statusCode < 400) return false;
   if (statusCode === 401 || statusCode === 404) return false;
+  // A 5xx is always a fault, however it happened. The `deliberate` flag is a
+  // claim about a 4xx — "I meant to say no" — never about a crash.
+  if (statusCode >= 500) return true;
   return !deliberate;
 }
