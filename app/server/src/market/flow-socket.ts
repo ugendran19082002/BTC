@@ -130,6 +130,8 @@ export class FlowSocket {
     connect?: () => SocketLike;
     now?: () => number;
     log?: (line: string) => void;
+    /** Called on every print of the perpetual, after it is held. */
+    onPerp?: () => void;
     staleMs?: number;
     holdMs?: number;
     /** The option contracts to watch besides the perpetual: the two nearest expiries, every strike. Read at each (re)connect and on `watch`. */
@@ -229,6 +231,8 @@ export class FlowSocket {
     }
     this.prints.push(p);
     if (!p.symbol && (!this.lastPerp || p.at >= this.lastPerp.at)) this.lastPerp = p;
+    // A print of the perp, as it arrives: whoever acts on the price is told now, not on its next timer.
+    if (!p.symbol) { try { this.o.onPerp?.(); } catch { /* a listener must not stop the tape */ } }
     if (this.prints.length > 1 && p.at < this.prints[this.prints.length - 2]!.at) this.prints.sort((a, b) => a.at - b.at);
   }
 

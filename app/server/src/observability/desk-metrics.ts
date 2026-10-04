@@ -38,7 +38,7 @@ export function costOf(method: string, path: string): { kind: DeltaKind; units: 
 
 type Call = { at: number; ms: number; units: number; kind: DeltaKind; outcome: DeltaOutcome };
 type Pass = { at: number; ms: number; trades: number };
-type Run = { at: number; readMs: number; calcMs: number };
+type Run = { at: number; readMs: number; calcMs: number; early: boolean; afterCloseMs: number | null };
 
 let calls: Call[] = [];
 let passes: Pass[] = [];
@@ -68,8 +68,8 @@ export function notePass(ms: number, trades: number, now = Date.now()): void {
 }
 
 /** One signal run: reading the market, then every method on it. The second holds the thread. */
-export function noteSignalRun(readMs: number, calcMs: number, now = Date.now()): void {
-  try { runs.push({ at: now, readMs, calcMs }); if (runs.length > 240) runs = runs.slice(-120); } catch { /* as above */ }
+export function noteSignalRun(readMs: number, calcMs: number, o: { early?: boolean; afterCloseMs?: number } = {}, now = Date.now()): void {
+  try { runs.push({ at: now, readMs, calcMs, early: o.early === true, afterCloseMs: o.afterCloseMs ?? null }); if (runs.length > 240) runs = runs.slice(-120); } catch { /* as above */ }
 }
 
 // The thread itself: how late a timer fires is how long something held it. Sampled in windows of a minute.
@@ -138,6 +138,9 @@ export function deskMetrics(now = Date.now()) {
       read: spread(recentRuns.map((r) => r.readMs)),
       /** The calculation runs on the thread the SL and TGT watch runs on: this long, the watch waits. */
       calc: spread(recentRuns.map((r) => r.calcMs)),
+      /** How long after the candle closed the signals were ready, and how many runs went early on a verified candle. */
+      afterClose: spread(recentRuns.filter((r) => r.afterCloseMs !== null).map((r) => r.afterCloseMs!)),
+      early: recentRuns.filter((r) => r.early).length,
     },
     thread: loopNow(now),
   };

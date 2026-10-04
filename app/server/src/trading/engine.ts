@@ -463,6 +463,15 @@ const PROTECT_RETRY_MS = 2_000;
  * because the feed stalled rather than because the price moved.
  */
 const MARK_STALE_MS = 15_000;
+/**
+ * How long a leverage the desk set itself is taken as still set. Leverage is a
+ * setting on the product at Delta, not on the order; the desk asked for it
+ * before every entry -- a whole round trip in front of each order, to set the
+ * number it had set a minute before. Ten minutes, so a change made by hand at
+ * Delta is not trusted over for long; and forgotten the moment an entry is
+ * refused, in case the leverage is why.
+ */
+export const LEVERAGE_HELD_MS = 10 * 60_000;
 
 /**
  * Which of a signal trade's perp levels a price has reached -- the stop before
@@ -600,6 +609,37 @@ export class TradeEngine {
    */
   /** The book each entry was judged on, held from the gates to the order: written into the journal with it, then dropped. */
   private readonly judgedOn = new Map<string, { bid: number | null; ask: number | null; mark: number | null; at: number }>();
+
+  /** Per product: the leverage this desk last set at Delta, and when. */
+  private readonly leverageSet = new Map<number, { leverage: number; at: number }>();
+
+  /** Set the product's leverage at Delta unless this desk set that very number a short while ago. */
+  private async ensureLeverage(productId: number, leverage: number): Promise<void> {
+    const held = this.leverageSet.get(productId);
+    if (held && held.leverage === leverage && this.now() - held.at < LEVERAGE_HELD_MS) return;
+    this.leverageSet.delete(productId);
+    await this.exchange.setLeverage(productId, leverage);
+    this.leverageSet.set(productId, { leverage, at: this.now() });
+  }
+
+  /**
+   * Make a contract ready to be sold before the order is due: its product
+   * looked up, its leverage set. A signal strategy that enters at the zone
+   * calls this when the signal appears, so that when the perp reaches the zone
+   * the order is the only thing left to send. Sends no order, changes no trade,
+   * and never throws: an entry that was not warmed is only an entry as slow as
+   * it was before.
+   */
+  async warm(symbol: string, leverage: number): Promise<boolean> {
+    try {
+      const product = await this.exchange.getProduct(symbol);
+      if (!product) return false;
+      await this.ensureLeverage(product.productId, clampLeverage(leverage));
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   private withTrade<T>(tradeId: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.queue.get(tradeId) ?? Promise.resolve();
@@ -786,7 +826,7 @@ export class TradeEngine {
     // does not go: the alternative is filling at whatever was left from last time.
     if (product) {
       try {
-        await this.exchange.setLeverage(product.productId, clampLeverage(plan.leverage));
+        await this.ensureLeverage(product.productId, clampLeverage(plan.leverage));
       } catch (e) {
         rec = await this.commit(rec, {
           t: 'precheck_failed',
@@ -834,6 +874,8 @@ export class TradeEngine {
         return { ok: true, state: rec.state };
       }
       if (e instanceof OrderRejected) {
+        // Whatever the reason, the leverage is asked for again before the next entry on this product.
+        if (product) this.leverageSet.delete(product.productId);
         rec = await this.commit(rec, { t: 'entry_rejected', reason: e.reason, at: this.now() });
         return { ok: false, state: rec.state, precheck: { ok: false, failures: [{ code: 'NOT_TRADABLE', message: e.reason }] } };
       }
@@ -887,6 +929,7 @@ export class TradeEngine {
       }
     }
     if (order.status === 'rejected') {
+      this.leverageSet.delete(rec.state.productId);
       rec = await this.commit(rec, { t: 'entry_rejected', reason: order.reason ?? 'rejected', at: this.now() });
     }
     return rec;

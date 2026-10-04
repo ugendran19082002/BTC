@@ -178,7 +178,7 @@ export type DeskMetrics = {
     rateLimited: { inWindow: number; sinceStart: number; lastAt: number | null };
   };
   passes: MsSpread & { count: number; everyMs: number; late: number; tradesNow: number };
-  signalRun: { count: number; read: MsSpread; calc: MsSpread };
+  signalRun: { count: number; read: MsSpread; calc: MsSpread; afterClose?: MsSpread; early?: number };
   thread: { p50Ms: number; p99Ms: number; maxMs: number } | null;
 };
 export const getDeskMetrics = () => json<DeskMetrics>('/api/desk/metrics');

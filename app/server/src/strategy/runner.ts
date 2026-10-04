@@ -351,9 +351,13 @@ export class StrategyRunner {
     if (!this.armed()) return;
     for (const s of await this.store.all()) {
       if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
-      // The ones that enter at the signal; the rest wait for the perp to reach the zone (`onSetupFilled`).
-      if (entersOn(s.config.signal) !== 'signal') continue;
       if (!signalMatches(s.config.signal, r)) continue;
+      // The ones that enter at the signal; the rest wait for the perp to reach the zone (`onSetupFilled`) --
+      // and are made ready for it meanwhile.
+      if (entersOn(s.config.signal) !== 'signal') {
+        void this.warmFor(s, r).catch(() => {});
+        continue;
+      }
       await this.takeSignal(s, r, null).catch((e) => this.note(s, 'signal', e));
     }
   }
@@ -385,6 +389,24 @@ export class StrategyRunner {
       if (!signalMatches(s.config.signal, r)) continue;
       await this.takeSignal(s, r, f).catch((e) => this.note(s, 'signal', e));
     }
+  }
+
+  /**
+   * A signal this strategy will take at the zone, seen before the zone is reached: the contract it would
+   * sell right now is made ready -- product looked up, leverage set -- so that when the perp gets there the
+   * order is all that is left to send. Nothing is claimed, decided or placed here: the strike is chosen
+   * again, on the board as it then stands, when the zone fills; if that is another contract, this was a
+   * wasted lookup and nothing more. Only for a strategy with live orders on, and in its window.
+   */
+  private async warmFor(s: Strategy, r: MethodRead): Promise<void> {
+    if (!s.config.liveOrders || !inSignalWindow(s, this.now())) return;
+    const snap = await this.signalBoard().catch(() => null);
+    if (!snap || !snap.live || !snap.isDaily) return;
+    const leg = legOfSignal(r.dir === 'long' ? 1 : -1);
+    const at = strikePickAt(s.config, istMinutes(this.now()));
+    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
+    const chosen = sel.legs[0];
+    if (chosen) await tradingService().warmEntry(`${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`);
   }
 
   private async takeSignal(s: Strategy, r: MethodRead, fill: SetupFill | null): Promise<void> {

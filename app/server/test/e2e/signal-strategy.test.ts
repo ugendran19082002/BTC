@@ -1003,3 +1003,32 @@ test('[critical] the limits under load: a ticket trade takes a place, a burst of
 
   for (const id of ['sig-burst', 'sig-burst-zone']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
 });
+
+test('[critical] a zone-entry signal makes its contract ready and nothing else: no claim, no order, no trade -- and only with live orders on', async () => {
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  const zone = { ...config, signal: { mode: 'single', tf: '30m', methods: ['breakout'], target: 'tp1', maxOpen: 5 } };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig warm', config: { ...zone, liveOrders: true } })).status, 200);
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig warm paper', config: { ...zone, liveOrders: false } })).status, 200);
+  for (const id of ['sig-warm', 'sig-warm-paper']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+
+  const svc = tradingService();
+  const warmed: string[] = [];
+  const real = svc.warmEntry.bind(svc);
+  svc.warmEntry = (symbol: string) => { warmed.push(symbol); return real(symbol); };
+  try {
+    const tradesBefore = (await svc.openTrades()).length;
+    await runner.onSignal(signal({ tf: '30m' }));          // a BUY: this strategy would sell the put when the perp reaches the zone
+    await new Promise((r) => setTimeout(r, 50));            // the warm-up is not waited for by the signal
+    assert.deepEqual(warmed, [`P-BTC-${PUT}-${EXPIRY}`], 'the contract it would sell now is made ready -- once, for the strategy with live orders on');
+    assert.equal((await runsOf('sig-warm')).length, 0, 'the signal is not claimed: the zone has not been reached');
+    assert.equal((await runsOf('sig-warm-paper')).length, 0);
+    assert.equal((await svc.openTrades()).length, tradesBefore, 'and nothing was placed');
+  } finally {
+    svc.warmEntry = real;
+    for (const id of ['sig-warm', 'sig-warm-paper']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+  }
+});

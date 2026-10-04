@@ -127,6 +127,9 @@ export class UnderlyingWatch {
     return this.reading;
   }
 
+  /** The open trades have changed -- a fill, a close: read them again on the next look. */
+  stale(): void { this.listAt = 0; }
+
   /** Everything handed over has been tried, and any read has finished. For shutdown and for tests. */
   async settle(): Promise<void> {
     await Promise.all([...this.bySymbol.values()]);

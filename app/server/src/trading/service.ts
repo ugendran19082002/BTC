@@ -19,7 +19,7 @@ import { midOf } from './money.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { candles } from '../market/delta.js';
-import { liveLtp } from '../market/flow.js';
+import { liveLtp, onPerpPrint } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
@@ -27,7 +27,8 @@ import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import type { ExchangePort } from './exchange/port.js';
 import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-watch.js';
-import { notePass } from '../observability/desk-metrics.js';
+import { deskMetrics, notePass } from '../observability/desk-metrics.js';
+import { ENTRY_WATCH_MS, EntryWatch } from './entry-watch.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
 /**
@@ -291,6 +292,11 @@ export class TradingService {
     // A signal trade's SL and TGT on the perp, looked at far more often than the loop can poll.
     this.watchTimer ??= setInterval(() => { this.underlyingWatch.tick(); }, UNDERLYING_WATCH_MS);
     this.watchTimer.unref?.();
+    // And on the trade itself: every print of the perp is a look, so a level is acted on as it trades, not a tick later.
+    this.stopPerpWatch ??= onPerpPrint(() => { this.underlyingWatch.tick(); });
+    // The trades that cannot wait for the loop: a working entry, a position without its target yet.
+    this.entryTimer ??= setInterval(() => { this.entryWatch.tick(); }, ENTRY_WATCH_MS);
+    this.entryTimer.unref?.();
     await this.store.pruneMtm(Date.now());
     return recovered;
   }
@@ -299,11 +305,27 @@ export class TradingService {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     if (this.mtmTimer) { clearInterval(this.mtmTimer); this.mtmTimer = null; }
     if (this.watchTimer) { clearInterval(this.watchTimer); this.watchTimer = null; }
+    if (this.entryTimer) { clearInterval(this.entryTimer); this.entryTimer = null; }
+    if (this.stopPerpWatch) { this.stopPerpWatch(); this.stopPerpWatch = null; }
     if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
   }
 
   private mtmTimer: NodeJS.Timeout | null = null;
   private watchTimer: NodeJS.Timeout | null = null;
+  private entryTimer: NodeJS.Timeout | null = null;
+  private stopPerpWatch: (() => void) | null = null;
+
+  /**
+   * The urgent trades (`entry-watch.ts`): a working entry and a position
+   * without its target yet, polled four times a second on their own instead of
+   * waiting their turn in the loop. When one settles, the SL and TGT watch
+   * reads the open trades again, so its levels are armed at once.
+   */
+  readonly entryWatch = new EntryWatch({
+    poll: (tradeId) => this.engine.poll(tradeId),
+    quotaUsedPct: () => deskMetrics().delta.usedPct,
+    onSettled: () => this.underlyingWatch.stale(),
+  });
 
   /**
    * The fast watch on the signal trades' perp levels (`underlying-watch.ts`):
@@ -394,6 +416,7 @@ export class TradingService {
       polled = open.length;
       // What was just read is what the fast watch looks at until the next pass.
       this.underlyingWatch.note(watchedOf(open));
+      this.entryWatch.note(open);
       for (const rec of open) {
         await this.engine.poll(rec.state.tradeId).catch(() => {});
       }
@@ -412,7 +435,18 @@ export class TradingService {
 
   // ------------------------------------------------------------------ api
   async place(input: PlaceInput) {
-    return this.engine.open(orderPlan(input, `${input.symbol}-${nextTradeMs()}`));
+    const res = await this.engine.open(orderPlan(input, `${input.symbol}-${nextTradeMs()}`));
+    // Working from this moment: watched closely for its fill, without waiting for the loop to read it.
+    if (res.ok) this.entryWatch.add(res.state.tradeId);
+    return res;
+  }
+
+  /**
+   * Make a contract ready to be sold before its order is due (the engine's `warm`): product looked up,
+   * leverage set. Sends no order. A signal strategy calls it when a signal appears and it will enter at the zone.
+   */
+  warmEntry(symbol: string): Promise<boolean> {
+    return this.engine.warm(symbol, DEFAULT_LEVERAGE);
   }
 
   /** Whether that order would be taken, without sending it. */

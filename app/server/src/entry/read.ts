@@ -38,12 +38,51 @@ export const wholeUntil = (askedAtMs: number, nowSec: number) => Math.min(nowSec
 
 const VENUE: [Tf, Timeframe][] = [['1m', '1m'], ['5m', '5m'], ['15m', '15m'], ['30m', '30m'], ['1h', '1h'], ['4h', '4h']];
 
-export async function readEntryContext(now = Date.now()): Promise<EntryContext> {
+/** The closed minute as the desk's own tape saw it (market/flow.ts `perpMinuteFromTape`). */
+export type TapeMinute = { close: number; high: number; low: number; volume: number };
+
+/**
+ * Whether the candles that closed at `boundarySec` are final in this data, without waiting for them to settle.
+ *
+ * The run used to wait three seconds after every close, so that the venue's candle was surely whole. The
+ * desk holds every trade of the perp itself, so it can check instead: the venue's 1m candle for the minute
+ * that just ended must end where the tape's last trade ended, with the tape's high, low and volume; and every
+ * longer candle that closed on the same boundary must end at that same trade. If they do, the candles are
+ * what they will be in two seconds' time, and the methods can run now. If anything differs -- the venue is
+ * late, the tape has a gap -- this says no, and the run waits for the settled read exactly as before.
+ *
+ * It only decides *when* the venue's candles are read as closed. The methods read the venue's candles either way.
+ */
+export function closeVerified(series: ReadonlyMap<Timeframe, readonly Candle[]>, boundarySec: number, tape: TapeMinute | null): boolean {
+  if (!tape) return false;
+  const same = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+  const m1 = (series.get('1m') ?? []).find((b) => b.time === boundarySec - 60);
+  if (!m1) return false;
+  if (!same(m1.close, tape.close) || !same(m1.high, tape.high) || !same(m1.low, tape.low)) return false;
+  // Volume to a tenth of a percent, or one contract: the venue sums the same trades the tape holds.
+  if (Math.abs(m1.volume - tape.volume) > Math.max(1, tape.volume * 0.001)) return false;
+  for (const [tf, venue] of VENUE) {
+    if (tf === '1m' || boundarySec % TF_SEC[tf] !== 0) continue;
+    const bar = (series.get(venue) ?? []).find((b) => b.time === boundarySec - TF_SEC[tf]);
+    if (!bar || !same(bar.close, tape.close)) return false;
+  }
+  return true;
+}
+
+/**
+ * `early`: the look taken a second or two after a close. The candles are asked for afresh (`minAskedAt`) and
+ * the minute that just ended counts as closed only if `closeVerified` says so against `tape`; the context
+ * says which (`closeVerified`), and a caller that gets false waits for the settled read.
+ */
+export async function readEntryContext(now = Date.now(), early?: { minAskedAt: number; tape: TapeMinute | null }): Promise<EntryContext> {
   const nowSec = Math.floor(now / 1000);
+  const minuteStart = Math.floor(now / 60_000) * 60_000;
   // Asked for after this minute began, so the minute that just closed is in it whole.
-  const { askedAt, data: series } = await venueSeriesSince(Math.floor(now / 60_000) * 60_000)
+  const { askedAt, data: series } = await venueSeriesSince(early?.minAskedAt ?? minuteStart)
     .catch(() => ({ askedAt: 0, data: new Map<Timeframe, Candle[]>() }));
-  const asOf = wholeUntil(askedAt, nowSec);
+  const verified = early !== undefined && closeVerified(series, minuteStart / 1000, early.tape);
+  // Checked against the tape, the minute that just ended is closed now; otherwise it is closed once it has settled.
+  const asOf = verified ? Math.max(wholeUntil(askedAt, nowSec), Math.min(nowSec, minuteStart / 1000)) : wholeUntil(askedAt, nowSec);
   const frames: Frames = {};
   for (const [tf, venue] of VENUE) frames[tf] = closedOnly(series.get(venue) ?? [], TF_SEC[tf], asOf);
   frames['3m'] = resampleTf(frames['1m'] ?? [], 3);
@@ -84,6 +123,7 @@ export async function readEntryContext(now = Date.now()): Promise<EntryContext> 
   return {
     now,
     frames,
+    closeVerified: verified,
     gatesOff: off,
     // The tape's last trade, read now: the live price, milliseconds old while the socket is up.
     ltp: (() => { try { const l = liveLtp(now); return l ? { price: l.price, at: l.at } : null; } catch { return null; } })(),

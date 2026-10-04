@@ -72,6 +72,12 @@ export function DeskMetricsCard() {
           <dt>The signal run, once a minute</dt>
           <dd aria-label="signal read time">reading the market: {spreadOf(data.signalRun.read)}</dd>
           <dd aria-label="signal calculation time">every method on it: {spreadOf(data.signalRun.calc)} — the SL and TGT watch waits this long</dd>
+          {data.signalRun.afterClose && (
+            <dd aria-label="signals ready after the close">
+              signals ready after the candle closed: {spreadOf(data.signalRun.afterClose)}
+              {data.signalRun.count > 0 ? ` · ${data.signalRun.early ?? 0} of ${data.signalRun.count} went early, on a candle checked against the tape` : ''}
+            </dd>
+          )}
         </div>
         <div>
           <dt>The thread, in the last minute</dt>

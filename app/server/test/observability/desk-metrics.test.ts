@@ -47,8 +47,8 @@ test('[critical] the window is the last five minutes: units, share of the quota,
 
 test('[critical] a pass over a second is a late one; the signal run reports how long it held the thread', () => {
   for (const [i, ms] of [200, 300, 1_500, 250, 2_200].entries()) notePass(ms, 20, T + i * 1_000);
-  noteSignalRun(120, 480, T);
-  noteSignalRun(90, 300, T + 60_000);
+  noteSignalRun(120, 480, { early: false, afterCloseMs: 3_900 }, T);
+  noteSignalRun(90, 300, { early: true, afterCloseMs: 1_800 }, T + 60_000);
   const m = deskMetrics(T + 61_000);
   assert.equal(m.passes.count, 5);
   assert.equal(m.passes.late, 2);
@@ -57,6 +57,8 @@ test('[critical] a pass over a second is a late one; the signal run reports how 
   assert.equal(m.signalRun.count, 2);
   assert.equal(m.signalRun.calc.maxMs, 480);
   assert.equal(m.signalRun.read.maxMs, 120);
+  assert.equal(m.signalRun.early, 1, 'one of the two went early, on a verified candle');
+  assert.equal(m.signalRun.afterClose.maxMs, 3_900, 'and how long after the close the signals were ready');
 });
 
 test('nothing noted is nothing shown, and a note can never throw', () => {

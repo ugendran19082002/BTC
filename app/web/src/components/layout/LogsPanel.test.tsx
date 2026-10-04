@@ -20,7 +20,7 @@ const metrics = {
     response: spread(180, 420, 1_300), failed: 0, refused: 2, rateLimited: { inWindow: 0, sinceStart: 0, lastAt: null },
   },
   passes: { count: 250, everyMs: 1_000, ...spread(640, 1_800, 4_200), late: 31, tradesNow: 18 },
-  signalRun: { count: 12, read: spread(90, 140, 200), calc: spread(310, 520, 700) },
+  signalRun: { count: 12, read: spread(90, 140, 200), calc: spread(310, 520, 700), afterClose: spread(1_800, 3_900, 4_100), early: 9 },
   thread: { p50Ms: 1, p99Ms: 38, maxMs: 512 },
 };
 
@@ -56,6 +56,7 @@ describe('the Logs screen', () => {
     expect(card.getByLabelText('pass time')).toHaveTextContent('640 ms median · 1.8 s at worst 5% · 4.2 s longest');
     expect(card.getByLabelText('late passes')).toHaveTextContent('31 of 250 took over a second · 18 trades polled now');
     expect(card.getByLabelText('signal calculation time')).toHaveTextContent('every method on it: 310 ms median · 520 ms at worst 5% · 700 ms longest — the SL and TGT watch waits this long');
+    expect(card.getByLabelText('signals ready after the close')).toHaveTextContent('signals ready after the candle closed: 1.8 s median · 3.9 s at worst 5% · 4.1 s longest · 9 of 12 went early, on a candle checked against the tape');
     expect(card.getByLabelText('thread held')).toHaveTextContent('held 38 ms at worst 1% · 512 ms longest');
   });
 

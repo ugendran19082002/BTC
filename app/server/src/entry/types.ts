@@ -127,6 +127,8 @@ export type FlowMinute = { time: number; buy: number; sell: number; largeBuy: nu
 export type EntryContext = {
   now: number;
   frames: Frames;
+  /** True when the candles that closed this minute were taken early, checked against the desk's own tape (read.ts). */
+  closeVerified?: boolean;
   /** The last few hours of the perpetual's tape, per minute; empty when not recorded. */
   flow: readonly FlowMinute[];
   /** Persistent resting walls in the perpetual's book. */

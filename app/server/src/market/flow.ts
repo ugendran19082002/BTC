@@ -183,7 +183,7 @@ export function startFlowSocket(log?: (line: string) => void): FlowSocket {
   refresh();
   const timer = setInterval(refresh, 10 * 60_000);
   timer.unref?.();
-  socket = new FlowSocket({ log, options: () => watched });
+  socket = new FlowSocket({ log, options: () => watched, onPerp: tellPerpListeners });
   socket.start();
   return socket;
 }
@@ -203,6 +203,44 @@ export function perpQuote(): { mark: number | null; index: number | null; at: nu
 export function perpTape(): { fresh(): boolean; perpSince(ms: number): Print[]; reconnects(): number } | null {
   const s = socket;
   return s ? { fresh: () => s.fresh(), perpSince: (ms) => s.perpSince(ms), reconnects: () => s.health().reconnects } : null;
+}
+
+// ------------------------------------------------------- the perp, as it prints
+
+/** One closed minute of the perpetual as the desk's own tape saw it: for checking the venue's candle against. */
+export type TapeMinute = { close: number; high: number; low: number; volume: number; prints: number };
+
+/**
+ * The minute that ended at `boundaryMs`, from the tape -- or null when the tape cannot vouch for it: no live
+ * socket, nothing printed in that minute, or the tape does not reach back before the minute began (it joined
+ * part-way through, so its high, low and volume are not the minute's).
+ */
+export function perpMinuteFromTape(boundaryMs: number, now = Date.now()): TapeMinute | null {
+  const s = socket;
+  if (!s || !s.fresh(now)) return null;
+  const from = boundaryMs - FLOW_BUCKET_MS;
+  // A little before the minute, to know the tape was already running when it began.
+  const held = s.perpSince(from - FLOW_BUCKET_MS);
+  if (!held.length || held[0]!.at >= from) return null;
+  const inMinute = held.filter((p) => p.at >= from && p.at < boundaryMs);
+  if (!inMinute.length) return null;
+  let high = -Infinity; let low = Infinity; let volume = 0;
+  for (const p of inMinute) { high = Math.max(high, p.price); low = Math.min(low, p.price); volume += p.size; }
+  return { close: inMinute[inMinute.length - 1]!.price, high, low, volume, prints: inMinute.length };
+}
+
+const perpListeners = new Set<() => void>();
+function tellPerpListeners(): void {
+  for (const fn of perpListeners) { try { fn(); } catch { /* one listener's fault is not another's */ } }
+}
+/**
+ * Be told of every print of the perpetual as it arrives off the socket -- for what must act on the price
+ * itself, not on a timer: the SL and TGT watch, the zone-entry grader. Returns the way to stop being told.
+ * Cheap things only: it is called inside the socket's own message handler.
+ */
+export function onPerpPrint(fn: () => void): () => void {
+  perpListeners.add(fn);
+  return () => { perpListeners.delete(fn); };
 }
 
 /** For tests: read from this feed instead of the live one. */

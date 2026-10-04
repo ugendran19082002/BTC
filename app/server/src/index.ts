@@ -15,7 +15,7 @@ import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-s
 import { captureBoard, chainFeaturesSchema } from './market/chain-features.js';
 import { wallWithinEm } from './http/routes/desk.routes.js';
 import { captureIndex, indexSchema } from './market/index-1m.js';
-import { capturePerpSnapshot, flowSchema, flushTradeFlow, perpTape, startFlowSocket } from './market/flow.js';
+import { capturePerpSnapshot, flowSchema, flushTradeFlow, onPerpPrint, perpMinuteFromTape, perpTape, startFlowSocket } from './market/flow.js';
 import { gradeLive, LIVE_GRADE_MS } from './entry/live-grade.js';
 import { noteSignalRun } from './observability/desk-metrics.js';
 import { bookHeatSchema, flushBookHeat, startBookHeat } from './market/book-heat.js';
@@ -194,10 +194,25 @@ setInterval(() => { flushBookHeat(Date.now()).catch(warn('book-heat')); }, 20_00
  * for the ways switched on -- the chain, and without it on 5m only, so the
  * phone is not told the same market seven times. Nothing is ordered.
  */
-const recordEntries = () => {
+/** The minute whose close has already been read and run: a minute is run once, by whichever look gets it first. */
+let entriesRunFor = 0;
+/**
+ * `look`: 'early' a second or two after the close -- taken only if the venue's candles check out against the
+ * desk's own tape (entry/read.ts `closeVerified`) -- or 'settled', three seconds after, as the run always was.
+ */
+const recordEntries = (look: 'early' | 'settled' = 'settled') => {
+  const startedAt = Date.now();
+  const boundary = Math.floor(startedAt / 60_000) * 60_000;
+  if (entriesRunFor === boundary) return;
   const readFrom = performance.now();
-  readEntryContext()
+  (look === 'early'
+    ? readEntryContext(startedAt, { minAskedAt: startedAt, tape: perpMinuteFromTape(boundary, startedAt) })
+    // Asked for late enough that the minute which just ended has settled in it, even if an early look read first.
+    : readEntryContext(startedAt, { minAskedAt: boundary + ENTRY_OFFSET_MS - 500, tape: null }))
     .then(async (ctx) => {
+      if (look === 'early' && !ctx.closeVerified) return;     // not final yet: the next look has it
+      if (entriesRunFor === boundary) return;                 // another look ran this minute while this one read
+      entriesRunFor = boundary;
       const readMs = performance.now() - readFrom;
       // Telegram for the ways switched on and their chosen timeframes, once per setup as it is first
       // written, each attempt written down (entry_alert_log) -- sent or failed, and why.
@@ -205,7 +220,7 @@ const recordEntries = () => {
       // Timed: this is every method on every way, on the thread the SL and TGT watch runs on.
       const calcFrom = performance.now();
       const reads = allReads(ctx);
-      noteSignalRun(readMs, performance.now() - calcFrom);
+      noteSignalRun(readMs, performance.now() - calcFrom, { early: look === 'early', afterCloseMs: Date.now() - boundary });
       // With the market as it stood: the tape's last trade (fresh) and the option board's index.
       const fresh = ctx.ltp && ctx.now - ctx.ltp.at <= 15_000 ? ctx.ltp.price : null;
       await recordSignals(reads, ctx.now, { ltp: fresh, index: ctx.options?.spot ?? null });
@@ -220,10 +235,14 @@ const recordEntries = () => {
 };
 // Aligned to the minute: three seconds after each 1m candle closes, so a new signal is written, a fill
 // or an exit graded, and Telegram sent within seconds of the candle that made it -- not up to a minute later.
+// And before that, at one second and at two, a look that runs at once if the candles are already final
+// (4 Oct 2026, the owner's sequence: close, wait a second, read, verify, run -- or try again shortly).
 const ENTRY_OFFSET_MS = 3_000;
+const ENTRY_EARLY_MS = [1_000, 2_000];
 const nextEntryRun = () => {
-  const wait = 60_000 - (Date.now() % 60_000) + ENTRY_OFFSET_MS;
-  setTimeout(() => { recordEntries(); nextEntryRun(); }, wait).unref();
+  const toClose = 60_000 - (Date.now() % 60_000);
+  for (const early of ENTRY_EARLY_MS) setTimeout(() => recordEntries('early'), toClose + early).unref();
+  setTimeout(() => { recordEntries('settled'); nextEntryRun(); }, toClose + ENTRY_OFFSET_MS).unref();
 };
 nextEntryRun();
 // The journal keeps a year; the paper log keeps its graded trades for good.
@@ -231,8 +250,14 @@ setInterval(() => { pruneSignals(Date.now()).catch(warn('entry-signals')); }, 6 
 // The paper log on the live tape: fills, stops and targets as they print (entry/live-grade.ts). Four looks a
 // second, and never two at once: a look still writing is not joined by another queued behind it.
 let grading = false;
-setInterval(() => {
+let gradedAt = 0;
+const gradeNow = () => {
   if (grading) return;
   grading = true;
+  gradedAt = Date.now();
   gradeLive(perpTape()).catch(warn('entry-live-grade')).finally(() => { grading = false; });
-}, LIVE_GRADE_MS).unref();
+};
+setInterval(gradeNow, LIVE_GRADE_MS).unref();
+// And on the perp's own prints: the zone is seen as it trades. Not more often than every 50 ms -- a burst of
+// prints is one look -- and never while a look is still writing.
+onPerpPrint(() => { if (Date.now() - gradedAt >= 50) gradeNow(); });
