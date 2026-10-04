@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, Loader2, Pencil, Plus, XCircle } from 'lucide-react';
-import { cloneStrategy, getStrategies, saveStrategy, setContractMaxLots, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
-import { contractMaxLotsProblem, MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
+import { cloneStrategy, getStrategies, saveStrategy, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
+import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
@@ -178,50 +178,6 @@ function GlobalMaxOpen({ value, allowed, openNow, busy, onSave, onInvalid }: {
   );
 }
 
-/** "P-BTC-84600-041026" as "PE 84,600". */
-const contractName = (symbol: string): string => {
-  const [cp, , strike] = symbol.split('-');
-  const n = Number(strike);
-  return `${cp === 'C' ? 'CE' : 'PE'} ${Number.isFinite(n) ? n.toLocaleString('en-US') : strike ?? ''}`.trim();
-};
-
-/**
- * The most lots on one contract, across every strategy (0: no limit). The
- * strategies' limits count trades; this one looks at where they sit -- most
- * signals choose the same strike, and one strike moving against the desk then
- * moves most of the book. Beside the field: the contract holding the most now.
- */
-function ContractMaxLots({ value, most, busy, onSave, onInvalid }: {
-  value: number; most: { symbol: string; lots: number } | null; busy: boolean;
-  onSave: (n: number) => Promise<boolean>; onInvalid: (message: string) => void;
-}) {
-  const full = value > 0 && most !== null && most.lots >= value;
-  return (
-    <label
-      className="desk-badge-pill inline-flex items-center gap-1.5"
-      title="One limit on a single contract, over every strategy: a signal whose order would take one strike past this many lots -- positions and working orders -- is skipped, and the history says so. It is not moved to another strike. 0 is no limit."
-      style={full
-        ? { background: 'rgba(250, 204, 21, 0.1)', color: '#facc15', border: '1px solid rgba(250, 204, 21, 0.3)' }
-        : { background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1', border: '1px solid #1e293b' }}
-    >
-      <span>At most on one strike</span>
-      <NumberCommit
-        label="At most lots on one contract, all strategies"
-        value={value}
-        busy={busy}
-        problem={contractMaxLotsProblem}
-        onInvalid={onInvalid}
-        onSave={(n) => (n !== value ? onSave(n) : Promise.resolve(true))}
-        className="h-6 w-12"
-      />
-      <span aria-label="lots on the fullest contract now">
-        {value > 0 ? 'lots' : 'lots · 0 is no limit'}
-        {most ? ` · ${contractName(most.symbol)} holds ${most.lots}` : ' · none open'}
-      </span>
-    </label>
-  );
-}
-
 /**
  * A whole number typed in place and saved when the field is left or Enter is
  * pressed -- for the numbers that sit on a card, where opening a form to change
@@ -380,16 +336,6 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
               openNow={data.openNow ?? 0}
               busy={busy === 'max-open'}
               onSave={(n) => act('max-open', () => setSignalMaxOpen(n))}
-              onInvalid={setFailed}
-            />
-          )}
-          {/* And the one number on where they sit: lots on a single contract. */}
-          {data && data.contractMaxLots !== undefined && (
-            <ContractMaxLots
-              value={data.contractMaxLots}
-              most={data.contractMostNow ?? null}
-              busy={busy === 'contract-lots'}
-              onSave={(n) => act('contract-lots', () => setContractMaxLots(n))}
               onInvalid={setFailed}
             />
           )}

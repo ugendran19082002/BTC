@@ -18,7 +18,7 @@ export function DeskMetricsCard() {
   const { data, error } = usePoll(getDeskMetrics, 5_000);
   if (!data) {
     return (
-      <CollapsibleCard id="settings-speed" title="Speed and Delta quota" ariaLabel="speed and quota">
+      <CollapsibleCard id="logs-speed" title="Speed and Delta quota" ariaLabel="speed and quota">
         <p className="m-0 text-[12px] text-muted-foreground">{error ? 'Not available on this server.' : 'Reading…'}</p>
       </CollapsibleCard>
     );
@@ -29,7 +29,7 @@ export function DeskMetricsCard() {
   const warming = data.countingForMs < d.windowMs;
   return (
     <CollapsibleCard
-      id="settings-speed"
+      id="logs-speed"
       title="Speed and Delta quota"
       ariaLabel="speed and quota"
       right={<span className="settings-note">last 5 minutes</span>}

@@ -1360,21 +1360,12 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 
 /* The floor field on the best-pick card. */
-.bt-alert-field { display: flex; flex: 1 1 160px; flex-direction: column; gap: 4px; min-width: 0; }
-.bt-alert-field > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--dim); }
-.bt-alert-note { margin: 6px 0 0; font-size: 11px; line-height: 1.4; color: var(--dim); }
-.bt-alert-note .warn, .bt-alert-note.warn { color: var(--warn); }
 
 /* The verdict at the head of the horizon row: the sentence the row is the
    working for. Compact, with the seven inputs and five gates behind a toggle. */
 /* The insight tiles inside the sudden-move strip: a row of their own under
    the five lead figures. */
 
-/* The best-pick card's own control: the premium floor. */
-.bt-settings { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
-.bt-controls { display: flex; align-items: flex-end; gap: 10px 12px; flex-wrap: wrap; margin-top: 12px; }
-.bt-controls .bt-alert-field { flex: 1 1 200px; }
-.bt-controls .bt-busy { align-self: center; }
 
 /* In its own card the controls need no hairline above them. */
 
@@ -1431,11 +1422,6 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 
 /* The settings screen: every number the desk works to, in one place. */
 .settings-lead { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--muted); }
-.settings-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
-.settings-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.settings-field > span { font-size: 11.5px; color: var(--muted); }
-.settings-field small { font-size: 10px; color: var(--dim); }
-.settings-field small.warn { color: var(--warn); }
 .settings-note { font-size: 11px; color: var(--dim); }
 .settings-note.warn { color: var(--warn); }
 .chain-link {

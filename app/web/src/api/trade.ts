@@ -105,12 +105,6 @@ export const cancelAdd = (tradeId: string) =>
 export const setAlerts = (on: boolean) =>
   post<{ ok: true; alerts: { configured: boolean; on: boolean } }>('/api/trade/alerts', { on });
 
-/** The best-pick card's own setting: the premium floor its pool is cut at. */
-export type BestTradeSettings = { minPremiumUsd: number };
-export const getBestTradeSettings = () => json<BestTradeSettings>('/api/trade/best-trade/settings');
-export const setBestTradeSettings = (patch: { minPremiumUsd?: number }) =>
-  post<{ ok: true; minPremiumUsd: number }>('/api/trade/best-trade/settings', patch);
-
 /** Pull a working order off the book. Refused once anything has filled. */
 export const cancelTrade = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/cancel', { tradeId });

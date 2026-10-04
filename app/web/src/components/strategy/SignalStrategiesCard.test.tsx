@@ -11,10 +11,8 @@ const setStrategyEnabled = vi.fn();
 const getSignalTrades = vi.fn();
 const cloneStrategy = vi.fn();
 const setSignalMaxOpen = vi.fn();
-const setContractMaxLots = vi.fn();
 vi.mock('@/api/strategy', () => ({
   setSignalMaxOpen: (...a: unknown[]) => setSignalMaxOpen(...a),
-  setContractMaxLots: (...a: unknown[]) => setContractMaxLots(...a),
   cloneStrategy: (...a: unknown[]) => cloneStrategy(...a),
   getStrategies: (...a: unknown[]) => getStrategies(...a),
   getSignalTrades: (...a: unknown[]) => getSignalTrades(...a),
@@ -633,38 +631,5 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
     render(<SignalStrategiesCard />);
     await screen.findByText('SHUT');
     expect(now('SHUT')).toHaveTextContent(`Outside its window now — the next signal is taken from ${time12(hh(m + 120))}.`);
-  });
-});
-
-describe('the limit on one contract', () => {
-  const field = () => screen.getByLabelText('At most lots on one contract, all strategies');
-
-  it('[critical] shows the limit and the contract holding the most now, and saves a new one when the field is left', async () => {
-    setContractMaxLots.mockResolvedValue({ ok: true, contractMaxLots: 12 });
-    getStrategies.mockResolvedValue(status([strat('A', SIG)], { contractMaxLots: 20, contractMostNow: { symbol: 'P-BTC-84600-041026', lots: 15 } }));
-    render(<SignalStrategiesCard />);
-    await waitFor(() => expect(field()).toHaveValue('20'));
-    expect(screen.getByLabelText('lots on the fullest contract now')).toHaveTextContent(/lots\s*·\s*PE 84,600 holds 15/);
-    fireEvent.change(field(), { target: { value: '12' } });
-    fireEvent.blur(field());
-    await waitFor(() => expect(setContractMaxLots).toHaveBeenCalledWith(12));
-  });
-
-  it('[critical] no limit is 0 and says so; a number out of range is said and never sent', async () => {
-    getStrategies.mockResolvedValue(status([strat('A', SIG)], { contractMaxLots: 0, contractMostNow: null }));
-    render(<SignalStrategiesCard />);
-    await waitFor(() => expect(field()).toHaveValue('0'));
-    expect(screen.getByLabelText('lots on the fullest contract now')).toHaveTextContent(/0 is no limit\s*·\s*none open/);
-    fireEvent.change(field(), { target: { value: '99999' } });
-    fireEvent.blur(field());
-    expect(await screen.findByText('At most lots on one contract must be a whole number from 0 (no limit) to 10,000.')).toBeInTheDocument();
-    expect(setContractMaxLots).not.toHaveBeenCalled();
-  });
-
-  it('an older server that does not send the limit shows no field for it', async () => {
-    getStrategies.mockResolvedValue(status([strat('A', SIG)], {}));
-    render(<SignalStrategiesCard />);
-    await screen.findByText('A');
-    expect(screen.queryByLabelText('At most lots on one contract, all strategies')).not.toBeInTheDocument();
   });
 });

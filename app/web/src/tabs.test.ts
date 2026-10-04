@@ -12,7 +12,7 @@ import { TABS, asTab } from '@/App';
 
 describe('the tab list', () => {
   it('[critical] every screen the desk has is in the list a click is checked against', () => {
-    expect([...TABS]).toEqual(['desk', 'trade', 'orders', 'strategy', 'pnl', 'methods', 'settings', 'errors']);
+    expect([...TABS]).toEqual(['desk', 'trade', 'orders', 'strategy', 'pnl', 'methods', 'errors']);
     for (const t of TABS) expect(asTab(t)).toBe(t);
   });
 
