@@ -252,15 +252,26 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   // The switched-on strategies added up, and the worst case under the desk-wide limit.
   const totals = signalTotals(mine, data?.balanceUsd ?? null, data?.spot ?? null);
   const cap = data?.signalMaxOpen ?? 0;
+  const inUse = usageNow(mine, data?.spot ?? null);
   // What can still open from here, at worst, and whether the free margin carries it.
   const room = roomLeft(mine, cap, data?.openNow ?? 0, data?.spot ?? null);
+  /*
+   * "In use" is measured against what can actually be open: the desk-wide limit
+   * where it is the tighter one, the strategies' own sum where it is not. Under a
+   * limit of 28, "6 of 55" reads as nearly empty on a desk that is 6 of 28 full
+   * -- so the entries are the desk's open trades of the limit, as the pill above
+   * says them, and the lots and margin are what is held of what is held plus
+   * what can still open.
+   */
+  const limited = cap > 0 && cap < totals.entries;
+  const usedEntries = limited ? (data?.openNow ?? 0) : inUse.entries;
+  const mostEntries = limited ? cap : totals.entries;
   const freeUsd = data?.balanceUsd ?? null;
   const short = freeUsd !== null && room.marginUsd > freeUsd;
   // How what is still to open sits against what is free: said in a word and an icon, never by colour alone.
   const fit: Status = short ? { tone: 'danger', word: 'More than is free' }
     : freeUsd !== null && freeUsd > 0 && room.marginUsd > freeUsd * 0.8 ? { tone: 'warning', word: 'Tight' }
       : { tone: 'good', word: 'Fits in the free margin' };
-  const inUse = usageNow(mine, data?.spot ?? null);
 
   return (
     <section className="live-signal-strategies fold-host mt-3 rounded-xl border border-solid border-border bg-[var(--panel)] p-3" data-folded={!open} aria-label="Signal strategies">
@@ -337,11 +348,11 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
             </Tile>
 
             {mine.some((s) => s.open) && (
-              <Tile label="In use now" name="in use now, all strategies"
-                    value={<>{inUse.entries} of {totals.entries} entr{totals.entries === 1 ? 'y' : 'ies'}</>}
-                    meter={{ label: 'entries in use, all strategies', now: inUse.entries, max: totals.entries, tone: 'accent' }}>
-                <span>{inUse.lots} of {totals.lots} lots</span>
-                <span className="tabular-nums">{inr(usdToInr(inUse.marginUsd))} of {inr(usdToInr(totals.marginUsd))} margin</span>
+              <Tile label={limited ? `In use now · of the limit of ${cap}` : 'In use now'} name="in use now, all strategies"
+                    value={<>{usedEntries} of {mostEntries} entr{mostEntries === 1 ? 'y' : 'ies'}</>}
+                    meter={{ label: 'entries in use, all strategies', now: usedEntries, max: mostEntries, tone: 'accent' }}>
+                <span>{inUse.lots} of {inUse.lots + room.lots} lots</span>
+                <span className="tabular-nums">{inr(usdToInr(inUse.marginUsd))} of {inr(usdToInr(inUse.marginUsd + room.marginUsd))} margin</span>
               </Tile>
             )}
 

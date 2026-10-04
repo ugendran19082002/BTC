@@ -232,7 +232,11 @@ describe('at most open at once, across all strategies', () => {
     render(<SignalStrategiesCard />);
     await screen.findByText('A');
     expect(screen.getByLabelText("the strategies' limits, added up")).toHaveTextContent(/54 entries\s*5 strategies on\s*265 lots/);
-    expect(screen.getByLabelText('in use now, all strategies')).toHaveTextContent(/12 of 54 entries\s*65 of 265 lots/);
+    // in use is measured against the limit, as the pill says it -- 12 of 28, not 12 of the 54 the strategies allow --
+    // and the lots against what is held plus what can still open: 65 + 116
+    expect(screen.getByLabelText('in use now, all strategies')).toHaveTextContent(/In use now · of the limit of 28\s*12 of 28 entries\s*65 of 181 lots\s*₹2,34\d(\.\d+)? of ₹6,53\d(\.\d+)? margin/);
+    const used = within(screen.getByLabelText('in use now, all strategies')).getByRole('progressbar', { name: 'entries in use, all strategies' });
+    expect([used.getAttribute('aria-valuenow'), used.getAttribute('aria-valuemax')]).toEqual(['12', '28']);
     // 16 places left: ten more of the 8-lot strategy (80 lots) and six of the 6-lot one (36) = 116 lots = ₹4,190.
     const left = screen.getByLabelText('still to open, against the free margin');
     expect(left).toHaveTextContent(/under the limit of 28\s*More than is free\s*16 entries · 116 lots\s*needs ₹4,19\d(\.\d+)? more margin — ₹3,515 is free \(119%\)/);
@@ -351,6 +355,28 @@ describe('each strategy: its limit, and how much of it is in use now', () => {
     expect(usage('A')).toHaveTextContent(/Open now\s*0 of 1.*Lots in use 0 of 3.*Margin in use ₹0 of ₹108/);
     expect(usage('E')).toHaveTextContent(/Open now\s*1 of 1/);
     expect(usage('E')).toHaveTextContent('at its limit: the next signal is skipped');
+  });
+
+  it('[critical] under a desk-wide limit, "in use" is of the limit -- 6 of 28 -- not of everything the strategies allow', async () => {
+    // 55 allowed; six open on the desk; the limit is 28
+    const desk = [withOpen('a', 6, 20, 3), withOpen('b', 5, 20, 3), withOpen('c', 3, 15, 0)];
+    getStrategies.mockResolvedValue(status(desk, { signalMaxOpen: 28, openNow: 6 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    const used = screen.getByLabelText('in use now, all strategies');
+    expect(used).toHaveTextContent(/In use now · of the limit of 28\s*6 of 28 entries/);
+    expect(used).not.toHaveTextContent('of 55');
+    // 33 lots held; 22 places left: 17 more of the 6-lot strategy, then 5 of the 5-lot one = 127 lots; 33 of 160
+    expect(used).toHaveTextContent(/33 of 160 lots/);
+    expect(screen.getByLabelText("the strategies' limits, added up")).toHaveTextContent(/55 entries/);
+  });
+
+  it('with no limit, or one the strategies cannot reach, "in use" is of what the strategies allow', async () => {
+    const desk = [withOpen('a', 6, 20, 3), withOpen('b', 5, 20, 3), withOpen('c', 3, 15, 0)];
+    getStrategies.mockResolvedValue(status(desk, { signalMaxOpen: 0, openNow: 6 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    expect(screen.getByLabelText('in use now, all strategies')).toHaveTextContent(/In use now\s*6 of 55 entries\s*33 of 265 lots/);
   });
 
   it('[critical] the header adds the use up: entries, lots and margin in use of what the switched-on strategies allow', async () => {
