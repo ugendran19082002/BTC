@@ -1,6 +1,7 @@
 import { MAX_SIGNAL_OPEN, MAX_STRIKE_STEP, SIGNAL_TFS, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
-import { exitRuleProblems, exitRules, premiumFallbackProblem } from '@/lib/strategy-exits';
+import { exitRuleProblems, exitRules, minOtmProblem, premiumFallbackProblem } from '@/lib/strategy-exits';
+import { strikeBlockProblems } from '@/lib/strategy-blocks';
 
 /**
  * What is wrong with a strategy before it is saved, and where on the form.
@@ -19,7 +20,7 @@ const LAUNCH_AUCTION_MIN = 5;
 
 export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin'
-  | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'minPremium' | 'lots'
+  | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'premiumMinOtm' | 'strikeBlocks' | 'minPremium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
   | 'signalMode' | 'signalTf' | 'signalMethods' | 'signalTarget' | 'maxOpen';
 
@@ -27,7 +28,7 @@ export type Problem = { field: FormField; tab: FormTab; message: string };
 
 const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when',
-  legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', minPremium: 'sell', lots: 'sell',
+  legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', premiumMinOtm: 'sell', strikeBlocks: 'sell', minPremium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
   signalMode: 'signal', signalTf: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade',
 };
@@ -69,6 +70,10 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
     const f = premiumFallbackProblem(c.premium);
     if (f) say('premiumFallback', f);
   }
+  if (c.premium.usd > 0 && c.premium.usd <= 10_000) {
+    const m = minOtmProblem(c.premium);
+    if (m) say('premiumMinOtm', m);
+  }
   if (c.minPremiumUsd !== null && c.minPremiumUsd !== undefined
     && (!(c.minPremiumUsd >= 0.1) || c.minPremiumUsd > 10_000)) {
     say('minPremium', 'The minimum premium must be at least $0.10, or left empty for the desk\'s $5.');
@@ -109,6 +114,8 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
         say('maxOpen', `At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
       }
     }
+    // The strike rule over the window -- the server's `strikeBlockProblems`, in its words.
+    for (const b of strikeBlockProblems(c.strikeBlocks, c.entryTime, c.exitTime)) say('strikeBlocks', b.message);
   }
   return out;
 }

@@ -6,7 +6,7 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, selectLegs, type Candidate } from './select.js';
-import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minutesForward, minutesOf, signalMatches, time12, type Strategy } from './types.js';
+import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minutesForward, minutesOf, signalMatches, strikeLabel, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -436,9 +436,12 @@ export class StrategyRunner {
 
     // The signal's leg: one, whatever `legs` says.
     const leg = legOfSignal(dir);
-    const sel = selectLegs({ ...s, config: { ...s.config, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
+    // The strike rule in force at this minute: the strategy's own, or the block the clock has reached.
+    const at = strikePickAt(s.config, istMinutes(now));
+    const block = at.block > 0 ? ` · block ${at.block + 1}, from ${time12(at.from)}` : '';
+    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
     const chosen = sel.legs[0];
-    if (!chosen) { await finish('refused', describeSelection(sel)); return; }
+    if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}`); return; }
 
     const target = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
     const args = {
@@ -453,11 +456,12 @@ export class StrategyRunner {
     };
     const perpIn = args.underlying.entry;
     const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
-      + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}`;
+      + (chosen.minOtm !== undefined ? ` (${strikeLabel(chosen.minOtm)}, the nearest allowed)` : '')
+      + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
 
     if (!s.config.liveOrders) {
       const p = await svc.wouldPlace(args);
-      await finish(p.ok ? 'would-place' : 'refused', `${p.ok ? 'live orders off: would' : 'refused:'} ${p.ok ? what : failureText(p)}`);
+      await finish(p.ok ? 'would-place' : 'refused', `${p.ok ? 'live orders off: would' : 'refused:'} ${p.ok ? what : `${failureText(p)}${block}`}`);
       return;
     }
     const res = await svc.place(args);

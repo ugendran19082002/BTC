@@ -65,6 +65,20 @@ export function strikeLabel(step: number): string {
 export type LegConfig = 'CE' | 'PE' | 'both';
 
 /**
+ * A premium rule, whole: the number, which way it reads, its fallback, and the
+ * nearest strike it may sell.
+ *
+ * `minOtm` (4 Oct 2026) is a floor on distance, counted the way a by-strike
+ * rule counts: 6 is OTM 6. The premium picks as it always did; a pick at OTM 6
+ * or further out stands (OTM 7 is sold as OTM 7), and a pick nearer the money
+ * than that -- or no pick at all -- is replaced by OTM 6 itself. A premium
+ * number says what a strike pays, not how far it sits, and on a day the board
+ * is rich "at most $50" can land two strikes from the money. Absent or null is
+ * no floor, which is every strategy saved before it existed.
+ */
+export type PremiumRule = { mode: PremiumMode; usd: number; fallbackUsd?: number | null; minOtm?: number | null };
+
+/**
  * How the entry is priced. The same three the order ticket offers, because a
  * strategy that prices its entry differently from the ticket is a strategy
  * nobody can check by hand.
@@ -125,7 +139,19 @@ export type StrategyConfig = {
    * strikes. Null or absent is no fallback, which is every strategy saved
    * before it existed.
    */
-  premium: { mode: PremiumMode; usd: number; fallbackUsd?: number | null };
+  premium: PremiumRule;
+  /**
+   * The strike rule over the window (4 Oct 2026), for a signal strategy: from
+   * each block's time the strike is picked by that block's rule, until the next
+   * block. Before the first block the rule above is in force, the same way
+   * `targetSteps` reads. Absent or empty is one rule for the whole window,
+   * which is every strategy saved before it existed.
+   *
+   * A signal strategy takes signals for up to a day, and what a strike pays at
+   * 6 PM, with the whole contract ahead of it, is not what it pays an hour
+   * before the settlement: one premium number cannot be right at both ends.
+   */
+  strikeBlocks?: StrikeBlock[];
   /**
    * The lowest premium this strategy may sell, in dollars -- its own floor in
    * place of the desk's ($5, `minPremiumUsd` in the precheck).
@@ -298,6 +324,104 @@ export function signalMatches(rule: SignalRule, r: { id: string; mode: string; t
   if (r.mode !== rule.mode) return false;
   if (rule.mode === 'single' && !ruleTfs(rule).includes(r.tf as SignalTf)) return false;
   return rule.methods.includes(r.id);
+}
+
+/** How a strike is picked, whole: the three fields of a config that say it. */
+export type StrikePick = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'premium'>;
+
+/**
+ * From `at` (IST "HH:MM"), strikes are picked by this rule instead of the
+ * strategy's own, until the next block. By premium or by strike: the
+ * open-interest wall is not offered to a signal strategy, so not here either.
+ */
+export type StrikeBlock = {
+  at: string;
+  strikeRule: 'premium' | 'strict';
+  strikeStep: number;
+  premium: PremiumRule;
+};
+
+/** A block for every hour of a contract; more is a mistake, not a schedule. */
+export const MAX_STRIKE_BLOCKS = 24;
+
+/**
+ * The strike rule in force at an IST minute of the day, and which block that
+ * is: 0 for the strategy's own rule, n for the nth block.
+ *
+ * Measured forward from the entry and taken in order, exactly as `exitValueAt`
+ * reads a target's steps, so a window that runs past midnight needs no case of
+ * its own.
+ */
+export function strikePickAt(c: StrategyConfig, istMinute: number): { pick: StrikePick; block: number; from: string } {
+  const entry = minutesOf(c.entryTime);
+  const since = minutesForward(entry, istMinute);
+  let pick: StrikePick = { strikeRule: c.strikeRule, strikeStep: c.strikeStep, premium: c.premium };
+  let block = 0;
+  let from = c.entryTime;
+  (c.strikeBlocks ?? []).forEach((b, i) => {
+    if (isHhmm(b.at) && minutesForward(entry, minutesOf(b.at)) <= since) {
+      pick = { strikeRule: b.strikeRule, strikeStep: b.strikeStep, premium: b.premium };
+      block = i + 1;
+      from = b.at;
+    }
+  });
+  return { pick, block, from };
+}
+
+/**
+ * What is wrong with the strike blocks, in words.
+ *
+ * Each block starts after the entry and before the exit, and after the block
+ * before it -- the same three rules a target's steps keep -- and each carries a
+ * rule that would be accepted as the strategy's own.
+ */
+export function strikeBlockProblems(
+  blocks: unknown, entryTime: string | undefined, exitTime: string | undefined,
+): string[] {
+  if (blocks === undefined || blocks === null) return [];
+  if (!Array.isArray(blocks)) return ['The strike blocks must be a list.'];
+  const bad: string[] = [];
+  if (blocks.length > MAX_STRIKE_BLOCKS) bad.push(`The strike rule can change at most ${MAX_STRIKE_BLOCKS} times in a window.`);
+  const windowOk = isHhmm(entryTime) && isHhmm(exitTime);
+  const entry = windowOk ? minutesOf(entryTime) : 0;
+  const span = windowOk ? minutesForward(entry, minutesOf(exitTime)) : 0;
+  let last = 0;
+  blocks.forEach((raw, i) => {
+    const b = (raw ?? {}) as Partial<StrikeBlock>;
+    // The strategy's own rule is block 1 on the screen, so the first of these is block 2.
+    const n = i + 2;
+    if (!isHhmm(b.at)) {
+      bad.push(`Block ${n} needs a time of day, like 9:35 PM.`);
+    } else if (windowOk) {
+      const at = minutesForward(entry, minutesOf(b.at));
+      if (at === 0 || at >= span) {
+        bad.push(`Block ${n} (${time12(b.at)}) must start after entry (${time12(entryTime!)}) and before exit (${time12(exitTime!)}).`);
+      } else if (at <= last) {
+        bad.push(`Block ${n} (${time12(b.at)}) must start after block ${n - 1}.`);
+      }
+      last = Math.max(last, at);
+    }
+    if (b.strikeRule !== 'premium' && b.strikeRule !== 'strict') {
+      bad.push(`Block ${n}: pick the strike by premium or by strike.`);
+    } else if (b.strikeRule === 'strict') {
+      if (!Number.isInteger(b.strikeStep) || Math.abs(b.strikeStep ?? Infinity) > MAX_STRIKE_STEP) {
+        bad.push(`Block ${n}: pick a strike between ITM ${MAX_STRIKE_STEP} and OTM ${MAX_STRIKE_STEP}, or at the money.`);
+      }
+    } else {
+      const p = b.premium;
+      if (!p || (p.mode !== 'atLeast' && p.mode !== 'atMost')) {
+        bad.push(`Block ${n}: the premium rule must be "at least" or "at most".`);
+      } else if (!(p.usd > 0) || p.usd > 10_000) {
+        bad.push(`Block ${n}: the premium must be a positive number of dollars.`);
+      } else {
+        const f = premiumFallbackProblem(p);
+        if (f) bad.push(`Block ${n}: ${f}`);
+        const m = minOtmProblem(p);
+        if (m) bad.push(`Block ${n}: ${m}`);
+      }
+    }
+  });
+  return bad;
 }
 
 /**
@@ -572,6 +696,8 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   } else {
     const f = premiumFallbackProblem(p);
     if (f) bad.push(f);
+    const m = minOtmProblem(p);
+    if (m) bad.push(m);
   }
   // Both fields are always kept, whichever mode reads them, so both are checked.
   if (!(typeof c.takeProfitPct === 'number') || c.takeProfitPct < 0 || c.takeProfitPct > MAX_TARGET_PCT) {
@@ -625,6 +751,11 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   }
   if (c.trigger !== undefined && c.trigger !== 'time' && c.trigger !== 'signal') bad.push('The trigger must be a time or a signal.');
   if (c.trigger === 'signal') bad.push(...signalRuleProblems(c.signal));
+  // Blocks are a signal strategy's: the clock enters once, at one time, under one rule.
+  if (c.trigger === 'signal') bad.push(...strikeBlockProblems(c.strikeBlocks, c.entryTime, c.exitTime));
+  else if (Array.isArray(c.strikeBlocks) && c.strikeBlocks.length > 0) {
+    bad.push('Strike blocks are for a signal strategy: a clock strategy enters once, under one rule.');
+  }
   if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
   return bad;
 }
@@ -653,7 +784,7 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
  * Why a premium fallback is not usable, or null. Shared with the form, word
  * for word, through the browser's copy of this rule.
  */
-export function premiumFallbackProblem(p: { mode: PremiumMode; usd: number; fallbackUsd?: number | null }): string | null {
+export function premiumFallbackProblem(p: Pick<PremiumRule, 'mode' | 'usd' | 'fallbackUsd'>): string | null {
   const f = p.fallbackUsd;
   if (f === null || f === undefined) return null;
   if (typeof f !== 'number' || !(f > 0) || f > 10_000) return 'The fallback premium must be a positive number of dollars.';
@@ -662,6 +793,16 @@ export function premiumFallbackProblem(p: { mode: PremiumMode; usd: number; fall
   }
   if (p.mode === 'atLeast' && !(f < p.usd)) {
     return `The fallback must be below $${p.usd}: it is tried when nothing pays $${p.usd}.`;
+  }
+  return null;
+}
+
+/** Why a premium rule's nearest strike is not usable, or null. Shared with the form, word for word. */
+export function minOtmProblem(p: { minOtm?: unknown }): string | null {
+  const m = p.minOtm;
+  if (m === null || m === undefined) return null;
+  if (typeof m !== 'number' || !Number.isInteger(m) || m < 1 || m > MAX_STRIKE_STEP) {
+    return `The nearest strike a premium rule may sell must be OTM 1 to OTM ${MAX_STRIKE_STEP}, or switched off.`;
   }
   return null;
 }

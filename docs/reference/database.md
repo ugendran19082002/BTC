@@ -243,7 +243,11 @@ them from anything read back, so a strategy reads as what it now does.
 absent key as what older strategies were doing. Since 22 Sep 2026 it may carry
 `targetMode` / `stopMode` (`pct` or `points`), `takeProfitPoints` /
 `stopLossPoints`, `targetSteps` / `stopSteps` (`[{ at: "HH:MM", value }]`, each
-between entry and exit) and `premium.fallbackUsd`. Absent, they read as a
+between entry and exit) and `premium.fallbackUsd`. Since 4 Oct 2026 a signal
+strategy may carry `strikeBlocks` (`[{ at: "HH:MM", strikeRule, strikeStep,
+premium }]`): its strike rule over the window; absent or empty is one rule all
+window. A premium rule, the strategy's or a block's, may carry `minOtm` (1-20):
+the nearest strike it may sell. The key is written only when set. Absent, they read as a
 percentage all day and no fallback (`exitRules()`, `cleanConfig()`). Which stage
 of a timetable a trade is on is not stored: it is a function of the clock.
 

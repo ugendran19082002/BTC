@@ -8,6 +8,7 @@ import { describeStrategy } from '@/lib/strategy-preview';
 import { cn } from '@/lib/utils';
 import { useStrategyDraft } from '@/components/strategy/useStrategyDraft';
 import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
+import { StrikeBlocksEditor } from '@/components/strategy/StrikeBlocksEditor';
 import {
   DaysField, EntryPriceFields, num, FormFooter, FormTabBar, NameField, OptionExitFields, RuleSentence,
   Segmented, SizeFields, Stack, StrikeFields, TimeWindowFields, type TabDef,
@@ -21,7 +22,8 @@ import {
  *                  timeframe), and which of the 81 methods -- with each one's
  *                  record, and its signals standing now
  *   Strike & lots  the leg is the signal's (BUY sells the PE, SELL the CE); the
- *                  strike by premium or by strike; lots per signal, 1 to start
+ *                  strike by premium or by strike -- one rule all window, or a
+ *                  rule per block of hours; lots per signal, 1 to start
  *   Entry & exit   the offer, then the bid after N seconds; the SL and TGT on
  *                  the BTC perp from each signal; the option's own exits as
  *                  the backstop at Delta
@@ -101,6 +103,8 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                 </div>
               </Stack>
               <StrikeFields c={c} set={set} err={err} allowOiWall={false} />
+              {/* The same rule cut over the window: each block its own premium or strike, the rule above the first. */}
+              <StrikeBlocksEditor c={c} set={set} />
               <SizeFields c={c} set={set} err={err} sizing={d.sizing} spot={spot} label="Lots per signal" warnings={d.warnings} />
             </>
           )}

@@ -1,4 +1,4 @@
-import type { ExitMode, ExitStep, PremiumMode, StrategyConfig } from '@/types/strategy';
+import { MAX_STRIKE_STEP, type ExitMode, type ExitStep, type PremiumMode, type StrategyConfig } from '@/types/strategy';
 import { hhmmOf, isHhmm, minutesForward, minutesOf, time12 } from '@/lib/time';
 
 /**
@@ -102,6 +102,16 @@ export function premiumFallbackProblem(p: { mode: PremiumMode; usd: number; fall
   if (!(f > 0) || f > 10_000) return 'The fallback premium must be a positive number of dollars.';
   if (p.mode === 'atMost' && !(f > p.usd)) return `The fallback must be above $${p.usd}: it is tried when nothing is at or below $${p.usd}.`;
   if (p.mode === 'atLeast' && !(f < p.usd)) return `The fallback must be below $${p.usd}: it is tried when nothing pays $${p.usd}.`;
+  return null;
+}
+
+/** Why a premium rule's nearest strike is not usable, or null. The server's words. */
+export function minOtmProblem(p: { minOtm?: number | null }): string | null {
+  const m = p.minOtm;
+  if (m === null || m === undefined) return null;
+  if (!Number.isInteger(m) || m < 1 || m > MAX_STRIKE_STEP) {
+    return `The nearest strike a premium rule may sell must be OTM 1 to OTM ${MAX_STRIKE_STEP}, or switched off.`;
+  }
   return null;
 }
 

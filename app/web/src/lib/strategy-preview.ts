@@ -2,6 +2,7 @@ import { strikeLabel, type StrategyConfig } from '@/types/strategy';
 import { ruleTfWords } from '@/types/strategy';
 import { time12, wrapsMidnight } from '@/lib/time';
 import { exitRules, exitWords, type ExitRule } from '@/lib/strategy-exits';
+import { blocksWords } from '@/lib/strategy-blocks';
 
 /**
  * What a strategy will actually do, in words and in money.
@@ -37,9 +38,12 @@ export function describePremium(c: StrategyConfig): string {
     : c.premium.mode === 'atLeast'
       ? ` (none? then at least $${f})`
       : ` (none? then the last strike at or below $${f})`;
+  const m = c.premium.minOtm;
+  // The floor on distance: the pick stands from OTM n outward, and OTM n is sold when it sits nearer.
+  const floor = m === null || m === undefined ? '' : `, never nearer than ${strikeLabel(m)}`;
   return (c.premium.mode === 'atLeast'
     ? `at least $${c.premium.usd} — takes the furthest strike still paying it`
-    : `at most $${c.premium.usd} — takes the richest strike under it`) + fallback;
+    : `at most $${c.premium.usd} — takes the richest strike under it`) + fallback + floor;
 }
 
 /**
@@ -103,7 +107,7 @@ export function describeStrategy(c: StrategyConfig): string {
     const way = r.mode === 'mtf' ? 'with the timeframe chain' : `without the chain, ${ruleTfWords(r)}`;
     return `From ${time12(c.entryTime)} to ${time12(c.exitTime)} IST on ${describeDays(c.weekdays)}, takes the TRADE signals of `
       + `${n === 0 ? 'no method yet' : `${n} method${n === 1 ? '' : 's'}`} ${way}: a BUY sells a put, a SELL a call, `
-      + `${describeStrike(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'}, at most ${r.maxOpen} open at once. `
+      + `${describeStrike(c)}${blocksWords(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'}, at most ${r.maxOpen} open at once. `
       + `When ${(r.enterOn ?? 'zone') === 'zone' ? 'the BTC perp trades into the signal\'s entry zone' : 'the signal is written'} it ${describeEntry(c)}, then exits when the BTC perp reaches the signal's SL or ${signalTargetLabel(r.target)}; `
       + (hasOptionExit(c) ? `on the option itself it ${describeExit(c)}; ` : 'no option target or stop is placed; ')
       + `whatever is open closes at ${time12(c.exitTime)}. `

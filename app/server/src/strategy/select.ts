@@ -47,6 +47,8 @@ export type Chosen = {
   ask: number | null;
   /** Set when the premium rule's own number found nothing and its fallback found this. */
   fallbackUsd?: number;
+  /** Set when the premium's own pick sat nearer the money than the rule allows, or there was none, and this is the nearest strike allowed. */
+  minOtm?: number;
 };
 
 export type Selection = {
@@ -159,8 +161,32 @@ export function pickStrike(
    * opinion on a board that has one.
    */
   const fallback = cfg.premium.fallbackUsd;
-  return pickByPremium(otm, cfg.premium.mode, cfg.premium.usd)
+  const byPremium = pickByPremium(otm, cfg.premium.mode, cfg.premium.usd)
     ?? (fallback !== null && fallback !== undefined ? pickByPremium(otm, cfg.premium.mode, fallback) : null);
+
+  /*
+   * The nearest strike the rule may sell (4 Oct 2026). The premium picks as it
+   * always did; at the floor or further out its pick stands -- OTM 7 under a
+   * floor of 6 is sold as OTM 7 -- and nearer than that, or with no pick at
+   * all, the floor's own strike is sold instead. Never refused for being too
+   * near, and never moved further than the floor: what it pays is then for the
+   * desk's premium floor to judge, like any other order.
+   */
+  const min = cfg.premium.minOtm;
+  if (min === null || min === undefined) return byPremium;
+  if (byPremium && otmStepOf(priced, cp, byPremium) >= min) return byPremium;
+  return pickByPosition(priced, cp, min);
+}
+
+/**
+ * How far out a strike sits, counted the way `pickByPosition` counts: OTM 1 is
+ * 1, and the strike at the money -- which a premium rule may sell when it has
+ * no intrinsic value -- is 0.
+ */
+export function otmStepOf(priced: readonly Candidate[], cp: 'C' | 'P', c: Candidate): number {
+  const outward = priced.filter((l) => l.cp === cp && l.moneyness === 'OTM')
+    .sort((a, b) => (cp === 'C' ? a.strike - b.strike : b.strike - a.strike));
+  return outward.findIndex((l) => l.strike === c.strike) + 1;
 }
 
 /** Whether a price meets a premium rule. */
@@ -211,7 +237,8 @@ export function selectLegs(
           : cfg.strikeRule === 'oiWall'
             ? `${leg}: no wall within ${opts.wallWithinEm ?? DEFAULT_WALL_WITHIN_EM} expected moves that pays $${cfg.premium.usd}`
             : `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`
-              + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : ''),
+              + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : '')
+              + (cfg.premium.minOtm != null ? `, and no ${strikeLabel(cfg.premium.minOtm)} strike listed with a price` : ''),
       );
       continue;
     }
@@ -219,17 +246,29 @@ export function selectLegs(
   }
 
   return {
-    legs: [...picked.values()].map((c) => ({
-      cp: c.cp,
-      strike: c.strike,
-      price: c.sellPrice!,
-      pOtm: c.pOtm,
-      lots: cfg.lots,
-      ask: c.ask ?? null,
-      ...(viaFallback(cfg, c) ? { fallbackUsd: cfg.premium.fallbackUsd! } : {}),
-    })),
+    legs: [...picked.values()].map((c) => {
+      const floored = viaMinOtm(cfg, candidates, c, opts);
+      return {
+        cp: c.cp,
+        strike: c.strike,
+        price: c.sellPrice!,
+        pOtm: c.pOtm,
+        lots: cfg.lots,
+        ask: c.ask ?? null,
+        // The floor's strike was not found by a premium number at all, so it is not "the fallback" either.
+        ...(!floored && viaFallback(cfg, c) ? { fallbackUsd: cfg.premium.fallbackUsd! } : {}),
+        ...(floored ? { minOtm: cfg.premium.minOtm! } : {}),
+      };
+    }),
     refusals,
   };
+}
+
+/** True when the premium's own pick was not this strike: the nearest-strike floor chose it. */
+function viaMinOtm(cfg: StrategyConfig, candidates: readonly Candidate[], c: Candidate, opts: SelectOptions): boolean {
+  if (cfg.strikeRule !== 'premium' || cfg.premium.minOtm === null || cfg.premium.minOtm === undefined) return false;
+  const own = pickStrike(candidates, c.cp, { ...cfg, premium: { ...cfg.premium, minOtm: null } }, opts);
+  return own?.strike !== c.strike;
 }
 
 /** True when this strike was found by the premium fallback rather than the rule's own number. */
@@ -249,6 +288,7 @@ function viaFallback(cfg: StrategyConfig, c: Candidate): boolean {
 export function describeSelection(sel: Selection): string {
   const sold = sel.legs.map((l) => `${l.cp === 'C' ? 'CE' : 'PE'} ${l.strike} x${l.lots} @ ${l.price}`
     + (l.fallbackUsd !== undefined ? ` (fallback $${l.fallbackUsd})` : '')
+    + (l.minOtm !== undefined ? ` (${strikeLabel(l.minOtm)}, the nearest allowed)` : '')
     + (l.ask !== null && l.ask > 0 ? `, ask ${l.ask}` : ''));
   if (sold.length === 0) return sel.refusals.join('; ') || 'nothing to sell';
   return sold.join(', ') + (sel.refusals.length ? ` (${sel.refusals.join('; ')})` : '');

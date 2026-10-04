@@ -411,3 +411,265 @@ describe('the exits: the perp first, the option as the backstop', () => {
     expect(screen.getByLabelText('Stop loss percent')).toHaveValue('200');
   });
 });
+
+describe('the strike rule by time of day: the window cut into blocks', () => {
+  // The owner's window: 5:35 PM to 5:29 PM, at most $50 with a $75 fallback, 3 lots.
+  const day = (over: Partial<Strategy['config']> = {}) => signalStrategy({}, {
+    entryTime: '17:35', exitTime: '17:29', lots: 3,
+    strikeRule: 'premium', premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 }, ...over,
+  });
+  const openBlocks = (s: Strategy = day()) => {
+    show(s);
+    tab('Strike & lots');
+    return screen.getByRole('region', { name: 'strike rule by time' });
+  };
+  const blockSwitch = () => screen.getByRole('switch', { name: /Different strike rule by time of day/ });
+  const block = (n: number) => within(screen.getByRole('list', { name: 'strike blocks' })).getByRole('listitem', { name: `block ${n}` });
+  const blockCount = () => within(screen.getByRole('list', { name: 'strike blocks' })).getAllByRole('listitem').length;
+
+  it('[critical] off by default: one rule for the whole window, and nothing extra is saved', async () => {
+    const region = openBlocks();
+    expect(blockSwitch()).not.toBeChecked();
+    expect(within(region).getByText('Off — the rule above for the whole window.')).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'strike blocks' })).not.toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.strikeBlocks ?? []).toEqual([]);
+  });
+
+  it('[critical] switched on: 23 h 54 min every 4 hours is six blocks -- 4, 4, 4, 4, 4 and 3 h 54 min -- the first the rule above', () => {
+    const region = openBlocks();
+    fireEvent.click(blockSwitch());
+    expect(blockCount()).toBe(6);
+    expect(block(1)).toHaveTextContent('Block 1 · 5:35 PM → 9:35 PM · 4 h — the rule above: at most $50 (else $75)');
+    expect(block(2)).toHaveTextContent('→ 1:35 AM · 4 h');
+    expect(block(6)).toHaveTextContent('→ 5:29 PM · 3 h 54 min');
+    expect(within(block(2)).getByLabelText('block 2 premium usd')).toHaveValue('50');
+    expect(within(block(2)).getByLabelText('block 2 fallback usd')).toHaveValue('75');
+    expect(within(region).getByText(/5:35 PM → 5:29 PM is 23 h 54 min: 6 blocks of 4 h, the last 3 h 54 min/)).toBeInTheDocument();
+    expect(within(region).getByText(/6 blocks from 5:35 PM to 5:29 PM/)).toBeInTheDocument();
+  });
+
+  it('[critical] the 4 hours is typed: 6 hours makes four blocks, 2 hours twelve', () => {
+    openBlocks();
+    fireEvent.click(blockSwitch());
+    const hours = screen.getByLabelText('block hours');
+    expect(hours).toHaveValue('4');
+    fireEvent.change(hours, { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Split' }));
+    expect(blockCount()).toBe(4);
+    expect(block(4)).toHaveTextContent('→ 5:29 PM · 5 h 54 min');
+    fireEvent.change(hours, { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Split' }));
+    expect(blockCount()).toBe(12);
+  });
+
+  it('[critical] each block has its own rule -- by premium, at least or at most, with a fallback, or by strike -- and all of it is saved', async () => {
+    openBlocks();
+    fireEvent.click(blockSwitch());
+    // block 2: at most $40, no fallback
+    fireEvent.change(screen.getByLabelText('block 2 premium usd'), { target: { value: '40' } });
+    fireEvent.change(screen.getByLabelText('block 2 fallback usd'), { target: { value: '' } });
+    // block 3: at least $15, else $10
+    radio('block 3 premium rule', 'At least');
+    fireEvent.change(screen.getByLabelText('block 3 premium usd'), { target: { value: '15' } });
+    fireEvent.change(screen.getByLabelText('block 3 fallback usd'), { target: { value: '10' } });
+    // block 4: by strike, two out
+    radio('block 4 strike rule', 'By strike');
+    expect(within(block(4)).queryByLabelText('block 4 premium usd')).not.toBeInTheDocument();
+    fireEvent.click(within(block(4)).getByRole('button', { name: 'one strike further out' }));
+    fireEvent.click(within(block(4)).getByRole('button', { name: 'one strike further out' }));
+    expect(within(block(4)).getByRole('status', { name: 'which strike' })).toHaveTextContent('OTM 2');
+
+    expect(screen.getByText(/— then from 9:35 PM at most \$40, from 1:35 AM at least \$15 \(else \$10\), from 5:35 AM OTM 2, from 9:35 AM at most \$50 \(else \$75\)/)).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    const sent = saved().config;
+    expect(sent.premium).toEqual({ mode: 'atMost', usd: 50, fallbackUsd: 75 });
+    expect(sent.strikeBlocks).toEqual([
+      { at: '21:35', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 40, fallbackUsd: null } },
+      { at: '01:35', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atLeast', usd: 15, fallbackUsd: 10 } },
+      { at: '05:35', strikeRule: 'strict', strikeStep: 2, premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 } },
+      { at: '09:35', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 } },
+      { at: '13:35', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 } },
+    ]);
+  });
+
+  it('[critical] block 1 is the rule above: changing it there changes it here, and no block', () => {
+    openBlocks();
+    fireEvent.click(blockSwitch());
+    fireEvent.change(screen.getByLabelText('premium usd'), { target: { value: '60' } });
+    expect(block(1)).toHaveTextContent('the rule above: at most $60 (else $75)');
+    expect(screen.getByLabelText('block 2 premium usd')).toHaveValue('50');
+  });
+
+  it('fewer blocks: one is removed and the one before it runs on; one is added after the last', () => {
+    openBlocks();
+    fireEvent.click(blockSwitch());
+    fireEvent.click(screen.getByRole('button', { name: 'remove block 3' }));
+    expect(blockCount()).toBe(5);
+    expect(block(2)).toHaveTextContent('→ 5:35 AM · 8 h');
+    fireEvent.click(screen.getByRole('button', { name: 'remove block 5' }));
+    expect(block(4)).toHaveTextContent('→ 5:29 PM · 7 h 54 min');
+    fireEvent.click(screen.getByRole('button', { name: /Add a block/ }));
+    expect(blockCount()).toBe(5);
+    expect(block(5)).toHaveTextContent('→ 5:29 PM · 3 h 54 min');
+  });
+
+  it('[critical] a bad block is said on its own row, marks the tab, and nothing is sent', () => {
+    openBlocks();
+    fireEvent.click(blockSwitch());
+    fireEvent.change(screen.getByLabelText('block 3 premium usd'), { target: { value: '0' } });
+    expect(within(block(3)).getByRole('alert')).toHaveTextContent('Block 3: the premium must be a positive number of dollars.');
+    expect(within(block(2)).queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^Strike & lots/ })).toContainElement(screen.getByLabelText('has a problem'));
+    expect(saveButton()).toHaveTextContent('Fix 1 to save');
+    fireEvent.click(saveButton());
+    expect(saveStrategy).not.toHaveBeenCalled();
+  });
+
+  it('[critical] a saved strategy opens with its blocks, each with the hours it runs', () => {
+    const blocks = [
+      { at: '21:35', strikeRule: 'premium' as const, strikeStep: 0, premium: { mode: 'atMost' as const, usd: 40, fallbackUsd: null } },
+      { at: '05:35', strikeRule: 'strict' as const, strikeStep: 1, premium: { mode: 'atMost' as const, usd: 50, fallbackUsd: null } },
+    ];
+    openBlocks(day({ strikeBlocks: blocks }));
+    expect(blockSwitch()).toBeChecked();
+    expect(blockCount()).toBe(3);
+    expect(block(2)).toHaveTextContent('→ 5:35 AM · 8 h');
+    expect(within(block(3)).getByRole('status', { name: 'which strike' })).toHaveTextContent('OTM 1');
+  });
+
+  it('a window moved from under its blocks is said, and one tap splits it again', () => {
+    const blocks = [{ at: '21:35', strikeRule: 'premium' as const, strikeStep: 0, premium: { mode: 'atMost' as const, usd: 40, fallbackUsd: null } }];
+    openBlocks(day({ entryTime: '09:00', exitTime: '17:00', strikeBlocks: blocks }));
+    expect(within(block(2)).getByRole('alert')).toHaveTextContent('Block 2 (9:35 PM) must start after entry (9:00 AM) and before exit (5:00 PM).');
+    fireEvent.click(screen.getByRole('button', { name: 'Split again every 4 h' }));
+    expect(blockCount()).toBe(2);
+    expect(block(2)).toHaveTextContent('→ 5:00 PM · 4 h');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('[critical] switched off again: the blocks are gone and the rule above holds all window', async () => {
+    openBlocks();
+    fireEvent.click(blockSwitch());
+    fireEvent.click(blockSwitch());
+    expect(screen.queryByRole('list', { name: 'strike blocks' })).not.toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.strikeBlocks).toEqual([]);
+  });
+
+  it('a window shorter than one length is cut in half, so there is something to edit', () => {
+    openBlocks(day({ entryTime: '09:00', exitTime: '11:00' }));
+    fireEvent.click(blockSwitch());
+    expect(blockCount()).toBe(2);
+    expect(block(1)).toHaveTextContent('9:00 AM → 10:00 AM · 1 h');
+    expect(block(2)).toHaveTextContent('→ 11:00 AM · 1 h');
+  });
+
+  it('the clock strategy\'s form has no blocks: it enters once, under one rule', () => {
+    render(<StrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} />);
+    tab('Sell');
+    expect(screen.queryByRole('switch', { name: /Different strike rule by time of day/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('"at least OTM n" beside the premium: the nearest strike it may sell', () => {
+  const day = (over: Partial<Strategy['config']> = {}) => signalStrategy({}, {
+    entryTime: '17:35', exitTime: '17:29', lots: 3,
+    strikeRule: 'premium', premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 }, ...over,
+  });
+  const open = (s: Strategy = day()) => { show(s); tab('Strike & lots'); };
+  const floorSwitch = () => screen.getByRole('switch', { name: /Keep it at least this far out of the money/ });
+  const nearest = () => screen.getByRole('status', { name: 'nearest strike' });
+  const block = (n: number) => within(screen.getByRole('list', { name: 'strike blocks' })).getByRole('listitem', { name: `block ${n}` });
+
+  it('[critical] off by default: no field, and nothing about it is saved', async () => {
+    open();
+    expect(floorSwitch()).not.toBeChecked();
+    expect(screen.getByText('Off — whichever strike the premium picks, however near the money.')).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'nearest strike' })).not.toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.premium.minOtm ?? null).toBeNull();
+  });
+
+  it('[critical] switched on: the field appears at OTM 6, says what it does, and the number is yours to change', async () => {
+    open();
+    fireEvent.click(floorSwitch());
+    expect(nearest()).toHaveTextContent('OTM 6');
+    expect(screen.getByText(/sold only at OTM 6 or further out — OTM 7 stays OTM 7\. Nearer than that, or none found: sells OTM 6 itself\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'one strike further out' }));
+    fireEvent.click(screen.getByRole('button', { name: 'one strike further out' }));
+    expect(nearest()).toHaveTextContent('OTM 8');
+    fireEvent.click(screen.getByRole('button', { name: 'one strike nearer the money' }));
+    expect(nearest()).toHaveTextContent('OTM 7');
+    expect(screen.getByText(/never nearer than OTM 7, 3 lots/)).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.premium).toEqual({ mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 7 });
+  });
+
+  it('[critical] it cannot be set nearer than OTM 1: the money itself is not "out of the money"', () => {
+    open(day({ premium: { mode: 'atMost', usd: 50, minOtm: 1 } }));
+    expect(nearest()).toHaveTextContent('OTM 1');
+    expect(screen.getByRole('button', { name: 'one strike nearer the money' })).toBeDisabled();
+  });
+
+  it('it belongs to the premium rule: by strike has no such switch', () => {
+    open(day({ premium: { mode: 'atMost', usd: 50, minOtm: 6 } }));
+    expect(floorSwitch()).toBeChecked();
+    radio('strike rule', 'By strike');
+    expect(screen.queryByRole('switch', { name: /Keep it at least this far out of the money/ })).not.toBeInTheDocument();
+  });
+
+  it('switched off again: saved as off', async () => {
+    open(day({ premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 6 } }));
+    fireEvent.click(floorSwitch());
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.premium.minOtm).toBeNull();
+  });
+
+  it('[critical] by time of day: block 1 reads the rule\'s floor, new blocks start with it, and each block ticks and types its own', async () => {
+    open(day({ premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 6 } }));
+    fireEvent.click(screen.getByRole('switch', { name: /Different strike rule by time of day/ }));
+    expect(block(1)).toHaveTextContent('the rule above: at most $50 (else $75), OTM 6 or further');
+    expect(screen.getByLabelText('block 2 at least otm')).toBeChecked();
+    expect(screen.getByLabelText('block 2 nearest otm')).toHaveValue('6');
+    // block 2: OTM 8; block 3: no floor; block 4: by strike has none to tick
+    fireEvent.change(screen.getByLabelText('block 2 nearest otm'), { target: { value: '8' } });
+    fireEvent.click(screen.getByLabelText('block 3 at least otm'));
+    expect(screen.queryByLabelText('block 3 nearest otm')).not.toBeInTheDocument();
+    radio('block 4 strike rule', 'By strike');
+    expect(screen.queryByLabelText('block 4 at least otm')).not.toBeInTheDocument();
+    expect(screen.getByText(/then from 9:35 PM at most \$50 \(else \$75\), OTM 8 or further, from 1:35 AM at most \$50 \(else \$75\), from 5:35 AM ATM/)).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    const sent = saved().config;
+    expect(sent.premium.minOtm).toBe(6);
+    expect(sent.strikeBlocks!.map((b) => b.premium.minOtm ?? null)).toEqual([8, null, 6, 6, 6]);
+  });
+
+  it('[critical] a block ticked on a rule without a floor starts at OTM 6; 0 or 21 is said on its row and stops the save', () => {
+    open();
+    fireEvent.click(screen.getByRole('switch', { name: /Different strike rule by time of day/ }));
+    expect(screen.getByLabelText('block 2 at least otm')).not.toBeChecked();
+    fireEvent.click(screen.getByLabelText('block 2 at least otm'));
+    expect(screen.getByLabelText('block 2 nearest otm')).toHaveValue('6');
+    fireEvent.change(screen.getByLabelText('block 2 nearest otm'), { target: { value: '21' } });
+    expect(within(block(2)).getByRole('alert')).toHaveTextContent('Block 2: The nearest strike a premium rule may sell must be OTM 1 to OTM 20, or switched off.');
+    expect(saveButton()).toHaveTextContent('Fix 1 to save');
+    fireEvent.click(saveButton());
+    expect(saveStrategy).not.toHaveBeenCalled();
+  });
+
+  it('the clock strategy\'s form has it too: the premium rule is the same rule', () => {
+    render(<StrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} />);
+    tab('Sell');
+    expect(floorSwitch()).not.toBeChecked();
+    fireEvent.click(floorSwitch());
+    expect(nearest()).toHaveTextContent('OTM 6');
+  });
+});

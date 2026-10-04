@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, SIGNAL_TFS, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, SIGNAL_TFS, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 
 /**
@@ -69,6 +69,7 @@ function cleanConfig(raw: unknown): StrategyConfig {
       fallbackUsd: c.premium?.fallbackUsd === null || c.premium?.fallbackUsd === undefined
         ? null
         : Number(c.premium.fallbackUsd),
+      ...cleanMinOtm(c.premium?.minOtm),
     },
     // Absent or empty: the desk's floor, which is what every strategy used before it.
     minPremiumUsd: c.minPremiumUsd === null || c.minPremiumUsd === undefined || (c.minPremiumUsd as unknown) === ''
@@ -104,10 +105,44 @@ function cleanConfig(raw: unknown): StrategyConfig {
       ? [...new Set(c.weekdays.map((d) => Math.floor(Number(d))))].sort()
       : [...DEFAULT_CONFIG.weekdays],
     // A client that predates signal strategies sends none of these, and means the clock.
+    // The blocks too: only a signal strategy has a window to split, so a clock strategy never carries them.
     ...(c.trigger === 'signal'
-      ? { trigger: 'signal' as const, signal: cleanSignal(c.signal), liveOrders: c.liveOrders === true }
+      ? { trigger: 'signal' as const, signal: cleanSignal(c.signal), liveOrders: c.liveOrders === true, strikeBlocks: cleanBlocks(c.strikeBlocks) }
       : {}),
   };
+}
+
+/**
+ * Each block's own keys, in the order sent -- not sorted, for the reason
+ * `cleanSteps` gives: a block out of order is said, not quietly repaired. A
+ * rule it cannot read is left as sent so validation can name it.
+ */
+function cleanBlocks(raw: unknown): StrikeBlock[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) return raw as StrikeBlock[];
+  return raw.map((b) => {
+    const o = (b ?? {}) as Partial<StrikeBlock>;
+    const f = o.premium?.fallbackUsd;
+    return {
+      at: String(o.at ?? ''),
+      strikeRule: o.strikeRule as StrikeBlock['strikeRule'],
+      strikeStep: Math.trunc(Number(o.strikeStep ?? 0)) || 0,
+      premium: {
+        mode: o.premium?.mode as StrikeBlock['premium']['mode'],
+        usd: Number(o.premium?.usd ?? DEFAULT_CONFIG.premium.usd),
+        fallbackUsd: f === null || f === undefined ? null : Number(f),
+        ...cleanMinOtm(o.premium?.minOtm),
+      },
+    };
+  });
+}
+
+/**
+ * The nearest strike a premium rule may sell, kept only when one is set: off is
+ * no key at all, so a strategy that never used it is stored as it always was.
+ */
+function cleanMinOtm(raw: unknown): { minOtm?: number } {
+  return raw === null || raw === undefined || raw === '' ? {} : { minOtm: Number(raw) };
 }
 
 /** A signal rule: only its own keys, the methods de-duplicated in the order sent. A mode or timeframe it cannot read is left for validation to name. */

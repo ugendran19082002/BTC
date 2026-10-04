@@ -371,3 +371,84 @@ test('the open-interest rule may take the nearest strike too, when it has no int
   const got = pickStrike(board, 'C', cfg({ strikeRule: 'oiWall', premium: { mode: 'atLeast', usd: 5 } }), { spot: 84_150 });
   assert.equal(got?.strike, 84_200);
 });
+
+// ------------------------------------------------------------ the nearest strike a premium rule may sell
+
+/*
+ * "At least OTM n" on a premium rule (4 Oct 2026). On BOARD the calls run
+ * OTM 1 79,000 @ 60 · OTM 2 79,400 @ 30 · OTM 3 79,800 @ 18 · OTM 4 80,200 @ 12 ·
+ * OTM 5 80,600 @ 7 · OTM 6 81,000 @ 3. The premium picks as it always did; its
+ * pick stands at the floor or further out, and the floor's own strike is sold
+ * when the pick sits nearer the money, or there is none.
+ */
+const floor = (mode: 'atLeast' | 'atMost', usd: number, minOtm: number | null, fallbackUsd: number | null = null) =>
+  cfg({ premium: { mode, usd, fallbackUsd, minOtm } });
+
+test('[critical] a premium pick further out than the floor stands: OTM 3 under "at least OTM 2" is sold as OTM 3', () => {
+  // at least $15 picks 79,800 @ 18, the third strike out
+  assert.equal(pickStrike(BOARD, 'C', floor('atLeast', 15, 2))?.strike, 79_800);
+  assert.equal(pickStrike(BOARD, 'C', floor('atLeast', 15, 1))?.strike, 79_800);
+});
+
+test('[critical] a pick exactly at the floor stands: equal counts', () => {
+  assert.equal(pickStrike(BOARD, 'C', floor('atLeast', 15, 3))?.strike, 79_800);
+  assert.equal(pickStrike(BOARD, 'C', floor('atMost', 15, 4))?.strike, 80_200);
+});
+
+test('[critical] a pick nearer the money than the floor is replaced by the floor\'s own strike', () => {
+  // at least $15 would sell OTM 3; the floor is OTM 5, so 80,600 @ 7 is sold -- whatever it pays
+  const got = pickStrike(BOARD, 'C', floor('atLeast', 15, 5));
+  assert.equal(got?.strike, 80_600);
+  assert.equal(got?.sellPrice, 7);
+  // at most $15 would sell OTM 4 @ 12; under OTM 6 it is 81,000 @ 3
+  assert.equal(pickStrike(BOARD, 'C', floor('atMost', 15, 6))?.strike, 81_000);
+  // and the put side counts down the board the same way: at least $15 picks OTM 3 (77,400), the floor is OTM 4
+  assert.equal(pickStrike(BOARD, 'P', floor('atLeast', 15, 4))?.strike, 77_000);
+});
+
+test('[critical] no strike meets the premium at all: the floor\'s strike is sold rather than nothing', () => {
+  assert.equal(pickStrike(BOARD, 'C', floor('atLeast', 500, null)), null, 'without a floor: nothing');
+  assert.equal(pickStrike(BOARD, 'C', floor('atLeast', 500, 2))?.strike, 79_400);
+});
+
+test('the strike at the money, sold by a premium rule when it has no intrinsic value, is nearer than any floor', () => {
+  // spot just under 78,600: the call there is out of the money and pays the most
+  assert.equal(pickStrike(BOARD, 'C', floor('atLeast', 200, null), { spot: 78_550 })?.strike, 78_600);
+  assert.equal(pickStrike(BOARD, 'C', floor('atLeast', 200, 1), { spot: 78_550 })?.strike, 79_000, 'OTM 1, not the money');
+});
+
+test('[critical] a floor beyond the last listed strike refuses the leg, and says why', () => {
+  // four puts out of the money; OTM 6 is not on the board
+  const sel = selectLegs(strat({ legs: 'PE', premium: { mode: 'atLeast', usd: 15, minOtm: 6 } }), BOARD);
+  assert.deepEqual(sel.legs, []);
+  assert.match(sel.refusals[0]!, /^PE: nothing out of the money paying \$15, and no OTM 6 strike listed with a price$/);
+});
+
+test('[critical] the run says when the floor chose the strike -- and does not call it the fallback', () => {
+  // at most $2 finds nothing; the fallback, at most $10, finds OTM 5 @ 7; the floor is OTM 6
+  const sel = selectLegs(strat({ legs: 'CE', lots: 3, premium: { mode: 'atMost', usd: 2, fallbackUsd: 10, minOtm: 6 } }), BOARD);
+  assert.equal(sel.legs[0]!.strike, 81_000);
+  assert.equal(sel.legs[0]!.minOtm, 6);
+  assert.equal(sel.legs[0]!.fallbackUsd, undefined);
+  assert.equal(describeSelection(sel), 'CE 81000 x3 @ 3 (OTM 6, the nearest allowed)');
+  // the premium's own pick, further out than the floor: no note at all
+  const own = selectLegs(strat({ legs: 'CE', premium: { mode: 'atLeast', usd: 15, minOtm: 2 } }), BOARD);
+  assert.equal(own.legs[0]!.minOtm, undefined);
+  assert.equal(describeSelection(own), 'CE 79800 x10 @ 18');
+  // a fallback pick at or beyond the floor is still said as the fallback
+  const viaFb = selectLegs(strat({ legs: 'CE', premium: { mode: 'atMost', usd: 2, fallbackUsd: 10, minOtm: 5 } }), BOARD);
+  assert.equal(viaFb.legs[0]!.strike, 80_600);
+  assert.equal(viaFb.legs[0]!.fallbackUsd, 10);
+  assert.equal(viaFb.legs[0]!.minOtm, undefined);
+});
+
+test('off -- null or absent -- is the premium rule as it always was', () => {
+  for (const minOtm of [null, undefined]) {
+    assert.equal(pickStrike(BOARD, 'C', cfg({ premium: { mode: 'atLeast', usd: 15, minOtm } }))?.strike, 79_800);
+    assert.equal(pickStrike(BOARD, 'C', cfg({ premium: { mode: 'atMost', usd: 15, minOtm } }))?.strike, 80_200);
+  }
+});
+
+test('a by-strike rule names its strike and does not read the floor', () => {
+  assert.equal(pickStrike(BOARD, 'C', cfg({ strikeRule: 'strict', strikeStep: 1, premium: { mode: 'atLeast', usd: 15, minOtm: 5 } }))?.strike, 79_000);
+});

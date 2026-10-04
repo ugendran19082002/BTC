@@ -2,7 +2,7 @@ import { useState, type RefObject } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { DAY_NAMES, MAX_STRIKE_STEP, strikeLabel, type StrategyConfig } from '@/types/strategy';
+import { DAY_NAMES, DEFAULT_MIN_OTM, MAX_STRIKE_STEP, strikeLabel, type StrategyConfig } from '@/types/strategy';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { TimePicker } from '@/components/ui/time-picker';
@@ -336,6 +336,32 @@ export function StrikeFields({ c, set, err, allowOiWall = true }: {
         </div>
       )}
 
+      {/*
+        A floor on distance, beside the premium (4 Oct 2026). A premium number says
+        what a strike pays, not how far it sits: on a rich board "at most $50" can
+        land two strikes from the money. On, the premium's pick stands only at
+        OTM n or further out; nearer than that, OTM n itself is sold.
+      */}
+      {c.strikeRule === 'premium' && (
+        <div className="mt-2">
+          <Switch
+            label="Keep it at least this far out of the money"
+            description={c.premium.minOtm != null
+              ? `The premium's strike is sold only at ${strikeLabel(c.premium.minOtm)} or further out — ${strikeLabel(c.premium.minOtm + 1)} stays ${strikeLabel(c.premium.minOtm + 1)}. Nearer than that, or none found: sells ${strikeLabel(c.premium.minOtm)} itself.`
+              : 'Off — whichever strike the premium picks, however near the money.'}
+            checked={c.premium.minOtm != null}
+            onCheckedChange={(on) => set('premium', { ...c.premium, minOtm: on ? DEFAULT_MIN_OTM : null })}
+          />
+          {c.premium.minOtm != null && (
+            <Stack label="Nearest strike it may sell" error={err('premiumMinOtm')} className="mt-1"
+                   hint="counted over the strikes Delta has listed, out from the money">
+              <StrikeStepper value={c.premium.minOtm} min={1} label="nearest strike"
+                             onChange={(v) => set('premium', { ...c.premium, minOtm: v })} />
+            </Stack>
+          )}
+        </div>
+      )}
+
       {c.strikeRule === 'strict' && (
         <Stack
           label="Which strike"
@@ -575,17 +601,22 @@ export function LeftToFix({ tabs: all, problems, needsName, onName, onGo }: {
  * carries the meaning, and "-2" typed into a box is not something anybody
  * should have to translate into "two strikes in the money".
  */
-export function StrikeStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const go = (by: number) => onChange(Math.max(-MAX_STRIKE_STEP, Math.min(MAX_STRIKE_STEP, value + by)));
+export function StrikeStepper({ value, onChange, min = -MAX_STRIKE_STEP, label = 'which strike' }: {
+  value: number; onChange: (v: number) => void;
+  /** The nearest it may go: 1 for a floor that must stay out of the money. */
+  min?: number;
+  label?: string;
+}) {
+  const go = (by: number) => onChange(Math.max(min, Math.min(MAX_STRIKE_STEP, value + by)));
   const btn = 'm-0 h-11 w-12 flex-none appearance-none rounded-md border border-solid border-border bg-muted '
     + 'font-[inherit] text-[18px] text-foreground disabled:opacity-35';
   return (
     <div className="flex items-center gap-2">
       <button type="button" aria-label="one strike nearer the money" className={btn}
-              disabled={value <= -MAX_STRIKE_STEP} onClick={() => go(-1)}>−</button>
+              disabled={value <= min} onClick={() => go(-1)}>−</button>
       <div
         role="status"
-        aria-label="which strike"
+        aria-label={label}
         className="flex h-11 flex-1 items-center justify-center rounded-md border border-solid border-border bg-muted text-[15px] font-semibold text-foreground"
       >
         {strikeLabel(value)}

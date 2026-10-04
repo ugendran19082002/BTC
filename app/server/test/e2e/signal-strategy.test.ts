@@ -389,7 +389,8 @@ test('[critical] enter at the zone (the default): nothing at the signal; the opt
   const off = onSetupFilled((f) => { void runner.onSetupFilled(f); });
   await recordSetups([s], Date.now());
   const row = (await workingRows()).find((x) => x.tf === '15m' && x.triggerAt === s.triggerTime)!;
-  const filledAt = Math.floor(Date.now() / 1000);
+  // Filled now by the runner's clock (10:00 IST), not the machine's: before 10:00 the machine's own time read as a fill hours old.
+  const filledAt = Math.floor(clock / 1000);
   await saveGraded(row.id, { ...row, status: 'filled', filledAt, fillPrice: 84_990 }, 'open');
   const run = await until(async () => (await runsOf('sig-zone')).at(-1), (x) => x?.status === 'placed', 'the zone entry');
   const t = await one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [run!.trade_id]);
@@ -484,4 +485,159 @@ test('[critical] live orders switched ON: the would-sells written down while it 
   const last = (await runsOf('sig-cap')).at(-1)!;
   assert.equal(last.status, 'placed', `on: a real order, not blocked by would-sells -- ${last.detail}`);
   await api('POST', '/api/strategies/sig-cap/enabled', { enabled: false });
+});
+
+// ------------------------------------------------------------ the strike rule over the window
+
+/*
+ * The window cut into blocks, each with its own strike rule (4 Oct 2026): 9:00 AM
+ * to 5:00 PM under "at most $20", from 1:00 PM "at most $10", from 3:00 PM the
+ * third strike out. A board of its own, with strikes for each rule to find.
+ */
+const BLOCKS = [
+  { at: '13:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 10, fallbackUsd: null } },
+  { at: '15:00', strikeRule: 'strict', strikeStep: 3, premium: { mode: 'atMost', usd: 10, fallbackUsd: null } },
+];
+const blocked = { ...config, signal: { ...config.signal, maxOpen: 10 }, strikeBlocks: BLOCKS };
+
+test('[critical] strike blocks are saved with the strategy, in the database, as sent -- and a bad one is refused in words', async () => {
+  const late = await api('POST', '/api/strategies', { name: 'Sig blocks', config: { ...blocked, strikeBlocks: [{ ...BLOCKS[0], at: '17:30' }] } });
+  assert.equal(late.status, 422);
+  assert.ok(late.body.problems.some((p: string) => /Block 2 \(5:30 PM\) must start after entry \(9:00 AM\) and before exit \(5:00 PM\)/.test(p)), late.body.problems.join(' '));
+  const order = await api('POST', '/api/strategies', { name: 'Sig blocks', config: { ...blocked, strikeBlocks: [BLOCKS[1], BLOCKS[0]] } });
+  assert.ok(order.body.problems.some((p: string) => /Block 3 \(1:00 PM\) must start after block 2/.test(p)), 'out of order is said, not sorted');
+  const zero = await api('POST', '/api/strategies', { name: 'Sig blocks', config: { ...blocked, strikeBlocks: [{ ...BLOCKS[0], premium: { mode: 'atMost', usd: 0 } }] } });
+  assert.ok(zero.body.problems.some((p: string) => /Block 2: the premium must be a positive number/.test(p)));
+
+  const r = await api('POST', '/api/strategies', { name: 'Sig blocks', config: { ...blocked, strikeBlocks: [{ ...BLOCKS[0], stray: 'x' }, BLOCKS[1]] } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-blocks'");
+  assert.deepEqual(row!.config.strikeBlocks, BLOCKS, 'every block kept, and only its own keys');
+  assert.deepEqual((await strategyStore().get('sig-blocks'))!.config.strikeBlocks, BLOCKS, 'and read back');
+  const listed = (await api('GET', '/api/strategies')).body.strategies.find((x: any) => x.id === 'sig-blocks');
+  assert.deepEqual(listed.config.strikeBlocks, BLOCKS, 'the screen gets them');
+});
+
+test('a strategy saved without blocks has none; a clock strategy never carries them', async () => {
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig one rule', config })).status, 200);
+  const none = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-one-rule'");
+  assert.deepEqual(none!.config.strikeBlocks, [], 'one rule for the whole window');
+  const { trigger: _t, signal: _s, liveOrders: _l, ...clockOnly } = blocked;
+  const r = await api('POST', '/api/strategies', { name: 'Clock blocks', config: clockOnly });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'clock-blocks'");
+  assert.equal('strikeBlocks' in row!.config, false, 'dropped by the cleaner: the clock enters once, under one rule');
+});
+
+test('[critical] each signal is sold under the block the clock has reached, and its row says which', async () => {
+  const FAR = 83_600, FURTHER = 83_200;
+  for (const [strike, pid, bid] of [[FAR, 7003, 9], [FURTHER, 7004, 4]] as const) {
+    const symbol = `P-BTC-${strike}-${EXPIRY}`;
+    paper().addProduct({ symbol, productId: pid, underlying: 'BTC', optionSide: 'PE', strike, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+    paper().setQuote({ symbol, bid, ask: bid + 0.5, bidSize: 5_000, askSize: 5_000, mark: bid + 0.2, ts: Date.now() });
+  }
+  paper().setQuote({ symbol: `P-BTC-${PUT}-${EXPIRY}`, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  const wide: SignalBoard = {
+    ...board,
+    candidates: [
+      ...board.candidates,
+      { cp: 'P', strike: FAR, sellPrice: 9, pOtm: 0.9, moneyness: 'OTM', ask: 9.5 },
+      { cp: 'P', strike: FURTHER, sellPrice: 4, pOtm: 0.95, moneyness: 'OTM', ask: 4.5 },
+    ],
+  };
+  const byBlock = new StrategyRunner(strategyStore(), () => clock, async () => wide);
+  await api('POST', '/api/strategies/sig-blocks/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  const last = async () => (await runsOf('sig-blocks')).at(-1)!;
+
+  clock = TEN;                                         // 10:00 -- before the first block: the strategy's own rule
+  await byBlock.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 84000 x1 @ 18 · perp SL 84600 · TGT 85500$/, 'at most $20, and no block named');
+
+  clock = TEN + 3 * 3_600_000;                         // 13:00 -- the minute the second block starts
+  await byBlock.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 .* · block 2, from 1:00 PM$/, 'at most $10');
+
+  clock = TEN + 5.5 * 3_600_000;                       // 15:30 -- the third: the third strike out, whatever it pays
+  await byBlock.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83200 x1 @ 4 .* · block 3, from 3:00 PM$/);
+
+  // A block whose rule finds nothing refuses the signal, and says which block asked.
+  const s = (await strategyStore().get('sig-blocks'))!;
+  const none = [{ ...BLOCKS[0], premium: { mode: 'atMost', usd: 2, fallbackUsd: null } }];
+  assert.equal((await api('POST', '/api/strategies', { id: s.id, name: s.name, config: { ...s.config, strikeBlocks: none } })).status, 200);
+  clock = TEN + 4 * 3_600_000;
+  await byBlock.onSignal(signal());
+  const refused = await last();
+  assert.equal(refused.status, 'refused', refused.detail);
+  assert.match(refused.detail, /PE: nothing out of the money at or below \$2 · block 2, from 1:00 PM$/);
+
+  // And a strike the block did find, turned down by a gate: the row still says which block chose it.
+  assert.equal((await api('POST', '/api/strategies', { id: s.id, name: s.name, config: { ...s.config, strikeBlocks: BLOCKS, minPremiumUsd: 5 } })).status, 200);
+  clock = TEN + 5.5 * 3_600_000;                       // 15:30 -- the third strike out pays 4, under its $5 floor
+  await byBlock.onSignal(signal());
+  const gated = await last();
+  assert.equal(gated.status, 'refused', gated.detail);
+  assert.match(gated.detail, /\| refused: .+ · block 3, from 3:00 PM$/);
+
+  clock = TEN;
+  await api('POST', '/api/strategies/sig-blocks/enabled', { enabled: false });
+});
+
+test('[critical] "at least OTM n" on a premium rule and on a block: saved only when set, and it decides the strike in real runs', async () => {
+  // Puts on the wide board: OTM 1 84,000 @ 18 · OTM 2 83,600 @ 9 · OTM 3 83,200 @ 4.
+  const floored = {
+    ...config, signal: { ...config.signal, maxOpen: 10 },
+    premium: { mode: 'atMost', usd: 20, fallbackUsd: null, minOtm: 2 },               // picks OTM 1 @ 18: nearer than OTM 2
+    strikeBlocks: [
+      { at: '13:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 10, fallbackUsd: null, minOtm: 1 } },   // picks OTM 2 @ 9: stands
+      { at: '15:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 20, fallbackUsd: null, minOtm: 3 } },   // picks OTM 1: sold at OTM 3
+    ],
+  };
+  const bad = await api('POST', '/api/strategies', { name: 'Sig floor', config: { ...floored, premium: { ...floored.premium, minOtm: 0 } } });
+  assert.equal(bad.status, 422);
+  assert.ok(bad.body.problems.includes('The nearest strike a premium rule may sell must be OTM 1 to OTM 20, or switched off.'), bad.body.problems.join(' '));
+  const badBlock = await api('POST', '/api/strategies', { name: 'Sig floor', config: { ...floored, strikeBlocks: [{ ...floored.strikeBlocks[0], premium: { mode: 'atMost', usd: 10, minOtm: 21 } }] } });
+  assert.ok(badBlock.body.problems.some((p: string) => /^Block 2: The nearest strike a premium rule may sell/.test(p)));
+
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig floor', config: floored })).status, 200);
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-floor'");
+  assert.equal(row!.config.premium.minOtm, 2);
+  assert.deepEqual(row!.config.strikeBlocks.map((b: any) => b.premium.minOtm), [1, 3]);
+  const plain = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-blocks'");
+  assert.equal('minOtm' in plain!.config.premium, false, 'off is no key at all: a strategy that never used it is stored as before');
+
+  const FAR = 83_600, FURTHER = 83_200;
+  for (const [strike, pid, bid] of [[PUT, 7001, 18], [FAR, 7003, 9], [FURTHER, 7004, 4]] as const) {
+    const symbol = `P-BTC-${strike}-${EXPIRY}`;
+    paper().addProduct({ symbol, productId: pid, underlying: 'BTC', optionSide: 'PE', strike, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+    paper().setQuote({ symbol, bid, ask: bid + 0.5, bidSize: 5_000, askSize: 5_000, mark: bid + 0.2, ts: Date.now() });
+  }
+  const wide: SignalBoard = {
+    ...board,
+    candidates: [
+      ...board.candidates,
+      { cp: 'P', strike: FAR, sellPrice: 9, pOtm: 0.9, moneyness: 'OTM', ask: 9.5 },
+      { cp: 'P', strike: FURTHER, sellPrice: 4, pOtm: 0.95, moneyness: 'OTM', ask: 4.5 },
+    ],
+  };
+  const r = new StrategyRunner(strategyStore(), () => clock, async () => wide);
+  await api('POST', '/api/strategies/sig-floor/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  const last = async () => (await runsOf('sig-floor')).at(-1)!;
+
+  clock = TEN;                                         // the rule itself: at most $20 is OTM 1, the floor is OTM 2
+  await r.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 \(OTM 2, the nearest allowed\) · perp SL 84600 · TGT 85500$/);
+
+  clock = TEN + 3.5 * 3_600_000;                       // 13:30 -- at most $10 is OTM 2, past its OTM 1 floor: the premium's own strike
+  await r.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 · perp SL 84600 · TGT 85500 · block 2, from 1:00 PM$/);
+
+  clock = TEN + 5.5 * 3_600_000;                       // 15:30 -- at most $20 is OTM 1, the floor is OTM 3
+  await r.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83200 x1 @ 4 \(OTM 3, the nearest allowed\) · perp SL 84600 · TGT 85500 · block 3, from 3:00 PM$/);
+
+  clock = TEN;
+  await api('POST', '/api/strategies/sig-floor/enabled', { enabled: false });
 });

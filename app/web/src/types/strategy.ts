@@ -2,6 +2,17 @@
 
 export type PremiumMode = 'atLeast' | 'atMost';
 export type LegConfig = 'CE' | 'PE' | 'both';
+
+/**
+ * A premium rule, whole (server: PremiumRule). `minOtm` is the nearest strike
+ * it may sell, counted like a by-strike rule: the premium's own pick stands at
+ * OTM n or further out, and nearer than that -- or with no pick -- OTM n itself
+ * is sold. Null or absent: no floor.
+ */
+export type PremiumRule = { mode: PremiumMode; usd: number; fallbackUsd?: number | null; minOtm?: number | null };
+
+/** What "at least OTM" starts at when it is switched on. */
+export const DEFAULT_MIN_OTM = 6;
 export type EntryPrice = 'now' | 'offer' | 'set';
 
 /** How the strike is chosen: by what it pays, or by where it sits. */
@@ -28,6 +39,17 @@ export function strikeLabel(step: number): string {
   if (!Number.isFinite(step) || step === 0) return 'ATM';
   return step > 0 ? `OTM ${step}` : `ITM ${-step}`;
 }
+
+/** From `at` (IST "HH:MM"), strikes are picked by this rule until the next block. Mirrors the server's StrikeBlock. */
+export type StrikeBlock = {
+  at: string;
+  strikeRule: 'premium' | 'strict';
+  strikeStep: number;
+  premium: PremiumRule;
+};
+
+/** A block for every hour of a contract (server: MAX_STRIKE_BLOCKS). */
+export const MAX_STRIKE_BLOCKS = 24;
 
 /**
  * An exit read as a share (0.8 = 80%), as points from the entry, or as the
@@ -58,7 +80,13 @@ export type StrategyConfig = {
    * the last strike at or under $50". Above `usd` for at-most, below it for
    * at-least. Null or absent is no fallback.
    */
-  premium: { mode: PremiumMode; usd: number; fallbackUsd?: number | null };
+  premium: PremiumRule;
+  /**
+   * A signal strategy's strike rule over its window: from each block's time the
+   * strike is picked by that block's rule, until the next. Before the first
+   * block the rule above is in force. Absent or empty: one rule all window.
+   */
+  strikeBlocks?: StrikeBlock[];
   /** This strategy's own premium floor, in dollars. Null or absent: the desk's $5. */
   minPremiumUsd?: number | null;
   entryPrice: EntryPrice;
