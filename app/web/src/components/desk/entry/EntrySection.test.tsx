@@ -227,7 +227,8 @@ describe('the entry section, side by side', () => {
     expect(within(await panel(/12 methods \+ timeframe/)).getByRole('table')).toBeInTheDocument();
     const chips = within(without).queryByRole('group', { name: 'alert timeframes' });
     if (chips) expect(within(chips).queryByRole('button', { name: '1m' })).toBeNull();
-    expect(within(screen.getByRole('group', { name: 'history timeframe' })).queryByRole('button', { name: '1m' })).toBeNull();
+    // The signal history, and its timeframe chips, are on the Methods screen now (4 Oct 2026): not in this section.
+    expect(screen.queryByRole('group', { name: 'history timeframe' })).toBeNull();
   });
 
   it('charts: one mode at a time, every method with a signal first', async () => {

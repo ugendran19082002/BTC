@@ -2228,6 +2228,18 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
   font-family: ui-monospace, monospace;
 }
 
+/* The signal strategies on a phone: the card is the whole Strategy screen, so it gives up its outer padding,
+   and the limit's pill takes a row of its own -- label and field together, its note under them -- instead of
+   breaking its label across two lines. */
+@media (max-width: 560px) {
+  .live-signal-strategies { padding: 8px; margin-top: 0; }
+  .live-signal-strategies .desk-section-header { padding: 10px 12px; margin-bottom: 8px; }
+  .live-signal-strategies .desk-section-title-wrap { align-items: flex-start; }
+  .live-signal-strategies .desk-section-badges { width: 100%; }
+  .live-signal-strategies label.desk-badge-pill { width: 100%; flex-wrap: wrap; row-gap: 4px; border-radius: 12px; padding: 6px 10px; }
+  .live-signal-strategies label.desk-badge-pill > span:first-child { white-space: nowrap; }
+}
+
 /* User-friendly SignalDesk improvements */
 
 .sig-badge.active {
