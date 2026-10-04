@@ -13,7 +13,6 @@ import { MethodLegend } from './MethodLegend';
 import { GateSwitches } from './GateSwitches';
 import { GateChecklist } from './GateChecklist';
 import { AlertSwitch } from './AlertSwitch';
-import { SignalHistory } from './SignalHistory';
 import './entry.css';
 
 /**
@@ -200,7 +199,6 @@ export function EntrySection({ desk, onTimeframes, belowHeader }: {
                        setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="mtf" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('mtf')} />
           </div>
-          <SignalHistory />
         </>
       ) : (
         <EntryGrid mode={gridMode} onMode={setGridMode} reads={reads.filter((r) => r.mode === gridMode)} singleTf={tf} setupsOn={setupsOn} chart={chart} />

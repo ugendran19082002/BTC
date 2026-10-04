@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-390 files listed, 186 test files counted below, images and lockfiles left out.
+387 files listed, 183 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 110 |
-| `app/web` | 76 |
+| `app/web` | 73 |
 
 ## `(root)`
 
@@ -376,15 +376,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [EntryCountdown.tsx](../../app/web/src/components/strategy/EntryCountdown.tsx) | How long until a strategy's next entry, ticking, and whether the scheduler is on to take it. |
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
 | [SignalRuleEditor.tsx](../../app/web/src/components/strategy/SignalRuleEditor.tsx) | Which signals a signal strategy takes: the way (with the timeframe chain, or without it on one timeframe), and the methods -- picked from the 81, each with its record so far in that way, so the cho... |
 | [SignalStrategiesCard.tsx](../../app/web/src/components/strategy/SignalStrategiesCard.tsx) | The signal strategies, on the Live screen beside the methods that make the signals: each one's switch, its live-orders switch, what it is set to, and what the last signals did. |
 | [SignalStrategyForm.tsx](../../app/web/src/components/strategy/SignalStrategyForm.tsx) | A signal strategy: the desk's entry signals sold as options. |
 | [SignalTradeHistory.tsx](../../app/web/src/components/strategy/SignalTradeHistory.tsx) | Every trade the signal strategies took, or with live orders off would have taken: the signal, the option, the signal's SL and TGT on the BTC perp, how it ended and what it made. |
-| [StrategyForm.tsx](../../app/web/src/components/strategy/StrategyForm.tsx) | A clock strategy -- everything it is, in words rather than symbols, in three short tabs: |
-| [StrategyPanel.tsx](../../app/web/src/components/strategy/StrategyPanel.tsx) | The strategies, what is armed, and when each one next runs. |
 | [StrikeBlocksEditor.tsx](../../app/web/src/components/strategy/StrikeBlocksEditor.tsx) | A signal strategy's strike rule, over its window (4 Oct 2026). |
 | [form-parts.tsx](../../app/web/src/components/strategy/form-parts.tsx) | The strategy forms' parts: every field group a strategy has, written once. |
 | [useStrategyDraft.ts](../../app/web/src/components/strategy/useStrategyDraft.ts) | A strategy being edited: the config, the name, what is wrong with them and on which tab, and saving -- the part both strategy forms share, so the clock form and the signal form check and save the s... |

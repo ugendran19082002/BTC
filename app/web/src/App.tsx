@@ -56,6 +56,7 @@ const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m)
 const SignalStrategiesCard = lazy(() => import('@/components/strategy/SignalStrategiesCard').then((m) => ({ default: m.SignalStrategiesCard })));
 const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
 const MethodReport = lazy(() => import('@/components/report/MethodReport').then((m) => ({ default: m.MethodReport })));
+const SignalHistory = lazy(() => import('@/components/desk/entry/SignalHistory').then((m) => ({ default: m.SignalHistory })));
 const LogsPanel = lazy(() => import('@/components/layout/LogsPanel').then((m) => ({ default: m.LogsPanel })));
 // The calendar library is a sixth of the first download and is needed only
 // once somebody chooses a past date.
@@ -733,9 +734,16 @@ export default function App() {
           <ReportPanel />
         </ErrorBoundary>
       ) : tab === 'methods' ? (
-        <ErrorBoundary where="Methods report">
-          <MethodReport />
-        </ErrorBoundary>
+        // The methods' record, and under it every signal they gave: the signal history sat under Entry setups on
+        // Live until 4 Oct 2026. Placement only.
+        <div className="grid min-w-0 gap-3">
+          <ErrorBoundary where="Methods report">
+            <MethodReport />
+          </ErrorBoundary>
+          <ErrorBoundary where="Signal history">
+            <SignalHistory />
+          </ErrorBoundary>
+        </div>
       ) : (
         <ErrorBoundary where="Logs">
           <LogsPanel />
