@@ -191,14 +191,25 @@ export type SignalRule = {
    * for the signal to be taken; nearer, it is skipped and the history says so. Absent or 0 for a timeframe: no filter.
    */
   minSlPts?: Partial<Record<SignalTf, number>>;
+  /** The same on the other side: the least distance from the perp entry to the target the trade exits at. Absent or 0: no filter. */
+  minTgtPts?: Partial<Record<SignalTf, number>>;
 };
 /** The most an SL-distance filter may ask for (server: MAX_SL_PTS). */
 export const MAX_SL_PTS = 100_000;
 
 /** The timeframes a rule filters by SL distance, with their points: only the ones it takes signals on, and only above zero. */
 export function slFilters(rule: SignalRule): { tf: SignalTf; pts: number }[] {
+  return distanceFilters(rule, rule.minSlPts);
+}
+
+/** The same for the TGT distance. */
+export function tgtFilters(rule: SignalRule): { tf: SignalTf; pts: number }[] {
+  return distanceFilters(rule, rule.minTgtPts);
+}
+
+function distanceFilters(rule: SignalRule, by: Partial<Record<SignalTf, number>> | undefined): { tf: SignalTf; pts: number }[] {
   if (rule.mode !== 'single') return [];
-  return (rule.tfs ?? [rule.tf]).map((tf) => ({ tf, pts: rule.minSlPts?.[tf] ?? 0 })).filter((x) => x.pts > 0);
+  return (rule.tfs ?? [rule.tf]).map((tf) => ({ tf, pts: by?.[tf] ?? 0 })).filter((x) => x.pts > 0);
 }
 
 /** The leg a signal is sold as: a BUY sells the put, a SELL the call. */

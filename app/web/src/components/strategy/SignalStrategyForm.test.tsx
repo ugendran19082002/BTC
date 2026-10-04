@@ -827,46 +827,71 @@ describe('the distance rule and its else strike, beside the premium', () => {
   });
 });
 
-describe('the SL-distance filter: a number of points for each timeframe picked', () => {
+describe('the SL and TGT distance filters: two numbers of points for each timeframe picked', () => {
   const single = (over: Partial<SignalRule> = {}) => signalStrategy({ mode: 'single', tf: '5m', tfs: ['5m', '15m'], ...over });
-  const group = () => screen.getByRole('group', { name: 'SL distance by timeframe' });
+  const group = () => screen.getByRole('group', { name: 'SL and TGT distance by timeframe' });
 
-  it('[critical] without the chain: one field per timeframe picked, 0 until typed -- and none with the chain', () => {
+  it('[critical] without the chain: an SL and a TGT field per timeframe picked, both 0 -- off -- until typed; none with the chain', () => {
     show(single());
-    expect(within(group()).getByLabelText('5m SL distance pts')).toHaveValue('0');
-    expect(within(group()).getByLabelText('15m SL distance pts')).toHaveValue('0');
+    for (const tf of ['5m', '15m']) {
+      expect(within(group()).getByLabelText(`${tf} SL distance pts`)).toHaveValue('0');
+      expect(within(group()).getByLabelText(`${tf} TGT distance pts`)).toHaveValue('0');
+    }
     expect(within(group()).queryByLabelText('1h SL distance pts')).not.toBeInTheDocument();
-    expect(within(group()).getByText(/greater than or\s+equal to the number and the signal is taken; nearer and it is skipped/)).toBeInTheDocument();
+    expect(within(group()).getAllByText('both off')).toHaveLength(2);
+    expect(within(group()).getByText(/greater than or equal to the number and the signal is taken; nearer and it is skipped/)).toBeInTheDocument();
+    expect(within(group()).getByText(/on from any number above 0 — 0 is off/)).toBeInTheDocument();
     radio('signal way', 'With the timeframe chain');
-    expect(screen.queryByRole('group', { name: 'SL distance by timeframe' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'SL and TGT distance by timeframe' })).not.toBeInTheDocument();
   });
 
-  it('[critical] picking another timeframe adds its field; each keeps its own number, and all of it is saved', async () => {
+  it('[critical] each is its own condition: a number above 0 switches that one on, and the row says which are on', () => {
+    show(single());
+    fireEvent.change(screen.getByLabelText('5m TGT distance pts'), { target: { value: '400' } });
+    expect(within(group()).getByText('TGT on')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('5m SL distance pts'), { target: { value: '150' } });
+    expect(within(group()).getByText('SL on · TGT on')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('5m TGT distance pts'), { target: { value: '0' } });
+    expect(within(group()).getByText('SL on')).toBeInTheDocument();
+    expect(within(group()).getAllByText('both off')).toHaveLength(1);      // 15m untouched
+  });
+
+  it('[critical] picking another timeframe adds its fields; each keeps its own numbers, and all of it is saved', async () => {
     show(single());
     fireEvent.change(screen.getByLabelText('5m SL distance pts'), { target: { value: '150' } });
     fireEvent.change(screen.getByLabelText('15m SL distance pts'), { target: { value: '300' } });
+    fireEvent.change(screen.getByLabelText('5m TGT distance pts'), { target: { value: '400' } });
     fireEvent.click(within(screen.getByRole('group', { name: 'signal timeframes' })).getByRole('button', { name: '1h' }));
     expect(screen.getByLabelText('1h SL distance pts')).toHaveValue('0');
+    expect(screen.getByLabelText('1h TGT distance pts')).toHaveValue('0');
     expect(screen.getByLabelText('5m SL distance pts')).toHaveValue('150');
-    expect(screen.getByText(/without the chain, on 5m \+ 15m \+ 1h \(only with the SL 150\+ pts from the entry on 5m, 300\+ on 15m\)/)).toBeInTheDocument();
+    expect(screen.getByText(/without the chain, on 5m \+ 15m \+ 1h \(only with the SL 150\+ pts from the entry on 5m, 300\+ on 15m; the TGT 400\+ pts from the entry on 5m\)/)).toBeInTheDocument();
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
     expect(saved().config.signal!.minSlPts).toMatchObject({ '5m': 150, '15m': 300 });
+    expect(saved().config.signal!.minTgtPts).toMatchObject({ '5m': 400 });
   });
 
-  it('[critical] a saved strategy opens with its numbers; too large is said under the fields and stops the save', () => {
-    show(single({ minSlPts: { '5m': 150, '15m': 300 } }));
+  it('[critical] a saved strategy opens with its numbers; too large is said under the fields, by name, and stops the save', () => {
+    show(single({ minSlPts: { '5m': 150, '15m': 300 }, minTgtPts: { '15m': 500 } }));
     expect(screen.getByLabelText('5m SL distance pts')).toHaveValue('150');
     expect(screen.getByLabelText('15m SL distance pts')).toHaveValue('300');
-    fireEvent.change(screen.getByLabelText('5m SL distance pts'), { target: { value: '200000' } });
-    expect(within(group()).getByRole('alert')).toHaveTextContent('The SL distance for 5m must be from 0 to 100,000 points.');
+    expect(screen.getByLabelText('5m TGT distance pts')).toHaveValue('0');
+    expect(screen.getByLabelText('15m TGT distance pts')).toHaveValue('500');
+    fireEvent.change(screen.getByLabelText('15m TGT distance pts'), { target: { value: '200000' } });
+    expect(within(group()).getByRole('alert')).toHaveTextContent('The TGT distance for 15m must be from 0 to 100,000 points.');
     expect(screen.getByRole('tab', { name: /^Signals/ })).toContainElement(screen.getByLabelText('has a problem'));
     fireEvent.click(saveButton());
     expect(saveStrategy).not.toHaveBeenCalled();
   });
 
+  it('the TGT alone is said in the sentence; with neither set it says nothing about distance', () => {
+    show(single({ minTgtPts: { '5m': 400 } }));
+    expect(screen.getByText(/on 5m \+ 15m \(only with the TGT 400\+ pts from the entry on 5m\)/)).toBeInTheDocument();
+  });
+
   it('with no number set the sentence says nothing about it', () => {
     show(single());
-    expect(screen.queryByText(/only with the SL/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/only with the/)).not.toBeInTheDocument();
   });
 });

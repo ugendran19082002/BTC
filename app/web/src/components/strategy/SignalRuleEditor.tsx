@@ -195,28 +195,47 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
           {errors.tf && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.tf}</p>}
 
           {/*
-            The SL-distance filter, a number per timeframe picked (4 Oct 2026). A
-            stop a few points from the entry is one the perp's own noise reaches;
-            how tight is too tight differs by timeframe, so each has its own.
+            The distance filters, two numbers per timeframe picked (4 Oct 2026). A
+            stop a few points from the entry is one the perp's own noise reaches,
+            and a target a few points away pays less than the option's spread; how
+            near is too near differs by timeframe, so each has its own. Both start
+            at 0, which is off.
           */}
           {tfs.length > 0 && (
-            <div role="group" aria-label="SL distance by timeframe" className="mt-2 rounded-lg border border-solid border-border px-2.5 py-2">
-              <div className="text-[12.5px] font-medium text-foreground">Take a signal only if its SL is far enough</div>
+            <div role="group" aria-label="SL and TGT distance by timeframe" className="mt-2 rounded-lg border border-solid border-border px-2.5 py-2">
+              <div className="text-[12.5px] font-medium text-foreground">Take a signal only if its SL and TGT are far enough</div>
               <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
-                The distance from the perp entry to the signal&apos;s SL, in BTC points, for each timeframe: greater than or
-                equal to the number and the signal is taken; nearer and it is skipped, with both prices in the trade
-                history. 0 takes every signal.
+                The distance from the perp entry to the signal&apos;s SL, and to its TGT, in BTC points, for each timeframe:
+                greater than or equal to the number and the signal is taken; nearer and it is skipped, with both prices
+                in the trade history. Each is its own condition, on from any number above 0 — 0 is off.
               </p>
-              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
+              <div className="mt-1.5 flex flex-col gap-1.5">
                 {tfs.map((tf) => (
-                  <div key={tf} className="flex items-center gap-1.5 text-[12px]">
+                  <div key={tf} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
                     <span className="w-8 flex-none font-medium text-foreground">{tf}</span>
-                    <span className="text-muted-foreground">≥</span>
-                    <NumberField label={`${tf} SL distance pts`} value={rule.minSlPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
-                                 onChange={(n) => onChange({ ...rule, minSlPts: { ...(rule.minSlPts ?? {}), [tf]: n } })} />
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[var(--down)]">SL</span>
+                      <span className="text-muted-foreground">≥</span>
+                      <NumberField label={`${tf} SL distance pts`} value={rule.minSlPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
+                                   onChange={(n) => onChange({ ...rule, minSlPts: { ...(rule.minSlPts ?? {}), [tf]: n } })} />
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[var(--up)]">TGT</span>
+                      <span className="text-muted-foreground">≥</span>
+                      <NumberField label={`${tf} TGT distance pts`} value={rule.minTgtPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
+                                   onChange={(n) => onChange({ ...rule, minTgtPts: { ...(rule.minTgtPts ?? {}), [tf]: n } })} />
+                    </span>
+                    <span className="text-[11px] text-[var(--dim)]">
+                      {(rule.minSlPts?.[tf] ?? 0) > 0 || (rule.minTgtPts?.[tf] ?? 0) > 0
+                        ? [(rule.minSlPts?.[tf] ?? 0) > 0 ? 'SL on' : null, (rule.minTgtPts?.[tf] ?? 0) > 0 ? 'TGT on' : null].filter(Boolean).join(' · ')
+                        : 'both off'}
+                    </span>
                   </div>
                 ))}
               </div>
+              <p className="m-0 mt-1.5 text-[11px] leading-snug text-[var(--dim)]">
+                The TGT is the one the trade exits at — TGT1, or the one picked on Entry &amp; exit (TGT1 where the signal has no TGT2 / TGT3).
+              </p>
               {errors.slPts && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.slPts}</p>}
             </div>
           )}

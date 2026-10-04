@@ -6,7 +6,7 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
-import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minSlPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -413,21 +413,28 @@ export class StrategyRunner {
     }
 
     /*
-     * The SL-distance filter (4 Oct 2026): without the chain, a signal whose SL
-     * sits nearer the perp entry than its timeframe's number is not taken. The
+     * The distance filters (4 Oct 2026): without the chain, a signal whose SL --
+     * or whose target -- sits nearer the perp entry than its timeframe's number
+     * for that side is not taken. The
      * entry is the one the trade would carry -- the fill, else the perp now,
      * else the middle of the signal's zone -- and the row says both prices, the
      * distance and the number it had to reach, so a skipped signal explains
      * itself in the history.
      */
-    const needPts = minSlPtsFor(rule, r.tf);
-    if (needPts > 0) {
+    const needSl = minSlPtsFor(rule, r.tf);
+    const needTgt = minTgtPtsFor(rule, r.tf);
+    if (needSl > 0 || needTgt > 0) {
       const from = fill?.fillPrice ?? perpNow() ?? (plan.entryLo + plan.entryHi) / 2;
-      const pts = Math.abs(from - plan.stop);
-      if (pts < needPts) {
-        await finish('skipped', `SL too near: the perp entry ${Math.round(from)} to the SL ${Math.round(plan.stop)} is ${Math.round(pts)} pts — this strategy takes ${r.tf} signals only at ${needPts} pts or more`);
-        return;
-      }
+      // The target the trade would exit at: the rule's, TGT1 where the signal has no TGT2 / TGT3.
+      const tgt = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
+      const near = (name: string, level: number, need: number) => {
+        const pts = Math.abs(from - level);
+        return need > 0 && pts < need
+          ? `${name} too near: the perp entry ${Math.round(from)} to the ${name} ${Math.round(level)} is ${Math.round(pts)} pts — this strategy takes ${r.tf} signals only at ${need} pts or more`
+          : null;
+      };
+      const why = [near('SL', plan.stop, needSl), near('TGT', tgt, needTgt)].filter(Boolean);
+      if (why.length) { await finish('skipped', why.join('; ')); return; }
     }
 
     const svc = tradingService();

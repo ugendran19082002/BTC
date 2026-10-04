@@ -748,3 +748,61 @@ test('[critical] at the zone, the distance is measured from the fill -- and with
   assert.equal(taken.status, 'would-place', taken.detail);
   for (const id of ['sig-sl-zone', 'sig-sl-chain']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
 });
+
+test('[critical] TGT distance per timeframe: a signal whose target is nearer than its points is skipped, said in the history -- measured to the target the trade exits at', async () => {
+  // The signal: entry 84,975 (the middle of its zone), SL 84,600 (375 pts), TGT1 85,500 (525 pts), TGT2 85,900 (925 pts).
+  const withTgt = (over: Record<string, unknown>) => ({ ...config, signal: { ...config.signal, maxOpen: 10, ...over } });
+  const bad = await api('POST', '/api/strategies', { name: 'Sig tgt', config: withTgt({ minTgtPts: { '5m': -5 } }) });
+  assert.equal(bad.status, 422);
+  assert.ok(bad.body.problems.includes('The TGT distance for 5m must be from 0 to 100,000 points.'), bad.body.problems.join(' '));
+
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig tgt', config: withTgt({ minTgtPts: { '5m': 600, '15m': 0, '1h': '' } }) })).status, 200);
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-tgt'");
+  assert.deepEqual(row!.config.signal.minTgtPts, { '5m': 600 }, 'kept; a blank or zero is no entry');
+  assert.equal('minSlPts' in row!.config.signal, false, 'the SL filter is its own key, absent when unused');
+  const plain = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-blocks'");
+  assert.equal('minTgtPts' in plain!.config.signal, false, 'a strategy that never used it is stored as before');
+
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  await api('POST', '/api/strategies/sig-tgt/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const last = async () => (await runsOf('sig-tgt')).at(-1)!;
+  const save = async (over: Record<string, unknown>) => {
+    const s = (await strategyStore().get('sig-tgt'))!;
+    assert.equal((await api('POST', '/api/strategies', { id: s.id, name: s.name, config: withTgt(over) })).status, 200);
+  };
+
+  await runner.onSignal(signal());                       // TGT1 525 pts against 600: not taken
+  const skipped = await last();
+  assert.equal(skipped.status, 'skipped', skipped.detail);
+  assert.equal(skipped.detail, '#1 Breakout BUY | TGT too near: the perp entry 84975 to the TGT 85500 is 525 pts — this strategy takes 5m signals only at 600 pts or more');
+
+  await save({ minTgtPts: { '5m': 525 } });              // equal is enough
+  await runner.onSignal(signal());
+  assert.equal((await last()).status, 'would-place', (await last()).detail);
+
+  await save({ minTgtPts: { '5m': 600 }, target: 'tp2' });   // exits at TGT2: 925 pts, measured to that one
+  await runner.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 84000 x1 @ 18 · perp SL 84600 · TGT 85900$/);
+
+  // TGT2 asked for and the signal has none: TGT1 is the exit, and the distance is to TGT1
+  await runner.onSignal(signal({ plan: { entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: null, tp3: null, tpWhy: [], rr: 1.25 } }));
+  assert.match((await last()).detail, /TGT too near: the perp entry 84975 to the TGT 85500 is 525 pts/);
+
+  // both filters on, both failing: both said in the one row
+  await save({ minSlPts: { '5m': 500 }, minTgtPts: { '5m': 600 }, target: 'tp1' });
+  await runner.onSignal(signal());
+  assert.equal((await last()).detail,
+    '#1 Breakout BUY | SL too near: the perp entry 84975 to the SL 84600 is 375 pts — this strategy takes 5m signals only at 500 pts or more; '
+    + 'TGT too near: the perp entry 84975 to the TGT 85500 is 525 pts — this strategy takes 5m signals only at 600 pts or more');
+
+  // a SELL is measured the same way: the target under the entry
+  await save({ minTgtPts: { '5m': 600 } });
+  await runner.onSignal(signal({ dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1.25 } }));
+  assert.match((await last()).detail, /SELL \| TGT too near: the perp entry 85025 to the TGT 84500 is 525 pts — this strategy takes 5m signals only at 600 pts or more$/);
+
+  await api('POST', '/api/strategies/sig-tgt/enabled', { enabled: false });
+});

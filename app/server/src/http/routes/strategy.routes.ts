@@ -166,23 +166,24 @@ function cleanSignal(raw: unknown): SignalRule {
     target: (r.target ?? 'tp1') as SignalRule['target'],
     maxOpen: r.maxOpen === undefined ? 1 : Math.trunc(Number(r.maxOpen)),
     enterOn: (r.enterOn ?? 'zone') as SignalRule['enterOn'],
-    ...cleanSlPts(r.minSlPts),
+    ...cleanPts('minSlPts', r.minSlPts),
+    ...cleanPts('minTgtPts', r.minTgtPts),
   };
 }
 
 /**
- * The SL-distance filter, per timeframe: each number as sent, a blank or zero
- * left out -- off is no entry -- and the key itself only when one is set, so a
- * strategy that never used it is stored as before. Not a map: left for
+ * A distance filter (SL or TGT), per timeframe: each number as sent, a blank or
+ * zero left out -- off is no entry -- and the key itself only when one is set,
+ * so a strategy that never used it is stored as before. Not a map: left for
  * validation to say.
  */
-function cleanSlPts(raw: unknown): { minSlPts?: SignalRule['minSlPts'] } {
+function cleanPts<K extends 'minSlPts' | 'minTgtPts'>(key: K, raw: unknown): Partial<Pick<SignalRule, K>> {
   if (raw === undefined || raw === null) return {};
-  if (typeof raw !== 'object' || Array.isArray(raw)) return { minSlPts: raw as SignalRule['minSlPts'] };
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { [key]: raw } as Partial<Pick<SignalRule, K>>;
   const kept = Object.entries(raw as Record<string, unknown>)
     .filter(([, v]) => v !== null && v !== undefined && v !== '' && Number(v) !== 0)
     .map(([tf, v]) => [tf, Number(v)] as const);
-  return kept.length ? { minSlPts: Object.fromEntries(kept) as SignalRule['minSlPts'] } : {};
+  return (kept.length ? { [key]: Object.fromEntries(kept) } : {}) as Partial<Pick<SignalRule, K>>;
 }
 
 /** An id from a name: stable, readable in the journal, and URL-safe. */

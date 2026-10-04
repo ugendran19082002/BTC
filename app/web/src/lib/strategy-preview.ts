@@ -1,5 +1,5 @@
 import { elseOtmOf, strikeLabel, type StrategyConfig } from '@/types/strategy';
-import { ruleTfWords, slFilters } from '@/types/strategy';
+import { ruleTfWords, slFilters, tgtFilters } from '@/types/strategy';
 import { time12, wrapsMidnight } from '@/lib/time';
 import { exitRules, exitWords, type ExitRule } from '@/lib/strategy-exits';
 import { blocksWords } from '@/lib/strategy-blocks';
@@ -104,9 +104,11 @@ export function describeStrategy(c: StrategyConfig): string {
   if (c.trigger === 'signal' && c.signal) {
     const r = c.signal;
     const n = r.methods.length;
-    // The SL-distance filter, where one is set: "(only with the SL 150+ pts from the entry on 5m, 300+ on 15m)".
-    const sl = slFilters(r);
-    const far = sl.length ? ` (only with the SL ${sl.map((x, i) => `${x.pts}+ ${i === 0 ? 'pts from the entry ' : ''}on ${x.tf}`).join(', ')})` : '';
+    // The distance filters, where set: "(only with the SL 150+ pts from the entry on 5m, 300+ on 15m; the TGT 400+ pts from the entry on 5m)".
+    const side = (name: string, xs: { tf: string; pts: number }[]) =>
+      (xs.length ? `the ${name} ${xs.map((x, i) => `${x.pts}+ ${i === 0 ? 'pts from the entry ' : ''}on ${x.tf}`).join(', ')}` : null);
+    const sides = [side('SL', slFilters(r)), side('TGT', tgtFilters(r))].filter(Boolean);
+    const far = sides.length ? ` (only with ${sides.join('; ')})` : '';
     const way = r.mode === 'mtf' ? 'with the timeframe chain' : `without the chain, ${ruleTfWords(r)}${far}`;
     return `From ${time12(c.entryTime)} to ${time12(c.exitTime)} IST on ${describeDays(c.weekdays)}, takes the TRADE signals of `
       + `${n === 0 ? 'no method yet' : `${n} method${n === 1 ? '' : 's'}`} ${way}: a BUY sells a put, a SELL a call, `

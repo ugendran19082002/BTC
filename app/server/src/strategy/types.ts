@@ -330,6 +330,14 @@ export type SignalRule = {
    * before it. Not read with the chain.
    */
   minSlPts?: Partial<Record<SignalTf, number>>;
+  /**
+   * The same filter on the other side (4 Oct 2026): per timeframe, the least
+   * distance in BTC points from the perp entry to the target the trade exits
+   * at -- the rule's `target`, TGT1 where the signal has no TGT2 / TGT3. A
+   * target a few points away pays less than the option's spread costs to
+   * cross twice. Absent or 0 for a timeframe: no filter. Not read with the chain.
+   */
+  minTgtPts?: Partial<Record<SignalTf, number>>;
 };
 export type SignalEntry = 'zone' | 'signal';
 /** The most an SL-distance filter may ask for: beyond this is a typo, not a filter. */
@@ -337,8 +345,17 @@ export const MAX_SL_PTS = 100_000;
 
 /** The least SL distance a rule asks of a signal on this timeframe; 0 is no filter. */
 export function minSlPtsFor(rule: Pick<SignalRule, 'mode' | 'minSlPts'>, tf: string): number {
-  if (rule.mode !== 'single') return 0;
-  const v = rule.minSlPts?.[tf as SignalTf];
+  return ptsFor(rule.mode, rule.minSlPts, tf);
+}
+
+/** The least TGT distance a rule asks of a signal on this timeframe; 0 is no filter. */
+export function minTgtPtsFor(rule: Pick<SignalRule, 'mode' | 'minTgtPts'>, tf: string): number {
+  return ptsFor(rule.mode, rule.minTgtPts, tf);
+}
+
+function ptsFor(mode: SignalRule['mode'], by: Partial<Record<SignalTf, number>> | undefined, tf: string): number {
+  if (mode !== 'single') return 0;
+  const v = by?.[tf as SignalTf];
   return typeof v === 'number' && v > 0 ? v : 0;
 }
 /** The default: enter "in the trade". */
@@ -810,14 +827,14 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   if (!Number.isInteger(r.maxOpen) || (r.maxOpen ?? 0) < 1 || (r.maxOpen ?? 0) > MAX_SIGNAL_OPEN) {
     bad.push(`At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
   }
-  if (r.minSlPts !== undefined && r.minSlPts !== null) {
-    if (typeof r.minSlPts !== 'object' || Array.isArray(r.minSlPts)) bad.push('The SL distances must be given per timeframe.');
-    else {
-      for (const [tf, v] of Object.entries(r.minSlPts)) {
-        if (!SIGNAL_TFS.includes(tf as SignalTf)) bad.push(`No such timeframe for an SL distance: ${tf}.`);
-        else if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_SL_PTS) {
-          bad.push(`The SL distance for ${tf} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
-        }
+  // The two distance filters, each a number of points per timeframe, held to the same rules.
+  for (const [by, a, name] of [[r.minSlPts, 'an', 'SL'], [r.minTgtPts, 'a', 'TGT']] as const) {
+    if (by === undefined || by === null) continue;
+    if (typeof by !== 'object' || Array.isArray(by)) { bad.push(`The ${name} distances must be given per timeframe.`); continue; }
+    for (const [tf, v] of Object.entries(by)) {
+      if (!SIGNAL_TFS.includes(tf as SignalTf)) bad.push(`No such timeframe for ${a} ${name} distance: ${tf}.`);
+      else if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_SL_PTS) {
+        bad.push(`The ${name} distance for ${tf} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
       }
     }
   }

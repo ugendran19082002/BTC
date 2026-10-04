@@ -107,11 +107,13 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
         if (tfs.length === 0) say('signalTf', 'Pick at least one timeframe.');
         else if (tfs.some((t) => !SIGNAL_TFS.includes(t))) say('signalTf', `Pick a timeframe: ${SIGNAL_TFS.join(', ')}.`);
       }
-      // The SL-distance filter -- the server's words (`signalRuleProblems`).
-      for (const [tf, v] of Object.entries(r.minSlPts ?? {})) {
-        if (!SIGNAL_TFS.includes(tf as SignalTf)) say('signalSlPts', `No such timeframe for an SL distance: ${tf}.`);
-        else if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_SL_PTS) {
-          say('signalSlPts', `The SL distance for ${tf} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
+      // The two distance filters -- the server's words (`signalRuleProblems`). One field: they sit in one box.
+      for (const [by, a, name] of [[r.minSlPts, 'an', 'SL'], [r.minTgtPts, 'a', 'TGT']] as const) {
+        for (const [tf, v] of Object.entries(by ?? {})) {
+          if (!SIGNAL_TFS.includes(tf as SignalTf)) say('signalSlPts', `No such timeframe for ${a} ${name} distance: ${tf}.`);
+          else if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_SL_PTS) {
+            say('signalSlPts', `The ${name} distance for ${tf} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
+          }
         }
       }
       if (!Array.isArray(r.methods) || r.methods.length === 0) say('signalMethods', 'Pick at least one method whose signals to take.');

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_SL_PTS, minSlPtsFor, signalRuleProblems, type SignalRule } from '../../src/strategy/types.js';
+import { MAX_SL_PTS, minSlPtsFor, minTgtPtsFor, signalRuleProblems, type SignalRule } from '../../src/strategy/types.js';
 
 /**
  * The SL-distance filter of a signal strategy (4 Oct 2026): without the chain,
@@ -33,4 +33,27 @@ test('[critical] a distance is 0 to 100,000 points on a real timeframe -- anythi
   assert.deepEqual(signalRuleProblems(rule({ minSlPts: { '5m': 'far' as unknown as number } })), ['The SL distance for 5m must be from 0 to 100,000 points.']);
   assert.deepEqual(signalRuleProblems(rule({ minSlPts: { '2m': 100 } as SignalRule['minSlPts'] })), ['No such timeframe for an SL distance: 2m.']);
   assert.deepEqual(signalRuleProblems(rule({ minSlPts: [150] as unknown as SignalRule['minSlPts'] })), ['The SL distances must be given per timeframe.']);
+});
+
+// ------------------------------------------------------------ the same filter on the target
+
+test('[critical] the TGT distance is its own number per timeframe, 0 or absent being off', () => {
+  const r = rule({ minSlPts: { '5m': 150 }, minTgtPts: { '5m': 300, '15m': 0 } });
+  assert.equal(minTgtPtsFor(r, '5m'), 300);
+  assert.equal(minSlPtsFor(r, '5m'), 150, 'the SL keeps its own');
+  assert.equal(minTgtPtsFor(r, '15m'), 0, 'zero is off');
+  assert.equal(minTgtPtsFor(r, '1h'), 0, 'no number: off');
+  assert.equal(minTgtPtsFor(rule(), '5m'), 0, 'a strategy saved before it existed');
+  assert.equal(minTgtPtsFor(rule({ mode: 'mtf', minTgtPts: { '5m': 300 } }), '5m'), 0, 'not read with the chain');
+});
+
+test('[critical] a TGT distance is held to the same limits as the SL\'s, and said by its own name', () => {
+  assert.deepEqual(signalRuleProblems(rule({ minTgtPts: { '5m': 300, '4h': 900.5 } })), []);
+  assert.deepEqual(signalRuleProblems(rule({ minTgtPts: { '5m': -1 } })), ['The TGT distance for 5m must be from 0 to 100,000 points.']);
+  assert.deepEqual(signalRuleProblems(rule({ minTgtPts: { '5m': MAX_SL_PTS + 1 } })), ['The TGT distance for 5m must be from 0 to 100,000 points.']);
+  assert.deepEqual(signalRuleProblems(rule({ minTgtPts: { '2m': 100 } as SignalRule['minTgtPts'] })), ['No such timeframe for a TGT distance: 2m.']);
+  assert.deepEqual(signalRuleProblems(rule({ minTgtPts: [300] as unknown as SignalRule['minTgtPts'] })), ['The TGT distances must be given per timeframe.']);
+  // both wrong: both said
+  assert.deepEqual(signalRuleProblems(rule({ minSlPts: { '5m': -1 }, minTgtPts: { '5m': -1 } })),
+    ['The SL distance for 5m must be from 0 to 100,000 points.', 'The TGT distance for 5m must be from 0 to 100,000 points.']);
 });
