@@ -27,6 +27,34 @@ const MAX_ATTEMPTS = 3;
 /** Telegram names a wait on a 429. Beyond this the alert is stale anyway. */
 const MAX_RETRY_AFTER_S = 30;
 const HOUR_MS = 3_600_000;
+/**
+ * The most that goes in one message. Telegram refuses anything over 4,096
+ * characters ("message is too long") -- which is what a day's summary of a
+ * hundred trades is, and it was the whole summary that was lost (4 Oct 2026).
+ * Under the limit, so the "2/2" a later part opens with still fits.
+ */
+export const MAX_MESSAGE_CHARS = 4_000;
+
+/**
+ * A message as Telegram will take it: whole when it fits, else in parts cut
+ * between lines, in order. Every line of an alert opens and closes its own
+ * markup, so a part cut there is valid on its own. One line longer than a
+ * part is cut where it stands; if that splits a tag, the part is sent again as
+ * plain words, as any markup Telegram cannot parse is. Pure.
+ */
+export function partsOf(text: string, max = MAX_MESSAGE_CHARS): string[] {
+  if (text.length <= max) return [text];
+  const parts: string[] = [];
+  let part = '';
+  for (const line of text.split('\n')) {
+    if (part && part.length + 1 + line.length > max) { parts.push(part); part = ''; }
+    let rest = line;
+    while (rest.length > max) { parts.push(rest.slice(0, max)); rest = rest.slice(max); }
+    part = part ? `${part}\n${rest}` : rest;
+  }
+  if (part) parts.push(part);
+  return parts.map((x, i) => (i === 0 ? x : `… ${i + 1}/${parts.length}\n${x}`));
+}
 
 export type TelegramOptions = {
   token: string;
@@ -173,7 +201,16 @@ export class TelegramNotifier {
     try { this.o.onResult?.(r); } catch { /* a log that throws is not the alert's problem */ }
   }
 
+  /** The whole message, in as many parts as Telegram needs. Delivered only when every part is. */
   private async deliver(text: string): Promise<boolean> {
+    for (const part of partsOf(text)) {
+      // A part that cannot go ends it: the rest would arrive without its beginning.
+      if (!await this.deliverPart(part)) return false;
+    }
+    return true;
+  }
+
+  private async deliverPart(text: string): Promise<boolean> {
     let html = true;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const reply = await this.post(html ? text : plain(text), html);

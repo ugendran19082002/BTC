@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TelegramNotifier, type TelegramOptions } from '../../src/notify/telegram.js';
+import { MAX_MESSAGE_CHARS, partsOf, TelegramNotifier, type TelegramOptions } from '../../src/notify/telegram.js';
 
 const TOKEN = '123456:TEST-token-never-to-be-seen';
 
@@ -202,4 +202,50 @@ test('[critical] every message is told: sent, failed with Telegram\'s reason, or
   assert.deepEqual(results.map((r) => [r.key, r.status]), [['t1:entry', 'sent'], ['t2:entry', 'failed'], ['t1:entry', 'repeat']]);
   assert.match(results[1]!.error!, /bot was blocked by the user \(HTTP 403\)/);
   assert.equal(results[0]!.text, 'SOLD 3 PE');
+});
+
+// ------------------------------------------------------------ long messages
+
+/** A day's summary as the desk writes it: a head, then one line a trade, each with its own markup. */
+const summary = (trades: number) => [
+  '📊 <b>DAY SUMMARY · Sun 4 Oct 2026</b>', '✔️ All positions closed · LIVE', '', `Trades: <b>${trades}</b>`, '', '<b>Trades</b>',
+  ...Array.from({ length: trades }, (_, i) => `⏹ BTC 83,800 PE · ${i + 1} @ 49.00 → 56.00 · <b>-₹1.78</b>`),
+].join('\n');
+
+test('[critical] a message over Telegram\'s limit goes in parts, cut between lines, in order, nothing lost', async () => {
+  const text = summary(109);
+  assert.ok(text.length > 4_096, 'the day that failed: 109 trades');
+  const parts = partsOf(text);
+  assert.equal(parts.length, 2);
+  assert.ok(parts.every((x) => x.length <= 4_096), 'each part is one Telegram will take');
+  assert.equal(parts[1]!.split('\n')[0], '… 2/2', 'a later part says which it is');
+  assert.equal([parts[0], parts[1]!.split('\n').slice(1).join('\n')].join('\n'), text, 'the parts are the message, whole');
+  for (const x of parts) {
+    assert.equal((x.match(/<b>/g) ?? []).length, (x.match(/<\/b>/g) ?? []).length, 'no tag is left open across a cut');
+  }
+
+  const { n, calls, errors } = make();
+  assert.equal(await n.send(text), true);
+  assert.deepEqual(calls.map((c) => c.body.text), parts, 'sent in order');
+  assert.ok(calls.every((c) => c.body.parse_mode === 'HTML'));
+  assert.equal(errors.length, 0);
+});
+
+test('a message that fits is one message, untouched; one long line is cut where it stands', () => {
+  assert.deepEqual(partsOf(summary(78)), [summary(78)], '78 trades fitted on 3 Oct and still go as one');
+  const line = 'x'.repeat(MAX_MESSAGE_CHARS * 2 + 10);
+  const cut = partsOf(line);
+  assert.equal(cut.length, 3);
+  assert.equal(cut.map((x, i) => (i ? x.split('\n').slice(1).join('\n') : x)).join(''), line);
+});
+
+test('[critical] a part Telegram refuses fails the message and is written down once; the log still has one row for it', async () => {
+  const told: { status: string; text: string }[] = [];
+  const text = summary(109);
+  const { n, calls, errors } = make([{ status: 200 }, { status: 400, body: { ok: false, description: 'Bad Request: chat not found' } }],
+    { onResult: (r) => told.push({ status: r.status, text: r.text }) });
+  assert.equal(await n.send(text), false);
+  assert.equal(calls.length, 2, 'the first part went, the second was refused');
+  assert.equal(errors.length, 1);
+  assert.deepEqual(told.map((t) => [t.status, t.text === text]), [['failed', true]], 'one row, with the whole message');
 });
