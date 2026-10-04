@@ -641,7 +641,7 @@ describe('the limit on one contract', () => {
 
   it('[critical] shows the limit and the contract holding the most now, and saves a new one when the field is left', async () => {
     setContractMaxLots.mockResolvedValue({ ok: true, contractMaxLots: 12 });
-    getStrategies.mockResolvedValue(status(five(), { contractMaxLots: 20, contractMostNow: { symbol: 'P-BTC-84600-041026', lots: 15 } }));
+    getStrategies.mockResolvedValue(status([strat('A', SIG)], { contractMaxLots: 20, contractMostNow: { symbol: 'P-BTC-84600-041026', lots: 15 } }));
     render(<SignalStrategiesCard />);
     await waitFor(() => expect(field()).toHaveValue('20'));
     expect(screen.getByLabelText('lots on the fullest contract now')).toHaveTextContent(/lots\s*·\s*PE 84,600 holds 15/);
@@ -651,7 +651,7 @@ describe('the limit on one contract', () => {
   });
 
   it('[critical] no limit is 0 and says so; a number out of range is said and never sent', async () => {
-    getStrategies.mockResolvedValue(status(five(), { contractMaxLots: 0, contractMostNow: null }));
+    getStrategies.mockResolvedValue(status([strat('A', SIG)], { contractMaxLots: 0, contractMostNow: null }));
     render(<SignalStrategiesCard />);
     await waitFor(() => expect(field()).toHaveValue('0'));
     expect(screen.getByLabelText('lots on the fullest contract now')).toHaveTextContent(/0 is no limit\s*·\s*none open/);
@@ -662,7 +662,7 @@ describe('the limit on one contract', () => {
   });
 
   it('an older server that does not send the limit shows no field for it', async () => {
-    getStrategies.mockResolvedValue(status(five(), {}));
+    getStrategies.mockResolvedValue(status([strat('A', SIG)], {}));
     render(<SignalStrategiesCard />);
     await screen.findByLabelText('At most open at once, all strategies');
     expect(screen.queryByLabelText('At most lots on one contract, all strategies')).not.toBeInTheDocument();
