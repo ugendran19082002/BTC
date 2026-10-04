@@ -1,6 +1,5 @@
 import type { Candle } from '@/types/desk';
 import type { LiveLtp } from '@/hooks/useStream';
-import type { Leg } from '@/types/desk';
 import type { PerpOiChange } from '@/api/desk';
 import { useMemo } from 'react';
 import { DeskHeader } from './DeskHeader';
@@ -19,7 +18,6 @@ import './desk-dashboard.css';
 export function DeskDashboard({
   bars,
   ltp = null,
-  strikes = null,
   derivs = null,
   expiryLabel,
   hoursToExpiry,
