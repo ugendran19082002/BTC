@@ -57,3 +57,15 @@ test('[critical] a TGT distance is held to the same limits as the SL\'s, and sai
   assert.deepEqual(signalRuleProblems(rule({ minSlPts: { '5m': -1 }, minTgtPts: { '5m': -1 } })),
     ['The SL distance for 5m must be from 0 to 100,000 points.', 'The TGT distance for 5m must be from 0 to 100,000 points.']);
 });
+
+// ------------------------------------------------------------ the desk-wide cap, as stored
+
+test('[critical] the desk-wide cap reads 0 -- no cap -- for anything that is not a whole number from 1 to 500', async () => {
+  const { globalMaxOpenOf, globalMaxOpenProblem, MAX_GLOBAL_OPEN } = await import('../../src/strategy/types.js');
+  for (const [raw, n] of [['6', 6], ['1', 1], ['500', 500], [null, 0], [undefined, 0], ['', 0], ['0', 0], ['501', 0], ['-2', 0], ['2.5', 0], ['many', 0]] as const) {
+    assert.equal(globalMaxOpenOf(raw), n, String(raw));
+  }
+  assert.equal(MAX_GLOBAL_OPEN, 500);
+  for (const ok of [0, 1, 6, 500]) assert.equal(globalMaxOpenProblem(ok), null);
+  for (const bad of [-1, 501, 1.5, '6', null, undefined]) assert.match(globalMaxOpenProblem(bad)!, /whole number from 0 \(no limit\) to 500/);
+});

@@ -8,7 +8,9 @@ const saveStrategy = vi.fn();
 const setStrategyEnabled = vi.fn();
 const getSignalTrades = vi.fn();
 const cloneStrategy = vi.fn();
+const setSignalMaxOpen = vi.fn();
 vi.mock('@/api/strategy', () => ({
+  setSignalMaxOpen: (...a: unknown[]) => setSignalMaxOpen(...a),
   cloneStrategy: (...a: unknown[]) => cloneStrategy(...a),
   getStrategies: (...a: unknown[]) => getStrategies(...a),
   getSignalTrades: (...a: unknown[]) => getSignalTrades(...a),
@@ -140,5 +142,75 @@ describe('copy', () => {
     fireEvent.change(name, { target: { value: 'Breakout 15m only' } });
     expect(name).toHaveValue('Breakout 15m only');
     expect(screen.getByRole('switch', { name: /^Live orders/ })).toHaveAttribute('aria-checked', 'false');
+  });
+});
+
+describe('at most open at once, across all strategies', () => {
+  const field = () => screen.getByLabelText('At most open at once, all strategies');
+  const type = (v: string) => { fireEvent.focus(field()); fireEvent.change(field(), { target: { value: v } }); fireEvent.blur(field()); };
+
+  beforeEach(() => { setSignalMaxOpen.mockResolvedValue({ ok: true }); });
+
+  it('[critical] sits left of "Auto-trading", shows the desk\'s number and how many are open against it', async () => {
+    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 6, openNow: 4 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('SIG');
+    expect(field()).toHaveValue('6');
+    expect(screen.getByLabelText('open now, of the limit')).toHaveTextContent('4 of 6 open');
+    const auto = screen.getByText(/^Auto-trading on$/);
+    expect(Boolean(field().compareDocumentPosition(auto) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    // each strategy's own limit is still on its line
+    expect(screen.getByText(/max 2 open/)).toBeInTheDocument();
+  });
+
+  it('[critical] 0 is no limit, and says so', async () => {
+    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 0, openNow: 3 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('SIG');
+    expect(field()).toHaveValue('0');
+    expect(screen.getByLabelText('open now, of the limit')).toHaveTextContent('no limit · 3 open');
+  });
+
+  it('[critical] typed and left: saved to the server as the number, and the list is read again', async () => {
+    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 0, openNow: 3 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('SIG');
+    const before = getStrategies.mock.calls.length;
+    type('6');
+    await waitFor(() => expect(setSignalMaxOpen).toHaveBeenCalledWith(6));
+    await waitFor(() => expect(getStrategies.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('[critical] unchanged is not sent; blank or over 500 is said and put back, not sent', async () => {
+    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 6, openNow: 1 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('SIG');
+    type('6');
+    type('');
+    expect(screen.getByText('At most open at once, across all strategies, must be a whole number from 0 (no limit) to 500.')).toBeInTheDocument();
+    expect(field()).toHaveValue('6');
+    type('501');
+    expect(field()).toHaveValue('6');
+    expect(setSignalMaxOpen).not.toHaveBeenCalled();
+    // letters cannot be typed at all
+    fireEvent.focus(field());
+    fireEvent.change(field(), { target: { value: '1x2' } });
+    expect(field()).toHaveValue('12');
+  });
+
+  it('the server\'s refusal is shown', async () => {
+    setSignalMaxOpen.mockRejectedValue(new Error('At most open at once, across all strategies, must be a whole number from 0 (no limit) to 500.'));
+    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 6, openNow: 1 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('SIG');
+    type('7');
+    expect(await screen.findByText(/must be a whole number from 0 \(no limit\) to 500/)).toBeInTheDocument();
+  });
+
+  it('an older server that does not send it shows no field', async () => {
+    getStrategies.mockResolvedValue(status([strat('sig', SIG)]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('SIG');
+    expect(screen.queryByLabelText('At most open at once, all strategies')).toBeNull();
   });
 });

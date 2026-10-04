@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-72 routes.
+73 routes.
 
 ## [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts)
 
@@ -85,6 +85,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | DELETE | `/api/strategies/:id` | signed in | Delete a strategy. |
 | POST | `/api/strategies/:id/clone` | signed in | Copy a strategy, settings and all, as a new one that is not armed. |
 | POST | `/api/strategies/:id/enabled` | signed in | Switch one strategy on or off. |
+| POST | `/api/strategies/max-open` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
 | GET | `/api/strategies/runs` | signed in | The run journal on its own, for the history panel. |
 | POST | `/api/strategies/scheduler` | signed in | The master switch for the whole scheduler. |
 | GET | `/api/strategies/signal-trades` | signed in | The signal strategies' trade history for a range of IST days (or minutes): the Live screen's Trade history and its date picker. |

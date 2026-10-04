@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { Bot, Copy, Loader2, Pencil, Plus } from 'lucide-react';
-import { cloneStrategy, getStrategies, saveStrategy, setStrategyEnabled } from '@/api/strategy';
-import { ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
+import { cloneStrategy, getStrategies, saveStrategy, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
+import { MAX_GLOBAL_OPEN, ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
@@ -18,6 +18,61 @@ import { cn } from '@/lib/utils';
  * tab, already on signals -- one strategy, two places to reach it.
  */
 
+
+/**
+ * The desk-wide "at most open at once" (4 Oct 2026).
+ *
+ * Each strategy has its own limit, and five strategies each allowed ten is
+ * fifty positions on an account whose margin carries a handful: the order that
+ * does not fit is refused by Delta, and that is a penalty. So one number over
+ * all of them, counted against every open position and working order the desk
+ * holds; a signal past it is skipped and the history says so. 0 is no limit.
+ *
+ * Typed, and saved when the field is left or Enter is pressed -- it sits in a
+ * header, where a Save button of its own would be one more thing to miss.
+ */
+function GlobalMaxOpen({ value, openNow, busy, onSave, onInvalid }: {
+  value: number; openNow: number; busy: boolean; onSave: (n: number) => void; onInvalid: (message: string) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  const typing = useRef(false);
+  // Follow the server's number, but never while it is being typed into.
+  useEffect(() => { if (!typing.current) setText(String(value)); }, [value]);
+  const commit = () => {
+    typing.current = false;
+    const n = Number(text);
+    if (text.trim() === '' || !Number.isInteger(n) || n < 0 || n > MAX_GLOBAL_OPEN) {
+      onInvalid(`At most open at once, across all strategies, must be a whole number from 0 (no limit) to ${MAX_GLOBAL_OPEN}.`);
+      setText(String(value));
+      return;
+    }
+    if (n !== value) onSave(n);
+  };
+  const full = value > 0 && openNow >= value;
+  return (
+    <label
+      className="desk-badge-pill inline-flex items-center gap-1.5"
+      title="One limit over every strategy: a signal is not taken while the desk already holds this many open trades -- positions and working orders, whichever strategy opened them. Each strategy's own limit still applies. 0 is no limit."
+      style={full
+        ? { background: 'rgba(250, 204, 21, 0.1)', color: '#facc15', border: '1px solid rgba(250, 204, 21, 0.3)' }
+        : { background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1', border: '1px solid #1e293b' }}
+    >
+      <span>At most open</span>
+      <input
+        aria-label="At most open at once, all strategies"
+        inputMode="numeric"
+        value={text}
+        disabled={busy}
+        onFocus={() => { typing.current = true; }}
+        onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        className="m-0 h-6 w-11 rounded border border-solid border-border bg-[var(--bg,#0a0e17)] px-1 text-center font-[inherit] text-[12px] tabular-nums text-foreground"
+      />
+      <span aria-label="open now, of the limit">{value === 0 ? `no limit · ${openNow} open` : `${openNow} of ${value} open`}</span>
+    </label>
+  );
+}
 
 /** One line: the methods and way, the leg rule, the strike, lots, exits. */
 export function signalLine(s: Strategy): string {
@@ -83,6 +138,16 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
           </div>
         </div>
         <div className="desk-section-badges">
+          {/* The desk's one number over all of them, left of the switch it works beside. */}
+          {data && data.signalMaxOpen !== undefined && (
+            <GlobalMaxOpen
+              value={data.signalMaxOpen}
+              openNow={data.openNow ?? 0}
+              busy={busy === 'max-open'}
+              onSave={(n) => void act('max-open', () => setSignalMaxOpen(n))}
+              onInvalid={setFailed}
+            />
+          )}
           {data && (
             <span className="desk-badge-pill"
                   style={data.schedulerOn

@@ -187,6 +187,7 @@ Keys the desk reads:
 | `expiry_default` | `first` \| `next_entry` | Which contract the board opens on. Seeded by `trading-002-default-settings`. |
 | `mode` | `live` \| `paper` | Which book the desk is trading. Written by the mode switch, so a mode chosen in the browser outlives a restart. |
 | `max_short_contracts` | a whole number | The most contracts the desk may be short across every strike at once. |
+| `signal_max_open` | a whole number, 0-500 | The most open trades the desk may hold at once across every strategy -- positions and working orders. A signal past it is skipped. 0 or absent: no cap. |
 | `alerts_enabled`, `best_trade_*`, `auto_trade*`, `scheduler_enabled`, `rebalance_*`, `wall_within_em` | | The other remembered switches; each is documented where it is read. |
 
 `max_short_contracts` is the one setting with a **ceiling**. `/api/settings`
@@ -249,8 +250,8 @@ premium }]`): its strike rule over the window; absent or empty is one rule all
 window. A premium rule, the strategy's or a block's, may carry `minOtm` (1-20),
 the nearest strike its own pick may be, and beside it `elseOtm` (1-20), the
 strike sold when the pick is nearer. A signal rule may carry `minSlPts`
-(`{ "5m": 150 }`): the least distance from the perp entry to the SL, per
-timeframe. Each key is written only when set. Absent, they read as a
+and `minTgtPts` (`{ "5m": 150 }`): the least distance from the perp entry to
+the SL, and to the target, per timeframe. Each key is written only when set. Absent, they read as a
 percentage all day and no fallback (`exitRules()`, `cleanConfig()`). Which stage
 of a timetable a trade is on is not stored: it is a function of the clock.
 

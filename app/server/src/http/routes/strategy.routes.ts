@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, SIGNAL_TFS, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 
 /**
@@ -219,6 +219,9 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        * should not need a deploy.
        */
       schedulerOn: svc.settings.get('scheduler_enabled') === '1',
+      // The desk-wide cap on open trades (0: none), and how many the desk holds now -- positions and working orders.
+      signalMaxOpen: globalMaxOpenOf(svc.settings.get(GLOBAL_MAX_OPEN_KEY)),
+      openNow: (await svc.openTrades().catch(() => [])).length,
       /**
        * Whether the loop that places the orders is actually installed.
        *
@@ -377,6 +380,15 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     }
     await svc.settings.set('scheduler_enabled', on ? '1' : '0');
     return { ok: true, schedulerOn: on };
+  });
+
+  // The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off.
+  app.post('/api/strategies/max-open', async (req, reply) => {
+    const { max } = (req.body ?? {}) as { max?: unknown };
+    const problem = globalMaxOpenProblem(max);
+    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+    await svc.settings.set(GLOBAL_MAX_OPEN_KEY, String(max));
+    return { ok: true, signalMaxOpen: max as number };
   });
 
   /** The run journal on its own, for the history panel. */

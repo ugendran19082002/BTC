@@ -19,6 +19,13 @@ export const setScheduler = (on: boolean) =>
   post<{ ok: true; schedulerOn: boolean }>('/api/strategies/scheduler', { on });
 
 /**
+ * The desk-wide "at most open at once": one number over every strategy, counted
+ * against every open position and working order. 0 takes the cap off.
+ */
+export const setSignalMaxOpen = (max: number) =>
+  post<{ ok: true; signalMaxOpen: number }>('/api/strategies/max-open', { max });
+
+/**
  * Copy one, settings and all, as a new draft.
  *
  * The desk's strategies differ by a field or two, and building the second by

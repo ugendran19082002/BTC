@@ -168,6 +168,8 @@ export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
 /** "At most open at once" is typed, 1 to this (server: MAX_SIGNAL_OPEN). */
 export const MAX_SIGNAL_OPEN = 100;
+/** The most the desk-wide cap may be set to; 0 takes it off (server: MAX_GLOBAL_OPEN). */
+export const MAX_GLOBAL_OPEN = 500;
 /** The quick picks beside it. */
 export const MAX_OPEN_PRESETS = [1, 5, 10, 25, 50, 75, 100] as const;
 export type SignalTarget = 'tp1' | 'tp2' | 'tp3';
@@ -314,6 +316,10 @@ export type SignalTrade = {
 export type StrategyStatus = {
   today: string;
   schedulerOn: boolean;
+  /** The desk-wide "at most open at once" over every strategy; 0 is no cap. Absent on an older server. */
+  signalMaxOpen?: number;
+  /** Open trades the desk holds now -- positions and working orders -- which that cap is counted against. */
+  openNow?: number;
   /** Whether the loop that actually places the orders is installed. */
   runnerInstalled?: boolean;
   mode: 'live' | 'paper';

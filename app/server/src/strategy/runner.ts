@@ -6,7 +6,7 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
-import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -446,12 +446,25 @@ export class StrategyRunner {
      * on, the would-sells written down while they were off are not trades -- counting them blocked real
      * orders ("already 15 open" with a handful of positions, 2 Oct 2026).
      */
-    const live = (await svc.openTrades()).filter((t) => t.plan.strategyId === s.id).length;
+    const openNow = await svc.openTrades();
+    const live = openNow.filter((t) => t.plan.strategyId === s.id).length;
     const paper = s.config.liveOrders ? 0 : await this.store.wouldBeOpen(s.id);
     const open = live + paper;
     if (open >= rule.maxOpen) {
       const parts = [live ? `${live} live` : null, paper ? `${paper} would-sell` : null].filter(Boolean).join(' + ');
       await finish('skipped', `already ${open} of its trade${open === 1 ? '' : 's'} open${parts ? ` (${parts})` : ''} -- at most ${rule.maxOpen}`);
+      return;
+    }
+
+    /*
+     * The desk-wide cap, after the strategy's own: every open trade the desk
+     * holds -- positions and working orders, of every strategy and the ticket --
+     * against one number. Margin is one pool; the strategies' own limits add up
+     * past it, and the order that does not fit is refused at Delta.
+     */
+    const cap = globalMaxOpenOf(svc.settings.get(GLOBAL_MAX_OPEN_KEY));
+    if (cap > 0 && openNow.length >= cap) {
+      await finish('skipped', `the desk already has ${openNow.length} open (positions and working orders, all strategies) -- at most ${cap} at once across all`);
       return;
     }
 

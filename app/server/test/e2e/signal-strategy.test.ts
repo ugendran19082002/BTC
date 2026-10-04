@@ -806,3 +806,76 @@ test('[critical] TGT distance per timeframe: a signal whose target is nearer tha
 
   await api('POST', '/api/strategies/sig-tgt/enabled', { enabled: false });
 });
+
+// ------------------------------------------------------------ the desk-wide cap on open trades
+
+test('[critical] at most open at once, across all strategies: one number over every strategy, saved as a setting, and a signal past it is skipped in words', async () => {
+  const MSG = 'At most open at once, across all strategies, must be a whole number from 0 (no limit) to 500.';
+  for (const bad of [-1, 501, 1.5, 'six', null]) {
+    const r = await api('POST', '/api/strategies/max-open', { max: bad });
+    assert.equal(r.status, 422, String(bad));
+    assert.deepEqual(r.body.problems, [MSG]);
+  }
+  // Nothing set: no cap, and the list says so beside how many are open now.
+  let status = (await api('GET', '/api/strategies')).body;
+  assert.equal(status.signalMaxOpen, 0);
+  const openBefore = (await tradingService().openTrades()).length;
+  assert.equal(status.openNow, openBefore);
+
+  // Two strategies, each allowed ten of its own: twenty between them, were it not for the desk's one number.
+  const each = { ...config, signal: { ...config.signal, maxOpen: 10 }, liveOrders: true };
+  for (const name of ['Sig cap a', 'Sig cap b']) {
+    assert.equal((await api('POST', '/api/strategies', { name, config: each })).status, 200);
+    await api('POST', `/api/strategies/${name.toLowerCase().replace(/ /g, '-')}/enabled`, { enabled: true });
+  }
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const quote = () => {
+    for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+      paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+    }
+  };
+  const lastOf = async (id: string) => (await runsOf(id)).at(-1)!;
+
+  // The cap: one more than the desk holds now. Saved in the settings table, as a number the list reads back.
+  const cap = openBefore + 1;
+  const saved = await api('POST', '/api/strategies/max-open', { max: cap });
+  assert.deepEqual([saved.status, saved.body.signalMaxOpen], [200, cap]);
+  const row = await one<{ value: string }>("SELECT value FROM settings WHERE key = 'signal_max_open'");
+  assert.equal(row!.value, String(cap));
+  assert.equal((await api('GET', '/api/strategies')).body.signalMaxOpen, cap);
+
+  // One signal, taken by both strategies in turn: the first fills the last place, the second is over the desk's cap --
+  // though it holds none of its own, and its own limit is ten.
+  quote();
+  await runner.onSignal(signal());
+  const a = await lastOf('sig-cap-a');
+  const b = await lastOf('sig-cap-b');
+  assert.equal(a.status, 'placed', a.detail);
+  assert.equal(b.status, 'skipped', b.detail);
+  assert.equal(b.detail.split(' | ')[1], `the desk already has ${cap} open (positions and working orders, all strategies) -- at most ${cap} at once across all`);
+  assert.equal(b.trade_id, null, 'nothing sent');
+  status = (await api('GET', '/api/strategies')).body;
+  assert.equal(status.openNow, cap);
+  const skippedRow = status.signalTrades.find((t: any) => t.strategyId === 'sig-cap-b' && t.status === 'skipped');
+  assert.match(skippedRow.detail, /at most \d+ at once across all$/, 'and the trade history\'s Skipped tab gets the reason');
+
+  // The strategy's own limit is still its own: with the desk's cap far away, "at most 1" of its own still holds it.
+  await api('POST', '/api/strategies/max-open', { max: 500 });
+  const one1 = (await strategyStore().get('sig-cap-a'))!;
+  await api('POST', '/api/strategies', { id: one1.id, name: one1.name, config: { ...one1.config, signal: { ...one1.config.signal, maxOpen: 1 } } });
+  await api('POST', '/api/strategies/sig-cap-b/enabled', { enabled: false });
+  quote();
+  await runner.onSignal(signal());
+  assert.match((await lastOf('sig-cap-a')).detail, /already 1 of its trade open .*-- at most 1$/);
+
+  // 0 takes the cap off: the second strategy takes the next signal.
+  await api('POST', '/api/strategies/max-open', { max: 0 });
+  assert.equal((await api('GET', '/api/strategies')).body.signalMaxOpen, 0);
+  await api('POST', '/api/strategies/sig-cap-b/enabled', { enabled: true });
+  quote();
+  await runner.onSignal(signal());
+  const free = await lastOf('sig-cap-b');
+  assert.equal(free.status, 'placed', free.detail);
+  for (const id of ['sig-cap-a', 'sig-cap-b']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+});

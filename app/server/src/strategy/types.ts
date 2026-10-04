@@ -365,6 +365,32 @@ export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', 
 /** "At most open at once" is typed, 1 to this. */
 export const MAX_SIGNAL_OPEN = 100;
 
+/**
+ * The desk-wide cap on open trades (4 Oct 2026): the setting `signal_max_open`.
+ *
+ * Each signal strategy has its own "at most open at once", and five strategies
+ * each allowed ten is fifty positions on an account whose margin carries a
+ * handful -- the order the margin cannot cover is refused by Delta, and a
+ * refusal there is a penalty. This is one number over all of them: a signal is
+ * not taken while the desk already holds that many open trades, positions and
+ * working orders alike, whichever strategy or hand opened them. Zero, or
+ * nothing set, is no cap -- the desk as it was before this existed.
+ */
+export const GLOBAL_MAX_OPEN_KEY = 'signal_max_open';
+/** The most the desk-wide cap may be set to. */
+export const MAX_GLOBAL_OPEN = 500;
+/** The setting as stored, read as a number: 0 when absent or unreadable, which is no cap. */
+export function globalMaxOpenOf(raw: string | null | undefined): number {
+  const n = Number(raw);
+  return raw !== null && raw !== undefined && raw !== '' && Number.isInteger(n) && n > 0 && n <= MAX_GLOBAL_OPEN ? n : 0;
+}
+/** Why a desk-wide cap cannot be saved, in words; null when it can. */
+export function globalMaxOpenProblem(v: unknown): string | null {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_GLOBAL_OPEN
+    ? null
+    : `At most open at once, across all strategies, must be a whole number from 0 (no limit) to ${MAX_GLOBAL_OPEN}.`;
+}
+
 /** The leg a signal is traded as: a BUY sells the put, a SELL the call -- each wins as the signal goes right. */
 export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');
 
