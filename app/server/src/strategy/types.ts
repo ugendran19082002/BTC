@@ -317,8 +317,30 @@ export type SignalRule = {
    *           zone -- sooner, but it also trades the ones that never fill.
    */
   enterOn?: SignalEntry;
+  /**
+   * Without the chain, per timeframe: the least distance, in BTC points, from
+   * the perp entry to the signal's SL for the signal to be taken (4 Oct 2026).
+   * `{ '5m': 150 }`: a 5m signal whose stop sits 149 points from the entry is
+   * not taken, and written down as skipped with both numbers.
+   *
+   * A stop a few points from the entry is one the perp's own noise reaches, and
+   * the option bought back there has paid the spread twice for nothing; how
+   * tight is too tight differs by timeframe, so each has its own number. A
+   * timeframe absent, or at 0, has no such filter -- every strategy saved
+   * before it. Not read with the chain.
+   */
+  minSlPts?: Partial<Record<SignalTf, number>>;
 };
 export type SignalEntry = 'zone' | 'signal';
+/** The most an SL-distance filter may ask for: beyond this is a typo, not a filter. */
+export const MAX_SL_PTS = 100_000;
+
+/** The least SL distance a rule asks of a signal on this timeframe; 0 is no filter. */
+export function minSlPtsFor(rule: Pick<SignalRule, 'mode' | 'minSlPts'>, tf: string): number {
+  if (rule.mode !== 'single') return 0;
+  const v = rule.minSlPts?.[tf as SignalTf];
+  return typeof v === 'number' && v > 0 ? v : 0;
+}
 /** The default: enter "in the trade". */
 export const entersOn = (rule: Pick<SignalRule, 'enterOn'>): SignalEntry => rule.enterOn ?? 'zone';
 export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
@@ -787,6 +809,17 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   if (r.enterOn !== undefined && r.enterOn !== 'zone' && r.enterOn !== 'signal') bad.push('Enter at the entry zone or at the signal.');
   if (!Number.isInteger(r.maxOpen) || (r.maxOpen ?? 0) < 1 || (r.maxOpen ?? 0) > MAX_SIGNAL_OPEN) {
     bad.push(`At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
+  }
+  if (r.minSlPts !== undefined && r.minSlPts !== null) {
+    if (typeof r.minSlPts !== 'object' || Array.isArray(r.minSlPts)) bad.push('The SL distances must be given per timeframe.');
+    else {
+      for (const [tf, v] of Object.entries(r.minSlPts)) {
+        if (!SIGNAL_TFS.includes(tf as SignalTf)) bad.push(`No such timeframe for an SL distance: ${tf}.`);
+        else if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_SL_PTS) {
+          bad.push(`The SL distance for ${tf} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
+        }
+      }
+    }
   }
   return bad;
 }

@@ -246,8 +246,11 @@ absent key as what older strategies were doing. Since 22 Sep 2026 it may carry
 between entry and exit) and `premium.fallbackUsd`. Since 4 Oct 2026 a signal
 strategy may carry `strikeBlocks` (`[{ at: "HH:MM", strikeRule, strikeStep,
 premium }]`): its strike rule over the window; absent or empty is one rule all
-window. A premium rule, the strategy's or a block's, may carry `minOtm` (1-20):
-the nearest strike it may sell. The key is written only when set. Absent, they read as a
+window. A premium rule, the strategy's or a block's, may carry `minOtm` (1-20),
+the nearest strike its own pick may be, and beside it `elseOtm` (1-20), the
+strike sold when the pick is nearer. A signal rule may carry `minSlPts`
+(`{ "5m": 150 }`): the least distance from the perp entry to the SL, per
+timeframe. Each key is written only when set. Absent, they read as a
 percentage all day and no fallback (`exitRules()`, `cleanConfig()`). Which stage
 of a timetable a trade is on is not stored: it is a function of the clock.
 

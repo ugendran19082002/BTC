@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-418 files listed, 198 test files counted below, images and lockfiles left out.
+418 files listed, 199 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 113 |
+| `app/server` | 114 |
 | `app/web` | 85 |
 
 ## `(root)`
@@ -418,7 +418,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [SignalTradeHistory.tsx](../../app/web/src/components/strategy/SignalTradeHistory.tsx) | Every trade the signal strategies took, or with live orders off would have taken: the signal, the option, the signal's SL and TGT on the BTC perp, how it ended and what it made. |
 | [StrategyForm.tsx](../../app/web/src/components/strategy/StrategyForm.tsx) | A clock strategy -- everything it is, in words rather than symbols, in three short tabs: |
 | [StrategyPanel.tsx](../../app/web/src/components/strategy/StrategyPanel.tsx) | The strategies, what is armed, and when each one next runs. |
-| [StrikeBlocksEditor.tsx](../../app/web/src/components/strategy/StrikeBlocksEditor.tsx) | A signal strategy's strike rule over its window (4 Oct 2026). |
+| [StrikeBlocksEditor.tsx](../../app/web/src/components/strategy/StrikeBlocksEditor.tsx) | A signal strategy's strike rule, over its window (4 Oct 2026). |
 | [form-parts.tsx](../../app/web/src/components/strategy/form-parts.tsx) | The strategy forms' parts: every field group a strategy has, written once. |
 | [useStrategyDraft.ts](../../app/web/src/components/strategy/useStrategyDraft.ts) | A strategy being edited: the config, the name, what is wrong with them and on which tab, and saving -- the part both strategy forms share, so the clock form and the signal form check and save the s... |
 

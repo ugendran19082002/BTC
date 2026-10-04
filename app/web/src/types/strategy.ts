@@ -186,7 +186,20 @@ export type SignalRule = {
   maxOpen: number;
   /** When the option is sold: when the perp reaches the entry zone ("in the trade", the default), or at the signal. */
   enterOn?: 'zone' | 'signal';
+  /**
+   * Without the chain, per timeframe: the least distance, in BTC points, from the perp entry to the signal's SL
+   * for the signal to be taken; nearer, it is skipped and the history says so. Absent or 0 for a timeframe: no filter.
+   */
+  minSlPts?: Partial<Record<SignalTf, number>>;
 };
+/** The most an SL-distance filter may ask for (server: MAX_SL_PTS). */
+export const MAX_SL_PTS = 100_000;
+
+/** The timeframes a rule filters by SL distance, with their points: only the ones it takes signals on, and only above zero. */
+export function slFilters(rule: SignalRule): { tf: SignalTf; pts: number }[] {
+  if (rule.mode !== 'single') return [];
+  return (rule.tfs ?? [rule.tf]).map((tf) => ({ tf, pts: rule.minSlPts?.[tf] ?? 0 })).filter((x) => x.pts > 0);
+}
 
 /** The leg a signal is sold as: a BUY sells the put, a SELL the call. */
 export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');

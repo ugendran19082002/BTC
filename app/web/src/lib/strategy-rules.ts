@@ -1,4 +1,4 @@
-import { MAX_SIGNAL_OPEN, MAX_STRIKE_STEP, SIGNAL_TFS, type StrategyConfig } from '@/types/strategy';
+import { MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -22,7 +22,7 @@ export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin'
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'premiumMinOtm' | 'strikeBlocks' | 'minPremium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
-  | 'signalMode' | 'signalTf' | 'signalMethods' | 'signalTarget' | 'maxOpen';
+  | 'signalMode' | 'signalTf' | 'signalSlPts' | 'signalMethods' | 'signalTarget' | 'maxOpen';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -30,7 +30,7 @@ const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when',
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', premiumMinOtm: 'sell', strikeBlocks: 'sell', minPremium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
-  signalMode: 'signal', signalTf: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade',
+  signalMode: 'signal', signalTf: 'signal', signalSlPts: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -106,6 +106,13 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
         const tfs = r.tfs ?? [r.tf];
         if (tfs.length === 0) say('signalTf', 'Pick at least one timeframe.');
         else if (tfs.some((t) => !SIGNAL_TFS.includes(t))) say('signalTf', `Pick a timeframe: ${SIGNAL_TFS.join(', ')}.`);
+      }
+      // The SL-distance filter -- the server's words (`signalRuleProblems`).
+      for (const [tf, v] of Object.entries(r.minSlPts ?? {})) {
+        if (!SIGNAL_TFS.includes(tf as SignalTf)) say('signalSlPts', `No such timeframe for an SL distance: ${tf}.`);
+        else if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_SL_PTS) {
+          say('signalSlPts', `The SL distance for ${tf} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
+        }
       }
       if (!Array.isArray(r.methods) || r.methods.length === 0) say('signalMethods', 'Pick at least one method whose signals to take.');
       if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') say('signalTarget', 'The target must be TGT1, TGT2 or TGT3.');

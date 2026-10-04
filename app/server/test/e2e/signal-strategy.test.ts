@@ -664,3 +664,80 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
   clock = TEN;
   await api('POST', '/api/strategies/sig-floor/enabled', { enabled: false });
 });
+
+// ------------------------------------------------------------ the SL-distance filter
+
+test('[critical] SL distance per timeframe: a signal whose SL is nearer than its timeframe\'s points is skipped, and the history says why', async () => {
+  // The signal: entry zone 84,950-85,000 (its middle 84,975 is the entry when the perp has no fresh print), SL 84,600 -- 375 pts.
+  const filtered = {
+    ...config, signal: { ...config.signal, tfs: ['5m', '15m'], maxOpen: 10, minSlPts: { '5m': 500, '15m': 375, '1h': 0, '4h': '' } },
+  };
+  const bad = await api('POST', '/api/strategies', { name: 'Sig sl', config: { ...filtered, signal: { ...filtered.signal, minSlPts: { '5m': -5 } } } });
+  assert.equal(bad.status, 422);
+  assert.ok(bad.body.problems.includes('The SL distance for 5m must be from 0 to 100,000 points.'), bad.body.problems.join(' '));
+
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig sl', config: filtered })).status, 200);
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-sl'");
+  assert.deepEqual(row!.config.signal.minSlPts, { '5m': 500, '15m': 375 }, 'each timeframe\'s number kept; a blank or zero is no entry');
+  const plain = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-blocks'");
+  assert.equal('minSlPts' in plain!.config.signal, false, 'a strategy that never used it is stored as before');
+
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  await api('POST', '/api/strategies/sig-sl/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const last = async () => (await runsOf('sig-sl')).at(-1)!;
+
+  await runner.onSignal(signal());                       // 5m: 375 pts against 500 -- not taken
+  const skipped = await last();
+  assert.equal(skipped.status, 'skipped', skipped.detail);
+  assert.equal(skipped.detail, '#1 Breakout BUY | SL too near: the perp entry 84975 to the SL 84600 is 375 pts — this strategy takes 5m signals only at 500 pts or more');
+  assert.equal(skipped.trade_id, null);
+
+  await runner.onSignal(signal({ tf: '15m' }));          // 15m: 375 against 375 -- equal is enough
+  assert.equal((await last()).status, 'would-place', (await last()).detail);
+
+  // a wider stop on 5m passes its 500
+  await runner.onSignal(signal({ plan: { entryLo: 84_950, entryHi: 85_000, stop: 84_400, tp1: 85_500, tp2: null, tp3: null, tpWhy: [], rr: 1 } }));
+  assert.match((await last()).detail, /would sell PE 84000 x1 @ 18 · perp SL 84400/);
+
+  // a SELL is measured the same way: the stop above the entry
+  await runner.onSignal(signal({ dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_200, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1 } }));
+  assert.match((await last()).detail, /SELL \| SL too near: the perp entry 85025 to the SL 85200 is 175 pts — this strategy takes 5m signals only at 500 pts or more$/);
+
+  // the trade history's Skipped tab gets the row, reason and all
+  const listed = (await api('GET', '/api/strategies')).body.signalTrades.filter((t: any) => t.strategyId === 'sig-sl' && t.status === 'skipped');
+  assert.equal(listed.length, 2);
+  assert.match(listed[0].detail, /SL too near: .* is 175 pts/);
+  await api('POST', '/api/strategies/sig-sl/enabled', { enabled: false });
+});
+
+test('[critical] at the zone, the distance is measured from the fill -- and with the chain the filter is not read', async () => {
+  const zone = { ...config, signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 10, enterOn: 'zone', minSlPts: { '15m': 400 } } };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig sl zone', config: zone })).status, 200);
+  const chain = { ...config, signal: { mode: 'mtf', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 10, enterOn: 'signal', minSlPts: { '5m': 5_000 } } };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig sl chain', config: chain })).status, 200);
+  for (const id of ['sig-sl-zone', 'sig-sl-chain']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: true });
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  clock = TEN;
+  const fill = (fillPrice: number, triggerAt: number) => ({
+    method: 'breakout', mode: 'single' as const, tf: '15m' as const, dir: 1 as const, triggerAt,
+    entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: null, tp3: null,
+    status: 'filled' as const, filledAt: Math.floor(clock / 1000), fillPrice,
+  });
+  await runner.onSetupFilled(fill(84_990, 1_790_900_000));     // 390 pts from the fill: under 400
+  const near = (await runsOf('sig-sl-zone')).at(-1)!;
+  assert.equal(near.status, 'skipped', near.detail);
+  assert.match(near.detail, /SL too near: the perp entry 84990 to the SL 84600 is 390 pts — this strategy takes 15m signals only at 400 pts or more$/);
+  await runner.onSetupFilled(fill(85_000, 1_790_900_900));     // 400 pts: taken
+  assert.equal((await runsOf('sig-sl-zone')).at(-1)!.status, 'would-place');
+
+  await runner.onSignal(signal({ mode: 'mtf', tf: '5m' }));    // with the chain: 375 pts against a 5,000 it does not read
+  const taken = (await runsOf('sig-sl-chain')).at(-1)!;
+  assert.equal(taken.status, 'would-place', taken.detail);
+  for (const id of ['sig-sl-zone', 'sig-sl-chain']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+});

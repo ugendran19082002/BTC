@@ -6,7 +6,7 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
-import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minSlPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -408,6 +408,24 @@ export class StrategyRunner {
       const ago = now - fill.filledAt * 1_000;
       if (ago > ZONE_FILL_FRESH_MS) {
         await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round(ago / 1_000)}s ago -- too late to enter`);
+        return;
+      }
+    }
+
+    /*
+     * The SL-distance filter (4 Oct 2026): without the chain, a signal whose SL
+     * sits nearer the perp entry than its timeframe's number is not taken. The
+     * entry is the one the trade would carry -- the fill, else the perp now,
+     * else the middle of the signal's zone -- and the row says both prices, the
+     * distance and the number it had to reach, so a skipped signal explains
+     * itself in the history.
+     */
+    const needPts = minSlPtsFor(rule, r.tf);
+    if (needPts > 0) {
+      const from = fill?.fillPrice ?? perpNow() ?? (plan.entryLo + plan.entryHi) / 2;
+      const pts = Math.abs(from - plan.stop);
+      if (pts < needPts) {
+        await finish('skipped', `SL too near: the perp entry ${Math.round(from)} to the SL ${Math.round(plan.stop)} is ${Math.round(pts)} pts — this strategy takes ${r.tf} signals only at ${needPts} pts or more`);
         return;
       }
     }

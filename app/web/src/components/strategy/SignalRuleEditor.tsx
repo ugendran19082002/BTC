@@ -4,6 +4,7 @@ import { getEntryBoard, getEntryMethods, getMethodReport, type EntryMethodInfo }
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Input } from '@/components/ui/input';
+import { NumberField } from '@/components/ui/number-field';
 import { legOfSignal, ruleTfs, SIGNAL_TFS, type SignalRule, type SignalTf } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
 import { cn } from '@/lib/utils';
@@ -81,7 +82,7 @@ export function profitableIds(rows: readonly MethodReportRow[], minTrades = MIN_
 export function SignalRuleEditor({ rule, onChange, errors }: {
   rule: SignalRule;
   onChange: (r: SignalRule) => void;
-  errors: { mode?: string | null; tf?: string | null; methods?: string | null };
+  errors: { mode?: string | null; tf?: string | null; methods?: string | null; slPts?: string | null };
 }) {
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState<GroupFilter>('all');
@@ -192,6 +193,33 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
             {tfs.length ? `Takes signals on ${tfs.join(', ')}. The record beside each method is added up over these.` : ''}
           </p>
           {errors.tf && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.tf}</p>}
+
+          {/*
+            The SL-distance filter, a number per timeframe picked (4 Oct 2026). A
+            stop a few points from the entry is one the perp's own noise reaches;
+            how tight is too tight differs by timeframe, so each has its own.
+          */}
+          {tfs.length > 0 && (
+            <div role="group" aria-label="SL distance by timeframe" className="mt-2 rounded-lg border border-solid border-border px-2.5 py-2">
+              <div className="text-[12.5px] font-medium text-foreground">Take a signal only if its SL is far enough</div>
+              <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
+                The distance from the perp entry to the signal&apos;s SL, in BTC points, for each timeframe: greater than or
+                equal to the number and the signal is taken; nearer and it is skipped, with both prices in the trade
+                history. 0 takes every signal.
+              </p>
+              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
+                {tfs.map((tf) => (
+                  <div key={tf} className="flex items-center gap-1.5 text-[12px]">
+                    <span className="w-8 flex-none font-medium text-foreground">{tf}</span>
+                    <span className="text-muted-foreground">≥</span>
+                    <NumberField label={`${tf} SL distance pts`} value={rule.minSlPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
+                                 onChange={(n) => onChange({ ...rule, minSlPts: { ...(rule.minSlPts ?? {}), [tf]: n } })} />
+                  </div>
+                ))}
+              </div>
+              {errors.slPts && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.slPts}</p>}
+            </div>
+          )}
         </div>
       )}
 

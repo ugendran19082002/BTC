@@ -785,3 +785,47 @@ describe('the distance rule and its else strike, beside the premium', () => {
     expect(strike('else strike')).toHaveTextContent('OTM 6');
   });
 });
+
+describe('the SL-distance filter: a number of points for each timeframe picked', () => {
+  const single = (over: Partial<SignalRule> = {}) => signalStrategy({ mode: 'single', tf: '5m', tfs: ['5m', '15m'], ...over });
+  const group = () => screen.getByRole('group', { name: 'SL distance by timeframe' });
+
+  it('[critical] without the chain: one field per timeframe picked, 0 until typed -- and none with the chain', () => {
+    show(single());
+    expect(within(group()).getByLabelText('5m SL distance pts')).toHaveValue('0');
+    expect(within(group()).getByLabelText('15m SL distance pts')).toHaveValue('0');
+    expect(within(group()).queryByLabelText('1h SL distance pts')).not.toBeInTheDocument();
+    expect(within(group()).getByText(/greater than or\s+equal to the number and the signal is taken; nearer and it is skipped/)).toBeInTheDocument();
+    radio('signal way', 'With the timeframe chain');
+    expect(screen.queryByRole('group', { name: 'SL distance by timeframe' })).not.toBeInTheDocument();
+  });
+
+  it('[critical] picking another timeframe adds its field; each keeps its own number, and all of it is saved', async () => {
+    show(single());
+    fireEvent.change(screen.getByLabelText('5m SL distance pts'), { target: { value: '150' } });
+    fireEvent.change(screen.getByLabelText('15m SL distance pts'), { target: { value: '300' } });
+    fireEvent.click(within(screen.getByRole('group', { name: 'signal timeframes' })).getByRole('button', { name: '1h' }));
+    expect(screen.getByLabelText('1h SL distance pts')).toHaveValue('0');
+    expect(screen.getByLabelText('5m SL distance pts')).toHaveValue('150');
+    expect(screen.getByText(/without the chain, on 5m \+ 15m \+ 1h \(only with the SL 150\+ pts from the entry on 5m, 300\+ on 15m\)/)).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.minSlPts).toMatchObject({ '5m': 150, '15m': 300 });
+  });
+
+  it('[critical] a saved strategy opens with its numbers; too large is said under the fields and stops the save', () => {
+    show(single({ minSlPts: { '5m': 150, '15m': 300 } }));
+    expect(screen.getByLabelText('5m SL distance pts')).toHaveValue('150');
+    expect(screen.getByLabelText('15m SL distance pts')).toHaveValue('300');
+    fireEvent.change(screen.getByLabelText('5m SL distance pts'), { target: { value: '200000' } });
+    expect(within(group()).getByRole('alert')).toHaveTextContent('The SL distance for 5m must be from 0 to 100,000 points.');
+    expect(screen.getByRole('tab', { name: /^Signals/ })).toContainElement(screen.getByLabelText('has a problem'));
+    fireEvent.click(saveButton());
+    expect(saveStrategy).not.toHaveBeenCalled();
+  });
+
+  it('with no number set the sentence says nothing about it', () => {
+    show(single());
+    expect(screen.queryByText(/only with the SL/)).not.toBeInTheDocument();
+  });
+});
