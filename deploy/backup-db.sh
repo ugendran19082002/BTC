@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 #
-# A consistent dump of the desk's database, kept for a fortnight.
+# A consistent dump of the desk's database. The newest three are kept.
+#
+# Three, not fourteen (owner, 4 Oct 2026): a dump is 60 MB, one is taken on
+# every deploy as well as daily, and fourteen of them from a single day had
+# filled 820 MB of a disk that was 86% full. KEEP_BACKUPS=n keeps more.
 #
 #   ./deploy/backup-db.sh                 -> backups/btc_desk-<utc stamp>.dump
 #   ./deploy/backup-db.sh --restore FILE  -> replace the database with that dump
@@ -22,7 +26,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="docker compose -f ${ROOT}/deploy/docker-compose.yml"
 OUT_DIR="${BACKUP_DIR:-$ROOT/backups}"
-KEEP="${KEEP_BACKUPS:-14}"
+KEEP="${KEEP_BACKUPS:-3}"
 WEB_PORT="${WEB_PORT:-8099}"
 DESK_HOST="${DESK_HOST:-172.17.0.1}"
 

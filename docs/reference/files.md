@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-389 files listed, 183 test files counted below, images and lockfiles left out.
+388 files listed, 183 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -20,7 +20,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [.dockerignore](../../.dockerignore) | never let a credential into a build context |
 | [.gitignore](../../.gitignore) | harvested option-chain cache - regenerate with research/harvest.py / harvester/harvest_chain.py |
-| [Delta-TransactionLog-OrderHistory_1790996588698.csv](../../Delta-TransactionLog-OrderHistory_1790996588698.csv) | -- |
 | [Dockerfile](../../Dockerfile) | ---------- build the API ---------- |
 | [Dockerfile.harvester](../../Dockerfile.harvester) | Keeps the chain cache current. |
 | [Dockerfile.web](../../Dockerfile.web) | The screen: build the Vite bundle, then serve it from nginx, which also proxies /api to the API container (deploy/nginx.docker.conf). |

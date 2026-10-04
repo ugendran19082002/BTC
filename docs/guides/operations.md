@@ -9,7 +9,7 @@ On the host's crontab (`CRON_TZ=Asia/Kolkata`):
 | When (IST) | Job | Log |
 |---|---|---|
 | 12:40 | `deploy/refresh.sh` -- harvest the settled chain into `chain.db` and hand it to the API | `refresh.log` |
-| 18:00 | `deploy/backup-db.sh` -- `pg_dump`, keep 14 days | `backup.log` |
+| 18:00 | `deploy/backup-db.sh` -- `pg_dump`, keep the newest 3 | `backup.log` |
 
 `refresh.sh` harvests yesterday and today into the repository's `chain.db` --
 a day is skipped until its 12:00 UTC settlement has passed, so at 12:40 IST it
