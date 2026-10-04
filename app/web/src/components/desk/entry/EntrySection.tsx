@@ -36,13 +36,15 @@ import './entry.css';
 
 const keyOf = (r: Pick<MethodRead, 'mode' | 'id'>) => `${r.mode}:${r.id}`;
 
-export function EntrySection({ desk, onTimeframes, belowHeader }: {
+export function EntrySection({ desk, onTimeframes, belowHeader, bottom }: {
   /** The desk's live 5m candles, last trade, option board and positioning, for the charts. */
   desk: DeskFeed;
   /** Each read's timeframe rows, handed up for the Timeframe analysis card under the Big move catch. */
   onTimeframes?: (rows: TimeframeRow[]) => void;
   /** Right under the header card (Perp / Mark / Index / Basis), before the panels: the signal strategies. */
   belowHeader?: React.ReactNode;
+  /** At the bottom of the entry setups section (e.g. Price change). */
+  bottom?: React.ReactNode;
 }) {
   const [singleTf, setSingleTf] = usePersisted<EntryTf>('entry:single-tf', '5m');
   const [open, setOpen] = useFold('entry-setups');
@@ -209,6 +211,8 @@ export function EntrySection({ desk, onTimeframes, belowHeader }: {
         paper log and graded on 1m candles, in points and R; the records here are that log, from 30 Sep 2026, and nothing
         else. No order is placed from here.
       </p>
+
+      {bottom && <div className="mt-3">{bottom}</div>}
     </section>
   );
 }

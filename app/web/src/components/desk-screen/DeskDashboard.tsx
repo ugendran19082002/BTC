@@ -26,6 +26,7 @@ export function DeskDashboard({
   controls,
   onTimeframes,
   belowEntry,
+  bottomEntry,
 }: {
   bars: readonly Candle[];
   ltp?: LiveLtp | null;
@@ -39,6 +40,8 @@ export function DeskDashboard({
   onTimeframes?: (rows: TimeframeRow[]) => void;
   /** Under the Entry setups header card, before its panels: the signal strategies that trade them. */
   belowEntry?: React.ReactNode;
+  /** At the bottom of the entry setups section (e.g. Price change). */
+  bottomEntry?: React.ReactNode;
 }) {
   const desk = useMemo(() => ({ bars5m: bars, ltp, derivs }), [bars, ltp, derivs]);
   return (
@@ -50,7 +53,7 @@ export function DeskDashboard({
         onSettings={onSettings}
         controls={controls}
       />
-      <EntrySection desk={desk} onTimeframes={onTimeframes} belowHeader={belowEntry} />
+      <EntrySection desk={desk} onTimeframes={onTimeframes} belowHeader={belowEntry} bottom={bottomEntry} />
     </div>
   );
 }

@@ -75,3 +75,16 @@ describe('the signal strategies, under the entry setups', () => {
     expect(sig.compareDocumentPosition(read) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+describe('price change placement', () => {
+  it('[critical] drawn at the bottom of the entry setups section, before market read', () => {
+    render(<Overview data={data} trade={null} />);
+    const entry = screen.getByRole('region', { name: 'entry setups' });
+    const priceChange = screen.getByText('Price change', { selector: 'h3' });
+    const read = screen.getByRole('region', { name: 'Market read' });
+    expect(entry.contains(priceChange)).toBe(true);
+    expect(read.contains(priceChange)).toBe(false);
+    expect(priceChange.compareDocumentPosition(read) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
