@@ -9,6 +9,8 @@ import { createHmac } from 'node:crypto';
  * be right about the signature and about never echoing a secret.
  */
 
+import { noteDeltaCall } from '../observability/desk-metrics.js';
+
 export const BASE = 'https://api.india.delta.exchange';
 
 export type Creds = { key: string; secret: string };
@@ -121,6 +123,10 @@ export async function signed<T>(creds: Creds | null, req: SignedRequest): Promis
   const payload = body === undefined ? '' : JSON.stringify(body);
   const ts = Math.floor(Date.now() / 1000).toString();
 
+  // Counted, never judged: how many, how long, how each ended (observability/desk-metrics.ts).
+  const sentAt = performance.now();
+  const counted = (outcome: 'ok' | 'refused' | 'rate-limited' | 'failed') => noteDeltaCall({ method, path, ms: performance.now() - sentAt, outcome });
+
   let res: Response;
   try {
     res = await fetch(BASE + path + query, {
@@ -139,6 +145,7 @@ export async function signed<T>(creds: Creds | null, req: SignedRequest): Promis
   } catch (e) {
     // A timeout or a dropped socket says nothing about whether the exchange
     // acted on the request. Callers that write must treat this as "unknown".
+    counted('failed');
     throw new RequestTimedOut(path);
   }
 
@@ -147,12 +154,14 @@ export async function signed<T>(creds: Creds | null, req: SignedRequest): Promis
   // on it, and the header says exactly how long to wait.
   if (res.status === 429) {
     const reset = Number(res.headers.get('X-RATE-LIMIT-RESET') ?? 0);
+    counted('rate-limited');
     throw new RateLimited(Number.isFinite(reset) && reset > 0 ? reset : 5_000);
   }
 
   const parsed = (await res.json().catch(() => null)) as
     | { success?: boolean; result?: T; error?: { code?: string; context?: unknown } }
     | null;
+  counted(res.ok && parsed && parsed.success !== false ? 'ok' : 'refused');
 
   // A success status whose body will not parse is not Delta saying no.
   if (res.ok && !parsed) throw new UnreadableReply(path, res.status);

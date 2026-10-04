@@ -27,6 +27,7 @@ import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import type { ExchangePort } from './exchange/port.js';
 import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-watch.js';
+import { notePass } from '../observability/desk-metrics.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
 /**
@@ -390,8 +391,11 @@ export class TradingService {
   private async step() {
     if (this.stepping) return;          // a slow exchange must not stack polls
     this.stepping = true;
+    const began = performance.now();
+    let polled = 0;
     try {
       const open = await this.store.open();
+      polled = open.length;
       // What was just read is what the fast watch looks at until the next pass.
       this.underlyingWatch.note(watchedOf(open));
       for (const rec of open) {
@@ -405,6 +409,8 @@ export class TradingService {
       this.feedOk = false;
     } finally {
       this.stepping = false;
+      // How long the pass took, for the gauge: a pass over a second makes the next one late.
+      notePass(performance.now() - began, polled);
     }
   }
 

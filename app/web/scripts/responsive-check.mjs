@@ -63,16 +63,36 @@ for (const w of widths) {
   if (bad) failures++;
   console.log(`${bad ? 'FAIL' : 'ok  '} ${String(w).padStart(4)}px  columns=${r.stacked} heights=${r.cols.join('/')} panels=${r.panels} folds=${r.folds}` + (r.overflowX > 0 ? `  page overflows by ${r.overflowX}px` : '') + (r.spills.length ? `  spills: ${r.spills.join(', ')}` : ''));
 }
-// Collapse all, then expand all: every panel follows.
-await page.setViewportSize({ width: 390, height: 900 });
-await page.click('button:has-text("Collapse all")');
-const folded = await page.evaluate(() => document.querySelectorAll('.ov-panel-folded').length);
-await page.click('button:has-text("Expand all")');
-const open = await page.evaluate(() => document.querySelectorAll('.ov-panel:not(.ov-panel-folded)').length);
-const total = await page.evaluate(() => document.querySelectorAll('.ov-panel').length);
-const foldOk = folded === total && open === total;
-if (!foldOk) failures++;
-console.log(`${foldOk ? 'ok  ' : 'FAIL'} collapse all → ${folded}/${total} folded; expand all → ${open}/${total} open`);
+// Every screen, at phone, tablet, laptop and desktop widths: the page must not scroll sideways, and nothing
+// outside a scroller of its own may reach past the edge. (The Live screen's Collapse-all step went with its button.)
+const SCREEN_WIDTHS = (process.env.SCREEN_WIDTHS ?? '360,390,768,1024,1366,1920').split(',').map(Number);
+const tabs = page.locator('nav.tabs button');
+const names = await tabs.allTextContents();
+for (const [i, raw] of names.entries()) {
+  const name = raw.replace(/\s+/g, ' ').trim() || `screen ${i + 1}`;
+  const rows = [];
+  for (const w of SCREEN_WIDTHS) {
+    await page.setViewportSize({ width: w, height: 900 });
+    await tabs.nth(i).scrollIntoViewIfNeeded();
+    await tabs.nth(i).click();
+    await page.waitForTimeout(700);
+    const r = await page.evaluate(() => {
+      const vw = window.innerWidth;
+      const scrolls = (el) => { for (let p = el.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p).overflowX; if (o === 'auto' || o === 'scroll' || o === 'hidden') return true; } return false; };
+      const past = [];
+      for (const el of document.querySelectorAll('body *')) {
+        const b = el.getBoundingClientRect();
+        if (b.width === 0 || b.height === 0) continue;
+        if (b.right > vw + 1 && !scrolls(el)) past.push(`${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''} +${Math.round(b.right - vw)}px`);
+      }
+      return { overflowX: document.documentElement.scrollWidth - vw, past: past.slice(0, 3) };
+    });
+    const bad = r.overflowX > 0 || r.past.length > 0;
+    if (bad) failures++;
+    rows.push(`${w}${bad ? ` FAIL(${r.overflowX > 0 ? `page +${r.overflowX}px` : r.past.join('; ')})` : ''}`);
+  }
+  console.log(`${rows.some((x) => x.includes('FAIL')) ? 'FAIL' : 'ok  '} ${name.padEnd(12)} ${rows.join('  ')}`);
+}
 await browser.close();
 if (failures) { console.error(`${failures} check(s) failed`); process.exit(1); }
 console.log('all widths pass');

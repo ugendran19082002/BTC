@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, simulationBacklog, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
 import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
+import { ttlCache } from '../ttl-cache.js';
+import { deskMetrics } from '../../observability/desk-metrics.js';
 import { scoreLegs, pickSells, bias, verdict, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
 import { DEFAULT_WALL_WITHIN_EM, optionStructure } from '../../domain/structure.js';
@@ -157,6 +159,13 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * summed from every print on the socket, and says how many of the minutes
    * it actually has.
    */
+  /**
+   * The desk's own gauges for the last five minutes: calls to Delta and how much of its quota they used,
+   * how long a pass over the open trades takes, how long the signal run holds the thread. Read-only.
+   */
+  app.get('/api/desk/metrics', async () => deskMetrics());
+
+  const optionFlowHeld = ttlCache<Awaited<ReturnType<typeof optionFlowSummary>>>(10_000);
   app.get('/api/perp', async (req, reply) => {
     try {
       const now = Date.now();
@@ -169,7 +178,9 @@ export function registerDeskRoutes(app: FastifyInstance) {
         liveBook(now).catch(() => null),
         flowSummary(windowMin, now),
         expiry ? oiPulse(expiry, now).catch(() => null) : Promise.resolve(null),
-        expiry ? optionFlowSummary(expiry, windowMin, now).catch(() => null) : Promise.resolve(null),
+        // The options' tape over the window -- up to a day of it -- is the heavy read here and a research figure,
+        // not a trading one: every screen asking within ten seconds shares one read of it.
+        expiry ? optionFlowHeld(`${expiry}|${windowMin}`, () => optionFlowSummary(expiry, windowMin, now)).catch(() => null) : Promise.resolve(null),
       ]);
       const perpOi = await perpOiChange(now, ticker ? { oiContracts: ticker.oiContracts, mark: ticker.mark } : null).catch(() => null);
       return { at: now, ticker, book, flow, oi, optionFlow, perpOi };
@@ -400,6 +411,9 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * chart is there to put the open-interest walls against recent price, and a
    * caller free to ask for a year of 1m bars is a caller who can hang the page.
    */
+  const candlesFast = ttlCache<Awaited<ReturnType<typeof candles>>>(5_000);
+  const candlesMid = ttlCache<Awaited<ReturnType<typeof candles>>>(10_000);
+  const candlesSlow = ttlCache<Awaited<ReturnType<typeof candles>>>(30_000);
   app.get('/api/candles', async (req, reply) => {
     const q = req.query as { tf?: string };
     // Roughly 100-160 bars each, which is what fits the width legibly. A
@@ -420,7 +434,14 @@ export function registerDeskRoutes(app: FastifyInstance) {
     const span = spans[tf]!;
     const now = Math.floor(Date.now() / 1000);
     try {
-      const bars = await candles('BTCUSD', now - span.hours * 3600, now, span.resolution);
+      /*
+       * One fetch from Delta per timeframe, shared by every screen for a few seconds (4 Oct 2026: each request
+       * was a round trip to Delta, 680 ms). A closed candle never changes, and the chart draws the forming one
+       * from the live tape, so a held answer costs nothing the screen shows. The screens' route only: the
+       * signal engine reads its candles itself and must have them fresh the moment one closes.
+       */
+      const held = tf === '1m' ? candlesFast : tf === '5m' || tf === '15m' ? candlesMid : candlesSlow;
+      const bars = await held(tf, () => candles('BTCUSD', now - span.hours * 3600, now, span.resolution));
       return { tf, resolution: span.resolution, bars };
     } catch (e) {
       // The chart is decoration around a board that still works without it.

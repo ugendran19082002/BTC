@@ -33,9 +33,11 @@ Every item carries one of three labels:
 | Old SQLite files | `trades.db` and `errors.db` archived to `backups/old-sqlite-2026-10-04.tar.gz`, then removed. | — |
 | Binance cache | `cache/binance` (188 MB) deleted. Its only readers were the removed study scripts. | — |
 | Backups | `backups/` went from 820 MB to 183 MB: the newest three database dumps are kept, and `deploy/backup-db.sh` now keeps three by default (it kept 14). The four one-off archives are untouched. | The three kept dumps were read back with `pg_restore -l` |
-| Stops and targets acted on late | The perp was a median 10 points, and at worst 185, past the level when the desk acted, because the check waited behind every other open trade's poll. A fast watch (`app/server/src/trading/underlying-watch.ts`) now looks five times a second and closes at once; the poll stays as the backstop. | 13 new tests; 1,281 server tests pass |
+| Stops and targets acted on late | The perp was a median 10 points, and at worst 185, past the level when the desk acted, because the check waited behind every other open trade's poll. A fast watch (`app/server/src/trading/underlying-watch.ts`) now looks ten times a second and closes at once; the poll stays as the backstop. | 13 new tests; 1,281 server tests pass |
 | Paper grader's per-second read (was Important 3) | The 528 working rows are held until the entry tables are written. | New test: the held rows always equal a fresh read |
 | Day's trades re-read every second (was Important 4) | The day's booked P&L is held until the journal is written. | New test: the held figure always equals a fresh read |
+| Zone entries | The live grader that sees the perp reach the zone now looks every 250 ms, not every second. | The entry tests pass |
+| Screens at every width | All eight screens pass at 360 to 1920 px: no sideways scroll, nothing past the edge. The check script now covers every screen. | `app/web/scripts/responsive-check.mjs`, on a paper desk |
 | Database sizing | Two CPUs and 1.5 GB (was one and 512 MB), 512 MB of buffers, `pg_stat_statements` loaded. Takes effect on the next deploy, which restarts the database. | The settings were started on the same image in a throwaway container |
 | Order-history CSV | Taken out of git and added to `.gitignore`. The file stays on disk. It is still in the git history. | — |
 

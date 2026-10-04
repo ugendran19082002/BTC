@@ -17,6 +17,7 @@ import { wallWithinEm } from './http/routes/desk.routes.js';
 import { captureIndex, indexSchema } from './market/index-1m.js';
 import { capturePerpSnapshot, flowSchema, flushTradeFlow, perpTape, startFlowSocket } from './market/flow.js';
 import { gradeLive, LIVE_GRADE_MS } from './entry/live-grade.js';
+import { noteSignalRun } from './observability/desk-metrics.js';
 import { bookHeatSchema, flushBookHeat, startBookHeat } from './market/book-heat.js';
 import { noteError } from './observability/errors.js';
 import { entrySchema, gradeSetups, onSetupFilled, recordSetups } from './entry/paper.js';
@@ -194,12 +195,17 @@ setInterval(() => { flushBookHeat(Date.now()).catch(warn('book-heat')); }, 20_00
  * phone is not told the same market seven times. Nothing is ordered.
  */
 const recordEntries = () => {
+  const readFrom = performance.now();
   readEntryContext()
     .then(async (ctx) => {
+      const readMs = performance.now() - readFrom;
       // Telegram for the ways switched on and their chosen timeframes, once per setup as it is first
       // written, each attempt written down (entry_alert_log) -- sent or failed, and why.
       const settings = await alertSettings().catch(() => []);
+      // Timed: this is every method on every way, on the thread the SL and TGT watch runs on.
+      const calcFrom = performance.now();
       const reads = allReads(ctx);
+      noteSignalRun(readMs, performance.now() - calcFrom);
       // With the market as it stood: the tape's last trade (fresh) and the option board's index.
       const fresh = ctx.ltp && ctx.now - ctx.ltp.at <= 15_000 ? ctx.ltp.price : null;
       await recordSignals(reads, ctx.now, { ltp: fresh, index: ctx.options?.spot ?? null });
