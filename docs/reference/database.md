@@ -17,7 +17,7 @@ ambiguous (`auth_sessions`, `strategy_runs`).
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
 | market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `large_prints`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
-| chart | `chart_annotations` | the annotation routes | Levels and zones saved on the price chart. Under the ledger since 29 Sep 2026 (`chart-001-annotations`). |
+| chart | none | -- | `chart_annotations` (levels saved on the price chart) was dropped on 4 Oct 2026 with the chart's layers (`chart-002-drop-annotations`); it held no rows. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
 
@@ -404,9 +404,8 @@ taker order on the perpetual of 200 contracts (0.2 BTC) or more, at its own
 millisecond, side, average price and size -- prints sharing a millisecond and
 a side are one order. Written with the minute rows, `PRIMARY KEY (at, side)`
 and `ON CONFLICT DO NOTHING`, so a replay cannot double one. Read by
-`GET /api/flow/large-prints` for the chart's big-trade bubbles, and for the
-automatic big-trade size (the 90th percentile of the rows in the chart's
-window). Kept a year, as the history to test big prints on. Roughly 100-400
+the chart's big-trade bubbles until they were removed on 4 Oct 2026; nothing
+reads it now. Kept a year, as the history to test big prints on. Roughly 100-400
 rows an hour.
 
 `book_heat_1m` (`market/book-heat.ts`, migration `market-016-book-heat`): the
@@ -415,7 +414,7 @@ about ±1.2% of price) and written a minute at a time: `base` (the lowest $10
 bin's price), `step` (10), `bid` and `ask` as `REAL[]` of the minute's average
 contracts per bin from `base` up, `samples`, and the touch (`best_bid`,
 `best_ask`). `PRIMARY KEY (at)`, `ON CONFLICT DO NOTHING`. Read by
-`GET /api/flow/heatmap` for the chart's heatmap and persistent walls. About
+the entry methods, for the book and its persistent walls (the chart's heatmap, which also read it, went on 4 Oct 2026). About
 1 KB a row, 1,440 a day; kept 14 days (~20 MB).
 
 `trade_flow_1m`, `perp_snapshots` (`market/flow.ts`, migration
@@ -460,14 +459,15 @@ minute; `/api/health` still reports the five-minute bucket.
 
 ---
 
-## `chart_annotations` — levels saved on the chart
+## `chart_annotations` — dropped
 
-Stop and target boxes, order blocks, fair-value gaps and liquidity lines the
-trader saves on the price chart, per symbol and timeframe, until deleted.
-`chart_annotations_by_symbol (symbol, tf, to_time DESC)` serves the chart's
-read. The table predates its migration: `chart-001-annotations` (29 Sep 2026)
-is `IF NOT EXISTS`, so on the live database it only recorded itself.
-Routes: `/api/chart/annotations` ([api.md](api.md)).
+Levels saved on the price chart, one of its layers. The layers were removed on
+4 Oct 2026 and the table with them (`chart-002-drop-annotations`, in
+`market/flow.ts`); it held no rows on the desk. `chart-001-annotations`, which
+made it, is retired: it stays in the live ledger and is not run on a fresh
+database.
+
+---
 
 ## Retired tables
 

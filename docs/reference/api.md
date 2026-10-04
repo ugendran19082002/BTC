@@ -9,16 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-79 routes.
-
-## [annotations.routes.ts](../../app/server/src/http/routes/annotations.routes.ts)
-
-| Method | Path | Session | What |
-|---|---|---|---|
-| DELETE | `/api/chart/annotations` | signed in | Clear all annotations for a symbol+tf, or a specific kind within it. |
-| GET | `/api/chart/annotations` | signed in | List annotations for a symbol+tf. |
-| POST | `/api/chart/annotations` | signed in | Create an annotation (SL box, TGT box, OB zone, etc.). |
-| DELETE | `/api/chart/annotations/:id` | signed in | Delete a single annotation by id. |
+72 routes.
 
 ## [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts)
 
@@ -28,9 +19,6 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/chain` | signed in | The option board for an expiry, live or at a past moment, scored for a seller: EV per strike, picks, bias, OI change, structure. |
 | GET | `/api/changes` | signed in | What changed over 1m … 12h for BTC, one strike and its board, from the desk's own records. |
 | GET | `/api/expiries` | signed in | The expiries Delta has listed, nearest first. |
-| GET | `/api/flow/bars` | signed in | Aggressive flow per candle -- taker buy and sell volume and the trade count -- for the chart's delta / CVD pane: `tf` 1m or 5m, `hours` back (up to 48). |
-| GET | `/api/flow/heatmap` | signed in | The perpetual's resting liquidity for the chart's heatmap: one column per candle (`tf` 1m or 5m), [bin, contracts] cells at $10 (1m) or $25 (5m) a bin, and the persistent walls now. |
-| GET | `/api/flow/large-prints` | signed in | The perpetual's big taker orders over the last hours, for the chart's bubbles, with the size that counts as big. |
 | GET | `/api/health` | none | The health probe. |
 | GET | `/api/perp` | signed in | The perpetual: its ticker (funding, open interest, turnover), the top of its book, and the last hour's order flow by aggressor side; the flow is summed from every print on the socket, and says how... |
 | POST | `/api/reload` | none | Re-read chain.db after deploy/refresh.sh has shipped a new copy. |

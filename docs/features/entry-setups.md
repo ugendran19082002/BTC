@@ -313,8 +313,8 @@ chooses that method in both panels -- then the two ways **side by side** --
 phone, where a method is its **number only**. Each panel has:
 
 - **The desk's price chart** ([price-chart.md](price-chart.md)) -- candles,
-  structure, liquidity, order flow, option strikes, its readout and Layers
-  menu -- on that panel's timeframe: without timeframe, the 3m-4H chips set
+  volume and its readout; its layers were removed on 4 Oct 2026 -- on that
+  panel's timeframe: without timeframe, the 3m-4H chips set
   what its reads use and the chart follows, and **1m is chart-only** (the
   chart, and in place of the table a note that 1m gives no signal or alert); with timeframe, the chips only
   change what the chart shows (the reads stay at 5m). The chart decides no

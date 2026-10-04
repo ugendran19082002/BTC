@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-418 files listed, 199 test files counted below, images and lockfiles left out.
+416 files listed, 199 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -153,7 +153,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [annotations.routes.ts](../../app/server/src/http/routes/annotations.routes.ts) | Chart annotations API routes. |
 | [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts) | The desk's read routes: health, the option chain, spot and candles, what changed, the perpetual's tape, book and big prints for the chart, the trend plan's paper log, chain.db reloads and the desk... |
 | [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | The entry section's routes: the 24 reads (twelve methods, with the timeframe chain and without it) and their paper record. |
 | [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts) | The error log, readable and writable from the browser. |
@@ -171,7 +170,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [chain-features.ts](../../app/server/src/market/chain-features.ts) | The option board as figures a measurement can use — and a record of them. |
 | [chain.ts](../../app/server/src/market/chain.ts) | Fallback spacing when the listed strikes cannot be read. |
 | [changes.ts](../../app/server/src/market/changes.ts) | What changed over the last 1m … 12h: BTC, one strike's premium / OI / IV / volume, and the board's call and put open interest, volume and PCR -- the "diff" a seller reads before entry (the desk spe... |
-| [chart-annotations.ts](../../app/server/src/market/chart-annotations.ts) | Chart annotations — SL/TGT boxes, SMC labels, OB zones saved by the trader. |
 | [delta-socket.ts](../../app/server/src/market/delta-socket.ts) | Delta's public ticker feed, over a socket. |
 | [delta.ts](../../app/server/src/market/delta.ts) | Delta Exchange India public market data. |
 | [flow-socket.ts](../../app/server/src/market/flow-socket.ts) | The perpetual's public feed: every BTCUSD trade as it prints, and the perp ticker (funding, open interest, turnover) as it changes. |
@@ -275,7 +273,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [annotations.ts](../../app/web/src/api/annotations.ts) | Chart annotations API client. |
 | [client.ts](../../app/web/src/api/client.ts) | One place that knows how to talk to the API: JSON in and out, the session cookie, "not signed in" as its own error, and which failures are worth reporting to the error log. |
 | [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
@@ -310,7 +307,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [BestTradeSettings.tsx](../../app/web/src/components/desk/BestTradeSettings.tsx) | The best-pick card's own two controls. |
 | [LivePrice.tsx](../../app/web/src/components/desk/LivePrice.tsx) | Spot, ticking, and how far it has come. |
 | [LoginPage.tsx](../../app/web/src/components/desk/LoginPage.tsx) | The gate in front of the desk: a password, then the code from the authenticator app. |
-| [PriceChart.tsx](../../app/web/src/components/desk/PriceChart.tsx) | The price chart: candles, and the market context the engine found, drawn on the candles themselves -- structure, liquidity, OB / FVG, levels, premium / discount, sessions, VWAP, candle tags, the bo... |
+| [PriceChart.tsx](../../app/web/src/components/desk/PriceChart.tsx) | The price chart: candles and volume, and the one setup it is handed -- `entry`, the entry section's choice (components/desk/entry, decided on the server), drawn as its entry box, stop and targets. |
 | [SettingsPanel.tsx](../../app/web/src/components/desk/SettingsPanel.tsx) | Every number the desk works to, in one screen. |
 | [StrikeAnalysis.tsx](../../app/web/src/components/desk/StrikeAnalysis.tsx) | Everything known about one strike, on one screen, before any order exists. |
 | [TelegramLogCard.tsx](../../app/web/src/components/desk/TelegramLogCard.tsx) | Every Telegram message the desk tried to send, and what became of it: sent, failed with Telegram's reason, or held back as a repeat of the same words (2 Oct 2026, owner: "check the last Telegram al... |
@@ -330,14 +327,13 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [ChartHud.tsx](../../app/web/src/components/desk/chart/ChartHud.tsx) | The chart's corner readout: the candle under the pointer (or the last), the timeframe context, positioning, big trades and the candle's flow -- what the market is doing, never a setup. |
+| [ChartHud.tsx](../../app/web/src/components/desk/chart/ChartHud.tsx) | The chart's corner readout: the candle under the pointer (or the last), the timeframe context and positioning -- what the market is doing, never a setup. |
 | [LtpChip.tsx](../../app/web/src/components/desk/chart/LtpChip.tsx) | The last traded price, where a trader looks for it: beside the chart's controls, green when it ticked up and red when it ticked down (kept until the next change, like the price scale's own label),... |
 | [entry-layer.ts](../../app/web/src/components/desk/chart/entry-layer.ts) | The chosen entry setup, drawn on the chart: the entry zone as a box from the bar the setup was anchored to, the stop and the targets as lines to the right edge. |
-| [flow-layers.ts](../../app/web/src/components/desk/chart/flow-layers.ts) | The order-flow layers, in the scene's data coordinates (bar index, price): |
 | [label-layout.ts](../../app/web/src/components/desk/chart/label-layout.ts) | Where each label goes, so that none is drawn over another. |
 | [price-chart.css](../../app/web/src/components/desk/chart/price-chart.css) | The price chart (PriceChart.tsx): the canvas fills the card, and the HUD and the toolbar float inside it. |
-| [scene.ts](../../app/web/src/components/desk/chart/scene.ts) | What the chart draws, in *data* coordinates (bar index, price), built from one engine state. |
-| [smc-primitive.ts](../../app/web/src/components/desk/chart/smc-primitive.ts) | Draws a scene (scene.ts) on the chart's own canvas, as a series primitive. |
+| [scene-primitive.ts](../../app/web/src/components/desk/chart/scene-primitive.ts) | Draws a scene (scene.ts) on the chart's own canvas, as a series primitive. |
+| [scene.ts](../../app/web/src/components/desk/chart/scene.ts) | What the chart draws over its candles, in data coordinates (bar index, price): the entry section's chosen setup -- its entry zone as a box, its entry, stop and targets as lines (entry-layer.ts). |
 
 ## `app/web/src/components/desk/entry/`
 
@@ -503,6 +499,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [tab-title.ts](../../app/web/src/lib/tab-title.ts) | What the browser tab says: the price, how far it has come today, and the day's P&L -- the three numbers somebody glances at from another tab. |
 | [time.ts](../../app/web/src/lib/time.ts) | Times of day, as the desk stores them and as a person reads them. |
 | [utils.ts](../../app/web/src/lib/utils.ts) | Class-name helpers shared by every component. |
+| [vol-regime.ts](../../app/web/src/lib/vol-regime.ts) | Is the chart moving more or less than usual: the latest ATR(14) against the median ATR over the candles given. |
+| [volume-profile.ts](../../app/web/src/lib/volume-profile.ts) | Volume at price over a run of candles: the point of control (POC, the busiest price), the value area (VAH / VAL, the 70% of volume around it) and the high- and low-volume nodes. |
 
 ## `app/web/src/lib/smc/`
 
