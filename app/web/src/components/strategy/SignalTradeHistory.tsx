@@ -128,7 +128,7 @@ export function tradesCsv(rows: readonly SignalTrade[], nameOf: (id: string) => 
 /**
  * What a trade's own line says about its strike rule: that the rule failed and
  * the else strike was sold ("rule failed: the premium's strike 84400 @ 51 is
- * nearer than OTM 6 — sold the else strike OTM 8"), and the block of the day it
+ * nearer than OTM 6 — went to the else strike OTM 8"), and the block of the day it
  * was sold under ("block 2, from 9:35 PM"). Either may be absent.
  *
  * A trade row shows figures, not the server's sentence, so these two were on

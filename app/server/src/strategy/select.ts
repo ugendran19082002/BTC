@@ -304,7 +304,7 @@ export function selectLegs(
 
 /**
  * For a leg the else chose, why: " (rule failed: the premium's strike 84400 @ 51
- * is nearer than OTM 6 — sold the else strike OTM 8)", or "no strike met the
+ * is nearer than OTM 6 — went to the else strike OTM 8)", or "no strike met the
  * premium" when it picked none. Nothing for a leg the premium chose.
  *
  * Written into the run's own line, which is what the trade history shows: a
@@ -316,7 +316,7 @@ export function elseWords(l: Pick<Chosen, 'minOtm' | 'elseOtm' | 'premiumPick'>)
   const why = l.premiumPick
     ? `the premium's strike ${l.premiumPick.strike} @ ${l.premiumPick.price} is nearer than ${strikeLabel(l.minOtm)}`
     : 'no strike met the premium';
-  return ` (rule failed: ${why} — sold the else strike ${strikeLabel(l.elseOtm)})`;
+  return ` (rule failed: ${why} — went to the else strike ${strikeLabel(l.elseOtm)})`;
 }
 
 /** True when this strike was found by the premium fallback rather than the rule's own number. */

@@ -431,7 +431,7 @@ test('[critical] the run says when the floor chose the strike -- and does not ca
   assert.equal(sel.legs[0]!.minOtm, 6);
   assert.equal(sel.legs[0]!.fallbackUsd, undefined);
   assert.equal(sel.legs[0]!.elseOtm, 6);
-  assert.equal(describeSelection(sel), 'CE 81000 x3 @ 3 (rule failed: the premium\'s strike 80600 @ 7 is nearer than OTM 6 — sold the else strike OTM 6)');
+  assert.equal(describeSelection(sel), 'CE 81000 x3 @ 3 (rule failed: the premium\'s strike 80600 @ 7 is nearer than OTM 6 — went to the else strike OTM 6)');
   // the premium's own pick, further out than the floor: no note at all
   const own = selectLegs(strat({ legs: 'CE', premium: { mode: 'atLeast', usd: 15, minOtm: 2 } }), BOARD);
   assert.equal(own.legs[0]!.minOtm, undefined);
@@ -493,15 +493,15 @@ test('[critical] the run names the else strike and the rule it answered -- even 
   const far = selectLegs(strat({ legs: 'CE', lots: 3, premium: { mode: 'atLeast', usd: 15, minOtm: 5, elseOtm: 6 } }), BOARD);
   assert.deepEqual([far.legs[0]!.strike, far.legs[0]!.minOtm, far.legs[0]!.elseOtm], [81_000, 5, 6]);
   assert.deepEqual(far.legs[0]!.premiumPick, { strike: 79_800, price: 18 });
-  assert.equal(describeSelection(far), 'CE 81000 x3 @ 3 (rule failed: the premium\'s strike 79800 @ 18 is nearer than OTM 5 — sold the else strike OTM 6)');
+  assert.equal(describeSelection(far), 'CE 81000 x3 @ 3 (rule failed: the premium\'s strike 79800 @ 18 is nearer than OTM 5 — went to the else strike OTM 6)');
   // the premium picks OTM 3, the rule wants OTM 5, and the else names OTM 3: the same strike, sold by the else
   const same = selectLegs(strat({ legs: 'CE', lots: 3, premium: { mode: 'atLeast', usd: 15, minOtm: 5, elseOtm: 3 } }), BOARD);
   assert.deepEqual([same.legs[0]!.strike, same.legs[0]!.elseOtm], [79_800, 3]);
-  assert.equal(describeSelection(same), 'CE 79800 x3 @ 18 (rule failed: the premium\'s strike 79800 @ 18 is nearer than OTM 5 — sold the else strike OTM 3)');
+  assert.equal(describeSelection(same), 'CE 79800 x3 @ 18 (rule failed: the premium\'s strike 79800 @ 18 is nearer than OTM 5 — went to the else strike OTM 3)');
   // no strike met the premium at all: said as that, not as a strike that was too near
   const none = selectLegs(strat({ legs: 'CE', lots: 3, premium: { mode: 'atLeast', usd: 500, minOtm: 5, elseOtm: 6 } }), BOARD);
   assert.equal(none.legs[0]!.premiumPick, null);
-  assert.equal(describeSelection(none), 'CE 81000 x3 @ 3 (rule failed: no strike met the premium — sold the else strike OTM 6)');
+  assert.equal(describeSelection(none), 'CE 81000 x3 @ 3 (rule failed: no strike met the premium — went to the else strike OTM 6)');
 });
 
 test('[critical] an else strike that is not on the board refuses the leg, and names it', () => {

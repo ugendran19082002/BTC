@@ -479,7 +479,10 @@ export class StrategyRunner {
 
     if (!s.config.liveOrders) {
       const p = await svc.wouldPlace(args);
-      await finish(p.ok ? 'would-place' : 'refused', `${p.ok ? 'live orders off: would' : 'refused:'} ${p.ok ? what : `${failureText(p)}${block}`}`);
+      // A gate's refusal names the strike it turned down and, where the rule failed, that it was the else strike:
+      // the history's Skipped tab then says the whole of why, not only the gate's half.
+      const turnedDown = `${leg} ${chosen.strike} @ ${chosen.price}${elseWords(chosen)}`;
+      await finish(p.ok ? 'would-place' : 'refused', p.ok ? `live orders off: would ${what}` : `refused: ${turnedDown} — ${failureText(p)}${block}`);
       return;
     }
     const res = await svc.place(args);

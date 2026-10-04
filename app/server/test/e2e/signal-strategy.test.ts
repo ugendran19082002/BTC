@@ -578,7 +578,7 @@ test('[critical] each signal is sold under the block the clock has reached, and 
   await byBlock.onSignal(signal());
   const gated = await last();
   assert.equal(gated.status, 'refused', gated.detail);
-  assert.match(gated.detail, /\| refused: .+ · block 3, from 3:00 PM$/);
+  assert.match(gated.detail, /\| refused: PE 83200 @ 4 — .+ · block 3, from 3:00 PM$/, 'the strike the gate turned down, and the block');
 
   clock = TEN;
   await api('POST', '/api/strategies/sig-blocks/enabled', { enabled: false });
@@ -634,7 +634,7 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
 
   clock = TEN;                                         // the rule itself: at most $20 is OTM 1, the floor is OTM 2
   await r.onSignal(signal());
-  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 2 — sold the else strike OTM 2\) · perp SL 84600 · TGT 85500$/);
+  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 2 — went to the else strike OTM 2\) · perp SL 84600 · TGT 85500$/);
 
   clock = TEN + 3.5 * 3_600_000;                       // 13:30 -- at most $10 is OTM 2, past its OTM 1 floor: the premium's own strike
   await r.onSignal(signal());
@@ -642,11 +642,11 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
 
   clock = TEN + 5.5 * 3_600_000;                       // 15:30 -- at most $20 is OTM 1, the floor is OTM 3
   await r.onSignal(signal());
-  assert.match((await last()).detail, /would sell PE 83200 x1 @ 4 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 3 — sold the else strike OTM 3\) · perp SL 84600 · TGT 85500 · block 3, from 3:00 PM$/);
+  assert.match((await last()).detail, /would sell PE 83200 x1 @ 4 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 3 — went to the else strike OTM 3\) · perp SL 84600 · TGT 85500 · block 3, from 3:00 PM$/);
 
   clock = TEN + 6.5 * 3_600_000;                       // 16:30 -- the same rule, OTM 3, with an else strike of its own: OTM 2
   await r.onSignal(signal());
-  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 3 — sold the else strike OTM 2\) · perp SL 84600 · TGT 85500 · block 4, from 4:00 PM$/);
+  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 3 — went to the else strike OTM 2\) · perp SL 84600 · TGT 85500 · block 4, from 4:00 PM$/);
 
   // The rule failed and its else strike is not on the board: the signal is not taken, and its row -- the one the
   // trade history's Skipped tab shows -- says both halves and the block.
@@ -658,7 +658,14 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
   const refused = await last();
   assert.equal(refused.status, 'refused', refused.detail);
   assert.equal(refused.detail.split(' | ')[1], "PE: rule failed — the premium's strike 84000 @ 18 is nearer than OTM 3 — and the else strike OTM 9 is not listed with a price · block 2, from 1:00 PM");
-  const listed = (await api('GET', '/api/strategies')).body.signalTrades.find((t: any) => t.strategyId === 'sig-floor' && t.status === 'refused');
+  // The rule failed, its else strike was chosen, and a gate turned that strike down: the row says all three.
+  const low = [{ at: '13:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 20, fallbackUsd: null, minOtm: 2, elseOtm: 3 } }];
+  assert.equal((await api('POST', '/api/strategies', { id: s.id, name: s.name, config: { ...s.config, strikeBlocks: low, minPremiumUsd: 5 } })).status, 200);
+  await r.onSignal(signal());
+  const gatedElse = await last();
+  assert.equal(gatedElse.status, 'refused', gatedElse.detail);
+  assert.match(gatedElse.detail, /\| refused: PE 83200 @ 4 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 2 — went to the else strike OTM 3\) — .+ · block 2, from 1:00 PM$/);
+  const listed = (await api('GET', '/api/strategies')).body.signalTrades.find((t: any) => t.strategyId === 'sig-floor' && t.status === 'refused' && /not listed/.test(t.detail));
   assert.match(listed.detail, /rule failed — .* · block 2, from 1:00 PM$/, 'and the history gets the same words');
 
   clock = TEN;
