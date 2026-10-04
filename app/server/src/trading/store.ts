@@ -114,6 +114,19 @@ export class PgTradeStore implements TradeStore {
    * makes a double write impossible rather than merely unlikely.
    */
   async save(rec: TradeRecord): Promise<void> {
+    try {
+      await this.write(rec);
+    } finally {
+      // After the write, whether or not it held: anything read before this is no longer known to be current.
+      this.writes++;
+    }
+  }
+
+  /** How many times the journal has been written by this process: what a held answer is held against. */
+  private writes = 0;
+  private realisedHeld: { fromMs: number; writes: number; value: { realisedUsd: number; profitUsd: number; lossUsd: number } } | null = null;
+
+  private async write(rec: TradeRecord): Promise<void> {
     const { state } = rec;
     await tx(async (c) => {
       await c.query(
@@ -187,6 +200,22 @@ export class PgTradeStore implements TradeStore {
    */
   /** Booked from `fromMs` on: breakdown of profit, loss and net realised P&L in USD. */
   async realisedBreakdownSince(fromMs: number): Promise<{ realisedUsd: number; profitUsd: number; lossUsd: number }> {
+    /*
+     * Held until the journal is next written. The status is refreshed every
+     * second and the day's figures with it; on 4 Oct 2026 that was every
+     * trade of the day -- 124 of them, 84 kB of state -- read and added up again
+     * each second, and more with every signal taken. Booked P&L only moves
+     * when a trade is saved, and every save goes through `save` above.
+     */
+    const held = this.realisedHeld;
+    if (held && held.fromMs === fromMs && held.writes === this.writes) return { ...held.value };
+    const writes = this.writes;
+    const value = await this.realisedRead(fromMs);
+    this.realisedHeld = { fromMs, writes, value };
+    return { ...value };
+  }
+
+  private async realisedRead(fromMs: number): Promise<{ realisedUsd: number; profitUsd: number; lossUsd: number }> {
     const found = await rows<{ state: TradeState }>('SELECT state FROM trades WHERE updated_at >= $1', [fromMs]);
     return found.reduce(
       (acc, r) => {

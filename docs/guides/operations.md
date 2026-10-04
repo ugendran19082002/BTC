@@ -29,6 +29,23 @@ Every deploy takes one first. `chain.db` is not in it: it is rebuilt by the
 harvester and packed by `export-data.sh`. Dumps are on the same disk as the
 database; off-host copies are open in [TODO.md](../TODO.md).
 
+## Which statements cost what
+
+The database loads `pg_stat_statements` (deploy/docker-compose.yml). It is switched on once, after the first
+deploy that carries that setting -- the database container restarts on that deploy, so do it with no trade open:
+
+```
+docker exec btc-desk-db-1 psql -U desk -d btc_desk -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements; GRANT pg_read_all_stats TO desk_ro;"
+```
+
+Then, at any time, the ten statements that have cost the most:
+
+```
+docker exec btc-desk-db-1 psql -U desk_ro -d btc_desk -c "SELECT calls, round(total_exec_time) AS ms, round(mean_exec_time::numeric, 1) AS mean_ms, rows, left(query, 90) AS statement FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10;"
+```
+
+Statements over 500 ms are also written to the database's log as they happen: `docker logs btc-desk-db-1 | grep duration:`.
+
 ## Moving to another server
 
 ```bash

@@ -2,7 +2,7 @@ import type { Candle } from '../market/delta.js';
 import { query, rows } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import { TF_SEC, type MethodRead, type Tf } from './types.js';
-import { bumpDataVersion } from './version.js';
+import { bumpDataVersion, dataVersion } from './version.js';
 
 /**
  * The entry setups' paper log: the forward test the 24 reads need before any
@@ -398,11 +398,26 @@ export function gradeSetups(bars1m: readonly Candle[]): Promise<number> {
   return withGradeLock(() => gradeSetupsNow(bars1m));
 }
 
-/** The working rows as the graders read them. */
+/**
+ * The working rows, held until the entry tables are next written.
+ *
+ * The live grader asks every second. On 4 Oct 2026 that was 528 rows and 277 kB
+ * read, sent and parsed each second -- a third of everything the database sent
+ * the API -- for an answer that only changes when a setup is written or graded,
+ * and every such write moves the data version (`version.ts`).
+ */
+let workingHeld: { version: number; rows: (PaperRow & { id: number })[] } | null = null;
+
+/** The working rows as the graders read them. Each caller gets its own copies. */
 export async function workingRows(): Promise<(PaperRow & { id: number })[]> {
   await entrySchema();
-  const open = await rows<DbRow>(`SELECT * FROM entry_setups WHERE status IN ('open', 'filled') OR runner = 'running'`);
-  return open.map((x) => ({ id: Number(x.id), ...rowOf(x) }));
+  const version = dataVersion();
+  if (workingHeld?.version !== version) {
+    const open = await rows<DbRow>(`SELECT * FROM entry_setups WHERE status IN ('open', 'filled') OR runner = 'running'`);
+    // Kept under the version it was asked at: a write that landed meanwhile has moved it on, and this is read again.
+    workingHeld = { version, rows: open.map((x) => ({ id: Number(x.id), ...rowOf(x) })) };
+  }
+  return workingHeld.rows.map((r) => ({ ...r }));
 }
 
 /** A setup's fill, as the graders write it: the moment a signal is "in the trade". */

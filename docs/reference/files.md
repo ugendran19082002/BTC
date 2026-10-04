@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-388 files listed, 183 test files counted below, images and lockfiles left out.
+389 files listed, 186 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 106 |
+| `app/server` | 109 |
 | `app/web` | 77 |
 
 ## `(root)`
@@ -212,6 +212,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [status.ts](../../app/server/src/trading/status.ts) | What a trade looks like in a list of orders. |
 | [store.ts](../../app/server/src/trading/store.ts) | The trade journal. |
 | [types.ts](../../app/server/src/trading/types.ts) | The vocabulary of a live trade. |
+| [underlying-watch.ts](../../app/server/src/trading/underlying-watch.ts) | The fast watch on a signal trade's stop and target. |
 
 ## `app/server/src/trading/exchange/`
 
@@ -494,7 +495,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [.env.example](../../deploy/.env.example) | Read by docker compose from this directory (deploy/.env). |
-| [backup-db.sh](../../deploy/backup-db.sh) | A consistent dump of the desk's database, kept for a fortnight. |
+| [backup-db.sh](../../deploy/backup-db.sh) | A consistent dump of the desk's database. |
 | [btc-desk-api.service](../../deploy/btc-desk-api.service) | A systemd unit for running the API straight on a host, without docker. |
 | [db-admin-role.sh](../../deploy/db-admin-role.sh) | A named admin login for a person, separate from the `desk` account the application uses. |
 | [db-readonly-role.sh](../../deploy/db-readonly-role.sh) | The read-only database account, `desk_ro`, for Adminer and anyone looking. |

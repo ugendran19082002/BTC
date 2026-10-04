@@ -33,6 +33,10 @@ Every item carries one of three labels:
 | Old SQLite files | `trades.db` and `errors.db` archived to `backups/old-sqlite-2026-10-04.tar.gz`, then removed. | — |
 | Binance cache | `cache/binance` (188 MB) deleted. Its only readers were the removed study scripts. | — |
 | Backups | `backups/` went from 820 MB to 183 MB: the newest three database dumps are kept, and `deploy/backup-db.sh` now keeps three by default (it kept 14). The four one-off archives are untouched. | The three kept dumps were read back with `pg_restore -l` |
+| Stops and targets acted on late | The perp was a median 10 points, and at worst 185, past the level when the desk acted, because the check waited behind every other open trade's poll. A fast watch (`app/server/src/trading/underlying-watch.ts`) now looks five times a second and closes at once; the poll stays as the backstop. | 13 new tests; 1,281 server tests pass |
+| Paper grader's per-second read (was Important 3) | The 528 working rows are held until the entry tables are written. | New test: the held rows always equal a fresh read |
+| Day's trades re-read every second (was Important 4) | The day's booked P&L is held until the journal is written. | New test: the held figure always equals a fresh read |
+| Database sizing | Two CPUs and 1.5 GB (was one and 512 MB), 512 MB of buffers, `pg_stat_statements` loaded. Takes effect on the next deploy, which restarts the database. | The settings were started on the same image in a throwaway container |
 | Order-history CSV | Taken out of git and added to `.gitignore`. The file stays on disk. It is still in the git history. | — |
 
 Test totals after the changes: server 1,344 of 1,344 in the touched areas, web 1,124 of 1,124, docs 3 of 3.
@@ -49,20 +53,21 @@ Test totals after the changes: server 1,344 of 1,344 in the touched areas, web 1
 |---|---|---|---|
 | 1 | Signal trades have no stop at Delta | At 15:27 IST all 22 open signal trades had a resting target and none had an option stop. If the desk is down, nothing at Delta stops them. | Decide whether a stop should rest at Delta. See `docs/TODO.md`, "Signal trades carry no stop at Delta". |
 | 2 | Most lots sit on one strike | 97 of 110 lots were on one contract: 19 trades of 4 strategies. The day closed at a net loss of ₹83.94 over 109 trades. | Decide on a limit per contract. See `docs/TODO.md`, "The else strike gathers the book on one strike". |
-| 3 | Paper grader re-reads every working setup each second | `app/server/src/entry/paper.ts`, `workingRows`, called from `app/server/src/entry/live-grade.ts`. 528 rows, 277 kB per read. | Keep the working rows in memory and read only what changed. |
-| 4 | Status is rebuilt every second and re-reads the whole day's trades | `app/server/src/trading/service.ts` (`STATUS_REFRESH_MS`) and `app/server/src/trading/store.ts` (`realisedBreakdownSince`). 124 trades that day, about 250 rows a second. It grows with every signal taken. | Keep the day's realised figure as a running total; update it when a trade closes. |
-| 5 | Every read of trades scans the whole journal | `app/server/src/trading/store.ts`, the events read. About 60 to 70 full scans a minute of `trade_events`. | Read the journal only for the trades that need it. Goes with item 4. |
+| 5 | Every read of trades scans the whole journal | `app/server/src/trading/store.ts`, the events read. About 60 to 70 full scans a minute of `trade_events`. | Read the journal only for the trades that need it. |
 | 6 | Disk is 85% full (61 of 75 GB) | Docker images: 7.5 GB can be freed. Build cache: 5.3 GB. | Prune unused Docker images and build cache. |
-| 7 | The database cannot name its slow queries | `pg_stat_statements` is not installed. Items 4 and 5 are read from table counters and the code. | Install it. It needs a database restart, so do it when no trade is open. |
+| 7 | The database cannot name its slow queries yet | `pg_stat_statements` is loaded by the next deploy. | After that deploy, run the one command in `docs/guides/operations.md`, "Which statements cost what". |
 | 8 | Full test runs on this machine while the desk trades | They pushed the load to about 6 on 4 CPUs. | Run only the tests of the part that changed. |
 
-Items 3, 4 and 5 are most of the 0.8 MB a second the database sends the API. They are on the real-money path, so each needs its own tests before deploy.
+Item 5 is what is left of the 0.8 MB a second the database sent the API; the two larger parts are in "Done" above. Measure again after the next deploy.
 
 ### Optional
 
 | What | Detail | What to do |
 |---|---|---|
 | Time-of-day strategies | 4 saved, all off, last run 2 Oct. They share the runner, the store and the rules with the signal strategies, and about 95 tests use them. | Remove as one change of its own, with the signal tests as the guard. Switched off, they cost nothing. |
+| The open trades are polled one after another | Fills, the resting target and the walk to the bid still wait a full pass (1.6 s from fill to target). | Poll different contracts side by side, within Delta's rate limits. |
+| The signal read waits 3 s after a candle closes | By design: it reads Delta's finished candle. | Measure the tape's own candle against Delta's first; only then consider reading the tape. |
+| An entry takes 21 s to fill | Each strategy rests at the offer and holds at the mid while the spread is over 15%. | A trading choice, on each strategy's form. |
 | `/api/entry/record` takes 694 ms | `app/server/src/entry/paper.ts`, `entryRecord`, loads all 13,047 setups and groups them in JavaScript. Asked every 60 s. | Group in SQL, as the methods report already does. |
 | `/api/candles` takes 680 ms | `app/server/src/http/routes/desk.routes.ts` has no cache of its own. | Cache each timeframe for a few seconds. |
 | Signal history totals over all days take 235 ms | Only with "today" switched off. Postgres picks 13,000 index lookups. | Leave, or rewrite the join. |
@@ -106,12 +111,12 @@ Route times come from 7 minutes of logs with one browser open, so they are a fir
 | Host | 4 CPUs, 7.7 GB; shared with the editor and its tools (about 1.4 GB) |
 | Largest tables | `option_snapshots` 218 MB, `option_flow_1m` 106 MB, `option_snapshots_1m` 30 MB, `entry_signals` 21 MB, `entry_setups` 11 MB |
 
-The removals above do not move the traffic figure: it comes from items 3 to 5.
+These were measured before the changes. The removals do not move the traffic figure; the two held reads should take most of it away. Measure again after the next deploy.
 
 ## Where to go next
 
 1. Decide items 1 and 2: they are about money, not speed.
 2. Free disk space (item 6): quick, and no code changes.
-3. Fix the two loops (items 3 to 5): this removes most of the load.
+3. Deploy with no trade open (the database restarts), then measure the stop overshoot and the traffic again.
 4. Install `pg_stat_statements` (item 7) at a quiet time, then measure again.
 5. Remove the time-of-day strategies, as a change of its own.

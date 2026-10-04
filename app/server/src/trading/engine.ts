@@ -465,6 +465,20 @@ const PROTECT_RETRY_MS = 2_000;
 const MARK_STALE_MS = 15_000;
 
 /**
+ * Which of a signal trade's perp levels a price has reached -- the stop before
+ * the target -- or null between them. Pure: the engine's own exit and the fast
+ * watch (`underlying-watch.ts`) both ask this, so they cannot disagree.
+ */
+export function underlyingHit(
+  u: { dir: 1 | -1; stop: number | null; target: number | null },
+  price: number,
+): 'stop' | 'target' | null {
+  if (u.stop !== null && (price - u.stop) * u.dir <= 0) return 'stop';
+  if (u.target !== null && (price - u.target) * u.dir >= 0) return 'target';
+  return null;
+}
+
+/**
  * How long the offer has to stay at or through the stop before the desk
  * closes. A short is bought back at the offer, so the offer is the price that
  * says the stop is really reached; fifteen seconds of it is a market that has
@@ -873,6 +887,30 @@ export class TradeEngine {
   /** One step of the loop. Queued, so it cannot overlap a screen action. */
   poll(tradeId: string): Promise<TradeState | null> {
     return this.withTrade(tradeId, () => this.pollInner(tradeId));
+  }
+
+  /**
+   * The underlying's exit for one trade, and nothing else of a poll.
+   *
+   * A poll reads the exchange three times before it looks at the perp, and the
+   * loop polls the open trades one after another: with twenty open, a stop
+   * waited seconds behind trades that had nothing to do (4 Oct 2026: the perp
+   * was a median 10 points past the level when the desk acted, 80 at worst
+   * decile, and five trades stopped together were closed over 19 seconds). The
+   * fast watch calls this the moment the perp is through a level.
+   *
+   * The same check and the same close as the poll's (`underlyingExit`), under
+   * the same guards and in the trade's own queue: if a poll is closing it, or
+   * has closed it, this finds nothing left to do.
+   */
+  exitOnUnderlying(tradeId: string): Promise<TradeState | null> {
+    return this.withTrade(tradeId, async () => {
+      const rec = await this.d.store.get(tradeId);
+      if (!rec || isDone(rec.state)) return rec?.state ?? null;
+      // An entry nobody has an answer for is the reconciler's; a close already working is a close.
+      if (rec.state.phase === 'entry_unknown' || rec.state.phase === 'exit_pending' || rec.state.position === 0) return rec.state;
+      return (await this.underlyingExit(rec)).state;
+    });
   }
 
   /** Take a working entry off the book and end the trade. */
@@ -1726,12 +1764,11 @@ export class TradeEngine {
     if (!u || (u.stop === null && u.target === null)) return rec;
     const px = this.d.underlying?.() ?? null;
     if (px === null || !(px.price > 0) || this.now() - px.at > MARK_STALE_MS) return rec;
-    const hitStop = u.stop !== null && (px.price - u.stop) * u.dir <= 0;
-    const hitTarget = !hitStop && u.target !== null && (px.price - u.target) * u.dir >= 0;
-    if (!hitStop && !hitTarget) return rec;
+    const hit = underlyingHit(u, px.price);
+    if (hit === null) return rec;
     // Two decimals, grouped: the reason is read in the alert and on the screens, not parsed for maths.
     const p2 = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const why = hitStop
+    const why = hit === 'stop'
       ? `${u.source} at ${p2(px.price)} reached the signal's stop ${p2(u.stop!)}`
       : `${u.source} at ${p2(px.price)} reached the signal's target ${p2(u.target!)}`;
     await this.closeNowInner(rec.state.tradeId, why);

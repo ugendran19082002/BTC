@@ -26,6 +26,7 @@ import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import type { ExchangePort } from './exchange/port.js';
+import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-watch.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
 /**
@@ -286,6 +287,9 @@ export class TradingService {
     this.timer.unref?.();
     this.mtmTimer ??= setInterval(() => { void this.sampleMtm(); }, MTM_SAMPLE_MS);
     this.mtmTimer.unref?.();
+    // A signal trade's SL and TGT on the perp, looked at far more often than the loop can poll.
+    this.watchTimer ??= setInterval(() => { this.underlyingWatch.tick(); }, UNDERLYING_WATCH_MS);
+    this.watchTimer.unref?.();
     await this.store.pruneMtm(Date.now());
     return recovered;
   }
@@ -293,10 +297,24 @@ export class TradingService {
   stop() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     if (this.mtmTimer) { clearInterval(this.mtmTimer); this.mtmTimer = null; }
+    if (this.watchTimer) { clearInterval(this.watchTimer); this.watchTimer = null; }
     if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
   }
 
   private mtmTimer: NodeJS.Timeout | null = null;
+  private watchTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * The fast watch on the signal trades' perp levels (`underlying-watch.ts`):
+   * the perp's last trade off the tape against every open trade's SL and TGT,
+   * five times a second, and the engine's own exit for whichever is through.
+   * The loop below still judges the same levels on every pass.
+   */
+  readonly underlyingWatch = new UnderlyingWatch({
+    open: async () => watchedOf(await this.store.open()),
+    price: () => { const l = liveLtp(); return l ? { price: l.price, at: l.at } : null; },
+    exit: (tradeId) => this.engine.exitOnUnderlying(tradeId),
+  });
 
   /**
    * The premium floor the best-pick card cuts its pool at. Remembered in the
@@ -373,7 +391,10 @@ export class TradingService {
     if (this.stepping) return;          // a slow exchange must not stack polls
     this.stepping = true;
     try {
-      for (const rec of await this.store.open()) {
+      const open = await this.store.open();
+      // What was just read is what the fast watch looks at until the next pass.
+      this.underlyingWatch.note(watchedOf(open));
+      for (const rec of open) {
         await this.engine.poll(rec.state.tradeId).catch(() => {});
       }
       // A finished trade whose other exit could not be confirmed off the book is

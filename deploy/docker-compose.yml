@@ -23,15 +23,38 @@ services:
       # Checksums catch a disk that lies. Cheap, and this is an order journal.
       POSTGRES_INITDB_ARGS: --data-checksums
     command:
-      # A desk this size: a handful of connections, small tables. Modest memory,
-      # and a WAL kept long enough for a backup to be consistent.
+      # Sized on 4 Oct 2026 from what the desk measured, not from a guess: the
+      # database is 440 MB and was given 128 MB of buffers and one CPU, so a
+      # backup's COPY (18 s on the largest table, at every deploy) had the
+      # signal path's reads waiting behind it -- `book_heat_1m`, a 0.4 ms read,
+      # was logged at 700 ms five times in a day. The host has 4 CPUs and 7.7 GB.
       - postgres
       - -c
-      - shared_buffers=128MB
+      # The whole database fits in memory with room to grow.
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      # The history's sorts and joins spilled to disk at the 4 MB default (16 temp files, 122 MB).
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      # SSD-backed: an index scan is not eight times dearer than a sequential one.
+      - random_page_cost=1.1
       - -c
       - max_connections=40
       - -c
       - log_min_duration_statement=500ms
+      - -c
+      # Which statements cost what, by name. Loaded here; switched on once with
+      # `CREATE EXTENSION pg_stat_statements` (docs/guides/operations.md).
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
+    # Parallel queries share memory through /dev/shm, and Docker gives a container
+    # 64 MB of it: with 16 MB a sort, a parallel join can ask for more and fail.
+    shm_size: 256mb
     volumes:
       - pgdata:/var/lib/postgresql/data
     expose:
@@ -47,8 +70,9 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 512M
+          # Two, so a backup or a report cannot take the only one from the trading reads.
+          cpus: "2.0"
+          memory: 1536M
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
