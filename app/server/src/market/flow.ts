@@ -11,12 +11,15 @@ import { marketSchema } from './oi-history.js';
  *
  *   trade_flow_1m      every BTCUSD print, summed per minute by aggressor side
  *   option_flow_1m     every print on the two nearest expiries' options, per contract per minute, by aggressor side
- *   large_prints       every large taker order on the perpetual, at its own price and time (recorded for research; nothing reads it)
  *   perp_snapshots     funding, open interest, turnover and the top of the book, every 5 minutes
  *
  * There was a fourth, `iv_term_snapshots`, for the IV term structure card's
  * "a week ago" lines. The card went on 22 September and the table with it
  * (`market-009`); the term structure itself is read live, from the tickers.
+ * And a fifth, `large_prints`, each large taker order on its own row: the
+ * chart's bubbles read it, they went on 4 Oct 2026, and the table followed
+ * (`market-017`). The large trades are still counted, per minute, in
+ * `trade_flow_1m`.
  *
  * The prints come off the socket (`flow-socket.ts`); the book and, when the
  * socket is quiet, the perp ticker come from REST. Every reader here says how
@@ -119,21 +122,6 @@ const MIGRATIONS: Migration[] = [
     up: 'DROP TABLE IF EXISTS iv_term_snapshots;',
   },
   {
-    // Each large taker order on the perpetual, at its own price and time: the history to test big
-    // trades on later (the chart's bubbles, which read it, went on 4 Oct 2026). `trade_flow_1m`
-    // keeps only their sums.
-    id: 'market-015-large-prints',
-    up: `
-      CREATE TABLE IF NOT EXISTS large_prints (
-        at    BIGINT           NOT NULL,
-        side  TEXT             NOT NULL,
-        price DOUBLE PRECISION NOT NULL,
-        size  DOUBLE PRECISION NOT NULL,
-        PRIMARY KEY (at, side)
-      );
-    `,
-  },
-  {
     /*
      * The chart's saved levels (4 Oct 2026). The price chart's layers were
      * removed -- the chart draws candles and the entry setup -- and saved
@@ -144,6 +132,19 @@ const MIGRATIONS: Migration[] = [
      */
     id: 'chart-002-drop-annotations',
     up: 'DROP TABLE IF EXISTS public.chart_annotations;',
+  },
+  {
+    /*
+     * The large orders' own rows go (4 Oct 2026). `market-015-large-prints`
+     * made the table for the chart's big-trade bubbles; they were removed, and
+     * from then it was written every minute and read by nothing. What the
+     * entry methods read -- how many large trades a minute had, and their
+     * volume, each side -- is in `trade_flow_1m` and stays. The rows the desk
+     * held were exported first (cache/reports). On a fresh database, where
+     * `market-015` never runs, this drops nothing.
+     */
+    id: 'market-017-drop-large-prints',
+    up: 'DROP TABLE IF EXISTS public.large_prints;',
   },
 ];
 
@@ -291,30 +292,6 @@ export function liveLtp(nowMs = Date.now()): LiveLtp | null {
   return { price: last.price, at: last.at, side: last.side, bars: { '1m': formingBar(prints, 60, nowMs), '5m': formingBar(prints, 300, nowMs) } };
 }
 
-// ------------------------------------------------------------ large orders
-
-export type LargePrint = { at: number; side: 'buy' | 'sell'; price: number; size: number };
-
-/**
- * The perpetual's prints as taker orders, keeping those of `large` contracts
- * or more. Prints that share a millisecond and a side are one order filling
- * through several levels; its price is their volume-weighted average. Pure.
- */
-export function largeOrdersOf(prints: readonly Print[], large = LARGE_PRINT_CONTRACTS): LargePrint[] {
-  const orders = new Map<string, { at: number; side: 'buy' | 'sell'; size: number; notional: number }>();
-  for (const p of prints) {
-    if (p.symbol) continue;
-    const k = `${p.at}:${p.side}`;
-    const o = orders.get(k) ?? orders.set(k, { at: p.at, side: p.side, size: 0, notional: 0 }).get(k)!;
-    o.size += p.size;
-    o.notional += p.size * p.price;
-  }
-  return [...orders.values()]
-    .filter((o) => o.size >= large)
-    .sort((a, b) => a.at - b.at)
-    .map((o) => ({ at: o.at, side: o.side, price: o.notional / o.size, size: o.size }));
-}
-
 let lastFlushedMinute = 0;
 
 /**
@@ -355,16 +332,6 @@ export async function flushTradeFlow(nowMs: number): Promise<number> {
       done.map((m) => m.largeBuyCount), done.map((m) => m.largeSellCount),
     ] as never,
   );
-  const big = largeOrdersOf(all.filter((p) => p.at < current));
-  if (big.length) {
-    await query(
-      `INSERT INTO large_prints (at, side, price, size)
-       SELECT * FROM unnest($1::bigint[], $2::text[], $3::float8[], $4::float8[])
-       ON CONFLICT (at, side) DO NOTHING`,
-      [big.map((o) => o.at), big.map((o) => o.side), big.map((o) => o.price), big.map((o) => o.size)] as never,
-    );
-    await query('DELETE FROM large_prints WHERE at < $1', [current - FLOW_KEEP_MS]);
-  }
   lastFlushedMinute = done[done.length - 1]!.at;
   await query('DELETE FROM trade_flow_1m WHERE at < $1', [current - FLOW_KEEP_MS]);
   return done.length + optionDone.length;

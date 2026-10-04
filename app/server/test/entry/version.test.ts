@@ -42,3 +42,30 @@ test('[critical] the cached history shows a new signal the moment it is recorded
   await recordSignals([read], (T + 5) * 1000);
   assert.equal((await cachedSignalPage(q)).total, 1, 'not the held empty answer');
 });
+
+test('[critical] a page turn or a sort reads the rows only: the count and the totals are held by the filters, and a new signal still shows at once', async () => {
+  const T = 1_790_500_000;
+  const read = (i: number): MethodRead => ({
+    id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: '', mode: 'single', tf: '4h', dir: i % 2 ? 'long' : 'short', state: 'WAIT',
+    steps: [], gates: [], plan: null, score: 10 * i, scoreParts: [], alignment: null, reason: 'x', triggerTime: T + i * 14_400,
+  });
+  await recordSignals([1, 2, 3, 4, 5].map(read), (T + 100_000) * 1000);
+  const filters = { tf: '4h', since: (T - 60) * 1000 };
+
+  const first = await cachedSignalPage({ ...filters, limit: 2, offset: 0 });
+  const second = await cachedSignalPage({ ...filters, limit: 2, offset: 2 });
+  const sorted = await cachedSignalPage({ ...filters, limit: 2, offset: 0, sort: 'score', asc: true });
+  assert.deepEqual([first.total, second.total, sorted.total], [5, 5, 5], 'the same count on every page');
+  assert.equal(second.summary, first.summary, 'the totals are the held answer, not read again');
+  assert.equal(sorted.summary, first.summary, 'nor for a sort');
+  assert.deepEqual(first.signals.map((s) => s.score), [50, 40], 'newest first');
+  assert.deepEqual(second.signals.map((s) => s.score), [30, 20], 'the next page is its own rows');
+  assert.deepEqual(sorted.signals.map((s) => s.score), [10, 20], 'and a sort its own order');
+  assert.notEqual((await cachedSignalPage({ ...filters, dir: 1, limit: 2 })).summary, first.summary, 'another filter is another count');
+  assert.equal((await cachedSignalPage({ ...filters, dir: 1, limit: 2 })).total, 3);
+
+  await recordSignals([read(6)], (T + 100_005) * 1000);
+  const after = await cachedSignalPage({ ...filters, limit: 2, offset: 0 });
+  assert.equal(after.total, 6, 'a write moves the version: counted again');
+  assert.equal(after.signals[0]!.score, 60);
+});

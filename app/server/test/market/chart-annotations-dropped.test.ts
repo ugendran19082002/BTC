@@ -29,7 +29,7 @@ test('[critical] chart-002 drops the saved-levels table a desk already has, and 
 });
 
 test('the tables the entry methods read are still there', async () => {
-  for (const t of ['trade_flow_1m', 'large_prints', 'perp_snapshots', 'option_flow_1m']) {
+  for (const t of ['trade_flow_1m', 'perp_snapshots', 'option_flow_1m']) {
     const r = await one<{ t: string | null }>('SELECT to_regclass($1)::text AS t', [`public.${t}`]);
     assert.equal(r!.t, t, `${t} is kept`);
   }

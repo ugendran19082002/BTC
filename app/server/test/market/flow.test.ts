@@ -2,7 +2,7 @@ import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowSocket, printOf, perpTickerOf, type Print } from '../../src/market/flow-socket.js';
 import {
-  bookOf, capturePerpSnapshot, flowSchema, flowSummary, oiRead, perpOiChange, flushTradeFlow, formingBar, largeOrdersOf, liveLtp, minuteOf, minutesOf,
+  bookOf, capturePerpSnapshot, flowSchema, flowSummary, oiRead, perpOiChange, flushTradeFlow, formingBar, liveLtp, minuteOf, minutesOf,
   useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
 } from '../../src/market/flow.js';
 import { closePool, one, query, rows } from '../../src/db/pool.js';
@@ -15,7 +15,7 @@ const p = (at: number, side: 'buy' | 'sell', size: number, price = 81_000): Prin
 
 beforeEach(async () => {
   await flowSchema();
-  await query('TRUNCATE trade_flow_1m, perp_snapshots, large_prints');
+  await query('TRUNCATE trade_flow_1m, perp_snapshots');
   useFlowSocket(null);
 });
 after(() => closePool());
@@ -105,20 +105,7 @@ test('[critical] completed minutes are written once; the one in progress waits; 
   assert.equal(sum.source, 'socket');
 });
 
-test('[critical] a large order is the prints of one millisecond and side, at their average price; options and small ones are left out', () => {
-  const L = LARGE_PRINT_CONTRACTS;
-  const orders = largeOrdersOf([
-    p(T0, 'buy', L - 50, 81_000), p(T0, 'buy', 100, 81_010), // one order through two levels: large
-    p(T0, 'sell', 10),                                         // same millisecond, the other side: its own, small
-    p(T0 + 1, 'buy', L - 1),                                  // one contract short
-    p(T0 + 2, 'sell', L * 3, 80_990),
-    { ...p(T0 + 3, 'buy', L * 5), symbol: 'C-BTC-82000-200926' },
-  ]);
-  assert.deepEqual(orders.map((o) => [o.at, o.side, o.size]), [[T0, 'buy', L + 50], [T0 + 2, 'sell', L * 3]]);
-  assert.equal(orders[0]!.price, ((L - 50) * 81_000 + 100 * 81_010) / (L + 50));
-});
-
-test('[critical] large orders are written once with their minute; the minute in progress waits', async () => {
+test('[critical] a minute\'s large trades are still written with it, each side counted, now that their own table is gone', async () => {
   const L = LARGE_PRINT_CONTRACTS;
   const s = new FlowSocket({ now: () => minute(12) + 10_000 });
   for (const x of [
@@ -127,16 +114,16 @@ test('[critical] large orders are written once with their minute; the minute in 
   ]) s.receive(JSON.stringify({ type: 'all_trades', symbol: 'BTCUSD', price: String(x.price), size: x.size, timestamp: x.at * 1000, buyer_role: x.side === 'buy' ? 'taker' : 'maker', seller_role: x.side === 'buy' ? 'maker' : 'taker' }));
   useFlowSocket(s);
 
-  await flushTradeFlow(minute(12) + 10_000);
-  await flushTradeFlow(minute(12) + 20_000);
-  const stored = await one<{ n: number }>('SELECT COUNT(*)::int AS n FROM large_prints');
-  assert.equal(stored?.n, 2, 'the two completed minutes\' large orders, once; the minute in progress waits');
-
-  const kept = await rows<{ at: string; side: string; size: number; price: number }>('SELECT at, side, size, price FROM large_prints ORDER BY at');
-  assert.deepEqual(kept.map((o) => [Number(o.at), o.side, Number(o.size), Number(o.price)]), [
-    [minute(10) + 1_000, 'buy', L * 2, 81_100],
-    [minute(11) + 1_000, 'sell', L, 81_050],
-  ], 'each at its own time, side, size and price');
+  assert.equal(await flushTradeFlow(minute(12) + 10_000), 2, 'the two completed minutes; the one in progress waits');
+  assert.equal(await flushTradeFlow(minute(12) + 20_000), 0, 'and they are written once');
+  const kept = await rows<{ at: string; large_buy_volume: number; large_sell_volume: number; large_buy_count: number; large_sell_count: number }>(
+    'SELECT at, large_buy_volume, large_sell_volume, large_buy_count, large_sell_count FROM trade_flow_1m ORDER BY at');
+  assert.deepEqual(kept.map((m) => [Number(m.at), Number(m.large_buy_volume), Number(m.large_sell_volume), m.large_buy_count, m.large_sell_count]), [
+    [minute(10), L * 2, 0, 1, 0],
+    [minute(11), 0, L, 0, 1],
+  ], 'what the entry methods read of the large trades is unchanged');
+  const gone = await one<{ t: string | null }>("SELECT to_regclass('public.large_prints')::text AS t");
+  assert.equal(gone!.t, null, 'and nothing is written to a table of their own');
 });
 
 test('[critical] the candle in progress is the perp\'s own prints since it opened: open, high, low, close, volume', () => {
