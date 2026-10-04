@@ -7,7 +7,6 @@ const setBestTradeSettings = vi.fn();
 vi.mock('@/api/trade', () => ({
   getBestTradeSettings: (...a: unknown[]) => getBestTradeSettings(...a),
   setBestTradeSettings: (...a: unknown[]) => setBestTradeSettings(...a),
-  getTelegramLog: vi.fn().mockResolvedValue({ rows: [] }),
 }));
 const getSettings = vi.fn();
 const setWallWithinEm = vi.fn();
