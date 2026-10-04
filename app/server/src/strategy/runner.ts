@@ -5,8 +5,8 @@ import { tradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
-import { describeSelection, selectLegs, type Candidate } from './select.js';
-import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minutesForward, minutesOf, signalMatches, strikeLabel, strikePickAt, time12, type Strategy } from './types.js';
+import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
+import { entersOn, exitAsk, exitRules, exitValueAt, legOfSignal, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -456,7 +456,7 @@ export class StrategyRunner {
     };
     const perpIn = args.underlying.entry;
     const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
-      + (chosen.minOtm !== undefined ? ` (${strikeLabel(chosen.minOtm)}, the nearest allowed)` : '')
+      + elseWords(chosen)
       + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
 
     if (!s.config.liveOrders) {

@@ -10,8 +10,8 @@ import { useStrategyDraft } from '@/components/strategy/useStrategyDraft';
 import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
 import { StrikeBlocksEditor } from '@/components/strategy/StrikeBlocksEditor';
 import {
-  DaysField, EntryPriceFields, num, FormFooter, FormTabBar, NameField, OptionExitFields, RuleSentence,
-  Segmented, SizeFields, Stack, StrikeFields, TimeWindowFields, type TabDef,
+  DaysField, EntryPriceFields, num, FormFooter, FormTabBar, MinPremiumField, NameField, OptionExitFields, RuleSentence,
+  Segmented, SizeFields, Stack, TimeWindowFields, type TabDef,
 } from '@/components/strategy/form-parts';
 
 /**
@@ -102,10 +102,11 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                   </div>
                 </div>
               </Stack>
-              <StrikeFields c={c} set={set} err={err} allowOiWall={false} />
-              {/* The same rule cut over the window: each block its own premium or strike, the rule above the first. */}
-              <StrikeBlocksEditor c={c} set={set} />
+              {/* One rule all window, or a rule per block of hours: two tick boxes, each with its own section. */}
+              <StrikeBlocksEditor c={c} set={set} err={err} />
               <SizeFields c={c} set={set} err={err} sizing={d.sizing} spot={spot} label="Lots per signal" warnings={d.warnings} />
+              {/* Last: a gate on whatever the rules above picked, in whichever block, not one of the rules. */}
+              <MinPremiumField c={c} set={set} err={err} />
             </>
           )}
 

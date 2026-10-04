@@ -68,15 +68,28 @@ export type LegConfig = 'CE' | 'PE' | 'both';
  * A premium rule, whole: the number, which way it reads, its fallback, and the
  * nearest strike it may sell.
  *
- * `minOtm` (4 Oct 2026) is a floor on distance, counted the way a by-strike
+ * `minOtm` (4 Oct 2026) is a condition on distance, counted the way a by-strike
  * rule counts: 6 is OTM 6. The premium picks as it always did; a pick at OTM 6
- * or further out stands (OTM 7 is sold as OTM 7), and a pick nearer the money
- * than that -- or no pick at all -- is replaced by OTM 6 itself. A premium
- * number says what a strike pays, not how far it sits, and on a day the board
- * is rich "at most $50" can land two strikes from the money. Absent or null is
- * no floor, which is every strategy saved before it existed.
+ * or further out stands (OTM 7 is sold as OTM 7). A pick nearer the money than
+ * that -- or no pick at all -- is the "else": the strike named by `elseOtm` is
+ * sold instead. The two are separate numbers, and may be equal or different:
+ * "at least OTM 6, else OTM 8" steps further out when the board is rich, and
+ * "else OTM 6" sells the condition's own strike. `elseOtm` absent reads as
+ * `minOtm`, which is what the rule did before the else had a strike of its own.
+ *
+ * A premium number says what a strike pays, not how far it sits, and on a day
+ * the board is rich "at most $50" can land two strikes from the money. `minOtm`
+ * absent or null is no condition, which is every strategy saved before it
+ * existed -- and then `elseOtm` is not read.
  */
-export type PremiumRule = { mode: PremiumMode; usd: number; fallbackUsd?: number | null; minOtm?: number | null };
+export type PremiumRule = {
+  mode: PremiumMode; usd: number; fallbackUsd?: number | null;
+  minOtm?: number | null; elseOtm?: number | null;
+};
+
+/** The strike a premium rule's else sells: its own, or the condition's when none was named. Null when there is no condition. */
+export const elseOtmOf = (p: Pick<PremiumRule, 'minOtm' | 'elseOtm'>): number | null =>
+  (p.minOtm === null || p.minOtm === undefined ? null : (p.elseOtm ?? p.minOtm));
 
 /**
  * How the entry is priced. The same three the order ticket offers, because a
@@ -416,8 +429,7 @@ export function strikeBlockProblems(
       } else {
         const f = premiumFallbackProblem(p);
         if (f) bad.push(`Block ${n}: ${f}`);
-        const m = minOtmProblem(p);
-        if (m) bad.push(`Block ${n}: ${m}`);
+        for (const m of minOtmProblems(p)) bad.push(`Block ${n}: ${m}`);
       }
     }
   });
@@ -696,8 +708,7 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   } else {
     const f = premiumFallbackProblem(p);
     if (f) bad.push(f);
-    const m = minOtmProblem(p);
-    if (m) bad.push(m);
+    bad.push(...minOtmProblems(p));
   }
   // Both fields are always kept, whichever mode reads them, so both are checked.
   if (!(typeof c.takeProfitPct === 'number') || c.takeProfitPct < 0 || c.takeProfitPct > MAX_TARGET_PCT) {
@@ -797,14 +808,21 @@ export function premiumFallbackProblem(p: Pick<PremiumRule, 'mode' | 'usd' | 'fa
   return null;
 }
 
-/** Why a premium rule's nearest strike is not usable, or null. Shared with the form, word for word. */
-export function minOtmProblem(p: { minOtm?: unknown }): string | null {
+/**
+ * What is wrong with a premium rule's distance condition and its else strike,
+ * in words. Shared with the form, word for word. Both are out of the money, 1
+ * to 20: a premium rule never sells at or in the money, and nor does its else.
+ */
+export function minOtmProblems(p: { minOtm?: unknown; elseOtm?: unknown }): string[] {
   const m = p.minOtm;
-  if (m === null || m === undefined) return null;
-  if (typeof m !== 'number' || !Number.isInteger(m) || m < 1 || m > MAX_STRIKE_STEP) {
-    return `The nearest strike a premium rule may sell must be OTM 1 to OTM ${MAX_STRIKE_STEP}, or switched off.`;
+  if (m === null || m === undefined) return [];
+  const otm = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= MAX_STRIKE_STEP;
+  const bad: string[] = [];
+  if (!otm(m)) bad.push(`The nearest strike a premium rule may sell must be OTM 1 to OTM ${MAX_STRIKE_STEP}, or switched off.`);
+  if (p.elseOtm !== null && p.elseOtm !== undefined && !otm(p.elseOtm)) {
+    bad.push(`The else strike must be OTM 1 to OTM ${MAX_STRIKE_STEP}.`);
   }
-  return null;
+  return bad;
 }
 
 /** "05:30" -> 330. Times are IST throughout; the desk never uses another one. */

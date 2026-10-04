@@ -69,7 +69,7 @@ function cleanConfig(raw: unknown): StrategyConfig {
       fallbackUsd: c.premium?.fallbackUsd === null || c.premium?.fallbackUsd === undefined
         ? null
         : Number(c.premium.fallbackUsd),
-      ...cleanMinOtm(c.premium?.minOtm),
+      ...cleanMinOtm(c.premium),
     },
     // Absent or empty: the desk's floor, which is what every strategy used before it.
     minPremiumUsd: c.minPremiumUsd === null || c.minPremiumUsd === undefined || (c.minPremiumUsd as unknown) === ''
@@ -131,18 +131,23 @@ function cleanBlocks(raw: unknown): StrikeBlock[] {
         mode: o.premium?.mode as StrikeBlock['premium']['mode'],
         usd: Number(o.premium?.usd ?? DEFAULT_CONFIG.premium.usd),
         fallbackUsd: f === null || f === undefined ? null : Number(f),
-        ...cleanMinOtm(o.premium?.minOtm),
+        ...cleanMinOtm(o.premium),
       },
     };
   });
 }
 
 /**
- * The nearest strike a premium rule may sell, kept only when one is set: off is
- * no key at all, so a strategy that never used it is stored as it always was.
+ * A premium rule's distance condition and its else strike, kept only when the
+ * condition is set: off is no key at all, so a strategy that never used it is
+ * stored as it always was -- and an else strike with no condition to be the
+ * else of is dropped. The else is always written beside its condition, the
+ * condition's own strike when none was sent, so the row says what is sold.
  */
-function cleanMinOtm(raw: unknown): { minOtm?: number } {
-  return raw === null || raw === undefined || raw === '' ? {} : { minOtm: Number(raw) };
+function cleanMinOtm(p: { minOtm?: unknown; elseOtm?: unknown } | undefined): { minOtm?: number; elseOtm?: number } {
+  const none = (v: unknown) => v === null || v === undefined || v === '';
+  if (!p || none(p.minOtm)) return {};
+  return { minOtm: Number(p.minOtm), elseOtm: Number(none(p.elseOtm) ? p.minOtm : p.elseOtm) };
 }
 
 /** A signal rule: only its own keys, the methods de-duplicated in the order sent. A mode or timeframe it cannot read is left for validation to name. */

@@ -1,6 +1,6 @@
 import { MAX_SIGNAL_OPEN, MAX_STRIKE_STEP, SIGNAL_TFS, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
-import { exitRuleProblems, exitRules, minOtmProblem, premiumFallbackProblem } from '@/lib/strategy-exits';
+import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
 
 /**
@@ -71,8 +71,7 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
     if (f) say('premiumFallback', f);
   }
   if (c.premium.usd > 0 && c.premium.usd <= 10_000) {
-    const m = minOtmProblem(c.premium);
-    if (m) say('premiumMinOtm', m);
+    for (const m of minOtmProblems(c.premium)) say('premiumMinOtm', m);
   }
   if (c.minPremiumUsd !== null && c.minPremiumUsd !== undefined
     && (!(c.minPremiumUsd >= 0.1) || c.minPremiumUsd > 10_000)) {

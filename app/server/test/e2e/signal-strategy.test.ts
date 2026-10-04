@@ -592,8 +592,12 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
     strikeBlocks: [
       { at: '13:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 10, fallbackUsd: null, minOtm: 1 } },   // picks OTM 2 @ 9: stands
       { at: '15:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 20, fallbackUsd: null, minOtm: 3 } },   // picks OTM 1: sold at OTM 3
+      { at: '16:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 20, fallbackUsd: null, minOtm: 3, elseOtm: 2 } },   // picks OTM 1: its else names OTM 2
     ],
   };
+  const badElse = await api('POST', '/api/strategies', { name: 'Sig floor', config: { ...floored, premium: { ...floored.premium, elseOtm: 0 } } });
+  assert.equal(badElse.status, 422);
+  assert.ok(badElse.body.problems.includes('The else strike must be OTM 1 to OTM 20.'), badElse.body.problems.join(' '));
   const bad = await api('POST', '/api/strategies', { name: 'Sig floor', config: { ...floored, premium: { ...floored.premium, minOtm: 0 } } });
   assert.equal(bad.status, 422);
   assert.ok(bad.body.problems.includes('The nearest strike a premium rule may sell must be OTM 1 to OTM 20, or switched off.'), bad.body.problems.join(' '));
@@ -603,9 +607,11 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
   assert.equal((await api('POST', '/api/strategies', { name: 'Sig floor', config: floored })).status, 200);
   const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-floor'");
   assert.equal(row!.config.premium.minOtm, 2);
-  assert.deepEqual(row!.config.strikeBlocks.map((b: any) => b.premium.minOtm), [1, 3]);
+  assert.equal(row!.config.premium.elseOtm, 2, 'the else strike is written beside its rule: the rule\'s own when none was sent');
+  assert.deepEqual(row!.config.strikeBlocks.map((b: any) => [b.premium.minOtm, b.premium.elseOtm]), [[1, 1], [3, 3], [3, 2]]);
   const plain = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-blocks'");
   assert.equal('minOtm' in plain!.config.premium, false, 'off is no key at all: a strategy that never used it is stored as before');
+  assert.equal('elseOtm' in plain!.config.premium, false);
 
   const FAR = 83_600, FURTHER = 83_200;
   for (const [strike, pid, bid] of [[PUT, 7001, 18], [FAR, 7003, 9], [FURTHER, 7004, 4]] as const) {
@@ -628,7 +634,7 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
 
   clock = TEN;                                         // the rule itself: at most $20 is OTM 1, the floor is OTM 2
   await r.onSignal(signal());
-  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 \(OTM 2, the nearest allowed\) · perp SL 84600 · TGT 85500$/);
+  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 2 — sold the else strike OTM 2\) · perp SL 84600 · TGT 85500$/);
 
   clock = TEN + 3.5 * 3_600_000;                       // 13:30 -- at most $10 is OTM 2, past its OTM 1 floor: the premium's own strike
   await r.onSignal(signal());
@@ -636,7 +642,24 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
 
   clock = TEN + 5.5 * 3_600_000;                       // 15:30 -- at most $20 is OTM 1, the floor is OTM 3
   await r.onSignal(signal());
-  assert.match((await last()).detail, /would sell PE 83200 x1 @ 4 \(OTM 3, the nearest allowed\) · perp SL 84600 · TGT 85500 · block 3, from 3:00 PM$/);
+  assert.match((await last()).detail, /would sell PE 83200 x1 @ 4 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 3 — sold the else strike OTM 3\) · perp SL 84600 · TGT 85500 · block 3, from 3:00 PM$/);
+
+  clock = TEN + 6.5 * 3_600_000;                       // 16:30 -- the same rule, OTM 3, with an else strike of its own: OTM 2
+  await r.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 3 — sold the else strike OTM 2\) · perp SL 84600 · TGT 85500 · block 4, from 4:00 PM$/);
+
+  // The rule failed and its else strike is not on the board: the signal is not taken, and its row -- the one the
+  // trade history's Skipped tab shows -- says both halves and the block.
+  const s = (await strategyStore().get('sig-floor'))!;
+  const gone = [{ at: '13:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 20, fallbackUsd: null, minOtm: 3, elseOtm: 9 } }];
+  assert.equal((await api('POST', '/api/strategies', { id: s.id, name: s.name, config: { ...s.config, strikeBlocks: gone } })).status, 200);
+  clock = TEN + 4 * 3_600_000;
+  await r.onSignal(signal());
+  const refused = await last();
+  assert.equal(refused.status, 'refused', refused.detail);
+  assert.equal(refused.detail.split(' | ')[1], "PE: rule failed — the premium's strike 84000 @ 18 is nearer than OTM 3 — and the else strike OTM 9 is not listed with a price · block 2, from 1:00 PM");
+  const listed = (await api('GET', '/api/strategies')).body.signalTrades.find((t: any) => t.strategyId === 'sig-floor' && t.status === 'refused');
+  assert.match(listed.detail, /rule failed — .* · block 2, from 1:00 PM$/, 'and the history gets the same words');
 
   clock = TEN;
   await api('POST', '/api/strategies/sig-floor/enabled', { enabled: false });

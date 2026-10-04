@@ -105,14 +105,15 @@ export function premiumFallbackProblem(p: { mode: PremiumMode; usd: number; fall
   return null;
 }
 
-/** Why a premium rule's nearest strike is not usable, or null. The server's words. */
-export function minOtmProblem(p: { minOtm?: number | null }): string | null {
+/** What is wrong with a premium rule's distance condition and its else strike. The server's words. */
+export function minOtmProblems(p: { minOtm?: number | null; elseOtm?: number | null }): string[] {
   const m = p.minOtm;
-  if (m === null || m === undefined) return null;
-  if (!Number.isInteger(m) || m < 1 || m > MAX_STRIKE_STEP) {
-    return `The nearest strike a premium rule may sell must be OTM 1 to OTM ${MAX_STRIKE_STEP}, or switched off.`;
-  }
-  return null;
+  if (m === null || m === undefined) return [];
+  const otm = (v: number) => Number.isInteger(v) && v >= 1 && v <= MAX_STRIKE_STEP;
+  const bad: string[] = [];
+  if (!otm(m)) bad.push(`The nearest strike a premium rule may sell must be OTM 1 to OTM ${MAX_STRIKE_STEP}, or switched off.`);
+  if (p.elseOtm !== null && p.elseOtm !== undefined && !otm(p.elseOtm)) bad.push(`The else strike must be OTM 1 to OTM ${MAX_STRIKE_STEP}.`);
+  return bad;
 }
 
 /** A sensible first fallback: two and a half times an at-most cap, half an at-least floor. */

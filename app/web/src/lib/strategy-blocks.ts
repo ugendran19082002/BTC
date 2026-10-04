@@ -1,6 +1,6 @@
-import { MAX_STRIKE_BLOCKS, MAX_STRIKE_STEP, strikeLabel, type StrategyConfig, type StrikeBlock } from '@/types/strategy';
+import { MAX_STRIKE_BLOCKS, MAX_STRIKE_STEP, elseOtmOf, strikeLabel, type StrategyConfig, type StrikeBlock } from '@/types/strategy';
 import { hhmmOf, isHhmm, minutesForward, minutesOf, time12 } from '@/lib/time';
-import { minOtmProblem, premiumFallbackProblem } from '@/lib/strategy-exits';
+import { minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 
 /**
  * A signal strategy's strike rule over its window, as the form works with it.
@@ -78,14 +78,20 @@ export function hoursLabel(minutes: number): string {
   return h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
-/** A block's rule in a few words: "at most $40", "at least $15 (else $10)", "at most $50, OTM 6 or further", "OTM 2". */
+/**
+ * A block's rule in a few words: "≤ $40", "≥ $15 (if none, ≥ $10)",
+ * "≤ $50 at OTM 6 or further, else OTM 8", "OTM 2". The signs are the form's
+ * own, and "else" is kept for the else strike alone -- the premium's second
+ * number is "if none".
+ */
 export function pickWords(p: StrikePick): string {
   if (p.strikeRule === 'strict') return strikeLabel(p.strikeStep);
+  const sign = p.premium.mode === 'atLeast' ? '≥' : '≤';
   const f = p.premium.fallbackUsd;
   const m = p.premium.minOtm;
-  return `${p.premium.mode === 'atLeast' ? 'at least' : 'at most'} $${p.premium.usd}`
-    + (f === null || f === undefined ? '' : ` (else $${f})`)
-    + (m === null || m === undefined ? '' : `, ${strikeLabel(m)} or further`);
+  return `${sign} $${p.premium.usd}`
+    + (f === null || f === undefined ? '' : ` (if none, ${sign} $${f})`)
+    + (m === null || m === undefined ? '' : ` at ${strikeLabel(m)} or further, else ${strikeLabel(elseOtmOf(p.premium)!)}`);
 }
 
 /** " — then from 9:35 PM at most $40, from 1:35 AM OTM 2", or nothing when there is one rule all window. */
@@ -137,8 +143,7 @@ export function strikeBlockProblems(blocks: StrikeBlock[] | undefined, entryTime
     } else {
       const f = premiumFallbackProblem(b.premium);
       if (f) say(`Block ${n}: ${f}`);
-      const m = minOtmProblem(b.premium);
-      if (m) say(`Block ${n}: ${m}`);
+      for (const m of minOtmProblems(b.premium)) say(`Block ${n}: ${m}`);
     }
   });
   return bad;

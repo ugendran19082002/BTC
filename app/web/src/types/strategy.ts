@@ -4,12 +4,23 @@ export type PremiumMode = 'atLeast' | 'atMost';
 export type LegConfig = 'CE' | 'PE' | 'both';
 
 /**
- * A premium rule, whole (server: PremiumRule). `minOtm` is the nearest strike
- * it may sell, counted like a by-strike rule: the premium's own pick stands at
- * OTM n or further out, and nearer than that -- or with no pick -- OTM n itself
- * is sold. Null or absent: no floor.
+ * A premium rule, whole (server: PremiumRule). `minOtm` is a condition on
+ * distance, counted like a by-strike rule: the premium's own pick stands at
+ * OTM n or further out. Else -- nearer than that, or no pick -- the strike
+ * `elseOtm` names is sold, which may be the same strike or a different one;
+ * absent, it reads as `minOtm`. `minOtm` null or absent: no condition.
  */
-export type PremiumRule = { mode: PremiumMode; usd: number; fallbackUsd?: number | null; minOtm?: number | null };
+export type PremiumRule = {
+  mode: PremiumMode; usd: number; fallbackUsd?: number | null;
+  minOtm?: number | null; elseOtm?: number | null;
+};
+
+/** The strike a premium rule's else sells; null when there is no condition (server: elseOtmOf). */
+export const elseOtmOf = (p: Pick<PremiumRule, 'minOtm' | 'elseOtm'>): number | null =>
+  (p.minOtm === null || p.minOtm === undefined ? null : (p.elseOtm ?? p.minOtm));
+
+/** The two ways a premium reads, as the form names them: the sign first, since the two are opposites. */
+export const PREMIUM_MODE_LABEL: Record<PremiumMode, string> = { atLeast: '≥ Greater or equal', atMost: '≤ Less or equal' };
 
 /** What "at least OTM" starts at when it is switched on. */
 export const DEFAULT_MIN_OTM = 6;

@@ -19,7 +19,7 @@ import { DEFAULT_WALL_WITHIN_EM } from '../domain/structure.js';
  * general, which is why it is a setting.
  */
 import type { StrategyConfig } from './types.js';
-import { strikeLabel, type Strategy } from './types.js';
+import { elseOtmOf, strikeLabel, type Strategy } from './types.js';
 
 /** Only the parts of a scored leg this decision needs. */
 export type Candidate = {
@@ -47,8 +47,15 @@ export type Chosen = {
   ask: number | null;
   /** Set when the premium rule's own number found nothing and its fallback found this. */
   fallbackUsd?: number;
-  /** Set when the premium's own pick sat nearer the money than the rule allows, or there was none, and this is the nearest strike allowed. */
+  /**
+   * Set when the premium's own pick sat nearer the money than `minOtm`, or there
+   * was none, and the rule's else strike was sold instead: the condition it
+   * failed, and the strike the else named.
+   */
   minOtm?: number;
+  elseOtm?: number;
+  /** With them: the strike the premium did pick, nearer the money than the rule allows -- or null when it picked none. */
+  premiumPick?: { strike: number; price: number } | null;
 };
 
 export type Selection = {
@@ -119,11 +126,22 @@ export function pickStrike(
   cfg: StrategyConfig,
   opts: SelectOptions = {},
 ): Candidate | null {
+  return pickStrikeHow(candidates, cp, cfg, opts).pick;
+}
+
+/** The pick, and whether a premium rule's else chose it rather than the premium. */
+function pickStrikeHow(
+  candidates: readonly Candidate[],
+  cp: 'C' | 'P',
+  cfg: StrategyConfig,
+  opts: SelectOptions,
+): { pick: Candidate | null; viaElse: boolean; premiumPick: Candidate | null } {
+  const own = (pick: Candidate | null) => ({ pick, viaElse: false, premiumPick: pick });
   const priced = candidates.filter((l) => l.cp === cp && (l.sellPrice ?? 0) > 0);
-  if (cfg.strikeRule === 'strict') return pickByPosition(priced, cp, cfg.strikeStep ?? 0);
+  if (cfg.strikeRule === 'strict') return own(pickByPosition(priced, cp, cfg.strikeStep ?? 0));
 
   const otm = priced.filter((l) => outOfTheMoney(l, opts.spot));
-  if (otm.length === 0) return null;
+  if (otm.length === 0) return own(null);
 
   /*
    * The wall: the strike on this side with the most open interest.
@@ -150,8 +168,8 @@ export function pickStrike(
       l.oi !== null && l.oi !== undefined && Number.isFinite(l.oi)
       && (l.sellPrice ?? 0) >= cfg.premium.usd
       && (l.emBuffer === null || l.emBuffer === undefined || l.emBuffer <= within));
-    if (readable.length === 0) return null;
-    return readable.reduce((a, b) => (b.oi! > a.oi! ? b : a));
+    if (readable.length === 0) return own(null);
+    return own(readable.reduce((a, b) => (b.oi! > a.oi! ? b : a)));
   }
 
   /*
@@ -165,17 +183,18 @@ export function pickStrike(
     ?? (fallback !== null && fallback !== undefined ? pickByPremium(otm, cfg.premium.mode, fallback) : null);
 
   /*
-   * The nearest strike the rule may sell (4 Oct 2026). The premium picks as it
-   * always did; at the floor or further out its pick stands -- OTM 7 under a
-   * floor of 6 is sold as OTM 7 -- and nearer than that, or with no pick at
-   * all, the floor's own strike is sold instead. Never refused for being too
-   * near, and never moved further than the floor: what it pays is then for the
-   * desk's premium floor to judge, like any other order.
+   * The condition on distance, and its else (4 Oct 2026). The premium picks as
+   * it always did; at `minOtm` or further out its pick stands -- OTM 7 under
+   * "at least OTM 6" is sold as OTM 7. Nearer than that, or with no pick at
+   * all, the else strike is sold instead: `elseOtm`, a strike named the way a
+   * by-strike rule names one, which may be the condition's own strike or a
+   * different one. What that strike pays is then for the desk's premium floor
+   * to judge, like any other order.
    */
   const min = cfg.premium.minOtm;
-  if (min === null || min === undefined) return byPremium;
-  if (byPremium && otmStepOf(priced, cp, byPremium) >= min) return byPremium;
-  return pickByPosition(priced, cp, min);
+  if (min === null || min === undefined) return own(byPremium);
+  if (byPremium && otmStepOf(priced, cp, byPremium) >= min) return own(byPremium);
+  return { pick: pickByPosition(priced, cp, elseOtmOf(cfg.premium)!), viaElse: true, premiumPick: byPremium };
 }
 
 /**
@@ -227,9 +246,25 @@ export function selectLegs(
   const wanted: ('CE' | 'PE')[] = cfg.legs === 'both' ? ['CE', 'PE'] : [cfg.legs];
   const refusals: string[] = [];
   const picked = new Map<'CE' | 'PE', Candidate>();
+  const viaElse = new Map<'CE' | 'PE', Candidate | null>();
 
   for (const leg of wanted) {
-    const chosen = pickStrike(candidates, SIDE[leg], cfg, opts);
+    const how = pickStrikeHow(candidates, SIDE[leg], cfg, opts);
+    const chosen = how.pick;
+    if (how.viaElse) viaElse.set(leg, how.premiumPick);
+    if (!chosen && how.viaElse) {
+      // The rule failed and its else could not be sold either: both halves said, so the row explains itself.
+      const near = how.premiumPick;
+      refusals.push(
+        `${leg}: rule failed — `
+        + (near
+          ? `the premium's strike ${near.strike} @ ${near.sellPrice} is nearer than ${strikeLabel(cfg.premium.minOtm!)}`
+          : `nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`
+            + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : ''))
+        + ` — and the else strike ${strikeLabel(elseOtmOf(cfg.premium)!)} is not listed with a price`,
+      );
+      continue;
+    }
     if (!chosen) {
       refusals.push(
         cfg.strikeRule === 'strict'
@@ -237,8 +272,7 @@ export function selectLegs(
           : cfg.strikeRule === 'oiWall'
             ? `${leg}: no wall within ${opts.wallWithinEm ?? DEFAULT_WALL_WITHIN_EM} expected moves that pays $${cfg.premium.usd}`
             : `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`
-              + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : '')
-              + (cfg.premium.minOtm != null ? `, and no ${strikeLabel(cfg.premium.minOtm)} strike listed with a price` : ''),
+              + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : ''),
       );
       continue;
     }
@@ -246,8 +280,9 @@ export function selectLegs(
   }
 
   return {
-    legs: [...picked.values()].map((c) => {
-      const floored = viaMinOtm(cfg, candidates, c, opts);
+    legs: [...picked.entries()].map(([leg, c]) => {
+      const floored = viaElse.has(leg);
+      const near = viaElse.get(leg) ?? null;
       return {
         cp: c.cp,
         strike: c.strike,
@@ -255,20 +290,33 @@ export function selectLegs(
         pOtm: c.pOtm,
         lots: cfg.lots,
         ask: c.ask ?? null,
-        // The floor's strike was not found by a premium number at all, so it is not "the fallback" either.
+        // The else strike was not found by a premium number at all, so it is not "the fallback" either.
         ...(!floored && viaFallback(cfg, c) ? { fallbackUsd: cfg.premium.fallbackUsd! } : {}),
-        ...(floored ? { minOtm: cfg.premium.minOtm! } : {}),
+        ...(floored ? {
+          minOtm: cfg.premium.minOtm!, elseOtm: elseOtmOf(cfg.premium)!,
+          premiumPick: near ? { strike: near.strike, price: near.sellPrice! } : null,
+        } : {}),
       };
     }),
     refusals,
   };
 }
 
-/** True when the premium's own pick was not this strike: the nearest-strike floor chose it. */
-function viaMinOtm(cfg: StrategyConfig, candidates: readonly Candidate[], c: Candidate, opts: SelectOptions): boolean {
-  if (cfg.strikeRule !== 'premium' || cfg.premium.minOtm === null || cfg.premium.minOtm === undefined) return false;
-  const own = pickStrike(candidates, c.cp, { ...cfg, premium: { ...cfg.premium, minOtm: null } }, opts);
-  return own?.strike !== c.strike;
+/**
+ * For a leg the else chose, why: " (rule failed: the premium's strike 84400 @ 51
+ * is nearer than OTM 6 — sold the else strike OTM 8)", or "no strike met the
+ * premium" when it picked none. Nothing for a leg the premium chose.
+ *
+ * Written into the run's own line, which is what the trade history shows: a
+ * strike other than the one the premium would have sold must say so where the
+ * trade is read, not only where the rule is set.
+ */
+export function elseWords(l: Pick<Chosen, 'minOtm' | 'elseOtm' | 'premiumPick'>): string {
+  if (l.minOtm === undefined || l.elseOtm === undefined) return '';
+  const why = l.premiumPick
+    ? `the premium's strike ${l.premiumPick.strike} @ ${l.premiumPick.price} is nearer than ${strikeLabel(l.minOtm)}`
+    : 'no strike met the premium';
+  return ` (rule failed: ${why} — sold the else strike ${strikeLabel(l.elseOtm)})`;
 }
 
 /** True when this strike was found by the premium fallback rather than the rule's own number. */
@@ -288,7 +336,7 @@ function viaFallback(cfg: StrategyConfig, c: Candidate): boolean {
 export function describeSelection(sel: Selection): string {
   const sold = sel.legs.map((l) => `${l.cp === 'C' ? 'CE' : 'PE'} ${l.strike} x${l.lots} @ ${l.price}`
     + (l.fallbackUsd !== undefined ? ` (fallback $${l.fallbackUsd})` : '')
-    + (l.minOtm !== undefined ? ` (${strikeLabel(l.minOtm)}, the nearest allowed)` : '')
+    + elseWords(l)
     + (l.ask !== null && l.ask > 0 ? `, ask ${l.ask}` : ''));
   if (sold.length === 0) return sel.refusals.join('; ') || 'nothing to sell';
   return sold.join(', ') + (sel.refusals.length ? ` (${sel.refusals.join('; ')})` : '');

@@ -1,4 +1,4 @@
-import { strikeLabel, type StrategyConfig } from '@/types/strategy';
+import { elseOtmOf, strikeLabel, type StrategyConfig } from '@/types/strategy';
 import { ruleTfWords } from '@/types/strategy';
 import { time12, wrapsMidnight } from '@/lib/time';
 import { exitRules, exitWords, type ExitRule } from '@/lib/strategy-exits';
@@ -39,8 +39,8 @@ export function describePremium(c: StrategyConfig): string {
       ? ` (none? then at least $${f})`
       : ` (none? then the last strike at or below $${f})`;
   const m = c.premium.minOtm;
-  // The floor on distance: the pick stands from OTM n outward, and OTM n is sold when it sits nearer.
-  const floor = m === null || m === undefined ? '' : `, never nearer than ${strikeLabel(m)}`;
+  // The condition on distance and its else: the pick stands from OTM n outward; nearer, the else strike is sold.
+  const floor = m === null || m === undefined ? '' : `, only at ${strikeLabel(m)} or further — else sells ${strikeLabel(elseOtmOf(c.premium)!)}`;
   return (c.premium.mode === 'atLeast'
     ? `at least $${c.premium.usd} — takes the furthest strike still paying it`
     : `at most $${c.premium.usd} — takes the richest strike under it`) + fallback + floor;

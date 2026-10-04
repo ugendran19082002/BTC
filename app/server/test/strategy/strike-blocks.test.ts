@@ -144,6 +144,40 @@ test('[critical] "at least OTM n" is a whole number from 1 to 20, or off -- on t
   assert.deepEqual(block(0), ['Block 2: The nearest strike a premium rule may sell must be OTM 1 to OTM 20, or switched off.']);
 });
 
+test('[critical] the else strike is OTM 1 to OTM 20 too, equal to the rule or not -- and is not read without a rule', () => {
+  const own = (minOtm: unknown, elseOtm: unknown) => validateConfig({ ...DAY, strikeBlocks: [], premium: { mode: 'atMost', usd: 50, minOtm: minOtm as number, elseOtm: elseOtm as number } });
+  for (const [m, e] of [[6, 6], [6, 8], [8, 6], [1, 20], [6, null], [6, undefined]]) assert.deepEqual(own(m, e), [], `${m}/${e}`);
+  for (const bad of [0, 21, -1, 2.5, 'eight']) assert.deepEqual(own(6, bad), ['The else strike must be OTM 1 to OTM 20.'], String(bad));
+  assert.deepEqual(own(0, 0), ['The nearest strike a premium rule may sell must be OTM 1 to OTM 20, or switched off.', 'The else strike must be OTM 1 to OTM 20.']);
+  assert.deepEqual(own(null, 0), [], 'no rule: no else to be wrong');
+  assert.deepEqual(
+    strikeBlockProblems([{ at: '12:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 20, minOtm: 6, elseOtm: 21 } }], '09:00', '17:00'),
+    ['Block 2: The else strike must be OTM 1 to OTM 20.']);
+});
+
+test('[critical] each block has its own else strike, and it is the one sold in that block', () => {
+  const leg = (strike: number, sellPrice: number): Candidate => ({ cp: 'P', strike, sellPrice, pOtm: 0.9, moneyness: 'OTM' });
+  const board = [leg(84_800, 62), leg(84_600, 44), leg(84_400, 33), leg(84_200, 21), leg(84_000, 12), leg(83_800, 6)];
+  const c: StrategyConfig = {
+    ...DAY,
+    premium: { mode: 'atMost', usd: 50, minOtm: 4, elseOtm: 5 },                       // picks OTM 2: else OTM 5
+    strikeBlocks: [
+      { at: '21:35', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 50, minOtm: 4, elseOtm: 6 } },   // else OTM 6
+      { at: '01:35', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 50, minOtm: 4, elseOtm: 4 } },   // else = the rule
+      { at: '05:35', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 50, minOtm: 2, elseOtm: 6 } },   // rule met: OTM 2, else unread
+    ],
+  };
+  const sold = (t: string) => {
+    const s: Strategy = { id: 's', name: 't', enabled: true, createdAt: 0, updatedAt: 0, config: { ...c, ...strikePickAt(c, min(t)).pick, legs: 'PE' } };
+    const l = selectLegs(s, board, { spot: 85_000 }).legs[0]!;
+    return [l.strike, l.elseOtm];
+  };
+  assert.deepEqual(sold('18:00'), [84_000, 5]);
+  assert.deepEqual(sold('22:00'), [83_800, 6]);
+  assert.deepEqual(sold('02:00'), [84_200, 4]);
+  assert.deepEqual(sold('06:00'), [84_600, undefined]);
+});
+
 test('[critical] each block carries its own floor, and it decides the strike sold in that block', () => {
   const leg = (strike: number, sellPrice: number): Candidate => ({ cp: 'P', strike, sellPrice, pOtm: 0.9, moneyness: 'OTM' });
   // OTM 1..6: 62, 44, 33, 21, 12, 6

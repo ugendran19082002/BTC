@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { outcomeOf, SignalTradeHistory, sortTrades, tradesCsv } from '@/components/strategy/SignalTradeHistory';
+import { outcomeOf, SignalTradeHistory, sortTrades, strikeNotes, tradesCsv } from '@/components/strategy/SignalTradeHistory';
 import { DEFAULT_CONFIG, type SignalTrade, type Strategy } from '@/types/strategy';
 
 /** The signal strategies' trade history: the signal, the option, the perp SL and TGT, the exit, the result, the money. */
@@ -276,5 +276,45 @@ describe('which exit closed it', () => {
     expect(within(row!).getByLabelText('perp TGT')).toHaveTextContent(/^84,500(TGT2.*)?$/);   // no exit time: not the perp's TGT
     expect(within(row!).getByLabelText('option exit')).toHaveTextContent(/^\$4\.5\d{2} Oct/);
     expect(within(row!).getByLabelText('option exits')).toHaveTextContent('TP $2.5 · SL off');
+  });
+});
+
+describe('the strike rule on the record: a failed rule, its else strike, the block of the day', () => {
+  const ELSE = '#1 Breakout BUY | live orders off: would sell PE 83600 x3 @ 6.2 (rule failed: the premium\'s strike 84400 @ 51 is nearer than OTM 6 — sold the else strike OTM 8) · perp filled 84761 · perp SL 84668 · TGT 84852 · block 2, from 9:35 PM';
+  const PLAIN = '#1 Breakout BUY | live orders off: would sell PE 84000 x1 @ 18 · perp SL 84600 · TGT 85500';
+  const REFUSED = '#1 Breakout BUY | PE: rule failed — the premium\'s strike 84400 @ 51 is nearer than OTM 6 — and the else strike OTM 9 is not listed with a price · block 3, from 1:35 AM';
+
+  it('[critical] read from the run\'s own line: the rule that failed and the else strike sold, and the block', () => {
+    expect(strikeNotes(ELSE)).toEqual({
+      rule: 'rule failed: the premium\'s strike 84400 @ 51 is nearer than OTM 6 — sold the else strike OTM 8',
+      block: 'block 2, from 9:35 PM',
+    });
+    expect(strikeNotes('#1 X BUY | sell PE 83600 x1 @ 9 (rule failed: no strike met the premium — sold the else strike OTM 6) · perp SL 1 · TGT 2').rule)
+      .toBe('rule failed: no strike met the premium — sold the else strike OTM 6');
+    expect(strikeNotes(PLAIN)).toEqual({ rule: null, block: null });
+  });
+
+  it('[critical] a trade sold by the else says so on its row, with its block -- a trade the premium chose says nothing', () => {
+    render(<SignalTradeHistory trades={[trade({ id: 21, detail: ELSE }), trade({ id: 22, detail: PLAIN })]} strategies={strategies} />);
+    const [, sold, plain] = within(screen.getByRole('table', { name: 'signal trades' })).getAllByRole('row');
+    expect(within(sold!).getByLabelText('strike rule')).toHaveTextContent('rule failed: the premium\'s strike 84400 @ 51 is nearer than OTM 6 — sold the else strike OTM 8');
+    expect(within(sold!).getByLabelText('strike block')).toHaveTextContent('block 2, from 9:35 PM');
+    expect(within(plain!).queryByLabelText('strike rule')).not.toBeInTheDocument();
+    expect(within(plain!).queryByLabelText('strike block')).not.toBeInTheDocument();
+  });
+
+  it('[critical] a signal not taken because the rule failed and its else strike is not listed says all of it under Skipped', () => {
+    render(<SignalTradeHistory trades={[trade({ id: 23, status: 'refused', detail: REFUSED, perp: null, levels: null })]} strategies={strategies} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Skipped/ }));
+    expect(screen.getByLabelText('why not taken')).toHaveTextContent(
+      'refusedPE: rule failed — the premium\'s strike 84400 @ 51 is nearer than OTM 6 — and the else strike OTM 9 is not listed with a price · block 3, from 1:35 AM');
+  });
+
+  it('the spreadsheet carries it in a column of its own', () => {
+    const csv = tradesCsv([trade({ id: 21, detail: ELSE }), trade({ id: 22, detail: PLAIN })], () => 'S');
+    const [head, first, second] = csv.trim().split(/\r?\n/);
+    expect(head).toContain('Strike rule');
+    expect(first).toContain('rule failed: the premium\'s strike 84400 @ 51 is nearer than OTM 6 — sold the else strike OTM 8 · block 2, from 9:35 PM');
+    expect(second).not.toContain('rule failed');
   });
 });

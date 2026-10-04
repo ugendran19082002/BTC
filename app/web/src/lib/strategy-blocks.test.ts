@@ -80,8 +80,8 @@ describe('splitting the window', () => {
 
 describe('in words', () => {
   it('a block\'s rule, short', () => {
-    expect(pickWords(premium('21:35', 40))).toBe('at most $40');
-    expect(pickWords(premium('21:35', 15, 'atLeast', 10))).toBe('at least $15 (else $10)');
+    expect(pickWords(premium('21:35', 40))).toBe('≤ $40');
+    expect(pickWords(premium('21:35', 15, 'atLeast', 10))).toBe('≥ $15 (if none, ≥ $10)');
     expect(pickWords(strict('21:35', 2))).toBe('OTM 2');
     expect(pickWords(strict('21:35', 0))).toBe('ATM');
   });
@@ -93,8 +93,8 @@ describe('in words', () => {
   it('[critical] the rule sentence names every block, and says nothing new when there are none', () => {
     expect(blocksWords(cfg())).toBe('');
     const c = cfg({ strikeBlocks: [premium('21:35', 40), strict('05:35', 2)] });
-    expect(blocksWords(c)).toBe(' — then from 9:35 PM at most $40, from 5:35 AM OTM 2');
-    expect(describeStrategy(c)).toContain('(none? then the last strike at or below $75) — then from 9:35 PM at most $40, from 5:35 AM OTM 2, 3 lots');
+    expect(blocksWords(c)).toBe(' — then from 9:35 PM ≤ $40, from 5:35 AM OTM 2');
+    expect(describeStrategy(c)).toContain('(none? then the last strike at or below $75) — then from 9:35 PM ≤ $40, from 5:35 AM OTM 2, 3 lots');
     expect(describeStrategy(cfg())).not.toContain('then from');
   });
 });
@@ -136,38 +136,47 @@ describe('what is refused -- the server\'s words', () => {
   });
 });
 
-describe('"at least OTM n": the nearest strike a premium rule may sell', () => {
-  const floored = (minOtm: number | null) => cfg({ premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm } });
+describe('the distance rule and its else strike', () => {
+  const floored = (minOtm: number | null, elseOtm?: number | null) => cfg({ premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm, elseOtm } });
 
-  it('[critical] in words: on the rule, on a block, and in the sentence', () => {
-    expect(pickWords({ strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 6 } })).toBe('at most $50 (else $75), OTM 6 or further');
-    expect(pickWords({ strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atLeast', usd: 15, minOtm: 3 } })).toBe('at least $15, OTM 3 or further');
-    expect(pickWords({ strikeRule: 'strict', strikeStep: 2, premium: { mode: 'atMost', usd: 50, minOtm: 6 } })).toBe('OTM 2');
-    expect(describeStrategy(floored(6))).toContain('(none? then the last strike at or below $75), never nearer than OTM 6, 3 lots');
-    expect(describeStrategy(floored(null))).not.toContain('never nearer');
+  it('[critical] in words: on the rule, on a block, and in the sentence -- "else" is the else strike, "if none" the second premium', () => {
+    expect(pickWords({ strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 6, elseOtm: 8 } })).toBe('≤ $50 (if none, ≤ $75) at OTM 6 or further, else OTM 8');
+    expect(pickWords({ strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atLeast', usd: 15, minOtm: 3, elseOtm: 3 } })).toBe('≥ $15 at OTM 3 or further, else OTM 3');
+    // saved before the else had a strike of its own: it is the rule's strike
+    expect(pickWords({ strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atLeast', usd: 15, minOtm: 3 } })).toBe('≥ $15 at OTM 3 or further, else OTM 3');
+    expect(pickWords({ strikeRule: 'strict', strikeStep: 2, premium: { mode: 'atMost', usd: 50, minOtm: 6, elseOtm: 8 } })).toBe('OTM 2');
+    expect(describeStrategy(floored(6, 8))).toContain('(none? then the last strike at or below $75), only at OTM 6 or further — else sells OTM 8, 3 lots');
+    expect(describeStrategy(floored(6))).toContain('only at OTM 6 or further — else sells OTM 6, 3 lots');
+    expect(describeStrategy(floored(null))).not.toContain('or further');
   });
 
-  it('[critical] a whole number from 1 to 20 or off -- the server\'s words, on the Strike & lots tab', () => {
-    for (const ok of [null, 1, 6, 20]) expect(strategyProblems(floored(ok), 'S')).toEqual([]);
+  it('[critical] each a whole number from OTM 1 to OTM 20 -- the server\'s words, on the Strike & lots tab', () => {
+    for (const [m, e] of [[null, null], [1, 1], [6, 8], [8, 6], [20, 20], [6, undefined]] as const) expect(strategyProblems(floored(m, e), 'S')).toEqual([]);
     for (const bad of [0, 21, 2.5]) {
-      expect(strategyProblems(floored(bad), 'S')).toEqual([
+      expect(strategyProblems(floored(bad, 6), 'S')).toEqual([
         { field: 'premiumMinOtm', tab: 'sell', message: 'The nearest strike a premium rule may sell must be OTM 1 to OTM 20, or switched off.' },
       ]);
+      expect(strategyProblems(floored(6, bad), 'S')).toEqual([
+        { field: 'premiumMinOtm', tab: 'sell', message: 'The else strike must be OTM 1 to OTM 20.' },
+      ]);
     }
+    // with no rule there is no else to be wrong
+    expect(strategyProblems(floored(null, 0), 'S')).toEqual([]);
   });
 
-  it('[critical] a block has its own, held to the same rule', () => {
-    const b = (minOtm: number | null): StrikeBlock => ({ at: '12:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 20, fallbackUsd: null, minOtm } });
-    expect(strikeBlockProblems([b(6)], '09:00', '17:00')).toEqual([]);
-    expect(strikeBlockProblems([b(0)], '09:00', '17:00')).toEqual([
+  it('[critical] a block has its own two strikes, held to the same rule', () => {
+    const b = (minOtm: number | null, elseOtm?: number): StrikeBlock => ({ at: '12:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 20, fallbackUsd: null, minOtm, elseOtm } });
+    expect(strikeBlockProblems([b(6, 9)], '09:00', '17:00')).toEqual([]);
+    expect(strikeBlockProblems([b(0, 6)], '09:00', '17:00')).toEqual([
       { index: 0, message: 'Block 2: The nearest strike a premium rule may sell must be OTM 1 to OTM 20, or switched off.' },
     ]);
-    // a by-strike block names its strike: a floor left on it is not read
-    expect(strikeBlockProblems([{ ...b(0), strikeRule: 'strict', strikeStep: 2 }], '09:00', '17:00')).toEqual([]);
+    expect(strikeBlockProblems([b(6, 21)], '09:00', '17:00')).toEqual([{ index: 0, message: 'Block 2: The else strike must be OTM 1 to OTM 20.' }]);
+    // a by-strike block names its strike: a rule left on it is not read
+    expect(strikeBlockProblems([{ ...b(0, 0), strikeRule: 'strict', strikeStep: 2 }], '09:00', '17:00')).toEqual([]);
   });
 
-  it('splitting carries the rule\'s floor into every new block', () => {
-    for (const blk of splitBlocks(floored(6), 240)) expect(blk.premium.minOtm).toBe(6);
+  it('splitting carries the rule\'s two strikes into every new block', () => {
+    for (const blk of splitBlocks(floored(6, 8), 240)) expect([blk.premium.minOtm, blk.premium.elseOtm]).toEqual([6, 8]);
     for (const blk of splitBlocks(floored(null), 240)) expect(blk.premium.minOtm ?? null).toBeNull();
   });
 });

@@ -119,9 +119,27 @@ export function tradesCsv(rows: readonly SignalTrade[], nameOf: (id: string) => 
     { header: 'P&L ($)', value: (t) => (t.option && !t.option.open ? Number(t.option.pnlUsd.toFixed(4)) : null) },
     { header: 'P&L (₹)', value: (t) => (t.option && !t.option.open ? Number((usdToInr(t.option.pnlUsd) ?? 0).toFixed(2)) : null) },
     { header: 'Why closed / not taken', value: (t) => t.option?.exitReason ?? (isTrade(t) ? null : t.detail.split(' | ').slice(1).join(' | ')) },
+    { header: 'Strike rule', value: (t) => [strikeNotes(t.detail).rule, strikeNotes(t.detail).block].filter(Boolean).join(' · ') || null },
     { header: 'Trade id', value: (t) => t.tradeId },
   ];
   return toCsv(rows, cols);
+}
+
+/**
+ * What a trade's own line says about its strike rule: that the rule failed and
+ * the else strike was sold ("rule failed: the premium's strike 84400 @ 51 is
+ * nearer than OTM 6 — sold the else strike OTM 8"), and the block of the day it
+ * was sold under ("block 2, from 9:35 PM"). Either may be absent.
+ *
+ * A trade row shows figures, not the server's sentence, so these two were on
+ * the record and not on the screen: a strike other than the premium's own has
+ * to say why where the trade is read.
+ */
+export function strikeNotes(detail: string): { rule: string | null; block: string | null } {
+  return {
+    rule: /\((rule failed: [^)]*)\)/.exec(detail)?.[1] ?? null,
+    block: /· (block \d+, from \d{1,2}:\d{2} [AP]M)/.exec(detail)?.[1] ?? null,
+  };
 }
 
 /** Everything a row says, lower-cased, for the search box: the signal, strategy, timeframe, option, result and why. */
@@ -355,6 +373,7 @@ function Row({ t, name }: { t: SignalTrade; name: string }) {
   const sl = t.option?.perpStop ?? t.levels?.stop ?? null;
   const tgt = t.option?.perpTarget ?? t.levels?.tp1 ?? null;
   const [said] = t.detail.split(' | ');
+  const notes = strikeNotes(t.detail);
   const perpEntry = t.option ? (t.option.perpEntry ?? null) : (t.perp?.fillPrice ?? null);
   const perpExit = t.option ? (t.option.perpExit ?? null) : (t.perp?.exitPrice ?? null);
   const approx = (on: boolean | undefined) => (on ? '≈' : '');
@@ -372,6 +391,11 @@ function Row({ t, name }: { t: SignalTrade; name: string }) {
         {t.option
           ? <>{t.option.side} {btc(t.option.strike)} ×{t.option.size}</>
           : <span className="text-[var(--dim)]">{t.dir === 1 ? 'PE' : 'CE'} · would sell</span>}
+        {/* The strike rule's own account: the rule failed and the else strike was sold, and which block of the day. */}
+        {notes.rule && (
+          <div aria-label="strike rule" className="max-w-[17rem] whitespace-normal text-[10.5px] leading-snug text-[var(--warn)]">{notes.rule}</div>
+        )}
+        {notes.block && <div aria-label="strike block" className="text-[10.5px] text-[var(--dim)]">{notes.block}</div>}
       </td>
       <td className="whitespace-nowrap px-2 py-1.5" aria-label="perp entry"
           title={t.option?.perpEntryApprox ? APPROX : t.option ? 'The perp the moment the option filled.' : 'Where the paper log filled it on the perp.'}>

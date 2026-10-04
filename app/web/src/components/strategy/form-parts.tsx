@@ -2,7 +2,7 @@ import { useState, type RefObject } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { DAY_NAMES, DEFAULT_MIN_OTM, MAX_STRIKE_STEP, strikeLabel, type StrategyConfig } from '@/types/strategy';
+import { DAY_NAMES, DEFAULT_MIN_OTM, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL, strikeLabel, type PremiumRule, type StrategyConfig } from '@/types/strategy';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { TimePicker } from '@/components/ui/time-picker';
@@ -237,8 +237,10 @@ export function DaysField({ c, set, err }: { c: StrategyConfig; set: SetField; e
  * by strike (ATM ± n), and -- where offered -- at the open-interest wall; then
  * the strategy's own premium floor.
  */
-export function StrikeFields({ c, set, err, allowOiWall = true }: {
+export function StrikeFields({ c, set, err, allowOiWall = true, minPremium = true }: {
   c: StrategyConfig; set: SetField; err: ErrOf; allowOiWall?: boolean;
+  /** False where the form places the minimum premium itself, further down (`MinPremiumField`). */
+  minPremium?: boolean;
 }) {
   return (
     <>
@@ -292,8 +294,8 @@ export function StrikeFields({ c, set, err, allowOiWall = true }: {
               onChange={(v) => set('premium', { ...c.premium, mode: v })}
               className="flex-1"
               options={[
-                { v: 'atLeast', label: 'At least', note: 'Furthest strike still paying this — more premium, more risk.' },
-                { v: 'atMost', label: 'At most', note: 'Best strike paying up to this — less premium, less risk.' },
+                { v: 'atLeast', label: PREMIUM_MODE_LABEL.atLeast, note: 'Pays this much or more: the furthest strike still paying it — more premium, more risk.' },
+                { v: 'atMost', label: PREMIUM_MODE_LABEL.atMost, note: 'Pays this much or less: the best strike under it — less premium, less risk.' },
               ]}
             />
             <Affix before="$">
@@ -343,23 +345,7 @@ export function StrikeFields({ c, set, err, allowOiWall = true }: {
         OTM n or further out; nearer than that, OTM n itself is sold.
       */}
       {c.strikeRule === 'premium' && (
-        <div className="mt-2">
-          <Switch
-            label="Keep it at least this far out of the money"
-            description={c.premium.minOtm != null
-              ? `The premium's strike is sold only at ${strikeLabel(c.premium.minOtm)} or further out — ${strikeLabel(c.premium.minOtm + 1)} stays ${strikeLabel(c.premium.minOtm + 1)}. Nearer than that, or none found: sells ${strikeLabel(c.premium.minOtm)} itself.`
-              : 'Off — whichever strike the premium picks, however near the money.'}
-            checked={c.premium.minOtm != null}
-            onCheckedChange={(on) => set('premium', { ...c.premium, minOtm: on ? DEFAULT_MIN_OTM : null })}
-          />
-          {c.premium.minOtm != null && (
-            <Stack label="Nearest strike it may sell" error={err('premiumMinOtm')} className="mt-1"
-                   hint="counted over the strikes Delta has listed, out from the money">
-              <StrikeStepper value={c.premium.minOtm} min={1} label="nearest strike"
-                             onChange={(v) => set('premium', { ...c.premium, minOtm: v })} />
-            </Stack>
-          )}
-        </div>
+        <MinOtmFields premium={c.premium} onChange={(p) => set('premium', p)} error={err('premiumMinOtm')} />
       )}
 
       {c.strikeRule === 'strict' && (
@@ -381,27 +367,85 @@ export function StrikeFields({ c, set, err, allowOiWall = true }: {
         </Stack>
       )}
 
-      {/*
-        The strategy's own premium floor. Off, the desk's $5 applies, as it does
-        to every order.
-      */}
-      <div className="mt-3">
-        <Switch
-          label="Its own minimum premium"
-          description={c.minPremiumUsd != null
-            ? `Sells down to $${c.minPremiumUsd} instead of the desk's $5.`
-            : "Off — the desk's $5 minimum applies."}
-          checked={c.minPremiumUsd != null}
-          onCheckedChange={(on) => set('minPremiumUsd', on ? 1 : null)}
-        />
-        {c.minPremiumUsd != null && (
-          <Stack label="Minimum premium" error={err('minPremium')} className="mt-1 w-40" hint="at least $0.10">
-            <NumberField label="minimum premium usd" unitBefore="$" value={c.minPremiumUsd}
-                         onChange={(n) => set('minPremiumUsd', n)} />
-          </Stack>
-        )}
-      </div>
+      {minPremium && <MinPremiumField c={c} set={set} err={err} />}
     </>
+  );
+}
+
+/**
+ * The strategy's own premium floor. Off, the desk's $5 applies, as it does to
+ * every order. Its own part, so a form can put it last: it is a gate on
+ * whatever the rules above picked, not one of the rules.
+ */
+export function MinPremiumField({ c, set, err }: { c: StrategyConfig; set: SetField; err: ErrOf }) {
+  return (
+    <div className="mt-3">
+      <Switch
+        label="Its own minimum premium"
+        description={c.minPremiumUsd != null
+          ? `Sells down to $${c.minPremiumUsd} instead of the desk's $5.`
+          : "Off — the desk's $5 minimum applies."}
+        checked={c.minPremiumUsd != null}
+        onCheckedChange={(on) => set('minPremiumUsd', on ? 1 : null)}
+      />
+      {c.minPremiumUsd != null && (
+        <Stack label="Minimum premium" error={err('minPremium')} className="mt-1 w-40" hint="at least $0.10">
+          <NumberField label="minimum premium usd" unitBefore="$" value={c.minPremiumUsd}
+                       onChange={(n) => set('minPremiumUsd', n)} />
+        </Stack>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A premium rule's condition on distance, and its else -- the same part on the
+ * strategy's own rule and on every block of the day.
+ *
+ * Two strikes, each picked the way a by-strike rule picks one. The **rule**:
+ * the premium's strike is sold only at this strike or further out. The
+ * **else**: the strike sold when the premium's sits nearer than that, or the
+ * premium finds none. They may be the same strike or different ones -- "at
+ * least OTM 6, else OTM 8" steps further out on a rich board.
+ */
+export function MinOtmFields({ premium, onChange, error, scope = '', start }: {
+  premium: PremiumRule;
+  onChange: (p: PremiumRule) => void;
+  error?: string | null;
+  /** "block 2": told apart from the rule's own by a screen reader, and by a test. */
+  scope?: string;
+  /** What switching it on starts from: the rule's own strikes for a block, OTM 6 otherwise. */
+  start?: { minOtm: number; elseOtm: number };
+}) {
+  const on = premium.minOtm != null;
+  const min = premium.minOtm ?? DEFAULT_MIN_OTM;
+  const other = premium.elseOtm ?? min;
+  const named = (what: string) => (scope ? `${scope} ${what}` : what);
+  const first = start ?? { minOtm: DEFAULT_MIN_OTM, elseOtm: DEFAULT_MIN_OTM };
+  return (
+    <div className="mt-2">
+      <Switch
+        label="Keep it at least this far out of the money"
+        description={on
+          ? `The premium's strike is sold only at ${strikeLabel(min)} or further out — ${strikeLabel(min + 1)} stays ${strikeLabel(min + 1)}. Else — nearer than that, or none found — sells ${strikeLabel(other)}.`
+          : 'Off — whichever strike the premium picks, however near the money.'}
+        checked={on}
+        onCheckedChange={(v) => onChange({ ...premium, minOtm: v ? first.minOtm : null, elseOtm: v ? first.elseOtm : null })}
+      />
+      {on && (
+        <div className="mt-1 grid gap-2 sm:grid-cols-2">
+          <Stack label="Rule — the premium's strike at least" hint="counted over the strikes Delta has listed, out from the money">
+            <StrikeStepper value={min} min={1} label={named('rule strike')}
+                           onChange={(v) => onChange({ ...premium, minOtm: v, elseOtm: other })} />
+          </Stack>
+          <Stack label="Else — sell this strike" hint="the same strike as the rule, or a different one">
+            <StrikeStepper value={other} min={1} label={named('else strike')}
+                           onChange={(v) => onChange({ ...premium, minOtm: min, elseOtm: v })} />
+          </Stack>
+        </div>
+      )}
+      <FieldError text={error ?? null} />
+    </div>
   );
 }
 
@@ -608,11 +652,13 @@ export function StrikeStepper({ value, onChange, min = -MAX_STRIKE_STEP, label =
   label?: string;
 }) {
   const go = (by: number) => onChange(Math.max(min, Math.min(MAX_STRIKE_STEP, value + by)));
+  // One stepper on a form is "the strike"; two side by side each say which they move.
+  const own = label === 'which strike' ? 'one strike' : `${label}:`;
   const btn = 'm-0 h-11 w-12 flex-none appearance-none rounded-md border border-solid border-border bg-muted '
     + 'font-[inherit] text-[18px] text-foreground disabled:opacity-35';
   return (
     <div className="flex items-center gap-2">
-      <button type="button" aria-label="one strike nearer the money" className={btn}
+      <button type="button" aria-label={`${own} nearer the money`} className={btn}
               disabled={value <= min} onClick={() => go(-1)}>−</button>
       <div
         role="status"
@@ -621,7 +667,7 @@ export function StrikeStepper({ value, onChange, min = -MAX_STRIKE_STEP, label =
       >
         {strikeLabel(value)}
       </div>
-      <button type="button" aria-label="one strike further out" className={btn}
+      <button type="button" aria-label={`${own} further out`} className={btn}
               disabled={value >= MAX_STRIKE_STEP} onClick={() => go(1)}>+</button>
     </div>
   );
