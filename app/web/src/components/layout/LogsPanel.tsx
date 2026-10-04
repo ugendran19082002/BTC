@@ -22,7 +22,7 @@ export function LogsPanel() {
   const [saved, setTab] = usePersisted<LogTab>('logs:tab', 'errors');
   const tab: LogTab = LOG_TABS.some((t) => t.id === saved) ? saved : 'errors';
   return (
-    <div className="grid gap-3">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       <div role="tablist" aria-label="Logs" className="inline-flex w-fit max-w-full overflow-x-auto rounded-lg border border-solid border-border bg-[var(--panel)] p-1">
         {LOG_TABS.map(({ id, label, Icon }) => (
           <button

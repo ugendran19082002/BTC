@@ -736,7 +736,9 @@ export default function App() {
       ) : tab === 'methods' ? (
         // The methods' record, and under it every signal they gave: the signal history sat under Entry setups on
         // Live until 4 Oct 2026. Placement only.
-        <div className="grid min-w-0 gap-3">
+        // One column that is exactly the screen's width: a bare grid sizes its column to the widest table inside
+        // it, which pushed the whole screen wider than the window.
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
           <ErrorBoundary where="Methods report">
             <MethodReport />
           </ErrorBoundary>
