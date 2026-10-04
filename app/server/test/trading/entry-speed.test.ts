@@ -15,68 +15,86 @@ import { FlowSocket } from '../../src/market/flow-socket.js';
 const PE = peProduct().symbol;
 const CE = ceProduct().symbol;
 
-/** The rig, with every leverage call to the exchange counted. */
+/** The rig, with every leverage call and every order written down in the order they reached the exchange. */
 function counted() {
   const r = rig({ products: [peProduct(), ceProduct()], quotes: [quote(PE, 100.5, 101), quote(CE, 100.5, 101)] });
-  const calls: [number, number][] = [];
-  const real = r.ex.setLeverage.bind(r.ex);
-  r.ex.setLeverage = async (productId: number, leverage: number) => { calls.push([productId, leverage]); return real(productId, leverage); };
-  return { r, calls };
+  const log: string[] = [];
+  const realLev = r.ex.setLeverage.bind(r.ex);
+  const realOrder = r.ex.placeOrder.bind(r.ex);
+  let failLeverage = false;
+  r.ex.setLeverage = async (productId: number, leverage: number) => {
+    log.push(`lev ${productId}@${leverage}`);
+    if (failLeverage) throw new Error('leverage refused');
+    return realLev(productId, leverage);
+  };
+  r.ex.placeOrder = async (req: Parameters<typeof realOrder>[0]) => { if (req.role === 'entry') log.push('order'); return realOrder(req); };
+  return { r, log, failLeverage: (on: boolean) => { failLeverage = on; } };
 }
+const settle = () => new Promise((r) => setImmediate(r));
 const signal = (i: number): TradePlan['signal'] => ({ method: 'bos', n: 6, name: 'BOS', mode: 'single', tf: '5m', dir: 1, triggerTime: 1_700_000_000 + i * 300 });
 const put = (i: number, over: Partial<TradePlan> = {}): TradePlan =>
   ({ ...planFor(peProduct(), { lots: 2, stopPrice: 300, takeProfitPrice: 1 }), tradeId: `put-${i}`, signal: signal(i), ...over });
+const PID = peProduct().productId;
+const lev = (n: number, id = PID) => `lev ${id}@${n}`;
 
 // ------------------------------------------------------------- the leverage
 
-test('[critical] the leverage is set once for a product, not before every entry -- and every entry still goes at it', async () => {
-  const { r, calls } = counted();
-  for (const i of [1, 2, 3]) assert.equal((await r.engine.open(put(i))).ok, true);
-  assert.equal(calls.length, 1, 'three entries on one contract: one leverage call');
-  assert.equal(calls[0]![1], 10, 'at the plan\'s leverage');
-  for (const i of [1, 2, 3]) {
-    const sent = r.store.peek(`put-${i}`)!.events.some((e) => e.t === 'entry_submitted');
-    assert.equal(sent, true, 'each order went');
-  }
+test('[critical] the first entry on a product sets the leverage in front of its order; the ones after it go straight to the order', async () => {
+  const { r, log } = counted();
+  for (const i of [1, 2, 3]) { assert.equal((await r.engine.open(put(i))).ok, true); await settle(); }
+  assert.deepEqual(log.slice(0, 3), [lev(10), 'order', 'order'], 'the second order did not wait for a leverage call');
+  for (const i of [1, 2, 3]) assert.equal(r.store.peek(`put-${i}`)!.events.some((e) => e.t === 'entry_submitted'), true, 'each order went');
 });
 
-test('[critical] another product, another leverage, or ten minutes on: asked again', async () => {
-  const { r, calls } = counted();
-  await r.engine.open(put(1));
-  await r.engine.open({ ...planFor(ceProduct(), { lots: 2, stopPrice: 300, takeProfitPrice: 1 }), tradeId: 'call-1' });
-  assert.equal(calls.length, 2, 'the call is another product');
-  await r.engine.open(put(2, { leverage: 20 }));
-  assert.equal(calls.length, 3, 'a different leverage is set');
-  assert.equal(calls[2]![1], 20);
-  await r.engine.open(put(3, { leverage: 20 }));
-  assert.equal(calls.length, 3, 'the same again is not');
+test('[critical] the fallback: an entry that went on a remembered leverage has it set again behind the order -- never in front', async () => {
+  const { r, log } = counted();
+  for (const i of [1, 2, 3]) { await r.engine.open(put(i)); await settle(); }
+  // 1: set, then the order. 2 and 3: the order first, then the leverage set again behind it.
+  assert.deepEqual(log, [lev(10), 'order', 'order', lev(10), 'order', lev(10)]);
+});
+
+test('[critical] another product, another leverage, or ten minutes on: set in front of the order again', async () => {
+  const { r, log } = counted();
+  await r.engine.open(put(1)); await settle();
+  const call = ceProduct();
+  await r.engine.open({ ...planFor(call, { lots: 2, stopPrice: 300, takeProfitPrice: 1 }), tradeId: 'call-1' }); await settle();
+  assert.deepEqual(log.slice(-2), [lev(10, call.productId), 'order'], 'the call is another product');
+  await r.engine.open(put(2, { leverage: 20 })); await settle();
+  assert.deepEqual(log.slice(-2), [lev(20), 'order'], 'a different leverage is set first');
   r.advance(LEVERAGE_HELD_MS + 1);
   r.ex.tick(quote(PE, 100.5, 101, { ts: r.now() }));   // a fresh book: the gates read it before the leverage is asked for
-  assert.equal((await r.engine.open(put(4, { leverage: 20 }))).ok, true);
-  assert.equal(calls.length, 4, 'after ten minutes it is not taken on trust');
+  assert.equal((await r.engine.open(put(3, { leverage: 20 }))).ok, true); await settle();
+  assert.deepEqual(log.slice(-2), [lev(20), 'order'], 'after ten minutes it is not taken on trust');
 });
 
-test('[critical] a leverage call that fails is not remembered: the entry is refused, and the next one asks again', async () => {
-  const { r, calls } = counted();
-  let fail = true;
-  const counting = r.ex.setLeverage.bind(r.ex);
-  r.ex.setLeverage = async (productId: number, leverage: number) => { if (fail) { calls.push([productId, leverage]); throw new Error('leverage refused'); } return counting(productId, leverage); };
+test('[critical] Delta refusing the leverage: in front of the order the entry is refused; behind it the memory is dropped and the next entry asks first', async () => {
+  const { r, log, failLeverage } = counted();
+  failLeverage(true);
   const refused = await r.engine.open(put(1));
-  assert.equal(refused.ok, false);
+  assert.equal(refused.ok, false, 'no leverage, no order');
   assert.match(r.store.peek('put-1')!.state.note ?? '', /could not set 10x leverage/);
-  fail = false;
-  assert.equal((await r.engine.open(put(2))).ok, true);
-  assert.equal(calls.length, 2, 'asked again, not assumed');
+  assert.equal(log.includes('order'), false);
+
+  failLeverage(false);
+  assert.equal((await r.engine.open(put(2))).ok, true); await settle();     // sets it, and remembers
+  failLeverage(true);
+  assert.equal((await r.engine.open(put(3))).ok, true, 'went on the remembered leverage'); await settle();
+  assert.deepEqual(log.slice(-2), ['order', lev(10)], 'and the set behind it was refused');
+  assert.ok(r.swallowed.some((x) => x.what === 'leverage' && /leverage refused/.test(x.message)), 'which is written down, not lost');
+  const n = log.length;
+  const next = await r.engine.open(put(4));
+  assert.equal(next.ok, false, 'so the next entry asks first, and is refused in the open');
+  assert.deepEqual(log.slice(n), [lev(10)], 'in front of the order, which is never sent');
 });
 
 test('[critical] warming a contract sets its leverage and sends no order; the entry that follows goes straight to the order', async () => {
-  const { r, calls } = counted();
+  const { r, log } = counted();
   assert.equal(await r.engine.warm(PE, 10), true);
-  assert.equal(calls.length, 1);
+  assert.deepEqual(log, [lev(10)]);
   assert.equal((await r.ex.getOpenOrders(PE)).length, 0, 'nothing on the book');
   assert.equal((await r.store.all()).length, 0, 'and no trade');
-  assert.equal((await r.engine.open(put(1))).ok, true);
-  assert.equal(calls.length, 1, 'the entry did not ask again');
+  assert.equal((await r.engine.open(put(1))).ok, true); await settle();
+  assert.deepEqual(log.slice(1, 2), ['order'], 'the entry did not ask first');
   assert.equal(await r.engine.warm('P-BTC-1-000000', 10), false, 'a contract that is not listed is only not warmed');
 });
 

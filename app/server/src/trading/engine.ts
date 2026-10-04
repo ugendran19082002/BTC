@@ -613,13 +613,34 @@ export class TradeEngine {
   /** Per product: the leverage this desk last set at Delta, and when. */
   private readonly leverageSet = new Map<number, { leverage: number; at: number }>();
 
-  /** Set the product's leverage at Delta unless this desk set that very number a short while ago. */
-  private async ensureLeverage(productId: number, leverage: number): Promise<void> {
+  /**
+   * Set the product's leverage at Delta unless this desk set that very number a short while ago.
+   * Answers whether it was taken from memory -- not set just now -- so the caller can set it again behind the order.
+   */
+  private async ensureLeverage(productId: number, leverage: number): Promise<boolean> {
     const held = this.leverageSet.get(productId);
-    if (held && held.leverage === leverage && this.now() - held.at < LEVERAGE_HELD_MS) return;
+    if (held && held.leverage === leverage && this.now() - held.at < LEVERAGE_HELD_MS) return true;
     this.leverageSet.delete(productId);
     await this.exchange.setLeverage(productId, leverage);
     this.leverageSet.set(productId, { leverage, at: this.now() });
+    return false;
+  }
+
+  /**
+   * The fallback for an entry that went on a remembered leverage: set it again now, behind the order instead
+   * of in front of it. The order has not waited for this. If somebody changed the leverage at Delta since the
+   * desk last set it, this puts it back before the next entry; and if Delta refuses, the memory is dropped and
+   * written down, so the next entry asks first and is refused in the open -- exactly as it was before the
+   * leverage was remembered at all.
+   */
+  private reassertLeverage(productId: number, leverage: number, symbol: string): void {
+    void this.exchange.setLeverage(productId, leverage).then(
+      () => { this.leverageSet.set(productId, { leverage, at: this.now() }); },
+      (e) => {
+        this.leverageSet.delete(productId);
+        this.note('leverage', { orderId: `leverage:${productId}`, symbol }, e);
+      },
+    );
   }
 
   /**
@@ -824,9 +845,11 @@ export class TradeEngine {
     // Leverage is a product setting on Delta, so it has to be right before the
     // order lands rather than travelling with it. If it cannot be set the trade
     // does not go: the alternative is filling at whatever was left from last time.
+    // Whether the leverage this entry goes on was remembered rather than set just now (see `reassertLeverage`).
+    let leverageRemembered = false;
     if (product) {
       try {
-        await this.ensureLeverage(product.productId, clampLeverage(plan.leverage));
+        leverageRemembered = await this.ensureLeverage(product.productId, clampLeverage(plan.leverage));
       } catch (e) {
         rec = await this.commit(rec, {
           t: 'precheck_failed',
@@ -861,6 +884,8 @@ export class TradeEngine {
         ...(judged ? { quote: judged } : {}),
         ...(req.limitPrice !== undefined ? { limitPrice: req.limitPrice } : {}),
       });
+      // The order is in. If it went on a remembered leverage, that leverage is set again now, behind it.
+      if (leverageRemembered && product) this.reassertLeverage(product.productId, clampLeverage(plan.leverage), plan.symbol);
       // No deadline at all when the order is meant to rest.
       if (plan.entry.timeoutMs > 0) {
         this.entryDeadline.set(plan.tradeId, this.now() + plan.entry.timeoutMs);
