@@ -168,6 +168,11 @@ export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
 /** "At most open at once" is typed, 1 to this (server: MAX_SIGNAL_OPEN). */
 export const MAX_SIGNAL_OPEN = 100;
+/** The most the per-contract limit may be set to; 0 takes it off (server: MAX_CONTRACT_LOTS). */
+export const MAX_CONTRACT_LOTS = 10_000;
+/** Why a value cannot be the per-contract limit, in the server's words; null when it can. */
+export const contractMaxLotsProblem = (v: number): string | null =>
+  Number.isInteger(v) && v >= 0 && v <= MAX_CONTRACT_LOTS ? null : `At most lots on one contract must be a whole number from 0 (no limit) to ${MAX_CONTRACT_LOTS.toLocaleString('en-US')}.`;
 /** The most the desk-wide cap may be set to; 0 takes it off (server: MAX_GLOBAL_OPEN). */
 export const MAX_GLOBAL_OPEN = 500;
 /** The quick picks beside it. */
@@ -322,6 +327,10 @@ export type StrategyStatus = {
   signalMaxOpen?: number;
   /** Open trades the desk holds now -- positions and working orders -- which that cap is counted against. */
   openNow?: number;
+  /** The most lots on any one contract, across every strategy; 0 is no limit. Absent on an older server. */
+  contractMaxLots?: number;
+  /** The contract holding the most lots now, positions and working orders; null with nothing open. */
+  contractMostNow?: { symbol: string; lots: number } | null;
   /** The desk's limit on lots short at once (the order gate's), and the lots it holds short now. Absent on an older server. */
   shortCap?: number;
   shortNow?: number;

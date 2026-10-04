@@ -6,7 +6,7 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
-import { GLOBAL_MAX_OPEN_KEY, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { CONTRACT_MAX_LOTS_KEY, GLOBAL_MAX_OPEN_KEY, contractMaxLotsOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -480,6 +480,23 @@ export class StrategyRunner {
     const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
     const chosen = sel.legs[0];
     if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}`); return; }
+
+    /*
+     * The limit on one contract, once the strike is known: every lot the desk holds or has working on this
+     * contract -- any strategy's, and the ticket's -- with this order's on top, against one number. Over it,
+     * the signal is skipped; it is not moved to another strike.
+     */
+    const contractCap = contractMaxLotsOf(svc.settings.get(CONTRACT_MAX_LOTS_KEY));
+    if (contractCap > 0) {
+      const symbol = `${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`;
+      const held = openNow
+        .filter((t) => t.plan.symbol === symbol)
+        .reduce((n, t) => n + (Math.abs(t.state.position) || t.state.requestedSize || 0), 0);
+      if (held + chosen.lots > contractCap) {
+        await finish('skipped', `the desk already has ${held} lot${held === 1 ? '' : 's'} on ${leg} ${chosen.strike} (positions and working orders, all strategies) -- ${chosen.lots} more would pass the ${contractCap} allowed on one contract${block}`);
+        return;
+      }
+    }
 
     const target = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
     const args = {

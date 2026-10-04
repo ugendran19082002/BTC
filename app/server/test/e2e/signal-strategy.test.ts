@@ -1003,3 +1003,61 @@ test('[critical] the limits under load: a ticket trade takes a place, a burst of
 
   for (const id of ['sig-burst', 'sig-burst-zone']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
 });
+
+test('[critical] the limit on one contract: a signal whose lots would pass it is skipped and says so; under it, or with no limit, it is placed -- and it is never moved to another strike', async () => {
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  // No other limit in the way; whatever earlier tests left on the put is counted from, not assumed away.
+  await tradingService().settings.set('signal_max_open', '0');
+  const live = { ...config, lots: 5, signal: { ...config.signal, maxOpen: 10 }, liveOrders: true };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig contract', config: live })).status, 200);
+  await api('POST', '/api/strategies/sig-contract/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const last = async () => (await runsOf('sig-contract')).at(-1)!;
+  const onPut = async () => (await tradingService().openTrades())
+    .filter((t) => t.plan.symbol === `P-BTC-${PUT}-${EXPIRY}`)
+    .reduce((n, t) => n + (Math.abs(t.state.position) || t.state.requestedSize || 0), 0);
+
+  // The setting: whole numbers from 0, refused in words otherwise.
+  for (const bad of [-1, 2.5, 'x', 10_001]) {
+    const r = await api('POST', '/api/strategies/contract-max-lots', { max: bad });
+    assert.equal(r.status, 422, String(bad));
+    assert.equal(r.body.error, 'At most lots on one contract must be a whole number from 0 (no limit) to 10,000.');
+  }
+  assert.equal((await api('GET', '/api/strategies')).body.contractMaxLots, 0, 'absent: no limit, as the desk was');
+
+  const base = await onPut();                            // lots other tests' trades already hold on this put
+  const tradesBefore = (await tradingService().openTrades()).length;
+  assert.equal((await api('POST', '/api/strategies/contract-max-lots', { max: base + 8 })).status, 200);
+  await runner.onSignal(signal());                       // 5 lots more: 3 under the limit
+  assert.equal((await last()).status, 'placed', (await last()).detail);
+  assert.equal(await onPut(), base + 5);
+
+  await runner.onSignal(signal());                       // 5 more would be 2 over
+  const skipped = await last();
+  assert.equal(skipped.status, 'skipped', skipped.detail);
+  assert.match(skipped.detail, new RegExp(`the desk already has ${base + 5} lots on PE ${PUT} \\(positions and working orders, all strategies\\) -- 5 more would pass the ${base + 8} allowed on one contract`));
+  assert.equal(await onPut(), base + 5, 'nothing was placed on this strike');
+  assert.equal((await tradingService().openTrades()).length, tradesBefore + 1, 'nor on another');
+
+  const status = (await api('GET', '/api/strategies')).body;
+  assert.equal(status.contractMaxLots, base + 8);
+  assert.equal(status.contractMostNow.lots >= base + 5, true, 'the screen is told how much the fullest contract holds');
+
+  await runner.onSignal(signal({ dir: 'short' }));       // a SELL sells the call: another contract, its own count
+  assert.equal((await last()).status, 'placed', (await last()).detail);
+
+  assert.equal((await api('POST', '/api/strategies/contract-max-lots', { max: base + 10 })).status, 200);
+  await runner.onSignal(signal());                       // exactly at the limit is allowed
+  assert.equal((await last()).status, 'placed', (await last()).detail);
+  assert.equal(await onPut(), base + 10);
+
+  assert.equal((await api('POST', '/api/strategies/contract-max-lots', { max: 0 })).status, 200);
+  await runner.onSignal(signal());                       // no limit: as before this setting existed
+  assert.equal((await last()).status, 'placed', (await last()).detail);
+  assert.equal(await onPut(), base + 15);
+
+  await api('POST', '/api/strategies/sig-contract/enabled', { enabled: false });
+});

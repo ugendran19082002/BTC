@@ -376,6 +376,30 @@ export const MAX_SIGNAL_OPEN = 100;
  * working orders alike, whichever strategy or hand opened them. Zero, or
  * nothing set, is no cap -- the desk as it was before this existed.
  */
+/**
+ * The most lots the desk may hold on any one contract, across every strategy (0: no limit).
+ *
+ * The strategies' own limits count trades, and the desk-wide one counts trades too; none of them looks at
+ * *where* the trades are. With "at least OTM n, else OTM n" most signals choose the same strike, and on
+ * 4 Oct 2026 the desk held 97 of its 110 lots on one put -- 19 trades of 4 strategies. This is the limit on
+ * that: a signal whose order would take one contract past it is skipped, and says so. It does not move the
+ * order to another strike -- that would be a different trade from the one the strategy chose.
+ */
+export const CONTRACT_MAX_LOTS_KEY = 'signal_contract_max_lots';
+/** The most the per-contract limit may be set to. */
+export const MAX_CONTRACT_LOTS = 10_000;
+/** The setting as stored, read as a number: 0 when absent or unreadable, which is no limit. */
+export function contractMaxLotsOf(raw: string | null | undefined): number {
+  const n = Number(raw);
+  return raw !== null && raw !== undefined && raw !== '' && Number.isInteger(n) && n > 0 && n <= MAX_CONTRACT_LOTS ? n : 0;
+}
+/** Why a value cannot be the per-contract limit, in words; null when it can. */
+export function contractMaxLotsProblem(v: unknown): string | null {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_CONTRACT_LOTS
+    ? null
+    : `At most lots on one contract must be a whole number from 0 (no limit) to ${MAX_CONTRACT_LOTS.toLocaleString('en-US')}.`;
+}
+
 export const GLOBAL_MAX_OPEN_KEY = 'signal_max_open';
 /** The most the desk-wide cap may be set to. */
 export const MAX_GLOBAL_OPEN = 500;

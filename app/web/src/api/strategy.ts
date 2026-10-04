@@ -26,6 +26,13 @@ export const setSignalMaxOpen = (max: number) =>
   post<{ ok: true; signalMaxOpen: number }>('/api/strategies/max-open', { max });
 
 /**
+ * The most lots the desk may hold on one contract, across every strategy. A
+ * signal whose order would pass it is skipped. 0 takes the limit off.
+ */
+export const setContractMaxLots = (max: number) =>
+  post<{ ok: true; contractMaxLots: number }>('/api/strategies/contract-max-lots', { max });
+
+/**
  * Copy one, settings and all, as a new draft.
  *
  * The desk's strategies differ by a field or two, and building the second by
