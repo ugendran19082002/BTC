@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { Bot, Copy, Loader2, Pencil, Plus } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, Copy, Loader2, Pencil, Plus, XCircle } from 'lucide-react';
 import { cloneStrategy, getStrategies, saveStrategy, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
-import { MAX_GLOBAL_OPEN, ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
+import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
@@ -20,6 +20,57 @@ import { cn } from '@/lib/utils';
  * tab, already on signals -- one strategy, two places to reach it.
  */
 
+
+type Tone = 'accent' | 'good' | 'warning' | 'danger';
+type Status = { tone: Exclude<Tone, 'accent'>; word: string };
+/** Each tone's fill, and its track: a faint step of the same colour, so the state reads across the whole bar. */
+const TONE: Record<Tone, { fill: string; track: string }> = {
+  accent: { fill: 'var(--accent)', track: 'color-mix(in srgb, var(--accent) 18%, transparent)' },
+  good: { fill: 'var(--up)', track: 'color-mix(in srgb, var(--up) 18%, transparent)' },
+  warning: { fill: 'var(--warn)', track: 'color-mix(in srgb, var(--warn) 20%, transparent)' },
+  danger: { fill: 'var(--down)', track: 'color-mix(in srgb, var(--down) 20%, transparent)' },
+};
+const STATUS_ICON = { good: CheckCircle2, warning: AlertTriangle, danger: XCircle } as const;
+
+/**
+ * One figure of the summary: what it is, the number, and what stands behind it
+ * -- with a bar where the number is a share of something, and a word and an
+ * icon where it has a state. The number is in the text's own colour; the bar
+ * and the icon carry the state, so nothing is said by colour alone.
+ */
+function Tile({ label, name, value, status, meter, children }: {
+  label: string;
+  /** The tile's accessible name. */
+  name: string;
+  value: React.ReactNode;
+  status?: Status | null;
+  meter?: { label: string; now: number; max: number; tone: Tone };
+  children?: React.ReactNode;
+}) {
+  const Icon = status ? STATUS_ICON[status.tone] : null;
+  const share = meter && meter.max > 0 ? Math.min(1, Math.max(0, meter.now / meter.max)) : 0;
+  return (
+    <div aria-label={name} className="min-w-0 rounded-lg border border-solid border-border bg-muted px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-[11px] text-muted-foreground">{label}</span>
+        {status && Icon && (
+          <span className="inline-flex flex-none items-center gap-1 text-[11px] font-medium text-foreground">
+            <Icon className="h-3.5 w-3.5" style={{ color: TONE[status.tone].fill }} aria-hidden />
+            {status.word}
+          </span>
+        )}
+      </div>
+      <div className="mt-0.5 text-[15px] font-semibold leading-snug tabular-nums text-foreground">{value}</div>
+      {meter && (
+        <div role="progressbar" aria-label={meter.label} aria-valuemin={0} aria-valuemax={meter.max} aria-valuenow={meter.now}
+             className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full" style={{ background: TONE[meter.tone].track }}>
+          <div className="h-full rounded-full" style={{ width: `${share * 100}%`, background: TONE[meter.tone].fill }} />
+        </div>
+      )}
+      {children && <div className="mt-1.5 flex flex-col gap-0.5 text-[11.5px] leading-snug text-muted-foreground">{children}</div>}
+    </div>
+  );
+}
 
 /**
  * One strategy's own limit and how much of it is in use now (4 Oct 2026): its
@@ -63,7 +114,7 @@ function GlobalMaxOpen({ value, allowed, openNow, busy, onSave, onInvalid }: {
   value: number;
   /** What the strategies switched on allow between them: the sum of their own limits. */
   allowed: number;
-  openNow: number; busy: boolean; onSave: (n: number) => void; onInvalid: (message: string) => void;
+  openNow: number; busy: boolean; onSave: (n: number) => Promise<boolean>; onInvalid: (message: string) => void;
 }) {
   /*
    * With no limit set, the field shows what the strategies allow between them:
@@ -72,18 +123,6 @@ function GlobalMaxOpen({ value, allowed, openNow, busy, onSave, onInvalid }: {
    * following the strategies as they change.
    */
   const shown = value > 0 ? value : allowed;
-  const [text, setText] = useState(String(shown));
-  const typing = useRef(false);
-  // Follow the server's number, but never while it is being typed into.
-  useEffect(() => { if (!typing.current) setText(String(shown)); }, [shown]);
-  const commit = () => {
-    typing.current = false;
-    const n = text.trim() === '' ? NaN : Number(text);
-    const problem = globalMaxOpenProblem(n, allowed, MAX_GLOBAL_OPEN);
-    if (problem) { onInvalid(problem); setText(String(shown)); return; }
-    const next = allowed > 0 && n === allowed ? 0 : n;
-    if (next !== value) onSave(next);
-  };
   const full = value > 0 && openNow >= value;
   return (
     <label
@@ -94,21 +133,67 @@ function GlobalMaxOpen({ value, allowed, openNow, busy, onSave, onInvalid }: {
         : { background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1', border: '1px solid #1e293b' }}
     >
       <span>At most open</span>
-      <input
-        aria-label="At most open at once, all strategies"
-        inputMode="numeric"
-        value={text}
-        disabled={busy}
-        onFocus={() => { typing.current = true; }}
-        onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-        className="m-0 h-6 w-11 rounded border border-solid border-border bg-[var(--bg,#0a0e17)] px-1 text-center font-[inherit] text-[12px] tabular-nums text-foreground"
+      <NumberCommit
+        label="At most open at once, all strategies"
+        value={shown}
+        busy={busy}
+        problem={(n) => globalMaxOpenProblem(n, allowed, MAX_GLOBAL_OPEN)}
+        onInvalid={onInvalid}
+        onSave={(n) => { const next = allowed > 0 && n === allowed ? 0 : n; return next !== value ? onSave(next) : Promise.resolve(true); }}
+        className="h-6 w-11"
       />
       <span aria-label="open now, of the limit">
         {value > 0 ? `${openNow} of ${value} open` : allowed > 0 ? `all the strategies allow · ${openNow} open` : `no limit · ${openNow} open`}
       </span>
     </label>
+  );
+}
+
+/**
+ * A whole number typed in place and saved when the field is left or Enter is
+ * pressed -- for the numbers that sit on a card, where opening a form to change
+ * one is a detour and a Save button of its own would be one more thing to miss.
+ *
+ * Digits only. A number the rule refuses is said (`onInvalid`, in the rule's own
+ * words) and put back, never sent; an unchanged one is not sent either; one the
+ * server refuses goes back to what is saved, so the field never shows a number
+ * the desk is not using. It follows the server's number, but not while it is
+ * being typed into.
+ */
+function NumberCommit({ label, value, busy, problem, onSave, onInvalid, className }: {
+  /** Read by screen readers, and what a test finds it by. */
+  label: string;
+  value: number;
+  busy?: boolean;
+  /** Why this number cannot be saved, or null. */
+  problem: (n: number) => string | null;
+  /** Saves it; answers whether it was taken. */
+  onSave: (n: number) => Promise<boolean>;
+  onInvalid: (message: string) => void;
+  className?: string;
+}) {
+  const [text, setText] = useState(String(value));
+  const typing = useRef(false);
+  useEffect(() => { if (!typing.current) setText(String(value)); }, [value]);
+  const commit = () => {
+    typing.current = false;
+    const n = text.trim() === '' ? NaN : Number(text);
+    const bad = problem(n);
+    if (bad) { onInvalid(bad); setText(String(value)); return; }
+    if (n !== value) void onSave(n).then((taken) => { if (!taken) setText(String(value)); });
+  };
+  return (
+    <input
+      aria-label={label}
+      inputMode="numeric"
+      value={text}
+      disabled={busy}
+      onFocus={() => { typing.current = true; }}
+      onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      className={cn('m-0 rounded border border-solid border-border bg-[var(--bg,#0a0e17)] px-1 text-center font-[inherit] text-[12px] tabular-nums text-foreground disabled:opacity-50', className)}
+    />
   );
 }
 
@@ -138,14 +223,17 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   // Real orders need a second tap: a switch that sends money to the exchange should not flip on a brush.
   const [confirmLive, setConfirmLive] = useState<string | null>(null);
 
-  const act = async (key: string, fn: () => Promise<unknown>) => {
+  /** Do it, read the list again, and say whether it was taken: a field that was refused goes back to what is saved. */
+  const act = async (key: string, fn: () => Promise<unknown>): Promise<boolean> => {
     setBusy(key);
     setFailed(null);
     try {
       await fn();
       refresh();
+      return true;
     } catch (e) {
       setFailed((e as Error).message);
+      return false;
     } finally {
       setBusy(null);
     }
@@ -168,6 +256,10 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   const room = roomLeft(mine, cap, data?.openNow ?? 0, data?.spot ?? null);
   const freeUsd = data?.balanceUsd ?? null;
   const short = freeUsd !== null && room.marginUsd > freeUsd;
+  // How what is still to open sits against what is free: said in a word and an icon, never by colour alone.
+  const fit: Status = short ? { tone: 'danger', word: 'More than is free' }
+    : freeUsd !== null && freeUsd > 0 && room.marginUsd > freeUsd * 0.8 ? { tone: 'warning', word: 'Tight' }
+      : { tone: 'good', word: 'Fits in the free margin' };
   const inUse = usageNow(mine, data?.spot ?? null);
 
   return (
@@ -191,7 +283,7 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
               allowed={totals.entries}
               openNow={data.openNow ?? 0}
               busy={busy === 'max-open'}
-              onSave={(n) => void act('max-open', () => setSignalMaxOpen(n))}
+              onSave={(n) => act('max-open', () => setSignalMaxOpen(n))}
               onInvalid={setFailed}
             />
           )}
@@ -235,43 +327,52 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
         Each card's own limit reads as modest; this is what the account has to carry.
       */}
       {data && totals.strategies > 0 && (
-        <p aria-label="strategies added up" className="m-0 mb-2 rounded-lg bg-muted px-2.5 py-1.5 text-[12px] leading-relaxed text-muted-foreground">
-          <span className="block" aria-label="the strategies' limits, added up">
-            <b className="text-foreground">Limits</b>: {totals.strategies} strateg{totals.strategies === 1 ? 'y' : 'ies'} on
-            {' · '}up to <b className="text-foreground">{totals.entries}</b> entr{totals.entries === 1 ? 'y' : 'ies'} at once
-            {' · '}<b className="text-foreground">{totals.lots}</b> lots
-            {' · '}<b className="tabular-nums text-foreground">{inr(usdToInr(totals.marginUsd))}</b> margin with all of it open
-          </span>
-          {mine.some((s) => s.open) && (
-            <span className="block" aria-label="in use now, all strategies">
-              <b className="text-foreground">In use now</b>: {inUse.entries} of {totals.entries} entr{totals.entries === 1 ? 'y' : 'ies'}
-              {' · '}{inUse.lots} of {totals.lots} lots
-              {' · '}<span className="tabular-nums">{inr(usdToInr(inUse.marginUsd))} of {inr(usdToInr(totals.marginUsd))}</span> margin
-            </span>
-          )}
-          {/*
-            What is still to open, against what is free. Not the whole requirement: the free balance is already net
-            of the margin the open positions use, and holding all of it against that counted them twice.
-          */}
-          <span className="block" aria-label="still to open, against the free margin">
-            <b className="text-foreground">Still to open</b>{cap > 0 ? <> under the limit of <b className="text-foreground">{cap}</b></> : null}:
-            {room.entries === 0
-              ? <> nothing — {cap > 0 && (data.openNow ?? 0) >= cap ? 'the limit is reached' : 'every strategy is at its own limit'}.</>
-              : <>
-                  {' '}up to <b className="text-foreground">{room.entries}</b> entr{room.entries === 1 ? 'y' : 'ies'}
-                  {' · '}<b className="text-foreground">{room.lots}</b> lots
-                  {' · '}needs <b className={cn('tabular-nums', short ? 'text-[var(--down)]' : 'text-foreground')}>{inr(usdToInr(room.marginUsd))}</b> more margin
-                  {freeUsd !== null && <> — <b className="tabular-nums text-foreground">{inr(usdToInr(freeUsd))}</b> is free{freeUsd > 0 ? ` (${Math.round((room.marginUsd / freeUsd) * 100)}%)` : ''}</>}
-                  . The worst case: the largest lots first.
-                </>}
-          </span>
+        <div aria-label="strategies added up" className="mb-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Tile label="Strategies allow" name="the strategies' limits, added up"
+                  value={<>{totals.entries} entr{totals.entries === 1 ? 'y' : 'ies'}</>}>
+              <span>{totals.strategies} strateg{totals.strategies === 1 ? 'y' : 'ies'} on</span>
+              <span>{totals.lots} lots</span>
+              <span className="tabular-nums">{inr(usdToInr(totals.marginUsd))} margin with all of it open</span>
+            </Tile>
+
+            {mine.some((s) => s.open) && (
+              <Tile label="In use now" name="in use now, all strategies"
+                    value={<>{inUse.entries} of {totals.entries} entr{totals.entries === 1 ? 'y' : 'ies'}</>}
+                    meter={{ label: 'entries in use, all strategies', now: inUse.entries, max: totals.entries, tone: 'accent' }}>
+                <span>{inUse.lots} of {totals.lots} lots</span>
+                <span className="tabular-nums">{inr(usdToInr(inUse.marginUsd))} of {inr(usdToInr(totals.marginUsd))} margin</span>
+              </Tile>
+            )}
+
+            {/*
+              What is still to open, against what is free. Not the whole requirement: the free balance is already net
+              of the margin the open positions use, and holding all of it against that counted them twice.
+            */}
+            <Tile label={cap > 0 ? `Still to open · under the limit of ${cap}` : 'Still to open'} name="still to open, against the free margin"
+                  value={room.entries === 0
+                    ? <>Nothing — {cap > 0 && (data.openNow ?? 0) >= cap ? 'the limit is reached' : 'every strategy is at its own limit'}</>
+                    : <>{room.entries} entr{room.entries === 1 ? 'y' : 'ies'} · {room.lots} lots</>}
+                  status={room.entries === 0 || freeUsd === null ? null : fit}
+                  meter={room.entries === 0 || freeUsd === null || !(freeUsd > 0) ? undefined
+                    : { label: 'margin still needed, of what is free', now: Math.round(usdToInr(room.marginUsd) ?? 0), max: Math.round(usdToInr(freeUsd) ?? 0), tone: fit.tone }}>
+              {room.entries > 0 && (
+                <span className="tabular-nums">
+                  needs {inr(usdToInr(room.marginUsd))} more margin
+                  {freeUsd !== null && <> — {inr(usdToInr(freeUsd))} is free{freeUsd > 0 ? ` (${Math.round((room.marginUsd / freeUsd) * 100)}%)` : ''}</>}
+                </span>
+              )}
+              {room.entries > 0 && <span>the worst case: the largest lots first</span>}
+            </Tile>
+          </div>
           {short && (
-            <span role="note" className="block text-[var(--down)]">
-              That is more than is free: an order that does not fit is refused at Delta. Lower the limit, the lots, or a strategy&apos;s own &ldquo;at most open&rdquo;.
-            </span>
+            <p role="note" className="m-0 mt-1.5 flex items-start gap-1.5 rounded-md border border-solid border-[var(--down)]/40 bg-[var(--down)]/10 px-2.5 py-1.5 text-[12px] leading-snug text-foreground">
+              <XCircle className="mt-px h-3.5 w-3.5 flex-none text-[var(--down)]" aria-hidden />
+              <span>That is more than is free: an order that does not fit is refused at Delta. Lower the limit, the lots, or a strategy&apos;s own &ldquo;at most open&rdquo;.</span>
+            </p>
           )}
-          <span className="block text-[11px] text-[var(--dim)]">Margin is the desk&apos;s estimate at 200x on BTC now; Delta&apos;s own figure moves with the premium.</span>
-        </p>
+          <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">Margin is the desk&apos;s estimate at 200x on BTC now; Delta&apos;s own figure moves with the premium.</p>
+        </div>
       )}
 
       {data && mine.length === 0 && (
@@ -334,6 +435,38 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
                 </div>
               </div>
               <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{signalLine(s)}</p>
+              {/*
+                The two numbers changed most often, on the card itself: the same settings as in the form (Edit),
+                saved the same way, so neither needs the form opened. They apply to the next signal; what is
+                already open keeps its size.
+              */}
+              <div role="group" aria-label={`quick settings of ${s.name}`} className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] text-muted-foreground">
+                <label className="inline-flex items-center gap-1.5">
+                  <span>Lots per signal</span>
+                  <NumberCommit
+                    label={`Lots per signal for ${s.name}`}
+                    value={s.config.lots}
+                    busy={busy === `quick-${s.id}`}
+                    problem={(n) => (Number.isInteger(n) && n >= 1 ? null : 'Lots must be a whole number, at least 1.')}
+                    onInvalid={setFailed}
+                    onSave={(n) => act(`quick-${s.id}`, () => saveStrategy({ id: s.id, name: s.name, config: { ...s.config, lots: n } }))}
+                    className="h-7 w-14"
+                  />
+                </label>
+                <label className="inline-flex items-center gap-1.5">
+                  <span>At most open</span>
+                  <NumberCommit
+                    label={`At most open for ${s.name}`}
+                    value={s.config.signal?.maxOpen ?? 1}
+                    busy={busy === `quick-${s.id}`}
+                    problem={(n) => (Number.isInteger(n) && n >= 1 && n <= MAX_SIGNAL_OPEN ? null : `At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`)}
+                    onInvalid={setFailed}
+                    onSave={(n) => act(`quick-${s.id}`, () => saveStrategy({ id: s.id, name: s.name, config: { ...s.config, signal: { ...s.config.signal!, maxOpen: n } } }))}
+                    className="h-7 w-14"
+                  />
+                </label>
+                <span className="text-[11px] text-[var(--dim)]">saved as you leave the field · from the next signal</span>
+              </div>
               {s.open && <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} />}
               <p className="m-0 mt-0.5 text-[11.5px] text-[var(--dim)]">
                 {s.status}

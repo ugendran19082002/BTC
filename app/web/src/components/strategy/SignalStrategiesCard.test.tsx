@@ -172,10 +172,14 @@ describe('at most open at once, across all strategies', () => {
     await screen.findByText('A');
     const sum = screen.getByLabelText('strategies added up');
     // 146 lots x $0.425 a lot = $62.05 = ₹5,274 at ₹85; the account has $228 = ₹19,380 free
-    expect(sum).toHaveTextContent(/Limits: 5 strategies on · up to 28 entries at once · 146 lots · ₹5,274(\.\d+)? margin with all of it open/);
+    const allow = screen.getByLabelText("the strategies' limits, added up");
+    expect(allow).toHaveTextContent(/Strategies allow\s*28 entries\s*5 strategies on\s*146 lots\s*₹5,274(\.\d+)? margin with all of it open/);
     // nothing reported open by this server: all 28 are still to open, against what is free
-    expect(screen.getByLabelText('still to open, against the free margin')).toHaveTextContent(
-      /Still to open: up to 28 entries · 146 lots · needs ₹5,274(\.\d+)? more margin — ₹19,380 is free \(27%\)/);
+    const left = screen.getByLabelText('still to open, against the free margin');
+    expect(left).toHaveTextContent(/Still to open\s*Fits in the free margin\s*28 entries · 146 lots\s*needs ₹5,274(\.\d+)? more margin — ₹19,380 is free \(27%\)\s*the worst case: the largest lots first/);
+    // the bar is the margin still needed against what is free, in rupees
+    const bar = within(left).getByRole('progressbar', { name: 'margin still needed, of what is free' });
+    expect([bar.getAttribute('aria-valuenow'), bar.getAttribute('aria-valuemax')]).toEqual(['5274', '19380']);
     expect(sum).toHaveTextContent('Margin is the desk\'s estimate at 200x on BTC now');
     expect(within(sum).queryByRole('note')).toBeNull();
   });
@@ -204,14 +208,18 @@ describe('at most open at once, across all strategies', () => {
     await screen.findByText('A');
     // 3 x 6 lots = 18 lots x $0.425 = $7.65 = ₹650
     expect(screen.getByLabelText('still to open, against the free margin')).toHaveTextContent(
-      /Still to open under the limit of 6: up to 3 entries · 18 lots · needs ₹650(\.\d+)? more margin — ₹19,380 is free \(3%\)\. The worst case: the largest lots first\./);
+      /Still to open · under the limit of 6\s*Fits in the free margin\s*3 entries · 18 lots\s*needs ₹650(\.\d+)? more margin — ₹19,380 is free \(3%\)/);
   });
 
   it('[critical] at the limit: nothing more can open, said as that', async () => {
     getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 6, openNow: 6 }));
     render(<SignalStrategiesCard />);
     await screen.findByText('A');
-    expect(screen.getByLabelText('still to open, against the free margin')).toHaveTextContent('Still to open under the limit of 6: nothing — the limit is reached.');
+    const left = screen.getByLabelText('still to open, against the free margin');
+    expect(left).toHaveTextContent(/Still to open · under the limit of 6\s*Nothing — the limit is reached/);
+    // nothing to hold against the free margin: no status word and no bar
+    expect(left).not.toHaveTextContent(/Fits|Tight|More than is free/);
+    expect(within(left).queryByRole('progressbar')).toBeNull();
     expect(within(screen.getByLabelText('strategies added up')).queryByRole('note')).toBeNull();
   });
 
@@ -223,11 +231,11 @@ describe('at most open at once, across all strategies', () => {
     getStrategies.mockResolvedValue(status(desk, { signalMaxOpen: 28, openNow: 12, balanceUsd: 3_515 / 85 }));
     render(<SignalStrategiesCard />);
     await screen.findByText('A');
-    expect(screen.getByLabelText('strategies added up')).toHaveTextContent(/up to 54 entries at once · 265 lots/);
-    expect(screen.getByLabelText('in use now, all strategies')).toHaveTextContent(/12 of 54 entries · 65 of 265 lots/);
+    expect(screen.getByLabelText("the strategies' limits, added up")).toHaveTextContent(/54 entries\s*5 strategies on\s*265 lots/);
+    expect(screen.getByLabelText('in use now, all strategies')).toHaveTextContent(/12 of 54 entries\s*65 of 265 lots/);
     // 16 places left: ten more of the 8-lot strategy (80 lots) and six of the 6-lot one (36) = 116 lots = ₹4,190.
     const left = screen.getByLabelText('still to open, against the free margin');
-    expect(left).toHaveTextContent(/under the limit of 28: up to 16 entries · 116 lots · needs ₹4,19\d(\.\d+)? more margin — ₹3,515 is free \(119%\)/);
+    expect(left).toHaveTextContent(/under the limit of 28\s*More than is free\s*16 entries · 116 lots\s*needs ₹4,19\d(\.\d+)? more margin — ₹3,515 is free \(119%\)/);
     // that is over what is free, and said -- but as ₹4,190 against ₹3,515, not the whole ₹9,557 against it
     expect(within(screen.getByLabelText('strategies added up')).getByRole('note')).toHaveTextContent('That is more than is free');
     expect(screen.getByLabelText('strategies added up')).not.toHaveTextContent(/272%|159%/);
@@ -265,6 +273,22 @@ describe('at most open at once, across all strategies', () => {
     fireEvent.focus(field());
     fireEvent.change(field(), { target: { value: '1x2' } });
     expect(field()).toHaveValue('12');
+  });
+
+  it('[critical] the state is a word and an icon, not a colour alone: Fits, Tight from 80% of what is free, More than is free past it', async () => {
+    const word = async (balanceUsd: number) => {
+      getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 0, openNow: 0, balanceUsd }));
+      const { unmount } = render(<SignalStrategiesCard />);
+      await screen.findByText('A');
+      const text = screen.getByLabelText('still to open, against the free margin').textContent ?? '';
+      unmount();
+      return /More than is free/.test(text) ? 'over' : /Tight/.test(text) ? 'tight' : /Fits in the free margin/.test(text) ? 'fits' : 'none';
+    };
+    // $62.05 still to open
+    expect(await word(228)).toBe('fits');       // 27% of what is free
+    expect(await word(70)).toBe('tight');       // 89%
+    expect(await word(62.05)).toBe('tight');    // exactly what is free: it fits, with nothing to spare
+    expect(await word(60)).toBe('over');        // 103%
   });
 
   it('[critical] more than is free is said, in red, with what to lower', async () => {
@@ -334,7 +358,10 @@ describe('each strategy: its limit, and how much of it is in use now', () => {
     render(<SignalStrategiesCard />);
     await screen.findByText('B');
     // 5 of 20 entries; 15 + 12 = 27 of 45 + 60 + 3 = 108 lots; 27 x $0.425 = ₹975 of 108 x $0.425 = ₹3,902
-    expect(screen.getByLabelText('in use now, all strategies')).toHaveTextContent(/In use now: 5 of 20 entries · 27 of 108 lots · ₹975(\.\d+)? of ₹3,90\d(\.\d+)? margin/);
+    const used = screen.getByLabelText('in use now, all strategies');
+    expect(used).toHaveTextContent(/In use now\s*5 of 20 entries\s*27 of 108 lots\s*₹975(\.\d+)? of ₹3,90\d(\.\d+)? margin/);
+    const bar = within(used).getByRole('progressbar', { name: 'entries in use, all strategies' });
+    expect([bar.getAttribute('aria-valuenow'), bar.getAttribute('aria-valuemax')]).toEqual(['5', '20']);
   });
 
   it('a strategy switched off with a position still open shows what it holds', async () => {
@@ -349,5 +376,99 @@ describe('each strategy: its limit, and how much of it is in use now', () => {
     render(<SignalStrategiesCard />);
     await screen.findByText('SIG');
     expect(screen.queryByLabelText('usage of SIG')).toBeNull();
+  });
+});
+
+describe('lots and "at most open", changed on the card itself', () => {
+  const two = () => [
+    strat('a', { ...SIG, lots: 3, signal: { ...SIG.signal, maxOpen: 5 }, liveOrders: true }),
+    strat('b', { ...SIG, lots: 5, signal: { ...SIG.signal, maxOpen: 10 } }),
+  ];
+  const lots = (name: string) => screen.getByLabelText(`Lots per signal for ${name}`);
+  const most = (name: string) => screen.getByLabelText(`At most open for ${name}`);
+  const type = (el: HTMLElement, v: string) => { fireEvent.focus(el); fireEvent.change(el, { target: { value: v } }); fireEvent.blur(el); };
+  const sent = () => saveStrategy.mock.calls.at(-1)![0] as { id: string; name: string; config: Strategy['config'] };
+
+  it('[critical] each strategy shows its own two numbers, the same as in its form', async () => {
+    getStrategies.mockResolvedValue(status(two()));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    expect([lots('A'), most('A'), lots('B'), most('B')].map((el) => (el as HTMLInputElement).value)).toEqual(['3', '5', '5', '10']);
+    expect(within(screen.getByRole('group', { name: 'quick settings of A' })).getByText(/saved as you leave the field · from the next signal/)).toBeInTheDocument();
+  });
+
+  it('[critical] lots typed and left: that strategy is saved with the new lots and everything else as it was', async () => {
+    getStrategies.mockResolvedValue(status(two()));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    type(lots('A'), '4');
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalledTimes(1));
+    expect(sent().id).toBe('a');
+    expect(sent().name).toBe('A');
+    expect(sent().config).toEqual({ ...two()[0]!.config, lots: 4 });        // live orders, its limit, its signals: untouched
+  });
+
+  it('[critical] at most open typed and Enter pressed: saved on its signal rule, the lots untouched', async () => {
+    getStrategies.mockResolvedValue(status(two()));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('B');
+    fireEvent.focus(most('B'));
+    fireEvent.change(most('B'), { target: { value: '7' } });
+    fireEvent.keyDown(most('B'), { key: 'Enter' });
+    fireEvent.blur(most('B'));
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalledTimes(1));
+    expect(sent().id).toBe('b');
+    expect(sent().config.signal).toEqual({ ...two()[1]!.config.signal, maxOpen: 7 });
+    expect(sent().config.lots).toBe(5);
+  });
+
+  it('[critical] 0 lots, 0 or 101 open, or blank: said in the form\'s own words, put back, and not sent', async () => {
+    getStrategies.mockResolvedValue(status(two()));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    type(lots('A'), '0');
+    expect(screen.getByRole('alert')).toHaveTextContent('Lots must be a whole number, at least 1.');
+    expect(lots('A')).toHaveValue('3');
+    type(most('A'), '101');
+    expect(screen.getByRole('alert')).toHaveTextContent('At most 1 to 100 of its trades open at once.');
+    expect(most('A')).toHaveValue('5');
+    type(most('A'), '0');
+    type(lots('A'), '');
+    expect(lots('A')).toHaveValue('3');
+    expect(saveStrategy).not.toHaveBeenCalled();
+  });
+
+  it('unchanged is not sent, and letters cannot be typed', async () => {
+    getStrategies.mockResolvedValue(status(two()));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    type(lots('A'), '3');
+    type(most('A'), '5');
+    expect(saveStrategy).not.toHaveBeenCalled();
+    fireEvent.focus(lots('A'));
+    fireEvent.change(lots('A'), { target: { value: '1a2' } });
+    expect(lots('A')).toHaveValue('12');
+  });
+
+  it('the server\'s refusal is shown, and the field goes back to the saved number on the next read', async () => {
+    saveStrategy.mockRejectedValue(new Error('Lots must be a whole number, at least 1.'));
+    getStrategies.mockResolvedValue(status(two()));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    type(lots('A'), '9');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Lots must be a whole number, at least 1.');
+    await waitFor(() => expect(lots('A')).toHaveValue('3'));
+  });
+
+  it('[critical] the form still has both: Edit opens it with the same numbers', async () => {
+    getStrategies.mockResolvedValue(status(two()));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit/ })[0]!);
+    fireEvent.click(await screen.findByRole('tab', { name: /^Strike & lots/ }));
+    const form = within(screen.getByRole('dialog'));
+    expect(form.getByLabelText(/^lots/i)).toHaveValue('3');
+    fireEvent.click(screen.getByRole('tab', { name: /^Entry & exit/ }));
+    expect(form.getByLabelText('max open')).toHaveValue('5');
   });
 });
