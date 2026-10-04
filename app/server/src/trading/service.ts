@@ -25,8 +25,6 @@ import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
-import { hoursSinceDeskOpen, liveChain, WHOLE_BOARD, type Snapshot } from '../market/chain.js';
-import { readMarket, type MarketRead } from '../market/moves.js';
 import type { ExchangePort } from './exchange/port.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 

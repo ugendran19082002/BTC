@@ -1,121 +1,41 @@
 import { useEffect, useState } from 'react';
 import { TelegramLogCard } from '@/components/desk/TelegramLogCard';
 import { Loader2 } from 'lucide-react';
-import {
-  getAutoTrade, setAutoTrade, type AutoTradeSettings as AutoTrade, type AutoTradeState,
-} from '@/api/trade';
 import { getSettings, setWallWithinEm } from '@/api/desk';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { AutoTradeSettings } from '@/components/desk/AutoTradeSettings';
 import { BestTradeSettings } from '@/components/desk/BestTradeSettings';
 
 /**
  * Every number the desk works to, in one screen.
  *
- * These used to be constants in the source — the most a rule may ask for, what
- * a new rule starts as, how many lots an automatic order may be. A ceiling
- * written into a file is a number standing between somebody and a trade they
- * meant to make, and changing it needs a deploy. So they live here, saved on the
- * server, and the only numbers left in the code are the hard ceilings each box
- * says out loud: what no setting may pass, whoever types it.
+ * These used to be constants in the source. A number written into a file
+ * stands between somebody and what they meant to do, and changing it needs a
+ * deploy. So they live here, saved on the server.
  *
- * Nothing here places an order. Raising a limit does not arm anything; it only
- * widens the range the other screens will accept.
+ * Nothing here places an order. The best pick's automatic trade, and the
+ * limits card that set its range, went on 4 Oct 2026: the signal strategies
+ * do the trading, each with its own switch on its own form.
  */
 export function SettingsPanel() {
   return (
     <div className="grid gap-3">
-      <BestPickSwitchesCard />
-      <AutoTradeLimitsCard />
+      <BestPickCard />
       <LevelsCard />
       <TelegramLogCard />
       <p className="m-0 px-1 text-[11.5px] leading-relaxed text-[var(--dim)]">
-        The only switches here that place orders are the best pick's, above. Each strategy has its own, on its
-        form. The rest of this screen sets the range those work inside.
+        Nothing on this screen places an order. Each strategy has its own switch, on its form.
       </p>
     </div>
   );
 }
 
-/**
- * The best pick's own switches: tell me when it changes, and sell it by itself.
- *
- * They lived on the best-pick card until the Live screen was trimmed on
- * 28 Sep 2026, and for two days had no screen at all while the server went on
- * running both from their saved settings -- an armed switch nobody could see.
- * Here they are visible again, with what each one is set to.
- */
-function BestPickSwitchesCard() {
+/** The best-pick card's premium floor: the one setting the card still has. */
+function BestPickCard() {
   return (
-    <CollapsibleCard id="settings-best-pick" title="Best pick — alerts and automatic trade" ariaLabel="best pick switches">
-      <div className="grid gap-3">
-        <BestTradeSettings />
-        <AutoTradeSettings />
-      </div>
-    </CollapsibleCard>
-  );
-}
-
-/** Lots, target, stop, seconds, trades per contract: the ceilings on the automatic order. */
-function AutoTradeLimitsCard() {
-  const [state, setState] = useState<AutoTradeState | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
-
-  useEffect(() => { getAutoTrade().then(setState).catch((e: Error) => setFailed(e.message)); }, []);
-
-  const save = async (limits: Partial<AutoTradeState['limits']>) => {
-    setBusy(true);
-    setFailed(null);
-    try {
-      await setAutoTrade({ limits } as Partial<AutoTrade> & { limits: typeof limits });
-      setState(await getAutoTrade());
-    } catch (e) {
-      setFailed((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!state) {
-    return (
-      <CollapsibleCard id="settings-auto-trade" title="Automatic best-pick trade — limits" ariaLabel="auto-trade limits">
-        <p className="m-0 text-[12px] text-muted-foreground">{failed ?? 'Reading…'}</p>
-      </CollapsibleCard>
-    );
-  }
-  const ceilings = state.ceilings ?? {
-    maxLots: 100_000, maxTargetPct: 99, maxStopPct: 10_000, maxChaseSec: 600, maxPerContract: 100,
-  };
-
-  return (
-    <CollapsibleCard
-      id="settings-auto-trade"
-      title="Automatic best-pick trade — limits"
-      ariaLabel="auto-trade limits"
-      right={<span className="settings-note">{state.settings.on ? 'armed' : 'off'} · {state.mode}</span>}
-    >
-      <p className="settings-lead">
-        The range the best-pick card will accept. It is at {state.settings.lots} lots and a {state.settings.targetPct}%
-        target today; raising a limit here does not change that, or arm anything.
-      </p>
-      <div className="settings-grid">
-        <Num label="Most lots per order" value={state.limits.maxLots} max={ceilings.maxLots} busy={busy}
-             onSave={(v) => void save({ maxLots: v })} />
-        <Num label="Smallest target %" value={state.limits.minTargetPct} max={ceilings.maxTargetPct} busy={busy}
-             onSave={(v) => void save({ minTargetPct: v })} />
-        <Num label="Largest target %" value={state.limits.maxTargetPct} max={ceilings.maxTargetPct} busy={busy}
-             onSave={(v) => void save({ maxTargetPct: v })} />
-        <Num label="Largest stop %" value={state.limits.maxStopPct} max={ceilings.maxStopPct} busy={busy} min={0}
-             onSave={(v) => void save({ maxStopPct: v })} />
-        <Num label="Longest walk to the bid (sec)" value={state.limits.maxChaseSec} max={ceilings.maxChaseSec} busy={busy} min={0}
-             onSave={(v) => void save({ maxChaseSec: v })} />
-        <Num label="Most trades per contract" value={state.limits.maxPerContract} max={ceilings.maxPerContract} busy={busy}
-             onSave={(v) => void save({ maxPerContract: v })} />
-      </div>
-      {failed && <p className="settings-note warn" role="alert">{failed}</p>}
+    <CollapsibleCard id="settings-best-pick" title="Best pick — premium floor" ariaLabel="best pick settings card">
+      <BestTradeSettings />
     </CollapsibleCard>
   );
 }
@@ -182,35 +102,5 @@ function LevelsCard() {
       </div>
       {failed && <p className="settings-note warn" role="alert">{failed}</p>}
     </CollapsibleCard>
-  );
-}
-
-/**
- * One number, saved when the box is left rather than per keystroke, with the
- * ceiling it cannot pass said on its face.
- */
-function Num({ label, value, max, min = 1, busy, onSave }: {
-  label: string; value: number; max: number; min?: number; busy: boolean; onSave: (v: number) => void;
-}) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => { setText(String(value)); }, [value]);
-  const n = Number(text);
-  const ok = Number.isInteger(n) && n >= min && n <= max;
-  const commit = () => { if (ok && n !== value && !busy) onSave(n); };
-  return (
-    <label className="settings-field">
-      <span>{label}</span>
-      <Input
-        aria-label={label}
-        inputMode="numeric"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
-        className={cn('h-8', !ok && 'border-[var(--down)]')}
-      />
-      <small className={cn(!ok && 'warn')}>{ok ? `up to ${max.toLocaleString('en-US')}` : `${min} to ${max.toLocaleString('en-US')}`}</small>
-      {busy && <Loader2 size={11} className="animate-spin text-muted-foreground" aria-hidden />}
-    </label>
   );
 }

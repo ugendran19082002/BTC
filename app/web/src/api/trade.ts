@@ -105,55 +105,11 @@ export const cancelAdd = (tradeId: string) =>
 export const setAlerts = (on: boolean) =>
   post<{ ok: true; alerts: { configured: boolean; on: boolean } }>('/api/trade/alerts', { on });
 
-/** The best-pick card's own settings: the phone switch and the premium floor. */
-export type BestTradeSettings = {
-  alertOn: boolean;
-  minPremiumUsd: number;
-  /** Times one strike may be sent per contract (5:31 PM to 5:30 PM next day). Absent from an older server. */
-  repeat?: number;
-  telegram: { configured: boolean; on: boolean };
-};
+/** The best-pick card's own setting: the premium floor its pool is cut at. */
+export type BestTradeSettings = { minPremiumUsd: number };
 export const getBestTradeSettings = () => json<BestTradeSettings>('/api/trade/best-trade/settings');
-export const setBestTradeSettings = (patch: { alertOn?: boolean; minPremiumUsd?: number; repeat?: number }) =>
-  post<{ ok: true; alertOn: boolean; minPremiumUsd: number; repeat?: number }>('/api/trade/best-trade/settings', patch);
-
-/**
- * Selling the best pick by itself.
- *
- * Off by default and after every deploy. The server clamps every number again;
- * what is sent from here is what the popup shows.
- */
-export type AutoTradeSettings = {
-  on: boolean;
-  lots: number;
-  targetPct: number;
-  stopPct: number;
-  chaseSeconds: number;
-  maxPerContract: number;
-};
-
-export type AutoTradeState = {
-  settings: AutoTradeSettings;
-  defaults: AutoTradeSettings;
-  limits: {
-    maxLots: number; minTargetPct: number; maxTargetPct: number;
-    maxStopPct: number; maxChaseSec: number; maxPerContract: number;
-  };
-  /** What no limit may pass, whoever types it. Not editable. */
-  ceilings: {
-    maxLots: number; maxTargetPct: number; maxStopPct: number; maxChaseSec: number; maxPerContract: number;
-  };
-  mode: 'live' | 'paper';
-  /** What has already been sold automatically on the contract on screen. */
-  done: Record<string, { at: number; status: 'placed' | 'refused'; tradeId?: string; detail?: string }>;
-};
-
-export const getAutoTrade = () => json<AutoTradeState>('/api/trade/auto-trade');
-export const setAutoTrade = (
-  patch: Partial<AutoTradeSettings> & { limits?: Partial<AutoTradeState['limits']> },
-) => post<{ ok: true; settings: AutoTradeSettings }>('/api/trade/auto-trade', patch);
-/** Consider the strikes already sold or refused on this contract again. */
-export const clearAutoTrade = () => post<{ ok: true }>('/api/trade/auto-trade/clear', {});
+export const setBestTradeSettings = (patch: { minPremiumUsd?: number }) =>
+  post<{ ok: true; minPremiumUsd: number }>('/api/trade/best-trade/settings', patch);
 
 /** Pull a working order off the book. Refused once anything has filled. */
 export const cancelTrade = (tradeId: string) =>

@@ -2,15 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SettingsPanel } from '@/components/desk/SettingsPanel';
 
-const getAutoTrade = vi.fn();
-const setAutoTrade = vi.fn();
 const getBestTradeSettings = vi.fn();
+const setBestTradeSettings = vi.fn();
 vi.mock('@/api/trade', () => ({
-  getAutoTrade: (...a: unknown[]) => getAutoTrade(...a),
-  setAutoTrade: (...a: unknown[]) => setAutoTrade(...a),
-  clearAutoTrade: vi.fn(),
   getBestTradeSettings: (...a: unknown[]) => getBestTradeSettings(...a),
-  setBestTradeSettings: vi.fn(),
+  setBestTradeSettings: (...a: unknown[]) => setBestTradeSettings(...a),
+  getTelegramLog: vi.fn().mockResolvedValue({ rows: [] }),
 }));
 const getSettings = vi.fn();
 const setWallWithinEm = vi.fn();
@@ -20,65 +17,35 @@ vi.mock('@/api/desk', () => ({
 }));
 
 /**
- * Every number the desk works to, in one screen.
- *
- * The property worth pinning: these are read from the server and written back,
- * never read from a constant in the browser — and the hard ceiling each box
- * cannot pass is shown, so raising a limit is a decision with a visible edge.
+ * The numbers the desk works to, in one screen: read from the server and
+ * written back, never read from a constant in the browser.
  */
-
-const autoTrade = {
-  settings: { on: false, lots: 5, targetPct: 95, stopPct: 0, chaseSeconds: 5, maxPerContract: 1 },
-  defaults: { on: false, lots: 5, targetPct: 95, stopPct: 0, chaseSeconds: 5, maxPerContract: 1 },
-  limits: { maxLots: 1_000, minTargetPct: 1, maxTargetPct: 99, maxStopPct: 500, maxChaseSec: 600, maxPerContract: 10 },
-  ceilings: { maxLots: 100_000, maxTargetPct: 99, maxStopPct: 10_000, maxChaseSec: 600, maxPerContract: 100 },
-  mode: 'paper', done: {},
-};
-
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
-  getAutoTrade.mockResolvedValue(autoTrade);
-  getBestTradeSettings.mockResolvedValue({ alertOn: false, minPremiumUsd: 5, repeat: 1, telegram: { configured: true, on: true } });
-  setAutoTrade.mockResolvedValue({ ok: true, settings: autoTrade.settings });
+  getBestTradeSettings.mockResolvedValue({ minPremiumUsd: 5 });
+  setBestTradeSettings.mockResolvedValue({ ok: true, minPremiumUsd: 8 });
   getSettings.mockResolvedValue({ settings: { wall_within_em: '2' }, shortCap: { inForce: 1, ceiling: 1, chosen: null } });
   setWallWithinEm.mockResolvedValue({ ok: true, key: 'wall_within_em', value: '1.5' });
 });
 
 describe('the settings screen', () => {
-  it('[critical] shows the limits in force, from the server, with their hard ceiling', async () => {
+  it('[critical] has no switch that places an order: the best pick\'s automatic trade and its limits are gone, and it says so', async () => {
     render(<SettingsPanel />);
-    const card = within(await screen.findByLabelText('auto-trade limits'));
-    expect(card.getByLabelText('Most lots per order')).toHaveValue('1000');
-    expect(card.getByText('up to 100,000')).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing on this screen places an order/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('auto-trade limits')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('best pick switches')).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
 
-  it('[critical] a changed limit is saved as a limit, not as a setting', async () => {
+  it('[critical] the best pick keeps its premium floor, read from the server and saved back', async () => {
     render(<SettingsPanel />);
-    const box = await screen.findByLabelText('Most lots per order');
-    fireEvent.change(box, { target: { value: '50' } });
+    const card = within(await screen.findByLabelText('best pick settings card'));
+    const box = await card.findByLabelText('only strikes paying at least');
+    expect(box).toHaveValue('5');
+    fireEvent.change(box, { target: { value: '8' } });
     fireEvent.blur(box);
-    await waitFor(() => expect(setAutoTrade).toHaveBeenCalledWith({ limits: { maxLots: 50 } }));
-  });
-
-  it('a number past the hard ceiling is refused before it is sent', async () => {
-    render(<SettingsPanel />);
-    const box = await screen.findByLabelText('Most lots per order');
-    fireEvent.change(box, { target: { value: '999999' } });
-    fireEvent.blur(box);
-    expect(setAutoTrade).not.toHaveBeenCalled();
-    expect(screen.getByText('1 to 100,000')).toBeInTheDocument();
-  });
-
-  it('says plainly which switches here place orders, and that the limits do not', async () => {
-    render(<SettingsPanel />);
-    expect(await screen.findByText(/The only switches here that place orders are the best pick's, above/)).toBeInTheDocument();
-  });
-
-  it('a server it cannot reach says so rather than showing invented numbers', async () => {
-    getAutoTrade.mockRejectedValue(new Error('offline'));
-    render(<SettingsPanel />);
-    expect(await screen.findByText('offline')).toBeInTheDocument();
+    await waitFor(() => expect(setBestTradeSettings).toHaveBeenCalledWith({ minPremiumUsd: 8 }));
   });
 
   it('[critical] the level band is a setting, and a fraction is allowed', async () => {
@@ -91,13 +58,5 @@ describe('the settings screen', () => {
     fireEvent.change(box, { target: { value: '0.1' } });
     fireEvent.blur(box);
     expect(setWallWithinEm).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('the best pick\'s own switches', () => {
-  it('[critical] are on this screen -- the server runs them from saved settings, so they must be visible somewhere', async () => {
-    render(<SettingsPanel />);
-    expect(await screen.findByText('Best pick — alerts and automatic trade')).toBeInTheDocument();
-    await waitFor(() => expect(getBestTradeSettings).toHaveBeenCalled());
   });
 });

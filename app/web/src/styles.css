@@ -1370,33 +1370,11 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 /* The insight tiles inside the sudden-move strip: a row of their own under
    the five lead figures. */
 
-/* The best-pick card's own two controls: the phone switch and the floor. */
+/* The best-pick card's own control: the premium floor. */
 .bt-settings { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
-.bt-settings-state {
-  display: inline-flex; align-items: center; gap: 5px; margin-top: 4px;
-  font-size: 11px; color: var(--up);
-}
-/* The floor and "same strike, at most N×" side by side, each under its own
-   label; the stepper because the range is 1 to 10 and a number box invites 0
-   and 250. */
 .bt-controls { display: flex; align-items: flex-end; gap: 10px 12px; flex-wrap: wrap; margin-top: 12px; }
 .bt-controls .bt-alert-field { flex: 1 1 200px; }
-.bt-controls .bt-repeat { flex: 0 0 auto; }
 .bt-controls .bt-busy { align-self: center; }
-.bt-stepper {
-  display: inline-flex; align-items: center; flex: none;
-  border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel-2);
-}
-.bt-stepper button {
-  appearance: none; border: 0; margin: 0; background: transparent; color: var(--text);
-  font: inherit; font-size: 17px; width: 40px; height: 34px; cursor: pointer;
-}
-.bt-stepper button:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); }
-.bt-stepper button:disabled { opacity: 0.35; cursor: not-allowed; }
-.bt-stepper b {
-  min-width: 42px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums;
-  border-left: 1px solid var(--line); border-right: 1px solid var(--line); line-height: 34px;
-}
 
 /* In its own card the controls need no hairline above them. */
 
@@ -1440,27 +1418,6 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 .origin-tag.strategy { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 .origin-tag.best-pick { color: #6cb2ff; border-color: color-mix(in srgb, #6cb2ff 40%, transparent); }
-
-/* Selling the best pick by itself: the switch, its options and what it has done. */
-.auto-trade { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
-.auto-trade-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
-.auto-trade-state { font-size: 11px; color: var(--muted); }
-.auto-trade-state.live { color: var(--down); font-weight: 600; }
-.auto-trade-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.auto-trade-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.auto-trade-field > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); }
-.auto-trade-field small { font-size: 10px; }
-.auto-trade-note { margin: 8px 0 0; font-size: 11px; line-height: 1.45; color: var(--muted); }
-.auto-trade-note.dim { color: var(--dim); }
-.auto-trade-note .warn, .auto-trade-note.warn { color: var(--warn); }
-.auto-trade-done { margin-top: 8px; font-size: 11px; line-height: 1.5; color: var(--muted); }
-.auto-trade-done .warn { color: var(--warn); }
-.auto-trade-clear {
-  appearance: none; border: 0; background: none; padding: 0; margin-left: 6px;
-  display: inline-flex; align-items: center; gap: 4px;
-  font: inherit; font-size: 11px; color: var(--accent); cursor: pointer;
-}
-.auto-trade-clear:hover { text-decoration: underline; }
 
 /* The settings screen: every number the desk works to, in one place. */
 .settings-lead { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--muted); }
