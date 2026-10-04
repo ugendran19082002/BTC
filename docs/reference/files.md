@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-417 files listed, 200 test files counted below, images and lockfiles left out.
+418 files listed, 200 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -615,6 +615,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [2026-09-11-security-audit.md](../history/2026-09-11-security-audit.md) | Security audit — BTC Desk |
 | [2026-09.md](../history/2026-09.md) | History — September 2026 |
+| [2026-10-04-load-and-unused-audit.md](../history/2026-10-04-load-and-unused-audit.md) | Audit: load, slowness, and what is not related to signals |
 | [2026-10.md](../history/2026-10.md) | History — October 2026 |
 
 ## `docs/reference/`

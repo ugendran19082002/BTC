@@ -145,9 +145,27 @@ export async function recordSignals(
  * A history page as the screen asks for it, from the version cache: the same
  * filters at the same data version are one read, however many tabs poll.
  * Exact -- every write to the entry tables moves the version.
+ *
+ * Held in two parts, because they answer to different things. The count and
+ * the totals depend on the filters alone; the rows on the page, its size and
+ * the sort as well. Turning a page or sorting a column reads ten rows, not
+ * the whole day again.
  */
-const pageCache = versionCache<Awaited<ReturnType<typeof signalPage>>>();
-export const cachedSignalPage = (q: SignalQuery) => pageCache(JSON.stringify(q), () => signalPage(q));
+const totalsCache = versionCache<Awaited<ReturnType<typeof signalTotals>>>();
+const rowsCache = versionCache<SignalRow[]>();
+/** The filters without the page and the sort: what the count and the totals are a function of. */
+const totalsKey = (q: SignalQuery): string => {
+  const f: SignalQuery = { ...q };
+  delete f.limit; delete f.offset; delete f.sort; delete f.asc;
+  return JSON.stringify(f);
+};
+export async function cachedSignalPage(q: SignalQuery): Promise<{ signals: SignalRow[]; total: number; summary: SignalSummary }> {
+  const [totals, signals] = await Promise.all([
+    totalsCache(totalsKey(q), () => signalTotals(q)),
+    rowsCache(JSON.stringify(q), () => signalRows(q)),
+  ]);
+  return { signals, ...totals };
+}
 
 /** Drop signals older than the keep period. Returns how many went. */
 export async function pruneSignals(nowMs: number, keepDays = SIGNALS_KEEP_DAYS): Promise<number> {
@@ -342,13 +360,9 @@ export const isSignalSort = (x: unknown): x is SignalSort => typeof x === 'strin
 
 /** The latest signals, newest first, optionally one way, timeframe or state, or since a moment; each TRADE with its outcome. */
 export async function recentSignals(q: SignalQuery = {}): Promise<SignalRow[]> {
-  return (await signalPage(q)).signals;
+  return signalRows(q);
 }
 
-/**
- * One page of the history and the number matching the filters, for the
- * screen's table: `limit` rows from `offset`, sorted by a fixed column.
- */
 /**
  * Over every signal matching the filters (not just the page): TRADEs, how many
  * reached TP1 and the points they made, how many hit the stop and the points
@@ -362,9 +376,17 @@ export type SignalSummary = {
   tp2: number; tp3: number;
 };
 
-export async function signalPage(q: SignalQuery = {}): Promise<{ signals: SignalRow[]; total: number; summary: SignalSummary }> {
-  // The history reads the paper log beside it (a TRADE's outcome): both tables first, whatever ran at boot.
-  await Promise.all([signalsSchema(), entrySchema(), alertsSchema()]);
+// A TRADE's paper row, looked up per signal through its unique index -- not a hash of the whole paper log,
+// which a plain join chose (110 ms for a day's 972 signals against a year's log; 1 Oct 2026).
+const SETUP = `SELECT * FROM entry_setups e0 WHERE s.state = 'TRADE' AND e0.method = s.method AND e0.mode = s.mode
+                  AND e0.tf = s.tf AND e0.dir = s.dir AND e0.trigger_at = s.trigger_at LIMIT 1`; // LIMIT 1 keeps it per row
+// A plain join lets Postgres choose -- index lookups for a day, a hash for a year; the per-row LATERAL is for
+// a page read newest first, where it is a page of lookups however long the history.
+const PLAIN = `JOIN entry_setups e ON e.method = s.method AND e.mode = s.mode AND e.tf = s.tf AND e.dir = s.dir AND e.trigger_at = s.trigger_at`;
+const JOIN = `LEFT ${PLAIN} AND s.state = 'TRADE'`;
+
+/** The history's filters as SQL: one WHERE and its arguments, built once for the totals and the page so the two cannot disagree. */
+function signalFilter(q: SignalQuery): { where: string[]; args: Param[]; filter: string; needsSetup: boolean } {
   const where: string[] = [];
   const args: Param[] = [];
   if (q.mode) { args.push(q.mode); where.push(`s.mode = $${args.length}`); }
@@ -375,18 +397,15 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
   // In play: waiting, filled, or a runner after TP1 still out for TP2/TP3.
   if (q.live) where.push(`(e.status IN ('open', 'filled') OR e.runner = 'running')`);
   if (q.outcome && isOutcomeFilter(q.outcome)) { args.push(q.outcome); where.push(`e.status = $${args.length}`); }
-  const filter = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  // A TRADE's paper row, looked up per signal through its unique index -- not a hash of the whole paper log,
-  // which a plain join chose (110 ms for a day's 972 signals against a year's log; 1 Oct 2026).
-  const SETUP = `SELECT * FROM entry_setups e0 WHERE s.state = 'TRADE' AND e0.method = s.method AND e0.mode = s.mode
-                    AND e0.tf = s.tf AND e0.dir = s.dir AND e0.trigger_at = s.trigger_at LIMIT 1`; // LIMIT 1 keeps it per row
-  // A plain join lets Postgres choose -- index lookups for a day, a hash for a year; the per-row LATERAL is for
-  // a page read newest first, where it is 25 lookups however long the history.
-  const PLAIN = `JOIN entry_setups e ON e.method = s.method AND e.mode = s.mode AND e.tf = s.tf AND e.dir = s.dir AND e.trigger_at = s.trigger_at`;
-  const JOIN = `LEFT ${PLAIN} AND s.state = 'TRADE'`;
   // Only the tabs that filter on the paper log need it to count; they are TRADEs only.
-  const needsSetup = !!q.live || !!q.outcome;
-  const bySetup = q.sort === 'fill' || q.sort === 'exit' || q.sort === 'result';
+  return { where, args, filter: where.length ? `WHERE ${where.join(' AND ')}` : '', needsSetup: !!q.live || !!q.outcome };
+}
+
+/** How many signals match the filters, and the totals over them -- whatever the page, its size or the sort. */
+export async function signalTotals(q: SignalQuery = {}): Promise<{ total: number; summary: SignalSummary }> {
+  // The history reads the paper log beside it (a TRADE's outcome): both tables first, whatever ran at boot.
+  await Promise.all([signalsSchema(), entrySchema(), alertsSchema()]);
+  const { where, args, filter, needsSetup } = signalFilter(q);
   // Points from the fill to the exit, in the trade's favour: (exit - fill) x direction, each trade to the
   // whole point as the rows show it -- so the totals add up exactly: net = target pts - SL pts + time-out pts.
   const pts = 'round(((e.exit_price - e.fill_price) * e.dir)::numeric)';
@@ -407,13 +426,26 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
        FROM entry_signals s ${PLAIN} ${tradeFilter}`,
     args,
   )]);
-  const n = Number(cnt?.n ?? 0);
   const summary: SignalSummary = {
     trades: Number(agg?.trades ?? 0), tp1: Number(agg?.tp1 ?? 0), tp1Pts: Number(agg?.tp1_pts ?? 0),
     stops: Number(agg?.stops ?? 0), slPts: Number(agg?.sl_pts ?? 0), timeouts: Number(agg?.timeouts ?? 0),
     timeoutPts: Number(agg?.timeout_pts ?? 0), netPts: Number(agg?.net_pts ?? 0), open: Number(agg?.open ?? 0),
     tp2: Number(agg?.tp2 ?? 0), tp3: Number(agg?.tp3 ?? 0),
   };
+  return { total: Number(cnt?.n ?? 0), summary };
+}
+
+/** One page of the history: its rows, counted and totalled together. What the tests and the export's callers read. */
+export async function signalPage(q: SignalQuery = {}): Promise<{ signals: SignalRow[]; total: number; summary: SignalSummary }> {
+  const totals = await signalTotals(q);
+  return { signals: await signalRows(q), ...totals };
+}
+
+/** The rows of one page: `limit` from `offset`, in the table's order, each TRADE with its paper row and first alert. */
+export async function signalRows(q: SignalQuery = {}): Promise<SignalRow[]> {
+  await Promise.all([signalsSchema(), entrySchema(), alertsSchema()]);
+  const { args, filter, needsSetup } = signalFilter(q);
+  const bySetup = q.sort === 'fill' || q.sort === 'exit' || q.sort === 'result';
   const cols = SORT_SQL[q.sort && isSignalSort(q.sort) ? q.sort : 'time'];
   // Newest first is the time index walked and stopped at the page -- first_seen is never null, so no NULLS LAST,
   // which would make Postgres sort the whole year. Other columns can be empty, and empties go last.
@@ -441,7 +473,7 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
     args,
   );
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
-  const signals = rs.map((r) => ({
+  return rs.map((r) => ({
     method: String(r.method), mode: r.mode as SignalRow['mode'], tf: r.tf as Tf, dir: Number(r.dir) as 1 | -1, state: r.state as SignalRow['state'],
     triggerAt: Number(r.trigger_at), firstSeen: Number(r.first_seen), lastSeen: Number(r.last_seen),
     score: num(r.score), reason: String(r.reason),
@@ -463,7 +495,6 @@ export async function signalPage(q: SignalQuery = {}): Promise<{ signals: Signal
     seenAfterMs: Number(r.first_seen) - (Number(r.trigger_at) + TF_SEC[r.tf as Tf]) * 1000,
     alert: r.al_at === null || r.al_at === undefined ? null : { at: Number(r.al_at), status: r.al_status as 'sent' | 'failed' },
   }));
-  return { signals, total: n, summary };
 }
 
 /**
@@ -509,12 +540,12 @@ export const EXPORT_MAX_ROWS = 20_000;
 /** Every signal matching the filters, in the table's order -- not just a page -- up to EXPORT_MAX_ROWS. */
 export async function exportSignals(q: SignalQuery): Promise<{ rows: SignalRow[]; total: number }> {
   const out: SignalRow[] = [];
-  let total = 0;
+  // Counted once: the count is the filters', not the page's.
+  const { total } = await signalTotals(q);
   for (let offset = 0; offset < EXPORT_MAX_ROWS; offset += 500) {
-    const p = await signalPage({ ...q, limit: 500, offset });
-    total = p.total;
-    out.push(...p.signals);
-    if (p.signals.length < 500) break;
+    const page = await signalRows({ ...q, limit: 500, offset });
+    out.push(...page);
+    if (page.length < 500) break;
   }
   return { rows: out.slice(0, EXPORT_MAX_ROWS), total };
 }

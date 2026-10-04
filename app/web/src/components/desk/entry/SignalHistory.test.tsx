@@ -94,15 +94,17 @@ describe('the signal history table', () => {
     await waitFor(() => { expect(last()).toMatchObject({ state: 'TRADE', dir: 1 }); expect(last().outcome).toBeUndefined(); });
   });
 
-  it('[critical] pages: "1–25 of 60", next and previous ask for the right offset, the page size is a choice', async () => {
+  it('[critical] pages: ten rows first -- "1–10 of 60" -- next and previous ask for the right offset, the page size is a choice', async () => {
     render(<SignalHistory />);
     const nav = await screen.findByRole('navigation', { name: 'history pages' });
-    expect(nav).toHaveTextContent('1–25 of 60');
-    expect(nav).toHaveTextContent('Page 1 of 3');
+    expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ offset: 0, limit: 10 });
+    expect(nav).toHaveTextContent('1–10 of 60');
+    expect(nav).toHaveTextContent('Page 1 of 6');
+    expect(within(within(nav).getByRole('group', { name: 'rows per page' })).getAllByRole('button').map((b) => b.textContent)).toEqual(['10', '25', '50', '100']);
     expect(within(nav).getByRole('button', { name: 'previous page' })).toBeDisabled();
     fireEvent.click(within(nav).getByRole('button', { name: 'next page' }));
-    await waitFor(() => expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ offset: 25, limit: 25 }));
-    await waitFor(() => expect(nav).toHaveTextContent('26–50 of 60'));
+    await waitFor(() => expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ offset: 10, limit: 10 }));
+    await waitFor(() => expect(nav).toHaveTextContent('11–20 of 60'));
     fireEvent.click(within(within(nav).getByRole('group', { name: 'rows per page' })).getByRole('button', { name: '50' }));
     await waitFor(() => expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ offset: 0, limit: 50 })); // a new size starts at the first page
   });
@@ -235,8 +237,8 @@ describe('the signal history table', () => {
   });
 
   it('[critical] a filter saved before -- 1m, the R:R column, a page size gone -- is cleaned, so the list never hides behind a chip that is not there', async () => {
-    expect(cleanFilter({ tf: '1m' as never, sort: 'rr' as never, size: 10 as never, tab: 'gone' as never, mode: 'x' as never }))
-      .toEqual({ tab: 'all', mode: 'all', tf: 'all', today: true, size: 25, sort: 'time', asc: false });
+    expect(cleanFilter({ tf: '1m' as never, sort: 'rr' as never, size: 7 as never, tab: 'gone' as never, mode: 'x' as never }))
+      .toEqual({ tab: 'all', mode: 'all', tf: 'all', today: true, size: 10, sort: 'time', asc: false });
     localStorage.setItem('btc-desk:entry:history-table', JSON.stringify({ tf: '1m', sort: 'rr' }));
     render(<SignalHistory />);
     await screen.findByRole('table', { name: 'signals' });
