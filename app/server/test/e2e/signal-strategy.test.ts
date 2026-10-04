@@ -895,3 +895,101 @@ test('[critical] at most open at once, across all strategies: one number over ev
   assert.equal(free.status, 'placed', free.detail);
   for (const id of ['sig-cap-a', 'sig-cap-b']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
 });
+
+// ------------------------------------------------------------ the limits, as real money needs them
+
+test('[critical] the limits under load: a ticket trade takes a place, a burst of signals stops exactly at the cap, a fill at the zone is held to it, and a cancelled entry frees its place', async () => {
+  const quote = () => {
+    for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+      paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+    }
+  };
+  const open = async () => (await tradingService().openTrades()).length;
+  // The cap is set straight into the settings here: the route holds it to what the strategies allow, and these
+  // cases need it just above whatever earlier tests left open.
+  const setCap = (n: number) => tradingService().settings.set('signal_max_open', String(n));
+  const live = { ...config, signal: { ...config.signal, maxOpen: 10 }, liveOrders: true };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig burst', config: live })).status, 200);
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig burst zone', config: { ...live, signal: { ...live.signal, tf: '15m', enterOn: 'zone' } } })).status, 200);
+  await api('POST', '/api/strategies/sig-burst/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const runs = async (id: string) => (await runsOf(id)).map((r) => r.status);
+  const lastOf = async (id: string) => (await runsOf(id)).at(-1)!;
+
+  // A trade placed from the ticket is a trade on the desk: it takes a place under the cap like any other.
+  quote();
+  const before = await open();
+  // On a contract of its own: the ticket will not open a second trade on a contract the desk already holds.
+  const TICKET = 82_800;
+  paper().addProduct({ symbol: `P-BTC-${TICKET}-${EXPIRY}`, productId: 7010, underlying: 'BTC', optionSide: 'PE', strike: TICKET, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+  paper().setQuote({ symbol: `P-BTC-${TICKET}-${EXPIRY}`, bid: 8, ask: 8.5, bidSize: 5_000, askSize: 5_000, mark: 8.2, ts: Date.now() });
+  const ticket = await api('POST', '/api/trade/place', { symbol: `P-BTC-${TICKET}-${EXPIRY}`, side: 'PE', strike: TICKET, expiryTs: EXPIRY_TS, lots: 1, limitPrice: 8.5, leverage: 200 });
+  assert.equal(ticket.status, 200, JSON.stringify(ticket.body).slice(0, 300));
+  assert.equal(await open(), before + 1);
+  await setCap(before + 1);
+  await runner.onSignal(signal());
+  const held = await lastOf('sig-burst');
+  assert.equal(held.status, 'skipped', held.detail);
+  assert.match(held.detail, new RegExp(`the desk already has ${before + 1} open .* at most ${before + 1} at once across all$`), 'the strategy holds none of its own: the ticket\'s trade filled the last place');
+  assert.equal(await open(), before + 1, 'nothing sent');
+
+  // A burst: five signals in the same moment, two places left. Exactly two orders go out -- never three.
+  await setCap(before + 3);
+  quote();
+  const n0 = (await runs('sig-burst')).length;
+  await Promise.all([1, 2, 3, 4, 5].map(() => runner.onSignal(signal())));
+  const burst = (await runs('sig-burst')).slice(n0);
+  assert.deepEqual([burst.filter((s) => s === 'placed').length, burst.filter((s) => s === 'skipped').length], [2, 3], burst.join(','));
+  assert.equal(await open(), before + 3, 'the desk holds exactly the cap');
+  assert.equal((await api('GET', '/api/strategies')).body.openNow, before + 3);
+
+  // A signal that fills at its zone is held to the same cap.
+  await api('POST', '/api/strategies/sig-burst/enabled', { enabled: false });
+  await api('POST', '/api/strategies/sig-burst-zone/enabled', { enabled: true });
+  quote();
+  await runner.onSetupFilled({
+    method: 'breakout', mode: 'single', tf: '15m', dir: 1, triggerAt: 1_790_950_000,
+    entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: null, tp3: null,
+    status: 'filled', filledAt: Math.floor(clock / 1000), fillPrice: 84_990,
+  });
+  const zone = await lastOf('sig-burst-zone');
+  assert.equal(zone.status, 'skipped', zone.detail);
+  assert.match(zone.detail, /at once across all$/);
+  assert.equal(await open(), before + 3);
+
+  // A working entry taken off the book frees its place: the next signal is taken.
+  const mine = (await runsOf('sig-burst')).filter((r) => r.status === 'placed').at(-1)!;
+  assert.equal((await api('POST', '/api/trade/cancel', { tradeId: mine.trade_id })).status, 200);
+  await until(open, (n) => n === before + 2, 'the cancelled entry to leave the open list');
+  quote();
+  await runner.onSetupFilled({
+    method: 'breakout', mode: 'single', tf: '15m', dir: 1, triggerAt: 1_790_950_900,
+    entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: null, tp3: null,
+    status: 'filled', filledAt: Math.floor(clock / 1000), fillPrice: 84_990,
+  });
+  const freed = await lastOf('sig-burst-zone');
+  assert.equal(freed.status, 'placed', freed.detail);
+  assert.equal(await open(), before + 3, 'back at the cap, not past it');
+
+  // The strategy's own limit holds inside the desk's: at most 2 of its own, with the desk's cap far away.
+  await setCap(0);
+  const z = (await strategyStore().get('sig-burst-zone'))!;
+  await api('POST', '/api/strategies', { id: z.id, name: z.name, config: { ...z.config, signal: { ...z.config.signal, maxOpen: 2 } } });
+  quote();
+  const z0 = (await runs('sig-burst-zone')).length;
+  for (const at of [1_790_951_800, 1_790_952_700, 1_790_953_600]) {
+    await runner.onSetupFilled({
+      method: 'breakout', mode: 'single', tf: '15m', dir: 1, triggerAt: at,
+      entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: null, tp3: null,
+      status: 'filled', filledAt: Math.floor(clock / 1000), fillPrice: 84_990,
+    });
+  }
+  // it already held one: one more is taken, then it is at its own limit of two
+  assert.deepEqual((await runs('sig-burst-zone')).slice(z0), ['placed', 'skipped', 'skipped']);
+  assert.match((await lastOf('sig-burst-zone')).detail, /already 2 of its trades open .*-- at most 2$/);
+  const own = (await api('GET', '/api/strategies')).body.strategies.find((x: any) => x.id === 'sig-burst-zone').open;
+  assert.deepEqual(own, { trades: 2, lots: 2 }, 'and its card says 2 of 2');
+
+  for (const id of ['sig-burst', 'sig-burst-zone']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+});
