@@ -3,6 +3,9 @@
 # ---------- build the API ----------
 FROM node:24.12-alpine AS server-build
 WORKDIR /build/server
+# Quiet and quick installs: no "new version of npm" notice, no funding line, and no audit request --
+# the build is not the place the desk's dependencies are audited.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 # copy manifests first so a source-only change reuses the install layer
 COPY app/server/package.json app/server/package-lock.json ./
 # A cache mount, so a lockfile change re-resolves but does not re-download every
@@ -16,6 +19,7 @@ RUN npm run build
 # ---------- production dependencies only ----------
 FROM node:24.12-alpine AS server-deps
 WORKDIR /build/server
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 COPY app/server/package.json app/server/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci --omit=dev
 

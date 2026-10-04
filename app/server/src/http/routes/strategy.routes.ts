@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { CONTRACT_MAX_LOTS_KEY, contractMaxLotsOf, contractMaxLotsProblem, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 import { config, STARTED_AT } from '../../config.js';
 
@@ -236,14 +236,6 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       schedulerOn: svc.settings.get('scheduler_enabled') === '1',
       // The desk-wide cap on open trades (0: none), and how many the desk holds now -- positions and working orders.
       signalMaxOpen: globalMaxOpenOf(svc.settings.get(GLOBAL_MAX_OPEN_KEY)),
-      // The most lots on any one contract (0: none), and the contract holding the most now -- so the limit is set against what is there.
-      contractMaxLots: contractMaxLotsOf(svc.settings.get(CONTRACT_MAX_LOTS_KEY)),
-      contractMostNow: (() => {
-        const by = new Map<string, number>();
-        for (const t of openTrades) by.set(t.plan.symbol, (by.get(t.plan.symbol) ?? 0) + lotsOf(t));
-        const top = [...by.entries()].sort((a, b) => b[1] - a[1])[0];
-        return top ? { symbol: top[0], lots: top[1] } : null;
-      })(),
       openNow: openTrades.length,
       /*
        * The desk's limit on lots short at once (the order gate's MAX_POSITION), and
@@ -420,15 +412,6 @@ export function registerStrategyRoutes(app: FastifyInstance) {
   });
 
   // The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off.
-  // The most lots on one contract, across every strategy: 0 is no limit.
-  app.post('/api/strategies/contract-max-lots', async (req, reply) => {
-    const { max } = (req.body ?? {}) as { max?: unknown };
-    const problem = contractMaxLotsProblem(max);
-    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    await svc.settings.set(CONTRACT_MAX_LOTS_KEY, String(max));
-    return { ok: true, contractMaxLots: max as number };
-  });
-
   app.post('/api/strategies/max-open', async (req, reply) => {
     const { max } = (req.body ?? {}) as { max?: unknown };
     // Held to what the strategies switched on allow between them: a cap above that can never bind.

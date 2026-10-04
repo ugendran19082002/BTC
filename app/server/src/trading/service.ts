@@ -331,10 +331,6 @@ export class TradingService {
     return Number.isFinite(v) && v > 0 ? v : BEST_TRADE_MIN_PREMIUM_USD;
   }
 
-  setBestTradeMinPremiumUsd(usd: number): Promise<void> {
-    return this.settings.set('best_trade_min_premium', String(usd));
-  }
-
   /**
    * The day so far, in one place: booked, still open, and Delta's charges on
    * every fill since the day began. `netUsd` is what the day has actually made

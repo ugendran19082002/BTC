@@ -770,25 +770,6 @@ export function registerTradeRoutes(app: FastifyInstance) {
    * journal, so a silence chosen on a quiet afternoon survives the next deploy.
    * Nothing about the trading engine changes either way.
    */
-  /**
-   * The best-pick card's own setting: the premium floor its pool is cut at.
-   * Remembered in the journal, so it survives a deploy and is the same on
-   * every phone. (Its phone alert and automatic trade went on 4 Oct 2026.)
-   */
-  app.get('/api/trade/best-trade/settings', async () => ({
-    minPremiumUsd: svc.bestTradeMinPremiumUsd,
-  }));
-
-  app.post('/api/trade/best-trade/settings', async (req, reply) => {
-    const b = (req.body ?? {}) as { minPremiumUsd?: unknown };
-    if (b.minPremiumUsd !== undefined) {
-      const v = Number(b.minPremiumUsd);
-      if (!Number.isFinite(v) || !(v > 0) || v > 1_000) { reply.code(400); return { error: 'minPremiumUsd must be a price above zero' }; }
-      await svc.setBestTradeMinPremiumUsd(v);
-    }
-    return { ok: true, minPremiumUsd: svc.bestTradeMinPremiumUsd };
-  });
-
   // Switch the Telegram fill alerts on or off.
   app.post('/api/trade/alerts', async (req, reply) => {
     const b = (req.body ?? {}) as { on?: unknown };

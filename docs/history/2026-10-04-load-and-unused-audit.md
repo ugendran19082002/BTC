@@ -38,11 +38,12 @@ Every item carries one of three labels:
 | Day's trades re-read every second (was Important 4) | The day's booked P&L is held until the journal is written. | New test: the held figure always equals a fresh read |
 | Zone entries | The live grader that sees the perp reach the zone now looks every 250 ms, not every second. | The entry tests pass |
 | Screens at every width | All eight screens pass at 360 to 1920 px: no sideways scroll, nothing past the edge. The check script now covers every screen. | `app/web/scripts/responsive-check.mjs`, on a paper desk |
-| The desk's own gauges | Calls to Delta and quota used, 429s, Delta's answer time, pass time over the open trades, the signal run's hold on the thread. On Settings, "Speed and Delta quota". Counting only. | 4 new server tests, 2 web tests |
-| Limit on one contract | "At most on one strike" on the strategy card: a signal that would take one contract past it is skipped. Off (0) until a number is set. | New end-to-end test; 3 web tests |
+| The desk's own gauges | Calls to Delta and quota used, 429s, Delta's answer time, pass time over the open trades, the signal run's hold on the thread. On Logs, the Speed tab. Counting only. | 4 new server tests, 2 web tests |
 | Entry cost telemetry | Each entry order is journalled with the bid, ask and mark it was judged on. No change to how entries are priced. | New engine test |
 | `/api/candles`, `/api/perp` | Held for a few seconds on the screens' routes only. | Typecheck; route tests |
 | `/api/entry/record` | Reckoned once per data version, groups built without copying. Same figures. | The entry tests |
+| Settings screen | Removed, with its two unused cards. "Errors" is now "Logs" with Errors, Telegram and Speed tabs. | Web suite: 1,120 pass |
+| Index check | No duplicate indexes, two unused ones of 16 kB, no missing one that matters. Nothing changed. | Read from the live counters |
 | Database sizing | Two CPUs and 1.5 GB (was one and 512 MB), 512 MB of buffers, `pg_stat_statements` loaded. Takes effect on the next deploy, which restarts the database. | The settings were started on the same image in a throwaway container |
 | Order-history CSV | Taken out of git and added to `.gitignore`. The file stays on disk. It is still in the git history. | — |
 
@@ -63,7 +64,6 @@ Test totals after the changes: server 1,344 of 1,344 in the touched areas, web 1
 | 5 | Every read of trades scans the whole journal | `app/server/src/trading/store.ts`, the events read. About 60 to 70 full scans a minute of `trade_events`. | Read the journal only for the trades that need it. |
 | 6 | Disk is 85% full (61 of 75 GB) | Docker images: 7.5 GB can be freed. Build cache: 5.3 GB. | Prune unused Docker images and build cache. |
 | 7 | The database cannot name its slow queries yet | `pg_stat_statements` is loaded by the next deploy. | After that deploy, run the one command in `docs/guides/operations.md`, "Which statements cost what". |
-| 9 | Set the per-contract limit | The limit exists and is off. | Choose the number of lots and type it into "At most on one strike". |
 | 10 | One-lot live test of a stop at Delta | Needed before the option stop is switched on for any signal strategy. | Place one lot with a stop, by hand, and watch which way Delta triggers it. |
 | 8 | Full test runs on this machine while the desk trades | They pushed the load to about 6 on 4 CPUs. | Run only the tests of the part that changed. |
 

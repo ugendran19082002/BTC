@@ -4,6 +4,8 @@
 
 FROM node:24.12-alpine AS build
 WORKDIR /build
+# See Dockerfile: no npm update notice, funding line or audit request in the build.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 COPY app/web/package.json app/web/package-lock.json ./
 # See Dockerfile: the layer cache covers "nothing changed", this covers "one
 # dependency moved".

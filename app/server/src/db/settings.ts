@@ -61,6 +61,12 @@ const MIGRATIONS: Migration[] = [
            ('best_trade_alert', 'best_trade_last', 'best_trade_sent', 'best_trade_repeat',
             'auto_trade', 'auto_trade_limits', 'auto_trade_done');`,
   },
+  {
+    // A limit on the lots on one contract was added and taken out again the same day (4 Oct 2026, the owner's
+    // call): its key, if a number was ever typed into it, goes with it.
+    id: 'trading-008-retire-contract-lots',
+    up: `DELETE FROM public.settings WHERE key = 'signal_contract_max_lots';`,
+  },
 ];
 
 export class SettingsCache implements Settings {
