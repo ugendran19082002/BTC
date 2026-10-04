@@ -12,7 +12,7 @@ describe('the timeframe analysis card', () => {
     expect(screen.getByRole('heading', { name: 'Timeframe analysis' })).toBeInTheDocument();
     const t = screen.getByLabelText('timeframe analysis');
     const rows = within(t).getAllByRole('row').map((r) => r.textContent);
-    expect(rows).toEqual(['4H↑ BullishHH / HLmacro context', '1H↓ BearishLH / LLmajor structure', '1M? Not read4 candlesexecution']);
+    expect(rows).toEqual(['TFDirectionSwingsRole', '4H↑ BullishHH / HLmacro context', '1H↓ BearishLH / LLmajor structure', '1M? Not read4 candlesexecution']);
     expect(within(t).getByLabelText('timeframe trend view')).toHaveTextContent('4H ↑1H ↓1M ?');
   });
 

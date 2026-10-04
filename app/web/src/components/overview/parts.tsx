@@ -43,8 +43,10 @@ export function Panel({ title, right, className, children, id, name }: {
   );
 }
 
-export function Row({ label, value, tone, hint, mark }: {
+export function Row({ label, value, tone, hint, mark, bar }: {
   label: ReactNode; value: ReactNode; tone?: 'up' | 'down' | 'warn' | 'muted'; hint?: string;
+  /** A thin meter beside the label, 0 to 1 of its row's scale: how big this figure is against its neighbours. */
+  bar?: number | null;
   /** A leading marker, as the reference screens draw: an arrow for a reading's lean, a dot for a level's kind. */
   mark?: 'arrow' | 'dot';
 }) {
@@ -56,6 +58,9 @@ export function Row({ label, value, tone, hint, mark }: {
         {mark === 'dot' && <i className={cn('ov-dot', `ov-bg-${tone ?? 'muted'}`)} aria-hidden />}
         {label}
       </span>
+      {bar !== undefined && bar !== null && Number.isFinite(bar) && (
+        <i className="ov-row-bar" aria-hidden><i className={`ov-bg-${tone ?? 'muted'}`} style={{ width: `${Math.round(Math.min(1, Math.max(0, bar)) * 100)}%` }} /></i>
+      )}
       <span className={cn('ov-row-value', tone && `ov-${tone}`)}>{value}</span>
     </div>
   );

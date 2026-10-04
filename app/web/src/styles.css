@@ -1750,6 +1750,25 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-empty { color: var(--muted); font-size: 13px; margin: 6px 0; }
 .ov-foot { color: var(--dim); font-size: 12px; margin: 8px 0 0; }
 .ov-up { color: var(--up); } .ov-down { color: var(--down); } .ov-warn { color: var(--warn); } .ov-muted { color: var(--muted); }
+/* A row's meter: a thin bar between the label and the value, on a track a step lighter than the panel. */
+.ov-row-bar { flex: 1 1 60px; max-width: 160px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--text) 9%, transparent); overflow: hidden; align-self: center; }
+.ov-row-bar > i { display: block; height: 100%; border-radius: 3px; }
+.ov-bg-warn { background: var(--warn); }
+/* The market read is one section: two columns, and whatever is marked wide runs across the foot of both. */
+.ov-main > .ov-wide { grid-column: 1 / -1; min-width: 0; }
+/* Price change: one tile a window, side by side; they wrap on a narrow screen. The colour is on the edge and
+   the arrow; the way is also in the sign, so it is never colour alone. */
+.ov-pc-strip { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.ov-pc-tile { display: grid; gap: 2px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line-soft); border-top: 2px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--text) 3%, transparent); text-align: center; }
+.ov-pc-tile.ov-pc-up { border-top-color: var(--up); }
+.ov-pc-tile.ov-pc-down { border-top-color: var(--down); }
+.ov-pc-tile.ov-pc-mark { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.ov-pc-label { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-pc-pts { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; display: inline-flex; align-items: baseline; justify-content: center; gap: 4px; }
+.ov-pc-pts > i { font-style: normal; font-size: 9px; }
+.ov-pc-pct { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .ov-pc-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
 .ov-bg-up { background: var(--up); } .ov-bg-down { background: var(--down); } .ov-bg-muted { background: var(--muted); }
 .ov-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
 .ov-tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: capitalize; white-space: nowrap; }
@@ -2096,10 +2115,6 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 .ov-expiry-phases em { font-style: normal; color: var(--dim); } .ov-expiry-phases em.on { color: var(--up); font-weight: 700; }
 .ov-mono { font-family: monospace; font-weight: 600; }
 
-/* Price change: the marks (since entry, since the day start) sit apart from the windows. */
-.ov-pchange td:not(:first-child), .ov-pchange th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.ov-pchange tr.ov-pchange-mark td { border-top: 1px solid var(--border); font-weight: 600; }
-.ov-pchange tr.ov-pchange-mark + tr.ov-pchange-mark td { border-top: 0; }
 
 /* Multi-timeframe: the pressure a move's type puts on the price, under the type. */
 .ov-mtf-pressure { display: block; font-size: 10.5px; line-height: 1.2; opacity: .85; }

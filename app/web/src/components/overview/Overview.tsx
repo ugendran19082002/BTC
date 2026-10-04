@@ -164,6 +164,9 @@ export function Overview({
           <ErrorBoundary where="Flow">
             <FlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} />
           </ErrorBoundary>
+        </div>
+        {/* Across the foot of both columns: one tile a window, side by side. */}
+        <div className="ov-wide">
           <ErrorBoundary where="Price change">
             <PriceChangePanel price={priceChange ?? null} spot={spot} />
           </ErrorBoundary>

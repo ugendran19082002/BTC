@@ -17,9 +17,17 @@ export function TimeframeAnalysisPanel({ rows }: { rows: readonly TimeframeRow[]
         {rows.length ? (
           <>
             <table className="w-full border-collapse">
+              <thead>
+                <tr className="text-left text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                  <th className="pb-1 pr-2 font-medium">TF</th>
+                  <th className="pb-1 pr-2 font-medium">Direction</th>
+                  <th className="pb-1 pr-2 font-medium">Swings</th>
+                  <th className="pb-1 text-right font-medium">Role</th>
+                </tr>
+              </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.tf} className="border-t border-border first:border-t-0">
+                  <tr key={r.tf} className="border-t border-border">
                     <td className="py-1 pr-2 font-semibold">{r.tf.toUpperCase()}</td>
                     <td className={cn('pr-2', cls(r.trend))}>{arrow(r.trend, r.label)} {r.label}</td>
                     <td className="pr-2 text-muted-foreground">{r.structure}</td>

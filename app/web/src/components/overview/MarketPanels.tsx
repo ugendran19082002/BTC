@@ -172,12 +172,15 @@ function TradeFlowPanel({ perp, window: win, onWindow, bare = false }: { perp: P
   const delta = f.deltaVolume;
   const last = f.cvd.at(-1)?.cvd ?? null;
   const kct = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : fmt.n(v));
+  // The three volumes on one scale -- the larger side is the full bar -- so the lean is seen before it is read.
+  const scale = Math.max(f.buyVolume, f.sellVolume);
+  const share = (v: number) => (scale > 0 ? Math.abs(v) / scale : null);
   return (
     <Frame bare={bare} title="BTC flow · perpetual"
       right={<span className="ov-chain-head">{head}<small className={f.minutesCovered < f.windowMin ? 'ov-warn' : 'ov-muted'} title="Minutes in the window with at least one print">{f.minutesCovered} of {f.windowMin} min</small></span>}>
-      <Row mark="dot" tone="up" label="Buy volume" value={`${kct(f.buyVolume)} ct`} hint="Contracts bought by the aggressor: buys that lifted the offer" />
-      <Row mark="dot" tone="down" label="Sell volume" value={`${kct(f.sellVolume)} ct`} hint="Contracts sold by the aggressor: sells that hit the bid" />
-      <Row mark="dot" tone={delta > 0 ? 'up' : delta < 0 ? 'down' : 'muted'} label="Delta volume" value={`${delta > 0 ? '+' : ''}${kct(delta)} ct`} hint="Buy volume minus sell volume" />
+      <Row mark="dot" tone="up" label="Buy volume" bar={share(f.buyVolume)} value={`${kct(f.buyVolume)} ct`} hint="Contracts bought by the aggressor: buys that lifted the offer" />
+      <Row mark="dot" tone="down" label="Sell volume" bar={share(f.sellVolume)} value={`${kct(f.sellVolume)} ct`} hint="Contracts sold by the aggressor: sells that hit the bid" />
+      <Row mark="dot" tone={delta > 0 ? 'up' : delta < 0 ? 'down' : 'muted'} label="Delta volume" bar={share(delta)} value={`${delta > 0 ? '+' : ''}${kct(delta)} ct`} hint="Buy volume minus sell volume" />
       <Row mark="dot" tone={last === null ? 'muted' : last >= 0 ? 'up' : 'down'} label="CVD" value={<CvdLine cvd={f.cvd} />} hint="Cumulative volume delta over the window, minute by minute" />
       <Row mark="dot" tone={f.largeTrades > 0 ? 'warn' : 'muted'} label="Large trades" value={fmt.n(f.largeTrades)} hint={`Prints of 200 contracts (0.2 BTC) or more: ${fmt.n(f.largeBuyVolume)} ct bought, ${fmt.n(f.largeSellVolume)} ct sold`} />
       <Row mark="dot" tone={f.aggressorBuyPct === null ? 'muted' : f.aggressorBuyPct > 0.55 ? 'up' : f.aggressorBuyPct < 0.45 ? 'down' : 'muted'} label="Aggressor buy %" value={fmt.pct(f.aggressorBuyPct, 1)} hint="Buy volume as a share of the total: above a half, buyers are lifting offers" />
@@ -286,33 +289,33 @@ const IST_HM_PC = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', h
 /**
  * Price change: BTC now against each window back -- the last minute out to half
  * a day -- and against the desk's own marks, the first entry of the open
- * positions and the last 17:30 settlement. Points and percent, up in green and
- * down in red. Back on the Live screen on 4 Oct 2026 (it was there from 21 Sep
- * until the screen was trimmed).
+ * positions and the last 17:30 settlement. One tile a window, side by side
+ * across the screen, wrapping on a phone: an arrow and a sign for the way, the
+ * points, the percent under them. Back on the Live screen on 4 Oct 2026.
  */
 export function PriceChangePanel({ price, spot }: { price: { spot: number | null; rows: PriceChange[] } | null; spot: number | null }) {
   const rows = price?.rows ?? [];
-  const label = (r: PriceChange) => r.mark === 'entry' ? `Since entry ${IST_HM_PC.format(new Date(r.at))}` : r.mark === 'dayStart' ? 'last settlement 17:30' : r.minutes! >= 60 ? `${r.minutes! / 60}h` : `${r.minutes}m`;
+  const label = (r: PriceChange) => r.mark === 'entry' ? `Since entry ${IST_HM_PC.format(new Date(r.at))}` : r.mark === 'dayStart' ? 'Last settlement 17:30' : r.minutes! >= 60 ? `${r.minutes! / 60}h` : `${r.minutes}m`;
   const now = price?.spot ?? spot;
   return (
     <Panel title="Price change" right={<small className="ov-muted">BTC {fmt.n(now)}</small>}>
       {rows.length === 0 ? <p className="ov-empty">No price record yet.</p> : (
-        <table className="ov-mini ov-pchange" aria-label="price change">
-          <thead><tr><th>Window</th><th>Then</th><th>Δ pts</th><th>Δ %</th></tr></thead>
-          <tbody>
-            {rows.map((r) => {
-              const tone = r.pts === null ? 'ov-muted' : r.pts > 0 ? 'ov-up' : r.pts < 0 ? 'ov-down' : 'ov-muted';
-              return (
-                <tr key={`${r.mark ?? r.minutes}`} className={r.mark ? 'ov-pchange-mark' : undefined}>
-                  <td title={`${IST_HM_PC.format(new Date(r.at))} IST`}>{label(r)}</td>
-                  <td>{fmt.n(r.then)}</td>
-                  <td className={tone}>{r.pts === null ? '—' : `${r.pts > 0 ? '+' : ''}${fmt.n(Math.round(r.pts))}`}</td>
-                  <td className={tone}>{r.pct === null ? '—' : `${r.pct > 0 ? '+' : ''}${r.pct.toFixed(2)}%`}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <ul className="ov-pc-strip" aria-label="price change">
+          {rows.map((r) => {
+            const way = r.pts === null ? 'flat' : r.pts > 0 ? 'up' : r.pts < 0 ? 'down' : 'flat';
+            const tone = way === 'up' ? 'ov-up' : way === 'down' ? 'ov-down' : 'ov-muted';
+            return (
+              <li key={`${r.mark ?? r.minutes}`} className={`ov-pc-tile ov-pc-${way}${r.mark ? ' ov-pc-mark' : ''}`}
+                  title={`BTC was ${fmt.n(r.then)} at ${IST_HM_PC.format(new Date(r.at))} IST`}>
+                <span className="ov-pc-label">{label(r)}</span>
+                <b className={`ov-pc-pts ${tone}`}>
+                  {r.pts === null ? '—' : <><i aria-hidden>{way === 'up' ? '▲' : way === 'down' ? '▼' : '■'}</i>{`${r.pts > 0 ? '+' : ''}${fmt.n(Math.round(r.pts))}`}</>}
+                </b>
+                <small className="ov-pc-pct">{r.pct === null ? '—' : `${r.pct > 0 ? '+' : ''}${r.pct.toFixed(2)}%`}</small>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </Panel>
   );
