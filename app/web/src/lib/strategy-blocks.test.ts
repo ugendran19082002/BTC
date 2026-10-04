@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  blockRanges, blocksWords, hoursLabel, ownPick, pickWords, splitBlocks, strikeBlockProblems,
+  blockHoursOf, blockRanges, blocksWords, hoursLabel, ownPick, pickWords, splitBlocks, strikeBlockProblems,
 } from '@/lib/strategy-blocks';
 import { strategyProblems } from '@/lib/strategy-rules';
 import { describeStrategy } from '@/lib/strategy-preview';
@@ -178,5 +178,30 @@ describe('the distance rule and its else strike', () => {
   it('splitting carries the rule\'s two strikes into every new block', () => {
     for (const blk of splitBlocks(floored(6, 8), 240)) expect([blk.premium.minOtm, blk.premium.elseOtm]).toEqual([6, 8]);
     for (const blk of splitBlocks(floored(null), 240)) expect(blk.premium.minOtm ?? null).toBeNull();
+  });
+});
+
+describe('the split length, read back from the saved blocks', () => {
+  it('[critical] a window split every 3 hours and saved reads as 3 -- not the form\'s default 4', () => {
+    for (const hours of [3, 4, 6, 2, 1.5]) {
+      expect(blockHoursOf(cfg({ strikeBlocks: splitBlocks(cfg(), hours * 60) }))).toBe(hours);
+    }
+  });
+
+  it('no blocks, or a first block with no time: the default 4', () => {
+    expect(blockHoursOf(cfg())).toBe(4);
+    expect(blockHoursOf(cfg({ strikeBlocks: [] }))).toBe(4);
+    expect(blockHoursOf(cfg({ strikeBlocks: [premium('', 40)] }))).toBe(4);
+  });
+
+  it('[critical] a window moved from under its blocks falls back to 4, so "Split again" still makes blocks', () => {
+    // 9:00 AM to 5:00 PM with a block left at 9:35 PM: 12 h 35 min from the start is not a length of this window
+    const moved = cfg({ entryTime: '09:00', exitTime: '17:00', strikeBlocks: [premium('21:35', 40)] });
+    expect(blockHoursOf(moved)).toBe(4);
+    expect(splitBlocks(moved, blockHoursOf(moved) * 60).map((b) => b.at)).toEqual(['13:00']);
+  });
+
+  it('a first block moved by hand reads as where it now starts: 5:35 PM to 9:00 PM is 3.42 h', () => {
+    expect(blockHoursOf(cfg({ strikeBlocks: [premium('21:00', 40), premium('01:35', 30)] }))).toBe(3.42);
   });
 });

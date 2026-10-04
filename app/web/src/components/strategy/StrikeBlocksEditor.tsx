@@ -9,7 +9,7 @@ import {
   FieldError, MinOtmFields, QuickFix, StrikeFields, StrikeStepper, num, type ErrOf, type SetField,
 } from '@/components/strategy/form-parts';
 import {
-  DEFAULT_BLOCK_HOURS, blockRanges, hoursLabel, ownPick, splitBlocks, strikeBlockProblems, type BlockRange,
+  blockHoursOf, blockRanges, hoursLabel, ownPick, splitBlocks, strikeBlockProblems, type BlockRange,
 } from '@/lib/strategy-blocks';
 import { hhmmOf, isHhmm, minutesForward, minutesOf, time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -36,7 +36,8 @@ import { cn } from '@/lib/utils';
 export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: SetField; err: ErrOf }) {
   const blocks = c.strikeBlocks ?? [];
   const on = blocks.length > 0;
-  const [hours, setHours] = useState(DEFAULT_BLOCK_HOURS);
+  // Starts at the length the saved blocks were cut at, so a strategy split every 3 hours reopens saying 3.
+  const [hours, setHours] = useState(() => blockHoursOf(c));
   const everyMin = Math.round(hours * 60);
 
   const windowOk = isHhmm(c.entryTime) && isHhmm(c.exitTime);

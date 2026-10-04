@@ -649,6 +649,47 @@ describe('the strike rule over the window: the same all the time, or cut into bl
   });
 });
 
+describe('the split length is remembered with the blocks', () => {
+  const blocksEvery = (hours: number) => {
+    const out = [];
+    for (let m = hours * 60; m < 1434; m += hours * 60) {
+      const t = (17 * 60 + 35 + m) % 1440;
+      out.push({ at: `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`, strikeRule: 'premium' as const, strikeStep: 0, premium: { mode: 'atMost' as const, usd: 50, fallbackUsd: 75 } });
+    }
+    return out;
+  };
+  const saved = (hours: number) => signalStrategy({}, {
+    entryTime: '17:35', exitTime: '17:29', strikeRule: 'premium', premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 }, strikeBlocks: blocksEvery(hours),
+  });
+
+  it('[critical] a strategy saved split every 3 hours reopens showing 3 h and its 8 blocks -- not the default 4', () => {
+    show(saved(3));
+    tab('Strike & lots');
+    expect(screen.getByLabelText('block hours')).toHaveValue('3');
+    expect(within(screen.getByRole('list', { name: 'strike blocks' })).getAllByRole('listitem')).toHaveLength(8);
+    expect(screen.getByText(/5:35 PM → 5:29 PM is 23 h 54 min: 8 blocks of 3 h, the last 2 h 54 min/)).toBeInTheDocument();
+  });
+
+  it('[critical] typed, split, and another tab visited: the length is still what was typed', () => {
+    show(saved(4));
+    tab('Strike & lots');
+    expect(screen.getByLabelText('block hours')).toHaveValue('4');
+    fireEvent.change(screen.getByLabelText('block hours'), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Split' }));
+    tab('When');
+    tab('Strike & lots');
+    expect(screen.getByLabelText('block hours')).toHaveValue('6');
+    expect(within(screen.getByRole('list', { name: 'strike blocks' })).getAllByRole('listitem')).toHaveLength(4);
+  });
+
+  it('a strategy with one rule all the time starts the split at 4 h', () => {
+    show(signalStrategy({}, { entryTime: '17:35', exitTime: '17:29' }));
+    tab('Strike & lots');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Different strike rule by time of day' }));
+    expect(screen.getByLabelText('block hours')).toHaveValue('4');
+  });
+});
+
 describe('the distance rule and its else strike, beside the premium', () => {
   const day = (over: Partial<Strategy['config']> = {}) => signalStrategy({}, {
     entryTime: '17:35', exitTime: '17:29', lots: 3,

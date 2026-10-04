@@ -18,6 +18,23 @@ export type StrikePick = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'pre
 /** The split the form offers first. */
 export const DEFAULT_BLOCK_HOURS = 4;
 
+/**
+ * The length the window is cut at, read back from the blocks themselves: how
+ * far block 2 starts after the window does. A strategy split every 3 hours and
+ * saved opens showing 3, not the form's 4 -- the length is not stored, the
+ * blocks are, so the blocks are where it is read from. No blocks, or a first
+ * block with no usable time or outside the window: the default.
+ */
+export function blockHoursOf(c: StrategyConfig): number {
+  const first = c.strikeBlocks?.[0];
+  if (!first || !isHhmm(first.at) || !isHhmm(c.entryTime) || !isHhmm(c.exitTime)) return DEFAULT_BLOCK_HOURS;
+  const entry = minutesOf(c.entryTime);
+  const gap = minutesForward(entry, minutesOf(first.at));
+  // A first block outside the window -- the window was moved from under it -- says nothing about a length.
+  if (gap === 0 || gap >= minutesForward(entry, minutesOf(c.exitTime))) return DEFAULT_BLOCK_HOURS;
+  return Math.round((gap / 60) * 100) / 100;
+}
+
 /** The strategy's own rule as a block would carry it; the wall, which a block cannot be, reads as premium. */
 export function ownPick(c: StrategyConfig): Omit<StrikeBlock, 'at'> {
   return { strikeRule: c.strikeRule === 'strict' ? 'strict' : 'premium', strikeStep: c.strikeStep, premium: { ...c.premium } };
