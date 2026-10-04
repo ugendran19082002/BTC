@@ -9,7 +9,7 @@ import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
-import { globalMaxOpenProblem, signalTotals, totalsUnderCap, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
+import { globalMaxOpenProblem, roomLeft, signalTotals, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
 import { inr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -164,7 +164,10 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   // The switched-on strategies added up, and the worst case under the desk-wide limit.
   const totals = signalTotals(mine, data?.balanceUsd ?? null, data?.spot ?? null);
   const cap = data?.signalMaxOpen ?? 0;
-  const capped = totalsUnderCap(mine, cap, data?.balanceUsd ?? null, data?.spot ?? null);
+  // What can still open from here, at worst, and whether the free margin carries it.
+  const room = roomLeft(mine, cap, data?.openNow ?? 0, data?.spot ?? null);
+  const freeUsd = data?.balanceUsd ?? null;
+  const short = freeUsd !== null && room.marginUsd > freeUsd;
   const inUse = usageNow(mine, data?.spot ?? null);
 
   return (
@@ -233,11 +236,12 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
       */}
       {data && totals.strategies > 0 && (
         <p aria-label="strategies added up" className="m-0 mb-2 rounded-lg bg-muted px-2.5 py-1.5 text-[12px] leading-relaxed text-muted-foreground">
-          <b className="text-foreground">{totals.strategies}</b> strateg{totals.strategies === 1 ? 'y' : 'ies'} on
-          {' · '}up to <b className="text-foreground">{totals.entries}</b> entr{totals.entries === 1 ? 'y' : 'ies'} at once
-          {' · '}<b className="text-foreground">{totals.lots}</b> lots
-          {' · '}needs <b className={cn('tabular-nums', totals.share !== null && totals.share > 1 ? 'text-[var(--down)]' : 'text-foreground')}>{inr(usdToInr(totals.marginUsd))}</b> margin
-          {totals.share !== null && <> ({Math.round(totals.share * 100)}% of the {inr(usdToInr(data.balanceUsd))} free)</>}
+          <span className="block" aria-label="the strategies' limits, added up">
+            <b className="text-foreground">Limits</b>: {totals.strategies} strateg{totals.strategies === 1 ? 'y' : 'ies'} on
+            {' · '}up to <b className="text-foreground">{totals.entries}</b> entr{totals.entries === 1 ? 'y' : 'ies'} at once
+            {' · '}<b className="text-foreground">{totals.lots}</b> lots
+            {' · '}<b className="tabular-nums text-foreground">{inr(usdToInr(totals.marginUsd))}</b> margin with all of it open
+          </span>
           {mine.some((s) => s.open) && (
             <span className="block" aria-label="in use now, all strategies">
               <b className="text-foreground">In use now</b>: {inUse.entries} of {totals.entries} entr{totals.entries === 1 ? 'y' : 'ies'}
@@ -245,18 +249,28 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
               {' · '}<span className="tabular-nums">{inr(usdToInr(inUse.marginUsd))} of {inr(usdToInr(totals.marginUsd))}</span> margin
             </span>
           )}
-          {cap > 0 && cap < totals.entries && (
-            <span className="block">
-              With the limit of <b className="text-foreground">{cap}</b>: at most <b className="text-foreground">{capped.lots}</b> lots
-              {' · '}<b className={cn('tabular-nums', capped.share !== null && capped.share > 1 ? 'text-[var(--down)]' : 'text-foreground')}>{inr(usdToInr(capped.marginUsd))}</b> margin
-              {capped.share !== null && <> ({Math.round(capped.share * 100)}% of free)</>} — the worst case, the largest lots first.
-            </span>
-          )}
-          {capped.share !== null && capped.share > 1 && (
+          {/*
+            What is still to open, against what is free. Not the whole requirement: the free balance is already net
+            of the margin the open positions use, and holding all of it against that counted them twice.
+          */}
+          <span className="block" aria-label="still to open, against the free margin">
+            <b className="text-foreground">Still to open</b>{cap > 0 ? <> under the limit of <b className="text-foreground">{cap}</b></> : null}:
+            {room.entries === 0
+              ? <> nothing — {cap > 0 && (data.openNow ?? 0) >= cap ? 'the limit is reached' : 'every strategy is at its own limit'}.</>
+              : <>
+                  {' '}up to <b className="text-foreground">{room.entries}</b> entr{room.entries === 1 ? 'y' : 'ies'}
+                  {' · '}<b className="text-foreground">{room.lots}</b> lots
+                  {' · '}needs <b className={cn('tabular-nums', short ? 'text-[var(--down)]' : 'text-foreground')}>{inr(usdToInr(room.marginUsd))}</b> more margin
+                  {freeUsd !== null && <> — <b className="tabular-nums text-foreground">{inr(usdToInr(freeUsd))}</b> is free{freeUsd > 0 ? ` (${Math.round((room.marginUsd / freeUsd) * 100)}%)` : ''}</>}
+                  . The worst case: the largest lots first.
+                </>}
+          </span>
+          {short && (
             <span role="note" className="block text-[var(--down)]">
-              That is more than the free margin: an order that does not fit is refused at Delta. Lower the limit, the lots, or a strategy&apos;s own &ldquo;at most open&rdquo;.
+              That is more than is free: an order that does not fit is refused at Delta. Lower the limit, the lots, or a strategy&apos;s own &ldquo;at most open&rdquo;.
             </span>
           )}
+          <span className="block text-[11px] text-[var(--dim)]">Margin is the desk&apos;s estimate at 200x on BTC now; Delta&apos;s own figure moves with the premium.</span>
         </p>
       )}
 

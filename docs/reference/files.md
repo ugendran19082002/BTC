@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-416 files listed, 199 test files counted below, images and lockfiles left out.
+417 files listed, 200 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 114 |
-| `app/web` | 85 |
+| `app/web` | 86 |
 
 ## `(root)`
 
@@ -496,6 +496,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [strategy-exits.ts](../../app/web/src/lib/strategy-exits.ts) | A strategy's two exits, read as a percentage or as points, and moved through the day by time steps: |
 | [strategy-preview.ts](../../app/web/src/lib/strategy-preview.ts) | What a strategy will actually do, in words and in money. |
 | [strategy-rules.ts](../../app/web/src/lib/strategy-rules.ts) | What is wrong with a strategy before it is saved, and where on the form. |
+| [strategy-totals.ts](../../app/web/src/lib/strategy-totals.ts) | What the signal strategies switched on add up to (4 Oct 2026): how many entries they allow between them, how many lots that is, and the margin it would take with every one of them open at once. |
 | [tab-title.ts](../../app/web/src/lib/tab-title.ts) | What the browser tab says: the price, how far it has come today, and the day's P&L -- the three numbers somebody glances at from another tab. |
 | [time.ts](../../app/web/src/lib/time.ts) | Times of day, as the desk stores them and as a person reads them. |
 | [utils.ts](../../app/web/src/lib/utils.ts) | Class-name helpers shared by every component. |

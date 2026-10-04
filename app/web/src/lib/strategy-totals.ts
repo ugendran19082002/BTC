@@ -42,29 +42,30 @@ export function signalTotals(strategies: readonly Strategy[], balanceUsd: number
 }
 
 /**
- * The most the desk could hold under a limit of `cap` entries: the worst case,
- * so the entries are taken from the strategies with the most lots first, each
- * up to its own limit. At or above what the strategies allow, it is the totals.
+ * What can still open from here, at worst: the entries the strategies have
+ * room for -- each its own limit less what it holds -- inside what the
+ * desk-wide limit leaves (`cap` less every open trade on the desk; no cap, no
+ * such bound), taken from the strategies with the most lots first.
+ *
+ * This is the number to hold against the FREE margin. The free balance is
+ * already net of the margin the open positions use, so the whole requirement
+ * against it counts those positions twice -- it read "more than the free
+ * margin" on a desk whose remaining entries fitted (4 Oct 2026).
  */
-export function totalsUnderCap(strategies: readonly Strategy[], cap: number, balanceUsd: number | null, spot: number | null): SignalTotals {
-  const all = signalTotals(strategies, balanceUsd, spot);
-  if (!(cap > 0) || cap >= all.entries) return all;
-  let left = cap;
+export function roomLeft(
+  strategies: readonly Strategy[], cap: number, openOnDesk: number, spot: number | null,
+): { entries: number; lots: number; marginUsd: number } {
+  let slots = cap > 0 ? Math.max(0, cap - openOnDesk) : Infinity;
+  let entries = 0;
   let lots = 0;
   for (const s of [...on(strategies)].sort((a, b) => b.config.lots - a.config.lots)) {
-    const take = Math.min(left, s.config.signal!.maxOpen);
+    const take = Math.min(slots, Math.max(0, s.config.signal!.maxOpen - (s.open?.trades ?? 0)));
+    entries += take;
     lots += take * s.config.lots;
-    left -= take;
-    if (left <= 0) break;
+    slots -= take;
+    if (slots <= 0) break;
   }
-  // The same margin a lot as the totals: one model, however many lots.
-  const perLotUsd = all.lots > 0 ? all.marginUsd / all.lots : 0;
-  const perLotInr = all.lots > 0 ? all.marginInr / all.lots : 0;
-  const marginUsd = lots * perLotUsd;
-  return {
-    strategies: all.strategies, entries: cap, lots, marginUsd, marginInr: lots * perLotInr,
-    share: balanceUsd && balanceUsd > 0 ? marginUsd / balanceUsd : null,
-  };
+  return { entries, lots, marginUsd: lots * (spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0) };
 }
 
 /**

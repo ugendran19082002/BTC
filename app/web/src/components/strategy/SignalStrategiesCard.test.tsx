@@ -172,8 +172,11 @@ describe('at most open at once, across all strategies', () => {
     await screen.findByText('A');
     const sum = screen.getByLabelText('strategies added up');
     // 146 lots x $0.425 a lot = $62.05 = ₹5,274 at ₹85; the account has $228 = ₹19,380 free
-    expect(sum).toHaveTextContent(/5 strategies on · up to 28 entries at once · 146 lots · needs ₹5,274(\.\d+)? margin \(27% of the ₹19,380 free\)/);
-    expect(sum).not.toHaveTextContent('With the limit');
+    expect(sum).toHaveTextContent(/Limits: 5 strategies on · up to 28 entries at once · 146 lots · ₹5,274(\.\d+)? margin with all of it open/);
+    // nothing reported open by this server: all 28 are still to open, against what is free
+    expect(screen.getByLabelText('still to open, against the free margin')).toHaveTextContent(
+      /Still to open: up to 28 entries · 146 lots · needs ₹5,274(\.\d+)? more margin — ₹19,380 is free \(27%\)/);
+    expect(sum).toHaveTextContent('Margin is the desk\'s estimate at 200x on BTC now');
     expect(within(sum).queryByRole('note')).toBeNull();
   });
 
@@ -195,12 +198,39 @@ describe('at most open at once, across all strategies', () => {
     await waitFor(() => expect(getStrategies.mock.calls.length).toBeGreaterThan(before));
   });
 
-  it('[critical] under a limit of 6: at most 36 lots -- six entries of the 6-lot strategy -- and its margin', async () => {
+  it('[critical] under a limit of 6 with 3 open on the desk: three places left -- the 6-lot strategy\'s -- and only their margin against what is free', async () => {
     getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 6, openNow: 3 }));
     render(<SignalStrategiesCard />);
     await screen.findByText('A');
-    // 36 lots x $0.425 = $15.30 = ₹1,300.50
-    expect(screen.getByLabelText('strategies added up')).toHaveTextContent(/With the limit of 6: at most 36 lots · ₹1,30\d(\.\d+)? margin \(7% of free\) — the worst case, the largest lots first\./);
+    // 3 x 6 lots = 18 lots x $0.425 = $7.65 = ₹650
+    expect(screen.getByLabelText('still to open, against the free margin')).toHaveTextContent(
+      /Still to open under the limit of 6: up to 3 entries · 18 lots · needs ₹650(\.\d+)? more margin — ₹19,380 is free \(3%\)\. The worst case: the largest lots first\./);
+  });
+
+  it('[critical] at the limit: nothing more can open, said as that', async () => {
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 6, openNow: 6 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    expect(screen.getByLabelText('still to open, against the free margin')).toHaveTextContent('Still to open under the limit of 6: nothing — the limit is reached.');
+    expect(within(screen.getByLabelText('strategies added up')).queryByRole('note')).toBeNull();
+  });
+
+  it('[critical] open positions are not held against the free margin twice (the owner\'s desk, 4 Oct 2026)', async () => {
+    // 54 entries and 265 lots allowed; 12 open using 65 lots; limit 28; ₹3,515 ($41.35) free.
+    const mk = (id: string, lots: number, maxOpen: number, trades: number): Strategy =>
+      ({ ...strat(id, { ...SIG, lots, signal: { ...SIG.signal, maxOpen } }), open: { trades, lots: trades * lots } });
+    const desk = [mk('a', 8, 12, 2), mk('b', 5, 14, 5), mk('c', 6, 10, 3), mk('d', 3, 3, 2), mk('e', 2, 15, 0)];
+    getStrategies.mockResolvedValue(status(desk, { signalMaxOpen: 28, openNow: 12, balanceUsd: 3_515 / 85 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    expect(screen.getByLabelText('strategies added up')).toHaveTextContent(/up to 54 entries at once · 265 lots/);
+    expect(screen.getByLabelText('in use now, all strategies')).toHaveTextContent(/12 of 54 entries · 65 of 265 lots/);
+    // 16 places left: ten more of the 8-lot strategy (80 lots) and six of the 6-lot one (36) = 116 lots = ₹4,190.
+    const left = screen.getByLabelText('still to open, against the free margin');
+    expect(left).toHaveTextContent(/under the limit of 28: up to 16 entries · 116 lots · needs ₹4,19\d(\.\d+)? more margin — ₹3,515 is free \(119%\)/);
+    // that is over what is free, and said -- but as ₹4,190 against ₹3,515, not the whole ₹9,557 against it
+    expect(within(screen.getByLabelText('strategies added up')).getByRole('note')).toHaveTextContent('That is more than is free');
+    expect(screen.getByLabelText('strategies added up')).not.toHaveTextContent(/272%|159%/);
   });
 
   it('[critical] a limit above what the strategies allow is refused in words, put back, and not sent', async () => {
@@ -237,13 +267,13 @@ describe('at most open at once, across all strategies', () => {
     expect(field()).toHaveValue('12');
   });
 
-  it('[critical] more than the free margin is said, in red, with what to lower', async () => {
-    // $20 free against $62.05 needed
+  it('[critical] more than is free is said, in red, with what to lower', async () => {
+    // $20 free against $62.05 still to open
     getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 0, openNow: 0, balanceUsd: 20 }));
     render(<SignalStrategiesCard />);
     await screen.findByText('A');
     expect(within(screen.getByLabelText('strategies added up')).getByRole('note')).toHaveTextContent(
-      'That is more than the free margin: an order that does not fit is refused at Delta. Lower the limit, the lots, or a strategy\'s own “at most open”.');
+      'That is more than is free: an order that does not fit is refused at Delta. Lower the limit, the lots, or a strategy\'s own “at most open”.');
   });
 
   it('the server\'s refusal is shown', async () => {

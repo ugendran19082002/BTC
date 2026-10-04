@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { globalMaxOpenProblem, signalTotals, totalsUnderCap } from '@/lib/strategy-totals';
+import { globalMaxOpenProblem, roomLeft, signalTotals } from '@/lib/strategy-totals';
 import { DEFAULT_CONFIG, type Strategy } from '@/types/strategy';
 
 /**
@@ -37,21 +37,54 @@ describe('the strategies added up', () => {
   });
 });
 
-describe('under a desk-wide limit: the worst case', () => {
-  it('[critical] the entries are taken from the strategies with the most lots first, each up to its own limit', () => {
-    // 6 entries: all from the 30m strategy (6 lots each, allows 10) = 36 lots
-    const six = totalsUnderCap(FIVE, 6, 228, SPOT);
-    expect([six.entries, six.lots]).toEqual([6, 36]);
-    expect(six.marginUsd).toBeCloseTo(36 * 0.425, 6);
-    // 12 entries: ten of 6 lots, then two of 5 = 70 lots
-    expect(totalsUnderCap(FIVE, 12, 228, SPOT).lots).toBe(70);
+describe('what can still open, at worst -- the number to hold against the free margin', () => {
+  const holding = (s: Strategy, trades: number): Strategy => ({ ...s, open: { trades, lots: trades * s.config.lots } });
+
+  it('[critical] nothing open, no limit: every entry the strategies allow', () => {
+    const r = roomLeft(FIVE, 0, 0, SPOT);
+    expect([r.entries, r.lots]).toEqual([28, 146]);
+    expect(r.marginUsd).toBeCloseTo(146 * 0.425, 6);
   });
 
-  it('no limit, or one at or above what they allow, is the totals themselves', () => {
-    const all = signalTotals(FIVE, 228, SPOT);
-    expect(totalsUnderCap(FIVE, 0, 228, SPOT)).toEqual(all);
-    expect(totalsUnderCap(FIVE, 28, 228, SPOT)).toEqual(all);
-    expect(totalsUnderCap(FIVE, 40, 228, SPOT)).toEqual(all);
+  it('[critical] under a limit: only the places it leaves, taken from the largest lots first', () => {
+    // limit 6, nothing open: six entries of the 6-lot strategy
+    expect(roomLeft(FIVE, 6, 0, SPOT)).toMatchObject({ entries: 6, lots: 36 });
+    // limit 12: ten of 6 lots, then two of 5
+    expect(roomLeft(FIVE, 12, 0, SPOT)).toMatchObject({ entries: 12, lots: 70 });
+  });
+
+  it('[critical] what is already open is not counted again: the limit less the desk\'s open trades, each strategy\'s limit less its own', () => {
+    // 30m holds 4 of its 10 (6 lots each), 15m holds 3 of its 9 (5 lots); 7 open on the desk, limit 12: five places left
+    const now = FIVE.map((s) => (s.id === '30m' ? holding(s, 4) : s.id === '15m' ? holding(s, 3) : s));
+    const r = roomLeft(now, 12, 7, SPOT);
+    expect([r.entries, r.lots]).toEqual([5, 30]);                 // five more of the 6-lot strategy, which has room for six
+    expect(r.marginUsd).toBeCloseTo(30 * 0.425, 6);
+    // a trade from the ticket takes a place too: 8 open on the desk leaves four
+    expect(roomLeft(now, 12, 8, SPOT)).toMatchObject({ entries: 4, lots: 24 });
+  });
+
+  it('[critical] at the limit, or with every strategy full: nothing more can open', () => {
+    expect(roomLeft(FIVE, 6, 6, SPOT)).toEqual({ entries: 0, lots: 0, marginUsd: 0 });
+    expect(roomLeft(FIVE, 6, 9, SPOT)).toEqual({ entries: 0, lots: 0, marginUsd: 0 });
+    expect(roomLeft(FIVE.map((s) => holding(s, s.config.signal!.maxOpen)), 0, 28, SPOT)).toEqual({ entries: 0, lots: 0, marginUsd: 0 });
+  });
+
+  it('a strategy holding more than its limit (the limit lowered since) has no room, not negative room', () => {
+    const over = FIVE.map((s) => (s.id === '4h' ? holding(s, 3) : s));
+    expect(roomLeft(over, 0, 3, SPOT).entries).toBe(27);           // 28 less the 4h strategy's one place
+  });
+
+  it('[critical] the owner\'s desk, 4 Oct: 54 allowed, 12 open (65 lots), limit 28 -- the 16 places left, not the whole requirement', () => {
+    // five strategies adding to 54 entries and 265 lots; what is open adds to 12 trades and 65 lots
+    const desk = [holding(sig('a', 8, 12), 2), holding(sig('b', 5, 14), 5), holding(sig('c', 6, 10), 3), holding(sig('d', 3, 3), 2), holding(sig('e', 2, 15), 0)];
+    const t = signalTotals(desk, null, SPOT);
+    expect([t.entries, t.lots]).toEqual([54, 265]);
+    const r = roomLeft(desk, 28, 12, SPOT);
+    // 16 places left: ten more of the 8-lot strategy, then six of the 6-lot one
+    expect([r.entries, r.lots]).toEqual([16, 116]);
+    expect(r.marginUsd * 85).toBeCloseTo(4_190.5, 1);
+    // what is open (65 lots) is already margined, and is no part of this number
+    expect(desk.reduce((n, x) => n + x.open!.lots, 0)).toBe(65);
   });
 });
 
