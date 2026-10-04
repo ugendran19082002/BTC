@@ -9,6 +9,8 @@ import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
+import { globalMaxOpenProblem, signalTotals, totalsUnderCap, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
+import { inr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -18,6 +20,32 @@ import { cn } from '@/lib/utils';
  * tab, already on signals -- one strategy, two places to reach it.
  */
 
+
+/**
+ * One strategy's own limit and how much of it is in use now (4 Oct 2026): its
+ * entries, its lots and the margin behind them, each "in use of limit", with a
+ * bar for the entries. The limit is what the strategy may take; in use is what
+ * the desk holds for it this moment -- positions and working orders.
+ */
+function UsageLine({ name, u }: { name: string; u: Usage }) {
+  const share = u.maxEntries > 0 ? Math.min(1, u.entries / u.maxEntries) : 0;
+  const full = u.maxEntries > 0 && u.entries >= u.maxEntries;
+  return (
+    <div aria-label={`usage of ${name}`} className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5">
+        <span className="text-[var(--dim)]">Open now</span>
+        <b className={cn('tabular-nums', full ? 'text-[var(--warn)]' : 'text-foreground')}>{u.entries} of {u.maxEntries}</b>
+        <span role="progressbar" aria-label={`${name} entries in use`} aria-valuemin={0} aria-valuemax={u.maxEntries} aria-valuenow={u.entries}
+              className="inline-block h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+          <span className={cn('block h-full rounded-full', full ? 'bg-[var(--warn)]' : 'bg-[var(--up)]')} style={{ width: `${share * 100}%` }} />
+        </span>
+      </span>
+      <span><span className="text-[var(--dim)]">Lots in use</span> <b className="tabular-nums text-foreground">{u.lots} of {u.maxLots}</b></span>
+      <span><span className="text-[var(--dim)]">Margin in use</span> <b className="tabular-nums text-foreground">{inr(usdToInr(u.marginUsd))} of {inr(usdToInr(u.maxMarginUsd))}</b></span>
+      {full && <span className="text-[var(--warn)]">at its limit: the next signal is skipped</span>}
+    </div>
+  );
+}
 
 /**
  * The desk-wide "at most open at once" (4 Oct 2026).
@@ -31,28 +59,36 @@ import { cn } from '@/lib/utils';
  * Typed, and saved when the field is left or Enter is pressed -- it sits in a
  * header, where a Save button of its own would be one more thing to miss.
  */
-function GlobalMaxOpen({ value, openNow, busy, onSave, onInvalid }: {
-  value: number; openNow: number; busy: boolean; onSave: (n: number) => void; onInvalid: (message: string) => void;
+function GlobalMaxOpen({ value, allowed, openNow, busy, onSave, onInvalid }: {
+  value: number;
+  /** What the strategies switched on allow between them: the sum of their own limits. */
+  allowed: number;
+  openNow: number; busy: boolean; onSave: (n: number) => void; onInvalid: (message: string) => void;
 }) {
-  const [text, setText] = useState(String(value));
+  /*
+   * With no limit set, the field shows what the strategies allow between them:
+   * that is the limit in force, and the number a lower one is typed against.
+   * Typing that sum back is "no extra limit" again (saved as 0), so it goes on
+   * following the strategies as they change.
+   */
+  const shown = value > 0 ? value : allowed;
+  const [text, setText] = useState(String(shown));
   const typing = useRef(false);
   // Follow the server's number, but never while it is being typed into.
-  useEffect(() => { if (!typing.current) setText(String(value)); }, [value]);
+  useEffect(() => { if (!typing.current) setText(String(shown)); }, [shown]);
   const commit = () => {
     typing.current = false;
-    const n = Number(text);
-    if (text.trim() === '' || !Number.isInteger(n) || n < 0 || n > MAX_GLOBAL_OPEN) {
-      onInvalid(`At most open at once, across all strategies, must be a whole number from 0 (no limit) to ${MAX_GLOBAL_OPEN}.`);
-      setText(String(value));
-      return;
-    }
-    if (n !== value) onSave(n);
+    const n = text.trim() === '' ? NaN : Number(text);
+    const problem = globalMaxOpenProblem(n, allowed, MAX_GLOBAL_OPEN);
+    if (problem) { onInvalid(problem); setText(String(shown)); return; }
+    const next = allowed > 0 && n === allowed ? 0 : n;
+    if (next !== value) onSave(next);
   };
   const full = value > 0 && openNow >= value;
   return (
     <label
       className="desk-badge-pill inline-flex items-center gap-1.5"
-      title="One limit over every strategy: a signal is not taken while the desk already holds this many open trades -- positions and working orders, whichever strategy opened them. Each strategy's own limit still applies. 0 is no limit."
+      title="One limit over every strategy: a signal is not taken while the desk already holds this many open trades -- positions and working orders, whichever strategy opened them. Each strategy's own limit still applies. It starts at what the strategies allow between them, and cannot be set above that."
       style={full
         ? { background: 'rgba(250, 204, 21, 0.1)', color: '#facc15', border: '1px solid rgba(250, 204, 21, 0.3)' }
         : { background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1', border: '1px solid #1e293b' }}
@@ -69,7 +105,9 @@ function GlobalMaxOpen({ value, openNow, busy, onSave, onInvalid }: {
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         className="m-0 h-6 w-11 rounded border border-solid border-border bg-[var(--bg,#0a0e17)] px-1 text-center font-[inherit] text-[12px] tabular-nums text-foreground"
       />
-      <span aria-label="open now, of the limit">{value === 0 ? `no limit · ${openNow} open` : `${openNow} of ${value} open`}</span>
+      <span aria-label="open now, of the limit">
+        {value > 0 ? `${openNow} of ${value} open` : allowed > 0 ? `all the strategies allow · ${openNow} open` : `no limit · ${openNow} open`}
+      </span>
     </label>
   );
 }
@@ -123,6 +161,11 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   };
 
   const mine = data?.strategies.filter((s) => s.config.trigger === 'signal') ?? [];
+  // The switched-on strategies added up, and the worst case under the desk-wide limit.
+  const totals = signalTotals(mine, data?.balanceUsd ?? null, data?.spot ?? null);
+  const cap = data?.signalMaxOpen ?? 0;
+  const capped = totalsUnderCap(mine, cap, data?.balanceUsd ?? null, data?.spot ?? null);
+  const inUse = usageNow(mine, data?.spot ?? null);
 
   return (
     <section className="live-signal-strategies fold-host mt-3 rounded-xl border border-solid border-border bg-[var(--panel)] p-3" data-folded={!open} aria-label="Signal strategies">
@@ -142,6 +185,7 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
           {data && data.signalMaxOpen !== undefined && (
             <GlobalMaxOpen
               value={data.signalMaxOpen}
+              allowed={totals.entries}
               openNow={data.openNow ?? 0}
               busy={busy === 'max-open'}
               onSave={(n) => void act('max-open', () => setSignalMaxOpen(n))}
@@ -182,6 +226,39 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
         </p>
       )}
       {failed && <p role="alert" className="m-0 mb-2 text-[12px] text-[var(--down)]">{failed}</p>}
+
+      {/*
+        The strategies added up: what they allow between them, and what that takes.
+        Each card's own limit reads as modest; this is what the account has to carry.
+      */}
+      {data && totals.strategies > 0 && (
+        <p aria-label="strategies added up" className="m-0 mb-2 rounded-lg bg-muted px-2.5 py-1.5 text-[12px] leading-relaxed text-muted-foreground">
+          <b className="text-foreground">{totals.strategies}</b> strateg{totals.strategies === 1 ? 'y' : 'ies'} on
+          {' · '}up to <b className="text-foreground">{totals.entries}</b> entr{totals.entries === 1 ? 'y' : 'ies'} at once
+          {' · '}<b className="text-foreground">{totals.lots}</b> lots
+          {' · '}needs <b className={cn('tabular-nums', totals.share !== null && totals.share > 1 ? 'text-[var(--down)]' : 'text-foreground')}>{inr(usdToInr(totals.marginUsd))}</b> margin
+          {totals.share !== null && <> ({Math.round(totals.share * 100)}% of the {inr(usdToInr(data.balanceUsd))} free)</>}
+          {mine.some((s) => s.open) && (
+            <span className="block" aria-label="in use now, all strategies">
+              <b className="text-foreground">In use now</b>: {inUse.entries} of {totals.entries} entr{totals.entries === 1 ? 'y' : 'ies'}
+              {' · '}{inUse.lots} of {totals.lots} lots
+              {' · '}<span className="tabular-nums">{inr(usdToInr(inUse.marginUsd))} of {inr(usdToInr(totals.marginUsd))}</span> margin
+            </span>
+          )}
+          {cap > 0 && cap < totals.entries && (
+            <span className="block">
+              With the limit of <b className="text-foreground">{cap}</b>: at most <b className="text-foreground">{capped.lots}</b> lots
+              {' · '}<b className={cn('tabular-nums', capped.share !== null && capped.share > 1 ? 'text-[var(--down)]' : 'text-foreground')}>{inr(usdToInr(capped.marginUsd))}</b> margin
+              {capped.share !== null && <> ({Math.round(capped.share * 100)}% of free)</>} — the worst case, the largest lots first.
+            </span>
+          )}
+          {capped.share !== null && capped.share > 1 && (
+            <span role="note" className="block text-[var(--down)]">
+              That is more than the free margin: an order that does not fit is refused at Delta. Lower the limit, the lots, or a strategy&apos;s own &ldquo;at most open&rdquo;.
+            </span>
+          )}
+        </p>
+      )}
 
       {data && mine.length === 0 && (
         <p className="m-0 rounded-lg border border-dashed border-[var(--line)] px-3 py-3 text-[12.5px] text-muted-foreground">
@@ -243,6 +320,7 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
                 </div>
               </div>
               <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{signalLine(s)}</p>
+              {s.open && <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} />}
               <p className="m-0 mt-0.5 text-[11.5px] text-[var(--dim)]">
                 {s.status}
                 {!live && ' · writes down what it would sell, sends nothing'}

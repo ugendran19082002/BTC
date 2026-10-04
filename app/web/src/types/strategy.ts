@@ -266,6 +266,8 @@ export type Strategy = {
   nextEntryAt: number | null;
   /** Why it is not entering right now, in the server's own words. */
   status: string;
+  /** A signal strategy's open trades now -- positions and working orders -- and their lots. Absent on an older server. */
+  open?: { trades: number; lots: number };
 };
 
 export type StrategyRun = {

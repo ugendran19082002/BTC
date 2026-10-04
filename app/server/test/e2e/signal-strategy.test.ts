@@ -837,8 +837,20 @@ test('[critical] at most open at once, across all strategies: one number over ev
   };
   const lastOf = async (id: string) => (await runsOf(id)).at(-1)!;
 
+  // What the strategies switched on allow between them: the sum of their own limits. A cap above it can never bind,
+  // so it is refused with that sum -- not stored as a limit that protects nothing.
+  const { signalEntriesAllowed } = await import('../../src/strategy/types.js');
+  const allowed = signalEntriesAllowed(await strategyStore().all());
+  assert.ok(allowed >= 20, `the two just switched on allow ten each: ${allowed}`);
+  const over = await api('POST', '/api/strategies/max-open', { max: allowed + 1 });
+  assert.equal(over.status, 422);
+  assert.deepEqual(over.body.problems, [`The strategies switched on allow ${allowed} entries between them, so a limit above ${allowed} changes nothing. Enter ${allowed} or less.`]);
+  assert.equal((await one<{ n: number }>("SELECT count(*)::int AS n FROM settings WHERE key = 'signal_max_open'"))!.n, 0, 'nothing stored');
+  assert.equal((await api('POST', '/api/strategies/max-open', { max: allowed })).status, 200, 'the sum itself is accepted');
+
   // The cap: one more than the desk holds now. Saved in the settings table, as a number the list reads back.
   const cap = openBefore + 1;
+  assert.ok(cap <= allowed, `the cap under test (${cap}) is inside what the strategies allow (${allowed})`);
   const saved = await api('POST', '/api/strategies/max-open', { max: cap });
   assert.deepEqual([saved.status, saved.body.signalMaxOpen], [200, cap]);
   const row = await one<{ value: string }>("SELECT value FROM settings WHERE key = 'signal_max_open'");
@@ -857,11 +869,15 @@ test('[critical] at most open at once, across all strategies: one number over ev
   assert.equal(b.trade_id, null, 'nothing sent');
   status = (await api('GET', '/api/strategies')).body;
   assert.equal(status.openNow, cap);
+  // Each strategy's card is told what it holds now: one trade of one lot for the first, nothing for the second.
+  const openOf = (id: string) => status.strategies.find((x: any) => x.id === id).open;
+  assert.deepEqual(openOf('sig-cap-a'), { trades: 1, lots: 1 }, 'a working entry counts at the size it asked for');
+  assert.deepEqual(openOf('sig-cap-b'), { trades: 0, lots: 0 });
   const skippedRow = status.signalTrades.find((t: any) => t.strategyId === 'sig-cap-b' && t.status === 'skipped');
   assert.match(skippedRow.detail, /at most \d+ at once across all$/, 'and the trade history\'s Skipped tab gets the reason');
 
   // The strategy's own limit is still its own: with the desk's cap far away, "at most 1" of its own still holds it.
-  await api('POST', '/api/strategies/max-open', { max: 500 });
+  assert.equal((await api('POST', '/api/strategies/max-open', { max: allowed })).status, 200);
   const one1 = (await strategyStore().get('sig-cap-a'))!;
   await api('POST', '/api/strategies', { id: one1.id, name: one1.name, config: { ...one1.config, signal: { ...one1.config.signal, maxOpen: 1 } } });
   await api('POST', '/api/strategies/sig-cap-b/enabled', { enabled: false });

@@ -384,11 +384,30 @@ export function globalMaxOpenOf(raw: string | null | undefined): number {
   const n = Number(raw);
   return raw !== null && raw !== undefined && raw !== '' && Number.isInteger(n) && n > 0 && n <= MAX_GLOBAL_OPEN ? n : 0;
 }
-/** Why a desk-wide cap cannot be saved, in words; null when it can. */
-export function globalMaxOpenProblem(v: unknown): string | null {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_GLOBAL_OPEN
-    ? null
-    : `At most open at once, across all strategies, must be a whole number from 0 (no limit) to ${MAX_GLOBAL_OPEN}.`;
+/**
+ * Why a desk-wide cap cannot be saved, in words; null when it can.
+ *
+ * `allowed` is what the signal strategies switched on allow between them -- the
+ * sum of each one's own "at most open". A cap above that sum can never be
+ * reached, and a limit that cannot bind reads as protection it does not give;
+ * so it is refused, with the sum, rather than stored. With none switched on
+ * there is no sum to hold it to.
+ */
+export function globalMaxOpenProblem(v: unknown, allowed = 0): string | null {
+  if (!(typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_GLOBAL_OPEN)) {
+    return `At most open at once, across all strategies, must be a whole number from 0 (no limit) to ${MAX_GLOBAL_OPEN}.`;
+  }
+  if (allowed > 0 && v > allowed) {
+    return `The strategies switched on allow ${allowed} entr${allowed === 1 ? 'y' : 'ies'} between them, so a limit above ${allowed} changes nothing. Enter ${allowed} or less.`;
+  }
+  return null;
+}
+
+/** What the switched-on signal strategies allow between them: the sum of each one's own "at most open". */
+export function signalEntriesAllowed(strategies: readonly Pick<Strategy, 'enabled' | 'config'>[]): number {
+  return strategies
+    .filter((s) => s.enabled && s.config.trigger === 'signal' && s.config.signal)
+    .reduce((n, s) => n + (s.config.signal!.maxOpen ?? 0), 0);
 }
 
 /** The leg a signal is traded as: a BUY sells the put, a SELL the call -- each wins as the signal goes right. */

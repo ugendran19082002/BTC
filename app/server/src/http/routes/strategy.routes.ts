@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 
 /**
@@ -210,6 +210,17 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const s = strategyStore();
     const now = Date.now();
     const today = istDate(now);
+    /*
+     * What each strategy holds open now -- positions and working orders -- as
+     * trades and as lots, so its card can say how much of its own limit is in
+     * use. A working entry holds no position yet and counts at the size it
+     * asked for: that margin is already spoken for.
+     */
+    const openTrades = await svc.openTrades().catch(() => []);
+    const openOf = (id: string) => {
+      const mine = openTrades.filter((t) => t.plan.strategyId === id);
+      return { trades: mine.length, lots: mine.reduce((n, t) => n + (Math.abs(t.state.position) || t.state.requestedSize || 0), 0) };
+    };
     return {
       today,
       /**
@@ -221,7 +232,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       schedulerOn: svc.settings.get('scheduler_enabled') === '1',
       // The desk-wide cap on open trades (0: none), and how many the desk holds now -- positions and working orders.
       signalMaxOpen: globalMaxOpenOf(svc.settings.get(GLOBAL_MAX_OPEN_KEY)),
-      openNow: (await svc.openTrades().catch(() => [])).length,
+      openNow: openTrades.length,
       /**
        * Whether the loop that places the orders is actually installed.
        *
@@ -246,6 +257,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
           const on = inSignalWindow(x, now);
           return {
             ...x, lastRunDate: null, ranToday: false, nextEntryAt: null,
+            open: openOf(x.id),
             status: on
               ? `taking signals until ${time12(x.config.exitTime)}${x.config.liveOrders ? '' : ' -- live orders off: writing down what it would place'}`
               : `outside its window (${time12(x.config.entryTime)} to ${time12(x.config.exitTime)} IST, its days)`,
@@ -385,7 +397,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
   // The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off.
   app.post('/api/strategies/max-open', async (req, reply) => {
     const { max } = (req.body ?? {}) as { max?: unknown };
-    const problem = globalMaxOpenProblem(max);
+    // Held to what the strategies switched on allow between them: a cap above that can never bind.
+    const problem = globalMaxOpenProblem(max, signalEntriesAllowed(await strategyStore().all()));
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
     await svc.settings.set(GLOBAL_MAX_OPEN_KEY, String(max));
     return { ok: true, signalMaxOpen: max as number };

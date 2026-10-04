@@ -148,43 +148,83 @@ describe('copy', () => {
 describe('at most open at once, across all strategies', () => {
   const field = () => screen.getByLabelText('At most open at once, all strategies');
   const type = (v: string) => { fireEvent.focus(field()); fireEvent.change(field(), { target: { value: v } }); fireEvent.blur(field()); };
+  // The owner's five: 3 lots x 1, 5 x 9, 6 x 10, 5 x 7, 3 x 1 -- 28 entries, 146 lots between them.
+  const five = () => ([['a', 3, 1], ['b', 5, 9], ['c', 6, 10], ['d', 5, 7], ['e', 3, 1]] as const)
+    .map(([id, lots, maxOpen]) => strat(id, { ...SIG, lots, signal: { ...SIG.signal, maxOpen } }));
 
   beforeEach(() => { setSignalMaxOpen.mockResolvedValue({ ok: true }); });
 
   it('[critical] sits left of "Auto-trading", shows the desk\'s number and how many are open against it', async () => {
-    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 6, openNow: 4 }));
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 6, openNow: 4 }));
     render(<SignalStrategiesCard />);
-    await screen.findByText('SIG');
+    await screen.findByText('A');
     expect(field()).toHaveValue('6');
     expect(screen.getByLabelText('open now, of the limit')).toHaveTextContent('4 of 6 open');
     const auto = screen.getByText(/^Auto-trading on$/);
     expect(Boolean(field().compareDocumentPosition(auto) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     // each strategy's own limit is still on its line
-    expect(screen.getByText(/max 2 open/)).toBeInTheDocument();
+    expect(screen.getByText(/max 9 open/)).toBeInTheDocument();
   });
 
-  it('[critical] 0 is no limit, and says so', async () => {
-    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 0, openNow: 3 }));
+  it('[critical] the strategies are added up: entries, lots, and the margin all of it takes against what is free', async () => {
+    getStrategies.mockResolvedValue(status([...five(), strat('off', { ...SIG, lots: 50, signal: { ...SIG.signal, maxOpen: 50 } }, false)], { signalMaxOpen: 0, openNow: 18 }));
     render(<SignalStrategiesCard />);
-    await screen.findByText('SIG');
-    expect(field()).toHaveValue('0');
-    expect(screen.getByLabelText('open now, of the limit')).toHaveTextContent('no limit · 3 open');
+    await screen.findByText('A');
+    const sum = screen.getByLabelText('strategies added up');
+    // 146 lots x $0.425 a lot = $62.05 = ₹5,274 at ₹85; the account has $228 = ₹19,380 free
+    expect(sum).toHaveTextContent(/5 strategies on · up to 28 entries at once · 146 lots · needs ₹5,274(\.\d+)? margin \(27% of the ₹19,380 free\)/);
+    expect(sum).not.toHaveTextContent('With the limit');
+    expect(within(sum).queryByRole('note')).toBeNull();
   });
 
-  it('[critical] typed and left: saved to the server as the number, and the list is read again', async () => {
-    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 0, openNow: 3 }));
+  it('[critical] with no limit set the field shows what the strategies allow between them -- the limit in force', async () => {
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 0, openNow: 18 }));
     render(<SignalStrategiesCard />);
-    await screen.findByText('SIG');
+    await screen.findByText('A');
+    expect(field()).toHaveValue('28');
+    expect(screen.getByLabelText('open now, of the limit')).toHaveTextContent('all the strategies allow · 18 open');
+  });
+
+  it('[critical] a lower limit is saved, and the line says the worst case under it: the largest lots first', async () => {
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 0, openNow: 3 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
     const before = getStrategies.mock.calls.length;
     type('6');
     await waitFor(() => expect(setSignalMaxOpen).toHaveBeenCalledWith(6));
     await waitFor(() => expect(getStrategies.mock.calls.length).toBeGreaterThan(before));
   });
 
-  it('[critical] unchanged is not sent; blank or over 500 is said and put back, not sent', async () => {
-    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 6, openNow: 1 }));
+  it('[critical] under a limit of 6: at most 36 lots -- six entries of the 6-lot strategy -- and its margin', async () => {
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 6, openNow: 3 }));
     render(<SignalStrategiesCard />);
-    await screen.findByText('SIG');
+    await screen.findByText('A');
+    // 36 lots x $0.425 = $15.30 = ₹1,300.50
+    expect(screen.getByLabelText('strategies added up')).toHaveTextContent(/With the limit of 6: at most 36 lots · ₹1,30\d(\.\d+)? margin \(7% of free\) — the worst case, the largest lots first\./);
+  });
+
+  it('[critical] a limit above what the strategies allow is refused in words, put back, and not sent', async () => {
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 0, openNow: 18 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    type('30');
+    expect(screen.getByRole('alert')).toHaveTextContent('The strategies switched on allow 28 entries between them, so a limit above 28 changes nothing. Enter 28 or less.');
+    expect(field()).toHaveValue('28');
+    expect(setSignalMaxOpen).not.toHaveBeenCalled();
+  });
+
+  it('[critical] typing the sum back is "no extra limit" again: saved as 0, so it follows the strategies', async () => {
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 6, openNow: 3 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    type('28');
+    await waitFor(() => expect(setSignalMaxOpen).toHaveBeenCalledWith(0));
+  });
+
+  it('[critical] unchanged is not sent; blank or over 500 is said and put back; letters cannot be typed', async () => {
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 6, openNow: 1 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
     type('6');
     type('');
     expect(screen.getByText('At most open at once, across all strategies, must be a whole number from 0 (no limit) to 500.')).toBeInTheDocument();
@@ -192,19 +232,36 @@ describe('at most open at once, across all strategies', () => {
     type('501');
     expect(field()).toHaveValue('6');
     expect(setSignalMaxOpen).not.toHaveBeenCalled();
-    // letters cannot be typed at all
     fireEvent.focus(field());
     fireEvent.change(field(), { target: { value: '1x2' } });
     expect(field()).toHaveValue('12');
   });
 
-  it('the server\'s refusal is shown', async () => {
-    setSignalMaxOpen.mockRejectedValue(new Error('At most open at once, across all strategies, must be a whole number from 0 (no limit) to 500.'));
-    getStrategies.mockResolvedValue(status([strat('sig', SIG)], { signalMaxOpen: 6, openNow: 1 }));
+  it('[critical] more than the free margin is said, in red, with what to lower', async () => {
+    // $20 free against $62.05 needed
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 0, openNow: 0, balanceUsd: 20 }));
     render(<SignalStrategiesCard />);
-    await screen.findByText('SIG');
+    await screen.findByText('A');
+    expect(within(screen.getByLabelText('strategies added up')).getByRole('note')).toHaveTextContent(
+      'That is more than the free margin: an order that does not fit is refused at Delta. Lower the limit, the lots, or a strategy\'s own “at most open”.');
+  });
+
+  it('the server\'s refusal is shown', async () => {
+    setSignalMaxOpen.mockRejectedValue(new Error('The strategies switched on allow 5 entries between them, so a limit above 5 changes nothing. Enter 5 or less.'));
+    getStrategies.mockResolvedValue(status(five(), { signalMaxOpen: 6, openNow: 1 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
     type('7');
-    expect(await screen.findByText(/must be a whole number from 0 \(no limit\) to 500/)).toBeInTheDocument();
+    expect(await screen.findByText(/allow 5 entries between them/)).toBeInTheDocument();
+  });
+
+  it('none switched on: nothing to add up, and the field says no limit', async () => {
+    getStrategies.mockResolvedValue(status([strat('off', SIG, false)], { signalMaxOpen: 0, openNow: 0 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('OFF');
+    expect(screen.queryByLabelText('strategies added up')).toBeNull();
+    expect(field()).toHaveValue('0');
+    expect(screen.getByLabelText('open now, of the limit')).toHaveTextContent('no limit · 0 open');
   });
 
   it('an older server that does not send it shows no field', async () => {
@@ -212,5 +269,55 @@ describe('at most open at once, across all strategies', () => {
     render(<SignalStrategiesCard />);
     await screen.findByText('SIG');
     expect(screen.queryByLabelText('At most open at once, all strategies')).toBeNull();
+  });
+});
+
+describe('each strategy: its limit, and how much of it is in use now', () => {
+  const withOpen = (id: string, lots: number, maxOpen: number, trades: number, enabled = true): Strategy =>
+    ({ ...strat(id, { ...SIG, lots, signal: { ...SIG.signal, maxOpen } }, enabled), open: { trades, lots: trades * lots } });
+  const usage = (name: string) => screen.getByLabelText(`usage of ${name}`);
+
+  it('[critical] entries, lots and margin, each as "in use of limit", labelled', async () => {
+    // 5 lots x at most 9: 45 lots, $19.13 = ₹1,626 of margin; 3 open: 15 lots, ₹542
+    getStrategies.mockResolvedValue(status([withOpen('b', 5, 9, 3)], { signalMaxOpen: 0, openNow: 3 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('B');
+    expect(usage('B')).toHaveTextContent(/Open now\s*3 of 9/);
+    expect(usage('B')).toHaveTextContent(/Lots in use 15 of 45/);
+    expect(usage('B')).toHaveTextContent(/Margin in use ₹542(\.\d+)? of ₹1,626/);
+    const bar = within(usage('B')).getByRole('progressbar', { name: 'B entries in use' });
+    expect([bar.getAttribute('aria-valuenow'), bar.getAttribute('aria-valuemax')]).toEqual(['3', '9']);
+    expect(usage('B')).not.toHaveTextContent('at its limit');
+  });
+
+  it('[critical] nothing open says 0 of its limit; at the limit says the next signal is skipped', async () => {
+    getStrategies.mockResolvedValue(status([withOpen('a', 3, 1, 0), withOpen('e', 3, 1, 1)], { signalMaxOpen: 0, openNow: 1 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    expect(usage('A')).toHaveTextContent(/Open now\s*0 of 1.*Lots in use 0 of 3.*Margin in use ₹0 of ₹108/);
+    expect(usage('E')).toHaveTextContent(/Open now\s*1 of 1/);
+    expect(usage('E')).toHaveTextContent('at its limit: the next signal is skipped');
+  });
+
+  it('[critical] the header adds the use up: entries, lots and margin in use of what the switched-on strategies allow', async () => {
+    getStrategies.mockResolvedValue(status([withOpen('b', 5, 9, 3), withOpen('c', 6, 10, 2), withOpen('a', 3, 1, 0)], { signalMaxOpen: 0, openNow: 5 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('B');
+    // 5 of 20 entries; 15 + 12 = 27 of 45 + 60 + 3 = 108 lots; 27 x $0.425 = ₹975 of 108 x $0.425 = ₹3,902
+    expect(screen.getByLabelText('in use now, all strategies')).toHaveTextContent(/In use now: 5 of 20 entries · 27 of 108 lots · ₹975(\.\d+)? of ₹3,90\d(\.\d+)? margin/);
+  });
+
+  it('a strategy switched off with a position still open shows what it holds', async () => {
+    getStrategies.mockResolvedValue(status([withOpen('b', 5, 9, 2, false)], { signalMaxOpen: 0, openNow: 2 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('B');
+    expect(usage('B')).toHaveTextContent(/Open now\s*2 of 9.*Lots in use 10 of 45/);
+  });
+
+  it('an older server that does not send it shows no usage line', async () => {
+    getStrategies.mockResolvedValue(status([strat('sig', SIG)]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('SIG');
+    expect(screen.queryByLabelText('usage of SIG')).toBeNull();
   });
 });

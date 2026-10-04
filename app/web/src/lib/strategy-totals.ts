@@ -1,0 +1,108 @@
+import { MARGIN_PER_CONTRACT, sizingOf } from '@/lib/strategy-preview';
+import type { Strategy } from '@/types/strategy';
+
+/**
+ * What the signal strategies switched on add up to (4 Oct 2026): how many
+ * entries they allow between them, how many lots that is, and the margin it
+ * would take with every one of them open at once.
+ *
+ * Each strategy's own "at most open" reads as modest; the sum is what the
+ * account has to carry, and nobody adds five cards up in their head. This is
+ * the sum, and what the desk-wide limit is held to: a limit above the entries
+ * the strategies allow can never be reached. Pure.
+ */
+export type SignalTotals = {
+  /** Signal strategies switched on. */
+  strategies: number;
+  /** The sum of their "at most open at once". */
+  entries: number;
+  /** Lots with every entry open: each strategy's lots times its entries. */
+  lots: number;
+  /** Margin that needs, at 200x, and its share of the free balance (null with no balance yet). */
+  marginUsd: number;
+  marginInr: number;
+  share: number | null;
+};
+
+const on = (strategies: readonly Strategy[]) =>
+  strategies.filter((s) => s.enabled && s.config.trigger === 'signal' && s.config.signal);
+
+export function signalTotals(strategies: readonly Strategy[], balanceUsd: number | null, spot: number | null): SignalTotals {
+  const mine = on(strategies);
+  const sized = mine.map((s) => sizingOf(s.config, balanceUsd, spot));
+  const marginUsd = sized.reduce((n, z) => n + z.marginUsd, 0);
+  return {
+    strategies: mine.length,
+    entries: mine.reduce((n, s) => n + s.config.signal!.maxOpen, 0),
+    lots: sized.reduce((n, z) => n + z.maxContracts, 0),
+    marginUsd,
+    marginInr: sized.reduce((n, z) => n + z.marginInr, 0),
+    share: balanceUsd && balanceUsd > 0 ? marginUsd / balanceUsd : null,
+  };
+}
+
+/**
+ * The most the desk could hold under a limit of `cap` entries: the worst case,
+ * so the entries are taken from the strategies with the most lots first, each
+ * up to its own limit. At or above what the strategies allow, it is the totals.
+ */
+export function totalsUnderCap(strategies: readonly Strategy[], cap: number, balanceUsd: number | null, spot: number | null): SignalTotals {
+  const all = signalTotals(strategies, balanceUsd, spot);
+  if (!(cap > 0) || cap >= all.entries) return all;
+  let left = cap;
+  let lots = 0;
+  for (const s of [...on(strategies)].sort((a, b) => b.config.lots - a.config.lots)) {
+    const take = Math.min(left, s.config.signal!.maxOpen);
+    lots += take * s.config.lots;
+    left -= take;
+    if (left <= 0) break;
+  }
+  // The same margin a lot as the totals: one model, however many lots.
+  const perLotUsd = all.lots > 0 ? all.marginUsd / all.lots : 0;
+  const perLotInr = all.lots > 0 ? all.marginInr / all.lots : 0;
+  const marginUsd = lots * perLotUsd;
+  return {
+    strategies: all.strategies, entries: cap, lots, marginUsd, marginInr: lots * perLotInr,
+    share: balanceUsd && balanceUsd > 0 ? marginUsd / balanceUsd : null,
+  };
+}
+
+/**
+ * Why a desk-wide limit cannot be saved, or null -- the server's
+ * `globalMaxOpenProblem`, word for word, so the form says before the save what
+ * the server would say after it.
+ */
+export function globalMaxOpenProblem(v: number, allowed: number, most: number): string | null {
+  if (!Number.isInteger(v) || v < 0 || v > most) {
+    return `At most open at once, across all strategies, must be a whole number from 0 (no limit) to ${most}.`;
+  }
+  if (allowed > 0 && v > allowed) {
+    return `The strategies switched on allow ${allowed} entr${allowed === 1 ? 'y' : 'ies'} between them, so a limit above ${allowed} changes nothing. Enter ${allowed} or less.`;
+  }
+  return null;
+}
+
+/**
+ * One strategy's limit and how much of it is in use now: entries, lots and the
+ * margin behind them. "In use" is what the desk holds for it -- positions and
+ * working orders -- as the server counts them (`Strategy.open`).
+ */
+export type Usage = {
+  entries: number; maxEntries: number;
+  lots: number; maxLots: number;
+  marginUsd: number; maxMarginUsd: number;
+};
+
+export function usageOf(s: Strategy, spot: number | null): Usage {
+  const per = spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0;
+  const maxEntries = s.config.signal?.maxOpen ?? 0;
+  const maxLots = maxEntries * s.config.lots;
+  const lots = s.open?.lots ?? 0;
+  return { entries: s.open?.trades ?? 0, maxEntries, lots, maxLots, marginUsd: lots * per, maxMarginUsd: maxLots * per };
+}
+
+/** Every signal strategy's use added up -- switched off ones too, since a position does not close when its strategy is switched off. */
+export function usageNow(strategies: readonly Strategy[], spot: number | null): { entries: number; lots: number; marginUsd: number } {
+  return strategies.filter((s) => s.config.trigger === 'signal').map((s) => usageOf(s, spot))
+    .reduce((a, u) => ({ entries: a.entries + u.entries, lots: a.lots + u.lots, marginUsd: a.marginUsd + u.marginUsd }), { entries: 0, lots: 0, marginUsd: 0 });
+}

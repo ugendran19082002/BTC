@@ -69,3 +69,21 @@ test('[critical] the desk-wide cap reads 0 -- no cap -- for anything that is not
   for (const ok of [0, 1, 6, 500]) assert.equal(globalMaxOpenProblem(ok), null);
   for (const bad of [-1, 501, 1.5, '6', null, undefined]) assert.match(globalMaxOpenProblem(bad)!, /whole number from 0 \(no limit\) to 500/);
 });
+
+test('[critical] a cap above what the switched-on strategies allow between them is refused, with their sum', async () => {
+  const { globalMaxOpenProblem, signalEntriesAllowed, DEFAULT_CONFIG } = await import('../../src/strategy/types.js');
+  const sig = (maxOpen: number, enabled = true, trigger: 'signal' | 'time' = 'signal') => ({
+    enabled, config: { ...DEFAULT_CONFIG, trigger, signal: { mode: 'single' as const, tf: '5m' as const, methods: ['breakout'], target: 'tp1' as const, maxOpen } },
+  });
+  // 1 + 9 + 10 + 7 + 1 on; one switched off and one clock strategy are not counted
+  const all = [sig(1), sig(9), sig(10), sig(7), sig(1), sig(50, false), sig(30, true, 'time')];
+  assert.equal(signalEntriesAllowed(all), 28);
+  assert.equal(globalMaxOpenProblem(28, 28), null, 'the sum itself');
+  assert.equal(globalMaxOpenProblem(6, 28), null);
+  assert.equal(globalMaxOpenProblem(0, 28), null, '0 is always no limit');
+  assert.equal(globalMaxOpenProblem(29, 28), 'The strategies switched on allow 28 entries between them, so a limit above 28 changes nothing. Enter 28 or less.');
+  assert.equal(globalMaxOpenProblem(2, 1), 'The strategies switched on allow 1 entry between them, so a limit above 1 changes nothing. Enter 1 or less.');
+  // none switched on: there is no sum to hold it to
+  assert.equal(signalEntriesAllowed([sig(5, false)]), 0);
+  assert.equal(globalMaxOpenProblem(40, 0), null);
+});

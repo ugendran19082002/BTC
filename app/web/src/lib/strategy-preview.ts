@@ -138,7 +138,7 @@ export type Sizing = {
 };
 
 /** Margin for one short contract at 200x -- margin.ts's model, spot-driven. */
-const MARGIN_PER_CONTRACT = (spot: number) => (spot / 200) * 0.001;
+export const MARGIN_PER_CONTRACT = (spot: number) => (spot / 200) * 0.001;
 
 /**
  * What this config would put at risk, in the numbers on the account card.
