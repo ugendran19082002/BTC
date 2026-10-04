@@ -109,8 +109,7 @@ export function Overview({
   // The entry board's timeframe rows, handed up by the entry section.
   const [timeframes, setTimeframes] = useState<TimeframeRow[]>([]);
 
-  // The board and the perp's positioning, for the chart's strike levels and context line.
-  const strikes = useMemo(() => ({ legs: data.legs, maxPain: data.structure?.maxPain?.strike ?? null }), [data.legs, data.structure]);
+  // The perp's positioning, for the chart's context line.
   const derivs = useMemo(() => (perp ? { oi: perp.perpOi ?? null, funding: perp.ticker?.fundingRate ?? null } : null), [perp]);
 
   return (
@@ -120,7 +119,6 @@ export function Overview({
         onTimeframes={setTimeframes}
         bars={bars}
         ltp={ltp}
-        strikes={strikes}
         derivs={derivs}
         expiryLabel={snap.expiry ? `${snap.expiry} 17:30 IST` : undefined}
         hoursToExpiry={snap.hoursToExpiry}

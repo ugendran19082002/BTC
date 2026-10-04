@@ -92,66 +92,6 @@
 .pc-tool:focus-visible,
 .pc-hud-head:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
 
-.pc-layers { display: grid; gap: 2px; min-width: 250px; max-width: 290px; padding: 8px; background: #0f1623; }
-/* Sixteen layers are taller than a phone: the menu scrolls inside the room it has, the presets staying on top. */
-.pc-layers { max-height: min(560px, var(--radix-popover-content-available-height, 70vh)); overflow-y: auto; overscroll-behavior: contain; }
-.pc-layers .pc-presets { position: sticky; top: -8px; z-index: 1; margin-top: -8px; padding-top: 8px; background: #0f1623; }
-@media (max-width: 640px) {
-  /* Clear of the app's bottom tab bar. */
-  .pc-layers { max-height: min(480px, calc(var(--radix-popover-content-available-height, 70vh) - 76px)); }
-}
-.pc-layer-note { display: block; font-size: 10px; line-height: 1.3; color: #64748b; font-weight: 500; }
-.pc-presets { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
-.pc-preset {
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: transparent;
-  color: #cbd5e1;
-  font: 600 11px/1.4 ui-sans-serif, system-ui, sans-serif;
-  cursor: pointer;
-}
-.pc-preset:hover { background: rgba(255, 255, 255, 0.06); }
-.pc-preset.on { color: #7dd3fc; border-color: rgba(56, 189, 248, 0.5); }
-.pc-preset:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
-.pc-tip {
-  position: absolute;
-  z-index: 6;
-  pointer-events: none;
-  max-width: 260px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: rgba(10, 14, 23, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  font: 500 11px/1.45 ui-sans-serif, system-ui, sans-serif;
-  color: #cbd5e1;
-  font-variant-numeric: tabular-nums;
-}
-.pc-tip-head { font-weight: 700; color: #e5e7eb; }
-.pc-layer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 0 6px;
-  border-radius: 5px;
-  font-size: 12px;
-  color: #cbd5e1;
-  cursor: pointer;
-}
-.pc-layer:hover { background: rgba(255, 255, 255, 0.05); }
-.pc-layer input { accent-color: #38bdf8; }
-.pc-clear {
-  margin-top: 6px;
-  min-height: 30px;
-  border-radius: 5px;
-  border: 1px solid rgba(226, 80, 79, 0.4);
-  background: transparent;
-  color: #fca5a5;
-  font-size: 12px;
-  cursor: pointer;
-}
-
 /* ── HUD, top left ──────────────────────────────────────────────────── */
 .pc-hud {
   position: absolute;
@@ -205,8 +145,6 @@
 .pc-hud-ohlc .up { color: #4ade80; }
 .pc-hud-ohlc .down { color: #f87171; }
 .pc-hud-ohlc .hot { color: #fbbf24; font-weight: 700; }
-.pc-hud-ohlc .bbuy { color: #60a5fa; }
-.pc-hud-ohlc .bsell { color: #e879f9; }
 
 /* ── phones: the toolbar drops under the HUD's line, the HUD narrows ── */
 @media (max-width: 640px) {

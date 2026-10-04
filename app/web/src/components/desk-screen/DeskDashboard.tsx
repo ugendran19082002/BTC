@@ -31,7 +31,6 @@ export function DeskDashboard({
 }: {
   bars: readonly Candle[];
   ltp?: LiveLtp | null;
-  strikes?: { legs: readonly Leg[]; maxPain: number | null } | null;
   derivs?: { oi: PerpOiChange | null; funding: number | null } | null;
   expiryLabel?: string;
   hoursToExpiry?: number;
@@ -43,7 +42,7 @@ export function DeskDashboard({
   /** Under the Entry setups header card, before its panels: the signal strategies that trade them. */
   belowEntry?: React.ReactNode;
 }) {
-  const desk = useMemo(() => ({ bars5m: bars, ltp, strikes, derivs }), [bars, ltp, strikes, derivs]);
+  const desk = useMemo(() => ({ bars5m: bars, ltp, derivs }), [bars, ltp, derivs]);
   return (
     <div className="desk-root" aria-label="BTC Live Desk">
       <DeskHeader
