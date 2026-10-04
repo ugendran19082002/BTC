@@ -11,8 +11,12 @@ const setStrategyEnabled = vi.fn();
 const getSignalTrades = vi.fn();
 const cloneStrategy = vi.fn();
 const setSignalMaxOpen = vi.fn();
+const setScheduler = vi.fn();
+const deleteStrategy = vi.fn();
 vi.mock('@/api/strategy', () => ({
   setSignalMaxOpen: (...a: unknown[]) => setSignalMaxOpen(...a),
+  setScheduler: (...a: unknown[]) => setScheduler(...a),
+  deleteStrategy: (...a: unknown[]) => deleteStrategy(...a),
   cloneStrategy: (...a: unknown[]) => cloneStrategy(...a),
   getStrategies: (...a: unknown[]) => getStrategies(...a),
   getSignalTrades: (...a: unknown[]) => getSignalTrades(...a),
@@ -25,7 +29,7 @@ vi.mock('@/api/entry', () => ({
   getEntryBoard: () => Promise.resolve({ reads: [], ltp: null }),
 }));
 
-/** The signal strategies on the Live screen: the same strategies as the Strategy tab, the signal ones. */
+/** The signal strategies: the whole of the Strategy screen since 4 Oct 2026 (they sat on Live before). */
 
 const strat = (id: string, over: Partial<Strategy['config']> = {}, enabled = true): Strategy => ({
   id, name: id.toUpperCase(), enabled, createdAt: 0, updatedAt: 0, lastRunDate: null, ranToday: false,
@@ -99,13 +103,11 @@ describe('signal strategies on the Live screen', () => {
     await waitFor(() => expect(setStrategyEnabled).toHaveBeenCalledWith('sig', true));
   });
 
-  it('[critical] auto-trading off is said, with the way to the switch', async () => {
+  it('[critical] auto-trading off is said, with the switch right there', async () => {
     getStrategies.mockResolvedValue(status([strat('sig', SIG)], { schedulerOn: false }));
-    const go = vi.fn();
-    render(<SignalStrategiesCard onOpenStrategyTab={go} />);
-    expect(await screen.findByText(/Auto-trading is off, so no signal is taken/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Turn it on on the Strategy tab/ }));
-    expect(go).toHaveBeenCalled();
+    render(<SignalStrategiesCard />);
+    expect(await screen.findByText(/Auto-trading is off, so no signal is taken\. Turn it on above\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Turn auto-trading on' })).toBeInTheDocument();
   });
 
   it('[critical] the trade history is shown; the raw signals log is not', async () => {
@@ -631,5 +633,37 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
     render(<SignalStrategiesCard />);
     await screen.findByText('SHUT');
     expect(now('SHUT')).toHaveTextContent(`Outside its window now — the next signal is taken from ${time12(hh(m + 120))}.`);
+  });
+});
+
+describe('the master switch and delete, on the card itself', () => {
+  it('[critical] auto-trading is switched off and on from the card: one press, and the button says what it will do', async () => {
+    setScheduler.mockResolvedValue({ ok: true });
+    getStrategies.mockResolvedValue(status([strat('A', SIG)], { schedulerOn: true }));
+    const { unmount } = render(<SignalStrategiesCard />);
+    const off = await screen.findByRole('button', { name: 'Turn auto-trading off' });
+    expect(off).toHaveTextContent('Turn off');
+    fireEvent.click(off);
+    await waitFor(() => expect(setScheduler).toHaveBeenCalledWith(false));
+    unmount();
+
+    getStrategies.mockResolvedValue(status([strat('A', SIG)], { schedulerOn: false }));
+    render(<SignalStrategiesCard />);
+    const on = await screen.findByRole('button', { name: 'Turn auto-trading on' });
+    expect(screen.getByRole('note')).toHaveTextContent('Auto-trading is off, so no signal is taken. Turn it on above.');
+    fireEvent.click(on);
+    await waitFor(() => expect(setScheduler).toHaveBeenLastCalledWith(true));
+  });
+
+  it('[critical] a strategy is deleted only on a second tap', async () => {
+    deleteStrategy.mockResolvedValue({ ok: true });
+    getStrategies.mockResolvedValue(status([strat('A', SIG)]));
+    render(<SignalStrategiesCard />);
+    const del = await screen.findByRole('button', { name: 'Delete A' });
+    fireEvent.click(del);
+    expect(deleteStrategy).not.toHaveBeenCalled();
+    expect(del).toHaveTextContent('Tap again to delete');
+    fireEvent.click(del);
+    await waitFor(() => expect(deleteStrategy).toHaveBeenCalledWith('A'));
   });
 });

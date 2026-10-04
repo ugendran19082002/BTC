@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { AlertTriangle, Bot, CheckCircle2, Copy, Loader2, Pencil, Plus, XCircle } from 'lucide-react';
-import { cloneStrategy, getStrategies, saveStrategy, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
+import { AlertTriangle, Bot, CheckCircle2, Copy, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
+import { cloneStrategy, deleteStrategy, getStrategies, saveStrategy, setScheduler, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -242,7 +242,7 @@ export function signalLine(s: Strategy): string {
   ].join(' · ');
 }
 
-export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?: () => void }) {
+export function SignalStrategiesCard() {
   const { data, refresh } = usePoll<StrategyStatus>(getStrategies, 5_000);
   const [open, setOpen] = useFold('signal-strategies');
   const [editing, setEditing] = useState<Strategy | null>(null);
@@ -251,6 +251,8 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   const [failed, setFailed] = useState<string | null>(null);
   // Real orders need a second tap: a switch that sends money to the exchange should not flip on a brush.
   const [confirmLive, setConfirmLive] = useState<string | null>(null);
+  // Deleting needs a second tap too: it cannot be undone.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   /** Do it, read the list again, and say whether it was taken: a field that was refused goes back to what is saved. */
   const act = async (key: string, fn: () => Promise<unknown>): Promise<boolean> => {
@@ -347,6 +349,19 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
               Auto-trading {data.schedulerOn ? 'on' : 'off'}
             </span>
           )}
+          {/* The master switch itself, beside what it says: it sat on the time-of-day strategies' panel until that went. */}
+          {data && (
+            <Button
+              size="sm" variant={data.schedulerOn ? 'outline' : 'default'} className="h-8"
+              aria-label={data.schedulerOn ? 'Turn auto-trading off' : 'Turn auto-trading on'}
+              title={data.schedulerOn ? 'No signal is taken while this is off. Open trades keep their exits.' : 'Signals are taken again, by every strategy switched on.'}
+              disabled={busy === 'sched'}
+              onClick={() => void act('sched', () => setScheduler(!data.schedulerOn))}
+            >
+              {busy === 'sched' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {data.schedulerOn ? 'Turn off' : 'Turn on'}
+            </Button>
+          )}
           {data && (
             <span className="desk-badge-pill"
                   style={data.mode === 'live'
@@ -363,13 +378,7 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
 
       {data && !data.schedulerOn && mine.some((s) => s.enabled) && (
         <p role="note" className="m-0 mb-2 text-[12px] text-[var(--warn)]">
-          Auto-trading is off, so no signal is taken.{' '}
-          {onOpenStrategyTab && (
-            <button type="button" onClick={onOpenStrategyTab}
-                    className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2">
-              Turn it on on the Strategy tab
-            </button>
-          )}
+          Auto-trading is off, so no signal is taken. Turn it on above.
         </p>
       )}
       {failed && <p role="alert" className="m-0 mb-2 text-[12px] text-[var(--down)]">{failed}</p>}
@@ -499,6 +508,25 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
                   >
                     {busy === `copy-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
                     Copy
+                  </Button>
+                  {/* Delete, on a second tap within four seconds. Its trades and their history stay. */}
+                  <Button
+                    size="sm" variant="ghost" className="h-8 text-[var(--down)]"
+                    aria-label={`Delete ${s.name}`}
+                    title="Delete this strategy. Trades it has open keep their exits, and its history stays."
+                    disabled={busy === `del-${s.id}`}
+                    onClick={() => {
+                      if (confirmDelete !== s.id) {
+                        setConfirmDelete(s.id);
+                        setTimeout(() => setConfirmDelete((cur) => (cur === s.id ? null : cur)), 4_000);
+                        return;
+                      }
+                      setConfirmDelete(null);
+                      void act(`del-${s.id}`, () => deleteStrategy(s.id));
+                    }}
+                  >
+                    {busy === `del-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    {confirmDelete === s.id && 'Tap again to delete'}
                   </Button>
                 </div>
               </div>

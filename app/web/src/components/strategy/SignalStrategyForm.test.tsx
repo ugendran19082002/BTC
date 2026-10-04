@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
-import { StrategyForm } from '@/components/strategy/StrategyForm';
 import { combineRows, matchingSignals, profitableIds } from '@/components/strategy/SignalRuleEditor';
 import { DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, type SignalRule, type Strategy } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
@@ -124,12 +123,6 @@ describe('a form of its own: only what a signal strategy has', () => {
     expect(screen.getByText('Lots per signal')).toBeInTheDocument();
   });
 
-  it('the clock strategy\'s form has none of it: no signals, no live-orders switch', () => {
-    render(<StrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} />);
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['When', 'Sell', 'Entry & exit']);
-    expect(screen.queryByRole('radiogroup', { name: 'trigger' })).toBeNull();
-    expect(screen.queryByRole('switch', { name: /Live orders/ })).toBeNull();
-  });
 });
 
 describe('picking the methods', () => {
@@ -641,12 +634,6 @@ describe('the strike rule over the window: the same all the time, or cut into bl
     expect(screen.getByLabelText('minimum premium usd')).toHaveValue('1');
   });
 
-  it('the clock strategy\'s form has no blocks: it enters once, under one rule', () => {
-    render(<StrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} />);
-    tab('Sell');
-    expect(screen.queryByRole('checkbox', { name: /Different strike rule by time of day/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: /Its own minimum premium/ })).toBeInTheDocument();
-  });
 });
 
 describe('the split length is remembered with the blocks', () => {
@@ -817,14 +804,6 @@ describe('the distance rule and its else strike, beside the premium', () => {
     expect(block(2)).toHaveTextContent(/sells OTM 6\./);
   });
 
-  it('the clock strategy\'s form has it too: the premium rule is the same rule', () => {
-    render(<StrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} />);
-    tab('Sell');
-    expect(floorSwitch()).not.toBeChecked();
-    fireEvent.click(floorSwitch());
-    expect(strike('rule strike')).toHaveTextContent('OTM 6');
-    expect(strike('else strike')).toHaveTextContent('OTM 6');
-  });
 });
 
 describe('the SL and TGT distance filters: two numbers of points for each timeframe picked', () => {

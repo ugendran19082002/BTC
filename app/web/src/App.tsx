@@ -54,7 +54,6 @@ const PositionsCard = lazy(() => import('@/components/trade/PositionsCard').then
 const AccountCard = lazy(() => import('@/components/trade/AccountCard').then((m) => ({ default: m.AccountCard })));
 const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m) => ({ default: m.OrdersPanel })));
 const SignalStrategiesCard = lazy(() => import('@/components/strategy/SignalStrategiesCard').then((m) => ({ default: m.SignalStrategiesCard })));
-const StrategyPanel = lazy(() => import('@/components/strategy/StrategyPanel').then((m) => ({ default: m.StrategyPanel })));
 const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
 const MethodReport = lazy(() => import('@/components/report/MethodReport').then((m) => ({ default: m.MethodReport })));
 const LogsPanel = lazy(() => import('@/components/layout/LogsPanel').then((m) => ({ default: m.LogsPanel })));
@@ -725,12 +724,10 @@ export default function App() {
       ) : tab === 'strategy' ? (
         // The signal strategies -- their limits, each strategy's row and the trade history -- lead the Strategy
         // screen (4 Oct 2026); they sat under Entry setups on Live. Placement only: the card is the same card.
-        <div className="grid min-w-0 gap-3">
-          <ErrorBoundary where="Signal strategies">
-            <SignalStrategiesCard />
-          </ErrorBoundary>
-          <StrategyPanel />
-        </div>
+        // Only the signal strategies: the time-of-day strategies and their run log left this screen the same day.
+        <ErrorBoundary where="Signal strategies">
+          <SignalStrategiesCard />
+        </ErrorBoundary>
       ) : tab === 'pnl' ? (
         <ErrorBoundary where="Profit and loss">
           <ReportPanel />
