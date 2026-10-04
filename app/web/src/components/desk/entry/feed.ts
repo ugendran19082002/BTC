@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { getCandles, getFlowBars, getHeatmap, getLargePrints, type HeatColumn, type PerpOiChange, type Wall } from '@/api/desk';
+import { useMemo } from 'react';
+import { getCandles, type PerpOiChange } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import type { LiveLtp } from '@/hooks/useStream';
 import { TF_SECONDS, withLiveBar, withLtp } from '@/lib/live-bar';
 import { aggregate, closedBars, readTf, type TfRead } from '@/lib/smc/context';
-import type { Candle, Leg } from '@/types/desk';
+import type { Candle } from '@/types/desk';
 import type { EntryTf } from '@/types/entry';
 
 /**
@@ -15,19 +15,15 @@ import type { EntryTf } from '@/types/entry';
  * Three candle series cover every timeframe: the desk's live 5m (App.tsx),
  * 1m (eight hours) and 1H (fourteen days). 3m is folded from 1m, 15m and 30m
  * from 5m, 4H from 1H -- the forming candle included, carried to the last
- * trade. The book heatmap and the per-candle flow exist for 1m and 5m only,
- * and are read only while a chart shows that timeframe.
+ * trade.
  */
 
-/** What the desk hands down: its live 5m candles, the stream's last trade, the option board and positioning. */
+/** What the desk hands down: its live 5m candles, the stream's last trade and the perp's positioning. */
 export type DeskFeed = {
   bars5m: readonly Candle[];
   ltp?: LiveLtp | null;
-  strikes?: { legs: readonly Leg[]; maxPain: number | null } | null;
   derivs?: { oi: PerpOiChange | null; funding: number | null } | null;
 };
-
-type Heat = { tf: string; step: number; columns: HeatColumn[]; walls: Wall[] };
 
 const H1 = 3600;
 const M5 = 300;
@@ -56,52 +52,19 @@ export function foldForChart(bars: readonly Candle[], fromSec: number, toSec: nu
   }];
 }
 
-/**
- * The book heatmap: every column once, then only from the newest one on (it
- * is still filling), merged in. Starts over when it is switched back on.
- */
-function useHeatmap(tf: '1m' | '5m', enabled: boolean): Heat | null {
-  const [heat, setHeat] = useState<Heat | null>(null);
-  const ref = useRef(heat);
-  ref.current = heat;
-  const { data } = usePoll(() => {
-    const cur = ref.current;
-    return getHeatmap(tf, cur ? cur.columns[cur.columns.length - 1]?.time : undefined);
-  }, 20_000, { enabled });
-  useEffect(() => {
-    if (!data) return;
-    setHeat((cur) => {
-      if (!cur || cur.step !== data.step) return data;
-      const from = data.columns[0]?.time ?? Infinity;
-      const oldest = Date.now() / 1000 - 48 * 3600;
-      return { ...data, columns: [...cur.columns.filter((c) => c.time < from && c.time >= oldest), ...data.columns] };
-    });
-  }, [data]);
-  return enabled ? heat : null;
-}
-
 /** Everything a PriceChart takes, for one timeframe. */
 export type ChartFeed = ReturnType<ReturnType<typeof useEntryFeed>>;
 
 /**
  * The shared reads, and a function giving one chart's props for a timeframe.
- * `shown`: the timeframes on screen now, so the 1m-only and 5m-only reads run
- * only while wanted.
+ * `shown`: the timeframes on screen now, so the 1m candles are read often only
+ * while a chart shows them.
  */
 export function useEntryFeed(desk: DeskFeed, shown: readonly EntryTf[]) {
   const want1m = shown.includes('1m') || shown.includes('3m');
-  const heat1On = shown.includes('1m');
-  const heat5On = shown.includes('5m');
   const { data: h1 } = usePoll(() => getCandles('1h'), 60_000);
   const { data: m1 } = usePoll(() => getCandles('1m'), want1m ? 10_000 : 60_000, { deps: [want1m] });
-  const { data: big } = usePoll(() => getLargePrints(36), 15_000);
-  const { data: flow1 } = usePoll(() => getFlowBars('1m', 8), 10_000, { enabled: heat1On });
-  const { data: flow5 } = usePoll(() => getFlowBars('5m', 36), 10_000, { enabled: heat5On });
-  const heat1 = useHeatmap('1m', heat1On);
-  const heat5 = useHeatmap('5m', heat5On);
-  const bigTrades = useMemo(() => ({ prints: big?.prints ?? [], min: big?.min ?? 200, basis: big?.basis }), [big]);
-
-  const { bars5m, ltp = null, strikes = null, derivs = null } = desk;
+  const { bars5m, ltp = null, derivs = null } = desk;
   const now = Date.now();
   // The tape's forming candle where the stream has one; else the last price carried onto the polled bars.
   const live1m = useMemo(
@@ -127,11 +90,6 @@ export function useEntryFeed(desk: DeskFeed, shown: readonly EntryTf[]) {
     return out;
   }, [live1h, bars5m, live1m, minute]);
 
-  const higher = useMemo(() => [
-    ...(live1h.length ? [{ tf: '1H', tfSec: H1, bars: live1h, show: 'zones' as const }] : []),
-    ...(bars5m.length ? [{ tf: '15m', tfSec: 900, bars: foldForChart(bars5m, M5, 900), show: 'structure' as const }] : []),
-  ], [live1h, bars5m]);
-
   const barsOf = useMemo(() => {
     const cache = new Map<EntryTf, readonly Candle[]>();
     return (tf: EntryTf): readonly Candle[] => {
@@ -153,12 +111,7 @@ export function useEntryFeed(desk: DeskFeed, shown: readonly EntryTf[]) {
     bars: barsOf(tf),
     loading: tf === '1m' || tf === '3m' ? !m1 : tf === '1h' || tf === '4h' ? !h1 : false,
     context,
-    higher,
-    bigTrades,
-    flowBars: tf === '1m' ? flow1?.bars : tf === '5m' ? flow5?.bars : undefined,
-    heat: tf === '1m' ? heat1 : tf === '5m' ? heat5 : null,
-    strikes,
     derivs,
     ltp,
-  }), [barsOf, m1, h1, context, higher, bigTrades, flow1, flow5, heat1, heat5, strikes, derivs, ltp]);
+  }), [barsOf, m1, h1, context, derivs, ltp]);
 }

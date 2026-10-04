@@ -24,7 +24,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Bar } from '../src/lib/smc/types';
-import { volumeProfile } from '../src/components/desk/chart/flow-layers';
+import { volumeProfile } from '../src/lib/volume-profile';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CACHE = join(HERE, '../../../cache/candles/BTCUSD-5m');

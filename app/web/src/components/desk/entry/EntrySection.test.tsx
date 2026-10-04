@@ -44,16 +44,11 @@ const SETTINGS = [
   { key: 'rr', label: 'R:R', enabled: true, locked: null, changedAt: null },
 ];
 const getCandles = vi.fn(async (tf: string) => ({ tf, bars: [{ time: 1, open: 84_000, high: 84_200, low: 83_900, close: 84_120, volume: 1 }] }));
-const getFlowBars = vi.fn(async (tf: string) => ({ tf, bars: [] }));
-const getHeatmap = vi.fn(async (tf: string) => ({ tf, step: 10, columns: [], walls: [] }));
 vi.mock('@/api/desk', () => ({
   getCandles: (tf: string) => getCandles(tf),
-  getFlowBars: (tf: string) => getFlowBars(tf),
-  getHeatmap: (tf: string) => getHeatmap(tf),
-  getLargePrints: async () => ({ min: 200, since: 0, prints: [] }),
 }));
 const five = [{ time: 300, open: 84_000, high: 84_200, low: 83_900, close: 84_120, volume: 1 }];
-const desk = { bars5m: five, ltp: null, strikes: null, derivs: null };
+const desk = { bars5m: five, ltp: null, derivs: null };
 
 /**
  * The reference layout: the twelve methods without the timeframe chain and
@@ -178,8 +173,6 @@ describe('the entry section, side by side', () => {
     expect(screen.getByRole('img', { name: '12 methods + timeframe chart' }).getAttribute('data-tf')).toBe('1h');
     await waitFor(() => expect(getCandles).toHaveBeenCalledWith('1h'));
     expect(getEntryBoard).not.toHaveBeenCalledWith('1h');
-    // The book and the flow are read for 1m and 5m only, and only while one is shown.
-    expect(getHeatmap.mock.calls.map((c) => c[0])).not.toContain('1m');
   });
 
   it('[critical] a WAIT shows what it waits for and what was not read, and draws no levels', async () => {

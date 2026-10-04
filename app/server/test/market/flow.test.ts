@@ -2,10 +2,10 @@ import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowSocket, printOf, perpTickerOf, type Print } from '../../src/market/flow-socket.js';
 import {
-  bookOf, capturePerpSnapshot, flowSchema, flowSummary, autoLargeMin, flowBarsOf, oiRead, perpOiChange, flushTradeFlow, formingBar, largeOrdersOf, largePrints, liveLtp, minuteOf, minutesOf,
+  bookOf, capturePerpSnapshot, flowSchema, flowSummary, oiRead, perpOiChange, flushTradeFlow, formingBar, largeOrdersOf, liveLtp, minuteOf, minutesOf,
   useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
 } from '../../src/market/flow.js';
-import { closePool, one, query } from '../../src/db/pool.js';
+import { closePool, one, query, rows } from '../../src/db/pool.js';
 import { marketSchema } from '../../src/market/oi-history.js';
 import type { Ticker } from '../../src/market/delta.js';
 
@@ -118,7 +118,7 @@ test('[critical] a large order is the prints of one millisecond and side, at the
   assert.equal(orders[0]!.price, ((L - 50) * 81_000 + 100 * 81_010) / (L + 50));
 });
 
-test('[critical] large orders are written once with their minute, and read back with the socket\'s unwritten ones', async () => {
+test('[critical] large orders are written once with their minute; the minute in progress waits', async () => {
   const L = LARGE_PRINT_CONTRACTS;
   const s = new FlowSocket({ now: () => minute(12) + 10_000 });
   for (const x of [
@@ -132,14 +132,11 @@ test('[critical] large orders are written once with their minute, and read back 
   const stored = await one<{ n: number }>('SELECT COUNT(*)::int AS n FROM large_prints');
   assert.equal(stored?.n, 2, 'the two completed minutes\' large orders, once; the minute in progress waits');
 
-  const all = await largePrints(minute(0));
-  assert.deepEqual(all.map((o) => [o.at, o.side, o.size, o.price]), [
+  const kept = await rows<{ at: string; side: string; size: number; price: number }>('SELECT at, side, size, price FROM large_prints ORDER BY at');
+  assert.deepEqual(kept.map((o) => [Number(o.at), o.side, Number(o.size), Number(o.price)]), [
     [minute(10) + 1_000, 'buy', L * 2, 81_100],
     [minute(11) + 1_000, 'sell', L, 81_050],
-    [minute(12) + 1_000, 'buy', L * 4, 81_200],
-  ], 'recorded, then the socket\'s own, none twice');
-  assert.deepEqual((await largePrints(minute(0), L * 3)).map((o) => o.size), [L * 4], 'filtered by size');
-  assert.deepEqual((await largePrints(minute(11))).map((o) => o.at), [minute(11) + 1_000, minute(12) + 1_000], 'from the time asked');
+  ], 'each at its own time, side, size and price');
 });
 
 test('[critical] the candle in progress is the perp\'s own prints since it opened: open, high, low, close, volume', () => {
@@ -170,16 +167,6 @@ test('[critical] the live price is the socket\'s last perp trade, with the 1m an
   assert.equal(live.bars['5m']!.volume, 7);
 });
 
-test('[critical] the flow per candle: taker buy and sell, trades, and how many minutes it has', () => {
-  const m = (n: number, buy: number, sell: number) => minuteOf(minute(n), [p(minute(n), 'buy', buy), p(minute(n) + 1, 'sell', sell)]);
-  // 06:02 and 06:03 fall in the 06:00 candle, 06:11 in the 06:10 one.
-  const bars = flowBarsOf([m(0, 5, 1), m(1, 2, 2), m(9, 0, 7)], 300);
-  assert.deepEqual(bars, [
-    { time: Date.UTC(2026, 8, 19, 6, 0) / 1000, buy: 7, sell: 3, trades: 4, minutes: 2 },
-    { time: Date.UTC(2026, 8, 19, 6, 10) / 1000, buy: 0, sell: 7, trades: 2, minutes: 1 },
-  ]);
-});
-
 test('[critical] the current minute\'s flow is the perpetual\'s alone: an option print is not counted in it', async () => {
   const s = new FlowSocket({ now: () => minute(30) + 5_000 });
   const send = (x: Print & { symbol?: string }) => s.receive(JSON.stringify({ type: 'all_trades', symbol: x.symbol ?? 'BTCUSD', price: String(x.price), size: x.size, timestamp: x.at * 1000, buyer_role: x.side === 'buy' ? 'taker' : 'maker', seller_role: x.side === 'buy' ? 'maker' : 'taker' }));
@@ -188,21 +175,6 @@ test('[critical] the current minute\'s flow is the perpetual\'s alone: an option
   useFlowSocket(s);
   const sum = await flowSummary(5, minute(30) + 5_000);
   assert.equal(sum.buyVolume, 4);
-});
-
-test('[critical] the big-trade threshold is the market\'s own: the top tenth of the recorded large orders, never under 0.2 BTC', async () => {
-  const L = LARGE_PRINT_CONTRACTS;
-  assert.deepEqual((await autoLargeMin(minute(0), minute(1))).min, L, 'nothing recorded: every large order');
-  // 100 recorded orders, 200 to 1,190 contracts: the 90th percentile is 1,100.
-  const sizes = Array.from({ length: 100 }, (_, k) => L + k * 10);
-  await query(
-    `INSERT INTO large_prints (at, side, price, size) SELECT * FROM unnest($1::bigint[], $2::text[], $3::float8[], $4::float8[])`,
-    [sizes.map((_, k) => minute(40) + k), sizes.map(() => 'buy'), sizes.map(() => 81_000), sizes] as never,
-  );
-  const auto = await autoLargeMin(minute(0), minute(50));
-  assert.equal(auto.min, L + 90 * 10);
-  assert.match(auto.basis, /top 10% of the 100 orders/);
-  assert.deepEqual((await autoLargeMin(minute(45), minute(50))).min, L, 'outside the window: too few to judge');
 });
 
 test('[critical] OI read with price: the four positioning reads, and flat under the thresholds', () => {

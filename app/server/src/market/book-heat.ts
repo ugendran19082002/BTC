@@ -173,32 +173,6 @@ function rebin(m: HeatMinute, step: number): { bid: Map<number, number>; ask: Ma
   return out;
 }
 
-/** A candle's column: [bin index, contracts] cells, bids and asks together (they do not overlap), faint ones left out. */
-export type HeatColumn = { time: number; cells: [number, number][] };
-
-/**
- * Minutes folded into `tfSec` candles at `step` dollars a bin: each bin's size
- * averaged over the candle's recorded minutes. Cells under 2% of the column's
- * largest are left out -- they would draw as nothing and cost bytes. Pure.
- */
-export function heatColumnsOf(minutes: readonly HeatMinute[], tfSec: number, step: number): HeatColumn[] {
-  const by = new Map<number, HeatMinute[]>();
-  for (const m of minutes) {
-    const time = Math.floor(m.at / 1000 / tfSec) * tfSec;
-    (by.get(time) ?? by.set(time, []).get(time)!).push(m);
-  }
-  return [...by.entries()].sort((a, b) => a[0] - b[0]).map(([time, ms]) => {
-    const sum = new Map<number, number>();
-    for (const m of ms) {
-      const r = rebin(m, step);
-      for (const side of [r.bid, r.ask]) for (const [k, v] of side) sum.set(k, (sum.get(k) ?? 0) + v / ms.length);
-    }
-    const max = Math.max(0, ...sum.values());
-    const cells = [...sum.entries()].filter(([, v]) => v >= max * 0.02).sort((a, b) => a[0] - b[0]).map(([k, v]) => [k, Math.round(v)] as [number, number]);
-    return { time, cells };
-  });
-}
-
 /** A level of resting size that has stayed: where, how much now (contracts), and for how many minutes running. */
 export type Wall = { side: 'bid' | 'ask'; price: number; size: number; minutes: number };
 

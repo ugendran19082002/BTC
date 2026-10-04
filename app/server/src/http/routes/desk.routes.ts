@@ -11,10 +11,8 @@ import { loadDays, reloadDays } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot } from '../../market/option-snapshots.js';
-import { heatColumnsOf, heatMinutes, persistentWalls } from '../../market/book-heat.js';
-import { ttlCache } from '../ttl-cache.js';
 import { trendPaper } from '../../strategy/trend-paper.js';
-import { autoLargeMin, flowBarsOf, flowFeedHealth, flowMinutes, flowSummary, largePrints, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange, LARGE_PRINT_CONTRACTS } from '../../market/flow.js';
+import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -179,90 +177,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };
-    }
-  });
-
-  /**
-   * Large taker orders on the perpetual, each at its own price and time: the
-   * chart's big-trade bubbles, `hours` back (up to 48). The size they must
-   * reach is the market's own by default (`autoLargeMin`: the top tenth of the
-   * large orders in the window); a number in `min` overrides it, never under
-   * the recording threshold, since smaller ones are not kept.
-   */
-  // The chart's pollers (every 10-20 s, from every open tab) share one read for a few seconds.
-  const largeCache = ttlCache<{ min: number; basis: string; since: number; prints: Awaited<ReturnType<typeof largePrints>> }>(5_000);
-  const barsCache = ttlCache<ReturnType<typeof flowBarsOf>>(3_000);
-  const heatCache = ttlCache<{ tf: string; step: number; columns: ReturnType<typeof heatColumnsOf>; walls: ReturnType<typeof persistentWalls> }>(5_000);
-
-  // The perpetual's big taker orders over the last hours, for the chart's bubbles, with the size that counts as big.
-  app.get('/api/flow/large-prints', async (req, reply) => {
-    const q = req.query as { hours?: string; min?: string };
-    const hours = Math.min(48, Math.max(1, Number(q.hours ?? 36) || 36));
-    const now = Date.now();
-    const since = now - hours * 3_600_000;
-    try {
-      const asked = Number(q.min);
-      const fixed = q.min && Number.isFinite(asked) ? Math.max(LARGE_PRINT_CONTRACTS, asked) : null;
-      return await largeCache(`${hours}:${fixed ?? 'auto'}`, async () => {
-        const { min, basis } = fixed !== null ? { min: fixed, basis: 'set by the caller' } : await autoLargeMin(since, now);
-        return { min, basis, since, prints: await largePrints(since, min) };
-      });
-    } catch (e) {
-      reply.code(502);
-      return { error: (e as Error).message, min: LARGE_PRINT_CONTRACTS, since, prints: [] };
-    }
-  });
-
-  /**
-   * Aggressive flow per candle -- taker buy and sell volume and the trade
-   * count -- for the chart's delta / CVD pane: `tf` 1m or 5m, `hours` back (up
-   * to 48). From the recorded minutes and the socket's current one; each
-   * candle says how many of its minutes were recorded, so a gap is not read
-   * as a quiet market.
-   */
-  app.get('/api/flow/bars', async (req, reply) => {
-    const q = req.query as { tf?: string; hours?: string };
-    const tfSec = q.tf === '1m' ? 60 : 300;
-    const hours = Math.min(48, Math.max(1, Number(q.hours ?? 36) || 36));
-    const now = Date.now();
-    try {
-      const bars = await barsCache(`${tfSec}:${hours}`, async () => flowBarsOf(await flowMinutes(now - hours * 3_600_000, now), tfSec));
-      return { tf: tfSec === 60 ? '1m' : '5m', bars };
-    } catch (e) {
-      reply.code(502);
-      return { error: (e as Error).message, bars: [] };
-    }
-  });
-
-  /**
-   * The perpetual's resting liquidity for the chart's heatmap: one column per
-   * candle (`tf` 1m or 5m), [bin, contracts] cells at $10 (1m) or $25 (5m) a
-   * bin, and the persistent walls now. `since` (epoch seconds) asks only for
-   * the columns from that candle on -- the chart asks for everything once,
-   * then for the newest -- and `hours` caps how far back (up to 48).
-   */
-  app.get('/api/flow/heatmap', async (req, reply) => {
-    const q = req.query as { tf?: string; hours?: string; since?: string };
-    const tfSec = q.tf === '1m' ? 60 : 300;
-    const step = tfSec === 60 ? 10 : 25;
-    const hours = Math.min(48, Math.max(1, Number(q.hours ?? 36) || 36));
-    const now = Date.now();
-    const earliest = now - hours * 3_600_000;
-    const asked = Number(q.since) > 0 ? Number(q.since) * 1000 : earliest;
-    const from = Math.floor(Math.max(asked, earliest) / 1000 / tfSec) * tfSec * 1000;
-    const wallsFrom = now - 30 * 60_000;
-    try {
-      return await heatCache(`${tfSec}:${from}`, async () => {
-        const minutes = await heatMinutes(Math.min(from, wallsFrom));
-        return {
-          tf: tfSec === 60 ? '1m' : '5m', step,
-          columns: heatColumnsOf(minutes.filter((m) => m.at >= from), tfSec, step),
-          walls: persistentWalls(minutes.filter((m) => m.at >= wallsFrom), step),
-        };
-      });
-    } catch (e) {
-      reply.code(502);
-      return { error: (e as Error).message, step, columns: [], walls: [] };
     }
   });
 

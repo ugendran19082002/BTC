@@ -1,19 +1,17 @@
 import { forwardRef } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { TfRead } from '@/lib/smc/context';
-import type { BigTradeSummary, FlowRead, VolRegime } from './flow-layers';
+import type { VolRegime } from '@/lib/vol-regime';
 import type { PerpOiChange } from '@/api/desk';
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
-const pct = (v: number) => `${Math.round(v * 100)}%`;
 
-type Shown = { open: number; high: number; low: number; close: number; when: string; hovering: boolean; flow?: FlowRead | null };
-const k = (v: number) => (Math.abs(v) >= 1_000 ? `${(v / 1_000).toFixed(1)}k` : `${Math.round(v)}`);
+type Shown = { open: number; high: number; low: number; close: number; when: string; hovering: boolean };
 
 /**
  * The chart's corner readout: the candle under the pointer (or the last), the
- * timeframe context, positioning, big trades and the candle's flow -- what the
- * market is doing, never a setup. Setups are the entry section's
+ * timeframe context and positioning -- what the market is doing, never a
+ * setup. Setups are the entry section's
  * (components/desk/entry), drawn on the chart from there. Inside the chart,
  * over the candles' quietest corner, and folds to one line.
  */
@@ -23,11 +21,9 @@ export const ChartHud = forwardRef<HTMLDivElement, {
   tf: string;
   context: readonly TfRead[];
   candle: Shown | null;
-  /** Big trades in view, the size they start at (contracts) and how it was set. */
-  big?: (BigTradeSummary & { min: number; basis?: string }) | null;
   /** Positioning and volatility: the perp's OI against an hour ago, funding, and the chart's ATR against its usual. */
   derivs?: { oi: PerpOiChange | null; funding: number | null; vol: VolRegime | null } | null;
-}>(function ChartHud({ open, onToggle, tf, context, candle, big, derivs }, ref) {
+}>(function ChartHud({ open, onToggle, tf, context, candle, derivs }, ref) {
   const up = candle ? candle.close >= candle.open : true;
   return (
     <div ref={ref} className="pc-hud" aria-label="Chart readout">
@@ -76,24 +72,6 @@ export const ChartHud = forwardRef<HTMLDivElement, {
                   Vol {derivs.vol.label} {derivs.vol.ratio.toFixed(1)}× · ATR {Math.round(derivs.vol.atr)} pts
                 </span>
               )}
-            </p>
-          )}
-          {big && (
-            <p className="pc-hud-ohlc" aria-label="Big trades in view" title={`Big trades start at ${big.min / 1_000} BTC: ${big.basis ?? 'the market\'s own size'}. Taker orders, counted over the candles in view. Hover a bubble for its detail.`}>
-              <span>Big ≥{(big.min / 1_000).toFixed(1)} BTC</span>
-              <span className="bbuy">● {big.buys} buy · {big.buyBtc.toFixed(1)}</span>
-              <span className="bsell">● {big.sells} sell · {big.sellBtc.toFixed(1)}</span>
-              <span className={big.buyBtc >= big.sellBtc ? 'bbuy' : 'bsell'}>net {big.buyBtc - big.sellBtc >= 0 ? '+' : '−'}{Math.abs(big.buyBtc - big.sellBtc).toFixed(1)} BTC</span>
-            </p>
-          )}
-          {candle?.flow && (
-            <p className="pc-hud-ohlc" aria-label="Candle flow" title="Taker buying minus selling in this candle (contracts), the buyers' share, and its trade rate against the twenty candles before it.">
-              <span>Flow</span>
-              <span className={candle.flow.delta >= 0 ? 'up' : 'down'}>Δ {candle.flow.delta >= 0 ? '+' : '−'}{k(Math.abs(candle.flow.delta))}</span>
-              {candle.flow.buyPct !== null && <span>buy {pct(candle.flow.buyPct)}</span>}
-              <span>{candle.flow.trades} trades</span>
-              {candle.flow.velocity !== null && <span className={candle.flow.velocity >= 2 ? 'hot' : ''}>{candle.flow.velocity.toFixed(1)}× pace</span>}
-              {!candle.flow.whole && <span>· minutes missing</span>}
             </p>
           )}
         </div>

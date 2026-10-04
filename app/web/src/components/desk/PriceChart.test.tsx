@@ -5,11 +5,10 @@ import type { SceneItem } from '@/components/desk/chart/scene';
 import type { Candle } from '@/types/desk';
 
 /*
- * The candles and the concepts are drawn by `lightweight-charts` onto a canvas,
- * which jsdom does not paint. So the library is stubbed and what is asserted
- * is the contract with it: the series get the bars, the scroll lock really
- * locks, and the primitive is handed a scene built from closed candles only.
- * What the scene contains is scene / engine tests' business.
+ * The candles are drawn by `lightweight-charts` onto a canvas, which jsdom
+ * does not paint. So the library is stubbed and what is asserted is the
+ * contract with it: the series get the bars, the scroll lock really locks, and
+ * the primitive is handed the entry setup and nothing else.
  */
 
 const setDataCalls: { which: string; data: any[] }[] = [];
@@ -50,11 +49,6 @@ vi.mock('lightweight-charts', () => {
     })),
   };
 });
-
-vi.mock('@/api/annotations', () => ({
-  getAnnotations: vi.fn(async () => []),
-  clearAnnotationsApi: vi.fn(async () => {}),
-}));
 
 const HOUR = 3600;
 /** Hourly candles ending with one still forming now. */
@@ -112,27 +106,28 @@ describe('the price chart', () => {
     expect(tailFrom(b, [...b, { ...b[4]! }])).toBe(-1);
   });
 
-  it('[critical] a preset sets the layers in one click; the default is the lean Desk set', () => {
+  it('[critical] there is no Layers menu: the toolbar is the timeframe, zoom and full screen', () => {
     chart();
-    fireEvent.click(screen.getByRole('button', { name: /Layers/ }));
-    const presets = screen.getByRole('group', { name: 'Layer presets' });
-    expect(within(presets).getByRole('button', { name: 'Desk' }).getAttribute('aria-pressed')).toBe('true');
-    expect((screen.getByLabelText(/^Liquidity heatmap \(book\)/) as HTMLInputElement).checked).toBe(false);
-    fireEvent.click(within(presets).getByRole('button', { name: 'Order flow' }));
-    expect((screen.getByLabelText(/^Liquidity heatmap \(book\)/) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByLabelText(/^Structure/) as HTMLInputElement).checked).toBe(false);
-    expect(within(presets).getByRole('button', { name: 'Order flow' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('button', { name: /Layers/ })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Layer presets' })).toBeNull();
+    expect(screen.queryAllByRole('checkbox')).toEqual([]);
+    const tools = within(screen.getByRole('toolbar', { name: 'Chart controls' })).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
+    expect(tools).toEqual(['Zoom', 'Full screen']);
   });
 
-  it('[critical] None unchecks every layer in one click, and the choice is remembered', () => {
+  it('[critical] nothing is drawn over the candles but a setup it is handed: no structure, zones, heatmap, bubbles or profile', () => {
+    addedTo.length = 0;
+    chart({ tf: '5m' });
+    expect(primitives).toHaveLength(1);
+    expect(primitives[0]!.scene).toEqual([]);
+    // Candles and volume in the one pane: no delta / CVD pane under the price.
+    expect(addedTo).toEqual([{ kind: 'candles', pane: 0 }, { kind: 'volume', pane: 0 }]);
+  });
+
+  it('[critical] the readout is price, context and positioning: no big-trade or flow lines', () => {
     chart();
-    fireEvent.click(screen.getByRole('button', { name: /Layers/ }));
-    const presets = screen.getByRole('group', { name: 'Layer presets' });
-    fireEvent.click(within(presets).getByRole('button', { name: 'None' }));
-    expect(within(presets).getByRole('button', { name: 'None' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getAllByRole('checkbox').every((c) => !(c as HTMLInputElement).checked)).toBe(true);
-    expect(primitives[primitives.length - 1]!.scene).toEqual([]);
-    expect(JSON.parse(localStorage.getItem('btc-desk:chart:layers:v5')!)).toEqual([]);
+    expect(screen.queryByLabelText('Big trades in view')).toBeNull();
+    expect(screen.queryByLabelText('Candle flow')).toBeNull();
   });
 
   it('[critical] the readout carries the perp\'s positioning and the volatility regime', () => {
@@ -166,15 +161,6 @@ describe('the price chart', () => {
     expect(onView).toHaveBeenCalledWith('1m');
   });
 
-  it('[critical] draws delta and CVD in their own pane under the price, only when there is flow', () => {
-    addedTo.length = 0;
-    chart({ tf: '5m' });
-    expect(addedTo.filter((a) => a.pane === 1)).toEqual([]);
-    const b = bars(60);
-    chart({ tf: '5m', flowBars: b.slice(-3).map((x) => ({ time: x.time, buy: 10, sell: 4, trades: 9, minutes: 5 })) });
-    expect(addedTo.filter((a) => a.pane === 1).map((a) => a.kind)).toEqual(['volume', 'line']);
-  });
-
   it('[critical] never asks a removed chart to repaint (the "Object is disposed" crash)', () => {
     const { unmount } = chart();
     const primitive = primitives[primitives.length - 1]!;
@@ -183,15 +169,6 @@ describe('the price chart', () => {
     // A resize observed after the chart is gone, before the effect that measures it is cleaned up.
     primitive.setReserved([{ x: 0, y: 0, w: 10, h: 10 }]);
     expect(repaints).not.toHaveBeenCalled();
-  });
-
-  it('[critical] draws through a primitive, and never reads the candle still forming', () => {
-    chart();
-    expect(primitives).toHaveLength(1);
-    const scene = primitives[0]!.scene;
-    const xs = scene
-      .flatMap((it) => (it.t === 'box' || it.t === 'line' ? [it.x1] : it.t === 'mark' || it.t === 'bubble' ? [it.x] : it.t === 'path' ? it.points.map((p) => p[0]) : it.t === 'heat' ? it.cols.map((c) => c.x) : []));
-    expect(Math.max(-1, ...xs)).toBeLessThan(59);
   });
 
   it('shows the timeframe context when it is given', () => {
@@ -206,15 +183,6 @@ describe('the price chart', () => {
     expect(ctx.textContent).toContain('5M ▼ Setup');
     // Trend only: the chart reads no setup.
     expect(ctx.textContent).not.toMatch(/forming|ready|active/i);
-  });
-
-  it('remembers which layers are drawn', () => {
-    chart();
-    fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
-    fireEvent.click(screen.getByLabelText(/^Structure/));
-    const stored = JSON.parse(localStorage.getItem('btc-desk:chart:layers:v5')!) as string[];
-    expect(stored).not.toContain('structure');
-    expect(stored).toContain('liquidity');
   });
 
   it('folds the readout to one line', () => {
@@ -232,9 +200,6 @@ describe('the price chart', () => {
     expect(hud.textContent).not.toMatch(/NO TRADE|FORMING|READY|ACTIVE|Plan|Trades|Measured/);
     expect(screen.queryByLabelText('Trade plan')).toBeNull();
     expect(screen.queryByLabelText('Trend plan')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Layers' }));
-    expect(screen.queryByLabelText(/^Trade/)).toBeNull();
-    expect(screen.queryByLabelText(/^Trend plan/)).toBeNull();
     expect(primitives[0]!.scene.some((it) => it.layer === 'entry')).toBe(false);
   });
 

@@ -11,7 +11,7 @@ import { marketSchema } from './oi-history.js';
  *
  *   trade_flow_1m      every BTCUSD print, summed per minute by aggressor side
  *   option_flow_1m     every print on the two nearest expiries' options, per contract per minute, by aggressor side
- *   large_prints       every large taker order on the perpetual, at its own price and time (the chart's bubbles)
+ *   large_prints       every large taker order on the perpetual, at its own price and time (recorded for research; nothing reads it)
  *   perp_snapshots     funding, open interest, turnover and the top of the book, every 5 minutes
  *
  * There was a fourth, `iv_term_snapshots`, for the IV term structure card's
@@ -119,8 +119,9 @@ const MIGRATIONS: Migration[] = [
     up: 'DROP TABLE IF EXISTS iv_term_snapshots;',
   },
   {
-    // Each large taker order on the perpetual, at its own price and time: the chart's big-trade
-    // bubbles, and the history to test them on later. `trade_flow_1m` keeps only their sums.
+    // Each large taker order on the perpetual, at its own price and time: the history to test big
+    // trades on later (the chart's bubbles, which read it, went on 4 Oct 2026). `trade_flow_1m`
+    // keeps only their sums.
     id: 'market-015-large-prints',
     up: `
       CREATE TABLE IF NOT EXISTS large_prints (
@@ -131,6 +132,18 @@ const MIGRATIONS: Migration[] = [
         PRIMARY KEY (at, side)
       );
     `,
+  },
+  {
+    /*
+     * The chart's saved levels (4 Oct 2026). The price chart's layers were
+     * removed -- the chart draws candles and the entry setup -- and saved
+     * levels were one of them: `chart-001-annotations` made this table, its
+     * routes and its module are gone, and nothing reads it. It held no rows on
+     * the desk. On a fresh database, where `chart-001` never runs, this drops
+     * nothing.
+     */
+    id: 'chart-002-drop-annotations',
+    up: 'DROP TABLE IF EXISTS public.chart_annotations;',
   },
 ];
 
@@ -300,47 +313,6 @@ export function largeOrdersOf(prints: readonly Print[], large = LARGE_PRINT_CONT
     .filter((o) => o.size >= large)
     .sort((a, b) => a.at - b.at)
     .map((o) => ({ at: o.at, side: o.side, price: o.notional / o.size, size: o.size }));
-}
-
-/**
- * Large orders since `sinceMs` of `minSize` contracts or more, oldest first:
- * the recorded ones, and the socket's own not yet written. At most `limit`,
- * the most recent kept.
- */
-export async function largePrints(sinceMs: number, minSize = LARGE_PRINT_CONTRACTS, limit = 5_000): Promise<LargePrint[]> {
-  await flowSchema();
-  const saved = await rows<{ at: string; side: 'buy' | 'sell'; price: number; size: number }>(
-    'SELECT at, side, price, size FROM large_prints WHERE at >= $1 AND size >= $2 ORDER BY at DESC LIMIT $3',
-    [sinceMs, minSize, limit],
-  );
-  const out: LargePrint[] = saved.reverse().map((r) => ({ at: Number(r.at), side: r.side, price: Number(r.price), size: Number(r.size) }));
-  const seen = new Set(out.map((o) => `${o.at}:${o.side}`));
-  const live = socket ? largeOrdersOf(socket.printsSince(sinceMs), minSize).filter((o) => !seen.has(`${o.at}:${o.side}`)) : [];
-  return [...out, ...live].slice(-limit);
-}
-
-/** The share of recorded large orders the chart draws by default: the top tenth. */
-export const AUTO_LARGE_QUANTILE = 0.9;
-
-/**
- * The size a big trade has to reach to be drawn, set by the market rather
- * than chosen: the 90th percentile of the large orders (200 contracts or
- * more) since `sinceMs` -- roughly the top 0.3% of all trades -- never under
- * the recording threshold. With too few recorded yet (a fresh deploy), the
- * socket's last hour is used; with too few there, the threshold itself.
- */
-export async function autoLargeMin(sinceMs: number, nowMs = Date.now()): Promise<{ min: number; basis: string }> {
-  await flowSchema();
-  const saved = (await rows<{ size: number }>('SELECT size FROM large_prints WHERE at >= $1', [sinceMs])).map((r) => Number(r.size));
-  const live = socket ? largeOrdersOf(socket.printsSince(Math.max(sinceMs, nowMs - 3_600_000))).map((o) => o.size) : [];
-  const sizes = saved.length >= 50 ? saved : live.length >= 20 ? live : [];
-  if (!sizes.length) return { min: LARGE_PRINT_CONTRACTS, basis: 'too few recorded yet: every order of 0.2 BTC or more' };
-  sizes.sort((a, b) => a - b);
-  const q = sizes[Math.min(sizes.length - 1, Math.floor(sizes.length * AUTO_LARGE_QUANTILE))]!;
-  return {
-    min: Math.max(LARGE_PRINT_CONTRACTS, q),
-    basis: `top ${Math.round((1 - AUTO_LARGE_QUANTILE) * 100)}% of the ${sizes.length} orders of 0.2 BTC or more ${saved.length >= 50 ? 'on the chart' : 'in the last hour'}`,
-  };
 }
 
 let lastFlushedMinute = 0;

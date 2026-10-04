@@ -75,28 +75,6 @@ export const setShortCap = (contracts: number) =>
  * open-interest walls against recent price does not need a year of 1m bars, and
  * a caller free to ask for one is a caller who can hang the page.
  */
-/** Resting liquidity per candle: [bin, contracts] cells, bin = floor(price / step). */
-export type HeatColumn = { time: number; cells: [number, number][] };
-export type Wall = { side: 'bid' | 'ask'; price: number; size: number; minutes: number };
-/** The book heatmap's columns from `since` (epoch seconds; all 36 hours when absent), and the persistent walls now. */
-export const getHeatmap = (tf: '1m' | '5m', since?: number) =>
-  json<{ tf: string; step: number; columns: HeatColumn[]; walls: Wall[] }>(`/api/flow/heatmap?tf=${tf}${since ? `&since=${since}` : ''}`);
-
-/** Aggressive flow per candle: taker buy / sell volume (contracts), trades, and how many of its minutes were recorded. */
-export type FlowBar = { time: number; buy: number; sell: number; trades: number; minutes: number };
-export const getFlowBars = (tf: '1m' | '5m', hours: number) =>
-  json<{ tf: string; bars: FlowBar[] }>(`/api/flow/bars?tf=${tf}&hours=${hours}`);
-
-/**
- * Large taker orders on the perpetual (contracts, 1,000 to a BTC), oldest
- * first: the chart's big-trade bubbles. The size they must reach is set by the
- * server from the market (`min`, and `basis` says how).
- */
-export const getLargePrints = (hours: number) =>
-  json<{ min: number; basis?: string; since: number; prints: { at: number; side: 'buy' | 'sell'; price: number; size: number }[] }>(
-    `/api/flow/large-prints?hours=${hours}`,
-  );
-
 export const getCandles = (tf: '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d') =>
   json<CandlesResponse>(`/api/candles?tf=${tf}`);
 

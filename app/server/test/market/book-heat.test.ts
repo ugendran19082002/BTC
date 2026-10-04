@@ -1,7 +1,7 @@
 import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  bookHeatSchema, flushBookHeat, heatColumnsOf, heatMinutes, minuteOfSamples, persistentWalls, resetBookHeat,
+  bookHeatSchema, flushBookHeat, heatMinutes, minuteOfSamples, persistentWalls, resetBookHeat,
   sampleBook, sampleOf, type HeatMinute,
 } from '../../src/market/book-heat.js';
 import { closePool, one, query } from '../../src/db/pool.js';
@@ -60,17 +60,6 @@ const minute = (at: number, bins: Record<number, number>, side: 'bid' | 'ask' = 
   const empty = arr.map(() => 0);
   return { at, base: lo * 10, step: 10, bid: side === 'bid' ? arr : empty, ask: side === 'ask' ? arr : empty, samples: 6, bestBid: null, bestAsk: null };
 };
-
-test('[critical] columns are the candle\'s minutes averaged at the chart\'s step, faint cells left out', () => {
-  // Two minutes of one 5m candle: $10 bins 8100 and 8101 fold into the $25 bin 3240.
-  const cols = heatColumnsOf([
-    minute(T0, { 8_100: 10, 8_101: 10, 8_110: 1_000, 8_120: 1 }),
-    minute(T0 + MIN, { 8_100: 30, 8_101: 30, 8_110: 1_000 }),
-  ], 300, 25);
-  assert.equal(cols.length, 1);
-  assert.equal(cols[0]!.time, T0 / 1000);
-  assert.deepEqual(cols[0]!.cells, [[3_240, 40], [3_244, 1_000]], 'the 1-contract bin is under 2% of the column');
-});
 
 test('[critical] a wall is persistent only when it has held five minutes running, up to now', () => {
   // A bid of 500 at 81,000 every minute; a new one of 900 at 80,500 for the last two; median bins of 10.
