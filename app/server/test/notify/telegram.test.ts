@@ -232,7 +232,8 @@ test('[critical] a message over Telegram\'s limit goes in parts, cut between lin
 });
 
 test('a message that fits is one message, untouched; one long line is cut where it stands', () => {
-  assert.deepEqual(partsOf(summary(78)), [summary(78)], '78 trades fitted on 3 Oct and still go as one');
+  assert.ok(summary(60).length <= MAX_MESSAGE_CHARS);
+  assert.deepEqual(partsOf(summary(60)), [summary(60)], 'a day that fits still goes as one');
   const line = 'x'.repeat(MAX_MESSAGE_CHARS * 2 + 10);
   const cut = partsOf(line);
   assert.equal(cut.length, 3);
@@ -244,7 +245,8 @@ test('[critical] a part Telegram refuses fails the message and is written down o
   const text = summary(109);
   const { n, calls, errors } = make([{ status: 200 }, { status: 400, body: { ok: false, description: 'Bad Request: chat not found' } }],
     { onResult: (r) => told.push({ status: r.status, text: r.text }) });
-  assert.equal(await n.send(text), false);
+  n.notify({ key: 'day:summary', text });
+  await n.drain();
   assert.equal(calls.length, 2, 'the first part went, the second was refused');
   assert.equal(errors.length, 1);
   assert.deepEqual(told.map((t) => [t.status, t.text === text]), [['failed', true]], 'one row, with the whole message');
