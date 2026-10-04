@@ -53,7 +53,6 @@ In PostgreSQL. Retention is enforced as each recorder writes.
 | `oi_snapshots` | OI per strike, with spot and ATM IV | 5 min | 48 hours |
 | `chain_features` | the board summarised: straddle, skew, PCR, walls, max pain, OI change | 5 min | 400 days |
 | `trade_flow_1m` | the perpetual's tape per minute by aggressor side, large-print counts | 1 min | a year |
-| `large_prints` | every perp taker order of 200 contracts (0.2 BTC) or more | per order | a year |
 | `option_flow_1m` | the options' own tape, per contract per minute, by aggressor side | 1 min | 31 days |
 | `perp_snapshots` | perp mark, funding, OI, turnover, top of book | 5 min | a year |
 | `book_heat_1m` | the perp's book, averaged per $10 bin per minute | 1 min | 14 days |

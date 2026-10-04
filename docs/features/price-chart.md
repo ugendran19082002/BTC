@@ -87,13 +87,9 @@ Entry methods   1 Breakout · 2 Breakout + retest · … · 12 Options
 | `app/web/src/lib/smc/engine.ts` | The engine: one closed candle at a time, no lookahead. `DESK_SMC_OPTIONS` is what the desk runs. |
 | `app/web/src/lib/smc/types.ts` | Its vocabulary: swings, breaks, zones, pools, sessions, tags, setups, options. |
 | `app/web/src/lib/smc/context.ts` | Closed-candle filter, timeframe folding, trend-as-known-at, the context row. |
-| `app/web/src/lib/smc/readout.ts` | The engine's setups in words, the live setup (`liveSetup`), the context gate, a record -- used by the research scripts; the chart no longer reads it. |
-| `app/web/src/lib/trend/breakout.ts` | The trend plan: 20-candle breakout, 2 ATR stop, 3 ATR chandelier, no target. Pure, no lookahead; the study and the server's paper log run it (off the chart since 30 Sep 2026). |
-| `app/server/src/strategy/trend-breakout.ts` | GENERATED copy of `lib/trend/breakout.ts` (`npm run sync:trend`); a test fails if it drifts. |
-| `app/server/src/strategy/trend-paper.ts` | The trend plan's paper log: replayed every 5 minutes, live trades apart from replayed, the pre-registered filters. |
 | `app/web/src/lib/live-bar.ts` | The forming candle: `withLiveBar` (from the tape), `withLtp` (the spot fallback); each timeframe's length. |
 | `app/web/src/components/desk/chart/scene.ts` | What is drawn over the candles, as data: boxes and lines in bar index and price, and the chart's colours. |
-| `app/web/src/lib/volume-profile.ts`, `vol-regime.ts` | Volume at price (the profile study's measurement) and the ATR regime the readout shows. The chart's order-flow layers, which these came from, were removed on 4 Oct 2026. |
+| `app/web/src/lib/vol-regime.ts` | The ATR regime the readout shows. |
 | `app/web/src/components/desk/chart/scene-primitive.ts` | Draws the scene on the chart's canvas (a lightweight-charts series primitive): boxes behind the candles, lines and labels in front. |
 | `app/web/src/components/desk/chart/label-layout.ts` | Label placement by priority; nothing is drawn over anything. |
 | `app/web/src/components/desk/chart/ChartHud.tsx` | The corner readout: context, the candle, positioning and the volatility regime. |
@@ -109,11 +105,7 @@ Entry methods   1 Breakout · 2 Breakout + retest · … · 12 Options
 | `app/server/src/http/routes/desk.routes.ts` | `/api/candles`, `/api/chain`, `/api/perp` (with `perpOi`). |
 | `app/server/src/http/ttl-cache.ts` | One shared read per key for a few seconds, for the entry section's pollers. |
 | `app/server/src/http/routes/stream.routes.ts` | `/api/stream`, including the `ltp` event. |
-| `app/web/scripts/smc-study.ts` | The engine replayed over cached history: funnel, variants. |
-| `app/web/scripts/crt-study.ts`, `intraday-momentum-study.ts` | Declared studies of published / popular models (§14). |
-| `app/web/scripts/momentum-study.ts`, `combo-study.ts` | Entries, stops and exits for big moves; daily trend, the layers as filters, the SMC plan against the trend (§14). |
-| `app/web/scripts/profile-study.ts`, `flow-study.ts` | Declared studies of the volume profile (Delta candles) and of CVD / delta, OI, funding and top traders (Binance history in `cache/binance`) (§14). |
-| `research/*.txt` | The studies' latest outputs. |
+| `research/*.txt` | The studies' last outputs. The scripts that wrote them were removed on 4 Oct 2026 (git history has them). |
 
 ---
 
@@ -406,11 +398,18 @@ routes `GET /api/flow/bars`, `/api/flow/heatmap`, `/api/flow/large-prints` and
 **Kept, on purpose.** The recorders and their tables stay, because the entry
 methods read them: `trade_flow_1m` and `perp_snapshots` (the tape and the
 perp's positioning), `book_heat_1m` (the book and its walls), `oi_snapshots`.
-`large_prints` is still written and nothing reads it now -- it is the record
-the planned order-flow study needs (TODO, "Research"); dropping it is a
-separate decision. The SMC engine (`lib/smc`) stays for the readout's context
-row and the research scripts, and `lib/volume-profile.ts` for the profile
-study.
+`large_prints`, each large order on its own row, was written and read by
+nothing; it was dropped later the same day (`market-017-drop-large-prints`),
+after its rows were exported. The large trades are still counted per minute in
+`trade_flow_1m`. The SMC engine (`lib/smc`) stays for the readout's context
+row.
+
+**Removed the same day (4 Oct 2026), as code nothing on the desk ran:** the
+study scripts (`app/web/scripts/*-study.ts`), `lib/smc/readout.ts`,
+`lib/volume-profile.ts`, `lib/trend/breakout.ts`, and the trend plan's paper
+log on the server (`strategy/trend-paper.ts`, `trend-breakout.ts`, the
+`trend_paper` table, `GET /api/trend/paper`). The findings in section 14 stand
+as measured; to run a study again, take its script from git history.
 
 ---
 
@@ -419,9 +418,7 @@ study.
 | Table | Written by | What | Kept |
 |---|---|---|---|
 | `trade_flow_1m` | `market/flow.ts`, every 20 s | the perp's tape per minute: buy / sell volume and count, large ones, VWAP, high, low | a year |
-| `large_prints` (`market-015`) | `market/flow.ts`, with the minute rows | every perp taker order ≥ 200 contracts: ms, side, average price, size. Unread since the bubbles went. | a year |
 | `book_heat_1m` (`market-016`) | `market/book-heat.ts`, every 20 s | the book each minute: average contracts per $10, bids and asks, the touch, samples | 14 days |
-| `trend_paper` (`trend-001`, `trend-002`) | `strategy/trend-paper.ts`, every 5 min | the trend plan's trades: signal, entry, stops, exit, net R, first seen, live, the two filters | kept |
 | `perp_snapshots` | `market/flow.ts`, every 5 min | funding, OI, turnover, the top of the book; read for the OI change an hour back | a year |
 | `oi_snapshots` | `market/oi-history.ts`, every 5 min | each strike's OI; read for the strikes' 1h change | 48 hours |
 
@@ -539,20 +536,7 @@ they lose. `research/MOMENTUM-STUDY.txt`.
 - 2026 has now judged several of these; the paper log is the clean test from
   here. `research/COMBO-STUDY.txt`.
 
-**Re-run** after changing a rule, and commit the outputs:
-
-```
-app/server/node_modules/.bin/tsx app/web/scripts/smc-study.ts
-# writes research/SMC-STUDY.txt
-app/server/node_modules/.bin/tsx app/web/scripts/crt-study.ts
-app/server/node_modules/.bin/tsx app/web/scripts/intraday-momentum-study.ts
-cd app/web && ../server/node_modules/.bin/tsx scripts/profile-study.ts
-cd app/web && ../server/node_modules/.bin/tsx scripts/flow-study.ts   # needs cache/binance
-cd app/web && ../server/node_modules/.bin/tsx scripts/momentum-study.ts
-# writes research/MOMENTUM-STUDY.txt
-cd app/web && ../server/node_modules/.bin/tsx scripts/combo-study.ts  # needs cache/binance
-cd app/server && npm run sync:trend    # after any change to lib/trend/breakout.ts
-```
+**Re-running.** The study scripts were removed on 4 Oct 2026. They are in git history (`app/web/scripts/`, before that date), with the caches they read (`cache/candles`, `cache/binance`, both git-ignored) to be downloaded again.
 
 ---
 

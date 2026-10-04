@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-73 routes.
+69 routes.
 
 ## [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts)
 
@@ -25,7 +25,6 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/settings` | signed in | Desk settings that survive a restart. |
 | POST | `/api/settings` | signed in | Save one desk setting; the short cap may be lowered freely but never raised past what margin covers. |
 | GET | `/api/spot` | signed in | Just the price. |
-| GET | `/api/trend/paper` | signed in | The trend plan's paper log: the latest trades and, per timeframe, the live forward test (trades first seen within 15 minutes of their signal) apart from those replayed later. |
 
 ## [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts)
 
@@ -106,11 +105,8 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/trade/add/cancel` | signed in | Stop a working add now. |
 | POST | `/api/trade/add/preview` | signed in | What that add would do and whether the gates would take it. |
 | POST | `/api/trade/alerts` | signed in | Switch the Telegram fill alerts on or off. |
-| GET | `/api/trade/auto-trade` | signed in | Selling the best pick by itself. |
-| POST | `/api/trade/auto-trade` | signed in | Arm, disarm or change the best pick's automatic trade, inside its limits. |
-| POST | `/api/trade/auto-trade/clear` | signed in | "Consider these strikes again" — clears the note, never a position. |
-| GET | `/api/trade/best-trade/settings` | signed in | The best-pick card's own settings: whether the phone hears when the pick changes, and the premium floor the pool is cut at. |
-| POST | `/api/trade/best-trade/settings` | signed in | The best-pick alert: on or off, its premium floor, and how often one strike may be announced. |
+| GET | `/api/trade/best-trade/settings` | signed in | The best-pick card's own setting: the premium floor its pool is cut at. |
+| POST | `/api/trade/best-trade/settings` | signed in | -- |
 | POST | `/api/trade/cancel` | signed in | Take a working entry off the book. |
 | POST | `/api/trade/close` | signed in | Close a position, all of it or part of it. |
 | POST | `/api/trade/close-all` | signed in | Square off everything. |

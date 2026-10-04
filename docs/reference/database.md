@@ -13,10 +13,10 @@ ambiguous (`auth_sessions`, `strategy_runs`).
 | Area | Tables | Written by | Purpose |
 |---|---|---|---|
 | trading | `trades`, `trade_events`, `settings`, `mtm_samples` | the trading engine, the settings cache | The trade journal and the desk's remembered choices. What makes a restart safe. |
-| strategy | `strategies`, `strategy_runs`, `trend_paper` | the scheduler; the trend plan's recorder | Saved strategies and their run journal (what stops a strategy entering twice), and the trend plan's paper log. |
+| strategy | `strategies`, `strategy_runs`, `strategy_signal_runs` | the scheduler | Saved strategies and their run journals (what stops a strategy entering twice, or taking a signal twice). |
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
-| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `large_prints`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | chart | none | -- | `chart_annotations` (levels saved on the price chart) was dropped on 4 Oct 2026 with the chart's layers (`chart-002-drop-annotations`); it held no rows. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
@@ -188,7 +188,7 @@ Keys the desk reads:
 | `mode` | `live` \| `paper` | Which book the desk is trading. Written by the mode switch, so a mode chosen in the browser outlives a restart. |
 | `max_short_contracts` | a whole number | The most contracts the desk may be short across every strike at once. |
 | `signal_max_open` | a whole number, 0-500 | The most open trades the desk may hold at once across every strategy -- positions and working orders. A signal past it is skipped. 0 or absent: no cap. |
-| `alerts_enabled`, `best_trade_*`, `auto_trade*`, `scheduler_enabled`, `rebalance_*`, `wall_within_em` | | The other remembered switches; each is documented where it is read. |
+| `alerts_enabled`, `best_trade_min_premium`, `scheduler_enabled`, `signal_max_open`, `rebalance_*`, `wall_within_em` | | The other remembered switches; each is documented where it is read. |
 
 `max_short_contracts` is the one setting with a **ceiling**. `/api/settings`
 takes it, but `TradingService.setShortCap` decides: the cap may be lowered
@@ -257,22 +257,11 @@ of a timetable a trade is on is not stored: it is a function of the clock.
 
 ---
 
-### `trend_paper` — the trend plan's forward test
+### `trend_paper` — removed
 
-The 1H / 4H trend plan (`strategy/trend-breakout.ts`, the same code the chart
-and the study run), replayed every five minutes on closed candles from a fixed
-start (1 Sep 2026), one row per trade, keyed `(tf, entry_time)`. Nothing is
-ordered; it records what the plan would have done, as it happened: direction,
-entry, the first stop and the trailing one, exit, and `r_net` after taker fees.
-
-`live` is the column that matters. A trade is live when the recorder first saw
-it within fifteen minutes of the candle that made it -- on the log before
-anyone knew how it would end. Trades written later (the recorder was down, or a
-fresh database replayed history) are kept but apart: only the live ones are the
-forward test. `vol_burst` and `session` (`trend-002`) record the two filters
-`research/COMBO-STUDY.txt` pre-registered, at each trade's signal, so the
-forward test can say whether they hold on data they were not found on. Read by
-`GET /api/trend/paper`. Reviewed on 31 Oct 2026 ([TODO.md](../TODO.md)).
+The trend plan's forward test: dropped on 4 Oct 2026 (`strategy-007-drop-trend-paper`)
+with its recorder and `GET /api/trend/paper`. No screen read it. Its 31 rows
+were exported first.
 
 ## `auth` — the sign-in
 
@@ -400,14 +389,10 @@ numbers. `moveOver()` gives the points and percent between two moments **with
 the minutes it actually covered**, because a move measured over 40 minutes of
 an hour is a different figure from one measured over the hour.
 
-`large_prints` (`market/flow.ts`, migration `market-015-large-prints`): every
-taker order on the perpetual of 200 contracts (0.2 BTC) or more, at its own
-millisecond, side, average price and size -- prints sharing a millisecond and
-a side are one order. Written with the minute rows, `PRIMARY KEY (at, side)`
-and `ON CONFLICT DO NOTHING`, so a replay cannot double one. Read by
-the chart's big-trade bubbles until they were removed on 4 Oct 2026; nothing
-reads it now. Kept a year, as the history to test big prints on. Roughly 100-400
-rows an hour.
+`large_prints` -- every large taker order on its own row -- was dropped on
+4 Oct 2026 (`market-017-drop-large-prints`): the chart's big-trade bubbles read
+it, they were removed, and nothing else did. Its rows were exported first. The
+minute rows above still count the large trades, each side.
 
 `book_heat_1m` (`market/book-heat.ts`, migration `market-016-book-heat`): the
 perpetual's order book, read from REST every ten seconds (500 levels a side,

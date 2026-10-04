@@ -90,9 +90,8 @@ reach its journal must not take an order.
 | 20 s | The strategy scheduler: is an entry or exit due, and has an exit stage come round | `strategy_runs`, then orders |
 | 1 min | Option snapshots (1-minute and 5-minute grains), the perp, BTC itself | `option_snapshots*`, `perp_snapshots`, `index_1m` |
 | 5 min | The board's own record: straddle, skew, walls, max pain | `chain_features`, `oi_snapshots` |
-| 20 s | The perp's tape from the `all_trades` socket, summed per minute | `trade_flow_1m`, `option_flow_1m`, `large_prints` |
+| 20 s | The perp's tape from the `all_trades` socket, summed per minute | `trade_flow_1m`, `option_flow_1m` |
 | 10 s sample, 20 s write | The perp's order book, binned at $10 | `book_heat_1m` |
-| 5 min | The trend plan's paper log on closed 1H / 4H candles | `trend_paper` |
 | 1 min | The day's mark-to-market P&L | `mtm_samples` |
 | 1 min | The 24 entry setups read; each new TRADE written, working ones graded on 1m candles | `entry_setups` |
 

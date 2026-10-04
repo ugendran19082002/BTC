@@ -160,10 +160,6 @@ Still open:
 - [ ] **The replay cannot test methods 11 and 12, nor the with-timeframe 3m / 1m
   steps**: there is no recorded tape, option board or 1m history for 2024-26.
   Keep recording; re-run `scripts/entry-study.ts` once there is a quarter.
-- [ ] **The trend plan's paper log is no longer on screen** (the chart lost it
-  on 30 Sep with its own entry logic). It is still written; its review at the
-  end of October reads `GET /api/trend/paper` or `trend_paper` directly --
-  or it gets a place in the entry section's records, if the owner wants it.
 
 ## Needs the owner
 

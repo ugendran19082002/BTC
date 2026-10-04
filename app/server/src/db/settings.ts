@@ -47,6 +47,20 @@ const MIGRATIONS: Migration[] = [
     id: 'trading-005-settings-to-public',
     up: moveToPublic([['trading.settings', 'settings']]),
   },
+  {
+    /*
+     * The best pick's phone alert and automatic trade were removed on 4 Oct
+     * 2026 (both off; the signal strategies do the trading). These were their
+     * keys: the switch, what was last announced and how often, the automatic
+     * trade's settings, its limits and its ledger. A key nothing reads is a
+     * value somebody will one day mistake for a live setting, so they go.
+     * `best_trade_min_premium` stays: the best-pick card still cuts its pool by it.
+     */
+    id: 'trading-007-retire-best-pick-settings',
+    up: `DELETE FROM public.settings WHERE key IN
+           ('best_trade_alert', 'best_trade_last', 'best_trade_sent', 'best_trade_repeat',
+            'auto_trade', 'auto_trade_limits', 'auto_trade_done');`,
+  },
 ];
 
 export class SettingsCache implements Settings {

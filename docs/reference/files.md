@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-418 files listed, 200 test files counted below, images and lockfiles left out.
+389 files listed, 183 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 114 |
-| `app/web` | 86 |
+| `app/server` | 106 |
+| `app/web` | 77 |
 
 ## `(root)`
 
@@ -44,7 +44,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [entry-study.ts](../../app/server/scripts/entry-study.ts) | The entry section's twelve methods replayed over the cached 5m history, graded the way the paper log grades them: R in points over risk, no fee term (removed from the entry section at the owner's r... |
 | [methods-study.ts](../../app/server/scripts/methods-study.ts) | The candidate entry methods (#13-#37, src/entry/methods.ts) replayed over the cached 5m history, through the same plan, gates and grading as the twelve -- the evidence for which, if any, join the d... |
 | [methods-week.ts](../../app/server/scripts/methods-week.ts) | The live record of every entry method -- the twelve and the rest, all on the desk since 1 Oct 2026 -- read from the paper log over the last N days: per method and way, set up, filled, closed, won,... |
-| [sync-trend.mjs](../../app/server/scripts/sync-trend.mjs) | Copies the trend plan (app/web/src/lib/trend/breakout.ts) into the server, which builds only its own src/ -- one rule for the chart, the study and the paper log. test/strategy/trend-copy.test.ts fa... |
 
 ## `app/server/src/`
 
@@ -70,10 +69,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [backtest.ts](../../app/server/src/backtest/backtest.ts) | Backtest over the harvested chain snapshots in chain.db. |
-| [candle-cache.ts](../../app/server/src/backtest/candle-cache.ts) | BTCUSD history for the research scripts, cached one file per month. |
-| [momentum-study.ts](../../app/server/src/backtest/momentum-study.ts) | How good is the momentum call, measured rather than claimed. |
-| [momentum.ts](../../app/server/src/backtest/momentum.ts) | The momentum call, replayed over history (26 Sep 2026). |
-| [signal-outcome.ts](../../app/server/src/backtest/signal-outcome.ts) | How a market-state call turned out, judged against the bars that followed. |
 
 ## `app/server/src/db/`
 
@@ -102,17 +97,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [best-trade-now.ts](../../app/server/src/domain/best-trade-now.ts) | The best pick from a board, the one way both callers work it out. |
 | [best-trade.ts](../../app/server/src/domain/best-trade.ts) | One trade, for this expiry, with everything the decision needs beside it. |
-| [break-risk.ts](../../app/server/src/domain/break-risk.ts) | The hour after a break: how big, not which way (26 Sep 2026). |
 | [bs.ts](../../app/server/src/domain/bs.ts) | Black-Scholes with r = 0, which is how Delta prices its crypto options. |
 | [calibration.ts](../../app/server/src/domain/calibration.ts) | What the model says, against what actually happened. |
 | [direction.ts](../../app/server/src/domain/direction.ts) | Which way the tape is leaning, and whether that is worth acting on. |
 | [ev.ts](../../app/server/src/domain/ev.ts) | What one short leg is worth on average, and whether it clears the eligibility rules -- per strike, for the whole board. |
 | [forecast.ts](../../app/server/src/domain/forecast.ts) | How far BTC could move over the next few hours, and which way. |
-| [indicators.ts](../../app/server/src/domain/indicators.ts) | The readings under the chart, and the arithmetic behind each one. |
-| [level-mode.ts](../../app/server/src/domain/level-mode.ts) | Which level the state machine judges against — named, shared, and measured. |
-| [market-state.ts](../../app/server/src/domain/market-state.ts) | Where price is against the level that matters: breakout, rejection, breakdown, or neither. |
 | [outlook.ts](../../app/server/src/domain/outlook.ts) | Where BTC could be at each horizon, and how much of that is knowable. |
-| [patterns.ts](../../app/server/src/domain/patterns.ts) | What the last few bars are doing, named. |
 | [probability.ts](../../app/server/src/domain/probability.ts) | The three different questions people mean by "will it expire at zero". |
 | [recommend.ts](../../app/server/src/domain/recommend.ts) | What to sell, on which side, and how many lots. |
 | [score.ts](../../app/server/src/domain/score.ts) | Ranking and sizing helpers. |
@@ -185,7 +175,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [best-trade-alert.ts](../../app/server/src/notify/best-trade-alert.ts) | "The best pick changed", said once: the rule for when a new pick is announced (a different strike, at most N times a contract, above the floor), and the message it is announced with. |
 | [messages.ts](../../app/server/src/notify/messages.ts) | What a fill, and a finished day, look like on a phone. |
 | [telegram-log.ts](../../app/server/src/notify/telegram-log.ts) | Every Telegram message the desk tried to send, and what became of it (2 Oct 2026, owner: "check the last Telegram alerts"): sent, failed with Telegram's reason, or held back as a repeat of the same... |
 | [telegram.ts](../../app/server/src/notify/telegram.ts) | Telegram, as somewhere to put alerts -- and nothing more. |
@@ -205,15 +194,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [schedule.ts](../../app/server/src/strategy/schedule.ts) | The IST calendar day a moment falls in, as `YYYY-MM-DD`. |
 | [select.ts](../../app/server/src/strategy/select.ts) | Which legs a strategy sells today, and how many lots each. |
 | [store.ts](../../app/server/src/strategy/store.ts) | Saved strategies and their run journal. |
-| [trend-breakout.ts](../../app/server/src/strategy/trend-breakout.ts) | GENERATED from app/web/src/lib/trend/breakout.ts by `npm run sync:trend` -- edit that file, not this one. |
-| [trend-paper.ts](../../app/server/src/strategy/trend-paper.ts) | The trend plan's paper log: the forward test the backtest cannot be. |
 | [types.ts](../../app/server/src/strategy/types.ts) | A saved strategy: everything the desk needs to place a day's trade without being asked twice. |
 
 ## `app/server/src/trading/`
 
 | File | What it is |
 |---|---|
-| [auto-trade.ts](../../app/server/src/trading/auto-trade.ts) | Selling the best pick by itself. |
 | [charges.ts](../../app/server/src/trading/charges.ts) | What Delta charges on an options fill, the way Delta charges it. |
 | [close-preview.ts](../../app/server/src/trading/close-preview.ts) | What buying back part or all of a position would book, before it is sent: which sizes may be closed, and the net after every charge at the price the close would pay -- the ask, or a resting target... |
 | [engine.ts](../../app/server/src/trading/engine.ts) | The thing that actually trades. |
@@ -252,14 +238,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [combo-study.ts](../../app/web/scripts/combo-study.ts) | ================================================================ Part 1 |
-| [crt-study.ts](../../app/web/scripts/crt-study.ts) | The CRT family on the cached 5m BTC history, declared before it ran. |
-| [flow-study.ts](../../app/web/scripts/flow-study.ts) | ---------------------------------------------------------------- data |
-| [intraday-momentum-study.ts](../../app/web/scripts/intraday-momentum-study.ts) | Intraday time-series momentum on BTC (Shen, Urquhart & Wang, Financial Review 2022): the day's first half hour predicts its last half hour. |
-| [momentum-study.ts](../../app/web/scripts/momentum-study.ts) | Entry, stop and exit for catching big moves -- on the cached Delta BTCUSD history, declared before it ran. |
-| [profile-study.ts](../../app/web/scripts/profile-study.ts) | Volume profile on the cached 5m BTC history, declared before it ran. |
 | [responsive-check.mjs](../../app/web/scripts/responsive-check.mjs) | Responsive check for the Live screen: load the app at phone, tablet and desktop widths and fail when the page scrolls sideways or a panel body overflows its panel. |
-| [smc-study.ts](../../app/web/scripts/smc-study.ts) | The chart engine (src/lib/smc) replayed over every cached 5-minute BTCUSD candle, one at a time -- the same code the chart runs, on real history. |
 
 ## `app/web/src/`
 
@@ -303,8 +282,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [AutoTradeSettings.tsx](../../app/web/src/components/desk/AutoTradeSettings.tsx) | Selling the best pick by itself. |
-| [BestTradeSettings.tsx](../../app/web/src/components/desk/BestTradeSettings.tsx) | The best-pick card's own two controls. |
+| [BestTradeSettings.tsx](../../app/web/src/components/desk/BestTradeSettings.tsx) | The best-pick card's own control. |
 | [LivePrice.tsx](../../app/web/src/components/desk/LivePrice.tsx) | Spot, ticking, and how far it has come. |
 | [LoginPage.tsx](../../app/web/src/components/desk/LoginPage.tsx) | The gate in front of the desk: a password, then the code from the authenticator app. |
 | [PriceChart.tsx](../../app/web/src/components/desk/PriceChart.tsx) | The price chart: candles and volume, and the one setup it is handed -- `entry`, the entry section's choice (components/desk/entry, decided on the server), drawn as its entry box, stop and targets. |
@@ -312,8 +290,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [StrikeAnalysis.tsx](../../app/web/src/components/desk/StrikeAnalysis.tsx) | Everything known about one strike, on one screen, before any order exists. |
 | [TelegramLogCard.tsx](../../app/web/src/components/desk/TelegramLogCard.tsx) | Every Telegram message the desk tried to send, and what became of it: sent, failed with Telegram's reason, or held back as a repeat of the same words (2 Oct 2026, owner: "check the last Telegram al... |
 | [TodayPnl.tsx](../../app/web/src/components/desk/TodayPnl.tsx) | Today's P&L, always in the header. |
-| [signal-export.ts](../../app/web/src/components/desk/signal-export.ts) | The signal history as a spreadsheet. |
-| [signal-track.ts](../../app/web/src/components/desk/signal-track.ts) | Where a call got to, between its trigger and its target. |
 
 ## `app/web/src/components/desk-screen/`
 
@@ -361,12 +337,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [ErrorBoundary.tsx](../../app/web/src/components/layout/ErrorBoundary.tsx) | A component that throws takes its part of the screen down, not the desk. |
 | [ErrorLogPanel.tsx](../../app/web/src/components/layout/ErrorLogPanel.tsx) | The error log, for whoever has to fix it. |
-
-## `app/web/src/components/live/`
-
-| File | What it is |
-|---|---|
-| [Liveness.tsx](../../app/web/src/components/live/Liveness.tsx) | "Checked 40s ago · still Range" — the sentence the signal history could not say. |
 
 ## `app/web/src/components/overview/`
 
@@ -479,7 +449,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [break-risk.ts](../../app/web/src/lib/break-risk.ts) | What a measured break hour means for one short option (26 Sep 2026). |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [ev-view.ts](../../app/web/src/lib/ev-view.ts) | Reading the server's per-strike arithmetic onto the screen. |
 | [exit-checks.ts](../../app/web/src/lib/exit-checks.ts) | Whether a stop and a target make sense against the price right now. |
@@ -501,7 +470,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [time.ts](../../app/web/src/lib/time.ts) | Times of day, as the desk stores them and as a person reads them. |
 | [utils.ts](../../app/web/src/lib/utils.ts) | Class-name helpers shared by every component. |
 | [vol-regime.ts](../../app/web/src/lib/vol-regime.ts) | Is the chart moving more or less than usual: the latest ATR(14) against the median ATR over the candles given. |
-| [volume-profile.ts](../../app/web/src/lib/volume-profile.ts) | Volume at price over a run of candles: the point of control (POC, the busiest price), the value area (VAH / VAL, the 70% of volume around it) and the high- and low-volume nodes. |
 
 ## `app/web/src/lib/smc/`
 
@@ -509,14 +477,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [context.ts](../../app/web/src/lib/smc/context.ts) | The multi-timeframe context, read with the same no-lookahead rule as the engine: a higher-timeframe candle counts only once it has closed. |
 | [engine.ts](../../app/web/src/lib/smc/engine.ts) | A price-action / SMC engine that reads the market one closed candle at a time. |
-| [readout.ts](../../app/web/src/lib/smc/readout.ts) | What the chart says in words: the one live setup, or what the next one is waiting for, and how this chart's own completed setups have done. |
 | [types.ts](../../app/web/src/lib/smc/types.ts) | The vocabulary of the price-action / SMC engine (lib/smc/engine.ts). |
-
-## `app/web/src/lib/trend/`
-
-| File | What it is |
-|---|---|
-| [breakout.ts](../../app/web/src/lib/trend/breakout.ts) | The trend plan: a close beyond the 20-candle channel, a stop 2 ATR(14) from the entry, then a chandelier -- 3 ATR from the best price since entry, never loosened -- and no target. |
 
 ## `app/web/src/types/`
 
