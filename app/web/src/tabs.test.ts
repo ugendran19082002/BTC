@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TABS, asTab } from '@/App';
+import { FIRST_TAB, TABS, asTab } from '@/App';
 
 /**
  * A tab exists in four places: the type, the nav button, the body, and this
@@ -12,8 +12,13 @@ import { TABS, asTab } from '@/App';
 
 describe('the tab list', () => {
   it('[critical] every screen the desk has is in the list a click is checked against', () => {
-    expect([...TABS]).toEqual(['desk', 'trade', 'orders', 'strategy', 'pnl', 'methods', 'errors']);
+    expect([...TABS]).toEqual(['strategy', 'desk', 'trade', 'orders', 'pnl', 'methods', 'errors']);
     for (const t of TABS) expect(asTab(t)).toBe(t);
+  });
+
+  it('[critical] Strategy is first in the menu and the screen a new browser opens on', () => {
+    expect(TABS[0]).toBe('strategy');
+    expect(FIRST_TAB).toBe('strategy');
   });
 
   it('a tab remembered from an older build falls back to Live rather than a blank screen', () => {

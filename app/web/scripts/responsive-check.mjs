@@ -38,6 +38,8 @@ const host = new URL(origin).hostname;
 await ctx.addCookies([{ name: '__Host-desk_session', value: cookie, domain: host, path: '/', secure: true, sameSite: 'Lax' }]);
 const page = await ctx.newPage();
 await page.goto(origin, { waitUntil: 'networkidle' });
+// The app opens on Strategy; the column checks below are the Live screen's.
+await page.locator('nav.tabs button', { hasText: 'Live' }).click();
 await page.waitForSelector('.ov-main', { timeout: 30_000 });
 // Every panel open: a folded panel hides the tables the check is about.
 await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('btc-desk:live:fold:')) localStorage.removeItem(k); });

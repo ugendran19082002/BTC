@@ -95,7 +95,10 @@ function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | nu
  * this line on 18 September, so clicking it fell straight back to Live. A tab
  * that exists in three places and not in the fourth is invisible.
  */
-export const TABS: readonly Tab[] = ['desk', 'trade', 'orders', 'strategy', 'pnl', 'methods', 'errors'];
+// In the menu's own order. Strategy is first (4 Oct 2026): the signal strategies are what the desk trades.
+export const TABS: readonly Tab[] = ['strategy', 'desk', 'trade', 'orders', 'pnl', 'methods', 'errors'];
+/** The screen a browser that remembers none opens on. */
+export const FIRST_TAB: Tab = 'strategy';
 export const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'desk';
 
 const REFRESH_SECONDS = 5;
@@ -122,7 +125,9 @@ function loadCachedExpiries(): ExpiryOption[] {
 const Loading = () => <div className="spinner">Loading…</div>;
 
 export default function App() {
-  const [storedTab, setTab] = usePersisted<Tab>('tab', 'desk');
+  // A new key with the new first screen, so a browser that remembered Live as the old default opens on Strategy
+  // once; after that it opens where it was left, as before.
+  const [storedTab, setTab] = usePersisted<Tab>('screen', FIRST_TAB);
   const tab = asTab(storedTab);
   // A ticket is a seed plus an open flag: the sheet animates closed with its contents still on screen.
   const [ticket, setTicket] = useState<TicketSeed | null>(null);
@@ -508,6 +513,9 @@ export default function App() {
       )}
 
       <nav className="tabs" aria-label="Screens">
+        <button className={tab === 'strategy' ? 'on' : ''} onClick={() => setTab('strategy')}>
+          <Bot aria-hidden /> <span>Strategy</span>
+        </button>
         <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>
           <Activity aria-hidden /> <span>Live</span>
         </button>
@@ -517,9 +525,6 @@ export default function App() {
         </button>
         <button className={tab === 'orders' ? 'on' : ''} onClick={() => setTab('orders')}>
           <ListOrdered aria-hidden /> <span>Orders</span>
-        </button>
-        <button className={tab === 'strategy' ? 'on' : ''} onClick={() => setTab('strategy')}>
-          <Bot aria-hidden /> <span>Strategy</span>
         </button>
         <button className={tab === 'pnl' ? 'on' : ''} onClick={() => setTab('pnl')}>
           <BarChart3 aria-hidden /> <span>P&L</span>
@@ -557,14 +562,6 @@ export default function App() {
                 tick={liveSpot}
                 bars={liveBars}
                 ltp={stream.live ? stream.ltp : null}
-                // Right under Entry setups: the signal strategies that trade those signals.
-                belowEntry={
-                  <ErrorBoundary where="Signal strategies">
-                    <Suspense fallback={null}>
-                      <SignalStrategiesCard onOpenStrategyTab={() => setTab('strategy')} />
-                    </Suspense>
-                  </ErrorBoundary>
-                }
                 controls={
                   <>
                     <Select ariaLabel="when" value={live ? 'live' : 'past'} onValueChange={(v) => setLive(v === 'live')}>
@@ -726,7 +723,14 @@ export default function App() {
           <OrdersPanel />
         </ErrorBoundary>
       ) : tab === 'strategy' ? (
-        <StrategyPanel />
+        // The signal strategies -- their limits, each strategy's row and the trade history -- lead the Strategy
+        // screen (4 Oct 2026); they sat under Entry setups on Live. Placement only: the card is the same card.
+        <div className="grid min-w-0 gap-3">
+          <ErrorBoundary where="Signal strategies">
+            <SignalStrategiesCard />
+          </ErrorBoundary>
+          <StrategyPanel />
+        </div>
       ) : tab === 'pnl' ? (
         <ErrorBoundary where="Profit and loss">
           <ReportPanel />
