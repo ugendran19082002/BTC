@@ -7,6 +7,7 @@ import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
 import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
+import { config, STARTED_AT } from '../../config.js';
 
 /**
  * The strategy desk: what is saved, what is armed, and when it next runs.
@@ -217,10 +218,13 @@ export function registerStrategyRoutes(app: FastifyInstance) {
      * asked for: that margin is already spoken for.
      */
     const openTrades = await svc.openTrades().catch(() => []);
+    const lotsOf = (t: typeof openTrades[number]) => Math.abs(t.state.position) || t.state.requestedSize || 0;
     const openOf = (id: string) => {
       const mine = openTrades.filter((t) => t.plan.strategyId === id);
-      return { trades: mine.length, lots: mine.reduce((n, t) => n + (Math.abs(t.state.position) || t.state.requestedSize || 0), 0) };
+      return { trades: mine.length, lots: mine.reduce((n, t) => n + lotsOf(t), 0) };
     };
+    // Delta's own wallet: what the account is worth and what is free. Null where the exchange cannot say (paper).
+    const wallet = await svc.walletForDisplay().catch(() => null);
     return {
       today,
       /**
@@ -233,6 +237,19 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       // The desk-wide cap on open trades (0: none), and how many the desk holds now -- positions and working orders.
       signalMaxOpen: globalMaxOpenOf(svc.settings.get(GLOBAL_MAX_OPEN_KEY)),
       openNow: openTrades.length,
+      /*
+       * The desk's limit on lots short at once (the order gate's MAX_POSITION), and
+       * the lots the desk holds short now, working entries at the size they asked
+       * for. The summary holds "still to open" to what this leaves: an entry the
+       * strategies' limits allow is still refused when it would pass this.
+       */
+      shortCap: svc.maxShortContracts,
+      shortNow: openTrades.reduce((n, t) => n + lotsOf(t), 0),
+      // Delta's own figures, where it gives them: the account's value, and the margin in use (value less what is free).
+      walletUsd: wallet?.balance ?? null,
+      marginUsedUsd: wallet ? Math.max(0, wallet.balance - wallet.available) : null,
+      // Which build this is and since when, so "is the change live" is read off the screen.
+      build: { tag: config.buildTag, startedAt: STARTED_AT },
       /**
        * Whether the loop that places the orders is actually installed.
        *

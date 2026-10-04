@@ -873,6 +873,16 @@ test('[critical] at most open at once, across all strategies: one number over ev
   const openOf = (id: string) => status.strategies.find((x: any) => x.id === id).open;
   assert.deepEqual(openOf('sig-cap-a'), { trades: 1, lots: 1 }, 'a working entry counts at the size it asked for');
   assert.deepEqual(openOf('sig-cap-b'), { trades: 0, lots: 0 });
+  // The summary's other figures: the desk's limit on lots short and the lots short now, Delta's wallet (none on
+  // paper), and which build this is -- no tag when run by hand, as here.
+  assert.equal(status.shortCap, tradingService().maxShortContracts);
+  assert.ok(Number.isInteger(status.shortNow) && status.shortNow >= status.openNow, `lots short (${status.shortNow}) cover every open trade (${status.openNow})`);
+  assert.equal(status.shortNow, status.strategies.reduce((n: number, x: any) => n + (x.open?.lots ?? 0), 0)
+    + (await tradingService().openTrades()).filter((t) => !t.plan.strategyId || !status.strategies.some((x: any) => x.id === t.plan.strategyId && x.open))
+      .reduce((n, t) => n + (Math.abs(t.state.position) || t.state.requestedSize || 0), 0), 'each strategy\'s lots, and the rest');
+  assert.deepEqual([status.walletUsd, status.marginUsedUsd], [null, null]);
+  assert.equal(status.build.tag, null);
+  assert.ok(status.build.startedAt <= Date.now() && status.build.startedAt > Date.now() - 3_600_000);
   const skippedRow = status.signalTrades.find((t: any) => t.strategyId === 'sig-cap-b' && t.status === 'skipped');
   assert.match(skippedRow.detail, /at most \d+ at once across all$/, 'and the trade history\'s Skipped tab gets the reason');
 

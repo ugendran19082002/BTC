@@ -322,6 +322,14 @@ export type StrategyStatus = {
   signalMaxOpen?: number;
   /** Open trades the desk holds now -- positions and working orders -- which that cap is counted against. */
   openNow?: number;
+  /** The desk's limit on lots short at once (the order gate's), and the lots it holds short now. Absent on an older server. */
+  shortCap?: number;
+  shortNow?: number;
+  /** Delta's own figures, where it gives them: the account's value and the margin in use. Null on paper. */
+  walletUsd?: number | null;
+  marginUsedUsd?: number | null;
+  /** Which build the server is, and since when (epoch ms); the tag is null when run by hand. */
+  build?: { tag: string | null; startedAt: number };
   /** Whether the loop that actually places the orders is installed. */
   runnerInstalled?: boolean;
   mode: 'live' | 'paper';

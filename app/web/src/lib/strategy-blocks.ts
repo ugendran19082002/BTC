@@ -165,3 +165,39 @@ export function strikeBlockProblems(blocks: StrikeBlock[] | undefined, entryTime
   });
   return bad;
 }
+
+/** The IST minute of the day at an instant (epoch ms): the clock every strategy time is read on. */
+export const istMinuteOf = (ms: number): number => (((Math.floor(ms / 60_000) + 330) % 1440) + 1440) % 1440;
+
+/**
+ * The block the clock is in now -- the rule a signal arriving this minute is
+ * sold under -- with when it ends and what comes after. The same reading as the
+ * server's `strikePickAt`: measured forward from the window's start, the last
+ * block started by now. Null outside the window (between its end and its next
+ * start), or while a time is not set.
+ *
+ * `n` is the block's number as the form counts them: 1 is the strategy's own
+ * rule, and with no blocks at all it is the only one.
+ */
+export function blockNow(c: StrategyConfig, istMinute: number): {
+  n: number; of: number; from: string; until: string; minutesLeft: number; pick: StrikePick;
+  next: { n: number; at: string; pick: StrikePick } | null;
+} | null {
+  if (!isHhmm(c.entryTime) || !isHhmm(c.exitTime)) return null;
+  const entry = minutesOf(c.entryTime);
+  const span = minutesForward(entry, minutesOf(c.exitTime));
+  const since = minutesForward(entry, istMinute);
+  if (since >= span) return null;
+  const blocks = (c.strikeBlocks ?? []).filter((b) => isHhmm(b.at));
+  const starts = [0, ...blocks.map((b) => minutesForward(entry, minutesOf(b.at)))];
+  const picks: StrikePick[] = [ownPick(c), ...blocks];
+  let i = 0;
+  starts.forEach((at, j) => { if (at <= since) i = j; });
+  const end = starts[i + 1] ?? span;
+  return {
+    n: i + 1, of: starts.length,
+    from: hhmmOf(entry + starts[i]!), until: hhmmOf(entry + end), minutesLeft: end - since,
+    pick: picks[i]!,
+    next: i + 1 < starts.length ? { n: i + 2, at: hhmmOf(entry + starts[i + 1]!), pick: picks[i + 1]! } : null,
+  };
+}

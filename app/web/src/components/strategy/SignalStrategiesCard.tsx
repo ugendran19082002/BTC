@@ -9,7 +9,8 @@ import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
-import { globalMaxOpenProblem, roomLeft, signalTotals, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
+import { blockNow, hoursLabel, istMinuteOf, pickWords } from '@/lib/strategy-blocks';
+import { globalMaxOpenProblem, marginPerLotUsd, roomLeft, signalTotals, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
 import { inr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -20,6 +21,34 @@ import { cn } from '@/lib/utils';
  * tab, already on signals -- one strategy, two places to reach it.
  */
 
+
+/**
+ * The strike rule in force this minute (4 Oct 2026). A strategy split by time
+ * of day sells under a different rule in each block, and the line above names
+ * only the first; this says which block the clock is in, until when, the rule a
+ * signal arriving now is sold under, and what follows it. The card is read
+ * again every few seconds, so it moves with the clock.
+ */
+function RuleNow({ s }: { s: Strategy }) {
+  const b = blockNow(s.config, istMinuteOf(Date.now()));
+  if (!b) {
+    return (
+      <p aria-label={`strike rule now of ${s.name}`} className="m-0 mt-1 text-[11.5px] text-[var(--dim)]">
+        Outside its window now — the next signal is taken from {time12(s.config.entryTime)}.
+      </p>
+    );
+  }
+  return (
+    <p aria-label={`strike rule now of ${s.name}`} className="m-0 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-muted-foreground">
+      <span className="rounded bg-[var(--accent)]/15 px-1.5 py-px text-[10.5px] font-semibold uppercase tracking-wide text-foreground">Now</span>
+      {b.of > 1
+        ? <span><b className="text-foreground">Block {b.n} of {b.of}</b> · {time12(b.from)} → {time12(b.until)} · {hoursLabel(b.minutesLeft)} left</span>
+        : <span><b className="text-foreground">Same rule all the time</b></span>}
+      <span>sells <b className="text-foreground">{pickWords(b.pick)}</b></span>
+      {b.next && <span className="text-[var(--dim)]">· then block {b.next.n} at {time12(b.next.at)}: {pickWords(b.next.pick)}</span>}
+    </p>
+  );
+}
 
 type Tone = 'accent' | 'good' | 'warning' | 'danger';
 type Status = { tone: Exclude<Tone, 'accent'>; word: string };
@@ -254,7 +283,19 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
   const cap = data?.signalMaxOpen ?? 0;
   const inUse = usageNow(mine, data?.spot ?? null);
   // What can still open from here, at worst, and whether the free margin carries it.
-  const room = roomLeft(mine, cap, data?.openNow ?? 0, data?.spot ?? null);
+  /*
+   * Held to everything that can stop an entry: each strategy's own limit, the
+   * desk-wide limit on open trades, and the desk's limit on lots short -- the
+   * order gate's, which refused an entry on 4 Oct 2026 that this line had
+   * called room. And priced at the dearer of the 200x model and what Delta is
+   * charging per lot now.
+   */
+  const shortCap = data?.shortCap ?? null;
+  const shortNow = data?.shortNow ?? 0;
+  const lotsLeft = shortCap === null ? null : Math.max(0, shortCap - shortNow);
+  const perLotUsd = marginPerLotUsd(data?.spot ?? null, data?.marginUsedUsd, shortNow);
+  const room = roomLeft(mine, cap, data?.openNow ?? 0, data?.spot ?? null, { lotsLeft, perLotUsd });
+  const deltaMarginUsd = data?.marginUsedUsd ?? null;
   /*
    * "In use" is measured against what can actually be open: the desk-wide limit
    * where it is the tighter one, the strategies' own sum where it is not. Under a
@@ -352,7 +393,11 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
                     value={<>{usedEntries} of {mostEntries} entr{mostEntries === 1 ? 'y' : 'ies'}</>}
                     meter={{ label: 'entries in use, all strategies', now: usedEntries, max: mostEntries, tone: 'accent' }}>
                 <span>{inUse.lots} of {inUse.lots + room.lots} lots</span>
-                <span className="tabular-nums">{inr(usdToInr(inUse.marginUsd))} of {inr(usdToInr(inUse.marginUsd + room.marginUsd))} margin</span>
+                {/* Delta's own margin in use where it gives it; the desk's estimate only where it does not (paper). */}
+                {deltaMarginUsd !== null
+                  ? <span className="tabular-nums" aria-label="margin in use, Delta's figure">{inr(usdToInr(deltaMarginUsd))} margin in use — Delta&apos;s own figure</span>
+                  : <span className="tabular-nums">{inr(usdToInr(inUse.marginUsd))} of {inr(usdToInr(inUse.marginUsd + room.marginUsd))} margin — the desk&apos;s estimate</span>}
+                {shortCap !== null && <span aria-label="lots short, of the desk's limit">{shortNow} of {shortCap} lots short — the desk&apos;s limit</span>}
               </Tile>
             )}
 
@@ -362,7 +407,9 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
             */}
             <Tile label={cap > 0 ? `Still to open · under the limit of ${cap}` : 'Still to open'} name="still to open, against the free margin"
                   value={room.entries === 0
-                    ? <>Nothing — {cap > 0 && (data.openNow ?? 0) >= cap ? 'the limit is reached' : 'every strategy is at its own limit'}</>
+                    ? <>Nothing — {cap > 0 && (data.openNow ?? 0) >= cap ? 'the limit is reached'
+                      : room.heldByShortLimit ? `the desk's limit of ${shortCap} lots short leaves no room (${shortNow} now)`
+                        : 'every strategy is at its own limit'}</>
                     : <>{room.entries} entr{room.entries === 1 ? 'y' : 'ies'} · {room.lots} lots</>}
                   status={room.entries === 0 || freeUsd === null ? null : fit}
                   meter={room.entries === 0 || freeUsd === null || !(freeUsd > 0) ? undefined
@@ -371,6 +418,11 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
                 <span className="tabular-nums">
                   needs {inr(usdToInr(room.marginUsd))} more margin
                   {freeUsd !== null && <> — {inr(usdToInr(freeUsd))} is free{freeUsd > 0 ? ` (${Math.round((room.marginUsd / freeUsd) * 100)}%)` : ''}</>}
+                </span>
+              )}
+              {room.entries > 0 && room.heldByShortLimit && (
+                <span aria-label="held by the limit on lots short">
+                  held to {lotsLeft} more lots by the desk&apos;s limit of {shortCap} short ({shortNow} now): an entry past it is refused
                 </span>
               )}
               {room.entries > 0 && <span>the worst case: the largest lots first</span>}
@@ -382,7 +434,12 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
               <span>That is more than is free: an order that does not fit is refused at Delta. Lower the limit, the lots, or a strategy&apos;s own &ldquo;at most open&rdquo;.</span>
             </p>
           )}
-          <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">Margin is the desk&apos;s estimate at 200x on BTC now; Delta&apos;s own figure moves with the premium.</p>
+          <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">
+            Margin still needed is estimated at {inr(usdToInr(perLotUsd))} a lot
+            {deltaMarginUsd !== null && shortNow > 0
+              ? ' — the dearer of the desk’s 200x model and what Delta is charging per lot now.'
+              : ' — the desk’s 200x model on BTC now; Delta’s own figure moves with the premium.'}
+          </p>
         </div>
       )}
 
@@ -446,6 +503,7 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
                 </div>
               </div>
               <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{signalLine(s)}</p>
+              <RuleNow s={s} />
               {/*
                 The two numbers changed most often, on the card itself: the same settings as in the form (Edit),
                 saved the same way, so neither needs the form opened. They apply to the next signal; what is
@@ -492,6 +550,13 @@ export function SignalStrategiesCard({ onOpenStrategyTab }: { onOpenStrategyTab?
       {data && mine.length > 0 && <SignalTradeHistory strategies={data.strategies} />}
 
 
+      {/* Which build the server is: so "is the change live" is read here, not guessed. */}
+      {data?.build && (
+        <p aria-label="server build" className="m-0 mt-2 text-[11px] text-[var(--dim)]">
+          Server build <span className="font-mono text-muted-foreground">{data.build.tag ?? 'not tagged (run by hand)'}</span>
+          {' · '}running since {new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }).format(data.build.startedAt)} IST
+        </p>
+      )}
       {data && (
         <SignalStrategyForm
           key={editing?.id ?? 'new-signal'}

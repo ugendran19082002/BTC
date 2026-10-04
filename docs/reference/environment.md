@@ -10,6 +10,7 @@ deploy variables are read by docker compose and the scripts from `deploy/.env`.
 
 | Variable | Read in | In `app/server/.env.example` | What it does |
 |---|---|---|---|
+| `BUILD_TAG` | [config.ts](../../app/server/src/config.ts) | **no** | The image tag this process was built as, shown on the screen as the running build. Compose sets it from `TAG`; unset when run by hand. |
 | `CHAIN_DB` | [paths.ts](../../app/server/src/paths.ts) | **no** | Path to `chain.db`, the harvester's read-only dataset. Default: `chain.db` at the repository root. Compose sets `/srv/data/chain.db`. |
 | `DATABASE_URL` | [config.ts](../../app/server/src/config.ts) | yes | PostgreSQL connection URL. **Required**: the desk will not start without somewhere to write its journal. Compose sets it from `POSTGRES_PASSWORD`. |
 | `DELTA_API_KEY` | [signed.ts](../../app/server/src/delta/signed.ts) | yes | Delta Exchange India API key for the account. Optional: without it market data still works and the desk stays on paper. |

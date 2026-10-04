@@ -461,6 +461,7 @@ export const ENV_NOTES: Record<string, string> = {
   // the API process (app/server)
   PORT: 'HTTP port the API listens on. Default `8787`.',
   LOG_LEVEL: 'Fastify log level. Default `info`.',
+  BUILD_TAG: 'The image tag this process was built as, shown on the screen as the running build. Compose sets it from `TAG`; unset when run by hand.',
   DATABASE_URL: 'PostgreSQL connection URL. **Required**: the desk will not start without somewhere to write its journal. Compose sets it from `POSTGRES_PASSWORD`.',
   CHAIN_DB: 'Path to `chain.db`, the harvester\'s read-only dataset. Default: `chain.db` at the repository root. Compose sets `/srv/data/chain.db`.',
   DELTA_API_KEY: 'Delta Exchange India API key for the account. Optional: without it market data still works and the desk stays on paper.',

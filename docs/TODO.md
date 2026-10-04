@@ -172,12 +172,19 @@ Still open:
   open ([guides/deploy.md](guides/deploy.md)), then run `deploy/refresh.sh` once
   so the desk gets the backfilled `chain.db` (756 days, to 29 Sep) and the
   reload goes through.
-- [ ] **One-lot live test: two strategies on one contract.** The engine now keeps
-  each trade's orders and position apart ([decision 0011](decisions/0011-one-trade-per-contract.md)),
-  tested on the paper exchange only. Whether Delta holds two reduce-only
-  targets and two stop triggers on one contract is the venue's answer
-  ([decision 0002](decisions/0002-simulator-is-not-the-venue.md)). Two
-  strategies, one lot each, same strike, watched.
+- [ ] **Two strategies on one contract: the targets are seen working live; the stop triggers are not.** The
+  live record on 4 Oct 2026 (read, not tested): `P-BTC-84600-041026` held by 19 trades of 4 strategies at once,
+  each with its own resting target; 432 overlapping pairs over 21 contracts in three days; 136 exits by a
+  resting target. So Delta holds many reduce-only targets on one contract. What is still unverified is two
+  *stop triggers* on one contract ([decision 0002](decisions/0002-simulator-is-not-the-venue.md)): none of
+  the signal trades carries an option stop, so the live record cannot say. One strategy with an option stop,
+  two trades on one strike, watched.
+- [ ] **Signal trades carry no stop at Delta.** On 4 Oct 2026 all 22 open trades had a resting target and
+  none an option stop: their stop is the signal's SL on the perp, watched by the desk, which acts only while
+  the desk is up. The form says so; it is the owner's choice per strategy (Entry & exit -> option stop).
+- [ ] **The else strike gathers the book on one strike.** With "at least OTM n, else OTM n" most signals go
+  to the same strike: on 4 Oct 97 of 110 lots short were on `P-BTC-84600`. One move through that strike is
+  one loss on all of them. A limit per strike, or an else strike that steps out as a strike fills, if wanted.
 - [ ] **Set the 17:01 strategy's own minimum premium**, if it is to trade like
   AlgoTest: Strategy -> Sell -> "Its own minimum premium". Off by default; the
   desk's $5 applies until it is set.

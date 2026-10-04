@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SignalStrategiesCard } from '@/components/strategy/SignalStrategiesCard';
 import { DEFAULT_CONFIG, type Strategy, type StrategyStatus } from '@/types/strategy';
+import { blockNow, hoursLabel, istMinuteOf, pickWords } from '@/lib/strategy-blocks';
+import { time12 } from '@/lib/time';
 
 const getStrategies = vi.fn();
 const saveStrategy = vi.fn();
@@ -180,7 +182,8 @@ describe('at most open at once, across all strategies', () => {
     // the bar is the margin still needed against what is free, in rupees
     const bar = within(left).getByRole('progressbar', { name: 'margin still needed, of what is free' });
     expect([bar.getAttribute('aria-valuenow'), bar.getAttribute('aria-valuemax')]).toEqual(['5274', '19380']);
-    expect(sum).toHaveTextContent('Margin is the desk\'s estimate at 200x on BTC now');
+    // ₹36 a lot: $0.425 at ₹85 -- and on a server that sends no figure from Delta, the model alone
+    expect(sum).toHaveTextContent(/Margin still needed is estimated at ₹36(\.\d+)? a lot — the desk’s 200x model on BTC now/);
     expect(within(sum).queryByRole('note')).toBeNull();
   });
 
@@ -496,5 +499,137 @@ describe('lots and "at most open", changed on the card itself', () => {
     expect(form.getByLabelText(/^lots/i)).toHaveValue('3');
     fireEvent.click(screen.getByRole('tab', { name: /^Entry & exit/ }));
     expect(form.getByLabelText('max open')).toHaveValue('5');
+  });
+});
+
+describe('the desk\'s other limits and Delta\'s own figures, on the summary', () => {
+  const mk = (id: string, lots: number, maxOpen: number, trades: number): Strategy =>
+    ({ ...strat(id, { ...SIG, lots, signal: { ...SIG.signal, maxOpen } }), open: { trades, lots: trades * lots } });
+  // The owner's desk at 3:27 PM, 4 Oct: 22 open, 110 lots short of a limit of 116, the open-trades limit 28.
+  const desk = () => [mk('a', 6, 15, 8), mk('b', 5, 10, 5), mk('c', 5, 20, 5), mk('d', 3, 5, 3), mk('e', 3, 5, 1), mk('f', 4, 10, 2)];
+  const live = (over: Partial<StrategyStatus> = {}) =>
+    status(desk(), { signalMaxOpen: 28, openNow: 24, shortCap: 116, shortNow: 110, walletUsd: 110, marginUsedUsd: 66, balanceUsd: 44, mode: 'live', ...over });
+
+  it('[critical] "still to open" is held to the lots the short limit leaves: one 6-lot entry, not the six places the open-trades limit would give', async () => {
+    getStrategies.mockResolvedValue(live());
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    const left = screen.getByLabelText('still to open, against the free margin');
+    expect(left).toHaveTextContent(/1 entry · 6 lots/);
+    expect(within(left).getByLabelText('held by the limit on lots short')).toHaveTextContent(
+      'held to 6 more lots by the desk\'s limit of 116 short (110 now): an entry past it is refused');
+  });
+
+  it('[critical] no room under the short limit is said as that, with the numbers -- not as "fits"', async () => {
+    getStrategies.mockResolvedValue(live({ shortNow: 115 }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    const left = screen.getByLabelText('still to open, against the free margin');
+    expect(left).toHaveTextContent('Nothing — the desk\'s limit of 116 lots short leaves no room (115 now)');
+    expect(left).not.toHaveTextContent(/Fits|Tight/);
+  });
+
+  it('[critical] the margin in use is Delta\'s own figure where Delta gives it, and the lots short are said against their limit', async () => {
+    getStrategies.mockResolvedValue(live());
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    const used = screen.getByLabelText('in use now, all strategies');
+    // $66 = ₹5,610
+    expect(within(used).getByLabelText("margin in use, Delta's figure")).toHaveTextContent('₹5,610 margin in use — Delta\'s own figure');
+    expect(within(used).getByLabelText("lots short, of the desk's limit")).toHaveTextContent('110 of 116 lots short — the desk\'s limit');
+    expect(used).not.toHaveTextContent('the desk\'s estimate');
+  });
+
+  it('[critical] what is still needed is priced at Delta\'s rate when it is dearer than the model, and says so', async () => {
+    getStrategies.mockResolvedValue(live());
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    // Delta: $66 over 110 lots = $0.60 a lot = ₹51; the model is ₹36. Six lots: ₹306.
+    expect(screen.getByLabelText('strategies added up')).toHaveTextContent(/Margin still needed is estimated at ₹51(\.\d+)? a lot — the dearer of the desk’s 200x model and what Delta is charging per lot now\./);
+    expect(screen.getByLabelText('still to open, against the free margin')).toHaveTextContent(/needs ₹306(\.\d+)? more margin — ₹3,740 is free \(8%\)/);
+  });
+
+  it('on paper, where Delta gives no figure, the margin in use is the desk\'s estimate and says so', async () => {
+    getStrategies.mockResolvedValue(live({ walletUsd: null, marginUsedUsd: null, mode: 'paper' }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    const used = screen.getByLabelText('in use now, all strategies');
+    expect(used).toHaveTextContent(/margin — the desk's estimate/);
+    expect(within(used).queryByLabelText("margin in use, Delta's figure")).toBeNull();
+  });
+
+  it('[critical] the running build is on the card: its tag and since when', async () => {
+    getStrategies.mockResolvedValue(live({ build: { tag: '66c14eb-dirty-070123', startedAt: Date.UTC(2026, 9, 4, 7, 3) } }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    expect(screen.getByLabelText('server build')).toHaveTextContent(/Server build 66c14eb-dirty-070123 · running since 4 Oct,? 12:33 pm IST/i);
+  });
+
+  it('a server run by hand says it has no tag; an older server shows no build line', async () => {
+    getStrategies.mockResolvedValue(live({ build: { tag: null, startedAt: Date.UTC(2026, 9, 4, 7, 3) } }));
+    const { unmount } = render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    expect(screen.getByLabelText('server build')).toHaveTextContent('not tagged (run by hand)');
+    unmount();
+    getStrategies.mockResolvedValue(live());
+    render(<SignalStrategiesCard />);
+    await screen.findByText('A');
+    expect(screen.queryByLabelText('server build')).toBeNull();
+  });
+});
+
+describe('the strike rule in force now, on each strategy\'s row', () => {
+  // A window covering the whole day but one minute, so whenever this runs the clock is inside it.
+  const allDay = { entryTime: '00:00', exitTime: '23:59' };
+  const blocks = ['03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'].map((at, i) => ({
+    at, strikeRule: 'premium' as const, strikeStep: 0, premium: { mode: 'atMost' as const, usd: 40 - i, fallbackUsd: null, minOtm: 2 + i, elseOtm: 3 + i },
+  }));
+  const now = (name: string) => screen.getByLabelText(`strike rule now of ${name}`);
+
+  it('[critical] a strategy split by time of day says the block the clock is in, until when, and the rule a signal is sold under now', async () => {
+    const s = strat('day', { ...SIG, ...allDay, strikeRule: 'premium', premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 }, strikeBlocks: blocks });
+    getStrategies.mockResolvedValue(status([s]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('DAY');
+    const b = blockNow(s.config, istMinuteOf(Date.now()))!;
+    expect(b.of).toBe(8);
+    expect(now('DAY')).toHaveTextContent(`Block ${b.n} of 8`);
+    expect(now('DAY')).toHaveTextContent(`${time12(b.from)} → ${time12(b.until)}`);
+    expect(now('DAY')).toHaveTextContent(`sells ${pickWords(b.pick)}`);
+    expect(now('DAY')).toHaveTextContent(/^Now/);
+    expect(now('DAY')).toHaveTextContent(/\d+ (h|min)( \d+ min)? left/);
+    if (b.next) expect(now('DAY')).toHaveTextContent(`then block ${b.next.n} at ${time12(b.next.at)}: ${pickWords(b.next.pick)}`);
+    else expect(now('DAY')).not.toHaveTextContent('then block');
+    // sanity: the words carry the block's own numbers, not block 1's
+    if (b.n > 1) expect(now('DAY')).toHaveTextContent(`≤ $${40 - (b.n - 2)} at OTM ${2 + (b.n - 2)} or further, else OTM ${3 + (b.n - 2)}`);
+    expect(hoursLabel(b.minutesLeft).length).toBeGreaterThan(0);
+  });
+
+  it('[critical] one rule all the time says that, with the rule', async () => {
+    const s = strat('one', { ...SIG, ...allDay, strikeRule: 'premium', premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 12, elseOtm: 12 } });
+    getStrategies.mockResolvedValue(status([s]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('ONE');
+    expect(now('ONE')).toHaveTextContent('NowSame rule all the timesells ≤ $50 (if none, ≤ $75) at OTM 12 or further, else OTM 12');
+    expect(now('ONE')).not.toHaveTextContent(/Block \d/);
+  });
+
+  it('a by-strike rule is said as its strike', async () => {
+    const s = strat('fix', { ...SIG, ...allDay, strikeRule: 'strict', strikeStep: 4 });
+    getStrategies.mockResolvedValue(status([s]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('FIX');
+    expect(now('FIX')).toHaveTextContent('sells OTM 4');
+  });
+
+  it('[critical] outside its window it says so, and when it starts again', async () => {
+    // a one-minute window that this minute is not in (it is moved off the current minute)
+    const m = istMinuteOf(Date.now());
+    const hh = (x: number) => `${String(Math.floor((x % 1440) / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`;
+    const s = strat('shut', { ...SIG, entryTime: hh(m + 120), exitTime: hh(m + 180) });
+    getStrategies.mockResolvedValue(status([s]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('SHUT');
+    expect(now('SHUT')).toHaveTextContent(`Outside its window now — the next signal is taken from ${time12(hh(m + 120))}.`);
   });
 });

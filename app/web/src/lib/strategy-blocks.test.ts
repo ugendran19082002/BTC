@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  blockHoursOf, blockRanges, blocksWords, hoursLabel, ownPick, pickWords, splitBlocks, strikeBlockProblems,
+  blockHoursOf, blockNow, blockRanges, blocksWords, hoursLabel, istMinuteOf, ownPick, pickWords, splitBlocks, strikeBlockProblems,
 } from '@/lib/strategy-blocks';
 import { strategyProblems } from '@/lib/strategy-rules';
 import { describeStrategy } from '@/lib/strategy-preview';
@@ -203,5 +203,47 @@ describe('the split length, read back from the saved blocks', () => {
 
   it('a first block moved by hand reads as where it now starts: 5:35 PM to 9:00 PM is 3.42 h', () => {
     expect(blockHoursOf(cfg({ strikeBlocks: [premium('21:00', 40), premium('01:35', 30)] }))).toBe(3.42);
+  });
+});
+
+describe('the block the clock is in now', () => {
+  const m = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+  // 5:35 PM to 5:29 PM every 3 hours: eight blocks, the last from 2:35 PM
+  const day = cfg({ strikeBlocks: splitBlocks(cfg(), 180).map((b, i) => ({ ...b, premium: { mode: 'atMost', usd: 50 - i, fallbackUsd: null } })) });
+
+  it('[critical] the last block started by now, its number as the form counts it, and how long it has left', () => {
+    const at = (t: string) => blockNow(day, m(t))!;
+    expect(at('17:35')).toMatchObject({ n: 1, of: 8, from: '17:35', until: '20:35', minutesLeft: 180 });
+    expect(at('20:34')).toMatchObject({ n: 1, minutesLeft: 1 });
+    expect(at('20:35')).toMatchObject({ n: 2, from: '20:35', until: '23:35' });
+    expect(at('00:10')).toMatchObject({ n: 3, from: '23:35', until: '02:35' });       // past midnight, still the 11:35 PM block
+    expect(at('15:40')).toMatchObject({ n: 8, of: 8, from: '14:35', until: '17:29', minutesLeft: 109 });
+  });
+
+  it('[critical] the rule is that block\'s own: block 1 is the strategy\'s, the rest their own', () => {
+    expect(blockNow(day, m('18:00'))!.pick.premium).toEqual({ mode: 'atMost', usd: 50, fallbackUsd: 75 });
+    expect(blockNow(day, m('21:00'))!.pick.premium.usd).toBe(50);                    // the first split block, i = 0
+    expect(blockNow(day, m('15:40'))!.pick.premium.usd).toBe(44);                    // the seventh, i = 6
+  });
+
+  it('[critical] what comes next: the following block and when -- none after the last', () => {
+    expect(blockNow(day, m('18:00'))!.next).toMatchObject({ n: 2, at: '20:35' });
+    expect(blockNow(day, m('15:40'))!.next).toBeNull();
+  });
+
+  it('one rule all the time is one block, the whole window', () => {
+    expect(blockNow(cfg(), m('03:00'))).toMatchObject({ n: 1, of: 1, from: '17:35', until: '17:29', next: null });
+  });
+
+  it('[critical] outside the window -- between its end and its next start -- there is no block', () => {
+    expect(blockNow(day, m('17:29'))).toBeNull();
+    expect(blockNow(day, m('17:32'))).toBeNull();
+    expect(blockNow(cfg({ entryTime: '09:00', exitTime: '17:00' }), m('08:00'))).toBeNull();
+    expect(blockNow(cfg({ entryTime: '' }), m('12:00'))).toBeNull();
+  });
+
+  it('the IST minute of an instant', () => {
+    expect(istMinuteOf(Date.UTC(2026, 9, 4, 10, 10))).toBe(15 * 60 + 40);            // 10:10 UTC is 3:40 PM IST
+    expect(istMinuteOf(Date.UTC(2026, 9, 4, 20, 0))).toBe(90);                       // 8:00 PM UTC is 1:30 AM IST
   });
 });

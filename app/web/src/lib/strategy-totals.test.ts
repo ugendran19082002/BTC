@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { globalMaxOpenProblem, roomLeft, signalTotals } from '@/lib/strategy-totals';
+import { globalMaxOpenProblem, marginPerLotUsd, roomLeft, signalTotals } from '@/lib/strategy-totals';
 import { DEFAULT_CONFIG, type Strategy } from '@/types/strategy';
 
 /**
@@ -64,9 +64,9 @@ describe('what can still open, at worst -- the number to hold against the free m
   });
 
   it('[critical] at the limit, or with every strategy full: nothing more can open', () => {
-    expect(roomLeft(FIVE, 6, 6, SPOT)).toEqual({ entries: 0, lots: 0, marginUsd: 0 });
-    expect(roomLeft(FIVE, 6, 9, SPOT)).toEqual({ entries: 0, lots: 0, marginUsd: 0 });
-    expect(roomLeft(FIVE.map((s) => holding(s, s.config.signal!.maxOpen)), 0, 28, SPOT)).toEqual({ entries: 0, lots: 0, marginUsd: 0 });
+    expect(roomLeft(FIVE, 6, 6, SPOT)).toMatchObject({ entries: 0, lots: 0, marginUsd: 0, heldByShortLimit: false });
+    expect(roomLeft(FIVE, 6, 9, SPOT)).toMatchObject({ entries: 0, lots: 0, marginUsd: 0, heldByShortLimit: false });
+    expect(roomLeft(FIVE.map((s) => holding(s, s.config.signal!.maxOpen)), 0, 28, SPOT)).toMatchObject({ entries: 0, lots: 0, marginUsd: 0, heldByShortLimit: false });
   });
 
   it('a strategy holding more than its limit (the limit lowered since) has no room, not negative room', () => {
@@ -101,5 +101,51 @@ describe('the limit, checked as it is typed -- the server\'s words', () => {
 
   it('with no strategy switched on there is no sum to hold it to', () => {
     expect(globalMaxOpenProblem(40, 0, 500)).toBeNull();
+  });
+});
+
+describe('held to the desk\'s limit on lots short', () => {
+  it('[critical] the lots the limit leaves bound what can still open: 110 short of 116 leaves one 6-lot entry, not six', () => {
+    // six places under the open-trades limit, all wanted by the 6-lot strategy: 36 lots -- but only 6 more may be short
+    const r = roomLeft(FIVE, 6, 0, SPOT, { lotsLeft: 6 });
+    expect([r.entries, r.lots, r.heldByShortLimit]).toEqual([1, 6, true]);
+    expect(r.marginUsd).toBeCloseTo(6 * 0.425, 6);
+  });
+
+  it('[critical] an entry is whole or not at all: 5 lots left takes no 6-lot entry, and goes on to the 5-lot strategies', () => {
+    const r = roomLeft(FIVE, 0, 0, SPOT, { lotsLeft: 5 });
+    expect([r.entries, r.lots, r.heldByShortLimit]).toEqual([1, 5, true]);
+    // 2 lots left: nothing here sells fewer than 3
+    expect(roomLeft(FIVE, 0, 0, SPOT, { lotsLeft: 2 })).toMatchObject({ entries: 0, lots: 0, heldByShortLimit: true });
+    expect(roomLeft(FIVE, 0, 0, SPOT, { lotsLeft: 0 })).toMatchObject({ entries: 0, lots: 0, heldByShortLimit: true });
+  });
+
+  it('room to spare under the short limit changes nothing, and says it holds nothing back', () => {
+    const r = roomLeft(FIVE, 6, 0, SPOT, { lotsLeft: 500 });
+    expect([r.entries, r.lots, r.heldByShortLimit]).toEqual([6, 36, false]);
+    expect(roomLeft(FIVE, 6, 0, SPOT, { lotsLeft: null })).toMatchObject({ entries: 6, lots: 36, heldByShortLimit: false });
+    expect(roomLeft(FIVE, 6, 0, SPOT)).toMatchObject({ entries: 6, lots: 36, heldByShortLimit: false });
+  });
+});
+
+describe('margin a lot, for what is still to open', () => {
+  it('[critical] the dearer of the 200x model and what Delta charges per lot on what is held', () => {
+    // the model at 85,000: $0.425 a lot
+    expect(marginPerLotUsd(SPOT, null, 0)).toBeCloseTo(0.425, 9);
+    // Delta: $66 in use over 110 lots = $0.60 a lot -- dearer, so it is the one planned on
+    expect(marginPerLotUsd(SPOT, 66, 110)).toBeCloseTo(0.6, 9);
+    // Delta cheaper than the model: the model stands
+    expect(marginPerLotUsd(SPOT, 33, 110)).toBeCloseTo(0.425, 9);
+  });
+
+  it('nothing held, or no figure from Delta (paper): the model alone', () => {
+    expect(marginPerLotUsd(SPOT, 66, 0)).toBeCloseTo(0.425, 9);
+    expect(marginPerLotUsd(SPOT, undefined, 110)).toBeCloseTo(0.425, 9);
+    expect(marginPerLotUsd(null, null, 0)).toBe(0);
+  });
+
+  it('[critical] what is still to open is priced at that rate', () => {
+    const r = roomLeft(FIVE, 6, 0, SPOT, { perLotUsd: 0.6 });
+    expect(r.marginUsd).toBeCloseTo(36 * 0.6, 6);
   });
 });

@@ -54,18 +54,48 @@ export function signalTotals(strategies: readonly Strategy[], balanceUsd: number
  */
 export function roomLeft(
   strategies: readonly Strategy[], cap: number, openOnDesk: number, spot: number | null,
-): { entries: number; lots: number; marginUsd: number } {
-  let slots = cap > 0 ? Math.max(0, cap - openOnDesk) : Infinity;
-  let entries = 0;
-  let lots = 0;
-  for (const s of [...on(strategies)].sort((a, b) => b.config.lots - a.config.lots)) {
-    const take = Math.min(slots, Math.max(0, s.config.signal!.maxOpen - (s.open?.trades ?? 0)));
-    entries += take;
-    lots += take * s.config.lots;
-    slots -= take;
-    if (slots <= 0) break;
-  }
-  return { entries, lots, marginUsd: lots * (spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0) };
+  o: {
+    /** Lots the desk's short limit still allows: its cap less the lots short now. Null or absent: no such bound. */
+    lotsLeft?: number | null;
+    /** Margin a lot, in USD, when a better figure than the 200x model is known (`marginPerLotUsd`). */
+    perLotUsd?: number;
+  } = {},
+): { entries: number; lots: number; marginUsd: number; heldByShortLimit: boolean } {
+  const fill = (lotsBound: number) => {
+    let slots = cap > 0 ? Math.max(0, cap - openOnDesk) : Infinity;
+    let lotsLeft = lotsBound;
+    let entries = 0;
+    let lots = 0;
+    for (const s of [...on(strategies)].sort((a, b) => b.config.lots - a.config.lots)) {
+      const per = s.config.lots;
+      // An entry is taken whole or not at all: the gate refuses an order that would pass the short limit.
+      const take = Math.min(slots, Math.max(0, s.config.signal!.maxOpen - (s.open?.trades ?? 0)), per > 0 ? Math.floor(lotsLeft / per) : 0);
+      entries += take;
+      lots += take * per;
+      slots -= take;
+      lotsLeft -= take * per;
+      if (slots <= 0) break;
+    }
+    return { entries, lots };
+  };
+  const free = fill(Infinity);
+  const bound = o.lotsLeft === null || o.lotsLeft === undefined ? free : fill(Math.max(0, o.lotsLeft));
+  const perLot = o.perLotUsd ?? (spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0);
+  return { ...bound, marginUsd: bound.lots * perLot, heldByShortLimit: bound.lots < free.lots };
+}
+
+/**
+ * Margin a lot, in USD, for what is still to open: the higher of the desk's
+ * 200x model and what Delta is charging per lot on the positions held now
+ * (its own margin in use over the lots short). The model is a fixed formula;
+ * Delta's figure moves with the premium -- so where Delta's is known and is
+ * the dearer, it is the one to plan on. With nothing held, or on paper, the
+ * model alone.
+ */
+export function marginPerLotUsd(spot: number | null, marginUsedUsd: number | null | undefined, shortLots: number | null | undefined): number {
+  const model = spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0;
+  const delta = marginUsedUsd && shortLots && marginUsedUsd > 0 && shortLots > 0 ? marginUsedUsd / shortLots : 0;
+  return Math.max(model, delta);
 }
 
 /**

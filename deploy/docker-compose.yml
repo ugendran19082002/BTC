@@ -69,6 +69,8 @@ services:
     environment:
       PORT: 8787
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # The image tag the deploy scripts built, so the screen can say which build is running.
+      BUILD_TAG: ${TAG:-}
       # The one SQLite file left: the harvester's read-only chain dataset.
       CHAIN_DB: /srv/data/chain.db
       # Everything the desk writes -- the order journal above all, which is how

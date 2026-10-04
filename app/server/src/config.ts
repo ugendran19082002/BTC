@@ -47,6 +47,13 @@ export type Config = {
    * a desk with nowhere to write its journal must not start.
    */
   databaseUrl: string | null;
+  /**
+   * Which build this process is: the image tag the deploy script built
+   * (`<commit>` or `<commit>-dirty-<time>`), handed in by compose. Shown on the
+   * screen so "is the fix live yet" is read, not guessed. Null when run by
+   * hand, outside an image.
+   */
+  buildTag: string | null;
 };
 
 const telegramFromEnv = (): Config['telegram'] => {
@@ -62,5 +69,9 @@ export const config: Config = {
   paperLocked: isOff(process.env.DELTA_LIVE_TRADING),
   telegram: telegramFromEnv(),
   databaseUrl: process.env.DATABASE_URL?.trim() || null,
+  buildTag: process.env.BUILD_TAG?.trim() || null,
 };
+
+/** When this process started, for the build line on the screen. */
+export const STARTED_AT = Date.now();
 
