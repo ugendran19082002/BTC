@@ -598,6 +598,9 @@ export class TradeEngine {
    * cancelSiblings -- assume they are already inside one, so a nested call
    * cannot deadlock against itself.
    */
+  /** The book each entry was judged on, held from the gates to the order: written into the journal with it, then dropped. */
+  private readonly judgedOn = new Map<string, { bid: number | null; ask: number | null; mark: number | null; at: number }>();
+
   private withTrade<T>(tradeId: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.queue.get(tradeId) ?? Promise.resolve();
     const next = previous.then(fn, fn);
@@ -690,6 +693,10 @@ export class TradeEngine {
       : held;
     const totalShort = positions.reduce((n, p) => n + (p.size < 0 ? -p.size : 0), 0);
     const price = plan.entry.type === 'limit' ? plan.entry.limitPrice ?? null : quote?.bid ?? null;
+    // Remembered for the journal: what the book was as this order was judged (`entry_submitted`).
+    // Previews ask too and never place: the map is kept small rather than trusted to be emptied.
+    if (this.judgedOn.size > 256) this.judgedOn.clear();
+    if (quote) this.judgedOn.set(plan.tradeId, { bid: quote.bid ?? null, ask: quote.ask ?? null, mark: quote.mark ?? null, at: quote.ts });
 
     // Worst case is the buy-back at the stop, less the credit taken in.
     //
@@ -765,6 +772,9 @@ export class TradeEngine {
     await this.d.store.save(rec);
 
     const gate = await this.runPrecheck(plan, product);
+    // Taken out here, whichever way the gates answered: a refused entry must not leave its book behind.
+    const judged = this.judgedOn.get(plan.tradeId);
+    this.judgedOn.delete(plan.tradeId);
     if (!gate.ok) {
       const why = gate.failures.map((x) => x.message).join(' ');
       rec = await this.commit(rec, { t: 'precheck_failed', reason: why, at: this.now() });
@@ -806,7 +816,11 @@ export class TradeEngine {
 
     try {
       const ack = await this.exchange.placeOrder(req);
-      rec = await this.commit(rec, { t: 'entry_submitted', clientOrderId: req.clientOrderId, size, at: this.now() });
+      rec = await this.commit(rec, {
+        t: 'entry_submitted', clientOrderId: req.clientOrderId, size, at: this.now(),
+        ...(judged ? { quote: judged } : {}),
+        ...(req.limitPrice !== undefined ? { limitPrice: req.limitPrice } : {}),
+      });
       // No deadline at all when the order is meant to rest.
       if (plan.entry.timeoutMs > 0) {
         this.entryDeadline.set(plan.tradeId, this.now() + plan.entry.timeoutMs);

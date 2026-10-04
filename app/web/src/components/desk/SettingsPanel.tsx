@@ -6,6 +6,7 @@ import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { BestTradeSettings } from '@/components/desk/BestTradeSettings';
+import { DeskMetricsCard } from '@/components/desk/DeskMetricsCard';
 
 /**
  * Every number the desk works to, in one screen.
@@ -23,6 +24,7 @@ export function SettingsPanel() {
     <div className="grid gap-3">
       <BestPickCard />
       <LevelsCard />
+      <DeskMetricsCard />
       <TelegramLogCard />
       <p className="m-0 px-1 text-[11.5px] leading-relaxed text-[var(--dim)]">
         Nothing on this screen places an order. Each strategy has its own switch, on its form.

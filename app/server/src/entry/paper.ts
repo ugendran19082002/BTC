@@ -2,7 +2,7 @@ import type { Candle } from '../market/delta.js';
 import { query, rows } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import { TF_SEC, type MethodRead, type Tf } from './types.js';
-import { bumpDataVersion, dataVersion } from './version.js';
+import { bumpDataVersion, dataVersion, versionCache } from './version.js';
 
 /**
  * The entry setups' paper log: the forward test the 24 reads need before any
@@ -551,14 +551,25 @@ type ClosedRow = {
  * setup, those let through by a switched-off gate included, and is shown apart
  * and labelled as such: the one figure never quietly stands in for the other.
  */
-export async function entryRecord(): Promise<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }> {
+export function entryRecord(): Promise<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }> {
+  // One reckoning per data version, shared by every screen asking: the record only changes when a setup is written or graded.
+  return recordHeld('record', entryRecordNow);
+}
+const recordHeld = versionCache<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }>(4);
+
+async function entryRecordNow(): Promise<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }> {
   await entrySchema();
   const all = await rows<ClosedRow>(
     `SELECT method, mode, tf, status, r_net, first_seen, gates_off, dir, fill_price, exit_price FROM entry_setups ORDER BY coalesce(exit_at, graded_to), id`,
   );
   const group = (key: (r: ClosedRow) => string) => {
     const m = new Map<string, ClosedRow[]>();
-    for (const r of all) m.set(key(r), [...(m.get(key(r)) ?? []), r]);
+    // Appended in place: copying a group's rows for every row added made a way's thousand setups a million copies.
+    for (const r of all) {
+      const k = key(r);
+      const xs = m.get(k);
+      if (xs) xs.push(r); else m.set(k, [r]);
+    }
     return m;
   };
   // The record is the rules as designed: a setup let through by a switched-off gate is counted apart.

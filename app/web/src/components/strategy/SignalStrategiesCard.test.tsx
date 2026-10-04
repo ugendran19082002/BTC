@@ -664,7 +664,7 @@ describe('the limit on one contract', () => {
   it('an older server that does not send the limit shows no field for it', async () => {
     getStrategies.mockResolvedValue(status([strat('A', SIG)], {}));
     render(<SignalStrategiesCard />);
-    await screen.findByLabelText('At most open at once, all strategies');
+    await screen.findByText('A');
     expect(screen.queryByLabelText('At most lots on one contract, all strategies')).not.toBeInTheDocument();
   });
 });

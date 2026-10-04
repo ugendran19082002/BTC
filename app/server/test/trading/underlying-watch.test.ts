@@ -227,3 +227,20 @@ test('a closed trade leaves the list at the next read, and a working entry is no
   await watch.settle();
   assert.deepEqual(watchedOf(await r.store.all()).map((x) => x.tradeId), [ids[1]], 'only the one still in');
 });
+
+// ------------------------------------------------- what an entry was judged on
+
+test('[critical] an entry order is written down with the book it was judged on and the limit it went at -- so its cost can be measured', async () => {
+  const r = rig({ products: [peProduct()], quotes: [quote(PE, 100.5, 101)] });
+  const plan = planFor(peProduct(), { lots: 10, stopPrice: 300, takeProfitPrice: 1 });
+  await r.engine.open(plan);
+  const sent = r.store.peek(plan.tradeId)!.events.find((e) => e.t === 'entry_submitted') as
+    { quote?: { bid: number | null; ask: number | null; mark: number | null; at: number }; limitPrice?: number; size: number };
+  assert.equal(sent.quote?.bid, 100.5);
+  assert.equal(sent.quote?.ask, 101);
+  assert.ok((sent.quote?.at ?? 0) > 0, 'and when that book was read');
+  assert.equal(sent.limitPrice, 100.5, 'the limit as sent');
+  // The trade itself is exactly what it was: the same size, the same state after the fill.
+  assert.equal(sent.size, 10);
+  assert.equal((await r.engine.poll(plan.tradeId))?.position, -10);
+});

@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-389 files listed, 186 test files counted below, images and lockfiles left out.
+391 files listed, 187 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 109 |
+| `app/server` | 110 |
 | `app/web` | 77 |
 
 ## `(root)`
@@ -182,6 +182,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [desk-metrics.ts](../../app/server/src/observability/desk-metrics.ts) | What the desk costs and how long it takes, counted -- so the next change to its speed is decided on numbers. |
 | [errors.ts](../../app/server/src/observability/errors.ts) | Every failure this system has, in one table. |
 
 ## `app/server/src/strategy/`
@@ -283,6 +284,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [BestTradeSettings.tsx](../../app/web/src/components/desk/BestTradeSettings.tsx) | The best-pick card's own control. |
+| [DeskMetricsCard.tsx](../../app/web/src/components/desk/DeskMetricsCard.tsx) | The desk's speed, counted: what it asks of Delta and how much of Delta's quota that uses, how long a pass over the open trades takes, and how long the signal run holds the thread the SL and TGT wat... |
 | [LivePrice.tsx](../../app/web/src/components/desk/LivePrice.tsx) | Spot, ticking, and how far it has come. |
 | [LoginPage.tsx](../../app/web/src/components/desk/LoginPage.tsx) | The gate in front of the desk: a password, then the code from the authenticator app. |
 | [PriceChart.tsx](../../app/web/src/components/desk/PriceChart.tsx) | The price chart: candles and volume, and the one setup it is handed -- `entry`, the entry section's choice (components/desk/entry, decided on the server), drawn as its entry box, stop and targets. |

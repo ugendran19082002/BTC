@@ -9,18 +9,19 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-69 routes.
+71 routes.
 
 ## [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts)
 
 | Method | Path | Session | What |
 |---|---|---|---|
-| GET | `/api/candles` | signed in | BTC bars for the chart under the board, at the three resolutions the screen offers. |
+| GET | `/api/candles` | signed in | -- |
 | GET | `/api/chain` | signed in | The option board for an expiry, live or at a past moment, scored for a seller: EV per strike, picks, bias, OI change, structure. |
 | GET | `/api/changes` | signed in | What changed over 1m … 12h for BTC, one strike and its board, from the desk's own records. |
+| GET | `/api/desk/metrics` | signed in | The desk's own gauges for the last five minutes: calls to Delta and how much of its quota they used, how long a pass over the open trades takes, how long the signal run holds the thread. |
 | GET | `/api/expiries` | signed in | The expiries Delta has listed, nearest first. |
 | GET | `/api/health` | none | The health probe. |
-| GET | `/api/perp` | signed in | The perpetual: its ticker (funding, open interest, turnover), the top of its book, and the last hour's order flow by aggressor side; the flow is summed from every print on the socket, and says how... |
+| GET | `/api/perp` | signed in | -- |
 | POST | `/api/reload` | none | Re-read chain.db after deploy/refresh.sh has shipped a new copy. |
 | GET | `/api/settings` | signed in | Desk settings that survive a restart. |
 | POST | `/api/settings` | signed in | Save one desk setting; the short cap may be lowered freely but never raised past what margin covers. |
@@ -84,7 +85,8 @@ What: the first sentence of the comment directly above the route. A dash means t
 | DELETE | `/api/strategies/:id` | signed in | Delete a strategy. |
 | POST | `/api/strategies/:id/clone` | signed in | Copy a strategy, settings and all, as a new one that is not armed. |
 | POST | `/api/strategies/:id/enabled` | signed in | Switch one strategy on or off. |
-| POST | `/api/strategies/max-open` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
+| POST | `/api/strategies/contract-max-lots` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
+| POST | `/api/strategies/max-open` | signed in | -- |
 | GET | `/api/strategies/runs` | signed in | The run journal on its own, for the history panel. |
 | POST | `/api/strategies/scheduler` | signed in | The master switch for the whole scheduler. |
 | GET | `/api/strategies/signal-trades` | signed in | The signal strategies' trade history for a range of IST days (or minutes): the Live screen's Trade history and its date picker. |

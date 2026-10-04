@@ -138,10 +138,11 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
   });
 
   // Each method's paper record, with the chain and without it, and the latest setups written.
-  app.get('/api/entry/record', async () => ({
-    ...(await entryRecord()),
-    recent: await recentSetups(50),
-  }));
+  app.get('/api/entry/record', async () => {
+    // Side by side: the two reads do not wait on each other.
+    const [record, recent] = await Promise.all([entryRecord(), recentSetups(50)]);
+    return { ...record, recent };
+  });
 }
 
 /** The history's filters from a query string: each checked against its own list, anything else dropped. */

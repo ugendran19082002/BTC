@@ -1419,6 +1419,16 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .origin-tag.strategy { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 .origin-tag.best-pick { color: #6cb2ff; border-color: color-mix(in srgb, #6cb2ff 40%, transparent); }
 
+/* The desk's own gauges: a label and its figures, one group a row; the quota as a thin bar. */
+.desk-metrics { margin: 0; display: grid; gap: 10px; }
+.desk-metrics > div { display: grid; gap: 2px; min-width: 0; }
+.desk-metrics dt { font-size: 11.5px; color: var(--muted); }
+.desk-metrics dd { margin: 0; font-size: 12.5px; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.desk-metrics dd.warn { color: var(--warn); }
+.desk-metrics-bar { height: 4px; border-radius: 2px; background: var(--line-soft); overflow: hidden; }
+.desk-metrics-bar span { display: block; height: 100%; background: var(--accent); }
+.desk-metrics-bar span.warn { background: var(--warn); }
+
 /* The settings screen: every number the desk works to, in one place. */
 .settings-lead { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--muted); }
 .settings-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }

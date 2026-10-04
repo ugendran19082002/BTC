@@ -324,7 +324,17 @@ export const isManualAdd = (s: AddSource): s is { manual: true } => 'manual' in 
 
 export type TradeEvent =
   | { t: 'precheck_failed'; reason: string; at: number }
-  | { t: 'entry_submitted'; clientOrderId: string; size: number; at: number }
+  | {
+      t: 'entry_submitted'; clientOrderId: string; size: number; at: number;
+      /**
+       * The option's book as the gates read it, a moment before the order went (4 Oct 2026). Kept so the
+       * cost of an entry can be measured -- the fill against this bid, ask and their middle -- before
+       * anything about how entries are priced is changed. Absent on older rows and when no quote was read.
+       */
+      quote?: { bid: number | null; ask: number | null; mark: number | null; at: number };
+      /** The limit the order was sent at; absent for a market order. */
+      limitPrice?: number;
+    }
   | { t: 'entry_submit_unknown'; at: number }
   | { t: 'entry_rejected'; reason: string; at: number }
   | {

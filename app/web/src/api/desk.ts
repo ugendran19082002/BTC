@@ -167,3 +167,25 @@ export const getChanges = (symbol: string, now: Record<string, number | null | u
   if (entryMs !== null) q.set('entry', String(entryMs));
   return json<ChangesResponse>(`/api/changes?${q.toString()}`);
 };
+
+/** A spread of times in milliseconds: the median, the 95th percentile and the worst; null with nothing measured. */
+export type MsSpread = { p50Ms: number | null; p95Ms: number | null; maxMs: number | null };
+/**
+ * The desk's own gauges for the last five minutes (server: observability/desk-metrics.ts): what it asks of
+ * Delta and what that costs of the quota, how long a pass over the open trades takes, how long the signal run
+ * holds the thread the SL and TGT watch runs on. Counted since the server started; lost on a restart.
+ */
+export type DeskMetrics = {
+  at: number;
+  countingForMs: number;
+  delta: {
+    windowMs: number; quotaUnits: number; calls: number; units: number; usedPct: number;
+    byKind: { kind: string; calls: number; units: number }[];
+    response: MsSpread; failed: number; refused: number;
+    rateLimited: { inWindow: number; sinceStart: number; lastAt: number | null };
+  };
+  passes: MsSpread & { count: number; everyMs: number; late: number; tradesNow: number };
+  signalRun: { count: number; read: MsSpread; calc: MsSpread };
+  thread: { p50Ms: number; p99Ms: number; maxMs: number } | null;
+};
+export const getDeskMetrics = () => json<DeskMetrics>('/api/desk/metrics');
