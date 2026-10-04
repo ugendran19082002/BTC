@@ -182,3 +182,14 @@ export type DeskMetrics = {
   thread: { p50Ms: number; p99Ms: number; maxMs: number } | null;
 };
 export const getDeskMetrics = () => json<DeskMetrics>('/api/desk/metrics');
+
+/** BTC now against then: a window back, or the desk's marks (the first entry of the open positions, the contract's day start). */
+export type PriceChange = { minutes: number | null; mark: 'entry' | 'dayStart' | null; at: number; then: number | null; pts: number | null; pct: number | null };
+export type PriceChangeResponse = { at: number; spot: number | null; rows: PriceChange[] };
+export const getPriceChange = (entryMs: number | null = null, expiryTs: number | null = null) => {
+  const q = new URLSearchParams();
+  if (entryMs !== null) q.set('entry', String(entryMs));
+  if (expiryTs !== null) q.set('expiry', String(expiryTs));
+  const qs = q.toString();
+  return json<PriceChangeResponse>(`/api/price-change${qs ? `?${qs}` : ''}`);
+};

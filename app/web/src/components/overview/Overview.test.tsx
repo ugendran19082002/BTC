@@ -6,6 +6,7 @@ import { Overview, screenSpot } from './Overview';
 
 vi.mock('@/api/desk', () => ({
   getPerp: () => new Promise(() => {}),
+  getPriceChange: () => new Promise(() => {}),
   getChanges: () => new Promise(() => {}),
 }));
 

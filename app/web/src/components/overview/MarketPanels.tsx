@@ -1,6 +1,6 @@
 
 import type { ChainResponse, Leg, MarketRead } from '@/types/desk';
-import type { FlowSummary, PerpResponse, SideFlow } from '@/api/desk';
+import type { FlowSummary, PerpResponse, PriceChange, SideFlow } from '@/api/desk';
 import { fundingRead, volRegime, WINDOW_CHOICES, windowLabel, type IvRv, type WindowChoice } from '@/lib/overview';
 import { fmt, More, NotCaptured, Panel, Row, Tag } from './parts';
 
@@ -278,5 +278,42 @@ function WindowSelect({ value, onChange }: { value: WindowChoice; onChange: (w: 
     <select className="ov-select" aria-label="Window" value={value} onChange={(e) => onChange(e.target.value as WindowChoice)} title="How far back the tape is summed">
       {WINDOW_CHOICES.map((w) => <option key={w} value={w}>{windowLabel(w)}</option>)}
     </select>
+  );
+}
+
+const IST_HM_PC = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+
+/**
+ * Price change: BTC now against each window back -- the last minute out to half
+ * a day -- and against the desk's own marks, the first entry of the open
+ * positions and the last 17:30 settlement. Points and percent, up in green and
+ * down in red. Back on the Live screen on 4 Oct 2026 (it was there from 21 Sep
+ * until the screen was trimmed).
+ */
+export function PriceChangePanel({ price, spot }: { price: { spot: number | null; rows: PriceChange[] } | null; spot: number | null }) {
+  const rows = price?.rows ?? [];
+  const label = (r: PriceChange) => r.mark === 'entry' ? `Since entry ${IST_HM_PC.format(new Date(r.at))}` : r.mark === 'dayStart' ? 'last settlement 17:30' : r.minutes! >= 60 ? `${r.minutes! / 60}h` : `${r.minutes}m`;
+  const now = price?.spot ?? spot;
+  return (
+    <Panel title="Price change" right={<small className="ov-muted">BTC {fmt.n(now)}</small>}>
+      {rows.length === 0 ? <p className="ov-empty">No price record yet.</p> : (
+        <table className="ov-mini ov-pchange" aria-label="price change">
+          <thead><tr><th>Window</th><th>Then</th><th>Δ pts</th><th>Δ %</th></tr></thead>
+          <tbody>
+            {rows.map((r) => {
+              const tone = r.pts === null ? 'ov-muted' : r.pts > 0 ? 'ov-up' : r.pts < 0 ? 'ov-down' : 'ov-muted';
+              return (
+                <tr key={`${r.mark ?? r.minutes}`} className={r.mark ? 'ov-pchange-mark' : undefined}>
+                  <td title={`${IST_HM_PC.format(new Date(r.at))} IST`}>{label(r)}</td>
+                  <td>{fmt.n(r.then)}</td>
+                  <td className={tone}>{r.pts === null ? '—' : `${r.pts > 0 ? '+' : ''}${fmt.n(Math.round(r.pts))}`}</td>
+                  <td className={tone}>{r.pct === null ? '—' : `${r.pct > 0 ? '+' : ''}${r.pct.toFixed(2)}%`}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </Panel>
   );
 }

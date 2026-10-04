@@ -4,6 +4,7 @@ import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
 import { ttlCache } from '../ttl-cache.js';
 import { deskMetrics } from '../../observability/desk-metrics.js';
+import { priceChangeNow } from '../../market/price-change.js';
 import { scoreLegs, pickSells, bias, verdict, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
 import { DEFAULT_WALL_WITHIN_EM, optionStructure } from '../../domain/structure.js';
@@ -164,6 +165,21 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * how long a pass over the open trades takes, how long the signal run holds the thread. Read-only.
    */
   app.get('/api/desk/metrics', async () => deskMetrics());
+
+  /*
+   * BTC now against then, for the Live screen's "Price change" card: each window back, and the desk's marks --
+   * the first entry of the open positions (epoch ms) and the contract's day start, the previous 17:30 IST
+   * settlement, a day before the expiry's own (epoch seconds).
+   */
+  app.get('/api/price-change', async (req, reply) => {
+    try {
+      const q = req.query as { entry?: string; expiry?: string };
+      const entryMs = /^\d{12,13}$/.test(q.entry ?? '') ? Number(q.entry) : null;
+      const expiryTs = /^\d{9,10}$/.test(q.expiry ?? '') ? Number(q.expiry) : null;
+      const dayStartMs = expiryTs === null ? null : expiryTs * 1000 - 24 * 3_600_000;
+      return await priceChangeNow(Date.now(), { entryMs, dayStartMs });
+    } catch (e) { reply.code(502); return { error: (e as Error).message }; }
+  });
 
   const optionFlowHeld = ttlCache<Awaited<ReturnType<typeof optionFlowSummary>>>(10_000);
   app.get('/api/perp', async (req, reply) => {

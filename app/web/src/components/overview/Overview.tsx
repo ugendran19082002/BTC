@@ -3,13 +3,13 @@ import { usePersisted } from '@/hooks/usePersisted';
 import type { LiveLtp } from '@/hooks/useStream';
 import type { Candle, ChainResponse, ExpiryOption } from '@/types/desk';
 import type { TradeStatus } from '@/types/trade';
-import { getPerp } from '@/api/desk';
+import { getPerp, getPriceChange } from '@/api/desk';
 import { DeskDashboard } from '@/components/desk-screen/DeskDashboard';
 import { usePoll } from '@/hooks/usePoll';
 import { bestLeg, windowMinutes, type WindowChoice } from '@/lib/overview';
 import { PanelFold } from './parts';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
-import { FlowPanel } from './MarketPanels';
+import { FlowPanel, PriceChangePanel } from './MarketPanels';
 import { findLeg, type Selected } from './DecisionPanels';
 import { EarlyWarningPanel, useChanges } from './TraderPanels';
 import { TimeframeAnalysisPanel } from './TimeframeAnalysisPanel';
@@ -103,6 +103,12 @@ export function Overview({
     return ts.length ? Math.min(...ts) : null;
   }, [trade?.open]);
   const changes = useChanges(data, leg, spot, leg ? entryOf(`${leg.cp}-BTC-${leg.strike}-${snap.expiry}`) : null);
+  // The price-change card's "since entry": the first fill of anything the desk holds now.
+  const firstEntryMs = useMemo(() => {
+    const ts = (trade?.open ?? []).filter((x) => x.position !== 0).flatMap((x) => x.fills.map((f) => f.ts)).filter((v) => v > 0);
+    return ts.length ? Math.min(...ts) : null;
+  }, [trade?.open]);
+  const { data: priceChange } = usePoll(() => getPriceChange(firstEntryMs, snap.expiryTs), 30_000, { enabled: snap.live, deps: [firstEntryMs, snap.expiryTs] });
 
   // Collapse all / expand all: a stamp each press, and what it asked for.
   const [fold] = useState({ stamp: 0, collapsed: false });
@@ -157,6 +163,9 @@ export function Overview({
         <div className="ov-col">
           <ErrorBoundary where="Flow">
             <FlowPanel perp={perp} legs={data.legs} atm={snap.atm} window={flowWindow} onWindow={setFlowWindow} />
+          </ErrorBoundary>
+          <ErrorBoundary where="Price change">
+            <PriceChangePanel price={priceChange ?? null} spot={spot} />
           </ErrorBoundary>
         </div>
       </section>
