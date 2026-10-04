@@ -307,7 +307,7 @@ export class TradingService {
   /**
    * The fast watch on the signal trades' perp levels (`underlying-watch.ts`):
    * the perp's last trade off the tape against every open trade's SL and TGT,
-   * five times a second, and the engine's own exit for whichever is through.
+   * ten times a second, and the engine's own exit for whichever is through.
    * The loop below still judges the same levels on every pass.
    */
   readonly underlyingWatch = new UnderlyingWatch({

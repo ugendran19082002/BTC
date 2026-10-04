@@ -16,7 +16,7 @@ import { captureBoard, chainFeaturesSchema } from './market/chain-features.js';
 import { wallWithinEm } from './http/routes/desk.routes.js';
 import { captureIndex, indexSchema } from './market/index-1m.js';
 import { capturePerpSnapshot, flowSchema, flushTradeFlow, perpTape, startFlowSocket } from './market/flow.js';
-import { gradeLive } from './entry/live-grade.js';
+import { gradeLive, LIVE_GRADE_MS } from './entry/live-grade.js';
 import { bookHeatSchema, flushBookHeat, startBookHeat } from './market/book-heat.js';
 import { noteError } from './observability/errors.js';
 import { entrySchema, gradeSetups, onSetupFilled, recordSetups } from './entry/paper.js';
@@ -222,5 +222,11 @@ const nextEntryRun = () => {
 nextEntryRun();
 // The journal keeps a year; the paper log keeps its graded trades for good.
 setInterval(() => { pruneSignals(Date.now()).catch(warn('entry-signals')); }, 6 * 3_600_000).unref();
-// The paper log on the live tape: fills, stops and targets the second they print (entry/live-grade.ts).
-setInterval(() => { gradeLive(perpTape()).catch(warn('entry-live-grade')); }, 1_000).unref();
+// The paper log on the live tape: fills, stops and targets as they print (entry/live-grade.ts). Four looks a
+// second, and never two at once: a look still writing is not joined by another queued behind it.
+let grading = false;
+setInterval(() => {
+  if (grading) return;
+  grading = true;
+  gradeLive(perpTape()).catch(warn('entry-live-grade')).finally(() => { grading = false; });
+}, LIVE_GRADE_MS).unref();

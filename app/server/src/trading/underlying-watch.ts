@@ -8,7 +8,7 @@ import { underlyingHit, type TradeRecord } from './engine.js';
  * each poll three round trips to the exchange -- so the check on one trade
  * waited behind the polls of all the others. This looks at nothing but the
  * perp's last trade, which is already in memory off the tape, against every
- * open trade's levels, several times a second; a trade through its level is
+ * open trade's levels, ten times a second; a trade through its level is
  * handed to the engine at once.
  *
  * What it deliberately is not:
@@ -33,8 +33,8 @@ export type WatchedTrade = {
   underlying: { dir: 1 | -1; stop: number | null; target: number | null };
 };
 
-/** How often the perp's last trade is held against the levels. */
-export const UNDERLYING_WATCH_MS = 200;
+/** How often the perp's last trade is held against the levels: as often as the screen is sent it. */
+export const UNDERLYING_WATCH_MS = 100;
 /** How old the list of open trades may get before the watch reads it itself. */
 export const WATCH_LIST_MAX_AGE_MS = 2_000;
 /** A perp price older than this is not acted on (the engine's own rule). */

@@ -30,6 +30,15 @@ export type Tape = {
   reconnects(): number;
 };
 
+/**
+ * How often the tape is looked at. A strategy that enters "at the zone" sends its
+ * option order when this sees the perp trade into the zone, so a second between
+ * looks was up to a second added to every such entry (4 Oct 2026). A look with
+ * nothing new costs the working rows, held in memory, and the prints since the
+ * last one.
+ */
+export const LIVE_GRADE_MS = 250;
+
 /** Per setup: the time of the last trade graded (ms). */
 const cursors = new Map<number, number>();
 let lastReconnects: number | null = null;
