@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { startOfDayIst } from '../../strategy/schedule.js';
 import { ExitAskError, stopFor, targetFor, tradingService } from '../../trading/service.js';
-import { AUTO_TRADE_CEILINGS, AUTO_TRADE_DEFAULTS } from '../../trading/auto-trade.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
 import {
@@ -772,110 +771,22 @@ export function registerTradeRoutes(app: FastifyInstance) {
    * Nothing about the trading engine changes either way.
    */
   /**
-   * The best-pick card's own settings: whether the phone hears when the pick
-   * changes, and the premium floor the pool is cut at. Both remembered in the
-   * journal, so they survive a deploy and are the same on every phone.
+   * The best-pick card's own setting: the premium floor its pool is cut at.
+   * Remembered in the journal, so it survives a deploy and is the same on
+   * every phone. (Its phone alert and automatic trade went on 4 Oct 2026.)
    */
   app.get('/api/trade/best-trade/settings', async () => ({
-    alertOn: svc.bestTradeAlertOn,
     minPremiumUsd: svc.bestTradeMinPremiumUsd,
-    /** Times one strike may be announced per contract (5:31 PM to 5:30 PM next day). */
-    repeat: svc.bestTradeRepeat,
-    telegram: { configured: svc.notifier !== null, on: svc.alertsOn },
   }));
 
-  // The best-pick alert: on or off, its premium floor, and how often one strike may be announced.
   app.post('/api/trade/best-trade/settings', async (req, reply) => {
-    const b = (req.body ?? {}) as { alertOn?: unknown; minPremiumUsd?: unknown; repeat?: unknown };
-    if (b.alertOn !== undefined) {
-      if (typeof b.alertOn !== 'boolean') { reply.code(400); return { error: 'alertOn must be true or false' }; }
-      await svc.setBestTradeAlertOn(b.alertOn);
-    }
+    const b = (req.body ?? {}) as { minPremiumUsd?: unknown };
     if (b.minPremiumUsd !== undefined) {
       const v = Number(b.minPremiumUsd);
       if (!Number.isFinite(v) || !(v > 0) || v > 1_000) { reply.code(400); return { error: 'minPremiumUsd must be a price above zero' }; }
       await svc.setBestTradeMinPremiumUsd(v);
     }
-    if (b.repeat !== undefined) {
-      const v = Number(b.repeat);
-      if (!Number.isInteger(v) || v < 1 || v > 10) { reply.code(400); return { error: 'repeat must be a whole number from 1 to 10' }; }
-      await svc.setBestTradeRepeat(v);
-    }
-    return { ok: true, alertOn: svc.bestTradeAlertOn, minPremiumUsd: svc.bestTradeMinPremiumUsd, repeat: svc.bestTradeRepeat };
-  });
-
-  /*
-   * Selling the best pick by itself.
-   *
-   * Off by default and after every deploy. The numbers are checked here as well
-   * as in the service, because a bad `lots` reaching an armed auto-trader is a
-   * real order: 5 lots and a 95% target are the defaults, and the ceilings are
-   * the same ones the service clamps to.
-   */
-  app.get('/api/trade/auto-trade', async () => ({
-    settings: svc.autoTrade,
-    defaults: AUTO_TRADE_DEFAULTS,
-    /** The limits in force, which are themselves settings. */
-    limits: svc.autoTradeLimits,
-    /** What no limit may pass, whoever types it. Not editable. */
-    ceilings: AUTO_TRADE_CEILINGS,
-    mode: svc.mode,
-    /** What has already been sold automatically for the contract on screen. */
-    done: svc.autoTradeLedger(svc.autoTradeExpiry ?? '').entries,
-  }));
-
-  // Arm, disarm or change the best pick's automatic trade, inside its limits.
-  app.post('/api/trade/auto-trade', async (req, reply) => {
-    const b = (req.body ?? {}) as Record<string, unknown>;
-    /*
-     * The limits move first, then the settings are checked against them: a call
-     * that raises the ceiling and the size together must not be judged by the
-     * ceiling it is replacing.
-     */
-    if (b.limits !== undefined) {
-      if (b.limits === null || typeof b.limits !== 'object') {
-        reply.code(400);
-        return { error: 'limits must be an object' };
-      }
-      const asked = b.limits as Record<string, unknown>;
-      for (const [key, hi] of Object.entries(AUTO_TRADE_CEILINGS)) {
-        if (asked[key] === undefined) continue;
-        const v = Number(asked[key]);
-        if (!Number.isInteger(v) || v < 0 || v > hi) {
-          reply.code(400);
-          return { error: `${key} must be a whole number from 0 to ${hi}` };
-        }
-      }
-      await svc.setAutoTradeLimits(asked as Parameters<typeof svc.setAutoTradeLimits>[0]);
-    }
-    const limits = svc.autoTradeLimits;
-    const numeric: [string, number, number][] = [
-      ['lots', 1, limits.maxLots],
-      ['targetPct', limits.minTargetPct, limits.maxTargetPct],
-      ['stopPct', 0, limits.maxStopPct],
-      ['chaseSeconds', 0, limits.maxChaseSec],
-      ['maxPerContract', 1, limits.maxPerContract],
-    ];
-    for (const [key, lo, hi] of numeric) {
-      if (b[key] === undefined) continue;
-      const v = Number(b[key]);
-      if (!Number.isInteger(v) || v < lo || v > hi) {
-        reply.code(400);
-        return { error: `${key} must be a whole number from ${lo} to ${hi}` };
-      }
-    }
-    if (b.on !== undefined && typeof b.on !== 'boolean') {
-      reply.code(400);
-      return { error: 'on must be true or false' };
-    }
-    const { limits: _ignored, ...settings } = b;
-    return { ok: true, settings: await svc.setAutoTrade(settings as Parameters<typeof svc.setAutoTrade>[0]), limits };
-  });
-
-  /** "Consider these strikes again" — clears the note, never a position. */
-  app.post('/api/trade/auto-trade/clear', async () => {
-    await svc.clearAutoTradeLedger();
-    return { ok: true, done: {} };
+    return { ok: true, minPremiumUsd: svc.bestTradeMinPremiumUsd };
   });
 
   // Switch the Telegram fill alerts on or off.

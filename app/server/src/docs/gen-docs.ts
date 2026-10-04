@@ -339,7 +339,6 @@ async function migrateEverything(): Promise<void> {
   const { chainFeaturesSchema } = await import('../market/chain-features.js');
   const { bookHeatSchema } = await import('../market/book-heat.js');
   const { indexSchema } = await import('../market/index-1m.js');
-  const { trendPaperSchema } = await import('../strategy/trend-paper.js');
   const { entrySchema } = await import('../entry/paper.js');
   const { gatesSchema } = await import('../entry/gates.js');
   const { alertsSchema } = await import('../entry/alerts.js');
@@ -355,7 +354,6 @@ async function migrateEverything(): Promise<void> {
   await chainFeaturesSchema();
   await bookHeatSchema();
   await indexSchema();
-  await trendPaperSchema();
   await entrySchema();
   await gatesSchema();
   await alertsSchema();

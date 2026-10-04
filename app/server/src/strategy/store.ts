@@ -199,6 +199,19 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS strategy_signal_runs_by_time ON strategy_signal_runs (at DESC);
     `,
   },
+  {
+    /*
+     * The trend plan's paper log goes (4 Oct 2026). `trend-001` and
+     * `trend-002` made `trend_paper` for a breakout plan replayed on 1H / 4H
+     * candles every five minutes; no screen read it any more and it has
+     * nothing to do with the signal strategies, so the recorder, its route
+     * and its module went, and the table with them. Its 31 rows were exported
+     * first (cache/reports). On a fresh database, where the `trend-` steps
+     * never run, this drops nothing.
+     */
+    id: 'strategy-007-drop-trend-paper',
+    up: 'DROP TABLE IF EXISTS public.trend_paper;',
+  },
 ];
 
 /** A config without the settings the desk no longer has. */

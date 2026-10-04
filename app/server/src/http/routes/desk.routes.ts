@@ -11,7 +11,6 @@ import { loadDays, reloadDays } from '../../backtest/backtest.js';
 import { tradingService, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot } from '../../market/option-snapshots.js';
-import { trendPaper } from '../../strategy/trend-paper.js';
 import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange } from '../../market/flow.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -177,20 +176,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
     } catch (e) {
       reply.code(502);
       return { error: (e as Error).message };
-    }
-  });
-
-  /**
-   * The trend plan's paper log: the latest trades and, per timeframe, the live
-   * forward test (trades first seen within 15 minutes of their signal) apart
-   * from those replayed later.
-   */
-  app.get('/api/trend/paper', async (_req, reply) => {
-    try {
-      return await trendPaper();
-    } catch (e) {
-      reply.code(502);
-      return { error: (e as Error).message, trades: [], summary: [] };
     }
   });
 

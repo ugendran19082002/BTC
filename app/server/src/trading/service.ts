@@ -24,12 +24,6 @@ import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
-import { BEST_TRADE_REPEAT_DEFAULT, BEST_TRADE_REPEAT_MAX, bestTradeText } from '../notify/best-trade-alert.js';
-import {
-  AUTO_TRADE_DEFAULTS, cleanAutoTradeLimits, cleanAutoTradeSettings, decideAutoTrade,
-  type AutoTradeLedger, type AutoTradeLimits, type AutoTradeSettings,
-} from './auto-trade.js';
-import { bestTradeNow } from '../domain/best-trade-now.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import { hoursSinceDeskOpen, liveChain, WHOLE_BOARD, type Snapshot } from '../market/chain.js';
 import { readMarket, type MarketRead } from '../market/moves.js';
@@ -50,7 +44,6 @@ import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 const POLL_MS = 1_000;
 /** How often the day's P&L is written down. A minute draws a day in 720 points. */
 const MTM_SAMPLE_MS = 60_000;
-const BEST_TRADE_WATCH_MS = 60_000;
 /** Long enough that a one-second poll is one call; short enough to feel live. */
 /*
  * The display caches, sized for a status that is refreshed in the background
@@ -295,14 +288,6 @@ export class TradingService {
     this.timer.unref?.();
     this.mtmTimer ??= setInterval(() => { void this.sampleMtm(); }, MTM_SAMPLE_MS);
     this.mtmTimer.unref?.();
-    // The best-pick watcher reads the whole board once a minute, which is the
-    // cadence the pick actually changes at; the chain it reads is the cached one.
-    this.alertTimer ??= setInterval(() => {
-      // The message first, then the order: the same board, the same minute, and
-      // the phone hears about a pick whether or not the desk is armed to sell it.
-      void this.watchBestTrade().then(() => this.autoTradeBestPick());
-    }, BEST_TRADE_WATCH_MS);
-    this.alertTimer.unref?.();
     await this.store.pruneMtm(Date.now());
     return recovered;
   }
@@ -310,42 +295,20 @@ export class TradingService {
   stop() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     if (this.mtmTimer) { clearInterval(this.mtmTimer); this.mtmTimer = null; }
-    if (this.alertTimer) { clearInterval(this.alertTimer); this.alertTimer = null; }
     if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
   }
 
   private mtmTimer: NodeJS.Timeout | null = null;
-  private alertTimer: NodeJS.Timeout | null = null;
 
   /**
-   * "Tell me when the best pick changes."
+   * The premium floor the best-pick card cuts its pool at. Remembered in the
+   * journal (`best_trade_min_premium`), so it survives a deploy.
    *
-   * A switch on the best-pick card. Once a minute the whole board is read, the
-   * pick worked out the same way the card works it out (`bestTradeNow`), and
-   * if it names a different strike from the last one announced -- or names
-   * one where there was none -- the phone hears. Not every minute, and not
-   * when the same strike is still the pick: a message that repeats what the
-   * last message said is one that teaches you to ignore the next.
-   *
-   * Remembered in the journal (`best_trade_alert`, `best_trade_min_premium`,
-   * `best_trade_last`) so the switch and the last announcement survive a
-   * deploy. Honours the phone-alerts switch like every other message.
+   * The card is all that is left of the best pick: its phone alert and its
+   * automatic trade were removed on 4 Oct 2026 -- both had been off since the
+   * signal strategies took over, and a watcher that read the whole board every
+   * minute to decide to do nothing was load for no purpose.
    */
-  get bestTradeAlertOn(): boolean {
-    return this.settings.get('best_trade_alert') === '1';
-  }
-
-  async setBestTradeAlertOn(on: boolean): Promise<void> {
-    await this.settings.set('best_trade_alert', on ? '1' : '0');
-    // A fresh switch-on announces the current pick rather than waiting for a
-    // change; forgetting the last one -- and what has been sent this contract --
-    // is what makes that happen. Switching on is somebody asking to hear it.
-    if (on) {
-      await this.settings.set('best_trade_last', '');
-      await this.settings.set('best_trade_sent', '');
-    }
-  }
-
   get bestTradeMinPremiumUsd(): number {
     const v = Number(this.settings.get('best_trade_min_premium'));
     return Number.isFinite(v) && v > 0 ? v : BEST_TRADE_MIN_PREMIUM_USD;
@@ -353,228 +316,6 @@ export class TradingService {
 
   setBestTradeMinPremiumUsd(usd: number): Promise<void> {
     return this.settings.set('best_trade_min_premium', String(usd));
-  }
-
-  /**
-   * How many times one strike may be announced for one contract.
-   *
-   * A contract is listed at 5:30 PM and expires at 5:30 PM the next day, so this
-   * is "per strike, from 5:31 PM to 5:30 PM tomorrow". One by default: a pick
-   * that goes CE 78,800 → CE 79,000 → CE 78,800 is one piece of news about
-   * 78,800, not two.
-   */
-  get bestTradeRepeat(): number {
-    const v = Number(this.settings.get('best_trade_repeat'));
-    return Number.isInteger(v) && v >= 1 && v <= BEST_TRADE_REPEAT_MAX ? v : BEST_TRADE_REPEAT_DEFAULT;
-  }
-
-  setBestTradeRepeat(times: number): Promise<void> {
-    const v = Math.min(BEST_TRADE_REPEAT_MAX, Math.max(1, Math.round(times)));
-    return this.settings.set('best_trade_repeat', String(v));
-  }
-
-  async watchBestTrade(
-    now = Date.now(),
-    /** The board to read, for tests; the live one otherwise. */
-    board?: { snap: Snapshot; market: MarketRead | null },
-  ): Promise<'off' | 'unchanged' | 'sent' | 'repeat' | 'no board'> {
-    if (!this.bestTradeAlertOn) return 'off';
-    const snap = board?.snap ?? await liveChain(WHOLE_BOARD).catch(() => null);
-    if (!snap || !snap.live) return 'no board';
-    const market = board ? board.market : await readMarket(hoursSinceDeskOpen(snap.ts)).catch(() => null);
-    const best = bestTradeNow({
-      snap, market, lots: 10, hedgeGap: 3, minPremiumUsd: this.bestTradeMinPremiumUsd,
-    });
-    const key = best.pick && !best.bestOfNone ? `${best.pick.side}-${best.pick.strike}-${snap.expiry}` : '';
-    const last = this.settings.get('best_trade_last') ?? '';
-    if (key === last) return 'unchanged';
-    await this.settings.set('best_trade_last', key);
-    if (!key) return 'unchanged';   // it went away; nothing to say until something comes back
-
-    /*
-     * The cap: how many times this strike has been announced for this
-     * contract. Kept per expiry, so a new contract starts from nothing -- which
-     * is the 5:31 PM reset, without a clock in sight.
-     *
-     * Counted whether or not the phone was listening: turning phone alerts off
-     * is a choice to hear nothing, not a request to be told later.
-     */
-    const sent = this.bestTradeSent(snap.expiry);
-    const n = (sent.counts[key] ?? 0) + 1;
-    if (n > this.bestTradeRepeat) return 'repeat';
-    sent.counts[key] = n;
-    await this.settings.set('best_trade_sent', JSON.stringify(sent));
-
-    if (this.notifier && this.alertsOn) {
-      this.notifier.notify({
-        key: 'best-trade',
-        text: bestTradeText(best, snap.expiry, this.currentMode, now, { n, of: this.bestTradeRepeat }),
-      });
-    }
-    return 'sent';
-  }
-
-  /*
-   * Selling the best pick by itself.
-   *
-   * Armed from the card, off by default, and every rule about *not* trading
-   * lives in `auto-trade.ts` where it can be tested without an exchange. This
-   * is the acting half: read the board, ask, write the decision down *before*
-   * placing, then place through the same `place()` the ticket uses -- same
-   * engine, same prechecks, same protection.
-   *
-   * Written first, always. A crash between the order and the note is how a
-   * desk sells the same strike twice, so the note goes down first and a refusal
-   * is kept as well as a fill: a strike the gates turned down is not asked
-   * about again this contract.
-   */
-  get autoTrade(): AutoTradeSettings {
-    try {
-      const raw = JSON.parse(this.settings.get('auto_trade') || 'null') as Partial<AutoTradeSettings> | null;
-      return cleanAutoTradeSettings(raw ?? {}, this.autoTradeLimits);
-    } catch {
-      return { ...AUTO_TRADE_DEFAULTS };
-    }
-  }
-
-  async setAutoTrade(patch: Partial<AutoTradeSettings>): Promise<AutoTradeSettings> {
-    const next = cleanAutoTradeSettings({ ...this.autoTrade, ...patch }, this.autoTradeLimits);
-    await this.settings.set('auto_trade', JSON.stringify(next));
-    return next;
-  }
-
-  /**
-   * The ceilings the settings are held to -- themselves settings.
-   *
-   * Editable from the same card, because a number in the source standing
-   * between somebody and a trade they meant to make is not a safety feature.
-   * The hard ceilings behind them are not editable.
-   */
-  get autoTradeLimits(): AutoTradeLimits {
-    try {
-      const raw = JSON.parse(this.settings.get('auto_trade_limits') || 'null') as Partial<AutoTradeLimits> | null;
-      return cleanAutoTradeLimits(raw);
-    } catch {
-      return cleanAutoTradeLimits(null);
-    }
-  }
-
-  async setAutoTradeLimits(patch: Partial<AutoTradeLimits>): Promise<AutoTradeLimits> {
-    const next = cleanAutoTradeLimits({ ...this.autoTradeLimits, ...patch });
-    await this.settings.set('auto_trade_limits', JSON.stringify(next));
-    // A tighter ceiling pulls the settings under it at once, rather than
-    // leaving 50 lots armed under a new limit of 10.
-    await this.setAutoTrade({});
-    return next;
-  }
-
-  /**
-   * The contract the last board read was about, for the screen's "already sold
-   * automatically" list. Absent until a board has been read at all.
-   */
-  get autoTradeExpiry(): string | null {
-    try {
-      const v = JSON.parse(this.settings.get('auto_trade_done') || 'null') as { expiry?: unknown } | null;
-      return typeof v?.expiry === 'string' ? v.expiry : null;
-    } catch {
-      return null;
-    }
-  }
-
-  /** What has been sold automatically for this contract. */
-  autoTradeLedger(expiry: string): AutoTradeLedger {
-    try {
-      const v = JSON.parse(this.settings.get('auto_trade_done') || 'null') as AutoTradeLedger | null;
-      if (v && v.expiry === expiry && v.entries && typeof v.entries === 'object') return v;
-    } catch { /* unreadable is the same as nothing traded */ }
-    return { expiry, entries: {} };
-  }
-
-  /**
-   * Forget what has been sold automatically on this contract.
-   *
-   * The one way back from "already sold" and "refused earlier" without waiting
-   * for 5:31 PM: somebody who has read the refusal and dealt with it can ask
-   * for the strike to be considered again. It clears the note, never a position.
-   */
-  clearAutoTradeLedger(): Promise<void> {
-    return this.settings.set('auto_trade_done', '');
-  }
-
-  private writeAutoTrade(ledger: AutoTradeLedger, key: string, entry: AutoTradeLedger['entries'][string]): Promise<void> {
-    const next: AutoTradeLedger = { expiry: ledger.expiry, entries: { ...ledger.entries, [key]: entry } };
-    return this.settings.set('auto_trade_done', JSON.stringify(next));
-  }
-
-  async autoTradeBestPick(
-    now = Date.now(),
-    board?: { snap: Snapshot; market: MarketRead | null },
-  ): Promise<{ act: 'skip'; why: string } | { act: 'placed'; tradeId: string } | { act: 'refused'; why: string }> {
-    const settings = this.autoTrade;
-    if (!settings.on) return { act: 'skip', why: 'off' };
-    const snap = board?.snap ?? await liveChain(WHOLE_BOARD).catch(() => null);
-    if (!snap) return { act: 'skip', why: 'no board' };
-    const market = board ? board.market : await readMarket(hoursSinceDeskOpen(snap.ts)).catch(() => null);
-    const best = bestTradeNow({
-      snap, market, lots: settings.lots, hedgeGap: 3, minPremiumUsd: this.bestTradeMinPremiumUsd,
-    });
-    const ledger = this.autoTradeLedger(snap.expiry);
-    const decision = decideAutoTrade({
-      settings,
-      best,
-      snap,
-      // Anything the desk is already carrying or working, whoever opened it.
-      openSymbols: (await this.store.all()).filter((r) => r.state.position !== 0 || r.state.entrySize > 0)
-        .map((r) => r.state.symbol),
-      ledger,
-      symbolFor: (side, strike) => `${side === 'CE' ? 'C' : 'P'}-BTC-${strike}-${snap.expiry}`,
-    });
-    if (decision.act === 'skip') return decision;
-
-    // Written before the order goes out: a crash here costs one missed trade,
-    // never a second copy of one.
-    await this.writeAutoTrade(ledger, decision.key, { at: now, status: 'placed' });
-    const res = await this.place({
-      origin: 'best-pick',
-      symbol: decision.symbol,
-      optionSide: decision.side,
-      strike: decision.strike,
-      expiryTs: snap.expiryTs,
-      lots: decision.lots,
-      takeProfitPct: decision.takeProfitPct,
-      stopLossPct: decision.stopLossPct,
-      chaseSeconds: decision.chaseSeconds,
-    }).catch((e: Error) => ({ ok: false as const, reason: e.message }));
-
-    if (!res.ok) {
-      const why = 'precheck' in res && !res.precheck.ok
-        ? res.precheck.failures.map((f) => f.message).join('; ')
-        : ('reason' in res && typeof res.reason === 'string' ? res.reason : 'the desk would not place it');
-      await this.writeAutoTrade(ledger, decision.key, { at: now, status: 'refused', detail: why });
-      if (this.notifier && this.alertsOn) {
-        this.notifier.notify({
-          // Per decision: two strikes refused in the same minute are two
-          // messages, not the second one quietly replacing the first.
-          key: `auto-trade:${decision.key}`,
-          text: `🤖 Auto-trade did not sell ${decision.side} ${decision.strike.toLocaleString('en-IN')}: ${why}`,
-        });
-      }
-      return { act: 'refused', why };
-    }
-    const tradeId = 'state' in res ? res.state.tradeId : decision.key;
-    await this.writeAutoTrade(ledger, decision.key, { at: now, status: 'placed', tradeId });
-    return { act: 'placed', tradeId };
-  }
-
-  /** What has been announced for this contract, or a clean slate for a new one. */
-  private bestTradeSent(expiry: string): { expiry: string; counts: Record<string, number> } {
-    try {
-      const v = JSON.parse(this.settings.get('best_trade_sent') || 'null') as { expiry?: unknown; counts?: unknown } | null;
-      if (v && v.expiry === expiry && v.counts && typeof v.counts === 'object') {
-        return { expiry, counts: v.counts as Record<string, number> };
-      }
-    } catch { /* unreadable is the same as nothing sent */ }
-    return { expiry, counts: {} };
   }
 
   /**
