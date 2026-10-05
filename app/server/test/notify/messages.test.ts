@@ -279,6 +279,10 @@ test('[critical] a signal strategy\'s trade: the signal, its SL and TGT on the B
   assert.match(entry.text, /📈 BTC perp  🛑 SL <b>84,600\.00<\/b>   🎯 TGT <b>85,500\.00<\/b>/);
   assert.match(entry.text, /Option backstop: 🎯 Target 90\.00   🛑 Stop 110\.00/);
   assert.match(entry.text, /strategy “Breakout &lt;PE&gt;”/, 'named, and escaped');
+  // With more than one broker account the fill says whose it is; with one, the line is as it always was.
+  assert.match(entry.text, /IST · strategy “Breakout &lt;PE&gt;” · LIVE$/);
+  const named = last([submitted(), fill('entry', 100, 100.5)], plan, { mode: 'live', account: 'SELL <main>' })!;
+  assert.match(named.text, /IST · strategy “Breakout &lt;PE&gt;” · account “SELL &lt;main&gt;” · LIVE$/);
 
   const out = last([
     submitted(), fill('entry', 100, 100.5),
