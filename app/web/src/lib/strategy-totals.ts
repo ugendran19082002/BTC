@@ -137,3 +137,58 @@ export function usageNow(strategies: readonly Strategy[], spot: number | null): 
   return strategies.filter((s) => s.config.trigger === 'signal').map((s) => usageOf(s, spot))
     .reduce((a, u) => ({ entries: a.entries + u.entries, lots: a.lots + u.lots, marginUsd: a.marginUsd + u.marginUsd }), { entries: 0, lots: 0, marginUsd: 0 });
 }
+
+/**
+ * A bought option's cost (5 Oct 2026): a BUY strategy uses no margin -- the option is paid for in full -- so its
+ * figures are the premium, not margin. Per lot, priced at the strategy's own premium number (USD per BTC, on a
+ * 0.001 BTC contract): for "paying at most $50" that is the most a lot costs; for "at least" or a strike picked
+ * by distance it is not known until the strike is, and reads as null -- shown as unknown, never as zero.
+ */
+const CONTRACT_BTC = 0.001;
+export function buyCostPerLotUsd(s: Strategy): number | null {
+  const c = s.config;
+  if (c.strikeRule === 'strict' || !c.premium || c.premium.mode !== 'atMost') return null;
+  const most = Math.max(c.premium.usd, c.premium.fallbackUsd ?? 0);
+  return most > 0 ? most * CONTRACT_BTC : null;
+}
+
+export type BuyTotals = {
+  /** BUY strategies switched on. */
+  strategies: number;
+  /** The sum of their "at most open at once", and the lots that is. */
+  entries: number; lots: number;
+  /** What they hold now: open trades and lots, of every BUY strategy (a position outlives its strategy being switched off). */
+  openEntries: number; openLots: number;
+  /** Room left: each strategy's own limit less what it holds, inside the desk-wide limit's room. */
+  roomEntries: number; roomLots: number;
+  /** The most that room costs, at each strategy's premium number; null when any of it cannot be priced. */
+  roomCostUsd: number | null;
+  /** The most every entry open at once costs; null likewise. */
+  allCostUsd: number | null;
+};
+
+export function buyTotals(strategies: readonly Strategy[], capRoom: number | null): BuyTotals {
+  const buyers = strategies.filter((s) => s.config.trigger === 'signal' && s.config.signal?.action === 'buy');
+  const live = on(buyers);
+  let roomEntries = 0, roomLots = 0, roomCost: number | null = 0, allCost: number | null = 0;
+  let left = capRoom === null ? Infinity : Math.max(0, capRoom);
+  // The largest lots first: the worst case, as the sellers' room is worked out.
+  for (const s of [...live].sort((a, b) => b.config.lots - a.config.lots)) {
+    const per = buyCostPerLotUsd(s);
+    const max = s.config.signal!.maxOpen;
+    allCost = allCost === null || per === null ? null : allCost + per * max * s.config.lots;
+    const mine = Math.min(left, Math.max(0, max - (s.open?.trades ?? 0)));
+    left -= mine;
+    roomEntries += mine;
+    roomLots += mine * s.config.lots;
+    roomCost = roomCost === null || (per === null && mine > 0) ? null : roomCost + (per ?? 0) * mine * s.config.lots;
+  }
+  return {
+    strategies: live.length,
+    entries: live.reduce((n, s) => n + s.config.signal!.maxOpen, 0),
+    lots: live.reduce((n, s) => n + s.config.signal!.maxOpen * s.config.lots, 0),
+    openEntries: buyers.reduce((n, s) => n + (s.open?.trades ?? 0), 0),
+    openLots: buyers.reduce((n, s) => n + (s.open?.lots ?? 0), 0),
+    roomEntries, roomLots, roomCostUsd: roomCost, allCostUsd: allCost,
+  };
+}

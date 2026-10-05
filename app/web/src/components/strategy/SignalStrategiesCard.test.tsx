@@ -54,15 +54,23 @@ describe('bought strategies on the card', () => {
   it('[critical] a BUY strategy reads as bought, is left out of the seller\'s margin figures, and its live switch works like any other', async () => {
     const BUY = { ...SIG, signal: { ...SIG.signal, action: 'buy' as const } };
     getStrategies.mockResolvedValue(status([strat('buyer', BUY), strat('buyer2', BUY)], { signalMaxOpen: 0, openNow: 0, shortCap: 159, shortNow: 0, walletUsd: 2.35, marginUsedUsd: 0 }));
+    // (The at-most-open field counts them: what all the strategies allow is their 4 entries.)
     render(<SignalStrategiesCard />);
     expect(await screen.findByText('BUYER')).toBeInTheDocument();
     expect(screen.getAllByText(/bought: BUY → CE · SELL → PE/)).toHaveLength(2);
     expect(screen.getAllByText(/writes down what it would buy, sends nothing/)).toHaveLength(2);
     expect(screen.queryByText(/would sell/)).toBeNull();
-    // Paid for in full, no margin -- so the margin tiles are a seller's and these two are not in them.
-    expect(screen.getByLabelText('bought strategies')).toHaveTextContent(
-      '2 BUY strategies are switched on. A bought option uses no margin — it is paid for in full, from the free balance — so they are not in the margin figures below — which is why they read zero.');
+    // Their own tiles: entries, lots and the premium -- no margin, which a bought option does not use.
+    const tiles = within(screen.getByLabelText('bought strategies added up'));
+    // Two strategies of 2 entries each, 1 lot; the rule pays at most $5 a BTC on a 0.001 contract.
+    expect(tiles.getByLabelText("the bought strategies' limits, added up")).toHaveTextContent(/BUY strategies allow\s*4 entries\s*2 strategies on\s*4 lots/);
+    expect(tiles.getByLabelText('in use now, bought strategies')).toHaveTextContent(/0 of 4 entries/);
+    expect(tiles.getByLabelText('still to open, bought strategies')).toHaveTextContent(/4 entries · 4 lots/);
     expect(screen.queryByText(/margin with all of it open/)).toBeNull(); // no seller's margin is claimed for them
+    expect(screen.getByLabelText('open now, of the limit')).toHaveTextContent('all the strategies allow · 0 open');
+    expect(screen.getByLabelText('At most open at once, all strategies')).toHaveValue('4');
+    // Each row says it buys, and prices its lots as premium, not margin.
+    expect(screen.getAllByText(/^buys$/).length).toBeGreaterThan(0);
     // Live orders: two taps, like a sell strategy's -- the first says what the second does.
     const live = screen.getByRole('switch', { name: 'Live orders for BUYER' });
     expect(live).toBeEnabled();

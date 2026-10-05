@@ -11,7 +11,7 @@ import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
 import { blockNow, hoursLabel, istMinuteOf, pickWords } from '@/lib/strategy-blocks';
-import { globalMaxOpenProblem, marginPerLotUsd, roomLeft, signalTotals, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
+import { buyCostPerLotUsd, buyTotals, globalMaxOpenProblem, marginPerLotUsd, roomLeft, signalTotals, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
 import { inr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -45,7 +45,7 @@ function RuleNow({ s }: { s: Strategy }) {
       {b.of > 1
         ? <span><b className="text-foreground">Block {b.n} of {b.of}</b> · {time12(b.from)} → {time12(b.until)} · {hoursLabel(b.minutesLeft)} left</span>
         : <span><b className="text-foreground">Same rule all the time</b></span>}
-      <span>sells <b className="text-foreground">{pickWords(b.pick)}</b></span>
+      <span>{s.config.signal?.action === 'buy' ? 'buys' : 'sells'} <b className="text-foreground">{pickWords(b.pick)}</b></span>
       {b.next && <span className="text-[var(--dim)]">· then block {b.next.n} at {time12(b.next.at)}: {pickWords(b.next.pick)}</span>}
     </p>
   );
@@ -108,7 +108,9 @@ function Tile({ label, name, value, status, meter, children }: {
  * bar for the entries. The limit is what the strategy may take; in use is what
  * the desk holds for it this moment -- positions and working orders.
  */
-function UsageLine({ name, u }: { name: string; u: Usage }) {
+function UsageLine({ name, u, buyCostPerLotUsd: costPerLot }: { name: string; u: Usage; buyCostPerLotUsd?: number | null }) {
+  // A bought strategy uses no margin: its figure is what the premium costs, at its own premium number.
+  const bought = costPerLot !== undefined;
   const share = u.maxEntries > 0 ? Math.min(1, u.entries / u.maxEntries) : 0;
   const full = u.maxEntries > 0 && u.entries >= u.maxEntries;
   return (
@@ -122,7 +124,9 @@ function UsageLine({ name, u }: { name: string; u: Usage }) {
         </span>
       </span>
       <span><span className="text-[var(--dim)]">Lots in use</span> <b className="tabular-nums text-foreground">{u.lots} of {u.maxLots}</b></span>
-      <span><span className="text-[var(--dim)]">Margin in use</span> <b className="tabular-nums text-foreground">{inr(usdToInr(u.marginUsd))} of {inr(usdToInr(u.maxMarginUsd))}</b></span>
+      {bought
+        ? <span><span className="text-[var(--dim)]">Premium, at most</span> <b className="tabular-nums text-foreground">{costPerLot === null ? 'set by the strike' : `${inr(usdToInr(u.lots * costPerLot))} of ${inr(usdToInr(u.maxLots * costPerLot))}`}</b></span>
+        : <span><span className="text-[var(--dim)]">Margin in use</span> <b className="tabular-nums text-foreground">{inr(usdToInr(u.marginUsd))} of {inr(usdToInr(u.maxMarginUsd))}</b></span>}
       {full && <span className="text-[var(--warn)]">at its limit: the next signal is skipped</span>}
     </div>
   );
@@ -289,9 +293,12 @@ export function SignalStrategiesCard() {
    * beside them, rather than shown as short lots they will never hold.
    */
   const sellers = mine.filter((s) => s.config.signal?.action !== 'buy');
-  const buyersOn = mine.filter((s) => s.enabled && s.config.signal?.action === 'buy').length;
   const totals = signalTotals(sellers, data?.balanceUsd ?? null, data?.spot ?? null);
+  // "At most open" is over every strategy of the account, bought and sold: what they allow between them is the sum of all.
+  const allowedAll = signalTotals(mine, null, null).entries;
   const cap = data?.signalMaxOpen ?? 0;
+  const capRoom = cap > 0 ? Math.max(0, cap - (data?.openNow ?? 0)) : null;
+  const buys = buyTotals(mine, capRoom);
   const inUse = usageNow(sellers, data?.spot ?? null);
   // What can still open from here, at worst, and whether the free margin carries it.
   /*
@@ -315,7 +322,7 @@ export function SignalStrategiesCard() {
    * says them, and the lots and margin are what is held of what is held plus
    * what can still open.
    */
-  const limited = cap > 0 && cap < totals.entries;
+  const limited = cap > 0 && cap < allowedAll;
   const usedEntries = limited ? (data?.openNow ?? 0) : inUse.entries;
   const mostEntries = limited ? cap : totals.entries;
   const freeUsd = data?.balanceUsd ?? null;
@@ -343,7 +350,7 @@ export function SignalStrategiesCard() {
           {data && data.signalMaxOpen !== undefined && (
             <GlobalMaxOpen
               value={data.signalMaxOpen}
-              allowed={totals.entries}
+              allowed={allowedAll}
               openNow={data.openNow ?? 0}
               busy={busy === 'max-open'}
               onSave={(n) => act('max-open', () => setSignalMaxOpen(n))}
@@ -393,11 +400,40 @@ export function SignalStrategiesCard() {
           Showing every account's strategies. To make a new one, choose an account's tab above: a strategy belongs to one account and trades only on it.
         </p>
       )}
-      {buyersOn > 0 && (
-        <p role="note" aria-label="bought strategies" className="m-0 mb-2 text-[12px] text-muted-foreground">
-          {buyersOn} BUY {buyersOn === 1 ? 'strategy is' : 'strategies are'} switched on. A bought option uses no margin — it is paid for in full,
-          from the free balance — so {buyersOn === 1 ? 'it is' : 'they are'} not in the margin figures below{sellers.some((x) => x.enabled) ? '' : ' — which is why they read zero'}.
-        </p>
+      {/*
+        The bought strategies added up, beside the sold ones' margin tiles: a bought option uses no margin -- it is
+        paid for in full, from the free balance -- so its figures are entries, lots and the premium.
+      */}
+      {data && (buys.strategies > 0 || buys.openEntries > 0) && (
+        <div aria-label="bought strategies added up" className="mb-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Tile label="BUY strategies allow" name="the bought strategies' limits, added up"
+                  value={<>{buys.entries} entr{buys.entries === 1 ? 'y' : 'ies'}</>}>
+              <span>{buys.strategies} strateg{buys.strategies === 1 ? 'y' : 'ies'} on</span>
+              <span>{buys.lots} lots</span>
+              <span className="tabular-nums">{buys.allCostUsd === null ? 'premium set by the strike picked' : `${inr(usdToInr(buys.allCostUsd))} premium at most, all of it open`}</span>
+            </Tile>
+            <Tile label="In use now" name="in use now, bought strategies"
+                  value={<>{buys.openEntries} of {limited ? cap : buys.entries} entr{(limited ? cap : buys.entries) === 1 ? 'y' : 'ies'}</>}
+                  meter={{ label: 'entries in use, bought strategies', now: buys.openEntries, max: Math.max(1, limited ? cap : buys.entries), tone: 'accent' }}>
+              <span>{buys.openLots} lots held</span>
+              <span>no margin: each is paid for in full</span>
+            </Tile>
+            <Tile label={cap > 0 ? `Still to open · under the limit of ${cap}` : 'Still to open'} name="still to open, bought strategies"
+                  value={buys.roomEntries === 0
+                    ? <>Nothing — {cap > 0 && (data.openNow ?? 0) >= cap ? 'the limit is reached' : 'every strategy is at its own limit'}</>
+                    : <>{buys.roomEntries} entr{buys.roomEntries === 1 ? 'y' : 'ies'} · {buys.roomLots} lots</>}
+                  status={buys.roomEntries === 0 || buys.roomCostUsd === null || freeUsd === null ? null
+                    : buys.roomCostUsd > freeUsd ? { tone: 'danger', word: 'More than is free' } : { tone: 'good', word: 'Fits in the free balance' }}>
+              {buys.roomEntries > 0 && (
+                <span className="tabular-nums">
+                  {buys.roomCostUsd === null ? 'premium set by the strike picked' : `costs at most ${inr(usdToInr(buys.roomCostUsd))}`}
+                  {freeUsd !== null && <> — {inr(usdToInr(freeUsd))} is free</>}
+                </span>
+              )}
+            </Tile>
+          </div>
+        </div>
       )}
       {data && !data.schedulerOn && mine.some((s) => s.enabled) && (
         <p role="note" className="m-0 mb-2 text-[12px] text-[var(--warn)]">
@@ -587,7 +623,9 @@ export function SignalStrategiesCard() {
                 </label>
                 <span className="text-[11px] text-[var(--dim)]">saved as you leave the field · from the next signal</span>
               </div>
-              {s.open && <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} />}
+              {s.open && (s.config.signal?.action === 'buy'
+                ? <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} buyCostPerLotUsd={buyCostPerLotUsd(s)} />
+                : <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} />)}
               <p className="m-0 mt-0.5 text-[11.5px] text-[var(--dim)]">
                 {s.status}
                 {!live && (s.config.signal?.action === 'buy' ? ' · writes down what it would buy, sends nothing' : ' · writes down what it would sell, sends nothing')}
