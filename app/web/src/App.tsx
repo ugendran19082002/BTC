@@ -585,7 +585,8 @@ export default function App() {
         </button>
         <button className={tab === 'trade' ? 'on' : ''} onClick={() => setTab('trade')}>
           <Briefcase aria-hidden /> <span>Positions</span>
-          {trade && trade.open.length > 0 && <span className="pip">{trade.open.length}</span>}
+          {/* What is open on the whole desk -- every trading account's, as the header's Today is. */}
+          {headerDay && headerDay.open.length > 0 && <span className="pip">{headerDay.open.length}</span>}
         </button>
         <button className={tab === 'orders' ? 'on' : ''} onClick={() => setTab('orders')}>
           <ListOrdered aria-hidden /> <span>Orders</span>

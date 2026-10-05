@@ -898,7 +898,12 @@ export function registerTradeRoutes(app: FastifyInstance) {
     // `?account=<id>`: the orders placed as one broker account; without it, every account's.
     // Read from the whole journal by the account named (none: every account's) -- not through a desk's own
     // view, so an account that is switched off, and has no desk, still shows its own orders and no one else's.
-    const records = await forScreens(await journal().between(Math.min(from, to), Math.max(from + 86_400_000, to), limit, accountOf(req.query)));
+    const found = await forScreens(await journal().between(Math.min(from, to), Math.max(from + 86_400_000, to), limit, accountOf(req.query)));
+    // Whose order each is, for "All accounts": a trade from before accounts has it on its row, not in its plan.
+    // A copy for the screen only -- these records are never saved.
+    const owners = await journal().accountsOf(found.filter((r) => r.plan.accountId == null).map((r) => r.state.tradeId)).catch(() => new Map<string, number>());
+    const records = found.map((r) => (r.plan.accountId == null && owners.has(r.state.tradeId)
+      ? { ...r, plan: { ...r.plan, accountId: owners.get(r.state.tradeId)! } } : r));
 
     /*
      * Prices for the trades still open, so their row can say what closing now

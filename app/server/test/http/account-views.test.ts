@@ -177,6 +177,11 @@ test('[critical] an order is stamped with the account it was placed as, and the 
   await settled('', [res.state.tradeId]);
   assert.deepEqual(await ids(`?account=${second}`), [res2.state.tradeId]);
   assert.deepEqual((await ids('')).sort(), [res.state.tradeId, res2.state.tradeId].sort(), 'All accounts: both');
+  // Each order says whose it is -- also one from before accounts, whose plan does not name an account but whose row does.
+  await rows("UPDATE trades SET plan = plan - 'accountId' WHERE trade_id = $1", [res.state.tradeId]);
+  const whose = ((await api('GET', '/api/trade/history')).body.trades as { tradeId: string; plan: { accountId: number | null } }[])
+    .map((o) => [o.tradeId, o.plan.accountId]).sort();
+  assert.deepEqual(whose, [[res.state.tradeId, main()], [res2.state.tradeId, second]].sort());
   // An act on a trade reaches the desk that holds it, named by nothing but the trade.
   assert.equal((await api('GET', `/api/trade/${res2.state.tradeId}`)).status, 200);
   const held = await api('POST', `/api/accounts/${second}/active`, { active: false });

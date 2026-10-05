@@ -263,6 +263,18 @@ export class PgTradeStore implements TradeStore {
    * opened last night and closed this morning is one you did today -- and it is
    * the closing that a day's list is about.
    */
+  /**
+   * The broker account each trade was placed as, off its row. A trade from before accounts has it there
+   * (back-filled by trading-007) and not in its plan, so a screen showing several accounts' trades together
+   * reads it here. One query; a trade with none is left out.
+   */
+  async accountsOf(tradeIds: readonly string[]): Promise<Map<string, number>> {
+    if (tradeIds.length === 0) return new Map();
+    const found = await rows<{ trade_id: string; broker_account_id: string | null }>(
+      'SELECT trade_id, broker_account_id FROM trades WHERE trade_id = ANY($1)', [tradeIds]);
+    return new Map(found.filter((r) => r.broker_account_id !== null).map((r) => [r.trade_id, Number(r.broker_account_id)] as const));
+  }
+
   between(fromMs: number, toMs: number, limit = 500, accountId: number | null = null): Promise<TradeRecord[]> {
     // `accountId`: only the trades placed as that broker account; null, every trade.
     return this.query(
