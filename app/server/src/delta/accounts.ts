@@ -20,6 +20,9 @@ import { DeltaRefused, RateLimited, RequestTimedOut, signed, UnreadableReply, ty
  *   - A row that will not open (the master secret was rotated) is shown as
  *     unreadable and never used; its key is entered again.
  *   - At most one default, held by a unique index rather than by a check.
+ *   - The last account is never removed, only switched off (owner, 5 Oct 2026):
+ *     a desk that has had an account always has one to switch back on, and a
+ *     key is replaced by adding the new one first and removing the old second.
  *
  * Read like the settings: the table is loaded into memory once at start and the
  * process is its only writer, so every change is written first and the memory
@@ -28,7 +31,8 @@ import { DeltaRefused, RateLimited, RequestTimedOut, signed, UnreadableReply, ty
  *
  * `.env`'s DELTA_API_KEY / DELTA_API_SECRET are read once: the first start with
  * no account imports them as the default, so a desk holding live positions
- * comes up on the same account it went down on. After that they are not read.
+ * comes up on the same account it went down on. After that they are not read,
+ * and the key is not kept in `.env`: the two lines are emptied once it is here.
  */
 
 export const MAX_ACCOUNTS = 5;
@@ -214,10 +218,15 @@ export class BrokerAccounts {
     return this.need(id);
   }
 
-  /** Switch an account on or off. Off, it is kept and cannot be the default. */
+  /**
+   * Switch an account on or off. Off, it is kept and cannot be the default. Switched on while there is no
+   * default at all, it is the default -- as the first account is -- so the only account comes back in one tap.
+   */
   async setActive(id: number, active: boolean): Promise<BrokerAccount> {
-    this.need(id);
-    await query('UPDATE broker_accounts SET active = $2, is_default = is_default AND $2, updated_at = $3 WHERE id = $1', [id, active, this.now()]);
+    const a = this.need(id);
+    const takesDefault = active && a.readable && this.default() === null;
+    await query('UPDATE broker_accounts SET active = $2, is_default = (is_default AND $2) OR $3, updated_at = $4 WHERE id = $1',
+      [id, active, takesDefault, this.now()]);
     await this.refresh();
     return this.need(id);
   }
@@ -225,7 +234,7 @@ export class BrokerAccounts {
   /** Make one account the default, in one transaction, so there is never two and never a moment with the wrong one. */
   async setDefault(id: number): Promise<BrokerAccount> {
     const a = this.need(id);
-    if (!a.readable) throw new AccountRefused('This account\'s key cannot be read any more (DESK_SESSION_SECRET changed). Remove it and add it again.', 409);
+    if (!a.readable) throw new AccountRefused('This account\'s key cannot be read any more (DESK_SESSION_SECRET changed). Add it again as a new account, then remove this one.', 409);
     if (!a.active) throw new AccountRefused('Activate the account first.', 409);
     const at = this.now();
     await tx(async (c) => {
@@ -236,8 +245,16 @@ export class BrokerAccounts {
     return this.need(id);
   }
 
-  async remove(id: number): Promise<void> {
+  /** Why this account cannot be removed, or null. The last one is kept: it is switched off instead. */
+  removalBlocked(id: number): string | null {
     this.need(id);
+    return this.held.length === 1 ? 'This is the only account, and the last one is kept. Deactivate it instead.' : null;
+  }
+
+  /** Remove an account and its key for good -- never the last one. */
+  async remove(id: number): Promise<void> {
+    const blocked = this.removalBlocked(id);
+    if (blocked) throw new AccountRefused(blocked, 409);
     await query('DELETE FROM broker_accounts WHERE id = $1', [id]);
     await this.refresh();
   }

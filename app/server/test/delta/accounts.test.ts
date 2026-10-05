@@ -14,7 +14,7 @@ const KEY_B = 'keyBBBBBBBBBBBBBBBBB2222', SECRET_B = 'secretBBBBBBBBBBBBBBBBBBBB
 const stored = () => rows<{ id: string; name: string; api_key_sealed: string; api_secret_sealed: string; key_hint: string; is_default: boolean; active: boolean }>(
   'SELECT * FROM broker_accounts ORDER BY id');
 
-test('[critical] .env\'s key is imported once, sealed, as the default -- and an account removed does not come back', async () => {
+test('[critical] .env\'s key is imported once, sealed, as the default -- the last account is never removed, and an emptied table is not refilled', async () => {
   const settings = new MemorySettings();
   const seed = { key: KEY_A, secret: SECRET_A };
   const first = await new BrokerAccounts({ secrets: secrets() }).load({ seed, settings });
@@ -33,8 +33,18 @@ test('[critical] .env\'s key is imported once, sealed, as the default -- and an 
   const second = await new BrokerAccounts({ secrets: secrets() }).load({ seed, settings });
   assert.equal(second.list().length, 1);
 
-  // Removed on the screen, then a restart with the same .env: it stays removed.
-  await second.remove(second.default()!.id);
+  // The last account is kept: switched off, never removed.
+  const only = second.default()!.id;
+  assert.equal(second.removalBlocked(only), 'This is the only account, and the last one is kept. Deactivate it instead.');
+  await assert.rejects(second.remove(only), (e: AccountRefused) => e.status === 409 && /Deactivate it instead/.test(e.message));
+  assert.equal((await stored()).length, 1, 'still there');
+  // Off: kept, not used. On again with no default anywhere: it is the default again, in one tap.
+  assert.deepEqual([(await second.setActive(only, false)).isDefault, second.defaultCreds()], [false, null]);
+  assert.equal((await second.setActive(only, true)).isDefault, true);
+  assert.deepEqual(second.defaultCreds(), seed);
+
+  // A table emptied by hand, then a restart with the same .env: the import does not run twice.
+  await query('DELETE FROM broker_accounts');
   const third = await new BrokerAccounts({ secrets: secrets() }).load({ seed, settings });
   assert.deepEqual(third.list(), []);
   assert.equal(third.defaultCreds(), null);
@@ -58,13 +68,18 @@ test('[critical] two accounts: the first is the default, one default at a time, 
   assert.equal(a.default(), null);
   assert.equal(a.defaultCreds(), null);
   await assert.rejects(a.setDefault(two.id), /Activate the account first/);
-  await a.setActive(two.id, true);
-  assert.equal((await a.setDefault(two.id)).isDefault, true);
+  assert.equal((await a.setActive(two.id, true)).isDefault, true, 'on again with no default: it is the default');
+  // With a default in place, switching another on does not take it.
+  await a.setActive(one.id, false);
+  assert.equal((await a.setActive(one.id, true)).isDefault, false);
+  assert.equal(a.default()!.id, two.id);
 
   assert.equal((await a.rename(one.id, { name: 'Renamed', description: '' })).name, 'Renamed');
   assert.equal((await a.noteTest(one.id, { ok: false, detail: 'Delta does not know this API key. (invalid_api_key)' })).lastTest!.ok, false);
+  // One of two goes; the one left does not.
   await a.remove(one.id);
   assert.deepEqual(a.list().map((x) => x.name), ['Second']);
+  await assert.rejects(a.remove(two.id), /the last one is kept/);
 });
 
 test('what is refused: no name, a key that is not one, a name or a key twice, a sixth account, no master secret', async () => {

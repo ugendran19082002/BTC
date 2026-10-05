@@ -114,7 +114,7 @@ test('[critical] live on the default: it cannot be removed or switched off, and 
   assert.equal((await api('DELETE', `/api/accounts/${main.id}`)).status, 200);
 });
 
-test('test, rename, and on paper the last account can go -- after which live is not reachable', async () => {
+test('[critical] test, rename -- and the last account is never deleted: it is switched off, and comes back in one tap', async () => {
   const second = named((await api('GET', '/api/accounts')).body, 'Second');
   const t = await api('POST', `/api/accounts/${second.id}/test`);
   assert.deepEqual([t.status, t.body.test.ok, t.body.test.id], [200, true, second.id]);
@@ -123,15 +123,30 @@ test('test, rename, and on paper the last account can go -- after which live is 
   assert.equal((await api('POST', '/api/accounts/999/test')).status, 404);
   assert.equal((await api('POST', `/api/accounts/${second.id}/active`, { active: 'no' })).status, 400);
 
+  // The only account left: not removed, live or on paper -- and the answer says what to do instead.
+  const kept = 'This is the only account, and the last one is kept. Deactivate it instead.';
+  const liveTry = await api('DELETE', `/api/accounts/${second.id}`);
+  assert.deepEqual([liveTry.status, liveTry.body.error], [409, kept]);
   assert.equal((await tradingService().setMode('paper')).ok, true);
-  const removed = await api('DELETE', `/api/accounts/${second.id}`);
-  assert.deepEqual([removed.status, removed.body.accounts], [200, []]);
-  assert.equal(tradingService().canGoLive, false);
-  const back = await tradingService().setMode('live');
-  assert.equal(back.ok, false);
+  const paperTry = await api('DELETE', `/api/accounts/${second.id}`);
+  assert.deepEqual([paperTry.status, paperTry.body.error], [409, kept]);
+  assert.equal(brokerAccounts().list().length, 1);
 
-  // A first account again is the default at once, and live is reachable again.
-  const again = await api('POST', '/api/accounts', { name: 'Fresh', api_key: NEW_KEY, api_secret: NEW_SECRET });
-  assert.equal(named(again.body, 'Fresh').isDefault, true);
+  // Switched off instead: kept, not used, and live is not reachable.
+  const off = await api('POST', `/api/accounts/${second.id}/active`, { active: false });
+  assert.deepEqual([off.status, named(off.body, 'Trading').active, named(off.body, 'Trading').isDefault], [200, false, false]);
+  assert.equal(tradingService().canGoLive, false);
+  assert.equal((await tradingService().setMode('live')).ok, false);
+
+  // On again: the default again, and live is reachable again.
+  const on = await api('POST', `/api/accounts/${second.id}/active`, { active: true });
+  assert.deepEqual([on.status, named(on.body, 'Trading').active, named(on.body, 'Trading').isDefault], [200, true, true]);
   assert.equal(tradingService().canGoLive, true);
+
+  // A key is replaced by adding the new one first; then the old one can go.
+  const fresh = await api('POST', '/api/accounts', { name: 'Fresh', api_key: `${NEW_KEY}2`, api_secret: NEW_SECRET });
+  assert.equal(named(fresh.body, 'Fresh').isDefault, false);
+  assert.equal((await api('POST', `/api/accounts/${named(fresh.body, 'Fresh').id}/default`)).status, 200);
+  const gone = await api('DELETE', `/api/accounts/${second.id}`);
+  assert.deepEqual([gone.status, gone.body.accounts.map((a: { name: string }) => a.name)], [200, ['Fresh']]);
 });

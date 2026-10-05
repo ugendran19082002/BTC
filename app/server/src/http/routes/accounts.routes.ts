@@ -104,13 +104,13 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester }
     const a = found(reply, id);
     if (!a) return { error: 'no such account' };
     const creds = brokerAccounts().credsOf(id);
-    if (!creds) return refuse(reply, 409, { error: 'This account\'s key cannot be read any more. Remove it and add it again.' });
+    if (!creds) return refuse(reply, 409, { error: 'This account\'s key cannot be read any more. Add it again as a new account, then remove this one.' });
     const result = await test(creds);
     await brokerAccounts().noteTest(id, result);
     return { ...view(), test: { id, ...result } };
   });
 
-  // Switch an account on or off. Off, it is kept but cannot be used; the default cannot be switched off while the desk is live on it.
+  // Switch an account on or off. Off, it is kept but cannot be used; the default cannot be switched off while the desk is live on it. Switched on with no default, it is the default.
   app.post('/api/accounts/:id/active', async (req, reply) => {
     const id = idOf(req.params);
     const a = found(reply, id);
@@ -119,6 +119,8 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester }
     if (typeof active !== 'boolean') { reply.code(400); return { error: 'active must be true or false' }; }
     try {
       if (a.isDefault && !active) return await follow(reply, true, () => brokerAccounts().setActive(id, false));
+      // On again with no default anywhere: it becomes the one the desk signs as.
+      if (active && !a.active && brokerAccounts().default() === null) return await follow(reply, false, () => brokerAccounts().setActive(id, true));
       await brokerAccounts().setActive(id, active);
       return view();
     } catch (e) { return said(reply, e); }
@@ -133,7 +135,7 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester }
     try {
       const accounts = brokerAccounts();
       const creds = accounts.credsOf(id);
-      if (!creds) throw new AccountRefused('This account\'s key cannot be read any more. Remove it and add it again.', 409);
+      if (!creds) throw new AccountRefused('This account\'s key cannot be read any more. Add it again as a new account, then remove this one.', 409);
       if (!a.active) throw new AccountRefused('Activate the account first.', 409);
       // A default that cannot sign is a desk that cannot trade: the key has to work now, not last week.
       const result = await test(creds);
@@ -143,12 +145,15 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester }
     } catch (e) { return said(reply, e); }
   });
 
-  // Remove an account and its key for good. The default cannot be removed while the desk is live on it.
+  // Remove an account and its key for good. Never the last one -- that is switched off instead -- nor the default while the desk is live on it.
   app.delete('/api/accounts/:id', async (req, reply) => {
     const id = idOf(req.params);
     const a = found(reply, id);
     if (!a) return { error: 'no such account' };
     try {
+      // Said first: "switch to paper" would only lead to this answer.
+      const kept = brokerAccounts().removalBlocked(id);
+      if (kept) throw new AccountRefused(kept, 409);
       if (a.isDefault) return await follow(reply, true, () => brokerAccounts().remove(id));
       await brokerAccounts().remove(id);
       return view();
