@@ -454,6 +454,21 @@ describe('bought or sold: the BUY and SELL tabs over the leg', () => {
     expect(screen.getByLabelText('Stop loss percent')).toBeInTheDocument();
     expect(screen.getByText(/A bought option has no target limit of its own: the perp’s TGT closes it\. 0 is off\./)).toBeInTheDocument();
     expect(screen.queryByText(/Add one: \+200%/)).toBeNull(); // the seller's advice is not the buyer's
+    // The entry is the offer a buyer pays -- not the seller's "rest at the offer, then sell at the bid".
+    expect(screen.getByLabelText('entry price for a bought option')).toHaveTextContent('A buyer pays the offer, so each signal is written down at the offer of its strike');
+    expect(screen.queryByRole('radiogroup', { name: 'entry price' })).toBeNull();
+    expect(screen.queryByLabelText('cross after seconds')).toBeNull();
+    expect(screen.queryByText(/then sells at the bid/)).toBeNull();
+    expect(screen.queryByText(/buys the option back/)).toBeNull();
+    expect(screen.getByLabelText('exits on the BTC perp')).toHaveTextContent('A bought option would be sold the moment the perp reaches either');
+    expect(screen.getByLabelText('exit order')).toHaveTextContent('Option SL — only if you set it below (0 = off). A bought option has no target of its own.');
+    // Its stop is a sale under the entry: 40% lost, never "buys back above the entry" -- and 100% is refused.
+    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '40' } });
+    expect(within(screen.getByRole('region', { name: 'Stop loss' })).getByText(/sells once it has lost 40% of the premium/)).toBeInTheDocument();
+    expect(screen.queryByText(/buys back/)).toBeNull();
+    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '150' } });
+    expect(await screen.findByText('A bought option\'s stop is under 100%: it can lose its premium and no more.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '0' } });
 
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).toHaveBeenCalled());

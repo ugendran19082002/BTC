@@ -207,6 +207,8 @@ export type SignalRule = {
 };
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
+/** A bought option's stop, as a percentage: under 100% (the server's words). */
+export const BUY_STOP_UNDER_100 = 'A bought option\'s stop is under 100%: it can lose its premium and no more.';
 /** Why a BUY-side strategy cannot have live orders on (the server's words). */
 export const BUY_NOT_LIVE = 'A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.';
 /** The most an SL-distance filter may ask for (server: MAX_SL_PTS). */

@@ -1,4 +1,4 @@
-import { BUY_NOT_LIVE, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, type SignalTf, type StrategyConfig } from '@/types/strategy';
+import { BUY_NOT_LIVE, BUY_STOP_UNDER_100, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -104,6 +104,8 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
       if (r.mode !== 'mtf' && r.mode !== 'single') say('signalMode', 'Pick with the timeframe chain or without it.');
       // Buying is written down only (the server's words): its live orders stay off.
       if (r.action === 'buy' && c.liveOrders === true) say('signalMode', BUY_NOT_LIVE);
+      // A bought option can lose its premium and no more: a stop of 100% or over is no stop.
+      if (r.action === 'buy' && (c.stopMode ?? 'pct') === 'pct' && c.stopLossPct >= 1) say('stopLossPct', BUY_STOP_UNDER_100);
       if (r.mode === 'single') {
         const tfs = r.tfs ?? [r.tf];
         if (tfs.length === 0) say('signalTf', 'Pick at least one timeframe.');

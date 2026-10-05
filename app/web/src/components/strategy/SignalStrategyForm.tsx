@@ -157,11 +157,26 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                   ]}
                 />
               </Stack>
-              <EntryPriceFields c={c} set={set} err={err} allowSet={false} />
-              <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
-                Sent once, within a second of {(rule.enterOn ?? 'zone') === 'zone' ? 'the perp reaching the zone' : 'the candle that makes the signal'}.
-                Still unfilled {SIGNAL_ENTRY_MIN} minutes later, it is cancelled — a late fill on a signal is a different trade.
-              </p>
+              {buying ? (
+                // Bought: nothing is sent, so there is no order to rest at a price, chase or cancel -- the seller's
+                // fields (rest at the offer, then sell at the bid) are not shown as if they applied.
+                <div aria-label="entry price for a bought option" className="rounded-lg border border-solid border-border px-2.5 py-2">
+                  <div className="text-[12.5px] font-medium text-foreground">Entry price — the offer</div>
+                  <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
+                    A buyer pays the offer, so each signal is written down at the offer of its strike,{' '}
+                    {(rule.enterOn ?? 'zone') === 'zone' ? 'when the perp reaches the zone' : 'at the candle that makes the signal'}.
+                    Nothing is sent, so there is no order to rest, chase or cancel.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <EntryPriceFields c={c} set={set} err={err} allowSet={false} />
+                  <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
+                    Sent once, within a second of {(rule.enterOn ?? 'zone') === 'zone' ? 'the perp reaching the zone' : 'the candle that makes the signal'}.
+                    Still unfilled {SIGNAL_ENTRY_MIN} minutes later, it is cancelled — a late fill on a signal is a different trade.
+                  </p>
+                </>
+              )}
 
               {/*
                 The exits that matter: the signal's own SL and TGT on the BTC
@@ -172,8 +187,9 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                 <div className="text-[12.5px] font-medium text-foreground">Exits on the BTC perp — from each signal</div>
                 <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
                   The SL and TGT are the signal&apos;s own levels on the BTC perpetual, made by its method for each signal
-                  (SL past the structure by 0.25 ATR). The desk watches the perp&apos;s last trade and buys the option back
-                  the moment either is reached.
+                  (SL past the structure by 0.25 ATR). {buying
+                    ? 'A bought option would be sold the moment the perp reaches either; its record on the perp is kept the same way.'
+                    : 'The desk watches the perp’s last trade and buys the option back the moment either is reached.'}
                 </p>
                 <Stack label="Target" error={err('signalTarget')} className="mt-2">
                   <Segmented
@@ -188,7 +204,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                   />
                 </Stack>
                 <Stack label="At most open at once" error={err('maxOpen')} className="mt-2"
-                       hint={`1 to ${MAX_SIGNAL_OPEN}. Live orders off counts the would-sells still in play. A signal past this is written down and not taken.`}>
+                       hint={`1 to ${MAX_SIGNAL_OPEN}. ${buying ? 'Counts the would-buys still in play.' : 'Live orders off counts the would-sells still in play.'} A signal past this is written down and not taken.`}>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Input value={String(rule.maxOpen)} aria-label="max open" inputMode="numeric" className="w-20"
                            onChange={(e) => setRule('maxOpen', Math.trunc(num(e.target.value, 0)))} />
@@ -210,7 +226,9 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               */}
               <ol className="m-0 mt-3 list-decimal space-y-0.5 pl-5 text-[11.5px] leading-snug text-muted-foreground" aria-label="exit order">
                 <li><b className="text-foreground">BTC perp SL / TGT</b> — the signal&apos;s levels, checked by the desk every second. Checked first.</li>
-                <li><b className="text-foreground">Option TP / SL</b> — only if you set them below (0 = off, nothing placed). Set, they rest at Delta: whichever is reached first closes the trade, and they still work if the desk is down.</li>
+{buying
+                  ? <li><b className="text-foreground">Option SL</b> — only if you set it below (0 = off). A bought option has no target of its own.</li>
+                  : <li><b className="text-foreground">Option TP / SL</b> — only if you set them below (0 = off, nothing placed). Set, they rest at Delta: whichever is reached first closes the trade, and they still work if the desk is down.</li>}
               </ol>
               <div className="mt-3 text-[12px] text-muted-foreground">
                 {buying
@@ -219,7 +237,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               </div>
               {/* The "no target and no stop" warning is for a clock strategy; this one always has the perp's SL and TGT. */}
               {/* Bought: the stop alone. Sold: the target and the stop. */}
-              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} legs={buying ? ['stop'] : ['target', 'stop']}
+              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} legs={buying ? ['stop'] : ['target', 'stop']} bought={buying}
                                 warnings={d.warnings.filter((w) => !/target and no stop/.test(w))} className="mt-1" />
               {!buying && d.exits.stop.value <= 0 && !d.exits.stop.steps.some((st) => st.value > 0) && (
                 <p role="note" className="m-0 mt-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[11.5px] leading-snug text-[var(--warn)]">

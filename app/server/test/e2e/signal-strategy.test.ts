@@ -800,6 +800,13 @@ test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put
   assert.match((await last()).detail, /SELL \| written down only: would buy PE \d+ x1 @ [\d.]+ · perp SL 85400 · TGT 84500$/, 'a SELL signal: the put, bought');
 
   assert.equal((await rows('SELECT trade_id FROM trades')).length, tradesBefore, 'nothing was placed: no trade, no order');
+
+  // Its own stop is a sale under the offer paid: 40% of 18.5 lost is 11.1. And 100% or over is no stop at all.
+  const all = await api('POST', '/api/strategies', { id: 'sig-buy', name: 'Sig buy', config: { ...bought, stopMode: 'pct', stopLossPct: 1.5 } });
+  assert.ok(all.body.problems.includes('A bought option\'s stop is under 100%: it can lose its premium and no more.'), JSON.stringify(all.body));
+  assert.equal((await api('POST', '/api/strategies', { id: 'sig-buy', name: 'Sig buy', config: { ...bought, stopMode: 'pct', stopLossPct: 0.4 } })).status, 200);
+  await runner.onSignal(signal());
+  assert.match((await last()).detail, /would buy CE \d+ x1 @ 18\.5 · option SL 11\.1 · perp SL 84600 · TGT 85500$/);
   await api('POST', '/api/strategies/sig-buy/enabled', { enabled: false });
 });
 

@@ -361,6 +361,25 @@ migrated in places the accounts table is not -- and the rule a key would hold
 (no row left belonging to nothing) is held by not removing an account that has
 any.
 
+**What is per account, and what is the desk's.** Checked across the code on
+5 Oct 2026:
+
+| | Kept | Per account? |
+|---|---|---|
+| strategies, their runs and signal runs | `strategies.broker_account_id`; the runs by their strategy | yes |
+| orders, positions, the P&L calendar | `trades.broker_account_id` | yes |
+| the day's P&L line | `mtm_samples.broker_account_id` | yes |
+| today's booked P&L -- the daily-loss gate, the header, the day's summary | `realisedSince(from, accountId)` | yes: the trading account's |
+| "At most open" over a set of strategies | `settings` `signal_max_open@<id>` | yes |
+| the most lots short | `settings` `max_short_contracts@<id>` | yes |
+| the wallet and margin on the Strategy card | Delta, as the trading account | the trading account's; blank when another is looked at |
+| paper or live, the scheduler switch, the alerts switch | `settings` `mode`, `scheduler_enabled`, `alerts_enabled` | no: one desk, one switch |
+| entry signals, setups, gates, methods; market data | `entry_*`, the market tables | no: they are the market's, not an account's |
+| sign-in, the error log, the Telegram log | `auth_*`, `errors`, `telegram_log` | no: the desk's |
+
+The two per-account settings are read through `accountSetting` (`db/settings.ts`): an account with no value
+of its own takes the desk-wide one, so a limit set before there were accounts still holds.
+
 **A strategy enters only on its own account** (`onDeskAccount`,
 `strategy/types.ts`): the scheduler and the signals skip a strategy whose
 account is not the one the desk is on. Its exits are never held by that. A

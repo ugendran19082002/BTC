@@ -363,6 +363,8 @@ export type SignalRule = {
 };
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
+/** A bought option's stop, as a percentage: under 100%. */
+export const BUY_STOP_UNDER_100 = 'A bought option\'s stop is under 100%: it can lose its premium and no more.';
 /** Why a BUY-side strategy cannot have live orders on: said by the form, the card and the server alike. */
 export const BUY_NOT_LIVE = 'A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.';
 export type SignalEntry = 'zone' | 'signal';
@@ -912,6 +914,8 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
   // Buying is written down only: the engine sells to open, so a BUY-side strategy must not be able to send an order.
   if (c.trigger === 'signal' && c.signal?.action === 'buy' && c.liveOrders === true) bad.push(BUY_NOT_LIVE);
+  // A bought option can lose its premium and no more: a stop of 100% or over is no stop.
+  if (c.trigger === 'signal' && c.signal?.action === 'buy' && (c.stopMode ?? 'pct') === 'pct' && (c.stopLossPct ?? 0) >= 1) bad.push(BUY_STOP_UNDER_100);
   return bad;
 }
 

@@ -541,7 +541,9 @@ export function EntryPriceFields({ c, set, err, allowSet = true }: {
  * fixed points or a price, and each able to move on a timetable. Shown against
  * the premium the rule asks for, so "80%" reads as the price it is.
  */
-export function OptionExitFields({ c, setC, exits, err, reference, warnings, className, legs = ['target', 'stop'] }: {
+export function OptionExitFields({ c, setC, exits, err, reference, warnings, className, legs = ['target', 'stop'], bought = false }: {
+  /** The option is bought, not sold: its stop is under the entry (ExitRuleEditor). */
+  bought?: boolean;
   /** Which of the two to offer: both, or the stop alone (a bought option has no target limit of its own). */
   legs?: readonly ('target' | 'stop')[];
   c: StrategyConfig;
@@ -567,7 +569,8 @@ export function OptionExitFields({ c, setC, exits, err, reference, warnings, cla
             entryTime={c.entryTime}
             exitTime={c.exitTime}
             samplePrice={reference.price}
-            sampleLabel={reference.label}
+            sampleLabel={bought ? 'bought at' : reference.label}
+            bought={bought}
             error={err(leg === 'target' ? 'takeProfitPct' : 'stopLossPct')}
           />
         ))}

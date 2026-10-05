@@ -541,7 +541,13 @@ export class StrategyRunner {
      * A buyer pays the offer, so that is the price written; no offer, nothing to buy at.
      */
     if (action === 'buy') {
+      // The option's own stop, where one is set: under the offer paid (a bought option's stop is a sale below its entry).
+      const own = exitRules(s.config).stop;
+      const paid = Number(chosen.ask);
+      const ownStop = !(own.value > 0) || !(paid > 0) ? null
+        : Math.max(0, Math.round((own.mode === 'pct' ? paid * (1 - own.value) : own.mode === 'points' ? paid - own.value : own.value) * 100) / 100);
       const bought = `buy ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.ask ?? '—'}`
+        + `${ownStop !== null ? ` · option SL ${ownStop}` : ''}`
         + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
       if (!(Number(chosen.ask) > 0)) { await finish('refused', `refused: ${leg} ${chosen.strike} has no offer to buy at${block}`); return; }
       await finish('would-place', `written down only: would ${bought}`);

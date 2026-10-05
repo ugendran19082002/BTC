@@ -31,8 +31,14 @@ import { cn } from '@/lib/utils';
  * red and over it. The stop may be far above 100%; the target stops at 99%.
  */
 export function ExitRuleEditor({
-  leg, rule, onChange, onMode, entryTime, exitTime, samplePrice, sampleLabel = 'sold at', error,
+  leg, rule, onChange, onMode, entryTime, exitTime, samplePrice, sampleLabel = 'sold at', error, bought = false,
 }: {
+  /**
+   * A bought option's stop (owner, 5 Oct 2026). Sold, a stop is a buy-back over the entry; bought, it is a sale
+   * under it -- the premium can only be lost down to nothing, so a percentage is under 100% and the level is
+   * the entry less it. Only the stop is offered for a bought option, so only the stop reads this.
+   */
+  bought?: boolean;
   leg: ExitLeg;
   rule: ExitRule;
   onChange: (r: ExitRule) => void;
@@ -94,8 +100,14 @@ export function ExitRuleEditor({
     setFillOpen(false);
   };
 
-  const level = exitPrice(leg, rule.mode, rule.value, samplePrice);
-  const balance = atPrice ? balanceOf(leg, rule.value > 0 ? rule.value : null, samplePrice) : null;
+  const soldLevel = exitPrice(leg, rule.mode, rule.value, samplePrice);
+  // Bought: the stop is the entry less the percentage or the points, never under zero.
+  const level = !bought || target ? soldLevel
+    : samplePrice === null || !(rule.value > 0) ? null
+      : Math.max(0, Math.round((pct ? samplePrice * (1 - rule.value) : rule.mode === 'points' ? samplePrice - rule.value : rule.value) * 100) / 100);
+  const soldBalance = atPrice ? balanceOf(leg, rule.value > 0 ? rule.value : null, samplePrice) : null;
+  // Bought, a stop at a price is on the right side when it is under the entry: the seller's reading, turned over.
+  const balance = !bought || target || !soldBalance ? soldBalance : { ...soldBalance, wrongSide: samplePrice !== null && rule.value >= samplePrice };
 
   return (
     <section aria-label={title} className="rounded-lg border border-[var(--line)] p-2.5">
@@ -137,7 +149,9 @@ export function ExitRuleEditor({
               ? <>{target ? 'buys back' : 'stops'} at <b className={cn('tabular-nums', tone)}>{fmtPrice(rule.value)}</b>, whatever the entry</>
               : target
                 ? pct ? <>keeps {exitWords('pct', rule.value)} of the premium</> : <>buys back {rule.value} pts under the entry</>
-                : pct ? <>buys back {exitWords('pct', rule.value)} above the entry</> : <>buys back {rule.value} pts above the entry</>}
+                : bought
+                  ? pct ? <>sells once it has lost {exitWords('pct', rule.value)} of the premium</> : <>sells {rule.value} pts under the entry</>
+                  : pct ? <>buys back {exitWords('pct', rule.value)} above the entry</> : <>buys back {rule.value} pts above the entry</>}
           {!atPrice && level !== null && samplePrice !== null && (
             <> · {sampleLabel} {fmtPrice(samplePrice)} → <b className={cn('tabular-nums', tone)}>{fmtPrice(level)}</b></>
           )}
@@ -148,8 +162,8 @@ export function ExitRuleEditor({
       </div>
       {atPrice && balance?.wrongSide && (
         <p className="m-0 mt-1 text-[11.5px] leading-snug text-[var(--warn)]">
-          At an entry of {fmtPrice(samplePrice)} this {target ? 'target is not under' : 'stop is not over'} the entry, so the order would be refused.
-          {target ? ' Type a price under it.' : ' Type a price over it.'}
+          At an entry of {fmtPrice(samplePrice)} this {target ? 'target is not under' : bought ? 'stop is not under' : 'stop is not over'} the entry, so the order would be refused.
+          {target || bought ? ' Type a price under it.' : ' Type a price over it.'}
         </p>
       )}
       {atPrice && samplePrice === null && rule.value > 0 && (
