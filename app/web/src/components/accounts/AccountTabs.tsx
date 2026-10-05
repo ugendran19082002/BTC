@@ -23,7 +23,7 @@ export function AccountTabs({ accounts, value, onChange, withAll = true }: {
   const ordered = [...accounts].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.id - b.id);
   const tab = (on: boolean) => cn(
     'm-0 inline-flex h-9 shrink-0 appearance-none items-center gap-1.5 rounded-md border-0 px-3 font-[inherit] text-[12.5px]',
-    on ? 'bg-[#2563eb] font-semibold text-white' : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
+    on ? 'bg-primary font-semibold text-primary-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
   );
   return (
     <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
@@ -33,10 +33,8 @@ export function AccountTabs({ accounts, value, onChange, withAll = true }: {
             key={a.id} type="button" role="tab" aria-selected={value === a.id} className={tab(value === a.id)} onClick={() => onChange(a.id)}
             title={!a.active ? 'Switched off: not trading' : a.isDefault ? 'Trading · the default: this tab opens first' : 'Trading'}
           >
-            <KeyRound size={13} aria-hidden /> {a.name}{' '}
-            {a.isDefault && (
-              <span className={cn('rounded-full px-1.5 py-[1px] text-[10px] font-semibold', value === a.id ? 'bg-white/20 text-white' : 'bg-[#3fb95022] text-[var(--up)]')}>default</span>
-            )}
+            {/* Which account is the default is the desk's own business -- which tab opens first -- and is not worn here (owner, 5 Oct 2026). */}
+            <KeyRound size={13} aria-hidden /> {a.name}
             {!a.active && ' '}
             {!a.active && <span className="rounded-full border border-solid border-current px-1.5 py-[1px] text-[10px] opacity-80">off</span>}
           </button>

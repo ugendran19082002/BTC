@@ -104,7 +104,7 @@ export function PriceChart({
       width: host.clientWidth || 720,
       height: host.clientHeight || 480,
       layout: {
-        background: { type: ColorType.Solid, color: '#0a0e17' },
+        background: { type: ColorType.Solid, color: '#0a0d10' },
         textColor: 'rgba(206, 216, 230, 0.85)',
         fontSize: 11,
         attributionLogo: false,

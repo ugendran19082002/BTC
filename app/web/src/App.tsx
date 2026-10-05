@@ -679,13 +679,13 @@ export default function App() {
                 </div>
               </div>
               <div className="desk-section-badges">
-                <span className="desk-badge-pill" style={{ background: 'rgba(0, 229, 255, 0.12)', color: '#00e5ff', border: '1px solid rgba(0, 229, 255, 0.3)' }}>
+                <span className="desk-badge-pill" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent-line)' }}>
                   ATM: {snap?.atm ? snap.atm.toLocaleString() : '—'}
                 </span>
-                <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #1e293b' }}>
+                <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #2a303a' }}>
                   {distinctStrikes > 0 ? `${distinctStrikes} Strikes` : '— Strikes'}
                 </span>
-                <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #1e293b' }}>
+                <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #2a303a' }}>
                   {data?.legs ? `${data.legs.length} Contracts` : '— Contracts'}
                 </span>
               </div>

@@ -187,7 +187,7 @@ export function MethodReport() {
               return (
                 <button key={s.id} type="button" aria-pressed={on} onClick={() => setShow(s.id)}
                         className={cn('inline-flex items-center gap-1.5 px-2.5 py-1.5 font-semibold',
-                          on ? 'bg-[#2563eb] text-white' : 'text-muted-foreground hover:bg-muted',
+                          on ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
                           !on && s.id === 'profit' && 'text-[var(--up)]', !on && s.id === 'loss' && 'text-[var(--down)]')}>
                   {s.name} <span className="tabular-nums opacity-80">{n}</span>
                 </button>
@@ -283,10 +283,10 @@ function TabList<T extends string>({ label, idPrefix, items, value, onChange, la
                   onClick={() => onChange(t.id)} onKeyDown={(e) => onKey(e, i)}
                   className={cn('-mb-px inline-flex flex-none items-center gap-1.5 whitespace-nowrap border-0 border-b-2 border-solid bg-transparent font-semibold',
                     large ? 'px-4 py-2 text-[13px]' : 'px-3 py-1.5 text-[12px]',
-                    on ? 'border-[#2563eb] text-foreground' : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground')}>
+                    on ? 'border-[var(--accent)] text-foreground' : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground')}>
             {t.short ? (<><span className="sm:hidden">{t.short}</span><span className="hidden sm:inline">{t.name}</span></>) : t.name}
             <span aria-hidden
-                  className={cn('rounded-full px-1.5 text-[10.5px] tabular-nums', on ? 'bg-[#2563eb] text-white' : 'bg-muted text-muted-foreground')}>
+                  className={cn('rounded-full px-1.5 text-[10.5px] tabular-nums', on ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
               {num(t.count)}
             </span>
           </button>

@@ -56,7 +56,7 @@ export function LiveStrip({ plan, dir, ltp, now = Date.now() }: {
     below: dir === 'long'
       ? { text: `${fmt(out)} pts under the zone · toward the SL`, cls: 'bg-[rgba(226,80,79,0.18)] text-[var(--down)]' }
       : { text: `${fmt(out)} pts under the zone · waiting for it to come up`, cls: 'bg-muted text-foreground' },
-    in: { text: 'IN THE ENTRY ZONE', cls: 'bg-[#3b82f6] text-white' },
+    in: { text: 'IN THE ENTRY ZONE', cls: 'bg-[var(--series)] text-[var(--accent-ink)]' },
     'past-sl': { text: 'PAST THE STOP', cls: 'bg-[#e2504f] text-white' },
     tp1: { text: 'AT / PAST TP1', cls: 'bg-[#26a17b] text-white' },
   };
@@ -70,7 +70,7 @@ export function LiveStrip({ plan, dir, ltp, now = Date.now() }: {
         <span className={cn('rounded px-1.5 py-px text-[10.5px] font-bold', chip[place].cls)}>{chip[place].text}</span>
       </div>
       <div className="mt-0.5 flex flex-wrap gap-x-3 text-muted-foreground">
-        <span>to entry <b className="text-[#3b82f6]">{fmt(toEntry)}</b> pts</span>
+        <span>to entry <b className="text-[var(--series)]">{fmt(toEntry)}</b> pts</span>
         <span>to SL <b className="text-[var(--down)]">{fmt(toStop)}</b> pts</span>
         <span>to TP1 <b className="text-[var(--up)]">{fmt(toTp1)}</b> pts</span>
       </div>

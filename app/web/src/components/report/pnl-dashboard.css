@@ -28,8 +28,8 @@
   flex-direction: column;
   justify-content: space-between;
   padding: 12px 14px;
-  background: rgba(13, 20, 34, 0.75);
-  border: 1px solid rgba(30, 41, 59, 0.85);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
   border-radius: 10px;
   backdrop-filter: blur(8px);
   min-height: 82px;
@@ -38,7 +38,7 @@
 }
 
 .pnl-kpi-card:hover {
-  border-color: rgba(56, 189, 248, 0.35);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 12px rgba(14, 203, 129, 0.08);
   transform: translateY(-1px);
 }
@@ -86,7 +86,7 @@
 }
 
 .pnl-kpi-val.neutral {
-  color: #38bdf8;
+  color: var(--text);
 }
 
 .pnl-kpi-foot {
@@ -154,8 +154,8 @@
 
 /* Card Common Styling */
 .pnl-panel-card {
-  background: rgba(13, 20, 34, 0.75);
-  border: 1px solid rgba(30, 41, 59, 0.85);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
   border-radius: 10px;
   padding: 16px 18px;
   backdrop-filter: blur(8px);
@@ -177,8 +177,8 @@
 }
 
 .pnl-select {
-  background: rgba(15, 23, 42, 0.9);
-  border: 1px solid rgba(51, 65, 85, 0.8);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--panel-3) 80%, transparent);
   color: #cbd5e1;
   font-size: 12px;
   padding: 4px 10px;
@@ -189,13 +189,13 @@
 }
 
 .pnl-select:hover, .pnl-select:focus {
-  border-color: #38bdf8;
+  border-color: var(--accent);
 }
 
 .pnl-pill-toggle {
   display: inline-flex;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(51, 65, 85, 0.8);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--panel-3) 80%, transparent);
   border-radius: 6px;
   padding: 2px;
   gap: 2px;
@@ -214,10 +214,10 @@
 }
 
 .pnl-pill-btn.active {
-  background: #0284c7;
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--accent-ink);
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.4);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .pnl-pill-btn:not(.active):hover {
@@ -238,16 +238,16 @@
 }
 
 .pnl-perf-tile {
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(30, 41, 59, 0.7);
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   border-radius: 8px;
   padding: 10px 12px;
   transition: all 0.15s ease;
 }
 
 .pnl-perf-tile:hover {
-  border-color: rgba(56, 189, 248, 0.3);
-  background: rgba(15, 23, 42, 0.8);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
 }
 
 .pnl-perf-label {
@@ -335,7 +335,7 @@
 }
 
 .pnl-wl-bottom {
-  border-top: 1px solid rgba(30, 41, 59, 0.8);
+  border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   padding-top: 12px;
   display: flex;
   flex-direction: column;
@@ -379,9 +379,9 @@
 
 /* Tooltip Card */
 .pnl-tooltip-box {
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(56, 189, 248, 0.4);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(2, 132, 199, 0.2);
+  background: color-mix(in srgb, var(--panel) 95%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px color-mix(in srgb, var(--accent) 20%, transparent);
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 11.5px;
@@ -443,8 +443,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(15, 23, 42, 0.75);
-  border: 1px dashed rgba(56, 189, 248, 0.35);
+  background: color-mix(in srgb, var(--panel) 75%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 11.5px;
@@ -559,7 +559,7 @@
   gap: 8px;
   padding-bottom: 10px;
   margin-bottom: 12px;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.45);
+  border-bottom: 1px solid color-mix(in srgb, var(--panel-3) 45%, transparent);
 }
 
 .pnl-cal-summary-pill {
@@ -580,23 +580,23 @@
   width: 24px;
   height: 24px;
   border-radius: 4px;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(51, 65, 85, 0.8);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--panel-3) 80%, transparent);
   color: #94a3b8;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .pnl-cal-nav-btn:hover {
-  background: rgba(30, 41, 59, 0.9);
+  background: color-mix(in srgb, var(--line) 90%, transparent);
   color: #f1f5f9;
-  border-color: #38bdf8;
+  border-color: var(--accent);
 }
 
 /* Calendar month cards */
 .pnl-month {
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(30, 41, 59, 0.85);
+  background: color-mix(in srgb, var(--panel) 65%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
   border-radius: 8px;
   padding: 10px 12px;
   flex: none;
@@ -605,7 +605,7 @@
 }
 
 .pnl-month:hover {
-  border-color: rgba(56, 189, 248, 0.3);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .pnl-month-header {
@@ -614,7 +614,7 @@
   justify-content: space-between;
   margin-bottom: 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+  border-bottom: 1px solid color-mix(in srgb, var(--panel-3) 30%, transparent);
 }
 
 .pnl-month-label {
@@ -646,7 +646,7 @@
 }
 
 .pnl-month-net-badge.flat {
-  background: rgba(51, 65, 85, 0.3);
+  background: color-mix(in srgb, var(--panel-3) 30%, transparent);
   color: #94a3b8;
 }
 
@@ -665,7 +665,7 @@
 
 .pnl-dow-wk {
   font-size: 9.5px;
-  color: #0284c7 !important;
+  color: var(--accent) !important;
   font-weight: 700 !important;
 }
 
@@ -722,8 +722,8 @@
   font-size: 9.5px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(30, 41, 59, 0.7);
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   border-radius: 6px;
 }
 
@@ -798,38 +798,38 @@
 }
 
 .pnl-day.flat {
-  background: rgba(30, 41, 59, 0.7);
+  background: color-mix(in srgb, var(--line) 70%, transparent);
   color: #cbd5e1;
-  border: 1px solid rgba(51, 65, 85, 0.5);
+  border: 1px solid color-mix(in srgb, var(--panel-3) 50%, transparent);
 }
 
 .pnl-day.none {
-  background: rgba(15, 23, 42, 0.45);
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
   color: #64748b;
-  border: 1px dashed rgba(51, 65, 85, 0.4);
+  border: 1px dashed color-mix(in srgb, var(--panel-3) 40%, transparent);
 }
 
 .pnl-day:not(.empty):hover,
 .pnl-day.hovered {
-  border-color: #38bdf8;
+  border-color: var(--accent);
   transform: translateY(-1px) scale(1.04);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 8px rgba(56, 189, 248, 0.4);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent);
   z-index: 5;
 }
 
 .pnl-day.selected {
-  outline: 2px solid #38bdf8;
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: #ffffff !important;
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.75);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 75%, transparent);
   z-index: 6;
 }
 
 /* Day Inspector Card */
 .pnl-day-inspector {
-  background: rgba(13, 20, 34, 0.85);
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(2, 132, 199, 0.15);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px color-mix(in srgb, var(--accent) 15%, transparent);
   border-radius: 8px;
   padding: 12px 14px;
   margin-top: 14px;
@@ -843,7 +843,7 @@
   flex-wrap: wrap;
   gap: 6px;
   padding-bottom: 8px;
-  border-bottom: 1px solid rgba(30, 41, 59, 0.8);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
 }
 
 .pnl-inspector-badge {
@@ -866,12 +866,12 @@
 }
 
 .pnl-inspector-badge.flat {
-  background: rgba(51, 65, 85, 0.3);
+  background: color-mix(in srgb, var(--panel-3) 30%, transparent);
   color: #94a3b8;
 }
 
 .pnl-inspector-badge.neutral {
-  background: rgba(51, 65, 85, 0.2);
+  background: color-mix(in srgb, var(--panel-3) 20%, transparent);
   color: #64748b;
 }
 

@@ -32,10 +32,10 @@ const signedPts = (v: number) => `${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))}`;
 
 /** The signal tabs, and what each asks the server for. */
 export const TABS = {
-  all: { label: 'All', q: {}, tone: '#2563eb', title: 'Every signal' },
+  all: { label: 'All', q: {}, tone: 'var(--accent)', title: 'Every signal' },
   // In play now: waiting at the zone or filled, not yet out at TP1, the stop or time.
-  trading: { label: 'TRADING', q: { state: 'TRADE', live: true }, tone: '#2563eb', title: 'In play now: waiting at the zone, filled, or a runner after TGT1' },
-  trades: { label: 'BUY & SELL', q: { state: 'TRADE' }, tone: '#2563eb', title: 'Every TRADE, either way' },
+  trading: { label: 'TRADING', q: { state: 'TRADE', live: true }, tone: 'var(--accent)', title: 'In play now: waiting at the zone, filled, or a runner after TGT1' },
+  trades: { label: 'BUY & SELL', q: { state: 'TRADE' }, tone: 'var(--accent)', title: 'Every TRADE, either way' },
   buy: { label: 'BUY', q: { state: 'TRADE', dir: 1 }, tone: '#26a17b', title: 'TRADEs to buy' },
   sell: { label: 'SELL', q: { state: 'TRADE', dir: -1 }, tone: '#e2504f', title: 'TRADEs to sell' },
   wait: { label: 'WAIT', q: { state: 'WAIT' }, tone: '#b7791f', title: 'Forming, not yet a TRADE' },
@@ -90,7 +90,7 @@ export function outcomeOf(s: EntrySignal): { text: string; cls: string } {
   const r = o.rNet === null ? '' : ` ${o.rNet >= 0 ? '+' : '−'}${Math.abs(o.rNet).toFixed(2)}R`;
   switch (o.status) {
     case 'open': return { text: 'waiting for price', cls: 'text-[var(--warn)]' };
-    case 'filled': return { text: `in the trade @ ${fmt(o.fillPrice)}`, cls: 'text-[#3b82f6]' };
+    case 'filled': return { text: `in the trade @ ${fmt(o.fillPrice)}`, cls: 'text-[var(--series)]' };
     case 'tp1': return { text: `TP1 ✓${r}`, cls: 'text-[var(--up)]' };
     case 'stop': return { text: `stop ✗${r}`, cls: 'text-[var(--down)]' };
     case 'timeout': return { text: `timed out${r}`, cls: 'text-muted-foreground' };
@@ -244,7 +244,7 @@ export function SignalHistory() {
   useEffect(() => { if (data && page > 0 && page >= pages) setPage(pages - 1); }, [data, page, pages, setPage]);
   const set = (next: Partial<Filter>) => { setF((cur) => ({ ...DEFAULT, ...cur, ...next })); setPage(0); };
   const sortBy = (col: Filter['sort']) => set(f.sort === col ? { asc: !f.asc } : { sort: col, asc: false });
-  const chip = (on: boolean) => cn('px-2.5 py-1', on ? 'bg-[#2563eb] font-semibold text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground');
+  const chip = (on: boolean) => cn('px-2.5 py-1', on ? 'bg-primary font-semibold text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground');
   const aria = (col: Filter['sort']) => (f.sort === col ? (f.asc ? 'ascending' : 'descending') : 'none');
   const from = total ? page * f.size + 1 : 0;
   const to = Math.min(total, (page + 1) * f.size);
@@ -254,7 +254,7 @@ export function SignalHistory() {
   const now = useNow(rows.some((s) => s.outcome?.status === 'open' || s.outcome?.status === 'filled' || s.outcome?.runner === 'running'));
 
   return (
-    <section aria-label="signal history" data-folded={!open} className="fold-host mt-3 rounded-xl border border-border border-t-4 border-t-[#2563eb] bg-[var(--panel)] p-3 text-[12px] shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
+    <section aria-label="signal history" data-folded={!open} className="fold-host mt-3 rounded-xl border border-border border-t-4 border-t-[var(--accent)] bg-[var(--panel)] p-3 text-[12px] shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
       <div className="fold-head mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-start gap-1">
           <FoldButton open={open} onToggle={() => setOpen(!open)} label="signal history" />
@@ -268,7 +268,8 @@ export function SignalHistory() {
       <div role="tablist" aria-label="signal tabs" className="mb-2 flex max-w-full gap-1 overflow-x-auto pb-0.5 text-[12px] [scrollbar-width:thin]">
         {(Object.keys(TABS) as Tab[]).map((t, k) => (
           <button key={t} type="button" role="tab" aria-selected={f.tab === t} onClick={() => set({ tab: t })} title={TABS[t].title}
-                  style={f.tab === t ? { background: TABS[t].tone, borderColor: TABS[t].tone } : undefined}
+                  // The accent is a light ground: its text is the dark ink, where the buy / sell / neutral tones carry white.
+                  style={f.tab === t ? { background: TABS[t].tone, borderColor: TABS[t].tone, ...(TABS[t].tone === 'var(--accent)' ? { color: 'var(--accent-ink)' } : {}) } : undefined}
                   className={cn('shrink-0 rounded-md border px-2.5 py-1 font-semibold', k === 6 && 'ml-2',
                     f.tab === t ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground')}>
             {t === 'trading' ? <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-[#26a17b] align-middle" /> : null}
@@ -305,7 +306,7 @@ export function SignalHistory() {
         </Field>
         {f.tab !== DEFAULT.tab || f.mode !== DEFAULT.mode || f.tf !== DEFAULT.tf || f.today !== DEFAULT.today ? (
           <button type="button" onClick={() => set({ tab: DEFAULT.tab, mode: DEFAULT.mode, tf: DEFAULT.tf, today: DEFAULT.today })}
-                  className="rounded-md px-2 py-1 font-semibold text-[#3b82f6] hover:bg-muted">
+                  className="rounded-md px-2 py-1 font-semibold text-[var(--accent)] hover:bg-muted">
             Clear filters
           </button>
         ) : null}
@@ -331,7 +332,7 @@ export function SignalHistory() {
         <p className="m-0 py-3 text-center text-muted-foreground">
           {loading && !data ? 'Reading…' : f.tab === 'trading' ? 'Nothing in play right now -- no TRADE waiting at its zone or filled. Closed ones are under BUY & SELL.' : 'outcome' in TABS[f.tab].q ? `No TRADE ended ${TABS[f.tab].label} for these filters.` : 'No signals for these filters yet. The server keeps every WAIT and TRADE as it forms, once a minute.'}
           {data && f.today ? (
-            <> <button type="button" onClick={() => set({ today: false })} className="font-semibold text-[#3b82f6] underline">Show all days</button> -- &quot;Today&quot; starts at 00:00 IST.</>
+            <> <button type="button" onClick={() => set({ today: false })} className="font-semibold text-[var(--accent)] underline">Show all days</button> -- &quot;Today&quot; starts at 00:00 IST.</>
           ) : null}
         </p>
       ) : (

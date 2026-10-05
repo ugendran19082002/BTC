@@ -3,12 +3,12 @@
    ========================================================================== */
 
 :root {
-  --desk-bg: #070a10;
-  --desk-card-bg: #0d121c;
-  --desk-card-bg-elevated: #111827;
-  --desk-border: #162032;
-  --desk-border-highlight: #1e2d46;
-  --desk-cyan: #00e5ff;
+  --desk-bg: var(--bg);
+  --desk-card-bg: var(--bg);
+  --desk-card-bg-elevated: var(--panel);
+  --desk-border: var(--panel-2);
+  --desk-border-highlight: var(--line);
+  --desk-cyan: var(--accent);
   --desk-green: #00e676;
   --desk-red: #ff3b57;
   --desk-amber: #f59e0b;
@@ -32,7 +32,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #0a0e17;
+  background: var(--bg);
   border: 1px solid var(--desk-border);
   border-radius: 12px;
   padding: 10px 16px;
@@ -113,7 +113,7 @@
   border: 1px solid var(--desk-border);
   border-radius: 8px;
   padding: 4px 10px;
-  background: #080c13;
+  background: var(--bg);
 }
 
 .desk-expiry-date { color: var(--desk-text, #e5e7eb); font-weight: 600; }
@@ -134,7 +134,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #0d121c;
+  background: var(--bg);
   border: 1px solid var(--desk-border);
   color: var(--desk-text-main);
   padding: 7px 12px;
@@ -146,7 +146,7 @@
 }
 
 .desk-btn-tool:hover {
-  background: #141c2c;
+  background: var(--panel-2);
   border-color: var(--desk-border-highlight);
 }
 

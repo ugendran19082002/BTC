@@ -30,7 +30,7 @@ export function GateChecklist({ selected, mode, onMode }: {
         <div role="group" aria-label="hard gates for" className="inline-flex overflow-hidden rounded border border-border text-[11px]">
           {(['single', 'mtf'] as const).map((m) => (
             <button key={m} type="button" aria-pressed={mode === m} onClick={() => onMode(m)}
-                    className={cn('px-2 py-0.5', mode === m ? 'bg-[#2563eb] text-white' : 'text-muted-foreground')}>
+                    className={cn('px-2 py-0.5', mode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground')}>
               {m === 'single' ? 'Without TF' : 'With TF'}
             </button>
           ))}

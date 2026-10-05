@@ -59,7 +59,7 @@ export function MethodLegend({ single, mtf, chosenId, onChoose, embedded = false
           <tbody>
             {rows.map(({ m, without, with: withTf }) => (
               <tr key={m.id} aria-selected={chosenId === m.id}
-                  className={cn('border-t border-border', chosenId === m.id && 'bg-[rgba(37,99,235,0.16)] shadow-[inset_3px_0_0_#2563eb]')}>
+                  className={cn('border-t border-border', chosenId === m.id && 'bg-[var(--accent-soft)] shadow-[inset_3px_0_0_var(--accent)]')}>
                 <td className="py-1 pl-1.5 pr-2"><NumberBadge read={m} /></td>
                 <td className="pr-2">
                   <button type="button" onClick={() => onChoose(m.id)} className="min-h-[28px] text-left font-medium hover:underline">{m.name}</button>

@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-400 files listed, 196 test files counted below, images and lockfiles left out.
+402 files listed, 197 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 117 |
-| `app/web` | 79 |
+| `app/web` | 80 |
 
 ## `(root)`
 
@@ -405,6 +405,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [AccountCard.tsx](../../app/web/src/components/trade/AccountCard.tsx) | The money, in plain words: what there is altogether, what is free, what is in use, how today is going after charges, and how much of today's loss limit is left. |
+| [AccountTag.tsx](../../app/web/src/components/trade/AccountTag.tsx) | Whose trade it is: shown only where several accounts' trades are on one screen ("All accounts"), so a row is never read as another account's. |
 | [ActionTag.tsx](../../app/web/src/components/trade/ActionTag.tsx) | Whether the option was sold or bought to open (owner, 5 Oct 2026): a label on each position and each order, so a row says what was done as well as on which contract. |
 | [AddLotsSheet.tsx](../../app/web/src/components/trade/AddLotsSheet.tsx) | Sell more of a contract that is already held. |
 | [AlertSwitch.tsx](../../app/web/src/components/trade/AlertSwitch.tsx) | Fill alerts on or off, from the header. |
@@ -473,6 +474,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ist-moment.ts](../../app/web/src/lib/ist-moment.ts) | A date and time, always read as India time. |
 | [live-bar.ts](../../app/web/src/lib/live-bar.ts) | The forming bar, carried to the last traded price. |
 | [long-exits.ts](../../app/web/src/lib/long-exits.ts) | A bought option's target and stop as prices, off the price paid (the server's `longLevels`): the target over it, the stop under it. |
+| [merge-status.ts](../../app/web/src/lib/merge-status.ts) | Several accounts' desks as one (5 Oct 2026): the "All accounts" tab on Positions and on P&L. |
 | [overview.ts](../../app/web/src/lib/overview.ts) | ------------------------------------------------------------------ volatility |
 | [report-error.ts](../../app/web/src/lib/report-error.ts) | Send a browser failure to the server so it lands in the same log as everything else. |
 | [report.ts](../../app/web/src/lib/report.ts) | The calendar's arithmetic, kept out of the drawing so it can be checked. |

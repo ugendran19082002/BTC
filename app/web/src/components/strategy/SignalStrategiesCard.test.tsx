@@ -52,7 +52,9 @@ beforeEach(() => {
 
 describe('bought strategies on the card', () => {
   it('[critical] a BUY strategy reads as bought, is left out of the seller\'s margin figures, and its live switch works like any other', async () => {
-    const BUY = { ...SIG, signal: { ...SIG.signal, action: 'buy' as const } };
+    // An all-day window: the row says "buys" only while its window is open, and with the default window
+    // (5:35 AM to 5:29 PM) this test failed every evening, whatever the code did.
+    const BUY = { ...SIG, entryTime: '00:00', exitTime: '23:59', signal: { ...SIG.signal, action: 'buy' as const } };
     getStrategies.mockResolvedValue(status([strat('buyer', BUY), strat('buyer2', BUY)], { signalMaxOpen: 0, openNow: 0, shortCap: 159, shortNow: 0, walletUsd: 2.35, marginUsedUsd: 0 }));
     // (The at-most-open field counts them: what all the strategies allow is their 4 entries.)
     render(<SignalStrategiesCard />);

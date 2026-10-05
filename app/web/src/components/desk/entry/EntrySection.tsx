@@ -160,7 +160,7 @@ export function EntrySection({ desk, onTimeframes, belowHeader, bottom }: {
             <div role="group" aria-label="entry view" className="col-span-2 inline-flex overflow-hidden rounded-md border border-border text-[12px] sm:col-span-1">
               {(['panels', 'grid'] as const).map((v) => (
                 <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
-                        className={cn('flex-1 px-3 py-1.5 font-semibold sm:flex-none', view === v ? 'bg-[#2563eb] text-white' : 'text-muted-foreground hover:bg-muted')}>
+                        className={cn('flex-1 px-3 py-1.5 font-semibold sm:flex-none', view === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
                   {v === 'panels' ? 'Side by side' : 'Charts'}
                 </button>
               ))}

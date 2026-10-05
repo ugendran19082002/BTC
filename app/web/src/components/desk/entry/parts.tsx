@@ -30,7 +30,7 @@ export function SignalChip({ read }: { read: Pick<MethodRead, 'state' | 'dir' | 
 }
 
 const BADGE: Record<MethodRead['group'], string> = {
-  breakout: 'bg-[#2563eb]',
+  breakout: 'bg-[#475569]',
   pullback: 'bg-[#7c3aed]',
   reversal: 'bg-[#db2777]',
   flow: 'bg-[#d97706]',
@@ -69,7 +69,7 @@ export function ViewChips({ value, onChange, label, counts }: { value: MethodVie
     <div role="group" aria-label={label} className="flex max-w-full gap-1 overflow-x-auto text-[11px] [scrollbar-width:none]">
       {METHOD_VIEWS.map((v) => (
         <button key={v} type="button" aria-pressed={value === v} onClick={() => onChange(v)}
-                className={cn('shrink-0 rounded border px-2 py-0.5', value === v ? 'border-[#2563eb] bg-[#2563eb] font-semibold text-white' : 'border-border text-muted-foreground hover:bg-muted')}>
+                className={cn('shrink-0 rounded border px-2 py-0.5', value === v ? 'border-[var(--accent)] bg-primary font-semibold text-primary-foreground' : 'border-border text-muted-foreground hover:bg-muted')}>
           {v === 'all' ? 'All' : v === 'signals' ? 'Signals' : GROUP_NAME[v]}{counts[v] !== undefined ? ` · ${counts[v]}` : ''}
         </button>
       ))}

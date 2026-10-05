@@ -179,7 +179,7 @@ export function DailyPnlChart({ rows }: DailyPnlChartProps) {
                       y1={y}
                       x2={W - padRight}
                       y2={y}
-                      stroke={isZero ? 'rgba(148, 163, 184, 0.4)' : 'rgba(51, 65, 85, 0.25)'}
+                      stroke={isZero ? 'rgba(148, 163, 184, 0.4)' : 'rgba(35, 40, 48, 0.25)'}
                       strokeWidth={isZero ? 1.2 : 0.8}
                       strokeDasharray={isZero ? 'none' : '3 3'}
                     />

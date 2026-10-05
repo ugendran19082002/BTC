@@ -134,7 +134,7 @@ export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
               cx="60"
               cy="60"
               r={R}
-              stroke="rgba(30, 41, 59, 0.6)"
+              stroke="rgba(42, 48, 58, 0.6)"
               strokeWidth="12"
               fill="none"
             />

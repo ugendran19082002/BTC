@@ -31,7 +31,7 @@ export function LogsPanel() {
           <button
             key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
             className={cn('m-0 inline-flex h-9 appearance-none items-center gap-1.5 rounded-md border-0 px-3 font-[inherit] text-[12.5px]',
-              tab === id ? 'bg-[#2563eb] font-semibold text-white' : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground')}
+              tab === id ? 'bg-primary font-semibold text-primary-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground')}
           >
             <Icon size={14} aria-hidden /> {label}
           </button>

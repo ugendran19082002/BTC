@@ -164,7 +164,7 @@ function GlobalMaxOpen({ value, allowed, openNow, busy, onSave, onInvalid }: {
       title="One limit over every strategy: a signal is not taken while the desk already holds this many open trades -- positions and working orders, whichever strategy opened them. Each strategy's own limit still applies. It starts at what the strategies allow between them, and cannot be set above that."
       style={full
         ? { background: 'rgba(250, 204, 21, 0.1)', color: '#facc15', border: '1px solid rgba(250, 204, 21, 0.3)' }
-        : { background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1', border: '1px solid #1e293b' }}
+        : { background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1', border: '1px solid #2a303a' }}
     >
       <span>At most open</span>
       <NumberCommit
@@ -226,7 +226,7 @@ function NumberCommit({ label, value, busy, problem, onSave, onInvalid, classNam
       onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-      className={cn('m-0 rounded border border-solid border-border bg-[var(--bg,#0a0e17)] px-1 text-center font-[inherit] text-[12px] tabular-nums text-foreground disabled:opacity-50', className)}
+      className={cn('m-0 rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-1 text-center font-[inherit] text-[12px] tabular-nums text-foreground disabled:opacity-50', className)}
     />
   );
 }
@@ -361,7 +361,7 @@ export function SignalStrategiesCard() {
             <span className="desk-badge-pill"
                   style={data.schedulerOn
                     ? { background: 'rgba(34, 197, 94, 0.12)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }
-                    : { background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #1e293b' }}>
+                    : { background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #2a303a' }}>
               Auto-trading {data.schedulerOn ? 'on' : 'off'}
             </span>
           )}

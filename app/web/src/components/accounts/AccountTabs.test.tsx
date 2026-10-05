@@ -19,11 +19,11 @@ beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
 afterEach(() => setAccountScope(null));
 
 describe('the account tabs', () => {
-  it('[critical] a tab per account, the default first and marked, then All -- and a tap chooses what is shown', () => {
+  it('[critical] a tab per account, the default first (and not marked: it is the desk\'s own business), then All -- and a tap chooses what is shown', () => {
     const onChange = vi.fn();
     render(<AccountTabs accounts={[second, off, account()]} value={1} onChange={onChange} />);
     const tabs = within(screen.getByRole('tablist', { name: 'Broker account' })).getAllByRole('tab');
-    expect(tabs.map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Main default', 'Second', 'Old off', 'All accounts']);
+    expect(tabs.map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Main', 'Second', 'Old off', 'All accounts']);
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(tabs[1]!);
     expect(onChange).toHaveBeenLastCalledWith(2);
@@ -33,7 +33,7 @@ describe('the account tabs', () => {
 
   it('one account needs no All; no account, no tabs', () => {
     const { unmount } = render(<AccountTabs accounts={[account()]} value={1} onChange={() => {}} />);
-    expect(screen.getAllByRole('tab').map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Main default']);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Main']);
     unmount();
     render(<AccountTabs accounts={[]} value="all" onChange={() => {}} />);
     expect(screen.queryByRole('tablist')).toBeNull();

@@ -194,7 +194,7 @@ export class ScenePrimitive implements ISeriesPrimitive<Time> {
 
 function pill(ctx: Ctx, r: Rect, text: string, color: string) {
   ctx.save();
-  ctx.fillStyle = 'rgba(10,14,23,0.86)';
+  ctx.fillStyle = 'rgba(10, 13, 16, 0.86)';
   ctx.strokeStyle = color;
   ctx.globalAlpha = 1;
   ctx.lineWidth = 1;

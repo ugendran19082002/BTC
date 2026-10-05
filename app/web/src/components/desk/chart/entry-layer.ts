@@ -9,9 +9,9 @@ import { C, type SceneItem } from './scene';
  */
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
-/** The entry's own colour: blue, apart from the stop (red) and the targets (green) on either side of it. */
-export const ENTRY = '#3b82f6';
-const ENTRY_FILL = 'rgba(59,130,246,0.14)';
+/** The entry's own colour: the neutral data line (`--series` in styles.css), apart from the stop (red) and the targets (green) on either side of it. */
+export const ENTRY = '#c9d1d9';
+const ENTRY_FILL = 'rgba(201,209,217,0.12)';
 
 export function entryScene(e: EntryOverlay, bars: readonly Candle[]): SceneItem[] {
   if (!bars.length) return [];

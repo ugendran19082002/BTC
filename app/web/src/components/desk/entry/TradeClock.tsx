@@ -25,7 +25,7 @@ export function TradeClock({ read }: { read: MethodRead }) {
     <section aria-label="entry clock" className="mx-2 mb-1.5 rounded border border-border px-2 py-1 text-[11.5px] tabular-nums">
       {state ? (
         <div aria-label="counter" className={cn('flex items-baseline justify-between gap-2 font-semibold',
-          state.tone === 'wait' ? 'text-[var(--warn)]' : state.tone === 'live' ? 'text-[#3b82f6]' : 'text-muted-foreground')}>
+          state.tone === 'wait' ? 'text-[var(--warn)]' : state.tone === 'live' ? 'text-[var(--series)]' : 'text-muted-foreground')}>
           <span>{state.label}</span>{' '}<span className="text-[13px]">{state.value}</span>
         </div>
       ) : (
@@ -37,7 +37,7 @@ export function TradeClock({ read }: { read: MethodRead }) {
         {barClose !== null ? row('Trigger bar closed', SECS.format(barClose)) : null}
         {c ? row('Seen', `${SECS.format(c.firstSeen)}${after(c.firstSeen)}`) : null}
         {c ? row('Alert', c.alertAt === null ? 'not sent' : `${SECS.format(c.alertAt)}${after(c.alertAt)}`) : null}
-        {c?.filledAt != null ? row('Filled', `${atText(c.filledAt)} @ ${c.fillPrice === null ? '–' : fmt(c.fillPrice)}`, 'text-[#3b82f6]') : null}
+        {c?.filledAt != null ? row('Filled', `${atText(c.filledAt)} @ ${c.fillPrice === null ? '–' : fmt(c.fillPrice)}`, 'text-[var(--series)]') : null}
         {c?.exitAt != null ? row('Out', `${atText(c.exitAt)} @ ${c.exitPrice === null ? '–' : fmt(c.exitPrice)}`) : null}
       </dl>
       {!c ? <p className="m-0 mt-0.5 text-[10.5px] text-muted-foreground">Being written to the paper log -- its fill window starts within the minute.</p> : null}

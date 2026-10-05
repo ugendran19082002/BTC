@@ -105,7 +105,7 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
             {CHART_TFS.map((x) => (
               <button key={x} type="button" aria-pressed={chartTf === x} onClick={() => onChartTf(x)}
                       title={VIEW_ONLY_TFS.includes(x) ? `${x}: chart only -- no signals, no alerts` : undefined}
-                      className={cn('min-w-[30px] px-1.5 py-0.5', chartTf === x ? 'bg-[#2563eb] text-white' : 'text-muted-foreground hover:bg-muted')}>
+                      className={cn('min-w-[30px] px-1.5 py-0.5', chartTf === x ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
                 {x}
               </button>
             ))}
@@ -172,14 +172,14 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf, autoPicked }: 
               return (
                 // The chosen row, unmistakable: a tint, an edge on the left, and "AUTO" when a signal chose it.
                 <tr key={r.id} aria-selected={on}
-                    className={cn('border-t border-border', on && 'bg-[rgba(37,99,235,0.16)] shadow-[inset_3px_0_0_#2563eb]')}>
+                    className={cn('border-t border-border', on && 'bg-[var(--accent-soft)] shadow-[inset_3px_0_0_var(--accent)]')}>
                   <td className="py-1 pl-2">
                     {/* The number only: the names are in the method table above both panels. */}
                     <button type="button" aria-pressed={on} onClick={() => onChoose(r)} aria-label={`${r.code ?? r.n} ${r.name}`}
                             title={`${r.code ?? r.n}. ${r.name} -- ${recordText(recordOf(r))}`} className="inline-flex items-center rounded-full align-middle">
                       <NumberBadge read={r} />
                     </button>
-                    {on && autoPicked ? <span className="ml-1 rounded bg-[#2563eb] px-1 text-[9px] font-bold text-white" title="Chosen by auto-select: this is the signal">AUTO</span> : null}
+                    {on && autoPicked ? <span className="ml-1 rounded bg-primary px-1 text-[9px] font-bold text-primary-foreground" title="Chosen by auto-select: this is the signal">AUTO</span> : null}
                   </td>
                   {chain ? CHAIN_TFS.map((t) => {
                     const k = tickOf(r, t);

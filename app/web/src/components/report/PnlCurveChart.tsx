@@ -233,7 +233,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
               Total P&L
             </span>
             <span className="pnl-legend-pill">
-              <i className="pnl-legend-dot" style={{ background: '#0284c7' }} />
+              <i className="pnl-legend-dot" style={{ background: '#c9d1d9' }} />
               Realized
             </span>
             <span className="pnl-legend-pill">
@@ -304,7 +304,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                       y1={y}
                       x2={W - padRight}
                       y2={y}
-                      stroke={isZero ? 'rgba(148, 163, 184, 0.4)' : 'rgba(51, 65, 85, 0.25)'}
+                      stroke={isZero ? 'rgba(148, 163, 184, 0.4)' : 'rgba(35, 40, 48, 0.25)'}
                       strokeWidth={isZero ? 1.2 : 0.8}
                       strokeDasharray={isZero ? 'none' : '3 3'}
                     />
@@ -339,7 +339,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
               <path
                 d={realizedPathD}
                 fill="none"
-                stroke="#0284c7"
+                stroke="#c9d1d9"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -370,7 +370,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                     cy={yTot}
                     r={isLast ? 3.5 : 2}
                     fill="#10b981"
-                    stroke="#0d1422"
+                    stroke="#0a0d10"
                     strokeWidth="1.5"
                   />
                 );
@@ -436,7 +436,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
 
                 <div className="flex items-center justify-between gap-4 py-0.5">
                   <span className="flex items-center gap-1.5 text-slate-400">
-                    <i className="pnl-legend-dot" style={{ background: '#0284c7' }} />
+                    <i className="pnl-legend-dot" style={{ background: '#c9d1d9' }} />
                     Realized
                   </span>
                   <span className="font-bold text-sky-400 tabular-nums">
