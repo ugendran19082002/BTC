@@ -25,11 +25,12 @@ vi.mock('@/api/entry', () => ({
  * one lot by default, and live orders off until switched on.
  */
 
+// The order sides are this file's own, so the Buy / Sell filter has both to show.
 const METHODS = [
-  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: 'A close through the 20-bar range', sl: 'the breakout candle' },
-  { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', summary: 'Stops taken past a swing', sl: 'the sweep extreme' },
-  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: 'A displacement close through a swing', sl: 'the last higher low' },
-  { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', summary: 'Absorption at a level', sl: 'the absorption extreme' },
+  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', orderSide: 'BUY', summary: 'A close through the 20-bar range', sl: 'the breakout candle' },
+  { id: 'liquidity-sweep', n: 3, name: 'Liquidity sweep', group: 'reversal', orderSide: 'SELL', summary: 'Stops taken past a swing', sl: 'the sweep extreme' },
+  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', orderSide: 'SELL', summary: 'A displacement close through a swing', sl: 'the last higher low' },
+  { id: 'order-flow', n: 11, name: 'Order flow', group: 'flow', orderSide: 'BUY', summary: 'Absorption at a level', sl: 'the absorption extreme' },
 ];
 const row = (method: string, trades: number, wins: number, netPts: number): MethodReportRow => ({
   n: null, method, name: method, signals: trades, trades, wins, losses: trades - wins,
@@ -379,6 +380,35 @@ describe('the method list: profitable by a rule you can see, and filtered by res
     expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout', '#3 Liquidity sweep']);
     fireEvent.click(screen.getByRole('button', { name: 'Reversal', pressed: false }));
     expect(within(by).getAllByRole('button').map((b) => b.textContent)).toEqual(['All 1', 'Profit 1', 'Loss 0', 'No trades 0']);
+  });
+
+  it('[critical] Order side: Both / Buy / Sell under the result filter, each row marked, the counts of both rows following each other', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    const sides = await screen.findByRole('group', { name: 'methods by order side' });
+    const results = screen.getByRole('group', { name: 'methods by result' });
+    const labels = (g: HTMLElement) => within(g).getAllByRole('button').map((b) => b.textContent);
+    // The result filter is remembered from the last look; start from every method.
+    fireEvent.click(within(results).getByRole('button', { name: /^All/ }));
+    await waitFor(() => expect(labels(sides)).toEqual(['Both 4', 'Buy 2', 'Sell 2']));
+    expect(within(sides).getByRole('button', { name: /^Both/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('#1 order side')).toHaveTextContent('BUY');
+    expect(screen.getByLabelText('#3 order side')).toHaveTextContent('SELL');
+
+    fireEvent.click(within(sides).getByRole('button', { name: /^Sell/ }));
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#3 Liquidity sweep', '#6 BOS']);
+    expect(labels(results)).toEqual(['All 2', 'Profit 1', 'Loss 1', 'No trades 0']); // the record's counts, of the SELL ones
+
+    // With a result chosen too, both hold: the profitable SELL ones -- and the side's counts are of the profitable ones.
+    fireEvent.click(within(results).getByRole('button', { name: /^Profit/ }));
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#3 Liquidity sweep']);
+    expect(labels(sides)).toEqual(['Both 2', 'Buy 1', 'Sell 1']);
+    expect(screen.getByRole('button', { name: 'Pick all shown (1)' })).toBeEnabled();
+
+    fireEvent.click(within(sides).getByRole('button', { name: /^Buy/ }));
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout']);
+    fireEvent.click(within(sides).getByRole('button', { name: /^Both/ }));
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout', '#3 Liquidity sweep']);
   });
 });
 

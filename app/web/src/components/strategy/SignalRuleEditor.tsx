@@ -38,6 +38,15 @@ const RESULTS: { id: ResultFilter; label: string; tone: string; test: (r: Method
   { id: 'none', label: 'No trades', tone: 'text-[var(--dim)]', test: (r) => !r || r.trades === 0 },
 ];
 
+/** By the method's order side in the owner's list (5 Oct 2026): both, the BUY ones, the SELL ones. */
+type SideFilter = 'both' | 'BUY' | 'SELL';
+const SIDES: { id: SideFilter; label: string; tone: string }[] = [
+  { id: 'both', label: 'Both', tone: '' },
+  { id: 'BUY', label: 'Buy', tone: 'text-[var(--up)]' },
+  { id: 'SELL', label: 'Sell', tone: 'text-[var(--down)]' },
+];
+const onSide = (m: EntryMethodInfo, side: SideFilter) => side === 'both' || m.orderSide === side;
+
 /** Enough trades that a record means something; fewer and "profitable" is a coin's opinion. */
 export const MIN_TRADES_FOR_RECORD = 5;
 /** The quick picks for that minimum; it can be typed too. Shown beside the button, never hidden (owner, 2 Oct 2026). */
@@ -88,6 +97,8 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
   const [group, setGroup] = useState<GroupFilter>('all');
   // By record: everything, the ones up, the ones down, the ones with no trade -- over the timeframes picked.
   const [result, setResult] = usePersisted<ResultFilter>('signal-rule:result', 'all');
+  // By order side. Not remembered: a list quietly missing half its methods next time is a list misread.
+  const [side, setSide] = useState<SideFilter>('both');
   const set = <K extends keyof SignalRule>(k: K, v: SignalRule[K]) => onChange({ ...rule, [k]: v });
 
   // The list changes with a deploy, not a minute: asked for once an hour.
@@ -122,14 +133,14 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
     [boards]);
 
   const methods: EntryMethodInfo[] = catalogue?.methods ?? [];
-  // Search and family first; the result filter on top, so its counts follow them.
+  // Search and family first; the result and order-side filters on top, so each one's counts follow the rest.
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
     return methods.filter((m) => (group === 'all' || m.group === group)
       && (!q || String(m.n) === q || m.name.toLowerCase().includes(q) || m.summary.toLowerCase().includes(q)));
   }, [methods, query, group]);
   const resultTab = RESULTS.find((x) => x.id === result) ?? RESULTS[0]!;
-  const shown = useMemo(() => searched.filter((m) => resultTab.test(recordOf.get(m.id))), [searched, resultTab, recordOf]);
+  const shown = useMemo(() => searched.filter((m) => onSide(m, side) && resultTab.test(recordOf.get(m.id))), [searched, resultTab, recordOf, side]);
   const picked = new Set(rule.methods);
   const toggle = (id: string) => set('methods', picked.has(id) ? rule.methods.filter((x) => x !== id) : [...rule.methods, id]);
   const addAll = (ids: string[]) => set('methods', [...new Set([...rule.methods, ...ids])]);
@@ -266,7 +277,17 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
           {RESULTS.map((x) => (
             <button key={x.id} type="button" aria-pressed={resultTab.id === x.id} onClick={() => setResult(x.id)} className={chip(resultTab.id === x.id)}>
               <span className={x.tone}>{x.label}</span>{' '}
-              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => x.test(recordOf.get(m.id))).length}</span>
+              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => onSide(m, side) && x.test(recordOf.get(m.id))).length}</span>
+            </button>
+          ))}
+        </div>
+        {/* By order side, under the record: the methods marked BUY, the ones marked SELL, or both. */}
+        <div role="group" aria-label="methods by order side" className="mt-1.5 flex flex-wrap items-center gap-1">
+          <span className="mr-1 text-[11.5px] text-muted-foreground">Order side</span>
+          {SIDES.map((x) => (
+            <button key={x.id} type="button" aria-pressed={side === x.id} onClick={() => setSide(x.id)} className={chip(side === x.id)}>
+              <span className={x.tone}>{x.label}</span>{' '}
+              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => onSide(m, x.id) && resultTab.test(recordOf.get(m.id))).length}</span>
             </button>
           ))}
         </div>
@@ -319,6 +340,11 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
                     <span className="flex items-baseline justify-between gap-2">
                       <span className="truncate text-[12.5px] font-medium text-foreground">
                         <span className="tabular-nums text-muted-foreground">#{m.n}</span> {m.name}
+                        {m.orderSide && (
+                          <span aria-label={`#${m.n} order side`} className={cn('ml-1.5 text-[10px] font-semibold', m.orderSide === 'BUY' ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
+                            {m.orderSide}
+                          </span>
+                        )}
                       </span>
                       <span className="flex-none text-[11px] tabular-nums text-muted-foreground">
                         {rec && rec.trades > 0
@@ -366,7 +392,9 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
             );
           })}
           {methods.length > 0 && !shown.length && (
-            <li className="px-2.5 py-3 text-center text-[12px] text-muted-foreground">No method matches “{query}”.</li>
+            <li className="px-2.5 py-3 text-center text-[12px] text-muted-foreground">
+              {query.trim() ? `No method matches “${query}”.` : 'No method under these filters.'}
+            </li>
           )}
         </ul>
         <p className="m-0 mt-1 text-[10.5px] text-[var(--dim)]">
