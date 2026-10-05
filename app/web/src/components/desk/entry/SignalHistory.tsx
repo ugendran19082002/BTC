@@ -333,16 +333,16 @@ export function SignalHistory() {
         </p>
       ) : (
         <>
-          {/* On a phone, a card per signal -- a table there only scrolls sideways. */}
-          <ul aria-label="signals as cards" className="m-0 grid list-none gap-1.5 p-0 sm:hidden">
-            {rows.map((s) => <Card key={keyOf(s, 'c')} s={s} now={now} />)}
-          </ul>
-          <div className="hidden overflow-x-auto sm:block">
-            <table className="w-full border-collapse tabular-nums" aria-label="signals">
+          {/*
+            A table on every screen (5 Oct 2026: the phone's card per signal read slower than rows side by side).
+            On a phone it scrolls sideways with the signal time pinned on the left, so a row is never lost.
+          */}
+          <div className="-mx-1 overflow-x-auto px-1">
+            <table className="w-full border-collapse text-[11.5px] tabular-nums sm:text-[12px]" aria-label="signals">
               <thead className="text-left text-[10.5px] text-muted-foreground">
                 <tr>
                   {COLUMNS.map((c) => (
-                    <th key={c.sort} className={cn('py-1 pr-2 align-bottom', c.cls)} aria-sort={aria(c.sort)} title={c.title}>
+                    <th key={c.sort} className={cn('py-1 pr-2 align-bottom', c.cls, c.sort === 'time' && PINNED)} aria-sort={aria(c.sort)} title={c.title}>
                       <button type="button" onClick={() => sortBy(c.sort)}
                               className={cn('inline-flex items-center gap-0.5 font-semibold uppercase hover:text-foreground', f.sort === c.sort && 'text-foreground')}>
                         {c.label}<span aria-hidden className={cn('text-[9px]', f.sort === c.sort ? 'opacity-100' : 'opacity-30')}>{f.sort === c.sort ? (f.asc ? '▲' : '▼') : '↕'}</span>
@@ -361,7 +361,7 @@ export function SignalHistory() {
                   return (
                     <tr key={keyOf(s, 'r')} className="border-t border-border align-top"
                         title={`${s.reason}${s.gatesOff.length ? ` -- gates off: ${s.gatesOff.join(', ')}` : ''}`}>
-                      <td className="whitespace-nowrap py-1 pr-2"><Times s={s} /></td>
+                      <td className={cn('whitespace-nowrap py-1 pr-2', PINNED)}><Times s={s} /></td>
                       <td className="min-w-[110px] pr-2">#{s.code ?? s.n ?? '?'} {s.name}</td>
                       <td className="whitespace-nowrap pr-2 text-muted-foreground">{s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf}</td>
                       <td className="whitespace-nowrap pr-2"><SignalTag s={s} /></td>
@@ -423,6 +423,9 @@ export function SignalHistory() {
     </section>
   );
 }
+
+/** The signal-time column, kept in view while the table scrolls sideways on a phone. */
+const PINNED = 'sticky left-0 z-[1] bg-[var(--panel)]';
 
 const keyOf = (s: EntrySignal, p: string) => `${p}:${s.mode}:${s.tf}:${s.method}:${s.dir}:${s.triggerAt}:${s.state}`;
 
@@ -512,44 +515,6 @@ function Counter({ s, now }: { s: EntrySignal; now: number }) {
   return c ? <div aria-label="counter" className="text-[10.5px] text-foreground">{c.label} <b className="tabular-nums">{c.value}</b></div> : null;
 }
 
-function Card({ s, now }: { s: EntrySignal; now: number }) {
-  const out = outcomeOf(s);
-  const ex = exitOf(s);
-  return (
-    <li className="rounded-lg border border-border bg-[var(--bg)] p-2 tabular-nums">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold">#{s.code ?? s.n ?? '?'} {s.name}</span>
-        <span><SignalTag s={s} /></span>
-      </div>
-      <div className="text-[11px] text-muted-foreground">
-        {TIME.format(s.firstSeen)} · {s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf} · stood {stood(s.lastSeen - s.firstSeen)}
-        {s.ltp !== null ? ` · LTP ${fmt(s.ltp)}` : ''}{s.indexPrice !== null ? ` · index ${fmt(s.indexPrice)}` : ''}
-      </div>
-      {s.entryLo !== null ? (
-        <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11.5px]">
-          <span>Entry {fmt(s.entryLo)}–{fmt(s.entryHi)}</span>
-        </div>
-      ) : null}
-      {s.state === 'TRADE' && s.tp1 !== null ? (
-        <div aria-label="targets" className="mt-0.5 grid grid-cols-2 gap-1 text-[11.5px] min-[380px]:grid-cols-4">
-          <div className="rounded bg-muted/50 px-1.5 py-0.5"><span className="text-[10px] text-muted-foreground">SL </span><StopCell s={s} /></div>
-          {targetsOf(s).map((t) => (
-            <div key={t.n} className="rounded bg-muted/50 px-1.5 py-0.5"><span className="text-[10px] text-muted-foreground">TGT{t.n} </span><Target t={t} /></div>
-          ))}
-        </div>
-      ) : null}
-      {ex ? <div className="text-[11.5px]">Fill {fmt(s.outcome?.fillPrice)} → exit {ex.price} ({ex.why}){ex.pts !== null ? ` · ${signedPts(ex.pts)} pts` : ''}</div> : null}
-      {s.why?.stop ? <div className="text-[10.5px] text-muted-foreground">SL at {s.why.stop}</div> : null}
-      <FillExitDetail s={s} />
-      <div className="text-[10.5px] text-muted-foreground">
-        {seenText(s)}
-        {s.alert ? ` · alert ${s.alert.status === 'sent' ? '✓' : '✗'} ${SECS.format(s.alert.at)}` : ''}
-      </div>
-      <div className={cn('mt-0.5 text-[11.5px] font-semibold', out.cls)}>{out.text}</div>
-      <Counter s={s} now={now} />
-    </li>
-  );
-}
 
 /** A named group of filters: its label above it, small. */
 function Field({ label, grow = false, children }: { label: string; grow?: boolean; children: React.ReactNode }) {
