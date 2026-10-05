@@ -1,5 +1,6 @@
 import type { CandlesResponse, ChainResponse, ExpiryOption } from '@/types/desk';
 import { json, post } from '@/api/client';
+import { accountScope, withAccount } from '@/lib/account-scope';
 
 /**
  * The desk's read calls: the option chain, spot and candles, what changed, the
@@ -53,8 +54,20 @@ export const getSpot = () => json<{ spot: number; at: number }>('/api/spot');
  */
 export type ShortCap = { inForce: number; ceiling: number | null; chosen: number | null };
 
+/** The long limit, per account: no margin ceiling -- a bought option is paid for in full. */
+export type LongCap = { inForce: number; chosen: number | null };
+
+/** The desk settings, as the account being shown has them (its own limits). */
 export const getSettings = () =>
-  json<{ settings: Record<string, string | null>; shortCap: ShortCap }>('/api/settings');
+  json<{ settings: Record<string, string | null>; shortCap: ShortCap; longCap?: LongCap }>(withAccount('/api/settings'));
+
+/** Ask for a long limit on the account being shown. */
+export const setLongCap = (contracts: number) =>
+  post<{ ok: true; key: string; value: string; longCap: LongCap }>('/api/settings', {
+    key: 'max_long_contracts',
+    value: String(contracts),
+    ...(accountScope() === null ? {} : { accountId: accountScope() }),
+  });
 
 /**
  * Ask the desk to hold itself to a smaller total short.
@@ -66,6 +79,7 @@ export const setShortCap = (contracts: number) =>
   post<{ ok: true; key: string; value: string; shortCap: ShortCap }>('/api/settings', {
     key: 'max_short_contracts',
     value: String(contracts),
+    ...(accountScope() === null ? {} : { accountId: accountScope() }),
   });
 
 /**

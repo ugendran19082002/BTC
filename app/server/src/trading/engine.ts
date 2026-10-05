@@ -772,6 +772,7 @@ export class TradeEngine {
         now: this.now(), size, expect: plan.expect, product, quote,
         feedHealthy: this.feedHealthy(), tradingEnabled: this.d.tradingEnabled !== false,
         availableUsd: balance, costUsd, existingPosition: held, dayPnlUsd: await this.dayPnl(), limits: this.limits,
+        totalLongContracts: positions.reduce((n, p) => n + (p.size > 0 ? p.size : 0), 0),
       });
     }
     /*

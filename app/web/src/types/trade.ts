@@ -211,12 +211,19 @@ export type TradeStatus = {
    * now. Absent on a server that predates the switch, which reads as on.
    */
   alerts?: { configured: boolean; on: boolean };
+  /**
+   * How much more this account can sell, and buy, right now: the order gates' own numbers, worked out before an
+   * order. Absent on a server from before it.
+   */
+  room?: TradeRoom;
   limits: {
     maxLeverage: number;
     maxQuoteAgeMs: number;
     maxSpreadPct: number;
     minBookCoverage: number;
     maxShortContracts: number;
+    /** The long limit: the most contracts held bought, across the book. Absent on a server from before it. */
+    maxLongContracts?: number;
     maxDailyLossUsd: number;
     minPremiumUsd: number;
     allowPyramiding: boolean;
@@ -359,4 +366,14 @@ export type OrderHistory = {
 /** The signal a signal strategy traded (server: trading/engine.ts `TradeSignal`). */
 export type TradeSignal = {
   method: string; n: number; name: string; mode: 'mtf' | 'single'; tf: string; dir: 1 | -1; triggerTime: number;
+};
+
+/** Status `room`: the room left on each side of one account (server: trade.routes.ts `roomOf`). */
+export type TradeRoom = {
+  freeUsd: number | null;
+  sell: { limit: number; held: number; byLimit: number; byMargin: number | null; perLotUsd: number | null; lots: number };
+  buy: {
+    limit: number; held: number; byLimit: number; lossRoomUsd: number;
+    byPremium: { premium: number; perLotUsd: number; lots: number; byFree: number | null; byLoss: number }[];
+  };
 };

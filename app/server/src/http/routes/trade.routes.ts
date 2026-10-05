@@ -471,7 +471,19 @@ export function registerTradeRoutes(app: FastifyInstance) {
         ...DEFAULT_LIMITS,
         maxDailyLossUsd: svc.dailyLossLimitUsd,
         maxShortContracts: svc.maxShortContracts,
+        maxLongContracts: svc.maxLongContracts,
       },
+      /*
+       * How much more this account can sell, and buy, right now (5 Oct 2026): the gates' own numbers, worked out
+       * before an order rather than met at it. Sell: the short limit less what is held short, and what the free
+       * balance carries in margin at 200x. Buy: the long limit less what is held long, and -- for a few premiums --
+       * what the free balance pays for and the day's loss budget allows (a bought option's worst case is its cost).
+       */
+      room: roomOf({
+        trades: trades.map((t) => t.state.position), freeUsd: balance, spot: svc.spot,
+        shortLimit: svc.maxShortContracts, longLimit: svc.maxLongContracts,
+        lossRoomUsd: svc.dailyLossLimitUsd + Math.min(0, today.realisedUsd),
+      }),
     };
   }
 
@@ -905,4 +917,37 @@ export function registerTradeRoutes(app: FastifyInstance) {
     if (!rec) { reply.code(404); return { error: 'no such trade' }; }
     return { trade: tradeView((await forScreens([rec]))[0]!), events: rec.events };
   });
+}
+
+/** Premiums the buy side of `room` is priced at: "at $50 a lot costs ..., and N lots fit". */
+const ROOM_PREMIUMS = [10, 25, 50, 100, 200] as const;
+
+/** The room left to sell and to buy (status `room`). Pure, from figures the status already has. */
+export function roomOf(i: {
+  trades: number[]; freeUsd: number | null; spot: number | null;
+  shortLimit: number; longLimit: number; lossRoomUsd: number;
+}) {
+  const shortHeld = i.trades.reduce((n, p) => n + Math.max(0, -p), 0);
+  const longHeld = i.trades.reduce((n, p) => n + Math.max(0, p), 0);
+  const sellPerLotUsd = i.spot && i.spot > 0 ? fundsRequiredPerContract({ spot: i.spot, premium: 0, leverage: 200 }) : null;
+  const sellByLimit = Math.max(0, i.shortLimit - shortHeld);
+  const sellByMargin = sellPerLotUsd && i.freeUsd !== null ? Math.max(0, Math.floor(i.freeUsd / sellPerLotUsd)) : null;
+  const buyByLimit = Math.max(0, i.longLimit - longHeld);
+  const lossRoom = Math.max(0, i.lossRoomUsd);
+  return {
+    freeUsd: i.freeUsd,
+    sell: {
+      limit: i.shortLimit, held: shortHeld, byLimit: sellByLimit, byMargin: sellByMargin, perLotUsd: sellPerLotUsd,
+      lots: sellByMargin === null ? sellByLimit : Math.min(sellByLimit, sellByMargin),
+    },
+    buy: {
+      limit: i.longLimit, held: longHeld, byLimit: buyByLimit, lossRoomUsd: lossRoom,
+      byPremium: ROOM_PREMIUMS.map((premium) => {
+        const perLotUsd = premium * 0.001 + fillChargesUsd({ price: premium, contracts: 1, contractValue: 0.001, spot: i.spot }).totalUsd;
+        const byFree = i.freeUsd === null ? null : Math.max(0, Math.floor(i.freeUsd / perLotUsd));
+        const byLoss = Math.max(0, Math.floor(lossRoom / perLotUsd));
+        return { premium, perLotUsd, lots: Math.min(buyByLimit, byLoss, byFree ?? Infinity), byFree, byLoss };
+      }),
+    },
+  };
 }

@@ -64,6 +64,10 @@ const STATUS_REFRESH_MS = 1_000;
 const STATUS_STALE_MS = 4_000;
 /** Where the chosen short cap is kept, so it outlives a restart. */
 export const SHORT_CAP_KEY = 'max_short_contracts';
+/** Where the chosen long limit is kept, per account like the short one. */
+export const LONG_CAP_KEY = 'max_long_contracts';
+/** The most a long limit may be set to: a typo guard. A bought option's real bound is the free balance. */
+export const MAX_LONG_CAP = 100_000;
 export type DeskMode = 'live' | 'paper';
 
 export type ModeSwitch =
@@ -170,6 +174,8 @@ export class TradingService {
       // than whatever it was when the process started.
       limits: { ...DEFAULT_LIMITS, ...limits, get maxDailyLossUsd() {
         return limits.maxDailyLossUsd ?? dailyLossLimitFor(self.lastBalance);
+      }, get maxLongContracts() {
+        return limits.maxLongContracts ?? self.maxLongContracts;
       }, get maxShortContracts() {
         // Same reasoning as the loss limit: read at the moment the gate runs,
         // so changing the setting takes effect on the next order rather than
@@ -812,6 +818,24 @@ export class TradingService {
     });
     if (!(per > 0)) return null;
     return Math.floor(this.lastBalance / per) + this.lastShortContracts;
+  }
+
+  /** The long limit in force on this account: the one chosen, else the default. */
+  get maxLongContracts(): number {
+    const raw = Number(accountSetting(this.settings, LONG_CAP_KEY, this.currentAccountId));
+    return Number.isInteger(raw) && raw >= 1 ? raw : DEFAULT_LIMITS.maxLongContracts;
+  }
+  get longCapSetting(): number | null {
+    const raw = Number(accountSetting(this.settings, LONG_CAP_KEY, this.currentAccountId));
+    return Number.isInteger(raw) && raw >= 1 ? raw : null;
+  }
+  /** Change the long limit, for this account. No margin ceiling: a bought option is paid for in full. */
+  async setLongCap(contracts: number): Promise<{ ok: true; cap: number } | { ok: false; reason: string }> {
+    if (!Number.isInteger(contracts) || contracts < 1 || contracts > MAX_LONG_CAP) {
+      return { ok: false, reason: `The long limit must be a whole number of contracts, from 1 to ${MAX_LONG_CAP.toLocaleString('en-US')}.` };
+    }
+    await this.settings.set(accountKey(LONG_CAP_KEY, this.currentAccountId), String(contracts));
+    return { ok: true, cap: this.maxLongContracts };
   }
 
   /** The cap the desk has been asked to hold itself to on the account it is trading on, if any. */

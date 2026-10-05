@@ -45,6 +45,8 @@ export type RiskLimits = {
   minBookCoverage: number;
   /** Total short contracts allowed across the book. */
   maxShortContracts: number;
+  /** Total contracts allowed held bought, across the book: the long limit (5 Oct 2026), the short limit's mirror. */
+  maxLongContracts: number;
   /**
    * Stop the day once losses reach this, in USD.
    *
@@ -97,6 +99,7 @@ export const DEFAULT_LIMITS: RiskLimits = {
   maxSpreadPct: 0.15,
   minBookCoverage: 0.5,
   maxShortContracts: 500,
+  maxLongContracts: 500,
   maxDailyLossUsd: 25,
   minPremiumUsd: 5,
   allowPyramiding: false,
@@ -387,6 +390,8 @@ export type PrecheckBuyInput = {
   costUsd: number | null;
   /** Signed contracts the account holds on this contract at the exchange. */
   existingPosition: number;
+  /** Contracts held bought across every contract, as a positive number. Absent: not checked. */
+  totalLongContracts?: number;
   dayPnlUsd: number;
   limits: RiskLimits;
 };
@@ -431,6 +436,10 @@ export function precheckBuy(input: PrecheckBuyInput): PrecheckResult {
 
   if (input.existingPosition < 0) {
     add('DUPLICATE_POSITION', `This account is short ${-input.existingPosition} on this contract: a buy would close that position, not open one.`);
+  }
+  // The long limit: the buyer's mirror of the short limit's MAX_POSITION.
+  if (input.totalLongContracts !== undefined && input.totalLongContracts + input.size > limits.maxLongContracts) {
+    add('MAX_POSITION', `Would take total long to ${input.totalLongContracts + input.size}, limit is ${limits.maxLongContracts}.`);
   }
   if (input.costUsd !== null && input.costUsd > input.availableUsd) {
     add('INSUFFICIENT_MARGIN', `Costs $${input.costUsd.toFixed(2)} to buy, have $${input.availableUsd.toFixed(2)} free.`);

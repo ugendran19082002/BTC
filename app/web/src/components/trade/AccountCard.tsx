@@ -3,7 +3,8 @@ import type { TradeStatus } from '@/types/trade';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { KV } from '@/components/ui/kv';
 import { Money } from '@/components/ui/money';
-import { getSettings, setShortCap, type ShortCap } from '@/api/desk';
+import { getSettings, setLongCap, setShortCap, type LongCap, type ShortCap } from '@/api/desk';
+import { usePersisted } from '@/hooks/usePersisted';
 import { inr, pct, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -114,7 +115,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
           ) : null}
         </div>
 
-        <ShortCapLine held={held} inForce={status.limits.maxShortContracts} />
+        <PositionLimits status={status} heldShort={held} />
       </dl>
 
       {unrealised !== 0 && (
@@ -125,12 +126,91 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
 }
 
 /**
- * The most contracts the desk may be short at once. Editable, but the server
- * decides: it refuses a limit above what margin can carry, and this shows the
- * answer it gave rather than the number typed.
+ * The account's two position limits, each on its own tab -- SELL (the short limit) and BUY (the long limit) --
+ * with how much more it can sell or buy right now (5 Oct 2026). The tab chosen is remembered in this browser.
+ *
+ * The figures are the order gates' own: the limit less what is held, the margin the free balance carries for a
+ * sale, and for a buy what the free balance pays for and the day's loss budget allows. Each limit is per account
+ * and editable; the server decides, and a short limit above what margin carries is refused.
  */
-function ShortCapLine({ held, inForce }: { held: number; inForce: number }) {
-  const [cap, setCap] = useState<ShortCap | null>(null);
+type Side = 'sell' | 'buy';
+function PositionLimits({ status, heldShort }: { status: TradeStatus; heldShort: number }) {
+  const [side, setSide] = usePersisted<Side>('positions:limits-side', 'sell');
+  const tab = (s: Side, label: string) => (
+    <button
+      key={s} type="button" role="tab" aria-selected={side === s} onClick={() => setSide(s)}
+      className={cn('m-0 h-8 flex-1 appearance-none rounded-md border-0 px-3 font-[inherit] text-[12.5px] font-semibold',
+        side === s ? 'bg-background shadow-sm' : 'bg-transparent text-muted-foreground',
+        side === s && (s === 'buy' ? 'text-[var(--up)]' : 'text-[var(--down)]'))}
+    >
+      {label}
+    </button>
+  );
+  const room = status.room;
+  return (
+    <div>
+      <div role="tablist" aria-label="position limits" className="mb-2 flex gap-0.5 rounded-lg bg-muted p-0.5">
+        {tab('sell', 'SELL · short limit')}
+        {tab('buy', 'BUY · long limit')}
+      </div>
+      {side === 'sell' ? (
+        <>
+          <LimitLine side="sell" held={room?.sell.held ?? heldShort} inForce={status.limits.maxShortContracts} />
+          {room && (
+            <p aria-label="room to sell" className="m-0 mt-1.5 text-[12px] leading-snug text-muted-foreground">
+              Can still sell <b className="text-foreground tabular-nums">{room.sell.lots.toLocaleString('en-US')} lots</b>
+              {' — '}the limit leaves {room.sell.byLimit.toLocaleString('en-US')}
+              {room.sell.byMargin !== null && <>, the free margin carries {room.sell.byMargin.toLocaleString('en-US')} at 200x</>}.
+              {room.sell.perLotUsd !== null && <span className="text-[var(--dim)]"> About {inr(usdToInr(room.sell.perLotUsd))} of margin a lot.</span>}
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <LimitLine side="buy" held={room?.buy.held ?? 0} inForce={status.limits.maxLongContracts ?? room?.buy.limit ?? 500} />
+          {room && (
+            <div aria-label="room to buy" className="mt-1.5 text-[12px] leading-snug text-muted-foreground">
+              <p className="m-0">
+                The limit leaves <b className="text-foreground tabular-nums">{room.buy.byLimit.toLocaleString('en-US')} lots</b>.
+                A bought option uses no margin: it is paid for in full from the free balance
+                {room.freeUsd !== null && <> ({inr(usdToInr(room.freeUsd))})</>}, and its cost counts against today&apos;s loss budget
+                ({inr(usdToInr(room.buy.lossRoomUsd))} left).
+              </p>
+              <table aria-label="lots you can buy, by premium" className="mt-1.5 w-full border-collapse text-[12px]">
+                <thead>
+                  <tr className="text-[11px] text-[var(--dim)]">
+                    <th scope="col" className="py-0.5 text-left font-medium">Premium</th>
+                    <th scope="col" className="py-0.5 text-right font-medium">Costs a lot</th>
+                    <th scope="col" className="py-0.5 text-right font-medium">Can buy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {room.buy.byPremium.map((r) => (
+                    <tr key={r.premium} className="border-t border-solid border-[var(--line)]">
+                      <td className="py-0.5 text-left tabular-nums">${r.premium}</td>
+                      <td className="py-0.5 text-right tabular-nums">{inr(usdToInr(r.perLotUsd))}</td>
+                      <td className="py-0.5 text-right font-semibold tabular-nums text-foreground">{r.lots.toLocaleString('en-US')} lots</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">Each row is the smallest of the limit, the free balance and the loss budget, at that premium, fees included.</p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One position limit -- the most contracts held short (SELL) or bought (BUY) at once, across all strikes. Editable,
+ * but the server decides: it refuses a short limit above what margin can carry, and this shows the answer it gave
+ * rather than the number typed.
+ */
+function LimitLine({ side, held, inForce }: { side: Side; held: number; inForce: number }) {
+  const [shortCap, setShortCapState] = useState<ShortCap | null>(null);
+  const [longCap, setLongCapState] = useState<LongCap | null>(null);
   const [draft, setDraft] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -139,15 +219,17 @@ function ShortCapLine({ held, inForce }: { held: number; inForce: number }) {
   useEffect(() => {
     let live = true;
     getSettings()
-      .then((r) => { if (live) setCap(r.shortCap); })
+      .then((r) => { if (live) { setShortCapState(r.shortCap); setLongCapState(r.longCap ?? null); } })
       // Still worth showing without it; the limit in force comes from the status poll.
       .catch(() => {});
     return () => { live = false; };
   }, []);
 
-  const limit = cap?.inForce ?? inForce;
-  const ceiling = cap?.ceiling ?? null;
+  const selling = side === 'sell';
+  const limit = (selling ? shortCap?.inForce : longCap?.inForce) ?? inForce;
+  const ceiling = selling ? shortCap?.ceiling ?? null : null;
   const used = limit > 0 ? held / limit : 0;
+  const name = selling ? 'Short limit' : 'Long limit';
 
   const save = async () => {
     const n = Number(draft);
@@ -158,8 +240,8 @@ function ShortCapLine({ held, inForce }: { held: number; inForce: number }) {
     setSaving(true);
     setRefusal(null);
     try {
-      const r = await setShortCap(n);
-      setCap(r.shortCap);
+      if (selling) setShortCapState((await setShortCap(n)).shortCap);
+      else setLongCapState((await setLongCap(n)).longCap);
       setEditing(false);
     } catch (e) {
       setRefusal((e as Error).message);
@@ -173,11 +255,13 @@ function ShortCapLine({ held, inForce }: { held: number; inForce: number }) {
       <div className="flex items-baseline justify-between gap-3">
         <dt
           className="m-0 cursor-help text-[12.5px] text-muted-foreground underline decoration-dotted underline-offset-2"
-          title="The most contracts the desk will be short across all strikes. New sells stop here."
+          title={selling
+            ? 'The most contracts this account will be short across all strikes. New sells stop here.'
+            : 'The most contracts this account will hold bought across all strikes. New buys stop here.'}
         >
-          Short limit
+          {name}
         </dt>
-        <dd className="m-0 flex items-baseline gap-2 tabular-nums" aria-label="short cap">
+        <dd className="m-0 flex items-baseline gap-2 tabular-nums" aria-label={selling ? 'short cap' : 'long cap'}>
           <span className="text-[13px] text-foreground">
             {held} <span className="text-[var(--dim)]">of {limit} contracts</span>
           </span>
@@ -208,7 +292,7 @@ function ShortCapLine({ held, inForce }: { held: number; inForce: number }) {
             step={1}
             inputMode="numeric"
             value={draft}
-            aria-label="most contracts short"
+            aria-label={selling ? 'most contracts short' : 'most contracts long'}
             className="h-9 w-28 rounded border border-[var(--line)] bg-transparent px-2 text-[14px] tabular-nums text-foreground"
             onChange={(e) => setDraft(e.target.value)}
           />
