@@ -94,6 +94,7 @@ export function reportCsv(data: MethodReportResponse): string {
     { header: 'timeframe', value: (r) => r.tf },
     { header: 'no', value: (r) => r.n },
     { header: 'method', value: (r) => r.name },
+    { header: 'order_side', value: (r) => r.orderSide ?? null },
     { header: 'signals', value: (r) => r.signals },
     { header: 'trades', value: (r) => r.trades },
     { header: 'wins', value: (r) => r.wins },
@@ -368,6 +369,9 @@ function ReportSection({ section, period, sort, onSort, show, tabs, panelOf, abo
     <tr key={total ? 'total' : r.method} className={cn('border-t border-border', total ? 'font-semibold' : r.trades === 0 && 'text-muted-foreground')}>
       <td className="px-2 py-1 text-right tabular-nums">{r.n ?? ''}</td>
       <td className="max-w-[16rem] truncate px-2 py-1 text-left" title={r.name}>{r.name}</td>
+      <td className={cn('whitespace-nowrap px-2 py-1 text-left font-semibold', r.orderSide === 'BUY' && 'text-[var(--up)]', r.orderSide === 'SELL' && 'text-[var(--down)]')}>
+        {r.orderSide ?? (total ? '' : '—')}
+      </td>
       <td className="px-2 py-1 text-right tabular-nums">{num(r.signals)}</td>
       <td className="px-2 py-1 text-right tabular-nums">{num(r.trades)}</td>
       <td className="px-2 py-1 text-right tabular-nums text-[var(--up)]">{num(r.wins)}</td>
@@ -390,17 +394,17 @@ function ReportSection({ section, period, sort, onSort, show, tabs, panelOf, abo
         <Kpi label="Net points" value={<span className={toneOf(t.netPts)}>{signed(t.netPts)}</span>} />
       </dl>
       <div className="max-h-[70vh] overflow-auto rounded-md border border-border">
-        <table aria-label={`${section.label}${panelOf ? `, ${tabName(panelOf)}` : ''}`} className="w-full min-w-[700px] border-collapse text-[12px]">
+        <table aria-label={`${section.label}${panelOf ? `, ${tabName(panelOf)}` : ''}`} className="w-full min-w-[780px] border-collapse text-[12px]">
           <thead>
             <tr>
-              {head('#', 'n')}{head('Method', undefined, true)}{head('Signals')}{head('Trades', 'trades')}
+              {head('#', 'n')}{head('Method', undefined, true)}{head('Order side', undefined, true)}{head('Signals')}{head('Trades', 'trades')}
               {head('Wins')}{head('Losses')}{head('Win %', 'winPct')}{head('Profit pts')}{head('Loss pts')}{head('Net pts', 'netPts')}
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => line(r))}
             {rows.length === 0 && (
-              <tr><td colSpan={10} className="px-2 py-3 text-center text-muted-foreground">{empty}</td></tr>
+              <tr><td colSpan={11} className="px-2 py-3 text-center text-muted-foreground">{empty}</td></tr>
             )}
           </tbody>
           <tfoot className="bg-[var(--panel)]">{line(t, true)}</tfoot>

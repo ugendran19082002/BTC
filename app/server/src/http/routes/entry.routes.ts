@@ -3,7 +3,7 @@ import { SINGLE_TFS, VIEW_ONLY_TFS, entryBoard, timeframeRows, type TimeframeRow
 import { readEntryContext } from '../../entry/read.js';
 import { entryRecord, recentSetups } from '../../entry/paper.js';
 import { istDayRange, methodReport } from '../../entry/catalogue.js';
-import { METHODS } from '../../entry/methods.js';
+import { METHODS, orderSideOf } from '../../entry/methods.js';
 import { GateLocked, gateSettings, gatesOff, isGateKey, setGate } from '../../entry/gates.js';
 import { alertSettings, isMode, recentAlerts, sampleAlertText, setAlert } from '../../entry/alerts.js';
 import { cachedSignalPage, clearPreview, clearRangeOf, clearSignals, clockKeyOf, exportSignals, recentClears, isOutcomeFilter, isSignalSort, setupClocks, signalsCsv, type SignalQuery } from '../../entry/signals.js';
@@ -122,7 +122,7 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
 
   // Every entry method, in the desk's 1-81 order: the list a signal strategy picks its methods from.
   app.get('/api/entry/methods', async () => ({
-    methods: METHODS.map((m) => ({ id: m.id, n: m.n, name: m.name, group: m.group, summary: m.summary, sl: m.sl })),
+    methods: METHODS.map((m) => ({ id: m.id, n: m.n, name: m.name, group: m.group, orderSide: orderSideOf(m.id), summary: m.summary, sl: m.sl })),
   }));
 
   // The report: every method, with the chain and without it -- signals, trades, wins, losses, win rate, profit, loss and net.

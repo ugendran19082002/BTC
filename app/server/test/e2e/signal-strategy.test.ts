@@ -224,7 +224,8 @@ test('the list carries each signal run in the shape the screen reads', async () 
   assert.equal(run.method, 'breakout');
   const m = await api('GET', '/api/entry/methods');
   assert.equal(m.body.methods.length, 81);
-  assert.deepEqual(Object.keys(m.body.methods[0]).sort(), ['group', 'id', 'n', 'name', 'sl', 'summary']);
+  assert.deepEqual(Object.keys(m.body.methods[0]).sort(), ['group', 'id', 'n', 'name', 'orderSide', 'sl', 'summary']);
+  assert.deepEqual([m.body.methods[0].orderSide, m.body.methods[9].orderSide], ['BUY', 'SELL'], '#1 Breakout BUY, #10 VWAP reversion SELL');
 });
 
 // ------------------------------------------------------------ several timeframes

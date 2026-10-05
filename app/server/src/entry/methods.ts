@@ -1,5 +1,5 @@
 import type { Candle } from '../market/delta.js';
-import type { EntryContext, Group, MethodId } from './types.js';
+import type { EntryContext, Group, MethodId, MethodOrderSide } from './types.js';
 import {
   PIVOT_K, body, bullish, bearish, closeLocation, donchian, efficiency, ema, isDisplacement, lastBreak, lastSweep,
   openFvgs, orderBlocks, pivots, range, rvol, trendOf, vwapBand,
@@ -2138,6 +2138,20 @@ export const REGIME_CANDIDATES: readonly Candidate[] = [
   { id: 'eth-decoupled', n: 128, name: 'Correlation breakdown (BTC vs ETH)', family: 'flow', sl: 'the break bar\'s far end', targets: tgt('nearest', 'next'),
     summary: "BTC's returns decoupled from ETH's, and a 20-bar break: a move of BTC's own", detect: decoupled },
 ];
+
+/**
+ * Each method's order side (owner's list of the 81, 5 Oct 2026): SELL for these
+ * 27, BUY for the other 54. Kept beside the method in `entry_methods.order_side`
+ * and shown in the Methods list. It is a label: a signal's own direction, and
+ * which leg a signal strategy sells, do not read it.
+ */
+const SELL_SIDE: ReadonlySet<MethodId> = new Set([
+  'vwap-reversion', 'trap', 'pd-rejection', 'exhaustion', 'equal-sweep', 'session-sweep', 'funding-divergence',
+  'oi-flush', 'em-edge', 'z-reversion', 'mid-range', 'dislocation', 'mark-divergence', 'iv-crush', 'skew-shift',
+  'gamma-wall', 'expiry-pin', 'stacked-reversal', 'naked-poc', 'ib-fail', 'week-sweep', 'month-sweep',
+  'oi-divergence', 'iv-vs-rv', 'term-inversion', 'expiry-oi-migration', 'vol-spike',
+]);
+export const orderSideOf = (id: MethodId): MethodOrderSide => (SELL_SIDE.has(id) ? 'SELL' : 'BUY');
 
 /**
  * Every entry method, numbered 1-81 in a series (owner, 1 Oct 2026: "1, 2, 3, 4

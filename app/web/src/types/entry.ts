@@ -177,9 +177,14 @@ export type EntryOverlay = {
   triggerTime: number | null;
 };
 
+/** A method's order side in the owner's list (5 Oct 2026): a label on the method, not the direction of any one signal. */
+export type MethodOrderSide = 'BUY' | 'SELL';
+
 /** One method's line in the Methods report: its signals, and how its closed paper trades went. */
 export type MethodReportRow = {
   n: number | null; method: string; name: string;
+  /** Absent or null on a total, and from a server that does not send it yet. */
+  orderSide?: MethodOrderSide | null;
   signals: number; trades: number; wins: number; losses: number;
   /** Wins over trades, 0-100; null with no trade yet. */
   winPct: number | null;

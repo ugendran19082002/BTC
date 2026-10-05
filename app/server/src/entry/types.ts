@@ -36,6 +36,9 @@ export type Group = 'breakout' | 'pullback' | 'reversal' | 'flow';
 /** A method's id: the twelve's ('breakout', 'liquidity-sweep', ...) and the rest's (methods.ts). */
 export type MethodId = string;
 
+/** A method's order side in the owner's list (5 Oct 2026). A label on the method: no read, signal or order follows it. */
+export type MethodOrderSide = 'BUY' | 'SELL';
+
 /** One step of a chain. `ok` null: could not be read (no data), which never counts as confirmed. */
 export type Step = { tf: Tf | null; label: string; ok: boolean | null };
 

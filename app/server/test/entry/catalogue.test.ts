@@ -2,7 +2,7 @@ import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { recordSignals } from '../../src/entry/signals.js';
 import { methodsSchema } from '../../src/entry/catalogue.js';
-import { METHODS } from '../../src/entry/methods.js';
+import { METHODS, orderSideOf } from '../../src/entry/methods.js';
 import type { MethodRead } from '../../src/entry/types.js';
 import { closePool, rows } from '../../src/db/pool.js';
 
@@ -19,8 +19,8 @@ test('[critical] the methods are in the database: 1-81 in the code\'s order, a m
   await recordSignals([read('dropped-method')], T * 1000);
   await methodsSchema();
 
-  const db = await rows<{ id: string; n: number | null; code: string | null; ref: string | null; active: boolean }>(
-    'SELECT id, n, code, ref, active FROM entry_methods ORDER BY n NULLS LAST, id');
+  const db = await rows<{ id: string; n: number | null; code: string | null; ref: string | null; active: boolean; order_side: string | null }>(
+    'SELECT id, n, code, ref, active, order_side FROM entry_methods ORDER BY n NULLS LAST, id');
   const live = db.filter((m) => m.active);
   assert.equal(live.length, 81);
   assert.deepEqual(live.map((m) => m.id), METHODS.map((m) => m.id), 'the code\'s order');
@@ -28,6 +28,12 @@ test('[critical] the methods are in the database: 1-81 in the code\'s order, a m
   assert.ok(live.every((m) => m.code === String(m.n)));
   assert.equal(live.find((m) => m.id === 'multi-factor')!.ref, '38a', 'the research number kept');
   assert.deepEqual(db.filter((m) => !m.active).map((m) => [m.id, m.n]), [['dropped-method', null]], 'kept, unnumbered: its rows are history');
+  // The owner's list of 5 Oct 2026, by desk number: these 27 SELL, the other 54 BUY.
+  const SELL = [10, 14, 16, 25, 26, 27, 28, 30, 31, 33, 35, 40, 43, 48, 49, 50, 51, 60, 61, 63, 64, 65, 71, 72, 73, 74, 75];
+  assert.deepEqual(live.filter((m) => m.order_side === 'SELL').map((m) => m.n), SELL, 'the order side of each method, in the table');
+  assert.ok(live.every((m) => m.order_side === 'BUY' || m.order_side === 'SELL'), 'every live method has one');
+  assert.deepEqual(METHODS.filter((m) => orderSideOf(m.id) === 'SELL').map((m) => m.n), SELL, 'and the code says the same');
+  assert.equal(db.find((m) => m.id === 'dropped-method')!.order_side, null, 'a retired method the code never named has none');
 
   await recordSignals([read('fvg-retest')], T * 1000);
   await assert.rejects(recordSignals([read('no-such-method')], T * 1000), /entry_signals_method_fk/);

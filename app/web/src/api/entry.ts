@@ -1,5 +1,5 @@
 import { json, post } from './client';
-import type { EntryAlerts, EntryBoard, EntryGateSetting, EntryMode, EntryRecordResponse, EntrySignalPage, EntryTf, MethodReportResponse } from '@/types/entry';
+import type { EntryAlerts, EntryBoard, EntryGateSetting, EntryMode, EntryRecordResponse, EntrySignalPage, EntryTf, MethodOrderSide, MethodReportResponse } from '@/types/entry';
 
 /** The 24 reads: with the timeframe chain (entry on 5m), and without it on `tf`. */
 export const getEntryBoard = (tf: EntryTf = '5m') => json<EntryBoard>(`/api/entry/board?tf=${tf}`);
@@ -72,6 +72,8 @@ export function getMethodReport(tf: EntryTf | null = null, everyGate = false, ra
 /** The 81 methods, each with its number, name, family and one line: the signal strategy's picker. */
 export type EntryMethodInfo = {
   id: string; n: number; name: string; group: 'breakout' | 'pullback' | 'reversal' | 'flow'; summary: string;
+  /** The method's order side in the owner's list: a label, not the direction of any one signal. */
+  orderSide?: MethodOrderSide;
   /** Where its stop goes, in words, before the 0.25 ATR buffer. */
   sl: string;
 };

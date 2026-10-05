@@ -1,9 +1,9 @@
 import type pg from 'pg';
 import { getPool, rows } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
-import { METHODS } from './methods.js';
+import { METHODS, orderSideOf } from './methods.js';
 import { entrySchema } from './paper.js';
-import type { Tf } from './types.js';
+import type { MethodOrderSide, Tf } from './types.js';
 import { SINGLE_TFS } from './engine.js';
 import { alertsSchema } from './alerts.js';
 import { signalsSchema } from './signals.js';
@@ -11,8 +11,8 @@ import { signalsSchema } from './signals.js';
 /**
  * The methods, in the database too (owner, 1 Oct 2026: "methods db side handle
  * best practice"). `entry_methods` holds every method the desk reads -- its id,
- * its number on the screen (1-81), its research number, name and group --
- * written from methods.ts on every start, so a query on the database alone can
+ * its number on the screen (1-81), its research number, name, group and order
+ * side -- written from methods.ts on every start, so a query on the database alone can
  * say which method a signal was and in what order they go.
  *
  * The signals, the paper setups and the alert log can only name a method in it
@@ -55,6 +55,10 @@ const MIGRATIONS: Migration[] = [{
       ALTER TABLE entry_alert_log ADD CONSTRAINT entry_alert_log_method_fk FOREIGN KEY (method) REFERENCES entry_methods (id);
     `);
   },
+}, {
+  // The owner's order side per method (5 Oct 2026). Null on a retired method the code no longer names.
+  id: 'entry-021-method-order-side',
+  up: `ALTER TABLE entry_methods ADD COLUMN IF NOT EXISTS order_side TEXT CHECK (order_side IN ('BUY', 'SELL'));`,
 }];
 
 /** The code's methods into the table: each one active with its number; any other one retired. */
@@ -76,6 +80,19 @@ async function syncWith(client: pg.PoolClient): Promise<void> {
   `, [JSON.stringify(ms), at]);
 }
 
+/**
+ * Each method's order side into its row. Apart from syncWith, which entry-019 runs
+ * before the column exists; a retired method keeps the side it last had.
+ */
+async function syncOrderSides(client: pg.PoolClient): Promise<void> {
+  const ms = METHODS.map((m) => ({ id: m.id, order_side: orderSideOf(m.id) }));
+  await client.query(`
+    UPDATE entry_methods AS e SET order_side = x.order_side, synced_at = $2
+      FROM jsonb_to_recordset($1::jsonb) AS x (id TEXT, order_side TEXT)
+     WHERE e.id = x.id AND e.order_side IS DISTINCT FROM x.order_side;
+  `, [JSON.stringify(ms), Date.now()]);
+}
+
 /** Write the code's methods into the table, in one transaction. */
 async function syncMethods(): Promise<void> {
   const client = await getPool().connect();
@@ -83,6 +100,7 @@ async function syncMethods(): Promise<void> {
     await client.query('BEGIN');
     try {
       await syncWith(client);
+      await syncOrderSides(client);
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK');
@@ -107,6 +125,8 @@ export function methodsSchema(): Promise<void> {
 /** One method's line in the report: its signals, how its closed trades went, in points and R. */
 export type MethodReportRow = {
   n: number | null; method: string; name: string;
+  /** The method's order side (entry_methods.order_side); null on a total. */
+  orderSide: MethodOrderSide | null;
   signals: number; trades: number; wins: number; losses: number; winPct: number | null;
   profitPts: number; lossPts: number; netPts: number; profitR: number; lossR: number; netR: number;
 };
@@ -147,8 +167,8 @@ export async function methodReport(
 ): Promise<MethodReport> {
   await entrySchema();
   await methodsSchema();
-  const methods = await rows<{ id: string; n: number | null; name: string }>(
-    'SELECT id, n, name FROM entry_methods WHERE active ORDER BY n, id');
+  const methods = await rows<{ id: string; n: number | null; name: string; order_side: MethodOrderSide | null }>(
+    'SELECT id, n, name, order_side FROM entry_methods WHERE active ORDER BY n, id');
   // One pass: every (method, way, timeframe) that has a setup, its signals and its closed trades.
   const xs = await rows<Record<string, string | number | null>>(
     `SELECT method, mode, tf,
@@ -168,11 +188,11 @@ export async function methodReport(
     [everyGate, range?.from ?? null, range?.to ?? null],
   );
   const num = (v: string | number | null | undefined) => Number(v ?? 0);
-  type Sums = Omit<MethodReportRow, 'n' | 'method' | 'name' | 'winPct' | 'netPts' | 'netR'>;
+  type Sums = Omit<MethodReportRow, 'n' | 'method' | 'name' | 'orderSide' | 'winPct' | 'netPts' | 'netR'>;
   const KEYS = ['signals', 'trades', 'wins', 'losses', 'profitPts', 'lossPts', 'profitR', 'lossR'] as const;
   const zero = (): Sums => ({ signals: 0, trades: 0, wins: 0, losses: 0, profitPts: 0, lossPts: 0, profitR: 0, lossR: 0 });
-  const lineOf = (n: number | null, method: string, name: string, v: Sums): MethodReportRow => ({
-    n, method, name, ...v,
+  const lineOf = (n: number | null, method: string, name: string, v: Sums, orderSide: MethodOrderSide | null = null): MethodReportRow => ({
+    n, method, name, orderSide, ...v,
     winPct: v.trades > 0 ? (100 * v.wins) / v.trades : null,
     netPts: v.profitPts - v.lossPts, netR: v.profitR - v.lossR,
   });
@@ -188,7 +208,7 @@ export async function methodReport(
       by.set(String(x.method), acc);
       gatesOffSignals += num(x.gates_off);
     }
-    const lines = methods.map((m) => lineOf(m.n === null ? null : Number(m.n), m.id, m.name, by.get(m.id) ?? zero()));
+    const lines = methods.map((m) => lineOf(m.n === null ? null : Number(m.n), m.id, m.name, by.get(m.id) ?? zero(), m.order_side));
     const sums = zero();
     for (const l of lines) for (const k of KEYS) sums[k] += l[k];
     return { mode, label: LABEL[mode], rows: lines, total: lineOf(null, 'all', `All ${lines.length} methods`, sums), gatesOffSignals };

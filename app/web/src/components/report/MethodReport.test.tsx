@@ -11,8 +11,8 @@ const row = (n: number, name: string, o: Partial<MethodReportRow> = {}): MethodR
   profitPts: 0, lossPts: 0, netPts: 0, profitR: 0, lossR: 0, netR: 0, ...o,
 });
 const rows = [
-  row(1, 'Breakout', { signals: 4, trades: 3, wins: 1, losses: 2, winPct: 100 / 3, profitPts: 150, lossPts: 180, netPts: -30, profitR: 1.5, lossR: 1.8, netR: -0.3 }),
-  row(2, 'Retest', { signals: 5, trades: 2, wins: 2, losses: 0, winPct: 100, profitPts: 200, netPts: 200, profitR: 3, netR: 3 }),
+  row(1, 'Breakout', { orderSide: 'BUY', signals: 4, trades: 3, wins: 1, losses: 2, winPct: 100 / 3, profitPts: 150, lossPts: 180, netPts: -30, profitR: 1.5, lossR: 1.8, netR: -0.3 }),
+  row(2, 'Retest', { orderSide: 'SELL', signals: 5, trades: 2, wins: 2, losses: 0, winPct: 100, profitPts: 200, netPts: 200, profitR: 3, netR: 3 }),
   row(3, 'Momentum'),
 ];
 const total = row(0, 'All 3 methods', { n: null, signals: 9, trades: 5, wins: 3, losses: 2, winPct: 60, profitPts: 350, lossPts: 180, netPts: 170, profitR: 4.5, lossR: 1.8, netR: 2.7 });
@@ -58,6 +58,12 @@ describe('the Methods report', () => {
     const breakout = within(table).getByText('Breakout').closest('tr')!;
     expect(breakout).toHaveTextContent('33.3%');
     expect(breakout).toHaveTextContent('−30');
+    // Each method's order side, in its own column; a row without one says so, and the total has none.
+    expect(within(table).getByRole('columnheader', { name: 'Order side' })).toBeInTheDocument();
+    expect(within(breakout).getAllByRole('cell')[2]).toHaveTextContent('BUY');
+    expect(within(within(table).getByText('Retest').closest('tr')!).getAllByRole('cell')[2]).toHaveTextContent('SELL');
+    expect(within(within(table).getByText('Momentum').closest('tr')!).getAllByRole('cell')[2]).toHaveTextContent('—');
+    expect(within(within(table).getByText('All 3 methods').closest('tr')!).getAllByRole('cell')[2]).toBeEmptyDOMElement();
   });
 
   it('[critical] no net R anywhere on the screen -- points only', async () => {
@@ -199,7 +205,7 @@ describe('the Methods report', () => {
 
   it('the CSV still holds every way and timeframe -- R kept there for the R&D', () => {
     const lines = reportCsv(report()).split('\r\n');
-    expect(lines[0]).toBe('section,timeframe,no,method,signals,trades,wins,losses,win_pct,profit_pts,loss_pts,net_pts,profit_r,loss_r,net_r');
+    expect(lines[0]).toBe('section,timeframe,no,method,order_side,signals,trades,wins,losses,win_pct,profit_pts,loss_pts,net_pts,profit_r,loss_r,net_r');
     expect(lines).toHaveLength(1 + 8 * (rows.length + 1));
   });
 

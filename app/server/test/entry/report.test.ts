@@ -36,6 +36,9 @@ test('[critical] two sections, every method in each, with the figures by hand', 
   assert.equal(mtf!.rows.length, METHODS.length, `all ${METHODS.length} methods, a line each`);
   assert.equal(single!.rows.length, METHODS.length);
   assert.deepEqual(mtf!.rows.map((r) => r.n), METHODS.map((m) => m.n), 'in the desk\'s 1-81 order');
+  assert.deepEqual(mtf!.rows.filter((r) => r.n !== null && r.n <= 12).map((r) => r.orderSide),
+    ['BUY', 'BUY', 'BUY', 'BUY', 'BUY', 'BUY', 'BUY', 'BUY', 'BUY', 'SELL', 'BUY', 'BUY'], 'each line carries its method\'s order side');
+  assert.equal(mtf!.total.orderSide, null, 'a total has none');
 
   const b = mtf!.rows.find((r) => r.method === 'breakout')!;
   assert.deepEqual(
