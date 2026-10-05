@@ -111,14 +111,14 @@ test('[critical] a bought position\'s card is told its own exits and its account
   assert.equal(rec.state.position, 1, 'long 1');
   const resting = await r.ex.getOpenOrders(CE);
   const q = quote(CE, 44, 46, { mark: 45 });
-  const v = tradeView(rec, resting, 0.001, q, 80_000);
+  const v = tradeView(rec, [], 0.001, q, 80_000, resting);
   // Without these the Edit exits form opened with the target unticked, and saving it took the target off.
   assert.deepEqual(v.plan.longExits, { target: { mode: 'pct', value: 3.5 }, stop: { mode: 'pct', value: 0.5 } });
   assert.equal(v.plan.accountId, 2);
   assert.equal(v.plan.action, 'buy');
   assert.equal(v.onBook?.target, 180, 'the sale resting at 350% over the 40 paid');
   // A bought position is sold at the bid: the same whatever the offer or the mark says.
-  const other = tradeView(rec, resting, 0.001, { ...q, ask: 60, mark: 50 }, 80_000);
+  const other = tradeView(rec, [], 0.001, { ...q, ask: 60, mark: 50 }, 80_000, resting);
   assert.equal(v.live.netIfClosedUsd, other.live.netIfClosedUsd);
   // A short's card says neither.
   const short = tradeView(await shortAt(20), [], 0.001, quote(CE, 9, 11, { mark: 10 }), 80_000);
