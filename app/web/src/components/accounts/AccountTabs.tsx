@@ -4,10 +4,10 @@ import { cn } from '@/lib/utils';
 
 /**
  * Which broker account the screen below is showing (owner, 5 Oct 2026): a tab per account over Strategy,
- * Positions, Orders and P&L, opening on the one the desk trades on.
+ * Positions, Orders and P&L, opening on the default.
  *
- * A tab chooses what is *shown*. It never changes which account the desk trades on -- that is Make default,
- * under Logs -> Accounts -- so looking at another account's orders cannot move a real order anywhere.
+ * Every account that is switched on trades its own strategies at once; a tab only chooses whose are *shown*,
+ * and the default is only which tab opens first. Looking at another account moves no order anywhere.
  */
 export type AccountChoice = number | 'all';
 
@@ -17,7 +17,7 @@ export function AccountTabs({ accounts, value, onChange }: {
   onChange: (c: AccountChoice) => void;
 }) {
   if (accounts.length === 0) return null;
-  // The one the desk trades on first, then as they were added.
+  // The default first, then as they were added.
   const ordered = [...accounts].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.id - b.id);
   const tab = (on: boolean) => cn(
     'm-0 inline-flex h-9 shrink-0 appearance-none items-center gap-1.5 rounded-md border-0 px-3 font-[inherit] text-[12.5px]',
@@ -29,11 +29,11 @@ export function AccountTabs({ accounts, value, onChange }: {
         {ordered.map((a) => (
           <button
             key={a.id} type="button" role="tab" aria-selected={value === a.id} className={tab(value === a.id)} onClick={() => onChange(a.id)}
-            title={a.isDefault ? 'The account the desk trades on' : a.active ? 'Saved, not the account the desk trades on' : 'Switched off'}
+            title={!a.active ? 'Switched off: not trading' : a.isDefault ? 'Trading · the default: this tab opens first' : 'Trading'}
           >
             <KeyRound size={13} aria-hidden /> {a.name}{' '}
             {a.isDefault && (
-              <span className={cn('rounded-full px-1.5 py-[1px] text-[10px] font-semibold', value === a.id ? 'bg-white/20 text-white' : 'bg-[#3fb95022] text-[var(--up)]')}>trading</span>
+              <span className={cn('rounded-full px-1.5 py-[1px] text-[10px] font-semibold', value === a.id ? 'bg-white/20 text-white' : 'bg-[#3fb95022] text-[var(--up)]')}>default</span>
             )}
             {!a.active && ' '}
             {!a.active && <span className="rounded-full border border-solid border-current px-1.5 py-[1px] text-[10px] opacity-80">off</span>}

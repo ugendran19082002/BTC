@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from '../config.js';
 import type { Creds } from '../delta/signed.js';
 import { brokerAccounts, initBrokerAccounts } from '../delta/accounts.js';
@@ -78,6 +79,8 @@ export type TradingServiceDeps = {
   creds?: Creds | null;
   /** That account's id, stamped on every trade placed and every P&L reading taken while the desk is on it. */
   accountId?: number | null;
+  /** The phone, shared by every account's desk: one sender, one repeat guard. Absent, this desk makes its own. */
+  notifier?: TelegramNotifier | null;
 };
 
 export class TradingService {
@@ -86,8 +89,8 @@ export class TradingService {
   readonly settings: Settings;
   /** Live unless the environment forbids it or there are no credentials. */
   private currentMode: DeskMode;
-  /** The real exchange, signed as the default broker account; null with no account. Replaced by `setLiveCreds`. */
-  private live: ExchangePort | null;
+  /** The real exchange, signed with this desk's own broker account's key; null on a desk with no account. */
+  private readonly live: ExchangePort | null;
   /** The default broker account's id, or null with none: what a new trade and a P&L reading are stamped with. */
   private currentAccountId: number | null;
   get accountId(): number | null { return this.currentAccountId; }
@@ -133,12 +136,12 @@ export class TradingService {
     return this.settings.set('alerts_enabled', on ? '1' : '0');
   }
 
-  constructor({ store, settings, limits = {}, creds = null, accountId = null }: TradingServiceDeps) {
+  constructor({ store, settings, limits = {}, creds = null, accountId = null, notifier }: TradingServiceDeps) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     this.store = store;
     this.settings = settings;
-    this.notifier = config.telegram
+    this.notifier = notifier !== undefined ? notifier : config.telegram
       ? new TelegramNotifier({
           ...config.telegram,
           onError: (message, context) => noteError({ source: 'server', level: 'warn', message, where: 'telegram', context }),
@@ -303,36 +306,6 @@ export class TradingService {
     await this.settings.set('mode', next);
     this.currentMode = next;
     return { ok: true, mode: this.currentMode };
-  }
-
-  /**
-   * Why the account live orders are signed as cannot change right now, or null.
-   *
-   * The mode switch's rule, for the same reason: a live position is on one
-   * account, and signing as another underneath it would leave the engine asking
-   * an account that has never heard of the order it is holding. On paper the
-   * account is not in use, so anything goes. `toNone`: the change would leave
-   * the desk with no account at all.
-   */
-  async accountSwitchBlocked(toNone: boolean): Promise<string | null> {
-    if (this.currentMode !== 'live') return null;
-    if (toNone) return 'The desk is trading live on this account. Switch to paper first.';
-    const open = await this.openTrades();
-    return open.length > 0
-      ? `Close ${open.length} open ${open.length === 1 ? 'position' : 'positions'} first — a position cannot move between accounts.`
-      : null;
-  }
-
-  /** Sign live orders as this account from now on (null: no account). Ask `accountSwitchBlocked` first. */
-  setLiveCreds(creds: Creds | null, accountId: number | null = null): void {
-    this.live = creds ? new DeltaExchange(creds) : null;
-    this.currentAccountId = accountId;
-    // Everything remembered about the account that was: its balance, positions and orders are not this one's.
-    this.lastBalance = null;
-    this.positionsCache = null;
-    this.balanceCache = null;
-    this.walletCache = null;
-    this.ordersCache.clear();
   }
 
   /** Pick up anything that was live when the process died, then start stepping. */
@@ -748,18 +721,39 @@ export class TradingService {
   private statusCompute: (() => Promise<unknown>) | null = null;
   private statusTimer: NodeJS.Timeout | null = null;
 
-  /** The route registers how the status is computed; the service keeps it fresh. */
+  /**
+   * The route registers how the status is computed; the service keeps it fresh.
+   *
+   * Registered once, and it is every account's: the computation asks `tradingService()` for the desk, so run
+   * as this desk (`statusHere`) it is this account's status. Each desk keeps its own answer fresh.
+   */
   provideStatus(compute: () => Promise<unknown>): void {
     this.statusCompute = compute;
+    statusForEveryDesk = compute;
+    this.beginStatus();
+    for (const d of tradingServices()) d.beginStatus();
+  }
+
+  /** Start keeping this desk's status fresh, once there is a way to compute it. */
+  beginStatus(): void {
+    if (!this.statusHere()) return;
     this.statusTimer ??= setInterval(() => { void this.refreshStatus(); }, STATUS_REFRESH_MS);
     this.statusTimer.unref?.();
     void this.refreshStatus();
   }
 
+  /** The status computation, run as this desk: its own, or the one registered for every desk. */
+  private statusHere(): (() => Promise<unknown>) | null {
+    // The shared one is for the desks the process runs, not for a desk somebody built on its own (a test's).
+    const compute = this.statusCompute ?? (singleton === this || [...desks.values()].includes(this) ? statusForEveryDesk : null);
+    return compute ? () => deskContext.run(this, compute) : null;
+  }
+
   private async refreshStatus(now = Date.now()): Promise<void> {
-    if (!this.statusCompute) return;
+    const compute = this.statusHere();
+    if (!compute) return;
     try {
-      const value = await this.coalesce('status', STATUS_TTL_MS, this.statusCompute, now);
+      const value = await this.coalesce('status', STATUS_TTL_MS, compute, now);
       this.statusLast = { at: now, value };
     } catch {
       // A refresh that fails leaves the last good answer in place; the route's
@@ -769,8 +763,9 @@ export class TradingService {
 
   async status<T>(now = Date.now()): Promise<T> {
     if (this.statusLast && now - this.statusLast.at < STATUS_STALE_MS) return this.statusLast.value as T;
-    if (!this.statusCompute) throw new Error('status not provided');
-    const value = await this.coalesce('status', STATUS_TTL_MS, this.statusCompute, now);
+    const compute = this.statusHere();
+    if (!compute) throw new Error('status not provided');
+    const value = await this.coalesce('status', STATUS_TTL_MS, compute, now);
     this.statusLast = { at: now, value };
     return value as T;
   }
@@ -869,7 +864,127 @@ export class TradingService {
 /** An exit asked for in a way that cannot stand -- a person's mistake, answered 400, not logged as a fault. */
 export class ExitAskError extends Error {}
 
+/*
+ * ------------------------------------------------------------------ a desk per broker account
+ *
+ * Every active broker account trades at once (owner, 5 Oct 2026: "default is only which tab opens; once an
+ * account is activated it trades"). A `TradingService` is one account's desk -- its own exchange, signed with
+ * its own key, its own engine and poll loop, its own balance, limits and caches -- and there is one per active
+ * account, each handed the journal through a store that sees only its own trades (`PgTradeStore.scoped`).
+ * With no account at all there is the one desk there always was, on paper, seeing every trade.
+ *
+ * `tradingService()` is "the desk this piece of work is for": inside a request for an account, a trade or a
+ * strategy it is that account's desk (`runAsDesk`); anywhere else it is the default account's. So the routes,
+ * the scheduler and the alerts ask for the desk exactly as before and each reaches the right one.
+ */
 let singleton: TradingService | null = null;
+/** One desk per active account, by account id. Empty on a desk with no account: `singleton` is then the only desk. */
+const desks = new Map<number, TradingService>();
+const deskContext = new AsyncLocalStorage<TradingService>();
+/** How a desk's status is computed, registered once by the routes and run as each desk in turn. */
+let statusForEveryDesk: (() => Promise<unknown>) | null = null;
+/** The whole journal, for the screens that read every account's trades together ("All accounts"). Read-only use. */
+let wholeJournal: PgTradeStore | null = null;
+let deskLimits: Partial<RiskLimits> = {};
+
+/** Do this piece of work as one account's desk: `tradingService()` inside it is that desk. */
+export const runAsDesk = <T>(desk: TradingService, fn: () => T): T => deskContext.run(desk, fn);
+
+/**
+ * The desk of one broker account, or null when that account is not trading (switched off, removed, its key
+ * unreadable). No account named (a strategy or a trade from a desk that had none): the default account's.
+ */
+export function tradingServiceFor(accountId: number | null | undefined): TradingService | null {
+  if (!singleton) throw new Error('tradingServiceFor() before initTradingService(): the desk is built at boot, in index.ts');
+  if (accountId === null || accountId === undefined || desks.size === 0) return singleton;
+  return desks.get(accountId) ?? null;
+}
+
+/** Whether this account has a desk of its own running: it is switched on, its key opens, and it trades. */
+export const deskOpen = (accountId: number): boolean => desks.has(accountId);
+
+/** Every desk there is: one per active account, or the single one of a desk with no account. */
+export const tradingServices = (): TradingService[] => (desks.size ? [...desks.values()] : singleton ? [singleton] : []);
+
+/** The journal across every account, for reading. */
+export const journal = (): PgTradeStore => {
+  if (!wholeJournal) throw new Error('journal() before initTradingService()');
+  return wholeJournal;
+};
+
+function deskFor(a: { id: number }, creds: Creds, settings: Settings, notifier: TelegramNotifier | null): TradingService {
+  return new TradingService({ store: journal().scoped(a.id), settings, limits: deskLimits, creds, accountId: a.id, notifier });
+}
+
+/**
+ * An account was switched on (or added): give it a desk and start it. Nothing if it already has one. The first
+ * account of a desk that had none takes over from the paper-only desk there was.
+ */
+export async function openDesk(accountId: number): Promise<TradingService | null> {
+  if (!singleton) return null;
+  const existing = desks.get(accountId);
+  if (existing) return existing;
+  const creds = brokerAccounts().credsOf(accountId);
+  const a = brokerAccounts().get(accountId);
+  if (!creds || !a || !a.active) return null;
+  const first = desks.size === 0;
+  const before: TradingService = singleton;
+  const desk = deskFor(a, creds, before.settings, before.notifier);
+  desks.set(accountId, desk);
+  if (first) { before.stop(); singleton = desk; }
+  desk.beginStatus();
+  if (started) await desk.start();
+  return desk;
+}
+
+/** An account was switched off: its desk stops. Ask `openTrades()` of it first -- a desk holding a position is not closed. */
+export function closeDesk(accountId: number): void {
+  const desk = desks.get(accountId);
+  if (!desk) return;
+  desk.stop();
+  desks.delete(accountId);
+  if (singleton === desk) {
+    const next: TradingService | undefined = desks.values().next().value;
+    // None left trading: the paper-only desk of a desk with no account, over the whole journal.
+    singleton = next ?? new TradingService({ store: journal(), settings: desk.settings, limits: deskLimits, notifier: desk.notifier });
+  }
+  if (started && desks.size === 0) void currentDesk().start();
+}
+
+/** Which desk answers when no account is named: the default account's, when it is trading. */
+export function setPrimaryDesk(accountId: number): void {
+  const desk = desks.get(accountId);
+  if (desk) singleton = desk;
+}
+
+let started = false;
+/** Start every desk: each picks up what was open on its own account and begins stepping. */
+export async function startTradingServices(): Promise<void> {
+  started = true;
+  await Promise.all(tradingServices().map((d) => d.start()));
+}
+
+/**
+ * Paper or live, for the whole desk: every account moves together, and none moves while any holds a position
+ * (the rule `setMode` holds for one account, held across all of them).
+ */
+export async function setDeskMode(next: DeskMode): Promise<ModeSwitch> {
+  const all = tradingServices();
+  const now = all[0]?.mode ?? 'paper';
+  for (const d of all) {
+    if (d.mode === next) continue;
+    const open = await d.openTrades();
+    if (open.length > 0) {
+      return { ok: false, mode: now, reason: `Close ${open.length} open ${open.length === 1 ? 'position' : 'positions'} first — a position cannot move between books.` };
+    }
+  }
+  let last: ModeSwitch = { ok: true, mode: next };
+  for (const d of all) {
+    last = await d.setMode(next);
+    if (!last.ok) return last;
+  }
+  return last;
+}
 
 /**
  * Build the process's desk: the journal migrated, the settings loaded, the
@@ -892,17 +1007,56 @@ export function nextTradeMs(now = Date.now()): number {
 }
 
 export async function initTradingService(limits: Partial<RiskLimits> = {}): Promise<TradingService> {
-  if (singleton) return singleton;
+  if (singleton) return tradingService();
   const settings = await deskSettings().load();
-  // The broker accounts before the desk: which exchange it drives is decided as it is built.
+  // The broker accounts before the desks: which exchange each drives is decided as it is built.
   const accounts = await initBrokerAccounts(settings);
-  const store = await PgTradeStore.open();
-  singleton = new TradingService({ store, settings, limits, creds: accounts.defaultCreds(), accountId: accounts.default()?.id ?? null });
-  return singleton;
+  wholeJournal = await PgTradeStore.open();
+  deskLimits = limits;
+  const trading = accounts.list().filter((a) => a.active && accounts.credsOf(a.id) !== null);
+  if (trading.length === 0) {
+    // No account trading: the one desk there always was, on paper, seeing the whole journal.
+    singleton = new TradingService({ store: wholeJournal, settings, limits });
+    return tradingService();
+  }
+  // The default account's desk first: it makes the phone's sender, and the rest share it.
+  const order = [...trading].sort((x, y) => Number(y.isDefault) - Number(x.isDefault) || x.id - y.id);
+  for (const a of order) {
+    const shared: TradingService | null = singleton;
+    const desk: TradingService = new TradingService({
+      store: wholeJournal.scoped(a.id), settings, limits, creds: accounts.credsOf(a.id), accountId: a.id,
+      ...(shared ? { notifier: shared.notifier } : {}),
+    });
+    desks.set(a.id, desk);
+    singleton ??= desk;
+  }
+  return tradingService();
 }
+
+/** The desk in force right now -- the real object, for the places that must hold one. */
+const currentDesk = (): TradingService => {
+  const desk = deskContext.getStore() ?? singleton;
+  if (!desk) throw new Error('tradingService() before initTradingService(): the desk is built at boot, in index.ts');
+  return desk;
+};
+
+/*
+ * What `tradingService()` hands out: not one desk, but whichever is in force when it is used. A route file
+ * takes it once, when the routes are registered, and every request through it then reaches the desk of the
+ * account that request is about.
+ */
+const deskHandle = new Proxy({} as TradingService, {
+  get: (_t, key) => {
+    const desk = currentDesk();
+    const v = Reflect.get(desk, key, desk);
+    return typeof v === 'function' ? v.bind(desk) : v;
+  },
+  set: (_t, key, value) => Reflect.set(currentDesk(), key, value),
+  has: (_t, key) => Reflect.has(currentDesk(), key),
+});
 
 /** The desk, once `initTradingService()` has run. Asking earlier is a boot-order bug. */
 export const tradingService = (): TradingService => {
   if (!singleton) throw new Error('tradingService() before initTradingService(): the desk is built at boot, in index.ts');
-  return singleton;
+  return deskHandle;
 };

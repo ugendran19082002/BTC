@@ -115,6 +115,20 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    /*
+     * Every active account trades at once (owner, 5 Oct 2026), so each takes its own reading of the day -- and
+     * two readings can fall in the same millisecond. The line's key was the moment alone; it is the moment and
+     * the account. The old key is found by what it is, not by a name that has moved with the table.
+     */
+    id: 'trading-008-mtm-by-account',
+    up: async (c) => {
+      const pk = await c.query<{ conname: string }>(
+        "SELECT conname FROM pg_constraint WHERE conrelid = 'public.mtm_samples'::regclass AND contype = 'p'");
+      for (const r of pk.rows) await c.query(`ALTER TABLE mtm_samples DROP CONSTRAINT "${r.conname}"`);
+      await c.query('CREATE UNIQUE INDEX IF NOT EXISTS mtm_samples_at_account ON mtm_samples (at, COALESCE(broker_account_id, 0));');
+    },
+  },
 ];
 
 /** How long a day's line is kept. */
@@ -127,6 +141,28 @@ type Row = { trade_id: string; plan: TradeRecord['plan']; state: TradeState };
 export class PgTradeStore implements TradeStore {
   /** Ids applied when the store was opened. For the health endpoint. */
   applied: string[] = [];
+
+  /**
+   * The broker account whose trades this store is, or null for every trade (a desk with no account).
+   *
+   * Every active account has a trading engine of its own (trading/service.ts), and each engine is handed the
+   * journal through a store that can see, and write, only its own account's trades. That is the wall between
+   * them: an engine that could read another account's open trade would ask its own exchange about a position
+   * that is not there, find nothing, and write the trade down as closed. So the wall is here, in every read
+   * the engine makes, and not in the engine remembering to look.
+   */
+  private scope: number | null = null;
+
+  /** The same journal, seen as one broker account. */
+  scoped(accountId: number): PgTradeStore {
+    if (!Number.isInteger(accountId) || accountId <= 0) throw new Error(`not a broker account id: ${accountId}`);
+    const view = new PgTradeStore();
+    view.applied = this.applied;
+    view.scope = accountId;
+    return view;
+  }
+  /** ` AND broker_account_id = <scope>`, or nothing when this store is every account's. The id is a checked integer. */
+  private get mine(): string { return this.scope === null ? '' : ` AND broker_account_id = ${this.scope}`; }
 
   /** The journal, migrated. Everything else assumes this has been awaited once. */
   static async open(): Promise<PgTradeStore> {
@@ -157,6 +193,10 @@ export class PgTradeStore implements TradeStore {
 
   private async write(rec: TradeRecord): Promise<void> {
     const { state } = rec;
+    // An account's store writes that account's trades and no other's.
+    if (this.scope !== null && (rec.plan.accountId ?? null) !== this.scope) {
+      throw new Error(`trade ${state.tradeId} belongs to account ${rec.plan.accountId ?? 'none'}, not ${this.scope}: not written`);
+    }
     await tx(async (c) => {
       await c.query(
         // broker_account_id is written with the row and left alone after: a trade does not change accounts.
@@ -186,21 +226,21 @@ export class PgTradeStore implements TradeStore {
   }
 
   async get(tradeId: string): Promise<TradeRecord | null> {
-    const found = await this.query('SELECT trade_id, plan, state FROM trades WHERE trade_id = $1', [tradeId]);
+    const found = await this.query(`SELECT trade_id, plan, state FROM trades WHERE trade_id = $1${this.mine}`, [tradeId]);
     return found[0] ?? null;
   }
 
   all(): Promise<TradeRecord[]> {
-    return this.query('SELECT trade_id, plan, state FROM trades ORDER BY updated_at DESC');
+    return this.query(`SELECT trade_id, plan, state FROM trades WHERE true${this.mine} ORDER BY updated_at DESC`);
   }
 
   open(): Promise<TradeRecord[]> {
-    return this.query(`SELECT trade_id, plan, state FROM trades WHERE phase IN ${OPEN_PHASES} ORDER BY updated_at DESC`);
+    return this.query(`SELECT trade_id, plan, state FROM trades WHERE phase IN ${OPEN_PHASES}${this.mine} ORDER BY updated_at DESC`);
   }
 
   /** Newest first, for the screen. */
   recent(limit = 50): Promise<TradeRecord[]> {
-    return this.query('SELECT trade_id, plan, state FROM trades ORDER BY updated_at DESC LIMIT $1', [limit]);
+    return this.query(`SELECT trade_id, plan, state FROM trades WHERE true${this.mine} ORDER BY updated_at DESC LIMIT $1`, [limit]);
   }
 
   /**
@@ -216,7 +256,8 @@ export class PgTradeStore implements TradeStore {
       `SELECT trade_id, plan, state FROM trades
         WHERE updated_at >= $1 AND updated_at < $2 AND ($4::bigint IS NULL OR broker_account_id = $4)
         ORDER BY updated_at DESC LIMIT $3`,
-      [fromMs, toMs, limit, accountId],
+      // An account's store reads its own, whatever it is asked.
+      [fromMs, toMs, limit, this.scope ?? accountId],
     );
   }
 
@@ -250,7 +291,7 @@ export class PgTradeStore implements TradeStore {
     const held = this.realisedHeld;
     if (held && held.fromMs === fromMs && held.accountId === accountId && held.writes === this.writes) return { ...held.value };
     const writes = this.writes;
-    const value = await this.realisedRead(fromMs, accountId);
+    const value = await this.realisedRead(fromMs, this.scope ?? accountId);
     this.realisedHeld = { fromMs, accountId, writes, value };
     return { ...value };
   }
@@ -281,8 +322,8 @@ export class PgTradeStore implements TradeStore {
   async sampleMtm(m: MtmSample, accountId: number | null = null): Promise<void> {
     await query(
       `INSERT INTO mtm_samples (at, day, realised, unrealised, charges, net, broker_account_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (at) DO NOTHING`,
-      [m.at, m.day, m.realisedUsd, m.unrealisedUsd, m.chargesUsd, m.netUsd, accountId],
+       VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
+      [m.at, m.day, m.realisedUsd, m.unrealisedUsd, m.chargesUsd, m.netUsd, this.scope ?? accountId],
     );
   }
 
@@ -291,7 +332,7 @@ export class PgTradeStore implements TradeStore {
     const found = await rows<{ at: number; day: string; realised: number; unrealised: number; charges: number; net: number }>(
       `SELECT at, day, realised, unrealised, charges, net FROM mtm_samples
         WHERE day = $1 AND ($2::bigint IS NULL OR broker_account_id = $2) ORDER BY at`,
-      [day, accountId],
+      [day, accountId ?? this.scope],
     );
     return found.map((r) => ({
       at: r.at, day: r.day, realisedUsd: r.realised, unrealisedUsd: r.unrealised, chargesUsd: r.charges, netUsd: r.net,
@@ -302,7 +343,7 @@ export class PgTradeStore implements TradeStore {
   async mtmDays(limit = 120, accountId: number | null = null): Promise<string[]> {
     return (await rows<{ day: string }>(
       'SELECT DISTINCT day FROM mtm_samples WHERE ($2::bigint IS NULL OR broker_account_id = $2) ORDER BY day DESC LIMIT $1',
-      [limit, accountId],
+      [limit, accountId ?? this.scope],
     )).map((r) => r.day);
   }
 

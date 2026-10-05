@@ -50,6 +50,25 @@ beforeEach(() => {
   setStrategyEnabled.mockResolvedValue({ ok: true });
 });
 
+describe('bought strategies on the card', () => {
+  it('[critical] a BUY strategy reads as bought, is left out of the seller\'s margin figures, and its live switch is off', async () => {
+    const BUY = { ...SIG, signal: { ...SIG.signal, action: 'buy' as const } };
+    getStrategies.mockResolvedValue(status([strat('buyer', BUY), strat('buyer2', BUY)], { signalMaxOpen: 0, openNow: 0, shortCap: 159, shortNow: 0, walletUsd: 2.35, marginUsedUsd: 0 }));
+    render(<SignalStrategiesCard />);
+    expect(await screen.findByText('BUYER')).toBeInTheDocument();
+    expect(screen.getAllByText(/bought: BUY → CE · SELL → PE/)).toHaveLength(2);
+    expect(screen.getAllByText(/writes down what it would buy, sends nothing/)).toHaveLength(2);
+    expect(screen.queryByText(/would sell/)).toBeNull();
+    // Written down only: no order, no margin -- so the margin tiles are a seller's and these two are not in them.
+    expect(screen.getByLabelText('bought strategies')).toHaveTextContent(
+      '2 BUY strategies are switched on and written down only: no order is sent and no margin is used, so they are not in the margin figures below — which is why they read zero.');
+    expect(screen.queryByText(/margin with all of it open/)).toBeNull(); // no seller's margin is claimed for them
+    const live = screen.getByRole('switch', { name: 'Live orders for BUYER' });
+    expect(live).toBeDisabled();
+    expect(live).toHaveTextContent('BUY · written down only');
+  });
+});
+
 describe('signal strategies on the Live screen', () => {
   it('[critical] lists only the signal strategies, each in one line', async () => {
     getStrategies.mockResolvedValue(status([strat('sig', SIG), strat('clock')]));

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { startOfDayIst } from '../../strategy/schedule.js';
-import { ExitAskError, stopFor, targetFor, tradingService } from '../../trading/service.js';
+import { ExitAskError, stopFor, targetFor, tradingService, journal, setDeskMode, startTradingServices } from '../../trading/service.js';
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
 import {
@@ -386,7 +386,8 @@ function parse(body: PlaceBody) {
 export function registerTradeRoutes(app: FastifyInstance) {
   const svc = tradingService();
   // Recovery runs once, at startup, before anything can be placed.
-  void svc.start();
+  // Every account's desk: each picks up its own open trades and begins stepping.
+  void startTradingServices();
 
   /*
    * Computed at most once per STATUS_TTL_MS however many tabs poll it, and
@@ -486,7 +487,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
       reply.code(400);
       return { error: "mode must be 'live' or 'paper'" };
     }
-    const res = await svc.setMode(mode);
+    // Paper or live is the whole desk's: every account moves together, none while any holds a position.
+    const res = await setDeskMode(mode);
     // Refusing to flip with a position open is the guard doing its job, not a
     // fault: it is answered plainly and stays out of the error log.
     return res.ok ? res : refuse(reply, 409, res);
@@ -850,7 +852,9 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const limit = Math.min(1_000, Number(q.limit ?? 500));
 
     // `?account=<id>`: the orders placed as one broker account; without it, every account's.
-    const records = await forScreens(await svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit, accountOf(req.query)));
+    // Read from the whole journal by the account named (none: every account's) -- not through a desk's own
+    // view, so an account that is switched off, and has no desk, still shows its own orders and no one else's.
+    const records = await forScreens(await journal().between(Math.min(from, to), Math.max(from + 86_400_000, to), limit, accountOf(req.query)));
 
     /*
      * Prices for the trades still open, so their row can say what closing now

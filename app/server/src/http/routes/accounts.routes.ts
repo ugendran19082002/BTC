@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { AccountRefused, brokerAccounts, envKeyLeft, MAX_ACCOUNTS, testConnection, type BrokerAccount, type Tester } from '../../delta/accounts.js';
-import { tradingService } from '../../trading/service.js';
+import { closeDesk, deskOpen, openDesk, setPrimaryDesk, tradingService, tradingServiceFor, tradingServices } from '../../trading/service.js';
 import { strategyStore } from './strategy.routes.js';
 import { DeltaExchange } from '../../trading/exchange/delta.js';
 import { noteError } from '../../observability/errors.js';
@@ -18,24 +18,35 @@ import type { ExchangePosition } from '../../trading/types.js';
  * its test) is answered with its sentence through `refuse`, so it stays out of
  * the error log.
  *
- * Whatever changes which key live orders are signed with goes through
- * `follow`: the desk is asked first whether it may change (never under a live
- * position), then the table is written, then the desk is told.
+ * Every active account trades (owner, 5 Oct 2026): switching one on gives it a
+ * desk of its own -- its engine, its exchange key, its own open trades -- and
+ * switching it off stops that desk, which is refused while it holds a position.
+ * The default is only which account's tab opens first and which desk answers a
+ * request that names none; choosing it moves no order anywhere.
  */
 
-/** Once a day the table is read again; a default changed underneath is followed only when the desk may. */
+/**
+ * Once a day the table is read again, and the desks brought into line with it: an account switched on by hand
+ * in a console gets its desk; one switched off loses it -- unless it holds a position, which is said instead.
+ */
 export async function refreshBrokerAccounts(): Promise<void> {
   const accounts = brokerAccounts();
-  const { defaultChanged } = await accounts.refresh();
-  if (!defaultChanged) return;
-  const svc = tradingService();
-  const creds = accounts.defaultCreds();
-  const blocked = await svc.accountSwitchBlocked(creds === null);
-  if (blocked) {
-    noteError({ source: 'server', level: 'warn', where: 'broker-accounts', message: `the default broker account changed in the database and is not followed: ${blocked}` });
-    return;
+  await accounts.refresh();
+  for (const a of accounts.list()) {
+    if (a.active && accounts.credsOf(a.id) && !deskOpen(a.id)) await openDesk(a.id);
   }
-  svc.setLiveCreds(creds, accounts.default()?.id ?? null);
+  for (const desk of tradingServices()) {
+    const id = desk.accountId;
+    if (id === null || !deskOpen(id)) continue;
+    const a = accounts.get(id);
+    if (a && a.active && accounts.credsOf(id)) continue;
+    const open = await desk.openTrades();
+    if (open.length > 0) {
+      noteError({ source: 'server', level: 'warn', where: 'broker-accounts', message: `broker account ${id} was switched off in the database while it holds ${open.length} open trade${open.length === 1 ? '' : 's'}: its desk keeps running until they are closed` });
+    } else closeDesk(id);
+  }
+  const first = accounts.default();
+  if (first) setPrimaryDesk(first.id);
 }
 
 export type AccountSummaryReader = (creds: { key: string; secret: string }) => Promise<[{ balance: number; available: number }, ExchangePosition[]]>;
@@ -48,7 +59,8 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester; 
     const svc = tradingService();
     return {
       // Each with why it cannot be removed, when it cannot: said on the screen before a code is asked for.
-      accounts: await Promise.all(accounts.list().map(async (a) => ({ ...a, keptBecause: await keptBecause(a) }))),
+      // ...and whether it is trading: switched on, its key readable, a desk of its own running.
+      accounts: await Promise.all(accounts.list().map(async (a) => ({ ...a, trading: deskOpen(a.id), keptBecause: await keptBecause(a) }))),
       max: MAX_ACCOUNTS,
       /** False without DESK_SESSION_SECRET: a key cannot be encrypted, so none can be added. */
       canStore: accounts.canStore,
@@ -77,22 +89,20 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester; 
   };
   /** Why an account cannot be removed right now, or null: the last one, one with history, the one the desk is live on. */
   const keptBecause = async (a: BrokerAccount): Promise<string | null> =>
-    brokerAccounts().removalBlocked(a.id) ?? await historyOf(a.id) ?? (a.isDefault ? await tradingService().accountSwitchBlocked(true) : null);
+    brokerAccounts().removalBlocked(a.id) ?? await historyOf(a.id);
+  /** Why an account's desk cannot be stopped right now, or null: it holds a position that only it is managing. */
+  const holding = async (a: BrokerAccount): Promise<string | null> => {
+    if (!deskOpen(a.id)) return null;
+    const open = await tradingServiceFor(a.id)!.openTrades();
+    return open.length > 0
+      ? `Close ${open.length} open ${open.length === 1 ? 'position' : 'positions'} on "${a.name}" first — while it holds one, its desk has to keep running to manage it.`
+      : null;
+  };
   const found = (reply: FastifyReply, id: number): BrokerAccount | null => {
     const a = Number.isInteger(id) ? brokerAccounts().get(id) : null;
     if (!a) { reply.code(404); return null; }
     return a;
   };
-  /** The desk signs as whatever the default now is. Asked before the write, told after it. */
-  const follow = async (reply: FastifyReply, toNone: boolean, write: () => Promise<unknown>) => {
-    const svc = tradingService();
-    const blocked = await svc.accountSwitchBlocked(toNone);
-    if (blocked) return refuse(reply, 409, { error: blocked });
-    await write();
-    svc.setLiveCreds(brokerAccounts().defaultCreds(), brokerAccounts().default()?.id ?? null);
-    return await view();
-  };
-
   // Every saved account -- name, description, the key's last four, whether it is on, the default, its last test.
   app.get('/api/accounts', async () => await view());
 
@@ -101,13 +111,13 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester; 
     const b = (req.body ?? {}) as { name?: unknown; description?: unknown; api_key?: unknown; api_secret?: unknown };
     try {
       const accounts = brokerAccounts();
-      const first = accounts.default() === null;
       const a = await accounts.create({ name: b.name, description: b.description, apiKey: b.api_key, apiSecret: b.api_secret });
       // Tested as it is saved, so the row says at once whether the key works; saved either way (an IP not yet whitelisted is fixed on Delta).
       const creds = accounts.credsOf(a.id);
       if (creds) await accounts.noteTest(a.id, await test(creds));
-      // The first account is the default: on paper nothing moves, and live was not reachable without one.
-      if (first && a.isDefault) tradingService().setLiveCreds(accounts.defaultCreds(), accounts.default()?.id ?? null);
+      // Saved switched on, so it has a desk at once: its own strategies trade on it from here.
+      await openDesk(a.id);
+      if (a.isDefault) setPrimaryDesk(a.id);
       return await view();
     } catch (e) { return said(reply, e); }
   });
@@ -135,7 +145,7 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester; 
     return { ...(await view()), test: { id, ...result } };
   });
 
-  // Switch an account on or off. Off, it is kept but cannot be used; the default cannot be switched off while the desk is live on it. Switched on with no default, it is the default.
+  // Switch an account on or off. On, it trades: a desk of its own is started. Off, it is kept and its desk stops -- refused while it holds a position.
   app.post('/api/accounts/:id/active', async (req, reply) => {
     const id = idOf(req.params);
     const a = found(reply, id);
@@ -143,30 +153,32 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester; 
     const { active } = (req.body ?? {}) as { active?: unknown };
     if (typeof active !== 'boolean') { reply.code(400); return { error: 'active must be true or false' }; }
     try {
-      if (a.isDefault && !active) return await follow(reply, true, () => brokerAccounts().setActive(id, false));
-      // On again with no default anywhere: it becomes the one the desk signs as.
-      if (active && !a.active && brokerAccounts().default() === null) return await follow(reply, false, () => brokerAccounts().setActive(id, true));
-      await brokerAccounts().setActive(id, active);
+      if (!active) {
+        const held = await holding(a);
+        if (held) return refuse(reply, 409, { error: held });
+        await brokerAccounts().setActive(id, false);
+        closeDesk(id);
+      } else {
+        const now = await brokerAccounts().setActive(id, true);
+        await openDesk(id);
+        if (now.isDefault) setPrimaryDesk(id);
+      }
+      const first = brokerAccounts().default();
+      if (first) setPrimaryDesk(first.id);
       return await view();
     } catch (e) { return said(reply, e); }
   });
 
-  // Make this the account the desk trades on. Its key is tested first; refused while a live position is open.
+  // Make this the default: the account whose tab opens first, and whose desk answers a request that names none. No order moves.
   app.post('/api/accounts/:id/default', async (req, reply) => {
     const id = idOf(req.params);
     const a = found(reply, id);
     if (!a) return { error: 'no such account' };
     if (a.isDefault) return await view();
     try {
-      const accounts = brokerAccounts();
-      const creds = accounts.credsOf(id);
-      if (!creds) throw new AccountRefused('This account\'s key cannot be read any more. Add it again as a new account, then remove this one.', 409);
-      if (!a.active) throw new AccountRefused('Activate the account first.', 409);
-      // A default that cannot sign is a desk that cannot trade: the key has to work now, not last week.
-      const result = await test(creds);
-      await accounts.noteTest(id, result);
-      if (!result.ok) return refuse(reply, 422, { ...(await view()), error: `Not made the default: its connection test failed. ${result.detail}` });
-      return await follow(reply, false, () => accounts.setDefault(id));
+      await brokerAccounts().setDefault(id);
+      setPrimaryDesk(id);
+      return await view();
     } catch (e) { return said(reply, e); }
   });
 
@@ -222,8 +234,12 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester; 
         alert: `🔐 BTC Desk: the broker account "${a.name}" (key ending ${a.keyHint}) was removed, from ${req.ip || 'unknown'}.`,
       });
       if (!confirmed.ok) return refuse(reply, confirmed.status, { error: confirmed.error, ...(confirmed.restart ? { restart: true } : {}) });
-      if (a.isDefault) return await follow(reply, true, () => brokerAccounts().remove(id));
+      const held = await holding(a);
+      if (held) return refuse(reply, 409, { error: held });
+      closeDesk(id);
       await brokerAccounts().remove(id);
+      const first = brokerAccounts().default();
+      if (first) setPrimaryDesk(first.id);
       return await view();
     } catch (e) { return said(reply, e); }
   });

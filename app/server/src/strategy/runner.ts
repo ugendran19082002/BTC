@@ -1,13 +1,13 @@
 import { liveChain, WHOLE_BOARD } from '../market/chain.js';
 import { scoreLegs } from '../domain/score.js';
 import { wallWithinEm } from '../http/routes/desk.routes.js';
-import { tradingService } from '../trading/service.js';
+import { runAsDesk, tradingService, tradingServiceFor } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { GLOBAL_MAX_OPEN_KEY, actionOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, onDeskAccount, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, actionOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -145,10 +145,15 @@ export class StrategyRunner {
     try {
       if (!this.armed()) return;
       for (const s of await this.store.all()) {
-        await this.considerExit(s).catch((e) => this.note(s, 'exit', e));
-        // Another account's strategy does not enter here; its exits above and below are never held by that.
-        if (onDeskAccount(s, tradingService().accountId)) await this.considerEntry(s).catch((e) => this.note(s, 'entry', e));
-        await this.exitStepper.consider(s).catch((e) => this.note(s, 'exit step', e));
+        // Each strategy on its own account's desk (5 Oct 2026: every active account trades at once). One whose
+        // account is switched off has no desk: nothing is entered for it, and it holds nothing to exit.
+        const desk = tradingServiceFor(s.accountId);
+        if (!desk) continue;
+        await runAsDesk(desk, async () => {
+          await this.considerExit(s).catch((e) => this.note(s, 'exit', e));
+          await this.considerEntry(s).catch((e) => this.note(s, 'entry', e));
+          await this.exitStepper.consider(s).catch((e) => this.note(s, 'exit step', e));
+        });
       }
     } finally {
       this.ticking = false;
@@ -353,15 +358,17 @@ export class StrategyRunner {
     if (!this.armed()) return;
     for (const s of await this.store.all()) {
       if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
-      if (!onDeskAccount(s, tradingService().accountId)) continue;
+      // On its own account's desk; none, when that account is switched off.
+      const desk = tradingServiceFor(s.accountId);
+      if (!desk) continue;
       if (!signalMatches(s.config.signal, r)) continue;
       // The ones that enter at the signal; the rest wait for the perp to reach the zone (`onSetupFilled`) --
       // and are made ready for it meanwhile.
       if (entersOn(s.config.signal) !== 'signal') {
-        void this.warmFor(s, r).catch(() => {});
+        void runAsDesk(desk, () => this.warmFor(s, r)).catch(() => {});
         continue;
       }
-      await this.takeSignal(s, r, null).catch((e) => this.note(s, 'signal', e));
+      await runAsDesk(desk, () => this.takeSignal(s, r, null)).catch((e) => this.note(s, 'signal', e));
     }
   }
 
@@ -388,10 +395,11 @@ export class StrategyRunner {
     } as unknown as MethodRead;
     for (const s of await this.store.all()) {
       if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
-      if (!onDeskAccount(s, tradingService().accountId)) continue;
+      const desk = tradingServiceFor(s.accountId);
+      if (!desk) continue;
       if (entersOn(s.config.signal) !== 'zone') continue;
       if (!signalMatches(s.config.signal, r)) continue;
-      await this.takeSignal(s, r, f).catch((e) => this.note(s, 'signal', e));
+      await runAsDesk(desk, () => this.takeSignal(s, r, f)).catch((e) => this.note(s, 'signal', e));
     }
   }
 

@@ -39,12 +39,13 @@ describe('the broker accounts', () => {
     ]));
     render(<AccountsPanel />);
     const main = await row('Main');
-    expect(main.getByText('Default · the desk trades on this')).toBeInTheDocument();
+    expect(main.getByText('Default · opens first')).toBeInTheDocument();
+    expect(main.getByText('Trading')).toBeInTheDocument();
     expect(main.getByText('••••9999')).toBeInTheDocument();
     expect(main.getByLabelText('last connection test')).toHaveTextContent('✓ Connected. Wallet balance $12.34. · tested just now');
     expect(main.queryByRole('button', { name: 'Make default' })).toBeNull(); // it already is
     const other = await row('Second');
-    expect(other.getByText('Off')).toBeInTheDocument();
+    expect(other.getByText('Off · not trading')).toBeInTheDocument();
     expect(other.getByLabelText('last connection test')).toHaveTextContent('✗ The API secret does not match the key.');
     expect(other.getByRole('button', { name: 'Make default' })).toBeDisabled(); // off: switch it on first
     expect(other.getByRole('button', { name: 'Activate' })).toBeEnabled();
@@ -85,27 +86,19 @@ describe('the broker accounts', () => {
     await row('Third');
   });
 
-  it('[critical] choosing a default on a live desk asks first; on paper it is one tap', async () => {
-    api.getAccounts.mockResolvedValue(answer([account(), second], { mode: 'live' }));
-    api.makeAccountDefault.mockResolvedValue(answer([account({ isDefault: false }), { ...second, isDefault: true }], { mode: 'live' }));
-    const { unmount } = render(<AccountsPanel />);
-    fireEvent.click((await row('Second')).getByRole('button', { name: 'Make default' }));
-    expect(api.makeAccountDefault).not.toHaveBeenCalled();
-    const asked = within(screen.getByRole('group', { name: 'trade on Second?' }));
-    expect(asked.getByText('The desk is LIVE. From this tap, real orders go to "Second".')).toBeInTheDocument();
-    fireEvent.click(asked.getByRole('button', { name: 'Yes, trade on it' }));
-    await waitFor(() => expect(api.makeAccountDefault).toHaveBeenCalledWith(2));
-    expect(await (await row('Second')).findByText('Default · the desk trades on this')).toBeInTheDocument();
-    expect((await row('Second')).getByRole('status')).toHaveTextContent('The desk now trades on "Second".');
-    unmount();
-
-    api.getAccounts.mockResolvedValue(answer([account(), second]));
-    api.makeAccountDefault.mockClear();
-    api.makeAccountDefault.mockRejectedValue(new Error('Not made the default: its connection test failed. Delta does not know this API key. (invalid_api_key)'));
+  it('[critical] every account that is on trades; choosing the default is one tap, live or not, and only says which tab opens first', async () => {
+    api.getAccounts.mockResolvedValue(answer([account({ trading: true }), { ...second, trading: true }], { mode: 'live' }));
+    api.makeAccountDefault.mockResolvedValue(answer([account({ isDefault: false, trading: true }), { ...second, isDefault: true, trading: true }], { mode: 'live' }));
     render(<AccountsPanel />);
+    // Both are trading, default or not.
+    expect((await row('Main')).getByText('Trading')).toBeInTheDocument();
+    expect((await row('Second')).getByText('Trading')).toBeInTheDocument();
+    expect(screen.getByText(/Every account that is switched on trades its own strategies, at the same time as the others/)).toBeInTheDocument();
     fireEvent.click((await row('Second')).getByRole('button', { name: 'Make default' }));
-    await waitFor(() => expect(api.makeAccountDefault).toHaveBeenCalledWith(2));
-    expect(await (await row('Second')).findByRole('alert')).toHaveTextContent('Not made the default: its connection test failed.');
+    await waitFor(() => expect(api.makeAccountDefault).toHaveBeenCalledWith(2)); // no second tap: no order moves
+    expect(await (await row('Second')).findByText('Default · opens first')).toBeInTheDocument();
+    expect((await row('Second')).getByRole('status')).toHaveTextContent('"Second" is the default: its tab opens first.');
+    expect((await row('Main')).getByText('Trading')).toBeInTheDocument(); // the other goes on trading
   });
 
   it('[critical] removing asks for an authenticator code; a wrong code removes nothing and is said beside the account', async () => {
@@ -165,7 +158,7 @@ describe('the broker accounts', () => {
     api.setAccountActive.mockResolvedValue(answer([account(), { ...second, active: false }]));
     fireEvent.click((await row('Second')).getByRole('button', { name: 'Deactivate' }));
     await waitFor(() => expect(api.setAccountActive).toHaveBeenCalledWith(2, false));
-    expect(await (await row('Second')).findByRole('status')).toHaveTextContent('Switched off. It is kept, and not used.');
+    expect(await (await row('Second')).findByRole('status')).toHaveTextContent('Switched off. It is kept, and does not trade.');
 
     api.renameAccount.mockResolvedValue(answer([account(), { ...second, name: 'Hedge', active: false }]));
     fireEvent.click((await row('Second')).getByRole('button', { name: 'Edit name' }));
@@ -198,12 +191,12 @@ describe('the broker accounts', () => {
 
     api.setAccountActive.mockResolvedValueOnce(answer([account({ active: false, isDefault: false })]));
     fireEvent.click(only.getByRole('button', { name: 'Deactivate' }));
-    expect(await (await row('Main')).findByRole('status')).toHaveTextContent('Switched off. It is kept, and not used.');
+    expect(await (await row('Main')).findByRole('status')).toHaveTextContent('Switched off. It is kept, and does not trade.');
     expect((await row('Main')).getByRole('button', { name: 'Remove' })).toBeDisabled(); // off, and still kept
 
     api.setAccountActive.mockResolvedValueOnce(answer([account()]));
     fireEvent.click((await row('Main')).getByRole('button', { name: 'Activate' }));
     await waitFor(() => expect(api.setAccountActive).toHaveBeenLastCalledWith(1, true));
-    expect(await (await row('Main')).findByText('Switched on. The desk trades on it.')).toBeInTheDocument();
+    expect(await (await row('Main')).findByText('Switched on. Its own strategies trade on it.')).toBeInTheDocument();
   });
 });

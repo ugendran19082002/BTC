@@ -5,11 +5,11 @@ import { usePoll } from '@/hooks/usePoll';
 import { contractLabel, price, size } from '@/lib/format';
 
 /**
- * An account the desk is not trading on, as Delta has it right now: its wallet and whatever it holds there,
- * read with its own key. Shown on Positions in place of the desk's own positions, which are always the
- * trading account's -- the desk places and manages orders on one account at a time.
+ * An account that is switched off, as Delta has it right now: its wallet and whatever it holds there, read
+ * with its own key. Shown on Positions in place of a desk's positions, because an account that is off has no
+ * desk -- every account that is switched on trades, and shows its own positions like the default's.
  */
-export function AccountSummaryCard({ account, tradingName }: { account: BrokerAccount; tradingName: string | null }) {
+export function AccountSummaryCard({ account }: { account: BrokerAccount }) {
   const { data, error } = usePoll(() => getAccountSummary(account.id), 15_000, { deps: [account.id] });
   const kpi = (label: string, value: React.ReactNode) => (
     <div className="rounded-md border border-solid border-border px-3 py-2">
@@ -19,10 +19,10 @@ export function AccountSummaryCard({ account, tradingName }: { account: BrokerAc
   );
   return (
     <CollapsibleCard id="account-summary" title={`${account.name} — on Delta now`} ariaLabel="account summary"
-      right={<span className="text-[11px] text-muted-foreground">not the account the desk trades on</span>}>
+      right={<span className="text-[11px] text-muted-foreground">switched off — not trading</span>}>
       <p className="m-0 mb-2 text-[12px] text-muted-foreground">
-        {tradingName ? <>The desk is trading on <b className="text-foreground">{tradingName}</b>; the positions it opens and manages are that account's. </> : 'The desk has no account in use. '}
-        To trade on <b className="text-foreground">{account.name}</b>, make it the default under Logs → Accounts.
+        <b className="text-foreground">{account.name}</b> is switched off, so the desk places and manages nothing on it.
+        Activate it under Logs → Accounts and its own strategies trade on it, beside the other accounts.
       </p>
       {error && !data && <p role="alert" className="m-0 mb-2 text-[12px] text-[var(--down)]">Could not read the account: {error.message}</p>}
       {data && (

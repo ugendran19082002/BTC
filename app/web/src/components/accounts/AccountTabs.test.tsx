@@ -19,11 +19,11 @@ beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
 afterEach(() => setAccountScope(null));
 
 describe('the account tabs', () => {
-  it('[critical] a tab per account, the one the desk trades on first and marked, then All -- and a tap chooses what is shown', () => {
+  it('[critical] a tab per account, the default first and marked, then All -- and a tap chooses what is shown', () => {
     const onChange = vi.fn();
     render(<AccountTabs accounts={[second, off, account()]} value={1} onChange={onChange} />);
     const tabs = within(screen.getByRole('tablist', { name: 'Broker account' })).getAllByRole('tab');
-    expect(tabs.map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Main trading', 'Second', 'Old off', 'All accounts']);
+    expect(tabs.map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Main default', 'Second', 'Old off', 'All accounts']);
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(tabs[1]!);
     expect(onChange).toHaveBeenLastCalledWith(2);
@@ -33,7 +33,7 @@ describe('the account tabs', () => {
 
   it('one account needs no All; no account, no tabs', () => {
     const { unmount } = render(<AccountTabs accounts={[account()]} value={1} onChange={() => {}} />);
-    expect(screen.getAllByRole('tab').map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Main trading']);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Main default']);
     unmount();
     render(<AccountTabs accounts={[]} value="all" onChange={() => {}} />);
     expect(screen.queryByRole('tablist')).toBeNull();
@@ -68,14 +68,15 @@ describe('the account tabs', () => {
     expect(canMakeForAccount()).toBe(true);
   });
 
-  it('another account on Positions: its wallet and what it holds on Delta, and where to make it the trading one', async () => {
+  it('an account that is switched off, on Positions: its wallet and what it holds on Delta, and where to switch it on', async () => {
     getAccountSummary.mockResolvedValue({
       id: 2, wallet: { balance: 120.5, available: 100 }, trades: 4, strategies: 2, note: null,
       positions: [{ symbol: 'P-BTC-83800-230926', size: -3, entryPrice: 20, unrealisedPnl: 1.5 }],
     });
-    render(<AccountSummaryCard account={second} tradingName="Main" />);
+    render(<AccountSummaryCard account={{ ...second, active: false, trading: false }} />);
     const card = within(await screen.findByLabelText('account summary'));
-    expect(card.getByText(/The desk is trading on/)).toHaveTextContent('The desk is trading on Main; the positions it opens and manages are that account\'s. To trade on Second, make it the default under Logs → Accounts.');
+    expect(card.getByText(/is switched off, so the desk places and manages nothing on it/)).toHaveTextContent(
+      'Second is switched off, so the desk places and manages nothing on it. Activate it under Logs → Accounts and its own strategies trade on it, beside the other accounts.');
     const table = within(await card.findByRole('table', { name: 'positions on Second' }));
     expect(table.getByText('83,800 PE')).toBeInTheDocument();
     expect(table.getByText('short')).toBeInTheDocument();

@@ -131,7 +131,7 @@ export function describeStrategy(c: StrategyConfig): string {
       + `When ${(r.enterOn ?? 'zone') === 'zone' ? 'the BTC perp trades into the signal\'s entry zone' : 'the signal is written'} it ${describeEntry(c)}, then exits when the BTC perp reaches the signal's SL or ${signalTargetLabel(r.target)}; `
       + (hasOptionExit(c) ? `on the option itself it ${describeExit(c)}; ` : 'no option target or stop is placed; ')
       + `whatever is open closes at ${time12(c.exitTime)}. `
-      + (c.liveOrders ? 'Live orders ON: it places real orders.' : 'Live orders off: it only writes down what it would sell.');
+      + (c.liveOrders ? 'Live orders ON: it places real orders.' : `Live orders off: it only writes down what it would ${r.action === 'buy' ? 'buy' : 'sell'}.`);
   }
   const legs = c.legs === 'both' ? 'a call and a put' : `a ${c.legs === 'CE' ? 'call' : 'put'}`;
   return `At ${time12(c.entryTime)} IST on ${describeDays(c.weekdays)}, sells ${legs} `

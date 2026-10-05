@@ -235,7 +235,8 @@ export function signalLine(s: Strategy): string {
   if (!r) return '';
   return [
     `${r.methods.length} method${r.methods.length === 1 ? '' : 's'} ${ruleTfWords(r)}`,
-    'BUY → PE · SELL → CE',
+    // Sold: a BUY signal sells the put. Bought: it buys the call.
+    c.signal?.action === 'buy' ? 'bought: BUY → CE · SELL → PE' : 'BUY → PE · SELL → CE',
     describeStrike(c).split(' — ')[0]!,
     `${c.lots} lot${c.lots === 1 ? '' : 's'}`,
     `perp SL / ${signalTargetLabel(r.target)}`,
@@ -283,9 +284,17 @@ export function SignalStrategiesCard() {
 
   const mine = data?.strategies.filter((s) => s.config.trigger === 'signal') ?? [];
   // The switched-on strategies added up, and the worst case under the desk-wide limit.
-  const totals = signalTotals(mine, data?.balanceUsd ?? null, data?.spot ?? null);
+  /*
+   * The margin figures are a seller's: a short option needs margin, and the desk's limit is on lots short. A
+   * BUY strategy is written down only -- it sends no order and uses no margin -- so it is left out of them and
+   * said beside them, rather than shown as short lots it will never hold (5 Oct 2026: the BUY account's tab
+   * showed a seller's margin for two BUY strategies).
+   */
+  const sellers = mine.filter((s) => s.config.signal?.action !== 'buy');
+  const buyersOn = mine.filter((s) => s.enabled && s.config.signal?.action === 'buy').length;
+  const totals = signalTotals(sellers, data?.balanceUsd ?? null, data?.spot ?? null);
   const cap = data?.signalMaxOpen ?? 0;
-  const inUse = usageNow(mine, data?.spot ?? null);
+  const inUse = usageNow(sellers, data?.spot ?? null);
   // What can still open from here, at worst, and whether the free margin carries it.
   /*
    * Held to everything that can stop an entry: each strategy's own limit, the
@@ -298,7 +307,7 @@ export function SignalStrategiesCard() {
   const shortNow = data?.shortNow ?? 0;
   const lotsLeft = shortCap === null ? null : Math.max(0, shortCap - shortNow);
   const perLotUsd = marginPerLotUsd(data?.spot ?? null, data?.marginUsedUsd, shortNow);
-  const room = roomLeft(mine, cap, data?.openNow ?? 0, data?.spot ?? null, { lotsLeft, perLotUsd });
+  const room = roomLeft(sellers, cap, data?.openNow ?? 0, data?.spot ?? null, { lotsLeft, perLotUsd });
   const deltaMarginUsd = data?.marginUsedUsd ?? null;
   /*
    * "In use" is measured against what can actually be open: the desk-wide limit
@@ -328,7 +337,7 @@ export function SignalStrategiesCard() {
           </div>
           <div>
             <h2 className="desk-section-title">Signal Strategies</h2>
-            <span className="desk-section-subtitle">The methods&apos; signals as options · BUY sells PE · SELL sells CE · SL / TGT on the BTC perp</span>
+            <span className="desk-section-subtitle">The methods&apos; signals as options · sold: BUY sells PE, SELL sells CE · bought: BUY buys CE, SELL buys PE · SL / TGT on the BTC perp</span>
           </div>
         </div>
         <div className="desk-section-badges">
@@ -384,6 +393,12 @@ export function SignalStrategiesCard() {
       {!canMakeForAccount() && (
         <p role="note" className="m-0 mb-2 text-[12px] text-muted-foreground">
           Showing every account's strategies. To make a new one, choose an account's tab above: a strategy belongs to one account and trades only on it.
+        </p>
+      )}
+      {buyersOn > 0 && (
+        <p role="note" aria-label="bought strategies" className="m-0 mb-2 text-[12px] text-muted-foreground">
+          {buyersOn} BUY {buyersOn === 1 ? 'strategy is' : 'strategies are'} switched on and written down only: no order is sent and no margin is used,
+          so {buyersOn === 1 ? 'it is' : 'they are'} not in the margin figures below{sellers.some((x) => x.enabled) ? '' : ' — which is why they read zero'}.
         </p>
       )}
       {data && !data.schedulerOn && mine.some((s) => s.enabled) && (
@@ -580,7 +595,7 @@ export function SignalStrategiesCard() {
               {s.open && <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} />}
               <p className="m-0 mt-0.5 text-[11.5px] text-[var(--dim)]">
                 {s.status}
-                {!live && ' · writes down what it would sell, sends nothing'}
+                {!live && (s.config.signal?.action === 'buy' ? ' · writes down what it would buy, sends nothing' : ' · writes down what it would sell, sends nothing')}
               </p>
             </div>
           );

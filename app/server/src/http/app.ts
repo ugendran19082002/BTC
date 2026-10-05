@@ -12,6 +12,8 @@ import { registerReportRoutes } from './routes/report.routes.js';
 import { registerStreamRoutes } from './routes/stream.routes.js';
 import { registerEntryRoutes } from './routes/entry.routes.js';
 import { registerAccountRoutes } from './routes/accounts.routes.js';
+import { deskOfRequest } from './account-query.js';
+import { runAsDesk } from '../trading/service.js';
 import type { Tester } from '../delta/accounts.js';
 import type { AccountSummaryReader } from './routes/accounts.routes.js';
 import { noteError } from '../observability/errors.js';
@@ -187,6 +189,16 @@ export async function buildApp(o: {
       where: `${req.method} ${req.url.split('?')[0]}`,
       context: { query: req.query },
     });
+  });
+
+  /*
+   * Which account's desk a request is for (5 Oct 2026: a desk per active account). Named by `?account=`, by
+   * `accountId` in the body, or by the trade it acts on; with none of those, the default account's. From here
+   * on, `tradingService()` inside the request is that desk -- so closing a trade reaches the engine and the
+   * exchange key that hold it, and no other.
+   */
+  app.addHook('preHandler', (req, _reply, done) => {
+    deskOfRequest(req).then((desk) => (desk ? runAsDesk(desk, done) : done()), () => done());
   });
 
   registerSessionRoutes(app, auth, now);

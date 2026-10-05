@@ -309,7 +309,8 @@ export default function App() {
    */
   const stream = useStream(signedIn === true);
   const polls = signedIn === true && !stream.live;
-  const { data: polledTrade, updatedAt: polledTradeAt, refresh: refreshTrade } = usePoll(getTradeStatus, 1_000, { enabled: polls });
+  // The default account's desk: what the stream carries, and what the header shows.
+  const { data: polledTrade, updatedAt: polledTradeAt, refresh: refreshTrade } = usePoll(() => getTradeStatus(), 1_000, { enabled: polls });
   const { data: errors } = usePoll(() => getErrors({ limit: 1 }), 30_000, { enabled: signedIn === true });
   /*
    * The broker accounts, and which one Strategy, Positions, Orders and P&L are showing (5 Oct 2026). The tabs
@@ -325,8 +326,18 @@ export default function App() {
   const shown = shownAccount(accountList, accountChoice);
   const shownId = shown === 'all' ? null : shown;
   setAccountScope(shownId, shown === 'all' && accountList.length > 0);
+  // Every account that is switched on trades at once, each on a desk of its own (5 Oct 2026); the default is only
+  // which tab opens first -- and the one whose status the stream carries. Another account's Positions are read
+  // from its own desk, once a second while they are on screen, and used only while they are still the answer to
+  // the account being shown.
   const tradingAccount = accountList.find((a) => a.isDefault) ?? null;
   const shownOther = shownId !== null && shownId !== tradingAccount?.id ? accountList.find((a) => a.id === shownId) ?? null : null;
+  const otherTrading = shownOther && shownOther.trading !== false && shownOther.active ? shownOther : null;
+  const otherPoll = usePoll(
+    () => getTradeStatus(otherTrading!.id).then((status) => ({ id: otherTrading!.id, status })),
+    1_000, { enabled: signedIn === true && tab === 'trade' && otherTrading !== null, deps: [otherTrading?.id ?? null] },
+  );
+  const otherTrade = otherTrading && otherPoll.data?.id === otherTrading.id ? otherPoll.data.status : null;
   const accountScreens = tab === 'strategy' || tab === 'trade' || tab === 'orders' || tab === 'pnl';
   const { data: polledTick, updatedAt: polledTickAt } = usePoll(getSpot, 1_000, { enabled: polls });
   const trade = newer(stream.status, stream.statusAt, polledTrade, polledTradeAt);
@@ -732,11 +743,21 @@ export default function App() {
           </section>
         </div>
       ) : tab === 'trade' ? (
-        shownOther ? (
-          // Another account: what Delta has for it. The desk's own positions are always the trading account's.
+        shownOther && !otherTrading ? (
+          // An account that is switched off has no desk: what Delta has for it, and where to switch it on.
           <ErrorBoundary where="Account summary">
-            <AccountSummaryCard key={shownOther.id} account={shownOther} tradingName={tradingAccount?.name ?? null} />
+            <AccountSummaryCard key={shownOther.id} account={shownOther} />
           </ErrorBoundary>
+        ) : otherTrading ? (
+          // Another account that is trading: its own desk's account figures and positions.
+          <div className="flex flex-col gap-3" key={`positions-${otherTrading.id}`}>
+            <ErrorBoundary where="Account">
+              <AccountCard status={otherTrade} />
+            </ErrorBoundary>
+            <ErrorBoundary where="Positions">
+              <PositionsCard trades={otherTrade?.open ?? []} onChanged={() => void otherPoll.refresh()} />
+            </ErrorBoundary>
+          </div>
         ) : (
         <div className="flex flex-col gap-3">
           <ErrorBoundary where="Account">

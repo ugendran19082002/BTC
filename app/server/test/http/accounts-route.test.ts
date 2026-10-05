@@ -23,7 +23,7 @@ const { AuthService } = await import('../../src/auth/service.js');
 const { AuthStore } = await import('../../src/auth/store.js');
 const { Secrets } = await import('../../src/auth/secrets.js');
 const { closePool, rows } = await import('../../src/db/pool.js');
-const { initTradingService, tradingService } = await import('../../src/trading/service.js');
+const { deskOpen, initTradingService, setDeskMode, tradingService, tradingServiceFor, tradingServices } = await import('../../src/trading/service.js');
 const { brokerAccounts } = await import('../../src/delta/accounts.js');
 const { initStrategyStore } = await import('../../src/http/routes/strategy.routes.js');
 const { query } = await import('../../src/db/pool.js');
@@ -83,7 +83,8 @@ test('[critical] the desk starts on .env\'s key, now a sealed row -- and no answ
   assert.equal(r.body.envKeyLeft, true, 'and the screen is told the key is still in .env, to be emptied there');
   const a = r.body.accounts[0];
   assert.deepEqual([a.name, a.isDefault, a.active, a.readable, a.keyHint], ['Delta India (from .env)', true, true, true, '9999']);
-  assert.deepEqual(Object.keys(a).sort(), ['active', 'broker', 'createdAt', 'description', 'id', 'isDefault', 'keptBecause', 'keyHint', 'lastTest', 'name', 'readable', 'updatedAt']);
+  assert.deepEqual(Object.keys(a).sort(), ['active', 'broker', 'createdAt', 'description', 'id', 'isDefault', 'keptBecause', 'keyHint', 'lastTest', 'name', 'readable', 'trading', 'updatedAt']);
+  assert.equal(a.trading, true, 'switched on, so it trades: a desk of its own');
   assert.equal(a.keptBecause, 'This is the only account, and the last one is kept. Deactivate it instead.', 'and why it cannot be removed, before anyone tries');
   assert.ok(!r.text.includes(ENV_KEY) && !r.text.includes(ENV_SECRET));
   assert.equal((await api('GET', '/api/accounts', undefined, {})).status, 401, 'closed without a session');
@@ -105,32 +106,33 @@ test('[critical] a second account: saved sealed, tested as it is saved, and not 
   assert.equal((await api('POST', '/api/accounts', { name: 'No key' })).status, 422);
 });
 
-test('[critical] live on the default: it cannot be removed or switched off, and a key that fails its test cannot become the default', async () => {
+test('[critical] live, every active account trades: the default is only which comes first, and switching one off stops its desk alone', async () => {
   const list = (await api('GET', '/api/accounts')).body;
   const main = named(list, 'Delta India (from .env)'), second = named(list, 'Second');
+  assert.deepEqual([main.trading, second.trading, main.keptBecause, second.keptBecause], [true, true, null, null]);
+  assert.equal(tradingServices().length, 2, 'a desk each');
+  assert.deepEqual(tradingServices().map((d) => d.mode), ['live', 'live'], 'both live: the second account trades beside the first');
+  assert.deepEqual([tradingServiceFor(main.id)!.accountId, tradingServiceFor(second.id)!.accountId], [main.id, second.id]);
 
-  assert.equal(main.keptBecause, 'The desk is trading live on this account. Switch to paper first.');
-  assert.equal(second.keptBecause, null);
-  const gone = await remove(main.id);
-  assert.deepEqual([gone.status, gone.body.error], [409, 'The desk is trading live on this account. Switch to paper first.']);
-  const off = await api('POST', `/api/accounts/${main.id}/active`, { active: false });
-  assert.equal(off.status, 409);
-  assert.equal(brokerAccounts().default()!.id, main.id, 'nothing changed');
-
+  // Choosing the default moves no order and asks nothing of Delta: it is the tab that opens first.
+  const before = tested.length;
   verdict = { [NEW_KEY]: { ok: false, detail: 'The API secret does not match the key. (Signature Mismatch)' } };
-  const failed = await api('POST', `/api/accounts/${second.id}/default`);
-  assert.equal(failed.status, 422);
-  assert.match(failed.body.error, /Not made the default: its connection test failed\. The API secret does not match the key/);
-  assert.equal(named(failed.body, 'Second').lastTest.ok, false, 'and the row says what the test said');
-  assert.equal(brokerAccounts().default()!.id, main.id);
-
-  // Working again, and nothing open: the desk moves to it, still live.
-  verdict = {};
   const moved = await api('POST', `/api/accounts/${second.id}/default`);
   assert.equal(moved.status, 200, moved.text);
   assert.deepEqual([named(moved.body, 'Second').isDefault, named(moved.body, 'Delta India (from .env)').isDefault], [true, false]);
-  assert.deepEqual(brokerAccounts().defaultCreds(), { key: NEW_KEY, secret: NEW_SECRET });
-  assert.equal(tradingService().mode, 'live');
+  assert.equal(tested.length, before, 'no connection test: nothing is being switched to');
+  assert.deepEqual([named(moved.body, 'Second').trading, named(moved.body, 'Delta India (from .env)').trading], [true, true], 'both still trade');
+  assert.equal(tradingService().accountId, second.id, 'a request that names no account is answered by the default account\'s desk');
+  verdict = {};
+
+  // Switched off with nothing open: its desk stops, the other's goes on -- and back on, it has a desk again.
+  const off = await api('POST', `/api/accounts/${main.id}/active`, { active: false });
+  assert.deepEqual([off.status, named(off.body, 'Delta India (from .env)').trading, named(off.body, 'Second').trading], [200, false, true]);
+  assert.deepEqual([deskOpen(main.id), deskOpen(second.id), tradingServices().length], [false, true, 1]);
+  const on = await api('POST', `/api/accounts/${main.id}/active`, { active: true });
+  assert.deepEqual([on.status, named(on.body, 'Delta India (from .env)').trading], [200, true]);
+  assert.equal(brokerAccounts().default()!.id, second.id, 'the default stayed where it was put');
+  assert.equal(tradingServiceFor(main.id)!.mode, 'live', 'and it comes back in the desk\'s mode');
 
   // The one no longer in use, with nothing on record, can go -- but only with a fresh authenticator code.
   const noCode = await api('POST', `/api/accounts/${main.id}/remove`, {});
@@ -160,20 +162,20 @@ test('[critical] test, rename -- and the last account is never deleted: it is sw
   const kept = 'This is the only account, and the last one is kept. Deactivate it instead.';
   const liveTry = await remove(second.id);
   assert.deepEqual([liveTry.status, liveTry.body.error], [409, kept]);
-  assert.equal((await tradingService().setMode('paper')).ok, true);
+  assert.equal((await setDeskMode('paper')).ok, true);
   const paperTry = await remove(second.id);
   assert.deepEqual([paperTry.status, paperTry.body.error], [409, kept]);
   assert.equal(brokerAccounts().list().length, 1);
 
-  // Switched off instead: kept, not used, and live is not reachable.
+  // Switched off instead: kept, not trading -- with no account trading, the desk is the paper one and live is not reachable.
   const off = await api('POST', `/api/accounts/${second.id}/active`, { active: false });
-  assert.deepEqual([off.status, named(off.body, 'Trading').active, named(off.body, 'Trading').isDefault], [200, false, false]);
+  assert.deepEqual([off.status, named(off.body, 'Trading').active, named(off.body, 'Trading').trading, named(off.body, 'Trading').isDefault], [200, false, false, false]);
   assert.equal(tradingService().canGoLive, false);
-  assert.equal((await tradingService().setMode('live')).ok, false);
+  assert.equal((await setDeskMode('live')).ok, false);
 
   // On again: the default again, and live is reachable again.
   const on = await api('POST', `/api/accounts/${second.id}/active`, { active: true });
-  assert.deepEqual([on.status, named(on.body, 'Trading').active, named(on.body, 'Trading').isDefault], [200, true, true]);
+  assert.deepEqual([on.status, named(on.body, 'Trading').active, named(on.body, 'Trading').trading, named(on.body, 'Trading').isDefault], [200, true, true, true]);
   assert.equal(tradingService().canGoLive, true);
 
   // A key is replaced by adding the new one first; then the old one can go.

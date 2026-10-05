@@ -11,7 +11,9 @@ import type {
  * screen shows before you tap is what the server will decide when you do.
  */
 
-export const getTradeStatus = () => json<TradeStatus>('/api/trade/status');
+/** One account's desk as it stands: `account` names it; with none, the default account's (the one the stream carries too). */
+export const getTradeStatus = (account?: number | null) =>
+  json<TradeStatus>(account == null ? '/api/trade/status' : `/api/trade/status?account=${account}`);
 
 export const getTradeQuote = (symbol: string) =>
   json<{ quote: Quote | null; product: ProductSpec | null }>(

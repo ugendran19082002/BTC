@@ -17,12 +17,14 @@ import { cn } from '@/lib/utils';
  * The broker accounts (owner, 5 Oct 2026): whose API key the desk trades with.
  *
  * Add an account, name it, test its connection, switch it on or off, choose the
- * default -- the one the desk trades on -- and remove it. The key and the secret
+ * default and remove it. Every account that is switched on trades its own
+ * strategies, at the same time as the others; the default is only which
+ * account's tab opens first. The key and the secret
  * are typed here once and sent to the server, which encrypts them; nothing
  * sends them back, so this screen only ever has the key's last four characters.
  *
- * Two things ask twice: removing an account, and choosing a default while the
- * desk is live, because from that tap on real orders go to another account.
+ * Removing an account asks twice. Choosing the default does not: it moves no
+ * order anywhere.
  *
  * Removing takes a fresh authenticator code as well: a signed-in browser may
  * look and switch, but destroying a key is not undone by signing in again.
@@ -35,7 +37,7 @@ import { cn } from '@/lib/utils';
 
 type Draft = { name: string; description: string; apiKey: string; apiSecret: string };
 const EMPTY: Draft = { name: '', description: '', apiKey: '', apiSecret: '' };
-type Asking = { id: number; what: 'remove' | 'default' } | null;
+type Asking = { id: number; what: 'remove' } | null;
 
 const field = 'grid gap-1 text-[11.5px] text-muted-foreground';
 
@@ -101,8 +103,9 @@ export function AccountsPanel() {
       )}
     >
       <p className="m-0 mb-2 text-[12px] text-muted-foreground">
-        The desk trades on the <b className="text-foreground">default</b> account. An API key and its secret are encrypted on the server as they
-        are saved and are never shown again — only the key's last four characters.
+        Every account that is switched on trades its own strategies, at the same time as the others. The{' '}
+        <b className="text-foreground">default</b> is only which account's tab opens first. An API key and its secret are encrypted on
+        the server as they are saved and are never shown again — only the key's last four characters.
       </p>
       {error && !view && <p role="alert" className="m-0 mb-2 text-[12px] text-[var(--down)]">Could not read the accounts: {error.message}</p>}
       {view && !view.canStore && (
@@ -123,19 +126,18 @@ export function AccountsPanel() {
       <ul aria-label="accounts" className="m-0 grid list-none gap-2 p-0">
         {accounts.map((a) => (
           <AccountRow
-            key={a.id} a={a} live={live} only={accounts.length === 1} busy={busy} asking={asking}
+            key={a.id} a={a} only={accounts.length === 1} busy={busy} asking={asking}
             said={said && said.id === a.id ? said : null}
             editing={editing && editing.id === a.id ? editing : null}
             onEdit={setEditing}
             onAsk={setAsking}
             // What the test said is written on the row itself, with when.
             onTest={() => run(a.id, 'test', () => testAccount(a.id))}
-            onActive={(on) => run(a.id, 'active', () => setAccountActive(a.id, on), (r) => ({
+            onActive={(on) => run(a.id, 'active', () => setAccountActive(a.id, on), () => ({
               ok: true,
-              text: !on ? 'Switched off. It is kept, and not used.'
-                : r.accounts.find((x) => x.id === a.id)?.isDefault && !a.isDefault ? 'Switched on. The desk trades on it.' : 'Switched on.',
+              text: on ? 'Switched on. Its own strategies trade on it.' : 'Switched off. It is kept, and does not trade.',
             }))}
-            onDefault={() => run(a.id, 'default', () => makeAccountDefault(a.id), () => ({ ok: true, text: `The desk now trades on "${a.name}".` }))}
+            onDefault={() => run(a.id, 'default', () => makeAccountDefault(a.id), () => ({ ok: true, text: `"${a.name}" is the default: its tab opens first.` }))}
             onRemove={(code) => run(a.id, 'remove', () => removeAccount(a.id, code))}
             onRename={async () => {
               if (!editing) return;
@@ -191,9 +193,8 @@ export function AccountsPanel() {
   );
 }
 
-function AccountRow({ a, live, only, busy, asking, said, editing, onEdit, onAsk, onTest, onActive, onDefault, onRemove, onRename }: {
+function AccountRow({ a, only, busy, asking, said, editing, onEdit, onAsk, onTest, onActive, onDefault, onRemove, onRename }: {
   a: BrokerAccount;
-  live: boolean;
   /** The only account there is: it is kept, so it can be switched off but not removed. */
   only: boolean;
   busy: string | null;
@@ -232,8 +233,9 @@ function AccountRow({ a, live, only, busy, asking, said, editing, onEdit, onAsk,
       ) : (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <b className="text-[13.5px] text-foreground">{a.name}</b>
-          {a.isDefault && <Badge tone="ok">Default · the desk trades on this</Badge>}
-          {!a.active && <Badge>Off</Badge>}
+          {a.isDefault && <Badge tone="ok">Default · opens first</Badge>}
+          {a.active && a.trading !== false && <Badge tone="ok">Trading</Badge>}
+          {!a.active && <Badge>Off · not trading</Badge>}
           {!a.readable && <Badge tone="danger">Key unreadable</Badge>}
         </div>
       )}
@@ -260,12 +262,6 @@ function AccountRow({ a, live, only, busy, asking, said, editing, onEdit, onAsk,
             <Button type="button" size="sm" variant="ghost" onClick={() => { setCode(''); onAsk(null); }}>Keep it</Button>
           </div>
         </form>
-      ) : ask === 'default' ? (
-        <div role="group" aria-label={`trade on ${a.name}?`} className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
-          <span className="text-[var(--warn)]">The desk is LIVE. From this tap, real orders go to "{a.name}".</span>
-          <Button type="button" size="sm" disabled={waiting} onClick={onDefault}>Yes, trade on it</Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => onAsk(null)}>Cancel</Button>
-        </div>
       ) : !editing && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <Button type="button" size="sm" variant="outline" disabled={waiting || !a.readable} onClick={onTest}>
@@ -274,8 +270,8 @@ function AccountRow({ a, live, only, busy, asking, said, editing, onEdit, onAsk,
           {!a.isDefault && (
             <Button type="button" size="sm" variant="outline" disabled={waiting || !a.active || !a.readable}
                     title={!a.active ? 'Switch it on first' : undefined}
-                    onClick={() => (live ? onAsk({ id: a.id, what: 'default' }) : onDefault())}>
-              <Star size={13} aria-hidden /> {mine('default') ? 'Testing, then switching…' : 'Make default'}
+                    onClick={onDefault}>
+              <Star size={13} aria-hidden /> {mine('default') ? 'Saving…' : 'Make default'}
             </Button>
           )}
           <Button type="button" size="sm" variant="outline" disabled={waiting} aria-pressed={a.active} onClick={() => onActive(!a.active)}>

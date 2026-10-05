@@ -4,7 +4,7 @@ import { authFromEnv } from './auth/service.js';
 import { loadDays } from './backtest/backtest.js';
 import { brokerAccounts, envKeyLeft } from './delta/accounts.js';
 import { refreshBrokerAccounts } from './http/routes/accounts.routes.js';
-import { initTradingService } from './trading/service.js';
+import { deskOpen, initTradingService } from './trading/service.js';
 import { initStrategyStore } from './http/routes/strategy.routes.js';
 import { StrategyRunner } from './strategy/runner.js';
 import { liveTickers, startTickerPoller, startTickerSocket } from './market/delta.js';
@@ -79,13 +79,14 @@ await app.listen({ port: config.port, host: '0.0.0.0' });
 app.log.info(`chain snapshots loaded: ${loadDays().length}`);
 {
   const accounts = brokerAccounts();
-  const inUse = accounts.default();
+  // Every active account trades, each on a desk of its own; the default is only which comes first.
+  const trading = accounts.list().filter((a) => deskOpen(a.id));
   app.log.info(
-    accounts.defaultCreds() !== null
-      ? `broker account: "${inUse!.name}" (key ending ${inUse!.keyHint}), ${accounts.list().length} saved`
+    trading.length > 0
+      ? `broker accounts trading: ${trading.map((a) => `"${a.name}" (key ending ${a.keyHint}${a.isDefault ? ', default' : ''})`).join(', ')} -- ${accounts.list().length} saved`
       : !accounts.canStore
         ? 'no broker account -- DESK_SESSION_SECRET is not set, so no API key can be kept; account and order endpoints are off'
-        : 'no usable default broker account -- add or choose one under Logs -> Accounts; account and order endpoints are off, market data unaffected',
+        : 'no broker account switched on -- add or activate one under Logs -> Accounts; account and order endpoints are off, market data unaffected',
   );
   if (envKeyLeft()) app.log.warn('DELTA_API_KEY / DELTA_API_SECRET are still set in .env: they are no longer read (the accounts are in the database) -- empty both lines');
 }

@@ -5,8 +5,8 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, onDeskAccount, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
-import { tradingService } from '../../trading/service.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
+import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
@@ -219,7 +219,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
    * `?account=<id>`: the strategies of one broker account (and those that belong to none), as ids -- what a
    * run or a signal is kept by. Null: every account, nothing left out.
    */
-  const OFF_ACCOUNT = 'not entering: the desk is trading on another account';
+  const OFF_ACCOUNT = 'not entering: its account is switched off';
   const belongs = (x: { accountId?: number | null }, account: number | null) =>
     account === null || (x.accountId ?? null) === null || x.accountId === account;
   async function ofAccount(account: number | null): Promise<Set<string> | null> {
@@ -300,7 +300,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       spot: svc.spot,
       strategies: await Promise.all(shown.map(async (x) => {
         // Another account's strategy: shown, and said plainly that it is not entering while the desk is elsewhere.
-        const here = onDeskAccount(x, svc.accountId);
+        const here = tradingServiceFor(x.accountId) !== null;
         if (x.config.trigger === 'signal') {
           // A signal strategy has no entry time to count down to: it is taking signals now, or it is not.
           const on = inSignalWindow(x, now);

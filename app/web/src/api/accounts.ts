@@ -8,8 +8,10 @@ export type BrokerAccount = {
   broker: 'delta-india';
   keyHint: string;
   active: boolean;
-  /** The account the desk trades on. */
+  /** The default: the account whose tab opens first. Every account that is switched on trades, default or not. */
   isDefault: boolean;
+  /** It is trading: switched on, its key readable, a desk of its own running on the server. */
+  trading?: boolean;
   /** False when the server can no longer read its key (the server's master secret changed): remove it and add it again. */
   readable: boolean;
   createdAt: number;
