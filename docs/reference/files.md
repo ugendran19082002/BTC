@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-389 files listed, 187 test files counted below, images and lockfiles left out.
+393 files listed, 190 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 113 |
-| `app/web` | 74 |
+| `app/server` | 115 |
+| `app/web` | 75 |
 
 ## `(root)`
 
@@ -82,6 +82,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [accounts.ts](../../app/server/src/delta/accounts.ts) | The broker accounts: whose API key the desk signs with (owner, 5 Oct 2026). |
 | [signed.ts](../../app/server/src/delta/signed.ts) | Signed transport for the user's own Delta Exchange India account. |
 
 ## `app/server/src/docs/`
@@ -142,6 +143,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts) | The broker accounts (Logs -> Accounts): add, name, test, switch on and off, choose the default, remove. |
 | [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts) | The desk's read routes: health, the option chain, spot and candles, what changed, the perpetual's tape, book and big prints for the chart, the trend plan's paper log, chain.db reloads and the desk... |
 | [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | The entry section's routes: the 24 reads (twelve methods, with the timeframe chain and without it) and their paper record. |
 | [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts) | The error log, readable and writable from the browser. |
@@ -255,6 +257,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [accounts.ts](../../app/web/src/api/accounts.ts) | -- |
 | [client.ts](../../app/web/src/api/client.ts) | One place that knows how to talk to the API: JSON in and out, the session cookie, "not signed in" as its own error, and which failures are worth reporting to the error log. |
 | [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
@@ -263,6 +266,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
 | [strategy.ts](../../app/web/src/api/strategy.ts) | Copy one, settings and all, as a new draft. |
 | [trade.ts](../../app/web/src/api/trade.ts) | The order desk. |
+
+## `app/web/src/components/accounts/`
+
+| File | What it is |
+|---|---|
+| [AccountsPanel.tsx](../../app/web/src/components/accounts/AccountsPanel.tsx) | The broker accounts (owner, 5 Oct 2026): whose API key the desk trades with. |
 
 ## `app/web/src/components/auth/`
 

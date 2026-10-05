@@ -2,7 +2,8 @@ import { buildApp } from './http/app.js';
 import { config } from './config.js';
 import { authFromEnv } from './auth/service.js';
 import { loadDays } from './backtest/backtest.js';
-import { credsFromEnv } from './delta/signed.js';
+import { brokerAccounts } from './delta/accounts.js';
+import { refreshBrokerAccounts } from './http/routes/accounts.routes.js';
 import { initTradingService } from './trading/service.js';
 import { initStrategyStore } from './http/routes/strategy.routes.js';
 import { StrategyRunner } from './strategy/runner.js';
@@ -76,11 +77,17 @@ const app = await buildApp({ auth });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 
 app.log.info(`chain snapshots loaded: ${loadDays().length}`);
-app.log.info(
-  credsFromEnv() !== null
-    ? 'Delta credentials present'
-    : 'no Delta credentials -- account and order endpoints are off, market data unaffected',
-);
+{
+  const accounts = brokerAccounts();
+  const inUse = accounts.default();
+  app.log.info(
+    accounts.defaultCreds() !== null
+      ? `broker account: "${inUse!.name}" (key ending ${inUse!.keyHint}), ${accounts.list().length} saved`
+      : !accounts.canStore
+        ? 'no broker account -- DESK_SESSION_SECRET is not set, so no API key can be kept; account and order endpoints are off'
+        : 'no usable default broker account -- add or choose one under Logs -> Accounts; account and order endpoints are off, market data unaffected',
+  );
+}
 /*
  * Migrate the strategy tables on the way up, not on the first request.
  *
@@ -247,6 +254,9 @@ const nextEntryRun = () => {
 nextEntryRun();
 // The journal keeps a year; the paper log keeps its graded trades for good.
 setInterval(() => { pruneSignals(Date.now()).catch(warn('entry-signals')); }, 6 * 3_600_000).unref();
+// The broker accounts are served from memory and written through it; once a day the table is read again, for a
+// row changed by hand in a console. A default changed that way is followed only when no live position is open.
+setInterval(() => { refreshBrokerAccounts().catch(warn('broker-accounts')); }, 24 * 3_600_000).unref();
 // The paper log on the live tape: fills, stops and targets as they print (entry/live-grade.ts). Four looks a
 // second, and never two at once: a look still writing is not joined by another queued behind it.
 let grading = false;

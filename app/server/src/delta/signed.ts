@@ -15,17 +15,11 @@ export const BASE = 'https://api.india.delta.exchange';
 
 export type Creds = { key: string; secret: string };
 
-export function credsFromEnv(): Creds | null {
-  const key = process.env.DELTA_API_KEY?.trim();
-  const secret = process.env.DELTA_API_SECRET?.trim();
-  return key && secret ? { key, secret } : null;
-}
-
 export class NotConfigured extends Error {
   constructor() {
     super(
-      'No Delta credentials configured. Set DELTA_API_KEY and DELTA_API_SECRET ' +
-        'in app/server/.env to enable account endpoints. Market data needs no key.',
+      'No broker account in use. Add one, or choose a default, under Logs -> Accounts ' +
+        'to enable account endpoints. Market data needs no key.',
     );
   }
 }

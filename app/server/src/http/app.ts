@@ -11,6 +11,8 @@ import { registerStrategyRoutes } from './routes/strategy.routes.js';
 import { registerReportRoutes } from './routes/report.routes.js';
 import { registerStreamRoutes } from './routes/stream.routes.js';
 import { registerEntryRoutes } from './routes/entry.routes.js';
+import { registerAccountRoutes } from './routes/accounts.routes.js';
+import type { Tester } from '../delta/accounts.js';
 import { noteError } from '../observability/errors.js';
 import { refuse, wasRefusal, worthLogging } from './refuse.js';
 
@@ -86,6 +88,8 @@ export async function buildApp(o: {
   now?: () => number;
   /** Told of every route as it is registered; docs/gen-docs.ts lists the API from it. */
   onRoute?: (route: RouteOptions) => void;
+  /** A broker account's connection test; Delta itself unless a test says otherwise. */
+  accountTest?: Tester;
 } = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -191,6 +195,7 @@ export async function buildApp(o: {
   registerStreamRoutes(app);
   // Telegram for the entry section's test alert; none when the trading service or Telegram is not set up.
   registerEntryRoutes(app, () => { try { return tradingService().notifier; } catch { return null; } });
+  registerAccountRoutes(app, { test: o.accountTest });
 
   return app;
 }

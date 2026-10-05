@@ -15,6 +15,7 @@ ambiguous (`auth_sessions`, `strategy_runs`).
 | trading | `trades`, `trade_events`, `settings`, `mtm_samples` | the trading engine, the settings cache | The trade journal and the desk's remembered choices. What makes a restart safe. |
 | strategy | `strategies`, `strategy_runs`, `strategy_signal_runs` | the scheduler | Saved strategies and their run journals (what stops a strategy entering twice, or taking a signal twice). |
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
+| broker | `broker_accounts` | the Accounts screen | Whose API key the desk trades with: the accounts, their keys sealed, and which is the default. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
 | market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | chart | none | -- | `chart_annotations` (levels saved on the price chart) was dropped on 4 Oct 2026 with the chart's layers (`chart-002-drop-annotations`); it held no rows. |
@@ -280,6 +281,50 @@ instead of waiting for a signed cookie to expire.
 
 The sealed secret opens only under the `DESK_SESSION_SECRET` it was sealed with;
 a dump of these tables on their own opens nothing.
+
+---
+
+## `broker_accounts` — whose key the desk signs with
+
+Until 5 Oct 2026 the Delta API key was two lines of `.env`: one account, changed
+by editing a file and restarting a desk that may be holding positions. Now each
+account is a row, kept from the screen (Logs -> Accounts), and the desk trades
+on the one marked default. `delta/accounts.ts` owns the table.
+
+| Column | Type | What it holds |
+|---|---|---|
+| `id` | BIGINT identity PK | |
+| `name`, `description` | TEXT | What the person calls it. `name` is unique, whatever its case. |
+| `broker` | TEXT | `delta-india`, the only one. |
+| `api_key_sealed`, `api_secret_sealed` | TEXT | **Both sealed**: AES-256-GCM under a key derived from `DESK_SESSION_SECRET` (label `btc-desk/broker-account/v1`, a key of its own -- the sign-in's sealing key does not open it). A dump of this table signs nothing. |
+| `key_hint` | TEXT | The key's last four characters: all the screen is ever given. |
+| `active` | BOOLEAN | Off, the account is kept and cannot be the default (`CHECK (active OR NOT is_default)`). |
+| `is_default` | BOOLEAN | The account the desk trades on. A partial unique index allows one. |
+| `created_at`, `updated_at` | BIGINT | Epoch ms. |
+| `last_test_at`, `last_test_ok`, `last_test_detail` | | What the last connection test said -- one signed read of the wallet. |
+
+Read like `settings`: the table is loaded into memory once at start, the process
+is its only writer, and every change is written first and memory updated
+second, so a signed request never waits on the database. It is read again once
+a day, for a row changed by hand in a console; a default changed that way is
+followed only when no live position is open.
+
+Rules the routes hold (`http/routes/accounts.routes.ts`), each answered through
+`refuse()`:
+
+- **The account under a live position does not change.** Choosing another
+  default is refused while the desk is live with anything open; removing or
+  switching off the default is refused while the desk is live at all. The mode
+  switch's rule, for the mode switch's reason.
+- **A default has to work now.** Its connection is tested before the switch; a
+  key that fails is not made the default, and the row says what Delta said.
+- **A row that will not open is never used.** After `DESK_SESSION_SECRET` is
+  rotated an account shows "key unreadable"; it is removed and added again.
+
+`.env`'s `DELTA_API_KEY` / `DELTA_API_SECRET` are read once: the first start
+with no account imports them as the default (the setting `broker_env_imported`
+remembers it, so an account removed on the screen does not come back), which is
+what lets a desk holding live positions come up on the account it went down on.
 
 ---
 

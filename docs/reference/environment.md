@@ -13,12 +13,12 @@ deploy variables are read by docker compose and the scripts from `deploy/.env`.
 | `BUILD_TAG` | [config.ts](../../app/server/src/config.ts) | **no** | The image tag this process was built as, shown on the screen as the running build. Compose sets it from `TAG`; unset when run by hand. |
 | `CHAIN_DB` | [paths.ts](../../app/server/src/paths.ts) | **no** | Path to `chain.db`, the harvester's read-only dataset. Default: `chain.db` at the repository root. Compose sets `/srv/data/chain.db`. |
 | `DATABASE_URL` | [config.ts](../../app/server/src/config.ts) | yes | PostgreSQL connection URL. **Required**: the desk will not start without somewhere to write its journal. Compose sets it from `POSTGRES_PASSWORD`. |
-| `DELTA_API_KEY` | [signed.ts](../../app/server/src/delta/signed.ts) | yes | Delta Exchange India API key for the account. Optional: without it market data still works and the desk stays on paper. |
-| `DELTA_API_SECRET` | [signed.ts](../../app/server/src/delta/signed.ts) | yes | The secret for `DELTA_API_KEY`. |
+| `DELTA_API_KEY` | [accounts.ts](../../app/server/src/delta/accounts.ts) | yes | Seeds the first broker account. Read once, at the first start with no account saved; afterwards the accounts live in `broker_accounts`, sealed, and are kept under Logs -> Accounts. Optional. |
+| `DELTA_API_SECRET` | [accounts.ts](../../app/server/src/delta/accounts.ts) | yes | The secret for `DELTA_API_KEY`; read with it, once. |
 | `DELTA_LIVE_TRADING` | [config.ts](../../app/server/src/config.ts) | yes | `0` or `false` forces paper and locks the mode switch. Anything else, or unset, allows live, and live is the starting mode once credentials exist (`config.ts`). |
 | `DESK_ALLOWED_ORIGINS` | [app.ts](../../app/server/src/http/app.ts) | yes | Extra origins, comma-separated, allowed to send a change besides the desk's own host. Normally empty. |
 | `DESK_PASSWORD_HASH` | [service.ts](../../app/server/src/auth/service.ts) | yes | Seeds the first user's password (scrypt hash from `npx tsx hash-password.mjs`). Never the password itself. |
-| `DESK_SESSION_SECRET` | [service.ts](../../app/server/src/auth/service.ts) | yes | Seals the authenticator secret and recovery codes. Required for sign-in; rotating it means setting up two-step sign-in again (`npm run auth -- reset-2fa`). |
+| `DESK_SESSION_SECRET` | [service.ts](../../app/server/src/auth/service.ts), [accounts.ts](../../app/server/src/delta/accounts.ts) | yes | Seals the authenticator secret, the recovery codes and the broker accounts' API keys. Required for sign-in and for keeping an account; rotating it means setting up two-step sign-in again (`npm run auth -- reset-2fa`) and entering each API key again. |
 | `DESK_USER` | [service.ts](../../app/server/src/auth/service.ts) | yes | Seeds the first sign-in user. Read once; afterwards the user lives in `auth_user`. |
 | `LOG_LEVEL` | [config.ts](../../app/server/src/config.ts) | **no** | Fastify log level. Default `info`. |
 | `PORT` | [config.ts](../../app/server/src/config.ts) | yes | HTTP port the API listens on. Default `8787`. |

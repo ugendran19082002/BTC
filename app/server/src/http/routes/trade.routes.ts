@@ -431,7 +431,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
       /** Why it cannot be thrown right now, if it cannot. */
       switchBlockedBy: trades.length > 0
         ? `Close ${trades.length} open position${trades.length === 1 ? '' : 's'} first.`
-        : svc.canGoLive ? null : 'No Delta credentials configured on the server.',
+        : svc.canGoLive ? null : 'No broker account in use. Add one under Logs → Accounts.',
       balanceUsd: balance,
       /**
        * Delta's own wallet: the balance its app shows (FNO wallet / account value), and the margin in use --

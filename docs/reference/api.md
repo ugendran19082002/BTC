@@ -9,7 +9,19 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-69 routes.
+76 routes.
+
+## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
+
+| Method | Path | Session | What |
+|---|---|---|---|
+| GET | `/api/accounts` | signed in | Every saved account -- name, description, the key's last four, whether it is on, the default, its last test. |
+| POST | `/api/accounts` | signed in | Save an account: the key and the secret are encrypted here and never sent back. |
+| DELETE | `/api/accounts/:id` | signed in | Remove an account and its key for good. |
+| POST | `/api/accounts/:id` | signed in | Rename an account or change its description. |
+| POST | `/api/accounts/:id/active` | signed in | Switch an account on or off. |
+| POST | `/api/accounts/:id/default` | signed in | Make this the account the desk trades on. |
+| POST | `/api/accounts/:id/test` | signed in | Ask Delta, signed with this account's key, for the wallet: the key is known, the secret matches, this server may use it. |
 
 ## [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts)
 

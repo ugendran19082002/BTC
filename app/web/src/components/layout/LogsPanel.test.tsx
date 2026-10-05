@@ -33,9 +33,9 @@ beforeEach(() => {
 const tab = (name: string) => within(screen.getByRole('tablist', { name: 'Logs' })).getByRole('tab', { name });
 
 describe('the Logs screen', () => {
-  it('[critical] has the errors, the Telegram log and the speed gauges as tabs, opens on errors and remembers the tab', () => {
+  it('[critical] has the errors, the Telegram log, the speed gauges and the broker accounts as tabs, opens on errors and remembers the tab', () => {
     const { unmount } = render(<LogsPanel />);
-    expect(within(screen.getByRole('tablist', { name: 'Logs' })).getAllByRole('tab').map((t) => t.textContent?.trim())).toEqual(['Errors', 'Telegram', 'Speed']);
+    expect(within(screen.getByRole('tablist', { name: 'Logs' })).getAllByRole('tab').map((t) => t.textContent?.trim())).toEqual(['Errors', 'Telegram', 'Speed', 'Accounts']);
     expect(tab('Errors')).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(tab('Telegram'));
     expect(tab('Telegram')).toHaveAttribute('aria-selected', 'true');

@@ -1,7 +1,8 @@
-import { AlertTriangle, Gauge, Send } from 'lucide-react';
+import { AlertTriangle, Gauge, KeyRound, Send } from 'lucide-react';
 import { ErrorLogPanel } from '@/components/layout/ErrorLogPanel';
 import { TelegramLogCard } from '@/components/desk/TelegramLogCard';
 import { DeskMetricsCard } from '@/components/desk/DeskMetricsCard';
+import { AccountsPanel } from '@/components/accounts/AccountsPanel';
 import { usePersisted } from '@/hooks/usePersisted';
 import { cn } from '@/lib/utils';
 
@@ -9,12 +10,14 @@ import { cn } from '@/lib/utils';
  * The desk's logs in one screen: what went wrong, what was sent to the phone,
  * and how fast the desk is running. They were three places -- the Errors screen,
  * and two cards at the foot of Settings -- and Settings itself went on 4 Oct
- * 2026, so they are tabs here.
+ * 2026, so they are tabs here. Beside them since 5 Oct 2026, the broker accounts:
+ * whose API key the desk trades with.
  */
 const LOG_TABS = [
   { id: 'errors', label: 'Errors', Icon: AlertTriangle },
   { id: 'telegram', label: 'Telegram', Icon: Send },
   { id: 'speed', label: 'Speed', Icon: Gauge },
+  { id: 'accounts', label: 'Accounts', Icon: KeyRound },
 ] as const;
 type LogTab = (typeof LOG_TABS)[number]['id'];
 
@@ -34,7 +37,7 @@ export function LogsPanel() {
           </button>
         ))}
       </div>
-      {tab === 'errors' ? <ErrorLogPanel /> : tab === 'telegram' ? <TelegramLogCard /> : <DeskMetricsCard />}
+      {tab === 'errors' ? <ErrorLogPanel /> : tab === 'telegram' ? <TelegramLogCard /> : tab === 'speed' ? <DeskMetricsCard /> : <AccountsPanel />}
     </div>
   );
 }

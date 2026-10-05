@@ -23,11 +23,12 @@ export class Secrets {
   private readonly encKey: Buffer;
   private readonly macKey: Buffer;
 
-  constructor(master: string) {
+  /** `encLabel`: which sealing key to derive, so each kind of secret has a key of its own under the one master. */
+  constructor(master: string, encLabel = 'btc-desk/totp-secret/v1') {
     // Any non-empty secret works through HKDF; a short one is weak, and the
     // audit TODO says to replace it with 32 random bytes.
     if (!master) throw new Error('DESK_SESSION_SECRET is not set');
-    this.encKey = derive(master, 'btc-desk/totp-secret/v1');
+    this.encKey = derive(master, encLabel);
     this.macKey = derive(master, 'btc-desk/recovery-code/v1');
   }
 

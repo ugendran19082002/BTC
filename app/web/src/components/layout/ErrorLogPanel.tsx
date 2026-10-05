@@ -48,7 +48,7 @@ function meaningOf(row: ErrorRow): string | null {
     return 'Delta did not answer in time. Reads are retried once automatically; nothing is ever sent twice.';
   }
   if (row.code === 'RateLimited') return 'Delta asked the desk to slow down. It waits, then tries again.';
-  if (row.code === 'NotConfigured') return 'No Delta API key is set on the server, so account data is off.';
+  if (row.code === 'NotConfigured') return 'No broker account is in use, so account data is off. Add one under Logs → Accounts.';
   if (row.code === 'UnreadableReply' || row.code === 'http_200') {
     return 'Delta answered, but the reply arrived broken or cut off. Reads are asked again once automatically; nothing is ever sent twice.';
   }

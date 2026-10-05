@@ -1,5 +1,6 @@
 import { config } from '../config.js';
-import { credsFromEnv } from '../delta/signed.js';
+import type { Creds } from '../delta/signed.js';
+import { initBrokerAccounts } from '../delta/accounts.js';
 import { TradeEngine, type AddRequest, type TradeRecord } from './engine.js';
 import { PgTradeStore } from './store.js';
 import { settings as deskSettings, type Settings } from '../db/settings.js';
@@ -34,9 +35,9 @@ import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 /**
  * The one live trading service.
  *
- * Which exchange it drives is decided here, once, from the environment:
- * DELTA_LIVE_TRADING must be on *and* credentials must be present. Anything
- * else is paper, and the desk says which one it is on every screen.
+ * Which exchange it drives is decided here: DELTA_LIVE_TRADING must be on *and*
+ * a default broker account must be present (delta/accounts.ts). Anything else
+ * is paper, and the desk says which one it is on every screen.
  *
  * The poll loop is deliberately dumb: every second, ask the engine to step each
  * open trade. All the judgement lives in the engine, where it is tested.
@@ -73,6 +74,8 @@ export type TradingServiceDeps = {
   /** Loaded before this is built: every getter below reads it synchronously. */
   settings: Settings;
   limits?: Partial<RiskLimits>;
+  /** The default broker account's key, or null: with none, the desk is paper only. */
+  creds?: Creds | null;
 };
 
 export class TradingService {
@@ -81,7 +84,8 @@ export class TradingService {
   readonly settings: Settings;
   /** Live unless the environment forbids it or there are no credentials. */
   private currentMode: DeskMode;
-  private readonly live: ExchangePort | null;
+  /** The real exchange, signed as the default broker account; null with no account. Replaced by `setLiveCreds`. */
+  private live: ExchangePort | null;
   private readonly paperExchange: PaperExchange;
   private readonly engine: TradeEngine;
   private timer: NodeJS.Timeout | null = null;
@@ -124,7 +128,7 @@ export class TradingService {
     return this.settings.set('alerts_enabled', on ? '1' : '0');
   }
 
-  constructor({ store, settings, limits = {} }: TradingServiceDeps) {
+  constructor({ store, settings, limits = {}, creds = null }: TradingServiceDeps) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     this.store = store;
@@ -137,7 +141,6 @@ export class TradingService {
           onResult: (r) => { void logTelegram(r); },
         })
       : null;
-    const creds = credsFromEnv();
     this.live = creds ? new DeltaExchange(creds) : null;
     this.paperExchange = new PaperExchange({ balanceUsd: 1_000 });
     // A mode chosen in the browser outlives a restart; without one, the
@@ -263,7 +266,7 @@ export class TradingService {
   async setMode(next: DeskMode): Promise<ModeSwitch> {
     if (next === this.currentMode) return { ok: true, mode: this.currentMode };
     if (next === 'live' && !this.live) {
-      return { ok: false, mode: this.currentMode, reason: 'No Delta credentials configured.' };
+      return { ok: false, mode: this.currentMode, reason: 'No broker account in use. Add one under Logs → Accounts.' };
     }
     if (next === 'live' && config.paperLocked) {
       return { ok: false, mode: this.currentMode, reason: 'DELTA_LIVE_TRADING=0 forbids live trading on this server.' };
@@ -280,6 +283,35 @@ export class TradingService {
     await this.settings.set('mode', next);
     this.currentMode = next;
     return { ok: true, mode: this.currentMode };
+  }
+
+  /**
+   * Why the account live orders are signed as cannot change right now, or null.
+   *
+   * The mode switch's rule, for the same reason: a live position is on one
+   * account, and signing as another underneath it would leave the engine asking
+   * an account that has never heard of the order it is holding. On paper the
+   * account is not in use, so anything goes. `toNone`: the change would leave
+   * the desk with no account at all.
+   */
+  async accountSwitchBlocked(toNone: boolean): Promise<string | null> {
+    if (this.currentMode !== 'live') return null;
+    if (toNone) return 'The desk is trading live on this account. Switch to paper first.';
+    const open = await this.openTrades();
+    return open.length > 0
+      ? `Close ${open.length} open ${open.length === 1 ? 'position' : 'positions'} first — a position cannot move between accounts.`
+      : null;
+  }
+
+  /** Sign live orders as this account from now on (null: no account). Ask `accountSwitchBlocked` first. */
+  setLiveCreds(creds: Creds | null): void {
+    this.live = creds ? new DeltaExchange(creds) : null;
+    // Everything remembered about the account that was: its balance, positions and orders are not this one's.
+    this.lastBalance = null;
+    this.positionsCache = null;
+    this.balanceCache = null;
+    this.walletCache = null;
+    this.ordersCache.clear();
   }
 
   /** Pick up anything that was live when the process died, then start stepping. */
@@ -834,8 +866,10 @@ export function nextTradeMs(now = Date.now()): number {
 export async function initTradingService(limits: Partial<RiskLimits> = {}): Promise<TradingService> {
   if (singleton) return singleton;
   const settings = await deskSettings().load();
+  // The broker accounts before the desk: which exchange it drives is decided as it is built.
+  const accounts = await initBrokerAccounts(settings);
   const store = await PgTradeStore.open();
-  singleton = new TradingService({ store, settings, limits });
+  singleton = new TradingService({ store, settings, limits, creds: accounts.defaultCreds() });
   return singleton;
 }
 
