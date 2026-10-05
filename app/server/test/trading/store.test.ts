@@ -116,3 +116,22 @@ test('a second writer cannot duplicate an event: (trade_id, seq) is unique', asy
   await store.save(stale);
   assert.equal((await store.events('t1')).length, 1);
 });
+
+test('[critical] an account\'s journal writes the trades from before accounts: the row\'s account decides, not the plan', async () => {
+  const store = await fresh();
+  // A trade placed before 5 Oct 2026: no accountId on its plan; its row given account 1 by trading-007.
+  const old = record();
+  await store.save(old);
+  await query("UPDATE trades SET broker_account_id = 1 WHERE trade_id = 't1'");
+  const mine = store.scoped(1);
+  const next = { ...old, state: { ...old.state, phase: 'protected' as const, updatedAt: 2_000 } };
+  await mine.save(next);
+  assert.equal((await mine.get('t1'))!.state.phase, 'protected', 'written: a target placed on it is on the record');
+  // Another account's journal still refuses it, and a plan naming another account is refused.
+  await assert.rejects(store.scoped(2).save(next), /belongs to account 1, not 2/);
+  await assert.rejects(mine.save({ ...next, plan: { ...next.plan, accountId: 2 } }), /belongs to account 2, not 1/);
+  // A new trade with no account on its plan is written as the account's own.
+  const fresh2 = record({ tradeId: 't2' });
+  await mine.save({ ...fresh2, state: { ...fresh2.state, tradeId: 't2' } });
+  assert.equal((await query("SELECT broker_account_id FROM trades WHERE trade_id = 't2'")).rows[0].broker_account_id, 1);
+});

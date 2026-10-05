@@ -193,11 +193,24 @@ export class PgTradeStore implements TradeStore {
 
   private async write(rec: TradeRecord): Promise<void> {
     const { state } = rec;
-    // An account's store writes that account's trades and no other's.
-    if (this.scope !== null && (rec.plan.accountId ?? null) !== this.scope) {
-      throw new Error(`trade ${state.tradeId} belongs to account ${rec.plan.accountId ?? 'none'}, not ${this.scope}: not written`);
+    // An account's store writes that account's trades and no other's. A plan that names another account is refused.
+    if (this.scope !== null && rec.plan.accountId != null && rec.plan.accountId !== this.scope) {
+      throw new Error(`trade ${state.tradeId} belongs to account ${rec.plan.accountId}, not ${this.scope}: not written`);
     }
     await tx(async (c) => {
+      /*
+       * A plan with no account id is a trade from before 5 Oct 2026: its account is the row's own
+       * `broker_account_id` (back-filled by trading-007), not the plan. It was refused here for that -- every
+       * event of the open trades placed before the change, their targets and closes included (5 Oct 2026,
+       * 13:43: "belongs to account none, not 1"). Now the row decides: this account's, or not yet written.
+       */
+      if (this.scope !== null && rec.plan.accountId == null) {
+        const row = await c.query<{ broker_account_id: string | null }>('SELECT broker_account_id FROM trades WHERE trade_id = $1', [state.tradeId]);
+        const owner = row.rows[0]?.broker_account_id;
+        if (owner != null && Number(owner) !== this.scope) {
+          throw new Error(`trade ${state.tradeId} belongs to account ${owner}, not ${this.scope}: not written`);
+        }
+      }
       await c.query(
         // broker_account_id is written with the row and left alone after: a trade does not change accounts.
         `INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at, broker_account_id)
@@ -211,7 +224,7 @@ export class PgTradeStore implements TradeStore {
            plan = EXCLUDED.plan,
            state = EXCLUDED.state, updated_at = EXCLUDED.updated_at`,
         [state.tradeId, state.symbol, state.phase, state.position, JSON.stringify(rec.plan), JSON.stringify(state), state.updatedAt,
-          rec.plan.accountId ?? null],
+          rec.plan.accountId ?? this.scope],
       );
       const written = await c.query<{ n: number }>('SELECT COUNT(*) AS n FROM trade_events WHERE trade_id = $1', [state.tradeId]);
       for (let i = written.rows[0]!.n; i < rec.events.length; i++) {
