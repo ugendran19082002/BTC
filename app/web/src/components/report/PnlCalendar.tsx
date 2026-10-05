@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
 import type { DayRow } from '@/types/report';
 import { byDay, heat, monthsOf, netOf } from '@/lib/report';
@@ -44,6 +44,11 @@ export function PnlCalendar({
     [rows, includeCharges]
   );
   const months = useMemo(() => monthsOf(from, to), [from, to]);
+  // Open on the latest month: on a phone only one fits, and the oldest of a 90-day range is three taps away from today.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [months.length]);
 
   // Overall statistics for range
   const { totalWinDays, totalLossDays, winRatePct } = useMemo(() => {

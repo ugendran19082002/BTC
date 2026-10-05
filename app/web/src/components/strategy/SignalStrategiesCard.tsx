@@ -523,13 +523,17 @@ export function SignalStrategiesCard() {
           const live = Boolean(s.config.liveOrders);
           return (
             <div key={s.id} className={cn('rounded-lg border border-solid px-2.5 py-2', s.enabled ? 'border-[var(--up)]' : 'border-[var(--line)]')}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-[13.5px] font-semibold text-foreground">{s.name}</span>
+              {/*
+                On a phone: the name with Edit, Copy and Delete as icons on one row, and the two switches that matter
+                -- on/off and live orders -- side by side under it, each half the width. One row on a wider screen.
+              */}
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 sm:flex sm:flex-wrap sm:justify-between">
+                <div className="order-1 flex min-w-0 items-baseline gap-2">
+                  <span className="truncate text-[13.5px] font-semibold text-foreground">{s.name}</span>
                   <span className={cn('text-[11px]', s.enabled ? 'text-[var(--up)]' : 'text-[var(--dim)]')}>{s.enabled ? 'on' : 'off'}</span>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <Button size="sm" className="h-8" variant={s.enabled ? 'outline' : 'default'} disabled={busy === s.id}
+                <div className="order-3 col-span-2 grid grid-cols-2 gap-1.5 sm:order-2 sm:ml-auto sm:flex">
+                  <Button size="sm" className="h-9 sm:h-8" variant={s.enabled ? 'outline' : 'default'} disabled={busy === s.id}
                           onClick={() => void act(s.id, () => setStrategyEnabled(s.id, !s.enabled))}>
                     {busy === s.id && <Loader2 className="h-3 w-3 animate-spin" />}
                     {s.enabled ? 'Disable' : 'Enable'}
@@ -537,7 +541,7 @@ export function SignalStrategiesCard() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className={cn('h-8', (live || confirmLive === s.id) && 'border-[var(--down)] text-[var(--down)]')}
+                    className={cn('h-9 sm:h-8', (live || confirmLive === s.id) && 'border-[var(--down)] text-[var(--down)]')}
                     role="switch"
                     aria-checked={live}
                     aria-label={`Live orders for ${s.name}`}
@@ -547,15 +551,17 @@ export function SignalStrategiesCard() {
                     {busy === `live-${s.id}` && <Loader2 className="h-3 w-3 animate-spin" />}
                     {confirmLive === s.id ? `Tap again: real ${s.config.signal?.action === 'buy' ? 'buys' : 'orders'}` : live ? 'Live orders ON' : 'Live orders off'}
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-8" onClick={() => { setEditing(s); setFormOpen(true); }}>
-                    <Pencil className="h-3 w-3" /> Edit
+                </div>
+                <div className="order-2 flex flex-none items-center gap-0.5 sm:order-3 sm:gap-1.5">
+                  <Button size="sm" variant="ghost" className="h-8 px-2 sm:px-2.5" onClick={() => { setEditing(s); setFormOpen(true); }}>
+                    <Pencil className="h-3.5 w-3.5 sm:h-3 sm:w-3" /> <span className="sr-only sm:not-sr-only">Edit</span>
                   </Button>
                   {/*
                     Copy, then the copy opens to be renamed and changed: how a second strategy is actually made.
                     The server saves it switched off with live orders off -- a draft, not a second set of orders.
                   */}
                   <Button
-                    size="sm" variant="ghost" className="h-8"
+                    size="sm" variant="ghost" className="h-8 px-2 sm:px-2.5"
                     aria-label={`Copy ${s.name}`}
                     title="A copy, switched off with live orders off, opened to rename and change"
                     disabled={busy === `copy-${s.id}`}
@@ -565,12 +571,12 @@ export function SignalStrategiesCard() {
                       setFormOpen(true);
                     })}
                   >
-                    {busy === `copy-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
-                    Copy
+                    {busy === `copy-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3.5 w-3.5 sm:h-3 sm:w-3" />}
+                    <span className="sr-only sm:not-sr-only">Copy</span>
                   </Button>
                   {/* Delete, on a second tap within four seconds. Its trades and their history stay. */}
                   <Button
-                    size="sm" variant="ghost" className="h-8 text-[var(--down)]"
+                    size="sm" variant="ghost" className="h-8 px-2 text-[var(--down)] sm:px-2.5"
                     aria-label={`Delete ${s.name}`}
                     title="Delete this strategy. Trades it has open keep their exits, and its history stays."
                     disabled={busy === `del-${s.id}`}
@@ -584,7 +590,7 @@ export function SignalStrategiesCard() {
                       void act(`del-${s.id}`, () => deleteStrategy(s.id));
                     }}
                   >
-                    {busy === `del-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    {busy === `del-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 sm:h-3 sm:w-3" />}
                     {confirmDelete === s.id && 'Tap again to delete'}
                   </Button>
                 </div>
@@ -596,9 +602,9 @@ export function SignalStrategiesCard() {
                 saved the same way, so neither needs the form opened. They apply to the next signal; what is
                 already open keeps its size.
               */}
-              <div role="group" aria-label={`quick settings of ${s.name}`} className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] text-muted-foreground">
-                <label className="inline-flex items-center gap-1.5">
-                  <span>Lots per signal</span>
+              <div role="group" aria-label={`quick settings of ${s.name}`} className="mt-1.5 grid grid-cols-2 items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground sm:flex sm:flex-wrap sm:gap-x-4 sm:gap-y-1.5">
+                <label className="inline-flex items-center justify-between gap-1.5 sm:justify-start">
+                  <span className="whitespace-nowrap">Lots per signal</span>
                   <NumberCommit
                     label={`Lots per signal for ${s.name}`}
                     value={s.config.lots}
@@ -606,11 +612,11 @@ export function SignalStrategiesCard() {
                     problem={(n) => (Number.isInteger(n) && n >= 1 ? null : 'Lots must be a whole number, at least 1.')}
                     onInvalid={setFailed}
                     onSave={(n) => act(`quick-${s.id}`, () => saveStrategy({ id: s.id, name: s.name, config: { ...s.config, lots: n } }))}
-                    className="h-7 w-14"
+                    className="h-7 w-12 sm:w-14"
                   />
                 </label>
-                <label className="inline-flex items-center gap-1.5">
-                  <span>At most open</span>
+                <label className="inline-flex items-center justify-between gap-1.5 sm:justify-start">
+                  <span className="whitespace-nowrap">At most open</span>
                   <NumberCommit
                     label={`At most open for ${s.name}`}
                     value={s.config.signal?.maxOpen ?? 1}
@@ -618,10 +624,10 @@ export function SignalStrategiesCard() {
                     problem={(n) => (Number.isInteger(n) && n >= 1 && n <= MAX_SIGNAL_OPEN ? null : `At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`)}
                     onInvalid={setFailed}
                     onSave={(n) => act(`quick-${s.id}`, () => saveStrategy({ id: s.id, name: s.name, config: { ...s.config, signal: { ...s.config.signal!, maxOpen: n } } }))}
-                    className="h-7 w-14"
+                    className="h-7 w-12 sm:w-14"
                   />
                 </label>
-                <span className="text-[11px] text-[var(--dim)]">saved as you leave the field · from the next signal</span>
+                <span className="col-span-2 text-[11px] text-[var(--dim)]">saved as you leave the field · from the next signal</span>
               </div>
               {s.open && (s.config.signal?.action === 'buy'
                 ? <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} buyCostPerLotUsd={buyCostPerLotUsd(s)} />

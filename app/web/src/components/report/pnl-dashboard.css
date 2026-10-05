@@ -943,3 +943,55 @@
   }
 }
 
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Phones (5 Oct 2026): KPI cards two by two with Total P&L across the top, and a
+   calendar whose days share the width instead of fixed 36px squares, so the
+   week column is never cut off at 360px.
+   ───────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 420px) {
+  .pnl-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .pnl-kpi-strip > .pnl-kpi-card:first-child {
+    grid-column: 1 / -1;
+  }
+  .pnl-kpi-card {
+    padding: 9px 10px;
+    min-height: 0;
+  }
+  .pnl-kpi-foot {
+    font-size: 10.5px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* One month at a time, the scroller's full width; the arrows' scroll snaps to the next. */
+  .pnl-cal.mode-detailed {
+    scroll-snap-type: x mandatory;
+  }
+  .mode-detailed .pnl-month {
+    flex: 0 0 100%;
+    min-width: 0;
+    scroll-snap-align: start;
+    padding: 8px;
+  }
+  .mode-detailed .pnl-dow,
+  .mode-detailed .pnl-week {
+    grid-template-columns: repeat(7, minmax(0, 1fr)) 26px;
+    gap: 2px;
+    width: 100%;
+  }
+  .mode-detailed .pnl-day {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    min-width: 0;
+  }
+  .mode-detailed .pnl-week-total {
+    width: 26px;
+    height: auto;
+    min-height: 0;
+  }
+}

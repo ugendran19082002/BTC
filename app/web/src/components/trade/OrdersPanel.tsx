@@ -558,7 +558,7 @@ function OrderRow({ order }: { order: OrderRecord }) {
         </span>
 
         {/* Row PnL & Timestamp */}
-        <span className="row-span-1 flex-none text-right">
+        <span className="flex-none text-right">
           {stillOpen ? (
             ifClosed !== null ? (
               <div>

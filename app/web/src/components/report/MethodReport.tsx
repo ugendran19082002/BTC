@@ -56,6 +56,9 @@ export const shows = (r: MethodReportRow, show: Show): boolean =>
         : r.trades > 0 && r.netPts < 0;
 
 /** The total of the lines shown: what a filtered table adds up to (owner, 2 Oct 2026: "the total follows the filter"). */
+/** The time pickers' trigger, filling half a phone's row; their own size from sm up. */
+const TIME_FIT = 'h-10 w-full min-w-0 gap-1.5 px-2 text-[13.5px] sm:h-11 sm:w-auto sm:min-w-[128px] sm:gap-2 sm:px-3 sm:text-[15px]';
+
 export function totalOf(rows: readonly MethodReportRow[], name: string): MethodReportRow {
   const sum = (k: 'signals' | 'trades' | 'wins' | 'losses' | 'profitPts' | 'lossPts' | 'profitR' | 'lossR') => rows.reduce((a, r) => a + r[k], 0);
   const t = {
@@ -143,11 +146,11 @@ export function MethodReport() {
 
   return (
     <div className="flex flex-col gap-3">
-      <CollapsibleCard id="methods-report" title="Methods report" right={
+      <CollapsibleCard id="methods-report" title="Methods report" rightInline right={
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => void refresh()} aria-label="Refresh"
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-muted">
-              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden /> Refresh
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden /> <span className="hidden sm:inline">Refresh</span>
             </button>
             <button type="button" onClick={() => data && downloadCsv('methods-report.csv', reportCsv(data))} disabled={!data}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-muted disabled:opacity-50">
@@ -167,13 +170,14 @@ export function MethodReport() {
             <span className="text-[11px] uppercase tracking-[0.6px] text-muted-foreground">Signals from</span>
             <DateRangePicker allowAll value={range} onChange={setRange} />
             {range && (
-              <>
-                <TimePicker label="From time" value={fromTime} onChange={onFromTime}
+              // From and to on one row on a phone, each half the width.
+              <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:flex sm:w-auto">
+                <TimePicker label="From time" value={fromTime} onChange={onFromTime} className={TIME_FIT}
                             presets={[{ label: 'start of day', value: DAY_START }, { label: '5:30 AM', value: '05:30' }, { label: '9:00 AM', value: '09:00' }]} />
                 <span className="text-[12px] text-muted-foreground">to</span>
-                <TimePicker label="To time" value={toTime} onChange={setToTime} min={oneDay ? fromTime : null}
+                <TimePicker label="To time" value={toTime} onChange={setToTime} min={oneDay ? fromTime : null} className={TIME_FIT}
                             presets={[{ label: '5:30 PM', value: '17:30' }, { label: 'end of day', value: DAY_END }]} />
-              </>
+              </div>
             )}
           </div>
           <div role="group" aria-label="Show methods" className="inline-flex overflow-hidden rounded-md border border-border text-[12px]">
@@ -193,13 +197,17 @@ export function MethodReport() {
           <Switch label="Only signals with every gate on" checked={everyGate} onCheckedChange={setEveryGate}
                   description={everyGate ? 'The rules as designed: gate-off signals left out.' : 'Every signal, as in the signal history.'} />
         </div>
-        <p className="m-0 mt-2 text-[11px] leading-relaxed text-[var(--dim)]">
+        {/* How it is counted: there when asked for, not a paragraph over the table on every visit (5 Oct 2026). */}
+        <details className="mt-2 text-[11px] leading-relaxed text-[var(--dim)]">
+          <summary className="cursor-pointer select-none text-[11.5px] text-muted-foreground">How this is counted</summary>
+          <p className="m-0 mt-1">
           The paper log: every TRADE signal, filled and closed at TGT1, the stop or the time-out. A win closed above its fill.
           The dates are the IST days the signals appeared on (a trade that closed the next day counts on its signal's day).
           Points from the fill to the exit, before fees. Profit and Loss list the methods whose net points are up or down, and
           the totals -- top and bottom -- add up the methods shown. Every signal counts, as in the signal history, unless "Only signals with every gate
           on" is set. With the chain the entry is always 5m; without it, each timeframe has its own tab.
-        </p>
+          </p>
+        </details>
         {error && <p role="alert" className="m-0 mt-2 text-[12px] text-[var(--down)]">Could not read the report: {error.message}</p>}
       </CollapsibleCard>
 
