@@ -143,8 +143,14 @@ export function describeStrategy(c: StrategyConfig): string {
 export type Sizing = {
   /** Contracts on the book at once, in the worst case this config allows. */
   maxContracts: number;
-  /** Margin that needs, in USD, at 200x. */
+  /**
+   * What it takes, in USD. Sold: the margin at 200x. Bought (`basis: 'premium'`): the premium, which is paid in
+   * full and uses no margin -- priced at the strategy's own "at most $N" number, 0 with `priced: false` where
+   * the premium is not known until the strike is picked.
+   */
   marginUsd: number;
+  basis?: 'margin' | 'premium';
+  priced?: boolean;
   marginInr: number;
   /** Share of the account it would tie up, 0-1, or null with no balance yet. */
   shareOfAccount: number | null;
@@ -169,13 +175,19 @@ export function sizingOf(
   // A signal strategy sells one leg per signal, up to `maxOpen` of them at once.
   const legsOn = c.trigger === 'signal' ? (c.signal?.maxOpen ?? 1) : c.legs === 'both' ? 2 : 1;
   const maxContracts = c.lots * legsOn;
-  const per = spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0;
+  // Bought (a BUY-side signal strategy): the premium, paid in full, at the strategy's own "at most $N" -- no margin.
+  const bought = c.trigger === 'signal' && c.signal?.action === 'buy';
+  const premiumCap = c.strikeRule !== 'strict' && c.premium?.mode === 'atMost' ? Math.max(c.premium.usd, c.premium.fallbackUsd ?? 0) : null;
+  const priced = bought ? premiumCap !== null && premiumCap > 0 : true;
+  const per = bought ? (priced ? premiumCap! * 0.001 : 0) : spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0;
   const marginUsd = per * maxContracts;
-  const share = balanceUsd && balanceUsd > 0 ? marginUsd / balanceUsd : null;
+  const share = balanceUsd && balanceUsd > 0 && priced ? marginUsd / balanceUsd : null;
 
   const warnings: string[] = [];
   if (share !== null && share > 1) {
-    warnings.push(`Needs about $${marginUsd.toFixed(0)} of margin against $${balanceUsd!.toFixed(0)} free — this cannot be funded.`);
+    warnings.push(bought
+      ? `Costs up to $${marginUsd.toFixed(2)} in premium against $${balanceUsd!.toFixed(2)} free — this account cannot pay for all of it.`
+      : `Needs about $${marginUsd.toFixed(0)} of margin against $${balanceUsd!.toFixed(0)} free — this cannot be funded.`);
   } else if (share !== null && share > 0.5) {
     warnings.push(`Would tie up ${Math.round(share * 100)}% of the account on a single day.`);
   }
@@ -187,6 +199,8 @@ export function sizingOf(
   if (c.weekdays.length === 0) warnings.push('No days picked, so this can never run.');
   return {
     maxContracts,
+    basis: bought ? 'premium' : 'margin',
+    priced,
     marginUsd,
     marginInr: marginUsd * usdInr,
     shareOfAccount: share,

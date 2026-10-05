@@ -466,8 +466,11 @@ export function SizeFields({ c, set, err, sizing, spot, label, warnings }: {
             <span className="tabular-nums text-foreground">{sizing.maxContracts}</span>
           </div>
           <div className="flex justify-between gap-2">
-            <span className="text-muted-foreground">Margin</span>
-            <span className="tabular-nums text-foreground">{spot ? inr(sizing.marginInr) : '—'}</span>
+            {/* Sold: margin at 200x. Bought: the premium, paid in full -- no margin. */}
+            <span className="text-muted-foreground">{sizing.basis === 'premium' ? 'Premium, at most' : 'Margin'}</span>
+            <span className="tabular-nums text-foreground">
+              {sizing.basis === 'premium' ? (sizing.priced ? inr(sizing.marginInr) : 'set by the strike') : spot ? inr(sizing.marginInr) : '—'}
+            </span>
           </div>
           {sizing.shareOfAccount !== null && (
             <div className="flex justify-between gap-2">
@@ -479,8 +482,10 @@ export function SizeFields({ c, set, err, sizing, spot, label, warnings }: {
           )}
         </div>
       </div>
-      {spot ? <p className="m-0 mt-1 text-right text-[11px] text-[var(--dim)]">{usd(sizing.marginUsd)} at 200x</p> : null}
-      <Warnings items={warnings.filter((w) => /margin|account|funded/i.test(w))} />
+      {sizing.basis === 'premium'
+        ? <p className="m-0 mt-1 text-right text-[11px] text-[var(--dim)]">{sizing.priced ? `${usd(sizing.marginUsd)} premium, no margin` : 'no margin: the premium is paid in full'}</p>
+        : spot ? <p className="m-0 mt-1 text-right text-[11px] text-[var(--dim)]">{usd(sizing.marginUsd)} at 200x</p> : null}
+      <Warnings items={warnings.filter((w) => /margin|account|funded|premium/i.test(w))} />
     </>
   );
 }

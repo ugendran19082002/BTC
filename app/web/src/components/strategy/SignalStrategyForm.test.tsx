@@ -480,6 +480,19 @@ describe('bought or sold: the BUY and SELL tabs over the leg', () => {
     expect([saved().config.takeProfitPct, saved().config.stopLossPct]).toEqual([3, 0.4]);
   });
 
+  it('[critical] the size of a BUY strategy is its premium, not a seller\'s margin', () => {
+    // 1 lot a signal, at most 2 open, paying at most $40: 2 contracts x $40 x 0.001 BTC = $0.08 of premium.
+    show(signalStrategy({ action: 'buy', maxOpen: 2 }, { lots: 1, strikeRule: 'premium', premium: { mode: 'atMost', usd: 40, fallbackUsd: null } }));
+    tab('Strike & lots');
+    expect(screen.getByText('Premium, at most')).toBeInTheDocument();
+    expect(screen.queryByText(/at 200x/)).toBeNull();
+    expect(screen.getByText('$0.080 premium, no margin')).toBeInTheDocument();
+    // Sold, the same strategy shows the seller's margin, as before.
+    radio('option buy or sell', 'SELL');
+    expect(screen.getByText('Margin')).toBeInTheDocument();
+    expect(screen.getByText(/at 200x/)).toBeInTheDocument();
+  });
+
   it('[critical] back to SELL: the exits start off again and take the seller\'s limits -- target up to 99%, stop open -- and live orders can be on', async () => {
     show(signalStrategy({ action: 'buy' }, { takeProfitPct: 3, stopLossPct: 0.4 }));
     tab('Entry & exit');
