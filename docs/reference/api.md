@@ -19,7 +19,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/accounts` | signed in | Save an account: the key and the secret are encrypted here and never sent back. |
 | POST | `/api/accounts/:id` | signed in | Rename an account or change its description. |
 | POST | `/api/accounts/:id/active` | signed in | Switch an account on or off. |
-| POST | `/api/accounts/:id/default` | signed in | Make this the account the desk trades on. |
+| POST | `/api/accounts/:id/default` | signed in | Make this the default: the account whose tab opens first, and whose desk answers a request that names none. |
 | POST | `/api/accounts/:id/remove` | signed in | Remove an account and its key for good -- only with a fresh authenticator code (owner, 5 Oct 2026). |
 | GET | `/api/accounts/:id/summary` | signed in | -- |
 | POST | `/api/accounts/:id/test` | signed in | Ask Delta, signed with this account's key, for the wallet: the key is known, the secret matches, this server may use it. |

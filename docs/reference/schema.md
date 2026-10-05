@@ -6,7 +6,7 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-34 tables, 62 migrations.
+34 tables, 63 migrations.
 
 ## Migrations applied
 
@@ -19,7 +19,7 @@ the way it is, is in [database.md](database.md).
 | errors | `errors-001-log`, `errors-002-to-public` |
 | market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-016-book-heat`, `market-017-drop-large-prints` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables`, `strategy-006-signal-runs`, `strategy-007-drop-trend-paper`, `strategy-008-broker-account`, `strategy-009-signal-action` |
-| trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public`, `trading-007-broker-account`, `trading-007-retire-best-pick-settings`, `trading-008-retire-contract-lots` |
+| trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public`, `trading-007-broker-account`, `trading-007-retire-best-pick-settings`, `trading-008-mtm-by-account`, `trading-008-retire-contract-lots` |
 
 ## Tables
 
@@ -410,8 +410,8 @@ the way it is, is in [database.md](database.md).
 | `net` | double precision |  |  |
 | `broker_account_id` | bigint | yes |  |
 
+- `mtm_samples_at_account` unique (at, COALESCE(broker_account_id, (0)::bigint))
 - `mtm_samples_by_day` (day, at)
-- `mtm_samples_pkey` unique (at)
 
 ### oi_snapshots
 

@@ -272,8 +272,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [AccountSummaryCard.tsx](../../app/web/src/components/accounts/AccountSummaryCard.tsx) | An account the desk is not trading on, as Delta has it right now: its wallet and whatever it holds there, read with its own key. |
-| [AccountTabs.tsx](../../app/web/src/components/accounts/AccountTabs.tsx) | Which broker account the screen below is showing (owner, 5 Oct 2026): a tab per account over Strategy, Positions, Orders and P&L, opening on the one the desk trades on. |
+| [AccountSummaryCard.tsx](../../app/web/src/components/accounts/AccountSummaryCard.tsx) | An account that is switched off, as Delta has it right now: its wallet and whatever it holds there, read with its own key. |
+| [AccountTabs.tsx](../../app/web/src/components/accounts/AccountTabs.tsx) | Which broker account the screen below is showing (owner, 5 Oct 2026): a tab per account over Strategy, Positions, Orders and P&L, opening on the default. |
 | [AccountsPanel.tsx](../../app/web/src/components/accounts/AccountsPanel.tsx) | The broker accounts (owner, 5 Oct 2026): whose API key the desk trades with. |
 
 ## `app/web/src/components/auth/`

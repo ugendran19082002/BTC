@@ -369,10 +369,10 @@ any.
 | strategies, their runs and signal runs | `strategies.broker_account_id`; the runs by their strategy | yes |
 | orders, positions, the P&L calendar | `trades.broker_account_id` | yes |
 | the day's P&L line | `mtm_samples.broker_account_id` | yes |
-| today's booked P&L -- the daily-loss gate, the header, the day's summary | `realisedSince(from, accountId)` | yes: the trading account's |
+| today's booked P&L -- the daily-loss gate, the day's summary | each desk's own scoped journal | yes: each account's own |
 | "At most open" over a set of strategies | `settings` `signal_max_open@<id>` | yes |
 | the most lots short | `settings` `max_short_contracts@<id>` | yes |
-| the wallet and margin on the Strategy card | Delta, as the trading account | the trading account's; blank when another is looked at |
+| the wallet, margin and positions on a screen | Delta, as the account being shown | yes: the shown account's own desk (blank for one that is switched off) |
 | paper or live, the scheduler switch, the alerts switch | `settings` `mode`, `scheduler_enabled`, `alerts_enabled` | no: one desk, one switch |
 | entry signals, setups, gates, methods; market data | `entry_*`, the market tables | no: they are the market's, not an account's |
 | sign-in, the error log, the Telegram log | `auth_*`, `errors`, `telegram_log` | no: the desk's |
@@ -380,11 +380,21 @@ any.
 The two per-account settings are read through `accountSetting` (`db/settings.ts`): an account with no value
 of its own takes the desk-wide one, so a limit set before there were accounts still holds.
 
-**A strategy enters only on its own account** (`onDeskAccount`,
-`strategy/types.ts`): the scheduler and the signals skip a strategy whose
-account is not the one the desk is on. Its exits are never held by that. A
-strategy of no account (a desk with none) enters wherever the desk is. The desk
-still trades on one account at a time; the other accounts' strategies wait.
+**Every active account trades at once, each on a desk of its own** (since the
+evening of 5 Oct 2026; `trading/service.ts`). A desk is one account's
+`TradingService`: its own exchange signed with its own key, its own engine and
+poll loop, its own balance, limits and caches. Each is handed the journal
+through `PgTradeStore.scoped(accountId)`, which can read and write only that
+account's trades -- the wall that keeps one account's engine from stepping, or
+"finding closed", another account's position. A strategy runs on its own
+account's desk; a request is answered by the desk of the account it names, or of
+the trade it acts on (`deskOfRequest`); with neither, the default account's.
+**The default is only which account's tab opens first.** Switching an account
+off stops its desk (refused while it holds a position); with no account
+switched on there is the one paper desk over the whole journal, as before
+there were accounts. `mtm_samples` is keyed by moment and account
+(`trading-008-mtm-by-account`), since two desks can take a reading in the same
+millisecond.
 
 ---
 

@@ -10,14 +10,15 @@ order ticket, and manages it to its own exit. The code is in
 
 ## A strategy belongs to one broker account
 
-Since 5 Oct 2026 a strategy is made on an account's tab (Strategy screen) and
-belongs to that account (`strategies.broker_account_id`). It **enters only
-while the desk is trading on that account**: the scheduler and the signals skip
-any other account's strategy, and its row says "not entering: the desk is
-trading on another account". Its exits are not held by this. It cannot be made
-on the "All accounts" tab, and a saved strategy never changes account. Sizes
-and limits are set against one account's balance, so moving the desk to
-another account must not start trading them there unasked.
+A strategy is made on an account's tab (Strategy screen) and belongs to that
+account (`strategies.broker_account_id`); it cannot be made on "All accounts"
+and never changes account. **Every account that is switched on trades its own
+strategies at the same time as the others**, each on a desk of its own -- its
+own exchange key, engine, balance and limits (`trading/service.ts`). So the
+SELL account's strategies and the BUY account's take the same signal in the
+same minute, each on its own account. A strategy whose account is switched off
+does not enter, and its row says "not entering: its account is switched off".
+The default account is only the tab that opens first.
 
 ## One pass of the scheduler
 
