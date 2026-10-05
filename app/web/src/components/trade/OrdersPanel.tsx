@@ -14,6 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DateRangePicker, istToday } from '@/components/ui/date-range-picker';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { OriginTag } from '@/components/trade/OriginTag';
+import { ActionTag } from '@/components/trade/ActionTag';
 import { SignalTag } from '@/components/trade/SignalTag';
 import {
   contractLabel, duration, inr, pnlTone, price, signedInr, signedUsd, stamp, usdToInr,
@@ -547,6 +548,8 @@ function OrderRow({ order }: { order: OrderRecord }) {
               </Badge>
             )}
             {reason && <span className={cn('text-[11px] font-medium', REASON_TONE[reason])}>{reason}</span>}
+            {/* What was done with the option: sold or bought. */}
+            <ActionTag action={order.plan?.action} />
             {/* Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */}
             <OriginTag origin={order.plan?.origin} strategyName={order.plan?.strategyName ?? null} strategyId={order.plan?.strategyId ?? null} />
             <SignalTag plan={order.plan} perpExit={order.position === 0 ? (order.perpExit ?? null) : null} />

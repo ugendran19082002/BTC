@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import type { Creds } from '../delta/signed.js';
-import { initBrokerAccounts } from '../delta/accounts.js';
+import { brokerAccounts, initBrokerAccounts } from '../delta/accounts.js';
 import { TradeEngine, type AddRequest, type TradeRecord } from './engine.js';
 import { PgTradeStore } from './store.js';
 import { settings as deskSettings, type Settings } from '../db/settings.js';
@@ -221,14 +221,14 @@ export class TradingService {
         // notifications follow.
         try {
           if (!this.notifier || !this.alertsOn) return;
-          this.notifier.notify(slippageAlert({ mode: this.currentMode }, t, plan, message, Date.now()));
+          this.notifier.notify(slippageAlert(this.alertContext(), t, plan, message, Date.now()));
         } catch { /* an alert is never worth a trade */ }
       },
       // The mode is read at the moment of the fill, not captured, so a paper
       // fill can never reach the phone dressed as a live one.
       onEvent: async (event, before, after, plan) => {
         if (!this.notifier || !this.alertsOn) return;
-        const alert = alertFor(event, before, after, plan, { mode: this.currentMode });
+        const alert = alertFor(event, before, after, plan, this.alertContext());
         if (alert) this.notifier.notify(alert);
         // Only a closing event can end the day, so only then is the book read.
         // The journal is already written, so the store sees this trade closed.
@@ -238,6 +238,19 @@ export class TradingService {
         }
       },
     });
+  }
+
+  /**
+   * What every alert is told about the desk as it is: paper or live, and -- with more than one broker account
+   * saved -- the name of the one it is trading on, so a fill on the phone says whose it is.
+   */
+  private alertContext(): { mode: DeskMode; account?: string | null } {
+    let account: string | null = null;
+    try {
+      const all = brokerAccounts().list();
+      if (all.length > 1 && this.currentAccountId !== null) account = all.find((a) => a.id === this.currentAccountId)?.name ?? null;
+    } catch { /* the accounts are not loaded (a test's desk): no name to say */ }
+    return { mode: this.currentMode, account };
   }
 
   /** One strategy's trades touched since the start of the IST day. */
@@ -477,6 +490,8 @@ export class TradingService {
     const plan = orderPlan(input, `${input.symbol}-${nextTradeMs()}`);
     // Which account this is placed as, written down where it is known: the journal's `broker_account_id`.
     if (this.currentAccountId !== null) plan.accountId = this.currentAccountId;
+    // And what was done with the option: sold. The engine opens every trade with a sell.
+    plan.action = 'sell';
     const res = await this.engine.open(plan);
     // Working from this moment: watched closely for its fill, without waiting for the loop to read it.
     if (res.ok) this.entryWatch.add(res.state.tradeId);

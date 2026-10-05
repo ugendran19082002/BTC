@@ -134,6 +134,12 @@ export type TradePlan = {
    */
   accountId?: number | null;
   /**
+   * Whether the option was sold or bought to open, for the label on Positions and Orders (5 Oct 2026). The
+   * engine sells to open, so every trade it places says `sell`; absent -- a trade from before the label --
+   * reads as `sell`, which is what it was.
+   */
+  action?: 'sell' | 'buy';
+  /**
    * The saved strategy that opened this trade, when one did.
    *
    * Absent for anything placed by hand from the ticket. The scheduler needs it

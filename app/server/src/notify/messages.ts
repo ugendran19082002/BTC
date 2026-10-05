@@ -43,7 +43,8 @@ export type Alert = {
  */
 export const PROBLEM_REPEAT_MS = 15 * 60_000;
 
-export type AlertContext = { mode: 'live' | 'paper' };
+/** `account`: the broker account's name, said in the footer when the desk has more than one. */
+export type AlertContext = { mode: 'live' | 'paper'; account?: string | null };
 
 /**
  * An exit that printed a long way from the price that asked for it.
@@ -507,7 +508,9 @@ function footer(at: number, plan: TradePlan, ctx: AlertContext): string {
   // Which strategy, by name: "strategy" alone does not say which of five.
   const origin = kind === 'strategy' && plan.strategyName ? `strategy “${escape(plan.strategyName)}”` : ORIGIN_WORDS[kind];
   const mode = ctx.mode === 'live' ? 'LIVE' : 'PAPER — simulated, no real order';
-  return `🕒 ${istTime(at)} IST · ${origin} · ${mode}`;
+  // Whose fill it is, where the desk has more than one account to trade on.
+  const account = ctx.account ? ` · account “${escape(ctx.account)}”` : '';
+  return `🕒 ${istTime(at)} IST · ${origin}${account} · ${mode}`;
 }
 
 const pnlLine = (usdPnl: number) => `${pnlIcon(usdPnl)} P&amp;L: ${signedMoney(usdPnl, true)}`;

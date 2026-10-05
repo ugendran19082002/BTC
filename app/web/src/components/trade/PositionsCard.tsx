@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { CloseAllButton } from '@/components/trade/CloseAllButton';
 import { OriginTag } from '@/components/trade/OriginTag';
+import { ActionTag } from '@/components/trade/ActionTag';
 import { SignalTag } from '@/components/trade/SignalTag';
 import { EditExitsSheet } from '@/components/trade/EditExitsSheet';
 import { AddLotsSheet } from '@/components/trade/AddLotsSheet';
@@ -305,6 +306,8 @@ function ContractName({ trade }: { trade: Trade }) {
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="text-[14px] font-semibold text-foreground">{contractLabel(trade.symbol)}</span>
       <Badge tone={trade.optionSide === 'CE' ? 'ok' : 'warn'}>{trade.optionSide}</Badge>
+      {/* What was done with the option: sold or bought. */}
+      <ActionTag action={trade.plan?.action} />
       {/* Three things place orders here; which one did is the first question. */}
       <OriginTag origin={trade.plan?.origin} strategyName={trade.plan?.strategyName ?? null} strategyId={trade.plan?.strategyId ?? null} />
       <SignalTag plan={trade.plan} />

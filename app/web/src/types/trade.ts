@@ -80,6 +80,8 @@ export type Trade = {
      * existed, where "manual" is what it always meant.
      */
     origin?: TradeOrigin;
+    /** Sold or bought to open; absent on a trade from before the label, which was sold. */
+    action?: 'sell' | 'buy';
     /** Which saved strategy, when a strategy opened it. */
     strategyId?: string | null;
     /** The strategy's name -- its current one, looked up by id; the name it was placed under once it is deleted. */
