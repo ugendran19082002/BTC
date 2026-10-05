@@ -31,7 +31,9 @@ export function TodayPnl({ status }: { status: TradeStatus | null }) {
           sideOffset={6}
           className="z-50 w-[min(18rem,calc(100vw-24px))] rounded-lg border border-border bg-background p-3 shadow-lg"
         >
-          <p className="m-0 mb-2 text-[11px] uppercase tracking-[0.6px] text-muted-foreground">Today, since 05:30 IST</p>
+          <p className="m-0 mb-2 text-[11px] uppercase tracking-[0.6px] text-muted-foreground">
+            Today, since 05:30 IST{status.combined ? ` · all ${status.combined.accounts.length} accounts` : ''}
+          </p>
           <dl className="m-0 grid gap-1.5">
             <KV label="Booked" hint="Profit or loss on trades closed today.">
               <Money value={today.realisedUsd} signed />
@@ -46,6 +48,17 @@ export function TodayPnl({ status }: { status: TradeStatus | null }) {
             <KV label={<span className="font-semibold text-foreground">Net</span>}>
               <Money value={today.netUsd} signed strong />
             </KV>
+            {/* Each account's own net, when the figure above is several accounts' added. */}
+            {status.combined && (
+              <>
+                <div className="my-0.5 h-px bg-border" />
+                {status.combined.accounts.map((a) => (
+                  <KV key={a.id} label={a.name}>
+                    <Money value={a.netTodayUsd} signed />
+                  </KV>
+                ))}
+              </>
+            )}
           </dl>
           <Popover.Arrow className="fill-[var(--line)]" />
         </Popover.Content>

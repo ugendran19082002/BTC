@@ -355,6 +355,20 @@ export default function App() {
     1_000, { enabled: signedIn === true && tab === 'trade' && allWanted, deps: [tradingKey] },
   );
   const allTrade = allWanted && allPoll.data?.key === tradingKey ? allPoll.data.status : null;
+  /*
+   * The header's "Today" is the desk's day: every trading account's, added (owner, 5 Oct 2026). It was the default
+   * account's alone, so a loss on the BUY account never reached the one number the desk is opened to see. Asked
+   * every two seconds wherever the header is; on Positions' "All accounts" the same answer is already being read
+   * each second, and is used instead. With more than one account nothing is shown until the sum is known --
+   * one account's figure under the word "Today" would be a wrong figure.
+   */
+  const onAllPositions = tab === 'trade' && allWanted;
+  const dayPoll = usePoll(
+    () => getStatusOfAccounts(tradingList).then((status) => ({ key: tradingKey, status })),
+    2_000, { enabled: signedIn === true && tradingList.length > 1 && !onAllPositions, deps: [tradingKey] },
+  );
+  const dayOfAll = dayPoll.data?.key === tradingKey ? dayPoll.data.status : null;
+  const mergedDay = onAllPositions ? allTrade ?? dayOfAll : dayOfAll ?? allTrade;
   const accountScreens = tab === 'strategy' || tab === 'trade' || tab === 'orders' || tab === 'pnl';
   const { data: polledTick, updatedAt: polledTickAt } = usePoll(getSpot, 1_000, { enabled: polls });
   const trade = newer(stream.status, stream.statusAt, polledTrade, polledTradeAt);
@@ -507,7 +521,8 @@ export default function App() {
   const sinceOpenPct = sinceOpenUsd !== null && openedAt ? sinceOpenUsd / openedAt : null;
 
   // The tab says what the header says, for a glance from another tab.
-  const todayNetUsd = trade ? (trade.today?.netUsd ?? (trade.realisedTodayUsd ?? 0) + (trade.unrealisedPnlUsd ?? 0)) : null;
+  const headerDay = !accountsKnown ? null : tradingList.length > 1 ? mergedDay : trade;
+  const todayNetUsd = headerDay ? (headerDay.today?.netUsd ?? (headerDay.realisedTodayUsd ?? 0) + (headerDay.unrealisedPnlUsd ?? 0)) : null;
   const todayInr = todayNetUsd === null ? null : pnlTone(todayNetUsd) ? signedInr(usdToInr(todayNetUsd)) : '₹0';
   useEffect(() => {
     document.title = tabTitle({ signedIn: signedIn === true, spot: liveSpot, dayMoveUsd: sinceOpenUsd, todayInr });
@@ -551,7 +566,7 @@ export default function App() {
               updatedAt={tick?.at ?? snap?.ts ?? null}
             />
           )}
-          <TodayPnl status={trade} />
+          <TodayPnl status={headerDay} />
         </div>
       </header>
 
