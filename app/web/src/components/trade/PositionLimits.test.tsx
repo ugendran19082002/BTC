@@ -12,7 +12,7 @@ vi.mock('@/api/desk', () => ({
 
 const status = (): TradeStatus => ({
   mode: 'live', live: true, canGoLive: true, switchBlockedBy: null, balanceUsd: 28.81, walletUsd: 75.68, marginUsedUsd: 46.87,
-  open: [], alarms: [], realisedTodayUsd: 0, lossTodayUsd: 0,
+  open: [], positions: [], alarms: [], realisedTodayUsd: 0, lossTodayUsd: 0,
   today: { realisedUsd: 0, lossUsd: 0, profitUsd: 0, unrealisedUsd: 0, chargesUsd: 0, netUsd: 0 },
   limits: { maxLeverage: 200, maxQuoteAgeMs: 3000, maxSpreadPct: 0.15, minBookCoverage: 0.5, maxShortContracts: 159, maxLongContracts: 40, maxDailyLossUsd: 37.84, minPremiumUsd: 5, allowPyramiding: false },
   room: {
