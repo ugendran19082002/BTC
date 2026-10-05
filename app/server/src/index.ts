@@ -2,7 +2,7 @@ import { buildApp } from './http/app.js';
 import { config } from './config.js';
 import { authFromEnv } from './auth/service.js';
 import { loadDays } from './backtest/backtest.js';
-import { brokerAccounts } from './delta/accounts.js';
+import { brokerAccounts, envKeyLeft } from './delta/accounts.js';
 import { refreshBrokerAccounts } from './http/routes/accounts.routes.js';
 import { initTradingService } from './trading/service.js';
 import { initStrategyStore } from './http/routes/strategy.routes.js';
@@ -87,6 +87,7 @@ app.log.info(`chain snapshots loaded: ${loadDays().length}`);
         ? 'no broker account -- DESK_SESSION_SECRET is not set, so no API key can be kept; account and order endpoints are off'
         : 'no usable default broker account -- add or choose one under Logs -> Accounts; account and order endpoints are off, market data unaffected',
   );
+  if (envKeyLeft()) app.log.warn('DELTA_API_KEY / DELTA_API_SECRET are still set in .env: they are no longer read (the accounts are in the database) -- empty both lines');
 }
 /*
  * Migrate the strategy tables on the way up, not on the first request.

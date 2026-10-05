@@ -22,6 +22,8 @@ export type AccountsAnswer = {
   /** False when the server cannot encrypt a key, so none can be added. */
   canStore: boolean;
   mode: 'live' | 'paper';
+  /** The server's `.env` still has the key it imported: no longer read, and to be emptied there. */
+  envKeyLeft?: boolean;
   /** After a connection test: what Delta said. */
   test?: { id: number; ok: boolean; detail: string };
 };

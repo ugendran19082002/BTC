@@ -49,6 +49,14 @@ describe('the broker accounts', () => {
     expect(other.getByRole('button', { name: 'Make default' })).toBeDisabled(); // off: switch it on first
     expect(other.getByRole('button', { name: 'Activate' })).toBeEnabled();
     expect(screen.getByLabelText('broker accounts')).toHaveTextContent('2 of 5 · desk is on paper');
+    expect(screen.queryByText(/still holds an API key/)).toBeNull();
+  });
+
+  it('a key still sitting in the server\'s .env is pointed out: it is no longer read, and should not be kept there', async () => {
+    api.getAccounts.mockResolvedValue(answer([account()], { envKeyLeft: true }));
+    render(<AccountsPanel />);
+    expect(await screen.findByText(/The server's \.env still holds an API key/)).toHaveTextContent(
+      'It is no longer read — the accounts here are what the desk uses — so empty DELTA_API_KEY and DELTA_API_SECRET there.');
   });
 
   it('[critical] adding an account sends the key once and forgets it; a refusal is said and the form kept', async () => {
@@ -169,8 +177,5 @@ describe('the broker accounts', () => {
     fireEvent.click((await row('Main')).getByRole('button', { name: 'Activate' }));
     await waitFor(() => expect(api.setAccountActive).toHaveBeenLastCalledWith(1, true));
     expect(await (await row('Main')).findByText('Switched on. The desk trades on it.')).toBeInTheDocument();
-
-    // With a second account there, either can go.
-    api.getAccounts.mockResolvedValue(answer([account(), second]));
   });
 });

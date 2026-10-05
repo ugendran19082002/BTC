@@ -62,6 +62,7 @@ test('[critical] the desk starts on .env\'s key, now a sealed row -- and no answ
   const r = await api('GET', '/api/accounts');
   assert.equal(r.status, 200, r.text);
   assert.equal(r.body.accounts.length, 1);
+  assert.equal(r.body.envKeyLeft, true, 'and the screen is told the key is still in .env, to be emptied there');
   const a = r.body.accounts[0];
   assert.deepEqual([a.name, a.isDefault, a.active, a.readable, a.keyHint], ['Delta India (from .env)', true, true, true, '9999']);
   assert.deepEqual(Object.keys(a).sort(), ['active', 'broker', 'createdAt', 'description', 'id', 'isDefault', 'keyHint', 'lastTest', 'name', 'readable', 'updatedAt']);

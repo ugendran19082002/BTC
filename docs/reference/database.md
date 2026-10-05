@@ -319,12 +319,19 @@ Rules the routes hold (`http/routes/accounts.routes.ts`), each answered through
 - **A default has to work now.** Its connection is tested before the switch; a
   key that fails is not made the default, and the row says what Delta said.
 - **A row that will not open is never used.** After `DESK_SESSION_SECRET` is
-  rotated an account shows "key unreadable"; it is removed and added again.
+  rotated an account shows "key unreadable"; it is added again as a new account
+  and the old row removed.
+- **The last account is never removed, only switched off.** A desk that has had
+  an account always has one to switch back on; switched on with no default
+  anywhere, it is the default again. A key is replaced by adding the new one
+  first and removing the old second.
 
 `.env`'s `DELTA_API_KEY` / `DELTA_API_SECRET` are read once: the first start
 with no account imports them as the default (the setting `broker_env_imported`
-remembers it, so an account removed on the screen does not come back), which is
-what lets a desk holding live positions come up on the account it went down on.
+remembers it, so a table emptied by hand is not refilled), which is what lets a
+desk holding live positions come up on the account it went down on. The key is
+not kept in `.env` after that: the desk says at start, and on the Accounts
+screen, that the two lines are still set, until they are emptied.
 
 ---
 

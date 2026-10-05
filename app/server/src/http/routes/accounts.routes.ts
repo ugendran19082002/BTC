@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { AccountRefused, brokerAccounts, MAX_ACCOUNTS, testConnection, type BrokerAccount, type Tester } from '../../delta/accounts.js';
+import { AccountRefused, brokerAccounts, envKeyLeft, MAX_ACCOUNTS, testConnection, type BrokerAccount, type Tester } from '../../delta/accounts.js';
 import { tradingService } from '../../trading/service.js';
 import { noteError } from '../../observability/errors.js';
 import { refuse } from '../refuse.js';
@@ -45,6 +45,8 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester }
       /** False without DESK_SESSION_SECRET: a key cannot be encrypted, so none can be added. */
       canStore: accounts.canStore,
       mode: svc.mode,
+      /** `.env` still has the key that was imported from it: not read any more, and to be emptied there. */
+      envKeyLeft: envKeyLeft(),
     };
   };
   /** A rule's "no" as its own status and sentence; anything else is a fault and is thrown on. */

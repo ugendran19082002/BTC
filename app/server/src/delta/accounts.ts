@@ -307,6 +307,12 @@ function envSeed(): Creds | null {
 
 let singleton: BrokerAccounts | null = null;
 
+/**
+ * True when `.env` still holds a key although the accounts are in the database: it is no longer read, and a
+ * secret kept in two places is one more place to leak from. Said at start and on the Accounts screen until it is emptied.
+ */
+export const envKeyLeft = (): boolean => envSeed() !== null && (singleton?.list().length ?? 0) > 0;
+
 /** Build the process's accounts: migrated, `.env` imported once, read into memory. Called at boot, before the desk. */
 export async function initBrokerAccounts(settings: Settings): Promise<BrokerAccounts> {
   if (singleton) return singleton;
