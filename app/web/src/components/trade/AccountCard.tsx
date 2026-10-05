@@ -93,32 +93,31 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
 
         <div className="my-0.5 h-px bg-border" />
 
-        <div>
-          <div className="flex items-baseline justify-between gap-3">
-            <dt className="m-0 text-[12.5px] text-muted-foreground">Daily loss limit</dt>
-            <dd className="m-0 text-[13px] tabular-nums text-foreground" aria-label="loss budget left">
+        {/* The daily loss limit beside the short / long limit: two columns, each label over its figure, so they fit a phone. */}
+        <PositionLimits status={status} heldShort={held} lossCell={
+          <div className="min-w-0">
+            <dt className="m-0 text-[12px] text-muted-foreground">Daily loss limit</dt>
+            <dd className="m-0 mt-0.5 text-[13px] tabular-nums text-foreground" aria-label="loss budget left">
               <span>{inr(usdToInr(left))}</span>{' '}
-              <span className="text-[var(--dim)]">of {inr(usdToInr(limit))} left</span>
+              <span className="text-[11.5px] text-[var(--dim)]">of {inr(usdToInr(limit))} left</span>
             </dd>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--line)]">
+              <div
+                className={cn('h-full rounded-full', used > 0.75 ? 'bg-[var(--down)]' : 'bg-[var(--warn)]')}
+                style={{ width: `${Math.min(100, used * 100)}%` }}
+              />
+            </div>
+            {used >= 1 ? (
+              <p className="m-0 mt-1 text-[11px] font-medium text-[var(--down)]">
+                Limit reached. New trades are blocked until tomorrow.
+              </p>
+            ) : used > 0 ? (
+              <p className="m-0 mt-1 text-[11px] text-muted-foreground">
+                {pct(used, 0)} used. New trades stop at 100%.
+              </p>
+            ) : null}
           </div>
-          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--line)]">
-            <div
-              className={cn('h-full rounded-full', used > 0.75 ? 'bg-[var(--down)]' : 'bg-[var(--warn)]')}
-              style={{ width: `${Math.min(100, used * 100)}%` }}
-            />
-          </div>
-          {used >= 1 ? (
-            <p className="m-0 mt-1 text-[11px] font-medium text-[var(--down)]">
-              Limit reached. New trades are blocked until tomorrow.
-            </p>
-          ) : used > 0 ? (
-            <p className="m-0 mt-1 text-[11px] text-muted-foreground">
-              {pct(used, 0)} used. New trades stop at 100%.
-            </p>
-          ) : null}
-        </div>
-
-        <PositionLimits status={status} heldShort={held} />
+        } />
       </dl>
 
       {unrealised !== 0 && (
@@ -137,14 +136,14 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
  * and editable; the server decides, and a short limit above what margin carries is refused.
  */
 type Side = 'sell' | 'buy';
-function PositionLimits({ status, heldShort }: { status: TradeStatus; heldShort: number }) {
+function PositionLimits({ status, heldShort, lossCell }: { status: TradeStatus; heldShort: number; lossCell: React.ReactNode }) {
   const [side, setSide] = usePersisted<Side>('positions:limits-side', 'sell');
   // The BUY tab's table by premium: closed until asked for, then remembered.
   const [buyDetail, setBuyDetail] = usePersisted<boolean>('positions:buy-room-open', false);
-  const tab = (s: Side, label: string) => (
+  const tab = (s: Side, label: string, name: string) => (
     <button
-      key={s} type="button" role="tab" aria-selected={side === s} onClick={() => setSide(s)}
-      className={cn('m-0 h-8 flex-1 appearance-none rounded-md border-0 px-3 font-[inherit] text-[12.5px] font-semibold',
+      key={s} type="button" role="tab" aria-selected={side === s} aria-label={name} onClick={() => setSide(s)}
+      className={cn('m-0 h-7 flex-1 appearance-none rounded-md border-0 px-2 font-[inherit] text-[12px] font-semibold',
         side === s ? 'bg-background shadow-sm' : 'bg-transparent text-muted-foreground',
         side === s && (s === 'buy' ? 'text-[var(--up)]' : 'text-[var(--down)]'))}
     >
@@ -153,14 +152,21 @@ function PositionLimits({ status, heldShort }: { status: TradeStatus; heldShort:
   );
   const room = status.room;
   return (
-    <div>
-      <div role="tablist" aria-label="position limits" className="mb-2 flex gap-0.5 rounded-lg bg-muted p-0.5">
-        {tab('sell', 'SELL · short limit')}
-        {tab('buy', 'BUY · long limit')}
+    <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+      {lossCell}
+      <div className="min-w-0">
+        <div role="tablist" aria-label="position limits" className="mb-1.5 flex gap-0.5 rounded-lg bg-muted p-0.5">
+          {tab('sell', 'SELL', 'SELL · short limit')}
+          {tab('buy', 'BUY', 'BUY · long limit')}
+        </div>
+        {side === 'sell'
+          ? <LimitLine side="sell" held={room?.sell.held ?? heldShort} inForce={status.limits.maxShortContracts} />
+          : <LimitLine side="buy" held={room?.buy.held ?? 0} inForce={status.limits.maxLongContracts ?? room?.buy.limit ?? 500} />}
       </div>
+      {/* What is left on the chosen side, the width of the card. */}
+      <div className="col-span-2 min-w-0">
       {side === 'sell' ? (
         <>
-          <LimitLine side="sell" held={room?.sell.held ?? heldShort} inForce={status.limits.maxShortContracts} />
           {room && (
             <p aria-label="room to sell" className="m-0 mt-1.5 text-[12px] leading-snug text-muted-foreground">
               Can still sell <b className="text-foreground tabular-nums">{room.sell.lots.toLocaleString('en-US')} lots</b>
@@ -172,7 +178,6 @@ function PositionLimits({ status, heldShort }: { status: TradeStatus; heldShort:
         </>
       ) : (
         <>
-          <LimitLine side="buy" held={room?.buy.held ?? 0} inForce={status.limits.maxLongContracts ?? room?.buy.limit ?? 500} />
           {room && (
             <div aria-label="room to buy" className="mt-1.5 text-[12px] leading-snug text-muted-foreground">
               {/* One line always; the detail and the table by premium behind a toggle, remembered. */}
@@ -220,6 +225,7 @@ function PositionLimits({ status, heldShort }: { status: TradeStatus; heldShort:
           )}
         </>
       )}
+      </div>
     </div>
   );
 }
@@ -273,30 +279,30 @@ function LimitLine({ side, held, inForce }: { side: Side; held: number; inForce:
 
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex items-baseline justify-between gap-2">
         <dt
-          className="m-0 cursor-help text-[12.5px] text-muted-foreground underline decoration-dotted underline-offset-2"
+          className="m-0 cursor-help text-[12px] text-muted-foreground underline decoration-dotted underline-offset-2"
           title={selling
             ? 'The most contracts this account will be short across all strikes. New sells stop here.'
             : 'The most contracts this account will hold bought across all strikes. New buys stop here.'}
         >
           {name}
         </dt>
-        <dd className="m-0 flex items-baseline gap-2 tabular-nums" aria-label={selling ? 'short cap' : 'long cap'}>
-          <span className="text-[13px] text-foreground">
-            {held} <span className="text-[var(--dim)]">of {limit} contracts</span>
-          </span>
-          {!editing && (
-            <button
-              type="button"
-              className="inline-flex min-h-8 min-w-8 items-center justify-center text-[12px] text-muted-foreground underline underline-offset-2"
-              onClick={() => { setDraft(String(limit)); setRefusal(null); setEditing(true); }}
-            >
-              Edit
-            </button>
-          )}
-        </dd>
+        {!editing && (
+          <button
+            type="button" aria-label={`Edit the ${name.toLowerCase()}`}
+            className="m-0 inline-flex min-h-7 appearance-none items-center border-0 bg-transparent p-0 font-[inherit] text-[11.5px] text-muted-foreground underline underline-offset-2"
+            onClick={() => { setDraft(String(limit)); setRefusal(null); setEditing(true); }}
+          >
+            Edit
+          </button>
+        )}
       </div>
+      <dd className="m-0 mt-0.5 tabular-nums" aria-label={selling ? 'short cap' : 'long cap'}>
+        <span className="text-[13px] text-foreground">
+          {held} <span className="text-[11.5px] text-[var(--dim)]">of {limit} contracts</span>
+        </span>
+      </dd>
 
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--line)]">
         <div
@@ -314,7 +320,7 @@ function LimitLine({ side, held, inForce }: { side: Side; held: number; inForce:
             inputMode="numeric"
             value={draft}
             aria-label={selling ? 'most contracts short' : 'most contracts long'}
-            className="h-9 w-28 rounded border border-[var(--line)] bg-transparent px-2 text-[14px] tabular-nums text-foreground"
+            className="h-9 w-24 rounded border border-[var(--line)] bg-transparent px-2 text-[14px] tabular-nums text-foreground"
             onChange={(e) => setDraft(e.target.value)}
           />
           <button

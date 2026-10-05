@@ -60,7 +60,8 @@ describe('the position limits on Positions', () => {
     setLongCap.mockResolvedValue({ ok: true, key: 'max_long_contracts', value: '25', longCap: { inForce: 25, chosen: 25 } });
     render(<AccountCard status={status()} />);
     fireEvent.click(limits().getByRole('tab', { name: 'BUY · long limit' }));
-    fireEvent.click(within(await screen.findByLabelText('long cap')).getByRole('button', { name: 'Edit' }));
+    await screen.findByLabelText('long cap');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit the long limit' }));
     fireEvent.change(screen.getByLabelText('most contracts long'), { target: { value: '25' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(setLongCap).toHaveBeenCalledWith(25));
