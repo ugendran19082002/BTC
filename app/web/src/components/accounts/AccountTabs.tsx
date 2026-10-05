@@ -11,10 +11,12 @@ import { cn } from '@/lib/utils';
  */
 export type AccountChoice = number | 'all';
 
-export function AccountTabs({ accounts, value, onChange }: {
+export function AccountTabs({ accounts, value, onChange, withAll = true }: {
   accounts: readonly BrokerAccount[];
   value: AccountChoice;
   onChange: (c: AccountChoice) => void;
+  /** False on Strategy: a strategy belongs to one account, so there is no "All accounts" to choose there. */
+  withAll?: boolean;
 }) {
   if (accounts.length === 0) return null;
   // The default first, then as they were added.
@@ -39,7 +41,7 @@ export function AccountTabs({ accounts, value, onChange }: {
             {!a.active && <span className="rounded-full border border-solid border-current px-1.5 py-[1px] text-[10px] opacity-80">off</span>}
           </button>
         ))}
-        {accounts.length > 1 && (
+        {withAll && accounts.length > 1 && (
           <button type="button" role="tab" aria-selected={value === 'all'} className={tab(value === 'all')} onClick={() => onChange('all')}>
             <Layers size={13} aria-hidden /> All accounts
           </button>
@@ -50,8 +52,9 @@ export function AccountTabs({ accounts, value, onChange }: {
 }
 
 /** The account the tabs show: the one chosen if it is still there, else the one the desk trades on. */
-export function shownAccount(accounts: readonly BrokerAccount[], choice: AccountChoice | null): AccountChoice {
-  if (choice === 'all' && accounts.length > 1) return 'all';
+export function shownAccount(accounts: readonly BrokerAccount[], choice: AccountChoice | null, withAll = true): AccountChoice {
+  // Where "All accounts" is not offered (Strategy), a remembered "all" shows the default account instead.
+  if (choice === 'all' && accounts.length > 1 && withAll) return 'all';
   if (typeof choice === 'number' && accounts.some((a) => a.id === choice)) return choice;
   return accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? 'all';
 }

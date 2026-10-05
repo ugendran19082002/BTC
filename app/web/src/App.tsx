@@ -14,7 +14,7 @@ import type { TicketSeed } from '@/components/trade/OrderTicket';
 import { AlarmBanner } from '@/components/trade/ModeBanner';
 import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import { AlertSwitch } from '@/components/trade/AlertSwitch';
-import { getTradeStatus } from '@/api/trade';
+import { getStatusOfAccounts, getTradeStatus } from '@/api/trade';
 import { heldLegs, type HeldLeg } from '@/lib/held';
 import { getErrors } from '@/api/errors';
 import { getAccounts } from '@/api/accounts';
@@ -323,7 +323,10 @@ export default function App() {
   const accountList = accountsPoll.data?.accounts ?? [];
   const accountsKnown = accountsPoll.data !== null || accountsPoll.error !== null;
   const [accountChoice, setAccountChoice] = usePersisted<AccountChoice | null>('account:shown', null);
-  const shown = shownAccount(accountList, accountChoice);
+  // Strategy is by account only: a strategy belongs to one, so "All accounts" is not a tab there (owner, 5 Oct 2026).
+  // The choice itself is kept, so Positions, Orders and P&L are still on "All accounts" when gone back to.
+  const withAll = tab !== 'strategy';
+  const shown = shownAccount(accountList, accountChoice, withAll);
   const shownId = shown === 'all' ? null : shown;
   setAccountScope(shownId, shown === 'all' && accountList.length > 0);
   // Every account that is switched on trades at once, each on a desk of its own (5 Oct 2026); the default is only
@@ -338,6 +341,20 @@ export default function App() {
     1_000, { enabled: signedIn === true && tab === 'trade' && otherTrading !== null, deps: [otherTrading?.id ?? null] },
   );
   const otherTrade = otherTrading && otherPoll.data?.id === otherTrading.id ? otherPoll.data.status : null;
+  /*
+   * "All accounts" on Positions: every trading account's desk added together (lib/merge-status.ts) -- the money and
+   * the day as sums, every account's positions in one list, each tagged with whose it is. It showed the default
+   * account's alone. Asked of each desk once a second while it is on screen; with one trading account there is
+   * nothing to add, and that account's own status is the answer as before.
+   */
+  const tradingList = accountList.filter((a) => a.active && a.trading !== false);
+  const tradingKey = tradingList.map((a) => a.id).join(',');
+  const allWanted = shown === 'all' && tradingList.length > 1;
+  const allPoll = usePoll(
+    () => getStatusOfAccounts(tradingList).then((status) => ({ key: tradingKey, status })),
+    1_000, { enabled: signedIn === true && tab === 'trade' && allWanted, deps: [tradingKey] },
+  );
+  const allTrade = allWanted && allPoll.data?.key === tradingKey ? allPoll.data.status : null;
   const accountScreens = tab === 'strategy' || tab === 'trade' || tab === 'orders' || tab === 'pnl';
   const { data: polledTick, updatedAt: polledTickAt } = usePoll(getSpot, 1_000, { enabled: polls });
   const trade = newer(stream.status, stream.statusAt, polledTrade, polledTradeAt);
@@ -572,7 +589,7 @@ export default function App() {
         </button>
       </nav>
 
-      {accountScreens && <AccountTabs accounts={accountList} value={shown} onChange={setAccountChoice} />}
+      {accountScreens && <AccountTabs accounts={accountList} value={shown} onChange={setAccountChoice} withAll={withAll} />}
       <Suspense fallback={<Loading />}>
       {accountScreens && !accountsKnown ? <Loading /> : tab === 'desk' ? (
         <div className="desk-shell">
@@ -743,7 +760,17 @@ export default function App() {
           </section>
         </div>
       ) : tab === 'trade' ? (
-        shownOther && !otherTrading ? (
+        allWanted ? (
+          // All accounts: every trading account's figures added, and every one's positions in one list.
+          <div className="flex flex-col gap-3" key="positions-all">
+            <ErrorBoundary where="Account">
+              <AccountCard status={allTrade} />
+            </ErrorBoundary>
+            <ErrorBoundary where="Positions">
+              <PositionsCard trades={allTrade?.open ?? []} onChanged={() => void allPoll.refresh()} />
+            </ErrorBoundary>
+          </div>
+        ) : shownOther && !otherTrading ? (
           // An account that is switched off has no desk: what Delta has for it, and where to switch it on.
           <ErrorBoundary where="Account summary">
             <AccountSummaryCard key={shownOther.id} account={shownOther} />

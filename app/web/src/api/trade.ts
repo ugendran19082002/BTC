@@ -1,5 +1,7 @@
 import { json, post } from '@/api/client';
 import { accountScope } from '@/lib/account-scope';
+import { getAccounts } from '@/api/accounts';
+import { mergeStatuses } from '@/lib/merge-status';
 import type {
   AddDraft, AddPreview, ClosePreview, OrderDraft, OrderHistory, PlaceResult, PrecheckFailure, Preview, Quote, ProductSpec, Trade, TradeStatus,
 } from '@/types/trade';
@@ -14,6 +16,25 @@ import type {
 /** One account's desk as it stands: `account` names it; with none, the default account's (the one the stream carries too). */
 export const getTradeStatus = (account?: number | null) =>
   json<TradeStatus>(account == null ? '/api/trade/status' : `/api/trade/status?account=${account}`);
+
+/** Several accounts' desks added together (lib/merge-status.ts): each asked for its own status, at once. */
+export const getStatusOfAccounts = async (accounts: readonly { id: number; name: string }[]): Promise<TradeStatus | null> =>
+  mergeStatuses(await Promise.all(accounts.map(async (a) => ({ account: { id: a.id, name: a.name }, status: await getTradeStatus(a.id) }))));
+
+/**
+ * The live figures of what the account tabs are showing: one account's own desk, or -- on "All accounts" --
+ * every trading account's added together. Null for an account that is switched off: it has no desk, and asking
+ * for its status would answer with the default account's.
+ */
+export async function getShownStatus(): Promise<TradeStatus | null> {
+  const { accounts } = await getAccounts();
+  const trading = accounts.filter((a) => a.active && a.trading !== false);
+  const scope = accountScope();
+  if (scope !== null) return trading.some((a) => a.id === scope) ? getTradeStatus(scope) : null;
+  // No accounts at all (a desk from before them), or one: that desk's own answer.
+  if (trading.length <= 1) return getTradeStatus(trading[0]?.id);
+  return getStatusOfAccounts(trading);
+}
 
 export const getTradeQuote = (symbol: string) =>
   json<{ quote: Quote | null; product: ProductSpec | null }>(
@@ -127,6 +148,27 @@ export const closeAllTrades = () =>
     closed: string[];
     failed: { tradeId: string; reason: string }[];
   }>('/api/trade/close-all', accountScope() === null ? {} : { accountId: accountScope() });
+
+/**
+ * Square off the accounts named, one after another -- the "All accounts" tab, where every account's positions
+ * are on the screen. One account failing does not stop the next; each one's own report is added to the answer.
+ */
+export async function closeAllOnAccounts(ids: readonly number[]) {
+  const out = { ok: true, cancelled: [] as string[], closed: [] as string[], failed: [] as { tradeId: string; reason: string }[] };
+  for (const id of ids) {
+    try {
+      const r = await post<{ ok: boolean; cancelled: string[]; closed: string[]; failed: { tradeId: string; reason: string }[]; error?: string }>(
+        '/api/trade/close-all', { accountId: id });
+      out.cancelled.push(...(r.cancelled ?? []));
+      out.closed.push(...(r.closed ?? []));
+      out.failed.push(...(r.failed ?? []));
+    } catch (e) {
+      out.failed.push({ tradeId: `account ${id}`, reason: (e as Error).message });
+    }
+  }
+  out.ok = out.failed.length === 0;
+  return out;
+}
 
 /** Move the stop or the target on a position that is already open. */
 export const updateExits = (

@@ -6,7 +6,7 @@ import { KV } from '@/components/ui/kv';
 import { Money } from '@/components/ui/money';
 import { getSettings, setLongCap, setShortCap, type LongCap, type ShortCap } from '@/api/desk';
 import { usePersisted } from '@/hooks/usePersisted';
-import { inr, pct, usdToInr } from '@/lib/format';
+import { inr, pct, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -33,15 +33,17 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
     ? status.walletUsd!
     : heldMargin === null || status.balanceUsd === null ? null : status.balanceUsd + heldMargin;
 
-  const limit = status.limits.maxDailyLossUsd;
+  // Several accounts together ("All accounts"): the budget left is each account's own, added up.
+  const combined = status.combined ?? null;
+  const limit = combined ? combined.lossLimitUsd : status.limits.maxDailyLossUsd;
   const lost = Math.max(0, -booked);
-  const left = Math.max(0, limit - lost);
-  const used = limit > 0 ? lost / limit : 0;
+  const left = combined ? combined.lossLeftUsd : Math.max(0, limit - lost);
+  const used = limit > 0 ? Math.min(1, Math.max(0, 1 - left / limit)) : 0;
 
   return (
     <CollapsibleCard
       id="account"
-      title="Account"
+      title={combined ? `Account · all ${combined.accounts.length} accounts` : 'Account'}
       right={
         <span className={cn('text-[11px] font-semibold', status.mode === 'live' ? 'text-[var(--down)]' : 'text-[var(--warn)]')}>
           {status.mode === 'live' ? 'LIVE' : 'PAPER'}
@@ -108,7 +110,9 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
                 style={{ width: `${Math.min(100, used * 100)}%` }}
               />
             </div>
-            {used >= 1 ? (
+            {combined ? (
+              <p className="m-0 mt-1 text-[11px] text-muted-foreground">Each account&apos;s own limit, added up.</p>
+            ) : used >= 1 ? (
               <p className="m-0 mt-1 text-[11px] font-medium text-[var(--down)]">
                 Limit reached. New trades are blocked until tomorrow.
               </p>
@@ -122,6 +126,33 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
           <p className="m-0 mt-2 text-[11px] text-[var(--dim)]">₹ shown at ₹85 per $1.</p>
         )} />
       </dl>
+
+      {/* Each account's own part of the totals above: the sums are these rows added. */}
+      {combined && (
+        <table aria-label="by account" className="mt-3 w-full border-collapse text-[12px]">
+          <thead>
+            <tr className="text-[10.5px] uppercase tracking-[0.5px] text-[var(--dim)]">
+              <th scope="col" className="py-1 text-left font-medium">Account</th>
+              <th scope="col" className="py-1 text-right font-medium">Total</th>
+              <th scope="col" className="py-1 text-right font-medium">Open P&amp;L</th>
+              <th scope="col" className="py-1 text-right font-medium">Net today</th>
+            </tr>
+          </thead>
+          <tbody>
+            {combined.accounts.map((a) => (
+              <tr key={a.id} className="border-0 border-t border-solid border-[var(--line)]">
+                <td className="py-1 text-left font-[inherit]">
+                  <span className="font-semibold text-foreground">{a.name}</span>
+                  <span className="ml-1.5 text-[11px] text-[var(--dim)]">{a.positions} open</span>
+                </td>
+                <td className="py-1 text-right tabular-nums">{(a.totalUsd ?? a.availableUsd) === null ? '—' : inr(usdToInr((a.totalUsd ?? a.availableUsd)!))}</td>
+                <td className={cn('py-1 text-right tabular-nums', a.openPnlUsd > 0 ? 'text-[var(--up)]' : a.openPnlUsd < 0 ? 'text-[var(--down)]' : '')}>{signedInr(usdToInr(a.openPnlUsd))}</td>
+                <td className={cn('py-1 text-right font-semibold tabular-nums', a.netTodayUsd > 0 ? 'text-[var(--up)]' : a.netTodayUsd < 0 ? 'text-[var(--down)]' : '')}>{signedInr(usdToInr(a.netTodayUsd))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </CollapsibleCard>
   );
 }
@@ -150,6 +181,10 @@ function PositionLimits({ status, heldShort, lossCell, note }: { status: TradeSt
     </button>
   );
   const room = status.room;
+  // Several accounts together: the limits are sums, read here and changed on each account's own tab.
+  const several = Boolean(status.combined);
+  const shortHeld = status.positions.reduce((n, p) => n + (p.size < 0 ? -p.size : 0), 0);
+  const longHeld = status.positions.reduce((n, p) => n + (p.size > 0 ? p.size : 0), 0);
   return (
     <div className="grid grid-cols-2 gap-x-3 gap-y-2">
       {/* Left: the day's loss limit, and under it what is left on the chosen side -- the column was empty there. */}
@@ -185,8 +220,9 @@ function PositionLimits({ status, heldShort, lossCell, note }: { status: TradeSt
           {tab('buy', 'BUY', 'BUY · long limit')}
         </div>
         {side === 'sell'
-          ? <LimitLine side="sell" held={room?.sell.held ?? heldShort} inForce={status.limits.maxShortContracts} />
-          : <LimitLine side="buy" held={room?.buy.held ?? 0} inForce={status.limits.maxLongContracts ?? room?.buy.limit ?? 500} />}
+          ? <LimitLine side="sell" held={several ? shortHeld : room?.sell.held ?? heldShort} inForce={status.limits.maxShortContracts} readOnly={several} />
+          : <LimitLine side="buy" held={several ? longHeld : room?.buy.held ?? 0} inForce={status.limits.maxLongContracts ?? room?.buy.limit ?? 500} readOnly={several} />}
+        {several && <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">Every account&apos;s limit added. Change one on its own tab.</p>}
       </div>
       {/* The table by premium needs the card's width. */}
       {room && side === 'buy' && buyDetail && (
@@ -225,7 +261,7 @@ function PositionLimits({ status, heldShort, lossCell, note }: { status: TradeSt
  * but the server decides: it refuses a short limit above what margin can carry, and this shows the answer it gave
  * rather than the number typed.
  */
-function LimitLine({ side, held, inForce }: { side: Side; held: number; inForce: number }) {
+function LimitLine({ side, held, inForce, readOnly = false }: { side: Side; held: number; inForce: number; readOnly?: boolean }) {
   const [shortCap, setShortCapState] = useState<ShortCap | null>(null);
   const [longCap, setLongCapState] = useState<LongCap | null>(null);
   const [draft, setDraft] = useState('');
@@ -234,16 +270,18 @@ function LimitLine({ side, held, inForce }: { side: Side; held: number; inForce:
   const [refusal, setRefusal] = useState<string | null>(null);
 
   useEffect(() => {
+    // Read-only (several accounts): the limit is the sum handed in, not one account's setting.
+    if (readOnly) return;
     let live = true;
     getSettings()
       .then((r) => { if (live) { setShortCapState(r.shortCap); setLongCapState(r.longCap ?? null); } })
       // Still worth showing without it; the limit in force comes from the status poll.
       .catch(() => {});
     return () => { live = false; };
-  }, []);
+  }, [readOnly]);
 
   const selling = side === 'sell';
-  const limit = (selling ? shortCap?.inForce : longCap?.inForce) ?? inForce;
+  const limit = readOnly ? inForce : (selling ? shortCap?.inForce : longCap?.inForce) ?? inForce;
   const ceiling = selling ? shortCap?.ceiling ?? null : null;
   const used = limit > 0 ? held / limit : 0;
   const name = selling ? 'Short limit' : 'Long limit';
@@ -278,7 +316,7 @@ function LimitLine({ side, held, inForce }: { side: Side; held: number; inForce:
         >
           {name}
         </dt>
-        {!editing && (
+        {!editing && !readOnly && (
           <button
             type="button" aria-label={`Edit the ${name.toLowerCase()}`}
             className="m-0 inline-flex min-h-7 appearance-none items-center border-0 bg-transparent p-0 font-[inherit] text-[11.5px] text-muted-foreground underline underline-offset-2"

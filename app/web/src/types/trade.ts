@@ -28,6 +28,8 @@ export type TradeOrigin = 'manual' | 'strategy' | 'best-pick';
 
 export type Trade = {
   tradeId: string;
+  /** Whose trade it is, set here when several accounts' positions are shown together ("All accounts"). */
+  account?: { id: number; name: string };
   symbol: string;
   productId: number;
   optionSide: OptionSide;
@@ -224,6 +226,16 @@ export type TradeStatus = {
    * order. Absent on a server from before it.
    */
   room?: TradeRoom;
+  /**
+   * Set only on a status made here by adding several accounts' together (lib/merge-status.ts, the "All accounts"
+   * tab): who is in it, each one's own figures, and the day's loss budget left -- each account's own limit less
+   * its own losses, added up, since one account at its limit does not use up another's.
+   */
+  combined?: {
+    accounts: { id: number; name: string; totalUsd: number | null; availableUsd: number | null; openPnlUsd: number; netTodayUsd: number; positions: number }[];
+    lossLeftUsd: number;
+    lossLimitUsd: number;
+  };
   limits: {
     maxLeverage: number;
     maxQuoteAgeMs: number;

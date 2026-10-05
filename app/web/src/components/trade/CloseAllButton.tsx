@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { closeAllTrades } from '@/api/trade';
+import { closeAllOnAccounts, closeAllTrades } from '@/api/trade';
 import type { Trade } from '@/types/trade';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -39,10 +39,15 @@ export function CloseAllButton({ trades, onChanged, className }: { trades: Trade
     : null;
   if (held.length + working.length === 0) return null;
 
+  // Several accounts' positions on the screen ("All accounts"): every one of them is squared off, each on its own desk.
+  const accountIds = [...new Set(trades.map((t) => t.account?.id).filter((id): id is number => id !== undefined))];
+
+  const accountNames = [...new Set(trades.map((t) => t.account?.name).filter((n): n is string => n !== undefined))];
+
   const run = async () => {
     setBusy(true);
     try {
-      setResult(await closeAllTrades());
+      setResult(accountIds.length > 0 ? await closeAllOnAccounts(accountIds) : await closeAllTrades());
       onChanged?.();
     } catch (e) {
       setResult({ ok: false, cancelled: [], closed: [], failed: [{ tradeId: '—', reason: (e as Error).message }] });
@@ -69,7 +74,9 @@ export function CloseAllButton({ trades, onChanged, className }: { trades: Trade
             [
               held.length && `${held.length} position${held.length === 1 ? '' : 's'}`,
               working.length && `${working.length} order${working.length === 1 ? '' : 's'}`,
-            ].filter(Boolean).join(' and ') || undefined
+            ].filter(Boolean).join(' and ')
+            // Said up front when it is more than one account's: this closes all of them.
+            + (accountNames.length > 1 ? ` · on ${accountNames.length} accounts: ${accountNames.join(', ')}` : '') || undefined
           }
         >
           {result ? (
@@ -110,9 +117,10 @@ export function CloseAllButton({ trades, onChanged, className }: { trades: Trade
                 {held.map((t) => (
                   <Row
                     key={t.tradeId}
-                    name={contractLabel(t.symbol)}
+                    name={`${contractLabel(t.symbol)}${t.account ? ` · ${t.account.name}` : ''}`}
                     what={`${t.position < 0 ? 'Short' : 'Long'} ${fmtSize(t.position)} @ ${price(t.entryAvgPrice)} · now ${price(t.live?.markPrice)}`}
-                    action="buy back"
+                    // A short is bought back; a bought position is sold.
+                    action={t.position > 0 ? 'sell' : 'buy back'}
                     pnl={t.live?.unrealisedPnl}
                     ifClosed={t.live?.netIfClosedUsd}
                   />
@@ -120,7 +128,7 @@ export function CloseAllButton({ trades, onChanged, className }: { trades: Trade
                 {working.map((t) => (
                   <Row
                     key={t.tradeId}
-                    name={contractLabel(t.symbol)}
+                    name={`${contractLabel(t.symbol)}${t.account ? ` · ${t.account.name}` : ''}`}
                     what={
                       t.plan?.entry.limitPrice != null
                         ? `Selling ${fmtSize(t.plan.lots)} lots @ ${price(t.plan.entry.limitPrice)}`

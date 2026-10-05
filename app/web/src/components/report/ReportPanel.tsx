@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Download, RefreshCw } from 'lucide-react';
 import { daysCsvUrl, getDays, getMtm } from '@/api/report';
-import { getOrderHistory, getTradeStatus } from '@/api/trade';
+import { getOrderHistory, getShownStatus } from '@/api/trade';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Switch } from '@/components/ui/switch';
@@ -43,7 +43,9 @@ export function ReportPanel() {
   const validRange = DAY_RE.test(from) && DAY_RE.test(to) && from <= to;
   const days = usePoll(() => getDays(from, to), 60_000, { enabled: validRange, deps: [from, to] });
   const mtm = usePoll(() => getMtm(day), 60_000, { deps: [day] });
-  const tradeStatus = usePoll(() => getTradeStatus().catch(() => null), 15_000);
+  // The live figures of the account being shown -- every trading account's added on "All accounts". It asked for
+  // the default account's whichever tab was chosen, so the BUY account's page showed the SELL account's open P&L.
+  const tradeStatus = usePoll(() => getShownStatus().catch(() => null), 15_000);
   const history = usePoll(() => getOrderHistory({ from, to }).catch(() => null), 60_000, { enabled: validRange, deps: [from, to] });
 
   const rows = days.data?.days ?? [];
