@@ -168,9 +168,12 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <CloseAllButton trades={trades} onChanged={onChanged} />
-      </div>
+      {/* Close all sits beside the count in the open-positions header; on its own only when nothing is held yet. */}
+      {held.length === 0 && (
+        <div className="flex justify-end">
+          <CloseAllButton trades={trades} onChanged={onChanged} />
+        </div>
+      )}
 
       {filteredWorking.length > 0 && (
         <CollapsibleCard
@@ -188,18 +191,23 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
         <CollapsibleCard
           id="open-positions"
           title="Open positions"
-          right={<span className="text-[11px] text-muted-foreground">{held.length}</span>}
+          right={
+            <span className="flex items-center gap-2.5">
+              <span className="text-[11px] tabular-nums text-muted-foreground" aria-label="open positions count">{held.length}</span>
+              <CloseAllButton trades={trades} onChanged={onChanged} className="h-8 px-2.5 text-[12px]" />
+            </span>
+          }
         >
           {/* Running open position filter tabs: ALL, WIN, LOSS, WAIT with counts and subtotal */}
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <ToggleGroup
                 type="single"
                 value={activeTab}
                 onValueChange={(val) => {
                   if (val) setActiveTab(val as PositionFilterTab);
                 }}
-                className="flex flex-wrap gap-1"
+                className="grid w-full grid-cols-4 gap-1 sm:flex sm:w-auto sm:flex-wrap"
               >
                 {POSITION_TABS.map((t) => {
                   const tabCount = counts[t.key] ?? 0;
@@ -211,7 +219,7 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
                       title={t.hint}
                       aria-label={fullLabel}
                       className={cn(
-                        'flex items-center gap-1.5 px-3 py-1 text-[12px] font-medium transition-colors',
+                        'flex min-w-0 items-center justify-center gap-1 px-1.5 py-1 text-[12px] font-medium transition-colors sm:gap-1.5 sm:px-3',
                         t.tone === 'up' && 'hover:text-[var(--up)] data-[state=on]:bg-[var(--up)]/15 data-[state=on]:text-[var(--up)] data-[state=on]:border-[var(--up)]/30',
                         t.tone === 'down' && 'hover:text-[var(--down)] data-[state=on]:bg-[var(--down)]/15 data-[state=on]:text-[var(--down)] data-[state=on]:border-[var(--down)]/30',
                         t.tone === 'warn' && 'hover:text-[var(--warn)] data-[state=on]:bg-[var(--warn)]/15 data-[state=on]:text-[var(--warn)] data-[state=on]:border-[var(--warn)]/30',
@@ -260,14 +268,14 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
             </div>
 
             {held.length >= 4 && (
-              <div className="relative w-36 sm:w-44">
+              <div className="relative w-full sm:w-44">
                 <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Filter strike, rule..."
-                  className="h-8 pl-7 pr-6 text-[11.5px]"
+                  className="h-9 pl-7 pr-6 text-[12px] sm:h-8 sm:text-[11.5px]"
                 />
                 {search && (
                   <button
@@ -310,7 +318,6 @@ function ContractName({ trade }: { trade: Trade }) {
       <ActionTag action={trade.plan?.action} />
       {/* Three things place orders here; which one did is the first question. */}
       <OriginTag origin={trade.plan?.origin} strategyName={trade.plan?.strategyName ?? null} strategyId={trade.plan?.strategyId ?? null} />
-      <SignalTag plan={trade.plan} />
     </div>
   );
 }
@@ -326,16 +333,21 @@ function WorkingRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <ContractName trade={trade} />
+        </div>
+        <span className="flex flex-none items-center gap-1 text-[var(--warn)]">
+          <Clock className="h-3.5 w-3.5" />
+          <span className="text-[11px] font-medium uppercase tracking-[0.4px]">{STATUS[trade.phase]}</span>
+        </span>
+      </div>
+      <SignalTag plan={trade.plan} className="mt-1" />
+      <div>
+        <div>
           <p className="m-0 mt-0.5 text-[12px] text-muted-foreground">
             {at !== null
               ? <>Selling {fmtSize(lots)} lots @ {price(at)} · not filled yet</>
               : <>Selling {fmtSize(lots)} lots · not filled yet</>}
           </p>
         </div>
-        <span className="flex flex-none items-center gap-1 text-[var(--warn)]">
-          <Clock className="h-3.5 w-3.5" />
-          <span className="text-[11px] font-medium uppercase tracking-[0.4px]">{STATUS[trade.phase]}</span>
-        </span>
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
@@ -416,18 +428,24 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <ContractName trade={trade} />
+        </div>
+        <ShieldStatus naked={naked} status={status} />
+      </div>
+      <SignalTag plan={trade.plan} className="mt-1" />
+      <div>
+        <div>
           <p className="m-0 mt-0.5 text-[12px] text-muted-foreground">
             {/*
               What was sold, not what is left: "Sold 222" on a trade that sold
               425 and bought 203 back at the target reads as a smaller trade.
             */}
-            Sold {fmtSize(trade.exitSize > 0 || (trade.addedSize ?? 0) > 0 ? trade.entrySize : held)} @ {price(trade.entryAvgPrice)}
+            {trade.position > 0 ? 'Bought' : 'Sold'} {fmtSize(trade.exitSize > 0 || (trade.addedSize ?? 0) > 0 ? trade.entrySize : held)} @ {price(trade.entryAvgPrice)}
             {(trade.entrySize > 0 && (trade.addedSize ?? 0) > 0) && (
               // The average already includes the add; say how much of it was added.
               <> avg · <span className="text-foreground">{fmtSize(trade.addedSize!)} added</span></>
             )}
             {trade.exitSize > 0 && (
-              <> · {fmtSize(trade.exitSize)} bought back @ {price(trade.exitAvgPrice)} · <span className="text-foreground">{fmtSize(held)} left</span></>
+              <> · {fmtSize(trade.exitSize)} {trade.position > 0 ? 'sold' : 'bought back'} @ {price(trade.exitAvgPrice)} · <span className="text-foreground">{fmtSize(held)} left</span></>
             )}
             {' · '}{ago(trade.updatedAt)}
           </p>
@@ -475,19 +493,6 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
             </p>
           )}
         </div>
-        <span className="flex flex-none items-center gap-1">
-          {naked
-            ? <ShieldAlert className="h-4 w-4 text-[var(--down)]" />
-            : <ShieldCheck className="h-4 w-4 text-[var(--up)]" />}
-          <span
-            className={cn(
-              'text-[11px] font-medium uppercase tracking-[0.4px]',
-              naked ? 'text-[var(--down)]' : 'text-muted-foreground',
-            )}
-          >
-            {status}
-          </span>
-        </span>
       </div>
 
       <div className="mt-2 grid grid-cols-3 gap-2 rounded-md bg-background px-2.5 py-2">
@@ -665,10 +670,10 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
         itself. Adding and editing sit together because both change the
         position; closing sits apart and in red because it ends it.
       */}
-      <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:gap-2">
         <Button
           variant="outline"
-          className="h-9"
+          className="h-9 gap-1 px-1.5 text-[12.5px] sm:gap-1.5 sm:px-3 sm:text-[13px]"
           disabled={!canAdd}
           title={canAdd ? undefined : trade.adding ? 'An add is already working' : 'Nothing open to add to'}
           onClick={() => setAdding(true)}
@@ -676,13 +681,13 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
           <Plus className="h-3.5 w-3.5" />
           Add lots
         </Button>
-        <Button variant="outline" className="h-9" onClick={() => setEditing(true)}>
+        <Button variant="outline" className="h-9 gap-1 px-1.5 text-[12.5px] sm:gap-1.5 sm:px-3 sm:text-[13px]" onClick={() => setEditing(true)}>
           <Pencil className="h-3.5 w-3.5" />
           Edit exits
         </Button>
         <Button
           variant="outline"
-          className="col-span-2 h-9 text-[var(--down)] sm:col-span-1"
+          className="h-9 px-1.5 text-[12.5px] text-[var(--down)] sm:px-3 sm:text-[13px]"
           onClick={() => setClosing(true)}
         >
           Close now
@@ -698,5 +703,24 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
         onClose={(lots) => closeTrade(trade.tradeId, lots).finally(() => onChanged?.())}
       />
     </div>
+  );
+}
+
+/** The shield and the word: protected, open, or NO STOP in red. */
+function ShieldStatus({ naked, status }: { naked: boolean; status: string }) {
+  return (
+    <span className="flex flex-none items-center gap-1">
+      {naked
+        ? <ShieldAlert className="h-4 w-4 text-[var(--down)]" />
+        : <ShieldCheck className="h-4 w-4 text-[var(--up)]" />}
+      <span
+        className={cn(
+          'text-[11px] font-medium uppercase tracking-[0.4px]',
+          naked ? 'text-[var(--down)]' : 'text-muted-foreground',
+        )}
+      >
+        {status}
+      </span>
+    </span>
   );
 }

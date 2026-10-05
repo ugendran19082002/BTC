@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
  * one -- a venue refuses one buy-back and takes the rest -- and hiding that
  * behind a single tick would leave a position on with nobody watching.
  */
-export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChanged?: () => void }) {
+export function CloseAllButton({ trades, onChanged, className }: { trades: Trade[]; onChanged?: () => void; className?: string }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Awaited<ReturnType<typeof closeAllTrades>> | null>(null);
@@ -56,7 +56,7 @@ export function CloseAllButton({ trades, onChanged }: { trades: Trade[]; onChang
       <Button
         size="sm"
         variant="outline"
-        className="h-9 border-[var(--down)]/50 px-3 text-[var(--down)] hover:bg-[var(--down-bg)]"
+        className={cn('h-9 border-[var(--down)]/50 px-3 text-[var(--down)] hover:bg-[var(--down-bg)]', className)}
         onClick={() => { setResult(null); setOpen(true); }}
       >
         Close all
