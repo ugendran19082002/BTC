@@ -24,6 +24,9 @@ const TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
 // Ten by default: the newest signals are what is read; a longer page is one click.
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 const TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+/** The phone table's time: the minute, and the day under it. */
+const HM = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+const DAY = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' });
 const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '–' : Math.round(v).toLocaleString('en-US'));
 const signedPts = (v: number) => `${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))}`;
 
@@ -334,15 +337,50 @@ export function SignalHistory() {
       ) : (
         <>
           {/*
-            A table on every screen (5 Oct 2026: the phone's card per signal read slower than rows side by side).
-            On a phone it scrolls sideways with the signal time pinned on the left, so a row is never lost.
+            A table on every screen (5 Oct 2026: a card per signal read slower than rows one under another). A
+            phone gets the four columns that answer "what fired and how did it do" -- the levels are the wide
+            table's, from sm up.
           */}
-          <div className="-mx-1 overflow-x-auto px-1">
-            <table className="w-full border-collapse text-[11.5px] tabular-nums sm:text-[12px]" aria-label="signals">
+          <table className="w-full border-collapse tabular-nums sm:hidden" aria-label="signals, compact">
+            <thead className="text-[10px] uppercase text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-1.5 text-left font-semibold">Time</th>
+                <th className="pr-1.5 text-left font-semibold">Method</th>
+                <th className="pr-1.5 text-left font-semibold">Signal</th>
+                <th className="text-right font-semibold">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((s) => {
+                const out = outcomeOf(s);
+                const ex = exitOf(s);
+                return (
+                  <tr key={keyOf(s, 'm')} className="border-t border-border align-top text-[11.5px]">
+                    <td className="whitespace-nowrap py-1.5 pr-1.5 text-left font-[inherit]">
+                      {HM.format(s.firstSeen)}
+                      <div className="text-[10px] text-muted-foreground">{DAY.format(s.firstSeen)}</div>
+                    </td>
+                    <td className="whitespace-normal py-1.5 pr-1.5 text-left font-[inherit]">
+                      <span className="line-clamp-2 leading-snug">#{s.code ?? s.n ?? '?'} {s.name}</span>
+                      <div className="text-[10px] text-muted-foreground">{s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf}</div>
+                    </td>
+                    <td className="whitespace-nowrap py-1.5 pr-1.5 text-left font-[inherit]"><SignalTag s={s} /></td>
+                    <td className={cn('whitespace-normal py-1.5 text-right font-[inherit]', out.cls)}>
+                      {out.text}
+                      {ex?.pts != null ? <div className="text-[10px]">{signedPts(ex.pts)} pts</div> : null}
+                      <Counter s={s} now={now} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="hidden overflow-x-auto sm:block">
+            <table className="w-full border-collapse tabular-nums" aria-label="signals">
               <thead className="text-left text-[10.5px] text-muted-foreground">
                 <tr>
                   {COLUMNS.map((c) => (
-                    <th key={c.sort} className={cn('py-1 pr-2 align-bottom', c.cls, c.sort === 'time' && PINNED)} aria-sort={aria(c.sort)} title={c.title}>
+                    <th key={c.sort} className={cn('py-1 pr-2 align-bottom', c.cls)} aria-sort={aria(c.sort)} title={c.title}>
                       <button type="button" onClick={() => sortBy(c.sort)}
                               className={cn('inline-flex items-center gap-0.5 font-semibold uppercase hover:text-foreground', f.sort === c.sort && 'text-foreground')}>
                         {c.label}<span aria-hidden className={cn('text-[9px]', f.sort === c.sort ? 'opacity-100' : 'opacity-30')}>{f.sort === c.sort ? (f.asc ? '▲' : '▼') : '↕'}</span>
@@ -361,7 +399,7 @@ export function SignalHistory() {
                   return (
                     <tr key={keyOf(s, 'r')} className="border-t border-border align-top"
                         title={`${s.reason}${s.gatesOff.length ? ` -- gates off: ${s.gatesOff.join(', ')}` : ''}`}>
-                      <td className={cn('whitespace-nowrap py-1 pr-2', PINNED)}><Times s={s} /></td>
+                      <td className="whitespace-nowrap py-1 pr-2"><Times s={s} /></td>
                       <td className="min-w-[110px] pr-2">#{s.code ?? s.n ?? '?'} {s.name}</td>
                       <td className="whitespace-nowrap pr-2 text-muted-foreground">{s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf}</td>
                       <td className="whitespace-nowrap pr-2"><SignalTag s={s} /></td>
@@ -423,9 +461,6 @@ export function SignalHistory() {
     </section>
   );
 }
-
-/** The signal-time column, kept in view while the table scrolls sideways on a phone. */
-const PINNED = 'sticky left-0 z-[1] bg-[var(--panel)]';
 
 const keyOf = (s: EntrySignal, p: string) => `${p}:${s.mode}:${s.tf}:${s.method}:${s.dir}:${s.triggerAt}:${s.state}`;
 
