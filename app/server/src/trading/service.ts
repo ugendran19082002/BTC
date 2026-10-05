@@ -11,10 +11,10 @@ import {
   DEFAULT_LIMITS, dailyLossLimitFor, maxShortContractsFor, type RiskLimits,
 } from './precheck.js';
 import { fundsRequiredPerContract } from './margin.js';
-import { DEFAULT_LEVERAGE, exitPriceProblem, orderPlan, protectionFor, type ExitAsk, type PlaceInput } from './order-plan.js';
+import { DEFAULT_LEVERAGE, exitPriceProblem, longExitsFor, orderPlan, protectionFor, type ExitAsk, type PlaceInput } from './order-plan.js';
 
 export { stopFor, stopPriceFor, targetFor, targetPriceFor } from './order-plan.js';
-import { isDone } from './machine.js';
+import { isDone, isLong } from './machine.js';
 import { tradeCharges } from './charges.js';
 import { unrealisedPnlUsd } from './margin.js';
 import { midOf } from './money.js';
@@ -514,11 +514,24 @@ export class TradingService {
    * was actually opened at -- not off the mark, which would move the stop every
    * time the option did. A leg asked about neither way is left where it is.
    */
+  /** Bought to open, read off its fills: the edit sheet's percentages mean the mirror for one. */
+  async isLongTrade(tradeId: string): Promise<boolean> {
+    const rec = await this.store.get(tradeId);
+    return rec !== null && rec !== undefined && isLong(rec.state);
+  }
+
   async updateExits(tradeId: string, ask: ExitAsk, exitStage?: string) {
     const rec = await this.store.get(tradeId);
     if (!rec) return null;
     const entry = rec.state.entryAvgPrice;
     if (entry === null) return rec.state;
+    // A bought position: the same words, mirrored, kept as its own exits (5 Oct 2026). Never the short's fields,
+    // which the short's stop watcher would act on.
+    if (isLong(rec.state)) {
+      const next = longExitsFor(entry, ask, rec.plan.longExits);
+      if ('problem' in next) throw new ExitAskError(next.problem);
+      return this.engine.updateLongExits(tradeId, next.exits);
+    }
     // Asked for as prices, the levels must sit the right side of the entry.
     const wrong = exitPriceProblem(entry, ask);
     if (wrong) throw new ExitAskError(wrong);

@@ -320,3 +320,42 @@ describe('[critical] each exit opens in the terms it was set in', () => {
     expect(screen.getByRole('textbox', { name: 'stop points' })).toHaveValue('50');
   });
 });
+
+/** Bought one at 40 with a 350% target resting at 180 (5 Oct 2026). */
+const bought = (over: Partial<Trade> = {}): Trade => trade({
+  position: 1, entryAvgPrice: 40,
+  plan: { ...trade().plan!, action: 'buy', takeProfitPrice: null, stopPrice: null, exitAsk: null, longExits: { target: { mode: 'pct', value: 3.5 }, stop: null } },
+  onBook: { target: 180, stop: null },
+  ...over,
+});
+
+describe('a bought position', () => {
+  it('[critical] reads as bought, its target over the price paid with no 99% cap, and no liquidation', () => {
+    render(<EditExitsSheet trade={bought()} open onOpenChange={() => {}} />);
+    expect(screen.getByText('Bought 1 @ 40.00')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'target percent' })).toHaveValue('350');
+    expect(screen.getByText('On Delta now · target').nextSibling).toHaveTextContent('sell at 180.00');
+    expect(screen.queryByText(/liquidat/i)).toBeNull();
+    expect(screen.queryByText(/of the credit/i)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save exits' })).toBeEnabled();
+  });
+
+  it('[critical] saves the target and a stop as the long\'s shares', async () => {
+    const done = vi.fn();
+    render(<EditExitsSheet trade={bought()} open onOpenChange={done} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'target percent' }), { target: { value: '500' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'stop on' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'stop percent' }), { target: { value: '40' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save exits' })); });
+    expect(updateExits).toHaveBeenCalledWith('t1', { takeProfitPct: 5, stopLossPct: 0.4 });
+    await waitFor(() => expect(done).toHaveBeenCalledWith(false));
+  });
+
+  it('refuses a stop over 100% or a target price under what was paid, before sending', () => {
+    render(<EditExitsSheet trade={bought()} open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'stop on' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'stop percent' }), { target: { value: '120' } });
+    expect(screen.getByText(/at most 100% under the price paid/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save exits' })).toBeDisabled();
+  });
+});

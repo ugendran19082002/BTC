@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-398 files listed, 195 test files counted below, images and lockfiles left out.
+400 files listed, 195 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -412,6 +412,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ClosePositionSheet.tsx](../../app/web/src/components/trade/ClosePositionSheet.tsx) | "Close now", asked once more with everything on the table -- and with a size. |
 | [EditExitsSheet.tsx](../../app/web/src/components/trade/EditExitsSheet.tsx) | Change the stop and the target on a position that is already on. |
 | [ExitBars.tsx](../../app/web/src/components/trade/ExitBars.tsx) | The two exits, each behind a tick box, each a number you type. |
+| [LongExitsForm.tsx](../../app/web/src/components/trade/LongExitsForm.tsx) | A bought position's exits (5 Oct 2026): the mirror of a short's. |
 | [ModeBanner.tsx](../../app/web/src/components/trade/ModeBanner.tsx) | The alarm across the top of the page: a position with nothing behind it -- no stop, no target -- interrupts everything else until it is dealt with. |
 | [ModeSwitch.tsx](../../app/web/src/components/trade/ModeSwitch.tsx) | Which book the desk is trading on, and the switch between them. |
 | [OrderTicket.tsx](../../app/web/src/components/trade/OrderTicket.tsx) | The order ticket. |
@@ -471,6 +472,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [held.ts](../../app/web/src/lib/held.ts) | The strikes you are currently short, keyed the way the board looks them up. |
 | [ist-moment.ts](../../app/web/src/lib/ist-moment.ts) | A date and time, always read as India time. |
 | [live-bar.ts](../../app/web/src/lib/live-bar.ts) | The forming bar, carried to the last traded price. |
+| [long-exits.ts](../../app/web/src/lib/long-exits.ts) | A bought option's target and stop as prices, off the price paid (the server's `longLevels`): the target over it, the stop under it. |
 | [overview.ts](../../app/web/src/lib/overview.ts) | ------------------------------------------------------------------ volatility |
 | [report-error.ts](../../app/web/src/lib/report-error.ts) | Send a browser failure to the server so it lands in the same log as everything else. |
 | [report.ts](../../app/web/src/lib/report.ts) | The calendar's arithmetic, kept out of the drawing so it can be checked. |

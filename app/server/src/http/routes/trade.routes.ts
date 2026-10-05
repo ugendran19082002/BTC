@@ -307,7 +307,10 @@ export const tradeView = (
        */
       netIfClosedUsd: netIfClosedAt({
         state: r.state,
-        price: quote?.ask !== null && quote?.ask !== undefined && quote.ask > 0 ? quote.ask : mark,
+        // A bought position is sold, so at the bid (5 Oct 2026); a short is bought back at the ask.
+        price: r.state.position > 0
+          ? (quote?.bid !== null && quote?.bid !== undefined && quote.bid > 0 ? quote.bid : mark)
+          : quote?.ask !== null && quote?.ask !== undefined && quote.ask > 0 ? quote.ask : mark,
         spot,
         paidUsd: charges.totalUsd,
       }),
@@ -816,9 +819,12 @@ export function registerTradeRoutes(app: FastifyInstance) {
       takeProfitPrice?: number; stopPrice?: number;
     };
     if (!b.tradeId) { reply.code(400); return { error: 'tradeId is required' }; }
+    // A short's target is a share of the credit (under 100%) and its stop has no real ceiling; a bought option's
+    // target has none (a tenfold is a target) and its stop is at most all of what was paid.
+    const long = await svc.isLongTrade(b.tradeId);
     const state = await svc.updateExits(b.tradeId, {
-      takeProfitPct: b.takeProfitPct === undefined ? undefined : pct(b.takeProfitPct, 0.99),
-      stopLossPct: b.stopLossPct === undefined ? undefined : pct(b.stopLossPct, 20),
+      takeProfitPct: b.takeProfitPct === undefined ? undefined : pct(b.takeProfitPct, long ? 100 : 0.99),
+      stopLossPct: b.stopLossPct === undefined ? undefined : pct(b.stopLossPct, long ? 1 : 20),
       takeProfitPoints: b.takeProfitPoints === undefined ? undefined : points(b.takeProfitPoints),
       stopLossPoints: b.stopLossPoints === undefined ? undefined : points(b.stopLossPoints),
       takeProfitAt: b.takeProfitPrice === undefined ? undefined : points(b.takeProfitPrice),

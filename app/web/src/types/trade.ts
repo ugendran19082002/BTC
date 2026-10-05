@@ -112,6 +112,14 @@ export type Trade = {
      */
     exitAsk?: { takeProfitPct?: number; takeProfitPoints?: number; stopLossPct?: number; stopLossPoints?: number } | null;
     leverage?: number;
+    /**
+     * A bought option's own target and stop, off the price paid: a share (0.5 = 50%), points, or a price.
+     * The target rests at Delta as a sale; the stop is judged by the desk on the bid. Absent on a short.
+     */
+    longExits?: {
+      target?: { mode: 'pct' | 'points' | 'price'; value: number } | null;
+      stop?: { mode: 'pct' | 'points' | 'price'; value: number } | null;
+    };
   };
   /** The exchange's own figures, not a second opinion computed here. */
   live?: {

@@ -18,6 +18,7 @@ import {
   ago, contractLabel, countdown, inr, pct, pnlTone, price, signedInr, signedUsd, size as fmtSize, usdToInr,
 } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { longLevels } from '@/lib/long-exits';
 import { Figure } from '@/components/ui/figure';
 
 /**
@@ -345,8 +346,8 @@ function WorkingRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void
         <div>
           <p className="m-0 mt-0.5 text-[12px] text-muted-foreground">
             {at !== null
-              ? <>Selling {fmtSize(lots)} lots @ {price(at)} · not filled yet</>
-              : <>Selling {fmtSize(lots)} lots · not filled yet</>}
+              ? <>{trade.plan?.action === 'buy' ? 'Buying' : 'Selling'} {fmtSize(lots)} lots @ {price(at)} · not filled yet</>
+              : <>{trade.plan?.action === 'buy' ? 'Buying' : 'Selling'} {fmtSize(lots)} lots · not filled yet</>}
           </p>
         </div>
       </div>
@@ -423,6 +424,9 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
     ? `bid ${price(bid)} · ask ${price(ask)}`
     : undefined;
   const charges = trade.charges;
+  // A bought option: no margin, so no liquidation and no leverage; its stop is judged by the desk, not resting.
+  const long = trade.position > 0;
+  const deskStop = long ? longLevels(trade.plan, trade.entryAvgPrice).stop : null;
 
   return (
     <div className={cn('rounded-lg border border-border bg-muted p-3', naked && 'border-[var(--down)] bg-[var(--down-bg)]')}>
@@ -511,7 +515,7 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
           second={book}
           hint={
             book
-              ? 'The mark, with the book under it. Closing a short buys at the ask.'
+              ? long ? 'The mark, with the book under it. Closing a bought option sells at the bid.' : 'The mark, with the book under it. Closing a short buys at the ask.'
               : 'The exchange’s mark. No two-sided quote to read right now.'
           }
         />
@@ -569,8 +573,9 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
               naked ? 'text-[var(--down)]' : trade.protection.stopLoss ? 'text-foreground' : 'text-[var(--dim)]',
             )}
           >
-            {trade.onBook?.stop != null ? price(trade.onBook.stop) : 'none'}
+            {trade.onBook?.stop != null ? price(trade.onBook.stop) : deskStop !== null ? price(deskStop) : 'none'}
           </span>
+          {trade.onBook?.stop == null && deskStop !== null && <span className="text-[var(--dim)]"> · the desk watches it</span>}
           {trade.onBook?.stop != null && trade.ifExits?.stop != null && (
             <> → <span className={cn('tabular-nums', trade.ifExits.stop >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
               {trade.ifExits.stop >= 0 ? 'keep ' : 'lose '}{inr(Math.abs(usdToInr(trade.ifExits.stop) ?? 0))}
@@ -591,12 +596,12 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
             {trade.protectionProblem ? `: ${trade.protectionProblem}` : '; the desk places it again on its next check.'}
           </span>
         )}
-        {trade.live?.liquidationPrice != null && (
+        {!long && trade.live?.liquidationPrice != null && (
           <span title="Delta closes the position at this price, stop or no stop.">
             Liquidation <span className="tabular-nums text-[var(--warn)]">{price(trade.live.liquidationPrice)}</span>
           </span>
         )}
-        {trade.live?.decayed != null && (
+        {!long && trade.live?.decayed != null && (
           <span title="How much of the premium you sold has already melted away. At 100% you keep it all.">
             Premium earned{' '}
             <span className={cn('tabular-nums', pnlTone(trade.live.decayed) === 'down' ? 'text-[var(--down)]' : 'text-[var(--up)]')}>
@@ -604,7 +609,8 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
             </span>
           </span>
         )}
-        {trade.plan?.leverage && <span className="text-[var(--dim)]">{trade.plan.leverage}x</span>}
+        {!long && trade.plan?.leverage && <span className="text-[var(--dim)]">{trade.plan.leverage}x</span>}
+        {long && <span className="text-[var(--dim)]" title="Paid for in full: no margin, no liquidation.">most it can lose: what was paid</span>}
         {trade.realisedPnl !== 0 && (
           <span className={cn('tabular-nums', trade.realisedPnl > 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
             Booked {signedInr(usdToInr(trade.realisedPnl))}

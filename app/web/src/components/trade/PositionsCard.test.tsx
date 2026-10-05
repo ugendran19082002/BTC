@@ -900,3 +900,27 @@ describe('open positions tabs: all, win, loss, wait with counts', () => {
     expect(screen.getByText(/83,000/)).toBeInTheDocument();
   });
 });
+
+describe('a bought position (5 Oct 2026)', () => {
+  const long = (): Trade => trade({
+    position: 1, entrySize: 1, entryAvgPrice: 40, phase: 'position_open',
+    protection: { takeProfit: 'tp', stopLoss: null },
+    fills: [{ ts: 1, role: 'entry', side: 'buy', size: 1, price: 40, orderId: 'e' }] as Trade['fills'],
+    plan: {
+      lots: 1, entry: { type: 'limit', timeoutMs: 0, marketFallback: false }, takeProfitPrice: null, stopPrice: null, leverage: 200,
+      action: 'buy', longExits: { target: { mode: 'pct', value: 3.5 }, stop: { mode: 'pct', value: 0.5 } },
+    },
+    onBook: { target: 180, stop: null },
+    live: { markPrice: 44, liquidationPrice: 254.58, decayed: -0.1 } as Trade['live'],
+  });
+
+  it('[critical] reads as bought: no liquidation, no leverage, no "premium earned", and the desk\'s stop named', () => {
+    render(<PositionsCard trades={[long()]} />);
+    expect(screen.getByText(/Bought 1 @ 40.00/)).toBeInTheDocument();
+    expect(screen.queryByText(/Liquidation/)).toBeNull();
+    expect(screen.queryByText(/Premium earned/)).toBeNull();
+    expect(screen.queryByText('200x')).toBeNull();
+    expect(screen.getByText(/most it can lose: what was paid/)).toBeInTheDocument();
+    expect(screen.getByText(/the desk watches it/)).toBeInTheDocument();
+  });
+});

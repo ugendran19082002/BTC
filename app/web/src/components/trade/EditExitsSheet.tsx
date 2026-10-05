@@ -5,6 +5,7 @@ import type { Trade } from '@/types/trade';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { ExitBars } from '@/components/trade/ExitBars';
+import { LongExitsForm } from '@/components/trade/LongExitsForm';
 import { Figure } from '@/components/ui/figure';
 import { checkExits } from '@/lib/exit-checks';
 import { exitAskOf, inputProblem, levelOf, type ExitInput } from '@/lib/exit-input';
@@ -98,6 +99,24 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
   }, [open, trade, entry]);
 
   if (!trade) return null;
+
+  // A bought position has its own exits: over the price paid and under it, not a short's credit and liquidation.
+  if (trade.position > 0) {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent title={`Edit exits · ${contractLabel(trade.symbol)}`} description={`Bought ${trade.position} @ ${price(entry)}`}>
+          <div className="mb-3 grid grid-cols-2 gap-2 rounded-lg bg-muted px-2.5 py-2">
+            <Figure label="Price now" value={price(trade.live?.markPrice ?? null)}
+                    second={trade.live?.bid != null ? `bid ${price(trade.live.bid)}` : undefined} hint="A bought option is sold at the bid." />
+            <Figure label="P&L" value={signedInr(usdToInr(trade.live?.unrealisedPnl ?? null))} second={signedUsd(trade.live?.unrealisedPnl ?? null)}
+                    tone={trade.live?.unrealisedPnl == null || trade.live.unrealisedPnl === 0 ? undefined : trade.live.unrealisedPnl > 0 ? 'up' : 'down'} />
+          </div>
+          {/* Keyed on the opening, so the poll replacing the trade every second does not reset what is being typed. */}
+          {open && <LongExitsForm key={trade.tradeId} trade={trade} onCancel={() => onOpenChange(false)} onDone={() => { onSaved?.(); onOpenChange(false); }} />}
+        </SheetContent>
+      </Sheet>
+    );
+  }
 
   // Read off the exchange, not off the plan. A panel headed "on the book now"
   // that reads the plan is simply wrong in the one case worth showing: when the

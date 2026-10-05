@@ -20,6 +20,7 @@ import {
   contractLabel, duration, inr, pnlTone, price, signedInr, signedUsd, stamp, usdToInr,
 } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { isLongTrade, longLevels } from '@/lib/long-exits';
 
 /**
  * Every order, looking back. Dates start on today, the window almost everyone
@@ -525,6 +526,8 @@ function OrderRow({ order }: { order: OrderRecord }) {
    */
   const stillOpen = order.position !== 0;
   const ifClosed = stillOpen ? order.live?.netIfClosedUsd ?? null : null;
+  // Bought to open: the detail reads the other way round (bought at, sold at; no leverage).
+  const long = isLongTrade(order);
 
   // Contracts and trade amount (notional / premium)
   const contracts = order.entrySize || Math.abs(order.position);
@@ -635,23 +638,23 @@ function OrderRow({ order }: { order: OrderRecord }) {
           <KV label="Closed">{order.position === 0 ? stamp(order.updatedAt) : '—'}</KV>
           <KV label="Held for">{duration(held)}</KV>
           <KV label="Contracts">{contractsLine(order)}</KV>
-          <KV label="Sold at">{price(order.entryAvgPrice)}</KV>
-          <KV label="Bought back at">{price(order.exitAvgPrice)}</KV>
+          <KV label={long ? 'Bought at' : 'Sold at'}>{price(order.entryAvgPrice)}</KV>
+          <KV label={long ? 'Sold at' : 'Bought back at'}>{price(order.exitAvgPrice)}</KV>
           {premiumInr !== null && premiumUsd !== null && premiumUsd > 0 && (
             <KV label="Trade amount" hint="Total premium value at entry.">
               <span>{inr(premiumInr)}</span>
               <span className="ml-1 text-[11px] text-[var(--dim)]">({signedUsd(premiumUsd)})</span>
             </KV>
           )}
-          <KV label="Target">{price(order.plan?.takeProfitPrice)}</KV>
-          <KV label="Stop">{price(order.plan?.stopPrice)}</KV>
-          <KV label="Leverage">{order.plan?.leverage ? `${order.plan.leverage}x` : '—'}</KV>
+          <KV label="Target">{price(long ? longLevels(order.plan, order.entryAvgPrice).target : order.plan?.takeProfitPrice)}</KV>
+          <KV label="Stop">{price(long ? longLevels(order.plan, order.entryAvgPrice).stop : order.plan?.stopPrice)}</KV>
+          <KV label="Leverage">{!long && order.plan?.leverage ? `${order.plan.leverage}x` : long ? 'none — paid in full' : '—'}</KV>
           {stillOpen ? (
             <>
               {order.exitSize > 0 && (
                 <>
-                  <KV label="Bought back so far">{`${order.exitSize} of ${order.entrySize}`}</KV>
-                  <KV label="Booked so far" hint="The part already bought back, before charges.">
+                  <KV label={long ? 'Sold so far' : 'Bought back so far'}>{`${order.exitSize} of ${order.entrySize}`}</KV>
+                  <KV label="Booked so far" hint={long ? 'The part already sold, before charges.' : 'The part already bought back, before charges.'}>
                     <span>{signedInr(usdToInr(order.realisedPnl))}</span>
                     <span className="ml-1 text-[11px] text-[var(--dim)]">({signedUsd(order.realisedPnl)})</span>
                   </KV>
@@ -722,7 +725,7 @@ function FillLog({ fills, addedSize = 0 }: { fills: OrderRecord['fills']; addedS
   const labelOf = (f: OrderRecord['fills'][number]) => {
     if (f.role !== 'entry') return FILL_LABEL[f.role] ?? f.role;
     sold += f.size;
-    return sold > entryTotal - addedSize ? 'Added' : 'Sold';
+    return sold > entryTotal - addedSize ? 'Added' : f.side === 'buy' ? 'Bought' : 'Sold';
   };
   return (
     <div className="border-t border-border px-3 py-2">

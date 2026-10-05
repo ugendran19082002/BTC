@@ -80,25 +80,79 @@ test('[critical] a plan to buy rests nothing at the exchange: its exits are the 
   assert.equal(sold.stopPrice, 60);
 });
 
-test('[critical] bought at the offer, nothing resting after the fill, and the target taken on the bid with a sale', async () => {
+test('[critical] bought at the offer, the target resting at Delta as a reduce-only sale, and filled there', async () => {
   const r = rig({ quotes: [quote(CE, 100, 101)] });
   const res = await r.engine.open(buyPlan({ longExits: { target: { mode: 'pct', value: 0.5 }, stop: { mode: 'pct', value: 0.4 } } }));
   assert.equal(res.ok, true, JSON.stringify(res));
   assert.deepEqual([res.state.position, res.state.entryAvgPrice], [10, 101], 'long 10, bought at the offer');
   assert.equal((await r.ex.getPositions()).find((p) => p.symbol === CE)?.size, 10);
 
-  await r.engine.poll('t-buy-1');
-  assert.deepEqual(await r.ex.getOpenOrders(CE), [], 'no buy-back resting over a long: nothing at all');
+  const held = await r.engine.poll('t-buy-1');
+  // 150% of 101 is 151.5: a sale rests there, reduce-only, for all 10 -- and no stop order (the desk judges it).
+  const book = await r.ex.getOpenOrders(CE);
+  assert.deepEqual(book.map((o) => [o.side, o.type, o.limitPrice, o.size, o.reduceOnly]), [['sell', 'limit', 151.5, 10, true]]);
+  assert.equal(held!.protection.takeProfit, book[0]!.clientOrderId, 'the record knows its target');
+  assert.equal(held!.protection.stopLoss, null);
 
-  // 150% of 101 is 151.5: the bid there sells it.
-  r.ex.setQuote(quote(CE, 152, 153, { ts: r.now() }));
+  // The bid reaches it: the resting sale is the exit, at its price.
+  r.ex.tick(quote(CE, 152, 153, { ts: r.now() }));
   const s = await r.engine.poll('t-buy-1');
   assert.equal(s!.position, 0);
   assert.equal(s!.phase, 'flat');
-  const exit = s!.fills.find((f) => f.role === 'exit')!;
-  assert.deepEqual([exit.side, exit.price], ['sell', 152], 'sold at the bid');
+  const exit = s!.fills.find((f) => f.role !== 'entry')!;
+  assert.equal(exit.side, 'sell');
+  assert.ok(exit.price >= 151.5, `sold at the target or better, not under it: ${exit.price}`);
   assert.ok(s!.realisedPnl > 0);
+  assert.deepEqual(await r.ex.getOpenOrders(CE), [], 'nothing left resting');
+});
+
+test('[critical] with no resting target (Delta refused it) the desk still sells at the target on the bid', async () => {
+  const r = rig({ quotes: [quote(CE, 100, 101)] });
+  await r.engine.open(buyPlan({ longExits: { target: { mode: 'pct', value: 0.5 }, stop: null } }));
+  // Every reduce-only sale refused, as an exchange might while it registers the fill.
+  const place = r.ex.placeOrder.bind(r.ex);
+  r.ex.placeOrder = async (o) => { if (o.reduceOnly && o.role === 'take_profit') throw new Error('refused'); return place(o); };
+  const held = await r.engine.poll('t-buy-1');
+  assert.equal(held!.protection.takeProfit, null);
+  assert.equal(held!.alarm, null, 'no alarm: a bought option wants no stop order');
+  r.ex.setQuote(quote(CE, 152, 153, { ts: r.now() }));
+  const s = await r.engine.poll('t-buy-1');
+  assert.equal(s!.position, 0);
   assert.match(s!.exitReason ?? '', /option target reached: the bid at 152 \(target 151.5, bought at 101\)/);
+});
+
+test('[critical] editing a bought position\'s exits moves its own: the target over the price paid with no ceiling, never the short\'s stop', async () => {
+  const r = rig({ quotes: [quote(CE, 100, 101)] });
+  await r.engine.open(buyPlan({ longExits: { target: { mode: 'pct', value: 0.5 }, stop: null } }));
+  await r.engine.poll('t-buy-1');
+  // 350% over 101 is 454.5; a 50% stop is 50.5.
+  const s = await r.engine.updateLongExits('t-buy-1', { target: { mode: 'pct', value: 3.5 }, stop: { mode: 'pct', value: 0.5 } });
+  assert.equal(s!.position, 10);
+  const rec = await r.store.get('t-buy-1');
+  assert.deepEqual(rec!.plan.longExits, { target: { mode: 'pct', value: 3.5 }, stop: { mode: 'pct', value: 0.5 } });
+  assert.deepEqual([rec!.plan.takeProfitPrice, rec!.plan.stopPrice], [null, null], 'the short\'s fields stay empty on a long');
+  const book = await r.ex.getOpenOrders(CE);
+  assert.deepEqual(book.map((o) => [o.side, o.limitPrice, o.size]), [['sell', 454.5, 10]], 'moved, not doubled');
+  // A bid over the old "stop" reading of a short does not sell it: nothing at 120 is a level for a long.
+  r.ex.setQuote(quote(CE, 120, 121, { ts: r.now() }));
+  r.advance(STOP_CONFIRM_MS);
+  r.ex.setQuote(quote(CE, 120, 121, { ts: r.now() }));
+  assert.equal((await r.engine.poll('t-buy-1'))!.position, 10, 'still held');
+  // Target off: the resting sale comes off.
+  await r.engine.updateLongExits('t-buy-1', { target: null, stop: { mode: 'pct', value: 0.5 } });
+  assert.deepEqual(await r.ex.getOpenOrders(CE), []);
+});
+
+test('[critical] the edit sheet\'s words read as a long\'s: a target under the price paid or a stop over it is refused', async () => {
+  const { longExitsFor } = await import('../../src/trading/order-plan.js');
+  assert.deepEqual(longExitsFor(40, { takeProfitPct: 3.5 }, undefined), { exits: { target: { mode: 'pct', value: 3.5 }, stop: null } });
+  assert.deepEqual(longExitsFor(40, { stopLossPct: 0.5 }, { target: { mode: 'pct', value: 1 } }),
+    { exits: { target: { mode: 'pct', value: 1 }, stop: { mode: 'pct', value: 0.5 } } }, 'a leg not asked about keeps what it had');
+  assert.deepEqual(longExitsFor(40, { takeProfitPct: 0 }, { target: { mode: 'pct', value: 1 } }), { exits: { target: null, stop: null } }, 'zero is off');
+  assert.deepEqual(longExitsFor(40, { takeProfitAt: 180 }, undefined), { exits: { target: { mode: 'price', value: 180 }, stop: null } });
+  assert.ok('problem' in longExitsFor(40, { takeProfitAt: 30 }, undefined), 'a target under the price paid');
+  assert.ok('problem' in longExitsFor(40, { stopAt: 45 }, undefined), 'a stop over the price paid');
+  assert.ok('problem' in longExitsFor(40, { stopLossPct: 1 }, undefined), 'a 100% stop is no stop: zero is not a price');
 });
 
 test('[critical] the stop is judged on the bid and has to hold, like a short\'s on the offer', async () => {
