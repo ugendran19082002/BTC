@@ -321,6 +321,15 @@ Rules the routes hold (`http/routes/accounts.routes.ts`), each answered through
 - **A row that will not open is never used.** After `DESK_SESSION_SECRET` is
   rotated an account shows "key unreadable"; it is added again as a new account
   and the old row removed.
+- **Removing takes a fresh authenticator code.** A signed-in browser may look
+  and switch; destroying a key is not undone by signing in again, so
+  `POST /api/accounts/:id/remove` asks the second factor the way a new set of
+  recovery codes does -- the same lockout, a code good once -- and the removal,
+  and a refused attempt, are in `auth_events` and on the phone.
+- **An account with history is kept.** One that has trades or strategies on
+  record (`broker_account_id`, below) is switched off, not removed: its orders,
+  P&L and strategies are read by its id. `GET /api/accounts` says why each
+  account cannot be removed, so the screen says it before a code is asked for.
 - **The last account is never removed, only switched off.** A desk that has had
   an account always has one to switch back on; switched on with no default
   anywhere, it is the default again. A key is replaced by adding the new one
@@ -332,6 +341,30 @@ remembers it, so a table emptied by hand is not refilled), which is what lets a
 desk holding live positions come up on the account it went down on. The key is
 not kept in `.env` after that: the desk says at start, and on the Accounts
 screen, that the two lines are still set, until they are emptied.
+
+### `broker_account_id` — what belongs to which account
+
+Since 5 Oct 2026 three tables carry the account, so Strategy, Positions, Orders
+and P&L can be read one account at a time (the tabs over those screens; routes
+take `?account=<id>`, and without it answer for every account as before):
+
+| Table | Column | Written |
+|---|---|---|
+| `trades` | `broker_account_id` (indexed with `updated_at`) | Once, with the row, from `plan.accountId`: the account the desk was on when the trade was placed. Never changed. |
+| `mtm_samples` | `broker_account_id` | With each reading: the account the desk was on. |
+| `strategies` | `broker_account_id` | When the strategy is made: the account whose tab it was made on. A saved strategy keeps it. |
+
+`trading-007-broker-account` and `strategy-008-broker-account` gave every row
+that existed the one account the desk had. No foreign key -- the journal is
+migrated in places the accounts table is not -- and the rule a key would hold
+(no row left belonging to nothing) is held by not removing an account that has
+any.
+
+**A strategy enters only on its own account** (`onDeskAccount`,
+`strategy/types.ts`): the scheduler and the signals skip a strategy whose
+account is not the one the desk is on. Its exits are never held by that. A
+strategy of no account (a desk with none) enters wherever the desk is. The desk
+still trades on one account at a time; the other accounts' strategies wait.
 
 ---
 

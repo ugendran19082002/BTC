@@ -8,6 +8,17 @@ order ticket, and manages it to its own exit. The code is in
 
 ---
 
+## A strategy belongs to one broker account
+
+Since 5 Oct 2026 a strategy is made on an account's tab (Strategy screen) and
+belongs to that account (`strategies.broker_account_id`). It **enters only
+while the desk is trading on that account**: the scheduler and the signals skip
+any other account's strategy, and its row says "not entering: the desk is
+trading on another account". Its exits are not held by this. It cannot be made
+on the "All accounts" tab, and a saved strategy never changes account. Sizes
+and limits are set against one account's balance, so moving the desk to
+another account must not start trading them there unasked.
+
 ## One pass of the scheduler
 
 Every 20 seconds (`TICK_MS`) [runner.ts](../../app/server/src/strategy/runner.ts)

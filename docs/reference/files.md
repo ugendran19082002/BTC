@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-393 files listed, 190 test files counted below, images and lockfiles left out.
+397 files listed, 192 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 115 |
-| `app/web` | 75 |
+| `app/server` | 116 |
+| `app/web` | 76 |
 
 ## `(root)`
 
@@ -131,6 +131,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [account-query.ts](../../app/server/src/http/account-query.ts) | `?account=<id>` on the screens that are read by broker account -- orders, P&L, strategies. |
 | [add-body.ts](../../app/server/src/http/add-body.ts) | A person's add, as the position card sends it, checked and shaped. |
 | [app.ts](../../app/server/src/http/app.ts) | The Fastify app: the session gate, the CSRF origin check, trusted proxies, and the two hooks that put every failure in the error log. |
 | [close-body.ts](../../app/server/src/http/close-body.ts) | A person's close, as the position card sends it, checked and shaped. |
@@ -143,7 +144,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts) | The broker accounts (Logs -> Accounts): add, name, test, switch on and off, choose the default, remove. |
+| [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts) | The broker accounts (Logs -> Accounts): add, name, test, switch on and off, choose the default, remove -- the last only with a fresh authenticator code. |
 | [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts) | The desk's read routes: health, the option chain, spot and candles, what changed, the perpetual's tape, book and big prints for the chart, the trend plan's paper log, chain.db reloads and the desk... |
 | [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | The entry section's routes: the 24 reads (twelve methods, with the timeframe chain and without it) and their paper record. |
 | [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts) | The error log, readable and writable from the browser. |
@@ -271,6 +272,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [AccountSummaryCard.tsx](../../app/web/src/components/accounts/AccountSummaryCard.tsx) | An account the desk is not trading on, as Delta has it right now: its wallet and whatever it holds there, read with its own key. |
+| [AccountTabs.tsx](../../app/web/src/components/accounts/AccountTabs.tsx) | Which broker account the screen below is showing (owner, 5 Oct 2026): a tab per account over Strategy, Positions, Orders and P&L, opening on the one the desk trades on. |
 | [AccountsPanel.tsx](../../app/web/src/components/accounts/AccountsPanel.tsx) | The broker accounts (owner, 5 Oct 2026): whose API key the desk trades with. |
 
 ## `app/web/src/components/auth/`
@@ -458,6 +461,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [account-scope.ts](../../app/web/src/lib/account-scope.ts) | Which broker account the account-based screens are showing (owner, 5 Oct 2026): strategies, orders and P&L are read for one account at a time, chosen on the tabs above them. |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [ev-view.ts](../../app/web/src/lib/ev-view.ts) | Reading the server's per-strike arithmetic onto the screen. |
 | [exit-checks.ts](../../app/web/src/lib/exit-checks.ts) | Whether a stop and a target make sense against the price right now. |
