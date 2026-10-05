@@ -191,6 +191,7 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
         <CollapsibleCard
           id="open-positions"
           title="Open positions"
+          rightInline
           right={
             <span className="flex items-center gap-2.5">
               <span className="text-[11px] tabular-nums text-muted-foreground" aria-label="open positions count">{held.length}</span>
@@ -225,9 +226,9 @@ export function PositionsCard({ trades, onChanged }: { trades: Trade[]; onChange
                         t.tone === 'warn' && 'hover:text-[var(--warn)] data-[state=on]:bg-[var(--warn)]/15 data-[state=on]:text-[var(--warn)] data-[state=on]:border-[var(--warn)]/30',
                       )}
                     >
-                      {t.tone === 'up' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--up)]" />}
-                      {t.tone === 'down' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--down)]" />}
-                      {t.tone === 'warn' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--warn)]" />}
+                      {t.tone === 'up' && <span className="h-1.5 w-1.5 flex-none rounded-full bg-[var(--up)]" />}
+                      {t.tone === 'down' && <span className="h-1.5 w-1.5 flex-none rounded-full bg-[var(--down)]" />}
+                      {t.tone === 'warn' && <span className="h-1.5 w-1.5 flex-none rounded-full bg-[var(--warn)]" />}
                       <span>{t.label}</span>
                       <span
                         className={cn(

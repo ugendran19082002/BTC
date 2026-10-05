@@ -23,6 +23,7 @@ export function CollapsibleCard({
   defaultOpen = true,
   className,
   ariaLabel,
+  rightInline = false,
   children,
 }: {
   /** stable key for the remembered state; changing it forgets the choice */
@@ -38,6 +39,8 @@ export function CollapsibleCard({
   className?: string;
   /** names the card as a region, for a screen reader and for tests */
   ariaLabel?: string;
+  /** Keep `right` on the title's row even on a phone -- for a short title beside a button (Close all). */
+  rightInline?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = usePersisted<boolean>(`open:${id}`, defaultOpen);
@@ -64,7 +67,8 @@ export function CollapsibleCard({
             // as a grey pill across the top of every card.
             'appearance-none border-0 bg-transparent p-0 font-[inherit] cursor-pointer',
             // At least 32px tall: a thumb has to be able to find it on a phone.
-            'group flex min-h-8 min-w-[min(100%,15rem)] flex-1 items-center gap-1.5 text-left',
+            'group flex min-h-8 flex-1 items-center gap-1.5 text-left',
+            rightInline ? 'min-w-0' : 'min-w-[min(100%,15rem)]',
             'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded',
           )}
         >
