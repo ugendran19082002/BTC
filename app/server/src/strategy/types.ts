@@ -688,9 +688,25 @@ export type Strategy = {
   /** Off by default. A saved strategy that has never been armed does nothing. */
   enabled: boolean;
   config: StrategyConfig;
+  /**
+   * The broker account this strategy belongs to (`strategies.broker_account_id`), given when it is made and
+   * never changed: it enters only while the desk is on that account (`onDeskAccount`). Null or absent -- a desk
+   * with no account, a seed -- belongs to none and enters on whichever the desk is on.
+   */
+  accountId?: number | null;
   createdAt: number;
   updatedAt: number;
 };
+
+/**
+ * Whether a strategy may enter on the account the desk is on (owner, 5 Oct 2026: strategies by account).
+ *
+ * A strategy's size, strikes and limits were set against one account's balance; the desk moved to another
+ * account must not start trading them there unasked. Not entering is the safe direction. Its exits are never
+ * held by this: what it opened is closed and stepped whatever account is selected.
+ */
+export const onDeskAccount = (s: Pick<Strategy, 'accountId'>, deskAccountId: number | null): boolean =>
+  (s.accountId ?? null) === null || deskAccountId === null || s.accountId === deskAccountId;
 
 /** One attempt to run one strategy on one IST day. The audit trail. */
 export type StrategyRun = {

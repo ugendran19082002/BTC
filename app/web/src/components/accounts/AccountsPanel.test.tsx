@@ -108,24 +108,52 @@ describe('the broker accounts', () => {
     expect(await (await row('Second')).findByRole('alert')).toHaveTextContent('Not made the default: its connection test failed.');
   });
 
-  it('[critical] removing asks twice, and the server\'s refusal is said beside the account', async () => {
+  it('[critical] removing asks for an authenticator code; a wrong code removes nothing and is said beside the account', async () => {
     api.getAccounts.mockResolvedValue(answer([account(), second], { mode: 'live' }));
     render(<AccountsPanel />);
-    fireEvent.click((await row('Main')).getByRole('button', { name: 'Remove' }));
+    fireEvent.click((await row('Second')).getByRole('button', { name: 'Remove' }));
     expect(api.removeAccount).not.toHaveBeenCalled();
-    fireEvent.click(within(screen.getByRole('group', { name: 'remove Main?' })).getByRole('button', { name: 'Keep it' }));
-    expect(screen.queryByRole('group', { name: 'remove Main?' })).toBeNull();
+    fireEvent.click(within(screen.getByRole('group', { name: 'remove Second?' })).getByRole('button', { name: 'Keep it' }));
+    expect(screen.queryByRole('group', { name: 'remove Second?' })).toBeNull();
 
-    api.removeAccount.mockRejectedValueOnce(new Error('The desk is trading live on this account. Switch to paper first.'));
-    fireEvent.click((await row('Main')).getByRole('button', { name: 'Remove' }));
-    fireEvent.click(within(screen.getByRole('group', { name: 'remove Main?' })).getByRole('button', { name: 'Yes, remove' }));
-    expect(await (await row('Main')).findByRole('alert')).toHaveTextContent('The desk is trading live on this account. Switch to paper first.');
+    // No code, no removal: the button waits for six digits.
+    fireEvent.click((await row('Second')).getByRole('button', { name: 'Remove' }));
+    let asked = within(screen.getByRole('group', { name: 'remove Second?' }));
+    expect(asked.getByText(/Enter the code from your authenticator app to confirm/)).toBeInTheDocument();
+    expect(asked.getByRole('button', { name: 'Remove for good' })).toBeDisabled();
+    fireEvent.change(asked.getByLabelText('authenticator code to remove Second'), { target: { value: '123' } });
+    expect(asked.getByRole('button', { name: 'Remove for good' })).toBeDisabled();
+
+    api.removeAccount.mockRejectedValueOnce(new Error('The authenticator code is not right. Use the newest code in the app.'));
+    fireEvent.change(asked.getByLabelText('authenticator code to remove Second'), { target: { value: '123456' } });
+    fireEvent.click(asked.getByRole('button', { name: 'Remove for good' }));
+    expect(await (await row('Second')).findByRole('alert')).toHaveTextContent('The authenticator code is not right.');
+    expect(api.removeAccount).toHaveBeenLastCalledWith(2, '123456');
+    await row('Second'); // still there
 
     api.removeAccount.mockResolvedValueOnce(answer([account()], { mode: 'live' }));
     fireEvent.click((await row('Second')).getByRole('button', { name: 'Remove' }));
-    fireEvent.click(within(screen.getByRole('group', { name: 'remove Second?' })).getByRole('button', { name: 'Yes, remove' }));
+    asked = within(screen.getByRole('group', { name: 'remove Second?' }));
+    expect(asked.getByLabelText('authenticator code to remove Second')).toHaveValue(''); // the wrong code is not kept
+    fireEvent.change(asked.getByLabelText('authenticator code to remove Second'), { target: { value: '654 321' } });
+    fireEvent.click(asked.getByRole('button', { name: 'Remove for good' }));
     await waitFor(() => expect(screen.queryByRole('listitem', { name: 'Second' })).toBeNull());
-    expect(api.removeAccount).toHaveBeenLastCalledWith(2);
+    expect(api.removeAccount).toHaveBeenLastCalledWith(2, '654321');
+  });
+
+  it('[critical] an account the server keeps cannot be removed, and the row says why before a code is asked for', async () => {
+    api.getAccounts.mockResolvedValue(answer([
+      account({ keptBecause: 'The desk is trading live on this account. Switch to paper first.' }),
+      { ...second, keptBecause: 'This account has 12 trades and 2 strategies on record, so it is kept. Deactivate it instead.' },
+    ], { mode: 'live' }));
+    render(<AccountsPanel />);
+    const main = await row('Main');
+    expect(main.getByRole('button', { name: 'Remove' })).toBeDisabled();
+    expect(main.getByLabelText('why it is kept')).toHaveTextContent('The desk is trading live on this account. Switch to paper first.');
+    const other = await row('Second');
+    expect(other.getByRole('button', { name: 'Remove' })).toBeDisabled();
+    expect(other.getByLabelText('why it is kept')).toHaveTextContent('12 trades and 2 strategies on record');
+    expect(other.getByRole('button', { name: 'Deactivate' })).toBeEnabled();
   });
 
   it('test, deactivate and edit the name; a full list and a server that cannot encrypt say so', async () => {
@@ -163,7 +191,7 @@ describe('the broker accounts', () => {
     render(<AccountsPanel />);
     const only = await row('Main');
     expect(only.getByRole('button', { name: 'Remove' })).toBeDisabled();
-    expect(only.getByText('The last account is kept — deactivate it instead of removing it.')).toBeInTheDocument();
+    expect(only.getByLabelText('why it is kept')).toHaveTextContent('This is the only account, and the last one is kept. Deactivate it instead.');
     fireEvent.click(only.getByRole('button', { name: 'Remove' }));
     expect(screen.queryByRole('group', { name: 'remove Main?' })).toBeNull();
     expect(api.removeAccount).not.toHaveBeenCalled();

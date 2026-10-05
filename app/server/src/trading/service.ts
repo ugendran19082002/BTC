@@ -76,6 +76,8 @@ export type TradingServiceDeps = {
   limits?: Partial<RiskLimits>;
   /** The default broker account's key, or null: with none, the desk is paper only. */
   creds?: Creds | null;
+  /** That account's id, stamped on every trade placed and every P&L reading taken while the desk is on it. */
+  accountId?: number | null;
 };
 
 export class TradingService {
@@ -86,6 +88,9 @@ export class TradingService {
   private currentMode: DeskMode;
   /** The real exchange, signed as the default broker account; null with no account. Replaced by `setLiveCreds`. */
   private live: ExchangePort | null;
+  /** The default broker account's id, or null with none: what a new trade and a P&L reading are stamped with. */
+  private currentAccountId: number | null;
+  get accountId(): number | null { return this.currentAccountId; }
   private readonly paperExchange: PaperExchange;
   private readonly engine: TradeEngine;
   private timer: NodeJS.Timeout | null = null;
@@ -128,7 +133,7 @@ export class TradingService {
     return this.settings.set('alerts_enabled', on ? '1' : '0');
   }
 
-  constructor({ store, settings, limits = {}, creds = null }: TradingServiceDeps) {
+  constructor({ store, settings, limits = {}, creds = null, accountId = null }: TradingServiceDeps) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     this.store = store;
@@ -142,6 +147,7 @@ export class TradingService {
         })
       : null;
     this.live = creds ? new DeltaExchange(creds) : null;
+    this.currentAccountId = accountId;
     this.paperExchange = new PaperExchange({ balanceUsd: 1_000 });
     // A mode chosen in the browser outlives a restart; without one, the
     // environment decides.
@@ -304,8 +310,9 @@ export class TradingService {
   }
 
   /** Sign live orders as this account from now on (null: no account). Ask `accountSwitchBlocked` first. */
-  setLiveCreds(creds: Creds | null): void {
+  setLiveCreds(creds: Creds | null, accountId: number | null = null): void {
     this.live = creds ? new DeltaExchange(creds) : null;
+    this.currentAccountId = accountId;
     // Everything remembered about the account that was: its balance, positions and orders are not this one's.
     this.lastBalance = null;
     this.positionsCache = null;
@@ -429,7 +436,7 @@ export class TradingService {
     try {
       const f = await this.todayFigures(now);
       if ((await this.openTrades()).length === 0 && f.realisedUsd === 0 && f.chargesUsd === 0) return;
-      await this.store.sampleMtm({ at: now, day: istDate(now), ...f });
+      await this.store.sampleMtm({ at: now, day: istDate(now), ...f }, this.currentAccountId);
     } catch (e) {
       noteError({
         source: 'trading', level: 'warn', where: 'service/sampleMtm',
@@ -467,7 +474,10 @@ export class TradingService {
 
   // ------------------------------------------------------------------ api
   async place(input: PlaceInput) {
-    const res = await this.engine.open(orderPlan(input, `${input.symbol}-${nextTradeMs()}`));
+    const plan = orderPlan(input, `${input.symbol}-${nextTradeMs()}`);
+    // Which account this is placed as, written down where it is known: the journal's `broker_account_id`.
+    if (this.currentAccountId !== null) plan.accountId = this.currentAccountId;
+    const res = await this.engine.open(plan);
     // Working from this moment: watched closely for its fill, without waiting for the loop to read it.
     if (res.ok) this.entryWatch.add(res.state.tradeId);
     return res;
@@ -869,7 +879,7 @@ export async function initTradingService(limits: Partial<RiskLimits> = {}): Prom
   // The broker accounts before the desk: which exchange it drives is decided as it is built.
   const accounts = await initBrokerAccounts(settings);
   const store = await PgTradeStore.open();
-  singleton = new TradingService({ store, settings, limits, creds: accounts.defaultCreds() });
+  singleton = new TradingService({ store, settings, limits, creds: accounts.defaultCreds(), accountId: accounts.default()?.id ?? null });
   return singleton;
 }
 

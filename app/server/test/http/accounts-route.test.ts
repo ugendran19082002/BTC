@@ -25,8 +25,13 @@ const { Secrets } = await import('../../src/auth/secrets.js');
 const { closePool, rows } = await import('../../src/db/pool.js');
 const { initTradingService, tradingService } = await import('../../src/trading/service.js');
 const { brokerAccounts } = await import('../../src/delta/accounts.js');
+const { initStrategyStore } = await import('../../src/http/routes/strategy.routes.js');
+const { query } = await import('../../src/db/pool.js');
 
 await initTradingService();
+await initStrategyStore();
+// This file is the accounts' own rules; an account kept for its history is test/http/account-views.test.ts.
+await query('UPDATE strategies SET broker_account_id = NULL');
 const auth = await AuthStore.open();
 await auth.seedUser('desk', hashPassword('correct horse battery'), Date.now());
 await auth.createSession({ token: 'accounts-session', stage: 'full', now: Date.now(), ttlMs: 3_600_000, ip: null, userAgent: null });
@@ -39,11 +44,24 @@ const accountTest = async (creds: { key: string; secret: string }) => {
   return verdict[creds.key] ?? { ok: true, detail: 'Connected. Wallet balance $12.34.' };
 };
 
+
+/** Two-step sign-in set up, and a clock the test moves: an authenticator code is good once, so each removal takes the next. */
+const { base32Encode, totp } = await import('../../src/auth/totp.js');
+const { randomBytes } = await import('node:crypto');
+const TOTP_SECRET = base32Encode(randomBytes(20));
+let clock = Date.now();
+const nextCode = () => { clock += 30_000; return totp(TOTP_SECRET, clock); };
+/** The code that removed the first account, kept to show it removes nothing else. */
+let spent = '';
+await auth.enableTotp(new Secrets('accounts-route-master').seal(TOTP_SECRET), -1, Date.now());
+
 type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;
 before(async () => {
-  app = await buildApp({ auth: new AuthService({ store: auth, secrets: new Secrets('accounts-route-master'), now: Date.now }), accountTest });
+  app = await buildApp({ auth: new AuthService({ store: auth, secrets: new Secrets('accounts-route-master'), now: () => clock }), accountTest });
 });
+/** Remove an account, with a code (a fresh, right one unless given). */
+const remove = (id: number, code: string | undefined = nextCode()) => api('POST', `/api/accounts/${id}/remove`, code === undefined ? {} : { code });
 after(async () => {
   tradingService().stop();
   await app.close();
@@ -65,7 +83,8 @@ test('[critical] the desk starts on .env\'s key, now a sealed row -- and no answ
   assert.equal(r.body.envKeyLeft, true, 'and the screen is told the key is still in .env, to be emptied there');
   const a = r.body.accounts[0];
   assert.deepEqual([a.name, a.isDefault, a.active, a.readable, a.keyHint], ['Delta India (from .env)', true, true, true, '9999']);
-  assert.deepEqual(Object.keys(a).sort(), ['active', 'broker', 'createdAt', 'description', 'id', 'isDefault', 'keyHint', 'lastTest', 'name', 'readable', 'updatedAt']);
+  assert.deepEqual(Object.keys(a).sort(), ['active', 'broker', 'createdAt', 'description', 'id', 'isDefault', 'keptBecause', 'keyHint', 'lastTest', 'name', 'readable', 'updatedAt']);
+  assert.equal(a.keptBecause, 'This is the only account, and the last one is kept. Deactivate it instead.', 'and why it cannot be removed, before anyone tries');
   assert.ok(!r.text.includes(ENV_KEY) && !r.text.includes(ENV_SECRET));
   assert.equal((await api('GET', '/api/accounts', undefined, {})).status, 401, 'closed without a session');
 });
@@ -90,7 +109,9 @@ test('[critical] live on the default: it cannot be removed or switched off, and 
   const list = (await api('GET', '/api/accounts')).body;
   const main = named(list, 'Delta India (from .env)'), second = named(list, 'Second');
 
-  const gone = await api('DELETE', `/api/accounts/${main.id}`);
+  assert.equal(main.keptBecause, 'The desk is trading live on this account. Switch to paper first.');
+  assert.equal(second.keptBecause, null);
+  const gone = await remove(main.id);
   assert.deepEqual([gone.status, gone.body.error], [409, 'The desk is trading live on this account. Switch to paper first.']);
   const off = await api('POST', `/api/accounts/${main.id}/active`, { active: false });
   assert.equal(off.status, 409);
@@ -111,8 +132,19 @@ test('[critical] live on the default: it cannot be removed or switched off, and 
   assert.deepEqual(brokerAccounts().defaultCreds(), { key: NEW_KEY, secret: NEW_SECRET });
   assert.equal(tradingService().mode, 'live');
 
-  // The one no longer in use goes freely.
-  assert.equal((await api('DELETE', `/api/accounts/${main.id}`)).status, 200);
+  // The one no longer in use, with nothing on record, can go -- but only with a fresh authenticator code.
+  const noCode = await api('POST', `/api/accounts/${main.id}/remove`, {});
+  assert.deepEqual([noCode.status, noCode.body.error], [422, 'Enter the 6-digit code from your authenticator app.']);
+  const wrong = await remove(main.id, '000000');
+  assert.deepEqual([wrong.status, wrong.body.error], [403, 'The authenticator code is not right. Use the newest code in the app.']);
+  assert.equal(brokerAccounts().get(main.id)!.name, 'Delta India (from .env)', 'still there after a wrong code');
+  spent = nextCode();
+  assert.equal((await remove(main.id, spent)).status, 200);
+  assert.equal(brokerAccounts().get(main.id), null);
+  // The removal and the refused attempt are in the security log, with the account's name and never its key.
+  const log = await rows<{ kind: string; detail: string | null }>("SELECT kind, detail FROM auth_events WHERE kind LIKE 'broker_account_removed%' ORDER BY id");
+  assert.deepEqual(log.map((e) => e.kind), ['broker_account_removed_refused', 'broker_account_removed']);
+  assert.match(log[1]!.detail!, /"Delta India \(from \.env\)" \(key ending 9999\)/);
 });
 
 test('[critical] test, rename -- and the last account is never deleted: it is switched off, and comes back in one tap', async () => {
@@ -126,10 +158,10 @@ test('[critical] test, rename -- and the last account is never deleted: it is sw
 
   // The only account left: not removed, live or on paper -- and the answer says what to do instead.
   const kept = 'This is the only account, and the last one is kept. Deactivate it instead.';
-  const liveTry = await api('DELETE', `/api/accounts/${second.id}`);
+  const liveTry = await remove(second.id);
   assert.deepEqual([liveTry.status, liveTry.body.error], [409, kept]);
   assert.equal((await tradingService().setMode('paper')).ok, true);
-  const paperTry = await api('DELETE', `/api/accounts/${second.id}`);
+  const paperTry = await remove(second.id);
   assert.deepEqual([paperTry.status, paperTry.body.error], [409, kept]);
   assert.equal(brokerAccounts().list().length, 1);
 
@@ -148,6 +180,8 @@ test('[critical] test, rename -- and the last account is never deleted: it is sw
   const fresh = await api('POST', '/api/accounts', { name: 'Fresh', api_key: `${NEW_KEY}2`, api_secret: NEW_SECRET });
   assert.equal(named(fresh.body, 'Fresh').isDefault, false);
   assert.equal((await api('POST', `/api/accounts/${named(fresh.body, 'Fresh').id}/default`)).status, 200);
-  const gone = await api('DELETE', `/api/accounts/${second.id}`);
+  // A code is good once: the one that removed the first account does not remove another.
+  assert.equal((await remove(second.id, spent)).status, 403);
+  const gone = await remove(second.id);
   assert.deepEqual([gone.status, gone.body.accounts.map((a: { name: string }) => a.name)], [200, ['Fresh']]);
 });

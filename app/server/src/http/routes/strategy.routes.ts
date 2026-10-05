@@ -5,8 +5,10 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, onDeskAccount, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
+import { accountOf } from '../account-query.js';
+import { brokerAccounts } from '../../delta/accounts.js';
 import { config, STARTED_AT } from '../../config.js';
 
 /**
@@ -203,12 +205,30 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const { from, to } = (req.query ?? {}) as { from?: string; to?: string };
     const range = istDayRange(from, to);
     if (range && 'error' in range) { reply.code(400); return { error: range.error }; }
-    return { from: from ?? null, to: to ?? null, trades: await strategyStore().signalTrades(2_000, undefined, range ?? undefined) };
+    const trades = await strategyStore().signalTrades(2_000, undefined, range ?? undefined);
+    const mine = await ofAccount(accountOf(req.query));
+    return { from: from ?? null, to: to ?? null, trades: mine ? trades.filter((t) => mine.has(t.strategyId)) : trades };
   });
 
-  // Every saved strategy, today's runs, the scheduler switch and each strategy's next entry.
-  app.get('/api/strategies', async () => {
+  /**
+   * `?account=<id>`: the strategies of one broker account (and those that belong to none), as ids -- what a
+   * run or a signal is kept by. Null: every account, nothing left out.
+   */
+  const OFF_ACCOUNT = 'not entering: the desk is trading on another account';
+  const belongs = (x: { accountId?: number | null }, account: number | null) =>
+    account === null || (x.accountId ?? null) === null || x.accountId === account;
+  async function ofAccount(account: number | null): Promise<Set<string> | null> {
+    if (account === null) return null;
+    return new Set((await strategyStore().all()).filter((x) => belongs(x, account)).map((x) => x.id));
+  }
+
+  // Every saved strategy, today's runs, the scheduler switch and each strategy's next entry. `?account=<id>`: one broker account's.
+  app.get('/api/strategies', async (req) => {
     const s = strategyStore();
+    const account = accountOf(req.query);
+    const shown = (await s.all()).filter((x) => belongs(x, account));
+    const mine = account === null ? null : new Set(shown.map((x) => x.id));
+    const kept = <T extends { strategyId: string }>(xs: T[]): T[] => (mine ? xs.filter((x) => mine.has(x.strategyId)) : xs);
     const now = Date.now();
     const today = istDate(now);
     /*
@@ -268,14 +288,16 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        */
       balanceUsd: svc.lastBalanceUsd,
       spot: svc.spot,
-      strategies: await Promise.all((await s.all()).map(async (x) => {
+      strategies: await Promise.all(shown.map(async (x) => {
+        // Another account's strategy: shown, and said plainly that it is not entering while the desk is elsewhere.
+        const here = onDeskAccount(x, svc.accountId);
         if (x.config.trigger === 'signal') {
           // A signal strategy has no entry time to count down to: it is taking signals now, or it is not.
           const on = inSignalWindow(x, now);
           return {
             ...x, lastRunDate: null, ranToday: false, nextEntryAt: null,
             open: openOf(x.id),
-            status: on
+            status: !here ? OFF_ACCOUNT : on
               ? `taking signals until ${time12(x.config.exitTime)}${x.config.liveOrders ? '' : ' -- live orders off: writing down what it would place'}`
               : `outside its window (${time12(x.config.entryTime)} to ${time12(x.config.exitTime)} IST, its days)`,
           };
@@ -288,26 +310,35 @@ export function registerStrategyRoutes(app: FastifyInstance) {
           ranToday: last === today,
           nextEntryAt: nextEntryAt(x, now, last),
           /** Why it is not entering this second. The screen shows this verbatim. */
-          status: due.due ? 'due now' : due.because,
+          status: !here ? OFF_ACCOUNT : due.due ? 'due now' : due.because,
         };
       })),
-      runs: await s.runs(40),
+      runs: kept(await s.runs(mine ? 200 : 40)).slice(0, 40),
       // Each signal a signal strategy saw, and what became of it.
-      signalRuns: await s.signalRuns(60),
+      signalRuns: kept(await s.signalRuns(mine ? 300 : 60)).slice(0, 60),
       // The signal strategies' trades, with the signal's perp levels, the paper log's verdict and the option's money.
       // Never the reason the list fails: an unreadable history is an empty one, and an entry in the error log.
-      signalTrades: await s.signalTrades(300).catch((e: Error) => {
+      signalTrades: kept(await s.signalTrades(300).catch((e: Error) => {
         noteError({ source: 'server', level: 'warn', where: 'signal-trades', message: `signal trade history not read: ${e.message}` });
         return [];
-      }),
+      })),
     };
   });
 
   // Create or update a strategy, validated the way the form validates it.
   app.post('/api/strategies', async (req, reply) => {
-    const b = (req.body ?? {}) as { id?: string; name?: string; enabled?: boolean; config?: unknown };
+    const b = (req.body ?? {}) as { id?: string; name?: string; enabled?: boolean; config?: unknown; accountId?: unknown };
     const name = String(b.name ?? '').trim();
     if (!name) { reply.code(400); return { error: 'name is required' }; }
+    // The account a new strategy is made for: the one named (the screen's selected tab), else the one the desk is on.
+    let accountId = svc.accountId;
+    if (b.accountId !== undefined && b.accountId !== null) {
+      const named = Number(b.accountId);
+      let known = false;
+      try { known = Number.isInteger(named) && brokerAccounts().get(named) !== null; } catch { known = false; }
+      if (!known) return refuse(reply, 422, { error: 'No such broker account.', problems: ['No such broker account.'] });
+      accountId = named;
+    }
 
     const config = cleanConfig(b.config);
     const problems = validateConfig(config);
@@ -320,7 +351,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     // Arming and saving are separate acts. A new strategy is never born armed.
     const existing = await s.get(id);
     const enabled = existing ? existing.enabled : false;
-    return { ok: true, strategy: await s.save({ id, name, enabled, config }) };
+    // A saved strategy keeps the account it was made for (the store never rewrites it).
+    return { ok: true, strategy: await s.save({ id, name, enabled, config, accountId }) };
   });
 
   /**
@@ -360,7 +392,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        * changed, and enabling it must not start real orders before it has been looked at (2 Oct 2026).
        */
       strategy: await s.save({
-        id: newId, name, enabled: false,
+        id: newId, name, enabled: false, accountId: from.accountId ?? null,
         config: from.config.trigger === 'signal' ? { ...from.config, liveOrders: false } : from.config,
       }),
     };
@@ -422,5 +454,9 @@ export function registerStrategyRoutes(app: FastifyInstance) {
   });
 
   /** The run journal on its own, for the history panel. */
-  app.get('/api/strategies/runs', async () => ({ runs: await strategyStore().runs(200) }));
+  app.get('/api/strategies/runs', async (req) => {
+    const runs = await strategyStore().runs(200);
+    const mine = await ofAccount(accountOf(req.query));
+    return { runs: mine ? runs.filter((r) => mine.has(r.strategyId)) : runs };
+  });
 }

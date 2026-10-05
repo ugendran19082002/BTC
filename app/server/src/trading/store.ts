@@ -86,6 +86,35 @@ const MIGRATIONS: Migration[] = [
       ['trading.mtm_samples', 'mtm_samples'],
     ], ['trading']),
   },
+  {
+    /*
+     * Which broker account a trade was placed as, and a P&L reading taken as (owner, 5 Oct 2026: orders,
+     * positions and P&L by account). Stamped once, when the row is first written; never changed after.
+     *
+     * Everything already in the journal was traded on the one account the desk had -- the one imported from
+     * `.env` -- so it is given that account's id here, where there is one. No foreign key: the journal is
+     * migrated on its own in places the accounts table is not (a test's store), and an account with history
+     * is never removed (http/routes/accounts.routes.ts), which is the property a key would have held.
+     */
+    id: 'trading-007-broker-account',
+    up: async (c) => {
+      await c.query(`
+        ALTER TABLE trades      ADD COLUMN IF NOT EXISTS broker_account_id BIGINT;
+        ALTER TABLE mtm_samples ADD COLUMN IF NOT EXISTS broker_account_id BIGINT;
+        CREATE INDEX IF NOT EXISTS trades_by_account ON trades (broker_account_id, updated_at DESC);
+      `);
+      const accounts = await c.query<{ there: string | null }>("SELECT to_regclass('public.broker_accounts')::text AS there");
+      if (!accounts.rows[0]?.there) return;
+      await c.query(`
+        WITH first AS (SELECT id FROM broker_accounts ORDER BY is_default DESC, id LIMIT 1)
+        UPDATE trades SET broker_account_id = (SELECT id FROM first) WHERE broker_account_id IS NULL;
+      `);
+      await c.query(`
+        WITH first AS (SELECT id FROM broker_accounts ORDER BY is_default DESC, id LIMIT 1)
+        UPDATE mtm_samples SET broker_account_id = (SELECT id FROM first) WHERE broker_account_id IS NULL;
+      `);
+    },
+  },
 ];
 
 /** How long a day's line is kept. */
@@ -130,8 +159,9 @@ export class PgTradeStore implements TradeStore {
     const { state } = rec;
     await tx(async (c) => {
       await c.query(
-        `INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        // broker_account_id is written with the row and left alone after: a trade does not change accounts.
+        `INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at, broker_account_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (trade_id) DO UPDATE SET
            phase = EXCLUDED.phase, position = EXCLUDED.position,
            -- The plan changes: a stop moved, a target moved, an entry that fell
@@ -140,7 +170,8 @@ export class PgTradeStore implements TradeStore {
            -- read -- the exits moved on the exchange and reverted on the screen.
            plan = EXCLUDED.plan,
            state = EXCLUDED.state, updated_at = EXCLUDED.updated_at`,
-        [state.tradeId, state.symbol, state.phase, state.position, JSON.stringify(rec.plan), JSON.stringify(state), state.updatedAt],
+        [state.tradeId, state.symbol, state.phase, state.position, JSON.stringify(rec.plan), JSON.stringify(state), state.updatedAt,
+          rec.plan.accountId ?? null],
       );
       const written = await c.query<{ n: number }>('SELECT COUNT(*) AS n FROM trade_events WHERE trade_id = $1', [state.tradeId]);
       for (let i = written.rows[0]!.n; i < rec.events.length; i++) {
@@ -179,11 +210,19 @@ export class PgTradeStore implements TradeStore {
    * opened last night and closed this morning is one you did today -- and it is
    * the closing that a day's list is about.
    */
-  between(fromMs: number, toMs: number, limit = 500): Promise<TradeRecord[]> {
+  between(fromMs: number, toMs: number, limit = 500, accountId: number | null = null): Promise<TradeRecord[]> {
+    // `accountId`: only the trades placed as that broker account; null, every trade.
     return this.query(
-      'SELECT trade_id, plan, state FROM trades WHERE updated_at >= $1 AND updated_at < $2 ORDER BY updated_at DESC LIMIT $3',
-      [fromMs, toMs, limit],
+      `SELECT trade_id, plan, state FROM trades
+        WHERE updated_at >= $1 AND updated_at < $2 AND ($4::bigint IS NULL OR broker_account_id = $4)
+        ORDER BY updated_at DESC LIMIT $3`,
+      [fromMs, toMs, limit, accountId],
     );
+  }
+
+  /** How many trades the journal holds for one broker account: an account with any is kept, not removed. */
+  async countFor(accountId: number): Promise<number> {
+    return Number((await rows<{ n: string }>('SELECT count(*) AS n FROM trades WHERE broker_account_id = $1', [accountId]))[0]?.n ?? 0);
   }
 
   async events(tradeId: string): Promise<TradeEvent[]> {
@@ -237,19 +276,20 @@ export class PgTradeStore implements TradeStore {
   }
 
   /** One reading of the day. Ignored if a reading already sits at that millisecond. */
-  async sampleMtm(m: MtmSample): Promise<void> {
+  async sampleMtm(m: MtmSample, accountId: number | null = null): Promise<void> {
     await query(
-      `INSERT INTO mtm_samples (at, day, realised, unrealised, charges, net)
-       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (at) DO NOTHING`,
-      [m.at, m.day, m.realisedUsd, m.unrealisedUsd, m.chargesUsd, m.netUsd],
+      `INSERT INTO mtm_samples (at, day, realised, unrealised, charges, net, broker_account_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (at) DO NOTHING`,
+      [m.at, m.day, m.realisedUsd, m.unrealisedUsd, m.chargesUsd, m.netUsd, accountId],
     );
   }
 
   /** The day's line, oldest first. */
-  async mtmSamples(day: string): Promise<MtmSample[]> {
+  async mtmSamples(day: string, accountId: number | null = null): Promise<MtmSample[]> {
     const found = await rows<{ at: number; day: string; realised: number; unrealised: number; charges: number; net: number }>(
-      'SELECT at, day, realised, unrealised, charges, net FROM mtm_samples WHERE day = $1 ORDER BY at',
-      [day],
+      `SELECT at, day, realised, unrealised, charges, net FROM mtm_samples
+        WHERE day = $1 AND ($2::bigint IS NULL OR broker_account_id = $2) ORDER BY at`,
+      [day, accountId],
     );
     return found.map((r) => ({
       at: r.at, day: r.day, realisedUsd: r.realised, unrealisedUsd: r.unrealised, chargesUsd: r.charges, netUsd: r.net,
@@ -257,8 +297,11 @@ export class PgTradeStore implements TradeStore {
   }
 
   /** The days that have a line at all, newest first. */
-  async mtmDays(limit = 120): Promise<string[]> {
-    return (await rows<{ day: string }>('SELECT DISTINCT day FROM mtm_samples ORDER BY day DESC LIMIT $1', [limit])).map((r) => r.day);
+  async mtmDays(limit = 120, accountId: number | null = null): Promise<string[]> {
+    return (await rows<{ day: string }>(
+      'SELECT DISTINCT day FROM mtm_samples WHERE ($2::bigint IS NULL OR broker_account_id = $2) ORDER BY day DESC LIMIT $1',
+      [limit, accountId],
+    )).map((r) => r.day);
   }
 
   /** Drop lines older than `keepDays`. Returns how many readings went. */
@@ -268,7 +311,7 @@ export class PgTradeStore implements TradeStore {
   }
 
   /** Rows to records, with every trade's events fetched in one query rather than one per trade. */
-  private async query(sql: string, params: readonly (string | number)[] = []): Promise<TradeRecord[]> {
+  private async query(sql: string, params: readonly (string | number | null)[] = []): Promise<TradeRecord[]> {
     const found = await rows<Row>(sql, params);
     if (!found.length) return [];
     const events = await rows<{ trade_id: string; event: TradeEvent }>(

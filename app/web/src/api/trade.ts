@@ -1,4 +1,5 @@
 import { json, post } from '@/api/client';
+import { accountScope } from '@/lib/account-scope';
 import type {
   AddDraft, AddPreview, ClosePreview, OrderDraft, OrderHistory, PlaceResult, PrecheckFailure, Preview, Quote, ProductSpec, Trade, TradeStatus,
 } from '@/types/trade';
@@ -145,6 +146,8 @@ export function getOrderHistory(opts: { from?: string; to?: string; status?: str
   if (opts.from) q.set('from', opts.from);
   if (opts.to) q.set('to', opts.to);
   if (opts.status) q.set('status', opts.status);
+  // The orders of the broker account being shown; with none chosen, every account's.
+  if (accountScope() !== null) q.set('account', String(accountScope()));
   return json<OrderHistory>(`/api/trade/history?${q}`);
 }
 

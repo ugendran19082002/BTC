@@ -212,6 +212,24 @@ const MIGRATIONS: Migration[] = [
     id: 'strategy-007-drop-trend-paper',
     up: 'DROP TABLE IF EXISTS public.trend_paper;',
   },
+  {
+    /*
+     * A strategy belongs to a broker account (owner, 5 Oct 2026). Every strategy the desk already has was made
+     * for the one account it had, so each is given that account where there is one; with none, it stays null
+     * and runs on whichever account the desk is on, as before. No foreign key, for the reason the journal's
+     * column has none (trading/store.ts, trading-007).
+     */
+    id: 'strategy-008-broker-account',
+    up: async (c) => {
+      await c.query('ALTER TABLE strategies ADD COLUMN IF NOT EXISTS broker_account_id BIGINT;');
+      const accounts = await c.query<{ there: string | null }>("SELECT to_regclass('public.broker_accounts')::text AS there");
+      if (!accounts.rows[0]?.there) return;
+      await c.query(`
+        WITH first AS (SELECT id FROM broker_accounts ORDER BY is_default DESC, id LIMIT 1)
+        UPDATE strategies SET broker_account_id = (SELECT id FROM first) WHERE broker_account_id IS NULL;
+      `);
+    },
+  },
 ];
 
 /** A config without the settings the desk no longer has. */
@@ -221,7 +239,7 @@ function withoutRetired(cfg: StrategyConfig): StrategyConfig {
   return out as StrategyConfig;
 }
 
-type StrategyRow = { id: string; name: string; enabled: boolean; config: StrategyConfig; created_at: number; updated_at: number };
+type StrategyRow = { id: string; name: string; enabled: boolean; config: StrategyConfig; created_at: number; updated_at: number; broker_account_id: string | number | null };
 type RunRow = { id: number; strategy_id: string; run_date: string; status: StrategyRun['status']; detail: string; at: number };
 
 /** What became of one signal for one signal strategy. */
@@ -367,6 +385,7 @@ export class StrategyStore {
     // A config written by an older version may lack a field this one reads;
     // the defaults fill it rather than the screen showing undefined.
     config: withoutRetired({ ...DEFAULT_CONFIG, ...r.config }),
+    accountId: r.broker_account_id === null || r.broker_account_id === undefined ? null : Number(r.broker_account_id),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });
@@ -380,17 +399,23 @@ export class StrategyStore {
     return r ? this.hydrate(r) : null;
   }
 
-  async save(s: { id: string; name: string; enabled: boolean; config: StrategyConfig }): Promise<Strategy> {
+  /** `accountId`: the broker account a new strategy belongs to. Written when it is made; a saved one keeps its own. */
+  async save(s: { id: string; name: string; enabled: boolean; config: StrategyConfig; accountId?: number | null }): Promise<Strategy> {
     const now = Date.now();
     await query(
-      `INSERT INTO strategies (id, name, enabled, config, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $5)
+      `INSERT INTO strategies (id, name, enabled, config, created_at, updated_at, broker_account_id)
+       VALUES ($1, $2, $3, $4, $5, $5, $6)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name, enabled = EXCLUDED.enabled,
          config = EXCLUDED.config, updated_at = EXCLUDED.updated_at`,
-      [s.id, s.name, s.enabled, JSON.stringify(s.config), now],
+      [s.id, s.name, s.enabled, JSON.stringify(s.config), now, s.accountId ?? null],
     );
     return (await this.get(s.id))!;
+  }
+
+  /** How many strategies belong to one broker account: an account with any is kept, not removed. */
+  async countFor(accountId: number): Promise<number> {
+    return Number((await one<{ n: string }>('SELECT count(*) AS n FROM strategies WHERE broker_account_id = $1', [accountId]))?.n ?? 0);
   }
 
   async remove(id: string): Promise<void> {

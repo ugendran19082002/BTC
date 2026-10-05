@@ -128,6 +128,12 @@ export type TradePlan = {
   tradeId: string;
   symbol: string;
   /**
+   * The broker account the desk was on when this trade was placed (delta/accounts.ts); written to
+   * `trades.broker_account_id` with the row. Absent on a desk with no account, and on trades from before 5 Oct 2026
+   * (the column was back-filled for those).
+   */
+  accountId?: number | null;
+  /**
    * The saved strategy that opened this trade, when one did.
    *
    * Absent for anything placed by hand from the ticket. The scheduler needs it

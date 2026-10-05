@@ -13,12 +13,12 @@ import { refuse } from '../refuse.js';
 
 export type AuthLevel = 'public' | 'totp' | 'setup' | 'full';
 
-const ctxOf = (req: FastifyRequest) => ({
+export const ctxOf = (req: FastifyRequest) => ({
   ip: req.ip || null,
   userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
 });
 
-const tokenOf = (req: FastifyRequest) => readCookie(req.headers.cookie, COOKIE);
+export const tokenOf = (req: FastifyRequest) => readCookie(req.headers.cookie, COOKIE);
 
 function setSession(reply: FastifyReply, issued: Issued, now: number) {
   reply.header('Set-Cookie', sessionCookie(issued.token, (issued.expiresAt - now) / 1000));

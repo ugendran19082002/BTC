@@ -1,14 +1,17 @@
 import { json, post } from '@/api/client';
 import type { SignalTrade, Strategy, StrategyConfig, StrategyStatus } from '@/types/strategy';
+import { accountScope, withAccount } from '@/lib/account-scope';
 
-export const getStrategies = () => json<StrategyStatus>('/api/strategies');
+/** The strategies of the broker account being shown (lib/account-scope.ts); with none chosen, every account's. */
+export const getStrategies = () => json<StrategyStatus>(withAccount('/api/strategies'));
 
 /**
  * Save a strategy. The server validates and answers with what it stored, so
  * the screen shows the desk's answer rather than the number that was typed.
  */
 export const saveStrategy = (s: { id?: string; name: string; config: StrategyConfig }) =>
-  post<{ ok: true; strategy: Strategy }>('/api/strategies', s);
+  // A new strategy is made for the account being shown; a saved one keeps its own (the server never moves it).
+  post<{ ok: true; strategy: Strategy }>('/api/strategies', accountScope() === null ? s : { ...s, accountId: accountScope() });
 
 /** Arm or disarm one. Refused with a reason if its settings do not validate. */
 export const setStrategyEnabled = (id: string, enabled: boolean) =>
@@ -43,4 +46,4 @@ export const deleteStrategy = (id: string) =>
 /** The signal strategies' trade history for IST days (YYYY-MM-DD); null range: the latest. */
 export const getSignalTrades = (range: { from: string; to: string } | null) =>
   json<{ from: string | null; to: string | null; trades: SignalTrade[] }>(
-    `/api/strategies/signal-trades${range ? `?from=${range.from}&to=${range.to}` : ''}`);
+    withAccount(`/api/strategies/signal-trades${range ? `?from=${range.from}&to=${range.to}` : ''}`));

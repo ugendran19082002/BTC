@@ -17,6 +17,9 @@ import { AlertSwitch } from '@/components/trade/AlertSwitch';
 import { getTradeStatus } from '@/api/trade';
 import { heldLegs, type HeldLeg } from '@/lib/held';
 import { getErrors } from '@/api/errors';
+import { getAccounts } from '@/api/accounts';
+import { AccountTabs, shownAccount, type AccountChoice } from '@/components/accounts/AccountTabs';
+import { setAccountScope } from '@/lib/account-scope';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import type { Selected } from '@/components/overview/DecisionPanels';
 import { usePoll } from '@/hooks/usePoll';
@@ -58,6 +61,7 @@ const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m
 const MethodReport = lazy(() => import('@/components/report/MethodReport').then((m) => ({ default: m.MethodReport })));
 const SignalHistory = lazy(() => import('@/components/desk/entry/SignalHistory').then((m) => ({ default: m.SignalHistory })));
 const LogsPanel = lazy(() => import('@/components/layout/LogsPanel').then((m) => ({ default: m.LogsPanel })));
+const AccountSummaryCard = lazy(() => import('@/components/accounts/AccountSummaryCard').then((m) => ({ default: m.AccountSummaryCard })));
 // The calendar library is a sixth of the first download and is needed only
 // once somebody chooses a past date.
 const DateTimePicker = lazy(() => import('@/components/research/DateTimePicker').then((m) => ({ default: m.DateTimePicker })));
@@ -307,6 +311,23 @@ export default function App() {
   const polls = signedIn === true && !stream.live;
   const { data: polledTrade, updatedAt: polledTradeAt, refresh: refreshTrade } = usePoll(getTradeStatus, 1_000, { enabled: polls });
   const { data: errors } = usePoll(() => getErrors({ limit: 1 }), 30_000, { enabled: signedIn === true });
+  /*
+   * The broker accounts, and which one Strategy, Positions, Orders and P&L are showing (5 Oct 2026). The tabs
+   * open on the account the desk trades on and remember another choice; the choice is what those screens' calls
+   * ask for (lib/account-scope.ts), set here before they render, and each of them is keyed by it so a switch
+   * shows the other account's own rows rather than the last account's under a new name. Until the accounts
+   * are known those four screens wait: a moment of every account's figures is a wrong figure.
+   */
+  const accountsPoll = usePoll(getAccounts, 15_000, { enabled: signedIn === true });
+  const accountList = accountsPoll.data?.accounts ?? [];
+  const accountsKnown = accountsPoll.data !== null || accountsPoll.error !== null;
+  const [accountChoice, setAccountChoice] = usePersisted<AccountChoice | null>('account:shown', null);
+  const shown = shownAccount(accountList, accountChoice);
+  const shownId = shown === 'all' ? null : shown;
+  setAccountScope(shownId, shown === 'all' && accountList.length > 0);
+  const tradingAccount = accountList.find((a) => a.isDefault) ?? null;
+  const shownOther = shownId !== null && shownId !== tradingAccount?.id ? accountList.find((a) => a.id === shownId) ?? null : null;
+  const accountScreens = tab === 'strategy' || tab === 'trade' || tab === 'orders' || tab === 'pnl';
   const { data: polledTick, updatedAt: polledTickAt } = usePoll(getSpot, 1_000, { enabled: polls });
   const trade = newer(stream.status, stream.statusAt, polledTrade, polledTradeAt);
   const tick = useMemo(() => {
@@ -540,8 +561,9 @@ export default function App() {
         </button>
       </nav>
 
+      {accountScreens && <AccountTabs accounts={accountList} value={shown} onChange={setAccountChoice} />}
       <Suspense fallback={<Loading />}>
-      {tab === 'desk' ? (
+      {accountScreens && !accountsKnown ? <Loading /> : tab === 'desk' ? (
         <div className="desk-shell">
           {/*
             The Live screen: the KPI strip, three columns (market read · chart
@@ -710,6 +732,12 @@ export default function App() {
           </section>
         </div>
       ) : tab === 'trade' ? (
+        shownOther ? (
+          // Another account: what Delta has for it. The desk's own positions are always the trading account's.
+          <ErrorBoundary where="Account summary">
+            <AccountSummaryCard key={shownOther.id} account={shownOther} tradingName={tradingAccount?.name ?? null} />
+          </ErrorBoundary>
+        ) : (
         <div className="flex flex-col gap-3">
           <ErrorBoundary where="Account">
             <AccountCard status={trade} />
@@ -718,20 +746,21 @@ export default function App() {
             <PositionsCard trades={trade?.open ?? []} onChanged={() => void refreshTrade()} />
           </ErrorBoundary>
         </div>
+        )
       ) : tab === 'orders' ? (
         <ErrorBoundary where="Orders">
-          <OrdersPanel />
+          <OrdersPanel key={`orders-${shown}`} />
         </ErrorBoundary>
       ) : tab === 'strategy' ? (
         // The signal strategies -- their limits, each strategy's row and the trade history -- lead the Strategy
         // screen (4 Oct 2026); they sat under Entry setups on Live. Placement only: the card is the same card.
         // Only the signal strategies: the time-of-day strategies and their run log left this screen the same day.
         <ErrorBoundary where="Signal strategies">
-          <SignalStrategiesCard />
+          <SignalStrategiesCard key={`strategies-${shown}`} />
         </ErrorBoundary>
       ) : tab === 'pnl' ? (
         <ErrorBoundary where="Profit and loss">
-          <ReportPanel />
+          <ReportPanel key={`pnl-${shown}`} />
         </ErrorBoundary>
       ) : tab === 'methods' ? (
         // The methods' record, and under it every signal they gave: the signal history sat under Entry setups on

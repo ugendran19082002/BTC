@@ -1,3 +1,4 @@
+import { canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
@@ -370,12 +371,20 @@ export function SignalStrategiesCard() {
               {data.mode === 'live' ? 'LIVE' : 'PAPER'}
             </span>
           )}
-          <Button size="sm" onClick={() => { setEditing(null); setFormOpen(true); }}>
+          {/* A strategy belongs to one broker account, so it is made on that account's tab, never on "All accounts". */}
+          <Button size="sm" disabled={!canMakeForAccount()}
+                  title={canMakeForAccount() ? undefined : 'Choose an account tab first: a strategy belongs to one account'}
+                  onClick={() => { setEditing(null); setFormOpen(true); }}>
             <Plus className="h-3.5 w-3.5" /> New signal strategy
           </Button>
         </div>
       </div>
 
+      {!canMakeForAccount() && (
+        <p role="note" className="m-0 mb-2 text-[12px] text-muted-foreground">
+          Showing every account's strategies. To make a new one, choose an account's tab above: a strategy belongs to one account and trades only on it.
+        </p>
+      )}
       {data && !data.schedulerOn && mine.some((s) => s.enabled) && (
         <p role="note" className="m-0 mb-2 text-[12px] text-[var(--warn)]">
           Auto-trading is off, so no signal is taken. Turn it on above.

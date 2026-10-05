@@ -15,6 +15,7 @@ import {
   ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
 } from '../../trading/status.js';
 import { refuse } from '../refuse.js';
+import { accountOf } from '../account-query.js';
 import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
 import { parseCloseBody, type CloseBody } from '../close-body.js';
 import { strategyStore } from './strategy.routes.js';
@@ -846,7 +847,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const wanted = ORDER_STATUSES.find((x) => x === q.status) ?? null;
     const limit = Math.min(1_000, Number(q.limit ?? 500));
 
-    const records = await forScreens(await svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit));
+    // `?account=<id>`: the orders placed as one broker account; without it, every account's.
+    const records = await forScreens(await svc.store.between(Math.min(from, to), Math.max(from + 86_400_000, to), limit, accountOf(req.query)));
 
     /*
      * Prices for the trades still open, so their row can say what closing now

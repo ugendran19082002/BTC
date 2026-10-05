@@ -6,6 +6,7 @@ import {
 } from '@/api/accounts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CodeInput } from '@/components/auth/CodeInput';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { Input } from '@/components/ui/input';
 import { usePoll } from '@/hooks/usePoll';
@@ -23,9 +24,13 @@ import { cn } from '@/lib/utils';
  * Two things ask twice: removing an account, and choosing a default while the
  * desk is live, because from that tap on real orders go to another account.
  *
- * The last account cannot be removed, only switched off (the server holds the
- * rule; the button here is off and says why). A key is replaced by adding the
- * new one first, then removing the old.
+ * Removing takes a fresh authenticator code as well: a signed-in browser may
+ * look and switch, but destroying a key is not undone by signing in again.
+ *
+ * Some accounts cannot be removed at all, only switched off -- the last one,
+ * one with trades or strategies on record, the one the desk is live on. The
+ * server holds the rule and says which; the button here is off and says why.
+ * A key is replaced by adding the new one first, then removing the old.
  */
 
 type Draft = { name: string; description: string; apiKey: string; apiSecret: string };
@@ -131,7 +136,7 @@ export function AccountsPanel() {
                 : r.accounts.find((x) => x.id === a.id)?.isDefault && !a.isDefault ? 'Switched on. The desk trades on it.' : 'Switched on.',
             }))}
             onDefault={() => run(a.id, 'default', () => makeAccountDefault(a.id), () => ({ ok: true, text: `The desk now trades on "${a.name}".` }))}
-            onRemove={() => run(a.id, 'remove', () => removeAccount(a.id))}
+            onRemove={(code) => run(a.id, 'remove', () => removeAccount(a.id, code))}
             onRename={async () => {
               if (!editing) return;
               if (await run(a.id, 'rename', () => renameAccount(a.id, { name: editing.name, description: editing.description }))) setEditing(null);
@@ -200,10 +205,13 @@ function AccountRow({ a, live, only, busy, asking, said, editing, onEdit, onAsk,
   onTest: () => void;
   onActive: (on: boolean) => void;
   onDefault: () => void;
-  onRemove: () => void;
+  onRemove: (code: string) => void;
   onRename: () => void;
 }) {
   const waiting = busy !== null;
+  const [code, setCode] = useState('');
+  // Why the server will not remove it, said before anyone types a code; `only` covers a server that does not say.
+  const kept = a.keptBecause ?? (only ? 'This is the only account, and the last one is kept. Deactivate it instead.' : null);
   const mine = (action: string) => busy === `${a.id}:${action}`;
   const ask = asking && asking.id === a.id ? asking.what : null;
   return (
@@ -241,11 +249,17 @@ function AccountRow({ a, live, only, busy, asking, said, editing, onEdit, onAsk,
       )}
 
       {ask === 'remove' ? (
-        <div role="group" aria-label={`remove ${a.name}?`} className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
-          <span className="text-[var(--down)]">Remove "{a.name}" and its key for good?</span>
-          <Button type="button" size="sm" className="bg-[var(--down)] text-white" disabled={waiting} onClick={onRemove}>Yes, remove</Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => onAsk(null)}>Keep it</Button>
-        </div>
+        <form role="group" aria-label={`remove ${a.name}?`} className="mt-2 grid max-w-sm gap-2 text-[12px]"
+              onSubmit={(e) => { e.preventDefault(); if (code.length === 6 && !waiting) { onRemove(code); setCode(''); } }}>
+          <span className="text-[var(--down)]">Remove "{a.name}" and its key for good? Enter the code from your authenticator app to confirm.</span>
+          <CodeInput value={code} onChange={setCode} disabled={waiting} label={`authenticator code to remove ${a.name}`} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" size="sm" className="bg-[var(--down)] text-white" disabled={waiting || code.length !== 6}>
+              {mine('remove') ? 'Checking the code…' : 'Remove for good'}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => { setCode(''); onAsk(null); }}>Keep it</Button>
+          </div>
+        </form>
       ) : ask === 'default' ? (
         <div role="group" aria-label={`trade on ${a.name}?`} className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
           <span className="text-[var(--warn)]">The desk is LIVE. From this tap, real orders go to "{a.name}".</span>
@@ -270,12 +284,12 @@ function AccountRow({ a, live, only, busy, asking, said, editing, onEdit, onAsk,
           <Button type="button" size="sm" variant="ghost" disabled={waiting} onClick={() => onEdit({ id: a.id, name: a.name, description: a.description })}>
             <Pencil size={13} aria-hidden /> Edit name
           </Button>
-          <Button type="button" size="sm" variant="ghost" className="text-[var(--down)]" disabled={waiting || only}
-                  title={only ? 'The last account is kept. Deactivate it instead.' : undefined}
+          <Button type="button" size="sm" variant="ghost" className="text-[var(--down)]" disabled={waiting || kept !== null}
+                  title={kept ?? 'Asks for an authenticator code'}
                   onClick={() => onAsk({ id: a.id, what: 'remove' })}>
             <Trash2 size={13} aria-hidden /> Remove
           </Button>
-          {only && <span className="text-[11px] text-muted-foreground">The last account is kept — deactivate it instead of removing it.</span>}
+          {kept && <span aria-label="why it is kept" className="text-[11px] text-muted-foreground">{kept}</span>}
         </div>
       )}
       {said && <p role={said.ok ? 'status' : 'alert'} className={cn('m-0 mt-1.5 text-[12px]', said.ok ? 'text-[var(--up)]' : 'text-[var(--down)]')}>{said.text}</p>}

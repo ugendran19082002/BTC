@@ -1,0 +1,57 @@
+import { KeyRound, Layers } from 'lucide-react';
+import type { BrokerAccount } from '@/api/accounts';
+import { cn } from '@/lib/utils';
+
+/**
+ * Which broker account the screen below is showing (owner, 5 Oct 2026): a tab per account over Strategy,
+ * Positions, Orders and P&L, opening on the one the desk trades on.
+ *
+ * A tab chooses what is *shown*. It never changes which account the desk trades on -- that is Make default,
+ * under Logs -> Accounts -- so looking at another account's orders cannot move a real order anywhere.
+ */
+export type AccountChoice = number | 'all';
+
+export function AccountTabs({ accounts, value, onChange }: {
+  accounts: readonly BrokerAccount[];
+  value: AccountChoice;
+  onChange: (c: AccountChoice) => void;
+}) {
+  if (accounts.length === 0) return null;
+  // The one the desk trades on first, then as they were added.
+  const ordered = [...accounts].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.id - b.id);
+  const tab = (on: boolean) => cn(
+    'm-0 inline-flex h-9 shrink-0 appearance-none items-center gap-1.5 rounded-md border-0 px-3 font-[inherit] text-[12.5px]',
+    on ? 'bg-[#2563eb] font-semibold text-white' : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
+  );
+  return (
+    <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
+      <div role="tablist" aria-label="Broker account" className="inline-flex max-w-full overflow-x-auto rounded-lg border border-solid border-border bg-[var(--panel)] p-1">
+        {ordered.map((a) => (
+          <button
+            key={a.id} type="button" role="tab" aria-selected={value === a.id} className={tab(value === a.id)} onClick={() => onChange(a.id)}
+            title={a.isDefault ? 'The account the desk trades on' : a.active ? 'Saved, not the account the desk trades on' : 'Switched off'}
+          >
+            <KeyRound size={13} aria-hidden /> {a.name}{' '}
+            {a.isDefault && (
+              <span className={cn('rounded-full px-1.5 py-[1px] text-[10px] font-semibold', value === a.id ? 'bg-white/20 text-white' : 'bg-[#3fb95022] text-[var(--up)]')}>trading</span>
+            )}
+            {!a.active && ' '}
+            {!a.active && <span className="rounded-full border border-solid border-current px-1.5 py-[1px] text-[10px] opacity-80">off</span>}
+          </button>
+        ))}
+        {accounts.length > 1 && (
+          <button type="button" role="tab" aria-selected={value === 'all'} className={tab(value === 'all')} onClick={() => onChange('all')}>
+            <Layers size={13} aria-hidden /> All accounts
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The account the tabs show: the one chosen if it is still there, else the one the desk trades on. */
+export function shownAccount(accounts: readonly BrokerAccount[], choice: AccountChoice | null): AccountChoice {
+  if (choice === 'all' && accounts.length > 1) return 'all';
+  if (typeof choice === 'number' && accounts.some((a) => a.id === choice)) return choice;
+  return accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? 'all';
+}

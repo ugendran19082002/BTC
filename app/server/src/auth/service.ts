@@ -348,6 +348,31 @@ export class AuthService {
     return { ok: false, status: 401, error: 'That code is not right. Use the newest code in the app, and check your phone’s clock is set automatically.' };
   }
 
+  /**
+   * A fresh authenticator code, for a signed-in act that a stolen session alone must not be able to do --
+   * removing a broker account and its key (owner, 5 Oct 2026). The check the recovery codes make: a full
+   * session, the lockout after wrong codes, never a recovery code, and a code used once is used. `done` is
+   * what happened, for the security log and the phone, written only when the code was right.
+   */
+  async confirmWithCode(token: string | undefined, code: unknown, ctx: Ctx, done: { event: string; detail: string; alert?: string }): Promise<{ ok: true } | Failure> {
+    const now = this.d.now();
+    const s = await this.fullSession(token, now);
+    if (!s) return { ok: false, status: 401, error: 'Sign in again.', restart: true };
+    const user = await this.d.store.user();
+    if (!user || !user.totpSecret || !this.d.secrets) return { ok: false, status: 409, error: 'Two-step sign-in is not set up, so this cannot be confirmed with a code.' };
+    const locked = await this.lockedFor([[KEY.codeAccount, LIMITS.codePerAccount.max]], now);
+    if (locked) return { ok: false, status: 429, error: `Too many wrong codes. Try again in ${locked} minute${locked === 1 ? '' : 's'}.` };
+    if (!await this.checkCodeNow(user, typeof code === 'string' ? code.replace(/\s+/g, '') : code, now)) {
+      await this.d.store.fail(KEY.codeAccount, now, LIMITS.codePerAccount.windowMs);
+      await this.d.store.event(`${done.event}_refused`, now, ctx.ip, `wrong code: ${done.detail}`);
+      // 403, not 401: the session is good and stays; it is the code that was wrong.
+      return { ok: false, status: 403, error: 'The authenticator code is not right. Use the newest code in the app.' };
+    }
+    await this.d.store.event(done.event, now, ctx.ip, done.detail);
+    if (done.alert) this.alert(done.alert);
+    return { ok: true };
+  }
+
   /** A code for a signed-in action: never a recovery code, never a code already used. */
   private async checkCodeNow(user: User, code: unknown, now: number): Promise<boolean> {
     const secret = this.openSecret(user.totpSecret);

@@ -6,7 +6,7 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
-import { GLOBAL_MAX_OPEN_KEY, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, onDeskAccount, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -145,7 +145,8 @@ export class StrategyRunner {
       if (!this.armed()) return;
       for (const s of await this.store.all()) {
         await this.considerExit(s).catch((e) => this.note(s, 'exit', e));
-        await this.considerEntry(s).catch((e) => this.note(s, 'entry', e));
+        // Another account's strategy does not enter here; its exits above and below are never held by that.
+        if (onDeskAccount(s, tradingService().accountId)) await this.considerEntry(s).catch((e) => this.note(s, 'entry', e));
         await this.exitStepper.consider(s).catch((e) => this.note(s, 'exit step', e));
       }
     } finally {
@@ -351,6 +352,7 @@ export class StrategyRunner {
     if (!this.armed()) return;
     for (const s of await this.store.all()) {
       if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
+      if (!onDeskAccount(s, tradingService().accountId)) continue;
       if (!signalMatches(s.config.signal, r)) continue;
       // The ones that enter at the signal; the rest wait for the perp to reach the zone (`onSetupFilled`) --
       // and are made ready for it meanwhile.
@@ -385,6 +387,7 @@ export class StrategyRunner {
     } as unknown as MethodRead;
     for (const s of await this.store.all()) {
       if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
+      if (!onDeskAccount(s, tradingService().accountId)) continue;
       if (entersOn(s.config.signal) !== 'zone') continue;
       if (!signalMatches(s.config.signal, r)) continue;
       await this.takeSignal(s, r, f).catch((e) => this.note(s, 'signal', e));
