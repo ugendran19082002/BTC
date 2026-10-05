@@ -143,7 +143,8 @@ export function TimeWindowFields({ c, set, err, name, labels }: {
     && !strategyProblems({ ...c, exitTime: LAST_MINUTE }, name).some((p) => p.field === 'exitTime');
   return (
     <>
-      <div className="grid grid-cols-2 gap-2">
+      {/* items-end: a label that wraps to two lines keeps both pickers on one line. */}
+      <div className="grid grid-cols-2 items-end gap-2">
         <Stack label={labels.from} error={err('entryTime')}>
           <TimePicker
             label={labels.fromPicker}
@@ -287,7 +288,8 @@ export function StrikeFields({ c, set, err, allowOiWall = true, minPremium = tru
 
       {c.strikeRule === 'premium' && (
         <Stack label="Premium rule" error={err('premium')} className="mt-3">
-          <div className="flex items-stretch gap-2">
+          {/* The two choices the full width on a phone, the price under them; one row from sm up. */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
             <Segmented
               label="premium rule"
               value={c.premium.mode}
@@ -689,7 +691,8 @@ export function Stack({ label, hint, error, className, children }: {
 }) {
   return (
     <div className={cn('min-w-0', className)}>
-      <div className="mb-1 truncate text-[12px] text-muted-foreground">{label}</div>
+      {/* Wraps rather than truncates: "Until — closes what is open" was cut to "Until — closes what is o…" on a phone. */}
+      <div className="mb-1 text-[12px] leading-snug text-muted-foreground">{label}</div>
       {children}
       {/* under the field, where it can wrap -- beside a label on a phone it was cut off */}
       {hint && !error && <div className="mt-0.5 text-[10.5px] leading-snug text-[var(--dim)]">{hint}</div>}

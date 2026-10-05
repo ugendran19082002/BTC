@@ -364,7 +364,7 @@ export function SignalHistory() {
                       <span className="line-clamp-2 leading-snug">#{s.code ?? s.n ?? '?'} {s.name}</span>
                       <div className="text-[10px] text-muted-foreground">{s.mode === 'mtf' ? 'With TF' : 'Without'} · {s.tf}</div>
                     </td>
-                    <td className="whitespace-nowrap py-1.5 pr-1.5 text-left font-[inherit]"><SignalTag s={s} /></td>
+                    <td className="max-w-[7.5rem] whitespace-normal py-1.5 pr-1.5 text-left font-[inherit]"><SignalTag s={s} /></td>
                     <td className={cn('whitespace-normal py-1.5 text-right font-[inherit]', out.cls)}>
                       {out.text}
                       {ex?.pts != null ? <div className="text-[10px]">{signedPts(ex.pts)} pts</div> : null}
