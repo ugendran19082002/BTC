@@ -492,21 +492,6 @@ function Times({ s }: { s: EntrySignal }) {
   );
 }
 
-/** Under the prices: when it filled and went out (the 1m bar), and how each stood against the plan. */
-function FillExitDetail({ s }: { s: EntrySignal }) {
-  const o = s.outcome;
-  if (!o || o.filledAt === null) return null;
-  const fn = fillNote(s);
-  const en = exitNote(s);
-  return (
-    <div className="text-[10.5px] text-muted-foreground">
-      <div title="The 1m bar the fill and the exit came in">in {atText(o.filledAt)}{o.exitAt !== null ? ` → out ${atText(o.exitAt)}` : ''}</div>
-      {fn ? <div>fill {fn}</div> : null}
-      {en ? <div className={en.gap ? 'text-[var(--warn)]' : undefined}>exit {en.text}</div> : null}
-    </div>
-  );
-}
-
 /** A TRADE still in play: its fill window, or its time in the trade and to the time-out, counting. */
 function Counter({ s, now }: { s: EntrySignal; now: number }) {
   const o = s.outcome;
