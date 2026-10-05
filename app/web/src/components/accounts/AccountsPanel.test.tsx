@@ -120,7 +120,7 @@ describe('the broker accounts', () => {
     expect(api.removeAccount).toHaveBeenLastCalledWith(2);
   });
 
-  it('test, deactivate and edit the name; an unreadable key can only be removed; a full list and a server that cannot encrypt say so', async () => {
+  it('test, deactivate and edit the name; a full list and a server that cannot encrypt say so', async () => {
     const { unmount } = render(<AccountsPanel />);
     api.testAccount.mockResolvedValue(answer([account({ lastTest: { at: Date.now(), ok: true, detail: 'Connected.' } }), second], { test: { id: 1, ok: true, detail: 'Connected.' } }));
     fireEvent.click((await row('Main')).getByRole('button', { name: 'Test connection' }));
@@ -146,8 +146,31 @@ describe('the broker accounts', () => {
     expect(broken.getByText('Key unreadable')).toBeInTheDocument();
     expect(broken.getByRole('button', { name: 'Test connection' })).toBeDisabled();
     expect(broken.getByRole('button', { name: 'Make default' })).toBeDisabled();
-    expect(broken.getByRole('button', { name: 'Remove' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Add account' })).toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('The server has no DESK_SESSION_SECRET');
+  });
+
+  it('[critical] the last account cannot be removed, only switched off -- and switched on again it is the default', async () => {
+    api.getAccounts.mockResolvedValue(answer([account()]));
+    render(<AccountsPanel />);
+    const only = await row('Main');
+    expect(only.getByRole('button', { name: 'Remove' })).toBeDisabled();
+    expect(only.getByText('The last account is kept — deactivate it instead of removing it.')).toBeInTheDocument();
+    fireEvent.click(only.getByRole('button', { name: 'Remove' }));
+    expect(screen.queryByRole('group', { name: 'remove Main?' })).toBeNull();
+    expect(api.removeAccount).not.toHaveBeenCalled();
+
+    api.setAccountActive.mockResolvedValueOnce(answer([account({ active: false, isDefault: false })]));
+    fireEvent.click(only.getByRole('button', { name: 'Deactivate' }));
+    expect(await (await row('Main')).findByRole('status')).toHaveTextContent('Switched off. It is kept, and not used.');
+    expect((await row('Main')).getByRole('button', { name: 'Remove' })).toBeDisabled(); // off, and still kept
+
+    api.setAccountActive.mockResolvedValueOnce(answer([account()]));
+    fireEvent.click((await row('Main')).getByRole('button', { name: 'Activate' }));
+    await waitFor(() => expect(api.setAccountActive).toHaveBeenLastCalledWith(1, true));
+    expect(await (await row('Main')).findByText('Switched on. The desk trades on it.')).toBeInTheDocument();
+
+    // With a second account there, either can go.
+    api.getAccounts.mockResolvedValue(answer([account(), second]));
   });
 });

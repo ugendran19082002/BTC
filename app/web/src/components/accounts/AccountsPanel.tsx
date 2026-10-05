@@ -22,6 +22,10 @@ import { cn } from '@/lib/utils';
  *
  * Two things ask twice: removing an account, and choosing a default while the
  * desk is live, because from that tap on real orders go to another account.
+ *
+ * The last account cannot be removed, only switched off (the server holds the
+ * rule; the button here is off and says why). A key is replaced by adding the
+ * new one first, then removing the old.
  */
 
 type Draft = { name: string; description: string; apiKey: string; apiSecret: string };
@@ -108,14 +112,18 @@ export function AccountsPanel() {
       <ul aria-label="accounts" className="m-0 grid list-none gap-2 p-0">
         {accounts.map((a) => (
           <AccountRow
-            key={a.id} a={a} live={live} busy={busy} asking={asking}
+            key={a.id} a={a} live={live} only={accounts.length === 1} busy={busy} asking={asking}
             said={said && said.id === a.id ? said : null}
             editing={editing && editing.id === a.id ? editing : null}
             onEdit={setEditing}
             onAsk={setAsking}
             // What the test said is written on the row itself, with when.
             onTest={() => run(a.id, 'test', () => testAccount(a.id))}
-            onActive={(on) => run(a.id, 'active', () => setAccountActive(a.id, on), () => ({ ok: true, text: on ? 'Switched on.' : 'Switched off. It is kept, and not used.' }))}
+            onActive={(on) => run(a.id, 'active', () => setAccountActive(a.id, on), (r) => ({
+              ok: true,
+              text: !on ? 'Switched off. It is kept, and not used.'
+                : r.accounts.find((x) => x.id === a.id)?.isDefault && !a.isDefault ? 'Switched on. The desk trades on it.' : 'Switched on.',
+            }))}
             onDefault={() => run(a.id, 'default', () => makeAccountDefault(a.id), () => ({ ok: true, text: `The desk now trades on "${a.name}".` }))}
             onRemove={() => run(a.id, 'remove', () => removeAccount(a.id))}
             onRename={async () => {
@@ -172,9 +180,11 @@ export function AccountsPanel() {
   );
 }
 
-function AccountRow({ a, live, busy, asking, said, editing, onEdit, onAsk, onTest, onActive, onDefault, onRemove, onRename }: {
+function AccountRow({ a, live, only, busy, asking, said, editing, onEdit, onAsk, onTest, onActive, onDefault, onRemove, onRename }: {
   a: BrokerAccount;
   live: boolean;
+  /** The only account there is: it is kept, so it can be switched off but not removed. */
+  only: boolean;
   busy: string | null;
   asking: Asking;
   said: { ok: boolean; text: string } | null;
@@ -221,7 +231,7 @@ function AccountRow({ a, live, busy, asking, said, editing, onEdit, onAsk, onTes
         {!a.lastTest ? 'Connection not tested yet.' : `${a.lastTest.ok ? '✓' : '✗'} ${a.lastTest.detail} · tested ${ago(a.lastTest.at)}`}
       </p>
       {!a.readable && (
-        <p className="m-0 mt-0.5 text-[11.5px] text-[var(--down)]">The server can no longer read this key (its master secret changed). Remove the account and add it again.</p>
+        <p className="m-0 mt-0.5 text-[11.5px] text-[var(--down)]">The server can no longer read this key (its master secret changed). Add it again as a new account, then remove this one.</p>
       )}
 
       {ask === 'remove' ? (
@@ -254,9 +264,12 @@ function AccountRow({ a, live, busy, asking, said, editing, onEdit, onAsk, onTes
           <Button type="button" size="sm" variant="ghost" disabled={waiting} onClick={() => onEdit({ id: a.id, name: a.name, description: a.description })}>
             <Pencil size={13} aria-hidden /> Edit name
           </Button>
-          <Button type="button" size="sm" variant="ghost" className="text-[var(--down)]" disabled={waiting} onClick={() => onAsk({ id: a.id, what: 'remove' })}>
+          <Button type="button" size="sm" variant="ghost" className="text-[var(--down)]" disabled={waiting || only}
+                  title={only ? 'The last account is kept. Deactivate it instead.' : undefined}
+                  onClick={() => onAsk({ id: a.id, what: 'remove' })}>
             <Trash2 size={13} aria-hidden /> Remove
           </Button>
+          {only && <span className="text-[11px] text-muted-foreground">The last account is kept — deactivate it instead of removing it.</span>}
         </div>
       )}
       {said && <p role={said.ok ? 'status' : 'alert'} className={cn('m-0 mt-1.5 text-[12px]', said.ok ? 'text-[var(--up)]' : 'text-[var(--down)]')}>{said.text}</p>}
