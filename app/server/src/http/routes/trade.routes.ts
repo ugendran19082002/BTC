@@ -698,7 +698,18 @@ export function registerTradeRoutes(app: FastifyInstance) {
    * Deliberately not a DELETE on a collection: it is one irreversible action
    * with a report, not a tidy REST verb, and the report is the point.
    */
-  app.post('/api/trade/close-all', async () => {
+  app.post('/api/trade/close-all', async (req, reply) => {
+    /*
+     * The account whose positions were on the screen (5 Oct 2026). The button sent nothing, so whichever tab it
+     * was pressed on, the default account was squared off: pressed on the BUY account's tab it closed the SELL
+     * account's two positions and left the one it was pressed for. The desk in force is already the named
+     * account's (`deskOfRequest`); an account that is named and is not the one this would close -- switched off,
+     * so it has no desk and the request fell to the default's -- closes nothing.
+     */
+    const named = (req.body as { accountId?: unknown } | null | undefined)?.accountId;
+    if (named !== undefined && named !== null && svc.accountId !== null && Number(named) !== svc.accountId) {
+      return refuse(reply, 409, { ok: false, error: 'That account is not trading on this desk, so nothing was closed. Open its tab and try again.' });
+    }
     const result = await svc.closeAll();
     return { ok: result.failed.length === 0, ...result };
   });

@@ -113,8 +113,12 @@ export const cancelTrade = (tradeId: string) =>
   post<{ ok: true; trade: Trade }>('/api/trade/cancel', { tradeId });
 
 /**
- * Square off everything. Reports per trade, because a partial result is the
+ * Square off everything on the account being shown. Reports per trade, because a partial result is the
  * common one and a single tick would hide a position still on.
+ *
+ * The account is named (5 Oct 2026): sent with nothing, the server squared off the default account whichever
+ * tab the button was on. With no account chosen ("All accounts") the screen shows the default account's
+ * positions, and those are what close.
  */
 export const closeAllTrades = () =>
   post<{
@@ -122,7 +126,7 @@ export const closeAllTrades = () =>
     cancelled: string[];
     closed: string[];
     failed: { tradeId: string; reason: string }[];
-  }>('/api/trade/close-all', {});
+  }>('/api/trade/close-all', accountScope() === null ? {} : { accountId: accountScope() });
 
 /** Move the stop or the target on a position that is already open. */
 export const updateExits = (

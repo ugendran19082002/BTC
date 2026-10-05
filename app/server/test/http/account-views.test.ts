@@ -189,6 +189,23 @@ test('[critical] an order is stamped with the account it was placed as, and the 
   assert.ok(events.some((e) => e.kind === 'exit_submitted'), 'by its own engine: the close is in its journal');
   assert.deepEqual(await openOf(main()), [res.state.tradeId], 'and the first account\'s is untouched');
 
+  /*
+   * Close all is the named account's (5 Oct 2026): pressed on the second account's tab it squared off the
+   * default account -- the button sent no account. Named, it closes that account's positions and no one else's.
+   */
+  const res3 = await runAsDesk(theirs, () => tradingService().place({ symbol: SYMBOL, optionSide: 'PE', strike: 83_800, expiryTs: EXPIRY_TS, lots: 1, leverage: 200, limitPrice: 20, takeProfitPct: 0.8, stopPrice: 70 }));
+  assert.equal(res3.ok, true, JSON.stringify(res3));
+  const all = await api('POST', '/api/trade/close-all', { accountId: second });
+  assert.equal(all.status, 200, all.text);
+  assert.deepEqual(all.body.closed, [res3.state.tradeId], 'the second account\'s own position, and only it');
+  for (let i = 0; i < 40 && (await openOf(second)).length; i++) await new Promise((r) => setTimeout(r, 150));
+  assert.deepEqual(await openOf(second), [], 'closed, on its own exchange');
+  assert.deepEqual(await openOf(main()), [res.state.tradeId], 'the default account was not touched');
+  // An account that is not the one the desk would close: refused, nothing closed.
+  const wrong = await api('POST', '/api/trade/close-all', { accountId: 987_654 });
+  assert.equal(wrong.status, 409, wrong.text);
+  assert.deepEqual(await openOf(main()), [res.state.tradeId], 'still nothing closed on the default account');
+
   // The day's line is taken as the account the desk is on, and read back by it.
   await svc.sampleMtm();
   const today = istDate(Date.now());
