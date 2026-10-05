@@ -70,6 +70,20 @@ export function describeEntry(c: StrategyConfig): string {
 
 export function describeExit(c: StrategyConfig): string {
   const { target, stop } = exitRules(c);
+  // A bought option's exits are sales: the target over the entry, the stop under it.
+  if (c.trigger === 'signal' && c.signal?.action === 'buy') {
+    const up = target.value > 0
+      ? target.mode === 'points' ? `sells ${target.value} pts over the entry`
+        : target.mode === 'price' ? `sells at ${target.value}`
+          : `sells once up ${Math.round(target.value * 100)}%`
+      : 'holds to settlement';
+    const down = stop.value > 0
+      ? stop.mode === 'points' ? `stop at entry − ${stop.value} pts`
+        : stop.mode === 'price' ? `stop at ${stop.value}`
+          : `stop at −${Math.round(stop.value * 100)}%`
+      : 'no stop';
+    return `${up}${ladderWords(target)}, ${down}${ladderWords(stop)}`;
+  }
   const tp = target.value > 0
     ? target.mode === 'points'
       ? `buys back ${target.value} pts under the entry`

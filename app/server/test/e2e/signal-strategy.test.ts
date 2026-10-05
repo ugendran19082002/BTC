@@ -769,7 +769,10 @@ test('[critical] a maximum too: a signal whose SL or TGT is further than its tim
 // ------------------------------------------------------------ bought or sold
 
 test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put -- written down at the offer, never sent, and never live', async () => {
-  const bought = { ...config, signal: { ...config.signal, tfs: ['5m'], maxOpen: 10, action: 'buy' } };
+  // The base config's exits are a seller's (a 99% target, a 300% stop): a bought option starts with its own off.
+  const bought = { ...config, takeProfitPct: 0, stopLossPct: 0, signal: { ...config.signal, tfs: ['5m'], maxOpen: 10, action: 'buy' } };
+  const carried = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...config, signal: { ...config.signal, action: 'buy' } } });
+  assert.ok(carried.body.problems.includes('Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.'), 'a seller\'s 300% stop is not carried into a bought option');
   // Live orders cannot be on for it: there is no buy order the desk can send.
   const live = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...bought, liveOrders: true } });
   assert.equal(live.status, 422);
