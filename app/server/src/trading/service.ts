@@ -3,7 +3,7 @@ import type { Creds } from '../delta/signed.js';
 import { brokerAccounts, initBrokerAccounts } from '../delta/accounts.js';
 import { TradeEngine, type AddRequest, type TradeRecord } from './engine.js';
 import { PgTradeStore } from './store.js';
-import { settings as deskSettings, type Settings } from '../db/settings.js';
+import { accountKey, accountSetting, settings as deskSettings, type Settings } from '../db/settings.js';
 import { DeltaExchange } from './exchange/delta.js';
 import { PaperExchange } from './exchange/paper.js';
 import {
@@ -175,7 +175,8 @@ export class TradingService {
       } },
       tradingEnabled: true,
       feedHealthy: () => this.feedOk,
-      dayPnlUsd: () => this.store.realisedSince(startOfDayIst()),
+      // Today's booked P&L on the account being traded: the daily-loss gate is that account's, not the day's across accounts.
+      dayPnlUsd: () => this.store.realisedSince(startOfDayIst(), this.currentAccountId),
       spot: () => this.currentSpot(),
       // The option's own candles, for a stop the strategy asked to watch on
       // the close rather than on the touch.
@@ -262,7 +263,7 @@ export class TradingService {
   private async announceDay(workingOrders: number): Promise<void> {
     const now = Date.now();
     const dayStart = startOfDayIst(now);
-    const summary = daySummaryFor(await this.store.between(dayStart, now + 1), {
+    const summary = daySummaryFor(await this.store.between(dayStart, now + 1, 500, this.currentAccountId), {
       mode: this.currentMode, dayStart, at: now, spot: this.currentSpot(), workingOrders,
     });
     if (summary && this.alertsOn) this.notifier?.notify(summary);
@@ -416,7 +417,8 @@ export class TradingService {
    */
   async todayFigures(now = Date.now()): Promise<Omit<MtmSample, 'at' | 'day'> & { lossUsd: number; profitUsd: number }> {
     const dayStart = startOfDayIst(now);
-    const breakdown = await this.store.realisedBreakdownSince(dayStart);
+    // The account the desk is on: "today" on the screen and in the day's line is that account's day.
+    const breakdown = await this.store.realisedBreakdownSince(dayStart, this.currentAccountId);
     const realisedUsd = breakdown.realisedUsd;
     const lossUsd = breakdown.lossUsd;
     const profitUsd = breakdown.profitUsd;
@@ -433,7 +435,7 @@ export class TradingService {
         size: rec.state.position, contractValue: rec.state.contractValue,
       }) ?? 0;
     }
-    const chargesUsd = (await this.store.between(dayStart, now + 1))
+    const chargesUsd = (await this.store.between(dayStart, now + 1, 500, this.currentAccountId))
       .reduce((n, rec) => n + tradeCharges(rec.state, { spot: this.currentSpot(), since: dayStart }).totalUsd, 0);
     return { realisedUsd, lossUsd, profitUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
   }
@@ -817,9 +819,9 @@ export class TradingService {
     return Math.floor(this.lastBalance / per) + this.lastShortContracts;
   }
 
-  /** The cap the desk has been asked to hold itself to, if any. */
+  /** The cap the desk has been asked to hold itself to on the account it is trading on, if any. */
   get shortCapSetting(): number | null {
-    const raw = this.settings.get(SHORT_CAP_KEY);
+    const raw = accountSetting(this.settings, SHORT_CAP_KEY, this.currentAccountId);
     if (raw === null) return null;
     const n = Number(raw);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
@@ -847,7 +849,8 @@ export class TradingService {
         reason: `Margin covers ${ceiling} contracts at ${DEFAULT_LEVERAGE}x. A cap above that could never stop anything.`,
       };
     }
-    await this.settings.set(SHORT_CAP_KEY, String(contracts));
+    // Kept for the account it was set on: its ceiling is that account's margin.
+    await this.settings.set(accountKey(SHORT_CAP_KEY, this.currentAccountId), String(contracts));
     return { ok: true, cap: this.maxShortContracts };
   }
 

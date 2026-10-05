@@ -26,7 +26,8 @@ export const setScheduler = (on: boolean) =>
  * against every open position and working order. 0 takes the cap off.
  */
 export const setSignalMaxOpen = (max: number) =>
-  post<{ ok: true; signalMaxOpen: number }>('/api/strategies/max-open', { max });
+  // One account's cap: the one being shown, else the one the desk is trading on.
+  post<{ ok: true; signalMaxOpen: number }>('/api/strategies/max-open', accountScope() === null ? { max } : { max, accountId: accountScope() });
 
 /**
  * Copy one, settings and all, as a new draft.

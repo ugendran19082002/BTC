@@ -107,6 +107,19 @@ export class SettingsCache implements Settings {
   keys(): string[] { return [...this.values.keys()].sort(); }
 }
 
+/**
+ * A setting kept per broker account (owner, 5 Oct 2026: the limits by account).
+ *
+ * A limit set against one account's balance and strategies is not the other account's limit, so the two that
+ * are sized that way -- the most trades open at once, the most lots short -- are kept under `key@<account id>`.
+ * Read, an account with no value of its own takes the desk-wide one: what was set before there were accounts
+ * still holds for the account it was set on, and a new account starts under a limit rather than under none.
+ * The desk-wide switches (the mode, the scheduler, the alerts) are the desk's, and stay one value.
+ */
+export const accountKey = (key: string, accountId: number | null): string => (accountId === null ? key : `${key}@${accountId}`);
+export const accountSetting = (s: Settings, key: string, accountId: number | null): string | null =>
+  (accountId === null ? null : s.get(accountKey(key, accountId))) ?? s.get(key);
+
 /** For tests: the same contract, nothing behind it. */
 export class MemorySettings implements Settings {
   private values = new Map<string, string>();

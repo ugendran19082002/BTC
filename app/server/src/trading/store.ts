@@ -153,7 +153,7 @@ export class PgTradeStore implements TradeStore {
 
   /** How many times the journal has been written by this process: what a held answer is held against. */
   private writes = 0;
-  private realisedHeld: { fromMs: number; writes: number; value: { realisedUsd: number; profitUsd: number; lossUsd: number } } | null = null;
+  private realisedHeld: { fromMs: number; accountId: number | null; writes: number; value: { realisedUsd: number; profitUsd: number; lossUsd: number } } | null = null;
 
   private async write(rec: TradeRecord): Promise<void> {
     const { state } = rec;
@@ -238,7 +238,8 @@ export class PgTradeStore implements TradeStore {
    * otherwise keep feeding the gate a wrong number.
    */
   /** Booked from `fromMs` on: breakdown of profit, loss and net realised P&L in USD. */
-  async realisedBreakdownSince(fromMs: number): Promise<{ realisedUsd: number; profitUsd: number; lossUsd: number }> {
+  async realisedBreakdownSince(fromMs: number, accountId: number | null = null): Promise<{ realisedUsd: number; profitUsd: number; lossUsd: number }> {
+    // `accountId`: only what was booked on that broker account; null, every account's (a desk with none).
     /*
      * Held until the journal is next written. The status is refreshed every
      * second and the day's figures with it; on 4 Oct 2026 that was every
@@ -247,15 +248,16 @@ export class PgTradeStore implements TradeStore {
      * when a trade is saved, and every save goes through `save` above.
      */
     const held = this.realisedHeld;
-    if (held && held.fromMs === fromMs && held.writes === this.writes) return { ...held.value };
+    if (held && held.fromMs === fromMs && held.accountId === accountId && held.writes === this.writes) return { ...held.value };
     const writes = this.writes;
-    const value = await this.realisedRead(fromMs);
-    this.realisedHeld = { fromMs, writes, value };
+    const value = await this.realisedRead(fromMs, accountId);
+    this.realisedHeld = { fromMs, accountId, writes, value };
     return { ...value };
   }
 
-  private async realisedRead(fromMs: number): Promise<{ realisedUsd: number; profitUsd: number; lossUsd: number }> {
-    const found = await rows<{ state: TradeState }>('SELECT state FROM trades WHERE updated_at >= $1', [fromMs]);
+  private async realisedRead(fromMs: number, accountId: number | null): Promise<{ realisedUsd: number; profitUsd: number; lossUsd: number }> {
+    const found = await rows<{ state: TradeState }>(
+      'SELECT state FROM trades WHERE updated_at >= $1 AND ($2::bigint IS NULL OR broker_account_id = $2)', [fromMs, accountId]);
     return found.reduce(
       (acc, r) => {
         const b = realisedBreakdownSinceOf(r.state, fromMs);
@@ -270,8 +272,8 @@ export class PgTradeStore implements TradeStore {
   }
 
   /** Booked from `fromMs` on: only the exit fills since then (`realisedSinceOf`); a trade with one was updated since. */
-  async realisedSince(fromMs: number): Promise<number> {
-    const b = await this.realisedBreakdownSince(fromMs);
+  async realisedSince(fromMs: number, accountId: number | null = null): Promise<number> {
+    const b = await this.realisedBreakdownSince(fromMs, accountId);
     return b.realisedUsd;
   }
 

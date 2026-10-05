@@ -547,7 +547,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
         totalShortContracts: totalShort,
         // The same day as the place gate (service.ts): since 05:30 IST, not the last 24 hours -- the preview
         // and the order must not disagree about the daily loss limit.
-        dayPnlUsd: await svc.store.realisedSince(startOfDayIst()),
+        dayPnlUsd: await svc.store.realisedSince(startOfDayIst(), svc.accountId),
         worstCaseLossUsd: worstCase,
         // The limit in force, which is set from the balance rather than fixed.
       limits: {

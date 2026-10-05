@@ -8,6 +8,7 @@ import { inSignalWindow } from '../../strategy/runner.js';
 import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, onDeskAccount, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
+import { accountKey, accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { config, STARTED_AT } from '../../config.js';
 
@@ -233,6 +234,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const shown = (await s.all()).filter((x) => belongs(x, account));
     const mine = account === null ? null : new Set(shown.map((x) => x.id));
     const kept = <T extends { strategyId: string }>(xs: T[]): T[] => (mine ? xs.filter((x) => mine.has(x.strategyId)) : xs);
+    // An account other than the one the desk is trading on is being looked at: the desk's wallet and holdings are not its.
+    const elsewhere = account !== null && svc.accountId !== null && account !== svc.accountId;
     const now = Date.now();
     const today = istDate(now);
     /*
@@ -259,8 +262,10 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        */
       schedulerOn: svc.settings.get('scheduler_enabled') === '1',
       // The desk-wide cap on open trades (0: none), and how many the desk holds now -- positions and working orders.
-      signalMaxOpen: globalMaxOpenOf(svc.settings.get(GLOBAL_MAX_OPEN_KEY)),
-      openNow: openTrades.length,
+      // Kept per broker account: the shown account's own cap, the trading account's when none is asked for.
+      signalMaxOpen: globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, account ?? svc.accountId)),
+      // What the desk holds is the trading account's; another account, looked at, holds nothing of it.
+      openNow: elsewhere ? 0 : openTrades.length,
       /*
        * The desk's limit on lots short at once (the order gate's MAX_POSITION), and
        * the lots the desk holds short now, working entries at the size they asked
@@ -268,10 +273,11 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        * strategies' limits allow is still refused when it would pass this.
        */
       shortCap: svc.maxShortContracts,
-      shortNow: openTrades.reduce((n, t) => n + lotsOf(t), 0),
+      shortNow: elsewhere ? 0 : openTrades.reduce((n, t) => n + lotsOf(t), 0),
       // Delta's own figures, where it gives them: the account's value, and the margin in use (value less what is free).
-      walletUsd: wallet?.balance ?? null,
-      marginUsedUsd: wallet ? Math.max(0, wallet.balance - wallet.available) : null,
+      // The trading account's wallet -- not shown as another account's when that one is being looked at.
+      walletUsd: elsewhere ? null : wallet?.balance ?? null,
+      marginUsedUsd: elsewhere || !wallet ? null : Math.max(0, wallet.balance - wallet.available),
       // Which build this is and since when, so "is the change live" is read off the screen.
       build: { tag: config.buildTag, startedAt: STARTED_AT },
       /**
@@ -449,11 +455,14 @@ export function registerStrategyRoutes(app: FastifyInstance) {
 
   // The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off.
   app.post('/api/strategies/max-open', async (req, reply) => {
-    const { max } = (req.body ?? {}) as { max?: unknown };
-    // Held to what the strategies switched on allow between them: a cap above that can never bind.
-    const problem = globalMaxOpenProblem(max, signalEntriesAllowed(await strategyStore().all()));
+    const { max, accountId } = (req.body ?? {}) as { max?: unknown; accountId?: unknown };
+    // The cap is one account's (5 Oct 2026): the account named -- the screen's tab -- else the one the desk is on.
+    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    // Held to what that account's strategies, switched on, allow between them: a cap above that can never bind.
+    const its = (await strategyStore().all()).filter((x) => belongs(x, account));
+    const problem = globalMaxOpenProblem(max, signalEntriesAllowed(its));
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    await svc.settings.set(GLOBAL_MAX_OPEN_KEY, String(max));
+    await svc.settings.set(accountKey(GLOBAL_MAX_OPEN_KEY, account), String(max));
     return { ok: true, signalMaxOpen: max as number };
   });
 

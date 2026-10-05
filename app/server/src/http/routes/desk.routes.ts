@@ -526,6 +526,8 @@ export function registerDeskRoutes(app: FastifyInstance) {
     for (const key of [...Object.keys(ALLOWED_SETTINGS), ...NUMERIC_SETTINGS]) {
       out[key] = svc.settings.get(key);
     }
+    // The short cap is kept per broker account: the one in force is the trading account's.
+    out[SHORT_CAP_KEY] = svc.shortCapSetting === null ? null : String(svc.shortCapSetting);
     return {
       settings: out,
       /**

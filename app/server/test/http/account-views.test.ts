@@ -24,7 +24,7 @@ const { buildApp } = await import('../../src/http/app.js');
 const { AuthService } = await import('../../src/auth/service.js');
 const { AuthStore } = await import('../../src/auth/store.js');
 const { Secrets } = await import('../../src/auth/secrets.js');
-const { closePool, one, rows } = await import('../../src/db/pool.js');
+const { closePool, one, query, rows } = await import('../../src/db/pool.js');
 const { initTradingService, tradingService } = await import('../../src/trading/service.js');
 const { initStrategyStore, strategyStore } = await import('../../src/http/routes/strategy.routes.js');
 const { brokerAccounts } = await import('../../src/delta/accounts.js');
@@ -145,12 +145,57 @@ test('[critical] an order is stamped with the account it was placed as, and the 
   assert.equal(days.status, 200, days.text);
 });
 
+test('[critical] the limits are each account\'s own: the most open at once, the most lots short, and today\'s booked P&L', async () => {
+  const svc = tradingService();
+  const setting = async (key: string) => (await one<{ value: string }>('SELECT value FROM settings WHERE key = $1', [key]))?.value ?? null;
+
+  // The most open at once: set on an account's tab, kept under that account, held to that account's strategies.
+  await api('POST', '/api/strategies/second-only/enabled', { enabled: true });
+  const sig = { mode: 'mtf', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 4, enterOn: 'zone' };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Second sig', config: { ...DEFAULT_CONFIG, trigger: 'signal', signal: sig, liveOrders: false }, accountId: second })).status, 200);
+  await api('POST', '/api/strategies/second-sig/enabled', { enabled: true });
+  const over = await api('POST', '/api/strategies/max-open', { max: 9, accountId: second });
+  assert.equal(over.status, 422, 'above what that account\'s own strategies allow: a cap that could never bind');
+  assert.equal((await api('POST', '/api/strategies/max-open', { max: 3, accountId: second })).status, 200);
+  assert.equal(await setting(`signal_max_open@${second}`), '3');
+  assert.equal(await setting('signal_max_open'), null, 'the desk-wide value is not touched');
+  assert.equal((await api('GET', `/api/strategies?account=${second}`)).body.signalMaxOpen, 3);
+  assert.equal((await api('GET', `/api/strategies?account=${main()}`)).body.signalMaxOpen, 0, 'the other account has none of its own');
+  // A value from before there were accounts still holds for an account with none of its own.
+  await svc.settings.set('signal_max_open', '7');
+  assert.equal((await api('GET', `/api/strategies?account=${main()}`)).body.signalMaxOpen, 7);
+  assert.equal((await api('GET', `/api/strategies?account=${second}`)).body.signalMaxOpen, 3, 'its own comes first');
+
+  // Looking at an account the desk is not trading on: the desk's wallet and holdings are not shown as its.
+  const theirs = (await api('GET', `/api/strategies?account=${second}`)).body;
+  assert.deepEqual([theirs.walletUsd, theirs.marginUsedUsd, theirs.openNow, theirs.shortNow], [null, null, 0, 0]);
+  assert.equal((await api('GET', `/api/strategies?account=${main()}`)).body.openNow, 1, 'the trading account\'s own open trade');
+
+  // The most lots short: kept for the account it is set on.
+  assert.deepEqual(await svc.setShortCap(40), { ok: true, cap: 40 });
+  assert.equal(await setting(`max_short_contracts@${main()}`), '40');
+  assert.equal(await setting('max_short_contracts'), null);
+  assert.equal(svc.shortCapSetting, 40);
+  assert.equal((await api('GET', '/api/settings')).body.settings.max_short_contracts, '40');
+
+  // Today's booked P&L -- what the daily-loss gate reads -- is one account's, not the day's across accounts.
+  await query(`UPDATE trades SET state = jsonb_set(jsonb_set(state, '{fills}', $1::jsonb), '{position}', '0'), phase = 'flat'`, [JSON.stringify([
+    { orderId: 'a', clientOrderId: 'a', role: 'entry', side: 'sell', size: 1, price: 20, ts: Date.now() - 1_000 },
+    { orderId: 'b', clientOrderId: 'b', role: 'stop_loss', side: 'buy', size: 1, price: 50, ts: Date.now() },
+  ])]);
+  await query('UPDATE trades SET updated_at = $1', [Date.now()]);
+  const lost = await svc.store.realisedSince(0, main());
+  assert.ok(lost < 0, `the trading account booked a loss: ${lost}`);
+  assert.equal(await svc.store.realisedSince(0, second), 0, 'none of it is the other account\'s');
+  assert.equal(await svc.store.realisedSince(0), lost, 'no account asked for: every account\'s, as before');
+});
+
 test('[critical] an account with trades or strategies on record is kept, not removed; one with none can go', async () => {
   const kept = await api('POST', `/api/accounts/${second}/remove`, { code: nextCode() });
-  assert.deepEqual([kept.status, kept.body.error], [409, 'This account has 2 strategies on record, so it is kept. Deactivate it instead.']);
+  assert.deepEqual([kept.status, kept.body.error], [409, 'This account has 3 strategies on record, so it is kept. Deactivate it instead.']);
   const third = (await brokerAccounts().create({ name: 'Third', apiKey: 'thirdKEYthirdKEY7777', apiSecret: 'thirdSECRETthirdSECRETthirdSECRETthirdSECRET' })).id;
   assert.equal((await api('POST', `/api/accounts/${third}/remove`, { code: nextCode() })).status, 200);
-  assert.equal(await strategyStore().countFor(second), 2);
+  assert.equal(await strategyStore().countFor(second), 3);
 });
 
 test('an account the desk is not on, as Delta has it: its wallet and what it holds there, read with its own key', async () => {
@@ -158,7 +203,7 @@ test('an account the desk is not on, as Delta has it: its wallet and what it hol
   assert.equal(s.status, 200, s.text);
   assert.deepEqual(s.body.wallet, { balance: 120.5, available: 100 });
   assert.deepEqual(s.body.positions.map((p: { symbol: string; size: number }) => [p.symbol, p.size]), [['P-BTC-83800-230926', -3]], 'flat rows left out');
-  assert.deepEqual([s.body.trades, s.body.strategies, s.body.note], [0, 2, null]);
+  assert.deepEqual([s.body.trades, s.body.strategies, s.body.note], [0, 3, null]);
   assert.ok(!s.text.includes('newSECRET'));
   assert.equal((await api('GET', '/api/accounts/999/summary')).status, 404);
 });

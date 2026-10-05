@@ -149,7 +149,8 @@ way (`useStrategyDraft`).
 
 | | |
 |---|---|
-| Leg | from the signal: **BUY sells the PE**, **SELL sells the CE** (`legOfSignal`). `legs` is not read. |
+| Bought or sold | **BUY | SELL** over the leg on Strike & lots (`signal.action`, since 5 Oct 2026). **SELL** is what every strategy was and is unless it says otherwise (`strategy-009` wrote `sell` into each saved one). **BUY** is **written down only**: each signal is recorded as "would buy CE 86200 x1 @ 126 · perp SL · TGT" at the offer, with its record on the perp kept like any other, and nothing is sent -- the trading engine sells to open and buys to close in every order, gate and figure, so a bought option has no path through it. Live orders cannot be switched on for a BUY strategy (form, card and server say the same sentence), and on Entry & exit it has no option target, only a stop, off at 0. |
+| Leg | from the signal. Sold: **BUY sells the PE**, **SELL sells the CE**. Bought: **BUY buys the CE**, **SELL buys the PE** (`legOfSignal`). `legs` is not read. |
 | Which signals | the **Signals** tab: with the timeframe chain, or without it on any of 3m / 5m / 15m / 30m / 1h / 4h (several at once, `tfs`), and the methods, picked from the 81 with each one's record so far (win rate, trades, net points; "Pick profitable so far" = net above zero over at least 5 trades). The list narrows by family, by record (All / Profit / Loss / No trades) and, under that, by **Order side** (Both / Buy / Sell -- the method's mark in `entry_methods.order_side`, shown on each row); each row of chips counts what the others leave. |
 | Strike | by premium (at least / at most, with a fallback) or by strike (ATM ± n), the same parts as every strategy. |
 | Premium rule | **≥ Greater or equal** (`atLeast`: the furthest strike still paying the number) or **≤ Less or equal** (`atMost`: the richest strike at or under it), with an optional "if none" number tried when the first finds no strike (`fallbackUsd`). |

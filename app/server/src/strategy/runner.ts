@@ -6,6 +6,7 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
+import { accountSetting } from '../db/settings.js';
 import { GLOBAL_MAX_OPEN_KEY, actionOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, onDeskAccount, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
@@ -496,7 +497,8 @@ export class StrategyRunner {
      * against one number. Margin is one pool; the strategies' own limits add up
      * past it, and the order that does not fit is refused at Delta.
      */
-    const cap = globalMaxOpenOf(svc.settings.get(GLOBAL_MAX_OPEN_KEY));
+    // The trading account's own cap (kept per account; an account with none of its own takes the desk-wide one).
+    const cap = globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, svc.accountId));
     if (cap > 0 && openNow.length >= cap) {
       await finish('skipped', `the desk already has ${openNow.length} open (positions and working orders, all strategies) -- at most ${cap} at once across all`);
       return;
