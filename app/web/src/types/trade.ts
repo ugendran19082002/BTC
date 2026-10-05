@@ -121,7 +121,9 @@ export type Trade = {
     longExits?: {
       target?: { mode: 'pct' | 'points' | 'price'; value: number } | null;
       stop?: { mode: 'pct' | 'points' | 'price'; value: number } | null;
-    };
+    } | null;
+    /** The broker account the trade was placed as. Absent from an older server, null from before accounts. */
+    accountId?: number | null;
   };
   /** The exchange's own figures, not a second opinion computed here. */
   live?: {

@@ -97,3 +97,30 @@ test('[critical] a target Delta would not take is said, with why -- until one is
   const placedSince = { ...failed, events: [...failed.events, { t: 'protection_placed', takeProfit: 'x', stopLoss: null, size: 2, at: 3 }] } as typeof rec;
   assert.equal(tradeView(placedSince).protectionProblem, null, 'placed since: no problem now');
 });
+
+test('[critical] a bought position\'s card is told its own exits and its account, and is priced at the bid', async () => {
+  const r = rig({ quotes: [quote(CE, 39.5, 40)] });
+  const plan = planFor(ceProduct(), {
+    lots: 1, action: 'buy', accountId: 2, stopPrice: null, takeProfitPrice: null,
+    entry: { type: 'limit', limitPrice: 40, timeoutMs: 0, marketFallback: false, chase: null },
+    longExits: { target: { mode: 'pct', value: 3.5 }, stop: { mode: 'pct', value: 0.5 } },
+  });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  const rec = r.store.peek(plan.tradeId)!;
+  assert.equal(rec.state.position, 1, 'long 1');
+  const resting = await r.ex.getOpenOrders(CE);
+  const q = quote(CE, 44, 46, { mark: 45 });
+  const v = tradeView(rec, resting, 0.001, q, 80_000);
+  // Without these the Edit exits form opened with the target unticked, and saving it took the target off.
+  assert.deepEqual(v.plan.longExits, { target: { mode: 'pct', value: 3.5 }, stop: { mode: 'pct', value: 0.5 } });
+  assert.equal(v.plan.accountId, 2);
+  assert.equal(v.plan.action, 'buy');
+  assert.equal(v.onBook?.target, 180, 'the sale resting at 350% over the 40 paid');
+  // A bought position is sold at the bid: the same whatever the offer or the mark says.
+  const other = tradeView(rec, resting, 0.001, { ...q, ask: 60, mark: 50 }, 80_000);
+  assert.equal(v.live.netIfClosedUsd, other.live.netIfClosedUsd);
+  // A short's card says neither.
+  const short = tradeView(await shortAt(20), [], 0.001, quote(CE, 9, 11, { mark: 10 }), 80_000);
+  assert.deepEqual([short.plan.longExits, short.plan.accountId], [null, null]);
+});

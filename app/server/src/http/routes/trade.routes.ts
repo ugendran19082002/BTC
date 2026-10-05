@@ -271,6 +271,14 @@ export const tradeView = (
        */
       exitAsk: r.plan.exitAsk ?? null,
       leverage: r.plan.leverage,
+      /*
+       * A bought option's own target and stop, so the screens can show and edit them. Left out until
+       * 5 Oct 2026 (evening): the Edit exits form for a long then opened with its target unticked, and saving it
+       * as it stood would have taken a resting target off.
+       */
+      longExits: r.plan.longExits ?? null,
+      /** The broker account the trade was placed as, for a screen that shows several accounts' trades together. */
+      accountId: r.plan.accountId ?? null,
     },
     live: {
       markPrice: mark,
