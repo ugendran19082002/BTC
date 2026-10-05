@@ -541,13 +541,14 @@ export class StrategyRunner {
      * A buyer pays the offer, so that is the price written; no offer, nothing to buy at.
      */
     if (action === 'buy') {
-      // The option's own stop, where one is set: under the offer paid (a bought option's stop is a sale below its entry).
-      const own = exitRules(s.config).stop;
+      // The option's own exits, where set, on the buyer's side of the offer paid: the target a sale over it, the stop a sale under it.
+      const own = exitRules(s.config);
       const paid = Number(chosen.ask);
-      const ownStop = !(own.value > 0) || !(paid > 0) ? null
-        : Math.max(0, Math.round((own.mode === 'pct' ? paid * (1 - own.value) : own.mode === 'points' ? paid - own.value : own.value) * 100) / 100);
+      const levelOf = (r: { mode: string; value: number }, up: boolean): number | null => (!(r.value > 0) || !(paid > 0) ? null
+        : Math.max(0, Math.round((r.mode === 'pct' ? paid * (1 + (up ? r.value : -r.value)) : r.mode === 'points' ? paid + (up ? r.value : -r.value) : r.value) * 100) / 100));
+      const ownTgt = levelOf(own.target, true), ownStop = levelOf(own.stop, false);
       const bought = `buy ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.ask ?? '—'}`
-        + `${ownStop !== null ? ` · option SL ${ownStop}` : ''}`
+        + `${ownTgt !== null ? ` · option TGT ${ownTgt}` : ''}${ownStop !== null ? ` · option SL ${ownStop}` : ''}`
         + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
       if (!(Number(chosen.ask) > 0)) { await finish('refused', `refused: ${leg} ${chosen.strike} has no offer to buy at${block}`); return; }
       await finish('would-place', `written down only: would ${bought}`);

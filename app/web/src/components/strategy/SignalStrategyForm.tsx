@@ -68,11 +68,15 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
   // Bought or sold. A BUY-side strategy is written down only, so its live orders are off and stay off.
   const buying = actionOf(rule) === 'buy';
   const live = Boolean(c.liveOrders) && !buying;
-  const setAction = (a: SignalAction) => d.setC((p) => ({
+  const setAction = (a: SignalAction) => d.setC((p) => (actionOf(p.signal) === a ? p : {
     ...p,
     signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), action: a },
-    // Bought: nothing is sent, and the option carries no target limit of its own -- only a stop, off until set.
-    ...(a === 'buy' ? { liveOrders: false, targetMode: 'pct' as const, takeProfitPct: 0, takeProfitPoints: 0, takeProfitAt: 0, targetSteps: [] } : {}),
+    // The option's own target and stop mean the opposite thing bought and sold -- a 200% stop is a seller's, a
+    // 300% target a buyer's -- so a change of side starts both off (0) rather than carry a number across.
+    targetMode: 'pct' as const, takeProfitPct: 0, takeProfitPoints: 0, takeProfitAt: 0, targetSteps: [],
+    stopMode: 'pct' as const, stopLossPct: 0, stopLossPoints: 0, stopLossAt: 0, stopSteps: [],
+    // Bought: nothing is sent.
+    ...(a === 'buy' ? { liveOrders: false } : {}),
   }));
 
   return (
@@ -226,18 +230,16 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               */}
               <ol className="m-0 mt-3 list-decimal space-y-0.5 pl-5 text-[11.5px] leading-snug text-muted-foreground" aria-label="exit order">
                 <li><b className="text-foreground">BTC perp SL / TGT</b> — the signal&apos;s levels, checked by the desk every second. Checked first.</li>
-{buying
-                  ? <li><b className="text-foreground">Option SL</b> — only if you set it below (0 = off). A bought option has no target of its own.</li>
-                  : <li><b className="text-foreground">Option TP / SL</b> — only if you set them below (0 = off, nothing placed). Set, they rest at Delta: whichever is reached first closes the trade, and they still work if the desk is down.</li>}
+                <li><b className="text-foreground">Option TP / SL</b> — only if you set them below (0 = off, nothing placed). Set, they rest at Delta: whichever is reached first closes the trade, and they still work if the desk is down.</li>
               </ol>
               <div className="mt-3 text-[12px] text-muted-foreground">
                 {buying
-                  ? 'Option SL — optional. A bought option has no target limit of its own: the perp’s TGT closes it. 0 is off.'
-                  : 'Option TP / SL — optional, placed at Delta only when set'}
+                  ? 'Option TP / SL — optional, 0 is off. Bought: the target is a sale over the entry, with no upper limit; the stop a sale under it, up to 99% — the premium and no more.'
+                  : 'Option TP / SL — optional, placed at Delta only when set. Sold: the target is a buy-back under the entry, up to 99%; the stop a buy-back over it, with no upper limit.'}
               </div>
               {/* The "no target and no stop" warning is for a clock strategy; this one always has the perp's SL and TGT. */}
-              {/* Bought: the stop alone. Sold: the target and the stop. */}
-              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} legs={buying ? ['stop'] : ['target', 'stop']} bought={buying}
+              {/* Both, bought or sold; bought, each is on the other side of the entry (ExitRuleEditor). */}
+              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} bought={buying}
                                 warnings={d.warnings.filter((w) => !/target and no stop/.test(w))} className="mt-1" />
               {!buying && d.exits.stop.value <= 0 && !d.exits.stop.steps.some((st) => st.value > 0) && (
                 <p role="note" className="m-0 mt-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[11.5px] leading-snug text-[var(--warn)]">

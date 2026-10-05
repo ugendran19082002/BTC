@@ -363,8 +363,6 @@ export type SignalRule = {
 };
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
-/** A bought option's stop, as a percentage: under 100%. */
-export const BUY_STOP_UNDER_100 = 'A bought option\'s stop is under 100%: it can lose its premium and no more.';
 /** Why a BUY-side strategy cannot have live orders on: said by the form, the card and the server alike. */
 export const BUY_NOT_LIVE = 'A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.';
 export type SignalEntry = 'zone' | 'signal';
@@ -660,7 +658,7 @@ export function exitAsk(rule: ExitRule, value: number, leg: 'target' | 'stop') {
 }
 
 /** Why one exit value is not usable, in words; null when it is. */
-function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown): string | null {
+function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown, bought = false): string | null {
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
   if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return `${Leg} cannot be negative or blank.`;
   if (mode === 'points') {
@@ -668,6 +666,12 @@ function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown): s
   }
   if (mode === 'price') {
     return v > MAX_EXIT_POINTS ? `${Leg} must be a price of at most ${MAX_EXIT_POINTS.toLocaleString('en-US')}.` : null;
+  }
+  // Sold: the target is a buy-back under the entry, so at most 99% of the credit; the stop, over it, has no such end.
+  // Bought, the two change places: the stop is a sale under the entry -- the premium and no more -- and the target over it is open.
+  if (bought) {
+    if (leg === 'target') return v > MAX_STOP_PCT ? 'Take profit must be between 0 and 2000% of the premium paid.' : null;
+    return v > MAX_TARGET_PCT ? 'Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.' : null;
   }
   if (leg === 'target') return v > MAX_TARGET_PCT ? 'Take profit must be between 0 and 99% of the credit.' : null;
   return v > MAX_STOP_PCT ? 'Stop loss must be between 0 and 2000% of the credit.' : null;
@@ -684,6 +688,8 @@ function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown): s
 export function exitRuleProblems(
   leg: 'target' | 'stop', rule: { mode?: unknown; value: unknown; steps?: unknown },
   entryTime: string | undefined, exitTime: string | undefined,
+  /** The option is bought, not sold: its stop ends at the premium and its target is open (`exitValueProblem`). */
+  bought = false,
 ): string[] {
   const bad: string[] = [];
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
@@ -692,7 +698,7 @@ export function exitRuleProblems(
     return bad;
   }
   const mode: ExitMode = rule.mode === 'points' || rule.mode === 'price' ? rule.mode : 'pct';
-  const first = exitValueProblem(leg, mode, rule.value);
+  const first = exitValueProblem(leg, mode, rule.value, bought);
   if (first) bad.push(first);
   const steps = rule.steps;
   if (steps === undefined || steps === null) return bad;
@@ -717,7 +723,7 @@ export function exitRuleProblems(
       }
       last = Math.max(last, at);
     }
-    const p = exitValueProblem(leg, mode, st.value);
+    const p = exitValueProblem(leg, mode, st.value, bought);
     if (p) bad.push(`Step ${n}: ${p}`);
   });
   return bad;
@@ -855,11 +861,13 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     bad.push(...minOtmProblems(p));
   }
   // Both fields are always kept, whichever mode reads them, so both are checked.
-  if (!(typeof c.takeProfitPct === 'number') || c.takeProfitPct < 0 || c.takeProfitPct > MAX_TARGET_PCT) {
-    bad.push('Take profit must be between 0 and 99% of the credit.');
+  // A bought option's exits are the sold one's turned over: its stop ends at the premium, its target is open.
+  const bought = c.trigger === 'signal' && c.signal?.action === 'buy';
+  if (!(typeof c.takeProfitPct === 'number') || c.takeProfitPct < 0 || c.takeProfitPct > (bought ? MAX_STOP_PCT : MAX_TARGET_PCT)) {
+    bad.push(bought ? 'Take profit must be between 0 and 2000% of the premium paid.' : 'Take profit must be between 0 and 99% of the credit.');
   }
-  if (!(typeof c.stopLossPct === 'number') || c.stopLossPct < 0 || c.stopLossPct > MAX_STOP_PCT) {
-    bad.push('Stop loss must be between 0 and 2000% of the credit.');
+  if (!(typeof c.stopLossPct === 'number') || c.stopLossPct < 0 || c.stopLossPct > (bought ? MAX_TARGET_PCT : MAX_STOP_PCT)) {
+    bad.push(bought ? 'Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.' : 'Stop loss must be between 0 and 2000% of the credit.');
   }
   for (const leg of ['target', 'stop'] as const) {
     const mode = leg === 'target' ? c.targetMode : c.stopMode;
@@ -868,7 +876,7 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     const steps = leg === 'target' ? c.targetSteps : c.stopSteps;
     const value = mode === 'points' ? points : mode === 'price' ? at : (leg === 'target' ? c.takeProfitPct : c.stopLossPct);
     // The percentage itself was checked just above; only a mode, points and steps are new here.
-    const found = exitRuleProblems(leg, { mode, value: value ?? 0, steps }, c.entryTime, c.exitTime)
+    const found = exitRuleProblems(leg, { mode, value: value ?? 0, steps }, c.entryTime, c.exitTime, bought)
       .filter((m) => !/^(Take profit|Stop loss) must be between/.test(m));
     bad.push(...found);
   }
@@ -914,8 +922,6 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
   // Buying is written down only: the engine sells to open, so a BUY-side strategy must not be able to send an order.
   if (c.trigger === 'signal' && c.signal?.action === 'buy' && c.liveOrders === true) bad.push(BUY_NOT_LIVE);
-  // A bought option can lose its premium and no more: a stop of 100% or over is no stop.
-  if (c.trigger === 'signal' && c.signal?.action === 'buy' && (c.stopMode ?? 'pct') === 'pct' && (c.stopLossPct ?? 0) >= 1) bad.push(BUY_STOP_UNDER_100);
   return bad;
 }
 

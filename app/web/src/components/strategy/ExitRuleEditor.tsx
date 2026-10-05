@@ -34,9 +34,10 @@ export function ExitRuleEditor({
   leg, rule, onChange, onMode, entryTime, exitTime, samplePrice, sampleLabel = 'sold at', error, bought = false,
 }: {
   /**
-   * A bought option's stop (owner, 5 Oct 2026). Sold, a stop is a buy-back over the entry; bought, it is a sale
-   * under it -- the premium can only be lost down to nothing, so a percentage is under 100% and the level is
-   * the entry less it. Only the stop is offered for a bought option, so only the stop reads this.
+   * The option is bought, not sold (owner, 5 Oct 2026), and its exits are the sold one's turned over. Sold, the
+   * target is a buy-back under the entry (at most 99% of the credit) and the stop one over it (no such end).
+   * Bought, the target is a sale over the entry -- open, a bought option can go up many times -- and the stop a
+   * sale under it, which ends at the premium: under 100%.
    */
   bought?: boolean;
   leg: ExitLeg;
@@ -94,20 +95,27 @@ export function ExitRuleEditor({
       ...rule,
       steps: fillSteps({
         leg, mode: rule.mode, entryTime, exitTime, start: rule.value,
-        everyMin: Math.round(everyHours * 60), by: fromShown(by),
+        everyMin: Math.round(everyHours * 60), by: fromShown(by), bought,
       }),
     });
     setFillOpen(false);
   };
 
-  const soldLevel = exitPrice(leg, rule.mode, rule.value, samplePrice);
-  // Bought: the stop is the entry less the percentage or the points, never under zero.
-  const level = !bought || target ? soldLevel
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  // Bought: the target is the entry plus the percentage or the points, the stop the entry less it, never under zero.
+  const way = target ? 1 : -1;
+  const level = !bought ? exitPrice(leg, rule.mode, rule.value, samplePrice)
     : samplePrice === null || !(rule.value > 0) ? null
-      : Math.max(0, Math.round((pct ? samplePrice * (1 - rule.value) : rule.mode === 'points' ? samplePrice - rule.value : rule.value) * 100) / 100);
-  const soldBalance = atPrice ? balanceOf(leg, rule.value > 0 ? rule.value : null, samplePrice) : null;
-  // Bought, a stop at a price is on the right side when it is under the entry: the seller's reading, turned over.
-  const balance = !bought || target || !soldBalance ? soldBalance : { ...soldBalance, wrongSide: samplePrice !== null && rule.value >= samplePrice };
+      : Math.max(0, r2(pct ? samplePrice * (1 + way * rule.value) : rule.mode === 'points' ? samplePrice + way * rule.value : rule.value));
+  // At a price, what it leaves against the entry. Bought, a gain is a price over the entry: the seller's reading, turned over.
+  const balance = !atPrice ? null
+    : !bought ? balanceOf(leg, rule.value > 0 ? rule.value : null, samplePrice)
+      : samplePrice === null || !(rule.value > 0) ? null
+        : {
+          points: r2(rule.value - samplePrice),
+          pct: Math.round(((rule.value - samplePrice) / samplePrice) * 100),
+          wrongSide: target ? rule.value <= samplePrice : rule.value >= samplePrice,
+        };
 
   return (
     <section aria-label={title} className="rounded-lg border border-[var(--line)] p-2.5">
@@ -146,11 +154,13 @@ export function ExitRuleEditor({
           {!(rule.value > 0)
             ? (target ? 'Off — holds to expiry.' : 'Off — no stop.')
             : atPrice
-              ? <>{target ? 'buys back' : 'stops'} at <b className={cn('tabular-nums', tone)}>{fmtPrice(rule.value)}</b>, whatever the entry</>
-              : target
-                ? pct ? <>keeps {exitWords('pct', rule.value)} of the premium</> : <>buys back {rule.value} pts under the entry</>
-                : bought
-                  ? pct ? <>sells once it has lost {exitWords('pct', rule.value)} of the premium</> : <>sells {rule.value} pts under the entry</>
+              ? <>{target ? (bought ? 'sells' : 'buys back') : 'stops'} at <b className={cn('tabular-nums', tone)}>{fmtPrice(rule.value)}</b>, whatever the entry</>
+              : bought
+                ? target
+                  ? pct ? <>sells once it is up {exitWords('pct', rule.value)} on the premium paid</> : <>sells {rule.value} pts over the entry</>
+                  : pct ? <>sells once it has lost {exitWords('pct', rule.value)} of the premium paid</> : <>sells {rule.value} pts under the entry</>
+                : target
+                  ? pct ? <>keeps {exitWords('pct', rule.value)} of the premium</> : <>buys back {rule.value} pts under the entry</>
                   : pct ? <>buys back {exitWords('pct', rule.value)} above the entry</> : <>buys back {rule.value} pts above the entry</>}
           {!atPrice && level !== null && samplePrice !== null && (
             <> · {sampleLabel} {fmtPrice(samplePrice)} → <b className={cn('tabular-nums', tone)}>{fmtPrice(level)}</b></>
@@ -162,8 +172,8 @@ export function ExitRuleEditor({
       </div>
       {atPrice && balance?.wrongSide && (
         <p className="m-0 mt-1 text-[11.5px] leading-snug text-[var(--warn)]">
-          At an entry of {fmtPrice(samplePrice)} this {target ? 'target is not under' : bought ? 'stop is not under' : 'stop is not over'} the entry, so the order would be refused.
-          {target || bought ? ' Type a price under it.' : ' Type a price over it.'}
+          At an entry of {fmtPrice(samplePrice)} this {target ? `target is not ${bought ? 'over' : 'under'}` : `stop is not ${bought ? 'under' : 'over'}`} the entry, so the order would be refused.
+          {target !== bought ? ' Type a price under it.' : ' Type a price over it.'}
         </p>
       )}
       {atPrice && samplePrice === null && rule.value > 0 && (

@@ -801,12 +801,22 @@ test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put
 
   assert.equal((await rows('SELECT trade_id FROM trades')).length, tradesBefore, 'nothing was placed: no trade, no order');
 
-  // Its own stop is a sale under the offer paid: 40% of 18.5 lost is 11.1. And 100% or over is no stop at all.
-  const all = await api('POST', '/api/strategies', { id: 'sig-buy', name: 'Sig buy', config: { ...bought, stopMode: 'pct', stopLossPct: 1.5 } });
-  assert.ok(all.body.problems.includes('A bought option\'s stop is under 100%: it can lose its premium and no more.'), JSON.stringify(all.body));
-  assert.equal((await api('POST', '/api/strategies', { id: 'sig-buy', name: 'Sig buy', config: { ...bought, stopMode: 'pct', stopLossPct: 0.4 } })).status, 200);
+  /*
+   * Its own exits are the sold option's turned over. Sold: a target up to 99% (a buy-back under the entry), a stop
+   * with no such end. Bought: a stop up to 99% -- the premium and no more -- and a target that is open.
+   */
+  const own = (o: Record<string, unknown>) => api('POST', '/api/strategies', { id: 'sig-buy', name: 'Sig buy', config: { ...bought, targetMode: 'pct', stopMode: 'pct', takeProfitPct: 0, stopLossPct: 0, ...o } });
+  const all = await own({ stopLossPct: 1.5 });
+  assert.ok(all.body.problems.includes('Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.'), JSON.stringify(all.body));
+  assert.ok((await own({ takeProfitPct: 25 })).body.problems.includes('Take profit must be between 0 and 2000% of the premium paid.'));
+  // The same numbers on a SELL strategy are refused the other way round: its target ends at 99%, its stop does not.
+  const sold = await api('POST', '/api/strategies', { name: 'Sig sold exits', config: { ...bought, signal: { ...bought.signal, action: 'sell' }, targetMode: 'pct', stopMode: 'pct', takeProfitPct: 3, stopLossPct: 3 } });
+  assert.deepEqual(sold.body.problems, ['Take profit must be between 0 and 99% of the credit.'], 'a 300% target is no seller\'s; a 300% stop is');
+  // A 300% target and a 40% stop on the offer paid, 18.5: sold at 74, or at 11.1.
+  const ok = await own({ takeProfitPct: 3, stopLossPct: 0.4 });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
   await runner.onSignal(signal());
-  assert.match((await last()).detail, /would buy CE \d+ x1 @ 18\.5 · option SL 11\.1 · perp SL 84600 · TGT 85500$/);
+  assert.match((await last()).detail, /would buy CE \d+ x1 @ 18\.5 · option TGT 74 · option SL 11\.1 · perp SL 84600 · TGT 85500$/);
   await api('POST', '/api/strategies/sig-buy/enabled', { enabled: false });
 });
 

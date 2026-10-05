@@ -432,7 +432,7 @@ describe('bought or sold: the BUY and SELL tabs over the leg', () => {
     expect(within(screen.getByRole('radiogroup', { name: 'option buy or sell' })).getByRole('radio', { name: 'SELL' })).toBeChecked();
   });
 
-  it('[critical] BUY: a BUY signal buys the CE, a SELL the PE; no option target, only a stop; written down only -- and saved as bought', async () => {
+  it('[critical] BUY: a BUY signal buys the CE, a SELL the PE; its target open and its stop under 100%; written down only -- and saved as bought', async () => {
     show(signalStrategy({}, { liveOrders: true, takeProfitPct: 0.5 }));
     tab('Strike & lots');
     radio('option buy or sell', 'BUY');
@@ -448,11 +448,11 @@ describe('bought or sold: the BUY and SELL tabs over the leg', () => {
     expect(live).not.toBeChecked();
     expect(screen.getByText(/Off, and it stays off — a BUY strategy is written down only/)).toBeInTheDocument();
 
-    // The option's own exits: the stop alone, off at 0; no target limit.
+    // The option's own exits: both, each off at 0 -- the seller's 50% target did not come across as a buyer's.
     tab('Entry & exit');
-    expect(screen.queryByLabelText('Take profit percent')).toBeNull();
-    expect(screen.getByLabelText('Stop loss percent')).toBeInTheDocument();
-    expect(screen.getByText(/A bought option has no target limit of its own: the perp’s TGT closes it\. 0 is off\./)).toBeInTheDocument();
+    expect(screen.getByLabelText('Take profit percent')).toHaveValue('0');
+    expect(screen.getByLabelText('Stop loss percent')).toHaveValue('0');
+    expect(screen.getByText(/Bought: the target is a sale over the entry, with no upper limit; the stop a sale under it, up to 99% — the premium and no more\./)).toBeInTheDocument();
     expect(screen.queryByText(/Add one: \+200%/)).toBeNull(); // the seller's advice is not the buyer's
     // The entry is the offer a buyer pays -- not the seller's "rest at the offer, then sell at the bid".
     expect(screen.getByLabelText('entry price for a bought option')).toHaveTextContent('A buyer pays the offer, so each signal is written down at the offer of its strike');
@@ -461,31 +461,43 @@ describe('bought or sold: the BUY and SELL tabs over the leg', () => {
     expect(screen.queryByText(/then sells at the bid/)).toBeNull();
     expect(screen.queryByText(/buys the option back/)).toBeNull();
     expect(screen.getByLabelText('exits on the BTC perp')).toHaveTextContent('A bought option would be sold the moment the perp reaches either');
-    expect(screen.getByLabelText('exit order')).toHaveTextContent('Option SL — only if you set it below (0 = off). A bought option has no target of its own.');
-    // Its stop is a sale under the entry: 40% lost, never "buys back above the entry" -- and 100% is refused.
+    // Its stop is a sale under the entry, up to 99%: 40% lost, never "buys back above the entry" -- and 150% is refused.
     fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '40' } });
-    expect(within(screen.getByRole('region', { name: 'Stop loss' })).getByText(/sells once it has lost 40% of the premium/)).toBeInTheDocument();
-    expect(screen.queryByText(/buys back/)).toBeNull();
+    expect(within(screen.getByRole('region', { name: 'Stop loss' })).getByText(/sells once it has lost 40% of the premium paid/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '150' } });
-    expect(await screen.findByText('A bought option\'s stop is under 100%: it can lose its premium and no more.')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '0' } });
+    expect(await screen.findByText('Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '40' } });
+    // Its target is a sale over the entry, and open: 300% up is a buyer's target, and is taken.
+    fireEvent.change(screen.getByLabelText('Take profit percent'), { target: { value: '300' } });
+    expect(within(screen.getByRole('region', { name: 'Take profit' })).getByText(/sells once it is up 300% on the premium paid/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/must be between/)).toBeNull());
+    expect(screen.queryByText(/buys back/)).toBeNull();
 
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
     expect(saved().config.signal!.action).toBe('buy');
     expect(saved().config.liveOrders).toBe(false);
-    expect(saved().config.takeProfitPct).toBe(0);
+    expect([saved().config.takeProfitPct, saved().config.stopLossPct]).toEqual([3, 0.4]);
   });
 
-  it('back to SELL: the target comes back, and live orders can be switched on again', () => {
-    show(signalStrategy({ action: 'buy' }));
+  it('[critical] back to SELL: the exits start off again and take the seller\'s limits -- target up to 99%, stop open -- and live orders can be on', async () => {
+    show(signalStrategy({ action: 'buy' }, { takeProfitPct: 3, stopLossPct: 0.4 }));
     tab('Entry & exit');
-    expect(screen.queryByLabelText('Take profit percent')).toBeNull();
+    expect(screen.getByLabelText('Take profit percent')).toHaveValue('300'); // a buyer's target, as saved
     tab('Strike & lots');
     radio('option buy or sell', 'SELL');
     expect(legs()).toHaveTextContent('BUY signal → sells PE');
     tab('Entry & exit');
-    expect(screen.getByLabelText('Take profit percent')).toBeInTheDocument();
+    // The buyer's 300% did not come across as a seller's target.
+    expect(screen.getByLabelText('Take profit percent')).toHaveValue('0');
+    expect(screen.getByLabelText('Stop loss percent')).toHaveValue('0');
+    expect(screen.getByText(/Sold: the target is a buy-back under the entry, up to 99%; the stop a buy-back over it, with no upper limit\./)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Take profit percent'), { target: { value: '300' } });
+    expect(await screen.findByText('Take profit must be between 0 and 99% of the credit.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Take profit percent'), { target: { value: '80' } });
+    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '300' } });
+    await waitFor(() => expect(screen.queryByText(/must be between/)).toBeNull());
+    expect(within(screen.getByRole('region', { name: 'Stop loss' })).getByText(/buys back 300% above the entry/)).toBeInTheDocument();
     const live = screen.getByRole('switch', { name: /Live orders/ });
     fireEvent.click(live);
     expect(live).toBeChecked();

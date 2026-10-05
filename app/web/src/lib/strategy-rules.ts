@@ -1,4 +1,4 @@
-import { BUY_NOT_LIVE, BUY_STOP_UNDER_100, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, type SignalTf, type StrategyConfig } from '@/types/strategy';
+import { BUY_NOT_LIVE, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -88,8 +88,10 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
   }
   // Each exit, start and time steps, in whichever mode it is read -- said under its own box.
   const rules = exitRules(c);
-  for (const m of exitRuleProblems('target', rules.target, c.entryTime, c.exitTime)) say('takeProfitPct', m);
-  for (const m of exitRuleProblems('stop', rules.stop, c.entryTime, c.exitTime)) say('stopLossPct', m);
+  // A bought option's exits are the sold one's turned over: its stop ends at the premium, its target is open.
+  const bought = c.trigger === 'signal' && c.signal?.action === 'buy';
+  for (const m of exitRuleProblems('target', rules.target, c.entryTime, c.exitTime, bought)) say('takeProfitPct', m);
+  for (const m of exitRuleProblems('stop', rules.stop, c.entryTime, c.exitTime, bought)) say('stopLossPct', m);
 
   if (!Number.isInteger(c.graceMin) || c.graceMin < 1 || c.graceMin > 240) {
     say('graceMin', 'The late-entry window must be a whole number of minutes from 1 to 240.');
@@ -104,8 +106,6 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
       if (r.mode !== 'mtf' && r.mode !== 'single') say('signalMode', 'Pick with the timeframe chain or without it.');
       // Buying is written down only (the server's words): its live orders stay off.
       if (r.action === 'buy' && c.liveOrders === true) say('signalMode', BUY_NOT_LIVE);
-      // A bought option can lose its premium and no more: a stop of 100% or over is no stop.
-      if (r.action === 'buy' && (c.stopMode ?? 'pct') === 'pct' && c.stopLossPct >= 1) say('stopLossPct', BUY_STOP_UNDER_100);
       if (r.mode === 'single') {
         const tfs = r.tfs ?? [r.tf];
         if (tfs.length === 0) say('signalTf', 'Pick at least one timeframe.');
