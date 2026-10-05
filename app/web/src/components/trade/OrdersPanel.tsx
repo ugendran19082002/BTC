@@ -258,6 +258,7 @@ export function OrdersPanel() {
     <CollapsibleCard
       id="orders"
       title="Orders"
+      rightInline
       right={
         <Button
           size="sm"
@@ -281,7 +282,8 @@ export function OrdersPanel() {
         type="single"
         value={activeTab === 'new' ? 'wait' : activeTab}
         onValueChange={handleTabChange}
-        className="mb-2.5 flex flex-wrap gap-1"
+        // One row that scrolls sideways on a phone; wraps where there is room.
+        className="chip-scroller -mx-1 mb-2.5 flex flex-nowrap gap-1 overflow-x-auto px-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
       >
         {TABS.map((t) => {
           const tabCount = counts[t.key] ?? 0;
@@ -293,15 +295,15 @@ export function OrdersPanel() {
               title={t.hint}
               aria-label={fullLabel}
               className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium transition-colors',
+                'flex flex-none items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium transition-colors',
                 t.tone === 'up' && 'hover:text-[var(--up)] data-[state=on]:bg-[var(--up)]/15 data-[state=on]:text-[var(--up)] data-[state=on]:border-[var(--up)]/30',
                 t.tone === 'down' && 'hover:text-[var(--down)] data-[state=on]:bg-[var(--down)]/15 data-[state=on]:text-[var(--down)] data-[state=on]:border-[var(--down)]/30',
                 t.tone === 'warn' && 'hover:text-[var(--warn)] data-[state=on]:bg-[var(--warn)]/15 data-[state=on]:text-[var(--warn)] data-[state=on]:border-[var(--warn)]/30',
               )}
             >
-              {t.tone === 'up' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--up)]" />}
-              {t.tone === 'down' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--down)]" />}
-              {t.tone === 'warn' && <span className="h-1.5 w-1.5 rounded-full bg-[var(--warn)]" />}
+              {t.tone === 'up' && <span className="h-1.5 w-1.5 flex-none rounded-full bg-[var(--up)]" />}
+              {t.tone === 'down' && <span className="h-1.5 w-1.5 flex-none rounded-full bg-[var(--down)]" />}
+              {t.tone === 'warn' && <span className="h-1.5 w-1.5 flex-none rounded-full bg-[var(--warn)]" />}
               <span>{t.label}</span>
               <span
                 className={cn(
@@ -321,7 +323,7 @@ export function OrdersPanel() {
 
       {/* Search and Table Page Limit Toolbar */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="relative min-w-[200px] max-w-sm flex-1">
+        <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:max-w-sm sm:flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="text"
@@ -331,7 +333,7 @@ export function OrdersPanel() {
               setPage(1);
             }}
             placeholder="Search strike, symbol, strategy, rule, ID..."
-            className="h-8 pl-8 pr-7 text-[12px]"
+            className="h-9 pl-8 pr-7 text-[12px] sm:h-8"
           />
           {search && (
             <button
@@ -534,10 +536,10 @@ function OrderRow({ order }: { order: OrderRecord }) {
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen} className="rounded-lg border border-border bg-muted">
-      <Collapsible.Trigger className="flex w-full appearance-none items-start gap-2 border-0 bg-transparent p-3 text-left font-[inherit]">
+      <Collapsible.Trigger className="grid w-full appearance-none grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 border-0 bg-transparent p-3 text-left font-[inherit]">
         <ChevronRight className={cn('mt-[3px] h-3.5 w-3.5 flex-none text-muted-foreground transition-transform', open && 'rotate-90')} />
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-baseline gap-x-2">
+        <span className="min-w-0">
+          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="text-[13.5px] font-semibold text-foreground">{contractLabel(order.symbol)}</span>
             <span className={cn('text-[11px] font-medium uppercase tracking-[0.5px]', STATUS_TONE[order.status])}>
               {STATUS_LABEL[order.status]}
@@ -552,36 +554,11 @@ function OrderRow({ order }: { order: OrderRecord }) {
             <ActionTag action={order.plan?.action} />
             {/* Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */}
             <OriginTag origin={order.plan?.origin} strategyName={order.plan?.strategyName ?? null} strategyId={order.plan?.strategyId ?? null} />
-            <SignalTag plan={order.plan} perpExit={order.position === 0 ? (order.perpExit ?? null) : null} />
           </span>
-
-          {/* Subline with Outcome, Entry/Exit prices, and Trade Amount */}
-          <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11.5px] text-muted-foreground">
-            <span>{order.outcome}</span>
-            {order.entryAvgPrice !== null && (
-              <span>
-                Entry <span className="font-mono text-foreground">{price(order.entryAvgPrice)}</span>
-              </span>
-            )}
-            {order.exitAvgPrice !== null && (
-              <span>
-                Exit <span className="font-mono text-foreground">{price(order.exitAvgPrice)}</span>
-              </span>
-            )}
-            {premiumInr !== null && premiumUsd !== null && premiumUsd > 0 && (
-              <span title="Total premium value (size × price × contract value)">
-                Amt <span className="font-mono text-foreground">{inr(premiumInr)}</span>
-                <span className="ml-0.5 text-[10.5px] text-[var(--dim)]">(${premiumUsd.toFixed(2)})</span>
-              </span>
-            )}
-          </div>
-
-          {/* Why the desk closed it, when it was the desk's decision: "BTC perp at 84,590 reached the signal's stop 84,600". */}
-          {order.exitReason && <span className="mt-0.5 block text-[11px] text-[var(--dim)]">{order.exitReason}</span>}
         </span>
 
         {/* Row PnL & Timestamp */}
-        <span className="flex-none text-right">
+        <span className="row-span-1 flex-none text-right">
           {stillOpen ? (
             ifClosed !== null ? (
               <div>
@@ -620,6 +597,36 @@ function OrderRow({ order }: { order: OrderRecord }) {
           )}
           <span className="block text-[11px] text-[var(--dim)]">{stamp(order.updatedAt)}</span>
         </span>
+
+        {/* Under the name and the figures, the card's full width less the chevron: a phone has no room beside them. */}
+        <span className="col-start-2 col-end-4 min-w-0">
+          <SignalTag plan={order.plan} perpExit={order.position === 0 ? (order.perpExit ?? null) : null} className="mt-1" />
+
+          {/* Subline with Outcome, Entry/Exit prices, and Trade Amount */}
+          <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11.5px] text-muted-foreground">
+            <span>{order.outcome}</span>
+            {order.entryAvgPrice !== null && (
+              <span>
+                Entry <span className="font-mono text-foreground">{price(order.entryAvgPrice)}</span>
+              </span>
+            )}
+            {order.exitAvgPrice !== null && (
+              <span>
+                Exit <span className="font-mono text-foreground">{price(order.exitAvgPrice)}</span>
+              </span>
+            )}
+            {premiumInr !== null && premiumUsd !== null && premiumUsd > 0 && (
+              <span title="Total premium value (size × price × contract value)">
+                Amt <span className="font-mono text-foreground">{inr(premiumInr)}</span>
+                <span className="ml-0.5 text-[10.5px] text-[var(--dim)]">(${premiumUsd.toFixed(2)})</span>
+              </span>
+            )}
+          </div>
+
+          {/* Why the desk closed it, when it was the desk's decision: "BTC perp at 84,590 reached the signal's stop 84,600". */}
+          {order.exitReason && <span className="mt-0.5 block text-[11px] text-[var(--dim)]">{order.exitReason}</span>}
+        </span>
+
       </Collapsible.Trigger>
 
       <Collapsible.Content>

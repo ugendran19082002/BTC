@@ -187,6 +187,9 @@ header.top .top-row-2 {
   scrollbar-width: none;
 }
 .tabs::-webkit-scrollbar { display: none; }
+/* A row of chips that scrolls sideways on a phone instead of wrapping into three rows. */
+.chip-scroller { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.chip-scroller::-webkit-scrollbar { display: none; }
 .tabs button {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto;
   background: transparent; border: 1px solid transparent; color: var(--muted);
