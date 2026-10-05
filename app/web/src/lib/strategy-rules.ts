@@ -1,4 +1,4 @@
-import { BUY_NOT_LIVE, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, type SignalTf, type StrategyConfig } from '@/types/strategy';
+import { BUY_NO_STEPS, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -104,8 +104,8 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
       say('signalMethods', 'A signal strategy needs its signals: the way, the timeframe and at least one method.');
     } else {
       if (r.mode !== 'mtf' && r.mode !== 'single') say('signalMode', 'Pick with the timeframe chain or without it.');
-      // Buying is written down only (the server's words): its live orders stay off.
-      if (r.action === 'buy' && c.liveOrders === true) say('signalMode', BUY_NOT_LIVE);
+      // A bought option's target and stop hold one level each (the server's words).
+      if (r.action === 'buy' && (c.targetSteps?.length || c.stopSteps?.length)) say('stopLossPct', BUY_NO_STEPS);
       if (r.mode === 'single') {
         const tfs = r.tfs ?? [r.tf];
         if (tfs.length === 0) say('signalTf', 'Pick at least one timeframe.');

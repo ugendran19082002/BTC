@@ -405,7 +405,7 @@ export class TradingService {
         // This trade's own contracts, never Delta's row for the symbol: two trades may hold one contract
         // (decision 0011), and each counted both -- "Net today" disagreed with the Open P&L above it (2 Oct 2026).
         entryPrice: rec.state.entryAvgPrice, markPrice: mark,
-        size: rec.state.position, contractValue: rec.state.contractValue,
+        size: rec.state.position, contractValue: rec.state.contractValue, long: rec.state.position > 0,
       }) ?? 0;
     }
     const chargesUsd = (await this.store.between(dayStart, now + 1, 500, this.currentAccountId))
@@ -465,8 +465,8 @@ export class TradingService {
     const plan = orderPlan(input, `${input.symbol}-${nextTradeMs()}`);
     // Which account this is placed as, written down where it is known: the journal's `broker_account_id`.
     if (this.currentAccountId !== null) plan.accountId = this.currentAccountId;
-    // And what was done with the option: sold. The engine opens every trade with a sell.
-    plan.action = 'sell';
+    // And what was done with the option: sold, unless the caller asked to buy it (a BUY-side strategy).
+    plan.action = input.action === 'buy' ? 'buy' : 'sell';
     const res = await this.engine.open(plan);
     // Working from this moment: watched closely for its fill, without waiting for the loop to read it.
     if (res.ok) this.entryWatch.add(res.state.tradeId);

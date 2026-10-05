@@ -1,4 +1,3 @@
-import { BUY_NOT_LIVE } from '@/types/strategy';
 import { canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
@@ -286,9 +285,8 @@ export function SignalStrategiesCard() {
   // The switched-on strategies added up, and the worst case under the desk-wide limit.
   /*
    * The margin figures are a seller's: a short option needs margin, and the desk's limit is on lots short. A
-   * BUY strategy is written down only -- it sends no order and uses no margin -- so it is left out of them and
-   * said beside them, rather than shown as short lots it will never hold (5 Oct 2026: the BUY account's tab
-   * showed a seller's margin for two BUY strategies).
+   * bought option uses no margin -- it is paid for in full -- so BUY strategies are left out of them and said
+   * beside them, rather than shown as short lots they will never hold.
    */
   const sellers = mine.filter((s) => s.config.signal?.action !== 'buy');
   const buyersOn = mine.filter((s) => s.enabled && s.config.signal?.action === 'buy').length;
@@ -397,8 +395,8 @@ export function SignalStrategiesCard() {
       )}
       {buyersOn > 0 && (
         <p role="note" aria-label="bought strategies" className="m-0 mb-2 text-[12px] text-muted-foreground">
-          {buyersOn} BUY {buyersOn === 1 ? 'strategy is' : 'strategies are'} switched on and written down only: no order is sent and no margin is used,
-          so {buyersOn === 1 ? 'it is' : 'they are'} not in the margin figures below{sellers.some((x) => x.enabled) ? '' : ' — which is why they read zero'}.
+          {buyersOn} BUY {buyersOn === 1 ? 'strategy is' : 'strategies are'} switched on. A bought option uses no margin — it is paid for in full,
+          from the free balance — so {buyersOn === 1 ? 'it is' : 'they are'} not in the margin figures below{sellers.some((x) => x.enabled) ? '' : ' — which is why they read zero'}.
         </p>
       )}
       {data && !data.schedulerOn && mine.some((s) => s.enabled) && (
@@ -507,14 +505,11 @@ export function SignalStrategiesCard() {
                     role="switch"
                     aria-checked={live}
                     aria-label={`Live orders for ${s.name}`}
-                    // A BUY-side strategy is written down only: the desk sends sell orders, so there is nothing to switch on.
-                    disabled={busy === `live-${s.id}` || s.config.signal?.action === 'buy'}
-                    title={s.config.signal?.action === 'buy' ? BUY_NOT_LIVE : undefined}
+                    disabled={busy === `live-${s.id}`}
                     onClick={() => setLive(s, !live)}
                   >
                     {busy === `live-${s.id}` && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {s.config.signal?.action === 'buy' ? 'BUY · written down only'
-                      : confirmLive === s.id ? 'Tap again: real orders' : live ? 'Live orders ON' : 'Live orders off'}
+                    {confirmLive === s.id ? `Tap again: real ${s.config.signal?.action === 'buy' ? 'buys' : 'orders'}` : live ? 'Live orders ON' : 'Live orders off'}
                   </Button>
                   <Button size="sm" variant="ghost" className="h-8" onClick={() => { setEditing(s); setFormOpen(true); }}>
                     <Pencil className="h-3 w-3" /> Edit

@@ -200,15 +200,15 @@ export type SignalRule = {
   maxTgtPts?: Partial<Record<SignalTf, number>>;
   /**
    * What is done with the option: `sell` (a BUY signal sells the put, a SELL the call -- every strategy before the
-   * choice) or `buy` (a BUY signal buys the call, a SELL the put). Absent reads as `sell`. A `buy` strategy is
-   * written down only: the desk sends sell orders, so its live orders cannot be switched on (server: BUY_NOT_LIVE).
+   * choice) or `buy` (a BUY signal buys the call, a SELL the put). Absent reads as `sell`. With live orders on a
+   * `buy` strategy buys at the offer and sells to close, its own target and stop judged by the desk on the bid.
    */
   action?: SignalAction;
 };
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
-/** Why a BUY-side strategy cannot have live orders on (the server's words). */
-export const BUY_NOT_LIVE = 'A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.';
+/** A bought option's exits hold one level each (the server's words). */
+export const BUY_NO_STEPS = 'A BUY strategy\'s option target and stop hold one level each: remove the time steps.';
 /** The most an SL-distance filter may ask for (server: MAX_SL_PTS). */
 export const MAX_SL_PTS = 100_000;
 

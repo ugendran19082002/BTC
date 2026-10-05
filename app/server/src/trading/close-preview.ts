@@ -100,7 +100,8 @@ export function netIfClosedAt(i: {
   const s = i.state;
   const size = Math.abs(s.position);
   if (i.price === null || i.price === undefined || size === 0 || s.entryAvgPrice === null) return null;
-  const books = (s.entryAvgPrice - i.price) * size * s.contractValue;
+  // A short books what it took in less the buy-back; a bought position, what it sells for less what it cost.
+  const books = (s.position > 0 ? i.price - s.entryAvgPrice : s.entryAvgPrice - i.price) * size * s.contractValue;
   const toClose = fillChargesUsd({ price: i.price, contracts: size, contractValue: s.contractValue, spot: i.spot }).totalUsd;
   return s.realisedPnl + books - i.paidUsd - toClose;
 }
@@ -121,13 +122,15 @@ export function closePreview(i: {
   const lots = i.size === undefined ? held : i.size;
   const reason = closeEligibility(s, lots, held);
 
-  const ask = i.quote?.ask ?? null;
+  // A short is bought back at the offer; a bought position is sold at the bid.
+  const long = s.position > 0;
+  const touch = long ? i.quote?.bid ?? null : i.quote?.ask ?? null;
   const mark = i.quote?.mark ?? null;
-  const buysBackAt = ask !== null && ask > 0 ? ask : mark;
-  const atMark = (ask === null || !(ask > 0)) && mark !== null;
+  const buysBackAt = touch !== null && touch > 0 ? touch : mark;
+  const atMark = (touch === null || !(touch > 0)) && mark !== null;
 
   const priced = reason === null && buysBackAt !== null && s.entryAvgPrice !== null;
-  const bookedUsd = priced ? (s.entryAvgPrice! - buysBackAt!) * lots * s.contractValue : null;
+  const bookedUsd = priced ? (long ? buysBackAt! - s.entryAvgPrice! : s.entryAvgPrice! - buysBackAt!) * lots * s.contractValue : null;
   const chargesUsd = priced
     ? fillChargesUsd({ price: buysBackAt!, contracts: lots, contractValue: s.contractValue, spot: i.spot }).totalUsd
     : null;

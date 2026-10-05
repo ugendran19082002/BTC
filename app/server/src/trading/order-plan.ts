@@ -239,6 +239,10 @@ export type PlaceInput = {
   underlying?: TradePlan['underlying'];
   /** The signal a signal strategy traded (engine.ts `TradePlan.signal`). Never set from the ticket. */
   signal?: TradePlan['signal'];
+  /** Sold to open (the default, and the ticket's) or bought to open -- a BUY-side strategy's trade. */
+  action?: 'sell' | 'buy';
+  /** A bought option's own target and stop, judged by the desk on the bid (engine.ts `TradePlan.longExits`). */
+  longExits?: TradePlan['longExits'];
 };
 
 export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
@@ -301,6 +305,8 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
     ...(input.minPremiumUsd !== undefined ? { minPremiumUsd: input.minPremiumUsd } : {}),
     ...(input.underlying ? { underlying: input.underlying } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
+    action: input.action === 'buy' ? 'buy' : 'sell',
+    ...(input.action === 'buy' && input.longExits ? { longExits: input.longExits } : {}),
     expect: {
       underlying: 'BTC',
       optionSide: input.optionSide,
@@ -308,6 +314,13 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
       expiryTs: input.expiryTs,
     },
   };
+  // Bought: nothing rests at the exchange. Every resting exit this desk places is a buy-back of a short, so a
+  // bought option carries none; its own target and stop are `longExits`, judged by the desk.
+  if (plan.action === 'buy') {
+    plan.takeProfitPrice = null;
+    plan.stopPrice = null;
+    delete plan.exitAsk;
+  }
   return plan;
 }
 

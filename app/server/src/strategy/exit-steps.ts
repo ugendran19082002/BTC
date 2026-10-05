@@ -53,7 +53,8 @@ export class StrategyExitStepper {
    * have it yet. Returns the trades moved.
    */
   async consider(s: Strategy): Promise<string[]> {
-    if (!s.enabled) return [];
+    // A bought option's exits are one level each, judged by the desk (and steps are refused for it on save).
+    if (!s.enabled || s.config.signal?.action === 'buy') return [];
     const { target, stop } = exitRules(s.config);
     if (!target.steps.length && !stop.steps.length) return [];
 

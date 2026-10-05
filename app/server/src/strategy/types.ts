@@ -353,18 +353,16 @@ export type SignalRule = {
    * what every signal strategy did before this -- or `buy` -- a BUY signal buys the call, a SELL the put.
    * Absent reads as `sell`.
    *
-   * **A `buy` strategy is written down, never sent.** The trading engine sells to open and buys to close, in
-   * every order it places, every gate and every figure (trading/engine.ts, machine.ts, precheck.ts); a long
-   * option is none of those. So each signal of a `buy` strategy is recorded as the order it would be ("would
-   * buy CE 84000 x1 @ 18.5") with the perp's SL and TGT, live orders cannot be switched on for it, and its
-   * record on the perp is kept like any other. Sending them is engine work with a live test of its own.
+   * With live orders on, a `buy` strategy buys the option at the offer (engine.ts: bought to open, sold to
+   * close, the buyer's gate `precheckBuy`), exits on the signal's perp levels and on its own option target and
+   * stop, judged by the desk on the bid; off, each signal is written down as the order it would be.
    */
   action?: SignalAction;
 };
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
-/** Why a BUY-side strategy cannot have live orders on: said by the form, the card and the server alike. */
-export const BUY_NOT_LIVE = 'A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.';
+/** A bought option's exits hold one level each: a timetable of them is not built for buying. */
+export const BUY_NO_STEPS = 'A BUY strategy\'s option target and stop hold one level each: remove the time steps.';
 export type SignalEntry = 'zone' | 'signal';
 /** The most an SL-distance filter may ask for: beyond this is a typo, not a filter. */
 export const MAX_SL_PTS = 100_000;
@@ -911,8 +909,8 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     bad.push('Strike blocks are for a signal strategy: a clock strategy enters once, under one rule.');
   }
   if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
-  // Buying is written down only: the engine sells to open, so a BUY-side strategy must not be able to send an order.
-  if (c.trigger === 'signal' && c.signal?.action === 'buy' && c.liveOrders === true) bad.push(BUY_NOT_LIVE);
+  // A bought option's target and stop are judged by the desk at one level each (engine.ts `longExitIfReached`): no timetable yet.
+  if (c.trigger === 'signal' && c.signal?.action === 'buy' && ((c.targetSteps ?? []).length || (c.stopSteps ?? []).length)) bad.push(BUY_NO_STEPS);
   return bad;
 }
 

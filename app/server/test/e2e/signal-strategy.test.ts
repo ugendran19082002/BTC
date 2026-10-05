@@ -768,15 +768,15 @@ test('[critical] a maximum too: a signal whose SL or TGT is further than its tim
 
 // ------------------------------------------------------------ bought or sold
 
-test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put -- written down at the offer, never sent, and never live', async () => {
+test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put -- written down with live orders off, bought for real with them on', async () => {
   // The base config's exits are a seller's (a 99% target, a 300% stop): a bought option starts with its own off.
   const bought = { ...config, takeProfitPct: 0, stopLossPct: 0, signal: { ...config.signal, tfs: ['5m'], maxOpen: 10, action: 'buy' } };
   const carried = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...config, signal: { ...config.signal, action: 'buy' } } });
   assert.ok(carried.body.problems.includes('Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.'), 'a seller\'s 300% stop is not carried into a bought option');
-  // Live orders cannot be on for it: there is no buy order the desk can send.
-  const live = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...bought, liveOrders: true } });
-  assert.equal(live.status, 422);
-  assert.ok(live.body.problems.includes('A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.'), live.body.problems.join(' '));
+  // Its target and stop hold one level each: a timetable of them is refused, in words.
+  const stepped = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...bought, stopLossPct: 0.4, stopSteps: [{ at: '12:00', value: 0.3 }] } });
+  assert.equal(stepped.status, 422);
+  assert.ok(stepped.body.problems.includes('A BUY strategy\'s option target and stop hold one level each: remove the time steps.'), stepped.body.problems.join(' '));
   const odd = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...bought, signal: { ...bought.signal, action: 'hold' } } });
   assert.ok(odd.body.problems.includes('Pick whether the option is bought or sold.'), odd.body.problems.join(' '));
 
@@ -796,11 +796,11 @@ test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put
   await runner.onSignal(signal());                       // a BUY signal: the call, bought
   const up = await last();
   assert.equal(up.status, 'would-place', up.detail);
-  assert.match(up.detail, /^#1 Breakout BUY \| written down only: would buy CE \d+ x1 @ [\d.]+ · perp SL 84600 · TGT 85500$/);
+  assert.match(up.detail, /^#1 Breakout BUY \| live orders off: would buy CE \d+ x1 @ [\d.]+ · perp SL 84600 · TGT 85500$/);
   assert.equal(up.trade_id, null);
 
   await runner.onSignal(signal({ dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1 } }));
-  assert.match((await last()).detail, /SELL \| written down only: would buy PE \d+ x1 @ [\d.]+ · perp SL 85400 · TGT 84500$/, 'a SELL signal: the put, bought');
+  assert.match((await last()).detail, /SELL \| live orders off: would buy PE \d+ x1 @ [\d.]+ · perp SL 85400 · TGT 84500$/, 'a SELL signal: the put, bought');
 
   assert.equal((await rows('SELECT trade_id FROM trades')).length, tradesBefore, 'nothing was placed: no trade, no order');
 
@@ -820,6 +820,38 @@ test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   await runner.onSignal(signal());
   assert.match((await last()).detail, /would buy CE \d+ x1 @ 18\.5 · option TGT 74 · option SL 11\.1 · perp SL 84600 · TGT 85500$/);
+
+  // Live orders on: it is a real order now -- bought at the offer, long on the exchange, its exits on the plan.
+  const on = await own({ takeProfitPct: 3, stopLossPct: 0.4, liveOrders: true });
+  assert.equal(on.status, 200, JSON.stringify(on.body));
+  // Earlier cases here left this account short the same call: a buy would close that position, so it is refused.
+  await runner.onSignal(signal());
+  const blocked = await last();
+  assert.equal(blocked.status, 'refused', blocked.detail);
+  assert.match(blocked.detail, /refused: This account is short \d+ on this contract: a buy would close that position, not open one\.$/);
+  const callSym = (blocked.detail.match(/buy CE (\d+)/) ?? [])[1];
+  for (const t of await tradingService().openTrades()) {
+    if (t.plan.symbol === `C-BTC-${callSym}-${EXPIRY}`) await tradingService().close(t.state.tradeId, undefined, 'cleared for the buy case');
+  }
+  await runner.onSignal(signal());
+  const placed = await last();
+  assert.equal(placed.status, 'placed', placed.detail);
+  assert.match(placed.detail, /^#1 Breakout BUY \| buy CE \d+ x1 @ 18\.5 · option TGT 74 · option SL 11\.1 · perp SL 84600 · TGT 85500$/);
+  const trade = await one<{ position: number; plan: Record<string, any> }>('SELECT position, plan FROM trades WHERE trade_id = $1', [placed.trade_id]);
+  assert.equal(trade!.position, 1, 'long one contract');
+  assert.equal(trade!.plan.action, 'buy');
+  assert.deepEqual([trade!.plan.takeProfitPrice, trade!.plan.stopPrice], [null, null], 'nothing resting at the exchange');
+  assert.deepEqual(trade!.plan.longExits, { target: { mode: 'pct', value: 3 }, stop: { mode: 'pct', value: 0.4 } });
+  assert.deepEqual(trade!.plan.underlying.stop, 84_600);
+  const sym = trade!.plan.symbol as string;
+  assert.equal((await paper().getPositions()).find((p) => p.symbol === sym)?.size ?? 0, 1, 'and on the exchange');
+  assert.deepEqual((await paper().getOpenOrders(sym)).filter((o) => o.reduceOnly), [], 'no buy-back over a long');
+
+  // Closed through the desk, as the end of its window or the perp's levels close it (those are in buy-orders.test.ts): sold.
+  await tradingService().close(placed.trade_id!, undefined, 'the end of its window');
+  const closed = (await tradingService().trade(placed.trade_id!))!;
+  assert.equal(closed.state.position, 0);
+  assert.equal(closed.state.fills.find((f) => f.role === 'exit')!.side, 'sell', 'closed with a sale');
   await api('POST', '/api/strategies/sig-buy/enabled', { enabled: false });
 });
 

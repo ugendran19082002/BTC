@@ -71,13 +71,15 @@ export function unrealisedPnlUsd(i: {
   entryPrice: number | null;
   /** What it is worth now, by the exchange's mark. */
   markPrice: number | null;
-  /** Contracts held. Sign is ignored: a short is assumed. */
+  /** Contracts held. Sign is ignored: a short is assumed unless `long` says otherwise. */
   size: number;
   contractValue?: number;
+  /** Bought to open: it gains as the mark rises. */
+  long?: boolean;
 }): number | null {
   const { entryPrice, markPrice, size, contractValue = CONTRACT_BTC } = i;
   if (entryPrice === null || markPrice === null || !Number.isFinite(size) || size === 0) return null;
-  return (entryPrice - markPrice) * Math.abs(size) * contractValue;
+  return (i.long ? markPrice - entryPrice : entryPrice - markPrice) * Math.abs(size) * contractValue;
 }
 
 /**

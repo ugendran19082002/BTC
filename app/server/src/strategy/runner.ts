@@ -543,10 +543,11 @@ export class StrategyRunner {
       + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
 
     /*
-     * A BUY-side strategy: written down as the order it would be, and never sent (5 Oct 2026). The engine sells
-     * to open -- its orders, its gates, its P&L -- so there is no path here to a bought option, with live orders
-     * on or off; the seller's gates (premium floor, margin, short cap) are not asked either, being the seller's.
-     * A buyer pays the offer, so that is the price written; no offer, nothing to buy at.
+     * A BUY-side strategy (5 Oct 2026). A buyer pays the offer: the order is a limit at the offer -- it crosses,
+     * and it cannot pay more than the price it was judged at -- cancelled if still unfilled after
+     * SIGNAL_ENTRY_MS. It goes through the buyer's gate (engine.ts `precheckBuy`), carries the perp's SL and TGT
+     * as every signal trade does, and its own option target and stop as levels the desk judges on the bid.
+     * With live orders off it is written down as the order it would be, as before.
      */
     if (action === 'buy') {
       // The option's own exits, where set, on the buyer's side of the offer paid: the target a sale over it, the stop a sale under it.
@@ -559,7 +560,26 @@ export class StrategyRunner {
         + `${ownTgt !== null ? ` · option TGT ${ownTgt}` : ''}${ownStop !== null ? ` · option SL ${ownStop}` : ''}`
         + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
       if (!(Number(chosen.ask) > 0)) { await finish('refused', `refused: ${leg} ${chosen.strike} has no offer to buy at${block}`); return; }
-      await finish('would-place', `written down only: would ${bought}`);
+      if (!s.config.liveOrders) { await finish('would-place', `live orders off: would ${bought}`); return; }
+      const { target: tgtRule, stop: stopRule } = exitRules(s.config);
+      const buyArgs = {
+        symbol: args.symbol, optionSide: leg, strike: chosen.strike, expiryTs: snap.expiryTs, lots: chosen.lots,
+        strategyId: s.id, strategyName: s.name, origin: 'strategy' as const,
+        action: 'buy' as const, limitPrice: paid, timeoutMs: SIGNAL_ENTRY_MS,
+        longExits: {
+          target: tgtRule.value > 0 ? { mode: tgtRule.mode, value: tgtRule.value } : null,
+          stop: stopRule.value > 0 ? { mode: stopRule.mode, value: stopRule.value } : null,
+        },
+        underlying: args.underlying, signal: args.signal,
+      };
+      const res = await svc.place(buyArgs);
+      if (!res.ok) {
+        await finish('refused', `${bought} -- refused: ${res.precheck ? failureText(res.precheck) : 'refused'}`);
+        this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'failed', detail: `${said}: refused`, failedLegs: [bought], at: now }, ctx));
+        return;
+      }
+      await finish('placed', bought, res.state.tradeId);
+      this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'placed', detail: `${said}: ${bought}`, failedLegs: [], at: now }, ctx));
       return;
     }
 

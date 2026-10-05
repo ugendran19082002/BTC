@@ -41,17 +41,24 @@ export function orderStatusOf(state: TradeState, events: TradeEvent[] = []): Ord
 export function orderOutcomeOf(state: TradeState, events: TradeEvent[] = []): string {
   const status = orderStatusOf(state, events);
   switch (status) {
-    case 'completed':
+    case 'completed': {
+      // Bought to open, the words turn over: bought, then sold back.
+      const long = state.fills.find((f) => f.role === 'entry')?.side === 'buy';
+      const [opened, closed] = long ? ['bought', 'sold back'] : ['sold', 'bought back'];
       return state.position === 0
-        ? `sold ${state.entrySize}, bought back at ${state.exitAvgPrice?.toFixed(2) ?? '—'}`
-        : `sold ${state.entrySize}, ${Math.abs(state.position)} still open`;
-    case 'pending':
+        ? `${opened} ${state.entrySize}, ${closed} at ${state.exitAvgPrice?.toFixed(2) ?? '—'}`
+        : `${opened} ${state.entrySize}, ${Math.abs(state.position)} still open`;
+    }
+    case 'pending': {
       if (state.position === 0) return 'working on the book';
+      const long = state.position > 0;
+      const [opened, closed, held] = long ? ['bought', 'sold back', 'long'] : ['sold', 'bought back', 'short'];
       // One trade is one row, however many pieces it exits in -- so the row says
-      // what has already been bought back, not only what is left.
+      // what has already been closed, not only what is left.
       return state.exitSize > 0
-        ? `sold ${state.entrySize}, bought back ${state.exitSize} at ${state.exitAvgPrice?.toFixed(2) ?? '—'}, short ${Math.abs(state.position)}`
-        : `short ${Math.abs(state.position)}`;
+        ? `${opened} ${state.entrySize}, ${closed} ${state.exitSize} at ${state.exitAvgPrice?.toFixed(2) ?? '—'}, ${held} ${Math.abs(state.position)}`
+        : `${held} ${Math.abs(state.position)}`;
+    }
     case 'rejected':
     case 'cancelled':
       return state.note ?? status;

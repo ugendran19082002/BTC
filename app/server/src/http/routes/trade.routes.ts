@@ -190,6 +190,7 @@ export const tradeView = (
     // strategies may hold one contract (decision 0011), and each card would
     // otherwise show the P&L of both.
     size: r.state.position,
+    long: r.state.position > 0,
     contractValue,
   });
   // Delta's charges on every fill so far, and what closing the rest at the mark

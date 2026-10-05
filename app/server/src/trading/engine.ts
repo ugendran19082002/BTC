@@ -7,7 +7,7 @@ import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import {
   priceFor, lotsToContracts, slippageOf, stopFillLimit, stopPriceFor, targetTickFor, SLIPPAGE_ALERT_PCT,
 } from './money.js';
-import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits } from './precheck.js';
+import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits, precheckBuy } from './precheck.js';
 import { clampLeverage, fundsRequiredPerContract, liquidationRoom, premiumUsd } from './margin.js';
 import { fillChargesUsd } from './charges.js';
 import { closeEligibility, closePreview, type ClosePreview } from './close-preview.js';
@@ -139,6 +139,15 @@ export type TradePlan = {
    * reads as `sell`, which is what it was.
    */
   action?: 'sell' | 'buy';
+  /**
+   * A bought option's own target and stop (5 Oct 2026), as the strategy gave them: a percentage or points off
+   * the price paid, or a price. Nothing rests at the exchange for a bought position -- the desk judges both on
+   * the bid, each poll (`longExitIfReached`), beside the signal's levels on the perp. Absent or zero: off.
+   */
+  longExits?: {
+    target?: { mode: 'pct' | 'points' | 'price'; value: number } | null;
+    stop?: { mode: 'pct' | 'points' | 'price'; value: number } | null;
+  };
   /**
    * The saved strategy that opened this trade, when one did.
    *
@@ -748,6 +757,24 @@ export class TradeEngine {
     const size = product ? lotsToContracts(plan.lots, product.lotSize) : plan.lots;
     const held = positions.find((p) => p.symbol === plan.symbol)?.size ?? 0;
     /*
+     * A bought option goes through the buyer's gate (precheck.ts `precheckBuy`): no margin, no short cap, and
+     * a worst case that is the premium paid. Priced at the offer, with the taker fee, against the free balance.
+     */
+    if (plan.action === 'buy') {
+      if (this.judgedOn.size > 256) this.judgedOn.clear();
+      if (quote) this.judgedOn.set(plan.tradeId, { bid: quote.bid ?? null, ask: quote.ask ?? null, mark: quote.mark ?? null, at: quote.ts });
+      const ask = quote?.ask ?? null;
+      const costUsd = ask !== null && ask > 0
+        ? premiumUsd(ask, size, product?.contractValue)
+          + fillChargesUsd({ price: ask, contracts: size, contractValue: product?.contractValue ?? 0.001, spot }).totalUsd
+        : null;
+      return precheckBuy({
+        now: this.now(), size, expect: plan.expect, product, quote,
+        feedHealthy: this.feedHealthy(), tradingEnabled: this.d.tradingEnabled !== false,
+        availableUsd: balance, costUsd, existingPosition: held, dayPnlUsd: await this.dayPnl(), limits: this.limits,
+      });
+    }
+    /*
      * "Already holding" is about who is asking (0011). A strategy is refused
      * only when it already holds this contract itself -- another strategy's
      * trade on the same strike is not its position. A manual ticket keeps the
@@ -784,7 +811,7 @@ export class TradeEngine {
       leverage: clampLeverage(plan.leverage), contractValue: product?.contractValue,
     });
 
-    return precheck({
+    const judged = precheck({
       now: this.now(),
       intent: {
         side: 'sell', size, expect: plan.expect, price, reduceOnly: false,
@@ -806,6 +833,16 @@ export class TradeEngine {
         ? { ...this.limits, minPremiumUsd: add.minPremiumUsd }
         : plan.minPremiumUsd !== undefined ? { ...this.limits, minPremiumUsd: plan.minPremiumUsd } : this.limits,
     });
+    /*
+     * The account holds a bought position on this contract (it can, since 5 Oct 2026): Delta nets a contract's
+     * position, so a sale here would sell that position down rather than open a short. Read off the positions
+     * this gate already has -- no extra call.
+     */
+    if (held > 0) {
+      const failure = { code: 'DUPLICATE_POSITION' as const, message: `This account holds ${held} bought on this contract: a sale would close that position, not open a short.` };
+      return judged.ok ? { ok: false, failures: [failure] } : { ok: false, failures: [...judged.failures, failure] };
+    }
+    return judged;
   }
 
   // ----------------------------------------------------------------- open
@@ -834,7 +871,8 @@ export class TradeEngine {
         tradeId: plan.tradeId, symbol: plan.symbol, productId: product?.productId ?? 0,
         optionSide: plan.optionSide, requestedSize: size, at,
         // A stop asked for off the fill has no price until the fill, and is still wanted.
-        wantsProtection: plan.stopPrice !== null || asksStop(plan.exitAsk),
+        // A bought option has no resting stop at all: its exits are the desk's to judge (`longExitIfReached`).
+        wantsProtection: plan.action === 'buy' ? false : plan.stopPrice !== null || asksStop(plan.exitAsk),
         contractValue: product?.contractValue,
       }),
     };
@@ -859,7 +897,8 @@ export class TradeEngine {
     // does not go: the alternative is filling at whatever was left from last time.
     // Whether the leverage this entry goes on was remembered rather than set just now (see `reassertLeverage`).
     let leverageRemembered = false;
-    if (product) {
+    // A bought option is paid for in full: there is no leverage to set for it.
+    if (product && plan.action !== 'buy') {
       try {
         leverageRemembered = await this.ensureLeverage(product.productId, clampLeverage(plan.leverage));
       } catch (e) {
@@ -876,15 +915,17 @@ export class TradeEngine {
     }
 
     const tick = product?.tickSize ?? 0.1;
+    // Sold to open, or -- a BUY-side strategy's trade -- bought to open.
+    const entrySide = plan.action === 'buy' ? 'buy' as const : 'sell' as const;
     const req: PlaceOrderRequest = {
       clientOrderId: clientId(plan.tradeId, 'entry'),
       symbol: plan.symbol,
       productId: product?.productId ?? 0,
-      side: 'sell',
+      side: entrySide,
       type: plan.entry.type,
       size,
       limitPrice: plan.entry.type === 'limit' && plan.entry.limitPrice !== undefined
-        ? priceFor('sell', plan.entry.limitPrice, tick)
+        ? priceFor(entrySide, plan.entry.limitPrice, tick)
         : undefined,
       role: 'entry',
     };
@@ -1275,6 +1316,10 @@ export class TradeEngine {
     if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
       rec = await this.stopIfReached(rec);
     }
+    // A bought option's own target and stop: nothing rests at the exchange for them, so they are judged here.
+    if (rec.state.position > 0 && rec.state.phase !== 'exit_pending') {
+      rec = await this.longExitIfReached(rec);
+    }
 
     if (rec.state.position === 0 && rec.state.entrySize > 0 && rec.state.phase !== 'flat') {
       rec = await this.cancelSiblings(rec, true);
@@ -1303,7 +1348,7 @@ export class TradeEngine {
         clientOrderId: clientId(tradeId, 'entry', 2),
         symbol: rec.plan.symbol,
         productId: product?.productId ?? 0,
-        side: 'sell', type: 'market', size, role: 'entry',
+        side: rec.plan.action === 'buy' ? 'buy' : 'sell', type: 'market', size, role: 'entry',
       });
       rec = await this.absorb(rec, ack, 'entry');
       if (rec.state.position !== 0) rec = await this.protect(rec);
@@ -1357,6 +1402,8 @@ export class TradeEngine {
    * cancel is exactly how two live orders happen.
    */
   async protect(recIn: TradeRecord): Promise<TradeRecord> {
+    // A bought position has no resting exits: every order this function places is a buy-back of a short.
+    if (recIn.state.position > 0 || recIn.plan.action === 'buy') return recIn;
     let rec = anchorExits(recIn);
     const size = protectionSize(rec.state);
     if (size === 0) return rec;
@@ -1838,6 +1885,50 @@ export class TradeEngine {
   }
 
   /**
+   * A bought option's own target and stop (`plan.longExits`), judged on the bid.
+   *
+   * A bought position is sold at the bid, so the bid is the price that says a level is really reached -- the
+   * mirror of a short's stop on the offer (`stopIfReached`). The target is taken the moment the bid is there:
+   * selling into a bid at or over the target is the target. The stop has to hold for `STOP_CONFIRM_MS`, like a
+   * short's, so one stray quote does not sell the position. A missing or stale bid does nothing.
+   *
+   * Nothing rests at the exchange for these, so they work only while the desk is up -- as the signal's levels
+   * on the perp do. What a bought option can lose is bounded all the same: what was paid for it.
+   */
+  private async longExitIfReached(rec: TradeRecord): Promise<TradeRecord> {
+    const own = rec.plan.longExits;
+    const entry = rec.state.entryAvgPrice;
+    if (!own || entry === null || !(entry > 0)) return rec;
+    const levelOf = (r: { mode: string; value: number } | null | undefined, up: boolean): number | null =>
+      (!r || !(r.value > 0) ? null
+        : r.mode === 'pct' ? entry * (1 + (up ? r.value : -r.value))
+          : r.mode === 'points' ? entry + (up ? r.value : -r.value) : r.value);
+    const target = levelOf(own.target, true);
+    const stop = levelOf(own.stop, false);
+    if (target === null && stop === null) return rec;
+
+    const id = rec.state.tradeId;
+    const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
+    const bid = quote?.bid ?? null;
+    if (quote === null || this.now() - quote.ts > MARK_STALE_MS) return rec;
+    if (bid === null || !Number.isFinite(bid) || bid <= 0) return rec;
+    const p2 = (n: number) => (Math.round(n * 100) / 100).toString();
+
+    if (target !== null && bid >= target) {
+      this.stopSince.delete(id);
+      await this.closeNowInner(id, `option target reached: the bid at ${p2(bid)} (target ${p2(target)}, bought at ${p2(entry)})`);
+      return await this.d.store.get(id) ?? rec;
+    }
+    if (stop === null || bid > stop) { this.stopSince.delete(id); return rec; }
+    const since = this.stopSince.get(id) ?? this.now();
+    this.stopSince.set(id, since);
+    if (this.now() - since < STOP_CONFIRM_MS) return rec;
+    this.stopSince.delete(id);
+    await this.closeNowInner(id, `option stop reached: the bid held at ${p2(bid)} (stop ${p2(stop)}, bought at ${p2(entry)}) for ${Math.round((this.now() - since) / 1000)} s`);
+    return await this.d.store.get(id) ?? rec;
+  }
+
+  /**
    * The underlying's own exit (`plan.underlying`): the perp's last trade at the
    * signal's stop or target, and the option is bought back at the market.
    *
@@ -1924,7 +2015,8 @@ export class TradeEngine {
     // when the sheet was opened. More than that closes everything rather than
     // being refused: asking to close 1,500 of a position that is now 1,400
     // means "all of it" by any reading.
-    const size = want === undefined ? held : Math.min(Math.trunc(want), held);
+    // A size that is not a number is not "all of it": it is refused below, never sent (a NaN order once reached the paper book).
+    const size = want === undefined ? held : Number.isFinite(want) ? Math.min(Math.trunc(want), held) : 0;
     if (size < 1) {
       return (await this.commit(rec, {
         t: 'protection_failed',
@@ -1949,7 +2041,8 @@ export class TradeEngine {
     try {
       const ack = await this.exchange.placeOrder({
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
-        side: 'buy', type: 'market', size, reduceOnly: true, role: 'exit',
+        // A short is bought back; a bought position is sold. Reduce-only either way: a close never opens.
+        side: rec.state.position > 0 ? 'sell' : 'buy', type: 'market', size, reduceOnly: true, role: 'exit',
       });
       rec = await this.absorb(rec, ack, 'exit');
     } catch (e) {
@@ -1995,7 +2088,7 @@ export class TradeEngine {
     if (tries >= MAX_CLOSE_TRIES) {
       if (!this.gaveUpClosing.has(rec.state.tradeId)) {
         this.gaveUpClosing.add(rec.state.tradeId);
-        this.d.onAlarm?.(rec.state, `Close left ${held} contracts short after ${tries} tries at the market. `
+        this.d.onAlarm?.(rec.state, `Close left ${held} contracts ${rec.state.position > 0 ? 'long' : 'short'} after ${tries} tries at the market. `
           + 'Nothing more is sent -- close the rest by hand.', rec.plan);
       }
       return rec;

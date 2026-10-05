@@ -69,17 +69,25 @@ function averageOf(fills: Fill[], want: (f: Fill) => boolean): { size: number; a
 }
 
 /**
- * Short options only: we sell to open and buy to close, so profit is
- * (what we took in) - (what we paid to get out), over the size actually closed.
+ * Bought to open (a long), read off the record itself: its entry fills are buys. Every trade before
+ * 5 Oct 2026 was sold to open, so an entry that is a sale -- or a trade with no fill yet -- is a short.
+ */
+export const isLong = (s: Pick<TradeState, 'fills'>): boolean =>
+  s.fills.find((f) => f.role === 'entry')?.side === 'buy';
+
+/**
+ * Sold to open: profit is (what we took in) - (what we paid to get out), over the size actually closed.
+ * Bought to open, it is the other way round: (what it was sold for) - (what was paid for it).
  */
 function realised(
   entryAvg: number | null,
   exitAvg: number | null,
   closed: number,
   contractValue: number,
+  long = false,
 ): number {
   if (entryAvg === null || exitAvg === null || closed <= 0) return 0;
-  return (entryAvg - exitAvg) * closed * contractValue;
+  return (long ? exitAvg - entryAvg : entryAvg - exitAvg) * closed * contractValue;
 }
 
 export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
@@ -117,10 +125,12 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       s.entryAvgPrice = entry.avg;
       s.exitSize = exit.size;
       s.exitAvgPrice = exit.avg;
-      // short position: everything sold, less everything bought back.
+      // short position: everything sold, less everything bought back (negative while held).
+      // long position: everything bought, less everything sold back (positive while held).
       // Written this way round so a fully closed trade is 0 and never -0.
-      s.position = exit.size - entry.size;
-      s.realisedPnl = realised(s.entryAvgPrice, s.exitAvgPrice, exit.size, s.contractValue);
+      const long = isLong(s);
+      s.position = long ? entry.size - exit.size : exit.size - entry.size;
+      s.realisedPnl = realised(s.entryAvgPrice, s.exitAvgPrice, exit.size, s.contractValue, long);
 
       if (isExit(e.role)) {
         if (s.position === 0) {
@@ -294,8 +304,9 @@ export function realisedBreakdownSinceOf(s: TradeState, since: number): { realis
   if (entry === null) return { realisedUsd: 0, profitUsd: 0, lossUsd: 0 };
   let profitUsd = 0;
   let lossUsd = 0;
+  const long = isLong(s);
   for (const f of s.fills.filter((f) => isExit(f.role) && f.ts >= since)) {
-    const pnl = (entry - f.price) * f.size * (s.contractValue ?? 0.001);
+    const pnl = (long ? f.price - entry : entry - f.price) * f.size * (s.contractValue ?? 0.001);
     if (pnl > 0) profitUsd += pnl;
     else if (pnl < 0) lossUsd += Math.abs(pnl);
   }
@@ -311,7 +322,7 @@ export function recompute(s: TradeState): TradeState {
     entryAvgPrice: entry.avg,
     exitSize: exit.size,
     exitAvgPrice: exit.avg,
-    realisedPnl: realised(entry.avg, exit.avg, exit.size, s.contractValue ?? 0.001),
+    realisedPnl: realised(entry.avg, exit.avg, exit.size, s.contractValue ?? 0.001, isLong(s)),
   };
 }
 

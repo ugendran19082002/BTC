@@ -268,7 +268,7 @@ describe('saving', () => {
     const sw = screen.getByRole('switch', { name: /Live orders/ });
     expect(screen.getByText(/Nothing is sent/)).toBeInTheDocument();
     fireEvent.click(sw);
-    expect(screen.getByText(/each signal places a real order at Delta/)).toBeInTheDocument();
+    expect(screen.getByText(/each signal places a real sell order at Delta/)).toBeInTheDocument();
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
     expect(saved().config.liveOrders).toBe(true);
@@ -432,21 +432,21 @@ describe('bought or sold: the BUY and SELL tabs over the leg', () => {
     expect(within(screen.getByRole('radiogroup', { name: 'option buy or sell' })).getByRole('radio', { name: 'SELL' })).toBeChecked();
   });
 
-  it('[critical] BUY: a BUY signal buys the CE, a SELL the PE; its target open and its stop under 100%; written down only -- and saved as bought', async () => {
+  it('[critical] BUY: a BUY signal buys the CE, a SELL the PE; its target open and its stop under 100%; live orders off until switched on -- and saved as bought', async () => {
     show(signalStrategy({}, { liveOrders: true, takeProfitPct: 0.5 }));
     tab('Strike & lots');
     radio('option buy or sell', 'BUY');
     expect(legs()).toHaveTextContent('BUY signal → buys CEwins as BTC rises');
     expect(legs()).toHaveTextContent('SELL signal → buys PEwins as BTC falls');
-    expect(screen.getByRole('note')).toHaveTextContent('A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.');
-    expect(screen.getByText(/a BUY buys a call, a SELL a put \(written down only, not sent\)/)).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent('Bought at the offer, sold to close. The most it can lose is the premium paid.');
+    expect(screen.getByText(/a BUY buys a call, a SELL a put/)).toBeInTheDocument();
 
-    // Live orders went off with the choice, and do not come back on.
+    // Live orders went off with the change of side -- real orders of the other kind are switched on on purpose.
     const live = screen.getByRole('switch', { name: /Live orders/ });
     expect(live).not.toBeChecked();
     fireEvent.click(live);
-    expect(live).not.toBeChecked();
-    expect(screen.getByText(/Off, and it stays off — a BUY strategy is written down only/)).toBeInTheDocument();
+    expect(live).toBeChecked();
+    expect(screen.getByText(/ON — each signal places a real buy order at Delta\./)).toBeInTheDocument();
 
     // The option's own exits: both, each off at 0 -- the seller's 50% target did not come across as a buyer's.
     tab('Entry & exit');
@@ -455,7 +455,7 @@ describe('bought or sold: the BUY and SELL tabs over the leg', () => {
     expect(screen.getByText(/Bought: the target is a sale over the entry, with no upper limit; the stop a sale under it, up to 99% — the premium and no more\./)).toBeInTheDocument();
     expect(screen.queryByText(/Add one: \+200%/)).toBeNull(); // the seller's advice is not the buyer's
     // The entry is the offer a buyer pays -- not the seller's "rest at the offer, then sell at the bid".
-    expect(screen.getByLabelText('entry price for a bought option')).toHaveTextContent('A buyer pays the offer, so each signal is written down at the offer of its strike');
+    expect(screen.getByLabelText('entry price for a bought option')).toHaveTextContent('A buyer pays the offer: each signal is bought with a limit at the offer of its strike');
     expect(screen.queryByRole('radiogroup', { name: 'entry price' })).toBeNull();
     expect(screen.queryByLabelText('cross after seconds')).toBeNull();
     expect(screen.queryByText(/then sells at the bid/)).toBeNull();
@@ -476,7 +476,7 @@ describe('bought or sold: the BUY and SELL tabs over the leg', () => {
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
     expect(saved().config.signal!.action).toBe('buy');
-    expect(saved().config.liveOrders).toBe(false);
+    expect(saved().config.liveOrders).toBe(true);
     expect([saved().config.takeProfitPct, saved().config.stopLossPct]).toEqual([3, 0.4]);
   });
 

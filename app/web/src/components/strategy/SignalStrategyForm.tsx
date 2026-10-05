@@ -1,5 +1,5 @@
 import {
-  actionOf, asSignalConfig, BUY_NOT_LIVE, DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, legOfSignal, MAX_OPEN_PRESETS, MAX_SIGNAL_OPEN, type SignalAction, type SignalRule, type Strategy,
+  actionOf, asSignalConfig, DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, legOfSignal, MAX_OPEN_PRESETS, MAX_SIGNAL_OPEN, type SignalAction, type SignalRule, type Strategy,
 } from '@/types/strategy';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
@@ -65,9 +65,9 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
   const rule: SignalRule = c.signal ?? DEFAULT_SIGNAL_RULE;
   const setRule = <K extends keyof SignalRule>(k: K, v: SignalRule[K]) =>
     d.setC((p) => ({ ...p, signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), [k]: v } }));
-  // Bought or sold. A BUY-side strategy is written down only, so its live orders are off and stay off.
+  // Bought or sold: the leg, the entry and the option's exits all follow it.
   const buying = actionOf(rule) === 'buy';
-  const live = Boolean(c.liveOrders) && !buying;
+  const live = Boolean(c.liveOrders);
   const setAction = (a: SignalAction) => d.setC((p) => (actionOf(p.signal) === a ? p : {
     ...p,
     signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), action: a },
@@ -75,8 +75,8 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
     // 300% target a buyer's -- so a change of side starts both off (0) rather than carry a number across.
     targetMode: 'pct' as const, takeProfitPct: 0, takeProfitPoints: 0, takeProfitAt: 0, targetSteps: [],
     stopMode: 'pct' as const, stopLossPct: 0, stopLossPoints: 0, stopLossAt: 0, stopSteps: [],
-    // Bought: nothing is sent.
-    ...(a === 'buy' ? { liveOrders: false } : {}),
+    // Changing side switches live orders off: real orders of the other kind are switched on again on purpose, never carried over.
+    liveOrders: false,
   }));
 
   return (
@@ -118,8 +118,9 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                   ))}
                 </div>
                 {buying && (
-                  <p role="note" className="m-0 mt-1.5 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[11.5px] leading-snug text-[var(--warn)]">
-                    {BUY_NOT_LIVE} Each signal is recorded as the order it would be, with its SL and TGT on the perp.
+                  <p role="note" className="m-0 mt-1.5 rounded-md border border-solid border-border px-2.5 py-2 text-[11.5px] leading-snug text-muted-foreground">
+                    Bought at the offer, sold to close. The most it can lose is the premium paid. Its option target and stop are
+                    watched by the desk on the bid, so they act while the desk is up — like the perp&apos;s SL and TGT.
                   </p>
                 )}
               </Stack>
@@ -162,14 +163,14 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                 />
               </Stack>
               {buying ? (
-                // Bought: nothing is sent, so there is no order to rest at a price, chase or cancel -- the seller's
-                // fields (rest at the offer, then sell at the bid) are not shown as if they applied.
+                // Bought: a limit at the offer -- it crosses, and pays no more than the price it was judged at. The
+                // seller's fields (rest at the offer, then sell at the bid) are not shown as if they applied.
                 <div aria-label="entry price for a bought option" className="rounded-lg border border-solid border-border px-2.5 py-2">
                   <div className="text-[12.5px] font-medium text-foreground">Entry price — the offer</div>
                   <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
-                    A buyer pays the offer, so each signal is written down at the offer of its strike,{' '}
+                    A buyer pays the offer: each signal is bought with a limit at the offer of its strike,{' '}
                     {(rule.enterOn ?? 'zone') === 'zone' ? 'when the perp reaches the zone' : 'at the candle that makes the signal'}.
-                    Nothing is sent, so there is no order to rest, chase or cancel.
+                    Still unfilled {SIGNAL_ENTRY_MIN} minutes later, it is cancelled.
                   </p>
                 </div>
               ) : (
@@ -272,13 +273,11 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
             <div className={cn('rounded-lg border border-solid px-2.5 py-1.5', live ? 'border-[var(--down)] bg-[var(--down)]/10' : 'border-border')}>
               <Switch
                 label="Live orders"
-                description={buying
-                  ? 'Off, and it stays off — a BUY strategy is written down only: the desk sends sell orders, not buys.'
-                  : live
-                    ? 'ON — each signal places a real order at Delta.'
-                    : 'Off — each signal is written down as the order it would be. Nothing is sent.'}
+                description={live
+                  ? `ON — each signal places a real ${buying ? 'buy' : 'sell'} order at Delta.`
+                  : 'Off — each signal is written down as the order it would be. Nothing is sent.'}
                 checked={live}
-                onCheckedChange={(on) => { if (!buying) set('liveOrders', on); }}
+                onCheckedChange={(on) => set('liveOrders', on)}
               />
             </div>
           }
