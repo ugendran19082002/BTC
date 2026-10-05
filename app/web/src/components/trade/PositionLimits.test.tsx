@@ -33,7 +33,7 @@ describe('the position limits on Positions', () => {
     render(<AccountCard status={status()} />);
     expect(limits().getByRole('tab', { name: 'SELL · short limit' })).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByLabelText('short cap')).toHaveTextContent('97 of 159 contracts');
-    expect(screen.getByLabelText('room to sell')).toHaveTextContent('Can still sell 62 lots — the limit leaves 62, the free margin carries 66 at 200x.');
+    expect(screen.getByLabelText('room to sell')).toHaveTextContent('Can still sell 62 lotsLimit leaves 62Margin carries 66 at 200x');
   });
 
   it('[critical] BUY: the long limit, lots you can buy by premium, and the tab remembered', async () => {
@@ -41,7 +41,7 @@ describe('the position limits on Positions', () => {
     fireEvent.click(limits().getByRole('tab', { name: 'BUY · long limit' }));
     expect(await screen.findByLabelText('long cap')).toHaveTextContent('0 of 40 contracts');
     // One line, and the table closed until asked for.
-    expect(screen.getByLabelText('room to buy')).toHaveTextContent('Limit leaves 40 lots · free ₹2,449 · loss budget ₹3,216 left');
+    expect(screen.getByLabelText('room to buy')).toHaveTextContent('Limit leaves 40 lotsFree ₹2,449Loss budget ₹3,216 left');
     expect(screen.queryByRole('table', { name: 'lots you can buy, by premium' })).toBeNull();
     const toggle = screen.getByRole('button', { name: 'Show lots by premium' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');

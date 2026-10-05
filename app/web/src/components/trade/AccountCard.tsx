@@ -93,9 +93,10 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
 
         <div className="my-0.5 h-px bg-border" />
 
-        {/* The daily loss limit beside the short / long limit: two columns, each label over its figure, so they fit a phone. */}
+        {/* The daily loss limit beside the short / long limit: two columns, each label over its figure, so they fit a phone.
+            What is left to sell or buy, and the ₹ note, sit under the loss limit. */}
         <PositionLimits status={status} heldShort={held} lossCell={
-          <div className="min-w-0">
+          <div>
             <dt className="m-0 text-[12px] text-muted-foreground">Daily loss limit</dt>
             <dd className="m-0 mt-0.5 text-[13px] tabular-nums text-foreground" aria-label="loss budget left">
               <span>{inr(usdToInr(left))}</span>{' '}
@@ -117,12 +118,10 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
               </p>
             ) : null}
           </div>
-        } />
+        } note={unrealised !== 0 && (
+          <p className="m-0 mt-2 text-[11px] text-[var(--dim)]">₹ shown at ₹85 per $1.</p>
+        )} />
       </dl>
-
-      {unrealised !== 0 && (
-        <p className="m-0 mt-2.5 text-[11px] text-[var(--dim)]">₹ shown at ₹85 per $1.</p>
-      )}
     </CollapsibleCard>
   );
 }
@@ -136,7 +135,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
  * and editable; the server decides, and a short limit above what margin carries is refused.
  */
 type Side = 'sell' | 'buy';
-function PositionLimits({ status, heldShort, lossCell }: { status: TradeStatus; heldShort: number; lossCell: React.ReactNode }) {
+function PositionLimits({ status, heldShort, lossCell, note }: { status: TradeStatus; heldShort: number; lossCell: React.ReactNode; note?: React.ReactNode }) {
   const [side, setSide] = usePersisted<Side>('positions:limits-side', 'sell');
   // The BUY tab's table by premium: closed until asked for, then remembered.
   const [buyDetail, setBuyDetail] = usePersisted<boolean>('positions:buy-room-open', false);
@@ -153,7 +152,33 @@ function PositionLimits({ status, heldShort, lossCell }: { status: TradeStatus; 
   const room = status.room;
   return (
     <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-      {lossCell}
+      {/* Left: the day's loss limit, and under it what is left on the chosen side -- the column was empty there. */}
+      <div className="min-w-0">
+        {lossCell}
+        {room && side === 'sell' && (
+          <p aria-label="room to sell" className="m-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
+            <span className="block">Can still sell <b className="text-foreground tabular-nums">{room.sell.lots.toLocaleString('en-US')} lots</b></span>
+            <span className="block">Limit leaves {room.sell.byLimit.toLocaleString('en-US')}</span>
+            {room.sell.byMargin !== null && <span className="block">Margin carries {room.sell.byMargin.toLocaleString('en-US')} at 200x</span>}
+            {room.sell.perLotUsd !== null && <span className="block text-[var(--dim)]">About {inr(usdToInr(room.sell.perLotUsd))} margin a lot</span>}
+          </p>
+        )}
+        {room && side === 'buy' && (
+          <div aria-label="room to buy" className="mt-2 text-[11.5px] leading-snug text-muted-foreground">
+            <span className="block">Limit leaves <b className="text-foreground tabular-nums">{room.buy.byLimit.toLocaleString('en-US')} lots</b></span>
+            {room.freeUsd !== null && <span className="block">Free {inr(usdToInr(room.freeUsd))}</span>}
+            <span className="block">Loss budget {inr(usdToInr(room.buy.lossRoomUsd))} left</span>
+            {/* The detail and the table by premium behind a toggle, remembered. */}
+            <button
+              type="button" aria-expanded={buyDetail} aria-controls="buy-room-detail" onClick={() => setBuyDetail(!buyDetail)}
+              className="m-0 inline-flex min-h-8 appearance-none items-center gap-1 border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2"
+            >
+              {buyDetail ? 'Hide lots by premium' : 'Show lots by premium'}
+            </button>
+          </div>
+        )}
+        {note}
+      </div>
       <div className="min-w-0">
         <div role="tablist" aria-label="position limits" className="mb-1.5 flex gap-0.5 rounded-lg bg-muted p-0.5">
           {tab('sell', 'SELL', 'SELL · short limit')}
@@ -163,69 +188,34 @@ function PositionLimits({ status, heldShort, lossCell }: { status: TradeStatus; 
           ? <LimitLine side="sell" held={room?.sell.held ?? heldShort} inForce={status.limits.maxShortContracts} />
           : <LimitLine side="buy" held={room?.buy.held ?? 0} inForce={status.limits.maxLongContracts ?? room?.buy.limit ?? 500} />}
       </div>
-      {/* What is left on the chosen side, the width of the card. */}
-      <div className="col-span-2 min-w-0">
-      {side === 'sell' ? (
-        <>
-          {room && (
-            <p aria-label="room to sell" className="m-0 mt-1.5 text-[12px] leading-snug text-muted-foreground">
-              Can still sell <b className="text-foreground tabular-nums">{room.sell.lots.toLocaleString('en-US')} lots</b>
-              {' — '}the limit leaves {room.sell.byLimit.toLocaleString('en-US')}
-              {room.sell.byMargin !== null && <>, the free margin carries {room.sell.byMargin.toLocaleString('en-US')} at 200x</>}.
-              {room.sell.perLotUsd !== null && <span className="text-[var(--dim)]"> About {inr(usdToInr(room.sell.perLotUsd))} of margin a lot.</span>}
-            </p>
-          )}
-        </>
-      ) : (
-        <>
-          {room && (
-            <div aria-label="room to buy" className="mt-1.5 text-[12px] leading-snug text-muted-foreground">
-              {/* One line always; the detail and the table by premium behind a toggle, remembered. */}
-              <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-                <span>
-                  Limit leaves <b className="text-foreground tabular-nums">{room.buy.byLimit.toLocaleString('en-US')} lots</b>
-                  {room.freeUsd !== null && <> · free {inr(usdToInr(room.freeUsd))}</>}
-                  {' '}· loss budget {inr(usdToInr(room.buy.lossRoomUsd))} left
-                </span>
-                <button
-                  type="button" aria-expanded={buyDetail} aria-controls="buy-room-detail" onClick={() => setBuyDetail(!buyDetail)}
-                  className="m-0 inline-flex min-h-8 appearance-none items-center gap-1 border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2"
-                >
-                  {buyDetail ? 'Hide lots by premium' : 'Show lots by premium'}
-                </button>
-              </div>
-              {buyDetail && (
-                <div id="buy-room-detail">
-                  <p className="m-0 mt-1">
-                    A bought option uses no margin: it is paid for in full from the free balance, and its cost counts
-                    against today&apos;s loss budget.
-                  </p>
-                  <table aria-label="lots you can buy, by premium" className="mt-1.5 w-full border-collapse text-[12px]">
-                    <thead>
-                      <tr className="text-[11px] text-[var(--dim)]">
-                        <th scope="col" className="py-0.5 text-left font-medium">Premium</th>
-                        <th scope="col" className="py-0.5 text-right font-medium">Costs a lot</th>
-                        <th scope="col" className="py-0.5 text-right font-medium">Can buy</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {room.buy.byPremium.map((r) => (
-                        <tr key={r.premium} className="border-t border-solid border-[var(--line)]">
-                          <td className="py-0.5 text-left tabular-nums">${r.premium}</td>
-                          <td className="py-0.5 text-right tabular-nums">{inr(usdToInr(r.perLotUsd))}</td>
-                          <td className="py-0.5 text-right font-semibold tabular-nums text-foreground">{r.lots.toLocaleString('en-US')} lots</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">Each row is the smallest of the limit, the free balance and the loss budget, at that premium, fees included.</p>
-                </div>
-              )}
-            </div>
-          )}
-        </>
+      {/* The table by premium needs the card's width. */}
+      {room && side === 'buy' && buyDetail && (
+        <div id="buy-room-detail" className="col-span-2 min-w-0 text-[12px] leading-snug text-muted-foreground">
+          <p className="m-0">
+            A bought option uses no margin: it is paid for in full from the free balance, and its cost counts
+            against today&apos;s loss budget.
+          </p>
+          <table aria-label="lots you can buy, by premium" className="mt-1.5 w-full border-collapse text-[12px]">
+            <thead>
+              <tr className="text-[11px] text-[var(--dim)]">
+                <th scope="col" className="py-0.5 text-left font-medium">Premium</th>
+                <th scope="col" className="py-0.5 text-right font-medium">Costs a lot</th>
+                <th scope="col" className="py-0.5 text-right font-medium">Can buy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {room.buy.byPremium.map((r) => (
+                <tr key={r.premium} className="border-t border-solid border-[var(--line)]">
+                  <td className="py-0.5 text-left tabular-nums">${r.premium}</td>
+                  <td className="py-0.5 text-right tabular-nums">{inr(usdToInr(r.perLotUsd))}</td>
+                  <td className="py-0.5 text-right font-semibold tabular-nums text-foreground">{r.lots.toLocaleString('en-US')} lots</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">Each row is the smallest of the limit, the free balance and the loss budget, at that premium, fees included.</p>
+        </div>
       )}
-      </div>
     </div>
   );
 }
