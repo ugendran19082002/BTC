@@ -40,13 +40,20 @@ describe('the position limits on Positions', () => {
     const { unmount } = render(<AccountCard status={status()} />);
     fireEvent.click(limits().getByRole('tab', { name: 'BUY · long limit' }));
     expect(await screen.findByLabelText('long cap')).toHaveTextContent('0 of 40 contracts');
-    expect(screen.getByLabelText('room to buy')).toHaveTextContent('The limit leaves 40 lots. A bought option uses no margin');
+    // One line, and the table closed until asked for.
+    expect(screen.getByLabelText('room to buy')).toHaveTextContent('Limit leaves 40 lots · free ₹2,449 · loss budget ₹3,216 left');
+    expect(screen.queryByRole('table', { name: 'lots you can buy, by premium' })).toBeNull();
+    const toggle = screen.getByRole('button', { name: 'Show lots by premium' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Hide lots by premium' })).toHaveAttribute('aria-expanded', 'true');
     const rows = within(screen.getByRole('table', { name: 'lots you can buy, by premium' })).getAllByRole('row');
     expect(rows[1]).toHaveTextContent('$50');
     expect(rows[1]).toHaveTextContent('40 lots');
     unmount();
     render(<AccountCard status={status()} />);
     expect(limits().getByRole('tab', { name: 'BUY · long limit' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('table', { name: 'lots you can buy, by premium' })).toBeInTheDocument(); // left open: stays open
   });
 
   it('the long limit is edited on its own tab and saved through its own call', async () => {

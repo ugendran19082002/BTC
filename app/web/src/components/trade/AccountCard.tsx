@@ -1,3 +1,4 @@
+import type * as React from 'react';
 import { useEffect, useState } from 'react';
 import type { TradeStatus } from '@/types/trade';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
@@ -48,17 +49,20 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
       }
     >
       <dl className="m-0 grid gap-2">
-        <KV
-          label={<span className="font-semibold text-foreground">Total</span>}
-          hint={fromDelta
-            ? 'Delta\'s wallet balance -- the same number as its app\'s FNO wallet.'
-            : 'Available plus what open positions hold. The held part is estimated (paper), so Delta\'s screen is the authority.'}
-        >
-          <Money value={total} strong />
-        </KV>
-        <KV label="Available" hint='Money not tied up in a position. Delta calls this "Available Margin".'>
-          <Money value={status.balanceUsd} />
-        </KV>
+        {/* Total and Available side by side: the two figures read together. */}
+        <div className="grid grid-cols-2 gap-2">
+          <Tile
+            label={<span className="font-semibold text-foreground">Total</span>}
+            hint={fromDelta
+              ? 'Delta\'s wallet balance -- the same number as its app\'s FNO wallet.'
+              : 'Available plus what open positions hold. The held part is estimated (paper), so Delta\'s screen is the authority.'}
+          >
+            <Money value={total} strong />
+          </Tile>
+          <Tile label="Available" hint='Money not tied up in a position. Delta calls this "Available Margin".'>
+            <Money value={status.balanceUsd} />
+          </Tile>
+        </div>
         <KV
           label={<>Used for positions <span className="ml-1 text-[11px] text-[var(--dim)]">{held > 0 ? `${held} contract${held === 1 ? '' : 's'}` : 'none'}</span></>}
           hint={fromDelta ? 'Margin locked by open positions and orders, as Delta reports it: wallet balance less available.' : 'Margin locked while positions are open. It comes back when they close. Estimated.'}
@@ -68,22 +72,21 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
 
         <div className="my-0.5 h-px bg-border" />
 
-        <KV label="Open P&L" hint="Profit or loss on open positions at Delta's price. Not yours until you close.">
-          <Money value={status.unrealisedPnlUsd ?? null} signed />
-        </KV>
-        <KV label="Booked today" hint="Trades closed since 05:30 IST.">
-          <Money value={today.realisedUsd} signed />
-        </KV>
-        {lossToday > 0 && (
-          <KV label="Loss today" hint="Total losses from trades closed since 05:30 IST.">
-            <Money value={-lossToday} signed />
-          </KV>
-        )}
-        {today.chargesUsd > 0 && (
-          <KV label="Charges today" hint="Delta's fee plus 18% GST on every fill today.">
-            <Money value={-today.chargesUsd} signed />
-          </KV>
-        )}
+        {/* The day in four, two by two -- always all four, so the layout does not jump as figures appear. */}
+        <div className="grid grid-cols-2 gap-2">
+          <Tile label="Open P&L" hint="Profit or loss on open positions at Delta's price. Not yours until you close.">
+            <Money value={status.unrealisedPnlUsd ?? null} signed />
+          </Tile>
+          <Tile label="Booked today" hint="Trades closed since 05:30 IST.">
+            <Money value={today.realisedUsd} signed />
+          </Tile>
+          <Tile label="Loss today" hint="Total losses from trades closed since 05:30 IST.">
+            <Money value={lossToday > 0 ? -lossToday : 0} signed />
+          </Tile>
+          <Tile label="Charges today" hint="Delta's fee plus 18% GST on every fill today.">
+            <Money value={today.chargesUsd > 0 ? -today.chargesUsd : 0} signed />
+          </Tile>
+        </div>
         <KV label={<span className="font-semibold text-foreground">Net today</span>}>
           <Money value={today.netUsd} signed strong />
         </KV>
@@ -136,6 +139,8 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
 type Side = 'sell' | 'buy';
 function PositionLimits({ status, heldShort }: { status: TradeStatus; heldShort: number }) {
   const [side, setSide] = usePersisted<Side>('positions:limits-side', 'sell');
+  // The BUY tab's table by premium: closed until asked for, then remembered.
+  const [buyDetail, setBuyDetail] = usePersisted<boolean>('positions:buy-room-open', false);
   const tab = (s: Side, label: string) => (
     <button
       key={s} type="button" role="tab" aria-selected={side === s} onClick={() => setSide(s)}
@@ -170,31 +175,47 @@ function PositionLimits({ status, heldShort }: { status: TradeStatus; heldShort:
           <LimitLine side="buy" held={room?.buy.held ?? 0} inForce={status.limits.maxLongContracts ?? room?.buy.limit ?? 500} />
           {room && (
             <div aria-label="room to buy" className="mt-1.5 text-[12px] leading-snug text-muted-foreground">
-              <p className="m-0">
-                The limit leaves <b className="text-foreground tabular-nums">{room.buy.byLimit.toLocaleString('en-US')} lots</b>.
-                A bought option uses no margin: it is paid for in full from the free balance
-                {room.freeUsd !== null && <> ({inr(usdToInr(room.freeUsd))})</>}, and its cost counts against today&apos;s loss budget
-                ({inr(usdToInr(room.buy.lossRoomUsd))} left).
-              </p>
-              <table aria-label="lots you can buy, by premium" className="mt-1.5 w-full border-collapse text-[12px]">
-                <thead>
-                  <tr className="text-[11px] text-[var(--dim)]">
-                    <th scope="col" className="py-0.5 text-left font-medium">Premium</th>
-                    <th scope="col" className="py-0.5 text-right font-medium">Costs a lot</th>
-                    <th scope="col" className="py-0.5 text-right font-medium">Can buy</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {room.buy.byPremium.map((r) => (
-                    <tr key={r.premium} className="border-t border-solid border-[var(--line)]">
-                      <td className="py-0.5 text-left tabular-nums">${r.premium}</td>
-                      <td className="py-0.5 text-right tabular-nums">{inr(usdToInr(r.perLotUsd))}</td>
-                      <td className="py-0.5 text-right font-semibold tabular-nums text-foreground">{r.lots.toLocaleString('en-US')} lots</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">Each row is the smallest of the limit, the free balance and the loss budget, at that premium, fees included.</p>
+              {/* One line always; the detail and the table by premium behind a toggle, remembered. */}
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                <span>
+                  Limit leaves <b className="text-foreground tabular-nums">{room.buy.byLimit.toLocaleString('en-US')} lots</b>
+                  {room.freeUsd !== null && <> · free {inr(usdToInr(room.freeUsd))}</>}
+                  {' '}· loss budget {inr(usdToInr(room.buy.lossRoomUsd))} left
+                </span>
+                <button
+                  type="button" aria-expanded={buyDetail} aria-controls="buy-room-detail" onClick={() => setBuyDetail(!buyDetail)}
+                  className="m-0 inline-flex min-h-8 appearance-none items-center gap-1 border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2"
+                >
+                  {buyDetail ? 'Hide lots by premium' : 'Show lots by premium'}
+                </button>
+              </div>
+              {buyDetail && (
+                <div id="buy-room-detail">
+                  <p className="m-0 mt-1">
+                    A bought option uses no margin: it is paid for in full from the free balance, and its cost counts
+                    against today&apos;s loss budget.
+                  </p>
+                  <table aria-label="lots you can buy, by premium" className="mt-1.5 w-full border-collapse text-[12px]">
+                    <thead>
+                      <tr className="text-[11px] text-[var(--dim)]">
+                        <th scope="col" className="py-0.5 text-left font-medium">Premium</th>
+                        <th scope="col" className="py-0.5 text-right font-medium">Costs a lot</th>
+                        <th scope="col" className="py-0.5 text-right font-medium">Can buy</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {room.buy.byPremium.map((r) => (
+                        <tr key={r.premium} className="border-t border-solid border-[var(--line)]">
+                          <td className="py-0.5 text-left tabular-nums">${r.premium}</td>
+                          <td className="py-0.5 text-right tabular-nums">{inr(usdToInr(r.perLotUsd))}</td>
+                          <td className="py-0.5 text-right font-semibold tabular-nums text-foreground">{r.lots.toLocaleString('en-US')} lots</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">Each row is the smallest of the limit, the free balance and the loss budget, at that premium, fees included.</p>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -342,4 +363,16 @@ function heldMarginOf(status: TradeStatus): number | null {
     total += (spot / leverage) * 0.001 * Math.abs(t.position);
   }
   return total;
+}
+
+/** A label over its value, for the figures laid out in a grid on the card. */
+function Tile({ label, hint, children }: { label: React.ReactNode; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-md bg-muted/60 px-2.5 py-1.5">
+      <dt className={cn('m-0 text-[11.5px] text-muted-foreground', hint && 'cursor-help underline decoration-dotted underline-offset-2')} title={hint}>
+        {label}
+      </dt>
+      <dd className="m-0 mt-0.5 tabular-nums">{children}</dd>
+    </div>
+  );
 }
