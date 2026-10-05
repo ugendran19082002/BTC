@@ -4,6 +4,9 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { ChevronRight, Download, Search, X } from 'lucide-react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { getOrderHistory } from '@/api/trade';
+import { getAccounts } from '@/api/accounts';
+import { accountScope } from '@/lib/account-scope';
+import { AccountTag } from '@/components/trade/AccountTag';
 import type { OrderRecord, OrderStatus } from '@/types/trade';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -148,6 +151,14 @@ export function OrdersPanel() {
     { deps: [from, to] },
   );
   const rows = data?.trades ?? [];
+  // "All accounts": every account's orders are in the list, so each row says whose it is (5 Oct 2026).
+  const everyAccount = accountScope() === null;
+  const accounts = usePoll(() => getAccounts().catch(() => null), 60_000, { enabled: everyAccount });
+  const nameOf = useMemo(() => new Map((accounts.data?.accounts ?? []).map((a) => [a.id, a.name] as const)), [accounts.data]);
+  const accountOf = (r: OrderRecord) => {
+    const id = r.plan?.accountId;
+    return everyAccount && nameOf.size > 1 && id != null && nameOf.has(id) ? { id, name: nameOf.get(id)! } : undefined;
+  };
 
   // Compute breakdown counts across all orders for the current range
   const counts = useMemo(() => {
@@ -407,7 +418,7 @@ export function OrdersPanel() {
       ) : (
         <div className="flex flex-col gap-1.5">
           {paginatedRows.map((r) => (
-            <OrderRow key={r.tradeId} order={r} />
+            <OrderRow key={r.tradeId} order={r} account={accountOf(r)} />
           ))}
         </div>
       )}
@@ -513,7 +524,7 @@ function RangeSummary({ rows }: { rows: OrderRecord[] }) {
   );
 }
 
-function OrderRow({ order }: { order: OrderRecord }) {
+function OrderRow({ order, account }: { order: OrderRecord; account?: { id: number; name: string } }) {
   const [open, setOpen] = useState(false);
   const net = netOf(order);
   const reason = exitReason(order);
@@ -553,6 +564,8 @@ function OrderRow({ order }: { order: OrderRecord }) {
               </Badge>
             )}
             {reason && <span className={cn('text-[11px] font-medium', REASON_TONE[reason])}>{reason}</span>}
+            {/* Whose order it is, on "All accounts". */}
+            <AccountTag account={account} />
             {/* What was done with the option: sold or bought. */}
             <ActionTag action={order.plan?.action} />
             {/* Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */}
@@ -756,6 +769,7 @@ function contractsLine(order: OrderRecord): string {
 /** The download. Plain numbers, so a spreadsheet can add them up. */
 const CSV_COLUMNS = [
   { header: 'trade id', value: (r: OrderRecord) => r.tradeId },
+  { header: 'account id', value: (r: OrderRecord) => r.plan?.accountId },
   { header: 'symbol', value: (r: OrderRecord) => r.symbol },
   // Who placed it, in the download as well as on the screen.
   { header: 'placed_by', value: (r: OrderRecord) => r.plan?.origin ?? 'manual' },
