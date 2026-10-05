@@ -67,24 +67,17 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester; 
    * An account the journal knows is kept: its orders, P&L and strategies are read by its id, and removing it
    * would leave them belonging to nothing. It is switched off instead. (The check a foreign key would make.)
    */
-  const counted = new Map<number, { at: number; trades: number; strategies: number }>();
-  const historyOf = async (id: number, fresh = false): Promise<string | null> => {
-    // For the list, held ten seconds: it is polled, and the answer changes when a trade or a strategy is made.
-    // For a removal, always read now.
-    let c = counted.get(id);
-    if (fresh || !c || Date.now() - c.at > 10_000) {
-      const [t, s] = await Promise.all([tradingService().store.countFor(id), strategyStore().countFor(id)]);
-      c = { at: Date.now(), trades: t, strategies: s };
-      counted.set(id, c);
-    }
-    const { trades, strategies } = c;
+  const historyOf = async (id: number): Promise<string | null> => {
+    // Read now, every time: two counts on indexed columns. Held for ten seconds at first, and the real-time run
+    // showed the list saying "can be removed" for those ten seconds after a strategy was made for the account.
+    const [trades, strategies] = await Promise.all([tradingService().store.countFor(id), strategyStore().countFor(id)]);
     if (trades === 0 && strategies === 0) return null;
     const has = [trades ? `${trades} ${trades === 1 ? 'trade' : 'trades'}` : '', strategies ? `${strategies} ${strategies === 1 ? 'strategy' : 'strategies'}` : ''].filter(Boolean).join(' and ');
     return `This account has ${has} on record, so it is kept. Deactivate it instead.`;
   };
   /** Why an account cannot be removed right now, or null: the last one, one with history, the one the desk is live on. */
-  const keptBecause = async (a: BrokerAccount, fresh = false): Promise<string | null> =>
-    brokerAccounts().removalBlocked(a.id) ?? await historyOf(a.id, fresh) ?? (a.isDefault ? await tradingService().accountSwitchBlocked(true) : null);
+  const keptBecause = async (a: BrokerAccount): Promise<string | null> =>
+    brokerAccounts().removalBlocked(a.id) ?? await historyOf(a.id) ?? (a.isDefault ? await tradingService().accountSwitchBlocked(true) : null);
   const found = (reply: FastifyReply, id: number): BrokerAccount | null => {
     const a = Number.isInteger(id) ? brokerAccounts().get(id) : null;
     if (!a) { reply.code(404); return null; }
@@ -218,7 +211,7 @@ export function registerAccountRoutes(app: FastifyInstance, o: { test?: Tester; 
     const a = found(reply, id);
     if (!a) return { error: 'no such account' };
     try {
-      const kept = await keptBecause(a, true);
+      const kept = await keptBecause(a);
       if (kept) throw new AccountRefused(kept, 409);
       if (!o.auth) return refuse(reply, 409, { error: 'Sign-in is not set up on this server, so a removal cannot be confirmed.' });
       const code = (req.body as { code?: unknown } | undefined)?.code;

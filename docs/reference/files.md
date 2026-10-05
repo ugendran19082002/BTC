@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-397 files listed, 192 test files counted below, images and lockfiles left out.
+398 files listed, 193 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 116 |
-| `app/web` | 76 |
+| `app/web` | 77 |
 
 ## `(root)`
 
@@ -405,6 +405,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [AccountCard.tsx](../../app/web/src/components/trade/AccountCard.tsx) | The money, in plain words: what there is altogether, what is free, what is in use, how today is going after charges, and how much of today's loss limit is left. |
+| [ActionTag.tsx](../../app/web/src/components/trade/ActionTag.tsx) | Whether the option was sold or bought to open (owner, 5 Oct 2026): a label on each position and each order, so a row says what was done as well as on which contract. |
 | [AddLotsSheet.tsx](../../app/web/src/components/trade/AddLotsSheet.tsx) | Sell more of a contract that is already held. |
 | [AlertSwitch.tsx](../../app/web/src/components/trade/AlertSwitch.tsx) | Fill alerts on or off, from the header. |
 | [CloseAllButton.tsx](../../app/web/src/components/trade/CloseAllButton.tsx) | Square off everything. |

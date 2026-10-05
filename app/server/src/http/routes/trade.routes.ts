@@ -236,6 +236,8 @@ export const tradeView = (
        * it always was, a trade somebody placed by hand.
        */
       origin: r.plan.origin ?? (r.plan.strategyId ? 'strategy' : 'manual'),
+      // Sold or bought to open, for the label on Positions and Orders; a trade from before the label was sold.
+      action: r.plan.action ?? 'sell',
       strategyId: r.plan.strategyId ?? null,
       /** The strategy's name -- its current one when the route looked it up (`withStrategyName`). */
       strategyName: r.plan.strategyName ?? null,
