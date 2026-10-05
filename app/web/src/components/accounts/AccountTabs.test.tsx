@@ -50,6 +50,18 @@ describe('the account tabs', () => {
     expect(shownAccount([], null)).toBe('all'); // a desk with no account shows everything, as before
   });
 
+  it('[critical] Strategy has no "All accounts": a remembered "all" shows the default account there', () => {
+    const two = [{ id: 1, name: 'SELL', isDefault: true, active: true }, { id: 2, name: 'BUY', isDefault: false, active: true }] as never;
+    expect(shownAccount(two, 'all')).toBe('all');
+    expect(shownAccount(two, 'all', false)).toBe(1);
+    expect(shownAccount(two, 2, false)).toBe(2);
+    const { unmount } = render(<AccountTabs accounts={two} value={1} onChange={() => {}} withAll={false} />);
+    expect(screen.queryByRole('tab', { name: /All accounts/ })).toBeNull();
+    unmount();
+    render(<AccountTabs accounts={two} value={1} onChange={() => {}} />);
+    expect(screen.getByRole('tab', { name: /All accounts/ })).toBeInTheDocument();
+  });
+
   it('[critical] the screens\' calls ask for the account being shown, and for nothing when it is every account', () => {
     expect(withAccount('/api/strategies')).toBe('/api/strategies');
     setAccountScope(2);

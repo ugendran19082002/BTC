@@ -69,3 +69,32 @@ describe('the position limits on Positions', () => {
     expect(await screen.findByLabelText('long cap')).toHaveTextContent('0 of 25 contracts');
   });
 });
+
+describe('several accounts together ("All accounts")', () => {
+  const combined = (): TradeStatus => ({
+    ...status(), room: undefined,
+    positions: [{ symbol: 'P', size: -11 }, { symbol: 'C', size: 1 }],
+    limits: { ...status().limits, maxShortContracts: 126, maxLongContracts: 1000, maxDailyLossUsd: 26.83 },
+    combined: {
+      lossLeftUsd: 25.65, lossLimitUsd: 26.83,
+      accounts: [
+        { id: 1, name: 'SELL', totalUsd: 75.47, availableUsd: 51.29, openPnlUsd: 1.4, netTodayUsd: 6.16, positions: 2 },
+        { id: 2, name: 'BUY', totalUsd: 2.39, availableUsd: 2.35, openPnlUsd: 0.005, netTodayUsd: -2.997, positions: 1 },
+      ],
+    },
+  } as unknown as TradeStatus);
+
+  it('[critical] the card says it is all of them, lists each account\'s own figures, and its limits are read, not edited', async () => {
+    render(<AccountCard status={combined()} />);
+    expect(screen.getByText('Account · all 2 accounts')).toBeInTheDocument();
+    const rows = within(screen.getByRole('table', { name: 'by account' })).getAllByRole('row');
+    expect(rows[1]).toHaveTextContent('SELL2 open₹6,415+₹119+₹524');
+    expect(rows[2]).toHaveTextContent('BUY1 open₹203');
+    // The summed limits, each side counted from the positions; no Edit, and no one account's setting read over them.
+    expect(await screen.findByLabelText('short cap')).toHaveTextContent('11 of 126 contracts');
+    expect(screen.queryByRole('button', { name: 'Edit the short limit' })).toBeNull();
+    fireEvent.click(limits().getByRole('tab', { name: 'BUY · long limit' }));
+    expect(screen.getByLabelText('long cap')).toHaveTextContent('1 of 1000 contracts');
+    expect(screen.getByLabelText('loss budget left')).toHaveTextContent('₹2,180 of ₹2,281 left');
+  });
+});

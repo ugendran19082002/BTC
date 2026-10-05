@@ -5,7 +5,11 @@ import { swipe } from '@/test/swipe';
 import type { Trade } from '@/types/trade';
 
 const closeAllTrades = vi.fn();
-vi.mock('@/api/trade', () => ({ closeAllTrades: (...a: unknown[]) => closeAllTrades(...a) }));
+const closeAllOnAccounts = vi.fn();
+vi.mock('@/api/trade', () => ({
+  closeAllTrades: (...a: unknown[]) => closeAllTrades(...a),
+  closeAllOnAccounts: (...a: unknown[]) => closeAllOnAccounts(...a),
+}));
 
 /**
  * Close all: see what "all" is, and what it leaves, before agreeing -- and agree
@@ -70,6 +74,21 @@ describe('close all', () => {
     swipe(control, 1);
     await waitFor(() => expect(closeAllTrades).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('All closed')).toBeInTheDocument();
+  });
+
+  it('[critical] several accounts on the screen ("All accounts"): each is named, and every one of them is squared off', async () => {
+    closeAllOnAccounts.mockResolvedValue({ ok: true, closed: ['ce', 'pe'], cancelled: [], failed: [] });
+    openSheet([{ ...ce, account: { id: 1, name: 'SELL' } }, { ...pe, position: 3, account: { id: 2, name: 'BUY' } }]);
+    expect(screen.getByText(/on 2 accounts: SELL, BUY/)).toBeInTheDocument();
+    expect(screen.getByText(/· SELL$/)).toBeInTheDocument();
+    expect(screen.getByText(/· BUY$/)).toBeInTheDocument();
+    // A bought position is sold, not bought back.
+    expect(screen.getByText('sell')).toBeInTheDocument();
+    const control = screen.getByRole('slider', { name: /Swipe to close all 2/ });
+    fireEvent.click(control);
+    swipe(control, 1);
+    await waitFor(() => expect(closeAllOnAccounts).toHaveBeenCalledWith([1, 2]));
+    expect(closeAllTrades).not.toHaveBeenCalled();
   });
 
   it('Keep them sends nothing', () => {
