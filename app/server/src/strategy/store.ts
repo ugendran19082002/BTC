@@ -230,6 +230,19 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    /*
+     * Whether a signal strategy sells its option or buys it (owner, 5 Oct 2026: "the existing strategies are
+     * saved as SELL"). Every one there was sold -- there was nothing else -- so each is written down as that,
+     * in its own config, rather than left to be read as it.
+     */
+    id: 'strategy-009-signal-action',
+    up: `
+      UPDATE strategies
+         SET config = jsonb_set(config, '{signal,action}', '"sell"')
+       WHERE config->>'trigger' = 'signal' AND jsonb_typeof(config->'signal') = 'object' AND NOT (config->'signal' ? 'action');
+    `,
+  },
 ];
 
 /** A config without the settings the desk no longer has. */

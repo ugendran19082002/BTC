@@ -214,11 +214,12 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
           */}
           {tfs.length > 0 && (
             <div role="group" aria-label="SL and TGT distance by timeframe" className="mt-2 rounded-lg border border-solid border-border px-2.5 py-2">
-              <div className="text-[12.5px] font-medium text-foreground">Take a signal only if its SL and TGT are far enough</div>
+              <div className="text-[12.5px] font-medium text-foreground">Take a signal only if its SL and TGT are in range</div>
               <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
                 The distance from the perp entry to the signal&apos;s SL, and to its TGT, in BTC points, for each timeframe:
-                greater than or equal to the number and the signal is taken; nearer and it is skipped, with both prices
-                in the trade history. Each is its own condition, on from any number above 0 — 0 is off.
+                a minimum (≥) and a maximum (≤). Inside both and the signal is taken; nearer than the minimum or further
+                than the maximum and it is skipped, with both prices in the trade history. Each is its own condition,
+                on from any number above 0 — 0 is off.
               </p>
               <div className="mt-1.5 flex flex-col gap-1.5">
                 {tfs.map((tf) => (
@@ -229,17 +230,27 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
                       <span className="text-muted-foreground">≥</span>
                       <NumberField label={`${tf} SL distance pts`} value={rule.minSlPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
                                    onChange={(n) => onChange({ ...rule, minSlPts: { ...(rule.minSlPts ?? {}), [tf]: n } })} />
+                      <span className="text-muted-foreground">≤</span>
+                      <NumberField label={`${tf} SL maximum distance pts`} value={rule.maxSlPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
+                                   onChange={(n) => onChange({ ...rule, maxSlPts: { ...(rule.maxSlPts ?? {}), [tf]: n } })} />
                     </span>
                     <span className="flex items-center gap-1.5">
                       <span className="text-[var(--up)]">TGT</span>
                       <span className="text-muted-foreground">≥</span>
                       <NumberField label={`${tf} TGT distance pts`} value={rule.minTgtPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
                                    onChange={(n) => onChange({ ...rule, minTgtPts: { ...(rule.minTgtPts ?? {}), [tf]: n } })} />
+                      <span className="text-muted-foreground">≤</span>
+                      <NumberField label={`${tf} TGT maximum distance pts`} value={rule.maxTgtPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
+                                   onChange={(n) => onChange({ ...rule, maxTgtPts: { ...(rule.maxTgtPts ?? {}), [tf]: n } })} />
                     </span>
-                    <span className="text-[11px] text-[var(--dim)]">
-                      {(rule.minSlPts?.[tf] ?? 0) > 0 || (rule.minTgtPts?.[tf] ?? 0) > 0
-                        ? [(rule.minSlPts?.[tf] ?? 0) > 0 ? 'SL on' : null, (rule.minTgtPts?.[tf] ?? 0) > 0 ? 'TGT on' : null].filter(Boolean).join(' · ')
-                        : 'both off'}
+                    <span className="text-[11px] text-[var(--dim)]" aria-label={`${tf} distance filters`}>
+                      {(() => {
+                        // What is on, in words: "SL 150+ · TGT up to 900"; nothing set is "all off".
+                        const said = (name: string, least: number, most: number) =>
+                          (least > 0 && most > 0 ? `${name} ${least} to ${most}` : least > 0 ? `${name} ${least}+` : most > 0 ? `${name} up to ${most}` : null);
+                        const on = [said('SL', rule.minSlPts?.[tf] ?? 0, rule.maxSlPts?.[tf] ?? 0), said('TGT', rule.minTgtPts?.[tf] ?? 0, rule.maxTgtPts?.[tf] ?? 0)].filter(Boolean);
+                        return on.length ? on.join(' · ') : 'all off';
+                      })()}
                     </span>
                   </div>
                 ))}
@@ -422,12 +433,12 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
               <ul className="m-0 mt-1 list-none p-0">
                 {live.map((r) => {
                   const p = r.plan!;
-                  const leg = legOfSignal(r.dir!);
+                  const leg = legOfSignal(r.dir!, rule.action === 'buy' ? 'buy' : 'sell');
                   return (
                     <li key={`${r.id}|${r.mode}|${r.tf}`} className="py-0.5 text-[11.5px] leading-snug tabular-nums">
                       <span className="text-muted-foreground">#{r.n} {nameOf(r.id)?.name ?? r.name}{rule.mode === 'single' && tfs.length > 1 ? ` (${r.tf})` : ''}</span>{' '}
                       <span className={r.dir === 'long' ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{r.dir === 'long' ? 'BUY' : 'SELL'}</span>
-                      {' → sells '}<b className="font-semibold text-foreground">{leg}</b>
+                      {rule.action === 'buy' ? ' → buys ' : ' → sells '}<b className="font-semibold text-foreground">{leg}</b>
                       {' · perp SL '}{px(p.stop)}
                       {' · TGT1 '}{px(p.tp1)}
                       {p.tp2 != null && <> · TGT2 {px(p.tp2)}</>}

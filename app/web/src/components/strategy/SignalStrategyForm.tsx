@@ -1,5 +1,5 @@
 import {
-  asSignalConfig, DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, MAX_OPEN_PRESETS, MAX_SIGNAL_OPEN, type SignalRule, type Strategy,
+  actionOf, asSignalConfig, BUY_NOT_LIVE, DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, legOfSignal, MAX_OPEN_PRESETS, MAX_SIGNAL_OPEN, type SignalAction, type SignalRule, type Strategy,
 } from '@/types/strategy';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
@@ -65,13 +65,21 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
   const rule: SignalRule = c.signal ?? DEFAULT_SIGNAL_RULE;
   const setRule = <K extends keyof SignalRule>(k: K, v: SignalRule[K]) =>
     d.setC((p) => ({ ...p, signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), [k]: v } }));
-  const live = Boolean(c.liveOrders);
+  // Bought or sold. A BUY-side strategy is written down only, so its live orders are off and stay off.
+  const buying = actionOf(rule) === 'buy';
+  const live = Boolean(c.liveOrders) && !buying;
+  const setAction = (a: SignalAction) => d.setC((p) => ({
+    ...p,
+    signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), action: a },
+    // Bought: nothing is sent, and the option carries no target limit of its own -- only a stop, off until set.
+    ...(a === 'buy' ? { liveOrders: false, targetMode: 'pct' as const, takeProfitPct: 0, takeProfitPoints: 0, takeProfitAt: 0, targetSteps: [] } : {}),
+  }));
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         title={editing ? `Edit ${editing.name}` : 'New signal strategy'}
-        description="Each TRADE signal of the methods you pick, sold as one option. Times are IST."
+        description={`Each TRADE signal of the methods you pick, ${buying ? 'bought' : 'sold'} as one option. Times are IST.`}
         className="sm:w-[min(760px,94vw)]"
       >
         <NameField value={d.name} onChange={d.setName} touched={d.nameTouched} onTouched={() => d.setNameTouched(true)}
@@ -90,15 +98,36 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
 
           {tab === 'sell' && (
             <>
+              {/*
+                Buy the option or sell it (owner, 5 Oct 2026). Sold is what every strategy did before the choice:
+                a BUY signal sells the put, a SELL the call. Bought, a BUY signal buys the call, a SELL the put.
+              */}
+              <Stack label="Option — buy it or sell it" className="mb-3">
+                <div role="radiogroup" aria-label="option buy or sell" className="flex gap-0.5 rounded-lg bg-muted p-0.5">
+                  {([['buy', 'BUY'], ['sell', 'SELL']] as const).map(([v, label]) => (
+                    <button key={v} type="button" role="radio" aria-checked={actionOf(rule) === v} onClick={() => setAction(v)}
+                            className={cn('m-0 h-9 flex-1 appearance-none rounded-md border-0 px-2 font-[inherit] text-[12.5px] font-semibold',
+                              actionOf(rule) === v ? 'bg-background shadow-sm' : 'bg-transparent text-muted-foreground',
+                              actionOf(rule) === v && (v === 'buy' ? 'text-[var(--up)]' : 'text-[var(--down)]'))}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {buying && (
+                  <p role="note" className="m-0 mt-1.5 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[11.5px] leading-snug text-[var(--warn)]">
+                    {BUY_NOT_LIVE} Each signal is recorded as the order it would be, with its SL and TGT on the perp.
+                  </p>
+                )}
+              </Stack>
               <Stack label="Leg — from the signal">
                 <div className="grid grid-cols-2 gap-2" aria-label="leg from the signal">
                   <div className="rounded-lg bg-muted px-2.5 py-2 text-[12px]">
-                    <span className="font-semibold text-[var(--up)]">BUY</span> signal → sells <b>PE</b>
-                    <span className="mt-0.5 block text-[10.5px] text-muted-foreground">wins as BTC rises or holds</span>
+                    <span className="font-semibold text-[var(--up)]">BUY</span> signal → {buying ? 'buys' : 'sells'} <b>{legOfSignal('long', actionOf(rule))}</b>
+                    <span className="mt-0.5 block text-[10.5px] text-muted-foreground">{buying ? 'wins as BTC rises' : 'wins as BTC rises or holds'}</span>
                   </div>
                   <div className="rounded-lg bg-muted px-2.5 py-2 text-[12px]">
-                    <span className="font-semibold text-[var(--down)]">SELL</span> signal → sells <b>CE</b>
-                    <span className="mt-0.5 block text-[10.5px] text-muted-foreground">wins as BTC falls or holds</span>
+                    <span className="font-semibold text-[var(--down)]">SELL</span> signal → {buying ? 'buys' : 'sells'} <b>{legOfSignal('short', actionOf(rule))}</b>
+                    <span className="mt-0.5 block text-[10.5px] text-muted-foreground">{buying ? 'wins as BTC falls' : 'wins as BTC falls or holds'}</span>
                   </div>
                 </div>
               </Stack>
@@ -184,12 +213,15 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                 <li><b className="text-foreground">Option TP / SL</b> — only if you set them below (0 = off, nothing placed). Set, they rest at Delta: whichever is reached first closes the trade, and they still work if the desk is down.</li>
               </ol>
               <div className="mt-3 text-[12px] text-muted-foreground">
-                Option TP / SL — optional, placed at Delta only when set
+                {buying
+                  ? 'Option SL — optional. A bought option has no target limit of its own: the perp’s TGT closes it. 0 is off.'
+                  : 'Option TP / SL — optional, placed at Delta only when set'}
               </div>
               {/* The "no target and no stop" warning is for a clock strategy; this one always has the perp's SL and TGT. */}
-              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference}
+              {/* Bought: the stop alone. Sold: the target and the stop. */}
+              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} legs={buying ? ['stop'] : ['target', 'stop']}
                                 warnings={d.warnings.filter((w) => !/target and no stop/.test(w))} className="mt-1" />
-              {d.exits.stop.value <= 0 && !d.exits.stop.steps.some((st) => st.value > 0) && (
+              {!buying && d.exits.stop.value <= 0 && !d.exits.stop.steps.some((st) => st.value > 0) && (
                 <p role="note" className="m-0 mt-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[11.5px] leading-snug text-[var(--warn)]">
                   Option stop off — nothing is placed on the option. Only the perp SL protects the trade, and only while the desk can see the perp.{' '}
                   <button type="button" onClick={() => d.setC((p) => ({ ...p, stopMode: 'pct', stopLossPct: 2, stopSteps: [] }))}
@@ -220,11 +252,13 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
             <div className={cn('rounded-lg border border-solid px-2.5 py-1.5', live ? 'border-[var(--down)] bg-[var(--down)]/10' : 'border-border')}>
               <Switch
                 label="Live orders"
-                description={live
-                  ? 'ON — each signal places a real order at Delta.'
-                  : 'Off — each signal is written down as the order it would be. Nothing is sent.'}
+                description={buying
+                  ? 'Off, and it stays off — a BUY strategy is written down only: the desk sends sell orders, not buys.'
+                  : live
+                    ? 'ON — each signal places a real order at Delta.'
+                    : 'Off — each signal is written down as the order it would be. Nothing is sent.'}
                 checked={live}
-                onCheckedChange={(on) => set('liveOrders', on)}
+                onCheckedChange={(on) => { if (!buying) set('liveOrders', on); }}
               />
             </div>
           }

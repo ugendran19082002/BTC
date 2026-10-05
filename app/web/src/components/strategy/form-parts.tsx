@@ -541,7 +541,9 @@ export function EntryPriceFields({ c, set, err, allowSet = true }: {
  * fixed points or a price, and each able to move on a timetable. Shown against
  * the premium the rule asks for, so "80%" reads as the price it is.
  */
-export function OptionExitFields({ c, setC, exits, err, reference, warnings, className }: {
+export function OptionExitFields({ c, setC, exits, err, reference, warnings, className, legs = ['target', 'stop'] }: {
+  /** Which of the two to offer: both, or the stop alone (a bought option has no target limit of its own). */
+  legs?: readonly ('target' | 'stop')[];
   c: StrategyConfig;
   setC: (f: (p: StrategyConfig) => StrategyConfig) => void;
   exits: { target: ExitRule; stop: ExitRule };
@@ -553,7 +555,7 @@ export function OptionExitFields({ c, setC, exits, err, reference, warnings, cla
   return (
     <>
       <div className={cn('flex flex-col gap-2', className)}>
-        {(['target', 'stop'] as const).map((leg) => (
+        {legs.map((leg) => (
           <ExitRuleEditor
             key={leg}
             leg={leg}

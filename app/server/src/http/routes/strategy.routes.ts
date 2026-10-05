@@ -169,18 +169,22 @@ function cleanSignal(raw: unknown): SignalRule {
     target: (r.target ?? 'tp1') as SignalRule['target'],
     maxOpen: r.maxOpen === undefined ? 1 : Math.trunc(Number(r.maxOpen)),
     enterOn: (r.enterOn ?? 'zone') as SignalRule['enterOn'],
+    // Sold unless it says bought: what every strategy saved before the choice existed did.
+    action: (r.action ?? 'sell') as SignalRule['action'],
     ...cleanPts('minSlPts', r.minSlPts),
     ...cleanPts('minTgtPts', r.minTgtPts),
+    ...cleanPts('maxSlPts', r.maxSlPts),
+    ...cleanPts('maxTgtPts', r.maxTgtPts),
   };
 }
 
 /**
- * A distance filter (SL or TGT), per timeframe: each number as sent, a blank or
+ * A distance filter (the least or the most, SL or TGT), per timeframe: each number as sent, a blank or
  * zero left out -- off is no entry -- and the key itself only when one is set,
  * so a strategy that never used it is stored as before. Not a map: left for
  * validation to say.
  */
-function cleanPts<K extends 'minSlPts' | 'minTgtPts'>(key: K, raw: unknown): Partial<Pick<SignalRule, K>> {
+function cleanPts<K extends 'minSlPts' | 'minTgtPts' | 'maxSlPts' | 'maxTgtPts'>(key: K, raw: unknown): Partial<Pick<SignalRule, K>> {
   if (raw === undefined || raw === null) return {};
   if (typeof raw !== 'object' || Array.isArray(raw)) return { [key]: raw } as Partial<Pick<SignalRule, K>>;
   const kept = Object.entries(raw as Record<string, unknown>)

@@ -111,7 +111,8 @@ test('[critical] a signal strategy saves with its signals, live orders off -- an
   assert.equal(r.status, 200, JSON.stringify(r.body));
   const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-bo'");
   assert.equal(row!.config.trigger, 'signal');
-  assert.deepEqual(row!.config.signal, config.signal, 'every signal setting kept, not dropped by the cleaner');
+  // ...and written down as sold: what a strategy is unless it says bought.
+  assert.deepEqual(row!.config.signal, { ...config.signal, action: 'sell' }, 'every signal setting kept, not dropped by the cleaner');
   assert.equal(row!.config.liveOrders, false);
   await api('POST', '/api/strategies/sig-bo/enabled', { enabled: true });
   await tradingService().settings.set('scheduler_enabled', '1');
@@ -720,6 +721,86 @@ test('[critical] SL distance per timeframe: a signal whose SL is nearer than its
   assert.equal(listed.length, 2);
   assert.match(listed[0].detail, /SL too near: .* is 175 pts/);
   await api('POST', '/api/strategies/sig-sl/enabled', { enabled: false });
+});
+
+test('[critical] a maximum too: a signal whose SL or TGT is further than its timeframe\'s most is skipped, 0 is off, and a most under its least is refused', async () => {
+  // The signal: entry 84,975, SL 84,600 -- 375 pts; TGT1 85,500 -- 525 pts.
+  const ranged = { ...config, signal: { ...config.signal, tfs: ['5m', '15m'], maxOpen: 10, maxSlPts: { '5m': 300, '15m': 0 }, maxTgtPts: { '5m': 400, '1h': '' } } };
+  const crossed = await api('POST', '/api/strategies', { name: 'Sig max', config: { ...ranged, signal: { ...ranged.signal, minSlPts: { '5m': 500 } } } });
+  assert.equal(crossed.status, 422);
+  assert.ok(crossed.body.problems.includes('The SL maximum for 5m (300) is under its minimum (500): no signal could pass both.'), crossed.body.problems.join(' '));
+  const over = await api('POST', '/api/strategies', { name: 'Sig max', config: { ...ranged, signal: { ...ranged.signal, maxTgtPts: { '5m': 100_001 } } } });
+  assert.ok(over.body.problems.includes('The TGT maximum distance for 5m must be from 0 to 100,000 points.'), over.body.problems.join(' '));
+
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig max', config: ranged })).status, 200);
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-max'");
+  assert.deepEqual([row!.config.signal.maxSlPts, row!.config.signal.maxTgtPts], [{ '5m': 300 }, { '5m': 400 }], 'a blank or zero is no entry: off');
+  const plain = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-sl'");
+  assert.equal('maxSlPts' in plain!.config.signal || 'maxTgtPts' in plain!.config.signal, false, 'a strategy that never used it is stored as before');
+
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  await api('POST', '/api/strategies/sig-max/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const last = async () => (await runsOf('sig-max')).at(-1)!;
+
+  await runner.onSignal(signal());                       // 5m: SL 375 against at most 300, TGT 525 against at most 400 -- both said
+  const skipped = await last();
+  assert.equal(skipped.status, 'skipped', skipped.detail);
+  assert.equal(skipped.detail, '#1 Breakout BUY | SL too far: the perp entry 84975 to the SL 84600 is 375 pts — this strategy takes 5m signals only at 300 pts or less; '
+    + 'TGT too far: the perp entry 84975 to the TGT 85500 is 525 pts — this strategy takes 5m signals only at 400 pts or less');
+  assert.equal(skipped.trade_id, null);
+
+  await runner.onSignal(signal({ tf: '15m' }));          // 15m: no maximum set -- taken as before
+  assert.equal((await last()).status, 'would-place', (await last()).detail);
+
+  // exactly at the maximum is inside it: SL 300 pts, TGT 400 pts
+  await runner.onSignal(signal({ plan: { entryLo: 84_950, entryHi: 85_000, stop: 84_675, tp1: 85_375, tp2: null, tp3: null, tpWhy: [], rr: 1 } }));
+  assert.equal((await last()).status, 'would-place', (await last()).detail);
+
+  // a SELL is measured the same way: the stop above the entry, 475 pts against at most 300
+  await runner.onSignal(signal({ dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_500, tp1: 84_700, tp2: null, tp3: null, tpWhy: [], rr: 1 } }));
+  assert.match((await last()).detail, /SELL \| SL too far: the perp entry 85025 to the SL 85500 is 475 pts — this strategy takes 5m signals only at 300 pts or less$/);
+  await api('POST', '/api/strategies/sig-max/enabled', { enabled: false });
+});
+
+// ------------------------------------------------------------ bought or sold
+
+test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put -- written down at the offer, never sent, and never live', async () => {
+  const bought = { ...config, signal: { ...config.signal, tfs: ['5m'], maxOpen: 10, action: 'buy' } };
+  // Live orders cannot be on for it: there is no buy order the desk can send.
+  const live = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...bought, liveOrders: true } });
+  assert.equal(live.status, 422);
+  assert.ok(live.body.problems.includes('A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.'), live.body.problems.join(' '));
+  const odd = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...bought, signal: { ...bought.signal, action: 'hold' } } });
+  assert.ok(odd.body.problems.includes('Pick whether the option is bought or sold.'), odd.body.problems.join(' '));
+
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig buy', config: bought })).status, 200);
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-buy'");
+  assert.equal(row!.config.signal.action, 'buy');
+
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  await api('POST', '/api/strategies/sig-buy/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const last = async () => (await runsOf('sig-buy')).at(-1)!;
+  const tradesBefore = (await rows('SELECT trade_id FROM trades')).length;
+
+  await runner.onSignal(signal());                       // a BUY signal: the call, bought
+  const up = await last();
+  assert.equal(up.status, 'would-place', up.detail);
+  assert.match(up.detail, /^#1 Breakout BUY \| written down only: would buy CE \d+ x1 @ [\d.]+ · perp SL 84600 · TGT 85500$/);
+  assert.equal(up.trade_id, null);
+
+  await runner.onSignal(signal({ dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1 } }));
+  assert.match((await last()).detail, /SELL \| written down only: would buy PE \d+ x1 @ [\d.]+ · perp SL 85400 · TGT 84500$/, 'a SELL signal: the put, bought');
+
+  assert.equal((await rows('SELECT trade_id FROM trades')).length, tradesBefore, 'nothing was placed: no trade, no order');
+  await api('POST', '/api/strategies/sig-buy/enabled', { enabled: false });
 });
 
 test('[critical] at the zone, the distance is measured from the fill -- and with the chain the filter is not read', async () => {

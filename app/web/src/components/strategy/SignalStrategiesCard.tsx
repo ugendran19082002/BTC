@@ -1,3 +1,4 @@
+import { BUY_NOT_LIVE } from '@/types/strategy';
 import { canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
@@ -491,11 +492,14 @@ export function SignalStrategiesCard() {
                     role="switch"
                     aria-checked={live}
                     aria-label={`Live orders for ${s.name}`}
-                    disabled={busy === `live-${s.id}`}
+                    // A BUY-side strategy is written down only: the desk sends sell orders, so there is nothing to switch on.
+                    disabled={busy === `live-${s.id}` || s.config.signal?.action === 'buy'}
+                    title={s.config.signal?.action === 'buy' ? BUY_NOT_LIVE : undefined}
                     onClick={() => setLive(s, !live)}
                   >
                     {busy === `live-${s.id}` && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {confirmLive === s.id ? 'Tap again: real orders' : live ? 'Live orders ON' : 'Live orders off'}
+                    {s.config.signal?.action === 'buy' ? 'BUY · written down only'
+                      : confirmLive === s.id ? 'Tap again: real orders' : live ? 'Live orders ON' : 'Live orders off'}
                   </Button>
                   <Button size="sm" variant="ghost" className="h-8" onClick={() => { setEditing(s); setFormOpen(true); }}>
                     <Pencil className="h-3 w-3" /> Edit

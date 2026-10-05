@@ -412,6 +412,71 @@ describe('the method list: profitable by a rule you can see, and filtered by res
   });
 });
 
+describe('bought or sold: the BUY and SELL tabs over the leg', () => {
+  const legs = () => screen.getByLabelText('leg from the signal');
+
+  it('[critical] SELL is what a strategy is: a BUY signal sells the PE, a SELL the CE -- and an older strategy reads as SELL', () => {
+    const { unmount } = render(<SignalStrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
+    tab('Strike & lots');
+    const sides = within(screen.getByRole('radiogroup', { name: 'option buy or sell' }));
+    expect(sides.getAllByRole('radio').map((r) => r.textContent)).toEqual(['BUY', 'SELL']);
+    expect(sides.getByRole('radio', { name: 'SELL' })).toBeChecked();
+    expect(legs()).toHaveTextContent('BUY signal → sells PEwins as BTC rises or holds');
+    expect(legs()).toHaveTextContent('SELL signal → sells CEwins as BTC falls or holds');
+    unmount();
+    // Saved before the choice existed: no `action` on it at all.
+    const older = signalStrategy();
+    delete (older.config.signal as Partial<SignalRule>).action;
+    show(older);
+    tab('Strike & lots');
+    expect(within(screen.getByRole('radiogroup', { name: 'option buy or sell' })).getByRole('radio', { name: 'SELL' })).toBeChecked();
+  });
+
+  it('[critical] BUY: a BUY signal buys the CE, a SELL the PE; no option target, only a stop; written down only -- and saved as bought', async () => {
+    show(signalStrategy({}, { liveOrders: true, takeProfitPct: 0.5 }));
+    tab('Strike & lots');
+    radio('option buy or sell', 'BUY');
+    expect(legs()).toHaveTextContent('BUY signal → buys CEwins as BTC rises');
+    expect(legs()).toHaveTextContent('SELL signal → buys PEwins as BTC falls');
+    expect(screen.getByRole('note')).toHaveTextContent('A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.');
+    expect(screen.getByText(/a BUY buys a call, a SELL a put \(written down only, not sent\)/)).toBeInTheDocument();
+
+    // Live orders went off with the choice, and do not come back on.
+    const live = screen.getByRole('switch', { name: /Live orders/ });
+    expect(live).not.toBeChecked();
+    fireEvent.click(live);
+    expect(live).not.toBeChecked();
+    expect(screen.getByText(/Off, and it stays off — a BUY strategy is written down only/)).toBeInTheDocument();
+
+    // The option's own exits: the stop alone, off at 0; no target limit.
+    tab('Entry & exit');
+    expect(screen.queryByLabelText('Take profit percent')).toBeNull();
+    expect(screen.getByLabelText('Stop loss percent')).toBeInTheDocument();
+    expect(screen.getByText(/A bought option has no target limit of its own: the perp’s TGT closes it\. 0 is off\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Add one: \+200%/)).toBeNull(); // the seller's advice is not the buyer's
+
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.action).toBe('buy');
+    expect(saved().config.liveOrders).toBe(false);
+    expect(saved().config.takeProfitPct).toBe(0);
+  });
+
+  it('back to SELL: the target comes back, and live orders can be switched on again', () => {
+    show(signalStrategy({ action: 'buy' }));
+    tab('Entry & exit');
+    expect(screen.queryByLabelText('Take profit percent')).toBeNull();
+    tab('Strike & lots');
+    radio('option buy or sell', 'SELL');
+    expect(legs()).toHaveTextContent('BUY signal → sells PE');
+    tab('Entry & exit');
+    expect(screen.getByLabelText('Take profit percent')).toBeInTheDocument();
+    const live = screen.getByRole('switch', { name: /Live orders/ });
+    fireEvent.click(live);
+    expect(live).toBeChecked();
+  });
+});
+
 describe('the exits: the perp first, the option as the backstop', () => {
   it('[critical] a new strategy puts NOTHING on the option: target and stop off until you set them', async () => {
     show(null);
@@ -847,8 +912,13 @@ describe('the SL and TGT distance filters: two numbers of points for each timefr
       expect(within(group()).getByLabelText(`${tf} TGT distance pts`)).toHaveValue('0');
     }
     expect(within(group()).queryByLabelText('1h SL distance pts')).not.toBeInTheDocument();
-    expect(within(group()).getAllByText('both off')).toHaveLength(2);
-    expect(within(group()).getByText(/greater than or equal to the number and the signal is taken; nearer and it is skipped/)).toBeInTheDocument();
+    // And a maximum beside each, 0 -- off -- the same way.
+    for (const tf of ['5m', '15m']) {
+      expect(within(group()).getByLabelText(`${tf} SL maximum distance pts`)).toHaveValue('0');
+      expect(within(group()).getByLabelText(`${tf} TGT maximum distance pts`)).toHaveValue('0');
+    }
+    expect(within(group()).getAllByText('all off')).toHaveLength(2);
+    expect(within(group()).getByText(/a minimum \(≥\) and a maximum \(≤\)\. Inside both and the signal is taken; nearer than the minimum or further\s+than the maximum and it is skipped/)).toBeInTheDocument();
     expect(within(group()).getByText(/on from any number above 0 — 0 is off/)).toBeInTheDocument();
     radio('signal way', 'With the timeframe chain');
     expect(screen.queryByRole('group', { name: 'SL and TGT distance by timeframe' })).not.toBeInTheDocument();
@@ -857,12 +927,28 @@ describe('the SL and TGT distance filters: two numbers of points for each timefr
   it('[critical] each is its own condition: a number above 0 switches that one on, and the row says which are on', () => {
     show(single());
     fireEvent.change(screen.getByLabelText('5m TGT distance pts'), { target: { value: '400' } });
-    expect(within(group()).getByText('TGT on')).toBeInTheDocument();
+    expect(within(group()).getByText('TGT 400+')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('5m SL distance pts'), { target: { value: '150' } });
-    expect(within(group()).getByText('SL on · TGT on')).toBeInTheDocument();
+    expect(within(group()).getByText('SL 150+ · TGT 400+')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('5m TGT distance pts'), { target: { value: '0' } });
-    expect(within(group()).getByText('SL on')).toBeInTheDocument();
-    expect(within(group()).getAllByText('both off')).toHaveLength(1);      // 15m untouched
+    expect(within(group()).getByText('SL 150+')).toBeInTheDocument();
+    expect(within(group()).getAllByText('all off')).toHaveLength(1);      // 15m untouched
+  });
+
+  it('[critical] a maximum beside each minimum: on from any number above 0, said in words, saved -- and one under its minimum is refused', async () => {
+    show(single());
+    fireEvent.change(screen.getByLabelText('5m SL maximum distance pts'), { target: { value: '600' } });
+    expect(screen.getByLabelText('5m distance filters')).toHaveTextContent('SL up to 600');
+    fireEvent.change(screen.getByLabelText('5m SL distance pts'), { target: { value: '150' } });
+    fireEvent.change(screen.getByLabelText('5m TGT maximum distance pts'), { target: { value: '900' } });
+    expect(screen.getByLabelText('5m distance filters')).toHaveTextContent('SL 150 to 600 · TGT up to 900');
+    expect(screen.getByLabelText('15m distance filters')).toHaveTextContent('all off');
+
+    // Under its own minimum no signal could pass: said, in the server's words.
+    fireEvent.change(screen.getByLabelText('5m SL maximum distance pts'), { target: { value: '100' } });
+    expect(await screen.findByText('The SL maximum for 5m (100) is under its minimum (150): no signal could pass both.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('5m SL maximum distance pts'), { target: { value: '600' } });
+    await waitFor(() => expect(screen.queryByText(/is under its minimum/)).toBeNull());
   });
 
   it('[critical] picking another timeframe adds its fields; each keeps its own numbers, and all of it is saved', async () => {

@@ -252,7 +252,8 @@ window. A premium rule, the strategy's or a block's, may carry `minOtm` (1-20),
 the nearest strike its own pick may be, and beside it `elseOtm` (1-20), the
 strike sold when the pick is nearer. A signal rule may carry `minSlPts`
 and `minTgtPts` (`{ "5m": 150 }`): the least distance from the perp entry to
-the SL, and to the target, per timeframe. Each key is written only when set. Absent, they read as a
+the SL, and to the target, per timeframe; and since 5 Oct 2026 `maxSlPts` and
+`maxTgtPts`, the most each may be. Each key is written only when set. Absent, they read as a
 percentage all day and no fallback (`exitRules()`, `cleanConfig()`). Which stage
 of a timetable a trade is on is not stored: it is a function of the clock.
 

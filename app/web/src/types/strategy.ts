@@ -195,29 +195,49 @@ export type SignalRule = {
   minSlPts?: Partial<Record<SignalTf, number>>;
   /** The same on the other side: the least distance from the perp entry to the target the trade exits at. Absent or 0: no filter. */
   minTgtPts?: Partial<Record<SignalTf, number>>;
+  /** The other end of each: the most distance from the perp entry to the SL, and to the target; further, the signal is skipped. Absent or 0: no maximum. */
+  maxSlPts?: Partial<Record<SignalTf, number>>;
+  maxTgtPts?: Partial<Record<SignalTf, number>>;
+  /**
+   * What is done with the option: `sell` (a BUY signal sells the put, a SELL the call -- every strategy before the
+   * choice) or `buy` (a BUY signal buys the call, a SELL the put). Absent reads as `sell`. A `buy` strategy is
+   * written down only: the desk sends sell orders, so its live orders cannot be switched on (server: BUY_NOT_LIVE).
+   */
+  action?: SignalAction;
 };
+export type SignalAction = 'sell' | 'buy';
+export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
+/** Why a BUY-side strategy cannot have live orders on (the server's words). */
+export const BUY_NOT_LIVE = 'A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.';
 /** The most an SL-distance filter may ask for (server: MAX_SL_PTS). */
 export const MAX_SL_PTS = 100_000;
 
-/** The timeframes a rule filters by SL distance, with their points: only the ones it takes signals on, and only above zero. */
-export function slFilters(rule: SignalRule): { tf: SignalTf; pts: number }[] {
-  return distanceFilters(rule, rule.minSlPts);
+/** A timeframe's distance filter: `pts` the least (0: none), `max` the most (0: none). */
+export type DistanceFilter = { tf: SignalTf; pts: number; max: number };
+
+/** The timeframes a rule filters by SL distance, with their points: only the ones it takes signals on, and only where a least or a most is set. */
+export function slFilters(rule: SignalRule): DistanceFilter[] {
+  return distanceFilters(rule, rule.minSlPts, rule.maxSlPts);
 }
 
 /** The same for the TGT distance. */
-export function tgtFilters(rule: SignalRule): { tf: SignalTf; pts: number }[] {
-  return distanceFilters(rule, rule.minTgtPts);
+export function tgtFilters(rule: SignalRule): DistanceFilter[] {
+  return distanceFilters(rule, rule.minTgtPts, rule.maxTgtPts);
 }
 
-function distanceFilters(rule: SignalRule, by: Partial<Record<SignalTf, number>> | undefined): { tf: SignalTf; pts: number }[] {
+type ByTf = Partial<Record<SignalTf, number>> | undefined;
+function distanceFilters(rule: SignalRule, least: ByTf, most: ByTf): DistanceFilter[] {
   if (rule.mode !== 'single') return [];
-  return (rule.tfs ?? [rule.tf]).map((tf) => ({ tf, pts: by?.[tf] ?? 0 })).filter((x) => x.pts > 0);
+  return (rule.tfs ?? [rule.tf]).map((tf) => ({ tf, pts: least?.[tf] ?? 0, max: most?.[tf] ?? 0 })).filter((x) => x.pts > 0 || x.max > 0);
 }
 
-/** The leg a signal is sold as: a BUY sells the put, a SELL the call. */
-export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');
+/** The leg a signal is traded as. Sold: a BUY sells the put, a SELL the call. Bought: a BUY buys the call, a SELL the put. */
+export const legOfSignal = (dir: 'long' | 'short' | 1 | -1, action: SignalAction = 'sell'): 'CE' | 'PE' => {
+  const up = dir === 'long' || dir === 1;
+  return action === 'buy' ? (up ? 'CE' : 'PE') : (up ? 'PE' : 'CE');
+};
 
-export const DEFAULT_SIGNAL_RULE: SignalRule = { mode: 'mtf', tf: '5m', tfs: ['5m'], methods: [], target: 'tp1', maxOpen: 1, enterOn: 'zone' };
+export const DEFAULT_SIGNAL_RULE: SignalRule = { mode: 'mtf', tf: '5m', tfs: ['5m'], methods: [], target: 'tp1', maxOpen: 1, enterOn: 'zone', action: 'sell' };
 
 /**
  * The timeframes a rule without the chain takes: `tfs`, or the one `tf` it was saved with. An empty `tfs` is

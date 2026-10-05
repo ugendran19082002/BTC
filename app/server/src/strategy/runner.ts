@@ -6,7 +6,7 @@ import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
-import { GLOBAL_MAX_OPEN_KEY, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, onDeskAccount, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, actionOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, onDeskAccount, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -405,7 +405,7 @@ export class StrategyRunner {
     if (!s.config.liveOrders || !inSignalWindow(s, this.now())) return;
     const snap = await this.signalBoard().catch(() => null);
     if (!snap || !snap.live || !snap.isDaily) return;
-    const leg = legOfSignal(r.dir === 'long' ? 1 : -1);
+    const leg = legOfSignal(r.dir === 'long' ? 1 : -1, actionOf(s.config.signal));
     const at = strikePickAt(s.config, istMinutes(this.now()));
     const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
     const chosen = sel.legs[0];
@@ -448,7 +448,10 @@ export class StrategyRunner {
      */
     const needSl = minSlPtsFor(rule, r.tf);
     const needTgt = minTgtPtsFor(rule, r.tf);
-    if (needSl > 0 || needTgt > 0) {
+    // And the most each may be (5 Oct 2026): a stop or a target further than its timeframe's maximum is skipped the same way.
+    const mostSl = maxSlPtsFor(rule, r.tf);
+    const mostTgt = maxTgtPtsFor(rule, r.tf);
+    if (needSl > 0 || needTgt > 0 || mostSl > 0 || mostTgt > 0) {
       const from = fill?.fillPrice ?? perpNow() ?? (plan.entryLo + plan.entryHi) / 2;
       // The target the trade would exit at: the rule's, TGT1 where the signal has no TGT2 / TGT3.
       const tgt = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
@@ -458,7 +461,13 @@ export class StrategyRunner {
           ? `${name} too near: the perp entry ${Math.round(from)} to the ${name} ${Math.round(level)} is ${Math.round(pts)} pts — this strategy takes ${r.tf} signals only at ${need} pts or more`
           : null;
       };
-      const why = [near('SL', plan.stop, needSl), near('TGT', tgt, needTgt)].filter(Boolean);
+      const far = (name: string, level: number, most: number) => {
+        const pts = Math.abs(from - level);
+        return most > 0 && pts > most
+          ? `${name} too far: the perp entry ${Math.round(from)} to the ${name} ${Math.round(level)} is ${Math.round(pts)} pts — this strategy takes ${r.tf} signals only at ${most} pts or less`
+          : null;
+      };
+      const why = [near('SL', plan.stop, needSl), far('SL', plan.stop, mostSl), near('TGT', tgt, needTgt), far('TGT', tgt, mostTgt)].filter(Boolean);
       if (why.length) { await finish('skipped', why.join('; ')); return; }
     }
 
@@ -497,8 +506,9 @@ export class StrategyRunner {
     if (!snap || !snap.live) { await finish('skipped', 'no live option board'); return; }
     if (!snap.isDaily) { await finish('skipped', 'the nearest expiry is not the daily contract'); return; }
 
-    // The signal's leg: one, whatever `legs` says.
-    const leg = legOfSignal(dir);
+    // The signal's leg: one, whatever `legs` says. Sold, it is the put on a BUY; bought, the call.
+    const action = actionOf(rule);
+    const leg = legOfSignal(dir, action);
     // The strike rule in force at this minute: the strategy's own, or the block the clock has reached.
     const at = strikePickAt(s.config, istMinutes(now));
     const block = at.block > 0 ? ` · block ${at.block + 1}, from ${time12(at.from)}` : '';
@@ -521,6 +531,20 @@ export class StrategyRunner {
     const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
       + elseWords(chosen)
       + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
+
+    /*
+     * A BUY-side strategy: written down as the order it would be, and never sent (5 Oct 2026). The engine sells
+     * to open -- its orders, its gates, its P&L -- so there is no path here to a bought option, with live orders
+     * on or off; the seller's gates (premium floor, margin, short cap) are not asked either, being the seller's.
+     * A buyer pays the offer, so that is the price written; no offer, nothing to buy at.
+     */
+    if (action === 'buy') {
+      const bought = `buy ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.ask ?? '—'}`
+        + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
+      if (!(Number(chosen.ask) > 0)) { await finish('refused', `refused: ${leg} ${chosen.strike} has no offer to buy at${block}`); return; }
+      await finish('would-place', `written down only: would ${bought}`);
+      return;
+    }
 
     if (!s.config.liveOrders) {
       const p = await svc.wouldPlace(args);

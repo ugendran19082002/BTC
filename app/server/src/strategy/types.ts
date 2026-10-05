@@ -338,7 +338,33 @@ export type SignalRule = {
    * cross twice. Absent or 0 for a timeframe: no filter. Not read with the chain.
    */
   minTgtPts?: Partial<Record<SignalTf, number>>;
+  /**
+   * The other end of each (owner, 5 Oct 2026): per timeframe, the most distance in BTC points from the perp
+   * entry to the signal's SL, and to its target, for the signal to be taken. A stop a long way off is a loss
+   * larger than the option's premium is paid for; a target a long way off is one the day rarely reaches. A
+   * signal further than the number is skipped and the history says so. Absent or 0 for a timeframe: no
+   * maximum -- every strategy saved before it. Not read with the chain. Where a timeframe has both, the
+   * maximum is not under the minimum.
+   */
+  maxSlPts?: Partial<Record<SignalTf, number>>;
+  maxTgtPts?: Partial<Record<SignalTf, number>>;
+  /**
+   * What is done with the option (owner, 5 Oct 2026): `sell` -- a BUY signal sells the put, a SELL the call,
+   * what every signal strategy did before this -- or `buy` -- a BUY signal buys the call, a SELL the put.
+   * Absent reads as `sell`.
+   *
+   * **A `buy` strategy is written down, never sent.** The trading engine sells to open and buys to close, in
+   * every order it places, every gate and every figure (trading/engine.ts, machine.ts, precheck.ts); a long
+   * option is none of those. So each signal of a `buy` strategy is recorded as the order it would be ("would
+   * buy CE 84000 x1 @ 18.5") with the perp's SL and TGT, live orders cannot be switched on for it, and its
+   * record on the perp is kept like any other. Sending them is engine work with a live test of its own.
+   */
+  action?: SignalAction;
 };
+export type SignalAction = 'sell' | 'buy';
+export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
+/** Why a BUY-side strategy cannot have live orders on: said by the form, the card and the server alike. */
+export const BUY_NOT_LIVE = 'A BUY strategy is written down only for now: the desk sends sell orders, not buys, so its live orders stay off.';
 export type SignalEntry = 'zone' | 'signal';
 /** The most an SL-distance filter may ask for: beyond this is a typo, not a filter. */
 export const MAX_SL_PTS = 100_000;
@@ -351,6 +377,16 @@ export function minSlPtsFor(rule: Pick<SignalRule, 'mode' | 'minSlPts'>, tf: str
 /** The least TGT distance a rule asks of a signal on this timeframe; 0 is no filter. */
 export function minTgtPtsFor(rule: Pick<SignalRule, 'mode' | 'minTgtPts'>, tf: string): number {
   return ptsFor(rule.mode, rule.minTgtPts, tf);
+}
+
+/** The most SL distance a rule allows a signal on this timeframe; 0 is no maximum. */
+export function maxSlPtsFor(rule: Pick<SignalRule, 'mode' | 'maxSlPts'>, tf: string): number {
+  return ptsFor(rule.mode, rule.maxSlPts, tf);
+}
+
+/** The most TGT distance a rule allows a signal on this timeframe; 0 is no maximum. */
+export function maxTgtPtsFor(rule: Pick<SignalRule, 'mode' | 'maxTgtPts'>, tf: string): number {
+  return ptsFor(rule.mode, rule.maxTgtPts, tf);
 }
 
 function ptsFor(mode: SignalRule['mode'], by: Partial<Record<SignalTf, number>> | undefined, tf: string): number {
@@ -410,8 +446,14 @@ export function signalEntriesAllowed(strategies: readonly Pick<Strategy, 'enable
     .reduce((n, s) => n + (s.config.signal!.maxOpen ?? 0), 0);
 }
 
-/** The leg a signal is traded as: a BUY sells the put, a SELL the call -- each wins as the signal goes right. */
-export const legOfSignal = (dir: 'long' | 'short' | 1 | -1): 'CE' | 'PE' => (dir === 'long' || dir === 1 ? 'PE' : 'CE');
+/**
+ * The leg a signal is traded as -- each wins as the signal goes right. Selling: a BUY sells the put, a SELL
+ * the call. Buying: a BUY buys the call, a SELL the put.
+ */
+export const legOfSignal = (dir: 'long' | 'short' | 1 | -1, action: SignalAction = 'sell'): 'CE' | 'PE' => {
+  const up = dir === 'long' || dir === 1;
+  return action === 'buy' ? (up ? 'CE' : 'PE') : (up ? 'PE' : 'CE');
+};
 
 /** The timeframes a rule without the chain takes: `tfs`, or the one `tf` it was saved with before there could be several. */
 export const ruleTfs = (rule: Pick<SignalRule, 'tf' | 'tfs'>): SignalTf[] => (rule.tfs?.length ? rule.tfs : [rule.tf]);
@@ -868,6 +910,8 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     bad.push('Strike blocks are for a signal strategy: a clock strategy enters once, under one rule.');
   }
   if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
+  // Buying is written down only: the engine sells to open, so a BUY-side strategy must not be able to send an order.
+  if (c.trigger === 'signal' && c.signal?.action === 'buy' && c.liveOrders === true) bad.push(BUY_NOT_LIVE);
   return bad;
 }
 
@@ -885,17 +929,28 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   else if (r.methods.some((m) => !ids.has(m))) bad.push(`No such method: ${r.methods.filter((m) => !ids.has(m)).join(', ')}.`);
   if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') bad.push('The target must be TGT1, TGT2 or TGT3.');
   if (r.enterOn !== undefined && r.enterOn !== 'zone' && r.enterOn !== 'signal') bad.push('Enter at the entry zone or at the signal.');
+  if (r.action !== undefined && r.action !== 'sell' && r.action !== 'buy') bad.push('Pick whether the option is bought or sold.');
   if (!Number.isInteger(r.maxOpen) || (r.maxOpen ?? 0) < 1 || (r.maxOpen ?? 0) > MAX_SIGNAL_OPEN) {
     bad.push(`At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
   }
-  // The two distance filters, each a number of points per timeframe, held to the same rules.
-  for (const [by, a, name] of [[r.minSlPts, 'an', 'SL'], [r.minTgtPts, 'a', 'TGT']] as const) {
+  // The distance filters -- a least and a most for the SL and for the TGT -- each a number of points per timeframe, held to the same rules.
+  for (const [by, a, name] of [[r.minSlPts, 'an', 'SL'], [r.minTgtPts, 'a', 'TGT'], [r.maxSlPts, 'an', 'SL maximum'], [r.maxTgtPts, 'a', 'TGT maximum']] as const) {
     if (by === undefined || by === null) continue;
     if (typeof by !== 'object' || Array.isArray(by)) { bad.push(`The ${name} distances must be given per timeframe.`); continue; }
     for (const [tf, v] of Object.entries(by)) {
       if (!SIGNAL_TFS.includes(tf as SignalTf)) bad.push(`No such timeframe for ${a} ${name} distance: ${tf}.`);
       else if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_SL_PTS) {
         bad.push(`The ${name} distance for ${tf} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
+      }
+    }
+  }
+  // A maximum under its own minimum takes no signal at all: said, rather than saved as a strategy that never trades.
+  for (const [lo, hi, name] of [[r.minSlPts, r.maxSlPts, 'SL'], [r.minTgtPts, r.maxTgtPts, 'TGT']] as const) {
+    if (!lo || !hi || typeof lo !== 'object' || typeof hi !== 'object') continue;
+    for (const tf of SIGNAL_TFS) {
+      const least = lo[tf], most = hi[tf];
+      if (typeof least === 'number' && typeof most === 'number' && least > 0 && most > 0 && most < least) {
+        bad.push(`The ${name} maximum for ${tf} (${most}) is under its minimum (${least}): no signal could pass both.`);
       }
     }
   }
