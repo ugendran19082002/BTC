@@ -64,7 +64,7 @@ export function MethodLegend({ single, mtf, chosenId, onChoose, embedded = false
                 <td className="pr-2">
                   <button type="button" onClick={() => onChoose(m.id)} className="min-h-[28px] text-left font-medium hover:underline">{m.name}</button>
                   {/* On a phone the "looks for" column folds in under the name. */}
-                  <span className="block text-[11px] leading-snug text-muted-foreground sm:hidden">{m.summary}</span>
+                  <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground sm:hidden">{m.summary}</span>
                 </td>
                 <td className="hidden pr-2 text-muted-foreground md:table-cell">{GROUP_NAME[m.group]}</td>
                 <td className="hidden pr-2 text-muted-foreground sm:table-cell">{m.summary}</td>
