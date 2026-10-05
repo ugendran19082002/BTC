@@ -48,7 +48,12 @@ function levelOf(leg: Leg, entry: number, up: boolean): { level: number | null; 
 export function LongExitsForm({ trade, onDone, onCancel }: { trade: Trade; onDone: () => void; onCancel: () => void }) {
   const entry = trade.entryAvgPrice ?? 0;
   const size = Math.abs(trade.position);
-  const [target, setTarget] = useState<Leg>(() => legOf(trade.plan?.longExits?.target, entry, true, 1));
+  // From the plan; and where the plan does not say (an older server) but a sale is resting, from the book -- so
+  // the form never opens "off" over a target that is there, and saving it as it stands never takes one off.
+  const [target, setTarget] = useState<Leg>(() => legOf(
+    trade.plan?.longExits?.target ?? (trade.onBook?.target != null ? { mode: 'price', value: trade.onBook.target } : undefined),
+    entry, true, 1,
+  ));
   const [stop, setStop] = useState<Leg>(() => legOf(trade.plan?.longExits?.stop, entry, false, 0.5));
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);

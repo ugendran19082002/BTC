@@ -351,6 +351,15 @@ describe('a bought position', () => {
     await waitFor(() => expect(done).toHaveBeenCalledWith(false));
   });
 
+  it('[critical] a target resting at Delta that the plan does not name opens as that price, and saving it keeps it', async () => {
+    const t = bought();
+    render(<EditExitsSheet trade={{ ...t, plan: { ...t.plan!, longExits: undefined } }} open onOpenChange={() => {}} />);
+    expect(screen.getByRole('checkbox', { name: 'target on' })).toBeChecked();
+    expect(screen.getByRole('textbox', { name: 'target price' })).toHaveValue('180');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save exits' })); });
+    expect(updateExits).toHaveBeenCalledWith('t1', { takeProfitPrice: 180, stopLossPct: 0 });
+  });
+
   it('refuses a stop over 100% or a target price under what was paid, before sending', () => {
     render(<EditExitsSheet trade={bought()} open onOpenChange={() => {}} />);
     fireEvent.click(screen.getByRole('checkbox', { name: 'stop on' }));
