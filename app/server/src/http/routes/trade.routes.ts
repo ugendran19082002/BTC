@@ -193,11 +193,19 @@ export const tradeView = (
     long: r.state.position > 0,
     contractValue,
   });
-  // Delta's charges on every fill so far, and what closing the rest at the mark
-  // would add. Same formula as the statement; see trading/charges.ts.
+  /*
+   * The price a close would actually trade at: a bought position is sold at the bid, a short bought back at the
+   * ask; the mark only when that side is not quoted. One price for "to close" and "if closed now" alike -- the
+   * charge is capped at 3.5% of the premium, so pricing one at the mark and the other at the book made the two
+   * figures beside each other disagree (5 Oct 2026).
+   */
+  const side = r.state.position > 0 ? quote?.bid : quote?.ask;
+  const closePx = side !== null && side !== undefined && side > 0 ? side : mark;
+  // Delta's charges on every fill so far, and what closing the rest would add. Same formula as the statement;
+  // see trading/charges.ts.
   const charges = tradeCharges(r.state, { spot });
-  const toCloseUsd = mark !== null && r.state.position !== 0
-    ? fillChargesUsd({ price: mark, contracts: r.state.position, contractValue, spot }).totalUsd
+  const toCloseUsd = closePx !== null && r.state.position !== 0
+    ? fillChargesUsd({ price: closePx, contracts: r.state.position, contractValue, spot }).totalUsd
     : 0;
   /*
    * Why it was closed, in the desk's words -- from the trade's state, or for a trade closed before the state
@@ -308,9 +316,7 @@ export const tradeView = (
       netIfClosedUsd: netIfClosedAt({
         state: r.state,
         // A bought position is sold, so at the bid (5 Oct 2026); a short is bought back at the ask.
-        price: r.state.position > 0
-          ? (quote?.bid !== null && quote?.bid !== undefined && quote.bid > 0 ? quote.bid : mark)
-          : quote?.ask !== null && quote?.ask !== undefined && quote.ask > 0 ? quote.ask : mark,
+        price: closePx,
         spot,
         paidUsd: charges.totalUsd,
       }),
