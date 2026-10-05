@@ -161,3 +161,29 @@ test('[critical] a sale is refused on a contract this account holds bought, and 
   assert.equal(buy.ok, false);
   assert.deepEqual(failureCodes(buy.precheck!), ['DUPLICATE_POSITION']);
 });
+
+test('[critical] the long limit: a buy past it is refused like a sale past the short limit', () => {
+  const base = {
+    now: T0, size: 10, expect: { underlying: 'BTC', optionSide: 'CE' as const, strike: 80_000, expiryTs: ceProduct().expiryTs },
+    product: ceProduct(), quote: quote(CE, 20, 21), feedHealthy: true, tradingEnabled: true,
+    availableUsd: 100, costUsd: 0.22, existingPosition: 0, dayPnlUsd: 0, limits: { ...DEFAULT_LIMITS, maxLongContracts: 25 },
+  };
+  assert.deepEqual(precheckBuy({ ...base, totalLongContracts: 15 }), { ok: true }, '15 + 10 is the limit: allowed');
+  const over = precheckBuy({ ...base, totalLongContracts: 16 });
+  assert.deepEqual(failureCodes(over), ['MAX_POSITION']);
+  assert.equal(over.ok ? '' : over.failures[0]!.message, 'Would take total long to 26, limit is 25.');
+});
+
+test('[critical] the room left on each side: the gates\' own numbers, before an order', async () => {
+  const { roomOf } = await import('../../src/http/routes/trade.routes.js');
+  const r = roomOf({ trades: [-97, 5, -3], freeUsd: 28.81, spot: 85_000, shortLimit: 159, longLimit: 40, lossRoomUsd: 37.84 });
+  assert.deepEqual([r.sell.held, r.sell.byLimit, r.buy.held, r.buy.byLimit], [100, 59, 5, 35]);
+  // 200x: 85,000 / 200 x 0.001 = 0.425 a lot (plus a fee of nothing on a premium of 0): 28.81 carries 67.
+  assert.equal(r.sell.byMargin, 67);
+  assert.equal(r.sell.lots, 59, 'the smaller of the limit and the margin');
+  const at50 = r.buy.byPremium.find((x) => x.premium === 50)!;
+  assert.ok(Math.abs(at50.perLotUsd - (0.05 + 0.05 * 0.035 * 1.18)) < 1e-9, 'premium and fee, as Delta charges it');
+  assert.equal(at50.lots, 35, 'the limit binds before the balance or the loss budget');
+  const at200 = r.buy.byPremium.find((x) => x.premium === 200)!;
+  assert.equal(at200.lots, Math.min(35, Math.floor(28.81 / at200.perLotUsd)));
+});

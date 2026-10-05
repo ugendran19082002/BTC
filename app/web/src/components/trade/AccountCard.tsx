@@ -328,7 +328,8 @@ function LimitLine({ side, held, inForce }: { side: Side; held: number; inForce:
  * is the authority.
  */
 function heldMarginOf(status: TradeStatus): number | null {
-  const rows = status.open.filter((t) => t.position !== 0);
+  // Shorts only: a bought option is paid for in full and holds no margin.
+  const rows = status.open.filter((t) => t.position < 0);
   if (rows.length === 0) return 0;
   let total = 0;
   for (const t of rows) {
