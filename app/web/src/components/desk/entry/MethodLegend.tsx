@@ -13,12 +13,14 @@ import { GROUP_NAME, GateChip, METHOD_VIEWS, NumberBadge, SignalChip, ViewChips,
  * a signal, or one group -- and the body scrolls under a fixed header.
  * Choosing a row chooses that method in both panels.
  */
-export function MethodLegend({ single, mtf, chosenId, onChoose }: {
+export function MethodLegend({ single, mtf, chosenId, onChoose, embedded = false }: {
   single: readonly MethodRead[];
   mtf: readonly MethodRead[];
   /** The method chosen in the panels, when both sides are on the same one. */
   chosenId: string | null;
   onChoose: (id: string) => void;
+  /** Inside the entry setups card: no card of its own, a rule above it instead. */
+  embedded?: boolean;
 }) {
   const [open, setOpen] = useFold('entry-methods');
   const [view, setView] = usePersisted<MethodView>('entry:legend-view', 'all');
@@ -34,12 +36,13 @@ export function MethodLegend({ single, mtf, chosenId, onChoose }: {
   const rows = viewReads(all.map((r) => ({ ...r, state: best(r) })), view);
   const counts = Object.fromEntries(METHOD_VIEWS.map((v) => [v, viewReads(all.map((r) => ({ ...r, state: best(r) })), v).length]));
   return (
-    <section aria-label="entry methods" data-folded={!open} className="fold-host h-full rounded-xl border border-border bg-[var(--panel)] p-2.5">
+    <section aria-label="entry methods" data-folded={!open}
+             className={cn('fold-host', embedded ? 'mt-3 border-0 border-t border-solid border-border pt-2.5' : 'h-full rounded-xl border border-border bg-[var(--panel)] p-2.5')}>
       <div className="fold-head mb-1.5 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="m-0 flex items-center gap-1 text-[13px] font-bold"><FoldButton open={open} onToggle={() => setOpen(!open)} label="entry methods" className="-ml-1" />Entry methods <span className="font-normal text-muted-foreground">· {all.length}, the numbers used on both sides below</span></h3>
+        <h3 className="m-0 flex items-center gap-1 text-[13px] font-bold"><FoldButton open={open} onToggle={() => setOpen(!open)} label="entry methods" className="-ml-1" />Entry methods <span className="font-normal text-muted-foreground">· {all.length}<span className="hidden sm:inline">, the numbers used on both sides below</span></span></h3>
         <ViewChips value={view} onChange={setView} label="methods view" counts={counts} />
       </div>
-      <div className="max-h-[560px] overflow-auto rounded border border-border/60">
+      <div className="max-h-[60vh] overflow-auto rounded border border-border/60 sm:max-h-[560px]">
         <table className="w-full border-collapse text-[12px]" aria-label="entry methods by number">
           <thead className="sticky top-0 z-10 bg-[var(--panel)] text-left text-[11px] text-muted-foreground">
             <tr>

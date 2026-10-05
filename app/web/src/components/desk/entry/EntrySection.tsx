@@ -174,6 +174,14 @@ export function EntrySection({ desk, onTimeframes, belowHeader, bottom }: {
             <div className="col-span-2 sm:col-span-1"><GateSwitches onChanged={() => void rereadBoard()} /></div>
           </div>
         </div>
+        {/*
+          The methods list is the card's lower half (5 Oct 2026): one card for "what the board says" and "which
+          method says it", not two stacked on a phone. Folds with the card, and has its own fold for the long list.
+        */}
+        {open && view === 'panels' && (
+          <MethodLegend embedded single={reads.filter((r) => r.mode === 'single')} mtf={reads.filter((r) => r.mode === 'mtf')}
+                        chosenId={bothId} onChoose={chooseBoth} />
+        )}
       </header>
 
       {/* Kept when the setups fold: the signal strategies have a fold of their own. */}
@@ -183,12 +191,8 @@ export function EntrySection({ desk, onTimeframes, belowHeader, bottom }: {
 
       {view === 'panels' ? (
         <>
-          {/* The methods table three parts wide, the chosen method's hard gates the fourth; stacked below xl. */}
-          <div className="mb-3 grid gap-3 xl:grid-cols-4">
-            <div className="min-w-0 xl:col-span-3">
-              <MethodLegend single={reads.filter((r) => r.mode === 'single')} mtf={reads.filter((r) => r.mode === 'mtf')}
-                            chosenId={bothId} onChoose={chooseBoth} />
-            </div>
+          {/* The chosen method's hard gates, under the card that lists the methods. */}
+          <div className="mb-3">
             <GateChecklist selected={selected} mode={gatesMode === 'single' ? 'single' : 'mtf'} onMode={setGatesMode} />
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
