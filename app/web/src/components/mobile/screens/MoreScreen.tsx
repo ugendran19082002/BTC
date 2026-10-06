@@ -1,13 +1,14 @@
-import { Bell, Bot, History, Landmark, LineChart, Settings } from 'lucide-react';
+import { ArrowDownUp, Bell, Bot, History, Landmark, LineChart, Settings } from 'lucide-react';
 import { usePhone, type Sub } from '@/components/mobile/phone-context';
 import { Panel, ListButton } from '@/components/mobile/parts';
 import { phoneAlerts } from '@/lib/phone-alerts';
 import { DeskSwitch } from '@/components/mobile/DeskSwitch';
 
-/** More (6 Oct 2026): the six screens that do not need a tab of their own, one tap each. */
+/** More (6 Oct 2026): the screens that do not need a tab of their own, one tap each. */
 
 const ITEMS: { sub: Sub; label: string; hint: string; icon: typeof Bell }[] = [
   { sub: 'history', label: 'Trade history', hint: 'Closed trades, filtered', icon: History },
+  { sub: 'pairs', label: 'Signal history pairs', hint: 'Best and worst method + time frame', icon: ArrowDownUp },
   { sub: 'account', label: 'Account', hint: 'Wallet, margin, each account', icon: Landmark },
   { sub: 'market', label: 'Market', hint: 'BTC perp, funding, the next expiry', icon: LineChart },
   { sub: 'strategies', label: 'Strategies', hint: 'Today\'s runs and signals', icon: Bot },
@@ -16,7 +17,7 @@ const ITEMS: { sub: Sub; label: string; hint: string; icon: typeof Bell }[] = [
 ];
 
 export const SUB_TITLE: Record<Sub, string> = {
-  history: 'Trade history', account: 'Account', market: 'Market', strategies: 'Strategies', alerts: 'Alerts', settings: 'Status',
+  history: 'Trade history', pairs: 'Signal pairs', account: 'Account', market: 'Market', strategies: 'Strategies', alerts: 'Alerts', settings: 'Status',
 };
 
 export function MoreScreen() {

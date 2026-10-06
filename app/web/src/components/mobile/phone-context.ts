@@ -11,11 +11,11 @@ import type { TradeStatus } from '@/types/trade';
  */
 
 export type Tab = 'home' | 'pnl' | 'positions' | 'orders' | 'more';
-export type Sub = 'history' | 'account' | 'market' | 'strategies' | 'alerts' | 'settings';
+export type Sub = 'history' | 'pairs' | 'account' | 'market' | 'strategies' | 'alerts' | 'settings';
 export type Route = { tab: Tab; sub: Sub | null; trade: string | null };
 
 export const TABS: readonly Tab[] = ['home', 'pnl', 'positions', 'orders', 'more'];
-export const SUBS: readonly Sub[] = ['history', 'account', 'market', 'strategies', 'alerts', 'settings'];
+export const SUBS: readonly Sub[] = ['history', 'pairs', 'account', 'market', 'strategies', 'alerts', 'settings'];
 
 /** The route in a URL's query: `?tab=orders`, `?tab=more&sub=account`, `?trade=<id>` (the Telegram link). */
 export function routeOf(search: string): Route {

@@ -18,6 +18,7 @@ import { PositionsScreen } from '@/components/mobile/screens/PositionsScreen';
 import { OrdersScreen } from '@/components/mobile/screens/OrdersScreen';
 import { MoreScreen, SUB_TITLE } from '@/components/mobile/screens/MoreScreen';
 import { HistoryScreen } from '@/components/mobile/screens/HistoryScreen';
+import { SignalPairsScreen } from '@/components/mobile/screens/SignalPairsScreen';
 import { AccountScreen } from '@/components/mobile/screens/AccountScreen';
 import { MarketScreen } from '@/components/mobile/screens/MarketScreen';
 import { StrategiesScreen } from '@/components/mobile/screens/StrategiesScreen';
@@ -242,6 +243,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
             : route.tab === 'positions' ? <PositionsScreen />
               : route.tab === 'orders' ? <OrdersScreen />
                 : route.sub === 'history' ? <HistoryScreen />
+                  : route.sub === 'pairs' ? <SignalPairsScreen />
                   : route.sub === 'account' ? <AccountScreen />
                     : route.sub === 'market' ? <MarketScreen />
                       : route.sub === 'strategies' ? <StrategiesScreen />
