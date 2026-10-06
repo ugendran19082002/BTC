@@ -2612,3 +2612,17 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
   /* Price change: "Since entry 12:28" and "Last settlement 17:30" wrap rather than end in "…". */
   .ov-pc-mark .ov-pc-label { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
 }
+
+/* ── The phone's live toasts and waiting pulse (6 Oct 2026) ────────────────────
+   A toast slides down when an order starts waiting, fills or closes; a waiting
+   order's dot breathes. Movement that says something happened -- and none of it
+   for a person who has asked their phone for less motion. */
+@keyframes m-toast-in { from { opacity: 0; transform: translateY(-14px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes m-breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.8); } }
+@keyframes m-arrive { from { box-shadow: 0 0 0 2px var(--up); } to { box-shadow: 0 0 0 2px transparent; } }
+.m-toast { animation: m-toast-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.m-breathe { animation: m-breathe 1.6s ease-in-out infinite; }
+.m-arrive { animation: m-arrive 2.4s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .m-toast, .m-breathe, .m-arrive { animation: none; }
+}
