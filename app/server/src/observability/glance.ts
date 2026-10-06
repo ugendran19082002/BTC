@@ -21,7 +21,9 @@ export type GlanceReadings = {
    * The passes over the open trades in the last five minutes: how many, how many ran past their one second, and
    * the slowest. A pass calls Delta, so one a little over its second is the network, not a fault.
    */
-  passes: { count: number; late: number; maxMs: number | null; tradesNow?: number };
+  passes: { count: number; late: number; maxMs: number | null; tradesNow?: number; slowestTrades?: number | null; slowestAt?: number | null };
+  /** The longest the server's one thread was held in the last minute sampled: the hold every timer waited behind. */
+  threadMaxMs?: number | null;
   errors: { open: number; lastAt: number | null };
   schedulerOn: boolean;
   mode: 'live' | 'paper';
@@ -72,11 +74,18 @@ export function judge(r: GlanceReadings): { health: Health; issues: GlanceIssue[
   if (p.maxMs !== null && p.maxMs >= PASS_SLOW_MS) {
     // What waits on a pass, said exactly (6 Oct 2026): not the perp SL/TGT, which the fast watch reads ten times a
     // second, and not the stop resting at Delta -- the fills, the exit times and the desk's own option-stop check.
-    const n = p.tradesNow ?? null;
+    // The count is the slow pass's own; with one trade or none in it, polling trades was not the cause, so say what was.
+    const n = p.slowestTrades ?? null;
+    const ago = p.slowestAt != null ? `, ${secs(Math.max(0, r.now - p.slowestAt))} ago` : '';
+    const cause = n !== null && n <= 1
+      ? (r.threadMaxMs != null && r.threadMaxMs >= 1_000
+        ? ` With ${n} trade${n === 1 ? '' : 's'} in it, not the number of trades: likely the server being busy (its thread was held up to ${secs(r.threadMaxMs)}).`
+        : ` With ${n} trade${n === 1 ? '' : 's'} in it, not the number of trades: likely a slow answer from Delta or the database.`)
+      : '';
     issues.push({
       level: 'warn',
-      text: `One pass over the open trades${n !== null ? ` (${n} open)` : ''} took ${secs(p.maxMs)} in the last 5 min: `
-        + 'fills, exit times and the desk\'s own option-stop check waited that long. Perp SL/TGT have their own fast watch; every stop also rests at Delta.',
+      text: `One pass over the open trades${n !== null ? ` (${n} in it)` : ''} took ${secs(p.maxMs)}${ago}: `
+        + `fills, exit times and the desk's own option-stop check waited that long. Perp SL/TGT have their own fast watch; every stop also rests at Delta.${cause}`,
     });
   } else if (p.count >= PASS_MIN_COUNT && p.late / p.count >= PASS_LATE_SHARE) {
     issues.push({ level: 'warn', text: `The check on the open trades ran over its second ${p.late} of ${p.count} times in the last 5 min: the desk is falling behind.` });

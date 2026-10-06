@@ -195,7 +195,11 @@ export function registerDeskRoutes(app: FastifyInstance) {
       board: { source: board.source, connected: board.connected, lastAt: newest(board.lastMessageAt, board.batchAt) },
       tape: { source: tape.source, connected: tape.connected, lastAt: tape.lastMessageAt },
       delta: { usedPct: metrics.delta.usedPct, rateLimited: metrics.delta.rateLimited.inWindow, failed: metrics.delta.failed },
-      passes: { count: metrics.passes.count, late: metrics.passes.late, maxMs: metrics.passes.maxMs, tradesNow: metrics.passes.tradesNow },
+      passes: {
+        count: metrics.passes.count, late: metrics.passes.late, maxMs: metrics.passes.maxMs, tradesNow: metrics.passes.tradesNow,
+        slowestTrades: metrics.passes.slowest?.trades ?? null, slowestAt: metrics.passes.slowest?.at ?? null,
+      },
+      threadMaxMs: metrics.thread?.maxMs ?? null,
       errors: { open: errors.length, lastAt: errors[0]?.lastSeen ?? null },
       schedulerOn: svc.settings.get('scheduler_enabled') === '1',
       mode: svc.mode,

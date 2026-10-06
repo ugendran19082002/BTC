@@ -67,9 +67,20 @@ test('[critical] a few passes a little over their second are the network, not a 
 });
 
 test('one pass of five seconds or more warns: the stops were watched that much late', () => {
-  const j = judge({ ...healthy(), passes: { count: 300, late: 1, maxMs: 9_000, tradesNow: 19 } });
+  const j = judge({ ...healthy(), passes: { count: 300, late: 1, maxMs: 9_000, tradesNow: 0, slowestTrades: 19, slowestAt: NOW - 120_000 } });
   assert.equal(j.health, 'warn');
-  // What the live desk showed (6 Oct 2026, evening), said exactly: what waited, and what did not.
-  assert.match(j.issues[0]!.text, /^One pass over the open trades \(19 open\) took 9 s/);
+  // What the live desk showed (6 Oct 2026, evening), said exactly: what waited, and what did not -- with the slow
+  // pass's own count, not the latest pass's.
+  assert.match(j.issues[0]!.text, /^One pass over the open trades \(19 in it\) took 9 s, 120 s ago/);
   assert.match(j.issues[0]!.text, /Perp SL\/TGT have their own fast watch/);
+  assert.doesNotMatch(j.issues[0]!.text, /not the number of trades/);
+});
+
+test('[critical] a slow pass with no trades in it says the cause was not the trades (the live desk, 6 Oct 2026, 13:19)', () => {
+  // The phone read "(0 open) took 13 s": the latest pass's count beside the slowest pass's time.
+  const busy = judge({ ...healthy(), passes: { count: 280, late: 3, maxMs: 13_000, tradesNow: 0, slowestTrades: 0, slowestAt: NOW - 60_000 }, threadMaxMs: 4_200 });
+  assert.match(busy.issues[0]!.text, /\(0 in it\) took 13 s/);
+  assert.match(busy.issues[0]!.text, /likely the server being busy \(its thread was held up to 4 s\)/);
+  const slowAnswer = judge({ ...healthy(), passes: { count: 280, late: 3, maxMs: 13_000, slowestTrades: 1 }, threadMaxMs: 40 });
+  assert.match(slowAnswer.issues[0]!.text, /likely a slow answer from Delta or the database/);
 });

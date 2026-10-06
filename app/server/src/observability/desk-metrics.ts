@@ -132,6 +132,11 @@ export function deskMetrics(now = Date.now()) {
       ...spread(passes.map((p) => p.ms)),
       late: passes.filter((p) => p.ms > PASS_EVERY_MS).length,
       tradesNow: passes.length ? passes[passes.length - 1]!.trades : 0,
+      /**
+       * The slowest pass, with how many trades it polled and when (6 Oct 2026): the phone said "(0 open) took 13 s"
+       * by putting the latest pass's count beside the slowest pass's time.
+       */
+      slowest: passes.reduce<Pass | null>((m, p) => (m === null || p.ms > m.ms ? p : m), null),
     },
     signalRun: {
       count: recentRuns.length,
