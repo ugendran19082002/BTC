@@ -4,7 +4,19 @@ import { SignalHistory, cleanFilter, seenText, stopOf, exitNote, exitOf, fillNot
 import type { EntrySignal, EntrySignalOutcome, EntrySignalPage } from '@/types/entry';
 
 const getEntrySignals = vi.fn();
-vi.mock('@/api/entry', async (real) => ({ ...(await real<typeof import('@/api/entry')>()), getEntrySignals: (...a: unknown[]) => getEntrySignals(...a) }));
+const getEntryMethods = vi.fn();
+vi.mock('@/api/entry', async (real) => ({
+  ...(await real<typeof import('@/api/entry')>()),
+  getEntrySignals: (...a: unknown[]) => getEntrySignals(...a),
+  getEntryMethods: (...a: unknown[]) => getEntryMethods(...a),
+}));
+/** Four of the desk's methods, in its order. */
+const CATALOGUE = { methods: [
+  { id: 'breakout', n: 1, name: 'Breakout', group: 'breakout', summary: '', sl: '', orderSide: 'BUY' },
+  { id: 'fvg-retest', n: 4, name: 'FVG retest', group: 'pullback', summary: '', sl: '', orderSide: 'SELL' },
+  { id: 'order-block', n: 5, name: 'Order-block retest', group: 'pullback', summary: '', sl: '' },
+  { id: 'bos', n: 6, name: 'BOS', group: 'breakout', summary: '', sl: '' },
+] };
 
 const T = Date.UTC(2026, 8, 30, 14, 33);
 const S = T / 1000;
@@ -27,6 +39,7 @@ const page = (signals: EntrySignal[], total = signals.length): EntrySignalPage =
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  getEntryMethods.mockResolvedValue(CATALOGUE);
   getEntrySignals.mockResolvedValue(page([
     sig(),
     sig({ state: 'WAIT', dir: 1, method: 'bos', n: 6, name: 'BOS', mode: 'mtf', tf: '5m', entryLo: null, entryHi: null, stop: null, tp1: null, rr: null, outcome: null, gatesOff: ['rr'], triggerAt: 2 }),
@@ -238,7 +251,10 @@ describe('the signal history table', () => {
 
   it('[critical] a filter saved before -- 1m, the R:R column, a page size gone -- is cleaned, so the list never hides behind a chip that is not there', async () => {
     expect(cleanFilter({ tf: '1m' as never, sort: 'rr' as never, size: 7 as never, tab: 'gone' as never, mode: 'x' as never }))
-      .toEqual({ tab: 'all', mode: 'all', tf: 'all', today: true, size: 10, sort: 'time', asc: false });
+      .toEqual({ tab: 'all', mode: 'all', tf: 'all', today: true, size: 10, sort: 'time', asc: false, methods: [] });
+    // Methods saved as anything but ids are dropped, and one saved twice is one.
+    expect(cleanFilter({ methods: ['bos', 'bos', 'DROP TABLE', 7, null] as never }).methods).toEqual(['bos']);
+    expect(cleanFilter({ methods: 'bos' as never }).methods).toEqual([]);
     localStorage.setItem('btc-desk:entry:history-table', JSON.stringify({ tf: '1m', sort: 'rr' }));
     render(<SignalHistory />);
     await screen.findByRole('table', { name: 'signals' });
@@ -309,5 +325,51 @@ describe('the signal history table', () => {
     expect(getEntrySignals.mock.lastCall![0].track).toBeUndefined();
     expect(screen.queryByRole('group', { name: 'history methods' })).toBeNull();
     expect(within(table).getAllByRole('row')[1]).toHaveTextContent('#15 Opening-range breakout (Asia · London · New York)');
+  });
+});
+
+describe('the methods filter (6 Oct 2026)', () => {
+  const opened = async () => {
+    render(<SignalHistory />);
+    await screen.findByRole('table', { name: 'signals' });
+    fireEvent.click(screen.getByRole('button', { name: 'Methods: All methods' }));
+    return within(await screen.findByRole('list', { name: 'methods' }));
+  };
+  const asked = () => (getEntrySignals.mock.lastCall![0] as { methods?: string }).methods;
+
+  it('[critical] several methods are ticked at once: the history asks for exactly those, in the desk\'s order, and each is a chip', async () => {
+    const list = await opened();
+    expect(asked()).toBeUndefined();
+    // Ticked out of order: #6 then #1.
+    fireEvent.click(list.getByRole('checkbox', { name: '#6 BOS' }));
+    fireEvent.click(list.getByRole('checkbox', { name: '#1 Breakout' }));
+    await waitFor(() => expect(asked()).toBe('breakout,bos'));
+    expect(screen.getByRole('button', { name: 'Methods: 2 methods' })).toBeInTheDocument();
+    expect(screen.getByText('2 of 4 chosen')).toBeInTheDocument();
+    // One goes by its own ×, without the list; the button then names the one left.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove #1 Breakout' }));
+    await waitFor(() => expect(asked()).toBe('bos'));
+    expect(screen.getByRole('button', { name: 'Methods: #6 BOS' })).toBeInTheDocument();
+    // The Excel download is the same choice.
+    expect(screen.getByRole('link', { name: 'download for Excel' }).getAttribute('href')).toContain('methods=bos');
+    // And it is remembered in this browser.
+    expect(JSON.parse(localStorage.getItem('btc-desk:entry:history-table')!).methods).toEqual(['bos']);
+  });
+
+  it('[critical] found by number or name, a whole group ticked in one go, and Clear filters takes the methods off too', async () => {
+    const list = await opened();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search methods' }), { target: { value: '5' } });
+    expect(list.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#5 Order-block retest']);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search methods' }), { target: { value: 'retest' } });
+    expect(list.getAllByRole('checkbox')).toHaveLength(2);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search methods' }), { target: { value: 'zzz' } });
+    expect(list.getByText(/No method matches/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search methods' }), { target: { value: '' } });
+    fireEvent.click(within(screen.getByRole('group', { name: 'method group' })).getByRole('button', { name: 'Pullback' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tick these 2' }));
+    await waitFor(() => expect(asked()).toBe('fvg-retest,order-block'));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(asked()).toBeUndefined());
+    expect(screen.getByRole('button', { name: 'Methods: All methods' })).toBeInTheDocument();
   });
 });
