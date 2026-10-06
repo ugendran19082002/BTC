@@ -1,18 +1,14 @@
-import { useState } from 'react';
 import { json } from '@/api/client';
 import { getDaysFor, getStats, type StatsGroup } from '@/api/phone';
 import type { MtmReport } from '@/types/report';
 import { usePoll } from '@/hooks/usePoll';
-import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct, signedInr, usdToInr } from '@/lib/format';
 import { lossBudget } from '@/lib/position-risk';
-import { daysAgoIst, todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
-import { AreaChart, Empty, Loading, LossMeter, Panel, Rupees, Segmented, Stat, Stats } from '@/components/mobile/parts';
-import { DateRangeSheet } from '@/components/mobile/DateRangeSheet';
-import { describeRange, type DateRangeValue } from '@/components/ui/date-range-picker';
-import { rangeProblem } from '@/lib/custom-range';
+import { AreaChart, Empty, Loading, LossMeter, Panel, Rupees, Stat, Stats } from '@/components/mobile/parts';
+import { describeRange } from '@/components/ui/date-range-picker';
+import { useDayRange } from '@/components/mobile/useDayRange';
 import { pairsOfStats, splitPairs } from '@/lib/method-pairs';
 import { PairList } from '@/components/mobile/PairList';
 import { DayCalendar } from '@/components/mobile/DayCalendar';
@@ -25,17 +21,6 @@ import { DayCalendar } from '@/components/mobile/DayCalendar';
  * of the lists by strategy and by entry method), CE or PE, sold or bought, and account. Every figure after
  * charges, from the journal (`/api/report/*`), for the range chosen at the top.
  */
-
-type Range = 'today' | '7' | '30' | '90' | 'custom';
-const RANGES: { key: Range; label: string; spoken?: string; days: number }[] = [
-  // Short on the button so five fit a 360px phone; said in full to a screen reader.
-  { key: 'today', label: 'Today', days: 0 },
-  { key: '7', label: '7D', spoken: '7 days', days: 6 },
-  { key: '30', label: '30D', spoken: '30 days', days: 29 },
-  { key: '90', label: '90D', spoken: '90 days', days: 89 },
-  // Last, as asked (owner, 6 Oct 2026): any From and To, picked in a sheet.
-  { key: 'custom', label: 'Custom', days: -1 },
-];
 
 const rs = (usd: number | null | undefined) => (usd === null || usd === undefined ? '—' : signedInr(usdToInr(usd)));
 /** The same, short enough for a quarter of a phone: "₹42.5K" from ten thousand up, "₹1.25L" from a lakh. */
@@ -53,16 +38,9 @@ const toneOf = (usd: number | null | undefined): 'up' | 'down' | undefined => (u
 
 export function PnlScreen() {
   const p = usePhone();
-  const [range, setRange] = usePersisted<Range>('m-pnl-range', 'today');
-  const r = RANGES.find((x) => x.key === range) ?? RANGES[0]!;
-  const isToday = r.key === 'today';
-  const today = todayIst(p.now);
-  // The custom range, remembered; one that no longer holds (a year passed, a bad value) falls back to the last 7 days.
-  const [custom, setCustom] = usePersisted<DateRangeValue>('m-pnl-custom', { from: daysAgoIst(6, p.now), to: today });
-  const customOk = rangeProblem(custom, today) === null;
-  const [picking, setPicking] = useState(false);
-  const to = r.key === 'custom' && customOk ? custom.to : today;
-  const from = isToday ? today : r.key === 'custom' ? (customOk ? custom.from : daysAgoIst(6, p.now)) : daysAgoIst(r.days, p.now);
+  // The same filter as every other screen that reads days (`useDayRange`), remembered as P&L's own.
+  const range = useDayRange('m-pnl', p.now);
+  const { isToday, from, to, today } = range;
   const stats = usePoll(() => getStats(from, to, p.accountParam), isToday ? 30_000 : 120_000, { deps: [from, to, p.accountParam] });
   const days = usePoll(() => getDaysFor(from, to, p.accountParam), 120_000, { deps: [from, to, p.accountParam], enabled: !isToday });
   const mtm = usePoll(
@@ -82,20 +60,13 @@ export function PnlScreen() {
 
   return (
     <>
-      <Segmented label="Range" value={range} options={RANGES} onChange={(k) => (k === 'custom' ? setPicking(true) : setRange(k))} />
-      {picking && (
-        <DateRangeSheet
-          value={customOk ? custom : { from, to }} today={today}
-          onApply={(v) => { setCustom(v); setRange('custom'); setPicking(false); }}
-          onClose={() => setPicking(false)}
-        />
-      )}
+      {range.bar}
 
       <Panel>
         <span className="flex items-baseline justify-between gap-2 text-[13px] text-muted-foreground">
           <span>{isToday ? 'Net P&L, if everything closed now' : `Net P&L, ${describeRange({ from, to }, today)}`}</span>
-          {r.key === 'custom' && (
-            <button type="button" onClick={() => setPicking(true)} className="shrink-0 border-0 bg-transparent p-0 font-[inherit] text-[13px] text-[var(--accent)]">
+          {range.isCustom && (
+            <button type="button" onClick={range.pick} className="shrink-0 border-0 bg-transparent p-0 font-[inherit] text-[13px] text-[var(--accent)]">
               Change
             </button>
           )}
