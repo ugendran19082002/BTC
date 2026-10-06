@@ -2620,9 +2620,12 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 @keyframes m-toast-in { from { opacity: 0; transform: translateY(-14px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes m-breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.8); } }
 @keyframes m-arrive { from { box-shadow: 0 0 0 2px var(--up); } to { box-shadow: 0 0 0 2px transparent; } }
+@keyframes m-toast-time { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 .m-toast { animation: m-toast-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.m-toast-time { animation: m-toast-time linear both; opacity: 0.7; }
 .m-breathe { animation: m-breathe 1.6s ease-in-out infinite; }
 .m-arrive { animation: m-arrive 2.4s ease-out both; }
 @media (prefers-reduced-motion: reduce) {
   .m-toast, .m-breathe, .m-arrive { animation: none; }
+  .m-toast-time { animation: none; transform: scaleX(0); }
 }
