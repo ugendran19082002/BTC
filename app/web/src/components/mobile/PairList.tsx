@@ -13,7 +13,7 @@ import { Empty, Panel, Pill } from '@/components/mobile/parts';
 
 const FIRST = 5;
 
-export function PairList<T extends PairStat>({ title, tone, pairs, empty, amount, note }: {
+export function PairList<T extends PairStat>({ title, tone, pairs, empty, amount, note, ends }: {
   title: string;
   /** Which end of the list this is: it words the count beside the title. */
   tone: 'up' | 'down';
@@ -24,6 +24,8 @@ export function PairList<T extends PairStat>({ title, tone, pairs, empty, amount
   amount: (p: T) => string;
   /** One more thing to say after the profit factor: "+8.4R". */
   note?: (p: T) => string | null;
+  /** What the winners made and the losers gave back, under the two ends of the bar: "+12,480 pts", "−640 pts". */
+  ends?: (p: T) => { won: string; lost: string };
 }) {
   const [all, setAll] = useState(false);
   const shown = all ? pairs : pairs.slice(0, FIRST);
@@ -34,7 +36,7 @@ export function PairList<T extends PairStat>({ title, tone, pairs, empty, amount
     >
       {pairs.length === 0 ? <Empty>{empty}</Empty> : (
         <ol className="m-0 list-none divide-y divide-[var(--line-soft)] p-0" aria-label={title}>
-          {shown.map((g, i) => <PairRow key={g.key} rank={i + 1} pair={g} amount={amount(g)} note={note?.(g) ?? null} />)}
+          {shown.map((g, i) => <PairRow key={g.key} rank={i + 1} pair={g} amount={amount(g)} note={note?.(g) ?? null} ends={ends?.(g) ?? null} />)}
         </ol>
       )}
       {pairs.length > FIRST && (
@@ -49,7 +51,9 @@ export function PairList<T extends PairStat>({ title, tone, pairs, empty, amount
   );
 }
 
-function PairRow({ rank, pair: g, amount, note }: { rank: number; pair: PairStat; amount: string; note: string | null }) {
+function PairRow({ rank, pair: g, amount, note, ends }: {
+  rank: number; pair: PairStat; amount: string; note: string | null; ends: { won: string; lost: string } | null;
+}) {
   const pf = g.profitFactor !== null ? `PF ${g.profitFactor.toFixed(2)}` : g.wins > 0 ? 'no loss' : null;
   const won = g.trades > 0 ? g.wins / g.trades : 0;
   const lost = g.trades > 0 ? g.losses / g.trades : 0;
@@ -80,6 +84,12 @@ function PairRow({ rank, pair: g, amount, note }: { rank: number; pair: PairStat
         </span>
         <span className="shrink-0 whitespace-nowrap text-[var(--down)]">{g.losses} lost</span>
       </div>
+      {ends && (
+        <div className="mt-0.5 flex items-baseline justify-between gap-2 pl-6 text-[12px] font-medium tabular-nums">
+          <span className="whitespace-nowrap text-[var(--up)]" aria-label={`won ${ends.won}`}>{ends.won}</span>
+          <span className="whitespace-nowrap text-[var(--down)]" aria-label={`lost ${ends.lost}`}>{ends.lost}</span>
+        </div>
+      )}
     </li>
   );
 }

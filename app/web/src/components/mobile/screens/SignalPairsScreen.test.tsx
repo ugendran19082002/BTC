@@ -50,6 +50,9 @@ describe('SignalPairsScreen', () => {
     expect(rows[0]).toHaveTextContent('15m');
     expect(rows[0]).toHaveTextContent('+1,240 pts');
     expect(rows[0]).toHaveTextContent('5 trades · 80% won · PF 4.44 · +4.8R');
+    // what its winners made and its losers gave back, under the bar
+    expect(within(rows[0]!).getByLabelText('won +1,600 pts')).toBeInTheDocument();
+    expect(within(rows[0]!).getByLabelText('lost −360 pts')).toBeInTheDocument();
     expect(rows[1]).toHaveTextContent('#19 VWAP reclaim / loss');
     expect(rows[1]).toHaveTextContent('30m');
     const worst = within(screen.getByRole('list', { name: 'Worst pairs' })).getByRole('listitem');
@@ -61,6 +64,10 @@ describe('SignalPairsScreen', () => {
     expect(screen.getByText('Signals').parentElement!).toHaveTextContent('39');
     expect(screen.getByText('Trades').parentElement!).toHaveTextContent('15');
     expect(screen.getByText('Win rate').parentElement!).toHaveTextContent('60%');
+    // 1,600 + 1,600 + 200 won, 360 + 360 + 1,100 lost
+    expect(screen.getByText('Won pts').parentElement!).toHaveTextContent('+3,400 pts');
+    expect(screen.getByText('Loss pts').parentElement!).toHaveTextContent('−1,820 pts');
+    expect(screen.getByText('Profit factor').parentElement!).toHaveTextContent('1.87');
     expect(screen.getByText(/whether or not an order was placed/)).toBeInTheDocument();
   });
 

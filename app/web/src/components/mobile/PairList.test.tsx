@@ -38,6 +38,14 @@ describe('PairList', () => {
     const row = screen.getByRole('listitem');
     expect(row).toHaveTextContent('-1240 pts');
     expect(row).toHaveTextContent('PF 0.42 · −3.1R');
+    // with nothing to say for the two ends, there is no line for them
+    expect(screen.queryByLabelText(/^won /)).toBeNull();
+  });
+
+  it('what the winners made and the losers gave back sit under the two ends of the bar', () => {
+    render(<PairList title="Best pairs" tone="up" pairs={[pair(63)]} empty="none" amount={() => '+11,840 pts'} ends={() => ({ won: '+12,480 pts', lost: '−640 pts' })} />);
+    expect(screen.getByLabelText('won +12,480 pts')).toHaveTextContent('+12,480 pts');
+    expect(screen.getByLabelText('lost −640 pts')).toHaveTextContent('−640 pts');
   });
 
   it('five to begin with; the rest on a tap, and back again', () => {

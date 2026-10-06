@@ -53,10 +53,14 @@ export function SignalPairsScreen() {
   const losses = all.reduce((n, x) => n + x.losses, 0);
   const net = all.reduce((n, x) => n + x.net, 0);
   const netR = all.reduce((n, x) => n + x.netR, 0);
+  const wonPts = all.reduce((n, x) => n + x.wonPts, 0);
+  const lostPts = all.reduce((n, x) => n + x.lostPts, 0);
   const inRange = isToday ? 'today' : 'in this range';
   const wayWords = way === 'mtf' ? 'with the timeframe chain' : `without the timeframe chain${kept.length ? ` on ${kept.join(', ')}` : ''}`;
   const amount = (g: SignalPair) => pts(g.net);
   const note = (g: SignalPair) => inR(g.netR);
+  // What its winners made and its losers gave back, under the two ends of the row's bar (owner, 6 Oct 2026).
+  const ends = (g: SignalPair) => ({ won: pts(g.wonPts), lost: pts(-g.lostPts) });
 
   return (
     <>
@@ -108,6 +112,9 @@ export function SignalPairsScreen() {
                 <Stat label="Won" tone={wins ? 'up' : undefined}>{wins}</Stat>
                 <Stat label="Lost" tone={losses ? 'down' : undefined}>{losses}</Stat>
                 <Stat label="Pairs">{all.length}</Stat>
+                <Stat label="Won pts" tone={wonPts ? 'up' : undefined}>{pts(wonPts)}</Stat>
+                <Stat label="Loss pts" tone={lostPts ? 'down' : undefined}>{pts(-lostPts)}</Stat>
+                <Stat label="Profit factor">{lostPts > 0 ? (wonPts / lostPts).toFixed(2) : wonPts > 0 ? 'no loss' : '—'}</Stat>
               </Stats>
             </div>
           </>
@@ -116,8 +123,8 @@ export function SignalPairsScreen() {
 
       {split && split.trades > 0 ? (
         <>
-          <PairList title="Best pairs" tone="up" pairs={split.best} amount={amount} note={note} empty={`No method and time frame is in profit ${inRange}.`} />
-          <PairList title="Worst pairs" tone="down" pairs={split.worst} amount={amount} note={note} empty={`No method and time frame is in loss ${inRange}.`} />
+          <PairList title="Best pairs" tone="up" pairs={split.best} amount={amount} note={note} ends={ends} empty={`No method and time frame is in profit ${inRange}.`} />
+          <PairList title="Worst pairs" tone="down" pairs={split.worst} amount={amount} note={note} ends={ends} empty={`No method and time frame is in loss ${inRange}.`} />
         </>
       ) : read ? (
         <Panel><Empty>No signal became a trade {inRange}, {wayWords}.</Empty></Panel>

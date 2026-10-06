@@ -27,8 +27,11 @@ export type PairStat = {
   net: number;
 };
 
-/** A signal-history pair: also how many signals it gave, and its net in R (points over the risk to the stop). */
-export type SignalPair = PairStat & { signals: number; netR: number };
+/**
+ * A signal-history pair: also how many signals it gave, its net in R (points over the risk to the stop), and the
+ * points its winners made and its losers gave back, each a positive number: `net = wonPts − lostPts`.
+ */
+export type SignalPair = PairStat & { signals: number; netR: number; wonPts: number; lostPts: number };
 
 export type PairSplit<T extends PairStat = PairStat> = {
   /** In profit, the most first. */
@@ -79,7 +82,7 @@ export function pairsOfReport(
       pairs.push({
         key: `${r.method}|${way}|${tf}`, name: r.n === null ? r.name : `#${r.n} ${r.name}`, tf,
         trades: r.trades, wins: r.wins, losses: r.losses, winRate: r.winPct === null ? null : r.winPct / 100,
-        profitFactor: r.lossPts > 0 ? r.profitPts / r.lossPts : null, net: r.netPts, signals: r.signals, netR: r.netR,
+        profitFactor: r.lossPts > 0 ? r.profitPts / r.lossPts : null, net: r.netPts, signals: r.signals, netR: r.netR, wonPts: r.profitPts, lostPts: r.lossPts,
       });
     }
   }

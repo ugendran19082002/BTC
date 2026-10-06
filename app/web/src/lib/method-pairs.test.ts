@@ -55,7 +55,7 @@ describe('signal history pairs', () => {
   it('[critical] without the timeframe chain: one pair for each timeframe a method traded on, ranked on points', () => {
     const { pairs, signals } = pairsOfReport(report, 'single');
     expect(pairs.map((p) => [p.name, p.tf, p.trades, p.net, p.netR])).toEqual([['#1 Breakout', '15m', 4, 600, 2], ['#1 Breakout', '1h', 2, 400, 1.5]]);
-    expect(pairs[0]).toMatchObject({ key: 'breakout|single|15m', winRate: 0.75, profitFactor: 3, signals: 10 });
+    expect(pairs[0]).toMatchObject({ key: 'breakout|single|15m', winRate: 0.75, profitFactor: 3, signals: 10, wonPts: 900, lostPts: 300 });
     // nothing lost: no profit factor, rather than an infinite one
     expect(pairs[1]!.profitFactor).toBeNull();
     // the method with signals and no trade is in no pair, and its signals still count
