@@ -254,7 +254,7 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
             <div
               ref={wrap} className="relative w-full select-none outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
               tabIndex={0} role="group" aria-label={`Daily P&L, ${n} ${period === 'Daily' ? 'days' : period === 'Weekly' ? 'weeks' : 'months'}. Left and right arrows read each one.`}
-              onKeyDown={onKey} onPointerLeave={() => setAt(null)} onBlur={() => setAt(null)}
+              onKeyDown={onKey} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setAt(null); }} onBlur={() => setAt(null)}
             >
               <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} role="img" aria-label="Cumulative line over daily bars" className="block">
                 {/* Each panel named in its corner: two panels, each with its own scale. */}
@@ -327,24 +327,41 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
                 ))}
               </svg>
 
-              {hovered && at !== null && (
-                <div role="status" aria-live="polite" className="pnl-tooltip-box absolute top-1 z-10 min-w-[178px]"
-                     style={cx(at) > width / 2 ? { right: width - cx(at) + 12 } : { left: cx(at) + 12 }}>
-                  <div className="mb-1 text-[11.5px] font-semibold text-foreground">{hovered.title}</div>
-                  <Row k={<i className="inline-block h-0.5 w-3 rounded" style={{ background: hovered.booked < 0 ? LOSS : PROFIT }} />}
-                       label={hovered.booked < 0 ? 'Booked loss' : 'Booked profit'} value={signedInr(hovered.booked)} />
-                  <Row k={<i className="inline-block h-0.5 w-3 rounded" style={{ background: CHARGE }} />} label="Charges" value={hovered.charges > 0 ? `−${inr(hovered.charges)}` : inr(0)} />
-                  <Row k={<i className="inline-block w-3" />} label="Net" value={signedInr(hovered.net)} strong />
-                  <div className="my-1 h-px bg-border" />
-                  <Row k={<i className="inline-block h-0.5 w-3 rounded" style={{ background: LINE }} />} label="Cumulative" value={signedInr(hovered.cumulative)} />
-                  <Row k={<i className="inline-block w-3" />} label="Trades" value={String(hovered.trades)} />
+              {/*
+                The day's figures. Beside its line where there is room; on a phone, in a place of its own under the
+                chart -- a box over a 300px plot hides the bars it is about, and ran off the edge.
+              */}
+              {narrow ? (
+                <div role="status" aria-live="polite" className="mt-1 min-h-[104px] rounded-md border border-solid border-border bg-[var(--panel)] px-2.5 py-2">
+                  {hovered ? <Readout d={hovered} /> : <p className="m-0 py-7 text-center text-[11.5px] text-muted-foreground">Tap a bar to read that {period === 'Daily' ? 'day' : period === 'Weekly' ? 'week' : 'month'}.</p>}
                 </div>
-              )}
+              ) : hovered && at !== null ? (
+                <div role="status" aria-live="polite" className="pnl-tooltip-box absolute top-1 z-10 w-[190px]"
+                     style={{ left: cx(at) + 12 + 190 <= width ? cx(at) + 12 : Math.max(0, cx(at) - 12 - 190) }}>
+                  <Readout d={hovered} />
+                </div>
+              ) : null}
             </div>
           )}
         </>
       )}
     </div>
+  );
+}
+
+/** A bucket read out: what was booked, the charges, the net of the two, the running total, the trades. */
+function Readout({ d }: { d: PnlBucket }) {
+  const key = (c: string) => <i className="inline-block h-0.5 w-3 rounded" style={{ background: c }} />;
+  return (
+    <>
+      <div className="mb-1 text-[11.5px] font-semibold text-foreground">{d.title}</div>
+      <Row k={key(d.booked < 0 ? LOSS : PROFIT)} label={d.booked < 0 ? 'Booked loss' : 'Booked profit'} value={signedInr(d.booked)} />
+      <Row k={key(CHARGE)} label="Charges" value={d.charges > 0 ? `−${inr(d.charges)}` : inr(0)} />
+      <Row k={<i className="inline-block w-3" />} label="Net" value={signedInr(d.net)} strong />
+      <div className="my-1 h-px bg-border" />
+      <Row k={key(LINE)} label="Cumulative" value={signedInr(d.cumulative)} />
+      <Row k={<i className="inline-block w-3" />} label="Trades" value={String(d.trades)} />
+    </>
   );
 }
 
