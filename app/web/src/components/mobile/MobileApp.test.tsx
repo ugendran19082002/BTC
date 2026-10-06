@@ -67,7 +67,7 @@ const trade = (over: Partial<Trade> = {}): Trade => ({
 const status = (open: Trade[]): TradeStatus => ({
   mode: 'live', live: true, canGoLive: true, switchBlockedBy: null, balanceUsd: 100, walletUsd: 120, marginUsedUsd: 30,
   positions: [], open, alarms: [], realisedTodayUsd: -5,
-  today: { realisedUsd: -5, unrealisedUsd: 0.35, chargesUsd: 0.4, netUsd: -5.05 },
+  today: { realisedUsd: -5, unrealisedUsd: 0.35, chargesUsd: 0.4, netUsd: -5.05, lossUsd: 3, profitUsd: 0 },
   limits: { maxLeverage: 200, maxQuoteAgeMs: 0, maxSpreadPct: 0, minBookCoverage: 0, maxShortContracts: 0, maxDailyLossUsd: 25, minPremiumUsd: 0, allowPyramiding: false },
 });
 
@@ -201,10 +201,16 @@ describe('signed in', () => {
     expect(within(list).getByText(/Rejected: margin/)).toBeInTheDocument();
   });
 
-  it('says what needs a look when the desk is not all right', async () => {
+  it('[critical] Home says what cannot wait in one red line, and leaves what can wait to the bell', async () => {
     getGlance.mockResolvedValue(glance({ health: 'down', issues: [{ level: 'down', text: 'Option prices stopped 90 s ago.' }] }));
+    const { unmount } = render(<MobileApp />);
+    expect(await screen.findByText(/Option prices stopped 90 s ago\./)).toBeInTheDocument();
+    unmount();
+    // A warning that can wait: nothing on Home, a count on the bell.
+    getGlance.mockResolvedValue(glance({ health: 'warn', issues: [{ level: 'warn', text: 'One pass over the open trades took 9 s.' }] }));
     render(<MobileApp />);
-    expect(await screen.findAllByText('Option prices stopped 90 s ago.')).not.toHaveLength(0);
+    expect(await screen.findByRole('button', { name: 'Alerts: 1' })).toBeInTheDocument();
+    expect(screen.queryByText(/One pass over the open trades/)).toBeNull();
   });
 
   it('offers each trading account, and every account together', async () => {
@@ -246,7 +252,8 @@ describe('P&L: the day\'s high and low (owner, 6 Oct 2026)', () => {
       samples: [{ at: at(9, 0), day: '2026-10-06', realisedUsd: 0, unrealisedUsd: 0, chargesUsd: 0, netUsd: -4 }, { at: at(14, 0), day: '2026-10-06', realisedUsd: 0, unrealisedUsd: 0, chargesUsd: 0, netUsd: 30 }],
       stats: { nowUsd: 30, max: { at: at(13, 5), netUsd: 36 }, min: { at: at(9, 40), netUsd: -6 }, maxDrawdown: { usd: 8, at: at(13, 50) } },
     });
-    phone.getDaysFor.mockResolvedValue({ from: '', to: '', days: [], totals: { realisedUsd: 0, chargesUsd: 0, netUsd: 0, tradingDays: 2, winDays: 1, lossDays: 1, best: { day: '2026-10-02', netUsd: 12 }, worst: { day: '2026-10-04', netUsd: -5 } } });
+    const dayRow = (day: string, netUsd: number, lossUsd: number) => ({ day, realisedUsd: netUsd, profitUsd: Math.max(0, netUsd) + lossUsd, lossUsd, chargesUsd: 0, netUsd, trades: 1, cumulativeUsd: netUsd });
+    phone.getDaysFor.mockResolvedValue({ from: '', to: '', days: [dayRow('2026-10-02', 12, 2), dayRow('2026-10-04', -5, 6)], totals: { realisedUsd: 0, chargesUsd: 0, netUsd: 7, tradingDays: 2, winDays: 1, lossDays: 1, best: { day: '2026-10-02', netUsd: 12 }, worst: { day: '2026-10-04', netUsd: -5 } } });
     window.history.replaceState(null, '', '/m?tab=pnl');
     render(<MobileApp />);
     const high = (await screen.findByText('Day high')).parentElement!;
@@ -254,15 +261,18 @@ describe('P&L: the day\'s high and low (owner, 6 Oct 2026)', () => {
     expect(high).toHaveTextContent('13:05');
     expect(screen.getByText('Day low').parentElement!).toHaveTextContent('−₹510');
     expect(screen.getByText('Drawdown').parentElement!).toHaveTextContent('−₹680');
-    // the day's loss limit beside them: $25 at ₹85, with $20 of it left
-    const maxLoss = screen.getByText('Max loss').parentElement!;
-    expect(maxLoss).toHaveTextContent('−₹2,125');
-    expect(maxLoss).toHaveTextContent('80% left');
+    // what the day has booked as losses, beside them: $3 at ₹85
+    expect(screen.getByText('Day loss').parentElement!).toHaveTextContent('−₹255');
+    expect(screen.queryByText('Max loss')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '7 days' }));
     const best = (await screen.findByText('Best day')).parentElement!;
     expect(best).toHaveTextContent('+₹1,020');
-    expect(best).toHaveTextContent('2026-10-02');
+    expect(best).toHaveTextContent('10-02');
     expect(screen.getByText('Worst day').parentElement!).toHaveTextContent('−₹425');
+    // the losses booked over the range: $2 + $6 at ₹85
+    const loss = screen.getByText('Loss').parentElement!;
+    expect(loss).toHaveTextContent('−₹680');
+    expect(loss).toHaveTextContent('1 day down');
   });
 });
 

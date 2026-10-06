@@ -32,7 +32,7 @@ export function HomeScreen() {
   const latest = orders.data?.trades.slice().sort((a, b) => b.openedAt - a.openedAt)[0] ?? null;
   const o = stats.data?.overall;
   const g = p.glance;
-  const reds = alerts.filter((a) => a.level === 'red').length;
+  const critical = alerts.filter((a) => a.level === 'red');
   const marginShare = s?.marginUsedUsd != null && s.walletUsd ? s.marginUsedUsd / s.walletUsd : null;
   const samples = mtm.data?.samples ?? [];
 
@@ -47,27 +47,21 @@ export function HomeScreen() {
         <Tile label="Price feed" value={g ? (g.boardAgeMs === null ? '—' : g.boardAgeMs < 2_000 ? 'live' : `${Math.round(g.boardAgeMs / 1000)}s`) : '…'} tone={!g || g.boardAgeMs === null || g.boardAgeMs >= 15_000 ? 'warn' : 'up'} />
         <Tile label="API usage" value={g ? `${Math.round(g.readings.delta.usedPct)}%` : '…'} tone={g && g.readings.delta.usedPct >= 80 ? 'warn' : undefined} />
       </button>
-      {g && g.health !== 'ok' && (
-        <button type="button" onClick={() => p.go({ tab: 'more', sub: 'settings' })}
-          className={cn('flex items-center gap-2 rounded-lg border-0 px-3 py-2.5 text-left font-[inherit] text-[13px]', g.health === 'down' ? 'bg-[var(--down-bg)] text-[#ffb3ae]' : 'bg-[var(--warn-bg)] text-[var(--warn)]')}>
-          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{g.issues[0]?.text ?? 'The desk needs a look.'}</span>
-          <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0" />
-        </button>
-      )}
-      {alerts.length > 0 && (
+      {/*
+        One line, and only for what cannot wait (owner, 6 Oct 2026): the desk down, a position with no stop, a price
+        through its stop, liquidation near. The warnings that can wait -- a slow pass, a wide spread -- are behind
+        the bell, which wears a dot; said here too they filled Home with the same sentence twice.
+      */}
+      {critical.length > 0 && (
         <button
           type="button" onClick={() => p.go({ tab: 'more', sub: 'alerts' })}
-          className={cn(
-            'flex w-full items-center gap-2.5 rounded-lg border px-3 py-3 text-left font-[inherit]',
-            reds ? 'border-[var(--down)] bg-[var(--down-bg)] text-[#ffb3ae]' : 'border-[var(--warn)] bg-[var(--warn-bg)] text-[var(--warn)]',
-          )}
+          className="flex w-full items-center gap-2.5 rounded-lg border border-[var(--down)] bg-[var(--down-bg)] px-3 py-2.5 text-left font-[inherit] text-[#ffb3ae]"
         >
           <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 flex-1 text-[14px]">
-            <b>{alerts.length} alert{alerts.length === 1 ? '' : 's'}</b>
-            <span className="block truncate text-[13px] opacity-90">{alerts[0]!.title}{alerts[0]!.detail ? ` · ${alerts[0]!.detail}` : ''}</span>
+          <span className="min-w-0 flex-1 truncate text-[13.5px]">
+            {critical[0]!.title}{critical[0]!.detail ? ` · ${critical[0]!.detail}` : ''}{critical.length > 1 ? ` · +${critical.length - 1} more` : ''}
           </span>
+          <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0" />
         </button>
       )}
 
