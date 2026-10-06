@@ -1,4 +1,4 @@
-import { BUY_NO_STEPS, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, type SignalTf, type StrategyConfig } from '@/types/strategy';
+import { BUY_NO_STEPS, CHAIN_PTS, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -114,18 +114,18 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
       // The two distance filters -- the server's words (`signalRuleProblems`). One field: they sit in one box.
       for (const [by, a, name] of [[r.minSlPts, 'an', 'SL'], [r.minTgtPts, 'a', 'TGT'], [r.maxSlPts, 'an', 'SL maximum'], [r.maxTgtPts, 'a', 'TGT maximum']] as const) {
         for (const [tf, v] of Object.entries(by ?? {})) {
-          if (!SIGNAL_TFS.includes(tf as SignalTf)) say('signalSlPts', `No such timeframe for ${a} ${name} distance: ${tf}.`);
+          if (tf !== CHAIN_PTS && !SIGNAL_TFS.includes(tf as SignalTf)) say('signalSlPts', `No such timeframe for ${a} ${name} distance: ${tf}.`);
           else if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_SL_PTS) {
-            say('signalSlPts', `The ${name} distance for ${tf} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
+            say('signalSlPts', `The ${name} distance ${ptsWhere(tf)} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
           }
         }
       }
       // A maximum under its own minimum takes no signal at all (the server's words).
       for (const [lo, hi, name] of [[r.minSlPts, r.maxSlPts, 'SL'], [r.minTgtPts, r.maxTgtPts, 'TGT']] as const) {
-        for (const tf of SIGNAL_TFS) {
+        for (const tf of [...SIGNAL_TFS, CHAIN_PTS] as PtsKey[]) {
           const least = lo?.[tf], most = hi?.[tf];
           if (typeof least === 'number' && typeof most === 'number' && least > 0 && most > 0 && most < least) {
-            say('signalSlPts', `The ${name} maximum for ${tf} (${most}) is under its minimum (${least}): no signal could pass both.`);
+            say('signalSlPts', `The ${name} maximum ${ptsWhere(tf)} (${most}) is under its minimum (${least}): no signal could pass both.`);
           }
         }
       }

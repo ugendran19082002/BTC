@@ -447,9 +447,10 @@ export class StrategyRunner {
     }
 
     /*
-     * The distance filters (4 Oct 2026): without the chain, a signal whose SL --
-     * or whose target -- sits nearer the perp entry than its timeframe's number
-     * for that side is not taken. The
+     * The distance filters (4 Oct 2026): a signal whose SL -- or whose target --
+     * sits nearer the perp entry than the rule's number for that side is not
+     * taken: its timeframe's number without the chain, the chain's own with it
+     * (6 Oct 2026). The
      * entry is the one the trade would carry -- the fill, else the perp now,
      * else the middle of the signal's zone -- and the row says both prices, the
      * distance and the number it had to reach, so a skipped signal explains
@@ -464,16 +465,18 @@ export class StrategyRunner {
       const from = fill?.fillPrice ?? perpNow() ?? (plan.entryLo + plan.entryHi) / 2;
       // The target the trade would exit at: the rule's, TGT1 where the signal has no TGT2 / TGT3.
       const tgt = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
+      // Which signals the number is for, in the row's words: "15m", or "timeframe-chain".
+      const kind = rule.mode === 'single' ? r.tf : 'timeframe-chain';
       const near = (name: string, level: number, need: number) => {
         const pts = Math.abs(from - level);
         return need > 0 && pts < need
-          ? `${name} too near: the perp entry ${Math.round(from)} to the ${name} ${Math.round(level)} is ${Math.round(pts)} pts — this strategy takes ${r.tf} signals only at ${need} pts or more`
+          ? `${name} too near: the perp entry ${Math.round(from)} to the ${name} ${Math.round(level)} is ${Math.round(pts)} pts — this strategy takes ${kind} signals only at ${need} pts or more`
           : null;
       };
       const far = (name: string, level: number, most: number) => {
         const pts = Math.abs(from - level);
         return most > 0 && pts > most
-          ? `${name} too far: the perp entry ${Math.round(from)} to the ${name} ${Math.round(level)} is ${Math.round(pts)} pts — this strategy takes ${r.tf} signals only at ${most} pts or less`
+          ? `${name} too far: the perp entry ${Math.round(from)} to the ${name} ${Math.round(level)} is ${Math.round(pts)} pts — this strategy takes ${kind} signals only at ${most} pts or less`
           : null;
       };
       const why = [near('SL', plan.stop, needSl), far('SL', plan.stop, mostSl), near('TGT', tgt, needTgt), far('TGT', tgt, mostTgt)].filter(Boolean);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_SL_PTS, minSlPtsFor, minTgtPtsFor, signalRuleProblems, type SignalRule } from '../../src/strategy/types.js';
+import { CHAIN_PTS, MAX_SL_PTS, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, signalRuleProblems, type SignalRule } from '../../src/strategy/types.js';
 
 /**
  * The SL-distance filter of a signal strategy (4 Oct 2026): without the chain,
@@ -21,8 +21,35 @@ test('[critical] each timeframe is held to its own number, and one with none is 
   assert.equal(minSlPtsFor(rule({ minSlPts: { '5m': 0 } }), '5m'), 0, 'zero is off');
 });
 
-test('[critical] with the timeframe chain the filter is not read', () => {
+test('[critical] with the timeframe chain a timeframe\'s number is not read: a rule switched to the chain brings no filter with it', () => {
   assert.equal(minSlPtsFor(rule({ mode: 'mtf', minSlPts: { '5m': 150 } }), '5m'), 0);
+});
+
+test('[critical] with the chain the filter is the chain\'s own number -- SL and TGT, least and most -- and it is not read without the chain (6 Oct 2026)', () => {
+  assert.equal(CHAIN_PTS, 'chain');
+  // The live case: a rule copied from one without the chain, its timeframes' numbers still on it, then given the chain's own.
+  const r = rule({ mode: 'mtf', minSlPts: { '5m': 100, '4h': 100, chain: 180 }, maxSlPts: { chain: 600 }, minTgtPts: { '5m': 100, chain: 250 }, maxTgtPts: { chain: 900 } });
+  assert.deepEqual([minSlPtsFor(r, '5m'), maxSlPtsFor(r, '5m'), minTgtPtsFor(r, '5m'), maxTgtPtsFor(r, '5m')], [180, 600, 250, 900]);
+  // Off until it is set: the leftover numbers alone filter nothing.
+  const left = rule({ mode: 'mtf', minSlPts: { '5m': 100, '4h': 100 }, minTgtPts: { '5m': 100, '4h': 100 } });
+  assert.deepEqual([minSlPtsFor(left, '5m'), maxSlPtsFor(left, '5m'), minTgtPtsFor(left, '5m'), maxTgtPtsFor(left, '5m')], [0, 0, 0, 0]);
+  assert.equal(minSlPtsFor(rule({ mode: 'mtf', minSlPts: { chain: 0 } }), '5m'), 0, 'zero is off');
+  // Without the chain the chain's number is nobody's: each timeframe keeps its own.
+  const single = rule({ minSlPts: { '5m': 150, chain: 999 } });
+  assert.deepEqual([minSlPtsFor(single, '5m'), minSlPtsFor(single, '15m')], [150, 0]);
+});
+
+test('[critical] the chain\'s numbers are held to the same limits, and said as the chain\'s', () => {
+  const chain = (over: Partial<SignalRule>) => rule({ mode: 'mtf', ...over });
+  assert.deepEqual(signalRuleProblems(chain({ minSlPts: { chain: 180 }, maxSlPts: { chain: 600 }, minTgtPts: { chain: 250 }, maxTgtPts: { chain: 900 } })), []);
+  assert.deepEqual(signalRuleProblems(chain({ minSlPts: { chain: -1 } })), ['The SL distance with the chain must be from 0 to 100,000 points.']);
+  assert.deepEqual(signalRuleProblems(chain({ maxTgtPts: { chain: MAX_SL_PTS + 1 } })), ['The TGT maximum distance with the chain must be from 0 to 100,000 points.']);
+  assert.deepEqual(signalRuleProblems(chain({ minSlPts: { chain: 300 }, maxSlPts: { chain: 100 } })),
+    ['The SL maximum with the chain (100) is under its minimum (300): no signal could pass both.']);
+  assert.deepEqual(signalRuleProblems(chain({ minTgtPts: { chain: 500 }, maxTgtPts: { chain: 400 } })),
+    ['The TGT maximum with the chain (400) is under its minimum (500): no signal could pass both.']);
+  // A key that is neither a timeframe nor the chain is still refused.
+  assert.deepEqual(signalRuleProblems(chain({ minSlPts: { chains: 100 } as SignalRule['minSlPts'] })), ['No such timeframe for an SL distance: chains.']);
 });
 
 test('[critical] a distance is 0 to 100,000 points on a real timeframe -- anything else is refused in words', () => {

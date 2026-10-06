@@ -946,7 +946,7 @@ describe('the SL and TGT distance filters: two numbers of points for each timefr
   const single = (over: Partial<SignalRule> = {}) => signalStrategy({ mode: 'single', tf: '5m', tfs: ['5m', '15m'], ...over });
   const group = () => screen.getByRole('group', { name: 'SL and TGT distance by timeframe' });
 
-  it('[critical] without the chain: an SL and a TGT field per timeframe picked, both 0 -- off -- until typed; none with the chain', () => {
+  it('[critical] without the chain: an SL and a TGT field per timeframe picked, both 0 -- off -- until typed; with the chain, the chain\'s own row instead', () => {
     show(single());
     for (const tf of ['5m', '15m']) {
       expect(within(group()).getByLabelText(`${tf} SL distance pts`)).toHaveValue('0');
@@ -963,6 +963,40 @@ describe('the SL and TGT distance filters: two numbers of points for each timefr
     expect(within(group()).getByText(/on from any number above 0 — 0 is off/)).toBeInTheDocument();
     radio('signal way', 'With the timeframe chain');
     expect(screen.queryByRole('group', { name: 'SL and TGT distance by timeframe' })).not.toBeInTheDocument();
+    // The chain has a row of its own (6 Oct 2026): no timeframe's fields, and all four off.
+    const chain = within(screen.getByRole('group', { name: 'SL and TGT distance with the chain' }));
+    expect(chain.queryByLabelText('5m SL distance pts')).not.toBeInTheDocument();
+    for (const f of ['chain SL distance pts', 'chain SL maximum distance pts', 'chain TGT distance pts', 'chain TGT maximum distance pts']) {
+      expect(chain.getByLabelText(f)).toHaveValue('0');
+    }
+    expect(chain.getByLabelText('chain distance filters')).toHaveTextContent('all off');
+    expect(chain.getByText(/for signals with the chain \(their entry is on 5m\)/)).toBeInTheDocument();
+  });
+
+  it('[critical] with the chain: its own range is set, said, saved under the chain -- and a timeframe\'s number carried over is neither shown nor switched on', async () => {
+    // As the live one was: copied from a strategy without the chain, its 5m and 4h numbers still on it.
+    show(signalStrategy({ mode: 'mtf', tf: '5m', tfs: ['5m'], minSlPts: { '5m': 100, '4h': 100 }, minTgtPts: { '5m': 100, '4h': 100 } }));
+    const chain = within(screen.getByRole('group', { name: 'SL and TGT distance with the chain' }));
+    expect(chain.getByLabelText('chain SL distance pts')).toHaveValue('0');
+    expect(chain.getByLabelText('chain distance filters')).toHaveTextContent('all off');
+    expect(screen.getByText(/with the timeframe chain: a BUY sells a put/)).toBeInTheDocument();
+
+    fireEvent.change(chain.getByLabelText('chain SL distance pts'), { target: { value: '180' } });
+    fireEvent.change(chain.getByLabelText('chain SL maximum distance pts'), { target: { value: '600' } });
+    fireEvent.change(chain.getByLabelText('chain TGT distance pts'), { target: { value: '250' } });
+    expect(chain.getByLabelText('chain distance filters')).toHaveTextContent('SL 180 to 600 · TGT 250+');
+    expect(screen.getByText(/with the timeframe chain \(only with the SL 180 to 600 pts from the entry; the TGT 250\+ pts from the entry\)/)).toBeInTheDocument();
+    // A maximum under its minimum is refused in the chain's words.
+    fireEvent.change(chain.getByLabelText('chain SL maximum distance pts'), { target: { value: '100' } });
+    expect(await screen.findByText('The SL maximum with the chain (100) is under its minimum (180): no signal could pass both.')).toBeInTheDocument();
+    fireEvent.change(chain.getByLabelText('chain SL maximum distance pts'), { target: { value: '600' } });
+    await waitFor(() => expect(screen.queryByText(/is under its minimum/)).toBeNull());
+
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.minSlPts).toMatchObject({ chain: 180 });
+    expect(saved().config.signal!.maxSlPts).toMatchObject({ chain: 600 });
+    expect(saved().config.signal!.minTgtPts).toMatchObject({ chain: 250 });
   });
 
   it('[critical] each is its own condition: a number above 0 switches that one on, and the row says which are on', () => {

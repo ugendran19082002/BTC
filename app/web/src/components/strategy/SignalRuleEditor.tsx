@@ -5,7 +5,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Input } from '@/components/ui/input';
 import { NumberField } from '@/components/ui/number-field';
-import { legOfSignal, ruleTfs, SIGNAL_TFS, type SignalRule, type SignalTf } from '@/types/strategy';
+import { CHAIN_PTS, legOfSignal, ptsKeysOf, ruleTfs, SIGNAL_TFS, type PtsKey, type SignalRule, type SignalTf } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
 import { cn } from '@/lib/utils';
 
@@ -110,6 +110,8 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
   const { data: report } = usePoll(() => getMethodReport(null), 300_000);
   // The boards the signals stand on: 5m for the chain (its reads ride on every board), each picked timeframe without it.
   const boardTfs: SignalTf[] = rule.mode === 'single' ? tfs : ['5m'];
+  // The rows of the SL / TGT range: a timeframe each without the chain, the chain's one with it.
+  const ptsKeys: PtsKey[] = rule.mode === 'single' ? tfs : ptsKeysOf(rule);
   const { data: boards } = usePoll(() => Promise.all(boardTfs.map((tf) => getEntryBoard(tf))), 10_000, { deps: [rule.mode, tfKey] });
 
   const rows = useMemo((): MethodReportRow[] => {
@@ -205,26 +207,31 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
           </p>
           {errors.tf && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.tf}</p>}
 
-          {/*
-            The distance filters, two numbers per timeframe picked (4 Oct 2026). A
+        </div>
+      )}
+
+      {/*
+            The distance filters, two numbers per timeframe picked (4 Oct 2026) -- and, with the chain, the
+            chain's own two (6 Oct 2026): one row, kept apart from any timeframe's, so a rule switched to the
+            chain does not bring a filter with it. A
             stop a few points from the entry is one the perp's own noise reaches,
             and a target a few points away pays less than the option's spread; how
             near is too near differs by timeframe, so each has its own. Both start
             at 0, which is off.
           */}
-          {tfs.length > 0 && (
-            <div role="group" aria-label="SL and TGT distance by timeframe" className="mt-2 rounded-lg border border-solid border-border px-2.5 py-2">
+      {ptsKeys.length > 0 && (
+            <div role="group" aria-label={rule.mode === 'single' ? 'SL and TGT distance by timeframe' : 'SL and TGT distance with the chain'} className="rounded-lg border border-solid border-border px-2.5 py-2">
               <div className="text-[12.5px] font-medium text-foreground">Take a signal only if its SL and TGT are in range</div>
               <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
-                The distance from the perp entry to the signal&apos;s SL, and to its TGT, in BTC points, for each timeframe:
+                The distance from the perp entry to the signal&apos;s SL, and to its TGT, in BTC points, {rule.mode === 'single' ? 'for each timeframe' : 'for signals with the chain (their entry is on 5m)'}:
                 a minimum (≥) and a maximum (≤). Inside both and the signal is taken; nearer than the minimum or further
                 than the maximum and it is skipped, with both prices in the trade history. Each is its own condition,
                 on from any number above 0 — 0 is off.
               </p>
               <div className="mt-1.5 flex flex-col gap-1.5">
-                {tfs.map((tf) => (
+                {ptsKeys.map((tf) => (
                   <div key={tf} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
-                    <span className="w-8 flex-none font-medium text-foreground">{tf}</span>
+                    <span className={cn('flex-none font-medium text-foreground', tf === CHAIN_PTS ? 'w-12' : 'w-8')}>{tf === CHAIN_PTS ? 'Chain' : tf}</span>
                     <span className="flex items-center gap-1.5">
                       <span className="text-[var(--down)]">SL</span>
                       <span className="text-muted-foreground">≥</span>
@@ -260,8 +267,6 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
               </p>
               {errors.slPts && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.slPts}</p>}
             </div>
-          )}
-        </div>
       )}
 
       <div>

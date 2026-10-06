@@ -868,7 +868,7 @@ test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put
   await api('POST', '/api/strategies/sig-buy/enabled', { enabled: false });
 });
 
-test('[critical] at the zone, the distance is measured from the fill -- and with the chain the filter is not read', async () => {
+test('[critical] at the zone, the distance is measured from the fill -- and with the chain a timeframe\'s number is not read, the chain\'s own is', async () => {
   const zone = { ...config, signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 10, enterOn: 'zone', minSlPts: { '15m': 400 } } };
   assert.equal((await api('POST', '/api/strategies', { name: 'Sig sl zone', config: zone })).status, 200);
   const chain = { ...config, signal: { mode: 'mtf', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 10, enterOn: 'signal', minSlPts: { '5m': 5_000 } } };
@@ -890,10 +890,32 @@ test('[critical] at the zone, the distance is measured from the fill -- and with
   await runner.onSetupFilled(fill(85_000, 1_790_900_900));     // 400 pts: taken
   assert.equal((await runsOf('sig-sl-zone')).at(-1)!.status, 'would-place');
 
+  /*
+   * With the chain the filter is the chain's own (6 Oct 2026). The signal: entry 84,975, SL 84,600 (375 pts),
+   * TGT1 85,500 (525 pts). Three strategies with the chain: one asks an SL of 400 or more, one a TGT of 500 or
+   * less, one a range the signal is inside -- beside the one above, whose 5,000 is a timeframe's number.
+   */
+  const withChain = (over: object) => ({ ...config, signal: { mode: 'mtf', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 10, enterOn: 'signal', ...over } });
+  const made = await api('POST', '/api/strategies', { name: 'Chain sl near', config: withChain({ minSlPts: { '5m': 0, chain: 400 } }) });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  assert.deepEqual((await strategyStore().get('chain-sl-near'))!.config.signal!.minSlPts, { chain: 400 }, 'kept as the chain\'s own; a zero is no entry');
+  assert.equal((await api('POST', '/api/strategies', { name: 'Chain tgt far', config: withChain({ maxTgtPts: { chain: 500 } }) })).status, 200);
+  assert.equal((await api('POST', '/api/strategies', { name: 'Chain in range', config: withChain({ minSlPts: { chain: 300 }, maxSlPts: { chain: 400 }, minTgtPts: { chain: 500 }, maxTgtPts: { chain: 600 } }) })).status, 200);
+  const crossed = await api('POST', '/api/strategies', { name: 'Chain crossed', config: withChain({ minSlPts: { chain: 500 }, maxSlPts: { chain: 300 } }) });
+  assert.ok(crossed.body.problems.includes('The SL maximum with the chain (300) is under its minimum (500): no signal could pass both.'), JSON.stringify(crossed.body));
+  for (const id of ['chain-sl-near', 'chain-tgt-far', 'chain-in-range']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: true });
+
   await runner.onSignal(signal({ mode: 'mtf', tf: '5m' }));    // with the chain: 375 pts against a 5,000 it does not read
   const taken = (await runsOf('sig-sl-chain')).at(-1)!;
   assert.equal(taken.status, 'would-place', taken.detail);
-  for (const id of ['sig-sl-zone', 'sig-sl-chain']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+  const nearChain = (await runsOf('chain-sl-near')).at(-1)!;
+  assert.equal(nearChain.status, 'skipped', nearChain.detail);
+  assert.match(nearChain.detail, /SL too near: the perp entry 84975 to the SL 84600 is 375 pts — this strategy takes timeframe-chain signals only at 400 pts or more$/);
+  const farChain = (await runsOf('chain-tgt-far')).at(-1)!;
+  assert.equal(farChain.status, 'skipped', farChain.detail);
+  assert.match(farChain.detail, /TGT too far: the perp entry 84975 to the TGT 85500 is 525 pts — this strategy takes timeframe-chain signals only at 500 pts or less$/);
+  assert.equal((await runsOf('chain-in-range')).at(-1)!.status, 'would-place', 'inside every one of its four numbers: taken');
+  for (const id of ['sig-sl-zone', 'sig-sl-chain', 'chain-sl-near', 'chain-tgt-far', 'chain-in-range']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
 });
 
 test('[critical] TGT distance per timeframe: a signal whose target is nearer than its points is skipped, said in the history -- measured to the target the trade exits at', async () => {

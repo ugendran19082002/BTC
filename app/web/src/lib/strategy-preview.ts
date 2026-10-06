@@ -121,10 +121,10 @@ export function describeStrategy(c: StrategyConfig): string {
     // The distance filters, where set: "(only with the SL 150+ pts from the entry on 5m, 300 to 900 on 15m; the TGT up to 400 pts from the entry on 5m)".
     const span = (x: { pts: number; max: number }) => (x.pts > 0 && x.max > 0 ? `${x.pts} to ${x.max}` : x.pts > 0 ? `${x.pts}+` : `up to ${x.max}`);
     const side = (name: string, xs: { tf: string; pts: number; max: number }[]) =>
-      (xs.length ? `the ${name} ${xs.map((x, i) => `${span(x)} ${i === 0 ? 'pts from the entry ' : ''}on ${x.tf}`).join(', ')}` : null);
+      (xs.length ? `the ${name} ${xs.map((x, i) => `${span(x)} ${i === 0 ? 'pts from the entry' : ''}${x.tf === 'chain' ? '' : `${i === 0 ? ' ' : ''}on ${x.tf}`}`.trim()).join(', ')}` : null);
     const sides = [side('SL', slFilters(r)), side('TGT', tgtFilters(r))].filter(Boolean);
     const far = sides.length ? ` (only with ${sides.join('; ')})` : '';
-    const way = r.mode === 'mtf' ? 'with the timeframe chain' : `without the chain, ${ruleTfWords(r)}${far}`;
+    const way = r.mode === 'mtf' ? `with the timeframe chain${far}` : `without the chain, ${ruleTfWords(r)}${far}`;
     return `From ${time12(c.entryTime)} to ${time12(c.exitTime)} IST on ${describeDays(c.weekdays)}, takes the TRADE signals of `
       + `${n === 0 ? 'no method yet' : `${n} method${n === 1 ? '' : 's'}`} ${way}: ${r.action === 'buy' ? 'a BUY buys a call, a SELL a put' : 'a BUY sells a put, a SELL a call'}, `
       + `${describeStrike(c)}${blocksWords(c)}, ${c.lots} lot${c.lots === 1 ? '' : 's'}, at most ${r.maxOpen} open at once. `

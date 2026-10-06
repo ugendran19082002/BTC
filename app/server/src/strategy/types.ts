@@ -327,27 +327,31 @@ export type SignalRule = {
    * the option bought back there has paid the spread twice for nothing; how
    * tight is too tight differs by timeframe, so each has its own number. A
    * timeframe absent, or at 0, has no such filter -- every strategy saved
-   * before it. Not read with the chain.
+   * before it.
+   *
+   * With the chain (6 Oct 2026) the filter is the one number under `chain` -- its entry is always 5m, and it
+   * is a number of its own: a rule copied from one without the chain keeps that one's per-timeframe numbers,
+   * and they are not read with the chain, so switching a rule to the chain never switches a filter on with it.
    */
-  minSlPts?: Partial<Record<SignalTf, number>>;
+  minSlPts?: PtsBy;
   /**
    * The same filter on the other side (4 Oct 2026): per timeframe, the least
    * distance in BTC points from the perp entry to the target the trade exits
    * at -- the rule's `target`, TGT1 where the signal has no TGT2 / TGT3. A
    * target a few points away pays less than the option's spread costs to
-   * cross twice. Absent or 0 for a timeframe: no filter. Not read with the chain.
+   * cross twice. Absent or 0 for a timeframe: no filter. With the chain: the number under `chain`.
    */
-  minTgtPts?: Partial<Record<SignalTf, number>>;
+  minTgtPts?: PtsBy;
   /**
    * The other end of each (owner, 5 Oct 2026): per timeframe, the most distance in BTC points from the perp
    * entry to the signal's SL, and to its target, for the signal to be taken. A stop a long way off is a loss
    * larger than the option's premium is paid for; a target a long way off is one the day rarely reaches. A
    * signal further than the number is skipped and the history says so. Absent or 0 for a timeframe: no
-   * maximum -- every strategy saved before it. Not read with the chain. Where a timeframe has both, the
-   * maximum is not under the minimum.
+   * maximum -- every strategy saved before it. With the chain: the number under `chain`. Where one has both,
+   * the maximum is not under the minimum.
    */
-  maxSlPts?: Partial<Record<SignalTf, number>>;
-  maxTgtPts?: Partial<Record<SignalTf, number>>;
+  maxSlPts?: PtsBy;
+  maxTgtPts?: PtsBy;
   /**
    * What is done with the option (owner, 5 Oct 2026): `sell` -- a BUY signal sells the put, a SELL the call,
    * what every signal strategy did before this -- or `buy` -- a BUY signal buys the call, a SELL the put.
@@ -364,8 +368,16 @@ export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): S
 /** A bought option's exits hold one level each: a timetable of them is not built for buying. */
 export const BUY_NO_STEPS = 'A BUY strategy\'s option target and stop hold one level each: remove the time steps.';
 export type SignalEntry = 'zone' | 'signal';
+/** Where a rule with the chain keeps its distance filters: one number each, beside the per-timeframe ones of a rule without it. */
+export const CHAIN_PTS = 'chain' as const;
+export type PtsKey = SignalTf | typeof CHAIN_PTS;
+/** A distance filter's numbers: per timeframe without the chain, and one under `chain` with it. */
+export type PtsBy = Partial<Record<PtsKey, number>>;
 /** The most an SL-distance filter may ask for: beyond this is a typo, not a filter. */
 export const MAX_SL_PTS = 100_000;
+
+/** "for 15m", "with the chain": which of a rule's distance filters a message is about. */
+export const ptsWhere = (key: string): string => (key === CHAIN_PTS ? 'with the chain' : `for ${key}`);
 
 /** The least SL distance a rule asks of a signal on this timeframe; 0 is no filter. */
 export function minSlPtsFor(rule: Pick<SignalRule, 'mode' | 'minSlPts'>, tf: string): number {
@@ -387,9 +399,9 @@ export function maxTgtPtsFor(rule: Pick<SignalRule, 'mode' | 'maxTgtPts'>, tf: s
   return ptsFor(rule.mode, rule.maxTgtPts, tf);
 }
 
-function ptsFor(mode: SignalRule['mode'], by: Partial<Record<SignalTf, number>> | undefined, tf: string): number {
-  if (mode !== 'single') return 0;
-  const v = by?.[tf as SignalTf];
+function ptsFor(mode: SignalRule['mode'], by: PtsBy | undefined, tf: string): number {
+  // With the chain: its own number, whatever timeframes the rule carried before it was one with the chain.
+  const v = by?.[mode === 'single' ? (tf as SignalTf) : CHAIN_PTS];
   return typeof v === 'number' && v > 0 ? v : 0;
 }
 /** The default: enter "in the trade". */
@@ -937,19 +949,19 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
     if (by === undefined || by === null) continue;
     if (typeof by !== 'object' || Array.isArray(by)) { bad.push(`The ${name} distances must be given per timeframe.`); continue; }
     for (const [tf, v] of Object.entries(by)) {
-      if (!SIGNAL_TFS.includes(tf as SignalTf)) bad.push(`No such timeframe for ${a} ${name} distance: ${tf}.`);
+      if (tf !== CHAIN_PTS && !SIGNAL_TFS.includes(tf as SignalTf)) bad.push(`No such timeframe for ${a} ${name} distance: ${tf}.`);
       else if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_SL_PTS) {
-        bad.push(`The ${name} distance for ${tf} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
+        bad.push(`The ${name} distance ${ptsWhere(tf)} must be from 0 to ${MAX_SL_PTS.toLocaleString('en-US')} points.`);
       }
     }
   }
   // A maximum under its own minimum takes no signal at all: said, rather than saved as a strategy that never trades.
   for (const [lo, hi, name] of [[r.minSlPts, r.maxSlPts, 'SL'], [r.minTgtPts, r.maxTgtPts, 'TGT']] as const) {
     if (!lo || !hi || typeof lo !== 'object' || typeof hi !== 'object') continue;
-    for (const tf of SIGNAL_TFS) {
+    for (const tf of [...SIGNAL_TFS, CHAIN_PTS] as PtsKey[]) {
       const least = lo[tf], most = hi[tf];
       if (typeof least === 'number' && typeof most === 'number' && least > 0 && most > 0 && most < least) {
-        bad.push(`The ${name} maximum for ${tf} (${most}) is under its minimum (${least}): no signal could pass both.`);
+        bad.push(`The ${name} maximum ${ptsWhere(tf)} (${most}) is under its minimum (${least}): no signal could pass both.`);
       }
     }
   }

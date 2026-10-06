@@ -62,8 +62,12 @@ describe('the broker accounts', () => {
 
   it('[critical] adding an account sends the key once and forgets it; a refusal is said and the form kept', async () => {
     render(<AccountsPanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Add account' }));
-    const form = within(screen.getByRole('form', { name: 'add an account' }));
+    // The button is there before the accounts are read, and disabled until they are: a click before that opens
+    // nothing. Under load the test won that race five runs in eight and then could not find the form.
+    const add = await screen.findByRole('button', { name: 'Add account' });
+    await waitFor(() => expect(add).toBeEnabled());
+    fireEvent.click(add);
+    const form = within(await screen.findByRole('form', { name: 'add an account' }));
     expect(form.getByRole('button', { name: 'Save account' })).toBeDisabled(); // nothing typed
     fireEvent.change(form.getByLabelText('Name'), { target: { value: 'Third' } });
     fireEvent.change(form.getByLabelText('API key'), { target: { value: 'the-key' } });
