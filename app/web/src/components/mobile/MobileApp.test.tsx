@@ -266,6 +266,41 @@ describe('P&L: the day\'s high and low (owner, 6 Oct 2026)', () => {
   });
 });
 
+describe('Positions: the SL / TGT line (owner, 6 Oct 2026)', () => {
+  const underlying = { dir: -1 as const, stop: 62_400, target: 61_000, entry: 62_050, source: 'signal' };
+
+  it('[critical] a signal trade shows the perp line by default, and no option line when the option has no exit of its own', async () => {
+    signedIn();
+    getTradeStatus.mockResolvedValue(status([trade({ onBook: null, ifExits: null, plan: { ...trade().plan!, takeProfitPrice: null, stopPrice: null, underlying } })]));
+    window.history.replaceState(null, '', '/m?tab=positions');
+    render(<MobileApp />);
+    // entry 62,050, the perp at 62,010 (the glance's mark): 40 points toward a target 1,010 away, 390 from the stop
+    const perp = await screen.findByRole('img', { name: /^BTC perp: last 62,010, 1,010 to the target 61,000, 390 from the stop 62,400$/ });
+    expect(perp).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /^Option:/ })).toBeNull();
+    expect(screen.queryByText('No stop behind this position.')).toBeNull();
+  });
+
+  it('the option line appears when the option has its own SL or TGT, beside the perp line', async () => {
+    signedIn();
+    getTradeStatus.mockResolvedValue(status([trade({ plan: { ...trade().plan!, underlying } })]));
+    window.history.replaceState(null, '', '/m?tab=positions');
+    render(<MobileApp />);
+    expect(await screen.findByRole('img', { name: /^BTC perp:/ })).toBeInTheDocument();
+    // sold at 10, bought back at the offer 8.5: target 1, stop 25
+    expect(screen.getByRole('img', { name: 'Option: ask 8.50, 7.50 to the target 1.00, 16.5 from the stop 25.00' })).toBeInTheDocument();
+    expect(screen.getByText('TGT leaves')).toBeInTheDocument();
+  });
+
+  it('a trade with neither says so', async () => {
+    signedIn();
+    getTradeStatus.mockResolvedValue(status([trade({ position: 100, onBook: null, ifExits: null, plan: { ...trade().plan!, action: 'buy', takeProfitPrice: null, stopPrice: null } })]));
+    window.history.replaceState(null, '', '/m?tab=positions');
+    render(<MobileApp />);
+    expect(await screen.findByText('No stop and no target on this position.')).toBeInTheDocument();
+  });
+});
+
 describe('P&L: a custom From and To (owner, 6 Oct 2026)', () => {
   beforeEach(() => { signedIn(); window.history.replaceState(null, '', '/m?tab=pnl'); });
 
