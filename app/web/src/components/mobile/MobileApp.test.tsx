@@ -262,7 +262,8 @@ describe('P&L: the day\'s high and low (owner, 6 Oct 2026)', () => {
     expect(screen.getByText('Day low').parentElement!).toHaveTextContent('−₹510');
     expect(screen.getByText('Drawdown').parentElement!).toHaveTextContent('−₹680');
     // what the day has booked as losses, beside them: $3 at ₹85
-    expect(screen.getByText('Day loss').parentElement!).toHaveTextContent('−₹255');
+    // (the status is its own poll: it may land a moment after the day's line does)
+    await waitFor(() => expect(screen.getByText('Day loss').parentElement!).toHaveTextContent('−₹255'));
     expect(screen.queryByText('Max loss')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: '7 days' }));
     const best = (await screen.findByText('Best day')).parentElement!;
@@ -270,7 +271,8 @@ describe('P&L: the day\'s high and low (owner, 6 Oct 2026)', () => {
     expect(best).toHaveTextContent('10-02');
     expect(screen.getByText('Worst day').parentElement!).toHaveTextContent('−₹425');
     // the losses booked over the range: $2 + $6 at ₹85
-    const loss = screen.getByText('Loss').parentElement!;
+    // (the tile, not the word in the calendar's colour key)
+    const loss = screen.getByText('Loss', { selector: 'dt' }).parentElement!;
     expect(loss).toHaveTextContent('−₹680');
     expect(loss).toHaveTextContent('1 day down');
   });

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
  * The days of the P&L range as a calendar, for a thumb (owner, 6 Oct 2026): under each month's name what the month
  * made and how many days went up and down; a row of weekday letters; then a square a day, green or red by what it
  * made and stronger the bigger, with the figure written in it. A tap on a day puts that day's own numbers under
- * the calendar -- net, trades, profit, loss, charges, and the running total. The last day traded is open to begin with.
+ * the calendar -- net, trades, gains, losses, charges, and the running total. The last day traded is open to begin with.
  *
  * Only the weeks that hold a day of the range are drawn, so seven days are one row, not a month of blanks.
  *
@@ -128,8 +128,8 @@ export function DayCalendar({ from, to, rows, today }: { from: string; to: strin
           {/* Its own small grid, not the screen's tiles: six figures have to fit whole inside this box on a 360px phone. */}
           <dl className="m-0 grid grid-cols-3 !gap-x-[8px] !gap-y-[8px]">
             <Figure label="Trades">{row.trades}</Figure>
-            <Figure label="Profit" tone={row.profitUsd ? 'up' : undefined}>{row.profitUsd === undefined ? '—' : rs(row.profitUsd)}</Figure>
-            <Figure label="Loss" tone={row.lossUsd ? 'down' : undefined}>{row.lossUsd === undefined ? '—' : rs(-row.lossUsd)}</Figure>
+            <Figure label="Gains" tone={row.profitUsd ? 'up' : undefined}>{row.profitUsd === undefined ? '—' : rs(row.profitUsd)}</Figure>
+            <Figure label="Losses" tone={row.lossUsd ? 'down' : undefined}>{row.lossUsd === undefined ? '—' : rs(-row.lossUsd)}</Figure>
             <Figure label="Gross" tone={pnlTone(row.realisedUsd)}>{rs(row.realisedUsd)}</Figure>
             <Figure label="Charges" tone={row.chargesUsd ? 'down' : undefined}>{rs(-row.chargesUsd)}</Figure>
             <Figure label="Running total" tone={pnlTone(row.cumulativeUsd)}>{rs(row.cumulativeUsd)}</Figure>
