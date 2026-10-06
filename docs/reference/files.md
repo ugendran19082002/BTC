@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-432 files listed, 206 test files counted below, images and lockfiles left out.
+439 files listed, 210 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 120 |
-| `app/web` | 86 |
+| `app/web` | 90 |
 
 ## `(root)`
 
@@ -368,13 +368,17 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [DateRangeSheet.tsx](../../app/web/src/components/mobile/DateRangeSheet.tsx) | A From and a To date, from the bottom of the screen (the phone's P&L, owner, 6 Oct 2026). |
 | [DeskSwitch.tsx](../../app/web/src/components/mobile/DeskSwitch.tsx) | From the phone to the full desk (6 Oct 2026). |
+| [ExitRail.tsx](../../app/web/src/components/mobile/ExitRail.tsx) | The price between its target and its stop, drawn (owner's reference, 6 Oct 2026): TGT at the left, SL at the right, the entry between, and a marker for the price now that slides as it moves -- the... |
 | [HealthCard.tsx](../../app/web/src/components/mobile/HealthCard.tsx) | The phone's desk-health card: one line first -- a word, an icon and a colour, never colour alone -- then the reasons in the server's words, then the six readings behind them. |
 | [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | The phone (6 Oct 2026): the desk read at a glance, and nothing that changes it. |
-| [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then entry, price now and P&L, then how far it has gone toward its stop and its target -- each a bar, with the level, the points left and... |
+| [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then entry, price now and P&L, then where the price stands between the stop and the target, drawn and moving (ExitRail) -- the BTC perp's... |
+| [Toasts.tsx](../../app/web/src/components/mobile/Toasts.tsx) | What just happened, said once, on whatever screen is open (owner, 6 Oct 2026): an order began waiting, an order filled, a position closed -- a card that slides down under the header and opens the t... |
 | [TradeDetail.tsx](../../app/web/src/components/mobile/TradeDetail.tsx) | One trade, start to end, read only (the phone's Level 2, 6 Oct 2026): what it is and what it made, then its whole journal as a line of steps -- signal, entry, fill, protection, exit, closed. |
 | [parts.tsx](../../app/web/src/components/mobile/parts.tsx) | The phone's building blocks (6 Oct 2026): one way to show a figure, a row, a filter and a list item, so every screen reads the same. |
 | [phone-context.ts](../../app/web/src/components/mobile/phone-context.ts) | What every phone screen shares (6 Oct 2026): the desk's status and health, read once by the shell and handed down, the account being shown, the clock, and how to move -- so five screens do not poll... |
+| [useTradeToasts.ts](../../app/web/src/components/mobile/useTradeToasts.ts) | The phone's live toasts (owner, 6 Oct 2026): each reading of the open trades against the one before it, and a toast for what changed -- an order waiting, an order filled, a position closed, an orde... |
 
 ## `app/web/src/components/mobile/screens/`
 
@@ -505,9 +509,11 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [account-scope.ts](../../app/web/src/lib/account-scope.ts) | Which broker account the account-based screens are showing (owner, 5 Oct 2026): strategies, orders and P&L are read for one account at a time, chosen on the tabs above them. |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
+| [custom-range.ts](../../app/web/src/lib/custom-range.ts) | A custom range of IST days for the phone's P&L (owner, 6 Oct 2026): quick picks, and the rules a range must keep -- the same the server holds it to (`report.routes.ts` `rangeOf`: from not after to,... |
 | [ev-view.ts](../../app/web/src/lib/ev-view.ts) | Reading the server's per-strike arithmetic onto the screen. |
 | [exit-checks.ts](../../app/web/src/lib/exit-checks.ts) | Whether a stop and a target make sense against the price right now. |
 | [exit-input.ts](../../app/web/src/lib/exit-input.ts) | How the ticket and Edit exits read one exit: |
+| [exit-rail.ts](../../app/web/src/lib/exit-rail.ts) | Where the price stands between a trade's target and its stop, as places along one line (owner's reference, 6 Oct 2026): the target at the left, the stop at the right, the entry between them in prop... |
 | [format.ts](../../app/web/src/lib/format.ts) | How numbers are written on this desk. |
 | [held.ts](../../app/web/src/lib/held.ts) | The strikes you are currently short, keyed the way the board looks them up. |
 | [ist-moment.ts](../../app/web/src/lib/ist-moment.ts) | A date and time, always read as India time. |
@@ -528,6 +534,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [strategy-totals.ts](../../app/web/src/lib/strategy-totals.ts) | What the signal strategies switched on add up to (4 Oct 2026): how many entries they allow between them, how many lots that is, and the margin it would take with every one of them open at once. |
 | [tab-title.ts](../../app/web/src/lib/tab-title.ts) | What the browser tab says: the price, how far it has come today, and the day's P&L -- the three numbers somebody glances at from another tab. |
 | [time.ts](../../app/web/src/lib/time.ts) | Times of day, as the desk stores them and as a person reads them. |
+| [trade-events.ts](../../app/web/src/lib/trade-events.ts) | What changed between one reading of the desk's open trades and the next (the phone's live toasts, owner, 6 Oct 2026): an order began waiting, an order filled, a position closed, a waiting order wen... |
 | [utils.ts](../../app/web/src/lib/utils.ts) | Class-name helpers shared by every component. |
 | [vol-regime.ts](../../app/web/src/lib/vol-regime.ts) | Is the chart moving more or less than usual: the latest ATR(14) against the median ATR over the candles given. |
 
