@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHAIN_TF, pairsOfReport, pairsOfStats, splitPairs, type PairStat } from '@/lib/method-pairs';
+import { CHAIN_TF, chosenTfs, pairsOfReport, pairsOfStats, pickTf, splitPairs, timeframesOf, type PairStat } from '@/lib/method-pairs';
 import type { MethodReportResponse, MethodReportRow, MethodReportSection } from '@/types/entry';
 
 const pair = (name: string, tf: string, net: number, trades = 4): PairStat => ({
@@ -67,6 +67,36 @@ describe('signal history pairs', () => {
     expect(pairs.map((p) => [p.key, p.tf, p.net])).toEqual([['breakout|mtf|5m + TF chain', CHAIN_TF, -250]]);
     expect(signals).toBe(10);
     expect(splitPairs(pairs).worst).toHaveLength(1);
+  });
+
+  it('[critical] without the chain, only the timeframes picked: their pairs and their signals; none picked is all', () => {
+    expect(pairsOfReport(report, 'single', ['1h']).pairs.map((p) => p.tf)).toEqual(['1h']);
+    expect(pairsOfReport(report, 'single', ['1h']).signals).toBe(10);
+    expect(pairsOfReport(report, 'single', ['1h', '15m']).pairs.map((p) => p.tf)).toEqual(['15m', '1h']);
+    expect(pairsOfReport(report, 'single', []).pairs).toHaveLength(2);
+    // a pick remembered from a day that had 2h, on a report without it: every timeframe, not none
+    expect(pairsOfReport(report, 'single', ['2h']).pairs).toHaveLength(2);
+    // the chain has no timeframe to pick: the filter does not touch it
+    expect(pairsOfReport(report, 'mtf', ['1h']).pairs).toHaveLength(1);
+  });
+
+  it('the filter\'s chips: the report\'s timeframes, shortest first; a pick keeps only those it has', () => {
+    const r: MethodReportResponse = { tf: null, sections: [], singleByTf: { '4h': section('single', []), '5m': section('single', []), '1h': section('single', []), '15m': section('single', []) } };
+    expect(timeframesOf(r)).toEqual(['5m', '15m', '1h', '4h']);
+    expect(chosenTfs(r, ['4h', '2h', '5m'])).toEqual(['5m', '4h']);
+    expect(timeframesOf({ tf: null, sections: [], singleByTf: {} })).toEqual([]);
+  });
+
+  it('a tap on the filter: one at a time chooses that one alone; many adds or takes away; All clears', () => {
+    expect(pickTf([], '15m', 'one')).toEqual(['15m']);
+    expect(pickTf(['15m'], '1h', 'one')).toEqual(['1h']);
+    expect(pickTf(['15m'], '15m', 'one')).toEqual(['15m']);
+    expect(pickTf([], '15m', 'many')).toEqual(['15m']);
+    expect(pickTf(['15m'], '1h', 'many')).toEqual(['15m', '1h']);
+    expect(pickTf(['15m', '1h'], '15m', 'many')).toEqual(['1h']);
+    expect(pickTf(['1h'], '1h', 'many')).toEqual([]);
+    expect(pickTf(['15m', '1h'], null, 'many')).toEqual([]);
+    expect(pickTf(['15m'], null, 'one')).toEqual([]);
   });
 
   it('a report with no section for a way gives no pairs', () => {

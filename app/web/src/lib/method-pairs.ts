@@ -61,10 +61,15 @@ export const CHAIN_TF = '5m + TF chain';
  * one pair (its entry is on 5m); without it, one pair for each timeframe it gave a trade on. A method that gave
  * signals and no trade has nothing to be ranked on and is left out; its signals are still counted in `signals`.
  */
-export function pairsOfReport(report: MethodReportResponse, way: EntryMode): { pairs: SignalPair[]; signals: number } {
+export function pairsOfReport(
+  report: MethodReportResponse, way: EntryMode,
+  /** Without the chain, only these timeframes; none named (or none of them in the report) is every timeframe. */
+  only: readonly string[] = [],
+): { pairs: SignalPair[]; signals: number } {
+  const kept = chosenTfs(report, only);
   const sections = way === 'mtf'
     ? report.sections.filter((s) => s.mode === 'mtf').map((s) => ({ tf: CHAIN_TF, rows: s.rows }))
-    : Object.entries(report.singleByTf ?? {}).map(([tf, s]) => ({ tf, rows: s?.rows ?? [] }));
+    : Object.entries(report.singleByTf ?? {}).filter(([tf]) => kept.length === 0 || kept.includes(tf)).map(([tf, s]) => ({ tf, rows: s?.rows ?? [] }));
   const pairs: SignalPair[] = [];
   let signals = 0;
   for (const { tf, rows } of sections) {
@@ -79,4 +84,25 @@ export function pairsOfReport(report: MethodReportResponse, way: EntryMode): { p
     }
   }
   return { pairs, signals };
+}
+
+const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h'];
+
+/** The timeframes the report has without the chain, shortest first: the filter's chips. */
+export const timeframesOf = (report: MethodReportResponse): string[] =>
+  Object.keys(report.singleByTf ?? {}).sort((a, b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b));
+
+/** Of the timeframes picked, those the report has, in its order: a pick remembered from another day may name one it has not. */
+export const chosenTfs = (report: MethodReportResponse, picked: readonly string[]): string[] =>
+  timeframesOf(report).filter((t) => picked.includes(t));
+
+/**
+ * A tap on the timeframe filter (owner, 6 Oct 2026: "single select and multiple select"). `tf` null is "All",
+ * which clears the pick. Picking one at a time, a tap chooses that timeframe alone; picking many, a tap adds it
+ * or takes it away, and taking the last away is "All" again.
+ */
+export function pickTf(picked: readonly string[], tf: string | null, how: 'one' | 'many'): string[] {
+  if (tf === null) return [];
+  if (how === 'one') return [tf];
+  return picked.includes(tf) ? picked.filter((t) => t !== tf) : [...picked, tf];
 }
