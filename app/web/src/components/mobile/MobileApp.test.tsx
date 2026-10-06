@@ -138,7 +138,7 @@ describe('signed in', () => {
     expect(screen.getByText('API usage')).toBeInTheDocument();
     expect(await screen.findByText('−₹429')).toBeInTheDocument(); // −$5.05 at ₹85
     expect(await screen.findByText('75%')).toBeInTheDocument(); // win rate
-    expect(screen.getByText('Open positions · 1')).toBeInTheDocument();
+    expect(screen.getByText('Positions · 1 running')).toBeInTheDocument();
     expect(screen.getByRole('meter', { name: 'Daily loss limit used' })).toHaveAttribute('aria-valuenow', '20');
   });
 

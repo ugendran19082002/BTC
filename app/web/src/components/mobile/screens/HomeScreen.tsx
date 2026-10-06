@@ -3,7 +3,8 @@ import { json } from '@/api/client';
 import { getOrders, getStats } from '@/api/phone';
 import type { MtmReport } from '@/types/report';
 import { usePoll } from '@/hooks/usePoll';
-import { clock, contractLabel, pct, size } from '@/lib/format';
+import { clock, contractLabel, pct, price, size } from '@/lib/format';
+import { isRunning, isWaiting } from '@/lib/trade-events';
 import { lossBudget, positionRisk } from '@/lib/position-risk';
 import { phoneAlerts } from '@/lib/phone-alerts';
 import { todayIst } from '@/lib/report';
@@ -33,6 +34,8 @@ export function HomeScreen() {
   const o = stats.data?.overall;
   const g = p.glance;
   const critical = alerts.filter((a) => a.level === 'red');
+  const waitingN = (s?.open ?? []).filter(isWaiting).length;
+  const running = (s?.open ?? []).filter(isRunning).length;
   const marginShare = s?.marginUsedUsd != null && s.walletUsd ? s.marginUsedUsd / s.walletUsd : null;
   const samples = mtm.data?.samples ?? [];
 
@@ -94,11 +97,33 @@ export function HomeScreen() {
         )}
       </Panel>
 
-      <Panel title={`Open positions${s ? ` · ${s.open.length}` : ''}`} right={s && s.open.length > 0 ? <button type="button" onClick={() => p.go({ tab: 'positions' })} className="border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">Risk →</button> : undefined}>
-        {!s ? <Empty>Reading positions…</Empty> : s.open.length === 0 ? <Empty>No open positions.</Empty> : (
+      <Panel title={s ? `Positions · ${running} running${waitingN ? ` · ${waitingN} waiting` : ''}` : 'Positions'} right={s && s.open.length > 0 ? <button type="button" onClick={() => p.go({ tab: 'positions' })} className="border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">Risk →</button> : undefined}>
+        {!s ? <Empty>Reading positions…</Empty> : s.open.length === 0 ? <Empty>No open positions, no order waiting.</Empty> : (
           <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
-            {s.open.map((t) => {
+            {/* Running first; an order still waiting to fill after them, in amber, with where it rests. */}
+            {[...s.open].sort((a, b) => Number(isWaiting(a)) - Number(isWaiting(b))).map((t) => {
               const r = positionRisk(t, { alarms: s.alarms, perpMark: p.perp });
+              if (isWaiting(t)) {
+                const limit = t.plan?.entry.limitPrice ?? null;
+                return (
+                  <li key={`${t.account?.id ?? ''}-${t.tradeId}`}>
+                    <ListButton onClick={() => p.openTrade(t.tradeId)} label={`${contractLabel(t.symbol)}, waiting to fill: open the order`}>
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-[15px] font-semibold">{contractLabel(t.symbol)}</span>
+                          <SidePill long={r.long} />
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1.5 rounded bg-[var(--warn-bg)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--warn)]">
+                          <span aria-hidden="true" className="m-breathe h-2 w-2 rounded-full bg-[var(--warn)]" /> WAITING
+                        </span>
+                      </span>
+                      <span className="block text-[12px] tabular-nums text-muted-foreground">
+                        × {size(t.requestedSize)} · {limit !== null ? `resting at ${price(limit)}` : 'at market'}{t.account && p.shown === 'all' ? ` · ${t.account.name}` : ''}
+                      </span>
+                    </ListButton>
+                  </li>
+                );
+              }
               return (
                 <li key={`${t.account?.id ?? ''}-${t.tradeId}`}>
                   <ListButton onClick={() => p.openTrade(t.tradeId)} label={`${contractLabel(t.symbol)} ${r.long ? 'buy' : 'sell'}: open the trade`}>
