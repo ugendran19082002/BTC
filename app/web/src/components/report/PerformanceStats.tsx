@@ -5,6 +5,8 @@ import type { DayRow } from '@/types/report';
 import type { OrderRecord } from '@/types/trade';
 import { signedInr, usdToInr } from '@/lib/format';
 
+type StatsFilter = 'All Trades' | 'Strategy Trades' | 'Manual Trades';
+
 export interface PerformanceStatsProps {
   rows: DayRow[];
   orders?: OrderRecord[];
@@ -12,16 +14,18 @@ export interface PerformanceStatsProps {
 
 export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
   const [open, setOpen] = useFold('pnl-stats');
-  const [filter, setFilter] = usePersisted<'All Trades' | 'Strategy Trades' | 'Manual Trades'>('report:stats-filter', 'All Trades');
+  const [filter, setFilter] = usePersisted<StatsFilter>('report:stats-filter', 'All Trades');
 
   // Filter orders dynamically based on user choice
   const filteredOrders = useMemo(() => {
     if (!orders || orders.length === 0) return [];
     if (filter === 'Strategy Trades') {
-      return orders.filter((o) => (o as any).plan?.origin === 'strategy' || (o as any).strategyId);
+      // A strategy's trade by its origin, or -- on a record from before the field -- by the strategy it names.
+      // Typed (6 Oct 2026): through `as any` this read `o.strategyId`, which orders do not have.
+      return orders.filter((o) => o.plan?.origin === 'strategy' || Boolean(o.plan?.strategyId));
     }
     if (filter === 'Manual Trades') {
-      return orders.filter((o) => (o as any).plan?.origin === 'manual');
+      return orders.filter((o) => (o.plan?.origin ?? (o.plan?.strategyId ? 'strategy' : 'manual')) === 'manual');
     }
     return orders;
   }, [orders, filter]);
@@ -222,7 +226,7 @@ export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
           className="pnl-select"
           aria-label="Filter trades"
           value={filter}
-          onChange={(e) => setFilter(e.target.value as any)}
+          onChange={(e) => setFilter(e.target.value as StatsFilter)}
         >
           <option value="All Trades">All Trades</option>
           <option value="Strategy Trades">Strategy Trades</option>

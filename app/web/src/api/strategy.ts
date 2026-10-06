@@ -41,7 +41,7 @@ export const cloneStrategy = (id: string, name?: string) =>
   post<{ ok: true; strategy: Strategy }>(`/api/strategies/${encodeURIComponent(id)}/clone`, { name });
 
 export const deleteStrategy = (id: string) =>
-  fetch(`/api/strategies/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  fetch(`/api/strategies/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' })
     .then((r) => { if (!r.ok) throw new Error('could not delete'); });
 
 /** The signal strategies' trade history for IST days (YYYY-MM-DD); null range: the latest. */

@@ -247,7 +247,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
           className="pnl-select"
           aria-label="Metric Type"
           value={metricType}
-          onChange={(e) => setMetricType(e.target.value as any)}
+          onChange={(e) => setMetricType(e.target.value as 'P&L' | '% Return')}
         >
           <option value="P&L">P&L</option>
           <option value="% Return">% Return</option>
