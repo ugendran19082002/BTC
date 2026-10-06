@@ -43,7 +43,7 @@ export function HomeScreen() {
     <>
       <button
         type="button" onClick={() => p.go({ tab: 'more', sub: 'settings' })} aria-label="Desk status: open"
-        className="grid grid-cols-4 gap-1.5 border-0 bg-transparent p-0 text-left font-[inherit]"
+        className="grid grid-cols-4 !gap-1.5 border-0 bg-transparent p-0 text-left font-[inherit]"
       >
         <Tile label="Trading" value={s ? (s.mode === 'live' ? 'LIVE' : 'PAPER') : '…'} tone={s?.mode === 'live' ? 'up' : 'dim'} />
         <Tile label="Scheduler" value={g ? (g.readings.schedulerOn ? 'ON' : 'OFF') : '…'} tone={g?.readings.schedulerOn ? 'up' : 'dim'} />
@@ -97,7 +97,7 @@ export function HomeScreen() {
         )}
       </Panel>
 
-      <Panel title={s ? `Positions · ${running} running${waitingN ? ` · ${waitingN} waiting` : ''}` : 'Positions'} right={s && s.open.length > 0 ? <button type="button" onClick={() => p.go({ tab: 'positions' })} className="border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">Risk →</button> : undefined}>
+      <Panel title={s ? `Positions · ${running} running${waitingN ? ` · ${waitingN} waiting` : ''}` : 'Positions'} right={s && s.open.length > 0 ? <button type="button" onClick={() => p.go({ tab: 'positions' })} className="-my-[9px] inline-flex min-h-[36px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">Risk →</button> : undefined}>
         {!s ? <Empty>Reading positions…</Empty> : s.open.length === 0 ? <Empty>No open positions, no order waiting.</Empty> : (
           <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
             {/* Running first; an order still waiting to fill after them, in amber, with where it rests. */}
@@ -160,7 +160,7 @@ export function HomeScreen() {
         </button>
       </div>
 
-      <Panel title="Latest order" right={<button type="button" onClick={() => p.go({ tab: 'orders' })} className="border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">All →</button>}>
+      <Panel title="Latest order" right={<button type="button" onClick={() => p.go({ tab: 'orders' })} className="-my-[9px] inline-flex min-h-[36px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">All →</button>}>
         {!latest ? <Empty>{orders.data ? 'No order today.' : 'Reading orders…'}</Empty> : (
           <ListButton onClick={() => p.openTrade(latest.tradeId)} label="Open the latest order">
             <span className="flex items-center justify-between gap-2">

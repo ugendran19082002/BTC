@@ -65,8 +65,8 @@ describe('SignalPairsScreen', () => {
     expect(screen.getByText('Trades').parentElement!).toHaveTextContent('15');
     expect(screen.getByText('Win rate').parentElement!).toHaveTextContent('60%');
     // 1,600 + 1,600 + 200 won, 360 + 360 + 1,100 lost
-    expect(screen.getByText('Won pts').parentElement!).toHaveTextContent('+3,400 pts');
-    expect(screen.getByText('Loss pts').parentElement!).toHaveTextContent('−1,820 pts');
+    expect(screen.getByText('Won pts').parentElement!).toHaveTextContent('+3,400');
+    expect(screen.getByText('Loss pts').parentElement!).toHaveTextContent('−1,820');
     expect(screen.getByText('Profit factor').parentElement!).toHaveTextContent('1.87');
     expect(screen.getByText(/whether or not an order was placed/)).toBeInTheDocument();
   });
@@ -155,7 +155,8 @@ describe('SignalPairsScreen', () => {
     expect(await screen.findByText('No signal became a trade today, without the timeframe chain.')).toBeInTheDocument();
     expect(screen.queryByRole('list')).toBeNull();
     // the net, and nothing won or lost
-    expect(screen.getAllByText('0 pts')).toHaveLength(3);
+    expect(screen.getByText('0 pts')).toBeInTheDocument();
+    expect(screen.getByText('Won pts').parentElement!).toHaveTextContent('0');
     expect(screen.getByText('Profit factor').parentElement!).toHaveTextContent('—');
   });
 });

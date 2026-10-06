@@ -112,8 +112,8 @@ export function SignalPairsScreen() {
                 <Stat label="Won" tone={wins ? 'up' : undefined}>{wins}</Stat>
                 <Stat label="Lost" tone={losses ? 'down' : undefined}>{losses}</Stat>
                 <Stat label="Pairs">{all.length}</Stat>
-                <Stat label="Won pts" tone={wonPts ? 'up' : undefined}>{pts(wonPts)}</Stat>
-                <Stat label="Loss pts" tone={lostPts ? 'down' : undefined}>{pts(-lostPts)}</Stat>
+                <Stat label="Won pts" tone={wonPts ? 'up' : undefined}>{pts(wonPts).replace(' pts', '')}</Stat>
+                <Stat label="Loss pts" tone={lostPts ? 'down' : undefined}>{pts(-lostPts).replace(' pts', '')}</Stat>
                 <Stat label="Profit factor">{lostPts > 0 ? (wonPts / lostPts).toFixed(2) : wonPts > 0 ? 'no loss' : '—'}</Stat>
               </Stats>
             </div>

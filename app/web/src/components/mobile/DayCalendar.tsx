@@ -60,7 +60,7 @@ export function DayCalendar({ from, to, rows, today }: { from: string; to: strin
                 </span>
               )}
             </div>
-            <div aria-hidden="true" className="mb-1 grid grid-cols-7 !gap-[4px] text-center text-[10.5px] text-[var(--dim)]">
+            <div aria-hidden="true" className="mb-1 grid grid-cols-7 !gap-[4px] text-center text-[11px] text-[var(--dim)]">
               {WEEKDAYS.map((w) => <span key={w}>{w[0]}</span>)}
             </div>
             <div className="grid grid-cols-7 !gap-[4px]">

@@ -59,7 +59,7 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
       )}
 
       {onOpen
-        ? <button type="button" onClick={onOpen} aria-label={`${contractLabel(trade.symbol)}: what happened`} className="flex border-0 bg-transparent p-0 text-left font-[inherit] text-foreground">{head}</button>
+        ? <button type="button" onClick={onOpen} aria-label={`${contractLabel(trade.symbol)}: what happened`} className="-my-[6px] flex min-h-[36px] items-center border-0 bg-transparent p-0 text-left font-[inherit] text-foreground">{head}</button>
         : head}
       {(showAccount && trade.account) || by ? (
         <div className="truncate text-[12px] text-muted-foreground">

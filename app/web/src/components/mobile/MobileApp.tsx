@@ -212,7 +212,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
                   <span>{t.label}</span>
                   {badge > 0 && (
                     <span className={cn(
-                      'absolute left-1/2 top-1.5 ml-2 min-w-[18px] rounded-full px-1 text-center text-[10.5px] font-semibold leading-[18px]',
+                      'absolute left-1/2 top-1.5 ml-2 min-w-[18px] rounded-full px-1 text-center text-[11px] font-semibold leading-[18px]',
                       t.tab === 'more' ? 'bg-[var(--down)] text-white' : 'bg-[var(--panel-3)] text-foreground',
                     )}>
                       {badge}
@@ -260,7 +260,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
 /** The page frame: a sticky header clear of the notch, one column with a 16px gutter, the tab bar at the thumb. */
 function Frame({ header, nav, children }: { header?: ReactNode; nav?: ReactNode; children: ReactNode }) {
   return (
-    <div className="min-h-[100dvh] bg-[var(--bg)]">
+    <div className="m-phone min-h-[100dvh] bg-[var(--bg)]">
       {header && (
         <header className="sticky top-0 z-10 border-b border-border bg-[var(--bg)]/95 px-4 pb-1.5 pt-[calc(6px+env(safe-area-inset-top))] backdrop-blur">
           <div className="mx-auto max-w-[560px]">{header}</div>

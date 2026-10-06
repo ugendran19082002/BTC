@@ -53,7 +53,7 @@ export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, l
       </div>
 
       {/* The names of the points, over them. The ends hang inward so a label never leaves the card. */}
-      <div className="relative h-[27px] text-[10.5px] leading-[1.25] tabular-nums" aria-hidden="true">
+      <div className="relative h-[28px] text-[11px] leading-[1.25] tabular-nums" aria-hidden="true">
         {r.targetAt !== null && target !== null && <Tag at={r.targetAt} name="TGT" value={fmt(target)} tone="up" />}
         {r.entryAt !== null && entry !== null && <Tag at={r.entryAt} name="Entry" value={fmt(entry)} />}
         {r.stopAt !== null && stop !== null && <Tag at={r.stopAt} name="SL" value={fmt(stop)} tone="down" />}

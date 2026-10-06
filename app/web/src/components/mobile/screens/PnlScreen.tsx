@@ -89,7 +89,7 @@ export function PnlScreen() {
         {/* The day's high, low and deepest fall, minute by minute; over days, the best and the worst (owner, 6 Oct 2026). */}
         {/* One row of four (owner, 6 Oct 2026): how high, how low, how deep the fall, and what the day has lost. */}
         {isToday && ((mtm.data && (mtm.data.stats.max || mtm.data.stats.min)) || t) && (
-          <dl className="m-0 mt-3 grid grid-cols-4 gap-1">
+          <dl className="m-0 mt-3 grid grid-cols-4 !gap-1">
             <Mark small label="Day high" usd={mtm.data?.stats.max?.netUsd ?? null} when={mtm.data?.stats.max ? clock(mtm.data.stats.max.at) : null} />
             <Mark small label="Day low" usd={mtm.data?.stats.min?.netUsd ?? null} when={mtm.data?.stats.min ? clock(mtm.data.stats.min.at) : null} />
             <Mark small label="Drawdown" usd={mtm.data?.stats.maxDrawdown ? -mtm.data.stats.maxDrawdown.usd : null} when={mtm.data?.stats.maxDrawdown ? clock(mtm.data.stats.maxDrawdown.at) : null} />
@@ -97,7 +97,7 @@ export function PnlScreen() {
           </dl>
         )}
         {!isToday && days.data && (days.data.totals.best || days.data.totals.worst || days.data.days.length > 0) && (
-          <dl className="m-0 mt-3 grid grid-cols-3 gap-1.5">
+          <dl className="m-0 mt-3 grid grid-cols-3 !gap-1.5">
             <Mark label="Best day" usd={days.data.totals.best?.netUsd ?? null} when={days.data.totals.best?.day.slice(5) ?? null} />
             <Mark label="Worst day" usd={days.data.totals.worst?.netUsd ?? null} when={days.data.totals.worst?.day.slice(5) ?? null} />
             {/* The losses booked over the range chosen, a fill at a time, as each day's own loss is counted. */}
@@ -173,7 +173,7 @@ function Mark({ label, usd, when, small = false }: {
 }) {
   return (
     <div className={cn('min-w-0 rounded-md bg-muted py-2', small ? 'px-1 text-center min-[390px]:px-1.5' : 'px-2.5')}>
-      <dt className={cn('truncate text-muted-foreground', small ? 'text-[10.5px] min-[390px]:text-[11px]' : 'text-[11.5px]')}>{label}</dt>
+      <dt className={cn('truncate text-muted-foreground', small ? 'text-[11px]' : 'text-[11.5px]')}>{label}</dt>
       <dd className={cn(
         'm-0 truncate font-semibold tabular-nums',
         small ? 'text-[12px] min-[390px]:text-[13px]' : 'text-[14px] min-[390px]:text-[15px]',
@@ -181,7 +181,7 @@ function Mark({ label, usd, when, small = false }: {
       )}>
         {small ? rsShort(usd) : rs(usd)}
       </dd>
-      {when && <dd className={cn('m-0 truncate text-[10.5px] tabular-nums', /\d/.test(when) && !/day/.test(when) ? 'text-[var(--time)]' : 'text-muted-foreground')}>{when}</dd>}
+      {when && <dd className={cn('m-0 truncate text-[11px] tabular-nums', /\d/.test(when) && !/day/.test(when) ? 'text-[var(--time)]' : 'text-muted-foreground')}>{when}</dd>}
     </div>
   );
 }
