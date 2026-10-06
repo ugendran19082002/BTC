@@ -89,6 +89,59 @@ describe('SignalPairsScreen', () => {
     expect(screen.getByRole('radio', { name: 'Custom' })).toBeInTheDocument();
   });
 
+  it('[critical] without the chain, a row of timeframes under it: one at a time by default, and All to clear', async () => {
+    show();
+    await screen.findByRole('list', { name: 'Best pairs' });
+    const tfs = within(screen.getByRole('group', { name: 'Time frame' }));
+    expect(tfs.getAllByRole('button').map((b) => b.textContent)).toEqual(['All', '15m', '30m']);
+    expect(tfs.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(tfs.getByRole('button', { name: '30m' }));
+    // only 30m: #19 in profit, nothing in loss; its 12 + 3 signals, its 5 trades
+    expect(within(screen.getByRole('list', { name: 'Best pairs' })).getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByText('No method and time frame is in loss today.')).toBeInTheDocument();
+    expect(screen.getByText('+300 pts', { selector: 'div' })).toBeInTheDocument();
+    expect(screen.getByText('Signals').parentElement!).toHaveTextContent('15');
+    expect(screen.getByText(/without the timeframe chain on 30m/)).toBeInTheDocument();
+    // one at a time: 15m takes 30m's place
+    fireEvent.click(tfs.getByRole('button', { name: '15m' }));
+    expect(tfs.getByRole('button', { name: '30m' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(screen.getByRole('list', { name: 'Best pairs' })).getByRole('listitem')).toHaveTextContent('#63');
+    fireEvent.click(tfs.getByRole('button', { name: 'All' }));
+    expect(within(screen.getByRole('list', { name: 'Best pairs' })).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('many: each tap adds a timeframe or takes it away; back to one keeps the first; the pick is remembered', async () => {
+    const first = show();
+    await screen.findByRole('list', { name: 'Best pairs' });
+    const tfs = () => within(screen.getByRole('group', { name: 'Time frame' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Many' }));
+    fireEvent.click(tfs().getByRole('button', { name: '30m' }));
+    fireEvent.click(tfs().getByRole('button', { name: '15m' }));
+    expect(tfs().getByRole('button', { name: '15m' })).toHaveAttribute('aria-pressed', 'true');
+    expect(tfs().getByRole('button', { name: '30m' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('15m, 30m')).toBeInTheDocument();
+    fireEvent.click(tfs().getByRole('button', { name: '15m' }));
+    expect(tfs().getByRole('button', { name: '15m' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(tfs().getByRole('button', { name: '15m' }));
+    first.unmount();
+    show();
+    await screen.findByRole('list', { name: 'Best pairs' });
+    expect(screen.getByRole('button', { name: 'Many' })).toHaveAttribute('aria-pressed', 'true');
+    expect(tfs().getByRole('button', { name: '30m' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'One' }));
+    expect(tfs().getByRole('button', { name: '15m' })).toHaveAttribute('aria-pressed', 'true');
+    expect(tfs().getByRole('button', { name: '30m' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('with the chain there is no timeframe to pick: the row is gone, and a pick made before does not narrow it', async () => {
+    window.localStorage.setItem('m-sigpairs-tfs', JSON.stringify(['30m']));
+    show();
+    await screen.findByRole('list', { name: 'Best pairs' });
+    fireEvent.click(screen.getByRole('radio', { name: 'With the timeframe chain' }));
+    expect(screen.queryByRole('group', { name: 'Time frame' })).toBeNull();
+    expect(within(screen.getByRole('list', { name: 'Best pairs' })).getByRole('listitem')).toHaveTextContent('#31');
+  });
+
   it('no trade in the range: says so, and draws no list', async () => {
     getMethodReport.mockResolvedValue({ tf: null, sections: [], singleByTf: {} });
     show();
