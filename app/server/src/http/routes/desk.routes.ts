@@ -173,7 +173,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * The desk's health for the phone, in one word -- ok, warn or down -- with the reasons and the readings behind them.
    * The readings: the board's and the tape's age, Delta's quota, late passes, open errors, the scheduler switch,
    * paper or live, and BTC's price for the signal trades' perp levels (6 Oct 2026). The rule is `judge` in
-   * observability/glance.ts. Read-only, and cheap: one SELECT 1 and one read of the error log.
+   * observability/glance.ts. Read-only, and cheap: one SELECT 1 and one count of the error log.
    */
   app.get('/api/desk/glance', async () => {
     const now = Date.now();
@@ -181,7 +181,8 @@ export function registerDeskRoutes(app: FastifyInstance) {
       .then(() => ({ ok: true, latencyMs: Date.now() - now }))
       .catch(() => ({ ok: false, latencyMs: Date.now() - now }));
     const [errors, perp] = await Promise.all([
-      db.ok ? errorLog().list({ limit: 100 }).catch(() => []) : Promise.resolve([]),
+      // A count, not the rows: this is asked every 15 s by every phone, and it only says how many (6 Oct 2026 review).
+      db.ok ? errorLog().summary().then((s) => Number(s.unresolved)).catch(() => 0) : Promise.resolve(0),
       livePerp(now).catch(() => null),
     ]);
     const board = tickerFeedHealth();
@@ -200,7 +201,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
         slowestTrades: metrics.passes.slowest?.trades ?? null, slowestAt: metrics.passes.slowest?.at ?? null,
       },
       threadMaxMs: metrics.thread?.maxMs ?? null,
-      errors: { open: errors.length, lastAt: errors[0]?.lastSeen ?? null },
+      errors: { open: errors, lastAt: null },
       schedulerOn: svc.settings.get('scheduler_enabled') === '1',
       mode: svc.mode,
     };

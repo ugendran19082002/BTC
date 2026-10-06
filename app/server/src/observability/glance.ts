@@ -24,6 +24,7 @@ export type GlanceReadings = {
   passes: { count: number; late: number; maxMs: number | null; tradesNow?: number; slowestTrades?: number | null; slowestAt?: number | null };
   /** The longest the server's one thread was held in the last minute sampled: the hold every timer waited behind. */
   threadMaxMs?: number | null;
+  /** Errors in the log not yet resolved: a count. `lastAt` is kept for a phone holding an older page; always null now. */
   errors: { open: number; lastAt: number | null };
   schedulerOn: boolean;
   mode: 'live' | 'paper';
@@ -91,7 +92,7 @@ export function judge(r: GlanceReadings): { health: Health; issues: GlanceIssue[
     issues.push({ level: 'warn', text: `The check on the open trades ran over its second ${p.late} of ${p.count} times in the last 5 min: the desk is falling behind.` });
   }
 
-  if (r.errors.open > 0) issues.push({ level: 'warn', text: `${r.errors.open}${r.errors.open >= 100 ? '+' : ''} error${r.errors.open === 1 ? '' : 's'} in the log not yet resolved.` });
+  if (r.errors.open > 0) issues.push({ level: 'warn', text: `${r.errors.open} error${r.errors.open === 1 ? '' : 's'} in the log not yet resolved.` });
 
   const health: Health = issues.some((i) => i.level === 'down') ? 'down' : issues.length ? 'warn' : 'ok';
   return { health, issues, boardAgeMs, tapeAgeMs };

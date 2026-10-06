@@ -49,7 +49,7 @@ test('rate limits, a quota near its end, failed calls, late passes and open erro
   assert.match(text, /rate-limited 2 calls/);
   assert.match(text, /1 call to Delta failed/);
   assert.match(text, /ran over its second 120 of 300 times/);
-  assert.match(text, /100\+ errors/);
+  assert.match(text, /100 errors in the log/);
   assert.match(text, /tape is 5 min old/);
   // a rate limit already says the quota is gone; the percentage would only repeat it
   assert.doesNotMatch(text, /% of Delta/);

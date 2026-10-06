@@ -50,7 +50,7 @@ export function HealthCard({ glance, error }: { glance: Glance | null; error: Er
         <Reading label="Scheduler" value={r.schedulerOn ? 'On' : 'Off'} tone={r.schedulerOn ? undefined : 'dim'} />
         <Reading label="Option prices" value={age(glance.boardAgeMs)} tone={glance.boardAgeMs === null || glance.boardAgeMs >= 15_000 ? 'warn' : undefined} />
         <Reading label="Delta quota used" value={`${r.delta.usedPct}%`} tone={r.delta.usedPct >= 80 || r.delta.rateLimited > 0 ? 'warn' : undefined} />
-        <Reading label="Open errors" value={r.errors.open >= 100 ? '100+' : String(r.errors.open)} tone={r.errors.open > 0 ? 'warn' : undefined} />
+        <Reading label="Open errors" value={String(r.errors.open)} tone={r.errors.open > 0 ? 'warn' : undefined} />
         <Reading label="Database" value={r.db.ok ? `${r.db.latencyMs} ms` : 'Not answering'} tone={r.db.ok ? undefined : 'down'} />
       </dl>
     </Card>
