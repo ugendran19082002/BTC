@@ -75,7 +75,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/report/days` | signed in | Every trading day in the range, with the running total. |
 | GET | `/api/report/days.csv` | signed in | The P&L calendar as a spreadsheet that opens cleanly in Excel. |
 | GET | `/api/report/mtm` | signed in | One day, minute by minute. |
-| GET | `/api/report/stats` | signed in | How the closed trades did in the range: win rate, profit factor, average win and loss -- overall, by strategy and by broker account, after charges (`tradeStats`). |
+| GET | `/api/report/stats` | signed in | How the closed trades did in the range: win rate, profit factor, average win and loss -- overall, by strategy, by broker account and by method-and-timeframe pair, after charges (`tradeStats`). |
 
 ## [session.routes.ts](../../app/server/src/http/routes/session.routes.ts)
 

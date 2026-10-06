@@ -13,12 +13,15 @@ import { AreaChart, Empty, Loading, LossMeter, Panel, Rupees, Segmented, Stat, S
 import { DateRangeSheet } from '@/components/mobile/DateRangeSheet';
 import { describeRange, type DateRangeValue } from '@/components/ui/date-range-picker';
 import { rangeProblem } from '@/lib/custom-range';
+import { splitPairs } from '@/lib/method-pairs';
+import { PairList } from '@/components/mobile/PairList';
 
 /**
  * P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line,
  * then the closed trades' numbers in one grid (win rate, profit factor, average win and loss, best and worst),
- * then what is working: by strategy, CE or PE, sold or bought, entry method and account. Every figure after
- * charges, from the journal (`/api/report/*`).
+ * then what is working: the best and the worst pairs of entry method and timeframe (owner, 6 Oct 2026, in place
+ * of the lists by strategy and by entry method), CE or PE, sold or bought, and account. Every figure after
+ * charges, from the journal (`/api/report/*`), for the range chosen at the top.
  */
 
 type Range = 'today' | '7' | '30' | '90' | 'custom';
@@ -72,6 +75,8 @@ export function PnlScreen() {
   const line = isToday ? samples.map((x) => x.netUsd) : (days.data?.days ?? []).map((d) => d.cumulativeUsd);
   const budget = isToday && s ? lossBudget(s) : null;
   const o = stats.data?.overall;
+  const pairs = stats.data?.byPair ? splitPairs(stats.data.byPair) : null;
+  const inRange = isToday ? 'today' : 'in this range';
 
   return (
     <>
@@ -165,10 +170,21 @@ export function PnlScreen() {
 
       {stats.data && stats.data.overall.trades > 0 ? (
         <>
-          <Breakdown title="By strategy" groups={stats.data.byStrategy} />
+          {pairs && pairs.trades > 0 ? (
+            <>
+              <PairList title="Best pairs" tone="up" pairs={pairs.best} empty={`No method and time frame is in profit ${inRange}.`} />
+              <PairList title="Worst pairs" tone="down" pairs={pairs.worst} empty={`No method and time frame is in loss ${inRange}.`} />
+              <p className="m-0 px-1 text-[12px] text-muted-foreground">
+                A pair is one entry method on one time frame, over the {pairs.trades} signal trade{pairs.trades === 1 ? '' : 's'} closed {inRange}, after charges.
+                {stats.data.overall.trades > pairs.trades && ` ${stats.data.overall.trades - pairs.trades} more had no signal and are in neither list.`}
+              </p>
+            </>
+          ) : !pairs ? (
+            // A server from before the pairs: the methods alone, as this screen showed them.
+            <Breakdown title="By entry method" groups={stats.data.byMethod ?? []} limit={8} />
+          ) : null}
           <Breakdown title="CE or PE" groups={stats.data.byOption ?? []} />
           <Breakdown title="Sold or bought" groups={stats.data.byAction ?? []} />
-          <Breakdown title="By entry method" groups={stats.data.byMethod ?? []} limit={8} />
           {p.shown === 'all' && p.trading.length > 1 && <Breakdown title="By account" groups={stats.data.byAccount} />}
         </>
       ) : stats.data ? <Panel><Empty>No trade closed {isToday ? 'today' : 'in this range'} yet.</Empty></Panel> : null}

@@ -57,8 +57,8 @@ export function registerReportRoutes(app: FastifyInstance) {
   });
 
   /**
-   * How the closed trades did in the range: win rate, profit factor, average win and loss -- overall, by strategy
-   * and by broker account, after charges (`tradeStats`). Each group carries a name to show: the strategy's
+   * How the closed trades did in the range: win rate, profit factor, average win and loss -- overall, by strategy,
+   * by broker account and by method-and-timeframe pair, after charges (`tradeStats`). Each group carries a name to show: the strategy's
    * current name, "By hand" for a trade nobody scheduled, the account's name.
    */
   app.get('/api/report/stats', async (req, reply) => {
@@ -85,6 +85,11 @@ export function registerReportRoutes(app: FastifyInstance) {
       byOption: stats.byOption.map((g) => named(g, g.key)),
       byAction: stats.byAction.map((g) => named(g, g.key === 'buy' ? 'Bought' : 'Sold')),
       byMethod: stats.byMethod.map((g) => named(g, methodNames.get(g.key) ?? g.key)),
+      // A method on a timeframe: the method's name, and the timeframe said the way the trade lists say it.
+      byPair: stats.byPair.map((g) => {
+        const [method = g.key, mode, tf = ''] = g.key.split('|');
+        return { ...named(g, methodNames.get(method) ?? method), tf: mode === 'mtf' ? `${tf} + TF chain` : tf };
+      }),
     };
   });
 

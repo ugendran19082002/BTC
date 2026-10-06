@@ -131,7 +131,7 @@ export function daysReport(
 /** One reading of the day so far. Written once a minute while the desk is up. */
 /**
  * How the closed trades did (6 Oct 2026, the phone's statistics): win rate, profit factor, average win and loss,
- * the best and the worst -- for the whole range, by strategy and by broker account.
+ * the best and the worst -- for the whole range, by strategy, by broker account, and by entry method and timeframe.
  *
  * A trade is counted on the IST day it closed (its last exit fill), with what it made in the end: booked P&L,
  * fill by fill the same way `daysReport` books it, less every charge on every one of its fills. Judged after
@@ -171,7 +171,15 @@ export type TradeStats = {
   byAction: TradeStatsGroup[];
   /** A signal trade's entry method id; trades with no signal are left out of this one. */
   byMethod: TradeStatsGroup[];
+  /**
+   * The method and the timeframe it was read on, as one (`pairKey`): which method works on which timeframe is
+   * what the owner reads to keep or drop a pairing (6 Oct 2026). Trades with no signal are left out, as above.
+   */
+  byPair: TradeStatsGroup[];
 };
+
+/** `breakout|single|15m`; `breakout|mtf|5m` for the read with the timeframe chain, which is its own pairing. */
+export const pairKey = (s: { method: string; mode: 'mtf' | 'single'; tf: string }) => `${s.method}|${s.mode}|${s.tf}`;
 
 /** One closed trade's day and money, or null for a trade still open (or never filled). */
 export function closedNet(rec: TradeRecord, spot: number | null): { day: string; netUsd: number } | null {
@@ -222,6 +230,7 @@ export function tradeStats(
   const byOption = new Map<string, number[]>();
   const byAction = new Map<string, number[]>();
   const byMethod = new Map<string, number[]>();
+  const byPair = new Map<string, number[]>();
   const push = (m: Map<string, number[]>, k: string, n: number) => { const a = m.get(k); if (a) a.push(n); else m.set(k, [n]); };
   for (const rec of records) {
     const c = closedNet(rec, o.spot);
@@ -231,13 +240,17 @@ export function tradeStats(
     push(byAccount, rec.plan.accountId == null ? 'none' : String(rec.plan.accountId), c.netUsd);
     push(byOption, rec.state.optionSide, c.netUsd);
     push(byAction, isLong(rec.state) ? 'buy' : 'sell', c.netUsd);
-    if (rec.plan.signal?.method) push(byMethod, rec.plan.signal.method, c.netUsd);
+    if (rec.plan.signal?.method) {
+      push(byMethod, rec.plan.signal.method, c.netUsd);
+      push(byPair, pairKey(rec.plan.signal), c.netUsd);
+    }
   }
   const groups = (m: Map<string, number[]>) => [...m.entries()].map(([k, v]) => groupOf(k, v)).sort((a, b) => b.netUsd - a.netUsd);
   return {
     from: o.from, to: o.to, overall: groupOf('all', all),
     byStrategy: groups(byStrategy), byAccount: groups(byAccount),
     byOption: groups(byOption), byAction: groups(byAction), byMethod: groups(byMethod),
+    byPair: groups(byPair),
   };
 }
 

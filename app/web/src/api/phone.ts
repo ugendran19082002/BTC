@@ -34,6 +34,8 @@ export type Stats = {
   byStrategy: StatsGroup[]; byAccount: StatsGroup[];
   /** CE / PE, sold / bought, and a signal trade's entry method. Absent from an older server. */
   byOption?: StatsGroup[]; byAction?: StatsGroup[]; byMethod?: StatsGroup[];
+  /** A signal trade's entry method on the timeframe it was read on (`15m`, `5m + TF chain`), best first. Absent from an older server. */
+  byPair?: (StatsGroup & { tf: string })[];
 };
 
 export const getStats = (from: string, to: string, account: number | null) =>

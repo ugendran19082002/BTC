@@ -223,3 +223,21 @@ test('statistics also split by CE / PE, sold / bought, and a signal trade\'s ent
   assert.deepEqual(r.byAction.map((g) => [g.key, g.trades]), [['sell', 2]]);
   assert.deepEqual(r.byMethod.map((g) => [g.key, g.trades, g.losses]), [['breakout', 1, 1]]);
 });
+
+test('statistics pair a method with the timeframe it was read on: the same method on two timeframes is two pairs', () => {
+  const sig = (tf: string, mode: 'mtf' | 'single' = 'single') => ({ method: 'breakout', n: 1, name: 'Breakout', mode, tf, dir: 1 as const, triggerTime: 0 });
+  const on = (id: string, signal: ReturnType<typeof sig> | undefined, exit: number) => {
+    const rec = record(id, [fill('entry', 100, 15, T(11, 7)), fill(exit < 15 ? 'take_profit' : 'stop_loss', 100, exit, T(11, 9))]);
+    return { ...rec, plan: { ...rec.plan, signal } };
+  };
+  const r = tradeStats(
+    [on('a', sig('15m'), 5), on('b', sig('15m'), 5), on('c', sig('30m'), 22), on('d', sig('5m', 'mtf'), 5), on('e', sig('5m'), 22), on('hand', undefined, 5)],
+    { from: '2026-09-11', to: '2026-09-11', spot: 80_000 },
+  );
+  // Best first, by what the pair made; the trade by hand is in no pair.
+  assert.deepEqual(r.byPair.map((g) => [g.key, g.trades, g.wins]), [
+    ['breakout|single|15m', 2, 2], ['breakout|mtf|5m', 1, 1], ['breakout|single|30m', 1, 0], ['breakout|single|5m', 1, 0],
+  ]);
+  assert.equal(r.byPair.reduce((n, g) => n + g.trades, 0), r.overall.trades - 1);
+  assert.equal(r.byMethod[0]!.trades, 5);
+});
