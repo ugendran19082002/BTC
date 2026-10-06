@@ -95,7 +95,7 @@ export function MethodFilter({ value, onChange }: { value: readonly string[]; on
                   label={(
                     <span className="flex min-w-0 flex-1 items-baseline justify-between gap-2">
                       <span className="min-w-0 truncate"><span className="tabular-nums text-muted-foreground">#{m.n}</span> <span className="text-foreground">{m.name}</span></span>
-                      {m.orderSide && m.orderSide !== 'BOTH' && (
+                      {(m.orderSide === 'BUY' || m.orderSide === 'SELL') && (
                         <span className={cn('flex-none text-[10px] font-semibold', m.orderSide === 'BUY' ? 'text-[var(--up)]' : 'text-[var(--down)]')}>{m.orderSide}</span>
                       )}
                     </span>
