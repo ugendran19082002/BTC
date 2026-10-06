@@ -128,16 +128,20 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
   // Drawn in real pixels at the card's width, so a bar is never wider than 24px and text is never scaled.
   const wrap = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(720);
-  useEffect(() => {
-    const el = wrap.current;
-    if (!el || typeof ResizeObserver === 'undefined') return undefined;
-    const ro = new ResizeObserver(() => { const w = Math.round(el.clientWidth); if (w > 0) setWidth(w); });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [open, asTable]);
-
   const data = useMemo(() => bucketsOf(rows ?? [], period, includeCharges), [rows, period, includeCharges]);
   const n = data.length;
+  // Measured once the plot is on the page -- it is not while the rows are still being read, or the table is shown.
+  const plotted = open && !asTable && n > 0;
+  useEffect(() => {
+    const el = wrap.current;
+    if (!plotted || !el) return undefined;
+    const measure = () => { const w = Math.round(el.clientWidth); if (w > 0) setWidth(w); };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [plotted]);
   const total = data.reduce((s, d) => s + (includeCharges ? d.net : d.booked), 0);
   useEffect(() => { if (at !== null && at >= n) setAt(null); }, [at, n]);
 
@@ -154,12 +158,16 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
   const cx = (i: number) => padL + band * (i + 0.5);
 
   // The line's own scale, and the bars' own: two panels, never two scales on one.
-  const cumTicks = niceTicks(Math.min(...data.map((d) => d.cumulative), 0), Math.max(...data.map((d) => d.cumulative), 0), narrow ? 3 : 4);
+  const cumMax = Math.max(...data.map((d) => d.cumulative), 0);
+  const cumMin = Math.min(...data.map((d) => d.cumulative), 0);
+  // A dip of a few rupees under zero on the first day does not earn a whole band below the line.
+  const cumTicks = niceTicks(cumMin > -0.04 * cumMax ? 0 : cumMin, cumMax, narrow ? 3 : 4);
   const cumLo = cumTicks[0] ?? 0, cumHi = cumTicks[cumTicks.length - 1] ?? 1;
   const yCum = (v: number) => topY + topH * (1 - (v - cumLo) / (cumHi - cumLo || 1));
   const up = Math.max(...data.map((d) => Math.max(0, d.booked)), 0);
   const down = Math.max(...data.map((d) => Math.max(0, -d.booked) + d.charges), 0);
-  const barTicks = niceTicks(-down, up, narrow ? 3 : 4);
+  // A sixth of headroom at each end: the best and the worst day's figures are written past their bars.
+  const barTicks = niceTicks(-down * 1.18, up * 1.18, narrow ? 3 : 4);
   const barLo = barTicks[0] ?? -1, barHi = barTicks[barTicks.length - 1] ?? 1;
   const yBar = (v: number) => botY + botH * (1 - (v - barLo) / (barHi - barLo || 1));
   const zero = yBar(0);
@@ -213,9 +221,9 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
           {/* What each mark is. Text in the page's own ink; the mark beside it carries the colour. */}
           <ul aria-label="legend" className="m-0 mb-2 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-[11.5px] text-muted-foreground">
             <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-0.5 w-4 rounded" style={{ background: LINE }} />Cumulative {includeCharges ? 'net' : 'gross'}</li>
-            <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: PROFIT }} />Booked profit</li>
-            <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: LOSS }} />Booked loss</li>
-            <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: CHARGE }} />Charges</li>
+            <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: PROFIT }} />Booked profit</li>
+            <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: LOSS }} />Booked loss</li>
+            <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: CHARGE }} />Charges</li>
           </ul>
 
           {asTable ? (
