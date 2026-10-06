@@ -41,7 +41,7 @@ export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, l
 
   return (
     <div role="img" aria-label={said}>
-      <div className="mb-1 flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-[11.5px] font-semibold uppercase tracking-[0.5px] text-muted-foreground">{title}</span>
         {r.hit === 'target' ? (
           <span className="inline-flex items-center gap-1 rounded bg-[var(--up-bg)] px-1.5 py-0.5 text-[11.5px] font-semibold text-[var(--up)]"><CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> TGT HIT</span>
@@ -53,13 +53,13 @@ export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, l
       </div>
 
       {/* The names of the points, over them. The ends hang inward so a label never leaves the card. */}
-      <div className="relative h-[30px] text-[11px] leading-[1.25] tabular-nums" aria-hidden="true">
+      <div className="relative h-[27px] text-[10.5px] leading-[1.25] tabular-nums" aria-hidden="true">
         {r.targetAt !== null && target !== null && <Tag at={r.targetAt} name="TGT" value={fmt(target)} tone="up" />}
         {r.entryAt !== null && entry !== null && <Tag at={r.entryAt} name="Entry" value={fmt(entry)} />}
         {r.stopAt !== null && stop !== null && <Tag at={r.stopAt} name="SL" value={fmt(stop)} tone="down" />}
       </div>
 
-      <div className="relative h-5" aria-hidden="true">
+      <div className="relative h-4" aria-hidden="true">
         <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-[color-mix(in_srgb,var(--up)_35%,transparent)] via-[var(--panel-3)] to-[color-mix(in_srgb,var(--down)_35%,transparent)]" />
         {fillFrom !== null && fillTo !== null && tone && (
           <div
@@ -81,7 +81,7 @@ export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, l
         )}
       </div>
 
-      <div className="mt-0.5 flex justify-between gap-2 text-[11.5px] tabular-nums" aria-hidden="true">
+      <div className="flex justify-between gap-2 text-[11px] tabular-nums" aria-hidden="true">
         <span className="text-[var(--up)]">{r.toTarget && !r.hit ? `${gap(r.toTarget)} to TGT` : r.hit === 'target' ? 'target reached' : ''}</span>
         <span className="text-right text-[var(--down)]">{r.toStop && !r.hit ? `${gap(r.toStop)} to SL` : r.hit === 'stop' ? 'stop reached' : ''}</span>
       </div>

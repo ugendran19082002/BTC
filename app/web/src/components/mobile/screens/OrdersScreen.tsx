@@ -92,11 +92,14 @@ function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => vo
               </span>
               {orderStatusWord(o)}
             </span>
-            <span className="mt-0.5 flex gap-4 text-[12.5px] tabular-nums text-muted-foreground">
-              <span>Limit {limit !== null ? price(limit) : 'market'}</span>
-              <span>Filled {o.entryAvgPrice !== null ? <b className="text-foreground">{price(o.entryAvgPrice)}</b> : '—'}{o.entrySize > 0 && o.entrySize < o.requestedSize ? ` (${size(o.entrySize)})` : ''}</span>
+            {/* Two lines for an order that filled; its outcome is said only when it is not simply "filled". */}
+            <span className="flex items-baseline justify-between gap-3 text-[12.5px] tabular-nums text-muted-foreground">
+              <span className="shrink-0">
+                Limit {limit !== null ? price(limit) : 'market'} · Filled {o.entryAvgPrice !== null ? <b className="text-foreground">{price(o.entryAvgPrice)}</b> : '—'}{o.entrySize > 0 && o.entrySize < o.requestedSize ? ` (${size(o.entrySize)})` : ''}
+              </span>
+              <span className="min-w-0 truncate text-[12px]">{who}{showAccount && o.account ? ` · ${o.account.name}` : ''}</span>
             </span>
-            <span className="block truncate text-[12px] text-muted-foreground">{who}{showAccount && o.account ? ` · ${o.account.name}` : ''} · {o.outcome}</span>
+            {o.status !== 'completed' && <span className="block truncate text-[12px] text-muted-foreground">{o.outcome}</span>}
           </span>
         </span>
       </ListButton>
