@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { splitPairs, type Pair } from '@/lib/method-pairs';
+import { CHAIN_TF, pairsOfReport, pairsOfStats, splitPairs, type PairStat } from '@/lib/method-pairs';
+import type { MethodReportResponse, MethodReportRow, MethodReportSection } from '@/types/entry';
 
-const pair = (name: string, tf: string, netUsd: number, trades = 4): Pair => ({
-  key: `${name}|single|${tf}`, name, tf, trades, wins: netUsd > 0 ? trades : 0, losses: netUsd < 0 ? trades : 0,
-  winRate: netUsd > 0 ? 1 : 0, grossProfitUsd: Math.max(0, netUsd), grossLossUsd: Math.max(0, -netUsd),
-  profitFactor: netUsd < 0 ? 0 : null, avgWinUsd: null, avgLossUsd: null, netUsd, bestUsd: null, worstUsd: null,
+const pair = (name: string, tf: string, net: number, trades = 4): PairStat => ({
+  key: `${name}|single|${tf}`, name, tf, trades, wins: net > 0 ? trades : 0, losses: net < 0 ? trades : 0,
+  winRate: net > 0 ? 1 : 0, profitFactor: net < 0 ? 0 : null, net,
 });
 
 describe('method + timeframe pairs', () => {
@@ -16,7 +16,7 @@ describe('method + timeframe pairs', () => {
     expect(s.trades).toBe(20);
   });
 
-  it('level on money, the pair with more trades comes first', () => {
+  it('level on what they made, the pair with more trades comes first', () => {
     const s = splitPairs([pair('A', '15m', 0.5, 2), pair('B', '15m', 0.5, 9), pair('C', '1h', -0.5, 1), pair('D', '1h', -0.5, 6)]);
     expect(s.best.map((p) => p.name)).toEqual(['B', 'A']);
     expect(s.worst.map((p) => p.name)).toEqual(['D', 'C']);
@@ -27,5 +27,50 @@ describe('method + timeframe pairs', () => {
     const given = [pair('B', '30m', -1), pair('A', '15m', 1)];
     splitPairs(given);
     expect(given.map((p) => p.name)).toEqual(['B', 'A']);
+  });
+
+  it('the closed trades\' pairs are ranked on their money', () => {
+    const [p] = pairsOfStats([{ key: 'breakout|single|15m', name: '#1 Breakout', tf: '15m', trades: 3, wins: 2, losses: 1, winRate: 2 / 3,
+      grossProfitUsd: 2, grossLossUsd: 0.5, profitFactor: 4, avgWinUsd: 1, avgLossUsd: 0.5, netUsd: 1.5, bestUsd: 1.2, worstUsd: -0.5 }]);
+    expect(p).toEqual({ key: 'breakout|single|15m', name: '#1 Breakout', tf: '15m', trades: 3, wins: 2, losses: 1, winRate: 2 / 3, profitFactor: 4, net: 1.5 });
+  });
+});
+
+describe('signal history pairs', () => {
+  const row = (n: number, method: string, o: Partial<MethodReportRow> = {}): MethodReportRow => ({
+    n, method, name: method[0]!.toUpperCase() + method.slice(1), signals: 10, trades: 4, wins: 3, losses: 1, winPct: 75,
+    profitPts: 900, lossPts: 300, netPts: 600, profitR: 3, lossR: 1, netR: 2, ...o,
+  });
+  const section = (mode: 'mtf' | 'single', rows: MethodReportRow[]): MethodReportSection =>
+    ({ mode, label: mode, rows, total: row(0, 'total'), gatesOffSignals: 0 });
+  const report: MethodReportResponse = {
+    tf: null,
+    sections: [section('mtf', [row(1, 'breakout', { netPts: -250, netR: -0.8 })]), section('single', [row(1, 'breakout')])],
+    singleByTf: {
+      '15m': section('single', [row(1, 'breakout'), row(6, 'bos', { signals: 7, trades: 0, wins: 0, losses: 0, winPct: null, profitPts: 0, lossPts: 0, netPts: 0, netR: 0 })]),
+      '1h': section('single', [row(1, 'breakout', { trades: 2, wins: 2, losses: 0, winPct: 100, profitPts: 400, lossPts: 0, netPts: 400, netR: 1.5 })]),
+    },
+  };
+
+  it('[critical] without the timeframe chain: one pair for each timeframe a method traded on, ranked on points', () => {
+    const { pairs, signals } = pairsOfReport(report, 'single');
+    expect(pairs.map((p) => [p.name, p.tf, p.trades, p.net, p.netR])).toEqual([['#1 Breakout', '15m', 4, 600, 2], ['#1 Breakout', '1h', 2, 400, 1.5]]);
+    expect(pairs[0]).toMatchObject({ key: 'breakout|single|15m', winRate: 0.75, profitFactor: 3, signals: 10 });
+    // nothing lost: no profit factor, rather than an infinite one
+    expect(pairs[1]!.profitFactor).toBeNull();
+    // the method with signals and no trade is in no pair, and its signals still count
+    expect(signals).toBe(27);
+  });
+
+  it('with the timeframe chain: one pair a method, its timeframe the chain\'s', () => {
+    const { pairs, signals } = pairsOfReport(report, 'mtf');
+    expect(pairs.map((p) => [p.key, p.tf, p.net])).toEqual([['breakout|mtf|5m + TF chain', CHAIN_TF, -250]]);
+    expect(signals).toBe(10);
+    expect(splitPairs(pairs).worst).toHaveLength(1);
+  });
+
+  it('a report with no section for a way gives no pairs', () => {
+    expect(pairsOfReport({ tf: null, sections: [], singleByTf: {} }, 'mtf')).toEqual({ pairs: [], signals: 0 });
+    expect(pairsOfReport({ tf: null, sections: [], singleByTf: {} }, 'single')).toEqual({ pairs: [], signals: 0 });
   });
 });

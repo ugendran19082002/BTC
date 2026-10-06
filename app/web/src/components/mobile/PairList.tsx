@@ -1,23 +1,29 @@
 import { useState } from 'react';
 import { pct } from '@/lib/format';
-import type { Pair } from '@/lib/method-pairs';
-import { Empty, Panel, Pill, Rupees } from '@/components/mobile/parts';
+import type { PairStat } from '@/lib/method-pairs';
+import { cn } from '@/lib/utils';
+import { Empty, Panel, Pill } from '@/components/mobile/parts';
 
 /**
- * One list of method + timeframe pairs on the phone's P&L screen (owner, 6 Oct 2026): the best, or the worst.
- * A row says which method on which timeframe, what it made after charges, and how: trades, won and lost, the win
- * rate and the profit factor, with a bar between the won and the lost for their shares. Five to begin with, the rest one tap away.
+ * One list of method + timeframe pairs on the phone (owner, 6 Oct 2026): the best, or the worst -- of the closed
+ * trades on P&L, or of the signal history under More. A row says which method on which timeframe, what it made
+ * (said by the caller: rupees after charges, or perp points), and how: trades, the win rate and the profit factor,
+ * with a bar between the won and the lost for their shares. Five to begin with, the rest one tap away.
  */
 
 const FIRST = 5;
 
-export function PairList({ title, tone, pairs, empty }: {
+export function PairList<T extends PairStat>({ title, tone, pairs, empty, amount, note }: {
   title: string;
-  /** Which end of the list this is: it colours the count beside the title. */
+  /** Which end of the list this is: it words the count beside the title. */
   tone: 'up' | 'down';
-  pairs: readonly Pair[];
+  pairs: readonly T[];
   /** What to say when no pair belongs here. */
   empty: string;
+  /** What the pair made, as it should read at the right of its row: "+₹94.87", "+1,240 pts". */
+  amount: (p: T) => string;
+  /** One more thing to say after the profit factor: "+8.4R". */
+  note?: (p: T) => string | null;
 }) {
   const [all, setAll] = useState(false);
   const shown = all ? pairs : pairs.slice(0, FIRST);
@@ -28,7 +34,7 @@ export function PairList({ title, tone, pairs, empty }: {
     >
       {pairs.length === 0 ? <Empty>{empty}</Empty> : (
         <ol className="m-0 list-none divide-y divide-[var(--line-soft)] p-0" aria-label={title}>
-          {shown.map((g, i) => <PairRow key={g.key} rank={i + 1} pair={g} />)}
+          {shown.map((g, i) => <PairRow key={g.key} rank={i + 1} pair={g} amount={amount(g)} note={note?.(g) ?? null} />)}
         </ol>
       )}
       {pairs.length > FIRST && (
@@ -43,7 +49,7 @@ export function PairList({ title, tone, pairs, empty }: {
   );
 }
 
-function PairRow({ rank, pair: g }: { rank: number; pair: Pair }) {
+function PairRow({ rank, pair: g, amount, note }: { rank: number; pair: PairStat; amount: string; note: string | null }) {
   const pf = g.profitFactor !== null ? `PF ${g.profitFactor.toFixed(2)}` : g.wins > 0 ? 'no loss' : null;
   const won = g.trades > 0 ? g.wins / g.trades : 0;
   const lost = g.trades > 0 ? g.losses / g.trades : 0;
@@ -52,14 +58,14 @@ function PairRow({ rank, pair: g }: { rank: number; pair: Pair }) {
       <div className="flex items-start justify-between gap-3">
         <span className="flex min-w-0 items-baseline gap-2">
           <span aria-hidden="true" className="w-4 shrink-0 text-right text-[12px] tabular-nums text-muted-foreground">{rank}</span>
-          <span className="min-w-0 break-words text-[14px] font-medium leading-snug">{g.name ?? g.key}</span>
+          <span className="min-w-0 break-words text-[14px] font-medium leading-snug">{g.name}</span>
         </span>
-        <span className="shrink-0"><Rupees usd={g.netUsd} signed size="sm" /></span>
+        <span className={cn('shrink-0 whitespace-nowrap text-[14px] font-semibold tabular-nums', g.net > 0 && 'text-[var(--up)]', g.net < 0 && 'text-[var(--down)]')}>{amount}</span>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 pl-6 text-[12px] text-muted-foreground">
         <Pill tone="accent">{g.tf}</Pill>
         <span className="whitespace-nowrap tabular-nums">
-          {g.trades} trade{g.trades === 1 ? '' : 's'} · {pct(g.winRate, 0)} won{pf ? ` · ${pf}` : ''}
+          {g.trades} trade{g.trades === 1 ? '' : 's'} · {pct(g.winRate, 0)} won{pf ? ` · ${pf}` : ''}{note ? ` · ${note}` : ''}
         </span>
       </div>
       {/* Won at one end, lost at the other, the bar between them their shares: what is neither (a trade that made exactly nothing) stays grey. */}

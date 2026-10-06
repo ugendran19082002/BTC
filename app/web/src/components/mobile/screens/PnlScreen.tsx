@@ -13,7 +13,7 @@ import { AreaChart, Empty, Loading, LossMeter, Panel, Rupees, Segmented, Stat, S
 import { DateRangeSheet } from '@/components/mobile/DateRangeSheet';
 import { describeRange, type DateRangeValue } from '@/components/ui/date-range-picker';
 import { rangeProblem } from '@/lib/custom-range';
-import { splitPairs } from '@/lib/method-pairs';
+import { pairsOfStats, splitPairs } from '@/lib/method-pairs';
 import { PairList } from '@/components/mobile/PairList';
 import { DayCalendar } from '@/components/mobile/DayCalendar';
 
@@ -77,7 +77,7 @@ export function PnlScreen() {
   const line = isToday ? samples.map((x) => x.netUsd) : (days.data?.days ?? []).map((d) => d.cumulativeUsd);
   const budget = isToday && s ? lossBudget(s) : null;
   const o = stats.data?.overall;
-  const pairs = stats.data?.byPair ? splitPairs(stats.data.byPair) : null;
+  const pairs = stats.data?.byPair ? splitPairs(pairsOfStats(stats.data.byPair)) : null;
   const inRange = isToday ? 'today' : 'in this range';
 
   return (
@@ -174,8 +174,8 @@ export function PnlScreen() {
         <>
           {pairs && pairs.trades > 0 ? (
             <>
-              <PairList title="Best pairs" tone="up" pairs={pairs.best} empty={`No method and time frame is in profit ${inRange}.`} />
-              <PairList title="Worst pairs" tone="down" pairs={pairs.worst} empty={`No method and time frame is in loss ${inRange}.`} />
+              <PairList title="Best pairs" tone="up" pairs={pairs.best} amount={(g) => rs(g.net)} empty={`No method and time frame is in profit ${inRange}.`} />
+              <PairList title="Worst pairs" tone="down" pairs={pairs.worst} amount={(g) => rs(g.net)} empty={`No method and time frame is in loss ${inRange}.`} />
               <p className="m-0 px-1 text-[12px] text-muted-foreground">
                 A pair is one entry method on one time frame, over the {pairs.trades} signal trade{pairs.trades === 1 ? '' : 's'} closed {inRange}, after charges.
                 {stats.data.overall.trades > pairs.trades && ` ${stats.data.overall.trades - pairs.trades} more had no signal and are in neither list.`}
