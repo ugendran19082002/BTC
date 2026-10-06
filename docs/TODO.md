@@ -18,7 +18,9 @@ Updated 30 Sep 2026 (evening): 25 items closed that afternoon -- see the history
   every stop rests at Delta; what waits is noticing fills, exit times and the desk's own option-stop check. The
   fix is polling contracts side by side, which the 4 Oct audit left until it could be measured: read the pass
   times and Delta's quota on `/api/desk/metrics` with many trades open, then build it in a worktree (it is the
-  order path), with the owner's go-ahead.
+  order path), with the owner's go-ahead. **But** at 13:19 the same day a pass of 13 s had no trade in it: not the
+  polling. Look first at what holds the thread (`/api/desk/metrics` `thread`, the signal run's `calc`) and at
+  `sweepLeftovers`; the phone's warning now says which it likely was.
 
 ## Phone view and a phone-friendly desk
 

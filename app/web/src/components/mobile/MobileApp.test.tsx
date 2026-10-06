@@ -235,6 +235,46 @@ describe('switching to the desk', () => {
   });
 });
 
+describe('P&L: the day\'s high and low (owner, 6 Oct 2026)', () => {
+  it('today shows the high, the low and the deepest fall with their times; over days, the best and worst day', async () => {
+    signedIn();
+    const at = (h: number, m: number) => Date.UTC(2026, 9, 6, h - 5, m - 30);
+    json.mockResolvedValue({
+      mode: 'live', day: '2026-10-06', days: [],
+      samples: [{ at: at(9, 0), day: '2026-10-06', realisedUsd: 0, unrealisedUsd: 0, chargesUsd: 0, netUsd: -4 }, { at: at(14, 0), day: '2026-10-06', realisedUsd: 0, unrealisedUsd: 0, chargesUsd: 0, netUsd: 30 }],
+      stats: { nowUsd: 30, max: { at: at(13, 5), netUsd: 36 }, min: { at: at(9, 40), netUsd: -6 }, maxDrawdown: { usd: 8, at: at(13, 50) } },
+    });
+    phone.getDaysFor.mockResolvedValue({ from: '', to: '', days: [], totals: { realisedUsd: 0, chargesUsd: 0, netUsd: 0, tradingDays: 2, winDays: 1, lossDays: 1, best: { day: '2026-10-02', netUsd: 12 }, worst: { day: '2026-10-04', netUsd: -5 } } });
+    window.history.replaceState(null, '', '/m?tab=pnl');
+    render(<MobileApp />);
+    const high = (await screen.findByText('Day high')).parentElement!;
+    expect(high).toHaveTextContent('+₹3,060');
+    expect(high).toHaveTextContent('13:05');
+    expect(screen.getByText('Day low').parentElement!).toHaveTextContent('−₹510');
+    expect(screen.getByText('Max drawdown').parentElement!).toHaveTextContent('−₹680');
+    fireEvent.click(screen.getByRole('radio', { name: '7 days' }));
+    const best = (await screen.findByText('Best day')).parentElement!;
+    expect(best).toHaveTextContent('+₹1,020');
+    expect(best).toHaveTextContent('2026-10-02');
+    expect(screen.getByText('Worst day').parentElement!).toHaveTextContent('−₹425');
+  });
+});
+
+describe('the back button', () => {
+  it('[critical] each move leaves one step, and tapping the tab already open leaves none', async () => {
+    signedIn();
+    render(<MobileApp />);
+    await screen.findByText('Today\'s P&L');
+    const before = window.history.length;
+    tab('Orders');
+    await waitFor(() => expect(window.location.search).toBe('?tab=orders'));
+    tab('Orders');
+    expect(window.history.length).toBe(before + 1);
+    tab('P&L');
+    expect(window.history.length).toBe(before + 2);
+  });
+});
+
 describe('the route in the address', () => {
   it('reads and writes tab, sub-screen and trade, and ignores anything else', () => {
     expect(routeOf('')).toEqual({ tab: 'home', sub: null, trade: null });

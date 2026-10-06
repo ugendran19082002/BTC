@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, Bell, Home, IndianRupee, Layers, ListOrdered, Menu, RefreshCw } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getMe, logout, type Me } from '@/api/session';
@@ -84,30 +84,38 @@ const TAB_ITEMS: { tab: Tab; label: string; icon: typeof Home }[] = [
 const TAB_TITLE: Record<Tab, string> = { home: 'BTC Desk', pnl: 'P&L', positions: 'Positions', orders: 'Orders', more: 'More' };
 
 function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
-  const [route, setRoute] = useState<Route>(() => routeOf(window.location.search));
+  const [route, setRouteState] = useState<Route>(() => routeOf(window.location.search));
+  // The route as of the last change, for `go` to read without being remade on every one.
+  const current = useRef(route);
+  const setRoute = useCallback((r: Route) => { current.current = r; setRouteState(r); }, []);
   useEffect(() => {
     const back = () => setRoute(routeOf(window.location.search));
     window.addEventListener('popstate', back);
     return () => window.removeEventListener('popstate', back);
-  }, []);
+  }, [setRoute]);
+  /*
+   * Move, and leave a step for the back button. The history is written here, once, and not inside a state updater:
+   * React may run an updater twice (it does in development), and each run pushed its own entry (6 Oct 2026 review).
+   * Tapping where you already are leaves no step, so Back never seems to do nothing.
+   */
   const go = useCallback((to: Partial<Route>) => {
-    setRoute((cur) => {
-      const next: Route = {
-        tab: to.tab ?? cur.tab,
-        sub: to.sub !== undefined ? to.sub : to.tab && to.tab !== cur.tab ? null : cur.sub,
-        trade: to.trade !== undefined ? to.trade : null,
-      };
-      window.history.pushState({ phone: true }, '', `/m${searchOf(next)}`);
-      if (next.tab !== cur.tab || next.sub !== cur.sub) window.scrollTo(0, 0);
-      return next;
-    });
-  }, []);
+    const cur = current.current;
+    const next: Route = {
+      tab: to.tab ?? cur.tab,
+      sub: to.sub !== undefined ? to.sub : to.tab && to.tab !== cur.tab ? null : cur.sub,
+      trade: to.trade !== undefined ? to.trade : null,
+    };
+    if (next.tab === cur.tab && next.sub === cur.sub && next.trade === cur.trade) return;
+    window.history.pushState({ phone: true }, '', `/m${searchOf(next)}`);
+    if (next.tab !== cur.tab || next.sub !== cur.sub) window.scrollTo(0, 0);
+    setRoute(next);
+  }, [setRoute]);
   const openTrade = useCallback((trade: string) => go({ trade }), [go]);
   const closeTrade = useCallback(() => {
     // Opened here: back is where it came from. Opened from a link: there is nothing behind it, so stay on the tab.
     if ((window.history.state as { phone?: boolean } | null)?.phone) window.history.back();
-    else { const next = { ...route, trade: null }; window.history.replaceState(null, '', `/m${searchOf(next)}`); setRoute(next); }
-  }, [route]);
+    else { const next = { ...current.current, trade: null }; window.history.replaceState(null, '', `/m${searchOf(next)}`); setRoute(next); }
+  }, [setRoute]);
 
   const [choice, setChoice] = usePersisted<Choice>('m-account', 'all');
   const accounts = usePoll(getAccounts, ACCOUNTS_MS);

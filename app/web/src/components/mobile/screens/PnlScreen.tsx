@@ -71,6 +71,20 @@ export function PnlScreen() {
         {isToday && p.shown === 'all' && p.trading.length > 1 && samples.length >= 2 && (
           <p className="m-0 mt-1.5 text-[12px] text-muted-foreground">The line is the default account's: two accounts' lines do not add up to one.</p>
         )}
+        {/* The day's high, low and deepest fall, minute by minute; over days, the best and the worst (owner, 6 Oct 2026). */}
+        {isToday && mtm.data && (mtm.data.stats.max || mtm.data.stats.min) && (
+          <dl className="m-0 mt-3 grid grid-cols-3 gap-2">
+            <Mark label="Day high" usd={mtm.data.stats.max?.netUsd ?? null} when={mtm.data.stats.max ? clock(mtm.data.stats.max.at) : null} />
+            <Mark label="Day low" usd={mtm.data.stats.min?.netUsd ?? null} when={mtm.data.stats.min ? clock(mtm.data.stats.min.at) : null} />
+            <Mark label="Max drawdown" usd={mtm.data.stats.maxDrawdown ? -mtm.data.stats.maxDrawdown.usd : null} when={mtm.data.stats.maxDrawdown ? `low at ${clock(mtm.data.stats.maxDrawdown.at)}` : 'none'} />
+          </dl>
+        )}
+        {!isToday && days.data && (days.data.totals.best || days.data.totals.worst) && (
+          <dl className="m-0 mt-3 grid grid-cols-2 gap-2">
+            <Mark label="Best day" usd={days.data.totals.best?.netUsd ?? null} when={days.data.totals.best?.day ?? null} />
+            <Mark label="Worst day" usd={days.data.totals.worst?.netUsd ?? null} when={days.data.totals.worst?.day ?? null} />
+          </dl>
+        )}
         {budget && <LossMeter {...budget} />}
       </Panel>
 
@@ -118,6 +132,17 @@ export function PnlScreen() {
         </>
       ) : stats.data ? <Panel><Empty>No trade closed {isToday ? 'today' : 'in this range'} yet.</Empty></Panel> : null}
     </>
+  );
+}
+
+/** A figure with when it happened under it: the day's high and low, a best or worst day. */
+function Mark({ label, usd, when }: { label: string; usd: number | null; when: string | null }) {
+  return (
+    <div className="min-w-0 rounded-md bg-muted px-2.5 py-2">
+      <dt className="truncate text-[11.5px] text-muted-foreground">{label}</dt>
+      <dd className={cn('m-0 truncate text-[15px] font-semibold tabular-nums', toneOf(usd) === 'up' && 'text-[var(--up)]', toneOf(usd) === 'down' && 'text-[var(--down)]')}>{rs(usd)}</dd>
+      {when && <dd className="m-0 truncate text-[11px] tabular-nums text-muted-foreground">{when}</dd>}
+    </div>
   );
 }
 
