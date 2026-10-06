@@ -9,6 +9,8 @@ import type { TradeStatus } from '@/types/trade';
 import { LoginPage } from '@/components/desk/LoginPage';
 import { Card, CardTitle } from '@/components/ui/card';
 import { TradeDetail } from '@/components/mobile/TradeDetail';
+import { Toasts } from '@/components/mobile/Toasts';
+import { useTradeToasts } from '@/components/mobile/useTradeToasts';
 import { PhoneContext, routeOf, searchOf, type PhoneData, type Route, type Tab } from '@/components/mobile/phone-context';
 import { HomeScreen } from '@/components/mobile/screens/HomeScreen';
 import { PnlScreen } from '@/components/mobile/screens/PnlScreen';
@@ -132,6 +134,8 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
     { enabled: known, deps: [shown, trading.map((a) => a.id).join(',')] },
   );
   const glance = usePoll(getGlance, GLANCE_MS);
+  // What changed since the last reading, as toasts over whatever screen is open.
+  const live = useTradeToasts(status.data?.open, `${shown}|${trading.map((a) => a.id).join(',')}`);
   // The perp's last trade as it prints, for the SL / TGT line of a signal trade: the stream stops with the screen.
   const stream = useStream(true);
   const perpLive = stream.ltp !== null && Date.now() - stream.ltp.at < 30_000;
@@ -246,6 +250,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
                             : <MoreScreen />}
       </Frame>
       {route.trade && <TradeDetail tradeId={route.trade} onClose={closeTrade} onSignedOut={onSignedOut} />}
+      <Toasts toasts={live.toasts} onOpen={openTrade} onDismiss={live.dismiss} />
     </PhoneContext.Provider>
   );
 }

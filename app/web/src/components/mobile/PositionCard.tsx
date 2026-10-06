@@ -6,6 +6,8 @@ import { positionRisk } from '@/lib/position-risk';
 import { cn } from '@/lib/utils';
 import { Rupees, SidePill } from '@/components/mobile/parts';
 import { ExitRail } from '@/components/mobile/ExitRail';
+import { isWaiting } from '@/lib/trade-events';
+import { isLongTrade } from '@/lib/long-exits';
 
 /**
  * One open position, read only: what is wrong with it first, then entry, price now and P&L, then where the price
@@ -25,6 +27,7 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
   /** Open the trade's whole journal. */
   onOpen?: () => void;
 }) {
+  if (isWaiting(trade)) return <WaitingCard trade={trade} now={now} showAccount={showAccount} onOpen={onOpen} />;
   const r = positionRisk(trade, { alarms, perpMark });
   const pnl = trade.live?.netIfClosedUsd ?? trade.live?.unrealisedPnl ?? null;
   const entry = trade.entryAvgPrice;
@@ -117,6 +120,41 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
           {r.settlesAt !== null && <Line label="Settles 17:30 IST">{countdown(r.settlesAt, now)}</Line>}
         </dl>
       </details>
+    </Card>
+  );
+}
+
+/**
+ * An order sent and not filled yet: what it is, at what price it rests and for how long -- amber, with a dot that
+ * breathes, so a waiting order is never taken for a position that is running.
+ */
+function WaitingCard({ trade, now, showAccount, onOpen }: { trade: Trade; now: number; showAccount: boolean; onOpen?: () => void }) {
+  const long = isLongTrade(trade);
+  const limit = trade.plan?.entry.limitPrice ?? null;
+  const by = trade.plan?.signal ? `#${trade.plan.signal.n} ${trade.plan.signal.name}` : trade.plan?.strategyName ?? null;
+  const body = (
+    <span className="block w-full">
+      <span className="flex w-full items-center gap-1.5">
+        <span className="truncate text-[16px] font-semibold">{contractLabel(trade.symbol)}</span>
+        <SidePill long={long} />
+        <span className="text-[12.5px] text-muted-foreground">× {size(trade.requestedSize)}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 rounded bg-[var(--warn-bg)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--warn)]">
+          <span aria-hidden="true" className="m-breathe h-2 w-2 rounded-full bg-[var(--warn)]" /> WAITING
+        </span>
+        {onOpen && <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground" />}
+      </span>
+      <span className="mt-0.5 block truncate text-[12.5px] tabular-nums text-muted-foreground">
+        {limit !== null ? <>Resting at <b className="text-foreground">{price(limit)}</b></> : 'At market'}
+        {' · '}sent {duration(Math.max(0, now - trade.updatedAt))} ago
+        {[showAccount && trade.account ? trade.account.name : null, by].filter(Boolean).map((x) => ` · ${x}`).join('')}
+      </span>
+    </span>
+  );
+  return (
+    <Card className="!p-3 border-[color-mix(in_srgb,var(--warn)_45%,transparent)]">
+      {onOpen
+        ? <button type="button" onClick={onOpen} aria-label={`${contractLabel(trade.symbol)}, waiting to fill: what happened`} className="flex w-full border-0 bg-transparent p-0 text-left font-[inherit] text-foreground">{body}</button>
+        : body}
     </Card>
   );
 }
