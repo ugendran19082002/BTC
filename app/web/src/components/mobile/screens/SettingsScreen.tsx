@@ -3,6 +3,7 @@ import { HealthCard } from '@/components/mobile/HealthCard';
 import { usePhone } from '@/components/mobile/phone-context';
 import { Panel, Pill, Row, Rows } from '@/components/mobile/parts';
 import { ago, stamp } from '@/lib/format';
+import { DeskSwitch } from '@/components/mobile/DeskSwitch';
 
 /**
  * Status and settings (6 Oct 2026): the desk's health in full, who is signed in and how, which build the server
@@ -43,13 +44,13 @@ export function SettingsScreen() {
       </Panel>
 
       <div className="flex flex-col gap-2">
+        <DeskSwitch />
         <button
           type="button" onClick={p.signOut}
           className="flex h-12 items-center justify-center gap-2 rounded-lg border border-border bg-transparent font-[inherit] text-[15px] text-foreground active:bg-muted"
         >
           <LogOut className="h-5 w-5" aria-hidden="true" /> Sign out
         </button>
-        {p.me.scope !== 'view' && <a href="/" className="py-2 text-center text-[14px] text-[var(--accent)]">Open the full desk</a>}
       </div>
     </>
   );

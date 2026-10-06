@@ -2,6 +2,7 @@ import { Bell, Bot, History, Landmark, LineChart, Settings } from 'lucide-react'
 import { usePhone, type Sub } from '@/components/mobile/phone-context';
 import { Panel, ListButton } from '@/components/mobile/parts';
 import { phoneAlerts } from '@/lib/phone-alerts';
+import { DeskSwitch } from '@/components/mobile/DeskSwitch';
 
 /** More (6 Oct 2026): the six screens that do not need a tab of their own, one tap each. */
 
@@ -22,6 +23,7 @@ export function MoreScreen() {
   const p = usePhone();
   const alerts = phoneAlerts(p.status, p.glance, p.glance?.btc.perpMark ?? null).length;
   return (
+    <>
     <Panel>
       <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
         {ITEMS.map((it) => (
@@ -42,5 +44,7 @@ export function MoreScreen() {
         ))}
       </ul>
     </Panel>
+    <DeskSwitch />
+    </>
   );
 }

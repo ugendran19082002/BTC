@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import {
-  Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListChecks, ListOrdered, RefreshCw,
+  Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListChecks, ListOrdered, RefreshCw, Smartphone,
 } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getCandles, getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
@@ -569,6 +569,13 @@ export default function App() {
           <div className="top-actions">
             <AlertSwitch status={trade} onChanged={() => void refreshTrade()} />
             <ModeSwitch status={trade} onChanged={() => void refreshTrade()} />
+            {/* The phone view (6 Oct 2026): the same desk read at a glance, one tap away; it links back here. */}
+            <a
+              href="/m" aria-label="Phone view" title="Phone view"
+              className="flex h-9 w-9 flex-none items-center justify-center rounded-full border border-solid border-border bg-muted text-foreground no-underline"
+            >
+              <Smartphone className="h-4 w-4" aria-hidden="true" />
+            </a>
             <ProfileMenu username={username} onSignedOut={() => setSignedIn(false)} />
           </div>
         </div>
