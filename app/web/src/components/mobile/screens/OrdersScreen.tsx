@@ -83,25 +83,24 @@ function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => vo
   return (
     <li>
       <ListButton onClick={onOpen} label={`${buy ? 'Buy' : 'Sell'} ${contractLabel(o.symbol)}: open the order`}>
-        <span className="flex gap-3">
-          <When className="w-11 shrink-0 pt-0.5 text-[12.5px]">{clock(o.openedAt)}</When>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center justify-between gap-2">
-              <span className="truncate text-[14.5px] font-semibold">
-                <span className={buy ? 'text-[var(--buy)]' : 'text-[var(--down)]'}>{buy ? 'BUY' : 'SELL'}</span> {contractLabel(o.symbol)} × {size(o.requestedSize)}
-              </span>
-              {orderStatusWord(o)}
+        {/* The time leads the first line rather than taking a column: at 360px the column cut the contract short. */}
+        <span className="flex items-center justify-between gap-2">
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <When className="shrink-0 text-[12px]">{clock(o.openedAt)}</When>
+            <span className="truncate text-[14px] font-semibold">
+              <span className={buy ? 'text-[var(--buy)]' : 'text-[var(--down)]'}>{buy ? 'BUY' : 'SELL'}</span> {contractLabel(o.symbol)} × {size(o.requestedSize)}
             </span>
-            {/* Two lines for an order that filled; its outcome is said only when it is not simply "filled". */}
-            <span className="flex items-baseline justify-between gap-3 text-[12.5px] tabular-nums text-muted-foreground">
-              <span className="shrink-0">
-                Limit {limit !== null ? price(limit) : 'market'} · Filled {o.entryAvgPrice !== null ? <b className="text-foreground">{price(o.entryAvgPrice)}</b> : '—'}{o.entrySize > 0 && o.entrySize < o.requestedSize ? ` (${size(o.entrySize)})` : ''}
-              </span>
-              <span className="min-w-0 truncate text-[12px]">{who}{showAccount && o.account ? ` · ${o.account.name}` : ''}</span>
-            </span>
-            {o.status !== 'completed' && <span className="block truncate text-[12px] text-muted-foreground">{o.outcome}</span>}
           </span>
+          {orderStatusWord(o)}
         </span>
+        <span className="flex items-baseline gap-2 text-[12.5px] tabular-nums text-muted-foreground">
+          <span className="shrink-0">
+            Limit {limit !== null ? price(limit) : 'market'} · Filled {o.entryAvgPrice !== null ? <b className="text-foreground">{price(o.entryAvgPrice)}</b> : '—'}{o.entrySize > 0 && o.entrySize < o.requestedSize ? ` (${size(o.entrySize)})` : ''}
+          </span>
+          <span className="min-w-0 truncate text-[12px]">· {who}{showAccount && o.account ? ` · ${o.account.name}` : ''}</span>
+        </span>
+        {/* Two lines for an order that filled; its outcome is said only when it is not simply "filled". */}
+        {o.status !== 'completed' && <span className="block truncate text-[12px] text-muted-foreground">{o.outcome}</span>}
       </ListButton>
     </li>
   );
