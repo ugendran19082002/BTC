@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-402 files listed, 197 test files counted below, images and lockfiles left out.
+403 files listed, 197 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -336,6 +336,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [GateChecklist.tsx](../../app/web/src/components/desk/entry/GateChecklist.tsx) | The hard gates as a checklist, beside the Entry methods table: each gate's rule, what was read, and the verdict, for the method chosen there -- without the timeframe chain or with it. |
 | [GateSwitches.tsx](../../app/web/src/components/desk/entry/GateSwitches.tsx) | The hard gates' on/off switches, for the whole entry section: both ways, every panel, and the paper log's recorder. |
 | [LiveStrip.tsx](../../app/web/src/components/desk/entry/LiveStrip.tsx) | Where the live price is against a TRADE's levels, on every tick: the perpetual's last trade (the stream's `ltp`, ~0.1 s) against the entry zone, the stop and TP1, in points. |
+| [MethodFilter.tsx](../../app/web/src/components/desk/entry/MethodFilter.tsx) | Which methods the signal history shows (owner, 6 Oct 2026): any number of the 81, ticked in a list that can be searched by number or name. |
 | [MethodLegend.tsx](../../app/web/src/components/desk/entry/MethodLegend.tsx) | Every entry method by number -- the twelve first, then the rest (74 since 1 Oct 2026) -- the one place their names are written, so the two panels below can show the number alone. |
 | [ModePanel.tsx](../../app/web/src/components/desk/entry/ModePanel.tsx) | One half of the reference layout: the 81 methods read one way -- with the timeframe chain, or without it -- with their chart, table, the chosen setup and its reasons. |
 | [SignalHistory.tsx](../../app/web/src/components/desk/entry/SignalHistory.tsx) | Every signal the server kept (the journal, entry_signals), as a data table: signal tabs (all, BUY & SELL, BUY, SELL, WAIT), way and timeframe filters, today or all days, columns sortable on the ser... |

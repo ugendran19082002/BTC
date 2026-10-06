@@ -481,7 +481,7 @@ function SignalTag({ s }: { s: EntrySignal }) {
   const side = s.dir === 1 ? 'BUY' : 'SELL';
   return (
     <>
-      <span className={cn('rounded px-1 font-bold', s.state === 'WAIT' ? 'bg-[#b7791f] text-white' : s.dir === 1 ? 'bg-[#26a17b] text-white' : 'bg-[#e2504f] text-white')}>
+      <span className={cn('whitespace-nowrap rounded px-1 font-bold', s.state === 'WAIT' ? 'bg-[#b7791f] text-white' : s.dir === 1 ? 'bg-[#26a17b] text-white' : 'bg-[#e2504f] text-white')}>
         {s.state === 'WAIT' ? `WAIT ${side}` : side}
       </span>
       {s.gatesOff.length ? <span className="ml-1 text-[10px] text-[var(--warn)]" title={`gates off: ${s.gatesOff.join(', ')}`}>gates off</span> : null}
