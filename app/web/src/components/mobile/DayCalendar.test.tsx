@@ -16,7 +16,7 @@ const show = (rows = ROWS, from = '2026-09-30', to = '2026-10-06') => render(<Da
 describe('DayCalendar', () => {
   it('[critical] each traded day is a button with its figure in it and its numbers said; a day with no trade is not', () => {
     show();
-    const oct = within(screen.getByRole('region', { name: 'Oct 26' }));
+    const oct = within(screen.getByRole('region', { name: 'OCT 26' }));
     expect(oct.getByRole('button', { name: 'Sat, 3 Oct: +₹425, 4 trades' })).toHaveTextContent('3+425');
     expect(oct.getByRole('button', { name: 'Sun, 4 Oct: −₹1,240, 7 trades' })).toHaveTextContent('4−1.2K');
     expect(oct.getByRole('button', { name: 'Tue, 6 Oct: +₹85.00, 1 trade' })).toHaveTextContent('6+85');
@@ -27,10 +27,10 @@ describe('DayCalendar', () => {
 
   it('each month says what it made and how its days went', () => {
     show();
-    expect(screen.getByRole('region', { name: 'Oct 26' })).toHaveTextContent('−₹730 · 2 up · 1 down');
+    expect(screen.getByRole('region', { name: 'OCT 26' })).toHaveTextContent('−₹730 · 2 up · 1 down');
     // September is in the range for one day, with no trade: its name and its week, no total.
-    expect(screen.getByRole('region', { name: 'Sep 26' })).not.toHaveTextContent('up');
-    expect(within(screen.getByRole('region', { name: 'Sep 26' })).getByLabelText('Wed, 30 Sep: no trades')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'SEP 26' })).not.toHaveTextContent('up');
+    expect(within(screen.getByRole('region', { name: 'SEP 26' })).getByLabelText('Wed, 30 Sep: no trades')).toBeInTheDocument();
   });
 
   it('the last day traded is open to begin with; a tap opens another', () => {
@@ -58,8 +58,8 @@ describe('DayCalendar', () => {
 
   it('only the weeks that hold a day of the range are drawn: seven days are not a month of blanks', () => {
     show(ROWS, '2026-10-04', '2026-10-06');
-    expect(screen.queryByRole('region', { name: 'Sep 26' })).toBeNull();
-    const oct = screen.getByRole('region', { name: 'Oct 26' });
+    expect(screen.queryByRole('region', { name: 'SEP 26' })).toBeNull();
+    const oct = screen.getByRole('region', { name: 'OCT 26' });
     // One week: Sun 4 .. Sat 10, of which three days are in the range.
     expect(within(oct).getAllByLabelText(/Oct:/)).toHaveLength(3);
   });
