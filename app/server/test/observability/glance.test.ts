@@ -67,7 +67,9 @@ test('[critical] a few passes a little over their second are the network, not a 
 });
 
 test('one pass of five seconds or more warns: the stops were watched that much late', () => {
-  const j = judge({ ...healthy(), passes: { count: 300, late: 1, maxMs: 7_200 } });
+  const j = judge({ ...healthy(), passes: { count: 300, late: 1, maxMs: 9_000, tradesNow: 19 } });
   assert.equal(j.health, 'warn');
-  assert.match(j.issues[0]!.text, /took 7 s/);
+  // What the live desk showed (6 Oct 2026, evening), said exactly: what waited, and what did not.
+  assert.match(j.issues[0]!.text, /^One pass over the open trades \(19 open\) took 9 s/);
+  assert.match(j.issues[0]!.text, /Perp SL\/TGT have their own fast watch/);
 });

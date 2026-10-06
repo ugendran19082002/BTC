@@ -21,7 +21,7 @@ export type GlanceReadings = {
    * The passes over the open trades in the last five minutes: how many, how many ran past their one second, and
    * the slowest. A pass calls Delta, so one a little over its second is the network, not a fault.
    */
-  passes: { count: number; late: number; maxMs: number | null };
+  passes: { count: number; late: number; maxMs: number | null; tradesNow?: number };
   errors: { open: number; lastAt: number | null };
   schedulerOn: boolean;
   mode: 'live' | 'paper';
@@ -70,7 +70,14 @@ export function judge(r: GlanceReadings): { health: Health; issues: GlanceIssue[
 
   const p = r.passes;
   if (p.maxMs !== null && p.maxMs >= PASS_SLOW_MS) {
-    issues.push({ level: 'warn', text: `One check on the open trades took ${secs(p.maxMs)} in the last 5 min: stops were watched that much late.` });
+    // What waits on a pass, said exactly (6 Oct 2026): not the perp SL/TGT, which the fast watch reads ten times a
+    // second, and not the stop resting at Delta -- the fills, the exit times and the desk's own option-stop check.
+    const n = p.tradesNow ?? null;
+    issues.push({
+      level: 'warn',
+      text: `One pass over the open trades${n !== null ? ` (${n} open)` : ''} took ${secs(p.maxMs)} in the last 5 min: `
+        + 'fills, exit times and the desk\'s own option-stop check waited that long. Perp SL/TGT have their own fast watch; every stop also rests at Delta.',
+    });
   } else if (p.count >= PASS_MIN_COUNT && p.late / p.count >= PASS_LATE_SHARE) {
     issues.push({ level: 'warn', text: `The check on the open trades ran over its second ${p.late} of ${p.count} times in the last 5 min: the desk is falling behind.` });
   }

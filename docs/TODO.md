@@ -10,6 +10,16 @@ Updated 30 Sep 2026 (evening): 25 items closed that afternoon -- see the history
 
 ---
 
+## Speed: one pass over the open trades
+
+- [ ] **A pass polls the open trades one after another** (owner, 6 Oct 2026 evening: the phone's health card
+  showed one pass of 9 s). Each trade is about three round trips to Delta, so a pass grows with the trades open
+  (~0.4 s each). Perp SL/TGT do not wait on it -- the fast watch reads them ten times a second (4 Oct 2026) -- and
+  every stop rests at Delta; what waits is noticing fills, exit times and the desk's own option-stop check. The
+  fix is polling contracts side by side, which the 4 Oct audit left until it could be measured: read the pass
+  times and Delta's quota on `/api/desk/metrics` with many trades open, then build it in a worktree (it is the
+  order path), with the owner's go-ahead.
+
 ## Phone view and a phone-friendly desk
 
 Level 1 of the phone (`/m`: health, today, open positions' risk; view-only sign-in) was built on 6 Oct 2026 --
