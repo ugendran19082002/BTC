@@ -157,16 +157,20 @@ export function ReportPanel() {
         </div>
       </CollapsibleCard>
 
-      {/* 2. Performance Stats & Win/Loss Analysis Row */}
-      <div className="pnl-analytics-row">
-        <PerformanceStats rows={rows} orders={orders} />
-        <WinLossAnalysis rows={rows} orders={orders} />
+      {/* 2. The days, the width of the page: a bar each -- booked and charges -- under the running total (6 Oct 2026). */}
+      <div className="pnl-chart-full">
+        <DailyPnlChart rows={rows} includeCharges={includeCharges} />
       </div>
 
-      {/* 3. Daily P&L & P&L Curve Charts Row */}
+      {/* 3. Performance stats, the width of the page too. */}
+      <div className="pnl-chart-full">
+        <PerformanceStats rows={rows} orders={orders} />
+      </div>
+
+      {/* 4. The P&L curve beside the win / loss split. */}
       <div className="pnl-charts-row">
-        <DailyPnlChart rows={rows} />
         <PnlCurveChart rows={rows} status={tradeStatus.data} />
+        <WinLossAnalysis rows={rows} orders={orders} />
       </div>
 
       {/* 4. Calendar & Cumulative Progress Card */}

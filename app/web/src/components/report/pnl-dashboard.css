@@ -995,3 +995,18 @@
     min-height: 0;
   }
 }
+
+/* A card that takes the row to itself: the daily chart, the performance stats (6 Oct 2026). */
+.pnl-chart-full {
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.pnl-chart-full .pnl-perf-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+@media (max-width: 1080px) {
+  .pnl-chart-full .pnl-perf-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .pnl-chart-full .pnl-perf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

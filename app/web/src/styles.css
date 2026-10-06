@@ -40,6 +40,8 @@
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
   --accent-line: color-mix(in srgb, var(--accent) 40%, transparent);
   --series: #c9d1d9;
+  /* Delta's charges on a chart: a milder red beside --down, checked against it (17 apart in OKLab, 3:1 on the panel). */
+  --charge: #9c4a57;
   --ce: #0ecb81;
   --pe: #f6465d;
 
