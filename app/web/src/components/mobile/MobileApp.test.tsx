@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { OrderRecord, Trade, TradeStatus } from '@/types/trade';
 import type { Glance } from '@/api/glance';
 import { routeOf, searchOf } from '@/components/mobile/phone-context';
+import { quickPicks } from '@/lib/custom-range';
+import { todayIst } from '@/lib/report';
 
 /**
  * The phone (6 Oct 2026): signs in view only, then five tabs -- Home, P&L, Positions, Orders, More -- every one
@@ -257,6 +259,41 @@ describe('P&L: the day\'s high and low (owner, 6 Oct 2026)', () => {
     expect(best).toHaveTextContent('+₹1,020');
     expect(best).toHaveTextContent('2026-10-02');
     expect(screen.getByText('Worst day').parentElement!).toHaveTextContent('−₹425');
+  });
+});
+
+describe('P&L: a custom From and To (owner, 6 Oct 2026)', () => {
+  beforeEach(() => { signedIn(); window.history.replaceState(null, '', '/m?tab=pnl'); });
+
+  it('[critical] Custom, last in the row, opens a sheet; a quick pick and Show read exactly that range', async () => {
+    render(<MobileApp />);
+    const radios = await screen.findAllByRole('radio');
+    expect(radios.map((r) => r.textContent).at(-1)).toBe('Custom');
+    fireEvent.click(screen.getByRole('radio', { name: 'Custom' }));
+    const sheet = screen.getByRole('dialog', { name: 'Custom range' });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Last week' }));
+    const week = quickPicks(todayIst()).find((q) => q.label === 'Last week')!.range;
+    expect(within(sheet).getByLabelText('From')).toHaveValue(week.from);
+    expect(within(sheet).getByLabelText('To')).toHaveValue(week.to);
+    expect(within(sheet).getByRole('status')).toHaveTextContent('7 days');
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Show' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Custom range' })).toBeNull());
+    await waitFor(() => expect(phone.getStats).toHaveBeenCalledWith(week.from, week.to, null));
+    expect(screen.getByRole('radio', { name: 'Custom' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: 'Change' })).toBeInTheDocument();
+  });
+
+  it('a backwards range says why and cannot be shown; Cancel keeps the range there was', async () => {
+    render(<MobileApp />);
+    fireEvent.click(await screen.findByRole('radio', { name: 'Custom' }));
+    const sheet = screen.getByRole('dialog', { name: 'Custom range' });
+    fireEvent.change(within(sheet).getByLabelText('From'), { target: { value: '2026-10-05' } });
+    fireEvent.change(within(sheet).getByLabelText('To'), { target: { value: '2026-10-01' } });
+    expect(within(sheet).getByRole('alert')).toHaveTextContent('on or before');
+    expect(within(sheet).getByRole('button', { name: 'Show' })).toBeDisabled();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Custom range' })).toBeNull();
+    expect(screen.getByRole('radio', { name: 'Today' })).toHaveAttribute('aria-checked', 'true');
   });
 });
 

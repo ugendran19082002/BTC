@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { json } from '@/api/client';
 import { getDaysFor, getStats, type StatsGroup } from '@/api/phone';
 import type { DayRow, MtmReport } from '@/types/report';
@@ -9,6 +10,9 @@ import { byDay, daysAgoIst, heat, monthsOf, todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
 import { AreaChart, Empty, Loading, LossMeter, Panel, Rupees, Segmented, Stat, Stats } from '@/components/mobile/parts';
+import { DateRangeSheet } from '@/components/mobile/DateRangeSheet';
+import { describeRange, type DateRangeValue } from '@/components/ui/date-range-picker';
+import { rangeProblem } from '@/lib/custom-range';
 
 /**
  * P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line,
@@ -17,12 +21,14 @@ import { AreaChart, Empty, Loading, LossMeter, Panel, Rupees, Segmented, Stat, S
  * charges, from the journal (`/api/report/*`).
  */
 
-type Range = 'today' | '7' | '30' | '90';
+type Range = 'today' | '7' | '30' | '90' | 'custom';
 const RANGES: { key: Range; label: string; days: number }[] = [
   { key: 'today', label: 'Today', days: 0 },
   { key: '7', label: '7 days', days: 6 },
   { key: '30', label: '30 days', days: 29 },
   { key: '90', label: '90 days', days: 89 },
+  // Last, as asked (owner, 6 Oct 2026): any From and To, picked in a sheet.
+  { key: 'custom', label: 'Custom', days: -1 },
 ];
 
 const rs = (usd: number | null | undefined) => (usd === null || usd === undefined ? '—' : signedInr(usdToInr(usd)));
@@ -33,8 +39,13 @@ export function PnlScreen() {
   const [range, setRange] = usePersisted<Range>('m-pnl-range', 'today');
   const r = RANGES.find((x) => x.key === range) ?? RANGES[0]!;
   const isToday = r.key === 'today';
-  const to = todayIst(p.now);
-  const from = isToday ? to : daysAgoIst(r.days, p.now);
+  const today = todayIst(p.now);
+  // The custom range, remembered; one that no longer holds (a year passed, a bad value) falls back to the last 7 days.
+  const [custom, setCustom] = usePersisted<DateRangeValue>('m-pnl-custom', { from: daysAgoIst(6, p.now), to: today });
+  const customOk = rangeProblem(custom, today) === null;
+  const [picking, setPicking] = useState(false);
+  const to = r.key === 'custom' && customOk ? custom.to : today;
+  const from = isToday ? today : r.key === 'custom' ? (customOk ? custom.from : daysAgoIst(6, p.now)) : daysAgoIst(r.days, p.now);
   const stats = usePoll(() => getStats(from, to, p.accountParam), isToday ? 30_000 : 120_000, { deps: [from, to, p.accountParam] });
   const days = usePoll(() => getDaysFor(from, to, p.accountParam), 120_000, { deps: [from, to, p.accountParam], enabled: !isToday });
   const mtm = usePoll(
@@ -52,10 +63,24 @@ export function PnlScreen() {
 
   return (
     <>
-      <Segmented label="Range" value={range} options={RANGES} onChange={setRange} />
+      <Segmented label="Range" value={range} options={RANGES} onChange={(k) => (k === 'custom' ? setPicking(true) : setRange(k))} />
+      {picking && (
+        <DateRangeSheet
+          value={customOk ? custom : { from, to }} today={today}
+          onApply={(v) => { setCustom(v); setRange('custom'); setPicking(false); }}
+          onClose={() => setPicking(false)}
+        />
+      )}
 
       <Panel>
-        <span className="block text-[13px] text-muted-foreground">{isToday ? 'Net P&L, if everything closed now' : `Net P&L, ${from} to ${to}`}</span>
+        <span className="flex items-baseline justify-between gap-2 text-[13px] text-muted-foreground">
+          <span>{isToday ? 'Net P&L, if everything closed now' : `Net P&L, ${describeRange({ from, to }, today)}`}</span>
+          {r.key === 'custom' && (
+            <button type="button" onClick={() => setPicking(true)} className="shrink-0 border-0 bg-transparent p-0 font-[inherit] text-[13px] text-[var(--accent)]">
+              Change
+            </button>
+          )}
+        </span>
         {net !== null ? <Rupees usd={net} signed size="xl" /> : <Loading error={isToday ? null : days.error} what="the money" />}
         {line.length >= 2 && (
           <div className="mt-2">
