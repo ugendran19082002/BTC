@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { journal, tradingService } from '../../trading/service.js';
-import { daysCsv, daysReport, mtmStats } from '../../trading/pnl-history.js';
+import { daysCsv, daysReport, mtmStats, tradeStats, type TradeStatsGroup } from '../../trading/pnl-history.js';
+import { strategyStore } from './strategy.routes.js';
+import { brokerAccounts } from '../../delta/accounts.js';
 import { istDate } from '../../strategy/schedule.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
@@ -52,6 +54,38 @@ export function registerReportRoutes(app: FastifyInstance) {
     reply.header('Content-Type', 'text/csv; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="pnl-${r.from}-to-${r.to}.csv"`);
     return daysCsv(daysReport(records, { ...r, spot: svc.spot }));
+  });
+
+  /**
+   * How the closed trades did in the range: win rate, profit factor, average win and loss -- overall, by strategy
+   * and by broker account, after charges (`tradeStats`). Each group carries a name to show: the strategy's
+   * current name, "By hand" for a trade nobody scheduled, the account's name.
+   */
+  app.get('/api/report/stats', async (req, reply) => {
+    const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
+    if (typeof r === 'string') return refuse(reply, 400, { error: r });
+    const records = await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query));
+    const stats = tradeStats(records, { ...r, spot: svc.spot });
+    // A deleted strategy keeps the name its trades were placed under.
+    const strategyNames = new Map<string, string>();
+    for (const rec of records) if (rec.plan.strategyId && rec.plan.strategyName) strategyNames.set(rec.plan.strategyId, rec.plan.strategyName);
+    for (const x of await strategyStore().all().catch(() => [])) strategyNames.set(x.id, x.name);
+    const methodNames = new Map<string, string>();
+    for (const rec of records) if (rec.plan.signal) methodNames.set(rec.plan.signal.method, `#${rec.plan.signal.n} ${rec.plan.signal.name}`);
+    const accountNames = new Map<string, string>();
+    try { for (const a of brokerAccounts().list()) accountNames.set(String(a.id), a.name); } catch { /* none set up */ }
+    const named = (g: TradeStatsGroup, name: string) => ({ ...g, name });
+    return {
+      mode: svc.mode,
+      from: stats.from,
+      to: stats.to,
+      overall: stats.overall,
+      byStrategy: stats.byStrategy.map((g) => named(g, g.key === 'manual' ? 'By hand' : strategyNames.get(g.key) ?? g.key)),
+      byAccount: stats.byAccount.map((g) => named(g, g.key === 'none' ? 'No account' : accountNames.get(g.key) ?? `Account ${g.key}`)),
+      byOption: stats.byOption.map((g) => named(g, g.key)),
+      byAction: stats.byAction.map((g) => named(g, g.key === 'buy' ? 'Bought' : 'Sold')),
+      byMethod: stats.byMethod.map((g) => named(g, methodNames.get(g.key) ?? g.key)),
+    };
   });
 
   /** One day, minute by minute. Today unless asked otherwise. */

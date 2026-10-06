@@ -23,7 +23,7 @@ export type Alert = {
    * order that fills in nine pieces is one entry on the phone, not nine.
    */
   key: string;
-  /** Telegram HTML: only <b> and <i>, and every `&` written as `&amp;`. */
+  /** Telegram HTML: only <b>, <i> and the trade's own <a href> link, and every `&` written as `&amp;`. */
   text: string;
   /**
    * How long nothing else is said under this key once this has been sent.
@@ -43,8 +43,11 @@ export type Alert = {
  */
 export const PROBLEM_REPEAT_MS = 15 * 60_000;
 
-/** `account`: the broker account's name, said in the footer when the desk has more than one. */
-export type AlertContext = { mode: 'live' | 'paper'; account?: string | null };
+/**
+ * `account`: the broker account's name, said in the footer when the desk has more than one. `deskUrl`: where the
+ * desk is reached (config `DESK_URL`); with it, a fill's message links to that trade on the phone.
+ */
+export type AlertContext = { mode: 'live' | 'paper'; account?: string | null; deskUrl?: string | null };
 
 /**
  * An exit that printed a long way from the price that asked for it.
@@ -388,6 +391,7 @@ function entryText(e: FillEvent | null, s: TradeState, plan: TradePlan, ctx: Ale
     '',
     perpLine(plan),
     exits(plan),
+    tradeLink(s, ctx),
     footer(s.updatedAt, plan, ctx),
   );
 }
@@ -437,6 +441,7 @@ function exitText(
         : role === 'take_profit' && plan.takeProfitPrice !== null
           ? `⏳ Still ${held} — target resting at ${price(plan.takeProfitPrice)}`
           : `⏳ Still ${held} — exit working`,
+    tradeLink(s, ctx),
     footer(s.updatedAt, plan, ctx),
   );
 }
@@ -450,6 +455,7 @@ function reconciledText(s: TradeState, plan: TradePlan, ctx: AlertContext): stri
     s.exitSize > 0
       ? pnlLine(s.realisedPnl)
       : 'P&amp;L could not be counted from fills — check Delta for the closing price.',
+    tradeLink(s, ctx),
     footer(s.updatedAt, plan, ctx),
   );
 }
@@ -457,6 +463,13 @@ function reconciledText(s: TradeState, plan: TradePlan, ctx: AlertContext): stri
 // ------------------------------------------------------------------- pieces
 
 const lines = (...ls: (string | null)[]) => ls.filter((l) => l !== null).join('\n');
+
+/**
+ * The trade on the phone (6 Oct 2026): `/m?trade=<id>` opens its whole journal there. Only when the desk knows
+ * its own address; the origin comes from `URL` and the id is encoded, so nothing here needs escaping.
+ */
+const tradeLink = (s: TradeState, ctx: AlertContext): string | null =>
+  ctx.deskUrl ? `📱 <a href="${ctx.deskUrl}/m?trade=${encodeURIComponent(s.tradeId)}">Open this trade</a>` : null;
 
 function headline(ctx: { mode: 'live' | 'paper' }, icon: string, title: string): string {
   // A paper fill must never be mistakable for a real one, even from the lock

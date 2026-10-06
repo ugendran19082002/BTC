@@ -110,12 +110,16 @@ written: rupees main, dollars small, at ₹85. The chart is documented in
 [features/price-chart.md](features/price-chart.md).
 
 **The phone** is `/m` ([`components/mobile/`](../app/web/src/components/mobile/), 6 Oct 2026): the desk read
-at a glance and changed never -- its health (`GET /api/desk/glance`, judged in
-[`observability/glance.ts`](../app/server/src/observability/glance.ts)), today against the daily loss limit,
-and each open position's room to its stop, target and liquidation, riskiest first. It signs in **view only**
-(below) and installs to the home screen as an app (`public/m-manifest.json`, and `public/m-sw.js`, which
-caches nothing: an old position read as a live one is worse than none). Its own chunk, so a phone never
-downloads the desk.
+at a glance and changed never. Five tabs at the thumb -- **Home** (health, today, positions, margin, the last
+order), **P&L** (today live or 7 / 30 / 90 days, closed-trade statistics from `GET /api/report/stats`, split by
+strategy, CE/PE, side, method, account), **Positions** (each one's room to its stop, target and liquidation,
+riskiest first), **Orders**, and **More** (trade history, account, market, strategies' runs and signals, alerts,
+status). Any trade's journal opens as a timeline, from any of them or from a Telegram fill alert's link
+(`/m?trade=<id>`, when `DESK_URL` is set); the route lives in the URL, so the back button works. Health is one
+answer, `GET /api/desk/glance`, judged in [`observability/glance.ts`](../app/server/src/observability/glance.ts).
+It signs in **view only** (below) and installs to the home screen as an app (`public/m-manifest.json`, and
+`public/m-sw.js`, which caches nothing: an old position read as a live one is worse than none). Its own chunk,
+so a phone never downloads the desk; every screen is a GET -- no trading logic runs on the phone.
 
 ---
 

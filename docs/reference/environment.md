@@ -19,6 +19,7 @@ deploy variables are read by docker compose and the scripts from `deploy/.env`.
 | `DESK_ALLOWED_ORIGINS` | [app.ts](../../app/server/src/http/app.ts) | yes | Extra origins, comma-separated, allowed to send a change besides the desk's own host. Normally empty. |
 | `DESK_PASSWORD_HASH` | [service.ts](../../app/server/src/auth/service.ts) | yes | Seeds the first user's password (scrypt hash from `npx tsx hash-password.mjs`). Never the password itself. |
 | `DESK_SESSION_SECRET` | [service.ts](../../app/server/src/auth/service.ts), [accounts.ts](../../app/server/src/delta/accounts.ts) | yes | Seals the authenticator secret, the recovery codes and the broker accounts' API keys. Required for sign-in and for keeping an account; rotating it means setting up two-step sign-in again (`npm run auth -- reset-2fa`) and entering each API key again. |
+| `DESK_URL` | [config.ts](../../app/server/src/config.ts) | yes | Where the desk is reached from outside, e.g. `https://delta.thannigo.in`. Set, each fill alert links to that trade on the phone (`/m?trade=<id>`); blank or not an http(s) address, the alerts carry no link. |
 | `DESK_USER` | [service.ts](../../app/server/src/auth/service.ts) | yes | Seeds the first sign-in user. Read once; afterwards the user lives in `auth_user`. |
 | `LOG_LEVEL` | [config.ts](../../app/server/src/config.ts) | **no** | Fastify log level. Default `info`. |
 | `PORT` | [config.ts](../../app/server/src/config.ts) | yes | HTTP port the API listens on. Default `8787`. |

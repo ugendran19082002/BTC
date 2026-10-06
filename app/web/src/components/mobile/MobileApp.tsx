@@ -1,36 +1,47 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { LogOut, RefreshCw } from 'lucide-react';
-import { json, NotSignedIn } from '@/api/client';
+import { ArrowLeft, Bell, Home, IndianRupee, Layers, ListOrdered, Menu, RefreshCw } from 'lucide-react';
+import { NotSignedIn } from '@/api/client';
 import { getMe, logout, type Me } from '@/api/session';
 import { getAccounts } from '@/api/accounts';
 import { getStatusOfAccounts, getTradeStatus } from '@/api/trade';
 import { getGlance } from '@/api/glance';
-import type { MtmReport } from '@/types/report';
 import type { TradeStatus } from '@/types/trade';
 import { LoginPage } from '@/components/desk/LoginPage';
-import { Card, CardTitle, Note } from '@/components/ui/card';
-import { HealthCard } from '@/components/mobile/HealthCard';
-import { TodayCard } from '@/components/mobile/TodayCard';
-import { PositionCard } from '@/components/mobile/PositionCard';
+import { Card, CardTitle } from '@/components/ui/card';
+import { TradeDetail } from '@/components/mobile/TradeDetail';
+import { PhoneContext, routeOf, searchOf, type PhoneData, type Route, type Tab } from '@/components/mobile/phone-context';
+import { HomeScreen } from '@/components/mobile/screens/HomeScreen';
+import { PnlScreen } from '@/components/mobile/screens/PnlScreen';
+import { PositionsScreen } from '@/components/mobile/screens/PositionsScreen';
+import { OrdersScreen } from '@/components/mobile/screens/OrdersScreen';
+import { MoreScreen, SUB_TITLE } from '@/components/mobile/screens/MoreScreen';
+import { HistoryScreen } from '@/components/mobile/screens/HistoryScreen';
+import { AccountScreen } from '@/components/mobile/screens/AccountScreen';
+import { MarketScreen } from '@/components/mobile/screens/MarketScreen';
+import { StrategiesScreen } from '@/components/mobile/screens/StrategiesScreen';
+import { AlertsScreen } from '@/components/mobile/screens/AlertsScreen';
+import { SettingsScreen } from '@/components/mobile/screens/SettingsScreen';
+import { Chip, Chips } from '@/components/mobile/parts';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
-import { positionRisk } from '@/lib/position-risk';
-import { ago, duration } from '@/lib/format';
+import { phoneAlerts } from '@/lib/phone-alerts';
+import { duration } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
  * The phone (6 Oct 2026): the desk read at a glance, and nothing that changes it.
  *
  * Signed in view-only, so the server refuses every write this device could send (http/app.ts, `viewRefuses`)
- * -- the screen has no buttons, and a lost phone is not trusted to keep to its screen. Three things, in the
- * order a person away from the desk asks them: is the desk all right, how is today going, and how close is each
- * open position to its stop. Everything polls only while the screen is on, and says how old it is.
+ * -- the screens have no trading buttons, and a lost phone is not trusted to keep to its screens. Five tabs at the
+ * thumb -- Home, P&L, Positions, Orders, More (history, account, market, strategies, alerts, status) -- and any
+ * trade's whole story one tap away, or one tap from a Telegram alert (`/m?trade=<id>`). The route lives in the
+ * URL, so the phone's back button does what it should. Everything polls only while the screen is on, and says
+ * how old it is. No trading logic runs here: the server is the one source of truth.
  */
 
 /** Positions and the day: the desk's own status is cached at the server for about a second. */
 const STATUS_MS = 5_000;
 const GLANCE_MS = 15_000;
-const MTM_MS = 60_000;
 const ACCOUNTS_MS = 60_000;
 /** Figures older than this get a banner saying so: an old number on a trading screen reads as a true one. */
 const STALE_MS = 20_000;
@@ -45,32 +56,63 @@ export default function MobileApp() {
   useEffect(() => { refreshMe(); }, [refreshMe]);
   usePhoneShell();
 
-  if (me === null) return <Shell><p className="text-muted-foreground">Loading…</p></Shell>;
+  if (me === null) return <Frame><p className="text-muted-foreground">Loading…</p></Frame>;
   if (me.stage === 'setup') {
     return (
-      <Shell>
+      <Frame>
         <Card>
           <CardTitle>Two-step sign-in first</CardTitle>
           <p className="m-0 text-[14px]">Two-step sign-in is not set up yet. Finish it on the full desk, then sign in here.</p>
           <a className="mt-3 text-[14px] text-[var(--accent)]" href="/">Open the full desk</a>
         </Card>
-      </Shell>
+      </Frame>
     );
   }
   if (!me.signedIn) {
     return <LoginPage viewOnly startAtCode={me.stage === 'totp'} onSignedIn={refreshMe} onNeedsSetup={refreshMe} />;
   }
-  return <Glance me={me} onSignedOut={refreshMe} />;
+  return <Phone me={me} onSignedOut={refreshMe} />;
 }
 
-function Glance({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
-  const [choice, setChoice] = usePersisted<Choice>('m-account', 'all');
+const TAB_ITEMS: { tab: Tab; label: string; icon: typeof Home }[] = [
+  { tab: 'home', label: 'Home', icon: Home },
+  { tab: 'pnl', label: 'P&L', icon: IndianRupee },
+  { tab: 'positions', label: 'Positions', icon: Layers },
+  { tab: 'orders', label: 'Orders', icon: ListOrdered },
+  { tab: 'more', label: 'More', icon: Menu },
+];
+const TAB_TITLE: Record<Tab, string> = { home: 'BTC Desk', pnl: 'P&L', positions: 'Positions', orders: 'Orders', more: 'More' };
 
+function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
+  const [route, setRoute] = useState<Route>(() => routeOf(window.location.search));
+  useEffect(() => {
+    const back = () => setRoute(routeOf(window.location.search));
+    window.addEventListener('popstate', back);
+    return () => window.removeEventListener('popstate', back);
+  }, []);
+  const go = useCallback((to: Partial<Route>) => {
+    setRoute((cur) => {
+      const next: Route = {
+        tab: to.tab ?? cur.tab,
+        sub: to.sub !== undefined ? to.sub : to.tab && to.tab !== cur.tab ? null : cur.sub,
+        trade: to.trade !== undefined ? to.trade : null,
+      };
+      window.history.pushState({ phone: true }, '', `/m${searchOf(next)}`);
+      if (next.tab !== cur.tab || next.sub !== cur.sub) window.scrollTo(0, 0);
+      return next;
+    });
+  }, []);
+  const openTrade = useCallback((trade: string) => go({ trade }), [go]);
+  const closeTrade = useCallback(() => {
+    // Opened here: back is where it came from. Opened from a link: there is nothing behind it, so stay on the tab.
+    if ((window.history.state as { phone?: boolean } | null)?.phone) window.history.back();
+    else { const next = { ...route, trade: null }; window.history.replaceState(null, '', `/m${searchOf(next)}`); setRoute(next); }
+  }, [route]);
+
+  const [choice, setChoice] = usePersisted<Choice>('m-account', 'all');
   const accounts = usePoll(getAccounts, ACCOUNTS_MS);
-  const trading = useMemo(
-    () => (accounts.data?.accounts ?? []).filter((a) => a.active && a.trading !== false),
-    [accounts.data],
-  );
+  const all = accounts.data?.accounts ?? [];
+  const trading = useMemo(() => all.filter((a) => a.active && a.trading !== false), [all]);
   // A remembered account that is no longer trading falls back to every account.
   const shown: Choice = choice !== 'all' && trading.some((a) => a.id === choice) ? choice : 'all';
   const known = accounts.data !== null;
@@ -81,143 +123,140 @@ function Glance({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
     { enabled: known, deps: [shown, trading.map((a) => a.id).join(',')] },
   );
   const glance = usePoll(getGlance, GLANCE_MS);
-  const mtm = usePoll(
-    () => json<MtmReport>(shown === 'all' ? '/api/report/mtm' : `/api/report/mtm?account=${shown}`),
-    MTM_MS,
-    { deps: [shown] },
-  );
 
   // Any "not signed in" -- the session expired, or was signed out from the desk -- goes back to the sign-in.
-  const lost = [accounts.error, status.error, glance.error, mtm.error].some((e) => e instanceof NotSignedIn);
+  const lost = [accounts.error, status.error, glance.error].some((e) => e instanceof NotSignedIn);
   useEffect(() => { if (lost) onSignedOut(); }, [lost, onSignedOut]);
 
   const now = useNow(5_000);
   const stale = status.updatedAt !== null && now - status.updatedAt > STALE_MS;
+  const refreshAll = () => { void status.refresh(); void glance.refresh(); void accounts.refresh(); };
+  const signOut = useCallback(async () => { await logout().catch(() => undefined); onSignedOut(); }, [onSignedOut]);
 
-  const refreshAll = () => { void status.refresh(); void glance.refresh(); void mtm.refresh(); void accounts.refresh(); };
-  const signOut = async () => { await logout().catch(() => undefined); onSignedOut(); };
-
+  const data: PhoneData = {
+    me, status: status.data, statusError: status.error, statusAt: status.updatedAt, glance: glance.data, glanceError: glance.error,
+    accounts: all, trading, shown, accountParam: shown === 'all' ? null : shown, now, go, openTrade,
+    signOut: () => void signOut(), onSignedOut,
+  };
+  const alertCount = phoneAlerts(status.data, glance.data, glance.data?.btc.perpMark ?? null).filter((a) => a.level !== 'green').length;
+  const title = route.sub ? SUB_TITLE[route.sub] : TAB_TITLE[route.tab];
   const s = status.data;
-  const perpMark = glance.data?.btc.perpMark ?? null;
-  // The riskiest first: anything wrong, then the stop with the least room left.
-  const open = useMemo(() => {
-    const list = (s?.open ?? []).map((t) => ({ t, r: positionRisk(t, { alarms: s?.alarms, perpMark }) }));
-    const room = (x: (typeof list)[number]) => (x.r.stop && Number.isFinite(x.r.stop.pct) ? x.r.stop.pct! : Infinity);
-    return list.sort((a, b) => (b.r.problems.length > 0 ? 1 : 0) - (a.r.problems.length > 0 ? 1 : 0) || room(a) - room(b)).map((x) => x.t);
-  }, [s, perpMark]);
 
   return (
-    <Shell
-      header={
-        <div className="flex items-center gap-2">
-          <span className="btc-logo sm" aria-hidden="true">₿</span>
-          <h1 className="m-0 whitespace-nowrap text-[17px] font-semibold">BTC Desk</h1>
-          <span className={cn(
-            'whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold',
-            s?.mode === 'live' ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'bg-muted text-muted-foreground',
-          )}>
-            {s ? (s.mode === 'live' ? 'LIVE' : 'PAPER') : '…'}
-          </span>
-          {/* Under 380px the 44px buttons win the room; the footer says the same thing. */}
-          <span className="hidden whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground min-[380px]:inline">
-            {me.scope === 'view' ? 'View only' : 'Full access'}
-          </span>
-          <span className="ml-auto flex shrink-0">
-            <IconButton label="Refresh now" onClick={refreshAll} spin={status.loading}><RefreshCw className="h-[18px] w-[18px]" /></IconButton>
-            <IconButton label="Sign out" onClick={() => void signOut()}><LogOut className="h-[18px] w-[18px]" /></IconButton>
-          </span>
-        </div>
-      }
-    >
-      {trading.length > 1 && (
-        <nav aria-label="Accounts" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
-          <Chip on={shown === 'all'} onClick={() => setChoice('all')}>All accounts</Chip>
-          {trading.map((a) => <Chip key={a.id} on={shown === a.id} onClick={() => setChoice(a.id)}>{a.name}</Chip>)}
-        </nav>
-      )}
-
-      {stale && (
-        <div role="alert" className="rounded-md bg-[var(--warn-bg)] px-3 py-2.5 text-[14px] text-[var(--warn)]">
-          Not updated for {duration(now - status.updatedAt!)} — the figures below may be old.
-          {status.error && !(status.error instanceof NotSignedIn) ? ` (${status.error.message})` : ''}
-        </div>
-      )}
-
-      <HealthCard glance={glance.data} error={glance.error} />
-      <TodayCard status={s} mtm={mtm.data} allAccounts={shown === 'all' && trading.length > 1} />
-
-      <section aria-labelledby="open-heading" className="flex flex-col gap-3">
-        <h2 id="open-heading" className="m-0 mt-1 flex items-baseline justify-between text-[15px] font-semibold">
-          <span>Open positions{s ? ` · ${s.open.length}` : ''}</span>
-          {s?.marginUsedUsd != null && s.walletUsd != null && (
-            <span className="text-[12px] font-normal text-muted-foreground tabular-nums">
-              margin {Math.round((s.marginUsedUsd / Math.max(s.walletUsd, 1e-9)) * 100)}% of wallet
+    <PhoneContext.Provider value={data}>
+      <Frame
+        header={
+          <div className="flex items-center gap-2">
+            {route.sub ? (
+              <button type="button" aria-label="Back to More" onClick={() => go({ tab: 'more', sub: null })} className="-ml-2 grid h-11 w-11 place-items-center rounded-md border-0 bg-transparent text-foreground active:bg-muted">
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            ) : <span className="btc-logo sm" aria-hidden="true">₿</span>}
+            <h1 className="m-0 truncate whitespace-nowrap text-[17px] font-semibold">{title}</h1>
+            <span className={cn(
+              'whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold',
+              s?.mode === 'live' ? 'bg-[var(--up-bg)] text-[var(--up)]' : 'bg-muted text-muted-foreground',
+            )}>
+              {s ? (s.mode === 'live' ? '● LIVE' : 'PAPER') : '…'}
             </span>
-          )}
-        </h2>
-        {!s ? (
-          <Card aria-busy="true"><p className="m-0 text-[14px] text-muted-foreground">Reading positions…</p></Card>
-        ) : open.length === 0 ? (
-          <Card><p className="m-0 text-[14px] text-muted-foreground">No open positions.</p></Card>
-        ) : (
-          open.map((t) => (
-            <PositionCard key={`${t.account?.id ?? ''}-${t.tradeId}`} trade={t} alarms={s.alarms} perpMark={perpMark} now={now} showAccount={shown === 'all'} />
-          ))
-        )}
-      </section>
+            {/* Under 380px, and on a sub-screen with its back arrow, the title and the 44px buttons win the room; Status says the same thing. */}
+            <span className={cn('hidden whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground', !route.sub && 'min-[380px]:inline')}>
+              {me.scope === 'view' ? 'View only' : 'Full access'}
+            </span>
+            <button
+              type="button" aria-label="Refresh now" title="Refresh now" onClick={refreshAll}
+              className={cn('ml-auto grid h-11 w-11 shrink-0 place-items-center rounded-md border-0 bg-transparent text-muted-foreground active:bg-muted', status.loading && '[&>svg]:animate-spin')}
+            >
+              <RefreshCw className="h-[18px] w-[18px]" />
+            </button>
+            <button
+              type="button" aria-label={`Alerts${alertCount ? `: ${alertCount}` : ''}`} title="Alerts" onClick={() => go({ tab: 'more', sub: 'alerts' })}
+              className="relative -mr-2 grid h-11 w-11 shrink-0 place-items-center rounded-md border-0 bg-transparent text-muted-foreground active:bg-muted"
+            >
+              <Bell className="h-[19px] w-[19px]" />
+              {alertCount > 0 && <span aria-hidden="true" className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg)] bg-[var(--down)]" />}
+            </button>
+          </div>
+        }
+        nav={
+          <nav aria-label="Screens" className="grid grid-cols-5">
+            {TAB_ITEMS.map((t) => {
+              const on = route.tab === t.tab;
+              const badge = t.tab === 'positions' ? (s?.open.length ?? 0) : t.tab === 'more' ? alertCount : 0;
+              return (
+                <button
+                  key={t.tab} type="button" aria-current={on ? 'page' : undefined} onClick={() => go({ tab: t.tab, sub: null })}
+                  className={cn('relative flex h-[58px] flex-col items-center justify-center gap-0.5 border-0 bg-transparent font-[inherit] text-[11.5px]', on ? 'font-semibold text-[var(--up)]' : 'text-muted-foreground')}
+                >
+                  {on && <span aria-hidden="true" className="absolute top-0 h-[3px] w-8 rounded-b bg-[var(--up)]" />}
+                  <t.icon aria-hidden="true" className="h-[22px] w-[22px]" />
+                  <span>{t.label}</span>
+                  {badge > 0 && (
+                    <span className={cn(
+                      'absolute left-1/2 top-1.5 ml-2 min-w-[18px] rounded-full px-1 text-center text-[10.5px] font-semibold leading-[18px]',
+                      t.tab === 'more' ? 'bg-[var(--down)] text-white' : 'bg-[var(--panel-3)] text-foreground',
+                    )}>
+                      {badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        }
+      >
+        {trading.length > 1 && route.tab !== 'more' || (route.tab === 'more' && route.sub && ['history', 'account', 'strategies'].includes(route.sub) && trading.length > 1) ? (
+          <Chips label="Accounts">
+            <Chip on={shown === 'all'} onClick={() => setChoice('all')}>All accounts</Chip>
+            {trading.map((a) => <Chip key={a.id} on={shown === a.id} onClick={() => setChoice(a.id)}>{a.name}</Chip>)}
+          </Chips>
+        ) : null}
 
-      <footer className="pb-2 text-center text-[12px] text-muted-foreground">
-        {status.updatedAt !== null && <>Updated {ago(status.updatedAt, now)} · </>}
-        {me.scope === 'view'
-          ? 'This phone reads only. To trade, use the full desk.'
-          : <a className="text-[var(--accent)]" href="/">Open the full desk</a>}
-        <Note tone="dim">Refreshes every few seconds while the screen is on; nothing is fetched while it is off.</Note>
-      </footer>
-    </Shell>
+        {stale && (
+          <div role="alert" className="rounded-md bg-[var(--warn-bg)] px-3 py-2.5 text-[14px] text-[var(--warn)]">
+            Not updated for {duration(now - status.updatedAt!)} — the figures may be old.
+            {status.error && !(status.error instanceof NotSignedIn) ? ` (${status.error.message})` : ''}
+          </div>
+        )}
+
+        {route.tab === 'home' ? <HomeScreen />
+          : route.tab === 'pnl' ? <PnlScreen />
+            : route.tab === 'positions' ? <PositionsScreen />
+              : route.tab === 'orders' ? <OrdersScreen />
+                : route.sub === 'history' ? <HistoryScreen />
+                  : route.sub === 'account' ? <AccountScreen />
+                    : route.sub === 'market' ? <MarketScreen />
+                      : route.sub === 'strategies' ? <StrategiesScreen />
+                        : route.sub === 'alerts' ? <AlertsScreen />
+                          : route.sub === 'settings' ? <SettingsScreen />
+                            : <MoreScreen />}
+      </Frame>
+      {route.trade && <TradeDetail tradeId={route.trade} onClose={closeTrade} onSignedOut={onSignedOut} />}
+    </PhoneContext.Provider>
   );
 }
 
-/** The page frame: a sticky header clear of the notch, one column, a 16px gutter, nothing wider than a phone needs. */
-function Shell({ header, children }: { header?: ReactNode; children: ReactNode }) {
+/** The page frame: a sticky header clear of the notch, one column with a 16px gutter, the tab bar at the thumb. */
+function Frame({ header, nav, children }: { header?: ReactNode; nav?: ReactNode; children: ReactNode }) {
   return (
     <div className="min-h-[100dvh] bg-[var(--bg)]">
       {header && (
-        <header className="sticky top-0 z-10 border-b border-border bg-[var(--bg)]/95 px-4 pb-2.5 pt-[calc(10px+env(safe-area-inset-top))] backdrop-blur">
+        <header className="sticky top-0 z-10 border-b border-border bg-[var(--bg)]/95 px-4 pb-1.5 pt-[calc(6px+env(safe-area-inset-top))] backdrop-blur">
           <div className="mx-auto max-w-[560px]">{header}</div>
         </header>
       )}
-      <main className="mx-auto flex max-w-[560px] flex-col gap-3 px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 text-[14px]">
+      <main className={cn(
+        'mx-auto flex max-w-[560px] flex-col gap-3 px-4 pt-3 text-[14px]',
+        nav ? 'pb-[calc(76px+env(safe-area-inset-bottom))]' : 'pb-[calc(20px+env(safe-area-inset-bottom))]',
+      )}>
         {children}
       </main>
+      {nav && (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-[var(--bg)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+          <div className="mx-auto max-w-[560px]">{nav}</div>
+        </div>
+      )}
     </div>
-  );
-}
-
-function IconButton({ label, onClick, spin = false, children }: { label: string; onClick: () => void; spin?: boolean; children: ReactNode }) {
-  return (
-    <button
-      type="button" aria-label={label} title={label} onClick={onClick}
-      className={cn(
-        'grid h-11 w-11 place-items-center rounded-md border-0 bg-transparent text-muted-foreground active:bg-muted',
-        spin && '[&>svg]:animate-spin',
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button" aria-pressed={on} onClick={onClick}
-      className={cn(
-        'h-10 shrink-0 rounded-full border px-4 text-[14px] font-medium',
-        on ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]' : 'border-border bg-transparent text-muted-foreground',
-      )}
-    >
-      {children}
-    </button>
   );
 }
 

@@ -24,8 +24,17 @@ export type Glance = {
     schedulerOn: boolean;
     mode: 'live' | 'paper';
   };
-  /** BTC now, and the perp's mark: a signal trade's SL and TGT are on the perp. */
-  btc: { spot: number | null; perpMark: number | null };
+  /** BTC now, and the perp's mark: a signal trade's SL and TGT are on the perp. `perp`: its whole ticker. */
+  btc: { spot: number | null; perpMark: number | null; perp?: PerpTicker | null };
+  /** Which build the server runs, and since when. Absent from an older server. */
+  build?: { tag: string | null; startedAt: number };
+};
+
+/** The BTC perp's ticker as Delta publishes it (server: market/flow-socket.ts). Funding is in percent. */
+export type PerpTicker = {
+  at: number; mark: number | null; spot: number | null; last: number | null; fundingRate: number | null;
+  oiContracts: number | null; oiUsd: number | null; turnoverUsd24h: number | null; volume24h: number | null;
+  change24hPct: number | null; high24h: number | null; low24h: number | null;
 };
 
 export const getGlance = () => json<Glance>('/api/desk/glance');

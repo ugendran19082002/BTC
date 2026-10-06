@@ -87,7 +87,10 @@ test('[critical] a view sign-in reads the desk the phone shows', async () => {
   const me = (await app.inject({ method: 'GET', url: '/api/me', headers: jar(token) })).json();
   assert.equal(me.signedIn, true);
   assert.equal(me.scope, 'view');
-  for (const url of ['/api/trade/status', '/api/desk/glance', '/api/report/mtm', '/api/report/days', '/api/trade/history', '/api/accounts']) {
+  for (const url of [
+    '/api/trade/status', '/api/desk/glance', '/api/report/mtm', '/api/report/days', '/api/report/stats', '/api/trade/history',
+    '/api/accounts', '/api/strategies', '/api/telegram/log', '/api/entry/methods',
+  ]) {
     const r = await app.inject({ method: 'GET', url, headers: jar(token) });
     assert.equal(r.statusCode, 200, `${url}: ${r.body.slice(0, 120)}`);
   }

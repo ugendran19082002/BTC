@@ -129,6 +129,118 @@ export function daysReport(
 }
 
 /** One reading of the day so far. Written once a minute while the desk is up. */
+/**
+ * How the closed trades did (6 Oct 2026, the phone's statistics): win rate, profit factor, average win and loss,
+ * the best and the worst -- for the whole range, by strategy and by broker account.
+ *
+ * A trade is counted on the IST day it closed (its last exit fill), with what it made in the end: booked P&L,
+ * fill by fill the same way `daysReport` books it, less every charge on every one of its fills. Judged after
+ * charges, because that is what a strategy is kept or dropped on. A trade that made exactly nothing is neither a
+ * win nor a loss; one still open is not counted at all.
+ */
+export type TradeStatsGroup = {
+  /** The strategy id (`manual` for a trade nobody scheduled), the account id as text, or `all`. */
+  key: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  /** wins / trades; null with no trades. */
+  winRate: number | null;
+  /** Every winner's net added up, and every loser's (a positive number). */
+  grossProfitUsd: number;
+  grossLossUsd: number;
+  /** grossProfit / grossLoss; null with no losing trade, where it has no finite value. */
+  profitFactor: number | null;
+  avgWinUsd: number | null;
+  /** A positive number: the average size of a loss. */
+  avgLossUsd: number | null;
+  netUsd: number;
+  bestUsd: number | null;
+  worstUsd: number | null;
+};
+
+export type TradeStats = {
+  from: string;
+  to: string;
+  overall: TradeStatsGroup;
+  byStrategy: TradeStatsGroup[];
+  byAccount: TradeStatsGroup[];
+  /** `CE` / `PE`. */
+  byOption: TradeStatsGroup[];
+  /** `sell` / `buy`: sold or bought to open. */
+  byAction: TradeStatsGroup[];
+  /** A signal trade's entry method id; trades with no signal are left out of this one. */
+  byMethod: TradeStatsGroup[];
+};
+
+/** One closed trade's day and money, or null for a trade still open (or never filled). */
+export function closedNet(rec: TradeRecord, spot: number | null): { day: string; netUsd: number } | null {
+  const s = recompute(rec.state);
+  const exits = s.fills.filter((f) => isExit(f.role));
+  if (s.position !== 0 || exits.length === 0 || s.entryAvgPrice === null) return null;
+  const cv = s.contractValue ?? 0.001;
+  const long = isLong(s);
+  const entryAvg = s.entryAvgPrice;
+  let net = 0;
+  for (const f of s.fills) {
+    net -= fillChargesUsd({ price: f.price, contracts: f.size, contractValue: cv, spot }).totalUsd;
+    if (isExit(f.role)) net += (long ? f.price - entryAvg : entryAvg - f.price) * f.size * cv;
+  }
+  const closedAt = Math.max(...exits.map((f) => f.ts));
+  return { day: istDate(closedAt), netUsd: net };
+}
+
+function groupOf(key: string, nets: readonly number[]): TradeStatsGroup {
+  const wins = nets.filter((n) => n > 0);
+  const losses = nets.filter((n) => n < 0);
+  const grossProfitUsd = wins.reduce((a, n) => a + n, 0);
+  const grossLossUsd = -losses.reduce((a, n) => a + n, 0);
+  return {
+    key,
+    trades: nets.length,
+    wins: wins.length,
+    losses: losses.length,
+    winRate: nets.length ? wins.length / nets.length : null,
+    grossProfitUsd,
+    grossLossUsd,
+    profitFactor: grossLossUsd > 0 ? grossProfitUsd / grossLossUsd : null,
+    avgWinUsd: wins.length ? grossProfitUsd / wins.length : null,
+    avgLossUsd: losses.length ? grossLossUsd / losses.length : null,
+    netUsd: grossProfitUsd - grossLossUsd,
+    bestUsd: nets.length ? Math.max(...nets) : null,
+    worstUsd: nets.length ? Math.min(...nets) : null,
+  };
+}
+
+export function tradeStats(
+  records: readonly TradeRecord[],
+  o: { from: string; to: string; spot: number | null },
+): TradeStats {
+  const all: number[] = [];
+  const byStrategy = new Map<string, number[]>();
+  const byAccount = new Map<string, number[]>();
+  const byOption = new Map<string, number[]>();
+  const byAction = new Map<string, number[]>();
+  const byMethod = new Map<string, number[]>();
+  const push = (m: Map<string, number[]>, k: string, n: number) => { const a = m.get(k); if (a) a.push(n); else m.set(k, [n]); };
+  for (const rec of records) {
+    const c = closedNet(rec, o.spot);
+    if (!c || c.day < o.from || c.day > o.to) continue;
+    all.push(c.netUsd);
+    push(byStrategy, rec.plan.strategyId ?? 'manual', c.netUsd);
+    push(byAccount, rec.plan.accountId == null ? 'none' : String(rec.plan.accountId), c.netUsd);
+    push(byOption, rec.state.optionSide, c.netUsd);
+    push(byAction, isLong(rec.state) ? 'buy' : 'sell', c.netUsd);
+    if (rec.plan.signal?.method) push(byMethod, rec.plan.signal.method, c.netUsd);
+  }
+  const groups = (m: Map<string, number[]>) => [...m.entries()].map(([k, v]) => groupOf(k, v)).sort((a, b) => b.netUsd - a.netUsd);
+  return {
+    from: o.from, to: o.to, overall: groupOf('all', all),
+    byStrategy: groups(byStrategy), byAccount: groups(byAccount),
+    byOption: groups(byOption), byAction: groups(byAction), byMethod: groups(byMethod),
+  };
+}
+
 export type MtmSample = {
   at: number;
   day: string;

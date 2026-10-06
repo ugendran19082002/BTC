@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-415 files listed, 203 test files counted below, images and lockfiles left out.
+431 files listed, 206 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 119 |
-| `app/web` | 84 |
+| `app/server` | 120 |
+| `app/web` | 86 |
 
 ## `(root)`
 
@@ -272,6 +272,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
 | [errors.ts](../../app/web/src/api/errors.ts) | The error log: read it, resolve or delete a row, and report a failure from this browser into the same table the server writes to. |
 | [glance.ts](../../app/web/src/api/glance.ts) | The desk's health for the phone (6 Oct 2026): GET /api/desk/glance, judged at the server in observability/glance.ts. |
+| [phone.ts](../../app/web/src/api/phone.ts) | The phone's reads beyond the glance (Level 2, 6 Oct 2026): one trade's journal, the strategies' activity, and the closed trades' statistics. |
 | [report.ts](../../app/web/src/api/report.ts) | The P&L screen's calls: the record as a calendar, one day's mark-to-market line, and the spreadsheet download. |
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
 | [strategy.ts](../../app/web/src/api/strategy.ts) | Copy one, settings and all, as a new draft. |
@@ -369,8 +370,26 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [HealthCard.tsx](../../app/web/src/components/mobile/HealthCard.tsx) | The phone's desk-health card: one line first -- a word, an icon and a colour, never colour alone -- then the reasons in the server's words, then the six readings behind them. |
 | [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | The phone (6 Oct 2026): the desk read at a glance, and nothing that changes it. |
-| [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then what it makes, then how far each exit is and what it would leave, liquidation, and the time to settlement. |
-| [TodayCard.tsx](../../app/web/src/components/mobile/TodayCard.tsx) | Today, since 05:30 IST: the net first and large, then what it is made of, then how much of the day's loss limit is left -- the number the order gate stops at -- then the day as a line, minute by mi... |
+| [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then entry, price now and P&L, then how far it has gone toward its stop and its target -- each a bar, with the level, the points left and... |
+| [TradeDetail.tsx](../../app/web/src/components/mobile/TradeDetail.tsx) | One trade, start to end, read only (the phone's Level 2, 6 Oct 2026): what it is and what it made, then its whole journal as a line of steps -- signal, entry, fill, protection, exit, closed. |
+| [parts.tsx](../../app/web/src/components/mobile/parts.tsx) | The phone's building blocks (6 Oct 2026): one way to show a figure, a row, a filter and a list item, so every screen reads the same. |
+| [phone-context.ts](../../app/web/src/components/mobile/phone-context.ts) | What every phone screen shares (6 Oct 2026): the desk's status and health, read once by the shell and handed down, the account being shown, the clock, and how to move -- so five screens do not poll... |
+
+## `app/web/src/components/mobile/screens/`
+
+| File | What it is |
+|---|---|
+| [AccountScreen.tsx](../../app/web/src/components/mobile/screens/AccountScreen.tsx) | Account (6 Oct 2026): each broker account's money -- wallet, available, margin, open P&L, today -- and whether everything the desk depends on is answering: the account's key, Delta's API, the marke... |
+| [AlertsScreen.tsx](../../app/web/src/components/mobile/screens/AlertsScreen.tsx) | Alerts (6 Oct 2026): what needs a look right now, worked out from the live figures (lib/phone-alerts.ts), and what the desk has said on Telegram -- fills, exits, problems -- with whether each messa... |
+| [HistoryScreen.tsx](../../app/web/src/components/mobile/screens/HistoryScreen.tsx) | Trade history (6 Oct 2026): the closed trades, not the orders -- what each made after charges -- filtered by result, CE or PE, sold or bought and strategy, with the total of what is shown. |
+| [HomeScreen.tsx](../../app/web/src/components/mobile/screens/HomeScreen.tsx) | Home (6 Oct 2026): everything in one screen a person needs to know the desk is fine -- today's money, the desk's health, the open positions, the margin, the last order -- each tapping through to it... |
+| [MarketScreen.tsx](../../app/web/src/components/mobile/screens/MarketScreen.tsx) | Market (6 Oct 2026): BTC as the desk sees it -- the perp's last trade, mark and index, the day's change and range, funding and open interest -- and the next daily settlement. |
+| [MoreScreen.tsx](../../app/web/src/components/mobile/screens/MoreScreen.tsx) | More (6 Oct 2026): the six screens that do not need a tab of their own, one tap each. |
+| [OrdersScreen.tsx](../../app/web/src/components/mobile/screens/OrdersScreen.tsx) | Orders (6 Oct 2026): the day's orders as the desk placed them -- what was asked, what it filled at, and where each stands -- filtered by status, a day at a time. |
+| [PnlScreen.tsx](../../app/web/src/components/mobile/screens/PnlScreen.tsx) | P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line, then the closed trades' numbers in one grid (win rate, profit factor, average win and... |
+| [PositionsScreen.tsx](../../app/web/src/components/mobile/screens/PositionsScreen.tsx) | Positions (6 Oct 2026): every open position's live risk, the riskiest first -- anything wrong, then the stop with the least room. |
+| [SettingsScreen.tsx](../../app/web/src/components/mobile/screens/SettingsScreen.tsx) | Status and settings (6 Oct 2026): the desk's health in full, who is signed in and how, which build the server runs, whether Telegram is set up, and signing out. |
+| [StrategiesScreen.tsx](../../app/web/src/components/mobile/screens/StrategiesScreen.tsx) | Strategies (6 Oct 2026, Level 2): what the strategies did today and why. |
 
 ## `app/web/src/components/overview/`
 
@@ -491,10 +510,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [format.ts](../../app/web/src/lib/format.ts) | How numbers are written on this desk. |
 | [held.ts](../../app/web/src/lib/held.ts) | The strikes you are currently short, keyed the way the board looks them up. |
 | [ist-moment.ts](../../app/web/src/lib/ist-moment.ts) | A date and time, always read as India time. |
+| [journal-steps.ts](../../app/web/src/lib/journal-steps.ts) | A trade's journal as a person reads it (the phone's trade detail, 6 Oct 2026): the signal that started it, then every step the desk and the exchange took, in order, each in a sentence -- signal, en... |
 | [live-bar.ts](../../app/web/src/lib/live-bar.ts) | The forming bar, carried to the last traded price. |
 | [long-exits.ts](../../app/web/src/lib/long-exits.ts) | A bought option's target and stop as prices, off the price paid (the server's `longLevels`): the target over it, the stop under it. |
 | [merge-status.ts](../../app/web/src/lib/merge-status.ts) | Several accounts' desks as one (5 Oct 2026): the "All accounts" tab on Positions and on P&L. |
 | [overview.ts](../../app/web/src/lib/overview.ts) | ------------------------------------------------------------------ volatility |
+| [phone-alerts.ts](../../app/web/src/lib/phone-alerts.ts) | What deserves a look right now (the phone's Alerts, 6 Oct 2026), worked out from what the phone already reads: each open position's risk, the day's loss limit, the margin in use, and the desk's own... |
 | [position-risk.ts](../../app/web/src/lib/position-risk.ts) | One open position's risk, for the phone (6 Oct 2026): how far its stop and target are, what each would leave in money, how far liquidation is, how long until it settles, and anything wrong with it... |
 | [report-error.ts](../../app/web/src/lib/report-error.ts) | Send a browser failure to the server so it lands in the same log as everything else. |
 | [report.ts](../../app/web/src/lib/report.ts) | The calendar's arithmetic, kept out of the drawing so it can be checked. |

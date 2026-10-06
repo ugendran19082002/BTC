@@ -167,3 +167,59 @@ test('[critical] the store keeps the line, per day, oldest first, and prunes old
     await closePool();
   }
 });
+
+// ------------------------------------------------------------ trade statistics (6 Oct 2026)
+
+const { tradeStats, closedNet } = await import('../../src/trading/pnl-history.js');
+
+const tagged = (rec: TradeRecord, strategyId: string | undefined, accountId: number | null): TradeRecord =>
+  ({ ...rec, plan: { ...rec.plan, strategyId, accountId } });
+
+test('[critical] statistics count each closed trade once, on its closing day, after every charge', () => {
+  const win = tagged(record('w', [fill('entry', 100, 15, T(11, 7)), fill('take_profit', 100, 5, T(11, 9))]), 's1', 1);
+  const lose = tagged(record('l', [fill('entry', 100, 15, T(11, 7)), fill('stop_loss', 100, 22, T(11, 10))]), 's1', 1);
+  const hand = tagged(record('h', [fill('entry', 100, 15, T(12, 7)), fill('take_profit', 100, 10, T(12, 9))]), undefined, 2);
+  const r = tradeStats([win, lose, hand], { from: '2026-09-11', to: '2026-09-12', spot: 80_000 });
+  const nets = [win, lose, hand].map((x) => closedNet(x, 80_000)!.netUsd);
+  assert.ok(nets[0]! < (15 - 5) * 0.1 && nets[0]! > 0, 'the gain, less its charges');
+  assert.equal(r.overall.trades, 3);
+  assert.equal(r.overall.wins, 2);
+  assert.equal(r.overall.losses, 1);
+  assert.ok(Math.abs(r.overall.winRate! - 2 / 3) < 1e-12);
+  assert.ok(Math.abs(r.overall.grossLossUsd + nets[1]!) < 1e-12, 'the loss, as a positive number');
+  assert.ok(Math.abs(r.overall.profitFactor! - (nets[0]! + nets[2]!) / -nets[1]!) < 1e-12);
+  assert.ok(Math.abs(r.overall.netUsd - nets.reduce((a, n) => a + n, 0)) < 1e-12);
+  assert.deepEqual(r.byStrategy.map((g) => [g.key, g.trades]).sort(), [['manual', 1], ['s1', 2]]);
+  assert.deepEqual(r.byAccount.map((g) => [g.key, g.trades]).sort(), [['1', 2], ['2', 1]]);
+});
+
+test('statistics leave out a trade still open, and one that closed outside the range', () => {
+  const open = record('o', [fill('entry', 100, 15, T(11, 7))]);
+  open.state.position = -100;
+  open.state.phase = 'protected';
+  const before = record('b', [fill('entry', 100, 15, T(9, 7)), fill('take_profit', 100, 5, T(9, 9))]);
+  // Opened before the range and closed inside it: counted, on the day it closed.
+  const across = record('x', [fill('entry', 100, 15, T(10, 23)), fill('take_profit', 100, 5, T(11, 6))]);
+  const r = tradeStats([open, before, across], { from: '2026-09-11', to: '2026-09-11', spot: 80_000 });
+  assert.equal(closedNet(open, 80_000), null);
+  assert.equal(r.overall.trades, 1);
+});
+
+test('with no losing trade there is no profit factor, rather than an infinite one; with none at all, no rates', () => {
+  const win = record('w', [fill('entry', 100, 15, T(11, 7)), fill('take_profit', 100, 5, T(11, 9))]);
+  assert.equal(tradeStats([win], { from: '2026-09-11', to: '2026-09-11', spot: 80_000 }).overall.profitFactor, null);
+  const none = tradeStats([], { from: '2026-09-11', to: '2026-09-11', spot: 80_000 }).overall;
+  assert.deepEqual([none.trades, none.winRate, none.avgWinUsd, none.bestUsd], [0, null, null, null]);
+});
+
+test('statistics also split by CE / PE, sold / bought, and a signal trade\'s entry method', () => {
+  const sig = { method: 'breakout', n: 1, name: 'Breakout', mode: 'single' as const, tf: '5m', dir: 1 as const, triggerTime: 0 };
+  const ce = record('c', [fill('entry', 100, 15, T(11, 7)), fill('take_profit', 100, 5, T(11, 9))]);
+  const pe = { ...record('p', [fill('entry', 100, 15, T(11, 7)), fill('stop_loss', 100, 22, T(11, 10))]) };
+  pe.state = { ...pe.state, optionSide: 'PE' };
+  pe.plan = { ...pe.plan, signal: sig };
+  const r = tradeStats([ce, pe], { from: '2026-09-11', to: '2026-09-11', spot: 80_000 });
+  assert.deepEqual(r.byOption.map((g) => [g.key, g.trades, g.wins]).sort(), [['CE', 1, 1], ['PE', 1, 0]]);
+  assert.deepEqual(r.byAction.map((g) => [g.key, g.trades]), [['sell', 2]]);
+  assert.deepEqual(r.byMethod.map((g) => [g.key, g.trades, g.losses]), [['breakout', 1, 1]]);
+});

@@ -254,13 +254,13 @@ export class TradingService {
    * What every alert is told about the desk as it is: paper or live, and -- with more than one broker account
    * saved -- the name of the one it is trading on, so a fill on the phone says whose it is.
    */
-  private alertContext(): { mode: DeskMode; account?: string | null } {
+  private alertContext(): { mode: DeskMode; account?: string | null; deskUrl: string | null } {
     let account: string | null = null;
     try {
       const all = brokerAccounts().list();
       if (all.length > 1 && this.currentAccountId !== null) account = all.find((a) => a.id === this.currentAccountId)?.name ?? null;
     } catch { /* the accounts are not loaded (a test's desk): no name to say */ }
-    return { mode: this.currentMode, account };
+    return { mode: this.currentMode, account, deskUrl: config.deskUrl };
   }
 
   /** One strategy's trades touched since the start of the IST day. */

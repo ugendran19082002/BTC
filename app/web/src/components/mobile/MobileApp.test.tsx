@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { Trade, TradeStatus } from '@/types/trade';
+import type { OrderRecord, Trade, TradeStatus } from '@/types/trade';
 import type { Glance } from '@/api/glance';
+import { routeOf, searchOf } from '@/components/mobile/phone-context';
 
 /**
- * The phone (6 Oct 2026): signs in view only, then shows the desk's health, today and the open positions --
- * the riskiest first -- with no button that could change anything.
+ * The phone (6 Oct 2026): signs in view only, then five tabs -- Home, P&L, Positions, Orders, More -- every one
+ * reading the desk and none able to change it, and any trade's journal one tap away or one Telegram link away.
  */
 
 const getMe = vi.fn();
@@ -28,9 +29,24 @@ vi.mock('@/api/trade', () => ({
 const getGlance = vi.fn();
 vi.mock('@/api/glance', () => ({ getGlance: () => getGlance() }));
 const json = vi.fn();
+const post = vi.fn();
 vi.mock('@/api/client', async (orig) => ({
   ...(await orig<typeof import('@/api/client')>()),
   json: (...a: unknown[]) => json(...a),
+  post: (...a: unknown[]) => post(...a),
+}));
+const phone = {
+  getOrders: vi.fn(), getStats: vi.fn(), getDaysFor: vi.fn(), getActivity: vi.fn(), getTradeDetail: vi.fn(),
+  getTelegramLog: vi.fn(), methodNames: vi.fn(),
+};
+vi.mock('@/api/phone', () => ({
+  getOrders: (...a: unknown[]) => phone.getOrders(...a),
+  getStats: (...a: unknown[]) => phone.getStats(...a),
+  getDaysFor: (...a: unknown[]) => phone.getDaysFor(...a),
+  getActivity: (...a: unknown[]) => phone.getActivity(...a),
+  getTradeDetail: (...a: unknown[]) => phone.getTradeDetail(...a),
+  getTelegramLog: (...a: unknown[]) => phone.getTelegramLog(...a),
+  methodNames: () => phone.methodNames(),
 }));
 
 const { default: MobileApp } = await import('@/components/mobile/MobileApp');
@@ -39,7 +55,7 @@ const trade = (over: Partial<Trade> = {}): Trade => ({
   tradeId: 't1', symbol: 'C-BTC-80000-071026', productId: 1, optionSide: 'CE', phase: 'protected',
   position: -100, requestedSize: 100, entrySize: 100, entryAvgPrice: 10, exitSize: 0, exitAvgPrice: null,
   protection: { takeProfit: 'tp', stopLoss: 'sl' }, realisedPnl: 0, fills: [], note: null, alarm: null, updatedAt: 0,
-  plan: { lots: 100, entry: { type: 'limit', timeoutMs: 5000, marketFallback: false }, takeProfitPrice: 1, stopPrice: 25 },
+  plan: { lots: 100, entry: { type: 'limit', limitPrice: 10, timeoutMs: 5000, marketFallback: false }, takeProfitPrice: 1, stopPrice: 25 },
   onBook: { target: 1, stop: 25 },
   live: { markPrice: 8, bid: 7.5, ask: 8.5, unrealisedPnl: 0.2, decayed: 0.2, liquidationPrice: 300, netIfClosedUsd: 0.15 },
   ifExits: { target: 0.85, stop: -1.6 },
@@ -60,18 +76,42 @@ const glance = (over: Partial<Glance> = {}): Glance => ({
     tape: { source: 'socket', connected: true, lastAt: Date.now() }, delta: { usedPct: 12, rateLimited: 0, failed: 0 },
     passes: { count: 300, late: 0, maxMs: 400 }, errors: { open: 0, lastAt: null }, schedulerOn: true, mode: 'live',
   },
-  btc: { spot: 62_000, perpMark: 62_010 },
+  btc: { spot: 62_000, perpMark: 62_010, perp: null },
   ...over,
 });
+
+const order = (over: Partial<OrderRecord> = {}): OrderRecord => ({
+  ...trade(), status: 'completed', outcome: 'Filled 100 @ 10.00', openedAt: Date.now() - 60_000, ...over,
+} as OrderRecord);
+
+const emptyGroup = { key: 'all', trades: 0, wins: 0, losses: 0, winRate: null, grossProfitUsd: 0, grossLossUsd: 0, profitFactor: null, avgWinUsd: null, avgLossUsd: null, netUsd: 0, bestUsd: null, worstUsd: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
-  getAccounts.mockResolvedValue({ accounts: [{ id: 1, name: 'SELL', active: true, trading: true }], max: 5, canStore: true, mode: 'live' });
+  window.history.replaceState(null, '', '/m');
+  getAccounts.mockResolvedValue({ accounts: [{ id: 1, name: 'SELL', active: true, trading: true, readable: true }], max: 5, canStore: true, mode: 'live' });
   getGlance.mockResolvedValue(glance());
   json.mockResolvedValue({ mode: 'live', day: '2026-10-06', samples: [], stats: { nowUsd: null, min: null, max: null, maxDrawdown: null }, days: [] });
   getTradeStatus.mockResolvedValue(status([trade()]));
+  phone.getOrders.mockResolvedValue({ from: '', to: '', counts: {}, trades: [order(), order({ tradeId: 't2', status: 'rejected', outcome: 'Rejected: margin' })] });
+  phone.getStats.mockResolvedValue({ mode: 'live', from: '', to: '', overall: { ...emptyGroup, trades: 4, wins: 3, losses: 1, winRate: 0.75 }, byStrategy: [], byAccount: [] });
+  phone.getDaysFor.mockResolvedValue({ from: '', to: '', days: [], totals: { realisedUsd: 0, chargesUsd: 0, netUsd: 0, tradingDays: 0, winDays: 0, lossDays: 0, best: null, worst: null } });
+  phone.getActivity.mockResolvedValue({ today: '2026-10-06', schedulerOn: true, mode: 'live', balanceUsd: 0, spot: null, strategies: [], runs: [], signalRuns: [] });
+  phone.getTelegramLog.mockResolvedValue({ configured: true, on: true, entries: [] });
+  phone.methodNames.mockResolvedValue(new Map());
+  phone.getTradeDetail.mockResolvedValue({
+    trade: trade(),
+    events: [
+      { t: 'entry_submitted', clientOrderId: 'c', size: 100, limitPrice: 10, at: 1_000 },
+      { t: 'fill', role: 'entry', side: 'sell', size: 100, price: 10, orderId: 'o', at: 2_000 },
+      { t: 'protection_placed', takeProfit: 'tp', stopLoss: 'sl', size: 100, at: 3_000 },
+    ],
+  });
 });
+
+const signedIn = () => getMe.mockResolvedValue({ required: true, signedIn: true, username: 'desk', stage: 'full', scope: 'view' });
+const tab = (name: string) => fireEvent.click(within(screen.getByRole('navigation', { name: 'Screens' })).getByRole('button', { name: new RegExp(`^${name}`) }));
 
 describe('signing in', () => {
   it('[critical] asks for a view-only sign-in, and says what that means', async () => {
@@ -87,64 +127,106 @@ describe('signing in', () => {
 });
 
 describe('signed in', () => {
-  beforeEach(() => getMe.mockResolvedValue({ required: true, signedIn: true, username: 'desk', stage: 'full', scope: 'view' }));
+  beforeEach(signedIn);
 
-  it('shows the desk\'s health, today against the loss limit, and each position\'s room to its exits', async () => {
+  it('Home: the desk\'s state, today\'s money and the open positions on one screen', async () => {
     render(<MobileApp />);
-    expect(await screen.findByText('All OK')).toBeInTheDocument();
-    expect(screen.getByText('View only')).toBeInTheDocument();
-    expect(screen.getByText('LIVE', { selector: 'span' })).toBeInTheDocument();
-    // limit $25 less $5 booked: $20 left, at ₹85
-    expect(await screen.findByText('₹1,700')).toBeInTheDocument();
-    expect(screen.getByRole('meter', { name: 'Daily loss limit used' })).toHaveAttribute('aria-valuenow', '20');
-    // the stop 25, bought back at the offer 8.5: 16.5 points of room
-    expect(await screen.findByText(/16\.50 pts away/)).toBeInTheDocument();
+    expect(await screen.findByText('Today\'s P&L')).toBeInTheDocument();
+    expect(screen.getByText('Scheduler')).toBeInTheDocument();
+    expect(screen.getByText('API usage')).toBeInTheDocument();
+    expect(await screen.findByText('−₹429')).toBeInTheDocument(); // −$5.05 at ₹85
+    expect(await screen.findByText('75%')).toBeInTheDocument(); // win rate
     expect(screen.getByText('Open positions · 1')).toBeInTheDocument();
+    expect(screen.getByRole('meter', { name: 'Daily loss limit used' })).toHaveAttribute('aria-valuenow', '20');
   });
 
-  it('[critical] has no button that could change the desk', async () => {
+  it('[critical] no screen has a button that could change the desk', async () => {
     render(<MobileApp />);
-    await screen.findByText('All OK');
-    const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names.sort()).toEqual(['Refresh now', 'Sign out']);
+    await screen.findByText('Today\'s P&L');
+    const forbidden = /\b(close|cancel (the|this)|place|square|edit|add lots|delete|remove|go live|switch (on|off)|turn (on|off)|arm|disarm)\b/i;
+    for (const t of ['Home', 'P&L', 'Positions', 'Orders', 'More']) {
+      tab(t);
+      await waitFor(() => expect(screen.getByRole('navigation', { name: 'Screens' })).toBeInTheDocument());
+      const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent ?? '');
+      for (const n of names) expect(n, `${t}: "${n}"`).not.toMatch(forbidden);
+    }
+    expect(post).not.toHaveBeenCalled();
   });
 
-  it('[critical] puts a position with a problem first and says what the problem is', async () => {
+  it('[critical] Positions puts a position with a problem first and says what the problem is', async () => {
     getTradeStatus.mockResolvedValue(status([
       trade({ tradeId: 'calm', symbol: 'C-BTC-82000-071026' }),
       trade({ tradeId: 'bare', symbol: 'P-BTC-60000-071026', onBook: { target: 1, stop: null }, plan: { ...trade().plan!, stopPrice: null } }),
     ]));
     render(<MobileApp />);
+    await screen.findByText('Today\'s P&L');
+    tab('Positions');
     const alert = await screen.findByText('No stop behind this position.');
+    expect(alert.closest('[role="alert"]')).not.toBeNull();
     const cards = screen.getAllByText(/^\d{2},\d{3} (CE|PE)$/).map((n) => n.textContent);
     expect(cards).toEqual(['60,000 PE', '82,000 CE']);
-    expect(alert.closest('[role="alert"]')).not.toBeNull();
+  });
+
+  it('a position opens its whole story, and Back closes it', async () => {
+    render(<MobileApp />);
+    await screen.findByText('Today\'s P&L');
+    tab('Positions');
+    fireEvent.click(await screen.findByRole('button', { name: /what happened/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Trade detail' });
+    expect(await within(dialog).findByText('Entry order sent: 100 contracts at 10.00')).toBeInTheDocument();
+    expect(within(dialog).getByText('Target and stop placed at the exchange')).toBeInTheDocument();
+    expect(window.location.search).toBe('?tab=positions&trade=t1');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('[critical] the Telegram link /m?trade=<id> opens that trade', async () => {
+    window.history.replaceState(null, '', '/m?trade=t1');
+    render(<MobileApp />);
+    expect(await screen.findByRole('dialog', { name: 'Trade detail' })).toBeInTheDocument();
+    await waitFor(() => expect(phone.getTradeDetail).toHaveBeenCalledWith('t1'));
+  });
+
+  it('Orders filters by status and counts each', async () => {
+    render(<MobileApp />);
+    await screen.findByText('Today\'s P&L');
+    tab('Orders');
+    const filters = await screen.findByRole('group', { name: 'Order status' });
+    await waitFor(() => expect(within(filters).getByRole('button', { name: 'Rejected · 1' })).toBeInTheDocument());
+    fireEvent.click(within(filters).getByRole('button', { name: 'Rejected · 1' }));
+    const list = screen.getByRole('list', { name: 'Orders' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText(/Rejected: margin/)).toBeInTheDocument();
   });
 
   it('says what needs a look when the desk is not all right', async () => {
     getGlance.mockResolvedValue(glance({ health: 'down', issues: [{ level: 'down', text: 'Option prices stopped 90 s ago.' }] }));
     render(<MobileApp />);
-    expect(await screen.findByText('Something is down')).toBeInTheDocument();
-    expect(within(screen.getByRole('list', { name: 'What needs a look' })).getByText('Option prices stopped 90 s ago.')).toBeInTheDocument();
-  });
-
-  it('with no open positions, says so', async () => {
-    getTradeStatus.mockResolvedValue(status([]));
-    render(<MobileApp />);
-    expect(await screen.findByText('No open positions.')).toBeInTheDocument();
+    expect(await screen.findAllByText('Option prices stopped 90 s ago.')).not.toHaveLength(0);
   });
 
   it('offers each trading account, and every account together', async () => {
     getAccounts.mockResolvedValue({
-      accounts: [{ id: 1, name: 'SELL', active: true, trading: true }, { id: 2, name: 'BUY', active: true, trading: true }, { id: 3, name: 'OFF', active: false }],
+      accounts: [{ id: 1, name: 'SELL', active: true, trading: true, readable: true }, { id: 2, name: 'BUY', active: true, trading: true, readable: true }, { id: 3, name: 'OFF', active: false, readable: true }],
       max: 5, canStore: true, mode: 'live',
     });
     getStatusOfAccounts.mockResolvedValue(status([]));
     render(<MobileApp />);
-    const nav = await screen.findByRole('navigation', { name: 'Accounts' });
-    expect(within(nav).getAllByRole('button').map((b) => b.textContent)).toEqual(['All accounts', 'SELL', 'BUY']);
+    const chips = await screen.findByRole('group', { name: 'Accounts' });
+    expect(within(chips).getAllByRole('button').map((b) => b.textContent)).toEqual(['All accounts', 'SELL', 'BUY']);
     await waitFor(() => expect(getStatusOfAccounts).toHaveBeenCalled());
-    fireEvent.click(within(nav).getByRole('button', { name: 'BUY' }));
+    fireEvent.click(within(chips).getByRole('button', { name: 'BUY' }));
     await waitFor(() => expect(getTradeStatus).toHaveBeenCalledWith(2));
+  });
+});
+
+describe('the route in the address', () => {
+  it('reads and writes tab, sub-screen and trade, and ignores anything else', () => {
+    expect(routeOf('')).toEqual({ tab: 'home', sub: null, trade: null });
+    expect(routeOf('?tab=more&sub=alerts')).toEqual({ tab: 'more', sub: 'alerts', trade: null });
+    expect(routeOf('?tab=orders&sub=alerts')).toEqual({ tab: 'orders', sub: null, trade: null });
+    expect(routeOf('?tab=nonsense&trade=C-BTC-1')).toEqual({ tab: 'home', sub: null, trade: 'C-BTC-1' });
+    expect(searchOf({ tab: 'more', sub: 'account', trade: null })).toBe('?tab=more&sub=account');
+    expect(searchOf({ tab: 'home', sub: null, trade: null })).toBe('');
   });
 });

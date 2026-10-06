@@ -277,8 +277,9 @@ export class TelegramNotifier {
   }
 }
 
-/** The same words without markup, for when Telegram refuses the markup. */
-const plain = (html: string) => html
+/** The same words without markup, for when Telegram refuses the markup. A link keeps its address: "text: url". */
+export const plain = (html: string) => html
+  .replace(/<a href="([^"]*)">([^<]*)<\/a>/g, '$2: $1')
   .replace(/<[^>]*>/g, '')
   .replace(/&lt;/g, '<')
   .replace(/&gt;/g, '>')

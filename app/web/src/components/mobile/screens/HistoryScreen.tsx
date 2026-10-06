@@ -1,0 +1,107 @@
+import { useMemo, useState } from 'react';
+import { getOrders } from '@/api/phone';
+import type { OrderRecord } from '@/types/trade';
+import { usePoll } from '@/hooks/usePoll';
+import { clock, contractLabel, price, signedInr, usdToInr } from '@/lib/format';
+import { daysAgoIst, todayIst } from '@/lib/report';
+import { isLongTrade } from '@/lib/long-exits';
+import { usePhone } from '@/components/mobile/phone-context';
+import { Chip, Chips, Empty, ListButton, Loading, Panel, Rupees } from '@/components/mobile/parts';
+
+/**
+ * Trade history (6 Oct 2026): the closed trades, not the orders -- what each made after charges -- filtered by
+ * result, CE or PE, sold or bought and strategy, with the total of what is shown. Separate from Orders, which is
+ * the order's life; this is the trade's end.
+ */
+
+type Days = '0' | '6' | '29';
+const RANGES: { key: Days; label: string }[] = [{ key: '0', label: 'Today' }, { key: '6', label: '7 days' }, { key: '29', label: '30 days' }];
+type Result = 'all' | 'win' | 'loss';
+type Opt = 'all' | 'CE' | 'PE';
+type Act = 'all' | 'sell' | 'buy';
+
+const netOf = (o: OrderRecord) => o.netRealisedUsd ?? o.realisedPnl;
+const closedAt = (o: OrderRecord) => Math.max(o.updatedAt, ...o.fills.filter((f) => f.role !== 'entry').map((f) => f.ts));
+
+export function HistoryScreen() {
+  const p = usePhone();
+  const [days, setDays] = useState<Days>('0');
+  const [result, setResult] = useState<Result>('all');
+  const [opt, setOpt] = useState<Opt>('all');
+  const [act, setAct] = useState<Act>('all');
+  const [strategy, setStrategy] = useState('all');
+  const to = todayIst(p.now);
+  const from = days === '0' ? to : daysAgoIst(Number(days), p.now);
+  const orders = usePoll(() => getOrders(from, to, p.accountParam, 'completed'), 60_000, { deps: [from, to, p.accountParam] });
+
+  const closed = useMemo(
+    () => (orders.data?.trades ?? []).filter((o) => o.position === 0 && o.exitSize > 0).sort((a, b) => closedAt(b) - closedAt(a)),
+    [orders.data],
+  );
+  const strategies = useMemo(() => [...new Set(closed.map((o) => o.plan?.strategyName ?? 'By hand'))].sort(), [closed]);
+  const shown = closed.filter((o) =>
+    (result === 'all' || (result === 'win' ? netOf(o) > 0 : netOf(o) < 0))
+    && (opt === 'all' || o.optionSide === opt)
+    && (act === 'all' || (act === 'buy') === isLongTrade(o))
+    && (strategy === 'all' || (o.plan?.strategyName ?? 'By hand') === strategy));
+  const total = shown.reduce((n, o) => n + netOf(o), 0);
+  const wins = shown.filter((o) => netOf(o) > 0).length;
+
+  return (
+    <>
+      <Chips label="Range">{RANGES.map((r) => <Chip key={r.key} on={days === r.key} onClick={() => setDays(r.key)}>{r.label}</Chip>)}</Chips>
+      <Chips label="Filters">
+        <Chip on={result === 'win'} onClick={() => setResult(result === 'win' ? 'all' : 'win')}>Won</Chip>
+        <Chip on={result === 'loss'} onClick={() => setResult(result === 'loss' ? 'all' : 'loss')}>Lost</Chip>
+        <Chip on={opt === 'CE'} onClick={() => setOpt(opt === 'CE' ? 'all' : 'CE')}>CE</Chip>
+        <Chip on={opt === 'PE'} onClick={() => setOpt(opt === 'PE' ? 'all' : 'PE')}>PE</Chip>
+        <Chip on={act === 'sell'} onClick={() => setAct(act === 'sell' ? 'all' : 'sell')}>Sold</Chip>
+        <Chip on={act === 'buy'} onClick={() => setAct(act === 'buy' ? 'all' : 'buy')}>Bought</Chip>
+      </Chips>
+      {strategies.length > 1 && (
+        <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+          Strategy
+          <select
+            value={strategy} onChange={(e) => setStrategy(e.target.value)}
+            className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[15px] text-foreground"
+          >
+            <option value="all">All strategies</option>
+            {strategies.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+      )}
+
+      <Panel
+        title={orders.data ? `${shown.length} trade${shown.length === 1 ? '' : 's'} · ${wins} won` : 'Closed trades'}
+        right={orders.data && shown.length > 0 ? <Rupees usd={total} signed size="sm" /> : undefined}
+      >
+        {!orders.data ? <Loading error={orders.error} what="the trades" /> : shown.length === 0 ? (
+          <Empty>{closed.length === 0 ? 'No trade closed in this range.' : 'None match these filters.'}</Empty>
+        ) : (
+          <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Closed trades">
+            {shown.map((o) => {
+              const net = netOf(o);
+              const long = isLongTrade(o);
+              return (
+                <li key={`${o.account?.id ?? ''}-${o.tradeId}`}>
+                  <ListButton onClick={() => p.openTrade(o.tradeId)} label={`${contractLabel(o.symbol)}: open the trade`}>
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[14.5px] font-semibold">{long ? 'BUY' : 'SELL'} {contractLabel(o.symbol)}</span>
+                      <span className={net > 0 ? 'font-semibold text-[var(--up)]' : net < 0 ? 'font-semibold text-[var(--down)]' : 'font-semibold'}>{signedInr(usdToInr(net))}</span>
+                    </span>
+                    <span className="block text-[12.5px] tabular-nums text-muted-foreground">
+                      {clock(closedAt(o))} · in {price(o.entryAvgPrice)} → out {price(o.exitAvgPrice)}
+                    </span>
+                    <span className="block truncate text-[12px] text-muted-foreground">
+                      {o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ` : ''}{o.plan?.strategyName ?? 'By hand'}{p.shown === 'all' && o.account ? ` · ${o.account.name}` : ''}
+                    </span>
+                  </ListButton>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Panel>
+    </>
+  );
+}

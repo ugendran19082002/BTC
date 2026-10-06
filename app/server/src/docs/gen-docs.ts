@@ -471,6 +471,7 @@ export const ENV_NOTES: Record<string, string> = {
   DESK_ALLOWED_ORIGINS: 'Extra origins, comma-separated, allowed to send a change besides the desk\'s own host. Normally empty.',
   TG_TOKEN: 'Telegram bot token for fill and security alerts. Alerts are off unless both this and `TG_CHAT_ID` are set.',
   TG_CHAT_ID: 'The Telegram chat the alerts go to.',
+  DESK_URL: 'Where the desk is reached from outside, e.g. `https://delta.thannigo.in`. Set, each fill alert links to that trade on the phone (`/m?trade=<id>`); blank or not an http(s) address, the alerts carry no link.',
   // docker compose and the deploy scripts (deploy/.env)
   POSTGRES_PASSWORD: 'Password of the `desk` database role. **Required** by compose.',
   TAG: 'Image tag compose runs. Set by `deploy.sh`; default `latest`.',

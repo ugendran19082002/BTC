@@ -16,6 +16,7 @@ import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange } from '../../market/flow.js';
 import { errorLog } from '../../observability/errors.js';
+import { config, STARTED_AT } from '../../config.js';
 import { judge, type GlanceReadings } from '../../observability/glance.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
@@ -199,7 +200,12 @@ export function registerDeskRoutes(app: FastifyInstance) {
       schedulerOn: svc.settings.get('scheduler_enabled') === '1',
       mode: svc.mode,
     };
-    return { at: now, ...judge(readings), readings, btc: { spot: svc.spot, perpMark: perp?.mark ?? null } };
+    return {
+      at: now, ...judge(readings), readings,
+      // The perp's ticker for the phone's Market screen: already read above, so no extra call.
+      btc: { spot: svc.spot, perpMark: perp?.mark ?? null, perp },
+      build: { tag: config.buildTag, startedAt: STARTED_AT },
+    };
   });
 
   /*
