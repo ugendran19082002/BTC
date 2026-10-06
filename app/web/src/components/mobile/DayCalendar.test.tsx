@@ -64,6 +64,13 @@ describe('DayCalendar', () => {
     expect(within(oct).getAllByLabelText(/Oct:/)).toHaveLength(3);
   });
 
+  it('rows from outside the range (the last range\'s answer, still on screen) are not drawn, counted or opened', () => {
+    show(ROWS, '2026-10-05', '2026-10-06');
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('region', { name: 'OCT 26' })).toHaveTextContent('+₹85.00 · 1 up · 0 down');
+    expect(screen.getByRole('button', { name: /6 Oct/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('today is marked, traded or not; a range with no trade says so and draws no detail', () => {
     show([], '2026-10-04', '2026-10-06');
     expect(screen.getByLabelText('Tue, 6 Oct: no trades')).toHaveAttribute('aria-current', 'date');

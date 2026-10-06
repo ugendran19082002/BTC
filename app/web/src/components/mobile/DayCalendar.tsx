@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { DayRow } from '@/types/report';
 import { compactInr, pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { byDay, heat, monthsOf } from '@/lib/report';
 import { cn } from '@/lib/utils';
-import { Stat, Stats } from '@/components/mobile/parts';
 
 /**
  * The days of the P&L range as a calendar, for a thumb (owner, 6 Oct 2026): under each month's name what the month
@@ -12,6 +11,9 @@ import { Stat, Stats } from '@/components/mobile/parts';
  * the calendar -- net, trades, profit, loss, charges, and the running total. The last day traded is open to begin with.
  *
  * Only the weeks that hold a day of the range are drawn, so seven days are one row, not a month of blanks.
+ *
+ * The gaps are marked important: the desk's own `.grid { gap: 12px }` (styles.css) comes after the utilities and
+ * would otherwise win, leaving seven squares 33px wide on a 360px phone.
  */
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
@@ -28,8 +30,10 @@ const rs = (usd: number | null | undefined) => (usd === null || usd === undefine
 const traded = (r: DayRow | undefined): r is DayRow => !!r && (r.trades > 0 || r.netUsd !== 0);
 
 export function DayCalendar({ from, to, rows, today }: { from: string; to: string; rows: DayRow[]; today: string }) {
-  const map = byDay(rows);
-  const days = rows.filter(traded);
+  // Only the days of the range asked for: a reading still on screen from the range before must not show through.
+  const inRange = rows.filter((r) => r.day >= from && r.day <= to);
+  const map = byDay(inRange);
+  const days = inRange.filter(traded);
   const maxAbs = Math.max(0, ...days.map((x) => Math.abs(x.netUsd)));
   const [picked, setPicked] = useState<string | null>(null);
   // The day chosen, while it is still in the range shown; else the last day traded.
@@ -56,10 +60,10 @@ export function DayCalendar({ from, to, rows, today }: { from: string; to: strin
                 </span>
               )}
             </div>
-            <div aria-hidden="true" className="mb-1 grid grid-cols-7 gap-1 text-center text-[10.5px] text-[var(--dim)]">
+            <div aria-hidden="true" className="mb-1 grid grid-cols-7 !gap-[4px] text-center text-[10.5px] text-[var(--dim)]">
               {WEEKDAYS.map((w) => <span key={w}>{w[0]}</span>)}
             </div>
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 !gap-[4px]">
               {weeks.flat().map((d, i) => {
                 if (!d) return <span key={i} />;
                 const r = map.get(d);
@@ -69,7 +73,7 @@ export function DayCalendar({ from, to, rows, today }: { from: string; to: strin
                   return (
                     <span
                       key={i} aria-label={`${dayLabel(d)}: no trades`} aria-current={isToday ? 'date' : undefined}
-                      className={cn('grid min-h-[44px] place-items-center rounded-md bg-muted text-[11.5px] tabular-nums text-[var(--dim)]', isToday && 'outline outline-1 outline-[var(--time)]')}
+                      className={cn('grid min-h-[44px] place-items-center rounded-md bg-muted text-[11.5px] tabular-nums text-[var(--dim)]', isToday && 'ring-1 ring-[var(--time)]')}
                     >
                       {num}
                     </span>
@@ -82,7 +86,7 @@ export function DayCalendar({ from, to, rows, today }: { from: string; to: strin
                     key={i} type="button" onClick={() => setPicked(d)} aria-pressed={d === open} aria-current={isToday ? 'date' : undefined}
                     aria-label={`${dayLabel(d)}: ${rs(r.netUsd)}, ${r.trades} trade${r.trades === 1 ? '' : 's'}`}
                     className={cn(
-                      'flex min-h-[44px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-md border-0 px-0 py-1 font-[inherit] tabular-nums',
+                      'flex min-h-[44px] min-w-0 flex-col items-center justify-center gap-[3px] rounded-md border-0 p-0 font-[inherit] tabular-nums',
                       level === 0 && 'bg-muted text-muted-foreground',
                       gain && level === 1 && 'bg-[color-mix(in_srgb,var(--up)_22%,transparent)] text-foreground',
                       gain && level === 2 && 'bg-[color-mix(in_srgb,var(--up)_48%,transparent)] text-foreground',
@@ -90,11 +94,11 @@ export function DayCalendar({ from, to, rows, today }: { from: string; to: strin
                       !gain && level === 1 && 'bg-[color-mix(in_srgb,var(--down)_22%,transparent)] text-foreground',
                       !gain && level === 2 && 'bg-[color-mix(in_srgb,var(--down)_48%,transparent)] text-foreground',
                       !gain && level === 3 && 'bg-[var(--down)] text-[var(--bg)]',
-                      d === open ? 'outline outline-2 outline-offset-1 outline-foreground' : isToday && 'outline outline-1 outline-[var(--time)]',
+                      d === open ? 'ring-2 ring-foreground' : isToday && 'ring-1 ring-[var(--time)]',
                     )}
                   >
-                    <span className="text-[11px] leading-none opacity-80">{num}</span>
-                    <span className="max-w-full truncate text-[10.5px] font-semibold leading-none min-[390px]:text-[11.5px]">{compactInr(usdToInr(r.netUsd))}</span>
+                    <span className="text-[11px] leading-none opacity-75">{num}</span>
+                    <span className="max-w-full truncate text-[11.5px] font-semibold leading-none min-[390px]:text-[12.5px]">{compactInr(usdToInr(r.netUsd))}</span>
                   </button>
                 );
               })}
@@ -121,19 +125,29 @@ export function DayCalendar({ from, to, rows, today }: { from: string; to: strin
               {rs(row.netUsd)}
             </span>
           </div>
-          <Stats cols={3}>
-            <Stat label="Trades">{row.trades}</Stat>
-            <Stat label="Profit" tone={row.profitUsd ? 'up' : undefined}>{row.profitUsd === undefined ? '—' : rs(row.profitUsd)}</Stat>
-            <Stat label="Loss" tone={row.lossUsd ? 'down' : undefined}>{row.lossUsd === undefined ? '—' : rs(-row.lossUsd)}</Stat>
-            <Stat label="Gross" tone={pnlTone(row.realisedUsd)}>{rs(row.realisedUsd)}</Stat>
-            <Stat label="Charges" tone={row.chargesUsd ? 'down' : undefined}>{rs(-row.chargesUsd)}</Stat>
-            <Stat label="Running" tone={pnlTone(row.cumulativeUsd)}>{rs(row.cumulativeUsd)}</Stat>
-          </Stats>
+          {/* Its own small grid, not the screen's tiles: six figures have to fit whole inside this box on a 360px phone. */}
+          <dl className="m-0 grid grid-cols-3 !gap-x-[8px] !gap-y-[8px]">
+            <Figure label="Trades">{row.trades}</Figure>
+            <Figure label="Profit" tone={row.profitUsd ? 'up' : undefined}>{row.profitUsd === undefined ? '—' : rs(row.profitUsd)}</Figure>
+            <Figure label="Loss" tone={row.lossUsd ? 'down' : undefined}>{row.lossUsd === undefined ? '—' : rs(-row.lossUsd)}</Figure>
+            <Figure label="Gross" tone={pnlTone(row.realisedUsd)}>{rs(row.realisedUsd)}</Figure>
+            <Figure label="Charges" tone={row.chargesUsd ? 'down' : undefined}>{rs(-row.chargesUsd)}</Figure>
+            <Figure label="Running total" tone={pnlTone(row.cumulativeUsd)}>{rs(row.cumulativeUsd)}</Figure>
+          </dl>
           {days.length > 1 && <p className="m-0 mt-1.5 text-[11.5px] text-muted-foreground">Tap a day for its figures.</p>}
         </div>
       ) : (
         <p className="m-0 text-[12.5px] text-muted-foreground">No day in this range has a trade yet.</p>
       )}
+    </div>
+  );
+}
+
+function Figure({ label, tone, children }: { label: string; tone?: 'up' | 'down'; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="truncate text-[11px] text-muted-foreground">{label}</dt>
+      <dd className={cn('m-0 whitespace-nowrap text-[13.5px] font-semibold tabular-nums', tone === 'up' && 'text-[var(--up)]', tone === 'down' && 'text-[var(--down)]')}>{children}</dd>
     </div>
   );
 }
