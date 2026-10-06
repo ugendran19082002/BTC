@@ -1,6 +1,6 @@
 import { istDate } from '../strategy/schedule.js';
 import { fillChargesUsd } from './charges.js';
-import { isExit, recompute } from './machine.js';
+import { isExit, isLong, recompute } from './machine.js';
 import type { TradeRecord } from './engine.js';
 
 /**
@@ -27,6 +27,13 @@ export type DayRow = {
   /** IST calendar day, `YYYY-MM-DD`. */
   day: string;
   realisedUsd: number;
+  /**
+   * The day's booked gains and its booked losses, each a positive number: `realised = profit − loss`. Counted
+   * a fill at a time, as the status's own "today" is (machine.ts `realisedBreakdownSinceOf`), so a day with one
+   * winner and one loser shows both rather than only their difference.
+   */
+  profitUsd: number;
+  lossUsd: number;
   chargesUsd: number;
   /** `realised − charges`. The number a day is judged on. */
   netUsd: number;
@@ -57,10 +64,10 @@ export function daysReport(
   records: readonly TradeRecord[],
   o: { from: string; to: string; spot: number | null },
 ): DaysReport {
-  const byDay = new Map<string, { realised: number; charges: number; trades: Set<string> }>();
+  const byDay = new Map<string, { realised: number; profit: number; loss: number; charges: number; trades: Set<string> }>();
   const bucket = (day: string) => {
     let b = byDay.get(day);
-    if (!b) byDay.set(day, (b = { realised: 0, charges: 0, trades: new Set() }));
+    if (!b) byDay.set(day, (b = { realised: 0, profit: 0, loss: 0, charges: 0, trades: new Set() }));
     return b;
   };
 
@@ -68,13 +75,23 @@ export function daysReport(
     const s = recompute(rec.state);
     const cv = s.contractValue ?? 0.001;
     const entryAvg = s.entryAvgPrice;
+    /*
+     * Sold to open, a fill books what was taken in less what it cost to buy back; bought to open, what it sold
+     * for less what was paid. Until 6 Oct 2026 every exit was booked the short's way, so a bought trade's loss
+     * came out here as a profit of the same size -- the BUY account's days read +₹39 where its journal said −₹39.
+     */
+    const long = isLong(s);
     for (const f of s.fills) {
       const day = istDate(f.ts);
       if (day < o.from || day > o.to) continue;
       const b = bucket(day);
       b.trades.add(s.tradeId);
       b.charges += fillChargesUsd({ price: f.price, contracts: f.size, contractValue: cv, spot: o.spot }).totalUsd;
-      if (isExit(f.role) && entryAvg !== null) b.realised += (entryAvg - f.price) * f.size * cv;
+      if (isExit(f.role) && entryAvg !== null) {
+        const pnl = (long ? f.price - entryAvg : entryAvg - f.price) * f.size * cv;
+        b.realised += pnl;
+        if (pnl > 0) b.profit += pnl; else b.loss -= pnl;
+      }
     }
   }
 
@@ -85,7 +102,7 @@ export function daysReport(
       const netUsd = b.realised - b.charges;
       running += netUsd;
       return {
-        day, realisedUsd: b.realised, chargesUsd: b.charges, netUsd,
+        day, realisedUsd: b.realised, profitUsd: b.profit, lossUsd: b.loss, chargesUsd: b.charges, netUsd,
         trades: b.trades.size, cumulativeUsd: running,
       };
     });

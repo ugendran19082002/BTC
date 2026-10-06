@@ -4,6 +4,9 @@ export type DayRow = {
   /** IST calendar day, YYYY-MM-DD. */
   day: string;
   realisedUsd: number;
+  /** The day's booked gains and booked losses, each positive: realised = profit − loss. Absent from an older server. */
+  profitUsd?: number;
+  lossUsd?: number;
   chargesUsd: number;
   /** realised − charges. */
   netUsd: number;

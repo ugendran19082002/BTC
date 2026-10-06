@@ -47,6 +47,33 @@ test('[critical] money is booked on the day of the fill that booked it', () => {
   assert.equal(mon!.realisedUsd, (15 - 1) * 100 * 0.001, 'Monday booked the whole gain');
 });
 
+test('[critical] a bought trade is booked the buyer\'s way: sold for less than it cost is a loss, not a profit of the same size', () => {
+  // Bought 1 at 46 and sold at 9 (the BUY account, 5 Oct 2026): a loss of 37 a contract.
+  const buy = (role: string, size: number, price: number, ts: number): Fill =>
+    ({ orderId: `b${ts}`, role, side: role === 'entry' ? 'buy' : 'sell', size, price, ts } as Fill);
+  const lost = record('long-1', [buy('entry', 1, 46, T(11, 7)), buy('exit', 1, 9, T(11, 9))]);
+  const won = record('long-2', [buy('entry', 10, 40, T(11, 8)), buy('take_profit', 10, 180, T(11, 10))]);
+  const r = daysReport([lost, won], { from: '2026-09-11', to: '2026-09-11', spot: 80_000 });
+  const d = r.days[0]!;
+  assert.ok(Math.abs(d.lossUsd - (46 - 9) * 1 * 0.001) < 1e-12, 'the loss, as a loss');
+  assert.ok(Math.abs(d.profitUsd - (180 - 40) * 10 * 0.001) < 1e-12, 'the gain, as a gain');
+  assert.ok(Math.abs(d.realisedUsd - (d.profitUsd - d.lossUsd)) < 1e-12);
+  // A sold trade beside them is booked as it always was.
+  const short = record('short-1', [fill('entry', 100, 15, T(11, 7)), fill('stop_loss', 100, 20, T(11, 8))]);
+  const mixed = daysReport([lost, short], { from: '2026-09-11', to: '2026-09-11', spot: 80_000 }).days[0]!;
+  assert.ok(Math.abs(mixed.lossUsd - (0.037 + (20 - 15) * 100 * 0.001)) < 1e-12);
+  assert.equal(mixed.profitUsd, 0);
+});
+
+test('[critical] a day\'s profit and its loss are both kept: a winner and a loser do not cancel into their difference', () => {
+  const win = record('w', [fill('entry', 100, 15, T(11, 7)), fill('take_profit', 100, 5, T(11, 9))]);
+  const lose = record('l', [fill('entry', 100, 15, T(11, 7)), fill('stop_loss', 100, 22, T(11, 10))]);
+  const d = daysReport([win, lose], { from: '2026-09-11', to: '2026-09-11', spot: 80_000 }).days[0]!;
+  assert.deepEqual([d.profitUsd, d.lossUsd].map((x) => Math.round(x * 1e6) / 1e6), [1, 0.7]);
+  assert.ok(Math.abs(d.realisedUsd - 0.3) < 1e-9);
+  assert.ok(Math.abs(d.netUsd - (d.profitUsd - d.lossUsd - d.chargesUsd)) < 1e-12);
+});
+
 test('[critical] the days add up to the trades', () => {
   // Two buy-backs on two days: each day gets its piece, and the pieces are the
   // trade's realised total to the cent.

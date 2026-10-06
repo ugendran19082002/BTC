@@ -6,19 +6,19 @@ import { inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
- * The days, one bar each, and the running total over them (owner, 6 Oct 2026): what was booked -- a profit up
- * in green, a loss down in red -- with Delta's charges hanging under it in a milder red, and above the bars the
- * cumulative line they add up to.
+ * The days and the running total they add up to, as one chart (owner, 6 Oct 2026).
  *
- * Two panels on one row of days, not one plot with two scales: a day is hundreds of rupees and the running total
- * thousands, and laying one over the other on a second axis lines the two up by accident. They share the days
- * instead, so a bar and the point of the line over it are the same day, and one readout names both.
+ * Each day is three bars side by side -- what was booked in profit (green, up), what was booked in loss (red,
+ * down) and Delta's charges (a milder red, down) -- and over the same days runs the cumulative line. One plot and
+ * one scale: the bars and the line are the same rupees, so a tall green bar and the step it puts in the line can
+ * be read off the same axis. (They were two stacked panels for a few hours; the owner wanted them together, and
+ * with one shared scale that is honest -- it is a second axis that would not be.)
  *
- * The bar it replaces rounded its scale up to the next ₹50,000, so a ₹5,000 day was a sliver; the scale here is
+ * The bar it replaced rounded its scale up to the next ₹50,000, so a ₹5,000 day was a sliver; the scale here is
  * the data's own, to a round step.
  *
- * Colour says profit, loss and charge, and so does the place: profit is above the line, a loss below it, the
- * charge always the outer end with a gap before it -- for a reader who cannot tell the two reds apart.
+ * Colour says profit, loss and charge, and so does the place: profit is above the line and first in its group, a
+ * loss below it and second, the charge below it and last -- for a reader who cannot tell the two reds apart.
  */
 type Period = 'Daily' | 'Weekly' | 'Monthly';
 export type PnlBucket = {
@@ -27,7 +27,10 @@ export type PnlBucket = {
   label: string;
   /** In the readout: "Tue, 6 Oct 2026", "Week to 2026-10-06", "October 2026". */
   title: string;
-  /** Booked before charges, ₹: over zero a profit, under it a loss. */
+  /** Booked in gains and booked in losses, ₹, each a positive number; a day can have both. */
+  profit: number;
+  loss: number;
+  /** Booked before charges, ₹: profit − loss. */
   booked: number;
   /** Delta's fee and GST, ₹, as a positive number. */
   charges: number;
@@ -51,7 +54,7 @@ function isoWeek(day: string): { year: number; week: number } {
 
 /** The rows as bars: a day each, or added into weeks or months; the running total with or without charges. */
 export function bucketsOf(rows: readonly DayRow[], period: Period, includeCharges = true): PnlBucket[] {
-  const groups = new Map<string, { label: string; title: string; booked: number; charges: number; trades: number }>();
+  const groups = new Map<string, { label: string; title: string; profit: number; loss: number; charges: number; trades: number }>();
   for (const r of rows) {
     let key = r.day, label = dayLabel(r.day), title = dayTitle(r.day);
     if (period === 'Weekly') {
@@ -62,8 +65,11 @@ export function bucketsOf(rows: readonly DayRow[], period: Period, includeCharge
       key = r.day.slice(0, 7); label = `${MONTHS[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(-2)}`;
       title = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
     }
-    const g = groups.get(key) ?? { label, title, booked: 0, charges: 0, trades: 0 };
-    g.booked += usdToInr(r.realisedUsd) ?? 0;
+    const g = groups.get(key) ?? { label, title, profit: 0, loss: 0, charges: 0, trades: 0 };
+    // A server from before the split sends the day's booked figure only: all of it is then the one or the other.
+    const split = r.profitUsd !== undefined && r.lossUsd !== undefined;
+    g.profit += usdToInr(split ? r.profitUsd : Math.max(0, r.realisedUsd)) ?? 0;
+    g.loss += usdToInr(split ? r.lossUsd : Math.max(0, -r.realisedUsd)) ?? 0;
     g.charges += Math.max(0, usdToInr(r.chargesUsd) ?? 0);
     g.trades += r.trades || 0;
     g.title = title;                       // a week's title ends on its last day in the range
@@ -71,9 +77,10 @@ export function bucketsOf(rows: readonly DayRow[], period: Period, includeCharge
   }
   let running = 0;
   return [...groups.entries()].map(([key, g]) => {
-    const net = g.booked - g.charges;
-    running += includeCharges ? net : g.booked;
-    return { key, label: g.label, title: g.title, booked: g.booked, charges: g.charges, net, cumulative: running, trades: g.trades };
+    const booked = g.profit - g.loss;
+    const net = booked - g.charges;
+    running += includeCharges ? net : booked;
+    return { key, label: g.label, title: g.title, profit: g.profit, loss: g.loss, booked, charges: g.charges, net, cumulative: running, trades: g.trades };
   });
 }
 
@@ -146,40 +153,37 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
   useEffect(() => { if (at !== null && at >= n) setAt(null); }, [at, n]);
 
   const narrow = width < 520;
-  const padL = narrow ? 44 : 54;
-  const padR = narrow ? 58 : 74;                       // room for the line's end label
-  const topH = narrow ? 104 : 132;
-  const botH = narrow ? 132 : 156;
-  const topY = 18, gap = 34, botY = topY + topH + gap;
-  const H = botY + botH + 24;
+  const padL = narrow ? 40 : 54;
+  const padR = narrow ? 70 : 78;                       // room for the line's end label, to "+₹1,00,000"
+  const top = 14;
+  const plotH = narrow ? 230 : 300;
+  const H = top + plotH + 24;
   const plotW = Math.max(40, width - padL - padR);
   const band = n ? plotW / n : plotW;
-  const barW = Math.max(2, Math.min(24, band - 2));
+  // Three bars to a day with a 2px gap between them, never wider than 24px each, and air left in the band.
+  const slot = Math.max(2, Math.min(24, (band * 0.78 - 4) / 3));
+  const groupW = slot * 3 + 4;
   const cx = (i: number) => padL + band * (i + 0.5);
+  const barX = (i: number, k: 0 | 1 | 2) => cx(i) - groupW / 2 + k * (slot + 2);
 
-  // The line's own scale, and the bars' own: two panels, never two scales on one.
-  const cumMax = Math.max(...data.map((d) => d.cumulative), 0);
-  const cumMin = Math.min(...data.map((d) => d.cumulative), 0);
-  // A dip of a few rupees under zero on the first day does not earn a whole band below the line.
-  const cumTicks = niceTicks(cumMin > -0.04 * cumMax ? 0 : cumMin, cumMax, narrow ? 3 : 4);
-  const cumLo = cumTicks[0] ?? 0, cumHi = cumTicks[cumTicks.length - 1] ?? 1;
-  const yCum = (v: number) => topY + topH * (1 - (v - cumLo) / (cumHi - cumLo || 1));
-  const up = Math.max(...data.map((d) => Math.max(0, d.booked)), 0);
-  const down = Math.max(...data.map((d) => Math.max(0, -d.booked) + d.charges), 0);
-  // A sixth of headroom at each end: the best and the worst day's figures are written past their bars.
-  const barTicks = niceTicks(-down * 1.18, up * 1.18, narrow ? 3 : 4);
-  const barLo = barTicks[0] ?? -1, barHi = barTicks[barTicks.length - 1] ?? 1;
-  const yBar = (v: number) => botY + botH * (1 - (v - barLo) / (barHi - barLo || 1));
-  const zero = yBar(0);
+  // One scale for all of it: the tallest bar, the deepest, and the line's own high and low, with a little headroom.
+  const hi = Math.max(...data.map((d) => Math.max(d.profit, d.cumulative)), 0);
+  const lo = Math.min(...data.map((d) => Math.min(-d.loss, -d.charges, d.cumulative)), 0);
+  const ticks = niceTicks(lo * 1.06, hi * 1.06, narrow ? 4 : 5);
+  const yLo = ticks[0] ?? -1, yHi = ticks[ticks.length - 1] ?? 1;
+  const y = (v: number) => top + plotH * (1 - (v - yLo) / (yHi - yLo || 1));
+  const zero = y(0);
+  /** A bar's far end: where its value is, and never less than 1.5px from the zero line so a small day still shows. */
+  const upTo = (v: number) => Math.min(zero - 1.5, y(v));
+  const downTo = (v: number) => Math.max(zero + 1.5, y(-v));
 
-  const line = data.map((d, i) => `${i ? 'L' : 'M'}${cx(i).toFixed(1)},${yCum(d.cumulative).toFixed(1)}`).join(' ');
-  const area = n ? `${line} L${cx(n - 1).toFixed(1)},${yCum(0).toFixed(1)} L${cx(0).toFixed(1)},${yCum(0).toFixed(1)} Z` : '';
+  const line = data.map((d, i) => `${i ? 'L' : 'M'}${cx(i).toFixed(1)},${y(d.cumulative).toFixed(1)}`).join(' ');
   const last = data[n - 1];
-  // A date under every bar would collide: one about every 56px, and always the last.
+  // A date under every group would collide: one about every 56px, and always the last.
   const every = Math.max(1, Math.ceil(56 / band));
   const labelled = (i: number) => i === n - 1 || (i % every === 0 && n - 1 - i >= every * 0.6);
-  const best = n ? data.reduce((b, d, i) => (d.net > data[b]!.net ? i : b), 0) : -1;
-  const worst = n ? data.reduce((b, d, i) => (d.net < data[b]!.net ? i : b), 0) : -1;
+  // A dot on every day while there is room for one; always on the last, and on the day being read.
+  const dotted = band >= 20;
   const hovered = at !== null ? data[at] ?? null : null;
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -220,10 +224,10 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
         <>
           {/* What each mark is. Text in the page's own ink; the mark beside it carries the colour. */}
           <ul aria-label="legend" className="m-0 mb-2 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-[11.5px] text-muted-foreground">
-            <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-0.5 w-4 rounded" style={{ background: LINE }} />Cumulative {includeCharges ? 'net' : 'gross'}</li>
             <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: PROFIT }} />Booked profit</li>
             <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: LOSS }} />Booked loss</li>
             <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: CHARGE }} />Charges</li>
+            <li className="inline-flex items-center gap-1.5"><i aria-hidden className="inline-block h-0.5 w-4 rounded" style={{ background: LINE }} />Cumulative {includeCharges ? 'net' : 'gross'}</li>
           </ul>
 
           {asTable ? (
@@ -231,7 +235,7 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
               <table aria-label="Daily P&L table" className="w-full border-collapse text-[12px] tabular-nums">
                 <thead className="sticky top-0 bg-[var(--panel)] text-[11px] text-muted-foreground">
                   <tr>
-                    {[period === 'Daily' ? 'Day' : period === 'Weekly' ? 'Week' : 'Month', 'Booked', 'Charges', 'Net', 'Cumulative', 'Trades'].map((h, i) => (
+                    {[period === 'Daily' ? 'Day' : period === 'Weekly' ? 'Week' : 'Month', 'Profit', 'Loss', 'Charges', 'Net', 'Cumulative', 'Trades'].map((h, i) => (
                       <th key={h} scope="col" className={cn('px-2 py-1.5 font-semibold', i === 0 ? 'text-left' : 'text-right')}>{h}</th>
                     ))}
                   </tr>
@@ -240,7 +244,8 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
                   {[...data].reverse().map((d) => (
                     <tr key={d.key} className="border-0 border-t border-solid border-border">
                       <td className="whitespace-nowrap px-2 py-1 text-left font-[inherit]">{d.title}</td>
-                      <td className={cn('px-2 py-1 text-right', d.booked > 0 ? 'text-[var(--up)]' : d.booked < 0 ? 'text-[var(--down)]' : '')}>{signedInr(d.booked)}</td>
+                      <td className={cn('px-2 py-1 text-right', d.profit > 0 && 'text-[var(--up)]')}>{d.profit > 0 ? `+${inr(d.profit)}` : inr(0)}</td>
+                      <td className={cn('px-2 py-1 text-right', d.loss > 0 && 'text-[var(--down)]')}>{d.loss > 0 ? `−${inr(d.loss)}` : inr(0)}</td>
                       <td className="px-2 py-1 text-right text-muted-foreground">{d.charges > 0 ? `−${inr(d.charges)}` : inr(0)}</td>
                       <td className={cn('px-2 py-1 text-right font-semibold', d.net > 0 ? 'text-[var(--up)]' : d.net < 0 ? 'text-[var(--down)]' : '')}>{signedInr(d.net)}</td>
                       <td className="px-2 py-1 text-right">{signedInr(d.cumulative)}</td>
@@ -256,73 +261,46 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
               tabIndex={0} role="group" aria-label={`Daily P&L, ${n} ${period === 'Daily' ? 'days' : period === 'Weekly' ? 'weeks' : 'months'}. Left and right arrows read each one.`}
               onKeyDown={onKey} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setAt(null); }} onBlur={() => setAt(null)}
             >
-              <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} role="img" aria-label="Cumulative line over daily bars" className="block">
-                {/* Each panel named in its corner: two panels, each with its own scale. */}
-                <text x={padL} y={topY - 6} fontSize={10.5} fill="var(--muted)" fontWeight={600}>CUMULATIVE {includeCharges ? 'NET' : 'GROSS'}</text>
-                <text x={padL} y={botY - 8} fontSize={10.5} fill="var(--muted)" fontWeight={600}>BOOKED AND CHARGES, BY {period === 'Daily' ? 'DAY' : period === 'Weekly' ? 'WEEK' : 'MONTH'}</text>
-
-                {cumTicks.map((t) => (
-                  <g key={`c${t}`}>
-                    <line x1={padL} x2={width - padR} y1={yCum(t)} y2={yCum(t)} stroke={t === 0 ? 'var(--panel-3)' : 'var(--line-soft)'} strokeWidth={1} />
-                    <text x={padL - 6} y={yCum(t) + 3.5} fontSize={10} textAnchor="end" fill="var(--dim)" className="tabular-nums">{compactInr(t)}</text>
-                  </g>
-                ))}
-                {barTicks.map((t) => (
-                  <g key={`b${t}`}>
-                    <line x1={padL} x2={width - padR} y1={yBar(t)} y2={yBar(t)} stroke={t === 0 ? 'var(--panel-3)' : 'var(--line-soft)'} strokeWidth={1} />
-                    <text x={padL - 6} y={yBar(t) + 3.5} fontSize={10} textAnchor="end" fill="var(--dim)" className="tabular-nums">{compactInr(t)}</text>
+              <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} role="img" aria-label="Daily profit, loss and charges as bars, with the cumulative line over them" className="block">
+                {ticks.map((t) => (
+                  <g key={t}>
+                    <line x1={padL} x2={width - padR} y1={y(t)} y2={y(t)} stroke={t === 0 ? 'var(--panel-3)' : 'var(--line-soft)'} strokeWidth={1} />
+                    <text x={padL - 6} y={y(t) + 3.5} fontSize={10} textAnchor="end" fill="var(--dim)" className="tabular-nums">{compactInr(t)}</text>
                   </g>
                 ))}
 
-                {/* The day being read: one hairline through both panels. */}
-                {at !== null && <line x1={cx(at)} x2={cx(at)} y1={topY} y2={botY + botH} stroke="var(--muted)" strokeWidth={1} opacity={0.55} />}
+                {/* The day being read: a soft column behind its three bars. */}
+                {at !== null && <rect x={padL + band * at} y={top} width={band} height={plotH} fill="var(--panel-2)" opacity={0.7} />}
 
-                {/* The running total. */}
-                <path d={area} fill={LINE} opacity={0.1} />
+                {/* The bars, side by side from the zero line: profit up, then loss and charges down. */}
+                {data.map((d, i) => (
+                  <g key={d.key} opacity={at !== null && at !== i ? 0.5 : 1}>
+                    {d.profit > 0 && <path d={barPath(barX(i, 0), slot, zero, upTo(d.profit))} fill={PROFIT} />}
+                    {d.loss > 0 && <path d={barPath(barX(i, 1), slot, zero, downTo(d.loss))} fill={LOSS} />}
+                    {d.charges > 0 && <path d={barPath(barX(i, 2), slot, zero, downTo(d.charges))} fill={CHARGE} />}
+                  </g>
+                ))}
+
+                {/* The running total, over the bars it is made of. */}
+                <path d={line} fill="none" stroke={SURFACE} strokeWidth={5} strokeLinejoin="round" strokeLinecap="round" opacity={0.9} />
                 <path d={line} fill="none" stroke={LINE} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-                {at !== null && hovered && <circle cx={cx(at)} cy={yCum(hovered.cumulative)} r={4} fill={LINE} stroke={SURFACE} strokeWidth={2} />}
+                {data.map((d, i) => ((dotted || i === at) && i !== n - 1 ? (
+                  <circle key={`p${d.key}`} cx={cx(i)} cy={y(d.cumulative)} r={i === at ? 4.5 : 3} fill={LINE} stroke={SURFACE} strokeWidth={2} />
+                ) : null))}
                 {last && (
                   <>
-                    <circle cx={cx(n - 1)} cy={yCum(last.cumulative)} r={4} fill={LINE} stroke={SURFACE} strokeWidth={2} />
-                    <text x={cx(n - 1) + 9} y={yCum(last.cumulative) + 4} fontSize={11.5} fontWeight={600} fill="var(--text)" className="tabular-nums">{signedInr(last.cumulative)}</text>
+                    <circle cx={cx(n - 1)} cy={y(last.cumulative)} r={4.5} fill={LINE} stroke={SURFACE} strokeWidth={2} />
+                    <text x={cx(n - 1) + 10} y={y(last.cumulative) + 4} fontSize={11.5} fontWeight={600} fill="var(--text)" className="tabular-nums">{signedInr(last.cumulative)}</text>
                   </>
                 )}
 
-                {/* The bars: booked from the zero line, the charge the outer end below it, a gap between the two. */}
-                {data.map((d, i) => {
-                  const x = cx(i) - barW / 2;
-                  const dim = at !== null && at !== i ? 0.45 : 1;
-                  const lossEnd = d.booked < 0 ? yBar(d.booked) : zero;
-                  const chargeFrom = d.booked < 0 ? lossEnd + 2 : zero;
-                  const chargeH = d.charges > 0 ? Math.max(1.5, yBar(-d.charges) - zero) : 0;
-                  return (
-                    <g key={d.key} opacity={dim}>
-                      {d.booked > 0 && <path d={barPath(x, barW, zero, Math.min(zero - 1.5, yBar(d.booked)))} fill={PROFIT} />}
-                      {d.booked < 0 && <path d={barPath(x, barW, zero, Math.max(zero + 1.5, lossEnd), chargeH === 0)} fill={LOSS} />}
-                      {chargeH > 0 && <path d={barPath(x, barW, chargeFrom, chargeFrom + chargeH)} fill={CHARGE} />}
-                    </g>
-                  );
-                })}
-
-                {/* Only the best and the worst are written on the chart; every other figure is in the readout and the table. */}
-                {n > 1 && best >= 0 && data[best]!.net > 0 && (
-                  <text x={Math.max(padL + 22, Math.min(width - padR - 22, cx(best)))} y={yBar(Math.max(0, data[best]!.booked)) - 5} fontSize={10} textAnchor="middle" fill="var(--muted)" className="tabular-nums">
-                    {signedInr(data[best]!.net)}
-                  </text>
-                )}
-                {n > 1 && worst >= 0 && worst !== best && data[worst]!.net < 0 && (
-                  <text x={Math.max(padL + 22, Math.min(width - padR - 22, cx(worst)))} y={yBar(Math.min(0, data[worst]!.booked) - data[worst]!.charges) + 13} fontSize={10} textAnchor="middle" fill="var(--muted)" className="tabular-nums">
-                    {signedInr(data[worst]!.net)}
-                  </text>
-                )}
-
                 {data.map((d, i) => (labelled(i) ? (
-                  <text key={`x${d.key}`} x={cx(i)} y={H - 6} fontSize={10} textAnchor={i === n - 1 && cx(i) > width - padR - 14 ? 'end' : 'middle'} fill="var(--dim)">{d.label}</text>
+                  <text key={`x${d.key}`} x={cx(i)} y={H - 6} fontSize={10} textAnchor="middle" fill="var(--dim)">{d.label}</text>
                 ) : null))}
 
-                {/* A day's whole column answers the pointer -- not the few pixels of its bar. */}
+                {/* A day's whole column answers the pointer -- not the few pixels of a bar. */}
                 {data.map((d, i) => (
-                  <rect key={`h${d.key}`} x={padL + band * i} y={topY} width={band} height={botY + botH - topY} fill="transparent"
+                  <rect key={`h${d.key}`} x={padL + band * i} y={top} width={band} height={plotH} fill="transparent"
                         onPointerEnter={() => setAt(i)} onPointerMove={() => setAt(i)} onPointerDown={() => setAt(i)} />
                 ))}
               </svg>
@@ -332,7 +310,7 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
                 chart -- a box over a 300px plot hides the bars it is about, and ran off the edge.
               */}
               {narrow ? (
-                <div role="status" aria-live="polite" className="mt-1 min-h-[104px] rounded-md border border-solid border-border bg-[var(--panel)] px-2.5 py-2">
+                <div role="status" aria-live="polite" className="mt-1 min-h-[122px] rounded-md border border-solid border-border bg-[var(--panel)] px-2.5 py-2">
                   {hovered ? <Readout d={hovered} /> : <p className="m-0 py-7 text-center text-[11.5px] text-muted-foreground">Tap a bar to read that {period === 'Daily' ? 'day' : period === 'Weekly' ? 'week' : 'month'}.</p>}
                 </div>
               ) : hovered && at !== null ? (
@@ -355,7 +333,8 @@ function Readout({ d }: { d: PnlBucket }) {
   return (
     <>
       <div className="mb-1 text-[11.5px] font-semibold text-foreground">{d.title}</div>
-      <Row k={key(d.booked < 0 ? LOSS : PROFIT)} label={d.booked < 0 ? 'Booked loss' : 'Booked profit'} value={signedInr(d.booked)} />
+      <Row k={key(PROFIT)} label="Booked profit" value={d.profit > 0 ? `+${inr(d.profit)}` : inr(0)} />
+      <Row k={key(LOSS)} label="Booked loss" value={d.loss > 0 ? `−${inr(d.loss)}` : inr(0)} />
       <Row k={key(CHARGE)} label="Charges" value={d.charges > 0 ? `−${inr(d.charges)}` : inr(0)} />
       <Row k={<i className="inline-block w-3" />} label="Net" value={signedInr(d.net)} strong />
       <div className="my-1 h-px bg-border" />
