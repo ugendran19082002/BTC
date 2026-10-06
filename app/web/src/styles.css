@@ -29,6 +29,8 @@
   --down: #f6465d;
   /* A BUY, as a SELL is --down (6 Oct 2026): blue, because green and red are for money and a side is not a gain. */
   --buy: #3d8bfd;
+  /* A time or a date on the phone (6 Oct 2026): its own soft blue, so a time is never read as a price or a P&L. */
+  --time: #8ab4f8;
   --warn: #f0b90b;
   --accent: #fcd535;
   /*

@@ -54,18 +54,18 @@ export function DateRangeSheet({ value, today, onApply, onClose }: {
 
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="flex min-w-0 flex-col gap-1.5">
-            <span className="text-[13px] text-muted-foreground">From</span>
+            <span className="text-[13px] font-medium text-[var(--time)]">From</span>
             <input ref={first} type="date" className={field} value={draft.from} min={earliest} max={today}
               onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} />
           </label>
           <label className="flex min-w-0 flex-col gap-1.5">
-            <span className="text-[13px] text-muted-foreground">To</span>
+            <span className="text-[13px] font-medium text-[var(--time)]">To</span>
             <input type="date" className={field} value={draft.to} min={earliest} max={today}
               onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))} />
           </label>
         </div>
 
-        <p role={problem ? 'alert' : 'status'} className={cn('m-0 mt-3 min-h-[20px] text-[13.5px]', problem ? 'text-[var(--down)]' : 'text-muted-foreground')}>
+        <p role={problem ? 'alert' : 'status'} className={cn('m-0 mt-3 min-h-[20px] text-[13.5px]', problem ? 'text-[var(--down)]' : 'text-[var(--time)]')}>
           {problem ?? `${describeRange(draft, today)} · ${daysIn(draft)} day${daysIn(draft) === 1 ? '' : 's'}`}
         </p>
 

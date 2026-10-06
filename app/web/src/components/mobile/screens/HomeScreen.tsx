@@ -81,7 +81,7 @@ export function HomeScreen() {
         {samples.length >= 2 ? (
           <div className="mt-2">
             <AreaChart values={samples.map((x) => x.netUsd)} label="Today's P&L, minute by minute" height={88} />
-            <div className="mt-1 flex justify-between text-[11px] tabular-nums text-muted-foreground">
+            <div className="mt-1 flex justify-between text-[11px] tabular-nums text-[var(--time)]">
               <span>{clock(samples[0]!.at)}</span><span>{clock(samples[samples.length - 1]!.at)}</span>
             </div>
           </div>

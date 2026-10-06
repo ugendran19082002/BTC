@@ -67,7 +67,7 @@ export function AlertsScreen() {
                     <summary className="flex cursor-pointer list-none items-start justify-between gap-2">
                       <span className="min-w-0">
                         <span className="block text-[14px] font-medium">{first}</span>
-                        <span className="block text-[12px] text-muted-foreground">{stamp(e.at)}{e.error ? ` · ${e.error}` : ''}</span>
+                        <span className="block text-[12px] text-muted-foreground"><span className="text-[var(--time)]">{stamp(e.at)}</span>{e.error ? ` · ${e.error}` : ''}</span>
                       </span>
                       {e.status === 'sent' ? <Pill tone="up">SENT</Pill> : e.status === 'failed' ? <Pill tone="down">FAILED</Pill> : <Pill tone="dim">REPEAT</Pill>}
                     </summary>

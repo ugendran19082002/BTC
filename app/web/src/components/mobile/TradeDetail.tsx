@@ -104,7 +104,7 @@ export function TradeDetail({ tradeId, onClose, onSignedOut }: { tradeId: string
                           </span>
                         </div>
                         {s.detail && <div className="text-[12.5px] leading-snug text-muted-foreground">{s.detail}</div>}
-                        <div className="text-[11.5px] text-[var(--dim)] tabular-nums">{stamp(s.at)}</div>
+                        <div className="text-[11.5px] tabular-nums text-[var(--time)]">{stamp(s.at)}</div>
                       </div>
                     </li>
                   );

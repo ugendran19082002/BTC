@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardTitle } from '@/components/ui/card';
 import { pnlTone, signedInr, signedUsd, inr, usd, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -207,4 +207,30 @@ export function Empty({ children }: { children: ReactNode }) {
 /** Reading, failed, or the thing itself: a screen never shows blank while it waits. */
 export function Loading({ error, what }: { error: Error | null; what: string }) {
   return <Empty>{error ? `Could not read ${what}: ${error.message}` : `Reading ${what}…`}</Empty>;
+}
+
+/** A time or a date, in the colour times have on the phone: told apart from money and from prices at a glance. */
+export function When({ children, className }: { children: ReactNode; className?: string }) {
+  return <span className={cn('tabular-nums text-[var(--time)]', className)}>{children}</span>;
+}
+
+/**
+ * A choice from a list, sized for a thumb: the phone's own picker opens, which is the one a hand already knows.
+ * 16px text, because under that an iPhone zooms the whole page when the field is tapped.
+ */
+export function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: ReactNode }) {
+  return (
+    <label className="flex items-center gap-2.5 text-[13px] text-muted-foreground">
+      <span className="shrink-0">{label}</span>
+      <span className="relative min-w-0 flex-1">
+        <select
+          value={value} onChange={(e) => onChange(e.target.value)}
+          className="h-11 w-full min-w-0 appearance-none truncate rounded-lg border border-border bg-muted pl-3 pr-9 text-[16px] text-foreground focus:outline-none focus:ring-1 focus:ring-[var(--up)]"
+        >
+          {children}
+        </select>
+        <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      </span>
+    </label>
+  );
 }

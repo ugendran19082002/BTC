@@ -6,7 +6,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { clock, pct } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { usePhone } from '@/components/mobile/phone-context';
-import { Chip, Chips, Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats } from '@/components/mobile/parts';
+import { Chip, Chips, Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
 
 /**
  * Strategies (6 Oct 2026, Level 2): what the strategies did today and why. The clock strategies' runs -- placed,
@@ -63,7 +63,7 @@ export function StrategiesScreen() {
                   <span className="truncate text-[14.5px] font-medium">{nameOf(r.strategyId)}</span>
                   <Pill tone={RUN_TONE[r.status]}>{r.status.toUpperCase()}</Pill>
                 </span>
-                <span className="block text-[12.5px] leading-snug text-muted-foreground">{clock(r.at)} · {r.detail}</span>
+                <span className="block text-[12.5px] leading-snug text-muted-foreground"><When>{clock(r.at)}</When> · {r.detail}</span>
               </li>
             ))}
           </ul>
@@ -88,7 +88,7 @@ export function StrategiesScreen() {
                     </span>
                     <Pill tone={w.tone}>{w.word}</Pill>
                   </span>
-                  <span className="block text-[12.5px] leading-snug text-muted-foreground">{clock(r.at)} · {r.tf} · {nameOf(r.strategyId)} · {r.detail}</span>
+                  <span className="block text-[12.5px] leading-snug text-muted-foreground"><When>{clock(r.at)}</When> · {r.tf} · {nameOf(r.strategyId)} · {r.detail}</span>
                 </>
               );
               return (

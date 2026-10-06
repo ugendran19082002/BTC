@@ -6,7 +6,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { clock, contractLabel, price, size } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { usePhone } from '@/components/mobile/phone-context';
-import { Chip, Chips, Empty, ListButton, Loading, Panel, Pill } from '@/components/mobile/parts';
+import { Chip, Chips, Empty, ListButton, Loading, Panel, Pill, When } from '@/components/mobile/parts';
 
 /**
  * Orders (6 Oct 2026): the day's orders as the desk placed them -- what was asked, what it filled at, and where
@@ -84,7 +84,7 @@ function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => vo
     <li>
       <ListButton onClick={onOpen} label={`${buy ? 'Buy' : 'Sell'} ${contractLabel(o.symbol)}: open the order`}>
         <span className="flex gap-3">
-          <span className="w-11 shrink-0 pt-0.5 text-[12.5px] tabular-nums text-muted-foreground">{clock(o.openedAt)}</span>
+          <When className="w-11 shrink-0 pt-0.5 text-[12.5px]">{clock(o.openedAt)}</When>
           <span className="min-w-0 flex-1">
             <span className="flex items-center justify-between gap-2">
               <span className="truncate text-[14.5px] font-semibold">

@@ -97,7 +97,7 @@ export function PnlScreen() {
         {line.length >= 2 && (
           <div className="mt-2">
             <AreaChart values={line} label={isToday ? 'Net today, minute by minute' : 'Running total, day by day'} />
-            <div className="mt-1 flex justify-between text-[11px] tabular-nums text-muted-foreground">
+            <div className="mt-1 flex justify-between text-[11px] tabular-nums text-[var(--time)]">
               {isToday
                 ? <><span>{clock(samples[0]!.at)}</span><span>{clock(samples[samples.length - 1]!.at)}</span></>
                 : <><span>{days.data!.days[0]!.day}</span><span>{days.data!.days[days.data!.days.length - 1]!.day}</span></>}
@@ -192,7 +192,7 @@ function Mark({ label, usd, when, small = false }: {
       )}>
         {small ? rsShort(usd) : rs(usd)}
       </dd>
-      {when && <dd className="m-0 truncate text-[10.5px] tabular-nums text-muted-foreground">{when}</dd>}
+      {when && <dd className={cn('m-0 truncate text-[10.5px] tabular-nums', /\d/.test(when) && !/day/.test(when) ? 'text-[var(--time)]' : 'text-muted-foreground')}>{when}</dd>}
     </div>
   );
 }

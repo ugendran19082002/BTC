@@ -6,7 +6,7 @@ import { clock, contractLabel, price, signedInr, usdToInr } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { isLongTrade } from '@/lib/long-exits';
 import { usePhone } from '@/components/mobile/phone-context';
-import { Chip, Chips, Empty, ListButton, Loading, Panel, Rupees } from '@/components/mobile/parts';
+import { Chip, Chips, Empty, ListButton, Loading, Panel, Rupees, Select, When } from '@/components/mobile/parts';
 
 /**
  * Trade history (6 Oct 2026): the closed trades, not the orders -- what each made after charges -- filtered by
@@ -59,16 +59,10 @@ export function HistoryScreen() {
         <Chip on={act === 'buy'} onClick={() => setAct(act === 'buy' ? 'all' : 'buy')}>Bought</Chip>
       </Chips>
       {strategies.length > 1 && (
-        <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          Strategy
-          <select
-            value={strategy} onChange={(e) => setStrategy(e.target.value)}
-            className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[15px] text-foreground"
-          >
-            <option value="all">All strategies</option>
-            {strategies.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </label>
+        <Select label="Strategy" value={strategy} onChange={setStrategy}>
+          <option value="all">All strategies</option>
+          {strategies.map((x) => <option key={x} value={x}>{x}</option>)}
+        </Select>
       )}
 
       <Panel
@@ -90,7 +84,7 @@ export function HistoryScreen() {
                       <span className={net > 0 ? 'font-semibold text-[var(--up)]' : net < 0 ? 'font-semibold text-[var(--down)]' : 'font-semibold'}>{signedInr(usdToInr(net))}</span>
                     </span>
                     <span className="block text-[12.5px] tabular-nums text-muted-foreground">
-                      {clock(closedAt(o))} · in {price(o.entryAvgPrice)} → out {price(o.exitAvgPrice)}
+                      <When>{clock(closedAt(o))}</When> · in {price(o.entryAvgPrice)} → out {price(o.exitAvgPrice)}
                     </span>
                     <span className="block truncate text-[12px] text-muted-foreground">
                       {o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ` : ''}{o.plan?.strategyName ?? 'By hand'}{p.shown === 'all' && o.account ? ` · ${o.account.name}` : ''}
