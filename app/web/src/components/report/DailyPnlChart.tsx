@@ -161,7 +161,7 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
   const plotW = Math.max(40, width - padL - padR);
   const band = n ? plotW / n : plotW;
   // Three bars to a day with a 2px gap between them, never wider than 24px each, and air left in the band.
-  const slot = Math.max(2, Math.min(24, (band * 0.78 - 4) / 3));
+  const slot = Math.max(2, Math.min(24, (band * 0.86 - 4) / 3));
   const groupW = slot * 3 + 4;
   const cx = (i: number) => padL + band * (i + 0.5);
   const barX = (i: number, k: 0 | 1 | 2) => cx(i) - groupW / 2 + k * (slot + 2);
@@ -169,7 +169,7 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
   // One scale for all of it: the tallest bar, the deepest, and the line's own high and low, with a little headroom.
   const hi = Math.max(...data.map((d) => Math.max(d.profit, d.cumulative)), 0);
   const lo = Math.min(...data.map((d) => Math.min(-d.loss, -d.charges, d.cumulative)), 0);
-  const ticks = niceTicks(lo * 1.06, hi * 1.06, narrow ? 4 : 5);
+  const ticks = niceTicks(lo * 1.06, hi * 1.06, narrow ? 5 : 6);
   const yLo = ticks[0] ?? -1, yHi = ticks[ticks.length - 1] ?? 1;
   const y = (v: number) => top + plotH * (1 - (v - yLo) / (yHi - yLo || 1));
   const zero = y(0);
