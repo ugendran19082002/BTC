@@ -19,6 +19,23 @@ const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : nul
 const qty = (v: unknown) => (n(v) === null ? '?' : Math.abs(n(v)!).toLocaleString('en-US'));
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
+/** A timeframe in seconds: "5m" is 300, "1h" 3600. Zero for a word it does not know. */
+export function tfSeconds(tf: string): number {
+  const m = /^(\d+)\s*([mhd])$/i.exec(tf.trim());
+  if (!m) return 0;
+  return Number(m[1]) * ({ m: 60, h: 3600, d: 86_400 } as const)[m[2]!.toLowerCase() as 'm' | 'h' | 'd'];
+}
+
+/**
+ * When a signal was known, in epoch ms. Its `triggerTime` is the start of the signal candle in epoch SECONDS (the
+ * candles' own clock); the signal exists once that candle has closed. Read as milliseconds, as this did at first,
+ * a signal of 6 Oct 2026 was dated "21 Jan" -- 1970 (found on the live phone the same day).
+ */
+export function signalAt(triggerTime: number, tf: string): number {
+  const startMs = triggerTime < 1e11 ? triggerTime * 1000 : triggerTime;
+  return startMs + tfSeconds(tf) * 1000;
+}
+
 function stepOf(e: JournalEvent): Step {
   const at = e.at;
   switch (e.t) {
@@ -80,10 +97,10 @@ export function journalSteps(trade: Trade, events: readonly JournalEvent[]): Ste
   const sig = trade.plan?.signal;
   if (sig) {
     steps.push({
-      at: sig.triggerTime,
+      at: signalAt(sig.triggerTime, sig.tf),
       stage: 'signal',
       title: `Signal: #${sig.n} ${sig.name}`,
-      detail: `${sig.dir === 1 ? 'BUY' : 'SELL'} · ${sig.tf} · ${sig.mode === 'mtf' ? 'with the timeframe chain' : 'without it'}`,
+      detail: `${sig.dir === 1 ? 'BUY' : 'SELL'} · ${sig.tf} candle closed · ${sig.mode === 'mtf' ? 'with the timeframe chain' : 'without the chain'}`,
     });
   } else if (trade.plan?.strategyName) {
     steps.push({ at: events[0]?.at ?? trade.updatedAt, stage: 'signal', title: `Placed by strategy “${trade.plan.strategyName}”` });

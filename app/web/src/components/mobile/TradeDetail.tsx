@@ -9,6 +9,8 @@ import { contractLabel, price, size, stamp } from '@/lib/format';
 import { journalSteps, type Stage } from '@/lib/journal-steps';
 import { isLongTrade } from '@/lib/long-exits';
 import { cn } from '@/lib/utils';
+import { usePhone } from '@/components/mobile/phone-context';
+import { PositionCard } from '@/components/mobile/PositionCard';
 
 /**
  * One trade, start to end, read only (the phone's Level 2, 6 Oct 2026): what it is and what it made, then its
@@ -37,6 +39,13 @@ export function TradeDetail({ tradeId, onClose, onSignedOut }: { tradeId: string
     return () => { document.body.style.overflow = before; };
   }, []);
 
+  /*
+   * The trade as the status has it, while it is open: the journal route carries no prices, so an open trade read
+   * "If closed now — –" (the live phone, 6 Oct 2026). The status the phone already reads does, so the same live
+   * card as the Positions screen stands here -- P&L, the SL / TGT lines -- for as long as the trade is open.
+   */
+  const p = usePhone();
+  const liveTrade = p.status?.open.find((x) => x.tradeId === tradeId) ?? null;
   const d = detail.data;
   const t = d?.trade ?? null;
   const steps = d ? journalSteps(d.trade, d.events) : [];
@@ -67,6 +76,9 @@ export function TradeDetail({ tradeId, onClose, onSignedOut }: { tradeId: string
           </Card>
         ) : (
           <>
+            {liveTrade ? (
+              <PositionCard trade={liveTrade} alarms={p.status?.alarms ?? []} perpMark={p.perp} perpLive={p.perpLive} now={p.now} showAccount={p.shown === 'all'} />
+            ) : (
             <Card>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 text-[13px] text-muted-foreground">
@@ -86,6 +98,7 @@ export function TradeDetail({ tradeId, onClose, onSignedOut }: { tradeId: string
                 </div>
               )}
             </Card>
+            )}
 
             <Card>
               <CardTitle>What happened</CardTitle>

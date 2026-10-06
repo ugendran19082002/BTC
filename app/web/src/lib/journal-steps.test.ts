@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Trade } from '@/types/trade';
-import { journalSteps } from '@/lib/journal-steps';
+import { journalSteps, signalAt, tfSeconds } from '@/lib/journal-steps';
 
 const trade = (over: Partial<Trade> = {}): Trade => ({
   tradeId: 't1', symbol: 'C-BTC-80000-071026', productId: 1, optionSide: 'CE', phase: 'flat',
@@ -8,7 +8,8 @@ const trade = (over: Partial<Trade> = {}): Trade => ({
   protection: { takeProfit: null, stopLoss: null }, realisedPnl: 1.8, fills: [], note: null, alarm: null, updatedAt: 5_000,
   plan: {
     lots: 100, entry: { type: 'limit', timeoutMs: 5000, marketFallback: false }, takeProfitPrice: 2, stopPrice: 40,
-    signal: { method: 'breakout', n: 1, name: 'Breakout', mode: 'single', tf: '5m', dir: -1, triggerTime: 500 },
+    // the 5m candle that opened at 09:25:00 UTC, 6 Oct 2026 -- in epoch seconds, as the server sends it
+    signal: { method: 'breakout', n: 1, name: 'Breakout', mode: 'single', tf: '5m', dir: -1, triggerTime: 1_791_278_700 },
   },
   ...over,
 });
@@ -25,7 +26,7 @@ describe('journalSteps', () => {
   it('[critical] tells the trade in order: signal, entry, fill, protection, exit, closed', () => {
     const steps = journalSteps(trade(), EVENTS);
     expect(steps.map((s) => s.stage)).toEqual(['signal', 'entry', 'fill', 'protection', 'exit', 'info', 'closed']);
-    expect(steps[0]).toMatchObject({ title: 'Signal: #1 Breakout', detail: 'SELL · 5m · without it' });
+    expect(steps[0]).toMatchObject({ title: 'Signal: #1 Breakout', detail: 'SELL · 5m candle closed · without the chain' });
     expect(steps[1]).toMatchObject({ title: 'Entry order sent: 100 contracts at 20.00', detail: 'Book then: bid 19.50 · ask 20.50' });
     expect(steps[2]).toMatchObject({ title: 'Sold 100 @ 20.00', detail: 'BTC perp at 62,000' });
     expect(steps[3]!.title).toBe('Target and stop placed at the exchange');
@@ -50,5 +51,20 @@ describe('journalSteps', () => {
 
   it('an event it does not know is still shown, in its own words', () => {
     expect(journalSteps(trade({ plan: undefined }), [{ t: 'something_new', at: 1 }])[0]!.title).toBe('something new');
+  });
+
+  it('[critical] a signal is dated when its candle closed, from a start given in seconds -- not "21 Jan 1970"', () => {
+    // The live phone, 6 Oct 2026: a 5m signal read as milliseconds showed "21 Jan, 23:04" beside an entry at "06 Oct, 15:00".
+    const start = Date.UTC(2026, 9, 6, 9, 25, 0) / 1000; // 14:55 IST
+    expect(new Date(signalAt(start, '5m')).toISOString()).toBe('2026-10-06T09:30:00.000Z'); // 15:00 IST
+    expect(new Date(signalAt(start, '1h')).toISOString()).toBe('2026-10-06T10:25:00.000Z');
+    // already in milliseconds: left as it is
+    expect(signalAt(start * 1000, '5m')).toBe(start * 1000 + 300_000);
+    const step = journalSteps(trade({ plan: { ...trade().plan!, signal: { ...trade().plan!.signal!, triggerTime: start } } }), [])[0]!;
+    expect(new Date(step.at).getUTCFullYear()).toBe(2026);
+  });
+
+  it('timeframes in seconds', () => {
+    expect([tfSeconds('1m'), tfSeconds('5m'), tfSeconds('30m'), tfSeconds('1h'), tfSeconds('4h'), tfSeconds('?')]).toEqual([60, 300, 1800, 3600, 14_400, 0]);
   });
 });
