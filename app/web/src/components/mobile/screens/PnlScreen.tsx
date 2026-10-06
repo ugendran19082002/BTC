@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { json } from '@/api/client';
 import { getDaysFor, getStats, type StatsGroup } from '@/api/phone';
-import type { DayRow, MtmReport } from '@/types/report';
+import type { MtmReport } from '@/types/report';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct, signedInr, usdToInr } from '@/lib/format';
 import { lossBudget } from '@/lib/position-risk';
-import { byDay, daysAgoIst, heat, monthsOf, todayIst } from '@/lib/report';
+import { daysAgoIst, todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
 import { AreaChart, Empty, Loading, LossMeter, Panel, Rupees, Segmented, Stat, Stats } from '@/components/mobile/parts';
@@ -15,10 +15,12 @@ import { describeRange, type DateRangeValue } from '@/components/ui/date-range-p
 import { rangeProblem } from '@/lib/custom-range';
 import { splitPairs } from '@/lib/method-pairs';
 import { PairList } from '@/components/mobile/PairList';
+import { DayCalendar } from '@/components/mobile/DayCalendar';
 
 /**
  * P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line,
- * then the closed trades' numbers in one grid (win rate, profit factor, average win and loss, best and worst),
+ * then the closed trades' numbers in one grid (win rate, profit factor, average win and loss, best and worst)
+ * and, over days, a calendar with each day's figure in its square (`DayCalendar`),
  * then what is working: the best and the worst pairs of entry method and timeframe (owner, 6 Oct 2026, in place
  * of the lists by strategy and by entry method), CE or PE, sold or bought, and account. Every figure after
  * charges, from the journal (`/api/report/*`), for the range chosen at the top.
@@ -160,7 +162,7 @@ export function PnlScreen() {
           <Stat label="Worst trade" tone={toneOf(o?.worstUsd)}>{rs(o?.worstUsd)}</Stat>
         </Stats>
         {!stats.data && stats.error && <Loading error={stats.error} what="the trades" />}
-        {!isToday && days.data && <Calendar from={from} to={to} rows={days.data.days} />}
+        {!isToday && days.data && <DayCalendar from={from} to={to} rows={days.data.days} today={today} />}
         {!isToday && days.data && (
           <p className="m-0 mt-2 text-[12px] text-muted-foreground">
             {days.data.totals.tradingDays} days traded · {days.data.totals.winDays} up · {days.data.totals.lossDays} down
@@ -234,47 +236,5 @@ function Breakdown({ title, groups, limit }: { title: string; groups: StatsGroup
         ))}
       </ul>
     </Panel>
-  );
-}
-
-/** Each day of the range as a square, green or red by its net, stronger the bigger. */
-function Calendar({ from, to, rows }: { from: string; to: string; rows: DayRow[] }) {
-  const map = byDay(rows);
-  const maxAbs = Math.max(0, ...rows.map((x) => Math.abs(x.netUsd)));
-  return (
-    <div className="mt-3 flex flex-col gap-3">
-      {monthsOf(from, to).map((m) => (
-        <div key={m.key}>
-          <div className="mb-1 text-[11.5px] font-semibold tracking-[0.5px] text-muted-foreground">{m.label}</div>
-          <div className="grid grid-cols-7 gap-1" role="grid" aria-label={m.label}>
-            {m.weeks.flat().map((d, i) => {
-              const row = d ? map.get(d) : undefined;
-              const level = row ? heat(row.netUsd, maxAbs) : 0;
-              const up = row ? row.netUsd > 0 : false;
-              return (
-                <div
-                  key={i} role="gridcell"
-                  aria-label={d ? `${d}: ${row ? signedInr(usdToInr(row.netUsd)) : 'no trades'}` : undefined}
-                  className={cn(
-                    'grid aspect-square place-items-center rounded text-[11px] tabular-nums',
-                    !d && 'invisible',
-                    d && !row && 'bg-muted text-[var(--dim)]',
-                    row && level === 0 && 'bg-muted text-muted-foreground',
-                    row && up && level === 1 && 'bg-[color-mix(in_srgb,var(--up)_25%,transparent)] text-foreground',
-                    row && up && level === 2 && 'bg-[color-mix(in_srgb,var(--up)_50%,transparent)] text-foreground',
-                    row && up && level === 3 && 'bg-[var(--up)] text-[var(--bg)]',
-                    row && !up && level === 1 && 'bg-[color-mix(in_srgb,var(--down)_25%,transparent)] text-foreground',
-                    row && !up && level === 2 && 'bg-[color-mix(in_srgb,var(--down)_50%,transparent)] text-foreground',
-                    row && !up && level === 3 && 'bg-[var(--down)] text-[var(--bg)]',
-                  )}
-                >
-                  {d ? Number(d.slice(8)) : ''}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }

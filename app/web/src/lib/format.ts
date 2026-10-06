@@ -73,9 +73,10 @@ const USDINR = 85;
  */
 export function compactInr(n: number | null | undefined, dash = '—'): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return dash;
-  const abs = Math.abs(n);
+  // Rounded first, so ₹999.60 is "1K" and not "1000".
+  const abs = Math.abs(n) >= 10 ? Math.round(Math.abs(n)) : Math.abs(n);
   const short = (x: number) => (x >= 100 ? String(Math.round(x)) : x.toFixed(1).replace(/\.0$/, ''));
-  const body = abs >= 100_000 ? `${short(abs / 100_000)}L` : abs >= 1_000 ? `${short(abs / 1_000)}K` : abs >= 10 ? String(Math.round(abs)) : abs.toFixed(1).replace(/\.0$/, '');
+  const body = abs >= 100_000 ? `${short(abs / 100_000)}L` : abs >= 1_000 ? `${short(abs / 1_000)}K` : abs >= 10 ? String(abs) : abs.toFixed(1).replace(/\.0$/, '');
   return body === '0' ? '0' : `${signOf(n)}${body}`;
 }
 

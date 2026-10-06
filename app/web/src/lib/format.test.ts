@@ -188,7 +188,7 @@ describe('compactInr', () => {
     expect(compactInr(3.26)).toBe('+3.3');
     expect(compactInr(1_240)).toBe('+1.2K');
     expect(compactInr(-12_500)).toBe('−12.5K');
-    expect(compactInr(-999.6)).toBe('−1000');
+    expect(compactInr(-999.6)).toBe('−1K');
     expect(compactInr(125_000)).toBe('+1.3L');
     expect(compactInr(4_000)).toBe('+4K');
   });
