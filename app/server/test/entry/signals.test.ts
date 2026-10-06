@@ -282,3 +282,33 @@ test('clear data: a range must be from before to, not in the future; to past now
   assert.match((clearRangeOf({ from: now + 5, to: now + 10 }, now) as { error: string }).error, /future/);
   for (const bad of [{}, { from: '1', to: 2 }, { from: 1.5, to: 2 }, { from: -1, to: 2 }, null]) assert.ok('error' in (clearRangeOf(bad, now) as object));
 });
+
+test('[critical] the history by method: only the methods chosen -- in the rows, the total and the download alike; none chosen is every method', async () => {
+  // Last in the file, and read from its own moment on: the tests above keep their own rows and counts.
+  const at = T + 900_000;
+  const since = at * 1000;
+  await recordSignals([
+    read({ id: 'breakout', n: 1, name: 'Breakout', tf: '1h', triggerTime: at, state: 'TRADE', plan: PLAN }),
+    read({ id: 'bos', n: 6, name: 'BOS', tf: '1h', triggerTime: at + 1, state: 'TRADE', plan: PLAN }),
+    read({ id: 'momentum', n: 8, name: 'Momentum', tf: '1h', triggerTime: at + 2, state: 'WAIT' }),
+  ], (at + 3) * 1000);
+  const all = await signalPage({ since });
+  assert.deepEqual(all.signals.map((x) => x.method).sort(), ['bos', 'breakout', 'momentum']);
+  const one = await signalPage({ since, methods: ['bos'] });
+  assert.deepEqual([one.total, one.signals.map((x) => x.method)], [1, ['bos']]);
+  const two = await signalPage({ since, methods: ['breakout', 'momentum'] });
+  assert.deepEqual([two.total, two.signals.map((x) => x.method).sort()], [2, ['breakout', 'momentum']]);
+  // With the other filters, not instead of them.
+  assert.equal((await signalPage({ since, methods: ['breakout', 'momentum'], state: 'WAIT' })).total, 1);
+  assert.equal((await signalPage({ since, methods: [] })).total, 3, 'an empty list is no filter');
+  // The download is the same rows.
+  assert.deepEqual((await exportSignals({ since, methods: ['bos'] })).rows.map((x) => x.method), ['bos']);
+});
+
+test('the methods asked for in the address: only ids the desk has, each once, in its own order; none or all of them is no filter', async () => {
+  const { methodsOf } = await import('../../src/http/routes/entry.routes.js');
+  assert.deepEqual(methodsOf('bos,breakout,bos, nope ,'), ['breakout', 'bos']);
+  assert.equal(methodsOf(undefined), undefined);
+  assert.equal(methodsOf('nope'), undefined);
+  assert.equal(methodsOf(METHODS.map((m) => m.id).join(',')), undefined, 'every method is no filter');
+});

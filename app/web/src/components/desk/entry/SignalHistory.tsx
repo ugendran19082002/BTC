@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import type { EntryMode, EntrySignal, EntrySignalSummary, EntryTf } from '@/types/entry';
 import { SECS, atText, clockText, lag, useNow } from './clock';
 import { ClearHistoryDialog } from './ClearHistoryDialog';
+import { MethodFilter } from './MethodFilter';
 
 /**
  * Every signal the server kept (the journal, entry_signals), as a data table:
@@ -203,8 +204,14 @@ export function exitOf(s: EntrySignal): { price: string; why: 'TGT' | 'SL' | 'ti
   return { price: fmt(o.exitPrice), why, pts };
 }
 
-type Filter = { tab: Tab; mode: 'all' | EntryMode; tf: 'all' | EntryTf; today: boolean; size: (typeof PAGE_SIZES)[number]; sort: SignalSort; asc: boolean };
-const DEFAULT: Filter = { tab: 'all', mode: 'all', tf: 'all', today: true, size: 10, sort: 'time', asc: false };
+type Filter = {
+  tab: Tab; mode: 'all' | EntryMode; tf: 'all' | EntryTf; today: boolean; size: (typeof PAGE_SIZES)[number]; sort: SignalSort; asc: boolean;
+  /** The methods chosen, by id; none is every method. */
+  methods: string[];
+};
+const DEFAULT: Filter = { tab: 'all', mode: 'all', tf: 'all', today: true, size: 10, sort: 'time', asc: false, methods: [] };
+/** A method id as the server writes one: anything else saved in the browser is dropped, never sent. */
+const METHOD_ID = /^[a-z0-9-]{1,64}$/;
 
 /**
  * A filter saved in this browser, made safe: a timeframe, way, tab, size or
@@ -222,6 +229,7 @@ export function cleanFilter(saved: Partial<Filter> | null | undefined): Filter {
     size: (PAGE_SIZES as readonly number[]).includes(s.size) ? s.size : DEFAULT.size,
     sort: COLUMNS.some((c) => c.sort === s.sort) ? s.sort : DEFAULT.sort,
     asc: s.asc === true,
+    methods: Array.isArray(s.methods) ? [...new Set(s.methods.filter((m): m is string => typeof m === 'string' && METHOD_ID.test(m)))].slice(0, 200) : [],
   };
 }
 
@@ -233,10 +241,11 @@ export function SignalHistory() {
   const since = f.today ? startOfIstDay(Date.now()) : undefined;
   const query: SignalFilter = {
     ...TABS[f.tab].q, mode: f.mode === 'all' ? undefined : f.mode, tf: f.tf === 'all' ? undefined : f.tf, since,
+    methods: f.methods.length ? f.methods.join(',') : undefined,
     limit: f.size, offset: page * f.size, sort: f.sort, asc: f.asc || undefined,
   };
   const { data, loading, error, refresh } = usePoll(() => getEntrySignals(query), 5_000,
-    { deps: [f.tab, f.mode, f.tf, f.today, f.size, f.sort, f.asc, page] });
+    { deps: [f.tab, f.mode, f.tf, f.today, f.size, f.sort, f.asc, f.methods.join(','), page] });
   const rows = data?.signals ?? [];
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / f.size));
@@ -304,8 +313,11 @@ export function SignalHistory() {
             <button type="button" aria-pressed={!f.today} onClick={() => set({ today: false })} className={chip(!f.today)}>All days</button>
           </div>
         </Field>
-        {f.tab !== DEFAULT.tab || f.mode !== DEFAULT.mode || f.tf !== DEFAULT.tf || f.today !== DEFAULT.today ? (
-          <button type="button" onClick={() => set({ tab: DEFAULT.tab, mode: DEFAULT.mode, tf: DEFAULT.tf, today: DEFAULT.today })}
+        <Field label="Methods" grow>
+          <MethodFilter value={f.methods} onChange={(methods) => set({ methods })} />
+        </Field>
+        {f.tab !== DEFAULT.tab || f.mode !== DEFAULT.mode || f.tf !== DEFAULT.tf || f.today !== DEFAULT.today || f.methods.length > 0 ? (
+          <button type="button" onClick={() => set({ tab: DEFAULT.tab, mode: DEFAULT.mode, tf: DEFAULT.tf, today: DEFAULT.today, methods: [] })}
                   className="rounded-md px-2 py-1 font-semibold text-[var(--accent)] hover:bg-muted">
             Clear filters
           </button>

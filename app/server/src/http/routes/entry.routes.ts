@@ -146,6 +146,18 @@ export function registerEntryRoutes(app: FastifyInstance, notifier: () => { send
 }
 
 /** The history's filters from a query string: each checked against its own list, anything else dropped. */
+/**
+ * `methods=breakout,fvg-retest`: the methods the history is narrowed to. Only ids the desk has, each once and in
+ * the desk's own order -- so the same choice is the same cache key however it was typed -- and none at all (or
+ * every one of them) is no filter.
+ */
+export function methodsOf(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  const asked = new Set(raw.split(',').map((x) => x.trim()).filter(Boolean));
+  const known = METHODS.filter((m) => asked.has(m.id)).map((m) => m.id);
+  return known.length > 0 && known.length < METHODS.length ? known : undefined;
+}
+
 function signalQueryOf(query: unknown): SignalQuery {
   const q = (query ?? {}) as Record<string, string | undefined>;
   const num = (v?: string) => (v !== undefined && Number.isFinite(Number(v)) ? Number(v) : undefined);
@@ -156,6 +168,7 @@ function signalQueryOf(query: unknown): SignalQuery {
     tf: q.tf && (SINGLE_TFS as readonly string[]).includes(q.tf) ? q.tf : undefined,
     state: q.state === 'WAIT' || q.state === 'TRADE' ? q.state : undefined,
     dir: q.dir === '1' || q.dir === '-1' ? Number(q.dir) : undefined,
+    methods: methodsOf(q.methods),
     since: num(q.since),
     live: q.live === 'true',
     outcome: isOutcomeFilter(q.outcome) ? q.outcome : undefined,

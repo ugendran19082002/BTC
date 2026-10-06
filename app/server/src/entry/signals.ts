@@ -323,6 +323,8 @@ export type SignalQuery = {
   mode?: string; tf?: string; state?: string; since?: number;
   /** 1 BUY, -1 SELL. */
   dir?: number;
+  /** Only these methods, by id (`breakout`, `fvg-retest`, ...); absent or empty, every method. */
+  methods?: string[];
   /** Only TRADEs still in play: waiting at the zone or filled, not yet out (TP1, stop or time-out). */
   live?: boolean;
   /** Only TRADEs that ended one way in the paper log: TP1, the stop, the time-out, or expired (never filled). */
@@ -393,6 +395,8 @@ function signalFilter(q: SignalQuery): { where: string[]; args: Param[]; filter:
   if (q.tf) { args.push(q.tf); where.push(`s.tf = $${args.length}`); }
   if (q.state) { args.push(q.state); where.push(`s.state = $${args.length}`); }
   if (q.dir === 1 || q.dir === -1) { args.push(q.dir); where.push(`s.dir = $${args.length}`); }
+  // The methods chosen (6 Oct 2026): one argument, so the totals, the page and the download filter the same way.
+  if (q.methods?.length) { args.push(q.methods); where.push(`s.method = ANY($${args.length}::text[])`); }
   if (q.since) { args.push(q.since); where.push(`s.first_seen >= $${args.length}`); }
   // In play: waiting, filled, or a runner after TP1 still out for TP2/TP3.
   if (q.live) where.push(`(e.status IN ('open', 'filled') OR e.runner = 'running')`);

@@ -29,6 +29,8 @@ export const sendEntryAlertTest = () => post<{ ok: true }>('/api/entry/alerts/te
 export type SignalSort = 'time' | 'method' | 'way' | 'signal' | 'ltp' | 'entry' | 'sl' | 'tp1' | 'tp2' | 'tp3' | 'fill' | 'exit' | 'result' | 'score' | 'stood' | 'rr';
 export type SignalFilter = {
   mode?: EntryMode; tf?: EntryTf; state?: 'WAIT' | 'TRADE'; dir?: 1 | -1; since?: number;
+  /** Only these methods: their ids, comma-separated in the desk's order. Absent, every method. */
+  methods?: string;
   /** Only TRADEs still in play: waiting at the zone or filled, not yet out. */
   live?: boolean;
   /** Only TRADEs that ended one way: TGT1 hit, stopped, timed out, or expired (never filled). */
