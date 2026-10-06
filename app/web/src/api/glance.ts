@@ -19,7 +19,9 @@ export type Glance = {
     tape: { source: string; connected: boolean; lastAt: number | null };
     delta: { usedPct: number; rateLimited: number; failed: number };
     /** The passes over the open trades in the last five minutes: how many, how many over their second, the slowest. */
-    passes: { count: number; late: number; maxMs: number | null; tradesNow?: number };
+    passes: { count: number; late: number; maxMs: number | null; tradesNow?: number; slowestTrades?: number | null; slowestAt?: number | null };
+    /** The longest the server's thread was held in the last minute sampled. */
+    threadMaxMs?: number | null;
     errors: { open: number; lastAt: number | null };
     schedulerOn: boolean;
     mode: 'live' | 'paper';

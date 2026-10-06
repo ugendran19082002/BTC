@@ -71,7 +71,7 @@ test('one pass of five seconds or more warns: the stops were watched that much l
   assert.equal(j.health, 'warn');
   // What the live desk showed (6 Oct 2026, evening), said exactly: what waited, and what did not -- with the slow
   // pass's own count, not the latest pass's.
-  assert.match(j.issues[0]!.text, /^One pass over the open trades \(19 in it\) took 9 s, 120 s ago/);
+  assert.match(j.issues[0]!.text, /^One pass over the open trades \(19 in it\) took 9 s, 2 min ago/);
   assert.match(j.issues[0]!.text, /Perp SL\/TGT have their own fast watch/);
   assert.doesNotMatch(j.issues[0]!.text, /not the number of trades/);
 });

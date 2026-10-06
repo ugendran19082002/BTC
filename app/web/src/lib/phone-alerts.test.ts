@@ -50,4 +50,19 @@ describe('phoneAlerts', () => {
     const glance = { issues: [{ level: 'down', text: 'Option prices stopped 90 s ago.' }] } as unknown as Glance;
     expect(phoneAlerts(status([]), glance)).toEqual([{ level: 'red', title: 'Option prices stopped 90 s ago.' }]);
   });
+
+  it('[critical] two trades on one contract are told apart by strategy, and an alert said twice is said once (the live phone, 6 Oct 2026)', () => {
+    const wide = { markPrice: 40, bid: 35, ask: 45, unrealisedPnl: 0, decayed: 0, liquidationPrice: 400 };
+    const plan = trade().plan!;
+    const twins = phoneAlerts(status([trade({ tradeId: 'a', live: wide }), trade({ tradeId: 'b', live: wide })]), null).filter((x) => x.title.startsWith('Wide spread'));
+    expect(twins).toHaveLength(1);
+    const apart = phoneAlerts(status([
+      trade({ tradeId: 'a', live: wide, plan: { ...plan, strategyName: 'Evening sell' } }),
+      trade({ tradeId: 'b', live: wide, plan: { ...plan, strategyName: 'Breakout PE' } }),
+    ]), null).filter((x) => x.title.startsWith('Wide spread'));
+    expect(apart.map((x) => x.detail)).toEqual([
+      '84,600 PE SELL · Evening sell — closing costs more than the mark says',
+      '84,600 PE SELL · Breakout PE — closing costs more than the mark says',
+    ]);
+  });
 });

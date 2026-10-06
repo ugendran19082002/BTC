@@ -33,7 +33,9 @@ export function phoneAlerts(status: TradeStatus | null, glance: Glance | null, p
   if (status) {
     for (const t of status.open) {
       const r = positionRisk(t, { alarms: status.alarms, perpMark });
-      const name = `${contractLabel(t.symbol)} ${r.long ? 'BUY' : 'SELL'}${t.account ? ` · ${t.account.name}` : ''}`;
+      // Two strategies may hold one contract (decision 0011): which trade it is, so two alerts are not one said twice.
+      const by = t.plan?.strategyName ?? (t.plan?.origin === 'manual' ? 'by hand' : null);
+      const name = `${contractLabel(t.symbol)} ${r.long ? 'BUY' : 'SELL'}${by ? ` · ${by}` : ''}${t.account ? ` · ${t.account.name}` : ''}`;
       for (const p of r.problems) out.push({ level: 'red', title: p, detail: name, tradeId: t.tradeId });
       if (r.stop && r.stop.pct !== null && Number.isFinite(r.stop.points)) {
         if (r.stop.points <= 0) out.push({ level: 'red', title: 'Price is through the stop', detail: name, tradeId: t.tradeId });
@@ -61,5 +63,8 @@ export function phoneAlerts(status: TradeStatus | null, glance: Glance | null, p
       if (used >= MARGIN_WARN) out.push({ level: used >= 0.9 ? 'red' : 'amber', title: `${pct(used, 0)} of the wallet in margin` });
     }
   }
-  return out.sort((a, b) => RANK[a.level] - RANK[b.level]);
+  // The same thing said of two trades that read alike (one contract, one strategy, one account): said once.
+  const seen = new Set<string>();
+  const once = out.filter((a) => { const k = `${a.level}|${a.title}|${a.detail ?? ''}`; if (seen.has(k)) return false; seen.add(k); return true; });
+  return once.sort((a, b) => RANK[a.level] - RANK[b.level]);
 }
