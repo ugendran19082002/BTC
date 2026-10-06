@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-404 files listed, 199 test files counted below, images and lockfiles left out.
+406 files listed, 199 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -614,6 +614,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [entry-concepts.md](../research/entry-concepts.md) | Entry concepts — the owner's 130, deduplicated |
 | [findings.md](../research/findings.md) | Research findings |
 | [ideas.md](../research/ideas.md) | Strategy ideas |
+| [signal-history-by-15m-slot.md](../research/signal-history-by-15m-slot.md) | Signal history by 15-minute slot — target hits, stop hits and win rate, by method |
+| [signal-history-by-method-and-slot.md](../research/signal-history-by-method-and-slot.md) | Signal history: each method in each 15-minute slot |
 
 ## `harvester/`
 

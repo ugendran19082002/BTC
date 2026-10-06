@@ -49,6 +49,9 @@ Regenerate the generated pages with `npm run docs` in `app/server`.
 - [research/ideas.md](research/ideas.md) -- candidate strategy families, not yet tested.
 - [research/btc-15m-movement-2y.md](research/btc-15m-movement-2y.md) -- how much BTC moves in each 15 minutes of
   the session (5:35 PM to 5:29 PM IST), in % and points, over two years.
+- [research/signal-history-by-15m-slot.md](research/signal-history-by-15m-slot.md) -- the signal history by the same
+  15-minute slots and by method: target hits, stop hits, win rate, net points. Its method-by-slot detail is in
+  [research/signal-history-by-method-and-slot.md](research/signal-history-by-method-and-slot.md).
 
 ## Open and past
 
