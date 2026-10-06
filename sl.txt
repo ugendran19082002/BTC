@@ -1,0 +1,2641 @@
+
+
+86,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹6.10
+−$0.072
+06 Oct, 16:22
+#36 Trendline break & retest · SELL · 5m
+perp entry 85,965 → exit 86,203 · SL 86,195 · TGT 85,618
+sold 6, bought back at 24.00
+Entry 13.60
+Exit 24.00
+Amt ₹6.94($0.08)
+BTC perp at 86,198.00 reached the signal's stop 86,194.51
+
+86,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹7.26
+−$0.085
+06 Oct, 15:42
+#36 Trendline break & retest · SELL · 5m
+perp entry 85,921 → exit 86,096 · SL 86,123 · TGT 85,618
+sold 6, bought back at 24.90
+Entry 12.20
+Exit 24.90
+Amt ₹6.22($0.07)
+BTC perp at 86,125.00 reached the signal's stop 86,122.91
+
+86,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹20.74
+−$0.244
+06 Oct, 15:21
+#63 Initial balance failed break · SELL · 30m
+perp entry 85,761 → exit 86,157 · SL 86,151 · TGT 85,505
+sold 7, bought back at 39.00
+Entry 6.00
+Exit 39.00
+Amt ₹3.57($0.04)
+BTC perp at 86,161.00 reached the signal's stop 86,150.56
+
+86,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹18.84
+−$0.222
+06 Oct, 15:21
+#36 Trendline break & retest · SELL · 5m
+perp entry 85,770 → exit 86,161 · SL 86,115 · TGT 85,246
+sold 6, bought back at 41.00
+Entry 6.00
+Exit 41.00
+Amt ₹3.06($0.04)
+BTC perp at 86,117.00 reached the signal's stop 86,115.19
+
+86,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹46.17
+−$0.543
+06 Oct, 13:37
+#26 Equal H/L sweep & reclaim · SELL · 1h
+perp entry 85,267 → exit 85,858 · SL 85,808 · TGT 84,489
+sold 7, bought back at 104.90
+Entry 33.00
+Exit 104.90
+Amt ₹19.64($0.23)
+BTC perp at 85,808.50 reached the signal's stop 85,808.38
+
+86,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹32.41
+−$0.381
+06 Oct, 13:37
+#9 Pullback · SELL · 30m
+perp entry 85,209 → exit 85,800 · SL 85,780 · TGT 84,489
+sold 7, bought back at 87.30
+Entry 38.00
+Exit 87.30
+Amt ₹22.61($0.27)
+BTC perp at 85,780.00 reached the signal's stop 85,779.85
+
+86,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹14.06
+−$0.165
+06 Oct, 13:16
+#1 Breakout · SELL · 15m
+perp entry 85,098 → exit 85,529 · SL 85,517 · TGT 84,677
+sold 6, bought back at 51.33
+Entry 27.00
+Exit 51.33
+Amt ₹13.77($0.16)
+BTC perp at 85,525.00 reached the signal's stop 85,516.63
+
+86,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹11.89
+−$0.140
+06 Oct, 13:16
+#47 IV expansion breakout · SELL · 15m
+perp entry 85,112 → exit 85,525 · SL 85,517 · TGT 84,677
+sold 6, bought back at 50.00
+Entry 30.00
+Exit 50.00
+Amt ₹15.30($0.18)
+BTC perp at 85,525.50 reached the signal's stop 85,516.63
+
+86,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+All time frame
+−₹10.38
+−$0.122
+06 Oct, 13:16
+#57 Trade velocity / aggression spike · SELL · 5m + TF chain
+perp entry 85,110 → exit 85,526 · SL 85,500 · TGT 84,489
+sold 6, bought back at 49.00
+Entry 32.00
+Exit 49.00
+Amt ₹16.32($0.19)
+BTC perp at 85,500.00 reached the signal's stop 85,499.54
+
+86,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹6.49
+−$0.076
+06 Oct, 12:45
+#32 Volatility regime transition · SELL · 5m
+perp entry 85,100 → exit 85,350 · SL 85,344 · TGT 84,834
+sold 6, bought back at 38.00
+Entry 28.00
+Exit 38.00
+Amt ₹14.28($0.17)
+BTC perp at 85,347.00 reached the signal's stop 85,344.04
+
+84,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹17.51
+−$0.206
+06 Oct, 11:41
+#10 VWAP / mean reversion · BUY · 1h
+perp entry 85,588 → exit 85,176 · SL 85,193 · TGT 85,753
+sold 7, bought back at 43.00
+Entry 16.00
+Exit 43.00
+Amt ₹9.52($0.11)
+BTC perp at 85,191.00 reached the signal's stop 85,192.63
+
+84,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹3.45
+−$0.041
+06 Oct, 11:23
+#39 NR7 / inside-bar break · BUY · 30m
+perp entry 85,637 → exit 85,480 · SL 85,463 · TGT 86,000
+sold 7, bought back at 18.00
+Entry 13.50
+Exit 18.00
+Amt ₹8.03($0.09)
+BTC perp at 85,461.50 reached the signal's stop 85,462.64
+
+84,600 PE
+Done
+LOSS
+perp SL hit
+SELL
+All time frame
+−₹1.99
+−$0.023
+06 Oct, 09:00
+#10 VWAP / mean reversion · BUY · 5m + TF chain
+perp entry 85,517 → exit 85,373 · SL 85,380 · TGT 85,743
+sold 6, bought back at 24.00
+Entry 22.00
+Exit 24.00
+Amt ₹11.22($0.13)
+BTC perp at 85,379.00 reached the signal's stop 85,379.61
+
+86,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹26.41
+−$0.311
+06 Oct, 07:53
+#72 IV vs realised volatility · SELL · 15m
+perp entry 85,439 → exit 85,704 · SL 85,670 · TGT 85,000
+sold 6, bought back at 93.00
+Entry 47.00
+Exit 93.00
+Amt ₹23.97($0.28)
+BTC perp at 85,692.00 reached the signal's stop 85,669.54
+
+86,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹23.22
+−$0.273
+06 Oct, 07:53
+#1 Breakout · SELL · 15m
+perp entry 85,439 → exit 85,692 · SL 85,670 · TGT 84,938
+sold 6, bought back at 87.00
+Entry 47.00
+Exit 87.00
+Amt ₹23.97($0.28)
+BTC perp at 85,670.00 reached the signal's stop 85,669.54
+
+86,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹14.15
+−$0.166
+06 Oct, 07:53
+#21 Value-area break · SELL · 5m
+perp entry 85,467 → exit 85,606 · SL 85,596 · TGT 85,292
+sold 6, bought back at 69.00
+Entry 46.00
+Exit 69.00
+Amt ₹23.46($0.28)
+BTC perp at 85,605.50 reached the signal's stop 85,596.44
+
+86,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+All time frame
+−₹16.77
+−$0.197
+06 Oct, 07:53
+#21 Value-area break · SELL · 5m + TF chain
+perp entry 85,466 → exit 85,606 · SL 85,596 · TGT 85,292
+sold 6, bought back at 73.00
+Entry 45.00
+Exit 73.00
+Amt ₹22.95($0.27)
+BTC perp at 85,599.50 reached the signal's stop 85,596.44
+
+84,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹2.28
+−$0.027
+06 Oct, 07:37
+#39 NR7 / inside-bar break · BUY · 1h
+perp entry 85,954 → exit 85,497 · SL 85,505 · TGT 86,684
+sold 6, bought back at 31.00
+Entry 29.00
+Exit 31.00
+Amt ₹14.79($0.17)
+BTC perp at 85,504.00 reached the signal's stop 85,504.85
+
+85,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹6.01
+−$0.071
+06 Oct, 07:11
+#39 NR7 / inside-bar break · BUY · 30m
+perp entry 85,902 → exit 85,660 · SL 85,672 · TGT 86,336
+sold 7, bought back at 41.00
+Entry 34.00
+Exit 41.00
+Amt ₹20.23($0.24)
+BTC perp at 85,670.00 reached the signal's stop 85,671.55
+
+85,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹3.11
+−$0.037
+06 Oct, 07:04
+#15 Opening-range breakout (Asia · London · New York) · BUY · 15m
+perp entry 85,979 → exit 85,752 · SL 85,785 · TGT 86,389
+sold 6, bought back at 39.00
+Entry 36.00
+Exit 39.00
+Amt ₹18.36($0.22)
+BTC perp at 85,766.50 reached the signal's stop 85,784.84
+
+85,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹4.66
+−$0.055
+06 Oct, 07:04
+#36 Trendline break & retest · BUY · 5m
+perp entry 85,895 → exit 85,767 · SL 85,782 · TGT 86,099
+sold 6, bought back at 41.00
+Entry 35.00
+Exit 41.00
+Amt ₹17.85($0.21)
+BTC perp at 85,771.00 reached the signal's stop 85,782.40
+
+85,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹5.15
+−$0.061
+06 Oct, 07:04
+#36 Trendline break & retest · BUY · 5m
+perp entry 85,902 → exit 85,771 · SL 85,800 · TGT 86,099
+sold 6, bought back at 41.00
+Entry 34.00
+Exit 41.00
+Amt ₹17.34($0.20)
+BTC perp at 85,780.00 reached the signal's stop 85,799.86
+
+85,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+All time frame
+−₹5.60
+−$0.066
+06 Oct, 07:04
+#62 Initial balance break · BUY · 5m + TF chain
+perp entry 86,027 → exit 85,780 · SL 85,800 · TGT 86,405
+sold 6, bought back at 40.00
+Entry 32.00
+Exit 40.00
+Amt ₹16.32($0.19)
+BTC perp at 85,800.00 reached the signal's stop 85,800.15
+
+85,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹0.99
+−$0.012
+06 Oct, 06:48
+#72 IV vs realised volatility · BUY · 15m
+perp entry 85,989 → exit 85,832 · SL 85,838 · TGT 86,309
+sold 6, bought back at 35.00
+Entry 36.00
+Exit 35.00
+Amt ₹18.36($0.22)
+BTC perp at 85,832.00 reached the signal's stop 85,838.34
+
+85,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹3.11
+−$0.037
+06 Oct, 06:48
+#47 IV expansion breakout · BUY · 15m
+perp entry 85,985 → exit 85,832 · SL 85,838 · TGT 86,309
+sold 6, bought back at 39.00
+Entry 36.00
+Exit 39.00
+Amt ₹18.36($0.22)
+BTC perp at 85,835.00 reached the signal's stop 85,838.34
+
+87,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹20.23
+−$0.238
+06 Oct, 06:31
+#39 NR7 / inside-bar break · SELL · 1h
+perp entry 85,727 → exit 86,080 · SL 86,080 · TGT 85,000
+sold 6, bought back at 74.00
+Entry 39.00
+Exit 74.00
+Amt ₹19.89($0.23)
+BTC perp at 86,080.00 reached the signal's stop 86,079.52
+
+87,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹3.68
+−$0.043
+06 Oct, 06:30
+#36 Trendline break & retest · SELL · 5m
+perp entry 85,828 → exit 85,958 · SL 85,948 · TGT 85,654
+sold 6, bought back at 41.00
+Entry 37.00
+Exit 41.00
+Amt ₹18.87($0.22)
+BTC perp at 85,948.50 reached the signal's stop 85,948.08
+
+84,600 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹8.24
+−$0.097
+06 Oct, 05:17
+#72 IV vs realised volatility · BUY · 15m
+perp entry 85,862 → exit 85,720 · SL 85,712 · TGT 86,106
+sold 6, bought back at 33.00
+Entry 19.00
+Exit 33.00
+Amt ₹9.69($0.11)
+BTC perp at 85,710.50 reached the signal's stop 85,711.73
+
+84,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹4.41
+−$0.052
+06 Oct, 05:15
+#72 IV vs realised volatility · BUY · 15m
+perp entry 85,954 → exit 85,744 · SL 85,753 · TGT 86,120
+sold 6, bought back at 35.00
+Entry 29.00
+Exit 35.00
+Amt ₹14.79($0.17)
+BTC perp at 85,750.00 reached the signal's stop 85,753.28
+
+87,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹6.38
+−$0.075
+06 Oct, 04:34
+#20 Anchored VWAP (week) · SELL · 5m
+perp entry 85,905 → exit 86,007 · SL 86,004 · TGT 85,737
+sold 6, bought back at 47.00
+Entry 38.00
+Exit 47.00
+Amt ₹19.38($0.23)
+BTC perp at 86,008.50 reached the signal's stop 86,004.43
+
+87,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹14.36
+−$0.169
+06 Oct, 04:34
+#20 Anchored VWAP (week) · SELL · 5m
+perp entry 85,842 → exit 86,008 · SL 85,994 · TGT 85,604
+sold 6, bought back at 74.00
+Entry 51.00
+Exit 74.00
+Amt ₹26.01($0.31)
+BTC perp at 85,995.00 reached the signal's stop 85,993.97
+
+87,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time
+−₹7.74
+−$0.091
+06 Oct, 01:50
+#36 Trendline break & retest · SELL · 5m
+perp entry 85,664 → exit 85,765 · SL 85,762 · TGT 85,508
+sold 6, bought back at 56.00
+Entry 45.00
+Exit 56.00
+Amt ₹22.95($0.27)
+BTC perp at 85,767.50 reached the signal's stop 85,761.65
+
+87,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹5.57
+−$0.066
+06 Oct, 00:43
+#1 Breakout · SELL · 30m
+perp entry 85,250 → exit 85,636 · SL 85,636 · TGT 84,677
+sold 6, bought back at 51.00
+Entry 44.00
+Exit 51.00
+Amt ₹22.44($0.26)
+BTC perp at 85,636.00 reached the signal's stop 85,635.95
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹40.26
+−$0.474
+05 Oct, 20:04
+#54 Liquidity replenishment · BUY · 1h
+perp entry 86,345 → exit 85,581 · SL 85,608 · TGT 87,224
+sold 6, bought back at 120.00
+Entry 48.00
+Exit 120.00
+Amt ₹24.48($0.29)
+BTC perp at 85,581.00 reached the signal's stop 85,607.75
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹23.93
+−$0.282
+05 Oct, 20:03
+#52 Order-book imbalance breakout · BUY · 15m
+perp entry 86,341 → exit 85,660 · SL 85,770 · TGT 87,224
+sold 5, bought back at 99.00
+Entry 48.80
+Exit 99.00
+Amt ₹20.74($0.24)
+BTC perp at 85,660.00 reached the signal's stop 85,770.09
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹35.62
+−$0.419
+05 Oct, 20:03
+#13 Compression break · BUY · 15m
+perp entry 86,579 → exit 85,660 · SL 85,705 · TGT 87,944
+sold 5, bought back at 121.00
+Entry 44.00
+Exit 121.00
+Amt ₹18.70($0.22)
+BTC perp at 85,680.00 reached the signal's stop 85,705.38
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹30.21
+−$0.355
+05 Oct, 20:03
+#63 Initial balance failed break · BUY · 30m
+perp entry 86,150 → exit 85,660 · SL 85,687 · TGT 86,423
+sold 6, bought back at 102.00
+Entry 49.00
+Exit 102.00
+Amt ₹24.99($0.29)
+BTC perp at 85,685.50 reached the signal's stop 85,686.53
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹19.95
+−$0.235
+05 Oct, 20:03
+#36 Trendline break & retest · BUY · 30m
+perp entry 86,330 → exit 85,661 · SL 85,689 · TGT 87,224
+sold 6, bought back at 79.00
+Entry 45.00
+Exit 79.00
+Amt ₹22.95($0.27)
+BTC perp at 85,687.00 reached the signal's stop 85,689.29
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹24.84
+−$0.292
+05 Oct, 20:03
+#1 Breakout · BUY · 15m
+perp entry 86,364 → exit 85,663 · SL 85,770 · TGT 87,224
+sold 5, bought back at 104.00
+Entry 52.00
+Exit 104.00
+Amt ₹22.10($0.26)
+BTC perp at 85,700.50 reached the signal's stop 85,770.09
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹37.83
+−$0.445
+05 Oct, 20:03
+#8 Momentum · BUY · 15m
+perp entry 86,579 → exit 85,680 · SL 85,766 · TGT 87,854
+sold 5, bought back at 126.00
+Entry 44.00
+Exit 126.00
+Amt ₹18.70($0.22)
+BTC perp at 85,765.00 reached the signal's stop 85,765.88
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹19.35
+−$0.228
+05 Oct, 20:03
+#29 OI-confirmed breakout · BUY · 15m
+perp entry 86,361 → exit 85,779 · SL 85,770 · TGT 87,224
+sold 5, bought back at 87.00
+Entry 47.00
+Exit 87.00
+Amt ₹19.98($0.24)
+BTC perp at 85,770.00 reached the signal's stop 85,770.09
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹13.97
+−$0.164
+05 Oct, 20:03
+#76 Volume z-score spike · BUY · 15m
+perp entry 86,325 → exit 85,779 · SL 85,770 · TGT 87,224
+sold 5, bought back at 73.00
+Entry 45.00
+Exit 73.00
+Amt ₹19.13($0.23)
+BTC perp at 85,770.00 reached the signal's stop 85,770.09
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹15.38
+−$0.181
+05 Oct, 20:01
+#15 Opening-range breakout (Asia · London · New York) · BUY · 15m
+perp entry 86,580 → exit 86,034 · SL 86,046 · TGT 87,224
+sold 5, bought back at 76.00
+Entry 44.80
+Exit 76.00
+Amt ₹19.04($0.22)
+BTC perp at 86,042.50 reached the signal's stop 86,046.38
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹14.82
+−$0.174
+05 Oct, 20:00
+#1 Breakout · BUY · 15m
+perp entry 86,569 → exit 86,099 · SL 86,144 · TGT 87,224
+sold 5, bought back at 74.00
+Entry 44.00
+Exit 74.00
+Amt ₹18.70($0.22)
+BTC perp at 86,080.00 reached the signal's stop 86,144.38
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹13.97
+−$0.164
+05 Oct, 20:00
+#76 Volume z-score spike · BUY · 15m
+perp entry 86,578 → exit 86,080 · SL 86,144 · TGT 87,224
+sold 5, bought back at 73.00
+Entry 45.00
+Exit 73.00
+Amt ₹19.13($0.23)
+BTC perp at 86,132.50 reached the signal's stop 86,144.38
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹11.76
+−$0.138
+05 Oct, 20:00
+#37 Channel breakout · BUY · 15m
+perp entry 86,579 → exit 86,133 · SL 86,144 · TGT 87,224
+sold 5, bought back at 68.00
+Entry 45.00
+Exit 68.00
+Amt ₹19.13($0.23)
+BTC perp at 86,144.00 reached the signal's stop 86,144.38
+
+88,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+4h time
+−₹18.48
+−$0.217
+05 Oct, 19:38
+#55 Pulled wall (spoof / pull) · SELL · 4h
+perp entry 86,170 → exit 86,641 · SL 86,645 · TGT 85,367
+sold 6, bought back at 87.00
+Entry 56.70
+Exit 87.00
+Amt ₹28.92($0.34)
+BTC perp at 86,645.00 reached the signal's stop 86,644.85
+
+88,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹14.47
+−$0.170
+05 Oct, 19:27
+#54 Liquidity replenishment · SELL · 1h
+perp entry 85,972 → exit 86,428 · SL 86,421 · TGT 85,047
+sold 6, bought back at 65.00
+Entry 41.00
+Exit 65.00
+Amt ₹20.91($0.25)
+BTC perp at 86,423.00 reached the signal's stop 86,421.19
+
+88,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹14.74
+−$0.173
+05 Oct, 19:17
+#19 VWAP reclaim / loss · SELL · 1h
+perp entry 85,881 → exit 86,317 · SL 86,322 · TGT 85,367
+sold 6, bought back at 60.90
+Entry 36.00
+Exit 60.90
+Amt ₹18.36($0.22)
+BTC perp at 86,324.50 reached the signal's stop 86,322.09
+
+88,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹14.26
+−$0.168
+05 Oct, 19:17
+#12 Options / derivatives · SELL · 1h
+perp entry 85,881 → exit 86,287 · SL 86,293 · TGT 85,367
+sold 6, bought back at 60.00
+Entry 36.00
+Exit 60.00
+Amt ₹18.36($0.22)
+BTC perp at 86,294.50 reached the signal's stop 86,293.09
+
+88,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹9.03
+−$0.106
+05 Oct, 19:17
+#71 Call / put OI divergence · SELL · 15m
+perp entry 86,019 → exit 86,279 · SL 86,279 · TGT 85,594
+sold 5, bought back at 60.00
+Entry 43.00
+Exit 60.00
+Amt ₹18.27($0.21)
+BTC perp at 86,279.00 reached the signal's stop 86,278.90
+
+85,600 PE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹7.57
+−$0.089
+05 Oct, 14:47
+#8 Momentum · BUY · 5m
+perp entry 86,266 → exit 85,735 · SL 85,747 · TGT 86,691
+sold 3, bought back at 69.00
+Entry 44.00
+Exit 69.00
+Amt ₹11.22($0.13)
+BTC perp at 85,742.50 reached the signal's stop 85,746.92
+
+86,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹24.48
+−$0.288
+05 Oct, 12:23
+#52 Order-book imbalance breakout · SELL · 30m
+perp entry 85,726 → exit 86,208 · SL 86,184 · TGT 85,132
+sold 6, bought back at 82.00
+Entry 39.00
+Exit 82.00
+Amt ₹19.89($0.23)
+BTC perp at 86,185.00 reached the signal's stop 86,183.70
+
+86,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹9.76
+−$0.115
+05 Oct, 12:17
+#37 Channel breakout · SELL · 15m
+perp entry 85,745 → exit 86,076 · SL 85,991 · TGT 85,354
+sold 5, bought back at 69.00
+Entry 51.00
+Exit 69.00
+Amt ₹21.68($0.26)
+BTC perp at 86,072.50 reached the signal's stop 85,990.79
+
+86,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹29.57
+−$0.348
+05 Oct, 12:17
+#71 Call / put OI divergence · SELL · 15m
+perp entry 85,783 → exit 86,071 · SL 86,072 · TGT 85,367
+sold 5, bought back at 111.00
+Entry 48.00
+Exit 111.00
+Amt ₹20.40($0.24)
+BTC perp at 86,075.00 reached the signal's stop 86,071.82
+
+86,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹20.40
+−$0.240
+05 Oct, 12:17
+#29 OI-confirmed breakout · SELL · 15m
+perp entry 85,725 → exit 86,073 · SL 85,991 · TGT 85,354
+sold 5, bought back at 82.00
+Entry 39.00
+Exit 82.00
+Amt ₹16.57($0.20)
+BTC perp at 85,997.50 reached the signal's stop 85,990.79
+
+86,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹4.84
+−$0.057
+05 Oct, 11:31
+#37 Channel breakout · SELL · 15m
+perp entry 85,594 → exit 85,816 · SL 85,814 · TGT 85,271
+sold 5, bought back at 45.00
+Entry 37.00
+Exit 45.00
+Amt ₹15.72($0.18)
+BTC perp at 85,822.00 reached the signal's stop 85,813.50
+
+86,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹15.09
+−$0.178
+05 Oct, 11:31
+#52 Order-book imbalance breakout · SELL · 30m
+perp entry 85,520 → exit 85,819 · SL 85,831 · TGT 85,132
+sold 6, bought back at 68.00
+Entry 43.00
+Exit 68.00
+Amt ₹21.93($0.26)
+BTC perp at 85,833.00 reached the signal's stop 85,830.60
+
+86,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹5.28
+−$0.062
+05 Oct, 11:31
+#29 OI-confirmed breakout · SELL · 15m
+perp entry 85,585 → exit 85,822 · SL 85,814 · TGT 85,271
+sold 5, bought back at 46.00
+Entry 37.00
+Exit 46.00
+Amt ₹15.72($0.18)
+BTC perp at 85,818.50 reached the signal's stop 85,813.50
+
+86,800 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹4.91
+−$0.058
+05 Oct, 11:31
+#52 Order-book imbalance breakout · SELL · 15m
+perp entry 85,613 → exit 85,819 · SL 85,814 · TGT 85,271
+sold 5, bought back at 47.00
+Entry 39.00
+Exit 47.00
+Amt ₹16.57($0.20)
+BTC perp at 85,816.00 reached the signal's stop 85,813.50
+
+86,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹9.00
+−$0.106
+05 Oct, 11:14
+#2 Breakout + retest · SELL · 15m
+perp entry 85,549 → exit 85,718 · SL 85,718 · TGT 85,354
+sold 5, bought back at 59.00
+Entry 42.00
+Exit 59.00
+Amt ₹17.85($0.21)
+BTC perp at 85,718.00 reached the signal's stop 85,717.59
+
+85,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+4h time
+−₹18.80
+−$0.221
+05 Oct, 09:48
+#55 Pulled wall (spoof / pull) · BUY · 4h
+perp entry 86,002 → exit 85,791 · SL 85,807 · TGT 86,414
+sold 5, bought back at 83.00
+Entry 44.00
+Exit 83.00
+Amt ₹18.70($0.22)
+BTC perp at 85,806.00 reached the signal's stop 85,807.06
+
+85,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹4.97
+−$0.058
+05 Oct, 09:27
+#5 Order-block retest · BUY · 5m
+perp entry 86,254 → exit 86,109 · SL 86,136 · TGT 86,430
+sold 3, bought back at 67.50
+Entry 53.00
+Exit 67.50
+Amt ₹13.52($0.16)
+BTC perp at 86,135.00 reached the signal's stop 86,135.64
+
+85,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹2.71
+−$0.032
+05 Oct, 07:21
+#75 Volatility z-score spike · BUY · 15m
+perp entry 86,865 → exit 86,575 · SL 86,584 · TGT 87,257
+sold 5, bought back at 54.00
+Entry 52.00
+Exit 54.00
+Amt ₹22.10($0.26)
+BTC perp at 86,574.50 reached the signal's stop 86,584.11
+
+85,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹2.71
+−$0.032
+05 Oct, 07:21
+#1 Breakout · BUY · 15m
+perp entry 86,865 → exit 86,575 · SL 86,584 · TGT 87,257
+sold 5, bought back at 54.00
+Entry 52.00
+Exit 54.00
+Amt ₹22.10($0.26)
+BTC perp at 86,583.50 reached the signal's stop 86,584.11
+
+88,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹23.26
+−$0.274
+05 Oct, 06:52
+#40 Dislocation reversion · SELL · 30m
+perp entry 86,250 → exit 86,818 · SL 86,830 · TGT 85,132
+sold 6, bought back at 88.00
+Entry 48.00
+Exit 88.00
+Amt ₹24.48($0.29)
+BTC perp at 86,842.50 reached the signal's stop 86,830.05
+
+88,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹24.33
+−$0.286
+05 Oct, 06:52
+#72 IV vs realised volatility · SELL · 30m
+perp entry 86,251 → exit 86,842 · SL 86,830 · TGT 85,132
+sold 6, bought back at 90.00
+Entry 48.00
+Exit 90.00
+Amt ₹24.48($0.29)
+BTC perp at 86,832.00 reached the signal's stop 86,830.05
+
+88,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹4.46
+−$0.053
+05 Oct, 06:10
+#15 Opening-range breakout (Asia · London · New York) · SELL · 5m
+perp entry 86,200 → exit 86,389 · SL 86,386 · TGT 85,971
+sold 3, bought back at 61.00
+Entry 48.00
+Exit 61.00
+Amt ₹12.24($0.14)
+BTC perp at 86,389.00 reached the signal's stop 86,386.44
+
+84,400 PE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹3.35
+−$0.039
+05 Oct, 03:46
+#1 Breakout · BUY · 15m
+perp entry 85,961 → exit 86,611 · SL 85,716 · TGT 86,411
+sold 5, bought back at 49.00
+Entry 45.00
+Exit 49.00
+Amt ₹19.13($0.23)
+BTC perp at 86,532.50 reached the signal's target 86,410.62
+
+84,200 PE
+Done
+LOSS
+perp TGT hit
+SELL
+30m time
+−₹2.96
+−$0.035
+05 Oct, 03:46
+#47 IV expansion breakout · BUY · 30m
+perp entry 85,770 → exit 86,600 · SL 85,363 · TGT 86,418
+sold 6, bought back at 47.00
+Entry 45.00
+Exit 47.00
+Amt ₹22.95($0.27)
+BTC perp at 86,532.50 reached the signal's target 86,417.66
+
+83,800 PE
+Done
+LOSS
+perp TGT hit
+SELL
+1h time
+−₹0.89
+−$0.010
+05 Oct, 03:46
+#52 Order-book imbalance breakout · BUY · 1h
+perp entry 85,791 → exit 86,590 · SL 85,301 · TGT 86,511
+sold 5, bought back at 37.00
+Entry 38.00
+Exit 37.00
+Amt ₹16.15($0.19)
+BTC perp at 86,533.00 reached the signal's target 86,511.14
+
+84,400 PE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹0.43
+−$0.005
+05 Oct, 03:36
+#47 IV expansion breakout · BUY · 15m
+perp entry 85,678 → exit 86,217 · SL 85,376 · TGT 86,240
+sold 5, bought back at 47.00
+Entry 50.00
+Exit 47.00
+Amt ₹21.25($0.25)
+BTC perp at 86,244.00 reached the signal's target 86,240.25
+
+84,400 PE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹0.02
+−$0.001
+05 Oct, 03:36
+#52 Order-book imbalance breakout · BUY · 15m
+perp entry 85,678 → exit 86,224 · SL 85,376 · TGT 86,240
+sold 5, bought back at 47.00
+Entry 51.00
+Exit 47.00
+Amt ₹21.68($0.26)
+BTC perp at 86,242.00 reached the signal's target 86,240.25
+
+84,400 PE
+Done
+LOSS
+perp TGT hit
+SELL
+5m time frame
+−₹1.01
+−$0.012
+05 Oct, 03:32
+#8 Momentum · BUY · 5m
+perp entry 85,795 → exit 86,155 · SL 85,544 · TGT 86,144
+sold 3, bought back at 48.00
+Entry 48.00
+Exit 48.00
+Amt ₹12.24($0.14)
+BTC perp at 86,149.00 reached the signal's target 86,144.02
+
+87,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+4h time
+−₹8.34
+−$0.098
+05 Oct, 02:07
+#59 Footprint stacked imbalance -- continuation · SELL · 4h
+perp entry 85,218 → exit 85,600 · SL 85,598 · TGT 84,489
+sold 5, bought back at 52.00
+Entry 36.00
+Exit 52.00
+Amt ₹15.30($0.18)
+BTC perp at 85,598.00 reached the signal's stop 85,597.73
+
+87,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹6.57
+−$0.077
+05 Oct, 01:02
+#72 IV vs realised volatility · SELL · 30m
+perp entry 85,205 → exit 85,492 · SL 85,476 · TGT 84,677
+sold 6, bought back at 40.00
+Entry 30.00
+Exit 40.00
+Amt ₹15.30($0.18)
+BTC perp at 85,493.50 reached the signal's stop 85,476.43
+
+87,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹3.92
+−$0.046
+05 Oct, 01:02
+#71 Call / put OI divergence · SELL · 15m
+perp entry 85,219 → exit 85,494 · SL 85,468 · TGT 84,880
+sold 5, bought back at 42.00
+Entry 36.00
+Exit 42.00
+Amt ₹15.30($0.18)
+BTC perp at 85,503.00 reached the signal's stop 85,467.71
+
+87,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹3.48
+−$0.041
+05 Oct, 01:01
+#72 IV vs realised volatility · SELL · 15m
+perp entry 85,218 → exit 85,503 · SL 85,468 · TGT 84,880
+sold 5, bought back at 41.00
+Entry 36.00
+Exit 41.00
+Amt ₹15.30($0.18)
+BTC perp at 85,468.00 reached the signal's stop 85,467.71
+
+83,600 PE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹2.89
+−$0.034
+04 Oct, 21:33
+#5 Order-block retest · BUY · 5m
+perp entry 85,287 → exit 85,177 · SL 85,183 · TGT 85,441
+sold 3, bought back at 50.00
+Entry 42.50
+Exit 50.00
+Amt ₹10.84($0.13)
+BTC perp at 85,181.00 reached the signal's stop 85,182.98
+
+83,600 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹5.39
+−$0.063
+04 Oct, 21:32
+#15 Opening-range breakout (Asia · London · New York) · BUY · 15m
+perp entry 85,317 → exit 85,187 · SL 85,196 · TGT 85,506
+sold 5, bought back at 49.00
+Entry 40.00
+Exit 49.00
+Amt ₹17.00($0.20)
+BTC perp at 85,195.50 reached the signal's stop 85,195.82
+
+87,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹1.78
+−$0.021
+04 Oct, 20:51
+#14 Failed breakout / breakdown (trap) · SELL · 1h
+perp entry 85,081 → exit 85,427 · SL 85,436 · TGT 84,827
+sold 5, bought back at 39.00
+Entry 38.00
+Exit 39.00
+Amt ₹16.15($0.19)
+BTC perp at 85,440.50 reached the signal's stop 85,436.42
+
+87,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹1.78
+−$0.021
+04 Oct, 20:51
+#54 Liquidity replenishment · SELL · 1h
+perp entry 85,141 → exit 85,441 · SL 85,436 · TGT 84,489
+sold 5, bought back at 39.00
+Entry 38.00
+Exit 39.00
+Amt ₹16.15($0.19)
+BTC perp at 85,437.50 reached the signal's stop 85,436.42
+
+83,600 PE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹2.50
+−$0.029
+04 Oct, 20:38
+#15 Opening-range breakout (Asia · London · New York) · BUY · 5m
+perp entry 85,280 → exit 85,204 · SL 85,208 · TGT 85,385
+sold 3, bought back at 49.00
+Entry 43.00
+Exit 49.00
+Amt ₹10.96($0.13)
+BTC perp at 85,204.00 reached the signal's stop 85,208.00
+
+87,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹4.00
+−$0.047
+04 Oct, 20:34
+#71 Call / put OI divergence · SELL · 30m
+perp entry 85,144 → exit 85,317 · SL 85,318 · TGT 84,881
+sold 6, bought back at 37.00
+Entry 32.00
+Exit 37.00
+Amt ₹16.32($0.19)
+BTC perp at 85,325.50 reached the signal's stop 85,318.20
+
+87,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹2.23
+−$0.026
+04 Oct, 20:34
+#6 BOS · SELL · 5m
+perp entry 85,147 → exit 85,302 · SL 85,297 · TGT 84,991
+sold 3, bought back at 36.00
+Entry 30.00
+Exit 36.00
+Amt ₹7.65($0.09)
+BTC perp at 85,299.00 reached the signal's stop 85,296.78
+
+83,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹4.05
+−$0.048
+04 Oct, 18:16
+#35 Mid-range rejection · BUY · 5m
+perp entry 85,248 → exit 85,104 · SL 85,112 · TGT 85,390
+sold 3, bought back at 53.00
+Entry 41.00
+Exit 53.00
+Amt ₹10.46($0.12)
+BTC perp at 85,108.00 reached the signal's stop 85,111.95
+
+85,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹1.71
+−$0.020
+04 Oct, 14:57
+#16 Previous day H/L rejection · SELL · 5m
+perp entry 85,005 → exit 85,185 · SL 85,178 · TGT 84,781
+sold 3, bought back at 9.40
+Entry 3.20
+Exit 9.40
+Amt ₹0.82($0.01)
+BTC perp at 85,180.00 reached the signal's stop 85,177.59
+
+85,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹1.67
+−$0.020
+04 Oct, 13:29
+#72 IV vs realised volatility · SELL · 15m
+perp entry 84,952 → exit 85,057 · SL 85,055 · TGT 84,800
+sold 5, bought back at 7.00
+Entry 3.50
+Exit 7.00
+Amt ₹1.49($0.02)
+BTC perp at 85,057.00 reached the signal's stop 85,055.29
+
+85,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹1.83
+−$0.022
+04 Oct, 13:29
+#71 Call / put OI divergence · SELL · 15m
+perp entry 84,960 → exit 85,057 · SL 85,055 · TGT 84,800
+sold 5, bought back at 7.00
+Entry 3.10
+Exit 7.00
+Amt ₹1.32($0.02)
+BTC perp at 85,057.50 reached the signal's stop 85,055.29
+
+85,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹0.29
+−$0.003
+04 Oct, 13:29
+#16 Previous day H/L rejection · SELL · 5m
+perp entry 84,942 → exit 85,055 · SL 85,040 · TGT 84,834
+sold 3, bought back at 7.00
+Entry 6.40
+Exit 7.00
+Amt ₹1.63($0.02)
+BTC perp at 85,055.00 reached the signal's stop 85,040.10
+
+85,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹0.64
+−$0.007
+04 Oct, 13:29
+#16 Previous day H/L rejection · SELL · 5m
+perp entry 84,977 → exit 85,055 · SL 85,049 · TGT 84,835
+sold 3, bought back at 7.00
+Entry 5.00
+Exit 7.00
+Amt ₹1.27($0.01)
+BTC perp at 85,055.00 reached the signal's stop 85,048.78
+
+84,200 PE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹0.24
+−$0.003
+04 Oct, 11:52
+#37 Channel breakout · BUY · 15m
+perp entry 84,886 → exit 84,997 · SL 84,810 · TGT 84,985
+sold 5, bought back at 7.90
+Entry 8.00
+Exit 7.90
+Amt ₹3.40($0.04)
+BTC perp at 84,992.00 reached the signal's target 84,985.00
+
+85,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹1.90
+−$0.022
+04 Oct, 11:51
+#5 Order-block retest · SELL · 30m
+perp entry 84,800 → exit 84,935 · SL 84,899 · TGT 84,670
+sold 6, bought back at 45.00
+Entry 45.00
+Exit 45.00
+Amt ₹22.95($0.27)
+BTC perp at 84,935.00 reached the signal's stop 84,898.98
+
+85,600 CE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹1.31
+−$0.015
+04 Oct, 09:43
+#63 Initial balance failed break · SELL · 15m
+perp entry 84,800 → exit 84,772 · SL 84,868 · TGT 84,775
+sold 5, bought back at 14.00
+Entry 12.00
+Exit 14.00
+Amt ₹5.10($0.06)
+BTC perp at 84,772.00 reached the signal's target 84,775.00
+
+85,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹10.94
+−$0.129
+04 Oct, 05:50
+#19 VWAP reclaim / loss · SELL · 1h
+perp entry 84,711 → exit 84,839 · SL 84,821 · TGT 84,545
+sold 5, bought back at 68.00
+Entry 47.00
+Exit 68.00
+Amt ₹19.98($0.24)
+BTC perp at 84,839.00 reached the signal's stop 84,821.34
+
+84,200 PE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹0.15
+−$0.002
+04 Oct, 05:36
+#40 Dislocation reversion · BUY · 15m
+perp entry 84,751 → exit 84,802 · SL 84,633 · TGT 84,805
+sold 5, bought back at 39.00
+Entry 42.00
+Exit 39.00
+Amt ₹17.85($0.21)
+BTC perp at 84,805.00 reached the signal's target 84,805.00
+
+85,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹8.93
+−$0.105
+04 Oct, 05:36
+#19 VWAP reclaim / loss · SELL · 30m
+perp entry 84,701 → exit 84,808 · SL 84,797 · TGT 84,554
+sold 6, bought back at 61.00
+Entry 48.00
+Exit 61.00
+Amt ₹24.48($0.29)
+BTC perp at 84,807.50 reached the signal's stop 84,797.18
+
+85,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹8.39
+−$0.099
+04 Oct, 05:33
+#71 Call / put OI divergence · SELL · 30m
+perp entry 84,701 → exit 84,802 · SL 84,797 · TGT 84,554
+sold 6, bought back at 60.00
+Entry 48.00
+Exit 60.00
+Amt ₹24.48($0.29)
+BTC perp at 84,802.00 reached the signal's stop 84,797.18
+
+85,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹1.30
+−$0.015
+04 Oct, 05:32
+#71 Call / put OI divergence · SELL · 15m
+perp entry 84,716 → exit 84,791 · SL 84,776 · TGT 84,624
+sold 5, bought back at 37.00
+Entry 37.00
+Exit 37.00
+Amt ₹15.72($0.18)
+BTC perp at 84,785.50 reached the signal's stop 84,776.38
+
+85,400 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹3.05
+−$0.036
+04 Oct, 03:21
+#2 Breakout + retest · SELL · 15m
+perp entry 84,666 → exit 84,704 · SL 84,702 · TGT 84,563
+sold 5, bought back at 52.00
+Entry 49.00
+Exit 52.00
+Amt ₹20.82($0.24)
+BTC perp at 84,702.50 reached the signal's stop 84,701.66
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹5.78
+−$0.068
+04 Oct, 02:38
+#19 VWAP reclaim / loss · BUY · 30m
+perp entry 84,814 → exit 84,547 · SL 84,547 · TGT 85,213
+sold 6, bought back at 56.00
+Entry 49.00
+Exit 56.00
+Amt ₹24.99($0.29)
+BTC perp at 84,546.50 reached the signal's stop 84,546.90
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹12.57
+−$0.148
+04 Oct, 02:36
+#9 Pullback · BUY · 1h
+perp entry 84,836 → exit 84,568 · SL 84,569 · TGT 85,235
+sold 5, bought back at 68.00
+Entry 43.00
+Exit 68.00
+Amt ₹18.27($0.21)
+BTC perp at 84,567.00 reached the signal's stop 84,569.17
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹22.65
+−$0.266
+04 Oct, 02:36
+#71 Call / put OI divergence · BUY · 15m
+perp entry 84,806 → exit 84,565 · SL 84,655 · TGT 84,995
+sold 5, bought back at 88.00
+Entry 40.00
+Exit 88.00
+Amt ₹17.00($0.20)
+BTC perp at 84,565.00 reached the signal's stop 84,655.42
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹23.46
+−$0.276
+04 Oct, 02:36
+#71 Call / put OI divergence · BUY · 15m
+perp entry 84,846 → exit 84,560 · SL 84,656 · TGT 85,130
+sold 5, bought back at 88.00
+Entry 38.00
+Exit 88.00
+Amt ₹16.15($0.19)
+BTC perp at 84,555.50 reached the signal's stop 84,655.72
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹27.22
+−$0.320
+04 Oct, 02:36
+#71 Call / put OI divergence · BUY · 30m
+perp entry 84,844 → exit 84,556 · SL 84,646 · TGT 85,151
+sold 6, bought back at 89.00
+Entry 41.00
+Exit 89.00
+Amt ₹20.91($0.25)
+BTC perp at 84,555.50 reached the signal's stop 84,645.74
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹27.22
+−$0.320
+04 Oct, 02:36
+#9 Pullback · BUY · 30m
+perp entry 84,844 → exit 84,556 · SL 84,646 · TGT 85,151
+sold 6, bought back at 89.00
+Entry 41.00
+Exit 89.00
+Amt ₹20.91($0.25)
+BTC perp at 84,560.00 reached the signal's stop 84,645.74
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹2.89
+−$0.034
+04 Oct, 02:36
+#57 Trade velocity / aggression spike · BUY · 5m
+perp entry 84,820 → exit 84,560 · SL 84,637 · TGT 85,092
+sold 3, bought back at 56.00
+Entry 49.00
+Exit 56.00
+Amt ₹12.49($0.15)
+BTC perp at 84,554.50 reached the signal's stop 84,637.30
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹4.41
+−$0.052
+04 Oct, 02:36
+#29 OI-confirmed breakout · BUY · 15m
+perp entry 84,814 → exit 84,555 · SL 84,636 · TGT 85,000
+sold 5, bought back at 56.00
+Entry 50.00
+Exit 56.00
+Amt ₹21.25($0.25)
+BTC perp at 84,550.00 reached the signal's stop 84,636.38
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹5.23
+−$0.061
+04 Oct, 02:36
+#37 Channel breakout · BUY · 15m
+perp entry 84,814 → exit 84,550 · SL 84,636 · TGT 85,000
+sold 5, bought back at 56.00
+Entry 48.00
+Exit 56.00
+Amt ₹20.40($0.24)
+BTC perp at 84,549.50 reached the signal's stop 84,636.38
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹6.27
+−$0.074
+04 Oct, 02:36
+#1 Breakout · BUY · 30m
+perp entry 84,814 → exit 84,560 · SL 84,600 · TGT 85,133
+sold 6, bought back at 56.00
+Entry 48.00
+Exit 56.00
+Amt ₹24.48($0.29)
+BTC perp at 84,560.00 reached the signal's stop 84,600.40
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹5.23
+−$0.061
+04 Oct, 02:36
+#47 IV expansion breakout · BUY · 15m
+perp entry 84,814 → exit 84,553 · SL 84,636 · TGT 85,000
+sold 5, bought back at 56.00
+Entry 48.00
+Exit 56.00
+Amt ₹20.40($0.24)
+BTC perp at 84,556.50 reached the signal's stop 84,636.38
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹7.37
+−$0.087
+04 Oct, 02:36
+#47 IV expansion breakout · BUY · 30m
+perp entry 84,814 → exit 84,557 · SL 84,600 · TGT 85,133
+sold 6, bought back at 59.00
+Entry 49.00
+Exit 59.00
+Amt ₹24.99($0.29)
+BTC perp at 84,556.50 reached the signal's stop 84,600.40
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹7.37
+−$0.087
+04 Oct, 02:35
+#29 OI-confirmed breakout · BUY · 30m
+perp entry 84,814 → exit 84,555 · SL 84,600 · TGT 85,133
+sold 6, bought back at 59.00
+Entry 49.00
+Exit 59.00
+Amt ₹24.99($0.29)
+BTC perp at 84,549.50 reached the signal's stop 84,600.40
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹7.37
+−$0.087
+04 Oct, 02:35
+#72 IV vs realised volatility · BUY · 30m
+perp entry 84,814 → exit 84,550 · SL 84,600 · TGT 85,133
+sold 6, bought back at 59.00
+Entry 49.00
+Exit 59.00
+Amt ₹24.99($0.29)
+BTC perp at 84,549.50 reached the signal's stop 84,600.40
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹13.87
+−$0.163
+04 Oct, 02:35
+#54 Liquidity replenishment · BUY · 1h
+perp entry 84,836 → exit 84,558 · SL 84,646 · TGT 85,120
+sold 5, bought back at 70.00
+Entry 42.00
+Exit 70.00
+Amt ₹17.85($0.21)
+BTC perp at 84,593.50 reached the signal's stop 84,646.17
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹11.21
+−$0.132
+04 Oct, 02:35
+#38 Engulfing + structure · BUY · 1h
+perp entry 84,836 → exit 84,593 · SL 84,646 · TGT 85,120
+sold 5, bought back at 64.00
+Entry 42.00
+Exit 64.00
+Amt ₹17.85($0.21)
+BTC perp at 84,572.50 reached the signal's stop 84,646.17
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+1h time
+−₹13.87
+−$0.163
+04 Oct, 02:35
+#19 VWAP reclaim / loss · BUY · 1h
+perp entry 84,836 → exit 84,573 · SL 84,646 · TGT 85,120
+sold 5, bought back at 70.00
+Entry 42.00
+Exit 70.00
+Amt ₹17.85($0.21)
+BTC perp at 84,574.00 reached the signal's stop 84,646.17
+
+85,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹4.27
+−$0.050
+04 Oct, 01:33
+#37 Channel breakout · SELL · 15m
+perp entry 84,806 → exit 84,845 · SL 84,828 · TGT 84,746
+sold 5, bought back at 52.00
+Entry 46.00
+Exit 52.00
+Amt ₹19.55($0.23)
+BTC perp at 84,838.00 reached the signal's stop 84,827.58
+
+85,600 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹6.68
+−$0.079
+04 Oct, 01:25
+#52 Order-book imbalance breakout · SELL · 15m
+perp entry 84,741 → exit 84,809 · SL 84,807 · TGT 84,655
+sold 5, bought back at 51.00
+Entry 39.00
+Exit 51.00
+Amt ₹16.57($0.20)
+BTC perp at 84,809.00 reached the signal's stop 84,806.91
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹11.26
+−$0.132
+04 Oct, 01:03
+#29 OI-confirmed breakout · BUY · 30m
+perp entry 84,949 → exit 84,761 · SL 84,761 · TGT 85,278
+sold 6, bought back at 70.00
+Entry 53.00
+Exit 70.00
+Amt ₹27.03($0.32)
+BTC perp at 84,760.50 reached the signal's stop 84,760.72
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+30m time
+−₹11.26
+−$0.132
+04 Oct, 01:03
+#1 Breakout · BUY · 30m
+perp entry 84,947 → exit 84,761 · SL 84,761 · TGT 85,278
+sold 6, bought back at 70.00
+Entry 53.00
+Exit 70.00
+Amt ₹27.03($0.32)
+BTC perp at 84,760.50 reached the signal's stop 84,760.72
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹12.24
+−$0.144
+04 Oct, 01:03
+#52 Order-book imbalance breakout · BUY · 15m
+perp entry 84,940 → exit 84,762 · SL 84,773 · TGT 85,195
+sold 5, bought back at 70.00
+Entry 46.00
+Exit 70.00
+Amt ₹19.55($0.23)
+BTC perp at 84,761.50 reached the signal's stop 84,772.53
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹12.24
+−$0.144
+04 Oct, 01:03
+#1 Breakout · BUY · 15m
+perp entry 84,931 → exit 84,762 · SL 84,773 · TGT 85,195
+sold 5, bought back at 70.00
+Entry 46.00
+Exit 70.00
+Amt ₹19.55($0.23)
+BTC perp at 84,761.50 reached the signal's stop 84,772.53
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹5.79
+−$0.068
+04 Oct, 01:03
+#29 OI-confirmed breakout · BUY · 15m
+perp entry 84,939 → exit 84,762 · SL 84,773 · TGT 85,195
+sold 5, bought back at 49.00
+Entry 39.00
+Exit 49.00
+Amt ₹16.57($0.20)
+BTC perp at 84,761.50 reached the signal's stop 84,772.53
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹8.94
+−$0.105
+04 Oct, 00:33
+#29 OI-confirmed breakout · BUY · 15m
+perp entry 84,946 → exit 84,833 · SL 84,867 · TGT 85,119
+sold 5, bought back at 69.00
+Entry 53.00
+Exit 69.00
+Amt ₹22.53($0.27)
+BTC perp at 84,853.00 reached the signal's stop 84,866.66
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹2.80
+−$0.033
+04 Oct, 00:33
+#2 Breakout + retest · BUY · 15m
+perp entry 84,952 → exit 84,853 · SL 84,867 · TGT 85,045
+sold 5, bought back at 45.00
+Entry 42.00
+Exit 45.00
+Amt ₹17.85($0.21)
+BTC perp at 84,853.00 reached the signal's stop 84,866.66
+
+84,200 PE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹1.47
+−$0.017
+03 Oct, 22:50
+#52 Order-book imbalance breakout · BUY · 15m
+perp entry 84,868 → exit 84,886 · SL 84,808 · TGT 84,885
+sold 5, bought back at 42.00
+Entry 42.00
+Exit 42.00
+Amt ₹17.85($0.21)
+BTC perp at 84,886.00 reached the signal's target 84,885.00
+
+86,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹8.82
+−$0.104
+03 Oct, 19:05
+#40 Dislocation reversion · SELL · 15m
+perp entry 84,770 → exit 84,917 · SL 84,906 · TGT 84,655
+sold 5, bought back at 54.00
+Entry 37.00
+Exit 54.00
+Amt ₹15.72($0.18)
+BTC perp at 84,910.00 reached the signal's stop 84,906.09
+
+83,600 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹4.61
+−$0.054
+03 Oct, 18:50
+#37 Channel breakout · BUY · 15m
+perp entry 84,828 → exit 84,760 · SL 84,762 · TGT 84,985
+sold 5, bought back at 50.00
+Entry 43.00
+Exit 50.00
+Amt ₹18.27($0.21)
+BTC perp at 84,760.00 reached the signal's stop 84,761.85
+
+83,600 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹4.57
+−$0.054
+03 Oct, 18:49
+#37 Channel breakout · BUY · 15m
+perp entry 84,806 → exit 84,766 · SL 84,768 · TGT 84,887
+sold 5, bought back at 49.00
+Entry 42.00
+Exit 49.00
+Amt ₹17.85($0.21)
+BTC perp at 84,766.00 reached the signal's stop 84,767.76
+
+83,600 PE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹0.69
+−$0.008
+03 Oct, 18:24
+#37 Channel breakout · BUY · 15m
+perp entry 84,780 → exit 84,859 · SL 84,725 · TGT 84,855
+sold 5, bought back at 43.00
+Entry 45.00
+Exit 43.00
+Amt ₹19.13($0.23)
+BTC perp at 84,858.50 reached the signal's target 84,855.00
+
+83,600 PE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹2.17
+−$0.026
+03 Oct, 17:48
+#29 OI-confirmed breakout · BUY · 15m
+perp entry 84,666 → exit 84,730 · SL 84,619 · TGT 84,715
+sold 5, bought back at 44.50
+Entry 43.00
+Exit 44.50
+Amt ₹18.27($0.21)
+BTC perp at 84,719.50 reached the signal's target 84,715.00
+
+83,600 PE
+Done
+LOSS
+perp TGT hit
+SELL
+15m time
+−₹1.58
+−$0.019
+03 Oct, 17:42
+#52 Order-book imbalance breakout · BUY · 15m
+perp entry 84,632 → exit 84,666 · SL 84,613 · TGT 84,665
+sold 5, bought back at 45.00
+Entry 45.00
+Exit 45.00
+Amt ₹19.13($0.23)
+BTC perp at 84,666.00 reached the signal's target 84,665.00
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹0.22
+−$0.003
+03 Oct, 15:38
+#51 Expiry pin / max-pain magnet · BUY · 5m
+perp entry 84,552 → exit 84,538 · SL 84,539 · TGT 84,600
+sold 3, bought back at 8.20
+Entry 8.00
+Exit 8.20
+Amt ₹2.04($0.02)
+BTC perp at 84,537.50 reached the signal's stop 84,538.99
+
+85,000 CE
+Done
+LOSS
+perp SL hit
+SELL
+5m time frame
+−₹2.58
+−$0.030
+03 Oct, 09:12
+#5 Order-block retest · SELL · 5m
+perp entry 84,560 → exit 84,595 · SL 84,588 · TGT 84,525
+sold 3, bought back at 53.00
+Entry 47.00
+Exit 53.00
+Amt ₹11.99($0.14)
+BTC perp at 84,595.00 reached the signal's stop 84,587.73
+
+86,200 CE
+Done
+LOSS
+SELL
+15m,30m,1h NO time frame
+−₹0.44
+−$0.005
+03 Oct, 08:28
+#19 VWAP reclaim / loss · SELL · 1h
+perp entry 85,130 · SL 86,941 · TGT 83,137
+sold 3, bought back at —
+Entry 42.00
+Amt ₹10.71($0.13)
+
+85,200 CE
+Done
+LOSS
+perp SL hit
+SELL
+15m time
+−₹7.33
+−$0.086
+03 Oct, 06:02
+#71 Call / put OI divergence · SELL · 15m
+perp entry 84,206 → exit 84,577 · SL 84,573 · TGT 83,842
+sold 3, bought back at 58.00
+Entry 33.00
+Exit 58.00
+Amt ₹8.42($0.10)
+BTC perp at 84,576.50 reached the signal's stop 84,573.46
+
+83,600 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹24.48
+−$0.288
+03 Oct, 00:09
+#54 Liquidity replenishment · BUY · 1h
+perp entry 85,494 → exit 84,154 · SL 84,292 · TGT 87,257
+sold 3, bought back at 141.00
+Entry 53.00
+Exit 141.00
+Amt ₹13.52($0.16)
+BTC perp at 84,107.00 reached the signal's stop 84,291.98
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹9.82
+−$0.115
+02 Oct, 23:47
+#53 Microprice / queue imbalance · BUY · 15m
+perp entry 84,849 → exit 84,663 · SL 84,654 · TGT 85,160
+sold 3, bought back at 83.00
+Entry 50.00
+Exit 83.00
+Amt ₹12.75($0.15)
+BTC perp at 84,637.50 reached the signal's stop 84,653.85
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹16.35
+−$0.192
+02 Oct, 22:46
+#55 Pulled wall (spoof / pull) · BUY · 1h
+perp entry 85,122 → exit 84,775 · SL 84,823 · TGT 85,592
+sold 3, bought back at 103.00
+Entry 45.00
+Exit 103.00
+Amt ₹11.48($0.14)
+BTC perp at 84,750.00 reached the signal's stop 84,823.11
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹9.36
+−$0.110
+02 Oct, 22:46
+#55 Pulled wall (spoof / pull) · BUY · 15m
+perp entry 84,734 → exit 84,687 · SL 84,781 · TGT 85,065
+sold 3, bought back at 73.00
+Entry 41.00
+Exit 73.00
+Amt ₹10.46($0.12)
+BTC perp at 84,678.00 reached the signal's stop 84,780.92
+
+86,000 CE
+Done
+LOSS
+perp TGT hit
+SELL
+15m,30m,1h NO time frame
+−₹1.09
+−$0.013
+02 Oct, 22:46
+#63 Initial balance failed break · SELL · 15m
+perp entry 84,717 → exit 84,705 · SL 85,556 · TGT 84,784
+sold 3, bought back at 40.00
+Entry 39.00
+Exit 40.00
+Amt ₹9.95($0.12)
+BTC perp at 84,719.50 reached the signal's target 84,783.75
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹11.04
+−$0.130
+02 Oct, 22:45
+#55 Pulled wall (spoof / pull) · BUY · 30m
+perp entry 85,122 → exit 84,827 · SL 84,862 · TGT 85,533
+sold 3, bought back at 83.00
+Entry 45.00
+Exit 83.00
+Amt ₹11.48($0.14)
+BTC perp at 84,856.00 reached the signal's stop 84,861.98
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹9.22
+−$0.108
+02 Oct, 22:45
+#55 Pulled wall (spoof / pull) · BUY · 15m
+perp entry 85,156 → exit 84,877 · SL 84,882 · TGT 85,572
+sold 3, bought back at 78.00
+Entry 47.00
+Exit 78.00
+Amt ₹11.99($0.14)
+BTC perp at 84,876.50 reached the signal's stop 84,881.70
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹7.43
+−$0.087
+02 Oct, 22:44
+#59 Footprint stacked imbalance -- continuation · BUY · 15m
+perp entry 85,130 → exit 84,900 · SL 84,882 · TGT 85,572
+sold 3, bought back at 74.00
+Entry 50.00
+Exit 74.00
+Amt ₹12.75($0.15)
+BTC perp at 84,875.50 reached the signal's stop 84,881.70
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹14.27
+−$0.168
+02 Oct, 22:44
+#11 Order flow · BUY · 30m
+perp entry 85,222 → exit 84,903 · SL 84,941 · TGT 85,614
+sold 3, bought back at 97.00
+Entry 47.00
+Exit 97.00
+Amt ₹11.99($0.14)
+BTC perp at 84,903.00 reached the signal's stop 84,941.48
+
+84,400 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹13.29
+−$0.156
+02 Oct, 22:44
+#11 Order flow · BUY · 15m
+perp entry 85,194 → exit 84,903 · SL 84,963 · TGT 85,527
+sold 3, bought back at 97.00
+Entry 51.00
+Exit 97.00
+Amt ₹13.00($0.15)
+BTC perp at 84,921.00 reached the signal's stop 84,963.37
+
+84,200 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹6.81
+−$0.080
+02 Oct, 22:44
+#55 Pulled wall (spoof / pull) · BUY · 15m
+perp entry 85,122 → exit 84,960 · SL 84,963 · TGT 85,381
+sold 3, bought back at 68.00
+Entry 46.00
+Exit 68.00
+Amt ₹11.73($0.14)
+BTC perp at 84,954.00 reached the signal's stop 84,963.37
+
+88,800 CE
+Done
+LOSS
+SELL
+15m,30m,1h NO time frame
+−₹0.84
+−$0.010
+02 Oct, 22:07
+#59 Footprint stacked imbalance -- continuation · SELL · 15m
+perp entry 86,490 · SL 87,286 · TGT 85,000
+sold 3, bought back at —
+Entry 80.00
+Amt ₹20.40($0.24)
+
+88,800 CE
+Done
+LOSS
+SELL
+15m,30m,1h NO time frame
+−₹0.46
+−$0.005
+02 Oct, 22:07
+#50 Gamma wall reaction · SELL · 15m
+perp entry 86,337 · SL 87,201 · TGT 85,000
+sold 3, bought back at —
+Entry 44.00
+Amt ₹11.22($0.13)
+
+88,800 CE
+Done
+LOSS
+SELL
+15m,30m,1h NO time frame
+−₹0.84
+−$0.010
+02 Oct, 22:06
+#76 Volume z-score spike · SELL · 15m
+perp entry 86,476 · SL 87,286 · TGT 85,000
+sold 3, bought back at —
+Entry 80.00
+Amt ₹20.40($0.24)
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹8.67
+−$0.102
+02 Oct, 20:24
+#55 Pulled wall (spoof / pull) · BUY · 15m
+perp entry 85,867 → exit 85,508 · SL 85,554 · TGT 86,446
+sold 3, bought back at 75.00
+Entry 46.00
+Exit 75.00
+Amt ₹11.73($0.14)
+BTC perp at 85,505.50 reached the signal's stop 85,553.60
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹2.76
+−$0.033
+02 Oct, 20:04
+#55 Pulled wall (spoof / pull) · BUY · 30m
+perp entry 86,019 → exit 85,898 · SL 85,928 · TGT 86,206
+sold 3, bought back at 50.00
+Entry 43.00
+Exit 50.00
+Amt ₹10.96($0.13)
+BTC perp at 85,919.00 reached the signal's stop 85,927.96
+
+84,000 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹1.05
+−$0.012
+02 Oct, 20:03
+#55 Pulled wall (spoof / pull) · BUY · 15m
+perp entry 86,057 → exit 85,946 · SL 85,946 · TGT 86,179
+sold 3, bought back at 50.00
+Entry 50.00
+Exit 50.00
+Amt ₹12.75($0.15)
+BTC perp at 85,938.50 reached the signal's stop 85,945.96
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹0.42
+−$0.005
+02 Oct, 20:00
+#19 VWAP reclaim / loss · BUY · 1h
+perp entry 86,755 → exit 86,007 · SL 85,999 · TGT 87,924
+sold 3, bought back at 43.00
+Entry 45.00
+Exit 43.00
+Amt ₹11.48($0.14)
+BTC perp at 85,990.50 reached the signal's stop 85,999.03
+
+83,800 PE
+Done
+LOSS
+perp SL hit
+SELL
+15m,30m,1h NO time frame
+−₹0.95
+−$0.011
+02 Oct, 19:58
+#55 Pulled wall (spoof / pull) · BUY · 1h
+perp entry 86,761 → exit 86,120 · SL 86,136 · TGT 87,718
+sold 3, bought back at 45.00
+Entry 45.00
+Exit 45.00
+Amt ₹11.48($0.14)
+BTC perp at 86,119.50 reached the signal's stop 86,136.03

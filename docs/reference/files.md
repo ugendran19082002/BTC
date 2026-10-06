@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-439 files listed, 210 test files counted below, images and lockfiles left out.
+442 files listed, 210 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -25,6 +25,9 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [Dockerfile.web](../../Dockerfile.web) | The screen: build the Vite bundle, then serve it from nginx, which also proxies /api to the API container (deploy/nginx.docker.conf). |
 | [ENTRY.md](../../ENTRY.md) | Method Entry SL (+0.25 ATR) TGT1 / TGT2 |
 | [README.md](../../README.md) | BTC options desk |
+| [sl-tgt-report-oct2-to-oct6.md](../../sl-tgt-report-oct2-to-oct6.md) | SL / TGT trade report: 02 Oct to 06 Oct 2026 |
+| [sl.txt](../../sl.txt) | 86,400 CE |
+| [tgt.txt](../../tgt.txt) | Net P&L |
 
 ## `app/server/`
 
