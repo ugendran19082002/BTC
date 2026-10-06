@@ -27,8 +27,9 @@ Updated 30 Sep 2026 (evening): 25 items closed that afternoon -- see the history
 The phone (`/m`) has five tabs -- Home, P&L, Positions, Orders, More -- and Level 2 (runs, signals, trade detail,
 the Telegram link, statistics), built 6 Oct 2026: see [history/2026-10.md](history/2026-10.md). Still open:
 
-- [ ] **Deploy it and install it**: open `/m` on the phone, sign in, *Install app*. Check the session shows
-  "view only" on the desk's profile page, and that the phone refuses nothing it should read.
+- [ ] **Sign the phone in view only.** On 6 Oct 2026 every live session was `full`: the phone was reading `/m`
+  on the desk's own sign-in (one browser, one cookie). On the phone: More → Status → Sign out, then sign in again
+  at `/m`. The profile page on the desk should then show that device as "view only".
 - [ ] **`DESK_URL` is set** in `app/server/.env` (`https://delta.thannigo.in`, 6 Oct 2026): it reaches the API
   when the next deploy recreates the container. Then check a fill alert ends "📱 Open this trade" and opens the trade.
 - [ ] **A light theme, only if wanted** (the owner's reference showed one as optional): the desk is dark only.
