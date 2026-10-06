@@ -154,6 +154,8 @@ describe('SignalPairsScreen', () => {
     show();
     expect(await screen.findByText('No signal became a trade today, without the timeframe chain.')).toBeInTheDocument();
     expect(screen.queryByRole('list')).toBeNull();
-    expect(screen.getByText('0 pts')).toBeInTheDocument();
+    // the net, and nothing won or lost
+    expect(screen.getAllByText('0 pts')).toHaveLength(3);
+    expect(screen.getByText('Profit factor').parentElement!).toHaveTextContent('—');
   });
 });
