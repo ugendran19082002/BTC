@@ -40,7 +40,8 @@ export function Figure({ label, value, second, secondTone, tone, hint }: {
       {second && second !== '—' && (
         <div
           className={cn(
-            'truncate text-[11px] tabular-nums',
+            // Wraps rather than cuts off: "bid 38.40 · ask 39.10" in a third of a phone's width was "bid 38.40 · as…".
+            'break-words text-[11px] tabular-nums',
             secondTone === 'up' ? 'text-[var(--up)]'
               : secondTone === 'down' ? 'text-[var(--down)]'
               : secondTone === 'warn' ? 'text-[var(--warn)]'

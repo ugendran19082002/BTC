@@ -109,6 +109,12 @@ which keeps the last good answer and stops while the tab is hidden.
 written: rupees main, dollars small, at ₹85. The chart is documented in
 [features/price-chart.md](features/price-chart.md).
 
+**On a phone the desk is the same desk**: the tabs are a bottom bar, and a phone layer at the end of
+[`styles.css`](../app/web/src/styles.css) (under 640px) gives every control a 36px target -- inside a table its
+hit area grows instead, so the method list and the chain keep their density -- and the sheets and menus the same.
+The Methods report turns into one line per method. `npm run test:responsive` fails a screen that scrolls sideways
+or, on a phone, has a control under 32px.
+
 **The phone** is `/m` ([`components/mobile/`](../app/web/src/components/mobile/), 6 Oct 2026): the desk read
 at a glance and changed never. Five tabs at the thumb -- **Home** (health, today, positions, margin, the last
 order), **P&L** (today live or 7 / 30 / 90 days, closed-trade statistics from `GET /api/report/stats`, split by

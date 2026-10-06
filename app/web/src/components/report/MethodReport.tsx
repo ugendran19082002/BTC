@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, Download, RefreshCw } from 'lucide-react';
 import { getMethodReport } from '@/api/entry';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { Switch } from '@/components/ui/switch';
 import { DateRangePicker, describeRange, istToday, type DateRangeValue } from '@/components/ui/date-range-picker';
 import { TimePicker } from '@/components/ui/time-picker';
@@ -359,6 +360,8 @@ function ReportSection({ section, period, sort, onSort, show, tabs, panelOf, abo
     () => sortRows(section.rows.filter((r) => shows(r, show)), sort.key, sort.asc),
     [section.rows, sort.key, sort.asc, show],
   );
+  // A phone gets a card per method (6 Oct 2026): eleven columns at 390px left every figure behind a sideways swipe.
+  const phone = useMediaQuery('(max-width: 639px)');
   // The totals follow the filter: All is the server's own total; a filter adds up the lines it shows.
   const t = show === 'all' ? section.total : totalOf(rows, `${SHOWS.find((x) => x.id === show)!.name} · ${rows.length} method${rows.length === 1 ? '' : 's'}`);
   const head = (label: string, key?: SortKey, left = false) => (
@@ -401,6 +404,7 @@ function ReportSection({ section, period, sort, onSort, show, tabs, panelOf, abo
         <Kpi label="Win rate" value={winText(t.winPct)} />
         <Kpi label="Net points" value={<span className={toneOf(t.netPts)}>{signed(t.netPts)}</span>} />
       </dl>
+      {phone ? <PhoneRows rows={rows} total={t} sort={sort} onSort={onSort} empty={empty} label={section.label} /> : (
       <div className="max-h-[70vh] overflow-auto rounded-md border border-border">
         <table aria-label={`${section.label}${panelOf ? `, ${tabName(panelOf)}` : ''}`} className="w-full min-w-[780px] border-collapse text-[12px]">
           <thead>
@@ -418,6 +422,7 @@ function ReportSection({ section, period, sort, onSort, show, tabs, panelOf, abo
           <tfoot className="bg-[var(--panel)]">{line(t, true)}</tfoot>
         </table>
       </div>
+      )}
     </>
   );
 
@@ -435,6 +440,72 @@ function ReportSection({ section, period, sort, onSort, show, tabs, panelOf, abo
         ) : body}
       </CollapsibleCard>
     </section>
+  );
+}
+
+const SORT_NAMES: Record<SortKey, string> = { n: 'Number', trades: 'Trades', winPct: 'Win %', netPts: 'Net points' };
+
+/**
+ * The same rows as the table, one card each, for a phone: the method and its side, then every figure the table has,
+ * in two rows of three; the sort is a picker, since there are no column heads to tap. The total closes the list.
+ */
+function PhoneRows({ rows, total, sort, onSort, empty, label }: {
+  rows: MethodReportRow[]; total: MethodReportRow; sort: Sort; onSort: (k: SortKey) => void; empty: string; label: string;
+}) {
+  // A method that saw nothing is one quiet line; one with signals says them, in one line under its name.
+  const card = (r: MethodReportRow, isTotal = false) => {
+    const idle = !isTotal && r.signals === 0 && r.trades === 0;
+    return (
+      <li key={isTotal ? 'total' : r.method} className={cn('px-3', idle ? 'py-1.5' : 'py-2', isTotal && 'bg-background')}>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className={cn('min-w-0 truncate', isTotal ? 'text-[14px] font-semibold' : 'text-[13.5px]', idle && 'text-muted-foreground')}>
+            {r.n !== null ? <span className="mr-1.5 text-muted-foreground tabular-nums">#{r.n}</span> : null}{r.name}
+          </span>
+          <span className="flex shrink-0 items-baseline gap-2">
+            {idle && <span className="text-[12px] text-[var(--dim)]">no signal</span>}
+            {r.orderSide && (
+              <span className={cn('text-[11.5px] font-semibold', r.orderSide === 'BUY' ? 'text-[#3d8bfd]' : r.orderSide === 'SELL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{r.orderSide}</span>
+            )}
+          </span>
+        </div>
+        {!idle && (
+          <div className="mt-0.5 flex flex-wrap gap-x-2.5 text-[12.5px] tabular-nums text-muted-foreground">
+            <span>{num(r.signals)} signal{r.signals === 1 ? '' : 's'}</span>
+            <span>{num(r.trades)} trade{r.trades === 1 ? '' : 's'}</span>
+            <span><span className="text-[var(--up)]">{num(r.wins)}</span>/<span className="text-[var(--down)]">{num(r.losses)}</span></span>
+            <span>{winText(r.winPct)}</span>
+            <span className={cn('font-semibold', toneOf(r.netPts))}>{signed(r.netPts)} pts</span>
+            {(r.profitPts > 0 || r.lossPts > 0) && <span>(<span className="text-[var(--up)]">+{num(r.profitPts)}</span> <span className="text-[var(--down)]">−{num(r.lossPts)}</span>)</span>}
+          </div>
+        )}
+      </li>
+    );
+  };
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <label className="flex flex-1 items-center gap-2 text-[13px] text-muted-foreground">
+          Sort
+          <select
+            value={sort.key} onChange={(e) => onSort(e.target.value as SortKey)}
+            className="h-10 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[14px] text-foreground"
+          >
+            {SORT_KEYS.map((k) => <option key={k} value={k}>{SORT_NAMES[k]}</option>)}
+          </select>
+        </label>
+        <button
+          type="button" onClick={() => onSort(sort.key)} aria-label={sort.asc ? 'Ascending: switch to descending' : 'Descending: switch to ascending'}
+          className="grid h-10 w-10 place-items-center rounded-md border border-border bg-background text-foreground"
+        >
+          {sort.asc ? <ArrowUp className="h-4 w-4" aria-hidden /> : <ArrowDown className="h-4 w-4" aria-hidden />}
+        </button>
+      </div>
+      <ul aria-label={label} className="m-0 list-none divide-y divide-[var(--line-soft)] overflow-hidden rounded-md border border-border p-0">
+        {rows.map((r) => card(r))}
+        {rows.length === 0 && <li className="py-3 text-center text-[13px] text-muted-foreground">{empty}</li>}
+        {card(total, true)}
+      </ul>
+    </div>
   );
 }
 

@@ -230,24 +230,25 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
               </p>
               <div className="mt-1.5 flex flex-col gap-1.5">
                 {ptsKeys.map((tf) => (
-                  <div key={tf} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+                  // A phone: the timeframe, then an SL row and a TGT row, aligned; wider, all on one line as before.
+                  <div key={tf} className="grid grid-cols-1 gap-1.5 text-[12px] sm:flex sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
                     <span className={cn('flex-none font-medium text-foreground', tf === CHAIN_PTS ? 'w-12' : 'w-8')}>{tf === CHAIN_PTS ? 'Chain' : tf}</span>
-                    <span className="flex items-center gap-1.5">
+                    <span className="grid grid-cols-[2rem_auto_1fr_auto_1fr] items-center gap-1.5 sm:flex">
                       <span className="text-[var(--down)]">SL</span>
                       <span className="text-muted-foreground">≥</span>
-                      <NumberField label={`${tf} SL distance pts`} value={rule.minSlPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
+                      <NumberField label={`${tf} SL distance pts`} value={rule.minSlPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-full sm:w-24"
                                    onChange={(n) => onChange({ ...rule, minSlPts: { ...(rule.minSlPts ?? {}), [tf]: n } })} />
                       <span className="text-muted-foreground">≤</span>
-                      <NumberField label={`${tf} SL maximum distance pts`} value={rule.maxSlPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
+                      <NumberField label={`${tf} SL maximum distance pts`} value={rule.maxSlPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-full sm:w-24"
                                    onChange={(n) => onChange({ ...rule, maxSlPts: { ...(rule.maxSlPts ?? {}), [tf]: n } })} />
                     </span>
-                    <span className="flex items-center gap-1.5">
+                    <span className="grid grid-cols-[2rem_auto_1fr_auto_1fr] items-center gap-1.5 sm:flex">
                       <span className="text-[var(--up)]">TGT</span>
                       <span className="text-muted-foreground">≥</span>
-                      <NumberField label={`${tf} TGT distance pts`} value={rule.minTgtPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
+                      <NumberField label={`${tf} TGT distance pts`} value={rule.minTgtPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-full sm:w-24"
                                    onChange={(n) => onChange({ ...rule, minTgtPts: { ...(rule.minTgtPts ?? {}), [tf]: n } })} />
                       <span className="text-muted-foreground">≤</span>
-                      <NumberField label={`${tf} TGT maximum distance pts`} value={rule.maxTgtPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-24"
+                      <NumberField label={`${tf} TGT maximum distance pts`} value={rule.maxTgtPts?.[tf] ?? 0} unit="pts" decimals={0} className="w-full sm:w-24"
                                    onChange={(n) => onChange({ ...rule, maxTgtPts: { ...(rule.maxTgtPts ?? {}), [tf]: n } })} />
                     </span>
                     <span className="text-[11px] text-[var(--dim)]" aria-label={`${tf} distance filters`}>

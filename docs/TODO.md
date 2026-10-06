@@ -29,16 +29,9 @@ the Telegram link, statistics), built 6 Oct 2026: see [history/2026-10.md](histo
   "view only" on the desk's profile page, and that the phone refuses nothing it should read.
 - [ ] **`DESK_URL` is set** in `app/server/.env` (`https://delta.thannigo.in`, 6 Oct 2026): it reaches the API
   when the next deploy recreates the container. Then check a fill alert ends "📱 Open this trade" and opens the trade.
-- [ ] **The whole desk phone-friendly** (owner, 6 Oct 2026): every screen, menu, card, field and icon of the
-  full desk adapted to a phone -- sizes, padding, margins, touch targets, tables that become cards -- with no
-  change to what any of it does; the owner's reference image for colours and spacing. Mobile first, desktop
-  optional. Screen by screen (strategy, desk, trade, orders, pnl, methods, errors), measured at 360 / 390 / 430 px
-  for sideways scroll with `app/web/scripts/responsive-check.mjs`, landed one screen at a time.
 - [ ] **A light theme, only if wanted** (the owner's reference showed one as optional): the desk is dark only.
-- [ ] **An APK, only if wanted**: wrap `/m` with Bubblewrap (a Trusted Web Activity); needs
-  `/.well-known/assetlinks.json` served by nginx. The installed web app already does the same job.
-- [ ] Later, once the read-only phone has proved itself: a TOTP-confirmed "stop new risk" switch (scheduler or
-  one strategy off, never touching positions), and a passkey sign-in for the phone.
+- [ ] **Look at the desk on the phone itself** after the deploy: every screen, a sheet or two (Edit exits, a new
+  strategy), the methods list. `npm run test:responsive` checks widths and tap sizes; it cannot say what feels wrong.
 
 ## Entry section -- 24 entry setups
 

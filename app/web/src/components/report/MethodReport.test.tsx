@@ -264,3 +264,34 @@ describe('the date filter is remembered', () => {
     expect(getMethodReport).toHaveBeenCalledWith(null, false, { from: '2026-09-28T09:15', to: '2026-10-01T15:30' });
   });
 });
+
+describe('the Methods report on a phone (6 Oct 2026)', () => {
+  const phone = (matches: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({
+    matches: matches && q.includes('max-width'), media: q, addEventListener: () => {}, removeEventListener: () => {},
+  }));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('[critical] a line per method instead of eleven columns: an idle one quiet, one with signals saying them', async () => {
+    phone(true);
+    render(<MethodReport />);
+    const list = await screen.findByRole('list', { name: 'With the timeframe chain' });
+    expect(screen.queryByRole('table', { name: 'With the timeframe chain' })).toBeNull();
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(rows.length + 1); // the methods, then the total
+    const breakout = items.find((li) => li.textContent?.includes('Breakout'))!;
+    expect(breakout).toHaveTextContent('4 signals');
+    expect(breakout).toHaveTextContent('3 trades');
+    expect(breakout).toHaveTextContent('33.3%');
+    expect(breakout).toHaveTextContent('−30 pts');
+    expect(items.find((li) => li.textContent?.includes('Momentum'))).toHaveTextContent('no signal');
+    expect(items.at(-1)).toHaveTextContent('All 3 methods');
+  });
+
+  it('sorts from a picker, since there are no column heads to tap', async () => {
+    phone(true);
+    render(<MethodReport />);
+    const list = await screen.findByRole('list', { name: 'With the timeframe chain' });
+    fireEvent.change(screen.getAllByRole('combobox', { name: /Sort/ })[0]!, { target: { value: 'netPts' } });
+    await waitFor(() => expect(within(list).getAllByRole('listitem')[0]).toHaveTextContent('Retest'));
+  });
+});

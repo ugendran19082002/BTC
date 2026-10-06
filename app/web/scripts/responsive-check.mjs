@@ -65,8 +65,8 @@ for (const w of widths) {
   if (bad) failures++;
   console.log(`${bad ? 'FAIL' : 'ok  '} ${String(w).padStart(4)}px  columns=${r.stacked} heights=${r.cols.join('/')} panels=${r.panels} folds=${r.folds}` + (r.overflowX > 0 ? `  page overflows by ${r.overflowX}px` : '') + (r.spills.length ? `  spills: ${r.spills.join(', ')}` : ''));
 }
-// Every screen, at phone, tablet, laptop and desktop widths: the page must not scroll sideways, and nothing
-// outside a scroller of its own may reach past the edge. (The Live screen's Collapse-all step went with its button.)
+// Every screen, at phone, tablet, laptop and desktop widths: the page must not scroll sideways, nothing
+// outside a scroller of its own may reach past the edge, and on a phone nothing is too small to tap. (The Live screen's Collapse-all step went with its button.)
 const SCREEN_WIDTHS = (process.env.SCREEN_WIDTHS ?? '360,390,768,1024,1366,1920').split(',').map(Number);
 const tabs = page.locator('nav.tabs button');
 const names = await tabs.allTextContents();
@@ -87,11 +87,16 @@ for (const [i, raw] of names.entries()) {
         if (b.width === 0 || b.height === 0) continue;
         if (b.right > vw + 1 && !scrolls(el)) past.push(`${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''} +${Math.round(b.right - vw)}px`);
       }
-      return { overflowX: document.documentElement.scrollWidth - vw, past: past.slice(0, 3) };
+      // A phone (6 Oct 2026): every control a thumb can hit. Inside a table a control keeps its size and its hit
+      // area grows instead (styles.css, the phone layer), so tables are left out; so is the tab bar, and checkboxes.
+      const small = vw > 430 ? [] : [...document.querySelectorAll('button, a[download], input, select, [role=button], [role=tab]')]
+        .filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0 && b.height < 32 && !e.closest('table') && !e.closest('nav.tabs') && e.type !== 'checkbox' && e.type !== 'radio' && !e.classList.contains('absolute'); })
+        .map((e) => `${(e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 16)} ${Math.round(e.getBoundingClientRect().height)}px`);
+      return { overflowX: document.documentElement.scrollWidth - vw, past: past.slice(0, 3), small: small.slice(0, 3) };
     });
-    const bad = r.overflowX > 0 || r.past.length > 0;
+    const bad = r.overflowX > 0 || r.past.length > 0 || r.small.length > 0;
     if (bad) failures++;
-    rows.push(`${w}${bad ? ` FAIL(${r.overflowX > 0 ? `page +${r.overflowX}px` : r.past.join('; ')})` : ''}`);
+    rows.push(`${w}${bad ? ` FAIL(${r.overflowX > 0 ? `page +${r.overflowX}px` : r.past.length ? r.past.join('; ') : `small to tap: ${r.small.join('; ')}`})` : ''}`);
   }
   console.log(`${rows.some((x) => x.includes('FAIL')) ? 'FAIL' : 'ok  '} ${name.padEnd(12)} ${rows.join('  ')}`);
 }

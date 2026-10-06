@@ -2571,3 +2571,40 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 /* A folded card that draws its own header (components/ui/fold.tsx): only the header, and what is marked to stay. */
 .fold-host[data-folded="true"] > :not(.fold-head):not(.fold-keep) { display: none !important; }
 .fold-host[data-folded="true"] > .fold-head { margin-bottom: 0 !important; }
+
+/* ── The phone layer (6 Oct 2026) ────────────────────────────────────────────
+   Every screen of the desk on a phone, with nothing changed in what it does: a
+   thumb-sized target for every control, the tab bar like the phone view's (/m),
+   and nothing that has to be zoomed to be read or hit. Phones only.
+
+   Targets: 36px at least (WCAG asks 24, Apple 44; 36 keeps the dense screens
+   dense). Inside a table a control keeps its size and its hit area grows
+   instead -- the 81-method list and the option chain would otherwise double in
+   height for a target nobody misses. */
+@media (max-width: 640px) {
+  /* The desk, and its sheets and menus, which open in a layer of their own outside .app. */
+  :is(.app, [role="dialog"], [data-radix-popper-content-wrapper]) :is(button, select, [role="button"], [role="tab"], summary),
+  :is(.app, [role="dialog"], [data-radix-popper-content-wrapper]) input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.absolute) {
+    min-height: 36px;
+  }
+  :is(.app, [role="dialog"], [data-radix-popper-content-wrapper]) button { min-width: 32px; }
+  /* The spreadsheet downloads are links that act as buttons: sized like one. */
+  .app a[download], .app a[href$=".csv"], .app a[href*=".csv?"] { display: inline-flex; align-items: center; min-height: 36px; }
+  :is(.app, [role="dialog"]) table :is(button, a, [role="button"]) {
+    min-height: 0; min-width: 0; position: relative;
+  }
+  :is(.app, [role="dialog"]) table :is(button, a, [role="button"])::after {
+    content: ""; position: absolute; inset: -7px -3px;
+  }
+
+  /* The tab bar: the chosen screen in green, with a bar along its top edge, as on /m. */
+  .tabs button.on { background: transparent; border-color: transparent; color: var(--up); font-weight: 600; box-shadow: none; }
+  .tabs button.on::before {
+    content: ""; position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
+    width: 32px; height: 3px; border-radius: 0 0 3px 3px; background: var(--up);
+  }
+  .tabs button { min-height: 52px; }
+
+  /* Price change: "Since entry 12:28" and "Last settlement 17:30" wrap rather than end in "…". */
+  .ov-pc-mark .ov-pc-label { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
+}
