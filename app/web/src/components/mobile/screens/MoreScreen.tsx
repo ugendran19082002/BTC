@@ -24,27 +24,27 @@ export function MoreScreen() {
   const alerts = phoneAlerts(p.status, p.glance, p.glance?.btc.perpMark ?? null).length;
   return (
     <>
-    <Panel>
-      <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
-        {ITEMS.map((it) => (
-          <li key={it.sub}>
-            <ListButton onClick={() => p.go({ tab: 'more', sub: it.sub })} label={it.label}>
-              <span className="flex items-center gap-3">
-                <it.icon aria-hidden="true" className="h-5 w-5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0">
-                  <span className="block text-[15px] font-medium">
-                    {it.label}
-                    {it.sub === 'alerts' && alerts > 0 && <span className="ml-2 rounded-full bg-[var(--down)] px-1.5 text-[11px] font-semibold text-white">{alerts}</span>}
+      <Panel>
+        <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
+          {ITEMS.map((it) => (
+            <li key={it.sub}>
+              <ListButton onClick={() => p.go({ tab: 'more', sub: it.sub })} label={it.label}>
+                <span className="flex items-center gap-3">
+                  <it.icon aria-hidden="true" className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0">
+                    <span className="block text-[15px] font-medium">
+                      {it.label}
+                      {it.sub === 'alerts' && alerts > 0 && <span className="ml-2 rounded-full bg-[var(--down)] px-1.5 text-[11px] font-semibold text-white">{alerts}</span>}
+                    </span>
+                    <span className="block truncate text-[12.5px] text-muted-foreground">{it.hint}</span>
                   </span>
-                  <span className="block truncate text-[12.5px] text-muted-foreground">{it.hint}</span>
                 </span>
-              </span>
-            </ListButton>
-          </li>
-        ))}
-      </ul>
-    </Panel>
-    <DeskSwitch />
+              </ListButton>
+            </li>
+          ))}
+        </ul>
+      </Panel>
+      <DeskSwitch />
     </>
   );
 }

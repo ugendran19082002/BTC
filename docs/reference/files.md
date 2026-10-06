@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-431 files listed, 206 test files counted below, images and lockfiles left out.
+432 files listed, 206 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -368,6 +368,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [DeskSwitch.tsx](../../app/web/src/components/mobile/DeskSwitch.tsx) | From the phone to the full desk (6 Oct 2026). |
 | [HealthCard.tsx](../../app/web/src/components/mobile/HealthCard.tsx) | The phone's desk-health card: one line first -- a word, an icon and a colour, never colour alone -- then the reasons in the server's words, then the six readings behind them. |
 | [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | The phone (6 Oct 2026): the desk read at a glance, and nothing that changes it. |
 | [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then entry, price now and P&L, then how far it has gone toward its stop and its target -- each a bar, with the level, the points left and... |

@@ -220,6 +220,21 @@ describe('signed in', () => {
   });
 });
 
+describe('switching to the desk', () => {
+  it('[critical] a view-only phone says why the desk needs a full sign-in, and offers it; "Stay here" stays', async () => {
+    signedIn();
+    window.history.replaceState(null, '', '/m?tab=more');
+    render(<MobileApp />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to desk view' }));
+    const ask = screen.getByRole('dialog', { name: 'Switch to desk view' });
+    expect(within(ask).getByText(/needs a full sign-in/)).toBeInTheDocument();
+    expect(within(ask).getByRole('button', { name: 'Sign in to the desk' })).toBeInTheDocument();
+    fireEvent.click(within(ask).getByRole('button', { name: 'Stay here' }));
+    expect(screen.queryByRole('dialog', { name: 'Switch to desk view' })).toBeNull();
+    expect(logout).not.toHaveBeenCalled();
+  });
+});
+
 describe('the route in the address', () => {
   it('reads and writes tab, sub-screen and trade, and ignores anything else', () => {
     expect(routeOf('')).toEqual({ tab: 'home', sub: null, trade: null });

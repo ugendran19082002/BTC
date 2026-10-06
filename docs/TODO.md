@@ -27,8 +27,8 @@ the Telegram link, statistics), built 6 Oct 2026: see [history/2026-10.md](histo
 
 - [ ] **Deploy it and install it**: open `/m` on the phone, sign in, *Install app*. Check the session shows
   "view only" on the desk's profile page, and that the phone refuses nothing it should read.
-- [ ] **Set `DESK_URL`** in the server's `.env` (e.g. `https://delta.thannigo.in`): until it is set, fill alerts
-  carry no "Open this trade" link.
+- [ ] **`DESK_URL` is set** in `app/server/.env` (`https://delta.thannigo.in`, 6 Oct 2026): it reaches the API
+  when the next deploy recreates the container. Then check a fill alert ends "📱 Open this trade" and opens the trade.
 - [ ] **The whole desk phone-friendly** (owner, 6 Oct 2026): every screen, menu, card, field and icon of the
   full desk adapted to a phone -- sizes, padding, margins, touch targets, tables that become cards -- with no
   change to what any of it does; the owner's reference image for colours and spacing. Mobile first, desktop
