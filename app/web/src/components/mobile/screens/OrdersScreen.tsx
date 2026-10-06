@@ -83,18 +83,17 @@ function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => vo
   return (
     <li>
       <ListButton onClick={onOpen} label={`${buy ? 'Buy' : 'Sell'} ${contractLabel(o.symbol)}: open the order`}>
-        {/* The time leads the first line rather than taking a column: at 360px the column cut the contract short. */}
+        {/* What and where it stands, whole, on the first line; when, at what price and by what on the second. A time
+            column, and then the time on line one, each cut the contract short at 360px. */}
         <span className="flex items-center justify-between gap-2">
-          <span className="flex min-w-0 items-baseline gap-1.5">
-            <When className="shrink-0 text-[12px]">{clock(o.openedAt)}</When>
-            <span className="truncate text-[14px] font-semibold">
-              <span className={buy ? 'text-[var(--buy)]' : 'text-[var(--down)]'}>{buy ? 'BUY' : 'SELL'}</span> {contractLabel(o.symbol)} × {size(o.requestedSize)}
-            </span>
+          <span className="min-w-0 truncate text-[14px] font-semibold">
+            <span className={buy ? 'text-[var(--buy)]' : 'text-[var(--down)]'}>{buy ? 'BUY' : 'SELL'}</span> {contractLabel(o.symbol)} × {size(o.requestedSize)}
           </span>
           {orderStatusWord(o)}
         </span>
-        <span className="flex items-baseline gap-2 text-[12.5px] tabular-nums text-muted-foreground">
-          <span className="shrink-0">
+        <span className="flex items-baseline gap-1.5 text-[12.5px] tabular-nums text-muted-foreground">
+          <When className="shrink-0 text-[12px]">{clock(o.openedAt)}</When>
+          <span className="shrink-0">·
             Limit {limit !== null ? price(limit) : 'market'} · Filled {o.entryAvgPrice !== null ? <b className="text-foreground">{price(o.entryAvgPrice)}</b> : '—'}{o.entrySize > 0 && o.entrySize < o.requestedSize ? ` (${size(o.entrySize)})` : ''}
           </span>
           <span className="min-w-0 truncate text-[12px]">· {who}{showAccount && o.account ? ` · ${o.account.name}` : ''}</span>
