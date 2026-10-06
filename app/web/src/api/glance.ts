@@ -18,7 +18,8 @@ export type Glance = {
     board: { source: string; connected: boolean; lastAt: number | null };
     tape: { source: string; connected: boolean; lastAt: number | null };
     delta: { usedPct: number; rateLimited: number; failed: number };
-    latePasses: number;
+    /** The passes over the open trades in the last five minutes: how many, how many over their second, the slowest. */
+    passes: { count: number; late: number; maxMs: number | null };
     errors: { open: number; lastAt: number | null };
     schedulerOn: boolean;
     mode: 'live' | 'paper';

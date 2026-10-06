@@ -17,8 +17,11 @@ export type GlanceReadings = {
   /** The perp's trade tape. */
   tape: { source: string; connected: boolean; lastAt: number | null };
   delta: { usedPct: number; rateLimited: number; failed: number };
-  /** Passes over the open trades in the last five minutes that ran past their interval. */
-  latePasses: number;
+  /**
+   * The passes over the open trades in the last five minutes: how many, how many ran past their one second, and
+   * the slowest. A pass calls Delta, so one a little over its second is the network, not a fault.
+   */
+  passes: { count: number; late: number; maxMs: number | null };
   errors: { open: number; lastAt: number | null };
   schedulerOn: boolean;
   mode: 'live' | 'paper';
@@ -32,6 +35,16 @@ export const BOARD_DOWN_MS = 60_000;
 export const TAPE_LATE_MS = 60_000;
 /** Delta's quota used in the window above this is a warning: the next burst gets rate-limited. */
 export const QUOTA_WARN_PCT = 80;
+/**
+ * The check on open trades is a warning when one pass took this long -- the stop watch was blind that long
+ * (decision 0006: the desk judges the stop, Delta only backstops it) -- or when this share of the passes ran over
+ * their second, which is the desk falling behind rather than one slow answer. Until 6 Oct 2026 (evening) any late
+ * pass warned, and the live desk said "Needs a look" for 12 of about 300 passes a few hundred ms over: noise.
+ */
+export const PASS_SLOW_MS = 5_000;
+export const PASS_LATE_SHARE = 0.25;
+/** Under this many passes the share says nothing. */
+const PASS_MIN_COUNT = 30;
 
 const ageOf = (lastAt: number | null, now: number) => (lastAt === null ? null : Math.max(0, now - lastAt));
 
@@ -55,7 +68,12 @@ export function judge(r: GlanceReadings): { health: Health; issues: GlanceIssue[
   else if (r.delta.usedPct >= QUOTA_WARN_PCT) issues.push({ level: 'warn', text: `${r.delta.usedPct}% of Delta's call quota used in the last 5 min.` });
   if (r.delta.failed > 0) issues.push({ level: 'warn', text: `${r.delta.failed} call${r.delta.failed === 1 ? '' : 's'} to Delta failed in the last 5 min.` });
 
-  if (r.latePasses > 0) issues.push({ level: 'warn', text: `The check on open trades ran late ${r.latePasses} time${r.latePasses === 1 ? '' : 's'} in the last 5 min.` });
+  const p = r.passes;
+  if (p.maxMs !== null && p.maxMs >= PASS_SLOW_MS) {
+    issues.push({ level: 'warn', text: `One check on the open trades took ${secs(p.maxMs)} in the last 5 min: stops were watched that much late.` });
+  } else if (p.count >= PASS_MIN_COUNT && p.late / p.count >= PASS_LATE_SHARE) {
+    issues.push({ level: 'warn', text: `The check on the open trades ran over its second ${p.late} of ${p.count} times in the last 5 min: the desk is falling behind.` });
+  }
 
   if (r.errors.open > 0) issues.push({ level: 'warn', text: `${r.errors.open}${r.errors.open >= 100 ? '+' : ''} error${r.errors.open === 1 ? '' : 's'} in the log not yet resolved.` });
 

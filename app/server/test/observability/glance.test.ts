@@ -11,7 +11,7 @@ const healthy = (): GlanceReadings => ({
   board: { source: 'socket', connected: true, lastAt: NOW - 1_000 },
   tape: { source: 'socket', connected: true, lastAt: NOW - 2_000 },
   delta: { usedPct: 12, rateLimited: 0, failed: 0 },
-  latePasses: 0,
+  passes: { count: 300, late: 0, maxMs: 400 },
   errors: { open: 0, lastAt: null },
   schedulerOn: true,
   mode: 'live',
@@ -40,7 +40,7 @@ test('rate limits, a quota near its end, failed calls, late passes and open erro
   const j = judge({
     ...healthy(),
     delta: { usedPct: 91, rateLimited: 2, failed: 1 },
-    latePasses: 3,
+    passes: { count: 300, late: 120, maxMs: 1_800 },
     errors: { open: 100, lastAt: NOW },
     tape: { ...healthy().tape, lastAt: NOW - 5 * 60_000 },
   });
@@ -48,7 +48,7 @@ test('rate limits, a quota near its end, failed calls, late passes and open erro
   const text = j.issues.map((i) => i.text).join(' | ');
   assert.match(text, /rate-limited 2 calls/);
   assert.match(text, /1 call to Delta failed/);
-  assert.match(text, /ran late 3 times/);
+  assert.match(text, /ran over its second 120 of 300 times/);
   assert.match(text, /100\+ errors/);
   assert.match(text, /tape is 5 min old/);
   // a rate limit already says the quota is gone; the percentage would only repeat it
@@ -57,4 +57,17 @@ test('rate limits, a quota near its end, failed calls, late passes and open erro
 
 test('the scheduler off and paper mode are states to show, not problems', () => {
   assert.equal(judge({ ...healthy(), schedulerOn: false, mode: 'paper' }).health, 'ok');
+});
+
+test('[critical] a few passes a little over their second are the network, not a problem (the live desk, 6 Oct 2026)', () => {
+  // What the live desk showed as "Needs a look": 12 of about 300 passes late, none slow.
+  assert.equal(judge({ ...healthy(), passes: { count: 300, late: 12, maxMs: 1_900 } }).health, 'ok');
+  // Too few passes for a share to mean anything.
+  assert.equal(judge({ ...healthy(), passes: { count: 10, late: 5, maxMs: 1_500 } }).health, 'ok');
+});
+
+test('one pass of five seconds or more warns: the stops were watched that much late', () => {
+  const j = judge({ ...healthy(), passes: { count: 300, late: 1, maxMs: 7_200 } });
+  assert.equal(j.health, 'warn');
+  assert.match(j.issues[0]!.text, /took 7 s/);
 });

@@ -58,7 +58,7 @@ const glance = (over: Partial<Glance> = {}): Glance => ({
   readings: {
     db: { ok: true, latencyMs: 3 }, board: { source: 'socket', connected: true, lastAt: Date.now() },
     tape: { source: 'socket', connected: true, lastAt: Date.now() }, delta: { usedPct: 12, rateLimited: 0, failed: 0 },
-    latePasses: 0, errors: { open: 0, lastAt: null }, schedulerOn: true, mode: 'live',
+    passes: { count: 300, late: 0, maxMs: 400 }, errors: { open: 0, lastAt: null }, schedulerOn: true, mode: 'live',
   },
   btc: { spot: 62_000, perpMark: 62_010 },
   ...over,
