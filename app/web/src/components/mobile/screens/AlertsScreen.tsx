@@ -23,7 +23,7 @@ export const textOf = (html: string) => html
 
 export function AlertsScreen() {
   const p = usePhone();
-  const alerts = phoneAlerts(p.status, p.glance, p.glance?.btc.perpMark ?? null);
+  const alerts = phoneAlerts(p.status, p.glance, p.perp);
   const log = usePoll(() => getTelegramLog(30), 30_000);
 
   return (

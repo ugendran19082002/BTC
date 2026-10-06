@@ -12,7 +12,7 @@ import { pct } from '@/lib/format';
 export function PositionsScreen() {
   const p = usePhone();
   const s = p.status;
-  const perpMark = p.glance?.btc.perpMark ?? null;
+  const perpMark = p.perp;
   const open = useMemo(() => {
     const list = (s?.open ?? []).map((t) => ({ t, r: positionRisk(t, { alarms: s?.alarms, perpMark }) }));
     const room = (x: (typeof list)[number]) => (x.r.stop && x.r.stop.pct !== null && Number.isFinite(x.r.stop.pct) ? x.r.stop.pct : Infinity);
@@ -35,7 +35,7 @@ export function PositionsScreen() {
       {!s ? <Panel><Empty>Reading positions…</Empty></Panel> : open.length === 0 ? <Panel><Empty>No open positions.</Empty></Panel> : (
         open.map((t) => (
           <PositionCard
-            key={`${t.account?.id ?? ''}-${t.tradeId}`} trade={t} alarms={s.alarms} perpMark={perpMark}
+            key={`${t.account?.id ?? ''}-${t.tradeId}`} trade={t} alarms={s.alarms} perpMark={perpMark} perpLive={p.perpLive}
             now={p.now} showAccount={p.shown === 'all'} onOpen={() => p.openTrade(t.tradeId)}
           />
         ))

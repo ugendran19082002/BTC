@@ -23,6 +23,7 @@ import { AlertsScreen } from '@/components/mobile/screens/AlertsScreen';
 import { SettingsScreen } from '@/components/mobile/screens/SettingsScreen';
 import { Chip, Chips } from '@/components/mobile/parts';
 import { usePoll } from '@/hooks/usePoll';
+import { useStream } from '@/hooks/useStream';
 import { usePersisted } from '@/hooks/usePersisted';
 import { phoneAlerts } from '@/lib/phone-alerts';
 import { duration } from '@/lib/format';
@@ -131,6 +132,11 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
     { enabled: known, deps: [shown, trading.map((a) => a.id).join(',')] },
   );
   const glance = usePoll(getGlance, GLANCE_MS);
+  // The perp's last trade as it prints, for the SL / TGT line of a signal trade: the stream stops with the screen.
+  const stream = useStream(true);
+  const perpLive = stream.ltp !== null && Date.now() - stream.ltp.at < 30_000;
+  // At most twice a second: the perp can print many times in one, and the marker takes 0.7 s to slide anyway.
+  const perp = useThrottled(perpLive ? stream.ltp!.price : glance.data?.btc.perpMark ?? null, 500);
 
   // Any "not signed in" -- the session expired, or was signed out from the desk -- goes back to the sign-in.
   const lost = [accounts.error, status.error, glance.error].some((e) => e instanceof NotSignedIn);
@@ -143,10 +149,10 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
 
   const data: PhoneData = {
     me, status: status.data, statusError: status.error, statusAt: status.updatedAt, glance: glance.data, glanceError: glance.error,
-    accounts: all, trading, shown, accountParam: shown === 'all' ? null : shown, now, go, openTrade,
+    accounts: all, trading, shown, accountParam: shown === 'all' ? null : shown, now, perp, perpLive, go, openTrade,
     signOut: () => void signOut(), onSignedOut,
   };
-  const alertCount = phoneAlerts(status.data, glance.data, glance.data?.btc.perpMark ?? null).filter((a) => a.level !== 'green').length;
+  const alertCount = phoneAlerts(status.data, glance.data, perp).filter((a) => a.level !== 'green').length;
   const title = route.sub ? SUB_TITLE[route.sub] : TAB_TITLE[route.tab];
   const s = status.data;
 
@@ -266,6 +272,19 @@ function Frame({ header, nav, children }: { header?: ReactNode; nav?: ReactNode;
       )}
     </div>
   );
+}
+
+/** A value that changes often, passed on at most once every `ms`: the newest one always arrives, late at worst. */
+function useThrottled<T>(value: T, ms: number): T {
+  const [shown, setShown] = useState(value);
+  const last = useRef(0);
+  useEffect(() => {
+    const wait = ms - (Date.now() - last.current);
+    if (wait <= 0) { last.current = Date.now(); setShown(value); return; }
+    const id = setTimeout(() => { last.current = Date.now(); setShown(value); }, wait);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return shown;
 }
 
 /** The clock, ticking: countdowns and "updated 5 s ago" move without a poll. */

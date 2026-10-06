@@ -86,12 +86,13 @@ export function Segmented<T extends string>({ label, value, options, onChange }:
   label: string; value: T; options: readonly { key: T; label: string; spoken?: string }[]; onChange: (v: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid rounded-lg bg-muted p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    // Each segment as wide as its word needs, the spare room shared out: five fit a 360px phone without one spilling.
+    <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-muted p-1">
       {options.map((o) => (
         <button
           key={o.key} type="button" role="radio" aria-checked={value === o.key} aria-label={o.spoken} onClick={() => onChange(o.key)}
           className={cn(
-            'h-10 min-w-0 whitespace-nowrap rounded-md border-0 px-1 font-[inherit] text-[13.5px] font-semibold',
+            'h-10 flex-auto whitespace-nowrap rounded-md border-0 px-2 font-[inherit] text-[13.5px] font-semibold',
             value === o.key ? 'bg-[var(--up)] text-[var(--bg)]' : 'bg-transparent text-muted-foreground',
           )}
         >

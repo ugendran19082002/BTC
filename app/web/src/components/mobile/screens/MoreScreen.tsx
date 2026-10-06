@@ -21,7 +21,7 @@ export const SUB_TITLE: Record<Sub, string> = {
 
 export function MoreScreen() {
   const p = usePhone();
-  const alerts = phoneAlerts(p.status, p.glance, p.glance?.btc.perpMark ?? null).length;
+  const alerts = phoneAlerts(p.status, p.glance, p.perp).length;
   return (
     <>
       <Panel>

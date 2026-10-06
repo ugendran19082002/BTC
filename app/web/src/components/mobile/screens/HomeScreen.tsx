@@ -26,7 +26,7 @@ export function HomeScreen() {
     () => json<MtmReport>(p.accountParam === null ? '/api/report/mtm' : `/api/report/mtm?account=${p.accountParam}`),
     60_000, { deps: [p.accountParam] },
   );
-  const alerts = phoneAlerts(s, p.glance, p.glance?.btc.perpMark ?? null);
+  const alerts = phoneAlerts(s, p.glance, p.perp);
   const net = s ? (s.today?.netUsd ?? (s.realisedTodayUsd ?? 0) + (s.unrealisedPnlUsd ?? 0)) : null;
   const budget = s ? lossBudget(s) : null;
   const latest = orders.data?.trades.slice().sort((a, b) => b.openedAt - a.openedAt)[0] ?? null;
@@ -104,7 +104,7 @@ export function HomeScreen() {
         {!s ? <Empty>Reading positions…</Empty> : s.open.length === 0 ? <Empty>No open positions.</Empty> : (
           <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
             {s.open.map((t) => {
-              const r = positionRisk(t, { alarms: s.alarms, perpMark: p.glance?.btc.perpMark ?? null });
+              const r = positionRisk(t, { alarms: s.alarms, perpMark: p.perp });
               return (
                 <li key={`${t.account?.id ?? ''}-${t.tradeId}`}>
                   <ListButton onClick={() => p.openTrade(t.tradeId)} label={`${contractLabel(t.symbol)} ${r.long ? 'buy' : 'sell'}: open the trade`}>

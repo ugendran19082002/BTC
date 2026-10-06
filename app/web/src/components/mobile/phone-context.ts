@@ -49,6 +49,9 @@ export type PhoneData = {
   /** The account to ask the server for: null is every account. */
   accountParam: number | null;
   now: number;
+  /** The BTC perp now: its last trade as it prints (the stream), else the mark the glance read. `perpLive`: printing. */
+  perp: number | null;
+  perpLive: boolean;
   go: (to: Partial<Route>) => void;
   openTrade: (tradeId: string) => void;
   signOut: () => void;

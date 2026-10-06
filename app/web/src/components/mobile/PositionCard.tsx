@@ -1,21 +1,25 @@
 import { AlertOctagon, ChevronRight, Clock } from 'lucide-react';
 import type { Trade, TradeStatus } from '@/types/trade';
 import { Card } from '@/components/ui/card';
-import { contractLabel, countdown, duration, pct, price, signedInr, size, usdToInr } from '@/lib/format';
-import { positionRisk, type ExitRoom } from '@/lib/position-risk';
+import { contractLabel, countdown, duration, price, signedInr, size, usdToInr } from '@/lib/format';
+import { positionRisk } from '@/lib/position-risk';
 import { cn } from '@/lib/utils';
-import { Bar, Rupees, SidePill } from '@/components/mobile/parts';
+import { Rupees, SidePill } from '@/components/mobile/parts';
+import { ExitRail } from '@/components/mobile/ExitRail';
 
 /**
- * One open position, read only: what is wrong with it first, then entry, price now and P&L, then how far it has
- * gone toward its stop and its target -- each a bar, with the level, the points left and what it would leave --
+ * One open position, read only: what is wrong with it first, then entry, price now and P&L, then where the price
+ * stands between the stop and the target, drawn and moving (ExitRail) -- the BTC perp's line for a signal trade,
+ * whose real exits are there, and the option's own line only when the option has a stop or a target of its own --
  * then liquidation, settlement, how long it has been held and what opened it. No trading button: the phone's
  * session could not use one, and a screen that offers what it cannot do is lying.
  */
-export function PositionCard({ trade, alarms, perpMark, now, showAccount, onOpen }: {
+export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, showAccount, onOpen }: {
   trade: Trade;
   alarms: TradeStatus['alarms'];
   perpMark: number | null;
+  /** The perp's price is arriving as it prints. */
+  perpLive?: boolean;
   now: number;
   showAccount: boolean;
   /** Open the trade's whole journal. */
@@ -60,18 +64,33 @@ export function PositionCard({ trade, alarms, perpMark, now, showAccount, onOpen
         <Fig label="P&L"><Rupees usd={pnl} signed size="sm" /></Fig>
       </dl>
 
-      <div className="mt-3 flex flex-col gap-2.5">
-        <ExitBar kind="SL" room={r.stop} entry={entry} empty={r.perp?.stop ? 'on the BTC perp, below' : 'no stop'} />
-        <ExitBar kind="TGT" room={r.target} entry={entry} empty={r.perp?.target ? 'on the BTC perp, below' : 'no target'} />
+      <div className="mt-3 flex flex-col gap-3">
+        {r.perp && (r.perp.stop !== null || r.perp.target !== null) && (
+          <ExitRail
+            title="BTC perp" entry={r.perp.entry} target={r.perp.target} stop={r.perp.stop} current={perpMark}
+            fmt={whole} nowLabel="last" live={perpLive}
+          />
+        )}
+        {(r.stop || r.target) && (
+          <div>
+            <ExitRail
+              title="Option" entry={entry} target={r.target?.level ?? null} stop={r.stop?.level ?? null} current={r.exitPx}
+              fmt={(n) => price(n)} nowLabel={r.long ? 'bid' : 'ask'}
+            />
+            {(r.target?.moneyUsd != null || r.stop?.moneyUsd != null) && (
+              <div className="mt-1 flex justify-between gap-2 text-[11.5px] tabular-nums text-muted-foreground">
+                <span>{r.target?.moneyUsd != null ? <>TGT leaves <b className={moneyTone(r.target.moneyUsd)}>{signedInr(usdToInr(r.target.moneyUsd))}</b></> : ''}</span>
+                <span>{r.stop?.moneyUsd != null ? <>SL leaves <b className={moneyTone(r.stop.moneyUsd)}>{signedInr(usdToInr(r.stop.moneyUsd))}</b></> : ''}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {!r.stop && !r.target && !(r.perp && (r.perp.stop !== null || r.perp.target !== null)) && (
+          <p className="m-0 text-[13px] text-muted-foreground">No stop and no target on this position.</p>
+        )}
       </div>
 
       <dl className="m-0 mt-2 flex flex-col divide-y divide-[var(--line-soft)]">
-        {r.perp && (
-          <Line label="BTC perp">
-            {r.perp.stop !== null && <div>SL {Math.round(r.perp.stop).toLocaleString('en-US')}{r.perp.toStop !== null && <span className="text-muted-foreground"> · {pts(r.perp.toStop)} away</span>}</div>}
-            {r.perp.target !== null && <div>TGT {Math.round(r.perp.target).toLocaleString('en-US')}{r.perp.toTarget !== null && <span className="text-muted-foreground"> · {pts(r.perp.toTarget)} to go</span>}</div>}
-          </Line>
-        )}
         <Line label="Bid / Ask">{price(trade.live?.bid)} / {price(trade.live?.ask)}</Line>
         {r.liquidation && (
           <Line label="Liquidation">
@@ -90,7 +109,8 @@ export function PositionCard({ trade, alarms, perpMark, now, showAccount, onOpen
   );
 }
 
-const pts = (n: number) => `${n < 0 ? '−' : ''}${Math.abs(n) >= 100 ? Math.round(Math.abs(n)).toLocaleString('en-US') : Math.abs(n).toFixed(2)} pts`;
+const whole = (n: number) => Math.round(n).toLocaleString('en-US');
+const moneyTone = (usd: number) => (usd > 0 ? 'text-[var(--up)]' : usd < 0 ? 'text-[var(--down)]' : 'text-foreground');
 
 function Fig({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -106,40 +126,6 @@ function Line({ label, children }: { label: string; children: React.ReactNode })
     <div className="flex items-baseline justify-between gap-3 py-1.5">
       <dt className="shrink-0 whitespace-nowrap text-[13px] text-muted-foreground">{label}</dt>
       <dd className="m-0 min-w-0 text-right text-[13.5px] tabular-nums">{children}</dd>
-    </div>
-  );
-}
-
-/**
- * How far the price has gone from the entry toward one exit: the bar fills as it nears, red for the stop and
- * green for the target; the level, the points still between, and what filling there would leave.
- */
-function ExitBar({ kind, room, entry, empty }: { kind: 'SL' | 'TGT'; room: ExitRoom | null; entry: number | null; empty: string }) {
-  if (!room) {
-    return (
-      <div className="flex items-baseline justify-between text-[13px]">
-        <span className="font-semibold text-muted-foreground">{kind}</span>
-        <span className={cn(kind === 'SL' && empty === 'no stop' ? 'font-semibold text-[var(--down)]' : 'text-muted-foreground')}>{empty}</span>
-      </div>
-    );
-  }
-  const through = Number.isFinite(room.points) && room.points <= 0;
-  const span = entry !== null ? Math.abs(room.level - entry) : 0;
-  const gone = span > 0 && Number.isFinite(room.points) ? 1 - room.points / span : through ? 1 : 0;
-  return (
-    <div>
-      <div className="mb-1 flex items-baseline justify-between gap-2 text-[13px] tabular-nums">
-        <span className="min-w-0 truncate">
-          <b className={kind === 'SL' ? 'text-[var(--down)]' : 'text-[var(--up)]'}>{kind}</b> {price(room.level)}
-          <span className="text-muted-foreground">
-            {' · '}{through ? 'price is through it' : Number.isFinite(room.points) ? `${pts(room.points)}${room.pct !== null ? ` (${pct(room.pct, 0)})` : ''}` : ''}
-          </span>
-        </span>
-        {room.moneyUsd !== null && (
-          <span className={cn('shrink-0 whitespace-nowrap', room.moneyUsd > 0 ? 'text-[var(--up)]' : room.moneyUsd < 0 ? 'text-[var(--down)]' : '')}>{signedInr(usdToInr(room.moneyUsd))}</span>
-        )}
-      </div>
-      <Bar value={gone} tone={kind === 'SL' ? 'down' : 'up'} label={`${kind === 'SL' ? 'Stop' : 'Target'}: ${Math.round(Math.min(1, Math.max(0, gone)) * 100)}% of the way from the entry`} />
     </div>
   );
 }

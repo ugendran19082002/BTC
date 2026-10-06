@@ -37,7 +37,11 @@ export type PositionRisk = {
   liquidation: { level: number; points: number; multiple: number | null } | null;
   settlesAt: number | null;
   /** A signal trade's real exits, on the BTC perp: the levels, and the room left to each from the perp's mark. */
-  perp: { dir: 1 | -1; stop: number | null; target: number | null; toStop: number | null; toTarget: number | null } | null;
+  perp: {
+    dir: 1 | -1; stop: number | null; target: number | null; toStop: number | null; toTarget: number | null;
+    /** The perp's price as the option filled in, when the trade kept it: where the line between SL and TGT starts. */
+    entry: number | null;
+  } | null;
   /** What is wrong and must be seen, in the desk's words: an alarm, no stop at all, an exit the exchange refused. */
   problems: string[];
 };
@@ -79,6 +83,7 @@ export function positionRisk(t: Trade, opts: { alarms?: TradeStatus['alarms']; p
         dir: u.dir,
         stop: u.stop,
         target: u.target,
+        entry: finite(u.entry) ? u.entry : finite(t.perpEntry) ? t.perpEntry : null,
         // dir 1 is a view that BTC rises: its stop is under the perp and its target over it.
         toStop: finite(pm) && finite(u.stop) ? (u.dir === 1 ? pm - u.stop : u.stop - pm) : null,
         toTarget: finite(pm) && finite(u.target) ? (u.dir === 1 ? u.target - pm : pm - u.target) : null,
