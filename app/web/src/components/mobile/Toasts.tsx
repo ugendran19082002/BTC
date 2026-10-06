@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { CheckCircle2, Hourglass, Target, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Hourglass, ListChecks, Target, X, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -13,7 +13,8 @@ import { cn } from '@/lib/utils';
 
 export type Toast = {
   id: string;
-  kind: 'waiting' | 'filled' | 'closed' | 'gone';
+  /** `summary`: several things at once, or what happened while the screen was off -- one toast, not a stack. */
+  kind: 'waiting' | 'filled' | 'closed' | 'gone' | 'summary';
   /** For a close: whether it made or lost, once that is known. */
   tone?: 'up' | 'down';
   title: string;
@@ -23,7 +24,10 @@ export type Toast = {
   more?: string;
   /** A figure worth its own place, at the right: what a close made. */
   amount?: string;
+  /** What a tap opens: this trade's story... */
   tradeId?: string;
+  /** ...or, for a summary, the screen that lists them. */
+  to?: 'orders';
 };
 
 const LOOK = {
@@ -31,6 +35,7 @@ const LOOK = {
   filled: { icon: CheckCircle2, colour: 'text-[var(--up)]', edge: 'var(--up)' },
   closed: { icon: Target, colour: 'text-foreground', edge: 'var(--buy)' },
   gone: { icon: XCircle, colour: 'text-muted-foreground', edge: 'var(--dim)' },
+  summary: { icon: ListChecks, colour: 'text-foreground', edge: 'var(--buy)' },
 } as const;
 
 /** How long a toast stays when nobody touches it. */
@@ -38,7 +43,7 @@ export const TOAST_MS = 7_000;
 /** How far a push must go to count: sideways, and upward. Less, and it comes back. */
 const SWIPE_X = 72, SWIPE_UP = 36, TAP_SLOP = 8, LEAVE_MS = 220;
 
-export function Toasts({ toasts, onOpen, onDismiss }: { toasts: Toast[]; onOpen: (tradeId: string) => void; onDismiss: (id: string) => void }) {
+export function Toasts({ toasts, onOpen, onDismiss }: { toasts: Toast[]; onOpen: (toast: Toast) => void; onDismiss: (id: string) => void }) {
   return (
     <div
       role="status" aria-live="polite" aria-label="Live events"
@@ -51,7 +56,7 @@ export function Toasts({ toasts, onOpen, onDismiss }: { toasts: Toast[]; onOpen:
 
 type Leaving = 'left' | 'right' | 'up' | 'fade';
 
-function ToastCard({ toast: t, onOpen, onDismiss }: { toast: Toast; onOpen: (tradeId: string) => void; onDismiss: (id: string) => void }) {
+function ToastCard({ toast: t, onOpen, onDismiss }: { toast: Toast; onOpen: (toast: Toast) => void; onDismiss: (id: string) => void }) {
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
   const [leaving, setLeaving] = useState<Leaving | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -120,8 +125,8 @@ function ToastCard({ toast: t, onOpen, onDismiss }: { toast: Toast; onOpen: (tra
       }}
     >
       <button
-        type="button" disabled={!t.tradeId} onClick={() => t.tradeId && onOpen(t.tradeId)}
-        aria-label={[t.title, t.amount, t.detail, t.more, t.tradeId ? 'open the trade' : null].filter(Boolean).join(', ')}
+        type="button" disabled={!t.tradeId && !t.to} onClick={() => (t.tradeId || t.to) && onOpen(t)}
+        aria-label={[t.title, t.amount, t.detail, t.more, t.tradeId ? 'open the trade' : t.to ? 'open Orders' : null].filter(Boolean).join(', ')}
         className="flex min-w-0 flex-1 items-center gap-2.5 border-0 bg-transparent py-2.5 pl-3 pr-1 text-left font-[inherit] text-foreground disabled:cursor-default"
       >
         <look.icon aria-hidden="true" className={cn('h-5 w-5 shrink-0', colour)} />

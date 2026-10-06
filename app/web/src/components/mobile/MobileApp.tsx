@@ -250,7 +250,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
                             : <MoreScreen />}
       </Frame>
       {route.trade && <TradeDetail tradeId={route.trade} onClose={closeTrade} onSignedOut={onSignedOut} />}
-      <Toasts toasts={live.toasts} onOpen={openTrade} onDismiss={live.dismiss} />
+      <Toasts toasts={live.toasts} onOpen={(t) => (t.tradeId ? openTrade(t.tradeId) : go({ tab: 'orders', sub: null }))} onDismiss={live.dismiss} />
     </PhoneContext.Provider>
   );
 }
