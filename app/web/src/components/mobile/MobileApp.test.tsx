@@ -253,7 +253,7 @@ describe('P&L: the day\'s high and low (owner, 6 Oct 2026)', () => {
     expect(high).toHaveTextContent('+₹3,060');
     expect(high).toHaveTextContent('13:05');
     expect(screen.getByText('Day low').parentElement!).toHaveTextContent('−₹510');
-    expect(screen.getByText('Max drawdown').parentElement!).toHaveTextContent('−₹680');
+    expect(screen.getByText('Drawdown').parentElement!).toHaveTextContent('−₹680');
     fireEvent.click(screen.getByRole('radio', { name: '7 days' }));
     const best = (await screen.findByText('Best day')).parentElement!;
     expect(best).toHaveTextContent('+₹1,020');

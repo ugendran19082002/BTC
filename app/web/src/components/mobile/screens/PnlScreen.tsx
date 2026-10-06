@@ -22,11 +22,12 @@ import { rangeProblem } from '@/lib/custom-range';
  */
 
 type Range = 'today' | '7' | '30' | '90' | 'custom';
-const RANGES: { key: Range; label: string; days: number }[] = [
+const RANGES: { key: Range; label: string; spoken?: string; days: number }[] = [
+  // Short on the button so five fit a 360px phone; said in full to a screen reader.
   { key: 'today', label: 'Today', days: 0 },
-  { key: '7', label: '7 days', days: 6 },
-  { key: '30', label: '30 days', days: 29 },
-  { key: '90', label: '90 days', days: 89 },
+  { key: '7', label: '7D', spoken: '7 days', days: 6 },
+  { key: '30', label: '30D', spoken: '30 days', days: 29 },
+  { key: '90', label: '90D', spoken: '90 days', days: 89 },
   // Last, as asked (owner, 6 Oct 2026): any From and To, picked in a sheet.
   { key: 'custom', label: 'Custom', days: -1 },
 ];
@@ -101,7 +102,7 @@ export function PnlScreen() {
           <dl className="m-0 mt-3 grid grid-cols-3 gap-2">
             <Mark label="Day high" usd={mtm.data.stats.max?.netUsd ?? null} when={mtm.data.stats.max ? clock(mtm.data.stats.max.at) : null} />
             <Mark label="Day low" usd={mtm.data.stats.min?.netUsd ?? null} when={mtm.data.stats.min ? clock(mtm.data.stats.min.at) : null} />
-            <Mark label="Max drawdown" usd={mtm.data.stats.maxDrawdown ? -mtm.data.stats.maxDrawdown.usd : null} when={mtm.data.stats.maxDrawdown ? `low at ${clock(mtm.data.stats.maxDrawdown.at)}` : 'none'} />
+            <Mark label="Drawdown" usd={mtm.data.stats.maxDrawdown ? -mtm.data.stats.maxDrawdown.usd : null} when={mtm.data.stats.maxDrawdown ? `low at ${clock(mtm.data.stats.maxDrawdown.at)}` : 'none'} />
           </dl>
         )}
         {!isToday && days.data && (days.data.totals.best || days.data.totals.worst) && (
@@ -165,7 +166,7 @@ function Mark({ label, usd, when }: { label: string; usd: number | null; when: s
   return (
     <div className="min-w-0 rounded-md bg-muted px-2.5 py-2">
       <dt className="truncate text-[11.5px] text-muted-foreground">{label}</dt>
-      <dd className={cn('m-0 truncate text-[15px] font-semibold tabular-nums', toneOf(usd) === 'up' && 'text-[var(--up)]', toneOf(usd) === 'down' && 'text-[var(--down)]')}>{rs(usd)}</dd>
+      <dd className={cn('m-0 truncate text-[14px] font-semibold tabular-nums min-[390px]:text-[15px]', toneOf(usd) === 'up' && 'text-[var(--up)]', toneOf(usd) === 'down' && 'text-[var(--down)]')}>{rs(usd)}</dd>
       {when && <dd className="m-0 truncate text-[11px] tabular-nums text-muted-foreground">{when}</dd>}
     </div>
   );

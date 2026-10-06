@@ -43,10 +43,11 @@ export function Rows({ children }: { children: ReactNode }) {
 /** A small tile: a label over a figure. */
 export function Stat({ label, children, tone }: { label: string; children: ReactNode; tone?: 'up' | 'down' | 'warn' | 'dim' }) {
   return (
-    <div className="min-w-0 rounded-md bg-muted px-3 py-2">
+    <div className="min-w-0 rounded-md bg-muted px-2.5 py-2">
       <dt className="truncate text-[11.5px] text-muted-foreground">{label}</dt>
       <dd className={cn(
-        'm-0 truncate text-[15px] font-semibold tabular-nums',
+        // 14px on the narrowest phones, so "+₹4,123" fits a third of 360px whole rather than as "+₹4,1…".
+        'm-0 truncate text-[14px] font-semibold tabular-nums min-[390px]:text-[15px]',
         tone === 'up' && 'text-[var(--up)]', tone === 'down' && 'text-[var(--down)]',
         tone === 'warn' && 'text-[var(--warn)]', tone === 'dim' && 'text-muted-foreground',
       )}>
@@ -82,15 +83,15 @@ export const SidePill = ({ long }: { long: boolean }) => <Pill tone={long ? 'buy
 
 /** One choice of a few, as a single control: the chosen one filled. For ranges -- Today, 7 days, 30 days. */
 export function Segmented<T extends string>({ label, value, options, onChange }: {
-  label: string; value: T; options: readonly { key: T; label: string }[]; onChange: (v: T) => void;
+  label: string; value: T; options: readonly { key: T; label: string; spoken?: string }[]; onChange: (v: T) => void;
 }) {
   return (
     <div role="radiogroup" aria-label={label} className="grid rounded-lg bg-muted p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
       {options.map((o) => (
         <button
-          key={o.key} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)}
+          key={o.key} type="button" role="radio" aria-checked={value === o.key} aria-label={o.spoken} onClick={() => onChange(o.key)}
           className={cn(
-            'h-10 rounded-md border-0 font-[inherit] text-[13.5px] font-semibold',
+            'h-10 min-w-0 whitespace-nowrap rounded-md border-0 px-1 font-[inherit] text-[13.5px] font-semibold',
             value === o.key ? 'bg-[var(--up)] text-[var(--bg)]' : 'bg-transparent text-muted-foreground',
           )}
         >
