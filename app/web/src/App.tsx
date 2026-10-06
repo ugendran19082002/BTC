@@ -522,6 +522,21 @@ export default function App() {
 
   // The tab says what the header says, for a glance from another tab.
   const headerDay = !accountsKnown ? null : tradingList.length > 1 ? mergedDay : trade;
+  // Each account's own open trades, for its tab; added, they are the Positions badge. Several accounts: counted
+  // from the merged list, where each trade says whose it is. One: all of them are that account's.
+  const openByAccount = useMemo(() => {
+    const by = new Map<number, number>();
+    if (!headerDay) return by;
+    if (headerDay.combined) {
+      for (const a of headerDay.combined.accounts) by.set(a.id, 0);
+      for (const t of headerDay.open) if (t.account) by.set(t.account.id, (by.get(t.account.id) ?? 0) + 1);
+    } else {
+      const only = tradingList.length === 1 ? tradingList[0]! : tradingAccount;
+      if (only) by.set(only.id, headerDay.open.length);
+    }
+    return by;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headerDay, tradingKey, tradingAccount?.id]);
   const todayNetUsd = headerDay ? (headerDay.today?.netUsd ?? (headerDay.realisedTodayUsd ?? 0) + (headerDay.unrealisedPnlUsd ?? 0)) : null;
   const todayInr = todayNetUsd === null ? null : pnlTone(todayNetUsd) ? signedInr(usdToInr(todayNetUsd)) : '₹0';
   useEffect(() => {
@@ -605,7 +620,10 @@ export default function App() {
         </button>
       </nav>
 
-      {accountScreens && <AccountTabs accounts={accountList} value={shown} onChange={setAccountChoice} withAll={withAll} />}
+      {accountScreens && (
+        <AccountTabs accounts={accountList} value={shown} onChange={setAccountChoice} withAll={withAll}
+                     openCounts={openByAccount} openTotal={headerDay ? headerDay.open.length : null} />
+      )}
       <Suspense fallback={<Loading />}>
       {accountScreens && !accountsKnown ? <Loading /> : tab === 'desk' ? (
         <div className="desk-shell">

@@ -50,6 +50,21 @@ describe('the account tabs', () => {
     expect(shownAccount([], null)).toBe('all'); // a desk with no account shows everything, as before
   });
 
+  it('[critical] each tab wears its own open trades, and All accounts their sum -- none where an account is not trading', () => {
+    const three = [
+      { id: 1, name: 'Sell Order', isDefault: true, active: true }, { id: 2, name: 'Buy Order', isDefault: false, active: true },
+      { id: 3, name: 'Old', isDefault: false, active: false },
+    ] as never;
+    render(<AccountTabs accounts={three} value={2} onChange={() => {}} openCounts={new Map([[1, 17], [2, 1]])} openTotal={18} />);
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Sell Order17', 'Buy Order1', 'Old off', 'All accounts18']);
+    expect(within(tabs[0]!).getByLabelText('17 open')).toBeInTheDocument();
+    expect(within(tabs[2]!).queryByLabelText(/open$/)).toBeNull();
+    // An account with none says so; not read yet says nothing.
+    render(<AccountTabs accounts={three} value={1} onChange={() => {}} openCounts={new Map([[1, 0]])} openTotal={null} />);
+    expect(screen.getAllByLabelText('0 open')).toHaveLength(1);
+  });
+
   it('[critical] Strategy has no "All accounts": a remembered "all" shows the default account there', () => {
     const two = [{ id: 1, name: 'SELL', isDefault: true, active: true }, { id: 2, name: 'BUY', isDefault: false, active: true }] as never;
     expect(shownAccount(two, 'all')).toBe('all');
