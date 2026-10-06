@@ -80,7 +80,7 @@ describe('the Methods report', () => {
     await openWithout();
     expect(shown()).toHaveAttribute('aria-labelledby', 'mrw-tab-single');
     const tfs = within(screen.getByRole('tablist', { name: 'Timeframe' })).getAllByRole('tab');
-    expect(tfs.map((t) => t.textContent)).toEqual(['All5', '3m0', '5m0', '15m2', '30m0', '1h0', '4h0']);
+    expect(tfs.map((t) => t.textContent)).toEqual(['All5', '3m0', '5m0', '15m2', '30m0', '1h0', '2h0', '4h0']);
   });
 
   it('[critical] Profit and Loss list the methods whose net points are up or down -- and the totals follow', async () => {

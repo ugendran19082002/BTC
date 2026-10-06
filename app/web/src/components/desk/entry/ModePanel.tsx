@@ -24,7 +24,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 
 const CHAIN_TFS: readonly EntryTf[] = ['4h', '1h', '30m', '15m', '5m', '3m', '1m'];
 /** The timeframes the methods are read on without the chain -- signalled, alerted, kept. Not 1m (the server's SINGLE_TFS). */
-export const SINGLE_TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+export const SINGLE_TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 /** 1m is a chart to look at only (owner, 1 Oct 2026): no reads, no signal, no alert, no history. */
 export const VIEW_ONLY_TFS: readonly EntryTf[] = ['1m'];
 /** Every chip a panel's chart offers. */

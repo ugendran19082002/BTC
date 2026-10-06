@@ -21,7 +21,7 @@ import { MethodFilter } from './MethodFilter';
  */
 
 // Not 1m: chart-only without the chain, so it gives no signal and the server keeps none.
-const TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+const TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 // Ten by default: the newest signals are what is read; a longer page is one click.
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 const TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });

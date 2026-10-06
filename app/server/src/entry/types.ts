@@ -11,9 +11,9 @@ import type { DerivHistory } from './deriv.js';
  * states, and only TRADE carries an entry, a stop and targets.
  */
 
-export type Tf = '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
+export type Tf = '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h';
 export const TF_SEC: Record<Tf, number> = {
-  '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1_800, '1h': 3_600, '4h': 14_400,
+  '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1_800, '1h': 3_600, '2h': 7_200, '4h': 14_400,
 };
 /** The chain, coarsest first, with each timeframe's job and its weight in the alignment figure (TEST.md). */
 export const CHAIN: readonly { tf: Tf; role: string; weight: number }[] = [

@@ -89,7 +89,7 @@ export const setShortCap = (contracts: number) =>
  * open-interest walls against recent price does not need a year of 1m bars, and
  * a caller free to ask for one is a caller who can hang the page.
  */
-export const getCandles = (tf: '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d') =>
+export const getCandles = (tf: '1m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '1d') =>
   json<CandlesResponse>(`/api/candles?tf=${tf}`);
 
 /** The perpetual: ticker, top of book, and the last hour's flow by aggressor side. */

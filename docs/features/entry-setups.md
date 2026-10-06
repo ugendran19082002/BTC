@@ -314,7 +314,7 @@ phone, where a method is its **number only**. Each panel has:
 
 - **The desk's price chart** ([price-chart.md](price-chart.md)) -- candles,
   volume and its readout; its layers were removed on 4 Oct 2026 -- on that
-  panel's timeframe: without timeframe, the 3m-4H chips set
+  panel's timeframe: without timeframe, the 3m-4H chips (3m, 5m, 15m, 30m, 1h, 2h since 6 Oct 2026, 4h) set
   what its reads use and the chart follows, and **1m is chart-only** (the
   chart, and in place of the table a note that 1m gives no signal or alert); with timeframe, the chips only
   change what the chart shows (the reads stay at 5m). The chart decides no

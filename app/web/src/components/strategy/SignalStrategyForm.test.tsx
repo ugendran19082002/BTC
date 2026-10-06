@@ -184,7 +184,8 @@ describe('picking the methods', () => {
     fireEvent.click(screen.getByRole('button', { name: 'No timeframes' }));
     expect(screen.getByText('Pick at least one timeframe.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'All timeframes' }));
-    expect(tfs.getAllByRole('button', { pressed: true })).toHaveLength(6);
+    // Seven since 2h joined (6 Oct 2026), in the desk's order.
+    expect(tfs.getAllByRole('button', { pressed: true }).map((b) => b.textContent)).toEqual(['3m', '5m', '15m', '30m', '1h', '2h', '4h']);
   });
 
   it('the win rate is a whole number, added up from the sums', () => {

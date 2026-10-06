@@ -7,7 +7,7 @@ import { bumpDataVersion } from './version.js';
 
 /** Timeframes a without-the-chain alert may be asked for; 5m unless the owner picks others. */
 // Not 1m: it is view-only without the chain (engine.ts SINGLE_TFS), so it never alerts.
-export const ALERT_TFS: readonly Tf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+export const ALERT_TFS: readonly Tf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 const isTf = (t: string): t is Tf => (ALERT_TFS as readonly string[]).includes(t);
 
 /**

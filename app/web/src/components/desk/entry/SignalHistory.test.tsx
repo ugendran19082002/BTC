@@ -373,3 +373,16 @@ describe('the methods filter (6 Oct 2026)', () => {
     expect(screen.getByRole('button', { name: 'Methods: All methods' })).toBeInTheDocument();
   });
 });
+
+describe('2h, a timeframe like the rest (6 Oct 2026)', () => {
+  it('[critical] is a chip between 1h and 4h, and choosing it asks the history for 2h', async () => {
+    render(<SignalHistory />);
+    await screen.findByRole('table', { name: 'signals' });
+    const chips = within(screen.getByRole('group', { name: 'history timeframe' }));
+    expect(chips.getAllByRole('button').map((b) => b.textContent)).toEqual(['All TF', '3m', '5m', '15m', '30m', '1h', '2h', '4h']);
+    fireEvent.click(chips.getByRole('button', { name: '2h' }));
+    await waitFor(() => expect(getEntrySignals.mock.lastCall![0]).toMatchObject({ tf: '2h' }));
+    // Saved and read back as itself, not cleaned away as a timeframe that is gone.
+    expect(cleanFilter({ tf: '2h' }).tf).toBe('2h');
+  });
+});

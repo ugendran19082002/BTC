@@ -18,7 +18,7 @@ import { entryScene } from './chart/entry-layer';
 import type { EntryOverlay } from '@/types/entry';
 import './chart/price-chart.css';
 
-export type ChartTf = '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
+export type ChartTf = '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '1d';
 
 /** Bars shown when a timeframe opens -- about nine pixels each, at least thirty -- and the space kept right of the last one for levels and labels. */
 const openingBars = (width: number) => Math.max(30, Math.min(90, Math.floor(width / 9)));

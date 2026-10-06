@@ -164,8 +164,8 @@ export type StrategyConfig = {
 };
 
 /** Mirrors the server's SignalRule (app/server/src/strategy/types.ts). */
-export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
-export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h';
+export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 /** "At most open at once" is typed, 1 to this (server: MAX_SIGNAL_OPEN). */
 export const MAX_SIGNAL_OPEN = 100;
 /** The most the desk-wide cap may be set to; 0 takes it off (server: MAX_GLOBAL_OPEN). */

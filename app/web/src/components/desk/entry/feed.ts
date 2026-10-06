@@ -100,7 +100,8 @@ export function useEntryFeed(desk: DeskFeed, shown: readonly EntryTf[]) {
           : tf === '5m' ? bars5m
           : tf === '15m' || tf === '30m' ? foldForChart(bars5m, M5, TF_SECONDS[tf]!)
           : tf === '1h' ? live1h
-          : foldForChart(live1h, H1, 14_400);
+          // 2h and 4h: the hourly bars folded to the timeframe's own length (it was 4h for anything past 1h).
+          : foldForChart(live1h, H1, TF_SECONDS[tf] ?? 14_400);
         cache.set(tf, b);
       }
       return b;
@@ -109,7 +110,7 @@ export function useEntryFeed(desk: DeskFeed, shown: readonly EntryTf[]) {
 
   return useMemo(() => (tf: EntryTf) => ({
     bars: barsOf(tf),
-    loading: tf === '1m' || tf === '3m' ? !m1 : tf === '1h' || tf === '4h' ? !h1 : false,
+    loading: tf === '1m' || tf === '3m' ? !m1 : tf === '1h' || tf === '2h' || tf === '4h' ? !h1 : false,
     context,
     derivs,
     ltp,

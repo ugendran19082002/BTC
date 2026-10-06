@@ -36,7 +36,26 @@ export const CLOSE_SETTLE_SEC = 2;
  */
 export const wholeUntil = (askedAtMs: number, nowSec: number) => Math.min(nowSec, Math.floor(askedAtMs / 1000) - CLOSE_SETTLE_SEC);
 
-const VENUE: [Tf, Timeframe][] = [['1m', '1m'], ['5m', '5m'], ['15m', '15m'], ['30m', '30m'], ['1h', '1h'], ['4h', '4h']];
+// 2h since 6 Oct 2026: the venue's own 2h candles, already in the series every read asks for (market/moves.ts).
+const VENUE: [Tf, Timeframe][] = [['1m', '1m'], ['5m', '5m'], ['15m', '15m'], ['30m', '30m'], ['1h', '1h'], ['2h', '2h'], ['4h', '4h']];
+/**
+ * Timeframes that do not gate the early look. 2h joined after it was built, and a 2h candle the venue is slow
+ * with must not hold the signals of the timeframes that were there back to the settled read: they run when
+ * *their* candles are final, as before. The 2h candle is checked on its own (`finalAt`) and, if it is not final
+ * yet, left out of that early run -- the next pass reads it.
+ */
+const NOT_GATING: readonly Tf[] = ['2h'];
+
+/** Whether `tf`'s candle that closed at `boundarySec` is in the data and ends at the tape's last trade. True off its grid: nothing closed. */
+export function finalAt(series: ReadonlyMap<Timeframe, readonly Candle[]>, boundarySec: number, tape: TapeMinute | null, tf: Tf, venue: Timeframe): boolean {
+  if (boundarySec % TF_SEC[tf] !== 0) return true;
+  const bar = (series.get(venue) ?? []).find((b) => b.time === boundarySec - TF_SEC[tf]);
+  return !!bar && !!tape && Math.abs(bar.close - tape.close) < 1e-6;
+}
+
+/** The frame without the candle that closed at `boundarySec`: it is read when it is final, not before. */
+export const withoutClosing = (bars: readonly Candle[], tfSec: number, boundarySec: number): readonly Candle[] =>
+  bars.filter((b) => b.time !== boundarySec - tfSec);
 
 /** The closed minute as the desk's own tape saw it (market/flow.ts `perpMinuteFromTape`). */
 export type TapeMinute = { close: number; high: number; low: number; volume: number };
@@ -62,7 +81,7 @@ export function closeVerified(series: ReadonlyMap<Timeframe, readonly Candle[]>,
   // Volume to a tenth of a percent, or one contract: the venue sums the same trades the tape holds.
   if (Math.abs(m1.volume - tape.volume) > Math.max(1, tape.volume * 0.001)) return false;
   for (const [tf, venue] of VENUE) {
-    if (tf === '1m' || boundarySec % TF_SEC[tf] !== 0) continue;
+    if (tf === '1m' || NOT_GATING.includes(tf) || boundarySec % TF_SEC[tf] !== 0) continue;
     const bar = (series.get(venue) ?? []).find((b) => b.time === boundarySec - TF_SEC[tf]);
     if (!bar || !same(bar.close, tape.close)) return false;
   }
@@ -85,6 +104,12 @@ export async function readEntryContext(now = Date.now(), early?: { minAskedAt: n
   const asOf = verified ? Math.max(wholeUntil(askedAt, nowSec), Math.min(nowSec, minuteStart / 1000)) : wholeUntil(askedAt, nowSec);
   const frames: Frames = {};
   for (const [tf, venue] of VENUE) frames[tf] = closedOnly(series.get(venue) ?? [], TF_SEC[tf], asOf);
+  // An early run on verified candles: a timeframe that does not gate it is read only if its own candle is final too.
+  if (verified) for (const [tf, venue] of VENUE) {
+    if (NOT_GATING.includes(tf) && !finalAt(series, minuteStart / 1000, early?.tape ?? null, tf, venue)) {
+      frames[tf] = withoutClosing(frames[tf] ?? [], TF_SEC[tf], minuteStart / 1000);
+    }
+  }
   frames['3m'] = resampleTf(frames['1m'] ?? [], 3);
 
   const [flow, heat, book, snap, market, off, deriv, eth] = await Promise.all([

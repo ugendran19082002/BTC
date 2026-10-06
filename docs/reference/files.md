@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-403 files listed, 197 test files counted below, images and lockfiles left out.
+403 files listed, 198 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 117 |
-| `app/web` | 80 |
+| `app/web` | 81 |
 
 ## `(root)`
 

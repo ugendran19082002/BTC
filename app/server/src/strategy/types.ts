@@ -394,8 +394,8 @@ function ptsFor(mode: SignalRule['mode'], by: Partial<Record<SignalTf, number>> 
 }
 /** The default: enter "in the trade". */
 export const entersOn = (rule: Pick<SignalRule, 'enterOn'>): SignalEntry => rule.enterOn ?? 'zone';
-export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '4h';
-export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h';
+export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 /** "At most open at once" is typed, 1 to this. */
 export const MAX_SIGNAL_OPEN = 100;
 

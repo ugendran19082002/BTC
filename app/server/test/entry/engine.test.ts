@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Candle } from '../../src/market/delta.js';
-import { entryBoard, fillOf, MAX_TP1_R, pickTargets, TP1_FALLBACK_R, readMethod, rrOf, targetLevels, zoneOf, timeframeRows, MAX_ZONE_ATR, MIN_RR, TP_STEP_ATR } from '../../src/entry/engine.js';
+import { allReads, entryBoard, fillOf, MAX_TP1_R, pickTargets, TP1_FALLBACK_R, readMethod, rrOf, targetLevels, zoneOf, timeframeRows, MAX_ZONE_ATR, MIN_RR, TP_STEP_ATR } from '../../src/entry/engine.js';
 import { atr } from '../../src/entry/prims.js';
 import { METHODS } from '../../src/entry/methods.js';
 import type { EntryContext, Frames } from '../../src/entry/types.js';
@@ -410,4 +410,44 @@ test('[critical] the perpetual is the price; the mark checks it: a last trade fa
   // A mark gone stale is not read.
   const stale = readMethod(BREAKOUT, 'single', '5m', single({ ltp: { price: 84_400, at: 0 }, quote: { mark: 84_200, index: null, at: 0 } }));
   assert.equal(stale.gates.find((g) => g.key === 'mark')!.ok, null);
+});
+
+test('[critical] 2h is read exactly as any other timeframe: the same bars give the same TRADE, stop and targets (6 Oct 2026)', () => {
+  // The 5m breakout's candles, laid on 2h bars: a method reads prices, not the length of a bar.
+  const TWO_H = 7_200;
+  const five = breakoutBars();
+  const t0 = Math.ceil(five[0]!.time / TWO_H) * TWO_H;
+  const two = five.map((b, i) => ({ ...b, time: t0 + i * TWO_H }));
+  const ctx = (bars: readonly Candle[], tfSec: number, tf: '5m' | '2h') => ctxOf({
+    now: (bars[bars.length - 1]!.time + tfSec + 5) * 1000, frames: { [tf]: bars }, walls: [{ side: 'ask', price: 84_900, size: 5_000 }],
+  });
+  const on5 = readMethod(BREAKOUT, 'single', '5m', ctx(five, 300, '5m'));
+  const on2 = readMethod(BREAKOUT, 'single', '2h', ctx(two, TWO_H, '2h'));
+  assert.equal(on2.state, 'TRADE', on2.reason);
+  assert.equal(on2.tf, '2h');
+  assert.deepEqual([on2.dir, on2.plan!.entryLo, on2.plan!.entryHi, on2.plan!.stop, on2.plan!.tp1, on2.plan!.tp2],
+    [on5.dir, on5.plan!.entryLo, on5.plan!.entryHi, on5.plan!.stop, on5.plan!.tp1, on5.plan!.tp2]);
+  assert.equal(on2.triggerTime, two[two.length - 1]!.time, 'triggered by its own last closed 2h bar');
+  // Its candles gone stale is NO TRADE, by its own bar length -- as for every timeframe.
+  const stale = readMethod(BREAKOUT, 'single', '2h', { ...ctx(two, TWO_H, '2h'), now: (two[two.length - 1]!.time + TWO_H * 4) * 1000 });
+  assert.equal(stale.state, 'NO_TRADE');
+  // With no 2h candles it says so, and the chain is untouched: 2h is not one of its steps.
+  assert.match(readMethod(BREAKOUT, 'single', '2h', ctxOf({ frames: { '5m': five } })).reason, /not enough 2h candles/);
+  assert.ok(!timeframeRows(ctxOf({ frames: { '2h': two } })).some((r) => (r.tf as string) === '2h'));
+});
+
+test('[critical] adding 2h changes nothing that was there: every existing timeframe, and the chain, reads the same with 2h candles as without (6 Oct 2026)', () => {
+  // Every one of the 81 methods, with the chain and on each timeframe that was read before -- the whole board.
+  const before = ['3m', '5m', '15m', '30m', '1h', '4h'] as const;
+  for (const o of [{}, { h1: -6, h4: -6 }, { bull3m: false }] as const) {
+    const without = withChain(o);
+    const withTwo: EntryContext = { ...without, frames: { ...without.frames, '2h': htf(7_200, -9) } };
+    // A 2h trend the other way from everything else: if any read looked at it, it would show.
+    assert.deepEqual(allReads(withTwo, before), allReads(without, before));
+    assert.deepEqual(entryBoard(withTwo, '5m'), entryBoard(without, '5m'));
+  }
+  // And the 2h reads are there beside them, one per method.
+  const all = allReads(withChain());
+  assert.equal(all.filter((r) => r.mode === 'single' && r.tf === '2h').length, METHODS.length);
+  assert.equal(all.filter((r) => r.mode === 'mtf').length, METHODS.length, 'the chain is still read once, on 5m');
 });

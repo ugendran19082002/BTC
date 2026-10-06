@@ -74,4 +74,4 @@ export function clockText(
 }
 
 /** Seconds in a bar of each timeframe (the server's TF_SEC). */
-export const TF_SEC = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1_800, '1h': 3_600, '4h': 14_400 } as const;
+export const TF_SEC = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1_800, '1h': 3_600, '2h': 7_200, '4h': 14_400 } as const;

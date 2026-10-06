@@ -74,7 +74,7 @@ test('[critical] every gate on: only the setups taken under the rules as designe
 
 test('[critical] without the chain, one section per timeframe -- and they add up to All', async () => {
   const { sections: [, all], singleByTf } = await methodReport();
-  assert.deepEqual(Object.keys(singleByTf), ['3m', '5m', '15m', '30m', '1h', '4h']);
+  assert.deepEqual(Object.keys(singleByTf), ['3m', '5m', '15m', '30m', '1h', '2h', '4h']);
   const line = (tf: '3m' | '5m' | '15m') => singleByTf[tf]!.rows.find((r) => r.method === 'breakout')!;
   assert.deepEqual([line('15m').trades, line('15m').netPts], [1, -100], 'the 15m stop');
   assert.deepEqual([line('5m').trades, line('5m').netPts], [1, 60], 'the 5m TP1');

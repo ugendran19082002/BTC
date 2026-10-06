@@ -533,8 +533,12 @@ export function entryBoard(ctx: EntryContext, tf: Tf = '5m'): MethodRead[] {
  * alerted and kept in the history. Not 1m: at the owner's request (1 Oct 2026)
  * 1m is a chart to look at only; its bars are too fast for these methods'
  * stops and fees. The chain still reads 1m as its execution step.
+ *
+ * 2h joined on 6 Oct 2026 at the owner's request, between the two timeframes that did best in the paper log
+ * and in the real trades (1h and 4h). It is read exactly as they are -- the same 81 methods, gates, stops and
+ * targets on its own bars -- and is not a step of the chain, which stays 4H / 1H / 30m / 15m / 5m / 3m / 1m.
  */
-export const SINGLE_TFS: readonly Tf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+export const SINGLE_TFS: readonly Tf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 
 /** Timeframes the without-the-chain panel may show as a chart only: no reads, no signal, no alert. */
 export const VIEW_ONLY_TFS: readonly Tf[] = ['1m'];

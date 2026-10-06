@@ -443,6 +443,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
       '15m': { resolution: '15m', hours: 96 },
       '30m': { resolution: '30m', hours: 24 * 7 },
       '1h': { resolution: '1h', hours: 24 * 14 },
+      '2h': { resolution: '2h', hours: 24 * 30 },
       '4h': { resolution: '4h', hours: 24 * 60 },
       '1d': { resolution: '1d', hours: 24 * 150 },
     };

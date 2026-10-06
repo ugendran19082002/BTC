@@ -1,6 +1,6 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeVerified } from '../../src/entry/read.js';
+import { closeVerified, finalAt, withoutClosing } from '../../src/entry/read.js';
 import { FlowSocket } from '../../src/market/flow-socket.js';
 import { perpMinuteFromTape, useFlowSocket } from '../../src/market/flow.js';
 import type { Candle } from '../../src/market/delta.js';
@@ -70,4 +70,28 @@ test('[critical] the tape does not vouch for a minute it did not see whole, or a
   assert.equal(perpMinuteFromTape(minuteMs, minuteMs + 1_000), null, 'nothing traded in the minute');
   feed(minuteMs + 1_000, [[minuteMs - 70_000, 84_900, 9], [minuteMs - 1, 85_020, 600]], false);
   assert.equal(perpMinuteFromTape(minuteMs, minuteMs + 1_000), null, 'the socket is not live: its last trades are not the minute');
+});
+
+test('[critical] a late 2h candle does not hold the other timeframes back: it does not gate the early look, and is itself read only when final (6 Oct 2026)', () => {
+  // A boundary every timeframe closes on: 1m, 5m, 15m, 30m, 1h, 2h and 4h.
+  const D = 1_790_035_200;
+  assert.deepEqual([60, 300, 900, 1_800, 3_600, 7_200, 14_400].map((t) => D % t), [0, 0, 0, 0, 0, 0, 0]);
+  const at = (sec: number, o: Partial<Candle> = {}) => bar(D - sec, o);
+  const others: [string, Candle[]][] = [['5m', [at(300)]], ['15m', [at(900)]], ['30m', [at(1_800)]], ['1h', [at(3_600)]], ['4h', [at(14_400)]]];
+  // Every candle that was checked before is final: the early look runs -- with the 2h candle final, missing, or not final yet.
+  assert.equal(closeVerified(series([at(60)], [...others, ['2h', [at(7_200)]]]), D, tape), true);
+  assert.equal(closeVerified(series([at(60)], others), D, tape), true, 'the venue has not listed the 2h candle yet');
+  assert.equal(closeVerified(series([at(60)], [...others, ['2h', [at(7_200, { close: 85_011 })]]]), D, tape), true, 'the 2h candle is still moving');
+  // And a timeframe that was checked before still gates it, exactly as it did.
+  assert.equal(closeVerified(series([at(60)], [...others.filter(([t]) => t !== '1h'), ['1h', [at(3_600, { close: 85_011 })]], ['2h', [at(7_200)]]]), D, tape), false);
+
+  // The 2h candle is read in that early run only if it is final itself.
+  assert.equal(finalAt(series([], [['2h', [at(7_200)]]]), D, tape, '2h', '2h'), true);
+  assert.equal(finalAt(series([], [['2h', [at(7_200, { close: 85_011 })]]]), D, tape, '2h', '2h'), false, 'still moving');
+  assert.equal(finalAt(series([], []), D, tape, '2h', '2h'), false, 'not listed yet');
+  assert.equal(finalAt(series([], []), D + 3_600, tape, '2h', '2h'), true, 'off its grid: no 2h candle closed, nothing to wait for');
+  // Left out, the frame is the candles before it -- the read then sees what it saw a minute ago, and the next pass reads the new one.
+  const two = [at(14_400), at(7_200)];
+  assert.deepEqual(withoutClosing(two, 7_200, D).map((b) => b.time), [D - 14_400]);
+  assert.deepEqual(withoutClosing(two, 7_200, D + 60).map((b) => b.time), [D - 14_400, D - 7_200], 'only the candle closing on this boundary');
 });

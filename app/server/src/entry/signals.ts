@@ -344,7 +344,7 @@ const ORDER_OF = (col: string, xs: readonly string[]) => `array_position(ARRAY[$
 const SORT_SQL = {
   time: ['s.first_seen'],
   method: [ORDER_OF('s.method', METHODS.map((m) => m.id))],
-  way: ['s.mode', ORDER_OF('s.tf', ['1m', '3m', '5m', '15m', '30m', '1h', '4h'])],
+  way: ['s.mode', ORDER_OF('s.tf', ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h'])],
   signal: ['s.state', 's.dir'],
   ltp: ['s.ltp'],
   entry: ['s.entry_lo'],

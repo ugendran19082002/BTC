@@ -312,3 +312,21 @@ test('the methods asked for in the address: only ids the desk has, each once, in
   assert.equal(methodsOf('nope'), undefined);
   assert.equal(methodsOf(METHODS.map((m) => m.id).join(',')), undefined, 'every method is no filter');
 });
+
+test('[critical] 2h is a timeframe like the rest: read each minute, kept in the history, filtered and ordered between 1h and 4h (6 Oct 2026)', async () => {
+  assert.deepEqual([...SINGLE_TFS], ['3m', '5m', '15m', '30m', '1h', '2h', '4h']);
+  assert.equal(allReads(ctxOf()).filter((r) => r.mode === 'single' && r.tf === '2h').length, METHODS.length, 'every method, on 2h');
+  assert.equal(entryBoard(ctxOf(), '2h').filter((r) => r.mode === 'single').length, METHODS.length);
+  const at = T + 2_000_000;
+  const since = at * 1000;
+  await recordSignals([
+    read({ id: 'breakout', n: 1, name: 'Breakout', tf: '4h', triggerTime: at, state: 'TRADE', plan: PLAN }),
+    read({ id: 'breakout', n: 1, name: 'Breakout', tf: '2h', triggerTime: at, state: 'TRADE', plan: PLAN }),
+    read({ id: 'breakout', n: 1, name: 'Breakout', tf: '1h', triggerTime: at, state: 'TRADE', plan: PLAN }),
+  ], (at + 5) * 1000);
+  const two = await signalPage({ since, tf: '2h' });
+  assert.deepEqual([two.total, two.signals.map((x) => x.tf)], [1, ['2h']]);
+  // The bar it closed on is its own two hours.
+  assert.equal(two.signals[0]!.barCloseAt, at + 7_200);
+  assert.deepEqual((await signalPage({ since, sort: 'way', asc: true })).signals.map((x) => x.tf), ['1h', '2h', '4h']);
+});

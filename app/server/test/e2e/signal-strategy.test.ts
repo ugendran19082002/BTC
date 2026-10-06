@@ -236,8 +236,12 @@ test('[critical] without the chain on 5m and 1h: both timeframes taken, 15m not 
   const r = await api('POST', '/api/strategies', { name: 'Sig multi', config: multi });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.deepEqual((await strategyStore().get('sig-multi'))!.config.signal!.tfs, ['5m', '1h']);
-  const bad = await api('POST', '/api/strategies', { name: 'Sig multi bad', config: { ...multi, signal: { ...multi.signal, tfs: ['5m', '2h'] } } });
-  assert.ok(bad.body.problems.some((p: string) => /Pick a timeframe/.test(p)));
+  const bad = await api('POST', '/api/strategies', { name: 'Sig multi bad', config: { ...multi, signal: { ...multi.signal, tfs: ['5m', '6h'] } } });
+  assert.ok(bad.body.problems.some((p: string) => /Pick a timeframe/.test(p)), 'a timeframe the desk does not read is refused');
+  // 2h is one of the desk's timeframes since 6 Oct 2026: a strategy may be made for it -- and trades it only then.
+  const two = await api('POST', '/api/strategies', { name: 'Sig two hour', config: { ...multi, signal: { ...multi.signal, tfs: ['2h'] } } });
+  assert.equal(two.status, 200, JSON.stringify(two.body));
+  assert.deepEqual((await strategyStore().get('sig-two-hour'))!.config.signal!.tfs, ['2h']);
   await api('POST', '/api/strategies/sig-multi/enabled', { enabled: true });
   for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
     paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
@@ -245,8 +249,17 @@ test('[critical] without the chain on 5m and 1h: both timeframes taken, 15m not 
   await runner.onSignal(signal({ tf: '5m' }));
   await runner.onSignal(signal({ tf: '1h' }));
   await runner.onSignal(signal({ tf: '15m' }));
+  // A 2h signal is not this strategy's: it was saved for 5m and 1h, and a new timeframe joins no strategy by itself.
+  await runner.onSignal(signal({ tf: '2h' }));
   assert.deepEqual((await runsOf('sig-multi')).map((x) => x.signal_key.split('|')[2]), ['5m', '1h']);
+  assert.deepEqual(await runsOf('sig-two-hour'), [], 'and the 2h strategy, switched off, took nothing');
   await api('POST', '/api/strategies/sig-multi/enabled', { enabled: false });
+  // Switched on, the 2h strategy takes the 2h signal and no other timeframe's.
+  await api('POST', '/api/strategies/sig-two-hour/enabled', { enabled: true });
+  await runner.onSignal(signal({ tf: '1h', triggerTime: signal().triggerTime + 7_200 }));
+  await runner.onSignal(signal({ tf: '2h', triggerTime: signal().triggerTime + 7_200 }));
+  assert.deepEqual((await runsOf('sig-two-hour')).map((x) => x.signal_key.split('|')[2]), ['2h']);
+  await api('POST', '/api/strategies/sig-two-hour/enabled', { enabled: false });
 });
 
 // ------------------------------------------------------------ what it does not take

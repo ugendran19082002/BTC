@@ -31,7 +31,7 @@ import type { EntryMode, EntryTf, MethodReportResponse, MethodReportRow, MethodR
  * no orders: the paper log.
  */
 
-export const TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '4h'];
+export const TFS: readonly EntryTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 type TfTab = EntryTf | 'all';
 type SortKey = 'n' | 'trades' | 'winPct' | 'netPts';
 type Sort = { key: SortKey; asc: boolean };
