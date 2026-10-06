@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-403 files listed, 198 test files counted below, images and lockfiles left out.
+403 files listed, 199 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 117 |
-| `app/web` | 81 |
+| `app/web` | 82 |
 
 ## `(root)`
 
@@ -370,7 +370,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
-| [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | -- |
+| [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | The days and the running total they add up to, as one chart (owner, 6 Oct 2026). |
 | [MethodReport.tsx](../../app/web/src/components/report/MethodReport.tsx) | The Methods report (owner, 1 Oct 2026: "a tab of its own; two sections, 81 + 81: win rate, trades, win, loss, profit, loss, net"). |
 | [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | One day, minute by minute: what the day was worth at each reading, with every fall from a high shaded underneath. |
 | [PerformanceStats.tsx](../../app/web/src/components/report/PerformanceStats.tsx) | -- |
