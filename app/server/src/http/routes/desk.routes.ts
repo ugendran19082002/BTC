@@ -15,6 +15,8 @@ import { tradingService, LONG_CAP_KEY, SHORT_CAP_KEY } from '../../trading/servi
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange } from '../../market/flow.js';
+import { errorLog } from '../../observability/errors.js';
+import { judge, type GlanceReadings } from '../../observability/glance.js';
 import { changes } from '../../market/changes.js';
 import { one } from '../../db/pool.js';
 import { strategyStore } from './strategy.routes.js';
@@ -165,6 +167,40 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * how long a pass over the open trades takes, how long the signal run holds the thread. Read-only.
    */
   app.get('/api/desk/metrics', async () => deskMetrics());
+
+  /*
+   * The desk's health for the phone, in one word -- ok, warn or down -- with the reasons and the readings behind them.
+   * The readings: the board's and the tape's age, Delta's quota, late passes, open errors, the scheduler switch,
+   * paper or live, and BTC's price for the signal trades' perp levels (6 Oct 2026). The rule is `judge` in
+   * observability/glance.ts. Read-only, and cheap: one SELECT 1 and one read of the error log.
+   */
+  app.get('/api/desk/glance', async () => {
+    const now = Date.now();
+    const db = await one('SELECT 1 AS ok')
+      .then(() => ({ ok: true, latencyMs: Date.now() - now }))
+      .catch(() => ({ ok: false, latencyMs: Date.now() - now }));
+    const [errors, perp] = await Promise.all([
+      db.ok ? errorLog().list({ limit: 100 }).catch(() => []) : Promise.resolve([]),
+      livePerp(now).catch(() => null),
+    ]);
+    const board = tickerFeedHealth();
+    const tape = flowFeedHealth();
+    const metrics = deskMetrics(now);
+    const svc = tradingService();
+    const newest = (...at: (number | null)[]) => at.reduce<number | null>((m, x) => (x !== null && (m === null || x > m) ? x : m), null);
+    const readings: GlanceReadings = {
+      now,
+      db,
+      board: { source: board.source, connected: board.connected, lastAt: newest(board.lastMessageAt, board.batchAt) },
+      tape: { source: tape.source, connected: tape.connected, lastAt: tape.lastMessageAt },
+      delta: { usedPct: metrics.delta.usedPct, rateLimited: metrics.delta.rateLimited.inWindow, failed: metrics.delta.failed },
+      latePasses: metrics.passes.late,
+      errors: { open: errors.length, lastAt: errors[0]?.lastSeen ?? null },
+      schedulerOn: svc.settings.get('scheduler_enabled') === '1',
+      mode: svc.mode,
+    };
+    return { at: now, ...judge(readings), readings, btc: { spot: svc.spot, perpMark: perp?.mark ?? null } };
+  });
 
   /*
    * BTC now against then, for the Live screen's "Price change" card: each window back, and the desk's marks --

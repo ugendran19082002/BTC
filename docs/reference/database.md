@@ -275,7 +275,7 @@ instead of waiting for a signed cookie to expire.
 | Table | What it holds |
 |---|---|
 | `auth_user` | A single row (`CHECK (id = 1)`): `username`, `password_hash` (scrypt), `password_changed_at`, the sealed `totp_secret` and when it was enabled, `totp_last_step` (a code's step is claimed in one conditional UPDATE, so the same code sent twice passes once), the pending secret during setup. |
-| `auth_sessions` | `token_hash` PK, `stage` (`totp` \| `setup` \| `full`), created / expires / last seen, `ip`, `user_agent`, wrong-code `attempts`, `revoked_at`. Partial index on live rows. Pruned a week after a session *ended*. |
+| `auth_sessions` | `token_hash` PK, `stage` (`totp` \| `setup` \| `full`), `scope` (`full` \| `view`: the phone's read-only sign-in, chosen at the password step and kept to the end; `auth-003-session-scope`, 6 Oct 2026), created / expires / last seen, `ip`, `user_agent`, wrong-code `attempts`, `revoked_at`. Partial index on live rows. Pruned a week after a session *ended*. |
 | `auth_recovery_codes` | `code_hash` PK, `used_at`. Spent once, ever. |
 | `auth_limits` | `key` PK, `count`, `window_until`. The sign-in rate limits, per address and per account. |
 | `auth_events` | identity, `at`, `kind`, `ip`, `detail`. The security log; kept 180 days. |

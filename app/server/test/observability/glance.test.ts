@@ -1,0 +1,60 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { judge, type GlanceReadings } from '../../src/observability/glance.js';
+
+/** The phone's one word for the desk (6 Oct 2026): what makes it "warn", what makes it "down". */
+
+const NOW = Date.UTC(2026, 9, 6, 9, 0, 0);
+const healthy = (): GlanceReadings => ({
+  now: NOW,
+  db: { ok: true, latencyMs: 2 },
+  board: { source: 'socket', connected: true, lastAt: NOW - 1_000 },
+  tape: { source: 'socket', connected: true, lastAt: NOW - 2_000 },
+  delta: { usedPct: 12, rateLimited: 0, failed: 0 },
+  latePasses: 0,
+  errors: { open: 0, lastAt: null },
+  schedulerOn: true,
+  mode: 'live',
+});
+
+test('a desk with fresh feeds, quota to spare and a clean log is ok, with nothing to say', () => {
+  const j = judge(healthy());
+  assert.equal(j.health, 'ok');
+  assert.deepEqual(j.issues, []);
+  assert.equal(j.boardAgeMs, 1_000);
+});
+
+test('[critical] option prices that stopped are down; late is a warning', () => {
+  assert.equal(judge({ ...healthy(), board: { ...healthy().board, lastAt: NOW - 20_000 } }).health, 'warn');
+  const stopped = judge({ ...healthy(), board: { ...healthy().board, lastAt: NOW - 90_000 } });
+  assert.equal(stopped.health, 'down');
+  assert.match(stopped.issues[0]!.text, /stopped 90 s ago/);
+  assert.equal(judge({ ...healthy(), board: { ...healthy().board, lastAt: null } }).health, 'down');
+});
+
+test('[critical] a database that does not answer is down', () => {
+  assert.equal(judge({ ...healthy(), db: { ok: false, latencyMs: 5_000 } }).health, 'down');
+});
+
+test('rate limits, a quota near its end, failed calls, late passes and open errors each warn, each in its own words', () => {
+  const j = judge({
+    ...healthy(),
+    delta: { usedPct: 91, rateLimited: 2, failed: 1 },
+    latePasses: 3,
+    errors: { open: 100, lastAt: NOW },
+    tape: { ...healthy().tape, lastAt: NOW - 5 * 60_000 },
+  });
+  assert.equal(j.health, 'warn');
+  const text = j.issues.map((i) => i.text).join(' | ');
+  assert.match(text, /rate-limited 2 calls/);
+  assert.match(text, /1 call to Delta failed/);
+  assert.match(text, /ran late 3 times/);
+  assert.match(text, /100\+ errors/);
+  assert.match(text, /tape is 5 min old/);
+  // a rate limit already says the quota is gone; the percentage would only repeat it
+  assert.doesNotMatch(text, /% of Delta/);
+});
+
+test('the scheduler off and paper mode are states to show, not problems', () => {
+  assert.equal(judge({ ...healthy(), schedulerOn: false, mode: 'paper' }).health, 'ok');
+});

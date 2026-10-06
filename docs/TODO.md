@@ -10,6 +10,28 @@ Updated 30 Sep 2026 (evening): 25 items closed that afternoon -- see the history
 
 ---
 
+## Phone view and a phone-friendly desk
+
+Level 1 of the phone (`/m`: health, today, open positions' risk; view-only sign-in) was built on 6 Oct 2026 --
+see [history/2026-10.md](history/2026-10.md). The owner's next steps, in their order:
+
+- [ ] **Deploy it and install it**: open `/m` on the phone, sign in, *Install app*. Check the session shows
+  "view only" on the desk's profile page, and that the phone refuses nothing it should read.
+- [ ] **Level 2 -- what happened, and why** (owner, 6 Oct 2026):
+  - [ ] **Strategy runs** today: placed, refused, failed, and why (`/api/strategies` runs).
+  - [ ] **Signal feed**: the latest signals, and whether a strategy took each (`/api/strategies/signal-trades`).
+  - [ ] **Trade detail**: signal → entry → order → fill → SL/TGT protection → exit, the full event journal (`/api/trade/:tradeId`).
+  - [ ] **Telegram → trade detail**: the fill alert carries a link that opens that trade on the phone.
+  - [ ] **Statistics**: win rate, profit factor, average win / loss, by strategy and by account, and the P&L calendar.
+- [ ] **The whole desk phone-friendly** (owner, 6 Oct 2026): every screen, menu, card, field and icon of the
+  full desk adapted to a phone -- sizes, padding, margins, touch targets, tables that become cards -- with no
+  change to what any of it does. Large: plan it screen by screen (strategy, desk, trade, orders, pnl, methods,
+  errors), measure each at 360 / 390 / 430 px for sideways scroll, and land it one screen at a time.
+- [ ] **An APK, only if wanted**: wrap `/m` with Bubblewrap (a Trusted Web Activity); needs
+  `/.well-known/assetlinks.json` served by nginx. The installed web app already does the same job.
+- [ ] Later, once the read-only phone has proved itself: a TOTP-confirmed "stop new risk" switch (scheduler or
+  one strategy off, never touching positions), and a passkey sign-in for the phone.
+
 ## Entry section -- 24 entry setups
 
 Built 30 Sep 2026: the twelve entry methods of `TEST.md`, each read **with the

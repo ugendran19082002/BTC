@@ -76,9 +76,24 @@ const MIGRATIONS: Migration[] = [
       ['auth.events', 'auth_events'],
     ], ['auth']),
   },
+  {
+    /*
+     * A session's reach (6 Oct 2026): 'full' is the desk, 'view' is the phone's read-only view -- it reads
+     * positions, orders and P&L and can change nothing (the gate in http/app.ts refuses its writes). Every
+     * session that exists today is a full one, which is what the default says.
+     */
+    id: 'auth-003-session-scope',
+    up: `
+      ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'full'
+        CHECK (scope IN ('full', 'view'));
+    `,
+  },
 ];
 
 export type Stage = 'totp' | 'setup' | 'full';
+
+/** What a signed-in session may do: everything, or read only (the phone view). Chosen at the password step, kept to the end. */
+export type Scope = 'full' | 'view';
 
 export type User = {
   username: string;
@@ -100,6 +115,7 @@ export type SessionRow = {
   ip: string | null;
   userAgent: string | null;
   attempts: number;
+  scope: Scope;
 };
 
 export type AuthEvent = { id: number; at: number; kind: string; ip: string | null; detail: string | null };
@@ -110,6 +126,7 @@ const sessionOf = (r: Record<string, unknown>): SessionRow => ({
   tokenHash: String(r.token_hash), stage: r.stage as Stage, createdAt: Number(r.created_at),
   expiresAt: Number(r.expires_at), lastSeenAt: Number(r.last_seen_at),
   ip: (r.ip as string | null) ?? null, userAgent: (r.user_agent as string | null) ?? null, attempts: Number(r.attempts),
+  scope: r.scope === 'view' ? 'view' : 'full',
 });
 
 export class AuthStore {
@@ -190,11 +207,13 @@ export class AuthStore {
 
   // -------------------------------------------------------------- sessions
 
-  async createSession(s: { token: string; stage: Stage; now: number; ttlMs: number; ip: string | null; userAgent: string | null }): Promise<void> {
+  async createSession(s: {
+    token: string; stage: Stage; now: number; ttlMs: number; ip: string | null; userAgent: string | null; scope?: Scope;
+  }): Promise<void> {
     await query(
-      `INSERT INTO auth_sessions (token_hash, stage, created_at, expires_at, last_seen_at, ip, user_agent)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [tokenHash(s.token), s.stage, s.now, s.now + s.ttlMs, s.now, s.ip, s.userAgent?.slice(0, 200) ?? null],
+      `INSERT INTO auth_sessions (token_hash, stage, created_at, expires_at, last_seen_at, ip, user_agent, scope)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [tokenHash(s.token), s.stage, s.now, s.now + s.ttlMs, s.now, s.ip, s.userAgent?.slice(0, 200) ?? null, s.scope ?? 'full'],
     );
   }
 

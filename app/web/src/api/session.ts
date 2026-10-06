@@ -16,6 +16,8 @@ export type Me = {
   signedIn: boolean;
   username: string | null;
   expiresAt?: number | null;
+  /** 'view': this device reads the desk and changes nothing (the phone view). Absent from an older server: full. */
+  scope?: 'full' | 'view' | null;
 };
 
 export type SecurityEvent = { id: number; at: number; kind: string; ip: string | null; detail: string | null };
@@ -26,7 +28,7 @@ export type Account = {
   twoFactorSince: number | null;
   recoveryCodesLeft: number;
   sessionExpiresAt: number;
-  sessions: { id: string; current: boolean; createdAt: number; lastSeenAt: number; expiresAt: number; ip: string | null; device: string }[];
+  sessions: { id: string; current: boolean; createdAt: number; lastSeenAt: number; expiresAt: number; ip: string | null; device: string; viewOnly?: boolean }[];
   events: SecurityEvent[];
 };
 
@@ -51,8 +53,11 @@ async function call<T>(url: string, init?: { method?: string; body?: unknown }):
 
 export const getMe = () => call<Me>('/api/me');
 
-export const login = (username: string, password: string) =>
-  call<{ ok: true; next: 'code' | 'setup' }>('/api/login', { method: 'POST', body: { username, password } });
+/** `view`: the session this leads to can read the desk and never change it -- the phone's sign-in. */
+export const login = (username: string, password: string, opts: { view?: boolean } = {}) =>
+  call<{ ok: true; next: 'code' | 'setup' }>('/api/login', {
+    method: 'POST', body: opts.view ? { username, password, view: true } : { username, password },
+  });
 
 export const submitCode = (code: string) =>
   call<{ ok: true; usedRecoveryCode: boolean }>('/api/login/code', { method: 'POST', body: { code } });

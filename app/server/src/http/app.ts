@@ -76,6 +76,22 @@ const refererOrigin = (ref: string | undefined): string | undefined => {
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/*
+ * A view-only session (the phone, 6 Oct 2026) reads the desk and changes nothing. What it may still send: sign-in,
+ * sign-out, and its own failures to the error log. An allow-list, so a route added later is closed to it until
+ * somebody decides otherwise -- the screen that holds the session has no buttons, but a lost phone is not trusted
+ * to keep to its screen.
+ */
+const VIEW_WRITES = new Set(['/api/login', '/api/login/code', '/api/logout', '/api/errors']);
+/** Reads a view session is not given: the account's security page -- the devices, their addresses, the security log. */
+const VIEW_HIDDEN = new Set(['/api/security']);
+const VIEW_ONLY = { error: 'This device is signed in view only: it can read the desk, not change it.', viewOnly: true };
+
+/** True when a view-only session must be refused this matched route. */
+export function viewRefuses(method: string, route: string): boolean {
+  return UNSAFE.has(method) ? !VIEW_WRITES.has(route) : VIEW_HIDDEN.has(route);
+}
+
 declare module 'fastify' {
   interface FastifyRequest {
     /**
@@ -142,7 +158,9 @@ export async function buildApp(o: {
     const level = routeAuthLevel(route, req.routeOptions.config);
     if (level === 'public') {
       const token = readCookie(req.headers.cookie, COOKIE);
-      if (token && await auth.configured()) req.signedIn = (await auth.session(token))?.stage === 'full';
+      const s = token && await auth.configured() ? await auth.session(token) : null;
+      if (s?.scope === 'view' && viewRefuses(req.method, route)) return reply.send(refuse(reply, 403, VIEW_ONLY));
+      req.signedIn = s?.stage === 'full';
       return;
     }
     if (!(await auth.configured())) {
@@ -150,6 +168,7 @@ export async function buildApp(o: {
     }
     const s = await auth.session(readCookie(req.headers.cookie, COOKIE));
     if (s && s.stage === level) {
+      if (s.scope === 'view' && viewRefuses(req.method, route)) return reply.send(refuse(reply, 403, VIEW_ONLY));
       req.signedIn = s.stage === 'full';
       return;
     }

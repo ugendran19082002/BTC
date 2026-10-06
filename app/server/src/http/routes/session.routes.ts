@@ -47,13 +47,16 @@ export function registerSessionRoutes(app: FastifyInstance, auth: AuthService, n
       signedIn: s?.stage === 'full',
       username: s?.stage === 'full' ? await auth.username() : null,
       expiresAt: s?.stage === 'full' ? s.expiresAt : null,
+      /** 'view': this device reads the desk and changes nothing (the phone view). Null until signed in. */
+      scope: s?.stage === 'full' ? s.scope : null,
     };
   });
 
   // Sign-in, step one: the password. Opens a short session that only accepts the code.
+  // `view: true` (the phone): the session it leads to can read the desk and change nothing.
   app.post('/api/login', open, async (req, reply) => {
-    const b = (req.body ?? {}) as { username?: unknown; password?: unknown };
-    const r = await auth.login(b.username, b.password, ctxOf(req));
+    const b = (req.body ?? {}) as { username?: unknown; password?: unknown; view?: unknown };
+    const r = await auth.login(b.username, b.password, ctxOf(req), b.view === true ? 'view' : 'full');
     if (!r.ok) return failed(reply, r);
     setSession(reply, r.issued, now());
     return { ok: true, next: r.issued.stage === 'totp' ? 'code' : 'setup' };

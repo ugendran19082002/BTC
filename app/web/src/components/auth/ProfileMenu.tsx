@@ -155,7 +155,10 @@ function Devices({ account, onChanged }: { account: Account | null; onChanged: (
         {account.sessions.map((s) => (
           <li key={s.id} className="rounded-md bg-muted px-2.5 py-2 text-[12.5px]">
             <div className="flex justify-between gap-2">
-              <span className="font-medium text-foreground">{s.device}</span>
+              <span className="font-medium text-foreground">
+                {s.device}
+                {s.viewOnly && <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">· view only</span>}
+              </span>
               {s.current && <span className="text-[11px] text-[var(--up)]">this device</span>}
             </div>
             <div className="text-[11.5px] text-muted-foreground">

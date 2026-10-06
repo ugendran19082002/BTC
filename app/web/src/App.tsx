@@ -215,6 +215,8 @@ export default function App() {
   const refreshMe = useCallback(() => {
     getMe()
       .then((m) => {
+        // A view-only device (the phone) has a screen of its own; the desk's buttons would all be refused to it.
+        if (m.signedIn && m.scope === 'view') { window.location.replace('/m'); return; }
         const st: Stage = m.stage ?? (m.signedIn ? 'full' : 'none');
         setStage(st);
         setUsername(m.username);

@@ -6,13 +6,13 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-34 tables, 63 migrations.
+34 tables, 64 migrations.
 
 ## Migrations applied
 
 | Area | Migrations |
 |---|---|
-| auth | `auth-001-user-sessions`, `auth-002-to-public` |
+| auth | `auth-001-user-sessions`, `auth-002-to-public`, `auth-003-session-scope` |
 | broker | `broker-001-accounts` |
 | chart | `chart-002-drop-annotations` |
 | entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time`, `entry-015-setups-expire-why`, `entry-017-setups-regime`, `entry-017-signals-regime`, `entry-018-alerts-retired-methods`, `entry-018-setups-retired-methods`, `entry-018-signals-retired-methods`, `entry-019-methods`, `entry-020-cleared`, `entry-020-history-clears`, `entry-021-method-order-side` |
@@ -71,9 +71,11 @@ the way it is, is in [database.md](database.md).
 | `user_agent` | text | yes |  |
 | `attempts` | integer |  | `0` |
 | `revoked_at` | bigint | yes |  |
+| `scope` | text |  | `'full'::text` |
 
 - `auth_sessions_live` (expires_at) WHERE (revoked_at IS NULL)
 - `auth_sessions_pkey` unique (token_hash)
+- `auth_sessions_scope_check` CHECK ((scope = ANY (ARRAY['full'::text, 'view'::text])))
 - `sessions_stage_check` CHECK ((stage = ANY (ARRAY['totp'::text, 'setup'::text, 'full'::text])))
 
 ### auth_user

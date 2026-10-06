@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { hashPassword, verifyPassword } from '../http/session.js';
 import { passwordProblems } from './password.js';
 import { Secrets, newRecoveryCodes } from './secrets.js';
-import { AuthStore, tokenHash, type SessionRow, type Stage, type User } from './store.js';
+import { AuthStore, tokenHash, type Scope, type SessionRow, type Stage, type User } from './store.js';
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js';
 
 /**
@@ -88,7 +88,11 @@ export class AuthService {
 
   // ----------------------------------------------------------- step 1: password
 
-  async login(username: unknown, password: unknown, ctx: Ctx): Promise<{ ok: true; issued: Issued } | Failure> {
+  /**
+   * `scope` 'view' (the phone, 6 Oct 2026): the session this starts, and the one the code then opens, can read
+   * the desk and change nothing. Chosen here and never widened -- a view session is not a step toward a full one.
+   */
+  async login(username: unknown, password: unknown, ctx: Ctx, scope: Scope = 'full'): Promise<{ ok: true; issued: Issued } | Failure> {
     const now = this.d.now();
     if (!(await this.configured())) return { ok: false, status: 503, error: 'Sign-in is not set up on this server.' };
     const ip = ctx.ip ?? 'unknown';
@@ -119,8 +123,8 @@ export class AuthService {
 
     await this.d.store.clear(KEY.passwordAddress(ip));
     const stage: Stage = user.totpSecret ? 'totp' : 'setup';
-    await this.d.store.event('password_ok', now, ctx.ip, stage === 'totp' ? 'code needed' : '2FA setup needed');
-    return { ok: true, issued: await this.issue(stage, now, ctx) };
+    await this.d.store.event('password_ok', now, ctx.ip, `${stage === 'totp' ? 'code needed' : '2FA setup needed'}${scope === 'view' ? ', view only' : ''}`);
+    return { ok: true, issued: await this.issue(stage, now, ctx, scope) };
   }
 
   // ------------------------------------------------------------ step 2: code
@@ -153,12 +157,13 @@ export class AuthService {
     await this.d.store.revoke(s.tokenHash, now);
     await this.d.store.clear(KEY.passwordAccount);
     await this.d.store.clear(KEY.codeAccount);
-    await this.d.store.event(usedRecoveryCode ? 'signin_recovery_code' : 'signin', now, ctx.ip, ctx.userAgent);
+    await this.d.store.event(usedRecoveryCode ? 'signin_recovery_code' : 'signin', now, ctx.ip,
+      s.scope === 'view' ? `view only · ${ctx.userAgent ?? ''}` : ctx.userAgent);
     if (usedRecoveryCode) {
       const left = await this.d.store.recoveryCodesLeft();
       this.alert(`🔐 BTC Desk: signed in with a recovery code from ${ctx.ip ?? 'unknown'}. ${left} left.`);
     }
-    return { ok: true, issued: await this.issue('full', now, ctx), usedRecoveryCode };
+    return { ok: true, issued: await this.issue('full', now, ctx, s.scope), usedRecoveryCode };
   }
 
   // ------------------------------------------------------- first-time setup
@@ -203,7 +208,7 @@ export class AuthService {
     await this.d.store.clear(KEY.codeAccount);
     await this.d.store.event('2fa_enabled', now, ctx.ip);
     this.alert(`🔐 BTC Desk: two-step sign-in was turned on, from ${ctx.ip ?? 'unknown'}.`);
-    return { ok: true, issued: await this.issue('full', now, ctx), recoveryCodes: codes };
+    return { ok: true, issued: await this.issue('full', now, ctx, s.scope), recoveryCodes: codes };
   }
 
   // --------------------------------------------------------- signed in
@@ -265,7 +270,7 @@ export class AuthService {
     await this.d.store.revoke(s.tokenHash, now);
     await this.d.store.event('password_changed', now, ctx.ip, `${ended} other session${ended === 1 ? '' : 's'} ended`);
     this.alert(`🔐 BTC Desk: the password was changed, from ${ctx.ip ?? 'unknown'}. ${ended} other session${ended === 1 ? '' : 's'} signed out.`);
-    return { ok: true, issued: await this.issue('full', now, ctx), endedSessions: ended };
+    return { ok: true, issued: await this.issue('full', now, ctx, s.scope), endedSessions: ended };
   }
 
   async newRecoveryCodes(token: string | undefined, code: unknown, ctx: Ctx): Promise<{ ok: true; recoveryCodes: string[] } | Failure> {
@@ -314,6 +319,7 @@ export class AuthService {
         expiresAt: x.expiresAt,
         ip: x.ip,
         device: describeDevice(x.userAgent),
+        viewOnly: x.scope === 'view',
       })),
       events: await this.d.store.events(20),
     };
@@ -321,10 +327,10 @@ export class AuthService {
 
   // ------------------------------------------------------------- inside
 
-  private async issue(stage: Stage, now: number, ctx: Ctx): Promise<Issued> {
+  private async issue(stage: Stage, now: number, ctx: Ctx, scope: Scope = 'full'): Promise<Issued> {
     const token = randomBytes(32).toString('base64url');
     const ttlMs = stage === 'full' ? SESSION_MS : stage === 'totp' ? CODE_STAGE_MS : SETUP_STAGE_MS;
-    await this.d.store.createSession({ token, stage, now, ttlMs, ip: ctx.ip, userAgent: ctx.userAgent });
+    await this.d.store.createSession({ token, stage, now, ttlMs, ip: ctx.ip, userAgent: ctx.userAgent, scope });
     return { token, stage, expiresAt: now + ttlMs };
   }
 

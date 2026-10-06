@@ -100,14 +100,22 @@ desk.
 
 ## The screen
 
-[`app/web/src/App.tsx`](../app/web/src/App.tsx) holds seven tabs: **desk** (the
-price chart, the 24 entry setups under it, and the option chain), **trade** (order ticket, positions, account),
-**orders**, **strategy**, **pnl**, **settings** and **errors**. Prices stream over
+[`app/web/src/App.tsx`](../app/web/src/App.tsx) holds seven tabs: **strategy**, **desk** (the
+price chart, the entry setups under it, and the option chain), **trade** (order ticket, positions, account),
+**orders**, **pnl**, **methods** and **errors**. Prices stream over
 `/api/stream` (server-sent events); everything else is polled with `usePoll`,
 which keeps the last good answer and stops while the tab is hidden.
 [`lib/format.ts`](../app/web/src/lib/format.ts) is the only place a number is
 written: rupees main, dollars small, at ₹85. The chart is documented in
 [features/price-chart.md](features/price-chart.md).
+
+**The phone** is `/m` ([`components/mobile/`](../app/web/src/components/mobile/), 6 Oct 2026): the desk read
+at a glance and changed never -- its health (`GET /api/desk/glance`, judged in
+[`observability/glance.ts`](../app/server/src/observability/glance.ts)), today against the daily loss limit,
+and each open position's room to its stop, target and liquidation, riskiest first. It signs in **view only**
+(below) and installs to the home screen as an app (`public/m-manifest.json`, and `public/m-sw.js`, which
+caches nothing: an old position read as a live one is worse than none). Its own chunk, so a phone never
+downloads the desk.
 
 ---
 
@@ -169,6 +177,11 @@ costs an alert, never an order.
   TOTP secret is sealed (AES-256-GCM) under `DESK_SESSION_SECRET`. Sessions
   are rows holding only a SHA-256 of the token, last a week, and can be ended
   from the profile screen. Missing configuration fails closed.
+- **View only**: a sign-in from the phone carries `view: true`, and its session's `scope` is `view` from the
+  password step to the end. The gate refuses such a session every write but sign-in, sign-out and its own
+  error reports, and the security page -- an allow-list (`viewRefuses` in `http/app.ts`), so a route added
+  later is closed to it, and a test sweeps every write route the app registers. The phone has no buttons; a
+  lost phone is not trusted to keep to its screen.
 - **The gate** decides on the route Fastify matched, never on the URL text
   (`/%61pi/...` once walked past it). A route is closed unless it says
   otherwise; see the Session column in [reference/api.md](reference/api.md).

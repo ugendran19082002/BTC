@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-406 files listed, 199 test files counted below, images and lockfiles left out.
+415 files listed, 203 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 117 |
-| `app/web` | 82 |
+| `app/server` | 119 |
+| `app/web` | 84 |
 
 ## `(root)`
 
@@ -188,6 +188,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [desk-metrics.ts](../../app/server/src/observability/desk-metrics.ts) | What the desk costs and how long it takes, counted -- so the next change to its speed is decided on numbers. |
 | [errors.ts](../../app/server/src/observability/errors.ts) | Every failure this system has, in one table. |
+| [glance.ts](../../app/server/src/observability/glance.ts) | "Is everything all right?" in one answer, for the phone (6 Oct 2026). |
 
 ## `app/server/src/strategy/`
 
@@ -240,6 +241,13 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [tsconfig.json](../../app/web/tsconfig.json) | TypeScript compiler settings. |
 | [vite.config.ts](../../app/web/vite.config.ts) | The default pool, deliberately. |
 
+## `app/web/public/`
+
+| File | What it is |
+|---|---|
+| [m-manifest.json](../../app/web/public/m-manifest.json) | JSON settings. |
+| [m-sw.js](../../app/web/public/m-sw.js) | The phone view's service worker (6 Oct 2026): what lets /m be installed as an app, and nothing more. |
+
 ## `app/web/scripts/`
 
 | File | What it is |
@@ -251,7 +259,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [App.tsx](../../app/web/src/App.tsx) | The timeframes the market-state card offers, which the chart also draws. |
-| [main.tsx](../../app/web/src/main.tsx) | Installed before anything renders, so a failure during the first paint is still recorded rather than lost to a blank screen. |
+| [main.tsx](../../app/web/src/main.tsx) | /m is the phone (6 Oct 2026): the desk read at a glance, signed in view only. |
 | [styles.css](../../app/web/src/styles.css) | Slim, quiet scrollbars. |
 
 ## `app/web/src/api/`
@@ -263,6 +271,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
 | [errors.ts](../../app/web/src/api/errors.ts) | The error log: read it, resolve or delete a row, and report a failure from this browser into the same table the server writes to. |
+| [glance.ts](../../app/web/src/api/glance.ts) | The desk's health for the phone (6 Oct 2026): GET /api/desk/glance, judged at the server in observability/glance.ts. |
 | [report.ts](../../app/web/src/api/report.ts) | The P&L screen's calls: the record as a calendar, one day's mark-to-market line, and the spreadsheet download. |
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
 | [strategy.ts](../../app/web/src/api/strategy.ts) | Copy one, settings and all, as a new draft. |
@@ -353,6 +362,15 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ErrorBoundary.tsx](../../app/web/src/components/layout/ErrorBoundary.tsx) | A component that throws takes its part of the screen down, not the desk. |
 | [ErrorLogPanel.tsx](../../app/web/src/components/layout/ErrorLogPanel.tsx) | The error log, for whoever has to fix it. |
 | [LogsPanel.tsx](../../app/web/src/components/layout/LogsPanel.tsx) | The desk's logs in one screen: what went wrong, what was sent to the phone, and how fast the desk is running. |
+
+## `app/web/src/components/mobile/`
+
+| File | What it is |
+|---|---|
+| [HealthCard.tsx](../../app/web/src/components/mobile/HealthCard.tsx) | The phone's desk-health card: one line first -- a word, an icon and a colour, never colour alone -- then the reasons in the server's words, then the six readings behind them. |
+| [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | The phone (6 Oct 2026): the desk read at a glance, and nothing that changes it. |
+| [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then what it makes, then how far each exit is and what it would leave, liquidation, and the time to settlement. |
+| [TodayCard.tsx](../../app/web/src/components/mobile/TodayCard.tsx) | Today, since 05:30 IST: the net first and large, then what it is made of, then how much of the day's loss limit is left -- the number the order gate stops at -- then the day as a line, minute by mi... |
 
 ## `app/web/src/components/overview/`
 
@@ -477,6 +495,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [long-exits.ts](../../app/web/src/lib/long-exits.ts) | A bought option's target and stop as prices, off the price paid (the server's `longLevels`): the target over it, the stop under it. |
 | [merge-status.ts](../../app/web/src/lib/merge-status.ts) | Several accounts' desks as one (5 Oct 2026): the "All accounts" tab on Positions and on P&L. |
 | [overview.ts](../../app/web/src/lib/overview.ts) | ------------------------------------------------------------------ volatility |
+| [position-risk.ts](../../app/web/src/lib/position-risk.ts) | One open position's risk, for the phone (6 Oct 2026): how far its stop and target are, what each would leave in money, how far liquidation is, how long until it settles, and anything wrong with it... |
 | [report-error.ts](../../app/web/src/lib/report-error.ts) | Send a browser failure to the server so it lands in the same log as everything else. |
 | [report.ts](../../app/web/src/lib/report.ts) | The calendar's arithmetic, kept out of the drawing so it can be checked. |
 | [strategy-blocks.ts](../../app/web/src/lib/strategy-blocks.ts) | A signal strategy's strike rule over its window, as the form works with it. |

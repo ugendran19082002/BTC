@@ -16,11 +16,13 @@ import { CodeInput } from '@/components/auth/CodeInput';
  * The form says as little as possible when it fails: whether the username
  * exists is not something a stranger should be able to learn by trying.
  */
-export function LoginPage({ onSignedIn, onNeedsSetup, startAtCode = false }: {
+export function LoginPage({ onSignedIn, onNeedsSetup, startAtCode = false, viewOnly = false }: {
   onSignedIn: () => void;
   onNeedsSetup: () => void;
   /** The browser already passed the password step (a reload mid-sign-in). */
   startAtCode?: boolean;
+  /** The phone's sign-in: the session it opens reads the desk and can change nothing. */
+  viewOnly?: boolean;
 }) {
   const [step, setStep] = useState<'password' | 'code'>(startAtCode ? 'code' : 'password');
   const [username, setUsername] = useState('');
@@ -38,7 +40,7 @@ export function LoginPage({ onSignedIn, onNeedsSetup, startAtCode = false }: {
     setBusy(true);
     setError(null);
     try {
-      const r = await login(username, password);
+      const r = viewOnly ? await login(username, password, { view: true }) : await login(username, password);
       setPassword('');
       if (r.next === 'setup') onNeedsSetup();
       else setStep('code');
@@ -73,7 +75,7 @@ export function LoginPage({ onSignedIn, onNeedsSetup, startAtCode = false }: {
     <div className="mx-auto flex min-h-[70vh] w-full max-w-[380px] flex-col justify-center px-4">
       <div className="mb-5">
         <h1 className="m-0 text-[20px] font-semibold tracking-[-0.2px]">BTC Desk</h1>
-        <p className="mt-1 mb-0 text-[13px] text-muted-foreground">Delta Exchange India</p>
+        <p className="mt-1 mb-0 text-[13px] text-muted-foreground">Delta Exchange India{viewOnly ? ' · view only' : ''}</p>
       </div>
 
       <Card>
@@ -115,6 +117,8 @@ export function LoginPage({ onSignedIn, onNeedsSetup, startAtCode = false }: {
               </Button>
             </form>
             <Note tone="dim">
+              {viewOnly && <>This device will only <b>read</b> the desk — positions, P&amp;L and health. It cannot place,
+                change or close anything, even if it is lost. </>}
               Next you will be asked for the 6-digit code from your authenticator app. Too many wrong tries block sign-in
               for up to 15 minutes. You stay signed in for a week on this device.
             </Note>

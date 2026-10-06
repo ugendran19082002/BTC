@@ -19,7 +19,8 @@ export function Money({ value, signed = false, strong = false, className }: {
   const tone = signed ? pnlTone(value) : undefined;
   const rupees = usdToInr(value);
   return (
-    <span className={cn('inline-flex items-baseline gap-1.5 tabular-nums', className)}>
+    // nowrap: a sign left at the end of one line and its number at the start of the next reads as two figures
+    <span className={cn('inline-flex items-baseline gap-1.5 whitespace-nowrap tabular-nums', className)}>
       <span
         className={cn(
           'font-semibold',
