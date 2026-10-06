@@ -47,6 +47,8 @@ Regenerate the generated pages with `npm run docs` in `app/server`.
 
 - [research/findings.md](research/findings.md) -- what every study found, in one page.
 - [research/ideas.md](research/ideas.md) -- candidate strategy families, not yet tested.
+- [research/btc-15m-movement-2y.md](research/btc-15m-movement-2y.md) -- how much BTC moves in each 15 minutes of
+  the session (5:35 PM to 5:29 PM IST), in % and points, over two years.
 
 ## Open and past
 

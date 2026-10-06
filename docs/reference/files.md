@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-403 files listed, 199 test files counted below, images and lockfiles left out.
+404 files listed, 199 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -610,6 +610,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [btc-15m-movement-2y.md](../research/btc-15m-movement-2y.md) | BTC movement by 15-minute slot — 5:35 PM to 5:29 PM IST, last two years |
 | [entry-concepts.md](../research/entry-concepts.md) | Entry concepts — the owner's 130, deduplicated |
 | [findings.md](../research/findings.md) | Research findings |
 | [ideas.md](../research/ideas.md) | Strategy ideas |
