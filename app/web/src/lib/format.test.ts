@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ago, clock, contractLabel, countdown, duration, inr, pct, price, signedUsd, size, stamp,
+  ago, clock, compactInr, contractLabel, countdown, duration, inr, pct, price, signedUsd, size, stamp,
   strike, tone, usd,
 } from '@/lib/format';
 
@@ -178,5 +178,25 @@ describe('duration', () => {
     expect(duration(undefined)).toBe('—');
     expect(duration(-5_000)).toBe('—');
     expect(duration(Number.NaN)).toBe('—');
+  });
+});
+
+describe('compactInr', () => {
+  it('a signed figure that fits a calendar square: whole rupees, then K, then L', () => {
+    expect(compactInr(420.4)).toBe('+420');
+    expect(compactInr(-94.6)).toBe('−95');
+    expect(compactInr(3.26)).toBe('+3.3');
+    expect(compactInr(1_240)).toBe('+1.2K');
+    expect(compactInr(-12_500)).toBe('−12.5K');
+    expect(compactInr(-999.6)).toBe('−1000');
+    expect(compactInr(125_000)).toBe('+1.3L');
+    expect(compactInr(4_000)).toBe('+4K');
+  });
+
+  it('nothing is "0", unsigned; a missing figure is a dash', () => {
+    expect(compactInr(0)).toBe('0');
+    expect(compactInr(0.02)).toBe('0');
+    expect(compactInr(null)).toBe('—');
+    expect(compactInr(Number.NaN)).toBe('—');
   });
 });

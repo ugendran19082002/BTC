@@ -67,6 +67,18 @@ export const signedInr = (n: number | null | undefined) =>
  */
 const USDINR = 85;
 
+/**
+ * Signed rupees for a space a few characters wide -- a day's square on the phone's calendar: "+420", "−1.2K",
+ * "+2.5L". No rupee sign (the screen round it says rupees) and, from a thousand up, three figures at most.
+ */
+export function compactInr(n: number | null | undefined, dash = '—'): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return dash;
+  const abs = Math.abs(n);
+  const short = (x: number) => (x >= 100 ? String(Math.round(x)) : x.toFixed(1).replace(/\.0$/, ''));
+  const body = abs >= 100_000 ? `${short(abs / 100_000)}L` : abs >= 1_000 ? `${short(abs / 1_000)}K` : abs >= 10 ? String(Math.round(abs)) : abs.toFixed(1).replace(/\.0$/, '');
+  return body === '0' ? '0' : `${signOf(n)}${body}`;
+}
+
 export const usdToInr = (n: number | null | undefined) =>
   n === null || n === undefined || !Number.isFinite(n) ? null : n * USDINR;
 
