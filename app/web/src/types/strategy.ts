@@ -280,8 +280,6 @@ export function asSignalConfig(c: StrategyConfig, fresh: boolean): StrategyConfi
   };
 }
 
-export const isSignalStrategy = (c: Pick<StrategyConfig, 'trigger'>) => c.trigger === 'signal';
-
 export type Strategy = {
   /** The broker account it belongs to; it enters only while the desk is on that account. Null: none. */
   accountId?: number | null;

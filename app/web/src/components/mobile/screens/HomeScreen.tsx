@@ -146,7 +146,7 @@ export function HomeScreen() {
           <ListButton onClick={() => p.openTrade(latest.tradeId)} label="Open the latest order">
             <span className="flex items-center justify-between gap-2">
               <span className="truncate text-[14px] font-semibold">
-                <span className={latest.plan?.action === 'buy' ? 'text-[#3d8bfd]' : 'text-[var(--down)]'}>{latest.plan?.action === 'buy' ? 'BUY' : 'SELL'}</span> {contractLabel(latest.symbol)} × {size(latest.requestedSize)}
+                <span className={latest.plan?.action === 'buy' ? 'text-[var(--buy)]' : 'text-[var(--down)]'}>{latest.plan?.action === 'buy' ? 'BUY' : 'SELL'}</span> {contractLabel(latest.symbol)} × {size(latest.requestedSize)}
               </span>
               {orderStatusWord(latest)}
             </span>

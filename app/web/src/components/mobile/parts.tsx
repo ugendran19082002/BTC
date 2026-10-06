@@ -60,12 +60,6 @@ export function Stats({ children, cols = 2 }: { children: ReactNode; cols?: 2 | 
   return <dl className={cn('m-0 grid gap-2', cols === 3 ? 'grid-cols-3' : 'grid-cols-2')}>{children}</dl>;
 }
 
-/**
- * The phone's one colour the desk does not have: blue for a BUY, as a SELL is red -- so the side reads at a glance
- * without being mistaken for a gain or a loss. Set here, for the phone only.
- */
-export const BUY_BLUE = '#3d8bfd';
-
 /** A status word in a coloured pill. */
 export function Pill({ tone, children }: { tone: 'up' | 'down' | 'warn' | 'dim' | 'accent' | 'buy'; children: ReactNode }) {
   return (
@@ -76,7 +70,7 @@ export function Pill({ tone, children }: { tone: 'up' | 'down' | 'warn' | 'dim' 
       tone === 'warn' && 'bg-[var(--warn-bg)] text-[var(--warn)]',
       tone === 'dim' && 'bg-muted text-muted-foreground',
       tone === 'accent' && 'bg-[var(--accent-soft)] text-[var(--accent)]',
-      tone === 'buy' && 'bg-[#3d8bfd26] text-[#3d8bfd]',
+      tone === 'buy' && 'bg-[color-mix(in_srgb,var(--buy)_15%,transparent)] text-[var(--buy)]',
     )}>
       {children}
     </span>

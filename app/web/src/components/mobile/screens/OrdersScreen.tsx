@@ -88,7 +88,7 @@ function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => vo
           <span className="min-w-0 flex-1">
             <span className="flex items-center justify-between gap-2">
               <span className="truncate text-[14.5px] font-semibold">
-                <span className={buy ? 'text-[#3d8bfd]' : 'text-[var(--down)]'}>{buy ? 'BUY' : 'SELL'}</span> {contractLabel(o.symbol)} × {size(o.requestedSize)}
+                <span className={buy ? 'text-[var(--buy)]' : 'text-[var(--down)]'}>{buy ? 'BUY' : 'SELL'}</span> {contractLabel(o.symbol)} × {size(o.requestedSize)}
               </span>
               {orderStatusWord(o)}
             </span>

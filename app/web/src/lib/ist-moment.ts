@@ -19,7 +19,3 @@ export function istToEpoch({ date, time }: IstMoment): number {
   return Math.floor(Date.UTC(y!, m! - 1, d!, hh!, mm!) / 1000) - 5.5 * 3600;
 }
 
-export function nowIst(): IstMoment {
-  const d = new Date(Date.now() + 5.5 * 3600 * 1000);
-  return { date: d.toISOString().slice(0, 10), time: d.toISOString().slice(11, 16) };
-}

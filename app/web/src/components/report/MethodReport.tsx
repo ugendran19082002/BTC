@@ -464,7 +464,7 @@ function PhoneRows({ rows, total, sort, onSort, empty, label }: {
           <span className="flex shrink-0 items-baseline gap-2">
             {idle && <span className="text-[12px] text-[var(--dim)]">no signal</span>}
             {r.orderSide && (
-              <span className={cn('text-[11.5px] font-semibold', r.orderSide === 'BUY' ? 'text-[#3d8bfd]' : r.orderSide === 'SELL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{r.orderSide}</span>
+              <span className={cn('text-[11.5px] font-semibold', r.orderSide === 'BUY' ? 'text-[var(--buy)]' : r.orderSide === 'SELL' ? 'text-[var(--down)]' : 'text-muted-foreground')}>{r.orderSide}</span>
             )}
           </span>
         </div>

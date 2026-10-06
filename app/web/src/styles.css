@@ -27,6 +27,8 @@
 
   --up: #0ecb81;
   --down: #f6465d;
+  /* A BUY, as a SELL is --down (6 Oct 2026): blue, because green and red are for money and a side is not a gain. */
+  --buy: #3d8bfd;
   --warn: #f0b90b;
   --accent: #fcd535;
   /*

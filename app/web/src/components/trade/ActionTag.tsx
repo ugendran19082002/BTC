@@ -15,7 +15,7 @@ export function ActionTag({ action, className }: { action?: 'sell' | 'buy' | nul
       className={cn(
         'inline-block rounded-full border border-solid px-2 py-[1px] text-[10px] font-semibold tracking-[0.3px]',
         // Blue for a BUY, as on the phone view (6 Oct 2026): green and red are for money, and a side is not a gain.
-        bought ? 'border-[#3d8bfd66] bg-[#3d8bfd1a] text-[#3d8bfd]' : 'border-[#f8514955] bg-[#f8514915] text-[var(--down)]',
+        bought ? 'border-[color-mix(in_srgb,var(--buy)_40%,transparent)] bg-[color-mix(in_srgb,var(--buy)_10%,transparent)] text-[var(--buy)]' : 'border-[#f8514955] bg-[#f8514915] text-[var(--down)]',
         className,
       )}
     >

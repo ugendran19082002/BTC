@@ -13,7 +13,7 @@ import { type IstMoment } from '@/lib/ist-moment';
  * A date and time, always read as India time -- see `lib/ist-moment.ts` for
  * why. The picker works in IST regardless of where the browser is.
  */
-export { istToEpoch, nowIst, type IstMoment } from '@/lib/ist-moment';
+export { istToEpoch, type IstMoment } from '@/lib/ist-moment';
 
 const ENTRY = '05:30';
 const SETTLE = '17:29';
