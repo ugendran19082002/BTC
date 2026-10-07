@@ -83,10 +83,10 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
             className="block w-full min-w-0 border-0 bg-transparent p-0 text-left font-[inherit] text-foreground"
           >
             {/* Its name, and at the right the window as a small box (the button for it lies over this corner). Under 520px the box needs the room and the name is its second word. */}
-            <span className={cn(LABEL, 'flex items-center justify-between gap-0.5')}>
+            <span className={cn(LABEL, 'flex items-center justify-between')}>
               <span className="min-w-0 truncate"><span className="min-[520px]:hidden">Move</span><span className={WIDE}>Big move</span></span>
-              {/* "Move" is 27px and the box with its longest window, 15m, is 35: the two fit the 69px a 360px phone gives them. */}
-              <span aria-hidden="true" className="flex h-[14px] shrink-0 items-center rounded bg-[var(--panel-3)] pl-[3px] text-[11px] leading-none tabular-nums text-foreground min-[520px]:px-1">
+              {/* "Move" is 30px and the box with its longest window, 15m, is 36: the two fit the 69px a 360px phone gives them, with 3 to spare. */}
+              <span aria-hidden="true" className="flex h-[14px] shrink-0 items-center rounded bg-[var(--panel-3)] pl-[2px] text-[11px] leading-none tabular-nums text-foreground min-[520px]:px-1">
                 {windowLabel}<ChevronDown className={cn('h-2.5 w-2.5 text-muted-foreground transition-transform', picking && 'rotate-180')} />
               </span>
             </span>
