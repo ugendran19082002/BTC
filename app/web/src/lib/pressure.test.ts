@@ -56,11 +56,11 @@ describe('pressure readings', () => {
   it('a side\'s delta minute by minute as a few bars: each the sum of its minutes, sized against the largest', () => {
     const d = (...v: number[]) => v.map((delta) => ({ delta }));
     expect(deltaBars(d(4, -2, 1))).toEqual([{ up: true, size: 1 }, { up: false, size: 0.5 }, { up: true, size: 0.25 }]);
-    // sixty minutes into twelve bars of five
-    const hour = deltaBars(Array.from({ length: 60 }, (_, i) => ({ delta: i < 5 ? 2 : -1 })));
-    expect(hour).toHaveLength(12);
+    // sixty minutes into eight bars
+    const hour = deltaBars(Array.from({ length: 60 }, (_, i) => ({ delta: i < 7 ? 2 : -1 })));
+    expect(hour).toHaveLength(8);
     expect(hour[0]).toEqual({ up: true, size: 1 });
-    expect(hour[1]).toEqual({ up: false, size: 0.5 });
+    expect(hour[1]!.up).toBe(false);
     expect(deltaBars([])).toEqual([]);
     expect(deltaBars(d(0, 0))).toEqual([{ up: true, size: 0 }, { up: true, size: 0 }]);
   });

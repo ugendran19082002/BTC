@@ -1,25 +1,29 @@
-import type { CSSProperties, ReactNode } from 'react';
-import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
-import type { SideFlow } from '@/api/desk';
+import type { CSSProperties } from 'react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { clock } from '@/lib/format';
+import type { SideFlow } from '@/api/desk';
 import { deltaBars, sideRead, type SideRead } from '@/lib/pressure';
 import { points, signedPct, signedPoints, type PriceMove } from '@/lib/price-change';
 import { cn } from '@/lib/utils';
 import { PRESSURE_WINDOWS, type Pressure, type PressureWindow } from '@/components/mobile/usePressure';
 
 /**
- * Home's four cards, over today's P&L (owner, 7 Oct 2026): the call tape, the put tape, the big-move read, and
- * BTC itself. Two by two: the phone view is never wide enough for four of these side by side (at its widest,
- * 560px, a card would be 128px and its words cut off).
+ * Home's four cards, in one row over today's P&L (owner, 7 Oct 2026): the call tape, the put tape, the big-move
+ * read, and BTC itself. Four across at every width -- 78px a card on a 360px phone -- so each is five short
+ * lines, one under the other, and the five line up across the row:
  *
- *  - CE flow, PE flow: what the side reads as, large; the share of the side that leads as a badge; its delta
- *    minute by minute as a few bars; and a line from SELL to BUY with a mark where the aggressors stand.
- *  - Big move: the band, the pressure as a percent and the way it leans, the perp's running delta as a line, and
- *    the window all of it is read over -- 5m, 15m, 1h, 4h -- which the two tapes share and say beside their names.
- *  - BTC: the index now, the perp against it, and the move since the desk's entry (or, holding nothing, since
- *    the last settlement): from what to what, in points and percent.
+ *            CE flow / PE flow         Big move                  BTC index
+ *   word     SELL · BUY · BALANCED     the band                  the index now
+ *   figure   the share that leads      the pressure, its lean    the perp against it
+ *   picture  SELL-to-BUY line, a mark  the perp's running delta  the move since entry
+ *   foot     SELL ........ BUY         the window read over      what the move is since
  *
- * A tap on a tape or the band opens Pressure; on BTC, Price changes.
+ * Where the row has the room (from 520px: a card is then 118px or more) each card says a little more -- the
+ * window beside a tape's name and its delta as a few bars, the lean in a word, the time of the price, the move
+ * in percent too. Nothing is taken away to make room; narrower, those are a tap away on their own screens.
+ *
+ * Under the row, the window all three readings share -- 5m, 15m, 1h, 4h -- as wide as the row, where a finger
+ * finds it. A tap on a tape or the band opens Pressure; on BTC, Price changes.
  */
 
 const TONE = {
@@ -30,10 +34,17 @@ const TONE = {
 } as const;
 type Tone = keyof typeof TONE;
 
-/** A card: its edge and a wash of its tone, as the reading has one. */
-const SHELL = 'block min-w-0 rounded-xl border border-solid p-2.5 text-left font-[inherit] text-foreground '
+/** A card: its edge and a wash of its tone, as the reading has one. Five lines, each its own height, so the row lines up. */
+const SHELL = 'flex min-w-0 flex-col rounded-xl border border-solid px-1.5 py-2 text-left font-[inherit] text-foreground min-[420px]:px-2 '
   + 'border-[color-mix(in_srgb,var(--t)_38%,var(--line))] bg-[linear-gradient(160deg,color-mix(in_srgb,var(--t)_13%,var(--panel)),var(--panel)_62%)]';
 const shell = (tone: Tone): CSSProperties => ({ ['--t' as string]: TONE[tone].css });
+const LABEL = 'block h-[15px] truncate text-[11px] leading-[15px] text-muted-foreground';
+const WORD = 'mt-1 block h-[22px] truncate font-bold leading-[22px]';
+const FIGURE = 'block h-[17px] truncate text-[12px] leading-[17px] tabular-nums text-muted-foreground';
+const PICTURE = 'mt-1.5 flex h-[18px] items-center';
+/** Shown only where a card is wide enough for it. */
+const WIDE = 'hidden min-[520px]:inline';
+const FOOT = 'mt-0.5 block h-[14px] truncate text-[11px] leading-[14px] text-[var(--dim)]';
 
 export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOpen, onOpenPrice }: {
   pressure: Pressure;
@@ -52,40 +63,60 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
   const lean = !w || w.lean === 0 ? null : w.lean > 0 ? 'up' : 'down';
   // Since the desk's entry; holding nothing, since the last settlement.
   const mark = price.marks.find((m) => m.mark === 'entry') ?? price.marks.find((m) => m.mark === 'dayStart') ?? null;
+  const markTone: Tone = mark?.way === 'up' ? 'up' : mark?.way === 'down' ? 'down' : 'flat';
   const gap = perp !== null && price.index !== null ? perp - price.index : null;
   const MoveIcon = mark?.way === 'up' ? ArrowUp : mark?.way === 'down' ? ArrowDown : null;
 
   return (
-    <div className="grid grid-cols-2 !gap-1.5" role="group" aria-label="Pressure and price">
-      <SideCard name="CE flow" window={windowLabel} flow={x.flow?.ce ?? null} read={x.perpRead} onOpen={onOpen} />
-      <SideCard name="PE flow" window={windowLabel} flow={x.flow?.pe ?? null} read={x.perpRead} onOpen={onOpen} />
+    <div role="group" aria-label="Pressure and price">
+      <div className="grid grid-cols-4 !gap-1 min-[420px]:!gap-1.5">
+        <SideCard name="CE flow" window={windowLabel} flow={x.flow?.ce ?? null} read={x.perpRead} onOpen={onOpen} />
+        <SideCard name="PE flow" window={windowLabel} flow={x.flow?.pe ?? null} read={x.perpRead} onOpen={onOpen} />
 
-      <div className={SHELL} style={shell(bandTone)}>
         <button
-          type="button" onClick={onOpen}
+          type="button" onClick={onOpen} className={SHELL} style={shell(bandTone)}
           aria-label={w ? `Big move: ${w.band}${w.pressure === null ? '' : `, ${w.pressure} percent`}${lean ? `, pressure ${lean}` : ''}, over ${windowLabel}. Open Pressure` : 'Big move: reading. Open Pressure'}
-          className="block w-full border-0 bg-transparent p-0 text-left font-[inherit] text-foreground"
         >
-          <Head label="Big move" badge={w ? w.band.toUpperCase() : null} tone={bandTone} />
-          <span className="mt-1 flex items-end justify-between gap-1.5">
-            <span className="min-w-0">
-              <span className={cn('block truncate text-[19px] font-bold leading-none', TONE[bandTone].text)}>{w ? w.band.toUpperCase() : '…'}</span>
-              <span className="mt-1 block truncate text-[12px] tabular-nums text-muted-foreground">
-                {!w ? 'reading' : w.pressure === null ? '—' : <span className="font-semibold text-foreground">{w.pressure}%</span>}
-                {lean && <span className={cn('ml-1 font-medium', lean === 'up' ? TONE.up.text : TONE.down.text)}>{lean} {lean === 'up' ? '↑' : '↓'}</span>}
-              </span>
-            </span>
-            <Spark values={x.perpCvd} />
+          <span className={LABEL}>Big move</span>
+          <span className={cn(WORD, w?.band === 'sudden' ? 'text-[14px]' : 'text-[16px]', TONE[bandTone].text)}>{w ? w.band.toUpperCase() : '…'}</span>
+          <span className={FIGURE}>
+            {!w ? 'reading' : w.pressure === null ? '—' : <span className="font-semibold text-foreground">{w.pressure}%</span>}
+            {lean && <span className={cn('ml-1 font-semibold', lean === 'up' ? TONE.up.text : TONE.down.text)}><span className={WIDE}>{lean} </span>{lean === 'up' ? '↑' : '↓'}</span>}
           </span>
+          <span className={PICTURE}><Spark values={x.perpCvd} /></span>
+          <span className={FOOT}>over {windowLabel}</span>
         </button>
-        {/* The window the three readings share. Each segment a finger wide: 36px, the card's own padding given up to it. */}
-        <div role="radiogroup" aria-label="Window" className="-mx-1 mt-2 flex rounded-lg bg-[var(--panel-3)] p-0.5">
+
+        <button
+          type="button" onClick={onOpenPrice} className={SHELL} style={shell(markTone)}
+          aria-label={!price.read ? 'BTC index: reading. Open Price changes'
+            : `BTC index ${points(price.index)}${gap === null ? '' : `, perp ${signedPoints(gap)} to the index`}${mark && mark.pts !== null ? `; ${mark.label.toLowerCase()} ${signedPoints(mark.pts)} points, ${signedPct(mark.pct)}, from ${points(mark.from)} to ${points(mark.to)}` : ''}. Open Price changes`}
+        >
+          <span className={cn(LABEL, 'flex justify-between gap-1')}>
+            <span className="truncate">BTC index</span>
+            {price.at !== null && <span className={cn(WIDE, 'shrink-0 tabular-nums text-[var(--time)]')}>{clock(price.at)}</span>}
+          </span>
+          <span className={cn(WORD, 'text-[15px] tabular-nums')}>{price.read ? points(price.index) : '…'}</span>
+          <span className={FIGURE}>
+            {!price.read ? 'reading' : gap === null ? 'perp —' : <>perp <span className="font-semibold text-foreground">{signedPoints(gap)}</span></>}
+          </span>
+          <span className={cn(PICTURE, 'gap-0.5 truncate text-[13px] font-bold tabular-nums', TONE[markTone].text)}>
+            {mark && mark.pts !== null ? <>{MoveIcon && <MoveIcon aria-hidden="true" className="h-3 w-3 shrink-0" />}{signedPoints(mark.pts)}<span className={cn(WIDE, 'ml-1 text-[11px] font-medium')}>{signedPct(mark.pct)}</span></> : <span className="font-normal text-muted-foreground">—</span>}
+          </span>
+          <span className={FOOT}>{mark ? (mark.mark === 'entry' ? <>since entry<span className={cn(WIDE, 'tabular-nums')}> {clock(mark.at)}</span></> : 'since 17:30') : 'no mark'}</span>
+        </button>
+      </div>
+
+      {/* The window the three readings share: its own line under the row, each segment a finger tall. */}
+      <div className="mt-1.5 flex items-center gap-2">
+        <span id="m-pressure-window" className="shrink-0 pl-0.5 text-[12px] text-muted-foreground">Window</span>
+        <div role="radiogroup" aria-labelledby="m-pressure-window" className="flex min-w-0 flex-1 rounded-lg bg-muted p-0.5">
           {PRESSURE_WINDOWS.map((o) => (
             <button
               key={o.key} type="button" role="radio" aria-checked={window === o.key} aria-label={o.spoken} onClick={() => onWindow(o.key)}
               className={cn(
-                'h-9 min-w-0 flex-1 rounded-md border-0 p-0 font-[inherit] text-[12px] font-semibold tabular-nums',
-                window === o.key ? 'bg-[var(--panel)] text-foreground shadow-[0_0_0_1px_var(--line)]' : 'bg-transparent text-muted-foreground',
+                'h-9 min-w-0 flex-1 rounded-md border-0 p-0 font-[inherit] text-[13px] font-semibold tabular-nums',
+                window === o.key ? 'bg-[var(--panel-3)] text-foreground shadow-[0_0_0_1px_var(--line)]' : 'bg-transparent text-muted-foreground',
               )}
             >
               {o.label}
@@ -93,94 +124,55 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
           ))}
         </div>
       </div>
-
-      <button
-        type="button" onClick={onOpenPrice} className={SHELL} style={shell(mark?.way === 'up' ? 'up' : mark?.way === 'down' ? 'down' : 'flat')}
-        aria-label={!price.read ? 'BTC index: reading. Open Price changes'
-          : `BTC index ${points(price.index)}${gap === null ? '' : `, perp ${signedPoints(gap)} to the index`}${mark && mark.pts !== null ? `; ${mark.label.toLowerCase()} ${signedPoints(mark.pts)} points, ${signedPct(mark.pct)}, from ${points(mark.from)} to ${points(mark.to)}` : ''}. Open Price changes`}
-      >
-        <span className="flex items-baseline justify-between gap-1.5">
-          <span className="truncate text-[12px] text-muted-foreground">BTC index</span>
-          {price.at !== null && <span className="shrink-0 text-[11px] tabular-nums text-[var(--time)]">{clock(price.at)}</span>}
-        </span>
-        <span className="mt-1 block truncate text-[19px] font-bold leading-none tabular-nums">{price.read ? points(price.index) : '…'}</span>
-        <span className="mt-1 block truncate text-[12px] tabular-nums text-muted-foreground">
-          {!price.read ? 'reading' : gap === null ? 'perp —' : <>perp <span className="font-medium text-foreground">{signedPoints(gap)}</span></>}
-        </span>
-        {mark && (
-          <span className="mt-2 block border-0 border-t border-solid border-[var(--line-soft)] pt-1.5">
-            <span className="block truncate text-[11px] text-muted-foreground">{mark.label} <span className="tabular-nums text-[var(--time)]">{clock(mark.at)}</span></span>
-            <span className={cn('flex items-center gap-0.5 truncate text-[14px] font-bold leading-tight tabular-nums', TONE[mark.way === 'up' ? 'up' : mark.way === 'down' ? 'down' : 'flat'].text)}>
-              {MoveIcon && <MoveIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />}
-              {signedPoints(mark.pts)}
-              <span className="ml-1 text-[11.5px] font-medium">{signedPct(mark.pct)}</span>
-            </span>
-            <span className="flex items-center gap-1 truncate text-[11.5px] tabular-nums text-muted-foreground">
-              {points(mark.from)} <ArrowRight aria-hidden="true" className="h-3 w-3 shrink-0" /> <span className="text-foreground">{points(mark.to)}</span>
-            </span>
-          </span>
-        )}
-      </button>
     </div>
-  );
-}
-
-/** A card's first line: its name, and at the right what stands out about it, in a small frame of its tone. */
-function Head({ label, badge, tone }: { label: ReactNode; badge: string | null; tone: Tone }) {
-  return (
-    <span className="flex items-center justify-between gap-1.5">
-      <span className="min-w-0 truncate text-[12px] text-muted-foreground">{label}</span>
-      {badge !== null && (
-        <span className={cn('shrink-0 rounded-md border border-solid border-[color-mix(in_srgb,var(--t)_55%,transparent)] bg-[color-mix(in_srgb,var(--t)_14%,transparent)] px-1.5 py-0.5 text-[11px] font-bold leading-none tabular-nums', TONE[tone].text)}>
-          {badge}
-        </span>
-      )}
-    </span>
   );
 }
 
 /** One side of the option tape. */
 function SideCard({ name, window, flow, read, onOpen }: { name: string; window: string; flow: SideFlow | null; read: boolean; onOpen: () => void }) {
   const r: SideRead = read ? sideRead(flow) : { word: '—', sub: 'reading', tone: 'flat', buyShare: null, leadPct: null, leadWords: 'reading' };
-  // Eight bars: with more, the longest word a side can read as (BALANCED) has no room beside them at 360px.
-  const bars = flow ? deltaBars(flow.cvd, 8) : [];
   const at = r.buyShare === null ? null : Math.min(100, Math.max(0, r.buyShare * 100));
+  // Six bars: the longest word a side reads as (BALANCED) still has its room beside them in a 118px card.
+  const bars = flow ? deltaBars(flow.cvd, 6) : [];
   return (
     <button
       type="button" onClick={onOpen} className={SHELL} style={shell(r.tone)}
       aria-label={`${name}, ${window}: ${read ? (r.word === '—' ? 'no prints' : `${r.word.toLowerCase()}${r.sub === 'pressure' ? ' pressure' : ''}, ${r.leadWords}`) : 'reading'}. Open Pressure`}
     >
-      <Head label={<>{name} <span className="tabular-nums text-[var(--dim)]">· {window}</span></>} badge={r.leadPct === null ? null : `${r.leadPct}%`} tone={r.tone} />
-      <span className="mt-1 flex items-end justify-between gap-1.5">
-        <span className="min-w-0">
-          <span className={cn('block truncate font-bold leading-none', r.word === 'BALANCED' ? 'text-[14px]' : 'text-[19px]', TONE[r.tone].text)}>{read ? r.word : '…'}</span>
-          <span className="mt-1 block truncate text-[12px] text-muted-foreground">{r.sub}</span>
-        </span>
+      <span className={LABEL}>{name}<span className={cn(WIDE, 'tabular-nums text-[var(--dim)]')}> · {window}</span></span>
+      <span className="mt-1 flex h-[22px] items-end justify-between gap-1">
+        <span className={cn('min-w-0 truncate font-bold leading-[22px]', r.word === 'BALANCED' ? 'text-[11px] min-[420px]:text-[13px]' : 'text-[17px]', TONE[r.tone].text)}>{read ? r.word : '…'}</span>
         {/* Its delta, minute by minute, as a few bars: bought more than sold in green. */}
         {bars.length > 1 && (
-          <span aria-hidden="true" className="flex h-7 shrink-0 items-end gap-[2px]">
-            {bars.map((b, i) => <span key={i} className={cn('w-[3px] rounded-sm', b.up ? TONE.up.fill : TONE.down.fill)} style={{ height: `${Math.max(8, b.size * 100)}%`, opacity: 0.35 + 0.65 * ((i + 1) / bars.length) }} />)}
+          <span aria-hidden="true" className="hidden h-5 shrink-0 items-end gap-[2px] min-[520px]:flex">
+            {bars.map((b, i) => <span key={i} className={cn('w-[3px] rounded-sm', b.up ? TONE.up.fill : TONE.down.fill)} style={{ height: `${Math.max(10, b.size * 100)}%`, opacity: 0.4 + 0.6 * ((i + 1) / bars.length) }} />)}
           </span>
         )}
       </span>
-      {/* From SELL to BUY, with a mark where the aggressors stand; the middle is level. */}
-      <span aria-hidden="true" className="relative mt-2.5 block h-1.5 rounded-full bg-[var(--panel-3)]">
-        {at !== null && (
-          <>
-            <span className={cn('absolute inset-y-0 rounded-full', at >= 50 ? TONE.up.fill : TONE.down.fill)} style={{ left: `${Math.min(50, at)}%`, width: `${Math.abs(at - 50)}%` }} />
-            <span className="absolute -top-[3px] h-3 w-[2px] rounded-sm bg-foreground" style={{ left: `calc(${at}% - 1px)` }} />
-          </>
-        )}
+      {/* The share of the side that leads: "72% sells". */}
+      <span className={FIGURE}>
+        {r.leadPct === null ? r.sub : <><span className={cn('font-semibold', r.tone === 'flat' ? 'text-foreground' : TONE[r.tone].text)}>{r.leadPct}%</span> {r.leadWords.split(' ')[1]}</>}
       </span>
-      <span aria-hidden="true" className="mt-1 flex justify-between text-[11px] font-medium tracking-[0.4px] text-[var(--dim)]"><span>SELL</span><span>BUY</span></span>
+      {/* From SELL to BUY, with a mark where the aggressors stand; the middle is level. */}
+      <span aria-hidden="true" className={PICTURE}>
+        <span className="relative block h-1.5 w-full rounded-full bg-[var(--panel-3)]">
+          {at !== null && (
+            <>
+              <span className={cn('absolute inset-y-0 rounded-full', at >= 50 ? TONE.up.fill : TONE.down.fill)} style={{ left: `${Math.min(50, at)}%`, width: `${Math.abs(at - 50)}%` }} />
+              <span className="absolute -top-[3px] h-3 w-[2px] rounded-sm bg-foreground" style={{ left: `calc(${at}% - 1px)` }} />
+            </>
+          )}
+        </span>
+      </span>
+      <span aria-hidden="true" className={cn(FOOT, 'flex justify-between font-medium')}><span>SELL</span><span>BUY</span></span>
     </button>
   );
 }
 
 /** A reading's last stretch as a line, a dot on where it is now: green where it ends above its start. */
 function Spark({ values }: { values: readonly number[] }) {
-  if (values.length < 2) return null;
-  const W = 56, H = 28, PAD = 3;
+  if (values.length < 2) return <span className="block h-px w-full bg-[var(--line)]" />;
+  const W = 60, H = 18, PAD = 3;
   const lo = Math.min(...values), hi = Math.max(...values);
   const span = hi - lo || 1;
   const x = (i: number) => PAD + (i / (values.length - 1)) * (W - 2 * PAD);
@@ -188,9 +180,9 @@ function Spark({ values }: { values: readonly number[] }) {
   const last = values[values.length - 1]!;
   const colour = last >= values[0]! ? 'var(--up)' : 'var(--down)';
   return (
-    <svg aria-hidden="true" viewBox={`0 0 ${W} ${H}`} className="h-7 w-14 shrink-0">
-      <path d={values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('')} fill="none" stroke="var(--muted)" strokeWidth={1.25} strokeLinejoin="round" />
-      <circle cx={x(values.length - 1)} cy={y(last)} r={2.5} fill={colour} />
+    <svg aria-hidden="true" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="block h-[18px] w-full">
+      <path d={values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('')} fill="none" stroke="var(--muted)" strokeWidth={1.25} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={x(values.length - 1)} cy={y(last)} r={2} fill={colour} />
     </svg>
   );
 }

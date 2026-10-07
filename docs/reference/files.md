@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-453 files listed, 219 test files counted below, images and lockfiles left out.
+454 files listed, 219 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -379,13 +379,14 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | The phone (6 Oct 2026): the desk read at a glance, and nothing that changes it. |
 | [PairList.tsx](../../app/web/src/components/mobile/PairList.tsx) | One list of method + timeframe pairs on the phone (owner, 6 Oct 2026): the best, or the worst -- of the closed trades on P&L, or of the signal history under More. |
 | [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then entry, price now and P&L, then where the price stands between the stop and the target, drawn and moving (ExitRail) -- the BTC perp's... |
-| [PressureStrip.tsx](../../app/web/src/components/mobile/PressureStrip.tsx) | Home's row of three, over today's P&L (owner, 7 Oct 2026): what the call tape reads as, what the put tape reads as, and the big-move band with its pressure as a percent and the way it leans. |
+| [PressureStrip.tsx](../../app/web/src/components/mobile/PressureStrip.tsx) | Home's four cards, over today's P&L (owner, 7 Oct 2026): the call tape, the put tape, the big-move read, and BTC itself. |
 | [Toasts.tsx](../../app/web/src/components/mobile/Toasts.tsx) | What just happened, said once, on whatever screen is open (owner, 6 Oct 2026): an order began waiting, an order filled, a position closed -- a card that slides down under the header and opens the t... |
 | [TradeDetail.tsx](../../app/web/src/components/mobile/TradeDetail.tsx) | One trade, start to end, read only (the phone's Level 2, 6 Oct 2026): what it is and what it made, then its whole journal as a line of steps -- signal, entry, fill, protection, exit, closed. |
 | [parts.tsx](../../app/web/src/components/mobile/parts.tsx) | The phone's building blocks (6 Oct 2026): one way to show a figure, a row, a filter and a list item, so every screen reads the same. |
 | [phone-context.ts](../../app/web/src/components/mobile/phone-context.ts) | What every phone screen shares (6 Oct 2026): the desk's status and health, read once by the shell and handed down, the account being shown, the clock, and how to move -- so five screens do not poll... |
 | [useDayRange.tsx](../../app/web/src/components/mobile/useDayRange.tsx) | The phone's date filter, one for every screen that reads IST days (6 Oct 2026): Today, the last 7, 30 or 90 days, or Custom -- last, as the owner asked -- which opens a sheet for any From and To. |
 | [usePressure.ts](../../app/web/src/components/mobile/usePressure.ts) | The phone's read of pressure (owner, 7 Oct 2026), once, for the Pressure screen and for Home's row of three: the option tape a side at a time and the big-move early warning. |
+| [usePriceMoves.ts](../../app/web/src/components/mobile/usePriceMoves.ts) | BTC's index now against each window back and the desk's own marks (7 Oct 2026), read once for the Price changes screen and for Home's BTC card. |
 | [useTradeToasts.ts](../../app/web/src/components/mobile/useTradeToasts.ts) | The phone's live toasts (owner, 6 Oct 2026): each reading of the open trades against the one before it, and a toast for what changed -- an order waiting, an order filled, a position closed, an orde... |
 
 ## `app/web/src/components/mobile/screens/`

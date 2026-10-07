@@ -71,7 +71,7 @@ export function sideRead(x: Pick<SideFlow, 'pressure' | 'aggressorBuyPct'> | nul
  * A side's delta, minute by minute, as at most `max` bars: the minutes shared out evenly, each bar the sum of its
  * own, and its height its size against the largest (0-1). Bought more than sold is up.
  */
-export function deltaBars(cvd: readonly { delta: number }[], max = 12): { up: boolean; size: number }[] {
+export function deltaBars(cvd: readonly { delta: number }[], max = 8): { up: boolean; size: number }[] {
   if (cvd.length === 0) return [];
   const n = Math.min(max, cvd.length);
   const sums = Array.from({ length: n }, (_, i) => cvd.slice(Math.floor((i * cvd.length) / n), Math.floor(((i + 1) * cvd.length) / n)).reduce((a, c) => a + c.delta, 0));
