@@ -4,13 +4,14 @@ import { pct } from '@/lib/format';
 import type { Trigger } from '@/lib/overview';
 import { atmLeg, bookOf, buySellShare, kct, spreadOf } from '@/lib/pressure';
 import { cn } from '@/lib/utils';
-import { AreaChart, Empty, Loading, Panel, Pill } from '@/components/mobile/parts';
-import { usePressure } from '@/components/mobile/usePressure';
+import { AreaChart, Empty, Loading, Panel, Pill, Segmented } from '@/components/mobile/parts';
+import { PRESSURE_WINDOWS, usePressure, usePressureWindow } from '@/components/mobile/usePressure';
 
 /**
  * Pressure (owner, 7 Oct 2026): the desk's two pressure cards, made for a phone.
  *
- *  - Option flow, CE and PE: who crossed the spread on the calls and on the puts over the last hour -- bought
+ *  - Option flow, CE and PE: who crossed the spread on the calls and on the puts over the window picked at the
+ *    top (5m to 4h, an hour unless changed; Home's cards share the pick) -- bought
  *    against sold as one bar, the delta, the running delta as a line, the aggressor share, the at-the-money
  *    option's book and spread, the busiest strikes -- and what each side and the two together read as.
  *  - Big move catch: the nine readings that tend to run ahead of a move, each with how far it has come towards
@@ -25,9 +26,11 @@ const signed = (v: number, places = 0) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${
 const toneOf = (v: number | null | undefined) => (v == null || v === 0 ? '' : v > 0 ? 'text-[var(--up)]' : 'text-[var(--down)]');
 
 export function PressureScreen() {
-  const x = usePressure();
+  const [window, setWindow] = usePressureWindow();
+  const x = usePressure(15_000, window);
   const data = x.chain;
-  if (!data) return <Panel><Loading error={x.chainError} what="the market" /></Panel>;
+  const picker = <Segmented label="Window" value={window} options={PRESSURE_WINDOWS} onChange={setWindow} />;
+  if (!data) return <>{picker}<Panel><Loading error={x.chainError} what="the market" /></Panel></>;
   const snap = data.snapshot;
   const f = x.flow;
   const w = x.warning!;
@@ -38,9 +41,10 @@ export function PressureScreen() {
 
   return (
     <>
+      {picker}
       <Panel title="Option flow" right={f ? <span className={cn('text-[11.5px] tabular-nums', f.minutesCovered < f.windowMin ? 'text-[var(--warn)]' : 'text-muted-foreground')}>{f.minutesCovered} of {f.windowMin} min · {f.expiry}</span> : undefined}>
         {!x.perpRead ? <Loading error={x.perpError} what="the option tape" />
-          : !f ? <Empty>No option prints in the last hour: the tape recorder is not connected, or has only just begun.</Empty> : (
+          : !f ? <Empty>No option prints in this window: the tape recorder is not connected, or has only just begun.</Empty> : (
             <>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[13px] text-muted-foreground">Overall option flow</span>

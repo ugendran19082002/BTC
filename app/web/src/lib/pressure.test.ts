@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChainResponse, Leg } from '@/types/desk';
-import { atmLeg, bookOf, buySellShare, deskLeg, kct, spreadOf } from '@/lib/pressure';
+import { atmLeg, bookOf, buySellShare, deltaBars, deskLeg, kct, sideRead, spreadOf } from '@/lib/pressure';
 
 const leg = (cp: 'C' | 'P', strike: number, o: Partial<Leg> = {}): Leg => ({ cp, strike, bid: 40, ask: 41, bidSize: 60, askSize: 40, mark: 40.5, ...o } as Leg);
 const chain = (o: { sides?: { side: 'CE' | 'PE'; leg: Leg | null }[]; legs?: Leg[]; pick?: { cp: 'C' | 'P'; strike: number } | null; bestOfNone?: boolean }) => ({
@@ -41,5 +41,27 @@ describe('pressure readings', () => {
     expect(buySellShare(1_606.5, 2_063.1).buy).toBeCloseTo(0.4378, 4);
     expect(buySellShare(1, 3)).toEqual({ buy: 0.25, sell: 0.75 });
     expect(buySellShare(0, 0)).toEqual({ buy: 0, sell: 0 });
+  });
+
+  it('[critical] a side as its card says it: the word, the share of the side that leads, and where the mark sits', () => {
+    expect(sideRead({ pressure: 'SELL PRESSURE', aggressorBuyPct: 0.28 })).toEqual({ word: 'SELL', sub: 'pressure', tone: 'down', buyShare: 0.28, leadPct: 72, leadWords: '72% sells' });
+    expect(sideRead({ pressure: 'BUY PRESSURE', aggressorBuyPct: 0.68 })).toMatchObject({ word: 'BUY', tone: 'up', buyShare: 0.68, leadPct: 68, leadWords: '68% buys' });
+    expect(sideRead({ pressure: 'BALANCED', aggressorBuyPct: 0.51 })).toMatchObject({ word: 'BALANCED', sub: 'both sides', tone: 'flat', leadPct: 51 });
+    // no prints is not "balanced"
+    for (const x of [null, undefined, { pressure: null, aggressorBuyPct: null }, { pressure: 'BUY PRESSURE' as const, aggressorBuyPct: null }]) {
+      expect(sideRead(x)).toMatchObject({ word: '—', sub: 'no prints', buyShare: null, leadPct: null });
+    }
+  });
+
+  it('a side\'s delta minute by minute as a few bars: each the sum of its minutes, sized against the largest', () => {
+    const d = (...v: number[]) => v.map((delta) => ({ delta }));
+    expect(deltaBars(d(4, -2, 1))).toEqual([{ up: true, size: 1 }, { up: false, size: 0.5 }, { up: true, size: 0.25 }]);
+    // sixty minutes into twelve bars of five
+    const hour = deltaBars(Array.from({ length: 60 }, (_, i) => ({ delta: i < 5 ? 2 : -1 })));
+    expect(hour).toHaveLength(12);
+    expect(hour[0]).toEqual({ up: true, size: 1 });
+    expect(hour[1]).toEqual({ up: false, size: 0.5 });
+    expect(deltaBars([])).toEqual([]);
+    expect(deltaBars(d(0, 0))).toEqual([{ up: true, size: 0 }, { up: true, size: 0 }]);
   });
 });

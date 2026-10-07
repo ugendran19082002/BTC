@@ -1,12 +1,10 @@
 import { ArrowDown, ArrowRight, ArrowUp, Minus } from 'lucide-react';
-import { getPriceChange } from '@/api/desk';
-import { usePoll } from '@/hooks/usePoll';
 import { clock } from '@/lib/format';
-import { points, priceMoves, signedPct, signedPoints, type PriceMove } from '@/lib/price-change';
+import { points, signedPct, signedPoints, type PriceMove } from '@/lib/price-change';
 import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
 import { Empty, Loading, Panel } from '@/components/mobile/parts';
-import { nextSettlement } from '@/components/mobile/screens/MarketScreen';
+import { usePriceMoves } from '@/components/mobile/usePriceMoves';
 
 /**
  * Price changes (owner, 7 Oct 2026): the desk's "Price change" card, made for a phone. BTC's index now, then a
@@ -24,22 +22,18 @@ const SAID = { up: 'up', down: 'down', flat: 'no change' } as const;
 
 export function PriceChangeScreen() {
   const p = usePhone();
-  // "Since entry": the first fill of anything the desk holds now. "Last settlement": a day before the next one.
-  const fills = (p.status?.open ?? []).filter((t) => t.position !== 0).flatMap((t) => t.fills.map((f) => f.ts)).filter((v) => v > 0);
-  const entryMs = fills.length ? Math.min(...fills) : null;
-  const expiryTs = Math.round(nextSettlement(p.now) / 1000);
-  const res = usePoll(() => getPriceChange(entryMs, expiryTs), 15_000, { deps: [entryMs, expiryTs] });
-  const { windows, marks } = priceMoves(res.data ?? null);
-  const now = res.data?.spot ?? null;
+  const x = usePriceMoves();
+  const { windows, marks } = x;
+  const now = x.index;
 
   return (
     <>
       <Panel>
         <span className="flex items-baseline justify-between gap-2 text-[13px] text-muted-foreground">
           <span>BTC index now</span>
-          {res.data && <span className="tabular-nums text-[var(--time)]">{clock(res.data.at)}</span>}
+          {x.at !== null && <span className="tabular-nums text-[var(--time)]">{clock(x.at)}</span>}
         </span>
-        {!res.data ? <Loading error={res.error} what="the price" /> : (
+        {!x.read ? <Loading error={x.error} what="the price" /> : (
           <>
             <div className="text-[30px] font-semibold leading-tight tabular-nums">{points(now)}</div>
             {p.perp !== null && (
@@ -52,7 +46,7 @@ export function PriceChangeScreen() {
         )}
       </Panel>
 
-      {res.data && (
+      {x.read && (
         <>
           {marks.length > 0 && (
             <Panel title="Since the desk's marks" right={<span className="text-[11.5px] text-muted-foreground">from → now</span>}>

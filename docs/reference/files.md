@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-447 files listed, 214 test files counted below, images and lockfiles left out.
+453 files listed, 219 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 120 |
-| `app/web` | 94 |
+| `app/web` | 99 |
 
 ## `(root)`
 
@@ -379,11 +379,13 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | The phone (6 Oct 2026): the desk read at a glance, and nothing that changes it. |
 | [PairList.tsx](../../app/web/src/components/mobile/PairList.tsx) | One list of method + timeframe pairs on the phone (owner, 6 Oct 2026): the best, or the worst -- of the closed trades on P&L, or of the signal history under More. |
 | [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then entry, price now and P&L, then where the price stands between the stop and the target, drawn and moving (ExitRail) -- the BTC perp's... |
+| [PressureStrip.tsx](../../app/web/src/components/mobile/PressureStrip.tsx) | Home's row of three, over today's P&L (owner, 7 Oct 2026): what the call tape reads as, what the put tape reads as, and the big-move band with its pressure as a percent and the way it leans. |
 | [Toasts.tsx](../../app/web/src/components/mobile/Toasts.tsx) | What just happened, said once, on whatever screen is open (owner, 6 Oct 2026): an order began waiting, an order filled, a position closed -- a card that slides down under the header and opens the t... |
 | [TradeDetail.tsx](../../app/web/src/components/mobile/TradeDetail.tsx) | One trade, start to end, read only (the phone's Level 2, 6 Oct 2026): what it is and what it made, then its whole journal as a line of steps -- signal, entry, fill, protection, exit, closed. |
 | [parts.tsx](../../app/web/src/components/mobile/parts.tsx) | The phone's building blocks (6 Oct 2026): one way to show a figure, a row, a filter and a list item, so every screen reads the same. |
 | [phone-context.ts](../../app/web/src/components/mobile/phone-context.ts) | What every phone screen shares (6 Oct 2026): the desk's status and health, read once by the shell and handed down, the account being shown, the clock, and how to move -- so five screens do not poll... |
 | [useDayRange.tsx](../../app/web/src/components/mobile/useDayRange.tsx) | The phone's date filter, one for every screen that reads IST days (6 Oct 2026): Today, the last 7, 30 or 90 days, or Custom -- last, as the owner asked -- which opens a sheet for any From and To. |
+| [usePressure.ts](../../app/web/src/components/mobile/usePressure.ts) | The phone's read of pressure (owner, 7 Oct 2026), once, for the Pressure screen and for Home's row of three: the option tape a side at a time and the big-move early warning. |
 | [useTradeToasts.ts](../../app/web/src/components/mobile/useTradeToasts.ts) | The phone's live toasts (owner, 6 Oct 2026): each reading of the open trades against the one before it, and a toast for what changed -- an order waiting, an order filled, a position closed, an orde... |
 
 ## `app/web/src/components/mobile/screens/`
@@ -399,6 +401,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [OrdersScreen.tsx](../../app/web/src/components/mobile/screens/OrdersScreen.tsx) | Orders (6 Oct 2026): the day's orders as the desk placed them -- what was asked, what it filled at, and where each stands -- filtered by status, a day at a time. |
 | [PnlScreen.tsx](../../app/web/src/components/mobile/screens/PnlScreen.tsx) | P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line, then the closed trades' numbers in one grid (win rate, profit factor, average win and... |
 | [PositionsScreen.tsx](../../app/web/src/components/mobile/screens/PositionsScreen.tsx) | Positions (6 Oct 2026): every open position's live risk, the riskiest first -- anything wrong, then the stop with the least room. |
+| [PressureScreen.tsx](../../app/web/src/components/mobile/screens/PressureScreen.tsx) | Pressure (owner, 7 Oct 2026): the desk's two pressure cards, made for a phone. |
+| [PriceChangeScreen.tsx](../../app/web/src/components/mobile/screens/PriceChangeScreen.tsx) | Price changes (owner, 7 Oct 2026): the desk's "Price change" card, made for a phone. |
 | [SettingsScreen.tsx](../../app/web/src/components/mobile/screens/SettingsScreen.tsx) | Status and settings (6 Oct 2026): the desk's health in full, who is signed in and how, which build the server runs, whether Telegram is set up, and signing out. |
 | [SignalPairsScreen.tsx](../../app/web/src/components/mobile/screens/SignalPairsScreen.tsx) | Signal history pairs (owner, 6 Oct 2026): the best and the worst pairs of entry method and timeframe again, this time from the signal history -- every signal the methods gave on the days chosen, wh... |
 | [StrategiesScreen.tsx](../../app/web/src/components/mobile/screens/StrategiesScreen.tsx) | Strategies (6 Oct 2026, Level 2): what the strategies did today and why. |
@@ -532,6 +536,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [overview.ts](../../app/web/src/lib/overview.ts) | ------------------------------------------------------------------ volatility |
 | [phone-alerts.ts](../../app/web/src/lib/phone-alerts.ts) | What deserves a look right now (the phone's Alerts, 6 Oct 2026), worked out from what the phone already reads: each open position's risk, the day's loss limit, the margin in use, and the desk's own... |
 | [position-risk.ts](../../app/web/src/lib/position-risk.ts) | One open position's risk, for the phone (6 Oct 2026): how far its stop and target are, what each would leave in money, how far liquidation is, how long until it settles, and anything wrong with it... |
+| [pressure.ts](../../app/web/src/lib/pressure.ts) | The phone's Pressure screen (owner, 7 Oct 2026): the small readings its two cards share with the desk's "Option flow · CE / PE" and "Big move catch" -- which strike the early warning reads, an opti... |
+| [price-change.ts](../../app/web/src/lib/price-change.ts) | The phone's Price changes screen (owner, 7 Oct 2026): BTC's index now against each window back -- a minute out to half a day -- and against the desk's own marks, the first entry of what it holds an... |
 | [report-error.ts](../../app/web/src/lib/report-error.ts) | Send a browser failure to the server so it lands in the same log as everything else. |
 | [report.ts](../../app/web/src/lib/report.ts) | The calendar's arithmetic, kept out of the drawing so it can be checked. |
 | [strategy-blocks.ts](../../app/web/src/lib/strategy-blocks.ts) | A signal strategy's strike rule over its window, as the form works with it. |

@@ -106,7 +106,7 @@ describe('PressureScreen', () => {
   it('no option prints: says so, and the big-move readings are still there', async () => {
     getPerp.mockResolvedValue({ ...PERP, optionFlow: { ...FLOW, source: 'none' } });
     render(<PressureScreen />);
-    expect(await screen.findByText(/No option prints in the last hour/)).toBeInTheDocument();
+    expect(await screen.findByText(/No option prints in this window/)).toBeInTheDocument();
     expect(screen.queryByText('CE flow')).toBeNull();
     expect(screen.getByRole('list', { name: 'Big move readings' })).toBeInTheDocument();
   });

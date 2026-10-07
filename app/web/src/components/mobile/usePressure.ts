@@ -1,6 +1,7 @@
 import { getChain, getChanges, getPerp, type ChangesResponse, type OptionFlowSummary } from '@/api/desk';
 import type { ChainResponse, Leg, SuddenMove } from '@/types/desk';
 import { usePoll } from '@/hooks/usePoll';
+import { usePersisted } from '@/hooks/usePersisted';
 import { earlyWarning, type EarlyWarning } from '@/lib/overview';
 import { deskLeg } from '@/lib/pressure';
 
@@ -11,11 +12,22 @@ import { deskLeg } from '@/lib/pressure';
  * strike (`/api/changes`) -- worked through the same `earlyWarning`, so the phone and the desk cannot say
  * different things.
  *
- * `everyMs` is how often the chain is asked: the screen itself asks often; Home, which only wears three words
- * of it, asks half as often.
+ * `everyMs` is how often the chain is asked: the screen itself asks often; Home, which wears a card a reading,
+ * asks half as often. `window` is how far back the tapes are summed.
  */
 
-const WINDOW_MIN = 60;
+/** The windows the tapes are summed over: the last five minutes out to four hours. An hour unless one is picked. */
+export const PRESSURE_WINDOWS = [
+  { key: '5', label: '5m', spoken: '5 minutes' }, { key: '15', label: '15m', spoken: '15 minutes' },
+  { key: '60', label: '1h', spoken: '1 hour' }, { key: '240', label: '4h', spoken: '4 hours' },
+] as const;
+export type PressureWindow = (typeof PRESSURE_WINDOWS)[number]['key'];
+
+/** The window picked, remembered, and shared by Home's cards and the Pressure screen so the two say the same thing. */
+export function usePressureWindow(): [PressureWindow, (w: PressureWindow) => void] {
+  const [w, setW] = usePersisted<PressureWindow>('m-pressure-window', '60');
+  return [PRESSURE_WINDOWS.some((x) => x.key === w) ? w : '60', setW];
+}
 
 export type Pressure = {
   /** The chain, once it has been read; everything below is null until then. */
@@ -27,17 +39,21 @@ export type Pressure = {
   perpRead: boolean;
   perpError: Error | null;
   warning: EarlyWarning | null;
+  /** The window all of it was read over. */
+  window: PressureWindow;
+  /** The perp's own running delta over the window, minute by minute: the line on Home's big-move card. */
+  perpCvd: number[];
   /** The strike the premium and IV changes are read on: the desk's own pick, the put first. */
   leg: Leg | null;
   shock: SuddenMove | null;
 };
 
-export function usePressure(everyMs = 15_000): Pressure {
+export function usePressure(everyMs = 15_000, window: PressureWindow = '60'): Pressure {
   // The desk's own defaults for the chain: the nearest expiry, twenty strikes a side.
   const chain = usePoll(() => getChain('now', 20, 15, 0, 10), everyMs);
   const data = isChain(chain.data) ? chain.data : null;
   const snap = data?.snapshot ?? null;
-  const perp = usePoll(() => getPerp(WINDOW_MIN, snap?.expiry ?? null), Math.round(everyMs * 2 / 3), { enabled: snap !== null, deps: [snap?.expiry] });
+  const perp = usePoll(() => getPerp(Number(window), snap?.expiry ?? null), Math.round(everyMs * 2 / 3), { enabled: snap !== null, deps: [snap?.expiry, window] });
   const leg = data ? deskLeg(data) : null;
   const symbol = leg && snap ? `${leg.cp}-BTC-${leg.strike}-${snap.expiry}` : null;
   const changes = usePoll<ChangesResponse>(() => {
@@ -62,7 +78,7 @@ export function usePressure(everyMs = 15_000): Pressure {
   return {
     chain: data, chainError: chain.error,
     flow, perpRead: perp.data !== null, perpError: perp.error,
-    warning, leg, shock: data?.shocks?.[0] ?? null,
+    warning, window, perpCvd: (perp.data?.flow?.cvd ?? []).map((c) => c.cvd), leg, shock: data?.shocks?.[0] ?? null,
   };
 }
 

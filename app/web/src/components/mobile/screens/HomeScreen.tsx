@@ -12,7 +12,8 @@ import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
 import { AreaChart, Bar, Empty, ListButton, Panel, Rupees, SidePill } from '@/components/mobile/parts';
 import { orderStatusWord } from '@/components/mobile/screens/OrdersScreen';
-import { usePressure } from '@/components/mobile/usePressure';
+import { usePressure, usePressureWindow } from '@/components/mobile/usePressure';
+import { usePriceMoves } from '@/components/mobile/usePriceMoves';
 import { PressureStrip } from '@/components/mobile/PressureStrip';
 
 /**
@@ -40,8 +41,11 @@ export function HomeScreen() {
   const running = (s?.open ?? []).filter(isRunning).length;
   const marginShare = s?.marginUsedUsd != null && s.walletUsd ? s.marginUsedUsd / s.walletUsd : null;
   const samples = mtm.data?.samples ?? [];
-  // Three words of the Pressure screen, over today's P&L: asked half as often as the screen itself asks.
-  const pressure = usePressure(30_000);
+  // Four cards over today's P&L -- the two option tapes, the big-move read, BTC itself -- asked half as often as
+  // their own screens ask. The window is the Pressure screen's: picked on either, it holds on both.
+  const [pressureWindow, setPressureWindow] = usePressureWindow();
+  const pressure = usePressure(30_000, pressureWindow);
+  const priceMoves = usePriceMoves(30_000);
 
   return (
     <>
@@ -72,7 +76,10 @@ export function HomeScreen() {
         </button>
       )}
 
-      <PressureStrip pressure={pressure} onOpen={() => p.go({ tab: 'more', sub: 'pressure' })} />
+      <PressureStrip
+        pressure={pressure} window={pressureWindow} onWindow={setPressureWindow} price={priceMoves} perp={p.perp}
+        onOpen={() => p.go({ tab: 'more', sub: 'pressure' })} onOpenPrice={() => p.go({ tab: 'more', sub: 'price' })}
+      />
 
       <Panel>
         <button type="button" onClick={() => p.go({ tab: 'pnl' })} aria-label="Today's P&L: open the P&L" className="flex w-full items-start justify-between gap-3 border-0 bg-transparent p-0 text-left font-[inherit] text-foreground">

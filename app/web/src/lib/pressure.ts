@@ -1,3 +1,4 @@
+import type { SideFlow } from '@/api/desk';
 import type { ChainResponse, Leg } from '@/types/desk';
 import { bestLeg } from '@/lib/overview';
 
@@ -41,4 +42,39 @@ export const kct = (v: number): string =>
 export function buySellShare(buy: number, sell: number): { buy: number; sell: number } {
   const total = buy + sell;
   return total > 0 ? { buy: buy / total, sell: sell / total } : { buy: 0, sell: 0 };
+}
+
+export type SideRead = {
+  /** The word that matters, large: BUY, SELL, BALANCED; a dash where the tape has nothing. */
+  word: 'BUY' | 'SELL' | 'BALANCED' | '—';
+  sub: string;
+  tone: 'up' | 'down' | 'flat';
+  /** The aggressors' buy share, 0-1: where the marker sits between SELL (0) and BUY (1). Null with no prints. */
+  buyShare: number | null;
+  /** The share of the side that leads, as a whole percent: 72 for a tape 72% sold. Null with no prints. */
+  leadPct: number | null;
+  /** "72% sells", for a screen reader. */
+  leadWords: string;
+};
+
+/** One side of the option tape as Home's card says it (owner, 7 Oct 2026). */
+export function sideRead(x: Pick<SideFlow, 'pressure' | 'aggressorBuyPct'> | null | undefined): SideRead {
+  const buy = x?.aggressorBuyPct ?? null;
+  const pctOf = (v: number) => Math.round(v * 100);
+  if (!x || x.pressure === null || buy === null) return { word: '—', sub: 'no prints', tone: 'flat', buyShare: null, leadPct: null, leadWords: 'no prints' };
+  if (x.pressure === 'BUY PRESSURE') return { word: 'BUY', sub: 'pressure', tone: 'up', buyShare: buy, leadPct: pctOf(buy), leadWords: `${pctOf(buy)}% buys` };
+  if (x.pressure === 'SELL PRESSURE') return { word: 'SELL', sub: 'pressure', tone: 'down', buyShare: buy, leadPct: pctOf(1 - buy), leadWords: `${pctOf(1 - buy)}% sells` };
+  return { word: 'BALANCED', sub: 'both sides', tone: 'flat', buyShare: buy, leadPct: pctOf(buy), leadWords: `${pctOf(buy)}% buys` };
+}
+
+/**
+ * A side's delta, minute by minute, as at most `max` bars: the minutes shared out evenly, each bar the sum of its
+ * own, and its height its size against the largest (0-1). Bought more than sold is up.
+ */
+export function deltaBars(cvd: readonly { delta: number }[], max = 12): { up: boolean; size: number }[] {
+  if (cvd.length === 0) return [];
+  const n = Math.min(max, cvd.length);
+  const sums = Array.from({ length: n }, (_, i) => cvd.slice(Math.floor((i * cvd.length) / n), Math.floor(((i + 1) * cvd.length) / n)).reduce((a, c) => a + c.delta, 0));
+  const top = Math.max(...sums.map(Math.abs));
+  return sums.map((v) => ({ up: v >= 0, size: top > 0 ? Math.abs(v) / top : 0 }));
 }
