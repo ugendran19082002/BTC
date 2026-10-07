@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react';
-import { ArrowDown, ArrowUp, Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { clock } from '@/lib/format';
 import type { SideFlow } from '@/api/desk';
 import { deltaBars, sideRead, type SideRead } from '@/lib/pressure';
@@ -10,14 +10,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 
 /**
  * Home's four cards, in one row over today's P&L (owner, 7 Oct 2026): the call tape, the put tape, the big-move
- * read, and BTC itself. Four across at every width -- 78px a card on a 360px phone -- so each is five short
- * lines, one under the other, and the five line up across the row:
+ * read, and BTC itself. Four across at every width -- 79px a card on a 360px phone, about 80px tall -- so each is
+ * four short lines, one under the other, and the four line up across the row:
  *
  *            CE flow / PE flow         Big move                  BTC index
  *   word     SELL · BUY · BALANCED     the band                  the index now
  *   figure   the share that leads      the pressure, its lean    the perp against it
  *   picture  SELL-to-BUY line, a mark  the perp's running delta  the move since entry
- *   foot     SELL ........ BUY         what that line is         what the move is since
  *
  * Where the row has the room (from 520px: a card is then 118px or more) each card says a little more -- the
  * window beside a tape's name and its delta as a few bars, the lean in a word, the time of the price, the move
@@ -36,7 +35,7 @@ const TONE = {
 type Tone = keyof typeof TONE;
 
 /**
- * A card: its edge and a wash of its tone, as the reading has one. Five lines, each its own height, so the row
+ * A card: its edge and a wash of its tone, as the reading has one. Four lines, each its own height, so the row
  * lines up. 4px of padding at the sides under 420px: the room is the words'.
  */
 const SHELL = 'flex min-w-0 flex-col rounded-xl border border-solid px-1 py-1.5 text-left font-[inherit] text-foreground min-[420px]:px-2 '
@@ -46,10 +45,9 @@ const shell = (tone: Tone): CSSProperties => ({ ['--t' as string]: TONE[tone].cs
 const LABEL = 'block h-[14px] truncate text-[11px] leading-[14px] text-muted-foreground';
 const WORD = 'mt-0.5 block h-[18px] truncate font-semibold leading-[18px]';
 const FIGURE = 'block h-[15px] truncate text-[11.5px] leading-[15px] tabular-nums text-muted-foreground';
-const PICTURE = 'mt-1 flex h-[14px] items-center';
+const PICTURE = 'mt-1 flex h-[15px] items-center';
 /** Shown only where a card is wide enough for it. */
 const WIDE = 'hidden min-[520px]:inline';
-const FOOT = 'mt-0.5 block h-[15px] truncate text-[11px] leading-[15px] text-[var(--dim)]';
 
 export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOpen, onOpenPrice }: {
   pressure: Pressure;
@@ -71,7 +69,6 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
   const mark = price.marks.find((m) => m.mark === 'entry') ?? price.marks.find((m) => m.mark === 'dayStart') ?? null;
   const markTone: Tone = mark?.way === 'up' ? 'up' : mark?.way === 'down' ? 'down' : 'flat';
   const gap = perp !== null && price.index !== null ? perp - price.index : null;
-  const MoveIcon = mark?.way === 'up' ? ArrowUp : mark?.way === 'down' ? ArrowDown : null;
 
   return (
     <div role="group" aria-label="Pressure and price">
@@ -99,8 +96,6 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
             </span>
             <span className={PICTURE}><Spark values={x.perpCvd} /></span>
           </button>
-          {/* What the line above it is. */}
-          <span aria-hidden="true" className={FOOT}>perp CVD</span>
           {/*
             The window the three readings share, as a small box at the card's top right (owner, 7 Oct 2026). What
             shows is a box a line tall; what a finger gets is the corner, 44 by 36px. The list is the desk's own,
@@ -146,10 +141,16 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
           <span className={FIGURE}>
             {!price.read ? 'reading' : gap === null ? 'perp —' : <>perp <span className="font-semibold text-foreground">{signedPoints(gap)}</span></>}
           </span>
-          <span className={cn(PICTURE, 'gap-0.5 truncate text-[12px] font-semibold tabular-nums', TONE[markTone].text)}>
-            {mark && mark.pts !== null ? <>{MoveIcon && <MoveIcon aria-hidden="true" className="h-3 w-3 shrink-0" />}{signedPoints(mark.pts)}<span className={cn(WIDE, 'ml-1 text-[11px] font-medium')}>{signedPct(mark.pct)}</span></> : <span className="font-normal text-muted-foreground">—</span>}
+          {/* The move since the desk's entry -- holding nothing, since the day began at the 17:30 settlement -- named in a word, then said. */}
+          <span className={cn(PICTURE, 'gap-1 truncate text-[12px] tabular-nums')}>
+            {mark && mark.pts !== null ? (
+              <>
+                <span className="text-[11px] text-muted-foreground">{mark.mark === 'entry' ? 'entry' : 'day'}</span>
+                <span className={cn('font-semibold', TONE[markTone].text)}>{signedPoints(mark.pts)}</span>
+                <span className={cn(WIDE, 'text-[11px]', TONE[markTone].text)}>{signedPct(mark.pct)}</span>
+              </>
+            ) : <span className="text-muted-foreground">—</span>}
           </span>
-          <span className={FOOT}>{mark ? (mark.mark === 'entry' ? <>since entry<span className={cn(WIDE, 'tabular-nums')}> {clock(mark.at)}</span></> : 'since 17:30') : 'no mark'}</span>
         </button>
       </div>
     </div>
@@ -182,9 +183,10 @@ function SideCard({ name, window, flow, read, onOpen }: { name: string; window: 
       <span className={FIGURE}>
         {r.leadPct === null ? r.sub : <><span className={cn('font-semibold', r.tone === 'flat' ? 'text-foreground' : TONE[r.tone].text)}>{r.leadPct}%</span> {r.leadWords.split(' ')[1]}</>}
       </span>
-      {/* From SELL to BUY, with a mark where the aggressors stand; the middle is level. */}
-      <span aria-hidden="true" className={PICTURE}>
-        <span className="relative block h-1.5 w-full rounded-full bg-[var(--panel-3)]">
+      {/* From SELL to BUY, with a mark where the aggressors stand; the middle is level. The ends are named on the line itself: a letter each, the word where there is room. */}
+      <span aria-hidden="true" className={cn(PICTURE, 'gap-1 text-[11px] font-medium text-[var(--dim)]')}>
+        <span className="shrink-0"><span className="min-[520px]:hidden">S</span><span className={WIDE}>SELL</span></span>
+        <span className="relative block h-1.5 min-w-0 flex-1 rounded-full bg-[var(--panel-3)]">
           {at !== null && (
             <>
               <span className={cn('absolute inset-y-0 rounded-full', at >= 50 ? TONE.up.fill : TONE.down.fill)} style={{ left: `${Math.min(50, at)}%`, width: `${Math.abs(at - 50)}%` }} />
@@ -192,8 +194,8 @@ function SideCard({ name, window, flow, read, onOpen }: { name: string; window: 
             </>
           )}
         </span>
+        <span className="shrink-0"><span className="min-[520px]:hidden">B</span><span className={WIDE}>BUY</span></span>
       </span>
-      <span aria-hidden="true" className={cn(FOOT, 'flex justify-between font-medium')}><span>SELL</span><span>BUY</span></span>
     </button>
   );
 }
