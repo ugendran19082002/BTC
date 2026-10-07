@@ -35,30 +35,38 @@ describe('PressureStrip', () => {
     const pe = cards.getByRole('button', { name: 'PE flow, 15m: buy pressure, 68% buys. Open Pressure' });
     expect(pe).toHaveTextContent('PE flow · 15mBUY68% buysSELLBUY');
     const big = cards.getByRole('button', { name: 'Big move: calm, 31 percent, pressure down, over 15m. Open Pressure' });
-    expect(big).toHaveTextContent('Big moveCALM31%down ↓over 15m');
+    expect(big).toHaveTextContent('Big move15mCALM31%down ↓');
     const btc = cards.getByRole('button', { name: 'BTC index 83,810, perp −50 to the index; since entry −444 points, −0.53%, from 84,254 to 83,810. Open Price changes' });
     expect(btc).toHaveTextContent('BTC index08:1383,810perp −50−444−0.53%since entry 07:30');
     // one row, four across, at every width: the four cards are the row's only children
     const row = ce.parentElement!;
     expect(row.className).toContain('grid-cols-4');
     expect(row.className).not.toMatch(/grid-cols-2/);
-    expect([...row.children]).toEqual([ce, pe, big, btc]);
+    expect([...row.children]).toEqual([ce, pe, big.parentElement, btc]);
     fireEvent.click(ce); fireEvent.click(pe); fireEvent.click(big);
     expect(h.onOpen).toHaveBeenCalledTimes(3);
     fireEvent.click(btc);
     expect(h.onOpenPrice).toHaveBeenCalledOnce();
   });
 
-  it('the window all three readings share is its own line under the row', () => {
+  it('the window all three readings share is a small dropdown in the big-move card: the desk\'s own list, not the browser\'s', () => {
     const h = show(read(), { window: '60' });
-    const pick = within(screen.getByRole('radiogroup', { name: 'Window' }));
-    expect(pick.getAllByRole('radio').map((r) => r.textContent)).toEqual(['5m', '15m', '1h', '4h']);
-    expect(pick.getByRole('radio', { name: '1 hour' })).toBeChecked();
+    const open = screen.getByRole('button', { name: 'Window: 1h. Change' });
+    // in the card, under its button; what shows of it is the window chosen
+    const card = screen.getByRole('button', { name: /^Big move:/ }).parentElement!;
+    expect(card).toContainElement(open);
+    expect(card).toHaveTextContent('1h');
     expect(screen.getByRole('button', { name: /^CE flow, 1h:/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Big move:/ })).toHaveTextContent('over 1h');
-    fireEvent.click(pick.getByRole('radio', { name: '4 hours' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    fireEvent.click(open);
+    const menu = within(screen.getByRole('menu', { name: 'Window' }));
+    expect(menu.getAllByRole('menuitemradio').map((r) => r.textContent)).toEqual(['5m5 minutes', '15m15 minutes', '1h1 hour', '4h4 hours']);
+    expect(menu.getByRole('menuitemradio', { name: /1 hour/ })).toBeChecked();
+    fireEvent.click(menu.getByRole('menuitemradio', { name: /4 hours/ }));
     expect(h.onWindow).toHaveBeenCalledWith('240');
-    // picking a window is not opening a screen
+    // chosen, the list closes; and picking a window is not opening a screen
+    expect(screen.queryByRole('menu')).toBeNull();
     expect(h.onOpen).not.toHaveBeenCalled();
   });
 
