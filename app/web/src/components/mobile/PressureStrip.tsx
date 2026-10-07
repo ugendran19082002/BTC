@@ -34,8 +34,11 @@ const TONE = {
 } as const;
 type Tone = keyof typeof TONE;
 
-/** A card: its edge and a wash of its tone, as the reading has one. Five lines, each its own height, so the row lines up. */
-const SHELL = 'flex min-w-0 flex-col rounded-xl border border-solid px-1.5 py-2 text-left font-[inherit] text-foreground min-[420px]:px-2 '
+/**
+ * A card: its edge and a wash of its tone, as the reading has one. Five lines, each its own height, so the row
+ * lines up. 4px of padding at the sides under 420px: the room is the words'.
+ */
+const SHELL = 'flex min-w-0 flex-col rounded-xl border border-solid px-1 py-2 text-left font-[inherit] text-foreground min-[420px]:px-2 '
   + 'border-[color-mix(in_srgb,var(--t)_38%,var(--line))] bg-[linear-gradient(160deg,color-mix(in_srgb,var(--t)_13%,var(--panel)),var(--panel)_62%)]';
 const shell = (tone: Tone): CSSProperties => ({ ['--t' as string]: TONE[tone].css });
 const LABEL = 'block h-[15px] truncate text-[11px] leading-[15px] text-muted-foreground';
@@ -78,7 +81,7 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
           aria-label={w ? `Big move: ${w.band}${w.pressure === null ? '' : `, ${w.pressure} percent`}${lean ? `, pressure ${lean}` : ''}, over ${windowLabel}. Open Pressure` : 'Big move: reading. Open Pressure'}
         >
           <span className={LABEL}>Big move</span>
-          <span className={cn(WORD, w?.band === 'sudden' ? 'text-[14px]' : 'text-[16px]', TONE[bandTone].text)}>{w ? w.band.toUpperCase() : '…'}</span>
+          <span className={cn(w?.band === 'sudden' ? 'text-[14px]' : 'text-[16px]', WORD, TONE[bandTone].text)}>{w ? w.band.toUpperCase() : '…'}</span>
           <span className={FIGURE}>
             {!w ? 'reading' : w.pressure === null ? '—' : <span className="font-semibold text-foreground">{w.pressure}%</span>}
             {lean && <span className={cn('ml-1 font-semibold', lean === 'up' ? TONE.up.text : TONE.down.text)}><span className={WIDE}>{lean} </span>{lean === 'up' ? '↑' : '↓'}</span>}
@@ -96,7 +99,7 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
             <span className="truncate">BTC index</span>
             {price.at !== null && <span className={cn(WIDE, 'shrink-0 tabular-nums text-[var(--time)]')}>{clock(price.at)}</span>}
           </span>
-          <span className={cn(WORD, 'text-[15px] tabular-nums')}>{price.read ? points(price.index) : '…'}</span>
+          <span className={cn('text-[15px] tabular-nums', WORD)}>{price.read ? points(price.index) : '…'}</span>
           <span className={FIGURE}>
             {!price.read ? 'reading' : gap === null ? 'perp —' : <>perp <span className="font-semibold text-foreground">{signedPoints(gap)}</span></>}
           </span>
@@ -132,7 +135,8 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
 function SideCard({ name, window, flow, read, onOpen }: { name: string; window: string; flow: SideFlow | null; read: boolean; onOpen: () => void }) {
   const r: SideRead = read ? sideRead(flow) : { word: '—', sub: 'reading', tone: 'flat', buyShare: null, leadPct: null, leadWords: 'reading' };
   const at = r.buyShare === null ? null : Math.min(100, Math.max(0, r.buyShare * 100));
-  // Six bars: the longest word a side reads as (BALANCED) still has its room beside them in a 118px card.
+  // Six bars, and BALANCED at 11px (66px wide): the longest word a side reads as fits a 79px card on a 360px
+  // phone, and fits beside the bars in a 118px one. (A size class after `leading-*` drops the leading: size first.)
   const bars = flow ? deltaBars(flow.cvd, 6) : [];
   return (
     <button
@@ -141,7 +145,7 @@ function SideCard({ name, window, flow, read, onOpen }: { name: string; window: 
     >
       <span className={LABEL}>{name}<span className={cn(WIDE, 'tabular-nums text-[var(--dim)]')}> · {window}</span></span>
       <span className="mt-1 flex h-[22px] items-end justify-between gap-1">
-        <span className={cn('min-w-0 truncate font-bold leading-[22px]', r.word === 'BALANCED' ? 'text-[11px] min-[420px]:text-[13px]' : 'text-[17px]', TONE[r.tone].text)}>{read ? r.word : '…'}</span>
+        <span className={cn('min-w-0 truncate font-bold', r.word === 'BALANCED' ? 'text-[11px]' : 'text-[17px]', 'leading-[22px]', TONE[r.tone].text)}>{read ? r.word : '…'}</span>
         {/* Its delta, minute by minute, as a few bars: bought more than sold in green. */}
         {bars.length > 1 && (
           <span aria-hidden="true" className="hidden h-5 shrink-0 items-end gap-[2px] min-[520px]:flex">
