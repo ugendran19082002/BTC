@@ -9,7 +9,7 @@ import { DeskSwitch } from '@/components/mobile/DeskSwitch';
 const ITEMS: { sub: Sub; label: string; hint: string; icon: typeof Bell }[] = [
   { sub: 'history', label: 'Trade history', hint: 'Closed trades, filtered', icon: History },
   { sub: 'pairs', label: 'Signal history pairs', hint: 'Best and worst method + time frame', icon: ArrowDownUp },
-  { sub: 'price', label: 'Price changes', hint: 'BTC now against 1m to 12h, entry, settlement', icon: Activity },
+  { sub: 'price', label: 'Price changes', hint: 'BTC now against 1m to 12h, from → now', icon: Activity },
   { sub: 'pressure', label: 'Pressure', hint: 'Option flow CE / PE, big move catch', icon: Gauge },
   { sub: 'account', label: 'Account', hint: 'Wallet, margin, each account', icon: Landmark },
   { sub: 'market', label: 'Market', hint: 'BTC perp, funding, the next expiry', icon: LineChart },
