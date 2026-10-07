@@ -16,7 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
  *            CE flow / PE flow         Big move                  BTC index
  *   word     SELL · BUY · BALANCED     the band                  the index now
  *   figure   the share that leads      the pressure, its lean    the perp against it
- *   picture  SELL-to-BUY line, a mark  the perp's running delta  the move since entry
+ *   picture  SELL-to-BUY line, a mark  the perp's running delta  the move since 5:30 PM
  *
  * Where the row has the room (from 520px: a card is then 118px or more) each card says a little more -- the
  * window beside a tape's name and its delta as a few bars, the lean in a word, the time of the price. Nothing is
@@ -65,8 +65,9 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
   const windowLabel = PRESSURE_WINDOWS.find((o) => o.key === window)?.label ?? '1h';
   const bandTone: Tone = !w ? 'flat' : w.band === 'sudden' ? 'down' : w.band === 'high' || w.band === 'watch' ? 'warn' : 'up';
   const lean = !w || w.lean === 0 ? null : w.lean > 0 ? 'up' : 'down';
-  // Since the desk's entry; holding nothing, since the last settlement.
-  const mark = price.marks.find((m) => m.mark === 'entry') ?? price.marks.find((m) => m.mark === 'dayStart') ?? null;
+  // Since the last settlement, 5:30 PM: the day's own move (owner, 7 Oct 2026, in place of "since entry", which
+  // is on the Price changes screen).
+  const mark = price.marks.find((m) => m.mark === 'dayStart') ?? null;
   const markTone: Tone = mark?.way === 'up' ? 'up' : mark?.way === 'down' ? 'down' : 'flat';
   const gap = perp !== null && price.index !== null ? perp - price.index : null;
 
@@ -140,13 +141,16 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
           </span>
           <span className={cn('text-[14px] tabular-nums', WORD)}>{price.read ? points(price.index) : '…'}</span>
           <span className={FIGURE}>
-            {!price.read ? 'reading' : gap === null ? 'perp —' : <>perp <span className="font-semibold text-foreground">{signedPoints(gap)}</span></>}
+            {!price.read ? 'reading' : gap === null ? 'perp —' : (
+              // In points, and said so. A gap of three figures leaves no room for the word in a 79px card: there it shows from 520px.
+              <>perp <span className="font-semibold text-foreground">{signedPoints(gap)}</span><span className={cn('text-[11px]', Math.abs(Math.round(gap)) >= 100 && WIDE)}> pts</span></>
+            )}
           </span>
-          {/* The move since the desk's entry -- holding nothing, since the day began at the 17:30 settlement -- named in a word, then said. */}
+          {/* The move since the 5:30 PM settlement, named and then said. "PM" where there is room for it: with it, a four-figure move does not fit a 79px card. */}
           <span className={cn(PICTURE, 'gap-1 truncate text-[12px] tabular-nums')}>
             {mark && mark.pts !== null ? (
               <>
-                <span className="text-[11px] text-muted-foreground">{mark.mark === 'entry' ? 'entry' : 'day'}</span>
+                <span className="text-[11px] text-muted-foreground">5:30<span className={WIDE}>PM</span></span>
                 <span className={cn('font-semibold', TONE[markTone].text)}>{signedPoints(mark.pts)}</span>
               </>
             ) : <span className="text-muted-foreground">—</span>}

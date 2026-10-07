@@ -36,8 +36,9 @@ describe('PressureStrip', () => {
     expect(pe).toHaveTextContent('PE flow · 15mBUY68% buys');
     const big = cards.getByRole('button', { name: 'Big move: calm, 31 percent, pressure down, over 15m. Open Pressure' });
     expect(big).toHaveTextContent('Big move15mCALM31%down ↓');
-    const btc = cards.getByRole('button', { name: 'BTC index 83,810, perp −50 to the index; since entry −444 points, −0.53%, from 84,254 to 83,810. Open Price changes' });
-    expect(btc).toHaveTextContent('BTC index08:1383,810perp −50entry−444');
+    // the move is the day's, since the 5:30 PM settlement -- not since the desk's entry, though both marks are sent
+    const btc = cards.getByRole('button', { name: 'BTC index 83,810, perp −50 to the index; last settlement −2,401 points, −2.79%, from 86,211 to 83,810. Open Price changes' });
+    expect(btc).toHaveTextContent('BTC index08:1383,810perp −50 pts5:30PM−2,401');
     // one row, four across, at every width: the four cards are the row's only children
     const row = ce.parentElement!;
     expect(row.className).toContain('grid-cols-4');
@@ -70,14 +71,14 @@ describe('PressureStrip', () => {
     expect(h.onOpen).not.toHaveBeenCalled();
   });
 
-  it('a level tape, a band with no lean, and a desk holding nothing: the move since the last settlement', () => {
+  it('a level tape, a band with no lean, and no perp read yet', () => {
     show(read({ ce: side('BALANCED', 0.51), band: 'watch', pressure: 56, lean: 0 }), { price: { ...PRICE, marks: [move('dayStart', 86_211)] }, perp: null });
     expect(screen.getByRole('button', { name: 'CE flow, 15m: balanced, 51% buys. Open Pressure' })).toHaveTextContent('BALANCED51% buys');
     const big = screen.getByRole('button', { name: 'Big move: watch, 56 percent, over 15m. Open Pressure' });
     expect(big).toHaveTextContent('WATCH56%');
     expect(big).not.toHaveTextContent(/↑|↓/);
     const btc = screen.getByRole('button', { name: /^BTC index 83,810; last settlement −2,401 points/ });
-    expect(btc).toHaveTextContent('perp —day−2,401');
+    expect(btc).toHaveTextContent('perp —5:30PM−2,401');
   });
 
   it('not read yet is not "no prints": dots while reading, a dash where the tape has nothing, and no move without a mark', () => {
@@ -88,6 +89,6 @@ describe('PressureStrip', () => {
     rerender(<PressureStrip pressure={read({ flow: false, pressure: null })} window="60" price={{ ...PRICE, marks: [] }} perp={83_760} onWindow={() => {}} onOpen={() => {}} onOpenPrice={() => {}} />);
     expect(screen.getByRole('button', { name: 'CE flow, 1h: no prints. Open Pressure' })).toHaveTextContent('—no prints');
     expect(screen.getByRole('button', { name: /^Big move: calm, pressure down, over 1h/ })).toHaveTextContent('CALM—');
-    expect(screen.getByRole('button', { name: 'BTC index 83,810, perp −50 to the index. Open Price changes' })).toHaveTextContent('perp −50—');
+    expect(screen.getByRole('button', { name: 'BTC index 83,810, perp −50 to the index. Open Price changes' })).toHaveTextContent('perp −50 pts—');
   });
 });
