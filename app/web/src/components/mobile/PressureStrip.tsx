@@ -73,7 +73,11 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
 
   return (
     <div role="group" aria-label="Pressure and price">
-      <div className="grid grid-cols-4 !gap-1 min-[420px]:!gap-1.5">
+      {/*
+        Four across. Under 520px the BTC card is a sixth wider than the others: "perp −48 pts" and "5:30 −2,308"
+        are 75 to 77px, measured, and a quarter of a 360px phone gives 69 (of a 420px one, 75).
+      */}
+      <div className="grid grid-cols-[1fr_1fr_1fr_1.18fr] !gap-1 min-[420px]:!gap-1.5 min-[520px]:grid-cols-4">
         <SideCard name="CE flow" window={windowLabel} flow={x.flow?.ce ?? null} read={x.perpRead} onOpen={onOpen} />
         <SideCard name="PE flow" window={windowLabel} flow={x.flow?.pe ?? null} read={x.perpRead} onOpen={onOpen} />
 
@@ -88,7 +92,7 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
               <span className="min-w-0 truncate"><span className="min-[520px]:hidden">Move</span><span className={WIDE}>Big move</span></span>
               {/* "Move" is 30px and the box with its longest window, 15m, is 36: the two fit the 69px a 360px phone gives them, with 3 to spare. */}
               <span aria-hidden="true" className="flex h-[14px] shrink-0 items-center rounded bg-[var(--panel-3)] pl-[2px] text-[11px] leading-none tabular-nums text-foreground min-[520px]:px-1">
-                {windowLabel}<ChevronDown className={cn('h-2.5 w-2.5 text-muted-foreground transition-transform', picking && 'rotate-180')} />
+                {windowLabel}<ChevronDown className={cn('h-2 w-2 text-muted-foreground transition-transform min-[520px]:h-2.5 min-[520px]:w-2.5', picking && 'rotate-180')} />
               </span>
             </span>
             <span className={cn(w?.band === 'sudden' ? 'text-[13px]' : 'text-[14px]', WORD, TONE[bandTone].text)}>{w ? w.band.toUpperCase() : '…'}</span>
@@ -143,11 +147,11 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
           <span className={FIGURE}>
             {!price.read ? 'reading' : gap === null ? 'perp —' : (
               // In points, and said so. A gap of three figures leaves no room for the word in a 79px card: there it shows from 520px.
-              <>perp <span className="font-semibold text-foreground">{signedPoints(gap)}</span><span className={cn('text-[11px]', Math.abs(Math.round(gap)) >= 100 && WIDE)}> pts</span></>
+              <>perp <span className="font-semibold text-foreground">{signedPoints(gap)}</span><span className={cn('ml-0.5 text-[11px]', Math.abs(Math.round(gap)) >= 100 && WIDE)}>pts</span></>
             )}
           </span>
           {/* The move since the 5:30 PM settlement, named and then said. "PM" where there is room for it: with it, a four-figure move does not fit a 79px card. */}
-          <span className={cn(PICTURE, 'gap-1 truncate text-[12px] tabular-nums')}>
+          <span className={cn(PICTURE, 'gap-0.5 truncate text-[11.5px] tabular-nums min-[420px]:gap-1 min-[420px]:text-[12px]')}>
             {mark && mark.pts !== null ? (
               <>
                 <span className="text-[11px] text-muted-foreground">5:30<span className={WIDE}>PM</span></span>
@@ -175,7 +179,7 @@ function SideCard({ name, window, flow, read, onOpen }: { name: string; window: 
     >
       <span className={LABEL}>{name}<span className={cn(WIDE, 'tabular-nums text-[var(--dim)]')}> · {window}</span></span>
       <span className="mt-0.5 flex h-[18px] items-end justify-between gap-1">
-        <span className={cn('min-w-0 truncate font-semibold', r.word === 'BALANCED' ? 'text-[11px]' : 'text-[14px]', 'leading-[18px]', TONE[r.tone].text)}>{read ? r.word : '…'}</span>
+        <span className={cn('min-w-0 truncate font-semibold', r.word === 'BALANCED' ? 'text-[11px] tracking-[-0.4px] min-[420px]:tracking-normal' : 'text-[14px]', 'leading-[18px]', TONE[r.tone].text)}>{read ? r.word : '…'}</span>
         {/* Its delta, minute by minute, as a few bars: bought more than sold in green. */}
         {bars.length > 1 && (
           <span aria-hidden="true" className="hidden h-4 shrink-0 items-end gap-[2px] min-[520px]:flex">

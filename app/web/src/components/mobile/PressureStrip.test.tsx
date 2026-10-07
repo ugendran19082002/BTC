@@ -38,10 +38,10 @@ describe('PressureStrip', () => {
     expect(big).toHaveTextContent('Big move15mCALM31%down ↓');
     // the move is the day's, since the 5:30 PM settlement -- not since the desk's entry, though both marks are sent
     const btc = cards.getByRole('button', { name: 'BTC index 83,810, perp −50 to the index; last settlement −2,401 points, −2.79%, from 86,211 to 83,810. Open Price changes' });
-    expect(btc).toHaveTextContent('BTC index08:1383,810perp −50 pts5:30PM−2,401');
+    expect(btc).toHaveTextContent('BTC index08:1383,810perp −50pts5:30PM−2,401');
     // one row, four across, at every width: the four cards are the row's only children
     const row = ce.parentElement!;
-    expect(row.className).toContain('grid-cols-4');
+    expect(row.className).toMatch(/grid-cols-\[1fr_1fr_1fr_1\.18fr\].*min-\[520px\]:grid-cols-4/);
     expect(row.className).not.toMatch(/grid-cols-2/);
     expect([...row.children]).toEqual([ce, pe, big.parentElement, btc]);
     fireEvent.click(ce); fireEvent.click(pe); fireEvent.click(big);
@@ -89,6 +89,6 @@ describe('PressureStrip', () => {
     rerender(<PressureStrip pressure={read({ flow: false, pressure: null })} window="60" price={{ ...PRICE, marks: [] }} perp={83_760} onWindow={() => {}} onOpen={() => {}} onOpenPrice={() => {}} />);
     expect(screen.getByRole('button', { name: 'CE flow, 1h: no prints. Open Pressure' })).toHaveTextContent('—no prints');
     expect(screen.getByRole('button', { name: /^Big move: calm, pressure down, over 1h/ })).toHaveTextContent('CALM—');
-    expect(screen.getByRole('button', { name: 'BTC index 83,810, perp −50 to the index. Open Price changes' })).toHaveTextContent('perp −50 pts—');
+    expect(screen.getByRole('button', { name: 'BTC index 83,810, perp −50 to the index. Open Price changes' })).toHaveTextContent('perp −50pts—');
   });
 });
