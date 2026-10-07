@@ -38,7 +38,7 @@ export function PressureScreen() {
 
   return (
     <>
-      <Panel title="Option flow · CE / PE" right={f ? <span className={cn('text-[11.5px] tabular-nums', f.minutesCovered < f.windowMin ? 'text-[var(--warn)]' : 'text-muted-foreground')}>{f.minutesCovered} of {f.windowMin} min · {f.expiry}</span> : undefined}>
+      <Panel title="Option flow" right={f ? <span className={cn('text-[11.5px] tabular-nums', f.minutesCovered < f.windowMin ? 'text-[var(--warn)]' : 'text-muted-foreground')}>{f.minutesCovered} of {f.windowMin} min · {f.expiry}</span> : undefined}>
         {!x.perpRead ? <Loading error={x.perpError} what="the option tape" />
           : !f ? <Empty>No option prints in the last hour: the tape recorder is not connected, or has only just begun.</Empty> : (
             <>
@@ -115,7 +115,7 @@ function FlowCard({ name, side, flow: x, leg }: { name: string; side: 'CALL' | '
         <Figure label="Delta" className={toneOf(x.deltaVolume)}>{signed(x.deltaVolume)}</Figure>
         <Figure label="Aggressor buys">{pct(x.aggressorBuyPct, 1)}</Figure>
         <Figure label="Trades">{n0(x.trades)}</Figure>
-        <Figure label={leg ? `Book · ATM ${n0(leg.strike)}` : 'Book · ATM'} className={toneOf(book)}>{book === null ? '—' : `${signed(book * 100)}%`}</Figure>
+        <Figure label={leg ? `Book · ${n0(leg.strike)}` : 'Book · ATM'} className={toneOf(book)}>{book === null ? '—' : `${signed(book * 100)}%`}</Figure>
         <Figure label="Spread">{pct(spread, 1)}</Figure>
         <Figure label="CVD" className={toneOf(cvd[cvd.length - 1])}>{cvd.length ? signed(cvd[cvd.length - 1]!) : '—'}</Figure>
       </dl>

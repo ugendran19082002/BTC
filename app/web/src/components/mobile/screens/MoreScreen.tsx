@@ -19,7 +19,7 @@ const ITEMS: { sub: Sub; label: string; hint: string; icon: typeof Bell }[] = [
 ];
 
 export const SUB_TITLE: Record<Sub, string> = {
-  history: 'Trade history', pairs: 'Signal pairs', price: 'Price changes', pressure: 'Pressure', account: 'Account', market: 'Market', strategies: 'Strategies', alerts: 'Alerts', settings: 'Status',
+  history: 'Trade history', pairs: 'Signal pairs', price: 'Price change', pressure: 'Pressure', account: 'Account', market: 'Market', strategies: 'Strategies', alerts: 'Alerts', settings: 'Status',
 };
 
 export function MoreScreen() {

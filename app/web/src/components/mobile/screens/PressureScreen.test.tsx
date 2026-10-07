@@ -60,14 +60,14 @@ describe('PressureScreen', () => {
     expect(within(ce).getByText('Aggressor buys').parentElement!).toHaveTextContent('43.8%');
     expect(within(ce).getByText('Trades').parentElement!).toHaveTextContent('15,472');
     // the at-the-money call's top of book: (60 − 40) ÷ 100, and a 1-point spread on a 40 mid
-    expect(within(ce).getByText('Book · ATM 83,800').parentElement!).toHaveTextContent('+20%');
+    expect(within(ce).getByText('Book · 83,800').parentElement!).toHaveTextContent('+20%');
     expect(within(ce).getByText('Spread').parentElement!).toHaveTextContent('2.5%');
     expect(ce).toHaveTextContent('87,000 383.4K');
     expect(within(ce).getByRole('img', { name: /CE flow: cumulative volume delta/ })).toBeInTheDocument();
     const pe = screen.getByText('PE flow').closest('h2')!.parentElement!.parentElement!;
     expect(pe).toHaveTextContent('PUT');
     expect(pe).toHaveTextContent('BALANCED');
-    expect(within(pe).getByText('Book · ATM 83,800').parentElement!).toHaveTextContent('+21%');
+    expect(within(pe).getByText('Book · 83,800').parentElement!).toHaveTextContent('+21%');
     // the two together
     const all = screen.getByText('Overall option flow').parentElement!.parentElement!;
     expect(all).toHaveTextContent('MIXED');
