@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
 import { AreaChart, Bar, Empty, ListButton, Panel, Rupees, SidePill } from '@/components/mobile/parts';
 import { orderStatusWord } from '@/components/mobile/screens/OrdersScreen';
+import { usePressure } from '@/components/mobile/usePressure';
+import { PressureStrip } from '@/components/mobile/PressureStrip';
 
 /**
  * Home (6 Oct 2026): everything in one screen a person needs to know the desk is fine -- today's money, the
@@ -38,6 +40,8 @@ export function HomeScreen() {
   const running = (s?.open ?? []).filter(isRunning).length;
   const marginShare = s?.marginUsedUsd != null && s.walletUsd ? s.marginUsedUsd / s.walletUsd : null;
   const samples = mtm.data?.samples ?? [];
+  // Three words of the Pressure screen, over today's P&L: asked half as often as the screen itself asks.
+  const pressure = usePressure(30_000);
 
   return (
     <>
@@ -67,6 +71,8 @@ export function HomeScreen() {
           <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0" />
         </button>
       )}
+
+      <PressureStrip pressure={pressure} onOpen={() => p.go({ tab: 'more', sub: 'pressure' })} />
 
       <Panel>
         <button type="button" onClick={() => p.go({ tab: 'pnl' })} aria-label="Today's P&L: open the P&L" className="flex w-full items-start justify-between gap-3 border-0 bg-transparent p-0 text-left font-[inherit] text-foreground">

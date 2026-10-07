@@ -89,7 +89,7 @@ describe('PressureScreen', () => {
     expect(burst).toHaveTextContent('1.9× median · triggers ≥ 2.0×');
     expect(within(burst).getByRole('meter', { name: 'Volume burst score' })).toHaveAttribute('aria-valuenow', '96');
     expect(screen.getByText(/Measured sudden-move score 80 \(sudden\)/)).toBeInTheDocument();
-    expect(screen.getByText(/CALM|WATCH|HIGH|SUDDEN/, { selector: 'h2 ~ span, h2 ~ * span, span' })).toBeTruthy();
+    expect(screen.getByText(/^(CALM|WATCH|HIGH|SUDDEN) · \d+\/100$/)).toBeInTheDocument();
     // the strike the premium and IV changes are read on is the desk's own pick, the put first
     expect(getChanges).toHaveBeenCalledWith('P-BTC-83200-071026', expect.objectContaining({ spot: 83_774, mark: 40, pcr: 2 }));
     expect(screen.getByText(/read on 83,200 PE, the desk's own pick/)).toBeInTheDocument();

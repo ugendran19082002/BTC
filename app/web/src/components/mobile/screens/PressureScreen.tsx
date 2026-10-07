@@ -1,11 +1,11 @@
-import { getChain, getChanges, getPerp, type SideFlow } from '@/api/desk';
+import type { SideFlow } from '@/api/desk';
 import type { Leg } from '@/types/desk';
-import { usePoll } from '@/hooks/usePoll';
 import { pct } from '@/lib/format';
-import { earlyWarning, type Trigger } from '@/lib/overview';
-import { atmLeg, bookOf, buySellShare, deskLeg, kct, spreadOf } from '@/lib/pressure';
+import type { Trigger } from '@/lib/overview';
+import { atmLeg, bookOf, buySellShare, kct, spreadOf } from '@/lib/pressure';
 import { cn } from '@/lib/utils';
 import { AreaChart, Empty, Loading, Panel, Pill } from '@/components/mobile/parts';
+import { usePressure } from '@/components/mobile/usePressure';
 
 /**
  * Pressure (owner, 7 Oct 2026): the desk's two pressure cards, made for a phone.
@@ -17,50 +17,30 @@ import { AreaChart, Empty, Loading, Panel, Pill } from '@/components/mobile/part
  *    its own trigger out of 100, its lamp, and -- there being no hover on a phone -- the reading and its
  *    threshold written under it.
  *
- * Read-only, from what the desk's Live screen reads: the chain (`/api/chain`), the perp and its tapes
- * (`/api/perp`) and the 15-minute changes of the desk's own strike (`/api/changes`), worked through the same
- * `earlyWarning` -- so the phone and the desk cannot say different things.
+ * Read-only, from what the desk's Live screen reads (`usePressure`). Home wears three words of it in a row.
  */
 
-const WINDOW_MIN = 60;
 const n0 = (v: number) => Math.round(v).toLocaleString('en-US');
 const signed = (v: number, places = 0) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places })}`;
 const toneOf = (v: number | null | undefined) => (v == null || v === 0 ? '' : v > 0 ? 'text-[var(--up)]' : 'text-[var(--down)]');
 
 export function PressureScreen() {
-  // The desk's own defaults for the chain: the nearest expiry, twenty strikes a side.
-  const chain = usePoll(() => getChain('now', 20, 15, 0, 10), 15_000);
-  const data = chain.data;
-  const snap = data?.snapshot ?? null;
-  const perp = usePoll(() => getPerp(WINDOW_MIN, snap?.expiry ?? null), 10_000, { enabled: snap !== null, deps: [snap?.expiry] });
-  const leg = data ? deskLeg(data) : null;
-  const symbol = leg && snap ? `${leg.cp}-BTC-${leg.strike}-${snap.expiry}` : null;
-  const changes = usePoll(() => {
-    const s = data!.structure;
-    return getChanges(symbol!, {
-      spot: snap!.spot, mark: leg!.mark, oi: leg!.oi, iv: leg!.iv, volume: leg!.volume,
-      ceOi: s.ceOi, peOi: s.peOi, callVolume: s.ceVolume, putVolume: s.peVolume, pcr: s.pcrOi, atmIv: s.atmIv,
-    });
-  }, 30_000, { enabled: symbol !== null, deps: [symbol] });
-
-  if (!data) return <Panel><Loading error={chain.error} what="the market" /></Panel>;
-
-  const f = perp.data?.optionFlow ?? null;
-  const w15 = changes.data?.rows.find((r) => r.minutes === 15) ?? null;
-  const w = earlyWarning({
-    flow: perp.data?.flow ?? null, book: perp.data?.book ?? null, oi: perp.data?.oi ?? null, funding: perp.data?.ticker?.fundingRate ?? null,
-    market: data.market, outlook: data.outlook, markChange15mPct: w15?.markChangePct ?? null, atmIvChange15mPts: w15?.atmIvChangePts ?? null,
-  });
-  const shock = data.shocks?.[0] ?? null;
+  const x = usePressure();
+  const data = x.chain;
+  if (!data) return <Panel><Loading error={x.chainError} what="the market" /></Panel>;
+  const snap = data.snapshot;
+  const f = x.flow;
+  const w = x.warning!;
+  const { leg, shock } = x;
   const bias = f?.combined.bias ?? null;
   const biasTone = bias === null || bias === 'MIXED' ? 'dim' : /CALL BUYING|PUT SELLING/.test(bias) ? 'up' : 'down';
   const bandTone = w.band === 'sudden' ? 'down' : w.band === 'high' ? 'warn' : w.band === 'watch' ? 'accent' : 'up';
 
   return (
     <>
-      <Panel title="Option flow · CE / PE" right={f && f.source !== 'none' ? <span className={cn('text-[11.5px] tabular-nums', f.minutesCovered < f.windowMin ? 'text-[var(--warn)]' : 'text-muted-foreground')}>{f.minutesCovered} of {f.windowMin} min · {f.expiry}</span> : undefined}>
-        {!perp.data ? <Loading error={perp.error} what="the option tape" />
-          : !f || f.source === 'none' ? <Empty>No option prints in the last hour: the tape recorder is not connected, or has only just begun.</Empty> : (
+      <Panel title="Option flow · CE / PE" right={f ? <span className={cn('text-[11.5px] tabular-nums', f.minutesCovered < f.windowMin ? 'text-[var(--warn)]' : 'text-muted-foreground')}>{f.minutesCovered} of {f.windowMin} min · {f.expiry}</span> : undefined}>
+        {!x.perpRead ? <Loading error={x.perpError} what="the option tape" />
+          : !f ? <Empty>No option prints in the last hour: the tape recorder is not connected, or has only just begun.</Empty> : (
             <>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[13px] text-muted-foreground">Overall option flow</span>
@@ -75,10 +55,10 @@ export function PressureScreen() {
           )}
       </Panel>
 
-      {f && f.source !== 'none' && (
+      {f && (
         <>
-          <FlowCard name="CE flow" side="CALL" flow={f.ce} leg={atmLeg(data.legs, 'C', snap?.atm)} />
-          <FlowCard name="PE flow" side="PUT" flow={f.pe} leg={atmLeg(data.legs, 'P', snap?.atm)} />
+          <FlowCard name="CE flow" side="CALL" flow={f.ce} leg={atmLeg(data.legs, 'C', snap.atm)} />
+          <FlowCard name="PE flow" side="PUT" flow={f.pe} leg={atmLeg(data.legs, 'P', snap.atm)} />
         </>
       )}
 
