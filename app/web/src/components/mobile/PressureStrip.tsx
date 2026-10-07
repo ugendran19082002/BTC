@@ -19,8 +19,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
  *   picture  SELL-to-BUY line, a mark  the perp's running delta  the move since entry
  *
  * Where the row has the room (from 520px: a card is then 118px or more) each card says a little more -- the
- * window beside a tape's name and its delta as a few bars, the lean in a word, the time of the price, the move
- * in percent too. Nothing is taken away to make room; narrower, those are a tap away on their own screens.
+ * window beside a tape's name and its delta as a few bars, the lean in a word, the time of the price. Nothing is
+ * taken away to make room; narrower, those are a tap away on their own screens.
  *
  * The window all three readings share -- 5m, 15m, 1h, 4h -- is a small box at the top right of the big-move card.
  * A tap on a tape or the band opens Pressure; on BTC, Price changes. Type the size of the status tiles above.
@@ -83,10 +83,11 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
             className="block w-full min-w-0 border-0 bg-transparent p-0 text-left font-[inherit] text-foreground"
           >
             {/* Its name, and at the right the window as a small box (the button for it lies over this corner). Under 520px the box needs the room and the name is its second word. */}
-            <span className={cn(LABEL, 'flex items-center justify-between gap-1')}>
-              <span className="truncate"><span className="min-[520px]:hidden">Move</span><span className={WIDE}>Big move</span></span>
-              <span aria-hidden="true" className="flex h-[14px] shrink-0 items-center gap-px rounded bg-[var(--panel-3)] pl-1 pr-0.5 text-[11px] leading-none text-foreground">
-                {windowLabel}<ChevronDown className={cn('h-3 w-3 text-muted-foreground transition-transform', picking && 'rotate-180')} />
+            <span className={cn(LABEL, 'flex items-center justify-between gap-0.5')}>
+              <span className="min-w-0 truncate"><span className="min-[520px]:hidden">Move</span><span className={WIDE}>Big move</span></span>
+              {/* "Move" is 27px and the box with its longest window, 15m, is 35: the two fit the 69px a 360px phone gives them. */}
+              <span aria-hidden="true" className="flex h-[14px] shrink-0 items-center rounded bg-[var(--panel-3)] pl-[3px] text-[11px] leading-none tabular-nums text-foreground min-[520px]:px-1">
+                {windowLabel}<ChevronDown className={cn('h-2.5 w-2.5 text-muted-foreground transition-transform', picking && 'rotate-180')} />
               </span>
             </span>
             <span className={cn(w?.band === 'sudden' ? 'text-[13px]' : 'text-[14px]', WORD, TONE[bandTone].text)}>{w ? w.band.toUpperCase() : '…'}</span>
@@ -108,7 +109,7 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
                 className="absolute right-0 top-0 z-10 h-9 w-11 cursor-pointer rounded-tr-xl border-0 bg-transparent p-0"
               />
             </PopoverTrigger>
-            <PopoverContent align="end" sideOffset={2} className="w-[148px] p-1" role="menu" aria-label="Window">
+            <PopoverContent align="end" sideOffset={2} className="w-[176px] p-1" role="menu" aria-label="Window">
               {PRESSURE_WINDOWS.map((o) => (
                 <button
                   key={o.key} type="button" role="menuitemradio" aria-checked={window === o.key}
@@ -119,7 +120,7 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
                   )}
                 >
                   <span className="tabular-nums">{o.label}</span>
-                  <span className="flex items-center gap-1.5 text-[12px] font-normal text-muted-foreground">
+                  <span className="flex items-center gap-1.5 whitespace-nowrap text-[12px] font-normal text-muted-foreground">
                     {o.spoken}{window === o.key && <Check aria-hidden="true" className="h-4 w-4 text-[var(--up)]" />}
                   </span>
                 </button>
@@ -147,7 +148,6 @@ export function PressureStrip({ pressure: x, window, onWindow, price, perp, onOp
               <>
                 <span className="text-[11px] text-muted-foreground">{mark.mark === 'entry' ? 'entry' : 'day'}</span>
                 <span className={cn('font-semibold', TONE[markTone].text)}>{signedPoints(mark.pts)}</span>
-                <span className={cn(WIDE, 'text-[11px]', TONE[markTone].text)}>{signedPct(mark.pct)}</span>
               </>
             ) : <span className="text-muted-foreground">—</span>}
           </span>
