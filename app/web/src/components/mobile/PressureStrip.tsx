@@ -142,7 +142,8 @@ function Head({ label, badge, tone }: { label: ReactNode; badge: string | null; 
 /** One side of the option tape. */
 function SideCard({ name, window, flow, read, onOpen }: { name: string; window: string; flow: SideFlow | null; read: boolean; onOpen: () => void }) {
   const r: SideRead = read ? sideRead(flow) : { word: '—', sub: 'reading', tone: 'flat', buyShare: null, leadPct: null, leadWords: 'reading' };
-  const bars = flow ? deltaBars(flow.cvd) : [];
+  // Eight bars: with more, the longest word a side can read as (BALANCED) has no room beside them at 360px.
+  const bars = flow ? deltaBars(flow.cvd, 8) : [];
   const at = r.buyShare === null ? null : Math.min(100, Math.max(0, r.buyShare * 100));
   return (
     <button
@@ -152,7 +153,7 @@ function SideCard({ name, window, flow, read, onOpen }: { name: string; window: 
       <Head label={<>{name} <span className="tabular-nums text-[var(--dim)]">· {window}</span></>} badge={r.leadPct === null ? null : `${r.leadPct}%`} tone={r.tone} />
       <span className="mt-1 flex items-end justify-between gap-1.5">
         <span className="min-w-0">
-          <span className={cn('block truncate font-bold leading-none', r.word === 'BALANCED' ? 'text-[13px] tracking-[-0.2px]' : 'text-[19px]', TONE[r.tone].text)}>{read ? r.word : '…'}</span>
+          <span className={cn('block truncate font-bold leading-none', r.word === 'BALANCED' ? 'text-[14px]' : 'text-[19px]', TONE[r.tone].text)}>{read ? r.word : '…'}</span>
           <span className="mt-1 block truncate text-[12px] text-muted-foreground">{r.sub}</span>
         </span>
         {/* Its delta, minute by minute, as a few bars: bought more than sold in green. */}
