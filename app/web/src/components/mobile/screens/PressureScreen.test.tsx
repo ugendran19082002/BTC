@@ -95,6 +95,14 @@ describe('PressureScreen', () => {
     expect(screen.getByText(/read on 83,200 PE, the desk's own pick/)).toBeInTheDocument();
   });
 
+  it('an answer that is not a chain (an error\'s body, another shape) is "not read", not a crash', async () => {
+    getChain.mockResolvedValue({ error: 'upstream' });
+    render(<PressureScreen />);
+    await vi.waitFor(() => expect(getChain).toHaveBeenCalled());
+    expect(screen.queryByText('Big move catch')).toBeNull();
+    expect(getPerp).not.toHaveBeenCalled();
+  });
+
   it('no option prints: says so, and the big-move readings are still there', async () => {
     getPerp.mockResolvedValue({ ...PERP, optionFlow: { ...FLOW, source: 'none' } });
     render(<PressureScreen />);
