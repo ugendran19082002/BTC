@@ -240,7 +240,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               </div>
               {/* The "no target and no stop" warning is for a clock strategy; this one always has the perp's SL and TGT. */}
               {/* Both, bought or sold; bought, each is on the other side of the entry (ExitRuleEditor). */}
-              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} bought={buying}
+              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} bought={buying} spot={spot}
                                 warnings={d.warnings.filter((w) => !/target and no stop/.test(w))} className="mt-1" />
               {!buying && d.exits.stop.value <= 0 && !d.exits.stop.steps.some((st) => st.value > 0) && (
                 <p role="note" className="m-0 mt-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[11.5px] leading-snug text-[var(--warn)]">

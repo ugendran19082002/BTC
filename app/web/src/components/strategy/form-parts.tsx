@@ -13,6 +13,7 @@ import { NumberField } from '@/components/ui/number-field';
 import { ExitRuleEditor } from '@/components/strategy/ExitRuleEditor';
 import { suggestedFallback, withExitRule, type ExitRule } from '@/lib/strategy-exits';
 import { stepWarnings } from '@/lib/strategy-checks';
+import { STRATEGY_LEVERAGE, heldStopFor, stopHoldNote } from '@/lib/stop-hold';
 import { strategyProblems, type FormField, type FormTab, type Problem } from '@/lib/strategy-rules';
 import type { Sizing } from '@/lib/strategy-preview';
 import { SETTLEMENT, hhmmOf, isHhmm, minutesOf, spanLabel, wrapsMidnight } from '@/lib/time';
@@ -656,8 +657,14 @@ export function EntryPriceFields({ c, set, err, allowSet = true }: {
  * The option's two exits, typed rather than dragged, each as a percentage,
  * fixed points or a price, and each able to move on a timetable. Shown against
  * the premium the rule asks for, so "80%" reads as the price it is.
+ *
+ * Under a sold option's stop, where it can sit (8 Oct 2026): at 200x the exchange closes a short out a fixed
+ * distance over its entry, and a share past that is held just inside it. Said here, with the premium up to which
+ * the stop stands as asked, so a trade showing 251% under a 300% setting is not read as a mistake (`stopHoldNote`).
  */
-export function OptionExitFields({ c, setC, exits, err, reference, warnings, className, legs = ['target', 'stop'], bought = false }: {
+export function OptionExitFields({ c, setC, exits, err, reference, warnings, className, legs = ['target', 'stop'], bought = false, spot }: {
+  /** BTC now, where the form has it: what the close-out's room is worked out from. */
+  spot?: number | null;
   /** The option is bought, not sold: its stop is under the entry (ExitRuleEditor). */
   bought?: boolean;
   /** Which of the two to offer: both, or the stop alone (a bought option has no target limit of its own). */
@@ -691,9 +698,36 @@ export function OptionExitFields({ c, setC, exits, err, reference, warnings, cla
           />
         ))}
       </div>
+      {!bought && legs.includes('stop') && <StopHoldNote rule={exits.stop} spot={spot} />}
       <Warnings items={warnings.filter((w) => /target and no stop/.test(w))} />
       <Warnings items={[...stepWarnings(c, 'target'), ...stepWarnings(c, 'stop')]} />
     </>
+  );
+}
+
+/** Where a sold strategy's stop can sit at 200x, and what happens to one asked for past it. Nothing for no stop, or one typed as a price. */
+function StopHoldNote({ rule, spot }: { rule: ExitRule; spot?: number | null }) {
+  const n = stopHoldNote(rule, spot);
+  if (!n || !spot) return null;
+  const usd = (v: number) => `$${v.toFixed(v % 1 === 0 ? 0 : 1)}`;
+  // A worked entry a little past the line, so the held stop is seen as a price and as a share.
+  const eg = n.fitsUpTo !== null ? heldStopFor(Math.ceil(n.fitsUpTo * 1.2), rule, spot) : null;
+  const egEntry = n.fitsUpTo !== null ? Math.ceil(n.fitsUpTo * 1.2) : 0;
+  return (
+    <p role="note" aria-label="where the stop can sit" className="m-0 mt-2 rounded-md bg-muted px-2.5 py-2 text-[11.5px] leading-snug text-muted-foreground">
+      At {STRATEGY_LEVERAGE}x the exchange closes a sold option out <b className="text-foreground">{usd(Math.round(n.room))}</b> above its entry, whatever it was sold for.{' '}
+      {n.fitsUpTo !== null ? (
+        <>
+          This stop stands as set on an entry up to <b className="text-foreground">{usd(n.fitsUpTo)}</b>. On a richer one it is held at entry + {usd(n.hold)}, just inside the close-out
+          {eg?.held && <> — sold at {usd(egEntry)}, the stop is <b className="text-foreground">{eg.stop}</b> ({Math.round((eg.stop / egEntry - 1) * 100)}%), not {Math.round(eg.asked)}</>}.
+          The trade's line says so when it happens.
+        </>
+      ) : n.alwaysHeld ? (
+        <>This stop is past that on every entry, so it is held at entry + {usd(n.hold)}, just inside the close-out.</>
+      ) : (
+        <>This stop is inside that, and stands as set.</>
+      )}
+    </p>
   );
 }
 

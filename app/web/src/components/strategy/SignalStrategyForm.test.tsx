@@ -1065,3 +1065,40 @@ describe('the SL and TGT distance filters: two numbers of points for each timefr
     expect(screen.queryByText(/only with the/)).not.toBeInTheDocument();
   });
 });
+
+/*
+ * 8 Oct 2026: a 300% stop showed as 251% on a $73 entry -- held inside the close-out, which at 200x is a fixed
+ * distance over the entry -- and read as a mistake. The form says where the stop can sit, before the trade does.
+ */
+describe('the stop and the close-out, said under the stop', () => {
+  const note = () => screen.queryByRole('note', { name: 'where the stop can sit' });
+
+  it('[critical] a 300% stop: the close-out\'s distance, the premium up to which 300% stands, and a worked richer entry', () => {
+    show(signalStrategy({}, { stopMode: 'pct', stopLossPct: 3 }));
+    tab('Entry & exit');
+    // BTC 85,000: closed out 212.5 over the entry, held at 191.2; 300% fits up to 191.2 / 3 = 63.7.
+    expect(note()).toHaveTextContent('At 200x the exchange closes a sold option out $213 above its entry, whatever it was sold for.');
+    expect(note()).toHaveTextContent('This stop stands as set on an entry up to $63.7.');
+    expect(note()).toHaveTextContent('On a richer one it is held at entry + $191.2, just inside the close-out — sold at $77, the stop is 268.2 (248%), not 308.');
+  });
+
+  it('no stop, or a stop typed as a price, has nothing to say; a small points stop stands as set', () => {
+    const { unmount } = show(signalStrategy({}, { stopMode: 'pct', stopLossPct: 0 }));
+    tab('Entry & exit');
+    expect(note()).not.toBeInTheDocument();
+    unmount();
+    const price = show(signalStrategy({}, { stopMode: 'price', stopLossAt: 120 }));
+    tab('Entry & exit');
+    expect(note()).not.toBeInTheDocument();
+    price.unmount();
+    show(signalStrategy({}, { stopMode: 'points', stopLossPoints: 60 }));
+    tab('Entry & exit');
+    expect(note()).toHaveTextContent('This stop is inside that, and stands as set.');
+  });
+
+  it('a bought option has no close-out to be held inside: nothing is said', () => {
+    show(signalStrategy({ action: 'buy' }, { stopMode: 'pct', stopLossPct: 0.5 }));
+    tab('Entry & exit');
+    expect(note()).not.toBeInTheDocument();
+  });
+});
