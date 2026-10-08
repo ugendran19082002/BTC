@@ -250,7 +250,10 @@ strategy may carry `strikeBlocks` (`[{ at: "HH:MM", strikeRule, strikeStep,
 premium }]`): its strike rule over the window; absent or empty is one rule all
 window. A premium rule, the strategy's or a block's, may carry `minOtm` (1-20),
 the nearest strike its own pick may be, and beside it `elseOtm` (1-20), the
-strike sold when the pick is nearer. A signal rule may carry `minSlPts`
+strike sold when the pick is nearer. Since 8 Oct 2026 a strategy, or a block,
+may carry `delta` (`{ max }`, 0.01-0.50) and `distance` (`{ pct, scale }`,
+`scale` `fixed` or `time`), read when `strikeRule` is `delta` or `distance`.
+A signal rule may carry `minSlPts`
 and `minTgtPts` (`{ "5m": 150 }`): the least distance from the perp entry to
 the SL, and to the target, per timeframe; and since 5 Oct 2026 `maxSlPts` and
 `maxTgtPts`, the most each may be. Each key is written only when set. Absent, they read as a
