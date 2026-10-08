@@ -7,10 +7,13 @@ import { clock, contractLabel, price, size } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { usePhone } from '@/components/mobile/phone-context';
 import { Chip, Chips, Empty, ListButton, Loading, Panel, Pill, When } from '@/components/mobile/parts';
+import { PlacedLine } from '@/components/mobile/StrategyTag';
 
 /**
  * Orders (6 Oct 2026): the day's orders as the desk placed them -- what was asked, what it filled at, and where
- * each stands -- filtered by status, a day at a time. "What price did it actually fill at?" in one tap.
+ * each stands -- filtered by status, a day at a time. "What price did it actually fill at?" in one tap. Each row
+ * says which strategy placed it, as a tag (`StrategyTag`): until 8 Oct 2026 a signal trade's row named the signal
+ * and not the strategy.
  */
 
 const FILTERS: { key: OrderStatus | 'all'; label: string }[] = [
@@ -79,12 +82,13 @@ export function OrdersScreen() {
 function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => void; showAccount: boolean }) {
   const buy = o.plan?.action === 'buy';
   const limit = o.plan?.entry.limitPrice ?? null;
-  const who = o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name}` : o.plan?.strategyName ? o.plan.strategyName : 'By hand';
+  const signal = o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ${o.plan.signal.tf}` : null;
   return (
     <li>
       <ListButton onClick={onOpen} label={`${buy ? 'Buy' : 'Sell'} ${contractLabel(o.symbol)}: open the order`}>
-        {/* What and where it stands, whole, on the first line; when, at what price and by what on the second. A time
-            column, and then the time on line one, each cut the contract short at 360px. */}
+        {/* What and where it stands, whole, on the first line; when and at what price on the second; who placed it --
+            the strategy's tag, the signal, the account -- on the third. A time column, and then the time on line one,
+            each cut the contract short at 360px. */}
         <span className="flex items-center justify-between gap-2">
           <span className="min-w-0 truncate text-[14px] font-semibold">
             <span className={buy ? 'text-[var(--buy)]' : 'text-[var(--down)]'}>{buy ? 'BUY' : 'SELL'}</span> {contractLabel(o.symbol)} × {size(o.requestedSize)}
@@ -93,11 +97,11 @@ function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => vo
         </span>
         <span className="flex items-baseline gap-1.5 text-[12.5px] tabular-nums text-muted-foreground">
           <When className="shrink-0 text-[12px]">{clock(o.openedAt)}</When>
-          <span className="shrink-0">·
+          <span className="min-w-0 truncate">·
             Limit {limit !== null ? price(limit) : 'market'} · Filled {o.entryAvgPrice !== null ? <b className="text-foreground">{price(o.entryAvgPrice)}</b> : '—'}{o.entrySize > 0 && o.entrySize < o.requestedSize ? ` (${size(o.entrySize)})` : ''}
           </span>
-          <span className="min-w-0 truncate text-[12px]">· {who}{showAccount && o.account ? ` · ${o.account.name}` : ''}</span>
         </span>
+        <PlacedLine plan={o.plan} rest={[signal, showAccount && o.account ? o.account.name : null]} className="mt-0.5" />
         {/* Two lines for an order that filled; its outcome is said only when it is not simply "filled". */}
         {o.status !== 'completed' && <span className="block truncate text-[12px] text-muted-foreground">{o.outcome}</span>}
       </ListButton>

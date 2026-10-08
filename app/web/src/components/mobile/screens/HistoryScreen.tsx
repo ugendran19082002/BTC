@@ -7,11 +7,13 @@ import { daysAgoIst, todayIst } from '@/lib/report';
 import { isLongTrade } from '@/lib/long-exits';
 import { usePhone } from '@/components/mobile/phone-context';
 import { Chip, Chips, Empty, ListButton, Loading, Panel, Rupees, Select, When } from '@/components/mobile/parts';
+import { PlacedLine, placedBy } from '@/components/mobile/StrategyTag';
 
 /**
  * Trade history (6 Oct 2026): the closed trades, not the orders -- what each made after charges -- filtered by
  * result, CE or PE, sold or bought and strategy, with the total of what is shown. Separate from Orders, which is
- * the order's life; this is the trade's end.
+ * the order's life; this is the trade's end. Each row carries its strategy as a tag (`StrategyTag`), and the
+ * strategy filter names them the way the tags do.
  */
 
 type Days = '0' | '6' | '29';
@@ -38,12 +40,12 @@ export function HistoryScreen() {
     () => (orders.data?.trades ?? []).filter((o) => o.position === 0 && o.exitSize > 0).sort((a, b) => closedAt(b) - closedAt(a)),
     [orders.data],
   );
-  const strategies = useMemo(() => [...new Set(closed.map((o) => o.plan?.strategyName ?? 'By hand'))].sort(), [closed]);
+  const strategies = useMemo(() => [...new Set(closed.map((o) => placedBy(o.plan).label))].sort(), [closed]);
   const shown = closed.filter((o) =>
     (result === 'all' || (result === 'win' ? netOf(o) > 0 : netOf(o) < 0))
     && (opt === 'all' || o.optionSide === opt)
     && (act === 'all' || (act === 'buy') === isLongTrade(o))
-    && (strategy === 'all' || (o.plan?.strategyName ?? 'By hand') === strategy));
+    && (strategy === 'all' || placedBy(o.plan).label === strategy));
   const total = shown.reduce((n, o) => n + netOf(o), 0);
   const wins = shown.filter((o) => netOf(o) > 0).length;
 
@@ -86,9 +88,10 @@ export function HistoryScreen() {
                     <span className="block text-[12.5px] tabular-nums text-muted-foreground">
                       <When>{clock(closedAt(o))}</When> · in {price(o.entryAvgPrice)} → out {price(o.exitAvgPrice)}
                     </span>
-                    <span className="block truncate text-[12px] text-muted-foreground">
-                      {o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ` : ''}{o.plan?.strategyName ?? 'By hand'}{p.shown === 'all' && o.account ? ` · ${o.account.name}` : ''}
-                    </span>
+                    <PlacedLine
+                      plan={o.plan} className="mt-0.5"
+                      rest={[o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ${o.plan.signal.tf}` : null, p.shown === 'all' && o.account ? o.account.name : null]}
+                    />
                   </ListButton>
                 </li>
               );

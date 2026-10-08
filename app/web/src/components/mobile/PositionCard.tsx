@@ -8,12 +8,14 @@ import { Rupees, SidePill } from '@/components/mobile/parts';
 import { ExitRail } from '@/components/mobile/ExitRail';
 import { isWaiting } from '@/lib/trade-events';
 import { isLongTrade } from '@/lib/long-exits';
+import { PlacedLine } from '@/components/mobile/StrategyTag';
 
 /**
  * One open position, read only: what is wrong with it first, then entry, price now and P&L, then where the price
  * stands between the stop and the target, drawn and moving (ExitRail) -- the BTC perp's line for a signal trade,
  * whose real exits are there, and the option's own line only when the option has a stop or a target of its own --
- * then liquidation, settlement, how long it has been held and what opened it. No trading button: the phone's
+ * then liquidation, settlement, how long it has been held and what opened it -- the strategy as a tag under the
+ * contract (`StrategyTag`), with the signal and the account beside it. No trading button: the phone's
  * session could not use one, and a screen that offers what it cannot do is lying.
  */
 export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, showAccount, onOpen }: {
@@ -32,7 +34,7 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
   const pnl = trade.live?.netIfClosedUsd ?? trade.live?.unrealisedPnl ?? null;
   const entry = trade.entryAvgPrice;
   const firstFill = trade.fills.filter((f) => f.role === 'entry').reduce<number | null>((m, f) => (m === null || f.ts < m ? f.ts : m), null);
-  const by = trade.plan?.signal ? `#${trade.plan.signal.n} ${trade.plan.signal.name} · ${trade.plan.signal.tf}` : trade.plan?.strategyName ?? null;
+  const signal = trade.plan?.signal ? `#${trade.plan.signal.n} ${trade.plan.signal.name} · ${trade.plan.signal.tf}` : null;
 
   const nearLiq = r.liquidation?.multiple != null && r.liquidation.multiple < 3;
   const hasPerpRail = Boolean(r.perp && (r.perp.stop !== null || r.perp.target !== null));
@@ -61,11 +63,8 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
       {onOpen
         ? <button type="button" onClick={onOpen} aria-label={`${contractLabel(trade.symbol)}: what happened`} className="-my-[6px] flex min-h-[36px] items-center border-0 bg-transparent p-0 text-left font-[inherit] text-foreground">{head}</button>
         : head}
-      {(showAccount && trade.account) || by ? (
-        <div className="truncate text-[12px] text-muted-foreground">
-          {[showAccount && trade.account ? trade.account.name : null, by, trade.plan?.signal && trade.plan.strategyName ? trade.plan.strategyName : null].filter(Boolean).join(' · ')}
-        </div>
-      ) : null}
+      {/* Who placed it: the strategy as a tag, first, then the signal and the account. */}
+      <PlacedLine plan={trade.plan} rest={[signal, showAccount && trade.account ? trade.account.name : null]} className="mt-0.5" />
 
       {/* Entry, what leaving costs now, and the mark: one line, where three boxes made the card a screen tall. */}
       <dl className="m-0 mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px] tabular-nums">
@@ -131,7 +130,7 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
 function WaitingCard({ trade, now, showAccount, onOpen }: { trade: Trade; now: number; showAccount: boolean; onOpen?: () => void }) {
   const long = isLongTrade(trade);
   const limit = trade.plan?.entry.limitPrice ?? null;
-  const by = trade.plan?.signal ? `#${trade.plan.signal.n} ${trade.plan.signal.name}` : trade.plan?.strategyName ?? null;
+  const signal = trade.plan?.signal ? `#${trade.plan.signal.n} ${trade.plan.signal.name}` : null;
   const body = (
     <span className="block w-full">
       <span className="flex w-full items-center gap-1.5">
@@ -146,8 +145,8 @@ function WaitingCard({ trade, now, showAccount, onOpen }: { trade: Trade; now: n
       <span className="mt-0.5 block truncate text-[12.5px] tabular-nums text-muted-foreground">
         {limit !== null ? <>Resting at <b className="text-foreground">{price(limit)}</b></> : 'At market'}
         {' · '}sent {duration(Math.max(0, now - trade.updatedAt))} ago
-        {[showAccount && trade.account ? trade.account.name : null, by].filter(Boolean).map((x) => ` · ${x}`).join('')}
       </span>
+      <PlacedLine plan={trade.plan} rest={[signal, showAccount && trade.account ? trade.account.name : null]} className="mt-1" />
     </span>
   );
   return (
