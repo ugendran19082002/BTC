@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, signalEntriesAllowed, time12, validateConfig, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -64,7 +64,9 @@ function cleanConfig(raw: unknown): StrategyConfig {
     // premium -- which is what it has been doing all along.
     strikeRule: c.strikeRule === 'strict' ? 'strict'
       : c.strikeRule === 'oiWall' ? 'oiWall'
-        : 'premium',
+        : c.strikeRule === 'delta' ? 'delta'
+          : c.strikeRule === 'distance' ? 'distance'
+            : 'premium',
     strikeStep: Math.trunc(Number(c.strikeStep ?? DEFAULT_CONFIG.strikeStep)) || 0,
     premium: {
       mode: c.premium?.mode === 'atMost' ? 'atMost' : 'atLeast',
@@ -75,6 +77,7 @@ function cleanConfig(raw: unknown): StrategyConfig {
         : Number(c.premium.fallbackUsd),
       ...cleanMinOtm(c.premium),
     },
+    ...cleanDeltaDistance(c),
     // Absent or empty: the desk's floor, which is what every strategy used before it.
     minPremiumUsd: c.minPremiumUsd === null || c.minPremiumUsd === undefined || (c.minPremiumUsd as unknown) === ''
       ? null
@@ -137,8 +140,27 @@ function cleanBlocks(raw: unknown): StrikeBlock[] {
         fallbackUsd: f === null || f === undefined ? null : Number(f),
         ...cleanMinOtm(o.premium),
       },
+      ...cleanDeltaDistance(o),
     };
   });
+}
+
+/**
+ * A delta rule's number and a distance rule's, each kept only when it was sent:
+ * a strategy that never used either is stored as it always was. Kept whichever
+ * rule is chosen, the way the premium is, so a number typed under one rule is
+ * still there on the way back to it. A number that cannot be read is left for
+ * validation to name, under the rule that reads it.
+ */
+function cleanDeltaDistance(o: { delta?: unknown; distance?: unknown }): { delta?: DeltaRule; distance?: DistanceRule } {
+  const d = o.delta as Partial<DeltaRule> | null | undefined;
+  const far = o.distance as Partial<DistanceRule> | null | undefined;
+  return {
+    ...(d && typeof d === 'object' ? { delta: { max: Number(d.max) } } : {}),
+    ...(far && typeof far === 'object'
+      ? { distance: { pct: Number(far.pct), scale: far.scale as unknown as DistanceRule['scale'] } }
+      : {}),
+  };
 }
 
 /**

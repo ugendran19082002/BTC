@@ -40,7 +40,53 @@ export type StrikeRule =
    * is a better one to sell. Open interest is the thing `feature_screen.py`
    * tested as a trading rule and rejected. The form says so.
    */
-  | 'oiWall';
+  | 'oiWall'
+  /** By delta (8 Oct 2026): the strike nearest the money whose delta is at or under a number. */
+  | 'delta'
+  /** By distance (8 Oct 2026): the strike nearest the money at least this far from BTC. */
+  | 'distance';
+
+/** A delta rule: the delta, as a size, a strike must be at or under (server: DeltaRule). */
+export type DeltaRule = { max: number };
+export const MIN_DELTA = 0.01;
+export const MAX_DELTA = 0.5;
+export const DEFAULT_DELTA: DeltaRule = { max: 0.1 };
+/** The quick picks beside the number. */
+export const DELTA_PRESETS = [0.05, 0.07, 0.1, 0.15] as const;
+
+/**
+ * A distance rule (server: DistanceRule): `pct` percent of BTC all day (`fixed`), or `pct` times the square
+ * root of the hours left to the settlement (`time`) -- 0.45 is 2.0% with 20 hours left and 0.6% with 2.
+ */
+export type DistanceScale = 'fixed' | 'time';
+export type DistanceRule = { pct: number; scale: DistanceScale };
+export const MAX_DISTANCE_PCT = 20;
+export const DEFAULT_DISTANCE: DistanceRule = { pct: 0.45, scale: 'time' };
+/** What a rule switched to the other reading starts at: a fixed 1.5% is about what 0.45 asks for with 11 hours left. */
+export const DEFAULT_FIXED_DISTANCE_PCT = 1.5;
+
+/** How far from BTC a distance rule asks for with this long left, in percent; null when it needs the time and has none (server: distanceNeeded). */
+export function distanceNeeded(d: DistanceRule, hoursToExpiry: number | null | undefined): number | null {
+  if (d.scale !== 'time') return d.pct;
+  if (hoursToExpiry === null || hoursToExpiry === undefined || !Number.isFinite(hoursToExpiry) || hoursToExpiry < 0) return null;
+  return d.pct * Math.sqrt(hoursToExpiry);
+}
+
+/** What is wrong with a delta rule -- the server's `deltaProblem`, in its words. */
+export function deltaProblem(d: DeltaRule | null | undefined): string | null {
+  const max = d?.max;
+  return typeof max === 'number' && max >= MIN_DELTA && max <= MAX_DELTA
+    ? null
+    : `Delta must be between ${MIN_DELTA.toFixed(2)} and ${MAX_DELTA.toFixed(2)}.`;
+}
+
+/** What is wrong with a distance rule -- the server's `distanceProblem`, in its words. */
+export function distanceProblem(d: DistanceRule | null | undefined): string | null {
+  if (!d || typeof d.pct !== 'number' || !(d.pct > 0) || d.pct > MAX_DISTANCE_PCT) {
+    return `The distance from BTC must be above 0% and at most ${MAX_DISTANCE_PCT}%.`;
+  }
+  return d.scale === 'fixed' || d.scale === 'time' ? null : 'The distance must be a fixed percentage, or one that shrinks with the time left.';
+}
 
 /** How far from the money a strict rule may reach, either way. */
 export const MAX_STRIKE_STEP = 20;
@@ -54,9 +100,11 @@ export function strikeLabel(step: number): string {
 /** From `at` (IST "HH:MM"), strikes are picked by this rule until the next block. Mirrors the server's StrikeBlock. */
 export type StrikeBlock = {
   at: string;
-  strikeRule: 'premium' | 'strict';
+  strikeRule: 'premium' | 'strict' | 'delta' | 'distance';
   strikeStep: number;
   premium: PremiumRule;
+  delta?: DeltaRule | null;
+  distance?: DistanceRule | null;
 };
 
 /** A block for every hour of a contract (server: MAX_STRIKE_BLOCKS). */
@@ -92,6 +140,10 @@ export type StrategyConfig = {
    * at-least. Null or absent is no fallback.
    */
   premium: PremiumRule;
+  /** The delta a strike must be at or under, when `strikeRule` is 'delta'. Absent on a strategy that never used it. */
+  delta?: DeltaRule | null;
+  /** How far from BTC a strike must sit, when `strikeRule` is 'distance'. Absent on a strategy that never used it. */
+  distance?: DistanceRule | null;
   /**
    * A signal strategy's strike rule over its window: from each block's time the
    * strike is picked by that block's rule, until the next. Before the first

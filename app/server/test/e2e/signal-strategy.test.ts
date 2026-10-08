@@ -687,6 +687,70 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
   await api('POST', '/api/strategies/sig-floor/enabled', { enabled: false });
 });
 
+// ------------------------------------------------------------ by delta, by distance
+
+test('[critical] by delta and by distance: saved as sent, refused in words when unusable, and each signal is sold at the strike the rule names', async () => {
+  const greeks = {
+    ...config, signal: { ...config.signal, maxOpen: 10 }, strikeRule: 'delta', delta: { max: 0.1 },
+    strikeBlocks: [{ at: '13:00', strikeRule: 'distance', strikeStep: 0, premium: { mode: 'atMost', usd: 20, fallbackUsd: null }, distance: { pct: 2, scale: 'fixed' } }],
+  };
+  const bad = await api('POST', '/api/strategies', { name: 'Sig greeks', config: { ...greeks, delta: { max: 0.9 } } });
+  assert.equal(bad.status, 422);
+  assert.ok(bad.body.problems.includes('Delta must be between 0.01 and 0.50.'), bad.body.problems.join(' '));
+  const far = await api('POST', '/api/strategies', { name: 'Sig greeks', config: { ...greeks, strikeBlocks: [{ ...greeks.strikeBlocks[0], distance: { pct: 0, scale: 'fixed' } }] } });
+  assert.ok(far.body.problems.includes('Block 2: The distance from BTC must be above 0% and at most 20%.'), far.body.problems.join(' '));
+
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig greeks', config: { ...greeks, delta: { max: 0.1, stray: 1 } } })).status, 200);
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-greeks'");
+  assert.equal(row!.config.strikeRule, 'delta');
+  assert.deepEqual(row!.config.delta, { max: 0.1 }, 'the number, and only its own key');
+  assert.equal('distance' in row!.config, false, 'a rule never set is no key at all');
+  assert.deepEqual(row!.config.strikeBlocks, greeks.strikeBlocks, 'the block keeps its distance, and carries no delta');
+  // A strategy that uses neither is stored as it always was.
+  const plain = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-one-rule'");
+  assert.equal('delta' in plain!.config || 'distance' in plain!.config, false);
+
+  const FAR = 83_600, FURTHER = 83_200;
+  for (const [strike, pid, bid] of [[PUT, 7001, 18], [FAR, 7003, 9], [FURTHER, 7004, 4]] as const) {
+    const symbol = `P-BTC-${strike}-${EXPIRY}`;
+    paper().addProduct({ symbol, productId: pid, underlying: 'BTC', optionSide: 'PE', strike, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+    paper().setQuote({ symbol, bid, ask: bid + 0.5, bidSize: 5_000, askSize: 5_000, mark: bid + 0.2, ts: Date.now() });
+  }
+  const withDeltas: SignalBoard = {
+    ...board,
+    candidates: [
+      { cp: 'P', strike: PUT, sellPrice: 18, pOtm: 0.8, moneyness: 'OTM', ask: 18.5, delta: -0.2 },
+      { cp: 'C', strike: CALL, sellPrice: 18, pOtm: 0.8, moneyness: 'OTM', ask: 18.5, delta: 0.2 },
+      { cp: 'P', strike: FAR, sellPrice: 9, pOtm: 0.9, moneyness: 'OTM', ask: 9.5, delta: -0.09 },
+      { cp: 'P', strike: FURTHER, sellPrice: 4, pOtm: 0.95, moneyness: 'OTM', ask: 4.5, delta: -0.04 },
+    ],
+  };
+  const r = new StrategyRunner(strategyStore(), () => clock, async () => withDeltas);
+  await api('POST', '/api/strategies/sig-greeks/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  const last = async () => (await runsOf('sig-greeks')).at(-1)!;
+
+  clock = TEN;                                         // delta at or under 0.10: 84,000 is 0.20, 83,600 is 0.09
+  await r.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83600 x1 @ 9 \(delta 0\.09\) · perp SL 84600 · TGT 85500$/);
+
+  clock = TEN + 3.5 * 3_600_000;                       // 13:30 -- at least 2% from BTC at 85,000: 83,200 is 2.12% away
+  await r.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83200 x1 @ 4 \(2\.12% from BTC, rule 2\.00%\) · perp SL 84600 · TGT 85500 · block 2, from 1:00 PM$/);
+
+  // A rule that finds no strike refuses the signal in its own words.
+  const s = (await strategyStore().get('sig-greeks'))!;
+  assert.equal((await api('POST', '/api/strategies', { id: s.id, name: s.name, config: { ...s.config, delta: { max: 0.02 }, strikeBlocks: [] } })).status, 200);
+  clock = TEN + 1 * 3_600_000;
+  await r.onSignal(signal());
+  const refused = await last();
+  assert.equal(refused.status, 'refused', refused.detail);
+  assert.match(refused.detail, /PE: no strike out of the money with a delta at or under 0\.02$/);
+
+  clock = TEN;
+  await api('POST', '/api/strategies/sig-greeks/enabled', { enabled: false });
+});
+
 // ------------------------------------------------------------ the SL-distance filter
 
 test('[critical] SL distance per timeframe: a signal whose SL is nearer than its timeframe\'s points is skipped, and the history says why', async () => {

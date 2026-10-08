@@ -2,7 +2,10 @@ import { useState, type RefObject } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { DAY_NAMES, DEFAULT_MIN_OTM, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL, strikeLabel, type PremiumRule, type StrategyConfig } from '@/types/strategy';
+import {
+  DAY_NAMES, DEFAULT_DELTA, DEFAULT_DISTANCE, DEFAULT_FIXED_DISTANCE_PCT, DEFAULT_MIN_OTM, DELTA_PRESETS, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL,
+  distanceNeeded, strikeLabel, type DeltaRule, type DistanceRule, type PremiumRule, type StrategyConfig,
+} from '@/types/strategy';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { TimePicker } from '@/components/ui/time-picker';
@@ -235,13 +238,15 @@ export function DaysField({ c, set, err }: { c: StrategyConfig; set: SetField; e
 
 /**
  * How the strike is picked: by premium (at least / at most, with a fallback),
- * by strike (ATM ± n), and -- where offered -- at the open-interest wall; then
- * the strategy's own premium floor.
+ * by strike (ATM ± n), by delta, by distance from BTC, and -- where offered --
+ * at the open-interest wall; then the strategy's own premium floor.
  */
-export function StrikeFields({ c, set, err, allowOiWall = true, minPremium = true }: {
+export function StrikeFields({ c, set, err, allowOiWall = true, minPremium = true, spot }: {
   c: StrategyConfig; set: SetField; err: ErrOf; allowOiWall?: boolean;
   /** False where the form places the minimum premium itself, further down (`MinPremiumField`). */
   minPremium?: boolean;
+  /** BTC now, where the form has it: a distance is then said in points as well as percent. */
+  spot?: number | null;
 }) {
   return (
     <>
@@ -249,10 +254,18 @@ export function StrikeFields({ c, set, err, allowOiWall = true, minPremium = tru
         <Segmented
           label="strike rule"
           value={c.strikeRule}
-          onChange={(v) => set('strikeRule', v)}
+          wrap
+          onChange={(v) => {
+            set('strikeRule', v);
+            // A rule switched to for the first time starts from the figure that was measured, not from nothing.
+            if (v === 'delta' && !c.delta) set('delta', { ...DEFAULT_DELTA });
+            if (v === 'distance' && !c.distance) set('distance', { ...DEFAULT_DISTANCE });
+          }}
           options={[
             { v: 'premium', label: 'By premium', note: 'Whichever strike pays what you ask — the tested rule.' },
             { v: 'strict', label: 'By strike', note: 'The strike you name — ATM, OTM 1, ITM 2 — whatever it pays.' },
+            { v: 'delta', label: 'By delta', note: 'The nearest strike at or under a delta you name — one number that fits every hour of the day.' },
+            { v: 'distance', label: 'By distance', note: 'The nearest strike at least this far from BTC — the same all day, or nearer as the contract runs out.' },
             ...(allowOiWall ? [{
               v: 'oiWall' as const,
               label: 'By open interest',
@@ -369,8 +382,104 @@ export function StrikeFields({ c, set, err, allowOiWall = true, minPremium = tru
         </Stack>
       )}
 
+      {c.strikeRule === 'delta' && (
+        <DeltaFields rule={c.delta ?? DEFAULT_DELTA} onChange={(d) => set('delta', d)} error={err('delta')} />
+      )}
+      {c.strikeRule === 'distance' && (
+        <DistanceFields rule={c.distance ?? DEFAULT_DISTANCE} onChange={(d) => set('distance', d)} error={err('distance')} spot={spot} />
+      )}
+
       {minPremium && <MinPremiumField c={c} set={set} err={err} />}
     </>
+  );
+}
+
+/** What the two newer rules rest on, said where they are set -- the same way the wall says what it rests on. */
+function MeasuredNote() {
+  return (
+    <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-[var(--dim)]">
+      Measured on a week of real orders (to 8 Oct 2026) and three months of block entries: against the premium rule this
+      lost less, and did not make more. The minimum premium still applies — a strike paying under it is not sold.
+    </p>
+  );
+}
+
+/**
+ * A delta rule (8 Oct 2026): one number, with the usual ones a tap away. The strike nearest BTC whose delta is at
+ * or under it is sold, read from the live board when the signal arrives.
+ */
+export function DeltaFields({ rule, onChange, error }: { rule: DeltaRule; onChange: (d: DeltaRule) => void; error?: string | null }) {
+  const said = Number.isFinite(rule.max) ? rule.max.toFixed(2) : 'the number';
+  return (
+    <Stack label="Delta — at or under" error={error} className="mt-3" hint="lower is further from BTC: less premium, less risk">
+      <div className="flex flex-wrap items-center gap-2">
+        <NumberField label="delta" value={rule.max} onChange={(n) => onChange({ max: n })} invalid={Boolean(error)} className="w-24" />
+        <div role="group" aria-label="delta quick picks" className="flex gap-1">
+          {DELTA_PRESETS.map((d) => (
+            <button
+              key={d} type="button" aria-pressed={rule.max === d} onClick={() => onChange({ max: d })}
+              className={cn('m-0 h-9 min-w-[2.75rem] appearance-none rounded-md border border-solid px-2 font-[inherit] text-[12px] font-medium tabular-nums',
+                rule.max === d ? 'border-[var(--accent)] bg-[var(--accent)] text-white' : 'border-[var(--line)] bg-transparent text-muted-foreground')}
+            >
+              {d.toFixed(2)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
+        Sells the strike nearest BTC whose delta is {said} or lower. Delta already moves with the time left and with how
+        the day is priced, so one number names a strike of about the same risk at 9 PM and at 3 PM.
+      </p>
+      <MeasuredNote />
+    </Stack>
+  );
+}
+
+/** "2.01%", and with BTC known "2.01% (≈ 1,710 pts)". */
+function distanceSaid(pct: number | null, spot: number | null | undefined): string {
+  if (pct === null || !Number.isFinite(pct)) return '—';
+  const pts = spot && spot > 0 ? ` (≈ ${Math.round((spot * pct) / 100).toLocaleString('en-US')} pts)` : '';
+  return `${pct.toFixed(2)}%${pts}`;
+}
+
+/** The hours a shrinking distance is shown at: the start of a day's window, its middle, and its last hours. */
+const DISTANCE_EXAMPLE_HOURS = [20, 12, 6, 2] as const;
+
+/**
+ * A distance rule (8 Oct 2026): how far from BTC, and whether that holds all day or shrinks as the contract runs
+ * out. What the number means is worked out under it -- a percentage times a root is not something to do by eye.
+ */
+export function DistanceFields({ rule, onChange, error, spot }: {
+  rule: DistanceRule; onChange: (d: DistanceRule) => void; error?: string | null; spot?: number | null;
+}) {
+  const time = rule.scale === 'time';
+  return (
+    <Stack label="Distance from BTC — at least" error={error} className="mt-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+        <Segmented
+          label="distance kind"
+          value={rule.scale}
+          className="flex-1"
+          /*
+           * The two read the number differently -- 0.45 fixed is a strike beside the money, 1.5 times a root is one
+           * off the board -- so a switch starts the other from its own usual figure rather than carry the number over.
+           */
+          onChange={(v) => { if (v !== rule.scale) onChange({ scale: v, pct: v === 'time' ? DEFAULT_DISTANCE.pct : DEFAULT_FIXED_DISTANCE_PCT }); }}
+          options={[
+            { v: 'time', label: 'Shrinks with time left', note: 'The number × the square root of the hours left to the 5:30 PM settlement: far out in the evening, nearer in the last hours.' },
+            { v: 'fixed', label: 'Fixed all day', note: 'The same percentage of BTC at every hour.' },
+          ]}
+        />
+        <NumberField label="distance percent" unit={time ? '% ×√h' : '%'} value={rule.pct} onChange={(n) => onChange({ ...rule, pct: n })}
+                     invalid={Boolean(error)} className={time ? 'w-32' : 'w-24'} />
+      </div>
+      <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground" aria-label="distance worked out">
+        {time
+          ? <>Asks for: {DISTANCE_EXAMPLE_HOURS.map((h) => `${h} h left ${distanceSaid(distanceNeeded(rule, h), spot)}`).join(' · ')}. In the last minutes it asks for almost nothing — the minimum premium is the guard there.</>
+          : <>Sells the strike nearest BTC that is at least {distanceSaid(rule.pct, spot)} away, at every hour.</>}
+      </p>
+      <MeasuredNote />
+    </Stack>
   );
 }
 
@@ -735,17 +844,19 @@ export function Affix({ before, after, children }: { before?: string; after?: st
 }
 
 /** Two or three choices on one line; only the chosen one's sentence is shown. */
-export function Segmented<T extends string>({ label, value, options, onChange, className }: {
+export function Segmented<T extends string>({ label, value, options, onChange, className, wrap }: {
   label: string;
   value: T;
   options: { v: T; label: string; note: string }[];
   onChange: (v: T) => void;
   className?: string;
+  /** For four choices or more: two to a row on a phone, where one row would cut their names. The important gap is for the desk's own `.grid` rule. */
+  wrap?: boolean;
 }) {
   const chosen = options.find((o) => o.v === value);
   return (
     <div className={cn('min-w-0', className)}>
-      <div role="radiogroup" aria-label={label} className="flex gap-0.5 rounded-lg bg-muted p-0.5">
+      <div role="radiogroup" aria-label={label} className={cn('rounded-lg bg-muted p-0.5', wrap ? 'grid grid-cols-2 !gap-0.5 sm:flex sm:flex-wrap' : 'flex gap-0.5')}>
         {options.map((o) => (
           <button
             key={o.v}

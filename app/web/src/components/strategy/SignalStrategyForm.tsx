@@ -137,7 +137,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                 </div>
               </Stack>
               {/* One rule all window, or a rule per block of hours: two tick boxes, each with its own section. */}
-              <StrikeBlocksEditor c={c} set={set} err={err} />
+              <StrikeBlocksEditor c={c} set={set} err={err} spot={spot} />
               <SizeFields c={c} set={set} err={err} sizing={d.sizing} spot={spot} label="Lots per signal" warnings={d.warnings} />
               {/* Last: a gate on whatever the rules above picked, in whichever block, not one of the rules. */}
               <MinPremiumField c={c} set={set} err={err} />

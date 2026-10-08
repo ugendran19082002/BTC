@@ -1,4 +1,4 @@
-import { BUY_NO_STEPS, CHAIN_PTS, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
+import { BUY_NO_STEPS, CHAIN_PTS, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, deltaProblem, distanceProblem, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -20,7 +20,7 @@ const LAUNCH_AUCTION_MIN = 5;
 
 export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin'
-  | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'premiumMinOtm' | 'strikeBlocks' | 'minPremium' | 'lots'
+  | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'premiumMinOtm' | 'delta' | 'distance' | 'strikeBlocks' | 'minPremium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
   | 'signalMode' | 'signalTf' | 'signalSlPts' | 'signalMethods' | 'signalTarget' | 'maxOpen';
 
@@ -28,7 +28,7 @@ export type Problem = { field: FormField; tab: FormTab; message: string };
 
 const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when',
-  legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', premiumMinOtm: 'sell', strikeBlocks: 'sell', minPremium: 'sell', lots: 'sell',
+  legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', premiumMinOtm: 'sell', delta: 'sell', distance: 'sell', strikeBlocks: 'sell', minPremium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
   signalMode: 'signal', signalTf: 'signal', signalSlPts: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade',
 };
@@ -63,6 +63,15 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
 
   if (c.strikeRule === 'strict' && (!Number.isInteger(c.strikeStep) || Math.abs(c.strikeStep) > MAX_STRIKE_STEP)) {
     say('strikeStep', `Pick a strike between ITM ${MAX_STRIKE_STEP} and OTM ${MAX_STRIKE_STEP}, or at the money.`);
+  }
+  // Each read only under its own rule, so only checked there (server: validateConfig).
+  if (c.strikeRule === 'delta') {
+    const d = deltaProblem(c.delta);
+    if (d) say('delta', d);
+  }
+  if (c.strikeRule === 'distance') {
+    const d = distanceProblem(c.distance);
+    if (d) say('distance', d);
   }
   if (!(c.premium.usd > 0) || c.premium.usd > 10_000) {
     say('premium', 'Premium must be a positive number of dollars.');

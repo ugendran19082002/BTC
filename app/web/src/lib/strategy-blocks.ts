@@ -1,4 +1,4 @@
-import { MAX_STRIKE_BLOCKS, MAX_STRIKE_STEP, elseOtmOf, strikeLabel, type StrategyConfig, type StrikeBlock } from '@/types/strategy';
+import { MAX_STRIKE_BLOCKS, MAX_STRIKE_STEP, deltaProblem, distanceProblem, elseOtmOf, strikeLabel, type StrategyConfig, type StrikeBlock } from '@/types/strategy';
 import { hhmmOf, isHhmm, minutesForward, minutesOf, time12 } from '@/lib/time';
 import { minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 
@@ -12,8 +12,16 @@ import { minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
  * without a form.
  */
 
-/** How a strike is picked: the three fields that say it, on the strategy or on a block. */
-export type StrikePick = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'premium'>;
+/** How a strike is picked: the fields that say it, on the strategy or on a block. */
+export type StrikePick = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'premium' | 'delta' | 'distance'>;
+
+/** A rule's delta and distance numbers, copied -- each only where it has one, so a rule that never used them carries no key. */
+const numbersOf = (p: Pick<StrikePick, 'delta' | 'distance'>): Pick<StrikeBlock, 'delta' | 'distance'> => ({
+  ...(p.delta ? { delta: { ...p.delta } } : {}),
+  ...(p.distance ? { distance: { ...p.distance } } : {}),
+});
+/** The rule a block may carry: every one but the wall, which reads as premium. */
+const blockRuleOf = (r: StrategyConfig['strikeRule']): StrikeBlock['strikeRule'] => (r === 'oiWall' ? 'premium' : r);
 
 /** The split the form offers first. */
 export const DEFAULT_BLOCK_HOURS = 4;
@@ -37,7 +45,7 @@ export function blockHoursOf(c: StrategyConfig): number {
 
 /** The strategy's own rule as a block would carry it; the wall, which a block cannot be, reads as premium. */
 export function ownPick(c: StrategyConfig): Omit<StrikeBlock, 'at'> {
-  return { strikeRule: c.strikeRule === 'strict' ? 'strict' : 'premium', strikeStep: c.strikeStep, premium: { ...c.premium } };
+  return { strikeRule: blockRuleOf(c.strikeRule), strikeStep: c.strikeStep, premium: { ...c.premium }, ...numbersOf(c) };
 }
 
 /**
@@ -55,8 +63,8 @@ export function splitBlocks(c: StrategyConfig, everyMin: number): StrikeBlock[] 
   const span = minutesForward(entry, minutesOf(c.exitTime));
   const out: StrikeBlock[] = [];
   for (let at = Math.round(everyMin); at < span && out.length < MAX_STRIKE_BLOCKS; at += Math.round(everyMin)) {
-    const { strikeRule, strikeStep, premium } = pickAt(c, at);
-    out.push({ at: hhmmOf(entry + at), strikeRule: strikeRule === 'strict' ? 'strict' : 'premium', strikeStep, premium: { ...premium } });
+    const p = pickAt(c, at);
+    out.push({ at: hhmmOf(entry + at), strikeRule: blockRuleOf(p.strikeRule), strikeStep: p.strikeStep, premium: { ...p.premium }, ...numbersOf(p) });
   }
   return out;
 }
@@ -97,12 +105,18 @@ export function hoursLabel(minutes: number): string {
 
 /**
  * A block's rule in a few words: "≤ $40", "≥ $15 (if none, ≥ $10)",
- * "≤ $50 at OTM 6 or further, else OTM 8", "OTM 2". The signs are the form's
+ * "≤ $50 at OTM 6 or further, else OTM 8", "OTM 2", "delta ≤ 0.10",
+ * "≥ 1.5% from BTC", "≥ 0.45% × √hours left from BTC". The signs are the form's
  * own, and "else" is kept for the else strike alone -- the premium's second
  * number is "if none".
  */
 export function pickWords(p: StrikePick): string {
   if (p.strikeRule === 'strict') return strikeLabel(p.strikeStep);
+  if (p.strikeRule === 'delta') return p.delta ? `delta ≤ ${p.delta.max.toFixed(2)}` : 'delta not set';
+  if (p.strikeRule === 'distance') {
+    if (!p.distance) return 'distance not set';
+    return `≥ ${p.distance.pct}%${p.distance.scale === 'time' ? ' × √hours left' : ''} from BTC`;
+  }
   const sign = p.premium.mode === 'atLeast' ? '≥' : '≤';
   const f = p.premium.fallbackUsd;
   const m = p.premium.minOtm;
@@ -147,12 +161,18 @@ export function strikeBlockProblems(blocks: StrikeBlock[] | undefined, entryTime
       }
       last = Math.max(last, at);
     }
-    if (b.strikeRule !== 'premium' && b.strikeRule !== 'strict') {
-      say(`Block ${n}: pick the strike by premium or by strike.`);
+    if (b.strikeRule !== 'premium' && b.strikeRule !== 'strict' && b.strikeRule !== 'delta' && b.strikeRule !== 'distance') {
+      say(`Block ${n}: pick the strike by premium, by strike, by delta or by distance.`);
     } else if (b.strikeRule === 'strict') {
       if (!Number.isInteger(b.strikeStep) || Math.abs(b.strikeStep) > MAX_STRIKE_STEP) {
         say(`Block ${n}: pick a strike between ITM ${MAX_STRIKE_STEP} and OTM ${MAX_STRIKE_STEP}, or at the money.`);
       }
+    } else if (b.strikeRule === 'delta') {
+      const d = deltaProblem(b.delta);
+      if (d) say(`Block ${n}: ${d}`);
+    } else if (b.strikeRule === 'distance') {
+      const d = distanceProblem(b.distance);
+      if (d) say(`Block ${n}: ${d}`);
     } else if (b.premium.mode !== 'atLeast' && b.premium.mode !== 'atMost') {
       say(`Block ${n}: the premium rule must be "at least" or "at most".`);
     } else if (!(b.premium.usd > 0) || b.premium.usd > 10_000) {
@@ -166,8 +186,8 @@ export function strikeBlockProblems(blocks: StrikeBlock[] | undefined, entryTime
   return bad;
 }
 
-/** The four fields that hold every block's rule: block 1's on the strategy, the rest in `strikeBlocks`. */
-export type BlockRules = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'premium' | 'strikeBlocks'>;
+/** The fields that hold every block's rule: block 1's on the strategy, the rest in `strikeBlocks`. */
+export type BlockRules = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'premium' | 'delta' | 'distance' | 'strikeBlocks'>;
 
 /**
  * "Apply to all blocks" (owner, 8 Oct 2026): one block's premium -- its ≥ or ≤, its number and its "if none"
@@ -177,7 +197,8 @@ export type BlockRules = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'pre
  * What is copied is what the owner named, the entry premium and its "if none". Each block keeps its own time, and
  * its own distance rule (the OTM strike it must be at, and the else strike): that part is set per block on
  * purpose, the far blocks of a day sitting further out than the near ones. A block picked "by strike" copies its
- * strike instead, and turns the others to "by strike" with it.
+ * strike instead, and turns the others to "by strike" with it; one picked by delta or by distance copies that
+ * number the same way -- the whole of such a rule is its one number.
  *
  * Returns null where there is nothing to copy from, or the block's premium is not a usable number -- the form
  * greys the button there rather than spread a mistake across the day.
@@ -188,16 +209,22 @@ export function applyToAllBlocks(c: StrategyConfig, from: number): BlockRules | 
   if (!src) return null;
   if (src.strikeRule === 'premium' && (!(src.premium.usd > 0) || src.premium.usd > 10_000 || premiumFallbackProblem(src.premium))) return null;
   if (src.strikeRule === 'strict' && (!Number.isInteger(src.strikeStep) || Math.abs(src.strikeStep) > MAX_STRIKE_STEP)) return null;
+  if (src.strikeRule === 'delta' && deltaProblem(src.delta)) return null;
+  if (src.strikeRule === 'distance' && distanceProblem(src.distance)) return null;
   const onto = <T extends Omit<StrikeBlock, 'at'>>(b: T): T => (src.strikeRule === 'strict'
     ? { ...b, strikeRule: 'strict', strikeStep: src.strikeStep }
-    : { ...b, strikeRule: 'premium', premium: { ...b.premium, mode: src.premium.mode, usd: src.premium.usd, fallbackUsd: src.premium.fallbackUsd ?? null } });
+    : src.strikeRule === 'delta'
+      ? { ...b, strikeRule: 'delta', delta: { ...src.delta! } }
+      : src.strikeRule === 'distance'
+        ? { ...b, strikeRule: 'distance', distance: { ...src.distance! } }
+        : { ...b, strikeRule: 'premium', premium: { ...b.premium, mode: src.premium.mode, usd: src.premium.usd, fallbackUsd: src.premium.fallbackUsd ?? null } });
   const first = onto(ownPick(c));
-  return { strikeRule: first.strikeRule, strikeStep: first.strikeStep, premium: first.premium, strikeBlocks: blocks.map(onto) };
+  return { strikeRule: first.strikeRule, strikeStep: first.strikeStep, premium: first.premium, delta: first.delta, distance: first.distance, strikeBlocks: blocks.map(onto) };
 }
 
-/** What "Apply to all blocks" copies, in a few words: "≤ $50 (if none, ≤ $60)", "OTM 2". The distance rule is not copied, so it is not said. */
+/** What "Apply to all blocks" copies, in a few words: "≤ $50 (if none, ≤ $60)", "OTM 2", "delta ≤ 0.10". A premium's "at least OTM" rule is not copied, so it is not said. */
 export function appliedWords(p: StrikePick): string {
-  return pickWords(p.strikeRule === 'strict' ? p : { ...p, premium: { ...p.premium, minOtm: null, elseOtm: null } });
+  return pickWords(p.strikeRule === 'premium' ? { ...p, premium: { ...p.premium, minOtm: null, elseOtm: null } } : p);
 }
 
 /** The IST minute of the day at an instant (epoch ms): the clock every strategy time is read on. */

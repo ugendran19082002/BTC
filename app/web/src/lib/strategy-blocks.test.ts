@@ -304,3 +304,84 @@ describe('apply to all blocks (owner, 8 Oct 2026)', () => {
     expect(appliedWords(day().strikeBlocks![1]!)).toBe(pickWords(day().strikeBlocks![1]!));
   });
 });
+
+/*
+ * By delta and by distance (8 Oct 2026): two more rules a block -- or the whole window -- may pick its strike by.
+ * Each is one number; the checks say what the server's say, word for word.
+ */
+describe('by delta and by distance', () => {
+  const byDelta = (at: string, max: number): StrikeBlock => ({ at, strikeRule: 'delta', strikeStep: 0, premium: { mode: 'atMost', usd: 50, fallbackUsd: null }, delta: { max } });
+  const byDistance = (at: string, pct: number, scale: 'fixed' | 'time'): StrikeBlock =>
+    ({ at, strikeRule: 'distance', strikeStep: 0, premium: { mode: 'atMost', usd: 50, fallbackUsd: null }, distance: { pct, scale } });
+
+  it('[critical] the words say the rule: the delta to two places, the distance with what it is measured against', () => {
+    expect(pickWords(byDelta('21:35', 0.1))).toBe('delta ≤ 0.10');
+    expect(pickWords(byDistance('21:35', 1.5, 'fixed'))).toBe('≥ 1.5% from BTC');
+    expect(pickWords(byDistance('21:35', 0.45, 'time'))).toBe('≥ 0.45% × √hours left from BTC');
+    expect(pickWords({ strikeRule: 'delta', strikeStep: 0, premium: { mode: 'atMost', usd: 50 } })).toBe('delta not set');
+    expect(blocksWords(cfg({ strikeBlocks: [byDelta('21:35', 0.07), byDistance('01:35', 2, 'fixed')] })))
+      .toBe(' — then from 9:35 PM delta ≤ 0.07, from 1:35 AM ≥ 2% from BTC');
+  });
+
+  it('[critical] the strategy\'s own rule as block 1 keeps its rule and its number; a rule that never had one carries no key', () => {
+    expect(ownPick(cfg({ strikeRule: 'delta', delta: { max: 0.1 } }))).toMatchObject({ strikeRule: 'delta', delta: { max: 0.1 } });
+    expect(ownPick(cfg({ strikeRule: 'distance', distance: { pct: 0.45, scale: 'time' } }))).toMatchObject({ strikeRule: 'distance', distance: { pct: 0.45, scale: 'time' } });
+    expect(Object.keys(ownPick(cfg()))).toEqual(['strikeRule', 'strikeStep', 'premium']);
+  });
+
+  it('[critical] splitting carries a delta rule into every new block, each with a copy of its own', () => {
+    const c = cfg({ strikeRule: 'delta', delta: { max: 0.1 } });
+    const blocks = splitBlocks(c, 240);
+    expect(blocks).toHaveLength(5);
+    for (const b of blocks) expect(b).toMatchObject({ strikeRule: 'delta', delta: { max: 0.1 } });
+    expect(blocks[0]!.delta).not.toBe(c.delta);
+    // Split again, and a block already by distance keeps it where its time still falls.
+    const again = splitBlocks({ ...c, strikeBlocks: [byDistance('21:35', 2, 'fixed')] }, 240);
+    expect(again[0]).toMatchObject({ at: '21:35', strikeRule: 'distance', distance: { pct: 2, scale: 'fixed' } });
+  });
+
+  it('[critical] a block\'s delta or distance is held to the server\'s rules, in its words', () => {
+    const say = (b: StrikeBlock) => strikeBlockProblems([b], '17:35', '17:29').map((p) => p.message);
+    expect(say(byDelta('21:35', 0.1))).toEqual([]);
+    expect(say(byDelta('21:35', 0.6))).toEqual(['Block 2: Delta must be between 0.01 and 0.50.']);
+    expect(say({ ...byDelta('21:35', 0.1), delta: null })).toEqual(['Block 2: Delta must be between 0.01 and 0.50.']);
+    expect(say(byDistance('21:35', 0.45, 'time'))).toEqual([]);
+    expect(say(byDistance('21:35', 0, 'fixed'))).toEqual(['Block 2: The distance from BTC must be above 0% and at most 20%.']);
+    expect(say({ ...byDelta('21:35', 0.1), strikeRule: 'oiWall' as never })).toEqual(['Block 2: pick the strike by premium, by strike, by delta or by distance.']);
+  });
+
+  it('[critical] the form says a delta or a distance that cannot be saved, only under the rule that reads it', () => {
+    const said = (over: Partial<StrategyConfig>, field: string) => strategyProblems(cfg(over), 'x').filter((p) => p.field === field).map((p) => p.message);
+    expect(said({ strikeRule: 'delta' }, 'delta')).toEqual(['Delta must be between 0.01 and 0.50.']);
+    expect(said({ strikeRule: 'delta', delta: { max: 0.1 } }, 'delta')).toEqual([]);
+    expect(said({ strikeRule: 'premium', delta: { max: 9 } }, 'delta')).toEqual([]);
+    expect(said({ strikeRule: 'distance', distance: { pct: 25, scale: 'fixed' } }, 'distance')).toEqual(['The distance from BTC must be above 0% and at most 20%.']);
+    expect(said({ strikeRule: 'distance', distance: { pct: 0.45, scale: 'time' } }, 'distance')).toEqual([]);
+  });
+
+  it('[critical] "Apply to all blocks" from a delta block puts its number on every block, and from a distance block its distance', () => {
+    const c = cfg({ strikeBlocks: [byDelta('21:35', 0.07), premium('01:35', 30)] });
+    const d = applyToAllBlocks(c, 1)!;
+    expect(d.strikeRule).toBe('delta');
+    expect(d.delta).toEqual({ max: 0.07 });
+    expect(d.strikeBlocks!.map((b) => [b.at, b.strikeRule, b.delta])).toEqual([['21:35', 'delta', { max: 0.07 }], ['01:35', 'delta', { max: 0.07 }]]);
+    // The premium each block had is still there under it, for the way back.
+    expect(d.strikeBlocks![1]!.premium.usd).toBe(30);
+    expect(appliedWords(c.strikeBlocks![0]!)).toBe('delta ≤ 0.07');
+
+    const far = applyToAllBlocks(cfg({ strikeBlocks: [byDistance('21:35', 0.45, 'time')] }), 1)!;
+    expect([far.strikeRule, far.distance, far.strikeBlocks![0]!.distance]).toEqual(['distance', { pct: 0.45, scale: 'time' }, { pct: 0.45, scale: 'time' }]);
+    // A number that cannot be saved is not spread across the day.
+    expect(applyToAllBlocks(cfg({ strikeBlocks: [byDelta('21:35', 0)] }), 1)).toBeNull();
+    expect(applyToAllBlocks(cfg({ strikeBlocks: [byDistance('21:35', 99, 'fixed')] }), 1)).toBeNull();
+    // From a premium block, a strategy that never used either still carries neither.
+    const plain = applyToAllBlocks(cfg({ strikeBlocks: [premium('21:35', 30)] }), 0)!;
+    expect([plain.delta, plain.distance]).toEqual([undefined, undefined]);
+  });
+
+  it('the sentence the strategy is described in names the rule', () => {
+    expect(describeStrategy(cfg({ strikeRule: 'delta', delta: { max: 0.1 } }))).toMatch(/nearest strike with a delta of 0\.10 or less/);
+    expect(describeStrategy(cfg({ strikeRule: 'distance', distance: { pct: 0.45, scale: 'time' } }))).toMatch(/at least 0\.45% × √hours left from BTC/);
+    expect(describeStrategy(cfg({ strikeRule: 'distance', distance: { pct: 1.5, scale: 'fixed' } }))).toMatch(/at least 1\.5% from BTC/);
+  });
+});

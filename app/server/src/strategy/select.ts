@@ -18,8 +18,8 @@ import { DEFAULT_WALL_WITHIN_EM } from '../domain/structure.js';
  * Rs -1,241, atMost Rs +9,881 at Rs -721. Neither is the right answer in
  * general, which is why it is a setting.
  */
-import type { StrategyConfig } from './types.js';
-import { elseOtmOf, strikeLabel, type Strategy } from './types.js';
+import type { DeltaRule, DistanceRule, StrategyConfig } from './types.js';
+import { distanceNeeded, elseOtmOf, strikeLabel, type Strategy } from './types.js';
 
 /** Only the parts of a scored leg this decision needs. */
 export type Candidate = {
@@ -36,6 +36,8 @@ export type Candidate = {
   oi?: number | null;
   /** How far the strike sits from spot, in expected moves. Read only by the open-interest rule. */
   emBuffer?: number | null;
+  /** The option's delta, negative for a put. Read only by the delta rule; null where the board could not work it out. */
+  delta?: number | null;
 };
 
 export type Chosen = {
@@ -56,6 +58,11 @@ export type Chosen = {
   elseOtm?: number;
   /** With them: the strike the premium did pick, nearer the money than the rule allows -- or null when it picked none. */
   premiumPick?: { strike: number; price: number } | null;
+  /** Set when a delta rule chose it: the strike's delta, as a size. */
+  delta?: number;
+  /** Set when a distance rule chose it: how far the strike sits from BTC, and how far the rule asked for, in percent. */
+  distancePct?: number;
+  distanceNeedPct?: number;
 };
 
 export type Selection = {
@@ -92,8 +99,10 @@ export function pickByPosition(
 export type SelectOptions = {
   /** The desk's level band, for the open-interest rule. Absent takes the default. */
   wallWithinEm?: number | null;
-  /** BTC now. Without it the strike nearest the money is never sold under a premium rule. */
+  /** BTC now. Without it the strike nearest the money is never sold under a premium rule, and a distance rule picks nothing. */
   spot?: number | null;
+  /** Hours to the settlement. Read only by a distance rule that shrinks with the time left. */
+  hoursToExpiry?: number | null;
 };
 
 /**
@@ -142,6 +151,10 @@ function pickStrikeHow(
 
   const otm = priced.filter((l) => outOfTheMoney(l, opts.spot));
   if (otm.length === 0) return own(null);
+
+  // By delta and by distance: each a single question asked of the board, out of the money only, with no else.
+  if (cfg.strikeRule === 'delta') return own(pickByDelta(otm, cp, cfg.delta));
+  if (cfg.strikeRule === 'distance') return own(pickByDistance(otm, cp, cfg.distance, opts));
 
   /*
    * The wall: the strike on this side with the most open interest.
@@ -230,6 +243,74 @@ export function pickByPremium(
     : ok.reduce((a, b) => (b.sellPrice! > a.sellPrice! ? b : a));
 }
 
+/** One side's strikes, nearest the money first: up the board for a call, down it for a put. */
+const outwardOf = (legs: readonly Candidate[], cp: 'C' | 'P'): Candidate[] =>
+  [...legs].sort((a, b) => (cp === 'C' ? a.strike - b.strike : b.strike - a.strike));
+
+/** How far a strike sits from BTC, as a percentage of BTC. */
+export const distancePctOf = (strike: number, spot: number): number => (Math.abs(strike - spot) / spot) * 100;
+
+/**
+ * The strike nearest the money whose delta is at or under the rule's.
+ *
+ * Delta falls as a strike moves out, so the first one outward that meets the
+ * number is the richest that does. A strike whose delta the board could not
+ * work out -- no mark, no volatility -- is not "zero delta", it is unreadable,
+ * and is passed over rather than sold as if it were far away.
+ */
+export function pickByDelta(
+  otm: readonly Candidate[],
+  cp: 'C' | 'P',
+  rule: DeltaRule | null | undefined,
+): Candidate | null {
+  if (!rule || !(rule.max > 0)) return null;
+  return outwardOf(otm, cp).find((l) => {
+    const d = Math.abs(l.delta ?? NaN);
+    return d > 0 && d <= rule.max;
+  }) ?? null;
+}
+
+/**
+ * The strike nearest the money that sits at least the rule's distance from BTC.
+ *
+ * Nothing without BTC's price, and nothing when the distance shrinks with the
+ * time left and the time left is not known: a strike picked on a guessed
+ * distance is a strike nobody asked for.
+ */
+export function pickByDistance(
+  otm: readonly Candidate[],
+  cp: 'C' | 'P',
+  rule: DistanceRule | null | undefined,
+  opts: SelectOptions,
+): Candidate | null {
+  const spot = opts.spot;
+  const need = rule ? distanceNeeded(rule, opts.hoursToExpiry) : null;
+  if (need === null || !(need > 0) || spot === null || spot === undefined || !(spot > 0)) return null;
+  return outwardOf(otm, cp).find((l) => distancePctOf(l.strike, spot) >= need) ?? null;
+}
+
+/** Why a leg found no strike, for the rules that have no else: one line for the run's record. */
+function noStrikeWords(leg: 'CE' | 'PE', cfg: StrategyConfig, opts: SelectOptions): string {
+  if (cfg.strikeRule === 'strict') return `${leg}: no ${strikeLabel(cfg.strikeStep)} strike listed with a price`;
+  if (cfg.strikeRule === 'oiWall') {
+    return `${leg}: no wall within ${opts.wallWithinEm ?? DEFAULT_WALL_WITHIN_EM} expected moves that pays $${cfg.premium.usd}`;
+  }
+  if (cfg.strikeRule === 'delta') {
+    return cfg.delta
+      ? `${leg}: no strike out of the money with a delta at or under ${cfg.delta.max}`
+      : `${leg}: the delta rule has no number set`;
+  }
+  if (cfg.strikeRule === 'distance') {
+    if (!cfg.distance) return `${leg}: the distance rule has no number set`;
+    const need = distanceNeeded(cfg.distance, opts.hoursToExpiry);
+    if (need === null) return `${leg}: the time left to the settlement is not known, so the distance from BTC cannot be worked out`;
+    if (!(Number(opts.spot) > 0)) return `${leg}: no BTC price to measure the distance from`;
+    return `${leg}: no strike listed with a price at least ${need.toFixed(2)}% from BTC`;
+  }
+  return `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`
+    + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : '');
+}
+
 /**
  * The whole day's decision: which legs, at what size.
  *
@@ -266,14 +347,7 @@ export function selectLegs(
       continue;
     }
     if (!chosen) {
-      refusals.push(
-        cfg.strikeRule === 'strict'
-          ? `${leg}: no ${strikeLabel(cfg.strikeStep)} strike listed with a price`
-          : cfg.strikeRule === 'oiWall'
-            ? `${leg}: no wall within ${opts.wallWithinEm ?? DEFAULT_WALL_WITHIN_EM} expected moves that pays $${cfg.premium.usd}`
-            : `${leg}: nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`
-              + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : ''),
-      );
+      refusals.push(noStrikeWords(leg, cfg, opts));
       continue;
     }
     picked.set(leg, chosen);
@@ -295,6 +369,12 @@ export function selectLegs(
         ...(floored ? {
           minOtm: cfg.premium.minOtm!, elseOtm: elseOtmOf(cfg.premium)!,
           premiumPick: near ? { strike: near.strike, price: near.sellPrice! } : null,
+        } : {}),
+        // What the rule read at the strike it chose, for the run's line.
+        ...(cfg.strikeRule === 'delta' && c.delta != null ? { delta: Math.abs(c.delta) } : {}),
+        ...(cfg.strikeRule === 'distance' && cfg.distance && Number(opts.spot) > 0 ? {
+          distancePct: distancePctOf(c.strike, opts.spot!),
+          distanceNeedPct: distanceNeeded(cfg.distance, opts.hoursToExpiry) ?? undefined,
         } : {}),
       };
     }),
@@ -319,6 +399,19 @@ export function elseWords(l: Pick<Chosen, 'minOtm' | 'elseOtm' | 'premiumPick'>)
   return ` (rule failed: ${why} — went to the else strike ${strikeLabel(l.elseOtm)})`;
 }
 
+/**
+ * For a leg a delta or a distance rule chose, what it read there: " (delta 0.09)",
+ * " (1.92% from BTC, rule 1.85%)". Nothing for any other leg. Written into the
+ * run's line beside the strike, as the else's words are.
+ */
+export function ruleWords(l: Pick<Chosen, 'delta' | 'distancePct' | 'distanceNeedPct'>): string {
+  if (l.delta !== undefined) return ` (delta ${l.delta.toFixed(2)})`;
+  if (l.distancePct !== undefined) {
+    return ` (${l.distancePct.toFixed(2)}% from BTC${l.distanceNeedPct !== undefined ? `, rule ${l.distanceNeedPct.toFixed(2)}%` : ''})`;
+  }
+  return '';
+}
+
 /** True when this strike was found by the premium fallback rather than the rule's own number. */
 function viaFallback(cfg: StrategyConfig, c: Candidate): boolean {
   return cfg.strikeRule === 'premium'
@@ -337,6 +430,7 @@ export function describeSelection(sel: Selection): string {
   const sold = sel.legs.map((l) => `${l.cp === 'C' ? 'CE' : 'PE'} ${l.strike} x${l.lots} @ ${l.price}`
     + (l.fallbackUsd !== undefined ? ` (fallback $${l.fallbackUsd})` : '')
     + elseWords(l)
+    + ruleWords(l)
     + (l.ask !== null && l.ask > 0 ? `, ask ${l.ask}` : ''));
   if (sold.length === 0) return sel.refusals.join('; ') || 'nothing to sell';
   return sold.join(', ') + (sel.refusals.length ? ` (${sel.refusals.join('; ')})` : '');

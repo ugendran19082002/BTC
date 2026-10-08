@@ -521,3 +521,95 @@ test('both sides read the same two strikes, each counted out from the money on i
   // at most $100: the call at OTM 1 (60) and the put at OTM 1 (55) -- both nearer than OTM 3, both sold at OTM 4
   assert.deepEqual(sel.legs.map((l) => [l.cp, l.strike, l.elseOtm]), [['C', 80_200, 4], ['P', 77_000, 4]]);
 });
+
+/* ------------------------------------------------- by delta, by distance --- */
+
+/*
+ * Two more ways to name a strike (8 Oct 2026): by its delta, and by how far it
+ * sits from BTC. Each asks one question of the board, out of the money only.
+ */
+const dleg = (cp: 'C' | 'P', strike: number, sellPrice: number | null, delta: number | null, moneyness: Candidate['moneyness'] = 'OTM'): Candidate =>
+  ({ cp, strike, sellPrice, pOtm: null, moneyness, delta });
+
+/** Spot 85,000. Calls above with a falling delta, puts below with a rising (negative) one. */
+const GREEKS: Candidate[] = [
+  dleg('C', 85_000, 400, 0.50, 'ATM'),
+  dleg('C', 85_200, 300, 0.42),
+  dleg('C', 85_600, 150, 0.24),
+  dleg('C', 86_000, 70, 0.13),
+  dleg('C', 86_400, 40, 0.10),
+  dleg('C', 86_800, 22, 0.06),
+  dleg('C', 87_200, 9, 0.03),
+  dleg('P', 84_800, 310, -0.43),
+  dleg('P', 84_400, 160, -0.25),
+  dleg('P', 84_000, 75, -0.14),
+  dleg('P', 83_600, 38, -0.09),
+  dleg('P', 83_200, 20, -0.05),
+];
+const byDelta = (max: number) => cfg({ strikeRule: 'delta', delta: { max } });
+const byDistance = (pct: number, scale: 'fixed' | 'time' = 'fixed') => cfg({ strikeRule: 'distance', distance: { pct, scale } });
+const AT = { spot: 85_000 };
+
+test('[critical] by delta sells the strike nearest the money whose delta is at or under the number', () => {
+  assert.equal(pickStrike(GREEKS, 'C', byDelta(0.10), AT)?.strike, 86_400, '0.10 exactly meets "at or under 0.10"');
+  assert.equal(pickStrike(GREEKS, 'C', byDelta(0.09), AT)?.strike, 86_800);
+  assert.equal(pickStrike(GREEKS, 'C', byDelta(0.25), AT)?.strike, 85_600);
+});
+
+test('[critical] a put\'s delta is read as a size: -0.09 meets "at or under 0.10"', () => {
+  assert.equal(pickStrike(GREEKS, 'P', byDelta(0.10), AT)?.strike, 83_600);
+  assert.equal(pickStrike(GREEKS, 'P', byDelta(0.15), AT)?.strike, 84_000);
+});
+
+test('[critical] a strike with no delta is passed over, never sold as if it were far away', () => {
+  const board = [dleg('C', 85_200, 300, null), dleg('C', 85_600, 150, 0), dleg('C', 86_000, 70, 0.13), dleg('C', 86_400, 40, 0.08)];
+  assert.equal(pickStrike(board, 'C', byDelta(0.10), AT)?.strike, 86_400);
+  assert.equal(pickStrike(board.slice(0, 2), 'C', byDelta(0.10), AT), null, 'nothing readable: nothing sold');
+});
+
+test('by delta never sells at or in the money, and refuses in words when nothing is far enough', () => {
+  const itm = [...GREEKS, dleg('C', 84_600, 700, 0.05, 'ITM')];
+  assert.equal(pickStrike(itm, 'C', byDelta(0.10), AT)?.strike, 86_400);
+  const sel = selectLegs(strat({ strikeRule: 'delta', delta: { max: 0.01 }, legs: 'CE' }), GREEKS, AT);
+  assert.deepEqual(sel.legs, []);
+  assert.match(sel.refusals[0]!, /CE: no strike out of the money with a delta at or under 0\.01/);
+  assert.match(selectLegs(strat({ strikeRule: 'delta', legs: 'CE' }), GREEKS, AT).refusals[0]!, /delta rule has no number set/);
+});
+
+test('[critical] by distance sells the strike nearest the money at least that far from BTC', () => {
+  // 1% of 85,000 is 850: the first call at or past 85,850 is 86,000; the first put at or under 84,150 is 84,000.
+  assert.equal(pickStrike(GREEKS, 'C', byDistance(1), AT)?.strike, 86_000);
+  assert.equal(pickStrike(GREEKS, 'P', byDistance(1), AT)?.strike, 84_000);
+  // 2% is 1,700: 86,800 is 1,800 away.
+  assert.equal(pickStrike(GREEKS, 'C', byDistance(2), AT)?.strike, 86_800);
+});
+
+test('[critical] a distance that shrinks with the time left: 0.45 is 2.01% with 20 hours left and 0.64% with 2', () => {
+  assert.equal(pickStrike(GREEKS, 'C', byDistance(0.45, 'time'), { ...AT, hoursToExpiry: 20 })?.strike, 86_800, '2.01% of 85,000 is 1,711');
+  assert.equal(pickStrike(GREEKS, 'C', byDistance(0.45, 'time'), { ...AT, hoursToExpiry: 2 })?.strike, 85_600, '0.64% is 541');
+  assert.equal(pickStrike(GREEKS, 'C', byDistance(0.45, 'time'), { ...AT, hoursToExpiry: 0 })?.strike, undefined, 'no time left asks for no distance: nothing is sold on it');
+});
+
+test('[critical] by distance picks nothing without BTC\'s price, or without the time left when it needs it', () => {
+  assert.equal(pickStrike(GREEKS, 'C', byDistance(1)), null);
+  assert.equal(pickStrike(GREEKS, 'C', byDistance(0.45, 'time'), AT), null);
+  const sel = selectLegs(strat({ strikeRule: 'distance', distance: { pct: 0.45, scale: 'time' }, legs: 'PE' }), GREEKS, AT);
+  assert.match(sel.refusals[0]!, /PE: the time left to the settlement is not known/);
+  assert.match(selectLegs(strat({ strikeRule: 'distance', distance: { pct: 9, scale: 'fixed' }, legs: 'PE' }), GREEKS, AT).refusals[0]!,
+    /PE: no strike listed with a price at least 9\.00% from BTC/);
+});
+
+test('the run\'s line says what the rule read at the strike it sold', () => {
+  const d = selectLegs(strat({ strikeRule: 'delta', delta: { max: 0.10 }, legs: 'PE', lots: 2 }), GREEKS, AT);
+  assert.equal(describeSelection(d), 'PE 83600 x2 @ 38 (delta 0.09)');
+  const far = selectLegs(strat({ strikeRule: 'distance', distance: { pct: 0.45, scale: 'time' }, legs: 'CE', lots: 1 }), GREEKS, { ...AT, hoursToExpiry: 20 });
+  assert.equal(describeSelection(far), 'CE 86800 x1 @ 22 (2.12% from BTC, rule 2.01%)');
+  // A premium leg says nothing more than it did.
+  assert.equal(describeSelection(selectLegs(strat({ strikeRule: 'premium', premium: { mode: 'atMost', usd: 40 }, legs: 'CE', lots: 1 }), GREEKS, AT)), 'CE 86400 x1 @ 40');
+});
+
+test('[critical] a strategy saved before either rule existed picks exactly as it did', () => {
+  // No delta and no distance on the config, and deltas on the board: the premium rule does not read them.
+  assert.equal(pickStrike(GREEKS, 'C', cfg({ strikeRule: 'premium', premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 2, elseOtm: 2 } }), AT)?.strike, 86_400);
+  assert.equal(pickStrike(BOARD, 'C', cfg({ premium: { mode: 'atLeast', usd: 15 } }))?.strike, 79_800);
+});

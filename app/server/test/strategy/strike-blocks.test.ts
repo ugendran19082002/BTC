@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { selectLegs, type Candidate } from '../../src/strategy/select.js';
 import {
-  DEFAULT_CONFIG, MAX_STRIKE_BLOCKS, strikeBlockProblems, strikePickAt, validateConfig,
+  DEFAULT_CONFIG, MAX_STRIKE_BLOCKS, distanceNeeded, minutesOf, strikeBlockProblems, strikePickAt, validateConfig,
   type Strategy, type StrategyConfig, type StrikeBlock,
 } from '../../src/strategy/types.js';
 
@@ -111,7 +111,7 @@ test('[critical] a block\'s rule is held to the same rules as the strategy\'s ow
   assert.match(say(premium('12:00', 'atMost', 20, 15))[0]!, /Block 2: The fallback must be above \$20/);
   assert.match(say(premium('12:00', 'atLeast', 20, 30))[0]!, /Block 2: The fallback must be below \$20/);
   assert.match(say(strict('12:00', 21))[0]!, /Block 2: pick a strike between ITM 20 and OTM 20/);
-  assert.match(say({ at: '12:00', strikeRule: 'oiWall', strikeStep: 0, premium: { mode: 'atMost', usd: 20 } })[0]!, /by premium or by strike/);
+  assert.match(say({ at: '12:00', strikeRule: 'oiWall', strikeStep: 0, premium: { mode: 'atMost', usd: 20 } })[0]!, /by premium, by strike, by delta or by distance/);
   assert.match(say({ at: '12:00', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'sideways', usd: 20 } })[0]!, /"at least" or "at most"/);
   // A by-strike block's premium is not read, so a stale number in it is not a problem.
   assert.deepEqual(say({ ...strict('12:00', 1), premium: { mode: 'atMost', usd: 0 } }), []);
@@ -199,4 +199,54 @@ test('[critical] each block carries its own floor, and it decides the strike sol
   assert.deepEqual([sold('22:00').strike, sold('22:00').minOtm], [83_800, 6]);
   assert.deepEqual([sold('02:00').strike, sold('02:00').minOtm], [83_800, undefined], 'the premium\'s own pick, already past the floor');
   assert.deepEqual([sold('06:00').strike, sold('06:00').minOtm], [84_600, undefined]);
+});
+
+/* ------------------------------------------------- by delta, by distance --- */
+
+test('[critical] a block by delta or by distance carries its own number, and the strategy\'s is not read under it', () => {
+  const c: StrategyConfig = {
+    ...DEFAULT_CONFIG, trigger: 'signal', entryTime: '21:35', exitTime: '17:29',
+    strikeRule: 'delta', delta: { max: 0.1 }, premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 },
+    strikeBlocks: [
+      { at: '03:35', strikeRule: 'distance', strikeStep: 0, premium: { mode: 'atMost', usd: 50 }, distance: { pct: 0.45, scale: 'time' } },
+      { at: '09:35', strikeRule: 'premium', strikeStep: 0, premium: { mode: 'atMost', usd: 40 } },
+      { at: '15:35', strikeRule: 'delta', strikeStep: 0, premium: { mode: 'atMost', usd: 40 }, delta: { max: 0.15 } },
+    ],
+  };
+  const at = (hhmm: string) => strikePickAt(c, minutesOf(hhmm));
+  assert.deepEqual([at('22:00').block, at('22:00').pick.strikeRule, at('22:00').pick.delta], [0, 'delta', { max: 0.1 }]);
+  assert.deepEqual([at('04:00').pick.strikeRule, at('04:00').pick.distance, at('04:00').pick.delta], ['distance', { pct: 0.45, scale: 'time' }, null]);
+  // A premium block does not inherit block 1's delta: laid over the config, the pick must clear it.
+  assert.deepEqual({ ...c, ...at('10:00').pick }.delta, null);
+  assert.deepEqual([at('16:00').block, at('16:00').pick.delta], [3, { max: 0.15 }]);
+  assert.deepEqual(strikeBlockProblems(c.strikeBlocks, c.entryTime, c.exitTime), []);
+  assert.deepEqual(validateConfig(c).filter((m) => /[Dd]elta|distance/.test(m)), []);
+});
+
+test('[critical] a delta or a distance that cannot be sold on is refused in words, on the strategy and on a block', () => {
+  const base = { ...DEFAULT_CONFIG, entryTime: '09:00', exitTime: '17:00' };
+  const said = (over: Partial<StrategyConfig>) => validateConfig({ ...base, ...over }).filter((m) => /[Dd]elta|distance|strike rule/.test(m));
+  assert.deepEqual(said({ strikeRule: 'delta' }), ['Delta must be between 0.01 and 0.50.']);
+  assert.deepEqual(said({ strikeRule: 'delta', delta: { max: 0.6 } }), ['Delta must be between 0.01 and 0.50.']);
+  assert.deepEqual(said({ strikeRule: 'delta', delta: { max: 0.1 } }), []);
+  assert.deepEqual(said({ strikeRule: 'distance' }), ['The distance from BTC must be above 0% and at most 20%.']);
+  assert.deepEqual(said({ strikeRule: 'distance', distance: { pct: 0, scale: 'fixed' } }), ['The distance from BTC must be above 0% and at most 20%.']);
+  assert.deepEqual(said({ strikeRule: 'distance', distance: { pct: 1.5, scale: 'sometimes' as never } }), ['The distance must be a fixed percentage, or one that shrinks with the time left.']);
+  assert.deepEqual(said({ strikeRule: 'distance', distance: { pct: 1.5, scale: 'fixed' } }), []);
+  // A number left over from a rule that is not in use is not a mistake.
+  assert.deepEqual(said({ strikeRule: 'premium', delta: { max: 9 } }), []);
+  assert.deepEqual(said({ strikeRule: 'gamma' as never }), ['The strike rule must be "premium", "strict", "delta" or "distance".']);
+
+  const block = (over: object) => strikeBlockProblems([{ at: '12:00', strikeStep: 0, premium: { mode: 'atMost', usd: 20 }, ...over }], '09:00', '17:00');
+  assert.deepEqual(block({ strikeRule: 'delta' }), ['Block 2: Delta must be between 0.01 and 0.50.']);
+  assert.deepEqual(block({ strikeRule: 'delta', delta: { max: 0.07 } }), []);
+  assert.deepEqual(block({ strikeRule: 'distance', distance: { pct: 25, scale: 'time' } }), ['Block 2: The distance from BTC must be above 0% and at most 20%.']);
+  assert.deepEqual(block({ strikeRule: 'distance', distance: { pct: 0.45, scale: 'time' } }), []);
+});
+
+test('the distance a rule asks for: fixed is its own number, and one that shrinks is the number times the root of the hours left', () => {
+  assert.equal(distanceNeeded({ pct: 1.5, scale: 'fixed' }, null), 1.5);
+  assert.equal(distanceNeeded({ pct: 0.5, scale: 'time' }, 16), 2);
+  assert.equal(distanceNeeded({ pct: 0.5, scale: 'time' }, null), null);
+  assert.equal(distanceNeeded({ pct: 0.5, scale: 'time' }, -1), null);
 });

@@ -5,7 +5,7 @@ import { runAsDesk, tradingService, tradingServiceFor } from '../trading/service
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
-import { describeSelection, elseWords, selectLegs, type Candidate } from './select.js';
+import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
 import { GLOBAL_MAX_OPEN_KEY, actionOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
@@ -77,7 +77,7 @@ async function liveSignalBoard(): Promise<SignalBoard | null> {
     live: snap.live, isDaily: snap.isDaily, expiry: snap.expiry, expiryTs: snap.expiryTs, spot: snap.spot,
     candidates: scoreLegs(snap).map((l) => ({
       cp: l.cp, strike: l.strike, sellPrice: l.sellPrice, pOtm: l.pOtm,
-      moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer,
+      moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer, delta: l.delta,
     })),
   };
 }
@@ -88,6 +88,9 @@ export function inSignalWindow(s: Strategy, nowMs: number): boolean {
   const from = minutesOf(s.config.entryTime);
   return minutesForward(from, istMinutes(nowMs)) < minutesForward(from, minutesOf(s.config.exitTime));
 }
+
+/** Hours from `nowMs` to a contract's settlement (`expiryTs`, epoch seconds): what a distance rule that shrinks with time reads. */
+const hoursLeft = (expiryTs: number, nowMs: number): number => (expiryTs * 1_000 - nowMs) / 3_600_000;
 
 /** The perp's last trade, when fresh: what a signal entered at, for the labels. */
 function perpNow(): number | null {
@@ -277,11 +280,11 @@ export class StrategyRunner {
 
     const candidates: Candidate[] = scoreLegs(snap).map((l) => ({
       cp: l.cp, strike: l.strike, sellPrice: l.sellPrice, pOtm: l.pOtm,
-      moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer,
+      moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer, delta: l.delta,
     }));
     // The open-interest rule looks for its wall inside the desk's level band;
     // spot lets the strike nearest the money count when it has no intrinsic value.
-    const sel = selectLegs(s, candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
+    const sel = selectLegs(s, candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
     if (sel.legs.length === 0) {
       await this.claimAndFinish(s, day, 'refused', describeSelection(sel));
       return;
@@ -416,7 +419,7 @@ export class StrategyRunner {
     if (!snap || !snap.live || !snap.isDaily) return;
     const leg = legOfSignal(r.dir === 'long' ? 1 : -1, actionOf(s.config.signal));
     const at = strikePickAt(s.config, istMinutes(this.now()));
-    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
+    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, this.now()) });
     const chosen = sel.legs[0];
     if (chosen) await tradingService().warmEntry(`${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`);
   }
@@ -525,7 +528,7 @@ export class StrategyRunner {
     // The strike rule in force at this minute: the strategy's own, or the block the clock has reached.
     const at = strikePickAt(s.config, istMinutes(now));
     const block = at.block > 0 ? ` · block ${at.block + 1}, from ${time12(at.from)}` : '';
-    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot });
+    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
     const chosen = sel.legs[0];
     if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}`); return; }
 
@@ -543,6 +546,7 @@ export class StrategyRunner {
     const perpIn = args.underlying.entry;
     const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
       + elseWords(chosen)
+      + ruleWords(chosen)
       + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
 
     /*
@@ -590,7 +594,7 @@ export class StrategyRunner {
       const p = await svc.wouldPlace(args);
       // A gate's refusal names the strike it turned down and, where the rule failed, that it was the else strike:
       // the history's Skipped tab then says the whole of why, not only the gate's half.
-      const turnedDown = `${leg} ${chosen.strike} @ ${chosen.price}${elseWords(chosen)}`;
+      const turnedDown = `${leg} ${chosen.strike} @ ${chosen.price}${elseWords(chosen)}${ruleWords(chosen)}`;
       await finish(p.ok ? 'would-place' : 'refused', p.ok ? `live orders off: would ${what}` : `refused: ${turnedDown} — ${failureText(p)}${block}`);
       return;
     }

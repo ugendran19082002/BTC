@@ -57,6 +57,13 @@ export function describePremium(c: StrategyConfig): string {
 export function describeStrike(c: StrategyConfig): string {
   if (c.strikeRule === 'strict') return `at ${strikeLabel(c.strikeStep)}, whatever it pays`;
   if (c.strikeRule === 'oiWall') return 'at the open-interest wall, whatever it pays';
+  if (c.strikeRule === 'delta') return c.delta ? `at the nearest strike with a delta of ${c.delta.max.toFixed(2)} or less` : 'by delta, with no number set';
+  if (c.strikeRule === 'distance') {
+    if (!c.distance) return 'by distance, with no number set';
+    return c.distance.scale === 'time'
+      ? `at the nearest strike at least ${c.distance.pct}% × √hours left from BTC`
+      : `at the nearest strike at least ${c.distance.pct}% from BTC`;
+  }
   return `paying ${describePremium(c)}`;
 }
 
@@ -177,7 +184,7 @@ export function sizingOf(
   const maxContracts = c.lots * legsOn;
   // Bought (a BUY-side signal strategy): the premium, paid in full, at the strategy's own "at most $N" -- no margin.
   const bought = c.trigger === 'signal' && c.signal?.action === 'buy';
-  const premiumCap = c.strikeRule !== 'strict' && c.premium?.mode === 'atMost' ? Math.max(c.premium.usd, c.premium.fallbackUsd ?? 0) : null;
+  const premiumCap = c.strikeRule !== 'strict' && c.strikeRule !== 'delta' && c.strikeRule !== 'distance' && c.premium?.mode === 'atMost' ? Math.max(c.premium.usd, c.premium.fallbackUsd ?? 0) : null;
   const priced = bought ? premiumCap !== null && premiumCap > 0 : true;
   const per = bought ? (priced ? premiumCap! * 0.001 : 0) : spot && spot > 0 ? MARGIN_PER_CONTRACT(spot) : 0;
   const marginUsd = per * maxContracts;

@@ -147,7 +147,7 @@ export function usageNow(strategies: readonly Strategy[], spot: number | null): 
 const CONTRACT_BTC = 0.001;
 export function buyCostPerLotUsd(s: Strategy): number | null {
   const c = s.config;
-  if (c.strikeRule === 'strict' || !c.premium || c.premium.mode !== 'atMost') return null;
+  if (c.strikeRule === 'strict' || c.strikeRule === 'delta' || c.strikeRule === 'distance' || !c.premium || c.premium.mode !== 'atMost') return null;
   const most = Math.max(c.premium.usd, c.premium.fallbackUsd ?? 0);
   return most > 0 ? most * CONTRACT_BTC : null;
 }

@@ -51,10 +51,79 @@ export type StrikeRule =
    * anyway, so selling at one is a thing a person will want to try. The
    * strategy form says what it rests on.
    */
-  | 'oiWall';
+  | 'oiWall'
+  /**
+   * By delta (8 Oct 2026): the strike nearest the money whose delta is at or
+   * under a number -- "0.10" is the ten-delta strike. Delta moves with the time
+   * left and with how the day is priced, so one number names a strike of the
+   * same risk at 9 PM and at 3 PM, where a premium or a strike count needs a
+   * different number for each.
+   */
+  | 'delta'
+  /**
+   * By distance (8 Oct 2026): the strike nearest the money that sits at least
+   * this far from BTC, as a percentage of it -- one figure all day, or one that
+   * shrinks as the contract runs out (`DistanceRule.scale`).
+   *
+   * **What the two rest on.** Replayed over the week of real orders to 8 Oct
+   * 2026 and over three months of entries at the block starts, both lost less
+   * than the premium rule and neither made more: a rule for a smaller loss,
+   * not for a larger profit. The form says so.
+   */
+  | 'distance';
 
 /** How far from the money a strict rule may reach, either way. */
 export const MAX_STRIKE_STEP = 20;
+
+/** A delta rule: sell the strike nearest the money whose delta, as a size, is at or under `max`. */
+export type DeltaRule = { max: number };
+/** A delta under one in a hundred is a strike that pays nothing; over a half is in the money. */
+export const MIN_DELTA = 0.01;
+export const MAX_DELTA = 0.5;
+/** What the form starts a delta rule at: the figure that was measured. */
+export const DEFAULT_DELTA: DeltaRule = { max: 0.1 };
+
+/**
+ * A distance rule: sell the strike nearest the money at least this far from BTC.
+ *
+ *   fixed   `pct` percent of BTC, whatever the hour
+ *   time    `pct` x the square root of the hours left to the settlement: 0.45
+ *           is 2.0% with 20 hours left, 1.3% with 8 and 0.6% with 2 -- what BTC
+ *           can travel shrinks with the time it has, by that root
+ */
+export type DistanceScale = 'fixed' | 'time';
+export type DistanceRule = { pct: number; scale: DistanceScale };
+/** Twenty percent from BTC is further than any daily strike is listed. */
+export const MAX_DISTANCE_PCT = 20;
+export const DEFAULT_DISTANCE: DistanceRule = { pct: 0.45, scale: 'time' };
+
+/**
+ * How far from BTC a distance rule asks for right now, in percent. Null when
+ * it scales with the time left and the time left is not known: no distance is
+ * better than a wrong one.
+ */
+export function distanceNeeded(d: DistanceRule, hoursToExpiry: number | null | undefined): number | null {
+  if (d.scale !== 'time') return d.pct;
+  if (hoursToExpiry === null || hoursToExpiry === undefined || !Number.isFinite(hoursToExpiry) || hoursToExpiry < 0) return null;
+  return d.pct * Math.sqrt(hoursToExpiry);
+}
+
+/** What is wrong with a delta rule, in words. Shared with the form, word for word. */
+export function deltaProblem(d: unknown): string | null {
+  const max = (d as Partial<DeltaRule> | null | undefined)?.max;
+  return typeof max === 'number' && max >= MIN_DELTA && max <= MAX_DELTA
+    ? null
+    : `Delta must be between ${MIN_DELTA.toFixed(2)} and ${MAX_DELTA.toFixed(2)}.`;
+}
+
+/** What is wrong with a distance rule, in words. Shared with the form, word for word. */
+export function distanceProblem(d: unknown): string | null {
+  const r = d as Partial<DistanceRule> | null | undefined;
+  if (!r || typeof r.pct !== 'number' || !(r.pct > 0) || r.pct > MAX_DISTANCE_PCT) {
+    return `The distance from BTC must be above 0% and at most ${MAX_DISTANCE_PCT}%.`;
+  }
+  return r.scale === 'fixed' || r.scale === 'time' ? null : 'The distance must be a fixed percentage, or one that shrinks with the time left.';
+}
 
 /** 0 -> "ATM", 2 -> "OTM 2", -1 -> "ITM 1". */
 export function strikeLabel(step: number): string {
@@ -153,6 +222,10 @@ export type StrategyConfig = {
    * before it existed.
    */
   premium: PremiumRule;
+  /** The delta a strike must be at or under. Read when `strikeRule` is `delta`; absent on every strategy saved before it. */
+  delta?: DeltaRule | null;
+  /** How far from BTC a strike must sit. Read when `strikeRule` is `distance`; absent on every strategy saved before it. */
+  distance?: DistanceRule | null;
   /**
    * The strike rule over the window (4 Oct 2026), for a signal strategy: from
    * each block's time the strike is picked by that block's rule, until the next
@@ -475,19 +548,22 @@ export function signalMatches(rule: SignalRule, r: { id: string; mode: string; t
   return rule.methods.includes(r.id);
 }
 
-/** How a strike is picked, whole: the three fields of a config that say it. */
-export type StrikePick = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'premium'>;
+/** How a strike is picked, whole: the fields of a config that say it. */
+export type StrikePick = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'premium' | 'delta' | 'distance'>;
 
 /**
  * From `at` (IST "HH:MM"), strikes are picked by this rule instead of the
- * strategy's own, until the next block. By premium or by strike: the
- * open-interest wall is not offered to a signal strategy, so not here either.
+ * strategy's own, until the next block. By premium, by strike, by delta or by
+ * distance: the open-interest wall is not offered to a signal strategy, so not
+ * here either.
  */
 export type StrikeBlock = {
   at: string;
-  strikeRule: 'premium' | 'strict';
+  strikeRule: 'premium' | 'strict' | 'delta' | 'distance';
   strikeStep: number;
   premium: PremiumRule;
+  delta?: DeltaRule | null;
+  distance?: DistanceRule | null;
 };
 
 /** A block for every hour of a contract; more is a mistake, not a schedule. */
@@ -504,12 +580,13 @@ export const MAX_STRIKE_BLOCKS = 24;
 export function strikePickAt(c: StrategyConfig, istMinute: number): { pick: StrikePick; block: number; from: string } {
   const entry = minutesOf(c.entryTime);
   const since = minutesForward(entry, istMinute);
-  let pick: StrikePick = { strikeRule: c.strikeRule, strikeStep: c.strikeStep, premium: c.premium };
+  // Every field, set or not: the runner lays the pick over the config, and a block's rule must not read the strategy's delta or distance.
+  let pick: StrikePick = { strikeRule: c.strikeRule, strikeStep: c.strikeStep, premium: c.premium, delta: c.delta ?? null, distance: c.distance ?? null };
   let block = 0;
   let from = c.entryTime;
   (c.strikeBlocks ?? []).forEach((b, i) => {
     if (isHhmm(b.at) && minutesForward(entry, minutesOf(b.at)) <= since) {
-      pick = { strikeRule: b.strikeRule, strikeStep: b.strikeStep, premium: b.premium };
+      pick = { strikeRule: b.strikeRule, strikeStep: b.strikeStep, premium: b.premium, delta: b.delta ?? null, distance: b.distance ?? null };
       block = i + 1;
       from = b.at;
     }
@@ -550,12 +627,18 @@ export function strikeBlockProblems(
       }
       last = Math.max(last, at);
     }
-    if (b.strikeRule !== 'premium' && b.strikeRule !== 'strict') {
-      bad.push(`Block ${n}: pick the strike by premium or by strike.`);
+    if (b.strikeRule !== 'premium' && b.strikeRule !== 'strict' && b.strikeRule !== 'delta' && b.strikeRule !== 'distance') {
+      bad.push(`Block ${n}: pick the strike by premium, by strike, by delta or by distance.`);
     } else if (b.strikeRule === 'strict') {
       if (!Number.isInteger(b.strikeStep) || Math.abs(b.strikeStep ?? Infinity) > MAX_STRIKE_STEP) {
         bad.push(`Block ${n}: pick a strike between ITM ${MAX_STRIKE_STEP} and OTM ${MAX_STRIKE_STEP}, or at the money.`);
       }
+    } else if (b.strikeRule === 'delta') {
+      const d = deltaProblem(b.delta);
+      if (d) bad.push(`Block ${n}: ${d}`);
+    } else if (b.strikeRule === 'distance') {
+      const d = distanceProblem(b.distance);
+      if (d) bad.push(`Block ${n}: ${d}`);
     } else {
       const p = b.premium;
       if (!p || (p.mode !== 'atLeast' && p.mode !== 'atMost')) {
@@ -844,8 +927,18 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     }
   }
   if (c.strikeRule !== undefined
-      && c.strikeRule !== 'premium' && c.strikeRule !== 'strict' && c.strikeRule !== 'oiWall') {
-    bad.push('The strike rule must be "premium" or "strict".');
+      && c.strikeRule !== 'premium' && c.strikeRule !== 'strict' && c.strikeRule !== 'oiWall'
+      && c.strikeRule !== 'delta' && c.strikeRule !== 'distance') {
+    bad.push('The strike rule must be "premium", "strict", "delta" or "distance".');
+  }
+  // Each is read only under its own rule, so only checked there: a number left over from another rule is not a mistake.
+  if (c.strikeRule === 'delta') {
+    const d = deltaProblem(c.delta);
+    if (d) bad.push(d);
+  }
+  if (c.strikeRule === 'distance') {
+    const d = distanceProblem(c.distance);
+    if (d) bad.push(d);
   }
   if (c.strikeRule === 'strict'
       && (!Number.isInteger(c.strikeStep) || Math.abs(c.strikeStep ?? Infinity) > MAX_STRIKE_STEP)) {
