@@ -12,9 +12,11 @@ import type { EntryMethodInfo } from '@/api/entry';
 const withAcct = (url: string, account: number | null) =>
   account === null ? url : `${url}${url.includes('?') ? '&' : '?'}account=${account}`;
 
-/** `&strategy=a,b` for the strategies chosen on the phone's filter; nothing for none, which is every strategy. */
-const ofStrategies = (strategies: readonly string[] | undefined) =>
-  (strategies && strategies.length ? `&strategy=${strategies.map(encodeURIComponent).join(',')}` : '');
+/** What the phone's filters keep: strategies by id (`manual` for trades by hand) and entry methods by id. None of either is every trade. */
+export type TradeFilter = { strategies?: readonly string[]; methods?: readonly string[] };
+const listed = (name: string, keys: readonly string[] | undefined) => (keys && keys.length ? `&${name}=${keys.map(encodeURIComponent).join(',')}` : '');
+/** `&strategy=a,b&method=c` for what is chosen; nothing for nothing chosen. */
+const filtered = (f: TradeFilter | undefined) => listed('strategy', f?.strategies) + listed('method', f?.methods);
 
 /** One event of a trade's journal as the server keeps it (trading/types.ts `TradeEvent`): `t` says which. */
 export type JournalEvent = { t: string; at: number } & Record<string, unknown>;
@@ -46,14 +48,16 @@ export type Stats = {
    * server, which does not filter either -- so the phone offers no filter there.
    */
   strategies?: { key: string; name: string; trades: number; netUsd: number }[];
+  /** The entry methods to choose from, the same way: those of the strategies chosen, not narrowed by the methods chosen. */
+  methods?: { key: string; name: string; trades: number; netUsd: number }[];
 };
 
-/** `strategies`: only those strategies' trades (their ids; `manual` for trades by hand). None: every trade. */
-export const getStats = (from: string, to: string, account: number | null, strategies?: readonly string[]) =>
-  json<Stats>(withAcct(`/api/report/stats?from=${from}&to=${to}${ofStrategies(strategies)}`, account));
+/** `filter`: only the trades of the strategies and the entry methods it names. Absent or empty: every trade. */
+export const getStats = (from: string, to: string, account: number | null, filter?: TradeFilter) =>
+  json<Stats>(withAcct(`/api/report/stats?from=${from}&to=${to}${filtered(filter)}`, account));
 
-export const getDaysFor = (from: string, to: string, account: number | null, strategies?: readonly string[]) =>
-  json<DaysReport>(withAcct(`/api/report/days?from=${from}&to=${to}${ofStrategies(strategies)}`, account));
+export const getDaysFor = (from: string, to: string, account: number | null, filter?: TradeFilter) =>
+  json<DaysReport>(withAcct(`/api/report/days?from=${from}&to=${to}${filtered(filter)}`, account));
 
 /** The entry methods' names by id, read once: a signal is shown by name, not by its id. */
 let methods: Promise<Map<string, EntryMethodInfo>> | null = null;

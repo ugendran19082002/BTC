@@ -101,6 +101,11 @@ test('[critical] a view sign-in reads the desk the phone shows', async () => {
   assert.deepEqual(stats.json().strategies.filter((x: { key: string }) => x.key === 'no-such' || x.key === 'manual').map((x: { key: string; name: string; trades: number }) => [x.key, x.name, x.trades]).sort(),
     [['manual', 'By hand', 0], ['no-such', 'no-such', 0]]);
   assert.equal((await app.inject({ method: 'GET', url: '/api/report/days?strategy=no-such', headers: jar(token) })).statusCode, 200);
+  // The method filter the same way: its own list, and a method asked for with no trade is still in it.
+  const byMethod = await app.inject({ method: 'GET', url: '/api/report/stats?method=breakout&strategy=manual', headers: jar(token) });
+  assert.equal(byMethod.statusCode, 200, byMethod.body.slice(0, 120));
+  assert.deepEqual(byMethod.json().methods.filter((x: { key: string }) => x.key === 'breakout').map((x: { key: string; trades: number }) => [x.key, x.trades]), [['breakout', 0]]);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/report/days?method=breakout', headers: jar(token) })).statusCode, 200);
 });
 
 test('[critical] a view session is refused every write but sign-in, sign-out and error reports -- every route the app has', async () => {

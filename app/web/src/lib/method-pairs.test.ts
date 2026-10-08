@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHAIN_TF, chosenTfs, pairsOfReport, pairsOfStats, pickTf, splitPairs, takenBy, timeframesOf, type PairStat } from '@/lib/method-pairs';
+import { CHAIN_TF, chosenTfs, pairsOfReport, pairsOfStats, methodsOfReport, pickTf, splitPairs, timeframesOf, type PairStat } from '@/lib/method-pairs';
 import type { MethodReportResponse, MethodReportRow, MethodReportSection } from '@/types/entry';
 
 const pair = (name: string, tf: string, net: number, trades = 4): PairStat => ({
@@ -102,22 +102,5 @@ describe('signal history pairs', () => {
   it('a report with no section for a way gives no pairs', () => {
     expect(pairsOfReport({ tf: null, sections: [], singleByTf: {} }, 'mtf')).toEqual({ pairs: [], signals: 0 });
     expect(pairsOfReport({ tf: null, sections: [], singleByTf: {} }, 'single')).toEqual({ pairs: [], signals: 0 });
-  });
-});
-
-describe('takenBy: the signals a set of strategies takes', () => {
-  const single = { mode: 'single' as const, tf: '15m' as const, tfs: ['15m' as const, '1h' as const], methods: ['a', 'b'] };
-  const old = { mode: 'single' as const, tf: '5m' as const, methods: ['c'] };
-  const chain = { mode: 'mtf' as const, tf: '5m' as const, methods: ['a'] };
-
-  it('[critical] without the chain a method counts only on the rule\'s own timeframes; with it the method alone decides', () => {
-    const one = takenBy([single, old, chain], 'single');
-    expect([one('a', '15m'), one('b', '1h'), one('a', '30m'), one('c', '15m')]).toEqual([true, true, false, false]);
-    // A rule saved before there could be several timeframes is read on its one.
-    expect(one('c', '5m')).toBe(true);
-    const mtf = takenBy([single, old, chain], 'mtf');
-    expect([mtf('a', CHAIN_TF), mtf('b', CHAIN_TF)]).toEqual([true, false]);
-    // No rule read this way takes nothing this way.
-    expect(takenBy([single], 'mtf')('a', CHAIN_TF)).toBe(false);
   });
 });

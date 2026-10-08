@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ofStrategies, daysCsv, daysReport, mtmStats, type MtmSample } from '../../src/trading/pnl-history.js';
+import { ofMethods, ofStrategies, daysCsv, daysReport, mtmStats, type MtmSample } from '../../src/trading/pnl-history.js';
 import { PgTradeStore } from '../../src/trading/store.js';
 import { SettingsCache } from '../../src/db/settings.js';
 import { closePool } from '../../src/db/pool.js';
@@ -259,4 +259,23 @@ test('[critical] the strategy filter keeps only the trades of the strategies nam
   assert.ok(Math.abs(one.overall.netUsd + rest.overall.netUsd - whole.overall.netUsd) < 1e-12);
   const days = daysReport(ofStrategies(all, ['manual']), range);
   assert.deepEqual(days.days.map((d) => [d.day, d.trades]), [['2026-09-12', 1]]);
+});
+
+test('[critical] the method filter keeps only the signal trades of the entry methods named; with the strategy filter it is both at once', () => {
+  const sig = (method: string) => ({ method, n: 1, name: method, mode: 'single' as const, tf: '15m', dir: 1 as const, triggerTime: 0 });
+  const of = (id: string, strategyId: string | undefined, method: string | undefined) => {
+    const rec = tagged(record(id, [fill('entry', 100, 15, T(11, 7)), fill('take_profit', 100, 5, T(11, 9))]), strategyId, 1);
+    return { ...rec, plan: { ...rec.plan, signal: method ? sig(method) : undefined } };
+  };
+  const all = [of('a', 's1', 'breakout'), of('b', 's1', 'vwap'), of('c', 's2', 'breakout'), of('h', undefined, undefined)];
+  const ids = (v: readonly { state: { tradeId: string } }[]) => v.map((r) => r.state.tradeId);
+  assert.equal(ofMethods(all, null), all);
+  assert.equal(ofMethods(all, []), all, 'an empty choice is no filter');
+  assert.deepEqual(ids(ofMethods(all, ['breakout'])), ['a', 'c']);
+  assert.deepEqual(ids(ofMethods(all, ['vwap', 'gone'])), ['b']);
+  // A trade with no signal has no method: a method filter leaves it out, whichever methods are named.
+  assert.deepEqual(ids(ofMethods(all, ['breakout', 'vwap'])), ['a', 'b', 'c']);
+  assert.deepEqual(ids(ofMethods(ofStrategies(all, ['s1']), ['breakout'])), ['a']);
+  const r = tradeStats(ofMethods(all, ['breakout']), { from: '2026-09-11', to: '2026-09-11', spot: 80_000 });
+  assert.deepEqual([r.overall.trades, r.byMethod.map((g) => g.key), r.byStrategy.map((g) => g.key).sort()], [2, ['breakout'], ['s1', 's2']]);
 });

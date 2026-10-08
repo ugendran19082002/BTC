@@ -1,6 +1,5 @@
 import type { StatsGroup } from '@/api/phone';
 import type { EntryMode, MethodReportResponse } from '@/types/entry';
-import { ruleTfs, type SignalRule, type SignalTf } from '@/types/strategy';
 
 /**
  * Which entry method works on which timeframe, and which does not (owner, 6 Oct 2026): a method on a timeframe is
@@ -69,7 +68,7 @@ export function pairsOfReport(
   report: MethodReportResponse, way: EntryMode,
   /** Without the chain, only these timeframes; none named (or none of them in the report) is every timeframe. */
   only: readonly string[] = [],
-  /** Only the methods-on-timeframes this says yes to (`takenBy`: the strategies chosen); absent is every one. */
+  /** Only the methods-on-timeframes this says yes to (the methods chosen on the filter); absent is every one. */
   takes?: (method: string, tf: string) => boolean,
 ): { pairs: SignalPair[]; signals: number } {
   const kept = chosenTfs(report, only);
@@ -93,15 +92,34 @@ export function pairsOfReport(
   return { pairs, signals };
 }
 
+/** One entry method over the signal history read: its signals, its trades and its points, across the timeframes kept. */
+export type MethodChoice = { key: string; n: number | null; name: string; signals: number; trades: number; net: number };
+
 /**
- * Which signals a set of strategies takes, read one way (8 Oct 2026, the strategy filter on the signal history's
- * pairs): a method on a timeframe is taken when any of the strategies' signal rules takes it -- the same reading as
- * the server's `signalMatches`. With the timeframe chain a rule has no timeframe of its own, so the method alone
- * decides; without it, the rule's timeframes do too. A rule read the other way takes nothing here.
+ * The entry methods there are to choose from (8 Oct 2026, the method filter on the signal history's pairs): every
+ * method with a signal in the report as it is read -- this way, on these timeframes, of these strategies -- added
+ * up across its timeframes, in the desk's own order, #1 first. Not narrowed by the methods already chosen: the
+ * caller leaves its method choice out of `takes`.
  */
-export const takenBy = (rules: readonly Pick<SignalRule, 'mode' | 'tf' | 'tfs' | 'methods'>[], way: EntryMode) =>
-  (method: string, tf: string): boolean => rules.some((r) =>
-    r.mode === way && (way === 'mtf' || ruleTfs(r).includes(tf as SignalTf)) && r.methods.includes(method));
+export function methodsOfReport(
+  report: MethodReportResponse, way: EntryMode, only: readonly string[] = [], takes?: (method: string, tf: string) => boolean,
+): MethodChoice[] {
+  const kept = chosenTfs(report, only);
+  const sections = way === 'mtf'
+    ? report.sections.filter((s) => s.mode === 'mtf').map((s) => ({ tf: CHAIN_TF, rows: s.rows }))
+    : Object.entries(report.singleByTf ?? {}).filter(([tf]) => kept.length === 0 || kept.includes(tf)).map(([tf, s]) => ({ tf, rows: s?.rows ?? [] }));
+  const by = new Map<string, MethodChoice>();
+  for (const { tf, rows } of sections) {
+    for (const r of rows) {
+      if (r.signals <= 0 && r.trades <= 0) continue;
+      if (takes && !takes(r.method, tf)) continue;
+      const m = by.get(r.method) ?? { key: r.method, n: r.n, name: r.n === null ? r.name : `#${r.n} ${r.name}`, signals: 0, trades: 0, net: 0 };
+      m.signals += r.signals; m.trades += r.trades; m.net += r.netPts;
+      by.set(r.method, m);
+    }
+  }
+  return [...by.values()].sort((a, b) => (a.n ?? Infinity) - (b.n ?? Infinity) || a.name.localeCompare(b.name));
+}
 
 const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 

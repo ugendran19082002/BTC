@@ -230,6 +230,13 @@ export function ofStrategies<T extends TradeRecord>(records: readonly T[], keys:
   return records.filter((rec) => wanted.has(strategyKeyOf(rec)));
 }
 
+/** Only the signal trades of the entry methods named (8 Oct 2026, the phone's method filter); null or none named is every trade, signal or not. */
+export function ofMethods<T extends TradeRecord>(records: readonly T[], methods: readonly string[] | null): readonly T[] {
+  if (!methods || methods.length === 0) return records;
+  const wanted = new Set(methods);
+  return records.filter((rec) => rec.plan.signal?.method !== undefined && wanted.has(rec.plan.signal.method));
+}
+
 export function tradeStats(
   records: readonly TradeRecord[],
   o: { from: string; to: string; spot: number | null },

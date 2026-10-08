@@ -1,70 +1,96 @@
 import { useState } from 'react';
-import { Check, ChevronDown, ListFilter } from 'lucide-react';
+import { Check, ChevronDown, ListFilter, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 /**
- * The phone's strategy filter (owner, 8 Oct 2026: "strategy select option, multiple select dropdown, mobile user
- * friendly -- the same filter on the signal filters"): one button that says what is chosen, opening a list to tick
- * any number of strategies in. None ticked is all of them, which is how it starts.
+ * The phone's tick-several filter (owner, 8 Oct 2026: "strategy select option, multiple select dropdown, mobile
+ * user friendly -- the same filter on the signal filters", then "same UI, add a methods filter"): one button that
+ * says what is chosen, opening a list to tick any number in. None ticked is all of them, which is how it starts.
  *
- * The same control on P&L, where it keeps the trades the chosen strategies placed, and on Signal history pairs,
- * where it keeps the signals they take. The list stays open while it is ticked -- several are meant to be chosen --
- * and closes on Done or a tap outside. Every row is a thumb high. A choice that is no longer in the list (a
- * strategy since deleted) is not counted and not shown.
+ * One control for strategies and for entry methods, on P&L -- where it keeps the trades of what is chosen -- and on
+ * Signal history pairs, where it keeps the signals. The list stays open while it is ticked -- several are meant to
+ * be chosen -- and closes on Done or a tap outside. Every row is a thumb high. A long list (the desk has 81
+ * methods) gets a box to search it by. A choice that is no longer in the list is not counted and not shown.
  */
 
-export type StrategyOption = {
+export type FilterOption = {
   key: string;
   name: string;
   /** Said under the name: "12 trades · +₹265", "on 15m · 8 methods". */
   note?: string;
-  /** Colours the note's figure side: the strategy made money, or lost it. */
+  /** Colours the note: it made money, or lost it. */
   tone?: 'up' | 'down';
 };
 
+/** What is being chosen, as the button and the list name it: `{ label: 'Strategy', many: 'strategies' }`. */
+export type FilterNoun = { label: string; many: string };
+export const STRATEGIES: FilterNoun = { label: 'Strategy', many: 'strategies' };
+export const METHODS: FilterNoun = { label: 'Method', many: 'methods' };
+
+/** A list longer than this gets a search box: past it, the one wanted is a scroll away. */
+const SEARCH_FROM = 9;
+
 /** "All strategies", the one name, or "3 of 8 strategies": what the button reads. */
-export function pickedWords(options: readonly StrategyOption[], picked: readonly string[]): string {
+export function pickedWords(options: readonly FilterOption[], picked: readonly string[], noun: FilterNoun = STRATEGIES): string {
   const chosen = options.filter((o) => picked.includes(o.key));
-  if (chosen.length === 0) return 'All strategies';
+  if (chosen.length === 0) return `All ${noun.many}`;
   if (chosen.length === 1) return chosen[0]!.name;
-  return `${chosen.length} of ${options.length} strategies`;
+  return `${chosen.length} of ${options.length} ${noun.many}`;
 }
 
-export function StrategyPicker({ options, picked, onChange }: {
-  options: readonly StrategyOption[];
-  /** The keys chosen; empty is every strategy. */
+export function FilterPicker({ noun, options, picked, onChange }: {
+  noun: FilterNoun;
+  options: readonly FilterOption[];
+  /** The keys chosen; empty is every one. */
   picked: readonly string[];
   onChange: (next: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [find, setFind] = useState('');
   if (options.length === 0) return null;
   const chosen = options.filter((o) => picked.includes(o.key)).map((o) => o.key);
-  const words = pickedWords(options, picked);
+  const words = pickedWords(options, picked, noun);
   const toggle = (key: string) => onChange(chosen.includes(key) ? chosen.filter((k) => k !== key) : [...chosen, key]);
+  const searchable = options.length >= SEARCH_FROM;
+  const wanted = find.trim().toLowerCase();
+  const shown = searchable && wanted ? options.filter((o) => o.name.toLowerCase().includes(wanted)) : options;
+  const listName = noun.many[0]!.toUpperCase() + noun.many.slice(1);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setFind(''); }}>
       <PopoverTrigger asChild>
         <button
-          type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`Strategy filter: ${words}`}
+          type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${noun.label} filter: ${words}`}
           className={cn(
             'm-0 flex h-11 w-full appearance-none items-center gap-2 rounded-lg border border-solid bg-muted px-3 text-left font-[inherit]',
             chosen.length ? 'border-[var(--up)]' : 'border-border',
           )}
         >
           <ListFilter className={cn('h-4 w-4 shrink-0', chosen.length ? 'text-[var(--up)]' : 'text-muted-foreground')} aria-hidden />
-          <span className="shrink-0 text-[12.5px] text-muted-foreground">Strategy</span>
+          <span className="shrink-0 text-[12.5px] text-muted-foreground">{noun.label}</span>
           <span className={cn('min-w-0 flex-1 truncate text-[14px] font-semibold', chosen.length ? 'text-[var(--up)]' : 'text-foreground')}>{words}</span>
           <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} aria-hidden />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={4} className="flex max-h-[min(60vh,440px)] w-[var(--radix-popover-trigger-width)] min-w-[260px] flex-col p-0">
-        <ul role="listbox" aria-multiselectable="true" aria-label="Strategies" className="m-0 min-h-0 flex-1 list-none overflow-y-auto p-1">
-          <Row on={chosen.length === 0} name="All strategies" note={`${options.length} in this list`} onClick={() => onChange([])} />
-          {options.map((o) => (
+        {searchable && (
+          <div className="relative shrink-0 border-0 border-b border-solid border-[var(--line-soft)] p-2">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <input
+              value={find} onChange={(e) => setFind(e.target.value)} aria-label={`Search ${noun.many}`} placeholder={`Search ${options.length} ${noun.many}`}
+              inputMode="search" autoComplete="off"
+              // 16px: a smaller font makes iOS zoom the whole page when the box is tapped.
+              className="m-0 h-10 w-full appearance-none rounded-md border border-solid border-border bg-background pl-8 pr-2 font-[inherit] text-[16px] text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+        )}
+        <ul role="listbox" aria-multiselectable="true" aria-label={listName} className="m-0 min-h-0 flex-1 list-none overflow-y-auto p-1">
+          {!wanted && <Row on={chosen.length === 0} name={`All ${noun.many}`} note={`${options.length} in this list`} onClick={() => onChange([])} />}
+          {shown.map((o) => (
             <Row key={o.key} on={chosen.includes(o.key)} name={o.name} note={o.note} tone={o.tone} onClick={() => toggle(o.key)} />
           ))}
+          {shown.length === 0 && <li className="m-0 px-2 py-3 text-[13px] text-muted-foreground">No {noun.label.toLowerCase()} named “{find.trim()}”.</li>}
         </ul>
         <div className="flex shrink-0 items-center gap-2 border-0 border-t border-solid border-[var(--line-soft)] p-2">
           <button
@@ -74,7 +100,7 @@ export function StrategyPicker({ options, picked, onChange }: {
             Clear
           </button>
           <button
-            type="button" onClick={() => setOpen(false)}
+            type="button" onClick={() => { setOpen(false); setFind(''); }}
             className="m-0 h-10 flex-1 appearance-none rounded-md border-0 bg-[var(--up)] font-[inherit] text-[13.5px] font-semibold text-[var(--bg)]"
           >
             Done
