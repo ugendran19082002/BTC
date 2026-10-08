@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Check, ChevronDown, ListFilter, Search } from 'lucide-react';
+import { Check, ChevronDown, Search, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
@@ -15,8 +15,10 @@ import { cn } from '@/lib/utils';
  *
  * The button is a chip, and the chips sit in one row (`FilterBar`; owner, 8 Oct 2026: "many filters take the
  * space"): three of them stacked full width were a third of a phone's screen before any figure. A chip says its
- * kind, then what is chosen -- the one name, or how many -- and turns green while it filters; the row scrolls
- * sideways where three do not fit, and ends in "Clear all" while anything is chosen.
+ * kind until something is chosen in it, then the one name chosen, or its kind and how many, and turns green while
+ * it filters. Three with nothing chosen fit a 360px phone side by side (measured: 324 of 328px); with long names
+ * chosen the row scrolls sideways. While anything is chosen the row starts with a cross that takes every choice
+ * off -- at the start, so it is on the screen however far the row runs.
  */
 
 export type FilterOption = {
@@ -53,17 +55,16 @@ export function FilterBar({ children, onClear }: {
 }) {
   return (
     // Bleeds to the screen's edges like the other chip rows, so a chip cut off at the edge says there is more to the side.
-    <div role="group" aria-label="Filters" className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1">
-      <ListFilter className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-      {children}
+    <div role="group" aria-label="Filters" className="-mx-4 flex items-center gap-1.5 overflow-x-auto px-4 pb-1">
       {onClear && (
         <button
-          type="button" onClick={onClear}
-          className="m-0 h-10 shrink-0 appearance-none whitespace-nowrap rounded-full border-0 bg-transparent px-2 font-[inherit] text-[13px] font-medium text-[var(--accent)]"
+          type="button" onClick={onClear} aria-label="Clear all" title="Clear all filters"
+          className="m-0 grid h-10 w-10 shrink-0 appearance-none place-items-center rounded-full border border-solid border-border bg-transparent p-0 text-muted-foreground"
         >
-          Clear all
+          <X className="h-4 w-4" aria-hidden />
         </button>
       )}
+      {children}
     </div>
   );
 }
@@ -93,13 +94,14 @@ export function FilterPicker({ noun, options, picked, onChange }: {
         <button
           type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${noun.label} filter: ${words}`}
           className={cn(
-            'm-0 inline-flex h-10 max-w-[15rem] shrink-0 appearance-none items-center gap-1.5 whitespace-nowrap rounded-full border border-solid px-3 text-left font-[inherit] text-[13.5px] font-medium',
+            'm-0 inline-flex h-10 max-w-[12rem] shrink-0 appearance-none items-center gap-1 whitespace-nowrap rounded-full border border-solid px-2.5 text-left font-[inherit] text-[13.5px] font-medium',
             on ? 'border-[var(--up)] bg-[var(--up-bg)] text-[var(--up)]' : 'border-border bg-transparent text-foreground',
           )}
         >
-          <span className={cn('shrink-0', chosen.length === 1 && 'text-[12.5px] opacity-80')}>{noun.label}</span>
-          {/* One chosen: its name, cut where it runs long. Several: how many. */}
-          {chosen.length === 1 && <span className="min-w-0 truncate font-semibold">{words}</span>}
+          {/* One chosen: its name alone, cut where it runs long -- the name says the kind. Otherwise the kind, and how many where several. */}
+          {chosen.length === 1
+            ? <span className="min-w-0 truncate font-semibold">{words}</span>
+            : <span className="shrink-0">{noun.label}</span>}
           {chosen.length > 1 && (
             <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-[var(--up)] px-1 text-[11.5px] font-bold tabular-nums text-[var(--bg)]">{chosen.length}</span>
           )}

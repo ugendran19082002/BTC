@@ -116,7 +116,7 @@ describe('FilterPicker', () => {
     expect(list.getByRole('option', { name: /#10/ })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('[critical] the chip says its kind, then the one name chosen or how many; and the row takes every choice off at once', () => {
+  it('[critical] the chip says its kind, the one name chosen, or its kind and how many; and the row takes every choice off at once', () => {
     let cleared = 0;
     function Row() {
       const [a, setA] = useState<string[]>(['s2']);
@@ -133,8 +133,10 @@ describe('FilterPicker', () => {
     render(<Row />);
     const row = within(screen.getByRole('group', { name: 'Filters' }));
     // one chosen: the name; several: the count -- the whole of it still read out
-    expect(row.getByRole('button', { name: 'Strategy filter: 1h time' })).toHaveTextContent('Strategy1h time');
-    expect(row.getByRole('button', { name: 'Method filter: 2 of 2 methods' })).toHaveTextContent('Method2');
+    expect(row.getByRole('button', { name: 'Strategy filter: 1h time' })).toHaveTextContent(/^1h time$/);
+    expect(row.getByRole('button', { name: 'Method filter: 2 of 2 methods' })).toHaveTextContent(/^Method2$/);
+    // the way to take them all off comes first in the row, so it is on screen however far the row runs
+    expect(row.getAllByRole('button')[0]).toHaveAccessibleName('Clear all');
     fireEvent.click(row.getByRole('button', { name: 'Clear all' }));
     expect(cleared).toBe(1);
     expect(row.getByRole('button', { name: 'Strategy filter: All strategies' })).toHaveTextContent(/^Strategy$/);
