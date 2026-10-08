@@ -220,6 +220,16 @@ function groupOf(key: string, nets: readonly number[]): TradeStatsGroup {
   };
 }
 
+/** The strategy a trade is counted under: its strategy's id, or `manual` for one nobody scheduled. */
+const strategyKeyOf = (rec: TradeRecord): string => rec.plan.strategyId ?? 'manual';
+
+/** Only the trades of the strategies named (8 Oct 2026, the phone's strategy filter); null or none named is every trade. */
+export function ofStrategies<T extends TradeRecord>(records: readonly T[], keys: readonly string[] | null): readonly T[] {
+  if (!keys || keys.length === 0) return records;
+  const wanted = new Set(keys);
+  return records.filter((rec) => wanted.has(strategyKeyOf(rec)));
+}
+
 export function tradeStats(
   records: readonly TradeRecord[],
   o: { from: string; to: string; spot: number | null },
@@ -236,7 +246,7 @@ export function tradeStats(
     const c = closedNet(rec, o.spot);
     if (!c || c.day < o.from || c.day > o.to) continue;
     all.push(c.netUsd);
-    push(byStrategy, rec.plan.strategyId ?? 'manual', c.netUsd);
+    push(byStrategy, strategyKeyOf(rec), c.netUsd);
     push(byAccount, rec.plan.accountId == null ? 'none' : String(rec.plan.accountId), c.netUsd);
     push(byOption, rec.state.optionSide, c.netUsd);
     push(byAction, isLong(rec.state) ? 'buy' : 'sell', c.netUsd);

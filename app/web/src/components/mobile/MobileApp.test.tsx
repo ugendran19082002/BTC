@@ -329,7 +329,8 @@ describe('P&L: a custom From and To (owner, 6 Oct 2026)', () => {
     expect(within(sheet).getByRole('status')).toHaveTextContent('7 days');
     fireEvent.click(within(sheet).getByRole('button', { name: 'Show' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Custom range' })).toBeNull());
-    await waitFor(() => expect(phone.getStats).toHaveBeenCalledWith(week.from, week.to, null));
+    // the last argument is the strategy filter: none chosen, so every strategy
+    await waitFor(() => expect(phone.getStats).toHaveBeenCalledWith(week.from, week.to, null, []));
     expect(screen.getByRole('radio', { name: 'Custom' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('button', { name: 'Change' })).toBeInTheDocument();
   });

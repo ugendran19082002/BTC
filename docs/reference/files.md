@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-454 files listed, 220 test files counted below, images and lockfiles left out.
+455 files listed, 222 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 120 |
-| `app/web` | 100 |
+| `app/web` | 102 |
 
 ## `(root)`
 
@@ -380,6 +380,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [PairList.tsx](../../app/web/src/components/mobile/PairList.tsx) | One list of method + timeframe pairs on the phone (owner, 6 Oct 2026): the best, or the worst -- of the closed trades on P&L, or of the signal history under More. |
 | [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then entry, price now and P&L, then where the price stands between the stop and the target, drawn and moving (ExitRail) -- the BTC perp's... |
 | [PressureStrip.tsx](../../app/web/src/components/mobile/PressureStrip.tsx) | Home's four cards, in one row over today's P&L (owner, 7 Oct 2026): the call tape, the put tape, the big-move read, and BTC itself. |
+| [StrategyPicker.tsx](../../app/web/src/components/mobile/StrategyPicker.tsx) | The phone's strategy filter (owner, 8 Oct 2026: "strategy select option, multiple select dropdown, mobile user friendly -- the same filter on the signal filters"): one button that says what is chos... |
 | [Toasts.tsx](../../app/web/src/components/mobile/Toasts.tsx) | What just happened, said once, on whatever screen is open (owner, 6 Oct 2026): an order began waiting, an order filled, a position closed -- a card that slides down under the header and opens the t... |
 | [TradeDetail.tsx](../../app/web/src/components/mobile/TradeDetail.tsx) | One trade, start to end, read only (the phone's Level 2, 6 Oct 2026): what it is and what it made, then its whole journal as a line of steps -- signal, entry, fill, protection, exit, closed. |
 | [parts.tsx](../../app/web/src/components/mobile/parts.tsx) | The phone's building blocks (6 Oct 2026): one way to show a figure, a row, a filter and a list item, so every screen reads the same. |

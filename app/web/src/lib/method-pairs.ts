@@ -1,5 +1,6 @@
 import type { StatsGroup } from '@/api/phone';
 import type { EntryMode, MethodReportResponse } from '@/types/entry';
+import { ruleTfs, type SignalRule, type SignalTf } from '@/types/strategy';
 
 /**
  * Which entry method works on which timeframe, and which does not (owner, 6 Oct 2026): a method on a timeframe is
@@ -68,6 +69,8 @@ export function pairsOfReport(
   report: MethodReportResponse, way: EntryMode,
   /** Without the chain, only these timeframes; none named (or none of them in the report) is every timeframe. */
   only: readonly string[] = [],
+  /** Only the methods-on-timeframes this says yes to (`takenBy`: the strategies chosen); absent is every one. */
+  takes?: (method: string, tf: string) => boolean,
 ): { pairs: SignalPair[]; signals: number } {
   const kept = chosenTfs(report, only);
   const sections = way === 'mtf'
@@ -77,6 +80,7 @@ export function pairsOfReport(
   let signals = 0;
   for (const { tf, rows } of sections) {
     for (const r of rows) {
+      if (takes && !takes(r.method, tf)) continue;
       signals += r.signals;
       if (r.trades <= 0) continue;
       pairs.push({
@@ -88,6 +92,16 @@ export function pairsOfReport(
   }
   return { pairs, signals };
 }
+
+/**
+ * Which signals a set of strategies takes, read one way (8 Oct 2026, the strategy filter on the signal history's
+ * pairs): a method on a timeframe is taken when any of the strategies' signal rules takes it -- the same reading as
+ * the server's `signalMatches`. With the timeframe chain a rule has no timeframe of its own, so the method alone
+ * decides; without it, the rule's timeframes do too. A rule read the other way takes nothing here.
+ */
+export const takenBy = (rules: readonly Pick<SignalRule, 'mode' | 'tf' | 'tfs' | 'methods'>[], way: EntryMode) =>
+  (method: string, tf: string): boolean => rules.some((r) =>
+    r.mode === way && (way === 'mtf' || ruleTfs(r).includes(tf as SignalTf)) && r.methods.includes(method));
 
 const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 

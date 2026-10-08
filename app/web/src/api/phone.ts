@@ -12,6 +12,10 @@ import type { EntryMethodInfo } from '@/api/entry';
 const withAcct = (url: string, account: number | null) =>
   account === null ? url : `${url}${url.includes('?') ? '&' : '?'}account=${account}`;
 
+/** `&strategy=a,b` for the strategies chosen on the phone's filter; nothing for none, which is every strategy. */
+const ofStrategies = (strategies: readonly string[] | undefined) =>
+  (strategies && strategies.length ? `&strategy=${strategies.map(encodeURIComponent).join(',')}` : '');
+
 /** One event of a trade's journal as the server keeps it (trading/types.ts `TradeEvent`): `t` says which. */
 export type JournalEvent = { t: string; at: number } & Record<string, unknown>;
 
@@ -36,13 +40,20 @@ export type Stats = {
   byOption?: StatsGroup[]; byAction?: StatsGroup[]; byMethod?: StatsGroup[];
   /** A signal trade's entry method on the timeframe it was read on (`15m`, `5m + TF chain`), best first. Absent from an older server. */
   byPair?: (StatsGroup & { tf: string })[];
+  /**
+   * The strategies there are to choose from (8 Oct 2026): every one with a trade closed in the range, whatever was
+   * asked for, and any asked for that has none. `manual` is the trades nobody scheduled. Absent from an older
+   * server, which does not filter either -- so the phone offers no filter there.
+   */
+  strategies?: { key: string; name: string; trades: number; netUsd: number }[];
 };
 
-export const getStats = (from: string, to: string, account: number | null) =>
-  json<Stats>(withAcct(`/api/report/stats?from=${from}&to=${to}`, account));
+/** `strategies`: only those strategies' trades (their ids; `manual` for trades by hand). None: every trade. */
+export const getStats = (from: string, to: string, account: number | null, strategies?: readonly string[]) =>
+  json<Stats>(withAcct(`/api/report/stats?from=${from}&to=${to}${ofStrategies(strategies)}`, account));
 
-export const getDaysFor = (from: string, to: string, account: number | null) =>
-  json<DaysReport>(withAcct(`/api/report/days?from=${from}&to=${to}`, account));
+export const getDaysFor = (from: string, to: string, account: number | null, strategies?: readonly string[]) =>
+  json<DaysReport>(withAcct(`/api/report/days?from=${from}&to=${to}${ofStrategies(strategies)}`, account));
 
 /** The entry methods' names by id, read once: a signal is shown by name, not by its id. */
 let methods: Promise<Map<string, EntryMethodInfo>> | null = null;

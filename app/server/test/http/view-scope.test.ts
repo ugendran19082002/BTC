@@ -94,6 +94,13 @@ test('[critical] a view sign-in reads the desk the phone shows', async () => {
     const r = await app.inject({ method: 'GET', url, headers: jar(token) });
     assert.equal(r.statusCode, 200, `${url}: ${r.body.slice(0, 120)}`);
   }
+  // The phone's strategy filter is a read like the rest: the statistics say which strategies there are to choose
+  // from, and a strategy asked for that has no trade in the range is still listed, so it can be taken off.
+  const stats = await app.inject({ method: 'GET', url: '/api/report/stats?strategy=no-such,manual', headers: jar(token) });
+  assert.equal(stats.statusCode, 200, stats.body.slice(0, 120));
+  assert.deepEqual(stats.json().strategies.filter((x: { key: string }) => x.key === 'no-such' || x.key === 'manual').map((x: { key: string; name: string; trades: number }) => [x.key, x.name, x.trades]).sort(),
+    [['manual', 'By hand', 0], ['no-such', 'no-such', 0]]);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/report/days?strategy=no-such', headers: jar(token) })).statusCode, 200);
 });
 
 test('[critical] a view session is refused every write but sign-in, sign-out and error reports -- every route the app has', async () => {

@@ -1,14 +1,17 @@
 import { getMethodReport } from '@/api/entry';
+import { getActivity } from '@/api/phone';
+import { ruleTfWords } from '@/types/strategy';
 import type { EntryMode } from '@/types/entry';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
-import { chosenTfs, pairsOfReport, pickTf, splitPairs, timeframesOf, type SignalPair } from '@/lib/method-pairs';
+import { chosenTfs, pairsOfReport, pickTf, splitPairs, takenBy, timeframesOf, type SignalPair } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
 import { Chip, Chips, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { useDayRange } from '@/components/mobile/useDayRange';
+import { StrategyPicker, type StrategyOption } from '@/components/mobile/StrategyPicker';
 import { describeRange } from '@/components/ui/date-range-picker';
 
 /**
@@ -21,6 +24,10 @@ import { describeRange } from '@/components/ui/date-range-picker';
  * Only a signal that became a trade is ranked: one that filled and then closed at its target, its stop or on time.
  * It is graded on the BTC perp, in points from its fill to its exit, with no charges: this is how good the signals
  * were, not what the account made. Read from the desk's Methods report (`/api/entry/report`).
+ *
+ * The same strategy filter as P&L's (owner, 8 Oct 2026): tick one signal strategy or several and only the signals
+ * they take are kept -- their methods, on their timeframes, read their way (`takenBy`). It narrows what is on the
+ * screen; the way of reading and the timeframes above it still apply on top.
  */
 
 const WAYS: { key: EntryMode; label: string; spoken: string }[] = [
@@ -46,7 +53,20 @@ export function SignalPairsScreen() {
   const [how, setHow] = usePersisted<'one' | 'many'>('m-sigpairs-pick', 'one');
   const tfs = report.data ? timeframesOf(report.data) : [];
   const kept = report.data && way === 'single' ? chosenTfs(report.data, picked) : [];
-  const read = report.data ? pairsOfReport(report.data, way, kept) : null;
+  // The signal strategies to choose from, and the ones kept: none is every signal, as it was.
+  const activity = usePoll(() => getActivity(p.accountParam), 300_000, { deps: [p.accountParam] });
+  const [strategies, setStrategies] = usePersisted<string[]>('m-sigpairs-strategies', []);
+  const signalOnes = (activity.data?.strategies ?? []).filter((s) => s.config.trigger === 'signal' && s.config.signal);
+  const options: StrategyOption[] = signalOnes.map((s) => {
+    const rule = s.config.signal!;
+    return { key: s.id, name: s.name, note: `${ruleTfWords(rule)} · ${rule.methods.length} method${rule.methods.length === 1 ? '' : 's'}${s.enabled ? '' : ' · off'}` };
+  });
+  const chosen = signalOnes.filter((s) => strategies.includes(s.id));
+  const rules = chosen.map((s) => s.config.signal!);
+  const read = report.data ? pairsOfReport(report.data, way, kept, rules.length ? takenBy(rules, way) : undefined) : null;
+  // The strategies chosen are all read the other way: nothing of theirs can be on this side of the switch.
+  const otherWay = rules.length > 0 && !rules.some((r) => r.mode === way);
+  const ofChosen = chosen.length === 0 ? '' : chosen.length === 1 ? ` · ${chosen[0]!.name}` : ` · ${chosen.length} strategies`;
   const split = read ? splitPairs(read.pairs) : null;
   const all = read?.pairs ?? [];
   const wins = all.reduce((n, x) => n + x.wins, 0);
@@ -65,6 +85,7 @@ export function SignalPairsScreen() {
   return (
     <>
       {range.bar}
+      <StrategyPicker options={options} picked={strategies} onChange={setStrategies} />
       <Segmented label="Way of reading" value={way} options={WAYS} onChange={setWay} />
       {way === 'single' && tfs.length > 0 && (
         <div>
@@ -92,7 +113,7 @@ export function SignalPairsScreen() {
 
       <Panel>
         <span className="flex items-baseline justify-between gap-2 text-[13px] text-muted-foreground">
-          <span>Signals {isToday ? 'today' : describeRange({ from, to }, today)}, {wayWords}</span>
+          <span>Signals {isToday ? 'today' : describeRange({ from, to }, today)}, {wayWords}{ofChosen}</span>
           {range.isCustom && (
             <button type="button" onClick={range.pick} className="shrink-0 border-0 bg-transparent p-0 font-[inherit] text-[13px] text-[var(--accent)]">
               Change
@@ -127,7 +148,13 @@ export function SignalPairsScreen() {
           <PairList title="Worst pairs" tone="down" pairs={split.worst} amount={amount} note={note} ends={ends} empty={`No method and time frame is in loss ${inRange}.`} />
         </>
       ) : read ? (
-        <Panel><Empty>No signal became a trade {inRange}, {wayWords}.</Empty></Panel>
+        <Panel>
+          <Empty>
+            {otherWay
+              ? `${chosen.length === 1 ? `${chosen[0]!.name} takes` : 'The strategies chosen take'} signals ${way === 'mtf' ? 'without' : 'with'} the timeframe chain only. Switch the way of reading above, or choose another strategy.`
+              : `No signal${chosen.length ? ` ${chosen.length === 1 ? `${chosen[0]!.name} takes` : 'the strategies chosen take'}` : ''} became a trade ${inRange}, ${wayWords}.`}
+          </Empty>
+        </Panel>
       ) : null}
 
       <p className="m-0 px-1 text-[12px] text-muted-foreground">

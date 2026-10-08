@@ -10,6 +10,8 @@ import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context'
 
 const getMethodReport = vi.fn();
 vi.mock('@/api/entry', () => ({ getMethodReport: (...a: unknown[]) => getMethodReport(...a) }));
+const getActivity = vi.fn();
+vi.mock('@/api/phone', () => ({ getActivity: (...a: unknown[]) => getActivity(...a) }));
 
 const { SignalPairsScreen } = await import('@/components/mobile/screens/SignalPairsScreen');
 
@@ -30,13 +32,15 @@ const REPORT: MethodReportResponse = {
 // Tue 6 Oct 2026, 14:00 IST
 const NOW = Date.UTC(2026, 9, 6, 8, 30);
 const show = () => render(
-  <PhoneContext.Provider value={{ now: NOW } as PhoneData}><SignalPairsScreen /></PhoneContext.Provider>,
+  <PhoneContext.Provider value={{ now: NOW, accountParam: null } as PhoneData}><SignalPairsScreen /></PhoneContext.Provider>,
 );
 
 beforeEach(() => {
   window.localStorage.clear();
   getMethodReport.mockReset();
   getMethodReport.mockResolvedValue(REPORT);
+  getActivity.mockReset();
+  getActivity.mockResolvedValue({ strategies: [] });
 });
 
 describe('SignalPairsScreen', () => {
@@ -158,5 +162,73 @@ describe('SignalPairsScreen', () => {
     expect(screen.getByText('0 pts')).toBeInTheDocument();
     expect(screen.getByText('Won pts').parentElement!).toHaveTextContent('0');
     expect(screen.getByText('Profit factor').parentElement!).toHaveTextContent('—');
+  });
+});
+
+/*
+ * The strategy filter (owner, 8 Oct 2026: "strategy select option, multiple select dropdown -- the same filter on
+ * the signal filters"): tick strategies, and only the signals they take are ranked.
+ */
+describe('SignalPairsScreen: the strategy filter', () => {
+  const strat = (id: string, name: string, signal: object, enabled = true) => ({ id, name, enabled, config: { trigger: 'signal', signal } });
+  const STRATEGIES = [
+    strat('ib-15', 'IB 15m', { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['initial-balance-failed-break'] }),
+    strat('chain', 'Chain edge', { mode: 'mtf', tf: '5m', methods: ['expected-move-edge-reaction'] }, false),
+    { id: 'clock', name: 'Morning sell', enabled: true, config: {} },
+  ];
+  const names = (list: string) => within(screen.getByRole('list', { name: list })).getAllByRole('listitem').map((li) => li.textContent!.match(/#\d+/)![0]);
+  const open = async () => fireEvent.click(await screen.findByRole('button', { name: /^Strategy filter:/ }));
+  const tick = (name: RegExp) => fireEvent.click(within(screen.getByRole('listbox', { name: 'Strategies' })).getByRole('option', { name }).querySelector('button')!);
+
+  it('with no signal strategy there is no filter to show', async () => {
+    show();
+    await screen.findByRole('list', { name: 'Best pairs' });
+    expect(screen.queryByRole('button', { name: /^Strategy filter:/ })).not.toBeInTheDocument();
+  });
+
+  it('[critical] one strategy ticked: only the methods it takes, on its timeframes, are ranked -- and the screen says whose signals', async () => {
+    getActivity.mockResolvedValue({ strategies: STRATEGIES });
+    show();
+    await screen.findByRole('list', { name: 'Best pairs' });
+    expect(names('Best pairs')).toEqual(['#63', '#19']);
+    await open();
+    // Signal strategies only, each saying what it takes; a clock strategy takes no signal and is not offered.
+    const list = within(screen.getByRole('listbox', { name: 'Strategies' }));
+    expect(list.getAllByRole('option').map((o) => o.textContent)).toEqual(['All strategies2 in this list', 'IB 15mon 15m · 1 method', 'Chain edgewith the chain · 1 method · off']);
+    tick(/IB 15m/);
+    expect(names('Best pairs')).toEqual(['#63']);
+    expect(screen.queryByRole('list', { name: 'Worst pairs' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Strategy filter: IB 15m' })).toBeInTheDocument();
+    expect(screen.getByText(/without the timeframe chain · IB 15m/)).toBeInTheDocument();
+    // Signals counted are that strategy's too: 12 of the 39 without the chain.
+    expect(screen.getByText('Signals').nextSibling).toHaveTextContent('12');
+  });
+
+  it('[critical] several ticked: what any of them takes; and a way of reading none of them uses says so', async () => {
+    getActivity.mockResolvedValue({ strategies: STRATEGIES });
+    show();
+    await screen.findByRole('list', { name: 'Best pairs' });
+    await open();
+    tick(/IB 15m/);
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'With the timeframe chain' }));
+    expect(screen.getByText('IB 15m takes signals without the timeframe chain only. Switch the way of reading above, or choose another strategy.')).toBeInTheDocument();
+    await open();
+    tick(/Chain edge/);
+    expect(screen.getByRole('button', { name: 'Strategy filter: 2 of 2 strategies' })).toBeInTheDocument();
+    expect(names('Best pairs')).toEqual(['#31']);
+    // "All strategies" takes the filter off again.
+    tick(/All strategies/);
+    expect(names('Best pairs')).toEqual(['#31']);
+    expect(names('Worst pairs')).toEqual(['#36']);
+    expect(screen.getByRole('button', { name: 'Strategy filter: All strategies' })).toBeInTheDocument();
+  });
+
+  it('the choice is remembered, and a strategy since deleted is not counted', async () => {
+    window.localStorage.setItem('btc-desk:m-sigpairs-strategies', JSON.stringify(['ib-15', 'gone']));
+    getActivity.mockResolvedValue({ strategies: STRATEGIES });
+    show();
+    expect(await screen.findByRole('button', { name: 'Strategy filter: IB 15m' })).toBeInTheDocument();
+    await waitFor(() => expect(names('Best pairs')).toEqual(['#63']));
   });
 });

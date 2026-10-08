@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { daysCsv, daysReport, mtmStats, type MtmSample } from '../../src/trading/pnl-history.js';
+import { ofStrategies, daysCsv, daysReport, mtmStats, type MtmSample } from '../../src/trading/pnl-history.js';
 import { PgTradeStore } from '../../src/trading/store.js';
 import { SettingsCache } from '../../src/db/settings.js';
 import { closePool } from '../../src/db/pool.js';
@@ -240,4 +240,23 @@ test('statistics pair a method with the timeframe it was read on: the same metho
   ]);
   assert.equal(r.byPair.reduce((n, g) => n + g.trades, 0), r.overall.trades - 1);
   assert.equal(r.byMethod[0]!.trades, 5);
+});
+
+test('[critical] the strategy filter keeps only the trades of the strategies named -- "manual" for one nobody scheduled -- and none named is every trade', () => {
+  const a = tagged(record('a', [fill('entry', 100, 15, T(11, 7)), fill('take_profit', 100, 5, T(11, 9))]), 's1', 1);
+  const b = tagged(record('b', [fill('entry', 100, 15, T(11, 7)), fill('stop_loss', 100, 22, T(11, 10))]), 's2', 1);
+  const hand = tagged(record('h', [fill('entry', 100, 15, T(12, 7)), fill('take_profit', 100, 10, T(12, 9))]), undefined, 1);
+  const all = [a, b, hand];
+  assert.equal(ofStrategies(all, null), all);
+  assert.equal(ofStrategies(all, []), all, 'an empty choice is no filter, not an empty report');
+  assert.deepEqual(ofStrategies(all, ['s1']).map((r) => r.state.tradeId), ['a']);
+  assert.deepEqual(ofStrategies(all, ['s2', 'manual']).map((r) => r.state.tradeId), ['b', 'h']);
+  assert.deepEqual(ofStrategies(all, ['gone']), []);
+  // The statistics and the calendar of a choice are those of its trades alone, and the parts add up to the whole.
+  const range = { from: '2026-09-11', to: '2026-09-12', spot: 80_000 };
+  const whole = tradeStats(all, range); const one = tradeStats(ofStrategies(all, ['s1']), range); const rest = tradeStats(ofStrategies(all, ['s2', 'manual']), range);
+  assert.deepEqual([one.overall.trades, one.overall.wins, one.byStrategy.map((g) => g.key)], [1, 1, ['s1']]);
+  assert.ok(Math.abs(one.overall.netUsd + rest.overall.netUsd - whole.overall.netUsd) < 1e-12);
+  const days = daysReport(ofStrategies(all, ['manual']), range);
+  assert.deepEqual(days.days.map((d) => [d.day, d.trades]), [['2026-09-12', 1]]);
 });
