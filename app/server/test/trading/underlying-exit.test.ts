@@ -96,3 +96,88 @@ test('a trade without perp exits records no perp points', async () => {
   const { r, id } = await shortPut(null);
   assert.equal(r.store.peek(id)!.state.perpEntry ?? null, null);
 });
+
+/* ---------------------------------------------- a touch between two looks (8 Oct 2026) --- */
+
+/*
+ * 5 Oct 11:49: the perp printed 85,997.50 through a SELL signal's stop at 85,990.79 and was back inside within the
+ * second. The desk asked only whether the *last* trade was through when the trade's turn came, so the stop closed
+ * nothing, and the trade stayed open 28 minutes more. A level that trades is reached.
+ */
+import { underlyingTouched, UNDERLYING_LOOKBACK_MS, type PerpRange } from '../../src/trading/engine.js';
+
+test('[critical] the pure question: the last trade, or any trade since, at or through a level -- the stop first', () => {
+  const sell = { dir: -1 as const, stop: 85_990.79, target: 85_354 };
+  const range = (high: number, low: number): PerpRange => ({ high, highAt: 1_000, low, lowAt: 2_000 });
+  // 5 Oct: the high touched the stop, the last trade is back inside.
+  assert.deepEqual(underlyingTouched(sell, { price: 85_958, at: 3_000 }, range(85_997.5, 85_950)), { hit: 'stop', price: 85_997.5, at: 1_000 });
+  assert.equal(underlyingTouched(sell, { price: 85_958, at: 3_000 }, range(85_990, 85_950)), null, 'short of the level by a dollar: nothing');
+  assert.equal(underlyingTouched(sell, { price: 85_958, at: 3_000 }, null), null, 'no tape: only the last trade, as before');
+  // A BUY is the mirror: its stop is under it, reached by the low.
+  const buy = { dir: 1 as const, stop: 84_000, target: 86_000 };
+  assert.deepEqual(underlyingTouched(buy, { price: 84_500, at: 3_000 }, range(84_600, 83_999)), { hit: 'stop', price: 83_999, at: 2_000 });
+  assert.deepEqual(underlyingTouched(buy, { price: 85_500, at: 3_000 }, range(86_000, 85_400)), { hit: 'target', price: 86_000, at: 1_000 });
+  // A stretch that reached both is a stop: the safe reading, as `underlyingHit` reads them.
+  assert.equal(underlyingTouched(buy, { price: 85_000, at: 3_000 }, range(86_100, 83_900))!.hit, 'stop');
+  // The last trade itself through wins, with its own price and time.
+  assert.deepEqual(underlyingTouched(buy, { price: 83_950, at: 3_000 }, range(84_600, 83_900)), { hit: 'stop', price: 83_950, at: 3_000 });
+});
+
+/** A short call from a SELL signal, its perp extremes whatever `tape` says. */
+async function shortCall(stop = 85_990.79, target = 85_354) {
+  const perp = { price: 85_747.5, at: 0 };
+  const tape: { range: PerpRange | null; asked: number[] } = { range: null, asked: [] };
+  const r = rig({
+    products: [peProduct(), ceProduct()],
+    quotes: [quote(PE, 100.5, 101), quote(CE, 100.5, 101)],
+    underlying: () => ({ price: perp.price, at: perp.at || r.now() }),
+    underlyingRange: (since) => { tape.asked.push(since); return tape.range; },
+  });
+  const plan = { ...planFor(ceProduct(), { lots: 5, stopPrice: 300, takeProfitPrice: 1 }), underlying: { dir: -1 as const, stop, target, source: 'BTC perp' } };
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  return { r, perp, tape, id: plan.tradeId };
+}
+
+test('[critical] 5 Oct again: a print through the stop that came back before the look still buys the call back, and says when it traded', async () => {
+  const { r, perp, tape, id } = await shortCall();
+  assert.equal(r.store.peek(id)!.state.position, -5);
+  perp.price = 85_958;                                                   // back inside now
+  tape.range = { high: 85_997.5, highAt: r.now() - 4_000, low: 85_950, lowAt: r.now() - 2_000 };
+  await r.engine.poll(id);
+  const rec = r.store.peek(id)!;
+  const exit = rec.events.find((e) => e.t === 'exit_submitted') as { reason?: string } | undefined;
+  assert.ok(exit, 'closed on this look, not 28 minutes later');
+  assert.match(exit!.reason!, /^BTC perp at 85,997\.50 reached the signal's stop 85,990\.79 \(traded \d\d:\d\d:\d\d IST; 85,958\.00 now\)$/);
+});
+
+test('[critical] never a print from before the option filled, nor one older than the look-back', async () => {
+  const { r, perp, tape, id } = await shortCall();
+  const filled = r.store.peek(id)!.state.fills.find((f) => f.role === 'entry')!.ts;
+  perp.price = 85_800;
+  tape.range = null;
+  await r.engine.poll(id);
+  assert.ok(tape.asked.length > 0);
+  for (const since of tape.asked) {
+    assert.ok(since >= filled, 'the window starts no earlier than the fill');
+    assert.ok(since >= r.now() - UNDERLYING_LOOKBACK_MS - 5_000, 'and reaches back no further than the look-back');
+  }
+  assert.equal(r.store.peek(id)!.state.position, -5, 'between the levels: nothing');
+});
+
+test('[critical] the fast watch hands the print it saw with the trade; a stale feed still closes nothing', async () => {
+  const { r, perp, id } = await shortCall();
+  perp.price = 85_958;                                                   // back inside when the engine looks
+  await r.engine.exitOnUnderlying(id, { price: 86_005, at: r.now() });   // after the fill, as a real print is
+  assert.match((r.store.peek(id)!.events.find((e) => e.t === 'exit_submitted') as { reason: string }).reason, /BTC perp at 86,005\.00 reached the signal's stop/);
+
+  const stale = await shortCall();
+  stale.perp.price = 86_100; stale.perp.at = 1;                          // through, but the feed stopped long ago
+  await stale.r.engine.exitOnUnderlying(stale.id, { price: 86_100, at: stale.r.now() });
+  assert.equal(stale.r.store.peek(stale.id)!.state.position, -5, 'no fresh last trade: nothing is acted on');
+  // A print handed over from before the fill is not this trade's.
+  const early = await shortCall();
+  early.perp.price = 85_800;
+  await early.r.engine.exitOnUnderlying(early.id, { price: 86_100, at: 0 });
+  assert.equal(early.r.store.peek(early.id)!.state.position, -5);
+});

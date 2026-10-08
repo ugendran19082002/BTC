@@ -207,6 +207,21 @@ export function perpTape(): { fresh(): boolean; perpSince(ms: number): Print[]; 
 
 // ------------------------------------------------------- the perp, as it prints
 
+/**
+ * The highest and lowest the perpetual traded at or after `sinceMs`, and when, off the tape; null with no live tape
+ * or no print in the stretch. What a stop or a target on the perp is judged against, so a touch between two looks is
+ * not missed (engine.ts `underlyingTouched`). Scans back from the newest print only.
+ */
+export function perpRange(sinceMs: number): { high: number; highAt: number; low: number; lowAt: number } | null {
+  const s = socket;
+  if (!s || !s.fresh()) return null;
+  const prints = s.perpSince(sinceMs);
+  if (!prints.length) return null;
+  let high = prints[0]!; let low = prints[0]!;
+  for (const p of prints) { if (p.price > high.price) high = p; if (p.price < low.price) low = p; }
+  return { high: high.price, highAt: high.at, low: low.price, lowAt: low.at };
+}
+
 /** One closed minute of the perpetual as the desk's own tape saw it: for checking the venue's candle against. */
 export type TapeMinute = { close: number; high: number; low: number; volume: number; prints: number };
 

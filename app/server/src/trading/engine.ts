@@ -417,7 +417,23 @@ export type EngineDeps = {
    * an underlying level, which is safer than one that guesses one.
    */
   underlying?: () => { price: number; at: number } | null;
+  /**
+   * The highest and the lowest the perpetual traded at or after `sinceMs`, off the same tape, with when (8 Oct 2026).
+   * A level is reached when any trade reaches it, not only when the last one is still there: without this, a print
+   * through the stop that came back inside before the desk looked was not a stop at all.
+   */
+  underlyingRange?: (sinceMs: number) => PerpRange | null;
 };
+
+/** The perp's extremes over a stretch of the tape. */
+export type PerpRange = { high: number; highAt: number; low: number; lowAt: number };
+
+/**
+ * How far back a look at the perp's levels reaches: every trade of the perp in this window, but never one from
+ * before the option filled. Longer than any gap between two looks -- the loop polls every second, the fast watch on
+ * every print -- so a touch between looks is still a touch when the desk next looks.
+ */
+export const UNDERLYING_LOOKBACK_MS = 120_000;
 
 export type OpenResult =
   | { ok: true; state: TradeState }
@@ -505,6 +521,37 @@ export function underlyingHit(
 ): 'stop' | 'target' | null {
   if (u.stop !== null && (price - u.stop) * u.dir <= 0) return 'stop';
   if (u.target !== null && (price - u.target) * u.dir >= 0) return 'target';
+  return null;
+}
+
+/**
+ * Which level the perp has *traded* at since `sinceMs` -- the last trade, or any trade on the tape in between --
+ * and the price and time of the trade that reached it (8 Oct 2026).
+ *
+ * A stop is a trigger: once a trade prints at it, it has fired, as a stop order at an exchange fires on the trade
+ * and does not ask again a second later. Until today the desk asked only whether the *last* trade was through, at
+ * the moment the trade's turn came: on 5 Oct the perp printed 85,997.50 through a stop at 85,990.79 and came back
+ * inside within the second; the watch saw it, and by the time the engine looked it was back, so the stop closed
+ * nothing -- and the trade stayed open 28 minutes more, 82 bought back where 39 was sold.
+ *
+ * The stop is read before the target, as `underlyingHit` reads them: a stretch that touched both is a stop.
+ */
+export function underlyingTouched(
+  u: { dir: 1 | -1; stop: number | null; target: number | null },
+  last: { price: number; at: number } | null,
+  range: PerpRange | null,
+): { hit: 'stop' | 'target'; price: number; at: number } | null {
+  // Against the signal is down for a BUY (dir +1) and up for a SELL; with it, the other way.
+  const against = range ? (u.dir > 0 ? { price: range.low, at: range.lowAt } : { price: range.high, at: range.highAt }) : null;
+  const along = range ? (u.dir > 0 ? { price: range.high, at: range.highAt } : { price: range.low, at: range.lowAt }) : null;
+  if (u.stop !== null) {
+    if (last && underlyingHit({ ...u, target: null }, last.price) === 'stop') return { hit: 'stop', ...last };
+    if (against && underlyingHit({ ...u, target: null }, against.price) === 'stop') return { hit: 'stop', ...against };
+  }
+  if (u.target !== null) {
+    if (last && underlyingHit({ ...u, stop: null }, last.price) === 'target') return { hit: 'target', ...last };
+    if (along && underlyingHit({ ...u, stop: null }, along.price) === 'target') return { hit: 'target', ...along };
+  }
   return null;
 }
 
@@ -1039,13 +1086,13 @@ export class TradeEngine {
    * the same guards and in the trade's own queue: if a poll is closing it, or
    * has closed it, this finds nothing left to do.
    */
-  exitOnUnderlying(tradeId: string): Promise<TradeState | null> {
+  exitOnUnderlying(tradeId: string, seen?: { price: number; at: number }): Promise<TradeState | null> {
     return this.withTrade(tradeId, async () => {
       const rec = await this.d.store.get(tradeId);
       if (!rec || isDone(rec.state)) return rec?.state ?? null;
       // An entry nobody has an answer for is the reconciler's; a close already working is a close.
       if (rec.state.phase === 'entry_unknown' || rec.state.phase === 'exit_pending' || rec.state.position === 0) return rec.state;
-      return (await this.underlyingExit(rec)).state;
+      return (await this.underlyingExit(rec, seen)).state;
     });
   }
 
@@ -2053,18 +2100,41 @@ export class TradeEngine {
     return px !== null && px.price > 0 && this.now() - px.at <= MARK_STALE_MS ? px.price : null;
   }
 
-  private async underlyingExit(rec: TradeRecord): Promise<TradeRecord> {
+  private async underlyingExit(rec: TradeRecord, seen?: { price: number; at: number }): Promise<TradeRecord> {
     const u = rec.plan.underlying;
     if (!u || (u.stop === null && u.target === null)) return rec;
+    const now = this.now();
     const px = this.d.underlying?.() ?? null;
-    if (px === null || !(px.price > 0) || this.now() - px.at > MARK_STALE_MS) return rec;
-    const hit = underlyingHit(u, px.price);
-    if (hit === null) return rec;
+    const fresh = px !== null && px.price > 0 && now - px.at <= MARK_STALE_MS ? px : null;
+    /*
+     * Every trade of the perp since the last look, not only the last one: a print through the level that came back
+     * before this look still reached it (`underlyingTouched`). Never a print from before the option filled -- that
+     * one is the market the trade was entered into, not a move against it.
+     */
+    const filledAt = rec.state.fills.filter((f) => f.role === 'entry').reduce((m, f) => Math.min(m, f.ts), Infinity);
+    const since = Math.max(now - UNDERLYING_LOOKBACK_MS, Number.isFinite(filledAt) ? filledAt : now);
+    let range = fresh ? (this.d.underlyingRange?.(since) ?? null) : null;
+    // A print the fast watch saw through the level, handed over with the trade: inside the window, it counts too.
+    if (seen && seen.price > 0 && seen.at >= since && seen.at <= now && fresh) {
+      const r = range ?? { high: seen.price, highAt: seen.at, low: seen.price, lowAt: seen.at };
+      range = {
+        high: Math.max(r.high, seen.price), highAt: seen.price > r.high ? seen.at : r.highAt,
+        low: Math.min(r.low, seen.price), lowAt: seen.price < r.low ? seen.at : r.lowAt,
+      };
+    }
+    // A feed that has stopped is no evidence about now: nothing is acted on without a fresh last trade.
+    if (!fresh) return rec;
+    const touched = underlyingTouched(u, fresh, range);
+    if (touched === null) return rec;
+    const hit = touched.hit;
     // Two decimals, grouped: the reason is read in the alert and on the screens, not parsed for maths.
     const p2 = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const when = touched.at < fresh.at - 1_000
+      ? ` (traded ${new Date(touched.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false })} IST; ${p2(fresh.price)} now)`
+      : '';
     const why = hit === 'stop'
-      ? `${u.source} at ${p2(px.price)} reached the signal's stop ${p2(u.stop!)}`
-      : `${u.source} at ${p2(px.price)} reached the signal's target ${p2(u.target!)}`;
+      ? `${u.source} at ${p2(touched.price)} reached the signal's stop ${p2(u.stop!)}${when}`
+      : `${u.source} at ${p2(touched.price)} reached the signal's target ${p2(u.target!)}${when}`;
     await this.closeNowInner(rec.state.tradeId, why);
     return await this.d.store.get(rec.state.tradeId) ?? rec;
   }

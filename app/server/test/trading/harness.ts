@@ -90,6 +90,8 @@ export function rig(opts: {
   candles?: EngineDeps['candles'];
   /** The BTC perpetual's last trade, for exits on the underlying. */
   underlying?: EngineDeps['underlying'];
+  /** The perp's extremes over a stretch, for a touch between two looks. */
+  underlyingRange?: EngineDeps['underlyingRange'];
 } = {}): Rig {
   const ex = new PaperExchange({ balanceUsd: opts.balanceUsd ?? 100_000 });
   for (const p of opts.products ?? [ceProduct()]) ex.addProduct(p);
@@ -123,6 +125,7 @@ export function rig(opts: {
     onAlarm: (t, message) => alarms.push({ tradeId: t.tradeId, message }),
     candles: opts.candles,
     underlying: opts.underlying,
+    underlyingRange: opts.underlyingRange,
     // A confirming read waits for real in the desk; not in a test.
     wait: async () => {},
     onSwallowed: (what, _order, error) => swallowed.push({ what, message: error.message }),

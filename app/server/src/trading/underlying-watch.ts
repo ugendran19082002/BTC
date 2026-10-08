@@ -59,8 +59,8 @@ export type UnderlyingWatchDeps = {
   open: () => Promise<WatchedTrade[]>;
   /** The perp's last trade and when it printed, or null. */
   price: () => { price: number; at: number } | null;
-  /** The engine's exit on the underlying for one trade. */
-  exit: (tradeId: string) => Promise<unknown>;
+  /** The engine's exit on the underlying for one trade, with the print that reached the level. */
+  exit: (tradeId: string, seen: { price: number; at: number }) => Promise<unknown>;
   now?: () => number;
 };
 
@@ -104,15 +104,19 @@ export class UnderlyingWatch {
       if (last !== undefined && now - last < WATCH_RETRY_MS) continue;
       this.fired.set(t.tradeId, now);
       handed.push(t.tradeId);
-      this.hand(t);
+      this.hand(t, { price: px.price, at: px.at });
     }
     return handed;
   }
 
-  private hand(t: WatchedTrade): void {
+  /**
+   * The print that reached the level goes with the trade (8 Oct 2026): by the time the engine's turn comes the perp
+   * may be back inside, and a level that traded is reached all the same (engine.ts `underlyingTouched`).
+   */
+  private hand(t: WatchedTrade, seen: { price: number; at: number }): void {
     const before = this.bySymbol.get(t.symbol) ?? Promise.resolve();
     const next = before
-      .then(() => this.d.exit(t.tradeId))
+      .then(() => this.d.exit(t.tradeId, seen))
       // A close that failed is the engine's to write down, and the loop's to try again.
       .then(() => {}, () => {})
       // Whatever happened, the list is out of date now.

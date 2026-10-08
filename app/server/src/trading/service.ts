@@ -21,7 +21,7 @@ import { midOf } from './money.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { candles } from '../market/delta.js';
-import { liveLtp, onPerpPrint } from '../market/flow.js';
+import { liveLtp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
@@ -192,6 +192,8 @@ export class TradingService {
       candles: (symbol, startSec, endSec, resolution) => candles(symbol, startSec, endSec, resolution),
       // The perpetual's last trade off the tape, for a signal strategy's exits on the underlying.
       underlying: () => { const l = liveLtp(); return l ? { price: l.price, at: l.at } : null; },
+      // Every trade of the perp since a moment, off the same tape: a touch between two looks is still a touch.
+      underlyingRange: (sinceMs) => perpRange(sinceMs),
       onSwallowed: (what, order, error) => {
         noteError({
           source: 'trading',
@@ -368,7 +370,7 @@ export class TradingService {
   readonly underlyingWatch = new UnderlyingWatch({
     open: async () => watchedOf(await this.store.open()),
     price: () => { const l = liveLtp(); return l ? { price: l.price, at: l.at } : null; },
-    exit: (tradeId) => this.engine.exitOnUnderlying(tradeId),
+    exit: (tradeId, seen) => this.engine.exitOnUnderlying(tradeId, seen),
   });
 
   /**
