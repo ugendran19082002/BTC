@@ -363,6 +363,12 @@ export const tradeView = (
         spot,
         paidUsd: charges.totalUsd,
       }),
+      /*
+       * At the stop the desk itself judges (8 Oct 2026). The order resting at Delta is the backstop, further out
+       * (engine.ts `backstopFor`), and the card showed only that: "Stop 425.40 -> lose Rs 160" over a 300% stop at
+       * 243 -- read as the stop being wrong. A bought option's own exits are the long's, said elsewhere.
+       */
+      deskStop: r.plan.action === 'buy' ? null : netIfClosedAt({ state: r.state, price: r.plan.stopPrice ?? null, spot, paidUsd: charges.totalUsd }),
     },
     onBook: resting === null ? null : {
       // The target rests as a limit and carries its level in limitPrice; the

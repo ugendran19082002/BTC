@@ -568,23 +568,39 @@ function PositionRow({ trade, onChanged }: { trade: Trade; onChanged?: () => voi
             </span></>
           )}
         </span>
-        <span title="The resting stop, and what the trade is left with if it fires — after every charge.">
-          Stop{' '}
-          <span
-            className={cn(
-              'tabular-nums',
-              naked ? 'text-[var(--down)]' : trade.protection.stopLoss ? 'text-foreground' : 'text-[var(--dim)]',
-            )}
-          >
-            {trade.onBook?.stop != null ? price(trade.onBook.stop) : deskStop !== null ? price(deskStop) : 'none'}
-          </span>
-          {trade.onBook?.stop == null && deskStop !== null && <span className="text-[var(--dim)]"> · the desk watches it</span>}
-          {trade.onBook?.stop != null && trade.ifExits?.stop != null && (
-            <> → <span className={cn('tabular-nums', trade.ifExits.stop >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
-              {trade.ifExits.stop >= 0 ? 'keep ' : 'lose '}{inr(Math.abs(usdToInr(trade.ifExits.stop) ?? 0))}
-            </span></>
-          )}
-        </span>
+        {/*
+          The stop: the one the desk judges, on the offer -- with its share of the entry, so "300%" is seen to be 300%
+          -- then what it leaves. The order resting at Delta is the backstop, further out (engine.ts `backstopFor`), said
+          after it. Until 8 Oct 2026 only the backstop was shown, as "Stop": 425.40 over a 300% stop at 243.20.
+        */}
+        {(() => {
+          // A short's stop is said only while it is resting at Delta as well: with nothing resting, "none" and the warning below say so.
+          const own = !long ? (trade.onBook?.stop != null ? (trade.plan?.stopPrice ?? trade.onBook.stop) : null) : deskStop;
+          const pct = !long && own !== null && trade.entryAvgPrice ? Math.round((own / trade.entryAvgPrice - 1) * 100) : null;
+          const leaves = trade.ifExits?.deskStop ?? (trade.onBook?.stop != null && own === trade.onBook.stop ? trade.ifExits?.stop ?? null : null);
+          const backstop = trade.onBook?.stop != null && trade.onBook.stop !== own ? trade.onBook.stop : null;
+          return (
+            <span title="The stop the desk judges, on the offer held for 15 seconds, and what the trade is left with if it fires — after every charge. The order resting at Delta sits further out: it fires only if the desk is down.">
+              Stop{' '}
+              <span
+                className={cn(
+                  'tabular-nums',
+                  naked ? 'text-[var(--down)]' : trade.protection.stopLoss || own !== null ? 'text-foreground' : 'text-[var(--dim)]',
+                )}
+              >
+                {own !== null ? price(own) : trade.onBook?.stop != null ? price(trade.onBook.stop) : 'none'}
+              </span>
+              {pct !== null && <span className="text-[var(--dim)]"> ({pct}%)</span>}
+              {leaves != null && (
+                <> → <span className={cn('tabular-nums', leaves >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
+                  {leaves >= 0 ? 'keep ' : 'lose '}{inr(Math.abs(usdToInr(leaves) ?? 0))}
+                </span></>
+              )}
+              {backstop !== null && <span className="text-[var(--dim)]"> · backstop at Delta <span className="tabular-nums">{price(backstop)}</span></span>}
+              {trade.onBook?.stop == null && long && deskStop !== null && <span className="text-[var(--dim)]"> · the desk watches it</span>}
+            </span>
+          );
+        })()}
         {/*
           A target or stop asked for and not resting at Delta, said with Delta's reason. It showed only "none",
           and a trade that asked for a 1.90 target looked the same as one that asked for nothing (2 Oct 2026).

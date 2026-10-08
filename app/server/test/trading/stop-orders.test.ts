@@ -357,3 +357,22 @@ test('a fill on the right side of both prices anchors as usual', () => {
   assert.equal(after.plan.exitProblem, undefined);
   assert.equal(after.state.wantsProtection, true);
 });
+
+/* -------------------------------------- the backstop inside the close-out (8 Oct 2026) --- */
+
+test('[critical] the backstop never sits past the close-out: 300% of 61 at 200x was resting at 425 against a 265 close-out', async () => {
+  const { backstopFor: back } = await import('../../src/trading/engine.js');
+  // The live trade: sold at 61, stop 243.2, BTC 81,034 at the entry -> closed out at 61 + 202.6 = 263.6.
+  assert.equal(back(243.2, 61), 425.4, 'uncapped, as it was');
+  const closeOut = 61 + (81_034 * 0.5) / 200;
+  const capped = back(243.2, 61, closeOut);
+  assert.ok(capped < closeOut, 'inside the close-out');
+  assert.ok(capped > 243.2, 'still past the stop the desk watches');
+  assert.equal(capped, 253.4, 'a twentieth of the room short of it');
+  // A backstop already inside is left exactly as it was.
+  assert.equal(back(60, 20, 20 + 200), backstopFor(60, 20));
+  // A stop at or past the close-out itself: the backstop is the stop, never under it.
+  assert.equal(back(300, 61, closeOut), 300);
+  // Nothing known about the close-out: as before.
+  assert.equal(back(243.2, 61, null), 425.4);
+});

@@ -266,7 +266,7 @@ describe('what the resting exits are worth', () => {
     expect(target).toHaveTextContent('Target 0.80 → keep ₹1,447');
     expect(within(target).getByText(/keep ₹1,447/).className).toContain('--up');
     const stop = screen.getByText(/^Stop/).closest('span')!;
-    expect(stop).toHaveTextContent('Stop 26.00 → lose ₹1,564');
+    expect(stop).toHaveTextContent('Stop 26.00 (148%) → lose ₹1,564');
     expect(within(stop).getByText(/lose ₹1,564/).className).toContain('--down');
   });
 
@@ -277,7 +277,7 @@ describe('what the resting exits are worth', () => {
 
   it('says nothing about money for an exit that is not on the book', () => {
     render(<PositionsCard trades={[resting({ onBook: { target: 0.8, stop: null } })]} />);
-    const stop = screen.getByTitle(/The resting stop/);
+    const stop = screen.getByTitle(/The stop the desk judges/);
     expect(stop).toHaveTextContent('Stop none');
     expect(stop).not.toHaveTextContent('lose');
     // and, asked for and not there, it is said
@@ -922,5 +922,22 @@ describe('a bought position (5 Oct 2026)', () => {
     expect(screen.queryByText('200x')).toBeNull();
     expect(screen.getByText(/most it can lose: what was paid/)).toBeInTheDocument();
     expect(screen.getByText(/the desk watches it/)).toBeInTheDocument();
+  });
+});
+
+/*
+ * 8 Oct 2026: a 300% stop on a 61 sale (243.20) showed as "Stop 425.40 -> lose Rs 160" -- the backstop resting at
+ * Delta, not the stop -- and read as the stop being wrong.
+ */
+describe('the stop line: the desk\'s own stop first, the backstop at Delta after it', () => {
+  it('[critical] says the stop the desk judges, with its share of the entry, what it leaves, and the backstop', () => {
+    const t = {
+      ...trade(), entryAvgPrice: 61, position: -5,
+      plan: { ...trade().plan!, stopPrice: 243.2, takeProfitPrice: 6.1 },
+      onBook: { target: 6.1, stop: 253.4 }, ifExits: { target: 0.26, stop: -0.99, deskStop: -0.93 },
+    };
+    render(<PositionsCard trades={[t]} />);
+    const line = screen.getByTitle(/The stop the desk judges/);
+    expect(line).toHaveTextContent(/^Stop 243\.20 \(299%\) → lose ₹79\.\d\d · backstop at Delta 253\.40$/);
   });
 });

@@ -55,7 +55,8 @@ export type Trade = {
    * read or there is no such order; the same arithmetic as `netIfClosedUsd`
    * with the target or the stop in place of the mark.
    */
-  ifExits?: { target: number | null; stop: number | null } | null;
+  /** What the resting target, the resting stop (the backstop at Delta) and the desk's own stop would leave. `deskStop` absent on an older server. */
+  ifExits?: { target: number | null; stop: number | null; deskStop?: number | null } | null;
   /** A sell working to add to the position, when there is one. */
   adding?: {
     size: number;

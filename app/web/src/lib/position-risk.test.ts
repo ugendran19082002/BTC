@@ -45,10 +45,12 @@ describe('positionRisk: a short', () => {
     expect(r.target).toMatchObject({ level: 0.5, points: 8, moneyUsd: 0.9 });
   });
 
-  it('reads the levels resting at Delta before the plan', () => {
+  it('reads the target resting at Delta, and the stop the desk judges -- not the backstop resting further out', () => {
     const r = positionRisk(trade({ onBook: { target: 1, stop: 20 } }));
-    expect(r.stop!.level).toBe(20);
+    expect(r.stop!.level).toBe(26);
     expect(r.target!.level).toBe(1);
+    // A plan with no stop of its own falls back to what rests.
+    expect(positionRisk(trade({ onBook: { target: 1, stop: 20 }, plan: { ...trade().plan!, stopPrice: null } })).stop!.level).toBe(20);
   });
 
   it('says how far liquidation is, as points and as a multiple of the price now', () => {
@@ -108,5 +110,18 @@ describe('lossBudget', () => {
 
   it('uses the accounts added together on "All accounts"', () => {
     expect(lossBudget(status({ combined: { accounts: [], lossLimitUsd: 50, lossLeftUsd: 40 } }))).toEqual({ limitUsd: 50, leftUsd: 40, usedPct: 0.2 });
+  });
+});
+
+describe('a short\'s stop is the desk\'s own, not the backstop at Delta (8 Oct 2026)', () => {
+  it('[critical] 300% of 73 is held at 256; the order resting at 439 is its backstop, not its SL', () => {
+    const r = positionRisk({
+      tradeId: 'x', symbol: 'P-BTC-78500-091026', optionSide: 'PE', position: -4, entryAvgPrice: 73,
+      plan: { lots: 4, entry: { type: 'limit', timeoutMs: 0, marketFallback: false }, takeProfitPrice: 7.3, stopPrice: 256 },
+      onBook: { target: 7.3, stop: 439 }, ifExits: { target: 0.25, stop: -1.52, deskStop: -0.75 },
+      live: { markPrice: 100.8, bid: 99, ask: 106, unrealisedPnl: 0, decayed: 0, liquidationPrice: 276 },
+    } as never, { alarms: [], perpMark: null });
+    expect(r.stop?.level).toBe(256);
+    expect(r.stop?.moneyUsd).toBe(-0.75);
   });
 });

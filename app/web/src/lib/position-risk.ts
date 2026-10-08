@@ -64,11 +64,18 @@ export function positionRisk(t: Trade, opts: { alarms?: TradeStatus['alarms']; p
   // A short's exits: what rests at Delta now, else the plan. A long's: its own levels off the price paid,
   // its target resting at Delta when it does.
   const own = long ? longLevels(t.plan, t.entryAvgPrice) : null;
-  const stopLevel = long ? own!.stop : (t.onBook?.stop ?? t.plan?.stopPrice ?? null);
+  /*
+   * A short's stop is the one the desk judges (`plan.stopPrice`), not the order resting at Delta, which is its
+   * backstop further out (engine.ts `backstopFor`): until 8 Oct 2026 the phone drew the backstop as "SL" -- 439
+   * over a 300% stop at 256 -- and it read as the stop being wrong.
+   */
+  const stopLevel = long ? own!.stop : (t.plan?.stopPrice ?? t.onBook?.stop ?? null);
   const targetLevel = long ? (t.onBook?.target ?? own!.target) : (t.onBook?.target ?? t.plan?.takeProfitPrice ?? null);
 
   // A short loses as the price rises: the stop is above, the target below. A long the other way round.
-  const stop = room(stopLevel, exitPx, long ? (l, p) => p - l : (l, p) => l - p, t.ifExits?.stop);
+  // What it leaves at that stop: the desk's own where the server says it, else the resting one's when they are the same level.
+  const stopLeaves = long ? t.ifExits?.stop : (t.ifExits?.deskStop ?? (t.onBook?.stop != null && t.onBook.stop === stopLevel ? t.ifExits?.stop : null));
+  const stop = room(stopLevel, exitPx, long ? (l, p) => p - l : (l, p) => l - p, stopLeaves);
   const target = room(targetLevel, exitPx, long ? (l, p) => l - p : (l, p) => p - l, t.ifExits?.target);
 
   const liq = live?.liquidationPrice ?? null;

@@ -594,10 +594,34 @@ export const MAX_CLOSE_TRIES = 3;
  * (`stopIfReached`), and the order at the exchange sits further out -- the
  * stop plus its distance from the entry, at least a quarter of the stop again
  * -- where only a real run or this process being down will reach it.
+ *
+ * Never past the close-out (8 Oct 2026). At 200x the exchange closes a short out about $203 over its entry, and a
+ * 300% stop on a $61 premium (243) put the backstop at 425 -- past the 265 close-out, an order that could never
+ * fire: the position is gone first. With `closeOut` known the backstop sits inside it, a twentieth of the room short
+ * of it, and never under the stop itself. Without it, as before.
  */
-export function backstopFor(stop: number, entry: number | null): number {
+export function backstopFor(stop: number, entry: number | null, closeOut: number | null = null): number {
   const gap = Math.max(entry === null || !(entry > 0) ? 0 : Math.abs(stop - entry), stop * 0.25);
-  return stop + gap;
+  const far = stop + gap;
+  if (closeOut === null || !Number.isFinite(closeOut) || entry === null || !(entry > 0) || !(closeOut > entry)) return far;
+  const inside = Math.floor((closeOut - (closeOut - entry) * BACKSTOP_INSIDE_CLOSE_OUT) * 10) / 10;
+  return Math.min(far, Math.max(stop, inside));
+}
+
+/** How far inside the close-out a capped backstop sits, as a share of the room from the entry to it. */
+export const BACKSTOP_INSIDE_CLOSE_OUT = 0.05;
+
+/**
+ * Where the exchange closes this short out: its entry plus the room at its leverage, worked from BTC when it was
+ * entered -- fixed for the trade, as the margin posted then is, so the backstop does not move with every tick of
+ * BTC. Null where BTC at the entry is not known; the backstop is then not capped.
+ */
+function closeOutOf(rec: TradeRecord): number | null {
+  const entry = rec.state.entryAvgPrice;
+  const spot = rec.state.perpEntry ?? rec.plan.underlying?.entry ?? null;
+  if (entry === null || !(entry > 0) || spot === null || !(spot > 0)) return null;
+  const room = liquidationRoom({ spot, premium: entry, leverage: clampLeverage(rec.plan.leverage) });
+  return room === null ? null : entry + room;
 }
 const PROTECT_RETRY_MAX_MS = 60_000;
 
@@ -1664,7 +1688,7 @@ export class TradeEngine {
      */
     const sl = await settle(
       'stop_loss',
-      rec.plan.stopPrice === null ? null : backstopFor(rec.plan.stopPrice, rec.state.entryAvgPrice),
+      rec.plan.stopPrice === null ? null : backstopFor(rec.plan.stopPrice, rec.state.entryAvgPrice, closeOutOf(rec)),
       // Either shape counts as the stop leg: a stop market placed before
       // 12 September is still a stop, and must be recognised to be replaced.
       (o) => o.type === 'stop_market' || o.type === 'stop_limit',
