@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-456 files listed, 223 test files counted below, images and lockfiles left out.
+457 files listed, 224 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 120 |
-| `app/web` | 103 |
+| `app/web` | 104 |
 
 ## `(root)`
 
@@ -543,6 +543,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [price-change.ts](../../app/web/src/lib/price-change.ts) | The phone's Price changes screen (owner, 7 Oct 2026): BTC's index now against each window back -- a minute out to half a day -- and against the desk's own marks, the first entry of what it holds an... |
 | [report-error.ts](../../app/web/src/lib/report-error.ts) | Send a browser failure to the server so it lands in the same log as everything else. |
 | [report.ts](../../app/web/src/lib/report.ts) | The calendar's arithmetic, kept out of the drawing so it can be checked. |
+| [stop-hold.ts](../../app/web/src/lib/stop-hold.ts) | Where a sold option's stop can sit, and what the desk does with one asked for past that (8 Oct 2026). |
 | [strategy-blocks.ts](../../app/web/src/lib/strategy-blocks.ts) | A signal strategy's strike rule over its window, as the form works with it. |
 | [strategy-checks.ts](../../app/web/src/lib/strategy-checks.ts) | Things that are allowed but probably not meant -- said as warnings, not refused. |
 | [strategy-exits.ts](../../app/web/src/lib/strategy-exits.ts) | A strategy's two exits, read as a percentage or as points, and moved through the day by time steps: |
