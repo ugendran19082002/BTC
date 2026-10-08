@@ -176,6 +176,8 @@ export type TradeStats = {
    * what the owner reads to keep or drop a pairing (6 Oct 2026). Trades with no signal are left out, as above.
    */
   byPair: TradeStatsGroup[];
+  /** The timeframe a signal trade was read on (`timeframeKeyOf`): `15m`, or `chain` with the timeframe chain. Signal trades only. */
+  byTimeframe: TradeStatsGroup[];
 };
 
 /** `breakout|single|15m`; `breakout|mtf|5m` for the read with the timeframe chain, which is its own pairing. */
@@ -237,6 +239,20 @@ export function ofMethods<T extends TradeRecord>(records: readonly T[], methods:
   return records.filter((rec) => rec.plan.signal?.method !== undefined && wanted.has(rec.plan.signal.method));
 }
 
+/** What the timeframe filter calls a trade read with the timeframe chain: it has no one timeframe of its own. */
+export const CHAIN_KEY = 'chain';
+
+/** The timeframe a signal trade was read on, as the filter names it: its timeframe, or `chain` with the timeframe chain. Null with no signal. */
+const timeframeKeyOf = (rec: TradeRecord): string | null =>
+  (rec.plan.signal ? (rec.plan.signal.mode === 'mtf' ? CHAIN_KEY : rec.plan.signal.tf) : null);
+
+/** Only the signal trades read on the timeframes named, `chain` being the timeframe chain (8 Oct 2026, the phone's timeframe filter); null or none named is every trade. */
+export function ofTimeframes<T extends TradeRecord>(records: readonly T[], keys: readonly string[] | null): readonly T[] {
+  if (!keys || keys.length === 0) return records;
+  const wanted = new Set(keys);
+  return records.filter((rec) => { const k = timeframeKeyOf(rec); return k !== null && wanted.has(k); });
+}
+
 export function tradeStats(
   records: readonly TradeRecord[],
   o: { from: string; to: string; spot: number | null },
@@ -248,6 +264,7 @@ export function tradeStats(
   const byAction = new Map<string, number[]>();
   const byMethod = new Map<string, number[]>();
   const byPair = new Map<string, number[]>();
+  const byTimeframe = new Map<string, number[]>();
   const push = (m: Map<string, number[]>, k: string, n: number) => { const a = m.get(k); if (a) a.push(n); else m.set(k, [n]); };
   for (const rec of records) {
     const c = closedNet(rec, o.spot);
@@ -260,6 +277,7 @@ export function tradeStats(
     if (rec.plan.signal?.method) {
       push(byMethod, rec.plan.signal.method, c.netUsd);
       push(byPair, pairKey(rec.plan.signal), c.netUsd);
+      push(byTimeframe, timeframeKeyOf(rec)!, c.netUsd);
     }
   }
   const groups = (m: Map<string, number[]>) => [...m.entries()].map(([k, v]) => groupOf(k, v)).sort((a, b) => b.netUsd - a.netUsd);
@@ -267,7 +285,7 @@ export function tradeStats(
     from: o.from, to: o.to, overall: groupOf('all', all),
     byStrategy: groups(byStrategy), byAccount: groups(byAccount),
     byOption: groups(byOption), byAction: groups(byAction), byMethod: groups(byMethod),
-    byPair: groups(byPair),
+    byPair: groups(byPair), byTimeframe: groups(byTimeframe),
   };
 }
 

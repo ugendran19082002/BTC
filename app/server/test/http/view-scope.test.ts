@@ -106,6 +106,11 @@ test('[critical] a view sign-in reads the desk the phone shows', async () => {
   assert.equal(byMethod.statusCode, 200, byMethod.body.slice(0, 120));
   assert.deepEqual(byMethod.json().methods.filter((x: { key: string }) => x.key === 'breakout').map((x: { key: string; trades: number }) => [x.key, x.trades]), [['breakout', 0]]);
   assert.equal((await app.inject({ method: 'GET', url: '/api/report/days?method=breakout', headers: jar(token) })).statusCode, 200);
+  // And the timeframe filter, the timeframe chain being one of its choices, named for the screen.
+  const byTf = await app.inject({ method: 'GET', url: '/api/report/stats?tf=chain,15m', headers: jar(token) });
+  assert.equal(byTf.statusCode, 200, byTf.body.slice(0, 120));
+  assert.deepEqual(byTf.json().timeframes.map((x: { key: string; name: string; trades: number }) => [x.key, x.name, x.trades]), [['15m', '15m', 0], ['chain', 'With timeframe chain', 0]]);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/report/days?tf=chain', headers: jar(token) })).statusCode, 200);
 });
 
 test('[critical] a view session is refused every write but sign-in, sign-out and error reports -- every route the app has', async () => {

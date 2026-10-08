@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ofMethods, ofStrategies, daysCsv, daysReport, mtmStats, type MtmSample } from '../../src/trading/pnl-history.js';
+import { ofMethods, ofStrategies, ofTimeframes, daysCsv, daysReport, mtmStats, type MtmSample } from '../../src/trading/pnl-history.js';
 import { PgTradeStore } from '../../src/trading/store.js';
 import { SettingsCache } from '../../src/db/settings.js';
 import { closePool } from '../../src/db/pool.js';
@@ -278,4 +278,26 @@ test('[critical] the method filter keeps only the signal trades of the entry met
   assert.deepEqual(ids(ofMethods(ofStrategies(all, ['s1']), ['breakout'])), ['a']);
   const r = tradeStats(ofMethods(all, ['breakout']), { from: '2026-09-11', to: '2026-09-11', spot: 80_000 });
   assert.deepEqual([r.overall.trades, r.byMethod.map((g) => g.key), r.byStrategy.map((g) => g.key).sort()], [2, ['breakout'], ['s1', 's2']]);
+});
+
+test('[critical] the timeframe filter keeps only the signal trades read on the timeframes named, the timeframe chain being one of them', () => {
+  const sig = (tf: string, mode: 'mtf' | 'single' = 'single') => ({ method: 'breakout', n: 1, name: 'Breakout', mode, tf, dir: 1 as const, triggerTime: 0 });
+  const of = (id: string, signal: ReturnType<typeof sig> | undefined) => {
+    const rec = tagged(record(id, [fill('entry', 100, 15, T(11, 7)), fill('take_profit', 100, 5, T(11, 9))]), 's1', 1);
+    return { ...rec, plan: { ...rec.plan, signal } };
+  };
+  const all = [of('a', sig('15m')), of('b', sig('1h')), of('c', sig('5m', 'mtf')), of('d', sig('15m')), of('h', undefined)];
+  const ids = (v: readonly { state: { tradeId: string } }[]) => v.map((r) => r.state.tradeId);
+  assert.equal(ofTimeframes(all, null), all);
+  assert.equal(ofTimeframes(all, []), all, 'an empty choice is no filter');
+  assert.deepEqual(ids(ofTimeframes(all, ['15m'])), ['a', 'd']);
+  // With the chain a trade has no timeframe of its own: it is chosen as `chain`, not as the 5m it enters on.
+  assert.deepEqual(ids(ofTimeframes(all, ['chain'])), ['c']);
+  assert.deepEqual(ids(ofTimeframes(all, ['5m'])), []);
+  assert.deepEqual(ids(ofTimeframes(all, ['1h', 'chain'])), ['b', 'c']);
+  // A trade with no signal has no timeframe: any timeframe filter leaves it out.
+  assert.deepEqual(ids(ofTimeframes(all, ['15m', '1h', 'chain'])), ['a', 'b', 'c', 'd']);
+  const r = tradeStats(all, { from: '2026-09-11', to: '2026-09-11', spot: 80_000 });
+  assert.deepEqual(r.byTimeframe.map((g) => [g.key, g.trades]).sort(), [['15m', 2], ['1h', 1], ['chain', 1]]);
+  assert.equal(r.byTimeframe.reduce((n, g) => n + g.trades, 0), r.overall.trades - 1, 'every signal trade in exactly one');
 });

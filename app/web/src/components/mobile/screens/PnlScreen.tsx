@@ -13,7 +13,7 @@ import { useDayRange } from '@/components/mobile/useDayRange';
 import { pairsOfStats, splitPairs } from '@/lib/method-pairs';
 import { PairList } from '@/components/mobile/PairList';
 import { DayCalendar } from '@/components/mobile/DayCalendar';
-import { FilterPicker, METHODS, STRATEGIES, type FilterOption } from '@/components/mobile/FilterPicker';
+import { FilterPicker, METHODS, STRATEGIES, TIMEFRAMES, type FilterOption } from '@/components/mobile/FilterPicker';
 
 /**
  * P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line,
@@ -23,10 +23,11 @@ import { FilterPicker, METHODS, STRATEGIES, type FilterOption } from '@/componen
  * of the lists by strategy and by entry method), CE or PE, sold or bought, and account. Every figure after
  * charges, from the journal (`/api/report/*`), for the range chosen at the top.
  *
- * Under the range, two filters of the same kind (owner, 8 Oct 2026): by strategy and by entry method. Tick one or
- * several in either and every figure of the closed trades -- the numbers, the calendar, the pairs -- is of those
- * trades alone; both at once is both. Each list offers what the other choice leaves. Today's live figure and its
- * line are the account's, which no strategy or method owns a share of, and the screen says so.
+ * Under the range, three filters of the same kind (owner, 8 Oct 2026): by strategy, by entry method and by
+ * timeframe -- the timeframe chain being one of the timeframes to tick. Tick one or several in any and every figure
+ * of the closed trades -- the numbers, the calendar, the pairs -- is of those trades alone; more than one filter at
+ * once is all of them. Each list offers what the other choices leave. Today's live figure and its line are the
+ * account's, which no strategy, method or timeframe owns a share of, and the screen says so.
  */
 
 const rs = (usd: number | null | undefined) => (usd === null || usd === undefined ? '—' : signedInr(usdToInr(usd)));
@@ -51,9 +52,11 @@ export function PnlScreen() {
   // The strategies and the entry methods kept; none of either is all of them. Asked of the server, which reads the trades: the phone only names them.
   const [strategies, setStrategies] = usePersisted<string[]>('m-pnl-strategies', []);
   const [methods, setMethods] = usePersisted<string[]>('m-pnl-methods', []);
-  const asked = `${strategies.join(',')}|${methods.join(',')}`;
-  const stats = usePoll(() => getStats(from, to, p.accountParam, { strategies, methods }), isToday ? 30_000 : 120_000, { deps: [from, to, p.accountParam, asked] });
-  const days = usePoll(() => getDaysFor(from, to, p.accountParam, { strategies, methods }), 120_000, { deps: [from, to, p.accountParam, asked], enabled: !isToday });
+  const [timeframes, setTimeframes] = usePersisted<string[]>('m-pnl-timeframes', []);
+  const filter = { strategies, methods, timeframes };
+  const asked = `${strategies.join(',')}|${methods.join(',')}|${timeframes.join(',')}`;
+  const stats = usePoll(() => getStats(from, to, p.accountParam, filter), isToday ? 30_000 : 120_000, { deps: [from, to, p.accountParam, asked] });
+  const days = usePoll(() => getDaysFor(from, to, p.accountParam, filter), 120_000, { deps: [from, to, p.accountParam, asked], enabled: !isToday });
   const mtm = usePoll(
     () => json<MtmReport>(p.accountParam === null ? '/api/report/mtm' : `/api/report/mtm?account=${p.accountParam}`),
     60_000, { deps: [p.accountParam], enabled: isToday },
@@ -76,11 +79,13 @@ export function PnlScreen() {
   });
   const options = (stats.data?.strategies ?? []).map(choice);
   const methodOptions = (stats.data?.methods ?? []).map(choice);
+  const timeframeOptions = (stats.data?.timeframes ?? []).map(choice);
   const chosen = options.filter((x) => strategies.includes(x.key));
   const chosenMethods = methodOptions.filter((x) => methods.includes(x.key));
+  const chosenTimeframes = timeframeOptions.filter((x) => timeframes.includes(x.key));
   // Whose figures these are, in a few words: " · 1h time", " · 2 strategies · 3 methods".
   const said = (v: readonly FilterOption[], many: string) => (v.length === 0 ? null : v.length === 1 ? v[0]!.name : `${v.length} ${many}`);
-  const whose = [said(chosen, 'strategies'), said(chosenMethods, 'methods')].filter((x): x is string => x !== null);
+  const whose = [said(chosen, 'strategies'), said(chosenMethods, 'methods'), said(chosenTimeframes, 'time frames')].filter((x): x is string => x !== null);
   const ofChosen = whose.map((w) => ` · ${w}`).join('');
   const narrowed = whose.length > 0;
 
@@ -90,6 +95,7 @@ export function PnlScreen() {
       {/* Each offered once there is something to choose between -- or a choice to take off. */}
       {(options.length > 1 || chosen.length > 0) && <FilterPicker noun={STRATEGIES} options={options} picked={strategies} onChange={setStrategies} />}
       {(methodOptions.length > 1 || chosenMethods.length > 0) && <FilterPicker noun={METHODS} options={methodOptions} picked={methods} onChange={setMethods} />}
+      {(timeframeOptions.length > 1 || chosenTimeframes.length > 0) && <FilterPicker noun={TIMEFRAMES} options={timeframeOptions} picked={timeframes} onChange={setTimeframes} />}
 
       <Panel>
         <span className="flex items-baseline justify-between gap-2 text-[13px] text-muted-foreground">
@@ -136,7 +142,7 @@ export function PnlScreen() {
         {budget && <LossMeter {...budget} />}
         {isToday && narrowed && (
           <p className="m-0 mt-2 text-[12px] text-muted-foreground">
-            This figure and its line are the whole account&apos;s: open positions are not split by strategy or method. The trades, the win rate and the pairs below are of {whose.join(', ')}.
+            This figure and its line are the whole account&apos;s: open positions are not split by strategy, method or time frame. The trades, the win rate and the pairs below are of {whose.join(', ')}.
           </p>
         )}
       </Panel>

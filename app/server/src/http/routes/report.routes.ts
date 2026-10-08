@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { journal, tradingService } from '../../trading/service.js';
-import { daysCsv, daysReport, mtmStats, ofMethods, ofStrategies, tradeStats, type TradeStatsGroup } from '../../trading/pnl-history.js';
+import { CHAIN_KEY, daysCsv, daysReport, mtmStats, ofMethods, ofStrategies, ofTimeframes, tradeStats, type TradeStatsGroup } from '../../trading/pnl-history.js';
 import { strategyStore } from './strategy.routes.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { istDate } from '../../strategy/schedule.js';
@@ -20,7 +20,9 @@ import { accountOf } from '../account-query.js';
  * `?strategy=<id>,<id>` on the days and the statistics (8 Oct 2026): only the
  * trades those strategies placed -- `manual` for the ones nobody scheduled.
  * Without it, or empty, every trade. `?method=<id>,<id>` beside it: only the
- * signal trades of those entry methods. Both together is both at once.
+ * signal trades of those entry methods. `?tf=15m,1h,chain`: only the signal
+ * trades read on those timeframes, `chain` being the timeframe chain. Any
+ * of them together is all of them at once.
  */
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ninetyDaysAgo = (now: number) => istDate(now - 90 * 86_400_000);
@@ -38,7 +40,7 @@ function rangeOf(q: { from?: unknown; to?: unknown }, now = Date.now()): { from:
 }
 
 /** The ids asked for under one name of the query, or null for all of them. More than a screen could list is a mistake, not a filter. */
-function listOf(q: unknown, name: 'strategy' | 'method'): string[] | null {
+function listOf(q: unknown, name: 'strategy' | 'method' | 'tf'): string[] | null {
   const raw = (q as Record<string, unknown> | null | undefined)?.[name];
   if (typeof raw !== 'string' || raw.trim() === '') return null;
   const keys = [...new Set(raw.split(',').map((k) => k.trim()).filter((k) => k !== '' && k.length <= 120))].slice(0, 200);
@@ -46,9 +48,15 @@ function listOf(q: unknown, name: 'strategy' | 'method'): string[] | null {
 }
 const strategiesOf = (q: unknown) => listOf(q, 'strategy');
 const methodsOf = (q: unknown) => listOf(q, 'method');
-/** The trades a request is about: the strategies it names, and the entry methods. */
-const chosenOf = <T extends Parameters<typeof ofStrategies>[0][number]>(records: readonly T[], q: unknown) =>
-  ofMethods(ofStrategies(records, strategiesOf(q)), methodsOf(q));
+const timeframesOf = (q: unknown) => listOf(q, 'tf');
+/** The trades a request is about: the strategies it names, the entry methods and the timeframes. `but` leaves one of the three out, for that filter's own list. */
+const chosenOf = <T extends Parameters<typeof ofStrategies>[0][number]>(records: readonly T[], q: unknown, but?: 'strategy' | 'method' | 'tf') =>
+  ofTimeframes(
+    ofMethods(ofStrategies(records, but === 'strategy' ? null : strategiesOf(q)), but === 'method' ? null : methodsOf(q)),
+    but === 'tf' ? null : timeframesOf(q),
+  );
+/** The desk's timeframes in their own order, the chain last: how the timeframe list is sorted. */
+const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', CHAIN_KEY];
 
 export function registerReportRoutes(app: FastifyInstance) {
   const svc = tradingService();
@@ -90,9 +98,10 @@ export function registerReportRoutes(app: FastifyInstance) {
    * net, and any strategy asked for that has none -- so a choice remembered from another range can still be seen
    * and taken off.
    *
-   * `?method=` the same way, with `methods` its list. Each list is of the trades the *other* choice leaves: the
-   * methods to choose from are those of the strategies chosen, and the strategies those of the methods chosen --
-   * so neither list offers something the other choice has already emptied, and neither is narrowed by its own.
+   * `?method=` and `?tf=` the same way, with `methods` and `timeframes` their lists. Each list is of the trades
+   * the *other* choices leave: the methods to choose from are those of the strategies and timeframes chosen, and
+   * so on round -- so no list offers something the other choices have already emptied, and none is narrowed by
+   * its own. `timeframes` is in the desk's order, the timeframe chain (`chain`) last.
    */
   app.get('/api/report/stats', async (req, reply) => {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
@@ -100,6 +109,7 @@ export function registerReportRoutes(app: FastifyInstance) {
     const every = await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query));
     const asked = strategiesOf(req.query);
     const askedMethods = methodsOf(req.query);
+    const askedTfs = timeframesOf(req.query);
     const records = chosenOf(every, req.query);
     const stats = tradeStats(records, { ...r, spot: svc.spot });
     // A deleted strategy keeps the name its trades were placed under.
@@ -117,11 +127,14 @@ export function registerReportRoutes(app: FastifyInstance) {
       ...groups.map((g) => ({ key: g.key, name: name(g.key), trades: g.trades, netUsd: g.netUsd })),
       ...(chosen ?? []).filter((k) => !groups.some((g) => g.key === k)).map((k) => ({ key: k, name: name(k), trades: 0, netUsd: 0 })),
     ];
-    const strategies = choices(asked ? tradeStats(ofMethods(every, askedMethods), { ...r, spot: svc.spot }).byStrategy : stats.byStrategy, asked, strategyName);
-    const methods = choices(
-      askedMethods ? tradeStats(ofStrategies(every, asked), { ...r, spot: svc.spot }).byMethod : stats.byMethod,
-      askedMethods, (key) => methodNames.get(key) ?? key,
-    );
+    // With nothing chosen every list is of every trade, which `stats` already is.
+    const any = asked !== null || askedMethods !== null || askedTfs !== null;
+    const leaving = (but: 'strategy' | 'method' | 'tf') => (any ? tradeStats(chosenOf(every, req.query, but), { ...r, spot: svc.spot }) : stats);
+    const strategies = choices(leaving('strategy').byStrategy, asked, strategyName);
+    const methods = choices(leaving('method').byMethod, askedMethods, (key) => methodNames.get(key) ?? key);
+    const place = (key: string) => { const i = TF_ORDER.indexOf(key); return i === -1 ? TF_ORDER.length : i; };
+    const timeframes = choices(leaving('tf').byTimeframe, askedTfs, (key) => (key === CHAIN_KEY ? 'With timeframe chain' : key))
+      .sort((a, b) => place(a.key) - place(b.key) || a.key.localeCompare(b.key));
     return {
       mode: svc.mode,
       from: stats.from,
@@ -129,6 +142,7 @@ export function registerReportRoutes(app: FastifyInstance) {
       overall: stats.overall,
       strategies,
       methods,
+      timeframes,
       byStrategy: stats.byStrategy.map((g) => named(g, strategyName(g.key))),
       byAccount: stats.byAccount.map((g) => named(g, g.key === 'none' ? 'No account' : accountNames.get(g.key) ?? `Account ${g.key}`)),
       byOption: stats.byOption.map((g) => named(g, g.key)),

@@ -329,8 +329,8 @@ describe('P&L: a custom From and To (owner, 6 Oct 2026)', () => {
     expect(within(sheet).getByRole('status')).toHaveTextContent('7 days');
     fireEvent.click(within(sheet).getByRole('button', { name: 'Show' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Custom range' })).toBeNull());
-    // the last argument is the filters: no strategy and no method chosen, so every trade
-    await waitFor(() => expect(phone.getStats).toHaveBeenCalledWith(week.from, week.to, null, { strategies: [], methods: [] }));
+    // the last argument is the filters: no strategy, method or timeframe chosen, so every trade
+    await waitFor(() => expect(phone.getStats).toHaveBeenCalledWith(week.from, week.to, null, { strategies: [], methods: [], timeframes: [] }));
     expect(screen.getByRole('radio', { name: 'Custom' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('button', { name: 'Change' })).toBeInTheDocument();
   });

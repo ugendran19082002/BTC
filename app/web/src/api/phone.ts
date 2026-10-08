@@ -12,11 +12,14 @@ import type { EntryMethodInfo } from '@/api/entry';
 const withAcct = (url: string, account: number | null) =>
   account === null ? url : `${url}${url.includes('?') ? '&' : '?'}account=${account}`;
 
-/** What the phone's filters keep: strategies by id (`manual` for trades by hand) and entry methods by id. None of either is every trade. */
-export type TradeFilter = { strategies?: readonly string[]; methods?: readonly string[] };
+/**
+ * What the phone's filters keep: strategies by id (`manual` for trades by hand), entry methods by id, and the
+ * timeframes a signal trade was read on (`15m`; `chain` for the timeframe chain). None of any is every trade.
+ */
+export type TradeFilter = { strategies?: readonly string[]; methods?: readonly string[]; timeframes?: readonly string[] };
 const listed = (name: string, keys: readonly string[] | undefined) => (keys && keys.length ? `&${name}=${keys.map(encodeURIComponent).join(',')}` : '');
-/** `&strategy=a,b&method=c` for what is chosen; nothing for nothing chosen. */
-const filtered = (f: TradeFilter | undefined) => listed('strategy', f?.strategies) + listed('method', f?.methods);
+/** `&strategy=a,b&method=c&tf=15m,chain` for what is chosen; nothing for nothing chosen. */
+const filtered = (f: TradeFilter | undefined) => listed('strategy', f?.strategies) + listed('method', f?.methods) + listed('tf', f?.timeframes);
 
 /** One event of a trade's journal as the server keeps it (trading/types.ts `TradeEvent`): `t` says which. */
 export type JournalEvent = { t: string; at: number } & Record<string, unknown>;
@@ -50,6 +53,8 @@ export type Stats = {
   strategies?: { key: string; name: string; trades: number; netUsd: number }[];
   /** The entry methods to choose from, the same way: those of the strategies chosen, not narrowed by the methods chosen. */
   methods?: { key: string; name: string; trades: number; netUsd: number }[];
+  /** The timeframes to choose from, the same way, in the desk's order: `15m`, `1h` ... and `chain`, "With timeframe chain", last. */
+  timeframes?: { key: string; name: string; trades: number; netUsd: number }[];
 };
 
 /** `filter`: only the trades of the strategies and the entry methods it names. Absent or empty: every trade. */

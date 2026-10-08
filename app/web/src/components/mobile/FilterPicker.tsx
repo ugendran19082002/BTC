@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
  * user friendly -- the same filter on the signal filters", then "same UI, add a methods filter"): one button that
  * says what is chosen, opening a list to tick any number in. None ticked is all of them, which is how it starts.
  *
- * One control for strategies and for entry methods, on P&L -- where it keeps the trades of what is chosen -- and on
+ * One control for strategies, for entry methods and for timeframes (the timeframe chain among them), on P&L -- where it keeps the trades of what is chosen -- and on
  * Signal history pairs, where it keeps the signals. The list stays open while it is ticked -- several are meant to
  * be chosen -- and closes on Done or a tap outside. Every row is a thumb high. A long list (the desk has 81
  * methods) gets a box to search it by. A choice that is no longer in the list is not counted and not shown.
@@ -27,6 +27,7 @@ export type FilterOption = {
 export type FilterNoun = { label: string; many: string };
 export const STRATEGIES: FilterNoun = { label: 'Strategy', many: 'strategies' };
 export const METHODS: FilterNoun = { label: 'Method', many: 'methods' };
+export const TIMEFRAMES: FilterNoun = { label: 'Time frame', many: 'time frames' };
 
 /** A list longer than this gets a search box: past it, the one wanted is a scroll away. */
 const SEARCH_FROM = 9;
