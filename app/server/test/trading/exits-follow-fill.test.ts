@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { anchorExits, type TradeRecord } from '../../src/trading/engine.js';
-import { followingAsk, orderPlan, protectionFor, type PlaceInput } from '../../src/trading/order-plan.js';
-import { rig, ceProduct, quote, type Rig } from './harness.js';
+import { followingAsk, orderPlan, protectionFor, stopAsked, stopFor, stopHeldWords, stopRoomInside, STOP_INSIDE_CLOSE_OUT, type PlaceInput } from '../../src/trading/order-plan.js';
+import { liquidationPrice, liquidationRoom } from '../../src/trading/margin.js';
+import { rig, ceProduct, quote, SPOT, type Rig } from './harness.js';
 
 /**
  * Exits follow the entry that happened, not the price on the ticket.
@@ -154,4 +155,100 @@ test('editing a stop as a price pins it; editing it as points keeps it following
   rec = r.store.peek('T')!;
   assert.equal(rec.plan.stopPrice, 35);
   assert.equal(rec.plan.exitAsk?.stopLossPoints, 20);
+});
+
+/* ------------------------------------------- a stop held inside the close-out --- */
+
+/*
+ * 8 Oct 2026: the evening the delta rule first sold $65-78 strikes, every order was refused -- "Stop at 304.00 is
+ * past the 278.53 close-out at 200x". The strategies carried a 300% stop, and at 200x a short is closed out about
+ * 0.25% of BTC over what it was sold for, whatever that was: 300% fits under it on a $50 premium and not on a $70
+ * one. A strategy's share or points stop is now held to the last level that is still a stop.
+ */
+const ROOM = liquidationRoom({ spot: SPOT, premium: 0, leverage: 200 })!;     // 200 with BTC at 80,000
+const HELD = stopRoomInside(ROOM)!;                                           // 180
+
+test('[critical] the hold: nine tenths of the close-out\'s room, and only ever a tightening', () => {
+  assert.equal(ROOM, 200);
+  assert.equal(HELD, 180);
+  assert.equal(STOP_INSIDE_CLOSE_OUT, 0.9);
+  assert.equal(stopRoomInside(null), undefined, 'no room known: no hold, and the gate judges the stop as asked');
+  assert.equal(stopRoomInside(202.565), 182.3, 'rounded down, never up');
+  // 300% of 76 is 304: past the 276 close-out. Held, it is 76 + 180.
+  assert.equal(stopAsked(76, { stopLossPct: 3, stopMaxPoints: HELD }), 304);
+  assert.equal(stopFor(76, { stopLossPct: 3, stopMaxPoints: HELD }), 256);
+  assert.ok(stopFor(76, { stopLossPct: 3, stopMaxPoints: HELD })! < liquidationPrice({ spot: SPOT, premium: 76, leverage: 200 })!);
+  // A stop already inside the room is left exactly as asked: 300% of 50 is 200, 150 over.
+  assert.equal(stopFor(50, { stopLossPct: 3, stopMaxPoints: HELD }), 200);
+  assert.equal(stopFor(15, { stopLossPct: 1.5, stopMaxPoints: HELD }), 37.5);
+  // Points the same way.
+  assert.equal(stopFor(76, { stopLossPoints: 250, stopMaxPoints: HELD }), 256);
+  assert.equal(stopFor(76, { stopLossPoints: 55, stopMaxPoints: HELD }), 131);
+  // The level is rounded down to the tick: never a tick past the hold.
+  assert.equal(stopFor(76, { stopLossPct: 3, stopMaxPoints: 182.37 }), 258.3);
+  // A price somebody named is that price, and no stop asked for is still none.
+  assert.equal(stopFor(76, { stopAt: 400, stopMaxPoints: HELD }), 400);
+  assert.equal(stopFor(76, { stopLossPct: 0, stopMaxPoints: HELD }), null);
+  // Without a hold nothing changes: every plan written before today.
+  assert.equal(stopFor(76, { stopLossPct: 3 }), 304);
+});
+
+test('the hold follows the fill with the stop it holds, and is said in the trade\'s line only when it moved the stop', () => {
+  assert.deepEqual(followingAsk({ ...base, stopLossPct: 3, stopMaxPoints: HELD }, 76), { stopLossPct: 3, stopMaxPoints: HELD });
+  assert.deepEqual(followingAsk({ ...base, stopLossPoints: 250, stopMaxPoints: HELD }, 76), { stopLossPoints: 250, stopMaxPoints: HELD });
+  assert.equal(followingAsk({ ...base, stopAt: 300, stopMaxPoints: HELD }, 76), undefined, 'a price is pinned: nothing follows, so no hold is kept');
+  assert.deepEqual(followingAsk({ ...base, takeProfitPct: 0.9, stopMaxPoints: HELD }, 76), { takeProfitPct: 0.9 }, 'no stop, no hold');
+  const rec = {
+    plan: { takeProfitPrice: 7.6, stopPrice: 256, exitAsk: { stopLossPct: 3, takeProfitPct: 0.9, stopMaxPoints: HELD } },
+    state: { entryAvgPrice: 70, wantsProtection: true },
+  } as unknown as TradeRecord;
+  assert.equal(anchorExits(rec).plan.stopPrice, 250, 'filled at 70: 300% is 280, held at 70 + 180');
+  assert.equal(anchorExits({ ...rec, state: { ...rec.state, entryAvgPrice: 50 } } as TradeRecord).plan.stopPrice, 200, 'filled at 50: 300% fits, and stands');
+  assert.equal(stopHeldWords(76, { stopLossPct: 3, stopMaxPoints: HELD }), ' · option SL 256 (asked 304, held inside the close-out)');
+  assert.equal(stopHeldWords(50, { stopLossPct: 3, stopMaxPoints: HELD }), '');
+  assert.equal(stopHeldWords(76, { stopLossPct: 0, stopMaxPoints: HELD }), '');
+});
+
+test('[critical] 300% on a $76 premium at 200x: refused as asked -- the ticket\'s answer still -- and placed when held, the stop following the fill', async () => {
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 76, 76.5)], limits: { maxShortContracts: 5_000 } });
+  const refused = await r.engine.open(orderPlan({ ...base, limitPrice: 76, stopLossPct: 3 }, 'R'));
+  assert.equal(refused.ok, false);
+  assert.match(JSON.stringify(refused), /Stop at 304\.00 is past the 276\.00 close-out at 200x/);
+  assert.deepEqual(await r.ex.getOpenOrders(CE), [], 'nothing reached the book');
+
+  const rec = await sell(r, { limitPrice: 76, stopLossPct: 3, takeProfitPct: 0.9, stopMaxPoints: HELD });
+  assert.equal(rec.state.entryAvgPrice, 76);
+  assert.equal(rec.plan.stopPrice, 256);
+  assert.deepEqual(rec.plan.exitAsk, { takeProfitPct: 0.9, stopLossPct: 3, stopMaxPoints: HELD });
+  assert.equal(rec.state.wantsProtection, true);
+  assert.equal((await book(r)).target[0], 7.6);
+});
+
+test('[critical] a fill above the ticket\'s price moves the held stop with it, never back out past the close-out', async () => {
+  // Offered at 76, filled at the 78 bid: 300% of 78 is 312; the close-out is 278. Held: 78 + 180.
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 78, 78.5)], limits: { maxShortContracts: 5_000 } });
+  const rec = await sell(r, { limitPrice: 76, stopLossPct: 3, stopMaxPoints: HELD });
+  assert.equal(rec.state.entryAvgPrice, 78);
+  assert.equal(rec.plan.stopPrice, 258);
+  assert.ok(rec.plan.stopPrice! < liquidationPrice({ spot: SPOT, premium: 78, leverage: 200 })!);
+});
+
+test('[critical] moved later: a new share keeps the hold, a price typed by hand drops it, and a cheap premium was never touched', async () => {
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 76, 76.5)], limits: { maxShortContracts: 5_000 } });
+  await sell(r, { limitPrice: 76, stopLossPct: 3, stopMaxPoints: HELD });
+  // What TradingService.updateExits sends for a stop stepped to 250% by the strategy's time steps.
+  await r.engine.updateProtection('T', protectionFor(76, { stopLossPct: 2.5, stopMaxPoints: HELD }), { stopLossPct: 2.5, stopLossPoints: 0 });
+  let rec = r.store.peek('T')!;
+  assert.equal(rec.plan.stopPrice, 256, '250% of 76 is 266: still past the hold');
+  assert.equal(rec.plan.exitAsk?.stopMaxPoints, HELD, 'the hold stays with a stop that follows the fill');
+  await r.engine.updateProtection('T', protectionFor(76, { stopLossPct: 1, stopMaxPoints: HELD }), { stopLossPct: 1, stopLossPoints: 0 });
+  assert.equal(r.store.peek('T')!.plan.stopPrice, 152, '100% fits, and stands as asked');
+  await r.engine.updateProtection('T', protectionFor(76, { stopAt: 200 }), {});
+  rec = r.store.peek('T')!;
+  assert.equal(rec.plan.stopPrice, 200);
+  assert.equal(rec.plan.exitAsk?.stopMaxPoints, undefined, 'a level typed as a price is the level: nothing left to hold');
+
+  const cheap = rig({ products: [ceProduct()], quotes: [quote(CE, 15, 15.5)], limits: { maxShortContracts: 5_000 } });
+  const c = await sell(cheap, { limitPrice: 15, stopLossPct: 3, stopMaxPoints: HELD }, 'C');
+  assert.equal(c.plan.stopPrice, 60, '300% of 15, as it always was');
 });

@@ -546,7 +546,9 @@ export class TradingService {
       follow.stopLossPct = ask.stopLossPct ?? 0;
       follow.stopLossPoints = ask.stopLossPoints ?? 0;
     }
-    return this.engine.updateProtection(tradeId, protectionFor(entry, ask), follow, exitStage);
+    // A stop moved as a share or a distance keeps the hold inside the close-out it was placed with (`ExitAsk.stopMaxPoints`).
+    const held = rec.plan.exitAsk?.stopMaxPoints;
+    return this.engine.updateProtection(tradeId, protectionFor(entry, held !== undefined ? { ...ask, stopMaxPoints: held } : ask), follow, exitStage);
   }
 
   /**

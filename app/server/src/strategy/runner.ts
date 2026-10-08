@@ -14,6 +14,8 @@ import { METHODS } from '../entry/methods.js';
 import { liveLtp } from '../market/flow.js';
 import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyExitStepper } from './exit-steps.js';
+import { DEFAULT_LEVERAGE, stopHeldWords, stopRoomInside } from '../trading/order-plan.js';
+import { liquidationRoom } from '../trading/margin.js';
 
 /**
  * The loop that turns a due strategy into orders.
@@ -298,6 +300,7 @@ export class StrategyRunner {
       expiryTs: snap.expiryTs,
       lots: leg.lots,
       ask: leg.ask,
+      spot: snap.spot,
       cancelAfterMs: Math.max(1_000, entryWindowEnd(s, now) - now),
     });
 
@@ -537,7 +540,7 @@ export class StrategyRunner {
       ...placeArgs(s, {
         symbol: `${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`,
         optionSide: leg, strike: chosen.strike, expiryTs: snap.expiryTs,
-        lots: chosen.lots, ask: chosen.ask, cancelAfterMs: SIGNAL_ENTRY_MS,
+        lots: chosen.lots, ask: chosen.ask, spot: snap.spot, cancelAfterMs: SIGNAL_ENTRY_MS,
       }),
       // The signal's own levels, on the perp: the trade's real exits. The premium stop stays at Delta as the backstop.
       underlying: { dir, stop: plan.stop, target, source: 'BTC perp', entry: fill?.fillPrice ?? perpNow() },
@@ -547,6 +550,8 @@ export class StrategyRunner {
     const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
       + elseWords(chosen)
       + ruleWords(chosen)
+      // A stop held inside the close-out is said beside the strike it was held for.
+      + (args.limitPrice !== undefined ? stopHeldWords(args.limitPrice, args) : '')
       + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
 
     /*
@@ -623,6 +628,8 @@ async function svcPlace(
   o: {
     symbol: string; optionSide: 'CE' | 'PE'; strike: number; expiryTs: number;
     lots: number; ask: number | null;
+    /** BTC now: what the close-out's room is worked out from, for the hold on a share or points stop. */
+    spot: number | null;
     /** How long an order may rest before what is left is cancelled: to the close of the entry window. */
     cancelAfterMs: number;
   },
@@ -635,7 +642,7 @@ async function svcPlace(
 /** The order, exactly as both the dry run and the real thing send it. */
 function placeArgs(s: Strategy, o: Parameters<typeof svcPlace>[1]) {
   const c = s.config;
-  const { ask, cancelAfterMs, ...order } = o;
+  const { ask, cancelAfterMs, spot, ...order } = o;
   /*
    * The three price modes, mapped onto the ticket's own arguments so a
    * scheduled order behaves exactly like a tapped one.
@@ -677,6 +684,13 @@ function placeArgs(s: Strategy, o: Parameters<typeof svcPlace>[1]) {
     ...(c.minPremiumUsd !== null && c.minPremiumUsd !== undefined ? { minPremiumUsd: c.minPremiumUsd } : {}),
     timeoutMs: c.entryPrice === 'offer' && c.crossAfterSec > 0 ? cancelAfterMs : undefined,
     ...exitsNow(s, Date.now()),
+    /*
+     * A stop asked for as a share or a distance is held inside the close-out (8 Oct 2026). Every strategy order
+     * goes out at the desk's default leverage, where the exchange closes a short out about 0.25% of BTC over what
+     * it was sold for: "300%" of a $70 premium is past that, and the gate refused every such order. Without BTC's
+     * price there is no room to work out, and the gate judges the stop as asked, as before.
+     */
+    ...(spot !== null && spot > 0 ? { stopMaxPoints: stopRoomInside(liquidationRoom({ spot, premium: 0, leverage: DEFAULT_LEVERAGE })) } : {}),
   };
 }
 

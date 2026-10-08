@@ -1907,9 +1907,12 @@ export class TradeEngine {
     // A leg that is set here stops following its old ask; it follows the new
     // one if `follow` carries one, and is pinned to its price if not.
     const ask: ExitAsk = { ...rec.plan.exitAsk };
+    // The hold inside the close-out belongs to a stop that follows the fill: kept with one, gone with a stop pinned to a price.
+    const held = ask.stopMaxPoints;
     if (next.takeProfitPrice !== undefined) { delete ask.takeProfitPct; delete ask.takeProfitPoints; delete ask.takeProfitAt; }
-    if (next.stopPrice !== undefined) { delete ask.stopLossPct; delete ask.stopLossPoints; delete ask.stopAt; }
+    if (next.stopPrice !== undefined) { delete ask.stopLossPct; delete ask.stopLossPoints; delete ask.stopAt; delete ask.stopMaxPoints; }
     Object.assign(ask, follow ?? {});
+    if (held !== undefined && ((ask.stopLossPct ?? 0) > 0 || (ask.stopLossPoints ?? 0) > 0)) ask.stopMaxPoints = held;
     rec.plan = {
       ...rec.plan,
       takeProfitPrice: next.takeProfitPrice !== undefined ? next.takeProfitPrice : rec.plan.takeProfitPrice,

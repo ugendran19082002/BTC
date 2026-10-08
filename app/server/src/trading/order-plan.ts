@@ -104,6 +104,18 @@ export type ExitAsk = {
   takeProfitAt?: number;
   /** The stop price itself: sold at 16, 70 buys back at 70 -- 54 points over. */
   stopAt?: number;
+  /**
+   * The furthest a stop asked for as a share or a distance may sit over the entry, in the option's own price
+   * (8 Oct 2026). A strategy sets it to the room the close-out leaves, less a margin (`stopRoomInside`).
+   *
+   * A short at 200x is closed out about 0.25% of BTC over what it was sold for -- $203 with BTC at 81,000 --
+   * whatever it was sold for. "300% of the premium" is under that on a $50 option and over it on a $70 one: the
+   * evening the delta rule first sold $70 strikes, every one was refused as "stop past the close-out". A stop
+   * past the close-out is not a stop, so one asked for as a share is held to the last level that still is. It
+   * follows the fill like the share does. A stop typed as a price (`stopAt`) is not moved: that is a level
+   * somebody named, and the gate answers it.
+   */
+  stopMaxPoints?: number;
 };
 
 /**
@@ -187,13 +199,47 @@ export function longExitsFor(entry: number, ask: ExitAsk, prev: TradePlan['longE
   return { exits: next };
 }
 
-/** The stop price, read off an entry, however it was asked for. Zero or absent means none. */
-export const stopFor = (entry: number, x: ExitAsk): number | null =>
+/** The stop as it was asked for, before any hold inside the close-out: what `stopFor` returned until 8 Oct 2026. */
+export const stopAsked = (entry: number, x: ExitAsk): number | null =>
   (x.stopAt ?? 0) > 0
     ? round1(x.stopAt!)
     : (x.stopLossPoints ?? 0) > 0
       ? stopPriceByPoints(entry, x.stopLossPoints!)
       : stopPriceFor(entry, x.stopLossPct ?? 0);
+
+/**
+ * The stop price, read off an entry, however it was asked for. Zero or absent means none.
+ *
+ * A share or a distance is held to `stopMaxPoints` over the entry where the ask carries one; the level is rounded
+ * *down* to the tick, so the hold is never a tick past what it was set to. A price is the price.
+ */
+export function stopFor(entry: number, x: ExitAsk): number | null {
+  const asked = stopAsked(entry, x);
+  const max = x.stopMaxPoints ?? 0;
+  if (asked === null || (x.stopAt ?? 0) > 0 || !(max > 0)) return asked;
+  const held = overEntry(entry, Math.floor((entry + max) * 10 + 1e-9) / 10);
+  return asked > held ? held : asked;
+}
+
+/**
+ * How far over its entry a short's stop may sit and still be reached before the exchange closes the position out:
+ * nine tenths of the room (`liquidationRoom`). The tenth kept back is for what the desk's own stop takes to act --
+ * it judges the offer, held for fifteen seconds -- while the exchange closes out on the mark.
+ */
+export const STOP_INSIDE_CLOSE_OUT = 0.9;
+export const stopRoomInside = (room: number | null): number | undefined =>
+  (room !== null && room > 0 ? Math.floor(room * STOP_INSIDE_CLOSE_OUT * 10) / 10 : undefined);
+
+/**
+ * For a trade's own line, when the hold moved its stop: " · option SL 258.2 (asked 304, held inside the
+ * close-out)". Nothing when the stop stands as asked, or there is none. A stop other than the one a strategy was
+ * set to must say so where the trade is read.
+ */
+export function stopHeldWords(entry: number, x: ExitAsk): string {
+  const asked = stopAsked(entry, x);
+  const got = stopFor(entry, x);
+  return asked !== null && got !== null && got < asked ? ` · option SL ${got} (asked ${asked}, held inside the close-out)` : '';
+}
 
 /**
  * The exits as they should follow the fill.
@@ -217,6 +263,8 @@ export function followingAsk(input: PlaceInput, _basis: number | null): ExitAsk 
   if (input.stopPrice === undefined && !((input.stopAt ?? 0) > 0)) {
     if ((input.stopLossPoints ?? 0) > 0) ask.stopLossPoints = input.stopLossPoints;
     else if ((input.stopLossPct ?? 0) > 0) ask.stopLossPct = input.stopLossPct;
+    // The hold inside the close-out follows the fill with the stop it holds.
+    if ((ask.stopLossPoints !== undefined || ask.stopLossPct !== undefined) && (input.stopMaxPoints ?? 0) > 0) ask.stopMaxPoints = input.stopMaxPoints;
   }
   return Object.keys(ask).length ? ask : undefined;
 }
@@ -268,6 +316,8 @@ export type PlaceInput = {
   takeProfitAt?: number;
   /** The stop price itself. Above zero, it wins over points and percentage. */
   stopAt?: number;
+  /** The furthest a share or points stop may sit over the entry (`ExitAsk.stopMaxPoints`). Only a strategy sets it; never the ticket. */
+  stopMaxPoints?: number;
   /** Overrides the percentage, when a caller wants an exact price. */
   takeProfitPrice?: number | null;
   stopPrice?: number | null;

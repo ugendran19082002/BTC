@@ -751,6 +751,45 @@ test('[critical] by delta and by distance: saved as sent, refused in words when 
   await api('POST', '/api/strategies/sig-greeks/enabled', { enabled: false });
 });
 
+// ------------------------------------------------------------ a stop held inside the close-out
+
+test('[critical] a 300% stop on a rich strike is held inside the close-out instead of refusing the signal, and its line says so', async () => {
+  // 8 Oct 2026, live: "sell CE 83200 x5 @ 70 (delta 0.10) -- refused: Stop at 304.00 is past the 278.53 close-out
+  // at 200x". Here BTC is 85,000: the close-out is 212.5 over the entry, the hold 191.2.
+  const RICH = 83_800;
+  const symbol = `P-BTC-${RICH}-${EXPIRY}`;
+  paper().addProduct({ symbol, productId: 7020, underlying: 'BTC', optionSide: 'PE', strike: RICH, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+  paper().setQuote({ symbol, bid: 70, ask: 76, bidSize: 5_000, askSize: 5_000, mark: 73, ts: Date.now() });
+  const rich: SignalBoard = { ...board, candidates: [{ cp: 'P', strike: RICH, sellPrice: 70, pOtm: 0.9, moneyness: 'OTM', ask: 76, delta: -0.1 }] };
+  const cfg = {
+    ...config, signal: { ...config.signal, maxOpen: 10 }, strikeRule: 'delta', delta: { max: 0.1 },
+    stopMode: 'pct', stopLossPct: 3, takeProfitPct: 0.9, minPremiumUsd: 10, maxCrossSpreadPct: 0.3,
+  };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig held', config: cfg })).status, 200);
+  const r = new StrategyRunner(strategyStore(), () => clock, async () => rich);
+  await api('POST', '/api/strategies/sig-held/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  const last = async () => (await runsOf('sig-held')).at(-1)!;
+
+  clock = TEN;
+  await r.onSignal(signal());
+  const dry = await last();
+  assert.equal(dry.status, 'would-place', dry.detail);
+  assert.match(dry.detail, /would sell PE 83800 x1 @ 70 \(delta 0\.10\) · option SL 267\.2 \(asked 304, held inside the close-out\) · perp SL 84600 · TGT 85500$/);
+
+  // The same order with live orders on, its plan and its stop after the fill, is pinned on the engine itself
+  // (test/trading/exits-follow-fill.test.ts): placing one here would take a place the tests below count.
+  const s = (await strategyStore().get('sig-held'))!;
+  // A cheap strike's 300% fits under the close-out, and is left exactly as asked: nothing is said, nothing moved.
+  const cheap: SignalBoard = { ...board, candidates: [{ cp: 'P', strike: PUT, sellPrice: 18, pOtm: 0.8, moneyness: 'OTM', ask: 18.5, delta: -0.05 }] };
+  const r2 = new StrategyRunner(strategyStore(), () => clock, async () => cheap);
+  assert.equal(s.config.liveOrders, false);
+  await r2.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 84000 x1 @ 18 \(delta 0\.05\) · perp SL 84600 · TGT 85500$/);
+
+  await api('POST', '/api/strategies/sig-held/enabled', { enabled: false });
+});
+
 // ------------------------------------------------------------ the SL-distance filter
 
 test('[critical] SL distance per timeframe: a signal whose SL is nearer than its timeframe\'s points is skipped, and the history says why', async () => {
