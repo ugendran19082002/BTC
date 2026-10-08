@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { CopyCheck, Plus, Undo2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { TimePicker } from '@/components/ui/time-picker';
@@ -9,7 +9,8 @@ import {
   FieldError, MinOtmFields, QuickFix, StrikeFields, StrikeStepper, num, type ErrOf, type SetField,
 } from '@/components/strategy/form-parts';
 import {
-  blockHoursOf, blockRanges, hoursLabel, ownPick, splitBlocks, strikeBlockProblems, type BlockRange,
+  appliedWords, applyToAllBlocks, blockHoursOf, blockRanges, hoursLabel, ownPick, splitBlocks, strikeBlockProblems, type BlockRange,
+  type BlockRules,
 } from '@/lib/strategy-blocks';
 import { hhmmOf, isHhmm, minutesForward, minutesOf, time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,10 @@ import { cn } from '@/lib/utils';
  * own rule (`strikeRule`, `strikeStep`, `premium`), so going back to one rule
  * keeps it; the rest are `strikeBlocks`. Every block's row has the whole rule:
  * the premium, its "if none" number, and the distance rule with its else strike.
+ *
+ * Every block also has "Apply to all blocks" (owner, 8 Oct 2026): one click copies that block's premium and its
+ * "if none" onto every block, says what it did, and offers to undo it -- a number worked out once is not typed
+ * six times. Each block's time and distance rule stay its own (`applyToAllBlocks`).
  */
 export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: SetField; err: ErrOf }) {
   const blocks = c.strikeBlocks ?? [];
@@ -46,16 +51,21 @@ export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: Se
   const firstAt = windowOk ? hhmmOf(entry + 1) : null;
   const lastAt = windowOk ? hhmmOf(entry + span - 1) : null;
 
+  // "Apply to all blocks": what was copied, from where, and the rules as they stood, for the undo.
+  const [applied, setApplied] = useState<{ from: number; words: string; before: BlockRules } | null>(null);
+
   const ranges = blockRanges(c);
   const problems = strikeBlockProblems(c.strikeBlocks, c.entryTime, c.exitTime);
   const problemsOf = (i: number) => problems.filter((p) => p.index === i).map((p) => p.message).join(' ') || null;
   // Block 1 is the strategy's own rule, so its problems are the rule's own.
   const firstBad = [err('strikeStep'), err('premium'), err('premiumFallback'), err('premiumMinOtm')].filter(Boolean).join(' ') || null;
 
-  const put = (next: StrikeBlock[]) => set('strikeBlocks', next);
+  // Any edit of the blocks ends the offer to undo a copy: undoing would take the edit with it.
+  const put = (next: StrikeBlock[]) => { setApplied(null); set('strikeBlocks', next); };
   const patch = (i: number, over: Partial<BlockRule>) => put(blocks.map((b, j) => (j === i ? { ...b, ...over } : b)));
   /** Block 1's rule is three of the strategy's own fields. */
   const patchFirst = (over: Partial<BlockRule>) => {
+    setApplied(null);
     if (over.strikeRule !== undefined) set('strikeRule', over.strikeRule);
     if (over.strikeStep !== undefined) set('strikeStep', over.strikeStep);
     if (over.premium !== undefined) set('premium', over.premium);
@@ -78,6 +88,19 @@ export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: Se
     const { at: _at, ...rule } = prev ?? { at: '', ...ownPick(c) };
     put([...blocks, { ...rule, premium: { ...rule.premium }, at: hhmmOf(entry + at) }]);
   };
+
+  const putRules = (r: BlockRules) => {
+    set('strikeRule', r.strikeRule); set('strikeStep', r.strikeStep); set('premium', r.premium); set('strikeBlocks', r.strikeBlocks ?? []);
+  };
+  const applyAll = (from: number) => {
+    const next = applyToAllBlocks(c, from);
+    if (!next) return;
+    const src = from === 0 ? ownPick(c) : blocks[from - 1]!;
+    setApplied({ from, words: appliedWords(src), before: { strikeRule: c.strikeRule, strikeStep: c.strikeStep, premium: c.premium, strikeBlocks: blocks } });
+    putRules(next);
+  };
+  const undoApply = () => { if (applied) { putRules(applied.before); setApplied(null); } };
+  const canApply = (from: number) => applyToAllBlocks(c, from) !== null;
 
   const wouldMake = windowOk && everyMin >= 1 ? splitBlocks({ ...c, strikeBlocks: [] }, everyMin).length + 1 : 0;
   // What a block's distance rule starts from when it is switched on: block 1's, where it has one.
@@ -147,6 +170,7 @@ export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: Se
                   <span className="tabular-nums text-foreground">{windowOk ? time12(c.entryTime) : 'the start'}</span>
                   <span className="text-[10.5px] text-[var(--dim)]">the start of the window</span>
                   <RangeWords range={ranges[0] ?? null} />
+                  <ApplyAll n={1} of={blocks.length + 1} enabled={canApply(0)} onClick={() => applyAll(0)} />
                 </div>
                 <RuleFields n={1} rule={ownPick(c)} onChange={patchFirst} start={undefined} />
                 <FieldError text={firstBad} />
@@ -170,11 +194,12 @@ export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: Se
                       />
                       {/* Under the time on a phone, where beside it would push the remove button onto a row of its own. */}
                       <RangeWords range={ranges[i + 1] ?? null} className="order-last basis-full sm:order-none sm:basis-auto" />
+                      <ApplyAll n={n} of={blocks.length + 1} enabled={canApply(n - 1)} onClick={() => applyAll(n - 1)} />
                       <button
                         type="button"
                         aria-label={`remove block ${n}`}
                         onClick={() => put(blocks.filter((_, j) => j !== i))}
-                        className="m-0 ml-auto grid h-8 w-8 flex-none appearance-none place-items-center rounded-md border-0 bg-transparent p-0 text-muted-foreground"
+                        className="m-0 grid h-8 w-8 flex-none appearance-none place-items-center rounded-md border-0 bg-transparent p-0 text-muted-foreground"
                       >
                         <X className="h-4 w-4" aria-hidden />
                       </button>
@@ -186,6 +211,18 @@ export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: Se
               })}
             </ol>
             <FieldError text={problemsOf(-1)} />
+            {/* What the button did, said once, with the way back. */}
+            {applied && (
+              <div role="status" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-solid border-[var(--up)]/50 bg-[var(--up-bg)] px-2.5 py-1.5 text-[12px] text-foreground">
+                <span className="min-w-0">
+                  Block {applied.from + 1}&apos;s rule, <b className="font-semibold">{applied.words}</b>, is now on all {blocks.length + 1} blocks. Each block kept its own time and distance rule.
+                </span>
+                <button type="button" onClick={undoApply}
+                        className="m-0 inline-flex h-8 flex-none appearance-none items-center gap-1 rounded-md border border-solid border-border bg-background px-2.5 font-[inherit] text-[12px] font-medium text-foreground">
+                  <Undo2 className="h-3.5 w-3.5" aria-hidden /> Undo
+                </button>
+              </div>
+            )}
 
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pb-1">
               <button
@@ -204,6 +241,23 @@ export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: Se
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * "Apply to all blocks", on a block's own line: copies its premium and "if none" (or its strike) onto every block.
+ * Greyed where the block's own rule is not yet a usable one -- a mistake is not spread across the day.
+ */
+function ApplyAll({ n, of, enabled, onClick }: { n: number; of: number; enabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button" onClick={onClick} disabled={!enabled}
+      aria-label={`apply block ${n} to all ${of} blocks`}
+      title={enabled ? `Copy block ${n}'s premium and its "if none" to all ${of} blocks` : `Finish block ${n}'s own rule first`}
+      className="m-0 ml-auto inline-flex h-8 flex-none appearance-none items-center gap-1 whitespace-nowrap rounded-md border border-solid border-[var(--accent)]/60 bg-transparent px-2 font-[inherit] text-[12px] font-medium text-[var(--accent)] disabled:border-border disabled:text-[var(--dim)] disabled:opacity-60"
+    >
+      <CopyCheck className="h-3.5 w-3.5" aria-hidden /> Apply to all blocks
+    </button>
   );
 }
 

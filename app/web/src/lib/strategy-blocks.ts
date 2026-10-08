@@ -166,6 +166,40 @@ export function strikeBlockProblems(blocks: StrikeBlock[] | undefined, entryTime
   return bad;
 }
 
+/** The four fields that hold every block's rule: block 1's on the strategy, the rest in `strikeBlocks`. */
+export type BlockRules = Pick<StrategyConfig, 'strikeRule' | 'strikeStep' | 'premium' | 'strikeBlocks'>;
+
+/**
+ * "Apply to all blocks" (owner, 8 Oct 2026): one block's premium -- its ≥ or ≤, its number and its "if none"
+ * number -- copied onto every block, so a number worked out once is not typed six times. `from` is the block's
+ * place on the screen: 0 is block 1, the strategy's own rule.
+ *
+ * What is copied is what the owner named, the entry premium and its "if none". Each block keeps its own time, and
+ * its own distance rule (the OTM strike it must be at, and the else strike): that part is set per block on
+ * purpose, the far blocks of a day sitting further out than the near ones. A block picked "by strike" copies its
+ * strike instead, and turns the others to "by strike" with it.
+ *
+ * Returns null where there is nothing to copy from, or the block's premium is not a usable number -- the form
+ * greys the button there rather than spread a mistake across the day.
+ */
+export function applyToAllBlocks(c: StrategyConfig, from: number): BlockRules | null {
+  const blocks = c.strikeBlocks ?? [];
+  const src = from === 0 ? ownPick(c) : blocks[from - 1];
+  if (!src) return null;
+  if (src.strikeRule === 'premium' && (!(src.premium.usd > 0) || src.premium.usd > 10_000 || premiumFallbackProblem(src.premium))) return null;
+  if (src.strikeRule === 'strict' && (!Number.isInteger(src.strikeStep) || Math.abs(src.strikeStep) > MAX_STRIKE_STEP)) return null;
+  const onto = <T extends Omit<StrikeBlock, 'at'>>(b: T): T => (src.strikeRule === 'strict'
+    ? { ...b, strikeRule: 'strict', strikeStep: src.strikeStep }
+    : { ...b, strikeRule: 'premium', premium: { ...b.premium, mode: src.premium.mode, usd: src.premium.usd, fallbackUsd: src.premium.fallbackUsd ?? null } });
+  const first = onto(ownPick(c));
+  return { strikeRule: first.strikeRule, strikeStep: first.strikeStep, premium: first.premium, strikeBlocks: blocks.map(onto) };
+}
+
+/** What "Apply to all blocks" copies, in a few words: "≤ $50 (if none, ≤ $60)", "OTM 2". The distance rule is not copied, so it is not said. */
+export function appliedWords(p: StrikePick): string {
+  return pickWords(p.strikeRule === 'strict' ? p : { ...p, premium: { ...p.premium, minOtm: null, elseOtm: null } });
+}
+
 /** The IST minute of the day at an instant (epoch ms): the clock every strategy time is read on. */
 export const istMinuteOf = (ms: number): number => (((Math.floor(ms / 60_000) + 330) % 1440) + 1440) % 1440;
 

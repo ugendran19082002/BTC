@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  blockHoursOf, blockNow, blockRanges, blocksWords, hoursLabel, istMinuteOf, ownPick, pickWords, splitBlocks, strikeBlockProblems,
+  appliedWords, applyToAllBlocks, blockHoursOf, blockNow, blockRanges, blocksWords, hoursLabel, istMinuteOf, ownPick, pickWords, splitBlocks,
+  strikeBlockProblems,
 } from '@/lib/strategy-blocks';
 import { strategyProblems } from '@/lib/strategy-rules';
 import { describeStrategy } from '@/lib/strategy-preview';
@@ -245,5 +246,61 @@ describe('the block the clock is in now', () => {
   it('the IST minute of an instant', () => {
     expect(istMinuteOf(Date.UTC(2026, 9, 4, 10, 10))).toBe(15 * 60 + 40);            // 10:10 UTC is 3:40 PM IST
     expect(istMinuteOf(Date.UTC(2026, 9, 4, 20, 0))).toBe(90);                       // 8:00 PM UTC is 1:30 AM IST
+  });
+});
+
+describe('apply to all blocks (owner, 8 Oct 2026)', () => {
+  const day = () => cfg({
+    premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 4, elseOtm: 6 },
+    strikeBlocks: [
+      { ...premium('21:35', 40, 'atLeast', 20), premium: { mode: 'atLeast', usd: 40, fallbackUsd: 20, minOtm: 8, elseOtm: 10 } },
+      strict('01:35', 3),
+      premium('05:35', 15),
+    ],
+  });
+
+  it('[critical] one block\'s premium, its ≥ or ≤ and its "if none" go onto every block; times and distance rules stay', () => {
+    const next = applyToAllBlocks(day(), 0)!;
+    // block 1 is the source: unchanged
+    expect(next.premium).toEqual({ mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 4, elseOtm: 6 });
+    expect(next.strikeBlocks!.map((b) => [b.at, b.strikeRule, b.premium.mode, b.premium.usd, b.premium.fallbackUsd])).toEqual([
+      ['21:35', 'premium', 'atMost', 50, 75], ['01:35', 'premium', 'atMost', 50, 75], ['05:35', 'premium', 'atMost', 50, 75],
+    ]);
+    // each block's own distance rule is not touched
+    expect(next.strikeBlocks![0]!.premium).toMatchObject({ minOtm: 8, elseOtm: 10 });
+    expect(next.strikeBlocks![2]!.premium.minOtm ?? null).toBeNull();
+    // and what comes out is a set of blocks the form accepts
+    expect(strikeBlockProblems(next.strikeBlocks, '17:35', '17:29')).toEqual([]);
+  });
+
+  it('from a later block: block 1, the strategy\'s own rule, is written too; no "if none" clears the others\'', () => {
+    const next = applyToAllBlocks(day(), 3)!;
+    expect([next.strikeRule, next.premium.mode, next.premium.usd, next.premium.fallbackUsd]).toEqual(['premium', 'atMost', 15, null]);
+    expect(next.premium).toMatchObject({ minOtm: 4, elseOtm: 6 });
+    expect(next.strikeBlocks!.map((b) => [b.premium.usd, b.premium.fallbackUsd])).toEqual([[15, null], [15, null], [15, null]]);
+  });
+
+  it('a block picked by strike copies its strike, and turns the others to by strike', () => {
+    const next = applyToAllBlocks(day(), 2)!;
+    expect([next.strikeRule, next.strikeStep]).toEqual(['strict', 3]);
+    expect(next.strikeBlocks!.map((b) => [b.strikeRule, b.strikeStep])).toEqual([['strict', 3], ['strict', 3], ['strict', 3]]);
+    // their premiums are kept under it, for going back
+    expect(next.strikeBlocks![0]!.premium.usd).toBe(40);
+  });
+
+  it('nothing is copied from a premium that is not a usable number, an "if none" on the wrong side, or a block that is not there', () => {
+    expect(applyToAllBlocks(cfg({ premium: { mode: 'atMost', usd: 0, fallbackUsd: null }, strikeBlocks: [premium('21:35', 40)] }), 0)).toBeNull();
+    // at most $50, "if none" $40: the second number has to find more strikes, not fewer
+    expect(applyToAllBlocks(cfg({ strikeBlocks: [premium('21:35', 50, 'atMost', 40)] }), 1)).toBeNull();
+    expect(applyToAllBlocks(day(), 9)).toBeNull();
+    // the strategy handed in is not changed
+    const c = day(); applyToAllBlocks(c, 0);
+    expect(c.strikeBlocks![0]!.premium.usd).toBe(40);
+  });
+
+  it('said in the form\'s own words, without the distance rule it does not copy', () => {
+    expect(appliedWords(ownPick(day()))).toBe('≤ $50 (if none, ≤ $75)');
+    expect(appliedWords(day().strikeBlocks![2]!)).toBe('≤ $15');
+    expect(appliedWords(day().strikeBlocks![1]!)).toBe(pickWords(day().strikeBlocks![1]!));
   });
 });
