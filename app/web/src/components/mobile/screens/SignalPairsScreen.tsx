@@ -9,7 +9,7 @@ import { usePhone } from '@/components/mobile/phone-context';
 import { Chip, Chips, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { useDayRange } from '@/components/mobile/useDayRange';
-import { FilterPicker, METHODS, type FilterOption } from '@/components/mobile/FilterPicker';
+import { FilterBar, FilterPicker, METHODS, type FilterOption } from '@/components/mobile/FilterPicker';
 import { describeRange } from '@/components/ui/date-range-picker';
 
 /**
@@ -107,7 +107,11 @@ export function SignalPairsScreen() {
         </div>
       )}
       {/* Under the way and the timeframes, which decide what the list holds. */}
-      {(options.length > 1 || chosen.length > 0) && <FilterPicker noun={METHODS} options={options} picked={methods} onChange={setMethods} />}
+      {(options.length > 1 || chosen.length > 0) && (
+        <FilterBar onClear={chosen.length ? () => setMethods([]) : null}>
+          <FilterPicker noun={METHODS} options={options} picked={methods} onChange={setMethods} />
+        </FilterBar>
+      )}
 
       <Panel>
         <span className="flex items-baseline justify-between gap-2 text-[13px] text-muted-foreground">

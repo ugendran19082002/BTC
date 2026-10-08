@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Check, ChevronDown, ListFilter, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,11 @@ import { cn } from '@/lib/utils';
  * Signal history pairs, where it keeps the signals. The list stays open while it is ticked -- several are meant to
  * be chosen -- and closes on Done or a tap outside. Every row is a thumb high. A long list (the desk has 81
  * methods) gets a box to search it by. A choice that is no longer in the list is not counted and not shown.
+ *
+ * The button is a chip, and the chips sit in one row (`FilterBar`; owner, 8 Oct 2026: "many filters take the
+ * space"): three of them stacked full width were a third of a phone's screen before any figure. A chip says its
+ * kind, then what is chosen -- the one name, or how many -- and turns green while it filters; the row scrolls
+ * sideways where three do not fit, and ends in "Clear all" while anything is chosen.
  */
 
 export type FilterOption = {
@@ -40,6 +45,29 @@ export function pickedWords(options: readonly FilterOption[], picked: readonly s
   return `${chosen.length} of ${options.length} ${noun.many}`;
 }
 
+/** The filters' one row: the chips side by side, scrolling sideways where they do not fit, with a way to take every choice off at once. */
+export function FilterBar({ children, onClear }: {
+  children: ReactNode;
+  /** Takes every filter's choice off; absent or null while nothing is chosen, and then the button is not shown. */
+  onClear?: (() => void) | null;
+}) {
+  return (
+    // Bleeds to the screen's edges like the other chip rows, so a chip cut off at the edge says there is more to the side.
+    <div role="group" aria-label="Filters" className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1">
+      <ListFilter className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      {children}
+      {onClear && (
+        <button
+          type="button" onClick={onClear}
+          className="m-0 h-10 shrink-0 appearance-none whitespace-nowrap rounded-full border-0 bg-transparent px-2 font-[inherit] text-[13px] font-medium text-[var(--accent)]"
+        >
+          Clear all
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function FilterPicker({ noun, options, picked, onChange }: {
   noun: FilterNoun;
   options: readonly FilterOption[];
@@ -52,6 +80,7 @@ export function FilterPicker({ noun, options, picked, onChange }: {
   if (options.length === 0) return null;
   const chosen = options.filter((o) => picked.includes(o.key)).map((o) => o.key);
   const words = pickedWords(options, picked, noun);
+  const on = chosen.length > 0;
   const toggle = (key: string) => onChange(chosen.includes(key) ? chosen.filter((k) => k !== key) : [...chosen, key]);
   const searchable = options.length >= SEARCH_FROM;
   const wanted = find.trim().toLowerCase();
@@ -64,17 +93,21 @@ export function FilterPicker({ noun, options, picked, onChange }: {
         <button
           type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${noun.label} filter: ${words}`}
           className={cn(
-            'm-0 flex h-11 w-full appearance-none items-center gap-2 rounded-lg border border-solid bg-muted px-3 text-left font-[inherit]',
-            chosen.length ? 'border-[var(--up)]' : 'border-border',
+            'm-0 inline-flex h-10 max-w-[15rem] shrink-0 appearance-none items-center gap-1.5 whitespace-nowrap rounded-full border border-solid px-3 text-left font-[inherit] text-[13.5px] font-medium',
+            on ? 'border-[var(--up)] bg-[var(--up-bg)] text-[var(--up)]' : 'border-border bg-transparent text-foreground',
           )}
         >
-          <ListFilter className={cn('h-4 w-4 shrink-0', chosen.length ? 'text-[var(--up)]' : 'text-muted-foreground')} aria-hidden />
-          <span className="shrink-0 text-[12.5px] text-muted-foreground">{noun.label}</span>
-          <span className={cn('min-w-0 flex-1 truncate text-[14px] font-semibold', chosen.length ? 'text-[var(--up)]' : 'text-foreground')}>{words}</span>
-          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} aria-hidden />
+          <span className={cn('shrink-0', chosen.length === 1 && 'text-[12.5px] opacity-80')}>{noun.label}</span>
+          {/* One chosen: its name, cut where it runs long. Several: how many. */}
+          {chosen.length === 1 && <span className="min-w-0 truncate font-semibold">{words}</span>}
+          {chosen.length > 1 && (
+            <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-[var(--up)] px-1 text-[11.5px] font-bold tabular-nums text-[var(--bg)]">{chosen.length}</span>
+          )}
+          <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', on ? 'text-[var(--up)]' : 'text-muted-foreground', open && 'rotate-180')} aria-hidden />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={4} className="flex max-h-[min(60vh,440px)] w-[var(--radix-popover-trigger-width)] min-w-[260px] flex-col p-0">
+      {/* As wide as a phone allows, whatever the chip's own width; kept clear of the screen's edges wherever the chip sits in the row. */}
+      <PopoverContent align="start" sideOffset={4} collisionPadding={16} className="flex max-h-[min(60vh,440px)] w-[min(calc(100vw-32px),360px)] flex-col p-0">
         {searchable && (
           <div className="relative shrink-0 border-0 border-b border-solid border-[var(--line-soft)] p-2">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />

@@ -13,7 +13,7 @@ import { useDayRange } from '@/components/mobile/useDayRange';
 import { pairsOfStats, splitPairs } from '@/lib/method-pairs';
 import { PairList } from '@/components/mobile/PairList';
 import { DayCalendar } from '@/components/mobile/DayCalendar';
-import { FilterPicker, METHODS, STRATEGIES, TIMEFRAMES, type FilterOption } from '@/components/mobile/FilterPicker';
+import { FilterBar, FilterPicker, METHODS, STRATEGIES, TIMEFRAMES, type FilterOption } from '@/components/mobile/FilterPicker';
 
 /**
  * P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line,
@@ -88,14 +88,23 @@ export function PnlScreen() {
   const whose = [said(chosen, 'strategies'), said(chosenMethods, 'methods'), said(chosenTimeframes, 'time frames')].filter((x): x is string => x !== null);
   const ofChosen = whose.map((w) => ` · ${w}`).join('');
   const narrowed = whose.length > 0;
+  const offered = {
+    strategy: options.length > 1 || chosen.length > 0,
+    method: methodOptions.length > 1 || chosenMethods.length > 0,
+    timeframe: timeframeOptions.length > 1 || chosenTimeframes.length > 0,
+  };
 
   return (
     <>
       {range.bar}
-      {/* Each offered once there is something to choose between -- or a choice to take off. */}
-      {(options.length > 1 || chosen.length > 0) && <FilterPicker noun={STRATEGIES} options={options} picked={strategies} onChange={setStrategies} />}
-      {(methodOptions.length > 1 || chosenMethods.length > 0) && <FilterPicker noun={METHODS} options={methodOptions} picked={methods} onChange={setMethods} />}
-      {(timeframeOptions.length > 1 || chosenTimeframes.length > 0) && <FilterPicker noun={TIMEFRAMES} options={timeframeOptions} picked={timeframes} onChange={setTimeframes} />}
+      {/* One row of chips. Each offered once there is something to choose between -- or a choice to take off. */}
+      {(offered.strategy || offered.method || offered.timeframe) && (
+        <FilterBar onClear={narrowed ? () => { setStrategies([]); setMethods([]); setTimeframes([]); } : null}>
+          {offered.strategy && <FilterPicker noun={STRATEGIES} options={options} picked={strategies} onChange={setStrategies} />}
+          {offered.method && <FilterPicker noun={METHODS} options={methodOptions} picked={methods} onChange={setMethods} />}
+          {offered.timeframe && <FilterPicker noun={TIMEFRAMES} options={timeframeOptions} picked={timeframes} onChange={setTimeframes} />}
+        </FilterBar>
+      )}
 
       <Panel>
         <span className="flex items-baseline justify-between gap-2 text-[13px] text-muted-foreground">

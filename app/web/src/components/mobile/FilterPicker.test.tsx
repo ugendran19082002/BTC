@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { FilterPicker, METHODS, STRATEGIES, pickedWords, type FilterNoun, type FilterOption } from '@/components/mobile/FilterPicker';
+import { FilterBar, FilterPicker, METHODS, STRATEGIES, pickedWords, type FilterNoun, type FilterOption } from '@/components/mobile/FilterPicker';
 
 /**
  * The phone's tick-several filter (owner, 8 Oct 2026): one button, a list to tick any number in -- strategies, or
@@ -76,9 +76,9 @@ describe('FilterPicker', () => {
     expect(screen.queryByRole('button', { name: /^Strategy filter:/ })).not.toBeInTheDocument();
   });
 
-  it('every row and the button itself are a thumb high', () => {
+  it('every row is a thumb high, and the chip as tall as the screen\'s other chips', () => {
     render(<Host />);
-    expect(trigger().className).toMatch(/\bh-11\b/);
+    expect(trigger().className).toMatch(/\bh-10\b/);
     fireEvent.click(trigger());
     for (const o of screen.getAllByRole('option')) expect(o.querySelector('button')!.className).toMatch(/min-h-\[44px\]/);
   });
@@ -114,5 +114,32 @@ describe('FilterPicker', () => {
     expect(list.getAllByRole('option')).toHaveLength(13);
     expect(latest).toEqual(['m10']);
     expect(list.getByRole('option', { name: /#10/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('[critical] the chip says its kind, then the one name chosen or how many; and the row takes every choice off at once', () => {
+    let cleared = 0;
+    function Row() {
+      const [a, setA] = useState<string[]>(['s2']);
+      const [b, setB] = useState<string[]>(['pd', 'vwap']);
+      const methods: FilterOption[] = [{ key: 'pd', name: '#16 Previous day H/L rejection' }, { key: 'vwap', name: '#19 VWAP reclaim / loss' }];
+      const any = a.length + b.length > 0;
+      return (
+        <FilterBar onClear={any ? () => { cleared++; setA([]); setB([]); } : null}>
+          <FilterPicker noun={STRATEGIES} options={OPTIONS} picked={a} onChange={setA} />
+          <FilterPicker noun={METHODS} options={methods} picked={b} onChange={setB} />
+        </FilterBar>
+      );
+    }
+    render(<Row />);
+    const row = within(screen.getByRole('group', { name: 'Filters' }));
+    // one chosen: the name; several: the count -- the whole of it still read out
+    expect(row.getByRole('button', { name: 'Strategy filter: 1h time' })).toHaveTextContent('Strategy1h time');
+    expect(row.getByRole('button', { name: 'Method filter: 2 of 2 methods' })).toHaveTextContent('Method2');
+    fireEvent.click(row.getByRole('button', { name: 'Clear all' }));
+    expect(cleared).toBe(1);
+    expect(row.getByRole('button', { name: 'Strategy filter: All strategies' })).toHaveTextContent(/^Strategy$/);
+    expect(row.getByRole('button', { name: 'Method filter: All methods' })).toHaveTextContent(/^Method$/);
+    // nothing chosen: nothing to clear
+    expect(row.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument();
   });
 });
