@@ -236,7 +236,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               <div className="mt-3 text-[12px] text-muted-foreground">
                 {buying
                   ? 'Option TP / SL — optional, 0 is off. Bought: the target is a sale over the entry, with no upper limit; the stop a sale under it, up to 99% — the premium and no more.'
-                  : 'Option TP / SL — optional, placed at Delta only when set. Sold: the target is a buy-back under the entry, up to 99%; the stop a buy-back over it, with no upper limit.'}
+                  : 'Option TP / SL — optional, 0 is off. Sold: the target is a buy-back under the entry, up to 99%, resting at Delta. The stop is a buy-back over the entry: the desk watches it and buys back at the market once the offer holds there 15 s; a backup stop rests at Delta further out, just inside the close-out, in case the desk is down.'}
               </div>
               {/* The "no target and no stop" warning is for a clock strategy; this one always has the perp's SL and TGT. */}
               {/* Both, bought or sold; bought, each is on the other side of the entry (ExitRuleEditor). */}

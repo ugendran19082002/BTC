@@ -116,6 +116,10 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
               {r.liquidation.multiple !== null && <span className="text-muted-foreground"> · {r.liquidation.multiple.toFixed(1)}× now</span>}
             </Line>
           )}
+          {/* The stop drawn above is the one the desk judges; this is the order resting at Delta in case the desk is down. */}
+          {!r.long && trade.onBook?.stop != null && trade.onBook.stop !== r.stop?.level && (
+            <Line label="Backup stop at Delta"><span className="text-muted-foreground">{price(trade.onBook.stop)}</span></Line>
+          )}
           {r.settlesAt !== null && <Line label="Settles 17:30 IST">{countdown(r.settlesAt, now)}</Line>}
         </dl>
       </details>

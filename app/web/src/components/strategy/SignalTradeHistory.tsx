@@ -409,7 +409,7 @@ function Row({ t, name }: { t: SignalTrade; name: string }) {
       <td className="whitespace-nowrap px-2 py-1.5" aria-label="option entry">
         {t.option ? opt(t.option.entry) : <span className="text-[var(--dim)]">—</span>}
         {t.option && <When at={entryAt} />}
-        {/* The option's own exits, the backstop at Delta -- or said to be off. */}
+        {/* The option's own exits: the target resting at Delta, the stop the desk judges -- or said to be off. */}
         {t.option && (t.option.optionTarget !== undefined || t.option.optionStop !== undefined) && (
           <div className="text-[10.5px] text-[var(--dim)]" aria-label="option exits">
             TP {t.option.optionTarget != null ? opt(t.option.optionTarget) : 'off'} · SL {t.option.optionStop != null ? opt(t.option.optionStop) : <span className="text-[var(--warn)]">off</span>}

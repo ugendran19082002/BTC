@@ -219,7 +219,7 @@ describe('the SL and TGT on the BTC perp, from the live signal', () => {
     tab('Entry & exit');
     expect(screen.getByText(/Still unfilled 5 minutes\s+later, it is cancelled/)).toBeInTheDocument();
     expect(screen.getByLabelText('exits on the BTC perp')).toHaveTextContent(/the signal's own levels on the BTC perpetual/);
-    expect(screen.getByText(/Option TP \/ SL — optional, placed at Delta only when set/)).toBeInTheDocument();
+    expect(screen.getByText(/Option TP \/ SL — optional, 0 is off\. Sold: the target is a buy-back under the entry, up to 99%, resting at Delta/)).toBeInTheDocument();
     // the entry is still priced the same way: at the offer, at the bid after 5 s
     expect(screen.getByRole('radio', { name: 'Offer' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByLabelText('cross after seconds')).toHaveValue('5');
@@ -505,7 +505,7 @@ describe('bought or sold: the BUY and SELL tabs over the leg', () => {
     // The buyer's 300% did not come across as a seller's target.
     expect(screen.getByLabelText('Take profit percent')).toHaveValue('0');
     expect(screen.getByLabelText('Stop loss percent')).toHaveValue('0');
-    expect(screen.getByText(/Sold: the target is a buy-back under the entry, up to 99%; the stop a buy-back over it, with no upper limit\./)).toBeInTheDocument();
+    expect(screen.getByText(/Sold: the target is a buy-back under the entry, up to 99%, resting at Delta\. The stop is a buy-back over the entry: the desk watches it/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Take profit percent'), { target: { value: '300' } });
     expect(await screen.findByText('Take profit must be between 0 and 99% of the credit.')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Take profit percent'), { target: { value: '80' } });
