@@ -114,6 +114,12 @@ export class FlowSocket {
   private lastPerp: Print | null = null;
   private perp: PerpTicker | null = null;
   private socket: SocketLike | null = null;
+  /**
+   * The socket once it has opened; null while one is still connecting. A send before the open throws
+   * ("Sent before connected"), and thrown from the watch timer that is an uncaught error: on 8 Oct 2026 it took a
+   * local desk down four seconds after start, when the board's contracts arrived before the socket had opened.
+   */
+  private opened: SocketLike | null = null;
   private stopped = true;
   private lastMessageAt: number | null = null;
   /** When the current socket was asked for: silence is counted from here too, or a reopen dies in its handshake. */
@@ -240,7 +246,8 @@ export class FlowSocket {
     const cutoff = this.now() - (this.o.holdMs ?? HOLD_MS);
     if (this.prints.length && this.prints[0]!.at < cutoff) this.prints = this.prints.filter((p) => p.at >= cutoff);
     // The listed contracts change at each settlement: the new expiry's strikes are subscribed as they appear.
-    if (this.socket && this.o.options) {
+    // Only on a socket that has opened: one still connecting subscribes to everything listed when it opens.
+    if (this.socket && this.socket === this.opened && this.o.options) {
       const want = this.o.options();
       const fresh = want.filter((sym) => !this.optionSymbols.includes(sym));
       if (fresh.length) { this.subscribe(fresh); this.optionSymbols = [...this.optionSymbols, ...fresh]; }
@@ -267,6 +274,7 @@ export class FlowSocket {
     this.socket = ws;
     this.openedAt = this.now();
     ws.onopen = () => {
+      this.opened = ws;
       this.backoffMs = 1_000;
       this.lastMessageAt = this.now();
       ws.send(JSON.stringify({ type: 'enable_heartbeat' }));
@@ -280,6 +288,7 @@ export class FlowSocket {
     ws.onclose = (ev) => {
       if (this.socket !== ws) return;
       this.socket = null;
+      this.opened = null;
       this.log(`flow socket closed (${ev.code ?? '?'})`);
       this.scheduleReconnect();
     };
@@ -288,7 +297,7 @@ export class FlowSocket {
   /** Every print on these contracts, in batches: Delta's subscribe payload is happiest under a hundred symbols. */
   private subscribe(symbols: readonly string[]): void {
     const ws = this.socket;
-    if (!ws || !symbols.length) return;
+    if (!ws || ws !== this.opened || !symbols.length) return;
     for (let i = 0; i < symbols.length; i += 80) {
       ws.send(JSON.stringify({ type: 'subscribe', payload: { channels: [{ name: 'all_trades', symbols: symbols.slice(i, i + 80) }] } }));
     }
@@ -297,6 +306,7 @@ export class FlowSocket {
   private drop(): void {
     const ws = this.socket;
     this.socket = null;
+    this.opened = null;
     if (!ws) return;
     ws.onclose = null;
     try { ws.close(); } catch { /* already gone */ }

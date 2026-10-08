@@ -287,3 +287,44 @@ test('[critical] a remade flow socket gets its handshake time: a stale old messa
   assert.equal(sockets[1]!.closed, false, 'a socket still connecting is not silent');
   s.stop();
 });
+
+test('[critical] a contract listed while the socket is still connecting is not sent before it opens -- that send throws, and from the watch timer it took the desk down', () => {
+  // 8 Oct 2026: the board's contracts arrived four seconds after start, before the socket had opened.
+  const sent: string[] = []; let listed: string[] = []; let isOpen = false;
+  const sockets: { onopen: ((e: unknown) => void) | null; onclose: ((e: { code?: number }) => void) | null }[] = [];
+  const s = new FlowSocket({
+    now: () => T0, options: () => listed,
+    connect: () => {
+      const ws = {
+        send: (m: string) => { if (!isOpen) throw new Error('Sent before connected.'); sent.push(m); },
+        close: () => {}, onopen: null, onmessage: null, onclose: null, onerror: null,
+      };
+      sockets.push(ws);
+      return ws;
+    },
+  });
+  const inner = s as unknown as { watch(): void; open(): void };
+  s.start();
+  listed = ['C-BTC-85000-091026'];
+  assert.doesNotThrow(() => inner.watch(), 'still connecting: nothing is sent');
+  assert.deepEqual(sent, []);
+  isOpen = true;
+  sockets[0]!.onopen?.({});
+  assert.ok(sent.some((m) => m.includes('all_trades') && m.includes('C-BTC-85000-091026')), 'opened: everything listed is subscribed');
+  // Open: a contract listed later is subscribed at the next watch, once.
+  const before = sent.length;
+  listed = [...listed, 'P-BTC-81000-091026'];
+  inner.watch(); inner.watch();
+  assert.deepEqual(sent.slice(before).filter((m) => m.includes('P-BTC-81000-091026')).length, 1);
+  // Closed and connecting again: the same guard, on the new socket.
+  sockets[0]!.onclose?.({ code: 1006 });
+  isOpen = false;
+  inner.open();
+  listed = [...listed, 'C-BTC-86000-091026'];
+  assert.doesNotThrow(() => inner.watch());
+  isOpen = true;
+  const again = sent.length;
+  sockets[1]!.onopen?.({});
+  assert.ok(sent.slice(again).some((m) => m.includes('C-BTC-86000-091026')), 'the reconnected socket subscribes to all three');
+  s.stop();
+});
