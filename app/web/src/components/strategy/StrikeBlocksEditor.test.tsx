@@ -36,6 +36,8 @@ describe('StrikeBlocksEditor: apply to all blocks', () => {
     expect(sign(2)).toBe(sign(1));
     expect(sign(3)).toBe(sign(1));
     expect(screen.getByRole('status')).toHaveTextContent('Block 1\'s rule, ≤ $50 (if none, ≤ $60), is now on all 3 blocks. Each block kept its own time and distance rule.');
+    // said in the block that was clicked, where the eye already is
+    expect(screen.getByRole('listitem', { name: 'block 1' })).toContainElement(screen.getByRole('status'));
     // each block is still at its own time
     expect(screen.getByRole('listitem', { name: 'block 2' })).toHaveTextContent(/9:35 PM/);
   });
@@ -46,6 +48,7 @@ describe('StrikeBlocksEditor: apply to all blocks', () => {
     expect([usd(1), usd(2), usd(3)]).toEqual(['15', '15', '15']);
     expect([ifNone(1), ifNone(2), ifNone(3)]).toEqual(['', '', '']);
     expect(screen.getByRole('status')).toHaveTextContent('Block 3\'s rule, ≥ $15, is now on all 3 blocks.');
+    expect(screen.getByRole('listitem', { name: 'block 3' })).toContainElement(screen.getByRole('status'));
   });
 
   it('undo puts every block back as it was', () => {

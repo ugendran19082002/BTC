@@ -102,6 +102,19 @@ export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: Se
   const undoApply = () => { if (applied) { putRules(applied.before); setApplied(null); } };
   const canApply = (from: number) => applyToAllBlocks(c, from) !== null;
 
+  // What the button did, said once in the block it was clicked on -- where the eye already is -- with the way back.
+  const appliedNote = applied && (
+    <div role="status" className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-solid border-[var(--up)]/50 bg-[var(--up-bg)] px-2.5 py-1.5 text-[12px] text-foreground">
+      <span className="min-w-0 flex-1 basis-[14rem]">
+        Block {applied.from + 1}&apos;s rule, <b className="font-semibold">{applied.words}</b>, is now on all {blocks.length + 1} blocks. Each block kept its own time and distance rule.
+      </span>
+      <button type="button" onClick={undoApply}
+              className="m-0 inline-flex h-8 flex-none appearance-none items-center gap-1 rounded-md border border-solid border-border bg-background px-2.5 font-[inherit] text-[12px] font-medium text-foreground">
+        <Undo2 className="h-3.5 w-3.5" aria-hidden /> Undo
+      </button>
+    </div>
+  );
+
   const wouldMake = windowOk && everyMin >= 1 ? splitBlocks({ ...c, strikeBlocks: [] }, everyMin).length + 1 : 0;
   // What a block's distance rule starts from when it is switched on: block 1's, where it has one.
   const start = c.strikeRule === 'premium' && c.premium.minOtm != null
@@ -174,6 +187,7 @@ export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: Se
                 </div>
                 <RuleFields n={1} rule={ownPick(c)} onChange={patchFirst} start={undefined} />
                 <FieldError text={firstBad} />
+                {applied?.from === 0 && appliedNote}
               </li>
               {blocks.map((b, i) => {
                 const n = i + 2;
@@ -206,23 +220,12 @@ export function StrikeBlocksEditor({ c, set, err }: { c: StrategyConfig; set: Se
                     </div>
                     <RuleFields n={n} rule={b} onChange={(over) => patch(i, over)} start={start} />
                     <FieldError text={bad} />
+                    {applied?.from === n - 1 && appliedNote}
                   </li>
                 );
               })}
             </ol>
             <FieldError text={problemsOf(-1)} />
-            {/* What the button did, said once, with the way back. */}
-            {applied && (
-              <div role="status" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-solid border-[var(--up)]/50 bg-[var(--up-bg)] px-2.5 py-1.5 text-[12px] text-foreground">
-                <span className="min-w-0">
-                  Block {applied.from + 1}&apos;s rule, <b className="font-semibold">{applied.words}</b>, is now on all {blocks.length + 1} blocks. Each block kept its own time and distance rule.
-                </span>
-                <button type="button" onClick={undoApply}
-                        className="m-0 inline-flex h-8 flex-none appearance-none items-center gap-1 rounded-md border border-solid border-border bg-background px-2.5 font-[inherit] text-[12px] font-medium text-foreground">
-                  <Undo2 className="h-3.5 w-3.5" aria-hidden /> Undo
-                </button>
-              </div>
-            )}
 
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pb-1">
               <button
