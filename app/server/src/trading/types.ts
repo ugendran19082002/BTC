@@ -172,6 +172,11 @@ export type ProtectionOrders = {
    * exists; only the size proves it covers the position.
    */
   size?: number;
+  /**
+   * The trigger the stop order rests at at Delta -- the backstop (8 Oct 2026). An id proves the stop exists; this
+   * proves it rests where it should. Absent on a record from before it was kept, which is then re-placed once.
+   */
+  stopAt?: number | null;
 };
 
 /**
@@ -350,6 +355,8 @@ export type TradeEvent =
       stopLoss: string | null;
       /** Contracts it covers, so a later fill can be seen to have outgrown it. */
       size?: number;
+      /** The trigger the stop order rests at -- the backstop (8 Oct 2026). Absent on a record from before it was kept. */
+      stopAt?: number | null;
       at: number;
     }
   | { t: 'protection_failed'; reason: string; at: number }

@@ -376,3 +376,29 @@ test('[critical] the backstop never sits past the close-out: 300% of 61 at 200x 
   // Nothing known about the close-out: as before.
   assert.equal(back(243.2, 61, null), 425.4);
 });
+
+test('[critical] a stop already resting at the old level is moved inside the close-out on the next poll, once -- then left alone', async () => {
+  const { missingProtection } = await import('../../src/trading/engine.js');
+  const CE = ceProduct().symbol;
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 61, 61.5)], limits: { maxShortContracts: 5_000 } });
+  await r.engine.open({ ...planFor(ceProduct(), { lots: 5, leverage: 200, stopPrice: 243.2, takeProfitPrice: 6.1, entry: { type: 'limit', limitPrice: 61, timeoutMs: 5_000, marketFallback: false } }), tradeId: 'OLD' });
+  for (let i = 0; i < 6; i++) { r.advance(1_250); await r.engine.poll('OLD'); }
+  let rec = r.store.peek('OLD')!;
+  const stopOrder = async () => (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly && (o.type === 'stop_limit' || o.type === 'stop_market'));
+  // As a record from before the level was kept: the stop resting where the old rule put it, no level written down.
+  rec.state = { ...rec.state, protection: { ...rec.state.protection, stopAt: undefined } };
+  assert.equal(missingProtection(rec), true, 'a stop whose level is not known is checked');
+  rec.state = { ...rec.state, perpEntry: 81_034 };
+  await r.store.save(rec);
+  r.advance(1_250); await r.engine.poll('OLD');
+  rec = r.store.peek('OLD')!;
+  const closeOut = 61 + (81_034 * 0.5) / 200;
+  const [stop] = await stopOrder();
+  assert.ok(stop!.stopPrice! < closeOut && stop!.stopPrice! > 243.2, `moved inside the close-out: ${stop!.stopPrice}`);
+  assert.equal(rec.state.protection.stopAt, stop!.stopPrice);
+  assert.equal(missingProtection(rec), false, 'and now it is where it should be: nothing to do');
+  const id = rec.state.protection.stopLoss;
+  r.advance(1_250); await r.engine.poll('OLD');
+  assert.equal(r.store.peek('OLD')!.state.protection.stopLoss, id, 'not placed again on every poll');
+  assert.equal((await stopOrder()).length, 1, 'one stop on the book');
+});

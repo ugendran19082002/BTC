@@ -212,6 +212,8 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
           // Falls back to the position at the moment it was placed, so a record
           // written before this field existed still reads sensibly.
           size: e.size ?? Math.abs(s.position),
+          // The level the stop rests at, so a change of level is seen -- not only a missing order.
+          ...(e.stopAt !== undefined ? { stopAt: e.stopAt } : {}),
         },
         alarm: null,
       };

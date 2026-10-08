@@ -616,6 +616,11 @@ export const BACKSTOP_INSIDE_CLOSE_OUT = 0.05;
  * entered -- fixed for the trade, as the margin posted then is, so the backstop does not move with every tick of
  * BTC. Null where BTC at the entry is not known; the backstop is then not capped.
  */
+/** Where a short's stop order rests at Delta: the backstop for its stop, inside its close-out. Null with no stop. */
+export function backstopOf(rec: TradeRecord): number | null {
+  return rec.plan.stopPrice === null ? null : backstopFor(rec.plan.stopPrice, rec.state.entryAvgPrice, closeOutOf(rec));
+}
+
 function closeOutOf(rec: TradeRecord): number | null {
   const entry = rec.state.entryAvgPrice;
   const spot = rec.state.perpEntry ?? rec.plan.underlying?.entry ?? null;
@@ -1686,9 +1691,10 @@ export class TradeEngine {
      * options. The stop the trader set is judged here, on the offer, by
      * `stopIfReached`. See `backstopFor`.
      */
+    const slAt = backstopOf(rec);
     const sl = await settle(
       'stop_loss',
-      rec.plan.stopPrice === null ? null : backstopFor(rec.plan.stopPrice, rec.state.entryAvgPrice, closeOutOf(rec)),
+      slAt,
       // Either shape counts as the stop leg: a stop market placed before
       // 12 September is still a stop, and must be recognised to be replaced.
       (o) => o.type === 'stop_market' || o.type === 'stop_limit',
@@ -1703,11 +1709,14 @@ export class TradeEngine {
 
     // Size is part of the identity of a protective order, not a detail of it:
     // the same ids covering a different number of contracts is a change.
+    // The stop's level is part of its identity too: a backstop moved to a new level is written down as moved.
+    const restsAt = sl === null ? null : slAt;
     if (tp !== rec.state.protection.takeProfit
         || sl !== rec.state.protection.stopLoss
-        || rec.state.protection.size !== size) {
+        || rec.state.protection.size !== size
+        || (rec.state.protection.stopAt ?? undefined) !== (restsAt ?? undefined)) {
       rec = await this.commit(rec, {
-        t: 'protection_placed', takeProfit: tp, stopLoss: sl, size, at: this.now(),
+        t: 'protection_placed', takeProfit: tp, stopLoss: sl, size, stopAt: restsAt, at: this.now(),
       });
     }
 
@@ -2756,9 +2765,17 @@ export function missingProtection(rec: TradeRecord): boolean {
    * does not promise to keep a reduce-only order bigger than the position.
    */
   const wrongSize = (protection.size ?? 0) !== want;
+  /*
+   * A stop resting at a level other than the one it should (8 Oct 2026). The backstop moved inside the close-out
+   * that day, and the stops already resting stayed where they were -- 425 against a 265 close-out -- because only a
+   * missing order or a wrong size was ever looked for. A record from before the level was kept is re-placed once, and
+   * then carries it.
+   */
+  const wrongLevel = wantsStop && ownsClientId(tradeId, protection.stopLoss ?? null)
+    && (protection.stopAt === undefined || protection.stopAt !== backstopOf(rec));
 
   return (
-    (wantsStop && (!ownsClientId(tradeId, protection.stopLoss ?? null) || wrongSize)) ||
+    (wantsStop && (!ownsClientId(tradeId, protection.stopLoss ?? null) || wrongSize || wrongLevel)) ||
     (wantsTarget && (!ownsClientId(tradeId, protection.takeProfit ?? null) || wrongSize))
   );
 }
