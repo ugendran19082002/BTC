@@ -1,29 +1,29 @@
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { StrategyPicker, pickedWords, type StrategyOption } from '@/components/mobile/StrategyPicker';
+import { FilterPicker, METHODS, STRATEGIES, pickedWords, type FilterNoun, type FilterOption } from '@/components/mobile/FilterPicker';
 
 /**
- * The phone's strategy filter (owner, 8 Oct 2026): one button, a list to tick any number of strategies in, none
- * ticked being all of them.
+ * The phone's tick-several filter (owner, 8 Oct 2026): one button, a list to tick any number in -- strategies, or
+ * entry methods -- none ticked being all of them.
  */
 
-const OPTIONS: StrategyOption[] = [
+const OPTIONS: FilterOption[] = [
   { key: 's1', name: '15m time', note: '12 trades · +₹265.00', tone: 'up' },
   { key: 's2', name: '1h time', note: '4 trades · −₹313.00', tone: 'down' },
   { key: 'manual', name: 'By hand', note: '1 trade · +₹12.00', tone: 'up' },
 ];
 let latest: string[] = [];
-function Host({ start = [] as string[], options = OPTIONS }: { start?: string[]; options?: StrategyOption[] }) {
+function Host({ start = [] as string[], options = OPTIONS, noun = STRATEGIES }: { start?: string[]; options?: FilterOption[]; noun?: FilterNoun }) {
   const [picked, setPicked] = useState(start);
   latest = picked;
-  return <StrategyPicker options={options} picked={picked} onChange={setPicked} />;
+  return <FilterPicker noun={noun} options={options} picked={picked} onChange={setPicked} />;
 }
 const trigger = () => screen.getByRole('button', { name: /^Strategy filter:/ });
 const option = (name: RegExp) => within(screen.getByRole('listbox', { name: 'Strategies' })).getByRole('option', { name });
 const tick = (name: RegExp) => fireEvent.click(option(name).querySelector('button')!);
 
-describe('StrategyPicker', () => {
+describe('FilterPicker', () => {
   it('says what is chosen: all, the one name, or how many of how many', () => {
     expect(pickedWords(OPTIONS, [])).toBe('All strategies');
     expect(pickedWords(OPTIONS, ['s2'])).toBe('1h time');
@@ -81,5 +81,38 @@ describe('StrategyPicker', () => {
     expect(trigger().className).toMatch(/\bh-11\b/);
     fireEvent.click(trigger());
     for (const o of screen.getAllByRole('option')) expect(o.querySelector('button')!.className).toMatch(/min-h-\[44px\]/);
+  });
+
+  it('[critical] the same control for entry methods: its own words on the button and the list', () => {
+    const methods: FilterOption[] = [{ key: 'pd', name: '#16 Previous day H/L rejection' }, { key: 'vwap', name: '#19 VWAP reclaim / loss' }];
+    render(<Host noun={METHODS} options={methods} />);
+    const button = screen.getByRole('button', { name: 'Method filter: All methods' });
+    fireEvent.click(button);
+    const list = within(screen.getByRole('listbox', { name: 'Methods' }));
+    expect(list.getAllByRole('option').map((o) => o.textContent)).toEqual(['All methods2 in this list', '#16 Previous day H/L rejection', '#19 VWAP reclaim / loss']);
+    fireEvent.click(list.getByRole('option', { name: /#19/ }).querySelector('button')!);
+    expect(latest).toEqual(['vwap']);
+    expect(screen.getByRole('button', { name: 'Method filter: #19 VWAP reclaim / loss' })).toBeInTheDocument();
+    expect(pickedWords(methods, ['pd', 'vwap'], METHODS)).toBe('2 of 2 methods');
+    // A short list has no search box.
+    expect(screen.queryByRole('textbox', { name: 'Search methods' })).not.toBeInTheDocument();
+  });
+
+  it('[critical] a long list can be searched by name; what is ticked while searching stays ticked', () => {
+    const many: FilterOption[] = Array.from({ length: 12 }, (_, i) => ({ key: `m${i + 1}`, name: `#${i + 1} ${i === 4 ? 'Liquidity sweep' : i === 9 ? 'Liquidity replenishment' : `Method ${i + 1}`}` }));
+    render(<Host noun={METHODS} options={many} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Method filter:/ }));
+    const search = screen.getByRole('textbox', { name: 'Search methods' });
+    expect(search).toHaveAttribute('placeholder', 'Search 12 methods');
+    fireEvent.change(search, { target: { value: 'liquid' } });
+    const list = within(screen.getByRole('listbox', { name: 'Methods' }));
+    expect(list.getAllByRole('option').map((o) => o.textContent)).toEqual(['#5 Liquidity sweep', '#10 Liquidity replenishment']);
+    fireEvent.click(list.getByRole('option', { name: /#10/ }).querySelector('button')!);
+    fireEvent.change(search, { target: { value: 'zzz' } });
+    expect(screen.getByText('No method named “zzz”.')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: '' } });
+    expect(list.getAllByRole('option')).toHaveLength(13);
+    expect(latest).toEqual(['m10']);
+    expect(list.getByRole('option', { name: /#10/ })).toHaveAttribute('aria-selected', 'true');
   });
 });

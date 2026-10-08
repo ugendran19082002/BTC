@@ -104,3 +104,38 @@ describe('signal history pairs', () => {
     expect(pairsOfReport({ tf: null, sections: [], singleByTf: {} }, 'single')).toEqual({ pairs: [], signals: 0 });
   });
 });
+
+describe('the method filter on the signal history', () => {
+  const row = (n: number, method: string, o: Partial<MethodReportRow> = {}): MethodReportRow => ({
+    n, method, name: method, signals: 10, trades: 4, wins: 3, losses: 1, winPct: 75, profitPts: 900, lossPts: 300, netPts: 600, profitR: 3, lossR: 1, netR: 2, ...o,
+  });
+  const sec = (mode: 'mtf' | 'single', rows: MethodReportRow[]): MethodReportSection => ({ mode, label: mode, rows, total: row(0, 'all'), gatesOffSignals: 0 });
+  const report: MethodReportResponse = {
+    tf: null,
+    sections: [sec('mtf', [row(31, 'edge')]), sec('single', [])],
+    singleByTf: {
+      '15m': sec('single', [row(63, 'ib'), row(1, 'breakout', { netPts: -200 }), row(9, 'quiet', { signals: 0, trades: 0, netPts: 0 })]),
+      '1h': sec('single', [row(63, 'ib', { signals: 5, trades: 2, netPts: 100 }), row(7, 'waiting', { signals: 3, trades: 0, netPts: 0 })]),
+    },
+  } as MethodReportResponse;
+
+  it('[critical] the methods to choose from: each once, added up across its timeframes, in the desk\'s own order', () => {
+    expect(methodsOfReport(report, 'single').map((m) => [m.name, m.signals, m.trades, m.net])).toEqual([
+      ['#1 breakout', 10, 4, -200], ['#7 waiting', 3, 0, 0], ['#63 ib', 15, 6, 700],
+    ]);
+    // A method with no signal at all is not offered; one with signals and no trade yet is.
+    expect(methodsOfReport(report, 'single').some((m) => m.key === 'quiet')).toBe(false);
+    // Only the timeframes kept, and only this way of reading.
+    expect(methodsOfReport(report, 'single', ['1h']).map((m) => [m.key, m.trades])).toEqual([['waiting', 0], ['ib', 2]]);
+    expect(methodsOfReport(report, 'mtf').map((m) => m.name)).toEqual(['#31 edge']);
+  });
+
+  it('[critical] with methods chosen only their signals are ranked and counted', () => {
+    const all = pairsOfReport(report, 'single');
+    expect([all.pairs.length, all.signals]).toEqual([3, 28]);
+    const one = pairsOfReport(report, 'single', [], (method) => method === 'ib');
+    expect(one.pairs.map((p) => `${p.name} ${p.tf}`)).toEqual(['#63 ib 15m', '#63 ib 1h']);
+    expect(one.signals).toBe(15);
+    expect(pairsOfReport(report, 'single', ['15m'], (method) => method === 'ib').pairs.map((p) => p.tf)).toEqual(['15m']);
+  });
+});
