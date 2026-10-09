@@ -30,6 +30,9 @@ export default defineConfig({
           if (id.includes('@radix-ui')) return 'radix';
           if (/react-day-picker|date-fns/.test(id)) return 'dates';
           if (id.includes('lucide-react')) return 'icons';
+          // The chart library on its own: the phone (/m) draws no chart, and while it sat in `vendor` beside
+          // clsx and tailwind-merge every phone load downloaded ~190 KB of it for one `cn()` (audit, 9 Oct 2026).
+          if (/[\\/]node_modules[\\/](lightweight-charts|fancy-canvas)[\\/]/.test(id)) return 'charts';
           return 'vendor';
         },
       },
