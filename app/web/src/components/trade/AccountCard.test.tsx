@@ -5,8 +5,8 @@ import type { TradeStatus } from '@/types/trade';
 
 /** A <dd> has no role, so getByLabelText cannot reach it. Query it directly. */
 const budgetLine = (c: HTMLElement) => c.querySelector('[aria-label="loss budget left"]');
-/** One labelled row, so a figure that also appears in "Net today" is not found twice. */
-const row = (label: string) => within(screen.getByText(label).closest('div')!);
+/** One labelled row, so a figure that also appears in "Net today" is not found twice. A tile is its own <dl>. */
+const row = (label: string) => within(screen.getByText(label).closest('div, dl')!);
 
 const status = (over: Partial<TradeStatus> = {}): TradeStatus => ({
   mode: 'live', live: true, canGoLive: true, switchBlockedBy: null,
