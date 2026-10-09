@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
+import { copySources } from '@/components/strategy/SignalRuleEditor';
 import { combineRows, matchingSignals, profitableIds } from '@/components/strategy/SignalRuleEditor';
 import { DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, type SignalRule, type Strategy } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
@@ -164,6 +165,56 @@ describe('picking the methods', () => {
     expect(screen.getByRole('checkbox', { name: '#6 BOS' })).not.toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
     expect(screen.getByText(/0 of 4 picked/)).toBeInTheDocument();
+  });
+
+  it('[critical] copy the methods of another strategy of the account: they replace the pick, are saved, and can be undone (9 Oct 2026)', async () => {
+    const other = { ...signalStrategy({ methods: ['bos', 'order-flow', 'retired-method'], mode: 'single', tf: '15m', tfs: ['15m', '1h'] }), id: 'o1', name: '1h time', enabled: true };
+    const third = { ...signalStrategy({ methods: ['liquidity-sweep'] }), id: 'o2', name: 'Asleep' };
+    render(<SignalStrategyForm editing={signalStrategy({ methods: ['breakout'] })} open onOpenChange={() => {}} onSaved={() => {}}
+                               balanceUsd={228} spot={85_000} copyFrom={copySources([third, other, signalStrategy()], 'sig')} />);
+    tab('Signals');
+    await screen.findByRole('checkbox', { name: '#1 Breakout' });
+    const pickFrom = screen.getByRole('combobox', { name: 'copy methods from a strategy' });
+    // By name, the strategy being edited left out, each with what its pick is.
+    expect(within(pickFrom).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Copy methods from a strategy…', 'Asleep — 1 method · with the chain · off', '1h time — 3 methods · 15m + 1h',
+    ]);
+    fireEvent.change(pickFrom, { target: { value: 'o1' } });
+    // The retired id is not carried: the save would refuse it.
+    expect(screen.getByRole('checkbox', { name: '#6 BOS' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '#11 Order flow' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '#1 Breakout' })).not.toBeChecked();
+    expect(screen.getByText(/2 of 4 picked/)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Took the 2 methods of 1h time, in place of the 1 picked before.');
+    expect(pickFrom).toHaveValue('');
+    // Only the methods: this strategy's way and timeframes stay its own.
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.methods).toEqual(['bos', 'order-flow']);
+    expect(saved().config.signal!.mode).toBe('mtf');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByRole('checkbox', { name: '#1 Breakout' })).toBeChecked();
+    expect(screen.getByText(/1 of 4 picked/)).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('a change made after a copy is the owner\'s own: the Undo goes, so it cannot throw that change away', async () => {
+    const other = { ...signalStrategy({ methods: ['bos'] }), id: 'o1', name: 'Other' };
+    render(<SignalStrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} copyFrom={[other]} />);
+    tab('Signals');
+    await screen.findByRole('checkbox', { name: '#1 Breakout' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'copy methods from a strategy' }), { target: { value: 'o1' } });
+    expect(screen.getByRole('status')).toHaveTextContent('Took the 1 method of Other.');
+    fireEvent.click(screen.getByRole('checkbox', { name: '#1 Breakout' }));
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+  });
+
+  it('no other strategy with methods: no copy list', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    await screen.findByRole('checkbox', { name: '#1 Breakout' });
+    expect(screen.queryByRole('combobox', { name: 'copy methods from a strategy' })).not.toBeInTheDocument();
+    expect(copySources([{ ...signalStrategy({ methods: [] }), id: 'x' }, strategy({}, 'Clock')], null)).toEqual([]);
   });
 
   it('[critical] without the chain: several timeframes, the record added up over them, a board read for each', async () => {
