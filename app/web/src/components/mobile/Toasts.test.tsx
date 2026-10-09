@@ -11,7 +11,7 @@ const getTradeDetail = vi.fn();
 vi.mock('@/api/phone', () => ({ getTradeDetail: (...a: unknown[]) => getTradeDetail(...a) }));
 
 const { Toasts, TOAST_MS } = await import('@/components/mobile/Toasts');
-const { useTradeToasts, summaryOf, AWAY_MS, REPEAT_MS } = await import('@/components/mobile/useTradeToasts');
+const { useTradeToasts, AWAY_MS, REPEAT_MS } = await import('@/components/mobile/useTradeToasts');
 type ToastT = import('@/components/mobile/Toasts').Toast;
 
 const trade = (over: Partial<Trade> = {}): Trade => ({
@@ -185,23 +185,29 @@ describe('many at once', () => {
     await waitFor(() => expect(titles().sort()).toEqual(['Order filled', 'Order filled', 'Order waiting']));
   });
 
-  it('[critical] more than three in one reading are one summary, which opens Orders', async () => {
+  it('[critical] more than three in one reading say nothing -- no summary toast, no buzz (9 Oct 2026)', async () => {
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true });
     const { rerender } = render(<Harness open={[trade({ tradeId: 'a' }), trade({ tradeId: 'b' }), trade({ tradeId: 'c' })]} />);
     read(rerender, [trade({ tradeId: 'd' }), waiting({ tradeId: 'e' })]);
-    expect(await screen.findByText('5 things just happened')).toBeInTheDocument();
-    expect(screen.getByText('1 order waiting · 1 filled · 3 closed')).toBeInTheDocument();
-    expect(titles()).toEqual(['5 things just happened']);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(titles()).toEqual([]);
+    expect(document.querySelectorAll('.m-toast')).toHaveLength(0);
     expect(getTradeDetail).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: /open Orders$/ }));
-    expect(opened).toHaveBeenCalledWith(expect.objectContaining({ kind: 'summary', to: 'orders' }));
+    expect(vibrate).not.toHaveBeenCalled();
+    // And they are not said later either: the next quiet reading shows nothing.
+    read(rerender, [trade({ tradeId: 'd' }), waiting({ tradeId: 'e' })]);
+    expect(titles()).toEqual([]);
   });
 
-  it('[critical] back after the screen was off: what happened meanwhile is one line, not a stack', async () => {
+  it('[critical] back to the tab after a while: nothing is shown for what happened meanwhile, and the next change is said as usual', async () => {
     const { rerender } = render(<Harness open={[trade({ tradeId: 'a' })]} />);
     read(rerender, [trade({ tradeId: 'b' })], { after: AWAY_MS + 5_000 });
-    expect(await screen.findByText('While you were away')).toBeInTheDocument();
-    expect(screen.getByText('1 filled · 1 closed')).toBeInTheDocument();
-    expect(titles()).toEqual(['While you were away']);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(titles()).toEqual([]);
+    read(rerender, [trade({ tradeId: 'b' }), trade({ tradeId: 'c' })]);
+    expect(await screen.findByText('Order filled')).toBeInTheDocument();
+    expect(titles()).toEqual(['Order filled']);
   });
 
   it('never more than three on the screen', async () => {
@@ -209,12 +215,6 @@ describe('many at once', () => {
     read(rerender, [trade({ tradeId: 'a' }), trade({ tradeId: 'b' })]);
     read(rerender, [trade({ tradeId: 'a' }), trade({ tradeId: 'b' }), trade({ tradeId: 'c' }), trade({ tradeId: 'd' })]);
     await waitFor(() => expect(document.querySelectorAll('.m-toast')).toHaveLength(3));
-  });
-
-  it('the words of a summary, in the order things happen to a trade', () => {
-    const ev = (kind: 'waiting' | 'filled' | 'closed' | 'gone') => ({ kind, tradeId: 'x', trade: trade() });
-    expect(summaryOf([ev('closed'), ev('waiting'), ev('waiting'), ev('gone'), ev('filled')])).toBe('2 orders waiting · 1 filled · 1 closed · 1 not filled');
-    expect(summaryOf([])).toBe('');
   });
 
   it('one buzz for a reading, however many things it held', async () => {

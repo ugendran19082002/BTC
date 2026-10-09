@@ -3,7 +3,7 @@ import { getTradeDetail } from '@/api/phone';
 import type { Trade } from '@/types/trade';
 import type { Toast } from '@/components/mobile/Toasts';
 import { contractLabel, duration, price, signedInr, usdToInr } from '@/lib/format';
-import { tradeEvents, tradeWords, type TradeEvent, type TradeEventKind } from '@/lib/trade-events';
+import { tradeEvents, tradeWords, type TradeEvent } from '@/lib/trade-events';
 
 /**
  * The phone's live toasts (owner, 6 Oct 2026): each reading of the open trades against the one before it, and a
@@ -13,8 +13,9 @@ import { tradeEvents, tradeWords, type TradeEvent, type TradeEventKind } from '@
  *
  *   - The first reading, and the first after the account shown changes, is only the baseline: opening the app, or
  *     looking at another account, is not twenty things happening at once.
- *   - Readings far apart (the screen was off) and readings with more than three changes are one summary, not a
- *     stack that cannot be read before it goes: "While you were away: 2 filled · 3 closed", opening Orders.
+ *   - Readings far apart (the screen was off, or the browser tab was in the background) and readings with more than
+ *     three changes say nothing: no stack that cannot be read before it goes, and no summary either -- the owner had
+ *     it removed (9 Oct 2026): "56 things just happened" on coming back to the tab told nothing Orders does not.
  *   - The same thing about the same trade is said once in ten minutes, whatever the readings do.
  *   - A close is said at once and then completed with how it ended and what it made, from the trade's own record
  *     -- completed where it stands: a toast already pushed away is not brought back.
@@ -32,23 +33,12 @@ const ENDED: Record<string, string> = {
   'window-end': 'Closed at its exit time', manual: 'Closed by hand',
 };
 
-const KIND_WORD: Record<TradeEventKind, [one: string, many: string]> = {
-  waiting: ['order waiting', 'orders waiting'], filled: ['filled', 'filled'], closed: ['closed', 'closed'], gone: ['not filled', 'not filled'],
-};
-
 /** What opened it, in a few words: the method and the strategy, or "by hand". */
 const openedBy = (t: Trade): string => {
   const sig = t.plan?.signal;
   const parts = [sig ? `#${sig.n} ${sig.name} · ${sig.tf}` : null, t.plan?.strategyName ?? (t.plan?.origin === 'manual' ? 'by hand' : null), t.account?.name ?? null];
   return parts.filter(Boolean).join(' · ');
 };
-
-/** "2 filled · 3 closed · 1 order waiting", in the order things happen to a trade. */
-export function summaryOf(events: readonly TradeEvent[]): string {
-  return (['waiting', 'filled', 'closed', 'gone'] as const)
-    .map((k) => { const n = events.filter((e) => e.kind === k).length; return n ? `${n} ${KIND_WORD[k][n === 1 ? 0 : 1]}` : null; })
-    .filter(Boolean).join(' · ');
-}
 
 export function useTradeToasts(
   open: readonly Trade[] | undefined, scope: string, now: () => number = Date.now,
@@ -77,15 +67,9 @@ export function useTradeToasts(
     if (events.length === 0) return;
     for (const e of events) said.current.set(idOf(e), at);
 
-    const away = at - before.at > AWAY_MS;
-    if (away || events.length > AT_MOST) {
-      add({
-        id: `summary:${at}`, kind: 'summary', to: 'orders',
-        title: away ? 'While you were away' : `${events.length} things just happened`,
-        detail: summaryOf(events),
-        more: events.slice(0, 2).map((e) => tradeWords(e.trade, contractLabel)).join(' · ') + (events.length > 2 ? ` · +${events.length - 2} more` : ''),
-      });
-    } else {
+    // Back to the tab, or a burst: marked as said above, and nothing shown -- Orders and History list them.
+    if (at - before.at > AWAY_MS || events.length > AT_MOST) return;
+    {
       for (const e of events) {
         const id = idOf(e);
         const words = tradeWords(e.trade, contractLabel);
