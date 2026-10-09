@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-457 files listed, 225 test files counted below, images and lockfiles left out.
+458 files listed, 227 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 120 |
-| `app/web` | 105 |
+| `app/server` | 121 |
+| `app/web` | 106 |
 
 ## `(root)`
 
@@ -547,6 +547,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [strategy-blocks.ts](../../app/web/src/lib/strategy-blocks.ts) | A signal strategy's strike rule over its window, as the form works with it. |
 | [strategy-checks.ts](../../app/web/src/lib/strategy-checks.ts) | Things that are allowed but probably not meant -- said as warnings, not refused. |
 | [strategy-exits.ts](../../app/web/src/lib/strategy-exits.ts) | A strategy's two exits, read as a percentage or as points, and moved through the day by time steps: |
+| [strategy-no-entry.ts](../../app/web/src/lib/strategy-no-entry.ts) | A signal strategy's no-entry windows (owner, 9 Oct 2026: "no entry window ... from time to time"; "trades taken before must not be closed, no new entry inside the range"): the browser's copy of the... |
 | [strategy-preview.ts](../../app/web/src/lib/strategy-preview.ts) | What a strategy will actually do, in words and in money. |
 | [strategy-rules.ts](../../app/web/src/lib/strategy-rules.ts) | What is wrong with a strategy before it is saved, and where on the form. |
 | [strategy-totals.ts](../../app/web/src/lib/strategy-totals.ts) | What the signal strategies switched on add up to (4 Oct 2026): how many entries they allow between them, how many lots that is, and the margin it would take with every one of them open at once. |
