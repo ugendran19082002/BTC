@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import type { MethodRead } from '@/types/entry';
@@ -12,8 +13,10 @@ import { GROUP_NAME, GateChip, METHOD_VIEWS, NumberBadge, SignalChip, ViewChips,
  * it). Signals first; a view keeps a long list usable -- All, only those with
  * a signal, or one group -- and the body scrolls under a fixed header.
  * Choosing a row chooses that method in both panels.
+ *
+ * Memoised: it sits in the entry card, which redraws on every live print; the list moves only with the board.
  */
-export function MethodLegend({ single, mtf, chosenId, onChoose, embedded = false }: {
+export const MethodLegend = memo(function MethodLegend({ single, mtf, chosenId, onChoose, embedded = false }: {
   single: readonly MethodRead[];
   mtf: readonly MethodRead[];
   /** The method chosen in the panels, when both sides are on the same one. */
@@ -87,4 +90,4 @@ export function MethodLegend({ single, mtf, chosenId, onChoose, embedded = false
       </div>
     </section>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -135,7 +135,9 @@ export function ModePanel({ mode, reads, selected, onChoose, recordOf, setupsOn,
   );
 }
 
-function MethodTable({ mode, reads, selected, onChoose, recordOf, autoPicked }: {
+// Memoised: the panel redraws on every live print (its selected card shows the price), the table only when
+// the board, the choice or the record moves -- 81 rows at a few prints a second held the main thread (audit, 9 Oct 2026).
+const MethodTable = memo(function MethodTable({ mode, reads, selected, onChoose, recordOf, autoPicked }: {
   mode: EntryMode; reads: readonly MethodRead[]; selected: MethodRead | null;
   onChoose: (r: MethodRead) => void; recordOf: (r: MethodRead) => EntryRecord | null;
   autoPicked: boolean;
@@ -197,7 +199,7 @@ function MethodTable({ mode, reads, selected, onChoose, recordOf, autoPicked }: 
       </div>
     </div>
   );
-}
+});
 
 function SelectedCard({ read, ltp }: { read: MethodRead | null; ltp: { price: number; at: number } | null }) {
   if (!read) return <div className="rounded-lg border border-border p-2 text-[12px] text-muted-foreground">Choose a method.</div>;

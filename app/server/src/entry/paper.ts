@@ -185,6 +185,17 @@ const MIGRATIONS: Migration[] = [{
       PRIMARY KEY (method, mode, tf, dir, trigger_at, state)
     );
   `,
+}, {
+  /*
+   * The log is kept for good, so its reads by time must not walk all of it (audit, 9 Oct 2026, on 35k rows):
+   * the board's setup clocks ask by trigger bar alone -- the last column of the unique key, so every read walked
+   * the whole index (~11 ms each 5 s) -- and the latest setups sort on first_seen (75 ms, a full scan).
+   */
+  id: 'entry-022-setups-by-time',
+  up: `
+    CREATE INDEX IF NOT EXISTS entry_setups_by_trigger_at ON entry_setups (trigger_at);
+    CREATE INDEX IF NOT EXISTS entry_setups_by_first_seen ON entry_setups (first_seen);
+  `,
 }];
 
 let ready: Promise<void> | null = null;

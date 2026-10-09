@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-457 files listed, 224 test files counted below, images and lockfiles left out.
+457 files listed, 225 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 120 |
-| `app/web` | 104 |
+| `app/web` | 105 |
 
 ## `(root)`
 
@@ -403,7 +403,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [MoreScreen.tsx](../../app/web/src/components/mobile/screens/MoreScreen.tsx) | More (6 Oct 2026): the screens that do not need a tab of their own, one tap each. |
 | [OrdersScreen.tsx](../../app/web/src/components/mobile/screens/OrdersScreen.tsx) | Orders (6 Oct 2026): the day's orders as the desk placed them -- what was asked, what it filled at, and where each stands -- filtered by status, a day at a time. |
 | [PnlScreen.tsx](../../app/web/src/components/mobile/screens/PnlScreen.tsx) | P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line, then the closed trades' numbers in one grid (win rate, profit factor, average win and... |
-| [PositionsScreen.tsx](../../app/web/src/components/mobile/screens/PositionsScreen.tsx) | Positions (6 Oct 2026): every open position's live risk, the riskiest first -- anything wrong, then the stop with the least room. |
+| [PositionsScreen.tsx](../../app/web/src/components/mobile/screens/PositionsScreen.tsx) | Positions (6 Oct 2026): every open position's live risk. |
 | [PressureScreen.tsx](../../app/web/src/components/mobile/screens/PressureScreen.tsx) | Pressure (owner, 7 Oct 2026): the desk's two pressure cards, made for a phone. |
 | [PriceChangeScreen.tsx](../../app/web/src/components/mobile/screens/PriceChangeScreen.tsx) | Price changes (owner, 7 Oct 2026): the desk's "Price change" card, made for a phone. |
 | [SettingsScreen.tsx](../../app/web/src/components/mobile/screens/SettingsScreen.tsx) | Status and settings (6 Oct 2026): the desk's health in full, who is signed in and how, which build the server runs, whether Telegram is set up, and signing out. |

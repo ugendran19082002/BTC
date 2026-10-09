@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -75,6 +75,10 @@ export function EntrySection({ desk, onTimeframes, belowHeader, bottom }: {
   const { data: record } = usePoll(() => getEntryRecord(), 60_000);
 
   const reads = useMemo(() => board?.reads ?? [], [board]);
+  // Each way's reads, kept between live ticks: the method tables are memoised on them, so a print of the
+  // perpetual (several a second) redraws the price and the chart, not 81 rows twice over (audit, 9 Oct 2026).
+  const singleReads = useMemo(() => reads.filter((r) => r.mode === 'single'), [reads]);
+  const mtfReads = useMemo(() => reads.filter((r) => r.mode === 'mtf'), [reads]);
   useEffect(() => { if (board) onTimeframes?.(board.timeframes); }, [board, onTimeframes]);
   const pick = (mode: EntryMode) => {
     const mine = reads.filter((r) => r.mode === mode);
@@ -111,14 +115,17 @@ export function EntrySection({ desk, onTimeframes, belowHeader, bottom }: {
   const autoPicked = (mode: EntryMode) => autoSelect && !!autoKey[mode] && chosen[mode] === autoKey[mode];
 
   const counts = { trade: reads.filter((r) => r.state === 'TRADE').length, wait: reads.filter((r) => r.state === 'WAIT').length };
-  const recordOf = (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null;
-  const choose = (r: MethodRead) => setChosen({ ...chosen, [r.mode]: keyOf(r) });
+  const recordOf = useCallback(
+    (r: MethodRead) => record?.records.find((x) => x.method === r.id && x.mode === r.mode && x.tf === r.tf) ?? null,
+    [record],
+  );
+  const choose = useCallback((r: MethodRead) => setChosen((c) => ({ ...c, [r.mode]: keyOf(r) })), [setChosen]);
   // From the method table: the same method on both sides.
-  const chooseBoth = (id: string) => {
+  const chooseBoth = useCallback((id: string) => {
     const s = reads.find((r) => r.mode === 'single' && r.id === id);
     const m = reads.find((r) => r.mode === 'mtf' && r.id === id);
-    setChosen({ single: s ? keyOf(s) : chosen.single, mtf: m ? keyOf(m) : chosen.mtf });
-  };
+    setChosen((c) => ({ single: s ? keyOf(s) : c.single, mtf: m ? keyOf(m) : c.mtf }));
+  }, [reads, setChosen]);
   const bothId = selected.single && selected.mtf && selected.single.id === selected.mtf.id ? selected.single.id : null;
   // How many methods the board reads each way (74 since 1 Oct 2026), and so how many reads in all.
   const nMethods = new Set(reads.map((r) => r.id)).size || 12;
@@ -179,7 +186,7 @@ export function EntrySection({ desk, onTimeframes, belowHeader, bottom }: {
           method says it", not two stacked on a phone. Folds with the card, and has its own fold for the long list.
         */}
         {open && view === 'panels' && (
-          <MethodLegend embedded single={reads.filter((r) => r.mode === 'single')} mtf={reads.filter((r) => r.mode === 'mtf')}
+          <MethodLegend embedded single={singleReads} mtf={mtfReads}
                         chosenId={bothId} onChoose={chooseBoth} />
         )}
       </header>
@@ -196,18 +203,18 @@ export function EntrySection({ desk, onTimeframes, belowHeader, bottom }: {
             <GateChecklist selected={selected} mode={gatesMode === 'single' ? 'single' : 'mtf'} onMode={setGatesMode} />
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
-            <ModePanel mode="single" reads={reads.filter((r) => r.mode === 'single')} count={nMethods}
+            <ModePanel mode="single" reads={singleReads} count={nMethods}
                        selected={selected.single} onChoose={choose} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={tf} onChartTf={setSingleTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="single" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('single')} />
-            <ModePanel mode="mtf" reads={reads.filter((r) => r.mode === 'mtf')} count={nMethods}
+            <ModePanel mode="mtf" reads={mtfReads} count={nMethods}
                        selected={selected.mtf} onChoose={choose} recordOf={recordOf}
                        setupsOn={setupsOn} chartTf={mtfTf} onChartTf={setMtfChartTf} chart={chart}
                        ltp={ltp} alert={<AlertSwitch mode="mtf" alerts={alerts} onChanged={setAlerts} />} autoPicked={autoPicked('mtf')} />
           </div>
         </>
       ) : (
-        <EntryGrid mode={gridMode} onMode={setGridMode} reads={reads.filter((r) => r.mode === gridMode)} singleTf={tf} setupsOn={setupsOn} chart={chart} />
+        <EntryGrid mode={gridMode} onMode={setGridMode} reads={gridMode === 'mtf' ? mtfReads : singleReads} singleTf={tf} setupsOn={setupsOn} chart={chart} />
       )}
 
       <p className="m-0 mt-2 text-[11px] leading-relaxed text-[var(--dim)]">

@@ -460,6 +460,9 @@ export default function App() {
     setInspecting({ cp, strike });
     setInspectOpen(true);
   }, [setFocus]);
+  // Kept, not written inline on the board: an arrow there is new every render, and the board (memo) then
+  // redrew all its rows on every live print (audit, 9 Oct 2026).
+  const focusLeg = useCallback((cp: 'C' | 'P', strike: number) => setFocus({ cp, strike }), [setFocus]);
 
   const snap = data?.snapshot;
   snapRef.current = snap ?? null;
@@ -790,7 +793,7 @@ export default function App() {
                   onInspect={inspectLeg}
                   focus={focus}
                   pair={pair}
-                  onFocus={(cp, strike) => setFocus({ cp, strike })}
+                  onFocus={focusLeg}
                   view={chainView}
                   eligibleOnly={eligibleOnly}
                   maxSpreadPct={trade?.limits.maxSpreadPct}
