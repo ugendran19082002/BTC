@@ -2340,6 +2340,21 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
   border-top: none !important;
 }
 
+/*
+ * The Live screen's two heavy blocks -- the entry setups (~4,600 elements) and the chain (~2,800, starting
+ * ~3,900px down) -- each painted on their own. Several live prints a second change text inside them; without
+ * containment every change re-recorded the paint of the whole 6,700px page: ~20% of the main thread on paint
+ * alone, 6 fps on a CPU a quarter as fast. Contained, a change repaints its own block, and a block off-screen
+ * is skipped until it scrolls near (audit, 9 Oct 2026: paint 980 -> 59 ms per 5 s). `auto` in the size keeps
+ * the last measured height, so the scrollbar does not jump. Their popovers (gate switches, columns) are
+ * portaled to <body>, so the paint containment clips nothing.
+ */
+section.desk-entry,
+section.live-chain {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1200px;
+}
+
 .chain-bar {
   background: var(--bg) !important;
   border: 1px solid var(--panel-2) !important;
