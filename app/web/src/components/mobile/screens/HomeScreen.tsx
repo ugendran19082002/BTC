@@ -51,7 +51,8 @@ export function HomeScreen() {
     <>
       <button
         type="button" onClick={() => p.go({ tab: 'more', sub: 'settings' })} aria-label="Desk status: open"
-        className="grid grid-cols-4 !gap-1.5 border-0 bg-transparent p-0 text-left font-[inherit]"
+        // Two by two under 360px: four across left "Sched…", "Price f…" on a 320px phone.
+        className="grid grid-cols-2 !gap-1.5 border-0 bg-transparent p-0 text-left font-[inherit] min-[360px]:grid-cols-4"
       >
         <Tile label="Trading" value={s ? (s.mode === 'live' ? 'LIVE' : 'PAPER') : '…'} tone={s?.mode === 'live' ? 'up' : 'dim'} />
         <Tile label="Scheduler" value={g ? (g.readings.schedulerOn ? 'ON' : 'OFF') : '…'} tone={g?.readings.schedulerOn ? 'up' : 'dim'} />
@@ -69,7 +70,8 @@ export function HomeScreen() {
           className="flex w-full items-center gap-2.5 rounded-lg border border-[var(--down)] bg-[var(--down-bg)] px-3 py-2.5 text-left font-[inherit] text-[#ffb3ae]"
         >
           <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate text-[13.5px]">
+          {/* Two lines before it is cut: the line that cannot wait was losing its reason to the ellipsis. */}
+          <span className="line-clamp-2 min-w-0 flex-1 text-[13.5px] leading-snug">
             {critical[0]!.title}{critical[0]!.detail ? ` · ${critical[0]!.detail}` : ''}{critical.length > 1 ? ` · +${critical.length - 1} more` : ''}
           </span>
           <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0" />
@@ -110,7 +112,7 @@ export function HomeScreen() {
         )}
       </Panel>
 
-      <Panel title={s ? `Positions · ${running} running${waitingN ? ` · ${waitingN} waiting` : ''}` : 'Positions'} right={s && s.open.length > 0 ? <button type="button" onClick={() => p.go({ tab: 'positions' })} className="-my-[9px] inline-flex min-h-[36px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">Risk →</button> : undefined}>
+      <Panel title={s ? `Positions · ${running} running${waitingN ? ` · ${waitingN} waiting` : ''}` : 'Positions'} right={s && s.open.length > 0 ? <button type="button" onClick={() => p.go({ tab: 'positions' })} className="-my-[13px] inline-flex min-h-[44px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">Risk →</button> : undefined}>
         {!s ? <Empty>Reading positions…</Empty> : s.open.length === 0 ? <Empty>No open positions, no order waiting.</Empty> : (
           <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
             {/* Running first; an order still waiting to fill after them, in amber, with where it rests. */}
@@ -173,7 +175,7 @@ export function HomeScreen() {
         </button>
       </div>
 
-      <Panel title="Latest order" right={<button type="button" onClick={() => p.go({ tab: 'orders' })} className="-my-[9px] inline-flex min-h-[36px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">All →</button>}>
+      <Panel title="Latest order" right={<button type="button" onClick={() => p.go({ tab: 'orders' })} className="-my-[13px] inline-flex min-h-[44px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">All →</button>}>
         {!latest ? <Empty>{orders.data ? 'No order today.' : 'Reading orders…'}</Empty> : (
           <ListButton onClick={() => p.openTrade(latest.tradeId)} label="Open the latest order">
             <span className="flex items-center justify-between gap-2">

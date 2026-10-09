@@ -39,7 +39,7 @@ export function MoreScreen() {
                       {it.label}
                       {it.sub === 'alerts' && alerts > 0 && <span className="ml-2 rounded-full bg-[var(--down)] px-1.5 text-[11px] font-semibold text-white">{alerts}</span>}
                     </span>
-                    <span className="block truncate text-[12.5px] text-muted-foreground">{it.hint}</span>
+                    <span className="line-clamp-2 text-[12.5px] leading-snug text-muted-foreground">{it.hint}</span>
                   </span>
                 </span>
               </ListButton>

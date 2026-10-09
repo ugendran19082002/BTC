@@ -2628,6 +2628,16 @@ section.live-chain {
   .ov-pc-mark .ov-pc-label { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
 }
 
+/* iPhone Safari zooms the page into any field whose text is under 16px the moment it is tapped, and leaves it
+   zoomed: the search box, the P&L selects, the strategy cap and the chart's window all did (audit, 9 Oct 2026).
+   16px on iOS phones only -- `-webkit-touch-callout` is iOS's alone -- so Android and the desk on a window keep
+   their sizes. A select keeps its box; its text is the larger. */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 640px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { font-size: 16px !important; }
+  }
+}
+
 /* ── The phone's live toasts and waiting pulse (6 Oct 2026) ────────────────────
    A toast slides down when an order starts waiting, fills or closes; a waiting
    order's dot breathes. Movement that says something happened -- and none of it

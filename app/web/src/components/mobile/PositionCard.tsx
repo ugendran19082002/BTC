@@ -40,10 +40,12 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
   const hasPerpRail = Boolean(r.perp && (r.perp.stop !== null || r.perp.target !== null));
 
   const head = (
-    <span className="flex w-full items-center gap-1.5">
-      <span className="truncate text-[16px] font-semibold">{contractLabel(trade.symbol)}</span>
+    // The contract is never cut -- it says which position this is; on a 320px phone it was "84,500 …" and "× 10"
+    // broke over two lines. Narrower than that, the money goes to the line below, on the right (9 Oct 2026).
+    <span className="flex w-full flex-wrap items-center gap-x-1.5 gap-y-0.5">
+      <span className="shrink-0 text-[15px] font-semibold min-[360px]:text-[16px]">{contractLabel(trade.symbol)}</span>
       <SidePill long={r.long} />
-      <span className="text-[12.5px] text-muted-foreground">× {size(trade.position)}</span>
+      <span className="whitespace-nowrap text-[12.5px] text-muted-foreground">× {size(trade.position)}</span>
       <span className="ml-auto flex shrink-0 items-center gap-1">
         <Rupees usd={pnl} signed size="sm" />
         {onOpen && <ChevronRight aria-hidden="true" className="h-4 w-4 text-muted-foreground" />}
@@ -61,7 +63,7 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
       )}
 
       {onOpen
-        ? <button type="button" onClick={onOpen} aria-label={`${contractLabel(trade.symbol)}: what happened`} className="-my-[6px] flex min-h-[36px] items-center border-0 bg-transparent p-0 text-left font-[inherit] text-foreground">{head}</button>
+        ? <button type="button" onClick={onOpen} aria-label={`${contractLabel(trade.symbol)}: what happened`} className="-my-[10px] flex min-h-[44px] w-full items-center border-0 bg-transparent p-0 text-left font-[inherit] text-foreground">{head}</button>
         : head}
       {/* Who placed it: the strategy as a tag, first, then the signal and the account. */}
       <PlacedLine plan={trade.plan} rest={[signal, showAccount && trade.account ? trade.account.name : null]} className="mt-0.5" />
@@ -101,7 +103,8 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
 
       {/* The rest, a tap away: what is read once in a while, not at every glance. Near liquidation it is said anyway. */}
       <details className="group mt-2 border-t border-[var(--line-soft)] pt-1">
-        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-2 text-[12px] text-muted-foreground [&::-webkit-details-marker]:hidden">
+        {/* `!`: in the trade's own layer (a dialog) the desk's 36px phone rule outranks a plain class. */}
+        <summary className="-mb-1 flex !min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-[12px] text-muted-foreground [&::-webkit-details-marker]:hidden">
           <span className="flex min-w-0 items-center gap-1 truncate">
             {firstFill !== null && <><Clock aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /> held {duration(now - firstFill)}</>}
             {nearLiq && <b className="ml-1 text-[var(--down)]">· liquidation {r.liquidation!.multiple!.toFixed(1)}× now</b>}
@@ -137,10 +140,11 @@ function WaitingCard({ trade, now, showAccount, onOpen }: { trade: Trade; now: n
   const signal = trade.plan?.signal ? `#${trade.plan.signal.n} ${trade.plan.signal.name}` : null;
   const body = (
     <span className="block w-full">
-      <span className="flex w-full items-center gap-1.5">
-        <span className="truncate text-[16px] font-semibold">{contractLabel(trade.symbol)}</span>
+      {/* As the running card's head: the contract whole, WAITING to the line below when they do not fit. */}
+      <span className="flex w-full flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        <span className="shrink-0 text-[15px] font-semibold min-[360px]:text-[16px]">{contractLabel(trade.symbol)}</span>
         <SidePill long={long} />
-        <span className="text-[12.5px] text-muted-foreground">× {size(trade.requestedSize)}</span>
+        <span className="whitespace-nowrap text-[12.5px] text-muted-foreground">× {size(trade.requestedSize)}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 rounded bg-[var(--warn-bg)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--warn)]">
           <span aria-hidden="true" className="m-breathe h-2 w-2 rounded-full bg-[var(--warn)]" /> WAITING
         </span>

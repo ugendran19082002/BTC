@@ -169,7 +169,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
         header={
           <div className="flex items-center gap-2">
             {route.sub ? (
-              <button type="button" aria-label="Back to More" onClick={() => go({ tab: 'more', sub: null })} className="-ml-2 grid h-11 w-11 place-items-center rounded-md border-0 bg-transparent text-foreground active:bg-muted">
+              <button type="button" aria-label="Back to More" onClick={() => go({ tab: 'more', sub: null })} className="-ml-2 grid h-11 w-11 shrink-0 place-items-center rounded-md border-0 bg-transparent text-foreground active:bg-muted">
                 <ArrowLeft className="h-5 w-5" />
               </button>
             ) : <span className="btc-logo sm" aria-hidden="true">₿</span>}

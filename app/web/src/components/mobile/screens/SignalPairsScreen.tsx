@@ -93,7 +93,8 @@ export function SignalPairsScreen() {
                   key={h} type="button" aria-pressed={how === h}
                   // Back to one at a time with several kept: the first of them stays.
                   onClick={() => { setHow(h); if (h === 'one' && kept.length > 1) setPicked(kept.slice(0, 1)); }}
-                  className={cn('h-9 rounded-full border-0 px-3 font-[inherit] text-[12.5px] font-medium', how === h ? 'bg-[var(--panel-3)] text-foreground' : 'bg-transparent text-muted-foreground')}
+                  // 40px inside the 2px track: 44 for the finger, the other switches' height (9 Oct 2026).
+                  className={cn('h-10 rounded-full border-0 px-3.5 font-[inherit] text-[12.5px] font-medium', how === h ? 'bg-[var(--panel-3)] text-foreground' : 'bg-transparent text-muted-foreground')}
                 >
                   {h === 'one' ? 'One' : 'Many'}
                 </button>

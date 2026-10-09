@@ -53,7 +53,8 @@ export function TradeDetail({ tradeId, onClose, onSignedOut }: { tradeId: string
   const long = t ? isLongTrade(t) : false;
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Trade detail" className="fixed inset-0 z-30 overflow-y-auto bg-[var(--bg)]">
+    // `m-phone`: the phone's card titles at 11.5px here too -- this layer sits outside the frame (9 Oct 2026).
+    <div role="dialog" aria-modal="true" aria-label="Trade detail" className="m-phone fixed inset-0 z-30 overflow-y-auto bg-[var(--bg)]">
       <header className="sticky top-0 z-10 flex items-center gap-1 border-b border-border bg-[var(--bg)]/95 px-2 pb-2 pt-[calc(8px+env(safe-area-inset-top))] backdrop-blur">
         <button type="button" onClick={onClose} aria-label="Back" className="grid h-11 w-11 place-items-center rounded-md border-0 bg-transparent text-foreground active:bg-muted">
           <ArrowLeft className="h-5 w-5" />

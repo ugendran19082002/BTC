@@ -90,8 +90,9 @@ function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => vo
             the strategy's tag, the signal, the account -- on the third. A time column, and then the time on line one,
             each cut the contract short at 360px. */}
         <span className="flex items-center justify-between gap-2">
-          <span className="min-w-0 truncate text-[14px] font-semibold">
-            <span className={buy ? 'text-[var(--buy)]' : 'text-[var(--down)]'}>{buy ? 'BUY' : 'SELL'}</span> {contractLabel(o.symbol)} × {size(o.requestedSize)}
+          {/* Wraps rather than cuts: beside WORKING on a 320px phone it read "SELL 79,500 PE …" (9 Oct 2026). */}
+          <span className="min-w-0 text-[14px] font-semibold leading-snug">
+            <span className={buy ? 'text-[var(--buy)]' : 'text-[var(--down)]'}>{buy ? 'BUY' : 'SELL'}</span> {contractLabel(o.symbol)} <span className="whitespace-nowrap">× {size(o.requestedSize)}</span>
           </span>
           {orderStatusWord(o)}
         </span>
@@ -103,7 +104,8 @@ function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => vo
         </span>
         <PlacedLine plan={o.plan} rest={[signal, showAccount && o.account ? o.account.name : null]} className="mt-0.5" />
         {/* Two lines for an order that filled; its outcome is said only when it is not simply "filled". */}
-        {o.status !== 'completed' && <span className="block truncate text-[12px] text-muted-foreground">{o.outcome}</span>}
+        {/* Two lines before it is cut: a refusal's reason is the point of the line. */}
+        {o.status !== 'completed' && <span className="line-clamp-2 text-[12px] leading-snug text-muted-foreground">{o.outcome}</span>}
       </ListButton>
     </li>
   );

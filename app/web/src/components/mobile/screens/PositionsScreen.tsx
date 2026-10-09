@@ -48,6 +48,13 @@ const openedAt = (t: Trade): number => {
 
 /** A tile's figure: 18px on the narrowest phones, 22px from 390px. */
 const BIG = 'm-0 text-[18px] font-semibold leading-tight tabular-nums min-[390px]:text-[22px]';
+/**
+ * The money figure sized to its own tile (17% of its width, 13 to 22px): "−₹10,367" was cut to "−₹10,3…" on
+ * every phone from 320 to 414px (9 Oct 2026). The tile is the container (`[container-type:inline-size]`).
+ */
+const MONEY = 'm-0 text-[clamp(13px,17cqi,22px)] font-semibold leading-tight tabular-nums';
+/** A tile's small words: they wrap on a 320px phone rather than end in "…". */
+const SMALL = 'm-0 text-[11.5px] leading-tight text-muted-foreground';
 
 type Item = {
   t: Trade; problem: boolean; room: number; pnl: number | null; waiting: boolean;
@@ -128,23 +135,23 @@ export function PositionsScreen() {
       <Panel>
         <dl aria-label="positions summary" className="m-0 grid grid-cols-[1fr_1.25fr_1fr] divide-x divide-[var(--line-soft)]">
           <div className="min-w-0 pr-2.5">
-            <dt className="truncate text-[11.5px] text-muted-foreground">Running</dt>
+            <dt className={SMALL}>Running</dt>
             <dd className={BIG}>{s ? running : '…'}</dd>
-            <dd className="m-0 truncate text-[11.5px] text-muted-foreground">{waiting ? <span className="text-[var(--warn)]">+{waiting} waiting</span> : 'positions'}</dd>
+            <dd className={SMALL}>{waiting ? <span className="text-[var(--warn)]">+{waiting} waiting</span> : 'positions'}</dd>
           </div>
-          <div className="min-w-0 px-2.5">
-            <dt className="truncate text-[11.5px] text-muted-foreground">Total P&amp;L</dt>
+          <div className="min-w-0 px-2.5 [container-type:inline-size]">
+            <dt className={SMALL}>Total P&amp;L</dt>
             {/* Rupees alone: with the dollars beside it, -₹3,983.20 does not fit a third of a 360px phone. */}
-            <dd className={cn(BIG, 'truncate', s && total > 0 && 'text-[var(--up)]', s && total < 0 && 'text-[var(--down)]')}>{s ? signedInr(usdToInr(total)) : '…'}</dd>
-            <dd className="m-0 truncate text-[11.5px] text-muted-foreground">if closed now</dd>
+            <dd className={cn(MONEY, 'truncate', s && total > 0 && 'text-[var(--up)]', s && total < 0 && 'text-[var(--down)]')}>{s ? signedInr(usdToInr(total)) : '…'}</dd>
+            <dd className={SMALL}>if closed now</dd>
           </div>
           <div className="min-w-0 pl-2.5">
-            <dt className="truncate text-[11.5px] text-muted-foreground">Margin used</dt>
+            <dt className={SMALL}>Margin used</dt>
             <dd className={cn(BIG, usedTone === 'down' && 'text-[var(--down)]', usedTone === 'warn' && 'text-[var(--warn)]')}>
               {used === null ? '—' : pct(used, 0)}
             </dd>
             <dd className="m-0 mt-1">{used !== null ? <Bar value={used} tone={usedTone} label="Margin used of the wallet" /> : null}</dd>
-            <dd className="m-0 mt-0.5 truncate text-[11.5px] text-muted-foreground">of the wallet</dd>
+            <dd className={cn(SMALL, 'mt-0.5')}>of the wallet</dd>
           </div>
         </dl>
       </Panel>
@@ -161,12 +168,13 @@ export function PositionsScreen() {
                   key={x.key} type="button" aria-pressed={on} aria-label={`${x.label} ${n}`}
                   onClick={() => setShow(on ? 'all' : x.key)}
                   className={cn(
-                    'flex h-14 min-w-0 flex-col items-center justify-center rounded-lg border px-1 font-[inherit]',
+                    'flex h-14 min-w-0 flex-col items-center justify-center rounded-lg border px-0 font-[inherit] min-[360px]:px-1',
                     on ? 'border-foreground/60 bg-muted' : 'border-border bg-transparent',
                   )}
                 >
                   <span className={cn('text-[17px] font-semibold leading-tight tabular-nums', n === 0 ? 'text-muted-foreground' : x.tone)}>{n}</span>
-                  <span className={cn('max-w-full truncate text-[12px]', on ? 'text-foreground' : 'text-muted-foreground')}>{x.label}</span>
+                  {/* 11px under 360px: five across a 320px phone leave 45px a word, and "Winning" was "Win…". */}
+                  <span className={cn('max-w-full truncate text-[11px] tracking-[-0.2px] min-[360px]:text-[12px] min-[360px]:tracking-normal', on ? 'text-foreground' : 'text-muted-foreground')}>{x.label}</span>
                 </button>
               );
             })}
