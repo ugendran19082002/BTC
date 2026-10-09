@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { NumberField } from '@/components/ui/number-field';
 import { CHAIN_PTS, legOfSignal, ptsKeysOf, ruleTfs, SIGNAL_TFS, type PtsKey, type SignalRule, type SignalTf } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
+import type { Strategy } from '@/types/strategy';
 import { cn } from '@/lib/utils';
 
 /**
@@ -88,12 +89,34 @@ export function profitableIds(rows: readonly MethodReportRow[], minTrades = MIN_
   return rows.filter((r) => r.trades >= minTrades && r.netPts > 0).map((r) => r.method);
 }
 
-export function SignalRuleEditor({ rule, onChange, errors }: {
+/** The strategies whose methods can be copied in: signal ones with methods picked, not the one being edited, by name. */
+export function copySources(strategies: readonly Strategy[], self: string | null): Strategy[] {
+  return strategies
+    .filter((s) => s.id !== self && s.config.trigger === 'signal' && (s.config.signal?.methods.length ?? 0) > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** "12 methods · with the chain" / "5 methods · 15m + 1h" -- what a strategy's pick is, beside its name. */
+const sourceWords = (s: Strategy) => {
+  const r = s.config.signal!;
+  const n = r.methods.length;
+  return `${n} method${n === 1 ? '' : 's'} · ${r.mode === 'mtf' ? 'with the chain' : ruleTfs(r).join(' + ')}${s.enabled ? '' : ' · off'}`;
+};
+
+export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
   rule: SignalRule;
   onChange: (r: SignalRule) => void;
   errors: { mode?: string | null; tf?: string | null; methods?: string | null; slPts?: string | null };
+  /**
+   * The same broker account's other signal strategies (`copySources`), whose picked methods can be taken in one
+   * step (owner, 9 Oct 2026): a new strategy on another timeframe or exit usually wants the same methods, and
+   * ticking 12 of 81 again by hand is how one gets missed.
+   */
+  copyFrom?: readonly Strategy[];
 }) {
   const [query, setQuery] = useState('');
+  // What the last copy replaced, so it can be undone; cleared by any other change to the pick.
+  const [copy, setCopy] = useState<{ name: string; took: string[]; before: string[] } | null>(null);
   const [group, setGroup] = useState<GroupFilter>('all');
   // By record: everything, the ones up, the ones down, the ones with no trade -- over the timeframes picked.
   const [result, setResult] = usePersisted<ResultFilter>('signal-rule:result', 'all');
@@ -144,6 +167,17 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
   const resultTab = RESULTS.find((x) => x.id === result) ?? RESULTS[0]!;
   const shown = useMemo(() => searched.filter((m) => onSide(m, side) && resultTab.test(recordOf.get(m.id))), [searched, resultTab, recordOf, side]);
   const picked = new Set(rule.methods);
+  // Only the methods the desk still has: a strategy saved before one was retired would carry an id the save refuses.
+  const known = new Set(methods.map((m) => m.id));
+  const copyIn = (id: string) => {
+    const from = copyFrom.find((s) => s.id === id);
+    if (!from?.config.signal) return;
+    const ids = [...new Set(from.config.signal.methods)].filter((m) => !known.size || known.has(m));
+    setCopy({ name: from.name, took: ids, before: rule.methods });
+    set('methods', ids);
+  };
+  // Said, with its Undo, only while the pick is still the copied one: a change made after it is the owner's own.
+  const copied = copy && copy.took.join(',') === rule.methods.join(',') ? copy : null;
   const toggle = (id: string) => set('methods', picked.has(id) ? rule.methods.filter((x) => x !== id) : [...rule.methods, id]);
   const addAll = (ids: string[]) => set('methods', [...new Set([...rule.methods, ...ids])]);
   // How many trades a record needs before "profitable" means anything; kept in this browser.
@@ -271,12 +305,29 @@ export function SignalRuleEditor({ rule, onChange, errors }: {
       )}
 
       <div>
-        <div className="mb-1 flex items-baseline justify-between gap-2">
-          <span className="text-[12px] text-muted-foreground">Methods</span>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="text-[12px] text-muted-foreground">Methods</span>
+            {/* Another strategy's pick, in one step: it replaces the pick here, and can be undone. */}
+            {copyFrom.length > 0 && (
+              <select aria-label="copy methods from a strategy" value="" onChange={(e) => copyIn(e.target.value)}
+                      title="Take the methods another strategy of this account picked -- they replace the ones picked here"
+                      className="h-8 max-w-[min(100%,20rem)] rounded-md border border-solid border-border bg-background px-2 text-[12px] text-foreground">
+                <option value="" disabled>Copy methods from a strategy…</option>
+                {copyFrom.map((s) => <option key={s.id} value={s.id}>{s.name} — {sourceWords(s)}</option>)}
+              </select>
+            )}
+          </span>
           <span className="text-[11.5px] tabular-nums text-foreground" aria-live="polite">
             {rule.methods.length} of {methods.length || 81} picked
           </span>
         </div>
+        {copied && (
+          <p role="status" className="m-0 mb-1.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted-foreground">
+            <span>Took the {copied.took.length} method{copied.took.length === 1 ? '' : 's'} of <b className="text-foreground">{copied.name}</b>{copied.before.length ? `, in place of the ${copied.before.length} picked before` : ''}.</span>
+            <button type="button" className={link} onClick={() => { set('methods', copied.before); setCopy(null); }}>Undo</button>
+          </p>
+        )}
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="search methods"

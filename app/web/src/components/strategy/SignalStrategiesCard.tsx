@@ -7,6 +7,7 @@ import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type Stra
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
+import { copySources } from '@/components/strategy/SignalRuleEditor';
 import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
@@ -661,6 +662,8 @@ export function SignalStrategiesCard() {
           onSaved={refresh}
           balanceUsd={data.balanceUsd}
           spot={data.spot}
+          // The same broker account's: a strategy trades on its own account, and on "All accounts" the list holds every one's.
+          copyFrom={copySources(mine.filter((s) => !editing || (s.accountId ?? null) === (editing.accountId ?? null)), editing?.id ?? null)}
         />
       )}
     </section>

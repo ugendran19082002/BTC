@@ -44,8 +44,10 @@ const TABS: TabDef[] = [
 /** The server's SIGNAL_ENTRY_MS: how long a signal's entry rests before it is cancelled. */
 const SIGNAL_ENTRY_MIN = 5;
 
-export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd, spot }: {
+export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd, spot, copyFrom = [] }: {
   editing: Strategy | null;
+  /** The account's other signal strategies, whose methods can be copied in (`SignalRuleEditor`). */
+  copyFrom?: readonly Strategy[];
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onSaved: () => void;
@@ -97,6 +99,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               rule={rule}
               onChange={(r) => set('signal', r)}
               errors={{ mode: err('signalMode'), tf: err('signalTf'), methods: err('signalMethods'), slPts: err('signalSlPts') }}
+              copyFrom={copyFrom}
             />
           )}
 
