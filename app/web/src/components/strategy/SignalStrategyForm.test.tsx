@@ -177,7 +177,7 @@ describe('picking the methods', () => {
     const pickFrom = screen.getByRole('combobox', { name: 'copy methods from a strategy' });
     // By name, the strategy being edited left out, each with what its pick is.
     expect(within(pickFrom).getAllByRole('option').map((o) => o.textContent)).toEqual([
-      'Copy methods from a strategy…', 'Asleep — 1 method · with the chain · off', '1h time — 3 methods · 15m + 1h',
+      'Copy methods from a strategy…', '1h time — 3 methods · 15m + 1h', 'Asleep — 1 method · with the chain · off',
     ]);
     fireEvent.change(pickFrom, { target: { value: 'o1' } });
     // The retired id is not carried: the save would refuse it.
