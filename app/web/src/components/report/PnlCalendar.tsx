@@ -240,8 +240,10 @@ export function PnlCalendar({
                     })}
 
                     {/* Weekly Column Indicator in Detailed Mode */}
+                    {/* A cell of the row like the days, so the grid's row holds cells only (axe, 9 Oct 2026). */}
                     {viewMode === 'detailed' && (
-                      <div className="pnl-week-total">
+                      <div className="pnl-week-total" role="gridcell"
+                           aria-label={weekNetInr !== null ? `week: ${signedInr(weekNetInr)}` : 'week: no trades'}>
                         {weekNetInr !== null ? (
                           <span className={`pnl-week-val ${weekNetInr > 0 ? 'up' : weekNetInr < 0 ? 'down' : ''}`}>
                             {formatCompactPnl(weekNetInr)}
