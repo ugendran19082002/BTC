@@ -6,7 +6,7 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-34 tables, 64 migrations.
+34 tables, 65 migrations.
 
 ## Migrations applied
 
@@ -15,7 +15,7 @@ the way it is, is in [database.md](database.md).
 | auth | `auth-001-user-sessions`, `auth-002-to-public`, `auth-003-session-scope` |
 | broker | `broker-001-accounts` |
 | chart | `chart-002-drop-annotations` |
-| entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time`, `entry-015-setups-expire-why`, `entry-017-setups-regime`, `entry-017-signals-regime`, `entry-018-alerts-retired-methods`, `entry-018-setups-retired-methods`, `entry-018-signals-retired-methods`, `entry-019-methods`, `entry-020-cleared`, `entry-020-history-clears`, `entry-021-method-order-side` |
+| entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time`, `entry-015-setups-expire-why`, `entry-017-setups-regime`, `entry-017-signals-regime`, `entry-018-alerts-retired-methods`, `entry-018-setups-retired-methods`, `entry-018-signals-retired-methods`, `entry-019-methods`, `entry-020-cleared`, `entry-020-history-clears`, `entry-021-method-order-side`, `entry-022-setups-by-time` |
 | errors | `errors-001-log`, `errors-002-to-public` |
 | market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-016-book-heat`, `market-017-drop-large-prints` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables`, `strategy-006-signal-runs`, `strategy-007-drop-trend-paper`, `strategy-008-broker-account`, `strategy-009-signal-action` |
@@ -316,7 +316,9 @@ the way it is, is in [database.md](database.md).
 | `expire_why` | text | yes |  |
 | `regime` | jsonb | yes |  |
 
+- `entry_setups_by_first_seen` (first_seen)
 - `entry_setups_by_method` (method, mode, first_seen DESC)
+- `entry_setups_by_trigger_at` (trigger_at)
 - `entry_setups_method_mode_tf_dir_trigger_at_key` unique (method, mode, tf, dir, trigger_at)
 - `entry_setups_pkey` unique (id)
 - `entry_setups_running` (runner) WHERE (runner = 'running'::text)
