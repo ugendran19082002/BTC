@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context';
 import type { Trade } from '@/types/trade';
-import { PositionsScreen, sortItems } from '@/components/mobile/screens/PositionsScreen';
+import { PositionsScreen, sortItems, type Sort } from '@/components/mobile/screens/PositionsScreen';
 
 /**
  * Positions on the phone (owner, 9 Oct 2026: "position phone la user friendly upgrades"): three tiles on top, which
@@ -82,6 +82,52 @@ describe('PositionsScreen', () => {
     const items = OPEN.slice(0, 5).map((t) => ({ t, problem: false, room: Infinity, pnl: 0, waiting: false }));
     expect(sortItems(items, 'new').map((x) => x.t.tradeId)).toEqual(['l5', 'l4', 'l3', 'w2', 'w1']);
     expect(sortItems(items, 'old').map((x) => x.t.tradeId)).toEqual(['w1', 'w2', 'l3', 'l4', 'l5']);
+  });
+
+  it('[critical] nearest exit first: a level already crossed before one ahead, a position without that exit last', () => {
+    const at = (id: string, o: { perpStop?: number; perpTarget?: number; optStop?: number; optTarget?: number }, extra: Partial<{ problem: boolean; waiting: boolean }> = {}) =>
+      ({ t: trade(id, 0), problem: false, room: Infinity, pnl: 0, waiting: false, ...o, ...extra });
+    const items = [
+      at('a', { perpStop: 300, perpTarget: 50, optStop: 0.4, optTarget: 0.9 }),
+      at('b', { perpStop: -20, perpTarget: 400, optStop: 1.2, optTarget: 0.1 }),   // perp already through its stop
+      at('c', { optStop: 0.05, optTarget: 0.5 }),                                 // a manual trade: no perp levels
+      at('d', { perpStop: 10, perpTarget: 5, optStop: 0.01, optTarget: 0.01 }, { waiting: true }),
+      at('e', { perpStop: 900, perpTarget: 900, optStop: 3, optTarget: 3 }, { problem: true }),
+    ];
+    const order = (s: Sort) => sortItems(items, s).map((x) => x.t.tradeId);
+    // Whatever the sort: the one with a problem on top, the waiting order last.
+    expect(order('perp-sl')).toEqual(['e', 'b', 'a', 'c', 'd']);
+    expect(order('perp-tgt')).toEqual(['e', 'a', 'b', 'c', 'd']);
+    expect(order('opt-sl')).toEqual(['e', 'c', 'a', 'b', 'd']);
+    expect(order('opt-tgt')).toEqual(['e', 'b', 'c', 'a', 'd']);
+  });
+
+  it('[critical] the four nearest sorts on the screen, from the perp mark and each option\'s own price', () => {
+    // Shorts priced at an offer of 41, the perp at 82,000. Room: the perp's in points, the option's as a share of 41.
+    const sell = (id: string, strike: number, plan: { stopPrice: number; takeProfitPrice: number; underlying?: object }) =>
+      trade(id, 0, { symbol: `P-BTC-${strike}-091026`, plan: { ...OPEN[0]!.plan, ...plan } as Trade['plan'] });
+    const open = [
+      sell('a', 80000, { stopPrice: 60, takeProfitPrice: 20, underlying: { dir: 1, stop: 81_800, target: 82_600, source: 's' } }), // perp 200 / 600, option 46% / 51%
+      sell('b', 79000, { stopPrice: 120, takeProfitPrice: 38, underlying: { dir: 1, stop: 81_500, target: 82_100, source: 's' } }), // perp 500 / 100, option 193% / 7%
+      sell('c', 78000, { stopPrice: 45, takeProfitPrice: 10 }), // no perp levels; option 10% / 76%
+    ];
+    render(
+      <PhoneContext.Provider value={{
+        now: 10_000_000, status: { open, alarms: [], marginUsedUsd: 10, walletUsd: 100 }, perp: 82_000, perpLive: true,
+        shown: 'one', openTrade: () => {},
+      } as unknown as PhoneData}><PositionsScreen /></PhoneContext.Provider>,
+    );
+    const strikes = () => cards().map((c) => /(\d{2},\d{3})/.exec(c.getAttribute('aria-label') ?? '')?.[1]);
+    const pick = (value: Sort) => fireEvent.change(screen.getByRole('combobox', { name: 'Sort positions by' }), { target: { value } });
+    pick('perp-sl');
+    expect(screen.getByText('Nearest perp SL', { selector: 'span' })).toBeInTheDocument();
+    expect(strikes()).toEqual(['80,000', '79,000', '78,000']);
+    pick('perp-tgt');
+    expect(strikes()).toEqual(['79,000', '80,000', '78,000']);
+    pick('opt-sl');
+    expect(strikes()).toEqual(['78,000', '80,000', '79,000']);
+    pick('opt-tgt');
+    expect(strikes()).toEqual(['79,000', '80,000', '78,000']);
   });
 
   it('nothing of a kind: says so, with a way back to all', () => {

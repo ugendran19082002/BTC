@@ -23,7 +23,7 @@ import type { Trade } from '@/types/trade';
  */
 
 export type Show = 'all' | 'win' | 'loss' | 'waiting' | 'alert';
-export type Sort = 'risk' | 'pnl-desc' | 'pnl-asc' | 'new' | 'old';
+export type Sort = 'risk' | 'pnl-desc' | 'pnl-asc' | 'new' | 'old' | 'perp-sl' | 'perp-tgt' | 'opt-sl' | 'opt-tgt';
 
 export const SORTS: { key: Sort; label: string }[] = [
   { key: 'risk', label: 'Riskiest first' },
@@ -31,6 +31,12 @@ export const SORTS: { key: Sort; label: string }[] = [
   { key: 'pnl-asc', label: 'P&L low to high' },
   { key: 'new', label: 'Newest first' },
   { key: 'old', label: 'Oldest first' },
+  // Nearest exit first (owner, 9 Oct 2026). The perp's in points -- one price for every position, so points and
+  // percent rank alike; the option's as a share of its own price, since a 20 and a 200 premium do not compare in points.
+  { key: 'perp-sl', label: 'Nearest perp SL' },
+  { key: 'perp-tgt', label: 'Nearest perp TGT' },
+  { key: 'opt-sl', label: 'Nearest option SL' },
+  { key: 'opt-tgt', label: 'Nearest option TGT' },
 ];
 
 const pnlOf = (t: Trade): number | null => t.live?.netIfClosedUsd ?? t.live?.unrealisedPnl ?? null;
@@ -43,7 +49,15 @@ const openedAt = (t: Trade): number => {
 /** A tile's figure: 18px on the narrowest phones, 22px from 390px. */
 const BIG = 'm-0 text-[18px] font-semibold leading-tight tabular-nums min-[390px]:text-[22px]';
 
-type Item = { t: Trade; problem: boolean; room: number; pnl: number | null; waiting: boolean };
+type Item = {
+  t: Trade; problem: boolean; room: number; pnl: number | null; waiting: boolean;
+  /**
+   * Room left to each exit: the perp's in points from its mark, the option's as a share of its price. Below zero
+   * once the price is through it, so a level already crossed comes first; left out where there is no such level
+   * (a manual trade has no perp levels) or no price to measure from, and such a position goes last.
+   */
+  perpStop?: number; perpTarget?: number; optStop?: number; optTarget?: number;
+};
 
 const SHOWS: { key: Show; label: string; tone: string; test: (x: Item) => boolean }[] = [
   { key: 'all', label: 'All', tone: 'text-foreground', test: () => true },
@@ -52,6 +66,13 @@ const SHOWS: { key: Show; label: string; tone: string; test: (x: Item) => boolea
   { key: 'waiting', label: 'Waiting', tone: 'text-[var(--warn)]', test: (x) => x.waiting },
   { key: 'alert', label: 'Alerts', tone: 'text-[var(--down)]', test: (x) => x.problem },
 ];
+
+/** Least room first; a position without that exit after every one with it (Infinity - Infinity would be NaN). */
+const nearest = (of: (x: Item) => number | undefined) => (a: Item, b: Item): number => {
+  const x = of(a), y = of(b);
+  if (x === undefined || y === undefined) return Number(x === undefined) - Number(y === undefined);
+  return x - y;
+};
 
 /** The order shown: problems first, waiting orders last, and the chosen sort in between. */
 export function sortItems<T extends Item>(items: readonly T[], sort: Sort): T[] {
@@ -62,6 +83,10 @@ export function sortItems<T extends Item>(items: readonly T[], sort: Sort): T[] 
     'pnl-asc': (a, b) => (a.pnl ?? Infinity) - (b.pnl ?? Infinity),
     new: (a, b) => openedAt(b.t) - openedAt(a.t),
     old: (a, b) => openedAt(a.t) - openedAt(b.t),
+    'perp-sl': nearest((x) => x.perpStop),
+    'perp-tgt': nearest((x) => x.perpTarget),
+    'opt-sl': nearest((x) => x.optStop),
+    'opt-tgt': nearest((x) => x.optTarget),
   };
   return [...items].sort((a, b) => Number(a.waiting) - Number(b.waiting) || Number(b.problem) - Number(a.problem) || by[sort](a, b) || 0);
 }
@@ -76,7 +101,12 @@ export function PositionsScreen() {
   const items = useMemo((): Item[] => (s?.open ?? []).map((t) => {
     const r = positionRisk(t, { alarms: s?.alarms, perpMark });
     const room = r.stop && r.stop.pct !== null && Number.isFinite(r.stop.pct) ? r.stop.pct : Infinity;
-    return { t, problem: r.problems.length > 0, room, pnl: pnlOf(t), waiting: isWaiting(t) };
+    const known = (n: number | null | undefined) => (typeof n === 'number' && Number.isFinite(n) ? n : undefined);
+    return {
+      t, problem: r.problems.length > 0, room, pnl: pnlOf(t), waiting: isWaiting(t),
+      perpStop: known(r.perp?.toStop), perpTarget: known(r.perp?.toTarget),
+      optStop: known(r.stop?.pct), optTarget: known(r.target?.pct),
+    };
   }), [s, perpMark]);
 
   // A remembered choice the screen no longer offers (Problems with none left) reads as All.
