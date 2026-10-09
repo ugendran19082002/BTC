@@ -11,7 +11,7 @@ import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
 import { StrikeBlocksEditor } from '@/components/strategy/StrikeBlocksEditor';
 import {
   DaysField, EntryPriceFields, num, FormFooter, FormTabBar, MinPremiumField, NameField, OptionExitFields, RuleSentence,
-  Segmented, SizeFields, Stack, TimeWindowFields, type TabDef,
+  NoEntryFields, Segmented, SizeFields, Stack, TimeWindowFields, type TabDef,
 } from '@/components/strategy/form-parts';
 
 /**
@@ -261,6 +261,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
             <>
               <TimeWindowFields c={c} set={set} err={err} name={d.name}
                                 labels={{ from: 'Take signals from', until: 'Until — closes what is open', fromPicker: 'Take signals from', untilPicker: 'Signals until' }} />
+              <NoEntryFields c={c} set={set} err={err} />
               <DaysField c={c} set={set} err={err} />
             </>
           )}

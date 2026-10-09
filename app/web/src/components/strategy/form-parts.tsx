@@ -3,9 +3,10 @@ import { ChevronDown, Loader2 } from 'lucide-react';
 import { SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import {
-  DAY_NAMES, DEFAULT_DELTA, DEFAULT_DISTANCE, DEFAULT_FIXED_DISTANCE_PCT, DEFAULT_MIN_OTM, DELTA_PRESETS, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL,
-  distanceNeeded, strikeLabel, type DeltaRule, type DistanceRule, type PremiumRule, type StrategyConfig,
+  DAY_NAMES, DEFAULT_DELTA, DEFAULT_DISTANCE, DEFAULT_FIXED_DISTANCE_PCT, DEFAULT_MIN_OTM, DELTA_PRESETS, MAX_NO_ENTRY_WINDOWS, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL,
+  distanceNeeded, strikeLabel, type DeltaRule, type DistanceRule, type NoEntry, type NoEntryWindow, type PremiumRule, type StrategyConfig,
 } from '@/types/strategy';
+import { nextWindow, noEntryWords, pickerBounds, suggestedWindow } from '@/lib/strategy-no-entry';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { TimePicker } from '@/components/ui/time-picker';
@@ -186,6 +187,73 @@ export function TimeWindowFields({ c, set, err, name, labels }: {
             : 'An evening entry holds tomorrow’s contract.'}
       </p>
     </>
+  );
+}
+
+/**
+ * A signal strategy's no-entry windows (owner, 9 Oct 2026: "no entry window ... from time to time"; "trades taken
+ * before must not be closed, no new entry inside the range"). A switch; on, one row of from / until per window,
+ * the first filled in as the half hour before the exit so it is never "outside"; up to six. Switched off, the
+ * times stay, so switching back on finds them. What it does and does not do is said under the switch.
+ */
+export function NoEntryFields({ c, set, err }: { c: StrategyConfig; set: SetField; err: ErrOf }) {
+  const n: NoEntry = c.noEntry ?? { on: false, windows: [] };
+  const put = (windows: NoEntryWindow[], on = n.on) => set('noEntry', { on, windows });
+  const edit = (i: number, k: keyof NoEntryWindow, v: string) => put(n.windows.map((w, j) => (j === i ? { ...w, [k]: v } : w)));
+  const problem = err('noEntry');
+  return (
+    <div className={cn('mt-3 rounded-lg border border-solid px-2.5 py-2', n.on ? 'border-[var(--warn)]/50 bg-[var(--warn)]/5' : 'border-border')}>
+      <Switch
+        label="No-entry window"
+        description={n.on
+          ? 'No new entry between these times: a signal inside is written down as skipped. Trades already open are not closed — they keep their SL, TGT and exit time.'
+          : 'Off — signals are taken all through the window above.'}
+        checked={n.on}
+        onCheckedChange={(on) => put(on && n.windows.length === 0 ? [suggestedWindow(c.entryTime, c.exitTime)] : n.windows, on)}
+      />
+      {n.on && (
+        <div className="mt-2 grid gap-2">
+          {n.windows.map((w, i) => {
+            const which = n.windows.length > 1 ? ` ${i + 1}` : '';
+            // Held to the strategy's own times: the pickers offer only what can be saved (the server checks again).
+            const b = pickerBounds(c.entryTime, c.exitTime, w.from);
+            return (
+              // items-end: a label that wraps keeps both pickers on one line. On a phone the two pickers have the
+              // row to themselves -- beside a remove button "4:48 PM" broke over two lines -- and remove goes under.
+              <div key={i} className="grid grid-cols-2 items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                <Stack label={`No entry from${which}`}>
+                  <TimePicker label={`No-entry window${which} from`} value={w.from} onChange={(v) => edit(i, 'from', v)}
+                              min={b.fromMin} max={b.fromMax} invalid={Boolean(problem)} className="w-full" />
+                </Stack>
+                <Stack label="Until">
+                  <TimePicker label={`No-entry window${which} until`} value={w.to} onChange={(v) => edit(i, 'to', v)}
+                              min={b.toMin} max={b.toMax} invalid={Boolean(problem)} className="w-full" />
+                </Stack>
+                <button
+                  type="button" aria-label={`Remove no-entry window${which}`}
+                  onClick={() => put(n.windows.filter((_, j) => j !== i))}
+                  className="col-span-2 m-0 flex h-11 w-full appearance-none items-center justify-center gap-1.5 rounded-md border border-solid border-border bg-transparent font-[inherit] text-muted-foreground sm:col-span-1 sm:w-11"
+                >
+                  <span aria-hidden="true" className="text-[18px] leading-none">×</span>
+                  <span aria-hidden="true" className="text-[13px] sm:hidden">Remove this window</span>
+                </button>
+              </div>
+            );
+          })}
+          {n.windows.length < MAX_NO_ENTRY_WINDOWS && (
+            <QuickFix onClick={() => put([...n.windows, nextWindow(n.windows, c.entryTime, c.exitTime)])}>
+              {n.windows.length ? '+ Add another window' : '+ Add a window'}
+            </QuickFix>
+          )}
+          {n.windows.length > 0 && !problem && (
+            <p className="m-0 text-[11.5px] leading-snug text-muted-foreground">
+              No new entry {n.windows.map(noEntryWords).join(', ')} IST. From the until time, signals are taken again.
+            </p>
+          )}
+          <FieldError text={problem} />
+        </div>
+      )}
+    </div>
   );
 }
 

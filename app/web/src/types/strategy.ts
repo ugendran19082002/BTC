@@ -213,7 +213,19 @@ export type StrategyConfig = {
   signal?: SignalRule;
   /** Real orders only with this on. Off (the default): it writes down what it would have sold. */
   liveOrders?: boolean;
+  /**
+   * A signal strategy's no-entry windows (9 Oct 2026): inside one no new entry is taken -- the signal is written
+   * down as skipped -- and nothing already open is closed: it keeps its SL, TGT and exit time. The times are kept
+   * while switched off. Absent or null: no window. Mirrors the server's `NoEntry`.
+   */
+  noEntry?: NoEntry | null;
 };
+
+/** From `from` (in the window) up to `to` (not in it), IST "HH:MM"; it may run past midnight. */
+export type NoEntryWindow = { from: string; to: string };
+export type NoEntry = { on: boolean; windows: NoEntryWindow[] };
+/** The server's `MAX_NO_ENTRY_WINDOWS`. */
+export const MAX_NO_ENTRY_WINDOWS = 6;
 
 /** Mirrors the server's SignalRule (app/server/src/strategy/types.ts). */
 export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h';

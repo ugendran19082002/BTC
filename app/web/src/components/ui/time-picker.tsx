@@ -137,7 +137,7 @@ export function TimePicker({
       aria-label={`${label}: ${isHhmm(value) ? time12(value) : 'not set'}`}
       aria-invalid={invalid || undefined}
       className={cn(
-        'm-0 inline-flex h-11 min-w-[128px] appearance-none items-center gap-2 rounded-md border border-solid bg-muted px-3',
+        'm-0 inline-flex h-11 min-w-[112px] appearance-none items-center gap-2 rounded-md border border-solid bg-muted px-3 min-[360px]:min-w-[128px]',
         'font-[inherit] text-[15px] font-semibold tabular-nums text-foreground',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50',
         invalid ? 'border-[var(--down)]' : 'border-border',
@@ -145,8 +145,10 @@ export function TimePicker({
       )}
     >
       <Clock className={cn('h-4 w-4 flex-none', invalid ? 'text-[var(--down)]' : 'text-muted-foreground')} />
-      <span>{isHhmm(value) ? time12(value) : 'Pick a time'}</span>
-      <span className="ml-auto text-[10px] font-normal text-[var(--dim)]">IST</span>
+      {/* One line always: two pickers side by side on a 320px phone broke "4:48 PM" in two. There the IST tag
+          goes -- the forms say "Times are IST" at their top. */}
+      <span className="whitespace-nowrap">{isHhmm(value) ? time12(value) : 'Pick a time'}</span>
+      <span className="ml-auto hidden text-[10px] font-normal text-[var(--dim)] min-[360px]:inline">IST</span>
     </button>
   );
 

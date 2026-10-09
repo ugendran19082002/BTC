@@ -363,7 +363,83 @@ export type StrategyConfig = {
    * the entry setups are measured before they are trusted (decision 0013).
    */
   liveOrders?: boolean;
+  /**
+   * Stretches of a signal strategy's window in which it takes no new entry (owner, 9 Oct 2026: "no entry
+   * window ... from time to time"). A signal inside one is written down as skipped, with the window; what is
+   * already open keeps its exits. The times are kept while it is switched off, so switching it back on finds
+   * them. Absent or null -- every strategy saved before it -- is no window.
+   */
+  noEntry?: NoEntry | null;
 };
+
+/** One no-entry window: from `from` (taken) up to `to` (not taken), IST "HH:MM"; it may run past midnight. */
+export type NoEntryWindow = { from: string; to: string };
+export type NoEntry = { on: boolean; windows: NoEntryWindow[] };
+export const MAX_NO_ENTRY_WINDOWS = 6;
+
+/** "5:00 PM – 6:00 PM", for anything a person reads. */
+export const noEntryWords = (w: NoEntryWindow): string => `${time12(w.from)} – ${time12(w.to)}`;
+
+/** The no-entry window `istMinute` falls in, when the switch is on; null when entries are open. */
+export function noEntryWindowAt(c: Pick<StrategyConfig, 'noEntry'>, istMinute: number): NoEntryWindow | null {
+  if (!c.noEntry?.on || !Array.isArray(c.noEntry.windows)) return null;
+  return c.noEntry.windows.find((w) => isHhmm(w.from) && isHhmm(w.to)
+    && minutesForward(minutesOf(w.from), istMinute) < minutesForward(minutesOf(w.from), minutesOf(w.to))) ?? null;
+}
+
+/**
+ * What is wrong with the no-entry windows, in words: an empty list when nothing is. Shared with the form, word
+ * for word. Only a signal strategy has them -- a clock strategy enters once, at its own time, which is moved
+ * rather than blocked.
+ *
+ * Held to the strategy's own entry and exit times (owner, 9 Oct 2026: "validation based on entry exit time"):
+ * each window lies wholly inside them -- from at or after the entry, until at or before the exit -- so what is
+ * saved is what applies, never half a window; none covers the whole of them, which would take no signal at all;
+ * and no two overlap, which says one thing twice. Measured forward from the entry, so a strategy and a window
+ * that run past midnight are the same arithmetic.
+ */
+export function noEntryProblems(n: unknown, entryTime: string | undefined, exitTime: string | undefined, signal: boolean): string[] {
+  if (n === undefined || n === null) return [];
+  const x = n as Partial<NoEntry>;
+  if (typeof n !== 'object' || typeof x.on !== 'boolean' || !Array.isArray(x.windows)) return ['The no-entry window must be on or off, with its times.'];
+  if (!x.on) return [];
+  if (!signal) return ['A no-entry window is for a signal strategy: a clock strategy enters once, at its entry time.'];
+  if (x.windows.length === 0) return ['Add a no-entry window, or switch it off.'];
+  if (x.windows.length > MAX_NO_ENTRY_WINDOWS) return [`At most ${MAX_NO_ENTRY_WINDOWS} no-entry windows.`];
+  const bad: string[] = [];
+  const several = x.windows.length > 1;
+  const timesOk = isHhmm(entryTime) && isHhmm(exitTime) && entryTime !== exitTime;
+  const entry = timesOk ? minutesOf(entryTime!) : 0;
+  const span = timesOk ? minutesForward(entry, minutesOf(exitTime!)) : 0;
+  const placed: { i: number; at: number; end: number }[] = [];
+  x.windows.forEach((w, i) => {
+    const which = several ? `No-entry window ${i + 1}` : 'The no-entry window';
+    if (!w || !isHhmm(w.from) || !isHhmm(w.to)) { bad.push(`${which} needs a from and an until time, like 5:00 PM.`); return; }
+    if (w.from === w.to) { bad.push(`${which} is empty: from and until are both ${time12(w.from)}.`); return; }
+    // The strategy's own times are said wrong under their own fields; nothing to measure against until they are right.
+    if (!timesOk) return;
+    // Forward from the strategy's entry: where the window starts and ends.
+    const at = minutesForward(entry, minutesOf(w.from));
+    const end = at + minutesForward(minutesOf(w.from), minutesOf(w.to));
+    if (at >= span || end > span) {
+      bad.push(`${which} (${noEntryWords(w)}) must lie inside this strategy's ${time12(entryTime!)} – ${time12(exitTime!)}: `
+        + `from ${time12(entryTime!)} or later, until ${time12(exitTime!)} or earlier.`);
+      return;
+    }
+    if (at === 0 && end === span) {
+      bad.push(`${which} (${noEntryWords(w)}) covers all of ${time12(entryTime!)} – ${time12(exitTime!)}: no signal could be taken. Switch the strategy off instead.`);
+      return;
+    }
+    placed.push({ i, at, end });
+  });
+  // Two windows over the same minutes: said once per pair, in the order they sit in the day.
+  placed.sort((a, b) => a.at - b.at);
+  for (let k = 1; k < placed.length; k++) {
+    const a = placed[k - 1]!, b = placed[k]!;
+    if (b.at < a.end) bad.push(`No-entry windows ${Math.min(a.i, b.i) + 1} and ${Math.max(a.i, b.i) + 1} overlap: make them one window.`);
+  }
+  return bad;
+}
 
 /** A signal strategy's rule: which way of reading, which methods, which target, how many at once. */
 export type SignalRule = {
@@ -1014,6 +1090,7 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     bad.push('Strike blocks are for a signal strategy: a clock strategy enters once, under one rule.');
   }
   if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
+  bad.push(...noEntryProblems(c.noEntry, c.entryTime, c.exitTime, c.trigger === 'signal'));
   // A bought option's target and stop are judged by the desk at one level each (engine.ts `longExitIfReached`): no timetable yet.
   if (c.trigger === 'signal' && c.signal?.action === 'buy' && ((c.targetSteps ?? []).length || (c.stopSteps ?? []).length)) bad.push(BUY_NO_STEPS);
   return bad;

@@ -1304,3 +1304,52 @@ test('[critical] a zone-entry signal makes its contract ready and nothing else: 
     for (const id of ['sig-warm', 'sig-warm-paper']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
   }
 });
+
+// ------------------------------------------------------------ the no-entry window (9 Oct 2026)
+
+test('[critical] a no-entry window: saved with the strategy, a signal inside it written down as skipped with the window, taken again from its to-time', async () => {
+  const quiet = { ...config, signal: { ...config.signal, maxOpen: 10 }, noEntry: { on: true, windows: [{ from: '09:55', to: '10:30' }] } };
+  // Refused in words first: on with nothing in it, and a window outside the strategy's 9:00 AM - 5:00 PM.
+  const none = await api('POST', '/api/strategies', { name: 'Sig quiet', config: { ...quiet, noEntry: { on: true, windows: [] } } });
+  assert.equal(none.status, 422);
+  assert.ok(none.body.problems.includes('Add a no-entry window, or switch it off.'), none.body.problems.join(' '));
+  const outside = await api('POST', '/api/strategies', { name: 'Sig quiet', config: { ...quiet, noEntry: { on: true, windows: [{ from: '18:00', to: '19:00' }] } } });
+  assert.ok(outside.body.problems.includes('The no-entry window (6:00 PM – 7:00 PM) must lie inside this strategy\'s 9:00 AM – 5:00 PM: from 9:00 AM or later, until 5:00 PM or earlier.'), outside.body.problems.join(' '));
+
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig quiet', config: quiet })).status, 200);
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-quiet'");
+  assert.deepEqual(row!.config.noEntry, quiet.noEntry, 'kept in the database as sent');
+  const plain = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-sl'");
+  assert.equal('noEntry' in plain!.config, false, 'a strategy that never used it is stored as before');
+
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  await api('POST', '/api/strategies/sig-quiet/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  const last = async () => (await runsOf('sig-quiet')).at(-1)!;
+  try {
+    clock = TEN;                                          // 10:00 IST: inside 9:55 - 10:30
+
+    await runner.onSignal(signal());
+    const skipped = await last();
+    assert.equal(skipped.status, 'skipped', skipped.detail);
+    assert.equal(skipped.detail, '#1 Breakout BUY | inside the no-entry window 9:55 AM – 10:30 AM — no new entry until 10:30 AM');
+    assert.equal(skipped.trade_id, null);
+
+    clock = TEN + 30 * 60_000;                            // 10:30: the to-time is not in the window
+    await runner.onSignal(signal());
+    assert.equal((await last()).status, 'would-place', (await last()).detail);
+
+    // Switched off: the times are kept, and a signal inside them is taken.
+    assert.equal((await api('POST', '/api/strategies', { id: 'sig-quiet', name: 'Sig quiet', config: { ...quiet, noEntry: { ...quiet.noEntry, on: false } } })).status, 200);
+    const off = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-quiet'");
+    assert.deepEqual(off!.config.noEntry, { on: false, windows: [{ from: '09:55', to: '10:30' }] });
+    clock = TEN;
+    await runner.onSignal(signal());
+    assert.equal((await last()).status, 'would-place', (await last()).detail);
+  } finally {
+    clock = TEN;
+    await api('POST', '/api/strategies/sig-quiet/enabled', { enabled: false });
+  }
+});

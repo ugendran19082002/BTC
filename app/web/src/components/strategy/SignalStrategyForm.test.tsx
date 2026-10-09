@@ -1153,3 +1153,43 @@ describe('the stop and the close-out, said under the stop', () => {
     expect(note()).not.toBeInTheDocument();
   });
 });
+
+describe('the no-entry window: no new entry between two times, nothing open closed (9 Oct 2026)', () => {
+  const noEntrySwitch = () => screen.getByRole('switch', { name: /No-entry window/ });
+
+  it('[critical] off by default; on, it offers the half hour before the exit, says what it does not do, and is saved', async () => {
+    show(signalStrategy());
+    tab('When');
+    expect(noEntrySwitch()).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(/signals are taken all through the window above/)).toBeInTheDocument();
+    fireEvent.click(noEntrySwitch());
+    expect(screen.getByText(/Trades already open are not closed — they keep their SL, TGT and exit time/)).toBeInTheDocument();
+    expect(screen.getByText('No new entry 4:59 PM – 5:29 PM IST. From the until time, signals are taken again.')).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalledTimes(1));
+    expect(saved().config.noEntry).toEqual({ on: true, windows: [{ from: '16:59', to: '17:29' }] });
+  });
+
+  it('[critical] a window outside the strategy\'s own times: the When tab marked, the reason said, nothing sent', () => {
+    show(signalStrategy({}, { noEntry: { on: true, windows: [{ from: '18:00', to: '19:00' }] } }));
+    expect(screen.getByRole('tab', { name: /^When/ })).toContainElement(screen.getByLabelText('has a problem'));
+    fireEvent.click(saveButton());
+    expect(saveStrategy).not.toHaveBeenCalled();
+    expect(screen.getByRole('tab', { name: /^When/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('The no-entry window (6:00 PM – 7:00 PM) must lie inside this strategy\'s 5:30 AM – 5:29 PM: from 5:30 AM or later, until 5:29 PM or earlier.')).toBeInTheDocument();
+  });
+
+  it('[critical] another window starts just before the first, never on top of it; one is removed; off keeps the times', async () => {
+    show(signalStrategy({}, { noEntry: { on: true, windows: [{ from: '16:59', to: '17:29' }] } }));
+    tab('When');
+    fireEvent.click(screen.getByRole('button', { name: '+ Add another window' }));
+    expect(screen.getByText('No new entry 4:59 PM – 5:29 PM, 4:29 PM – 4:59 PM IST. From the until time, signals are taken again.')).toBeInTheDocument();
+    expect(screen.queryByText(/overlap/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove no-entry window 1' }));
+    expect(screen.getByText('No new entry 4:29 PM – 4:59 PM IST. From the until time, signals are taken again.')).toBeInTheDocument();
+    fireEvent.click(noEntrySwitch());
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalledTimes(1));
+    expect(saved().config.noEntry).toEqual({ on: false, windows: [{ from: '16:29', to: '16:59' }] });
+  });
+});

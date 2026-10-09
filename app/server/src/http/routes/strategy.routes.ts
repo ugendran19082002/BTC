@@ -3,9 +3,9 @@ import { istDayRange } from '../../entry/catalogue.js';
 import { noteError } from '../../observability/errors.js';
 import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
-import { entryDue, istDate, nextEntryAt } from '../../strategy/schedule.js';
+import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -114,8 +114,25 @@ function cleanConfig(raw: unknown): StrategyConfig {
     // A client that predates signal strategies sends none of these, and means the clock.
     // The blocks too: only a signal strategy has a window to split, so a clock strategy never carries them.
     ...(c.trigger === 'signal'
-      ? { trigger: 'signal' as const, signal: cleanSignal(c.signal), liveOrders: c.liveOrders === true, strikeBlocks: cleanBlocks(c.strikeBlocks) }
+      ? { trigger: 'signal' as const, signal: cleanSignal(c.signal), liveOrders: c.liveOrders === true, strikeBlocks: cleanBlocks(c.strikeBlocks), ...cleanNoEntry(c.noEntry) }
       : {}),
+  };
+}
+
+/**
+ * The no-entry windows (9 Oct 2026): the switch and each window's two times, in the order sent; kept while
+ * switched off, so switching back on finds them. Absent is no key at all, so a strategy that never used it is
+ * stored as before. A shape it cannot read is left as sent, for validation to name.
+ */
+function cleanNoEntry(raw: unknown): { noEntry?: NoEntry } {
+  if (raw === undefined || raw === null) return {};
+  const n = raw as Partial<NoEntry>;
+  if (typeof raw !== 'object' || !Array.isArray(n.windows)) return { noEntry: raw as NoEntry };
+  return {
+    noEntry: {
+      on: n.on === true,
+      windows: n.windows.map((w) => ({ from: String((w as Partial<NoEntryWindow> | null)?.from ?? ''), to: String((w as Partial<NoEntryWindow> | null)?.to ?? '') })),
+    },
   };
 }
 
@@ -326,12 +343,16 @@ export function registerStrategyRoutes(app: FastifyInstance) {
         if (x.config.trigger === 'signal') {
           // A signal strategy has no entry time to count down to: it is taking signals now, or it is not.
           const on = inSignalWindow(x, now);
+          // Inside a no-entry window it is in its hours but not entering: said, with when entries open again.
+          const blocked = on ? noEntryWindowAt(x.config, istMinutes(now)) : null;
           return {
             ...x, lastRunDate: null, ranToday: false, nextEntryAt: null,
             open: openOf(x.id),
-            status: !here ? OFF_ACCOUNT : on
-              ? `taking signals until ${time12(x.config.exitTime)}${x.config.liveOrders ? '' : ' -- live orders off: writing down what it would place'}`
-              : `outside its window (${time12(x.config.entryTime)} to ${time12(x.config.exitTime)} IST, its days)`,
+            status: !here ? OFF_ACCOUNT : blocked
+              ? `no new entry until ${time12(blocked.to)} (no-entry window ${noEntryWords(blocked)}) -- what is open keeps its exits`
+              : on
+                ? `taking signals until ${time12(x.config.exitTime)}${x.config.liveOrders ? '' : ' -- live orders off: writing down what it would place'}`
+                : `outside its window (${time12(x.config.entryTime)} to ${time12(x.config.exitTime)} IST, its days)`,
           };
         }
         const last = await s.lastRunDate(x.id);

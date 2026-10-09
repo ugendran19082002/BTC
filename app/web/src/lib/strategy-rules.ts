@@ -2,6 +2,7 @@ import { BUY_NO_STEPS, CHAIN_PTS, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, 
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
+import { noEntryProblems } from '@/lib/strategy-no-entry';
 
 /**
  * What is wrong with a strategy before it is saved, and where on the form.
@@ -19,7 +20,7 @@ const SETTLEMENT_MIN = 17 * 60 + 30;
 const LAUNCH_AUCTION_MIN = 5;
 
 export type FormField =
-  | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin'
+  | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin' | 'noEntry'
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'premiumMinOtm' | 'delta' | 'distance' | 'strikeBlocks' | 'minPremium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
   | 'signalMode' | 'signalTf' | 'signalSlPts' | 'signalMethods' | 'signalTarget' | 'maxOpen';
@@ -27,7 +28,7 @@ export type FormField =
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
 const TAB: Record<FormField, FormTab> = {
-  name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when',
+  name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when', noEntry: 'when',
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', premiumMinOtm: 'sell', delta: 'sell', distance: 'sell', strikeBlocks: 'sell', minPremium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
   signalMode: 'signal', signalTf: 'signal', signalSlPts: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade',
@@ -146,6 +147,8 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
     }
     // The strike rule over the window -- the server's `strikeBlockProblems`, in its words.
     for (const b of strikeBlockProblems(c.strikeBlocks, c.entryTime, c.exitTime)) say('strikeBlocks', b.message);
+    // The no-entry windows -- the server's `noEntryProblems`, in its words.
+    for (const m of noEntryProblems(c.noEntry, c.entryTime, c.exitTime)) say('noEntry', m);
   }
   return out;
 }

@@ -7,7 +7,7 @@ import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { GLOBAL_MAX_OPEN_KEY, actionOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, actionOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -417,7 +417,7 @@ export class StrategyRunner {
    * wasted lookup and nothing more. Only for a strategy with live orders on, and in its window.
    */
   private async warmFor(s: Strategy, r: MethodRead): Promise<void> {
-    if (!s.config.liveOrders || !inSignalWindow(s, this.now())) return;
+    if (!s.config.liveOrders || !inSignalWindow(s, this.now()) || noEntryWindowAt(s.config, istMinutes(this.now()))) return;
     const snap = await this.signalBoard().catch(() => null);
     if (!snap || !snap.live || !snap.isDaily) return;
     const leg = legOfSignal(r.dir === 'long' ? 1 : -1, actionOf(s.config.signal));
@@ -438,6 +438,14 @@ export class StrategyRunner {
     const said = `#${r.n} ${r.name} ${dir === 1 ? 'BUY' : 'SELL'}`;
     const finish = (status: Parameters<StrategyStore['finishSignal']>[2], detail: string, tradeId: string | null = null) =>
       this.store.finishSignal(s.id, key, status, `${said} | ${detail}`, tradeId);
+
+    // A no-entry window (owner, 9 Oct 2026): the signal is written down, not taken -- at the moment it would
+    // have entered, the zone's fill for one that enters there. What is already open keeps its exits.
+    const blocked = noEntryWindowAt(s.config, istMinutes(now));
+    if (blocked) {
+      await finish('skipped', `inside the no-entry window ${noEntryWords(blocked)} — no new entry until ${time12(blocked.to)}`);
+      return;
+    }
 
     if (fill) {
       // In the trade -- but not one that is already over, nor a fill reported too late to follow.
