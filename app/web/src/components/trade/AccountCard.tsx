@@ -50,7 +50,11 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
         </span>
       }
     >
-      <dl className="m-0 grid gap-2">
+      {/*
+        A plain column, each figure its own <dl>: one list around tiles, rules, tabs and buttons was not a list
+        a screen reader could read (axe, 9 Oct 2026: dt / dd two wrappers deep, buttons among them).
+      */}
+      <div className="grid gap-2">
         {/* Total and Available side by side: the two figures read together. */}
         <div className="grid grid-cols-2 gap-2">
           <Tile
@@ -65,12 +69,14 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
             <Money value={status.balanceUsd} />
           </Tile>
         </div>
-        <KV
-          label={<>Used for positions <span className="ml-1 text-[11px] text-[var(--dim)]">{held > 0 ? `${held} contract${held === 1 ? '' : 's'}` : 'none'}</span></>}
-          hint={fromDelta ? 'Margin locked by open positions and orders, as Delta reports it: wallet balance less available.' : 'Margin locked while positions are open. It comes back when they close. Estimated.'}
-        >
-          <Money value={heldMargin} />
-        </KV>
+        <dl className="m-0">
+          <KV
+            label={<>Used for positions <span className="ml-1 text-[11px] text-[var(--dim)]">{held > 0 ? `${held} contract${held === 1 ? '' : 's'}` : 'none'}</span></>}
+            hint={fromDelta ? 'Margin locked by open positions and orders, as Delta reports it: wallet balance less available.' : 'Margin locked while positions are open. It comes back when they close. Estimated.'}
+          >
+            <Money value={heldMargin} />
+          </KV>
+        </dl>
 
         <div className="my-0.5 h-px bg-border" />
 
@@ -89,9 +95,11 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
             <Money value={today.chargesUsd > 0 ? -today.chargesUsd : 0} signed />
           </Tile>
         </div>
-        <KV label={<span className="font-semibold text-foreground">Net today</span>}>
-          <Money value={today.netUsd} signed strong />
-        </KV>
+        <dl className="m-0">
+          <KV label={<span className="font-semibold text-foreground">Net today</span>}>
+            <Money value={today.netUsd} signed strong />
+          </KV>
+        </dl>
 
         <div className="my-0.5 h-px bg-border" />
 
@@ -99,11 +107,13 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
             What is left to sell or buy, and the ₹ note, sit under the loss limit. */}
         <PositionLimits status={status} heldShort={held} lossCell={
           <div>
-            <dt className="m-0 text-[12px] text-muted-foreground">Daily loss limit</dt>
-            <dd className="m-0 mt-0.5 text-[13px] tabular-nums text-foreground" aria-label="loss budget left">
-              <span>{inr(usdToInr(left))}</span>{' '}
-              <span className="text-[11.5px] text-[var(--dim)]">of {inr(usdToInr(limit))} left</span>
-            </dd>
+            <dl className="m-0">
+              <dt className="m-0 text-[12px] text-muted-foreground">Daily loss limit</dt>
+              <dd className="m-0 mt-0.5 text-[13px] tabular-nums text-foreground" aria-label="loss budget left">
+                <span>{inr(usdToInr(left))}</span>{' '}
+                <span className="text-[11.5px] text-[var(--dim)]">of {inr(usdToInr(limit))} left</span>
+              </dd>
+            </dl>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--line)]">
               <div
                 className={cn('h-full rounded-full', used > 0.75 ? 'bg-[var(--down)]' : 'bg-[var(--warn)]')}
@@ -125,7 +135,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
         } note={unrealised !== 0 && (
           <p className="m-0 mt-2 text-[11px] text-[var(--dim)]">₹ shown at ₹85 per $1.</p>
         )} />
-      </dl>
+      </div>
 
       {/* Each account's own part of the totals above: the sums are these rows added. */}
       {combined && (
@@ -306,31 +316,32 @@ function LimitLine({ side, held, inForce, readOnly = false }: { side: Side; held
   };
 
   return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2">
+    // The Edit button sits over the list's corner, not inside it: a <dl> holds names and values only.
+    <div className="relative">
+      <dl className="m-0">
         <dt
-          className="m-0 cursor-help text-[12px] text-muted-foreground underline decoration-dotted underline-offset-2"
+          className="m-0 w-fit cursor-help text-[12px] text-muted-foreground underline decoration-dotted underline-offset-2"
           title={selling
             ? 'The most contracts this account will be short across all strikes. New sells stop here.'
             : 'The most contracts this account will hold bought across all strikes. New buys stop here.'}
         >
           {name}
         </dt>
-        {!editing && !readOnly && (
-          <button
-            type="button" aria-label={`Edit the ${name.toLowerCase()}`}
-            className="m-0 inline-flex min-h-7 appearance-none items-center border-0 bg-transparent p-0 font-[inherit] text-[11.5px] text-muted-foreground underline underline-offset-2"
-            onClick={() => { setDraft(String(limit)); setRefusal(null); setEditing(true); }}
-          >
-            Edit
-          </button>
-        )}
-      </div>
-      <dd className="m-0 mt-0.5 tabular-nums" aria-label={selling ? 'short cap' : 'long cap'}>
-        <span className="text-[13px] text-foreground">
-          {held} <span className="text-[11.5px] text-[var(--dim)]">of {limit} contracts</span>
-        </span>
-      </dd>
+        <dd className="m-0 mt-0.5 tabular-nums" aria-label={selling ? 'short cap' : 'long cap'}>
+          <span className="text-[13px] text-foreground">
+            {held} <span className="text-[11.5px] text-[var(--dim)]">of {limit} contracts</span>
+          </span>
+        </dd>
+      </dl>
+      {!editing && !readOnly && (
+        <button
+          type="button" aria-label={`Edit the ${name.toLowerCase()}`}
+          className="absolute right-0 top-0 m-0 inline-flex min-h-7 -translate-y-1.5 appearance-none items-center border-0 bg-transparent p-0 font-[inherit] text-[11.5px] text-muted-foreground underline underline-offset-2"
+          onClick={() => { setDraft(String(limit)); setRefusal(null); setEditing(true); }}
+        >
+          Edit
+        </button>
+      )}
 
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--line)]">
         <div
@@ -402,11 +413,11 @@ function heldMarginOf(status: TradeStatus): number | null {
 /** A label over its value, for the figures laid out in a grid on the card. */
 function Tile({ label, hint, children }: { label: React.ReactNode; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="min-w-0 rounded-md bg-muted/60 px-2.5 py-1.5">
+    <dl className="m-0 min-w-0 rounded-md bg-muted/60 px-2.5 py-1.5">
       <dt className={cn('m-0 text-[11.5px] text-muted-foreground', hint && 'cursor-help underline decoration-dotted underline-offset-2')} title={hint}>
         {label}
       </dt>
       <dd className="m-0 mt-0.5 tabular-nums">{children}</dd>
-    </div>
+    </dl>
   );
 }
