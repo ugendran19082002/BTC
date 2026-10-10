@@ -7,7 +7,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
-import { groupSections, onCount } from '@/lib/strategy-groups';
+import { accountTag, groupSections, onCount } from '@/lib/strategy-groups';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
 
@@ -169,8 +169,8 @@ export function StrategiesScreen() {
                 <h3 className="m-0 mt-2 flex items-center justify-between gap-2 border-b border-solid border-[var(--line)] pb-1 text-[13px] font-semibold first:mt-0">
                   <span className="min-w-0 truncate">
                     {sec.group ? sec.group.name : 'Not in a group'}
-                    {sec.group && p.accountParam === null && sec.group.accountName && (
-                      <span className="ml-1.5 text-[11.5px] font-normal text-muted-foreground">{sec.group.accountName}</span>
+                    {sec.group && p.accountParam === null && accountTag(sec.group) && (
+                      <span className="ml-1.5 text-[11.5px] font-normal text-muted-foreground">{accountTag(sec.group)}</span>
                     )}
                   </span>
                   <span className={cn('flex-none text-[12px] font-normal tabular-nums', n.on > 0 ? 'text-[var(--up)]' : 'text-muted-foreground')}>

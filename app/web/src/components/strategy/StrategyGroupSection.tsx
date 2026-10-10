@@ -4,7 +4,7 @@ import { cloneGroup, deleteGroup, renameGroup, setGroupEnabled } from '@/api/str
 import { getAccounts, type BrokerAccount } from '@/api/accounts';
 import { Button } from '@/components/ui/button';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { groupNameProblem, onCount } from '@/lib/strategy-groups';
+import { accountTag, groupNameProblem, onCount } from '@/lib/strategy-groups';
 import type { Strategy, StrategyGroup } from '@/types/strategy';
 import { cn } from '@/lib/utils';
 
@@ -101,8 +101,8 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
             <Button size="sm" variant="ghost" className="h-8" onClick={() => setRenaming(null)}>Cancel</Button>
           </span>
         )}
-        {showAccount && group.accountName && (
-          <span className="rounded bg-muted px-1.5 py-px text-[10.5px] font-medium text-muted-foreground">{group.accountName}</span>
+        {showAccount && accountTag(group) && (
+          <span className="rounded bg-muted px-1.5 py-px text-[10.5px] font-medium text-muted-foreground">{accountTag(group)}</span>
         )}
         <span aria-label={`switched on in ${group.name}`} className={cn('text-[11.5px] tabular-nums', on > 0 ? 'text-[var(--up)]' : 'text-[var(--dim)]')}>
           {of === 0 ? 'empty' : `${on} of ${of} on`}

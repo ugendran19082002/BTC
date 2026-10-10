@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { SignalStrategiesCard } from '@/components/strategy/SignalStrategiesCard';
 import { DEFAULT_CONFIG, type Strategy, type StrategyGroup, type StrategyStatus } from '@/types/strategy';
 import { setAccountScope } from '@/lib/account-scope';
-import { defaultGroupFor, groupNameProblem, groupSections, moveTargets, onCount } from '@/lib/strategy-groups';
+import { accountTag, defaultGroupFor, groupNameProblem, groupSections, moveTargets, onCount } from '@/lib/strategy-groups';
 
 const getStrategies = vi.fn();
 const saveStrategy = vi.fn();
@@ -78,6 +78,10 @@ describe('the groups, worked out', () => {
     expect(defaultGroupFor(null, [MAIN])).toBeNull();
     expect(defaultGroupFor(3, [MAIN])).toBeNull();
     expect(onCount(all)).toEqual({ on: 1, of: 5 });
+    // Whose it is, said only where the name does not already say it.
+    expect(accountTag(grp('g', 'Scalps', 2, 'Low win%'))).toBe('Low win%');
+    expect(accountTag(grp('g', 'High Win%', 1, 'high win% '))).toBeNull();
+    expect(accountTag(grp('g', 'Scalps', 1, ''))).toBeNull();
     expect(groupNameProblem(' ')).toBe('Give the group a name.');
     expect(groupNameProblem('x'.repeat(41))).toBe('A group name is at most 40 characters.');
   });
@@ -195,7 +199,9 @@ describe('the card, by group', () => {
     getStrategies.mockResolvedValue(status([strat('a', 1, 'group-1'), strat('e', 2, 'group-2')], [MAIN, OTHER]));
     render(<SignalStrategiesCard />);
     const other = await screen.findByRole('region', { name: 'group Low win%' });
-    expect(within(other).getByText('Low win%', { selector: 'span' })).toBeInTheDocument();
+    // "Main desk" is Acct 1's: said. "Low win%" is named after its account: not said twice.
+    expect(within(screen.getByRole('region', { name: 'group Main desk' })).getByText('Acct 1', { selector: 'span' })).toBeInTheDocument();
+    expect(within(other).queryByText('Low win%', { selector: 'span' })).toBeNull();
     expect(within(other).getByRole('button', { name: /New strategy in Low win%/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /New group/ })).toBeDisabled();
   });

@@ -39,6 +39,15 @@ export function defaultGroupFor(accountId: number | null, groups: readonly Strat
   return groups.find((g) => g.accountId === accountId) ?? null;
 }
 
+/**
+ * Whose a group is, said beside its name on "All accounts" -- only where it adds something: a group named after its
+ * account (each account's first, made so on 10 Oct 2026) read "High Win% High Win%".
+ */
+export function accountTag(g: Pick<StrategyGroup, 'name' | 'accountName'>): string | null {
+  const a = g.accountName?.trim();
+  return a && a.toLowerCase() !== g.name.trim().toLowerCase() ? a : null;
+}
+
 /** The server's rule (strategy/types.ts `groupNameProblem`), said before sending. */
 export function groupNameProblem(name: string): string | null {
   if (!name.trim()) return 'Give the group a name.';
