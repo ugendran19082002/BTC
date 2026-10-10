@@ -25,6 +25,8 @@ import { accountOf } from '../account-query.js';
  * of them together is all of them at once.
  */
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** The reports read each trade's state and plan, never its journal: not fetched (10 Oct 2026, half a 30-day report's time). */
+const NO_EVENTS = { events: false } as const;
 const ninetyDaysAgo = (now: number) => istDate(now - 90 * 86_400_000);
 
 /** A range, checked. Defaults to the last ninety days ending today. */
@@ -69,7 +71,7 @@ export function registerReportRoutes(app: FastifyInstance) {
     // closed inside it is inside it, and it is fills that decide, not rows.
     // From the whole journal, by the account named (none: every account's): an account with no desk still has its record.
     const records = chosenOf(
-      await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query)),
+      await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query), NO_EVENTS),
       req.query,
     );
     return { mode: svc.mode, ...daysReport(records, { ...r, spot: svc.spot }) };
@@ -80,7 +82,7 @@ export function registerReportRoutes(app: FastifyInstance) {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
     const records = chosenOf(
-      await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query)),
+      await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query), NO_EVENTS),
       req.query,
     );
     reply.header('Content-Type', 'text/csv; charset=utf-8');
@@ -106,7 +108,7 @@ export function registerReportRoutes(app: FastifyInstance) {
   app.get('/api/report/stats', async (req, reply) => {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
-    const every = await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query));
+    const every = await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query), NO_EVENTS);
     const asked = strategiesOf(req.query);
     const askedMethods = methodsOf(req.query);
     const askedTfs = timeframesOf(req.query);

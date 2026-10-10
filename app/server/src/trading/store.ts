@@ -275,7 +275,7 @@ export class PgTradeStore implements TradeStore {
     return new Map(found.filter((r) => r.broker_account_id !== null).map((r) => [r.trade_id, Number(r.broker_account_id)] as const));
   }
 
-  between(fromMs: number, toMs: number, limit = 500, accountId: number | null = null): Promise<TradeRecord[]> {
+  between(fromMs: number, toMs: number, limit = 500, accountId: number | null = null, opts: { events?: boolean } = {}): Promise<TradeRecord[]> {
     // `accountId`: only the trades placed as that broker account; null, every trade.
     return this.query(
       `SELECT trade_id, plan, state FROM trades
@@ -283,6 +283,7 @@ export class PgTradeStore implements TradeStore {
         ORDER BY updated_at DESC LIMIT $3`,
       // An account's store reads its own, whatever it is asked.
       [fromMs, toMs, limit, this.scope ?? accountId],
+      opts.events ?? true,
     );
   }
 
@@ -378,14 +379,18 @@ export class PgTradeStore implements TradeStore {
     return r.rowCount ?? 0;
   }
 
-  /** Rows to records, with every trade's events fetched in one query rather than one per trade. */
-  private async query(sql: string, params: readonly (string | number | null)[] = []): Promise<TradeRecord[]> {
+  /**
+   * Rows to records, with every trade's events fetched in one query rather than one per trade -- or, `events`
+   * false, none: the P&L reports read the state and the plan alone, and the journal was more than half of a
+   * 30-day report's time (10 Oct 2026: 9,215 events, ~120 ms of ~200).
+   */
+  private async query(sql: string, params: readonly (string | number | null)[] = [], withEvents = true): Promise<TradeRecord[]> {
     const found = await rows<Row>(sql, params);
     if (!found.length) return [];
-    const events = await rows<{ trade_id: string; event: TradeEvent }>(
+    const events = withEvents ? await rows<{ trade_id: string; event: TradeEvent }>(
       'SELECT trade_id, event FROM trade_events WHERE trade_id = ANY($1) ORDER BY trade_id, seq',
       [found.map((r) => r.trade_id)],
-    );
+    ) : [];
     const byTrade = new Map<string, TradeEvent[]>();
     for (const e of events) {
       const list = byTrade.get(e.trade_id);
