@@ -270,6 +270,12 @@ export function registerStrategyRoutes(app: FastifyInstance) {
   app.get('/api/strategies', async (req) => {
     const s = strategyStore();
     const account = accountOf(req.query);
+    /*
+     * `?lite=1` (10 Oct 2026): the phone's read, every 20 s -- the strategies, the runs and the figures, without the
+     * signal journal and the trade history it never shows: 203 KB of the 266 a read weighed, and the two queries
+     * behind them. The keys stay, empty, so one shape answers both.
+     */
+    const lite = (req.query as { lite?: string } | undefined)?.lite === '1';
     const shown = (await s.all()).filter((x) => belongs(x, account));
     const mine = account === null ? null : new Set(shown.map((x) => x.id));
     const kept = <T extends { strategyId: string }>(xs: T[]): T[] => (mine ? xs.filter((x) => mine.has(x.strategyId)) : xs);
@@ -368,10 +374,10 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       })),
       runs: kept(await s.runs(mine ? 200 : 40)).slice(0, 40),
       // Each signal a signal strategy saw, and what became of it.
-      signalRuns: kept(await s.signalRuns(mine ? 300 : 60)).slice(0, 60),
+      signalRuns: lite ? [] : kept(await s.signalRuns(mine ? 300 : 60)).slice(0, 60),
       // The signal strategies' trades, with the signal's perp levels, the paper log's verdict and the option's money.
       // Never the reason the list fails: an unreadable history is an empty one, and an entry in the error log.
-      signalTrades: kept(await s.signalTrades(300).catch((e: Error) => {
+      signalTrades: lite ? [] : kept(await s.signalTrades(300).catch((e: Error) => {
         noteError({ source: 'server', level: 'warn', where: 'signal-trades', message: `signal trade history not read: ${e.message}` });
         return [];
       })),

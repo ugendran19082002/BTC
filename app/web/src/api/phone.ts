@@ -29,8 +29,12 @@ export type TradeDetail = { trade: Trade; events: JournalEvent[] };
 export const getTradeDetail = (tradeId: string) =>
   json<TradeDetail>(`/api/trade/${encodeURIComponent(tradeId)}`);
 
-/** Today's strategy runs, the signals the signal strategies saw, and the strategies' names. */
-export const getActivity = (account: number | null) => json<StrategyStatus>(withAcct('/api/strategies', account));
+/**
+ * Today's strategy runs and the strategies with their state. `lite`: without the signal journal and the desk's
+ * trade history -- the phone reads the day's signals on their own (`getDaySignals`), and the history it never shows
+ * was most of the weight (266 KB a read on two accounts, every 20 s).
+ */
+export const getActivity = (account: number | null) => json<StrategyStatus>(withAcct('/api/strategies?lite=1', account));
 
 /**
  * Every signal the signal strategies saw on one IST day (`YYYY-MM-DD`), newest first, and what became of each:
