@@ -46,6 +46,23 @@ export function moved<T>(xs: readonly T[], i: number, by: -1 | 1): T[] {
   return out;
 }
 
+/** The list with the item at `from` taken out and put at `to`. */
+export function moveTo<T>(xs: readonly T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || from >= xs.length) return [...xs];
+  const out = [...xs];
+  const [x] = out.splice(from, 1);
+  out.splice(Math.max(0, Math.min(to, out.length)), 0, x!);
+  return out;
+}
+
+/**
+ * Where a row being dragged belongs (owner, 10 Oct 2026: "drag to change the order"): the number of the other rows
+ * whose middle is above the pointer -- `middles` are theirs, top to bottom, the dragged row's own left out.
+ */
+export function dropIndex(middles: readonly number[], y: number): number {
+  return middles.filter((m) => m < y).length;
+}
+
 /** "3 of 5 on": how many of a group's strategies are switched on. */
 export function onCount(strategies: readonly Strategy[]): { on: number; of: number } {
   return { on: strategies.filter((s) => s.enabled).length, of: strategies.length };

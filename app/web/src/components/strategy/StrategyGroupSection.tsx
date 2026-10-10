@@ -4,7 +4,8 @@ import { cloneGroup, deleteGroup, orderGroup, renameGroup, setGroupEnabled } fro
 import { getAccounts, type BrokerAccount } from '@/api/accounts';
 import { Button } from '@/components/ui/button';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { accountTag, groupNameProblem, moved, onCount } from '@/lib/strategy-groups';
+import { accountTag, groupNameProblem, onCount } from '@/lib/strategy-groups';
+import { ReorderList } from '@/components/strategy/ReorderList';
 import type { Strategy, StrategyGroup } from '@/types/strategy';
 import { cn } from '@/lib/utils';
 
@@ -18,8 +19,8 @@ import { cn } from '@/lib/utils';
  * have live orders on; off is one, the safe way. A clone is every strategy copied switched off, live orders off.
  * Removing the group keeps its strategies, in no group.
  *
- * Reorder (owner, 10 Oct 2026: "change the display order, user friendly"): the cards give way to one short row each,
- * with up and down buttons a thumb can hit -- no dragging, which a phone scrolls instead -- then Save; the group
+ * Reorder (owner, 10 Oct 2026: "change the display order, user friendly"; "drag to order"): the cards give way to
+ * one short row each, dragged by its grip or moved with up and down buttons (`ReorderList`), then Save; the group
  * itself moves up or down among its account's at once. The order is the screens' only: the runner's is its own.
  */
 export function StrategyGroupSection({ group, strategies, showAccount, busy, act, canMake, onNew, onCopyIn, onMoveGroup, children }: {
@@ -210,28 +211,13 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
 
       {open && order && (
         <div role="group" aria-label={`order of ${group.name}`} className="mt-2 rounded-lg border border-dashed border-[var(--accent)]/50 p-2">
-          <p className="m-0 mb-1.5 text-[12px] text-muted-foreground">Move each one up or down, then Save. Only the order they are listed in changes.</p>
-          <ol className="m-0 grid list-none gap-1 p-0">
-            {order.map((id, i) => {
-              const s = strategies.find((x) => x.id === id);
-              if (!s) return null;
-              return (
-                <li key={id} className="flex items-center gap-2 rounded-md bg-muted px-2 py-1">
-                  <span className="w-5 flex-none text-right text-[12px] tabular-nums text-[var(--dim)]">{i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate text-[13.5px] text-foreground">{s.name}</span>
-                  <span className={cn('flex-none text-[11px]', s.enabled ? 'text-[var(--up)]' : 'text-[var(--dim)]')}>{s.enabled ? 'on' : 'off'}</span>
-                  <Button size="sm" variant="outline" className="h-9 w-9 flex-none p-0" aria-label={`Move ${s.name} up`} disabled={i === 0}
-                          onClick={() => setOrder(moved(order, i, -1))}>
-                    <ArrowUp className="h-4 w-4" />
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-9 w-9 flex-none p-0" aria-label={`Move ${s.name} down`} disabled={i === order.length - 1}
-                          onClick={() => setOrder(moved(order, i, 1))}>
-                    <ArrowDown className="h-4 w-4" />
-                  </Button>
-                </li>
-              );
-            })}
-          </ol>
+          <p className="m-0 mb-1.5 text-[12px] text-muted-foreground">Drag a row by its grip, or use the arrows, then Save. Only the order they are listed in changes.</p>
+          <ReorderList
+            label={`strategies of ${group.name}, in order`}
+            items={strategies.map((x) => ({ id: x.id, name: x.name, on: x.enabled }))}
+            order={order}
+            onChange={setOrder}
+          />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button size="sm" className="h-9" disabled={busy === key('order')}
                     onClick={() => void act(key('order'), () => orderGroup(group.id, order)).then((ok) => { if (ok) setOrder(null); })}>

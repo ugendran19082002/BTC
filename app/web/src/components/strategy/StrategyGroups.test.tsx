@@ -331,3 +331,36 @@ describe('the display order, set by hand', () => {
     await waitFor(() => expect(screen.queryByRole('group', { name: 'order of Main desk' })).toBeNull());
   });
 });
+
+describe('dragging a row to its place', () => {
+  it('[critical] the grip dragged down past two rows: the row goes there, the others make room; then Save sends that order', async () => {
+    const { dropIndex: drop, moveTo: put } = await import('@/lib/strategy-groups');
+    expect(drop([10, 30, 50], 35)).toBe(2);
+    expect(drop([10, 30, 50], 0)).toBe(0);
+    expect(put(['a', 'b', 'c', 'd'], 0, 2)).toEqual(['b', 'c', 'a', 'd']);
+    expect(put(['a', 'b', 'c', 'd'], 3, 0)).toEqual(['d', 'a', 'b', 'c']);
+
+    getStrategies.mockResolvedValue(status([strat('a', 1, 'group-1'), strat('b', 1, 'group-1'), strat('c', 1, 'group-1'), strat('d', 1, 'group-1')], [MAIN]));
+    orderGroup.mockResolvedValue({ ok: true });
+    render(<SignalStrategiesCard />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reorder Main desk' }));
+    const list = screen.getByRole('list', { name: 'strategies of Main desk, in order' });
+    // No layout in jsdom: each row 40px tall, in the order it is now.
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const rows = [...list.querySelectorAll('li')];
+      const i = rows.indexOf(this as HTMLLIElement);
+      return { top: i * 40, height: 40, bottom: i * 40 + 40, left: 0, right: 300, width: 300, x: 0, y: i * 40, toJSON: () => ({}) } as DOMRect;
+    });
+    const grip = within(list).getByRole('button', { name: 'Drag A' });
+    fireEvent.pointerDown(grip, { clientY: 20, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientY: 105, pointerId: 1 }); // past B's middle (60) and C's (100), above D's (140)
+    fireEvent.pointerUp(grip, { pointerId: 1 });
+    rect.mockRestore();
+    expect(within(list).getAllByRole('listitem').map((li) => li.textContent?.replace(/off$/, ''))).toEqual(['1B', '2C', '3A', '4D']);
+    // The keyboard on the grip: one place up.
+    fireEvent.keyDown(within(list).getByRole('button', { name: 'Drag A' }), { key: 'ArrowUp' });
+    expect(within(list).getAllByRole('listitem').map((li) => li.textContent?.replace(/off$/, ''))).toEqual(['1B', '2A', '3C', '4D']);
+    fireEvent.click(screen.getByRole('button', { name: /Save order/ }));
+    await waitFor(() => expect(orderGroup).toHaveBeenCalledWith('group-1', ['b', 'a', 'c', 'd']));
+  });
+});
