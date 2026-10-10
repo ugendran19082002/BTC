@@ -61,6 +61,23 @@ export const setGroupEnabled = (id: string, enabled: boolean) =>
 export const cloneGroup = (id: string, to: { name?: string; accountId?: number }) =>
   post<{ ok: true; group: StrategyGroup; strategies: Strategy[] }>(`/api/strategy-groups/${encodeURIComponent(id)}/clone`, to);
 
+/**
+ * Every account's strategies and groups, whichever account is being shown -- for picking what to copy from another
+ * account. The light read: the signal journal and trade history are left out.
+ */
+export const getAllStrategies = () => json<StrategyStatus>('/api/strategies?lite=1');
+
+/**
+ * Strategies of any account and group copied into one group: one that exists, or a new one made for them. All or
+ * nothing; each copy switched off with live orders off, named as it was unless the account has that name already.
+ */
+export const copyIntoGroup = (strategyIds: string[], to: { groupId: string } | { newGroup: { name: string; accountId: number | null } }) =>
+  post<{ ok: true; group: StrategyGroup; strategies: Strategy[] }>('/api/strategy-groups/copy-in', {
+    strategyIds,
+    ...('groupId' in to ? { groupId: to.groupId }
+      : { newGroup: to.newGroup.accountId === null ? { name: to.newGroup.name } : to.newGroup }),
+  });
+
 /** The group goes; its strategies stay, as they were, in no group. */
 export const deleteGroup = (id: string) =>
   json<{ ok: true; ungrouped: number }>(`/api/strategy-groups/${encodeURIComponent(id)}`, { method: 'DELETE' });

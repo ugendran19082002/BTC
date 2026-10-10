@@ -174,6 +174,57 @@ test('[critical] clone to the other account: every strategy copied there, switch
   assert.ok((await list(second)).groups.every((g: any) => g.accountId === second));
 });
 
+test('[critical] copy in: strategies of any account and group, into a new group or one that exists -- off, live orders off, names kept unless taken', async () => {
+  const before = await list();
+  const count = { groups: before.groups.length, strategies: before.strategies.length };
+  const wasOn = before.strategies.find((s: any) => s.id === 'grp-one').enabled;
+  // From two accounts and three groups into a new group of the first account.
+  const made = await api('POST', '/api/strategy-groups/copy-in', { strategyIds: ['old-two', 'grp-one'], newGroup: { name: 'Mixed', accountId: main() } });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  assert.equal(made.body.group.name, 'Mixed');
+  assert.equal(made.body.group.accountId, main());
+  assert.equal(made.body.group.accountName, brokerAccounts().get(main())!.name);
+  // "Old two" is new to this account: kept. "Grp one" and "Grp one copy" are both here already: "Grp one copy 2".
+  assert.deepEqual(made.body.strategies.map((c: any) => c.name), ['Old two', 'Grp one copy 2']);
+  for (const c of made.body.strategies) {
+    assert.equal(c.accountId, main());
+    assert.equal(c.groupId, made.body.group.id);
+    assert.equal(c.enabled, false);
+    assert.equal(c.config.liveOrders, false);
+  }
+  // Into a group that exists, of the other account (which has "Grp one" and "Grp one copy" from the clone); twice is one copy.
+  const theirs = before.groups.find((g: any) => g.accountId === second && g.name === 'Scalps');
+  const into = await api('POST', '/api/strategy-groups/copy-in', { strategyIds: ['grp-one', 'grp-one'], groupId: theirs.id });
+  assert.equal(into.status, 200, JSON.stringify(into.body));
+  assert.deepEqual(into.body.strategies.map((c: any) => [c.name, c.accountId, c.groupId, c.enabled]), [['Grp one copy 2', second, theirs.id, false]]);
+  // The sources as they were.
+  const after = await list();
+  assert.equal(after.strategies.find((s: any) => s.id === 'grp-one').enabled, wasOn);
+  assert.equal(after.strategies.find((s: any) => s.id === 'old-two').accountId, second);
+  assert.equal(after.groups.length, count.groups + 1);
+  assert.equal(after.strategies.length, count.strategies + 3);
+
+  // Refused in words, and nothing made.
+  const refusals: [unknown, number, RegExp][] = [
+    [{ strategyIds: [], groupId: theirs.id }, 422, /Pick at least one strategy/],
+    [{ strategyIds: ['grp-one'] }, 422, /an existing one or a new one/],
+    [{ strategyIds: ['grp-one'], groupId: theirs.id, newGroup: { name: 'Both', accountId: main() } }, 422, /an existing one or a new one/],
+    [{ strategyIds: ['grp-one', 'nope'], newGroup: { name: 'Ghost', accountId: main() } }, 422, /No such strategy: nope/],
+    [{ strategyIds: ['grp-one'], newGroup: { name: 'mixed', accountId: main() } }, 409, /already has a group named "mixed"/],
+    [{ strategyIds: ['grp-one'], newGroup: { name: ' ', accountId: main() } }, 422, /Give the group a name/],
+    [{ strategyIds: ['grp-one'], newGroup: { name: 'Far', accountId: 999 } }, 422, /No such broker account/],
+    [{ strategyIds: ['grp-one'], groupId: 'no-such-group' }, 404, /no such group/],
+  ];
+  for (const [body, status, said] of refusals) {
+    const r = await api('POST', '/api/strategy-groups/copy-in', body);
+    assert.equal(r.status, status, JSON.stringify(body));
+    assert.match(r.body.error, said);
+  }
+  const still = await list();
+  assert.equal(still.groups.length, after.groups.length);
+  assert.equal(still.strategies.length, after.strategies.length);
+});
+
 test('[critical] removing a group keeps its strategies, as they were, in no group', async () => {
   const b = await list();
   const g = b.groups.find((x: any) => x.accountId === main() && x.name === 'Fast scalps copy');
