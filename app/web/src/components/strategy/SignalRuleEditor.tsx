@@ -39,6 +39,19 @@ const RESULTS: { id: ResultFilter; label: string; tone: string; test: (r: Method
   { id: 'none', label: 'No trades', tone: 'text-[var(--dim)]', test: (r) => !r || r.trades === 0 },
 ];
 
+/**
+ * By win rate (owner, 10 Oct 2026: "win % 50, 75, 90, custom %"): at least this share of its trades won, over at
+ * least the same number of trades "profitable" asks for -- a 100% on one trade is luck, not a record. 0 is any.
+ */
+const WIN_PRESETS = [50, 75, 90] as const;
+export const winPctOf = (r: MethodReportRow | undefined): number | null =>
+  (r && r.trades > 0 ? (r.winPct ?? (r.wins / r.trades) * 100) : null);
+export const winsAtLeast = (r: MethodReportRow | undefined, pct: number, minTrades: number): boolean => {
+  if (!(pct > 0)) return true;
+  const w = winPctOf(r);
+  return w !== null && r!.trades >= minTrades && w >= pct;
+};
+
 /** By the method's order side in the owner's list (5 Oct 2026): both, the BUY ones, the SELL ones. */
 type SideFilter = 'both' | 'BUY' | 'SELL';
 const SIDES: { id: SideFilter; label: string; tone: string }[] = [
@@ -165,7 +178,20 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
       && (!q || String(m.n) === q || m.name.toLowerCase().includes(q) || m.summary.toLowerCase().includes(q)));
   }, [methods, query, group]);
   const resultTab = RESULTS.find((x) => x.id === result) ?? RESULTS[0]!;
-  const shown = useMemo(() => searched.filter((m) => onSide(m, side) && resultTab.test(recordOf.get(m.id))), [searched, resultTab, recordOf, side]);
+  // How many trades a record needs before "profitable" -- or a win rate -- means anything; kept in this browser.
+  const [minTrades, setMinTrades] = usePersisted<number>('signal-rule:min-trades', MIN_TRADES_FOR_RECORD);
+  const minT = Math.max(1, Math.trunc(minTrades) || 1);
+  // The least win rate, 0 = any; a number that is not one of the quick picks is a custom one.
+  const [winMin, setWinMin] = usePersisted<number>('signal-rule:win-min', 0);
+  const win = Math.min(100, Math.max(0, Math.round(Number(winMin)) || 0));
+  const [customWin, setCustomWin] = useState(() => win > 0 && !(WIN_PRESETS as readonly number[]).includes(win));
+  const passes = (m: EntryMethodInfo, o: { side?: SideFilter; result?: (typeof RESULTS)[number]; win?: number } = {}) => {
+    const rec = recordOf.get(m.id);
+    return onSide(m, o.side ?? side) && (o.result ?? resultTab).test(rec) && winsAtLeast(rec, o.win ?? win, minT);
+  };
+  const shown = useMemo(() => searched.filter((m) => passes(m)),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+    [searched, resultTab, recordOf, side, win, minT]);
   const picked = new Set(rule.methods);
   // Only the methods the desk still has: a strategy saved before one was retired would carry an id the save refuses.
   const known = new Set(methods.map((m) => m.id));
@@ -180,9 +206,6 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
   const copied = copy && copy.took.join(',') === rule.methods.join(',') ? copy : null;
   const toggle = (id: string) => set('methods', picked.has(id) ? rule.methods.filter((x) => x !== id) : [...rule.methods, id]);
   const addAll = (ids: string[]) => set('methods', [...new Set([...rule.methods, ...ids])]);
-  // How many trades a record needs before "profitable" means anything; kept in this browser.
-  const [minTrades, setMinTrades] = usePersisted<number>('signal-rule:min-trades', MIN_TRADES_FOR_RECORD);
-  const minT = Math.max(1, Math.trunc(minTrades) || 1);
   const winners = profitableIds(rows, minT);
   const live = matchingSignals(reads, rule);
   const way = rule.mode === 'mtf' ? 'with the chain' : `without it on ${tfs.join(' + ')}`;
@@ -345,17 +368,50 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
           {RESULTS.map((x) => (
             <button key={x.id} type="button" aria-pressed={resultTab.id === x.id} onClick={() => setResult(x.id)} className={chip(resultTab.id === x.id)}>
               <span className={x.tone}>{x.label}</span>{' '}
-              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => onSide(m, side) && x.test(recordOf.get(m.id))).length}</span>
+              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => passes(m, { result: x })).length}</span>
             </button>
           ))}
         </div>
+        {/*
+          By win rate, under the record (owner, 10 Oct 2026): any, 50 / 75 / 90% or more, or a number of one's own --
+          each with how many it leaves, on top of the other filters, over at least the trades set below.
+        */}
+        <div role="group" aria-label="methods by win rate" className="mt-1.5 flex flex-wrap items-center gap-1">
+          <span className="mr-1 text-[11.5px] text-muted-foreground">Win rate</span>
+          <button type="button" aria-pressed={win === 0 && !customWin} onClick={() => { setCustomWin(false); setWinMin(0); }} className={chip(win === 0 && !customWin)}>
+            Any <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => passes(m, { win: 0 })).length}</span>
+          </button>
+          {WIN_PRESETS.map((n) => {
+            const on = !customWin && win === n;
+            return (
+              <button key={n} type="button" aria-pressed={on} aria-label={`Win rate ${n}% or more`} onClick={() => { setCustomWin(false); setWinMin(n); }} className={chip(on)}>
+                <span className="text-[var(--up)]">{n}%+</span> <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => passes(m, { win: n })).length}</span>
+              </button>
+            );
+          })}
+          <button type="button" aria-pressed={customWin} onClick={() => { setCustomWin(true); if ((WIN_PRESETS as readonly number[]).includes(win) || win === 0) setWinMin(60); }} className={chip(customWin)}>
+            Custom{customWin && win > 0 ? <> <span className="tabular-nums text-[var(--dim)]">{shown.length}</span></> : null}
+          </button>
+          {customWin && (
+            <span className="flex items-center gap-1">
+              <Input value={String(win)} aria-label="least win rate, percent" inputMode="numeric" className="h-8 w-14 px-1.5 text-center text-[12px]"
+                     onChange={(e) => setWinMin(Math.min(100, Math.max(0, Math.trunc(Number(e.target.value)) || 0)))} />
+              <span className="text-[11.5px] text-muted-foreground">% or more</span>
+            </span>
+          )}
+        </div>
+        {win > 0 && (
+          <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
+            Won {win}% or more of their trades, over at least {minT} trade{minT === 1 ? '' : 's'} (set below) — a method with fewer, or none, is not shown.
+          </p>
+        )}
         {/* By order side, under the record: the methods marked BUY, the ones marked SELL, or both. */}
         <div role="group" aria-label="methods by order side" className="mt-1.5 flex flex-wrap items-center gap-1">
           <span className="mr-1 text-[11.5px] text-muted-foreground">Order side</span>
           {SIDES.map((x) => (
             <button key={x.id} type="button" aria-pressed={side === x.id} onClick={() => setSide(x.id)} className={chip(side === x.id)}>
               <span className={x.tone}>{x.label}</span>{' '}
-              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => onSide(m, x.id) && resultTab.test(recordOf.get(m.id))).length}</span>
+              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => passes(m, { side: x.id })).length}</span>
             </button>
           ))}
         </div>
