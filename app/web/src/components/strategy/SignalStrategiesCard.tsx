@@ -11,6 +11,7 @@ import { copySources } from '@/components/strategy/SignalRuleEditor';
 import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { StrategyGroupSection } from '@/components/strategy/StrategyGroupSection';
 import { CopyStrategiesSheet } from '@/components/strategy/CopyStrategiesSheet';
+import { refreshGroupIndex } from '@/hooks/useGroupOf';
 import { defaultGroupFor, groupNameProblem, groupSections, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
@@ -278,6 +279,8 @@ export function SignalStrategiesCard() {
     try {
       await fn();
       refresh();
+      // Groups made, renamed, moved between: the tags beside strategy names elsewhere follow at once.
+      refreshGroupIndex();
       return true;
     } catch (e) {
       setFailed((e as Error).message);
@@ -769,7 +772,7 @@ export function SignalStrategiesCard() {
         into={copying?.into ?? null}
         pick={copying?.pick ?? []}
         shownAccount={accountScope()}
-        onDone={(said) => { setNotice(said); setFailed(null); refresh(); }}
+        onDone={(said) => { setNotice(said); setFailed(null); refresh(); refreshGroupIndex(); }}
       />
       {data && (
         <SignalStrategyForm
