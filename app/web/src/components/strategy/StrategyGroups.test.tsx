@@ -353,8 +353,10 @@ describe('dragging a row to its place', () => {
     });
     const grip = within(list).getByRole('button', { name: 'Drag A' });
     fireEvent.pointerDown(grip, { clientY: 20, pointerId: 1 });
-    fireEvent.pointerMove(grip, { clientY: 105, pointerId: 1 }); // past B's middle (60) and C's (100), above D's (140)
-    fireEvent.pointerUp(grip, { pointerId: 1 });
+    // Followed on the window: the row is moved in the page as it goes, and loses what it had captured.
+    fireEvent.pointerMove(window, { clientY: 70, pointerId: 1 }); // past B's middle (60)
+    fireEvent.pointerMove(window, { clientY: 105, pointerId: 1 }); // and C's (100), above D's (140)
+    fireEvent.pointerUp(window, { pointerId: 1 });
     rect.mockRestore();
     expect(within(list).getAllByRole('listitem').map((li) => li.textContent?.replace(/off$/, ''))).toEqual(['1B', '2C', '3A', '4D']);
     // The keyboard on the grip: one place up.

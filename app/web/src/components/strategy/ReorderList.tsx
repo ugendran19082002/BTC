@@ -36,6 +36,26 @@ export function ReorderList({ items, order, onChange, label }: {
     const from = now.indexOf(id);
     if (from >= 0 && to !== from) onChange(moveTo(now, from, to));
   };
+  const placeRef = useRef(place);
+  placeRef.current = place;
+
+  /*
+   * The drag is followed on the window, not on the grip: the row is moved in the page as it passes the others, and a
+   * moved element loses the pointer it had captured -- the drag stopped after the first row (seen in a browser).
+   */
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e: PointerEvent) => { pointerY.current = e.clientY; placeRef.current(dragging); };
+    const end = () => setDragging(null);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+  }, [dragging]);
 
   // While dragging near an edge of the screen, scroll, and keep the row under the pointer.
   useEffect(() => {
@@ -46,7 +66,7 @@ export function ReorderList({ items, order, onChange, label }: {
       const y = pointerY.current;
       const bottom = window.innerHeight - EDGE - 56; // above a phone's tab bar
       const by = y < EDGE ? -Math.ceil((EDGE - y) / 6) : y > bottom ? Math.ceil((y - bottom) / 6) : 0;
-      if (by !== 0) { window.scrollBy(0, by); place(dragging); }
+      if (by !== 0) { window.scrollBy(0, by); placeRef.current(dragging); }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -70,13 +90,9 @@ export function ReorderList({ items, order, onChange, label }: {
               className="flex h-9 w-8 flex-none cursor-grab touch-none items-center justify-center rounded border-0 bg-transparent p-0 text-muted-foreground active:cursor-grabbing"
               onPointerDown={(e) => {
                 e.preventDefault();
-                (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                 pointerY.current = e.clientY;
                 setDragging(id);
               }}
-              onPointerMove={(e) => { if (dragging !== id) return; pointerY.current = e.clientY; place(id); }}
-              onPointerUp={() => setDragging(null)}
-              onPointerCancel={() => setDragging(null)}
               onKeyDown={(e) => {
                 if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); onChange(moved(order, i, -1)); }
                 if (e.key === 'ArrowDown' && i < order.length - 1) { e.preventDefault(); onChange(moved(order, i, 1)); }
