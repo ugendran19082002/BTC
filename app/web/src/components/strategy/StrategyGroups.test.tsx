@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { SignalStrategiesCard } from '@/components/strategy/SignalStrategiesCard';
 import { DEFAULT_CONFIG, type Strategy, type StrategyGroup, type StrategyStatus } from '@/types/strategy';
 import { setAccountScope } from '@/lib/account-scope';
-import { accountTag, defaultGroupFor, groupNameProblem, groupSections, moveTargets, onCount } from '@/lib/strategy-groups';
+import { accountTag, copySources, defaultGroupFor, groupNameProblem, groupSections, moveTargets, onCount } from '@/lib/strategy-groups';
 
 const getStrategies = vi.fn();
 const saveStrategy = vi.fn();
@@ -14,6 +14,8 @@ const cloneGroup = vi.fn();
 const deleteGroup = vi.fn();
 const moveToGroup = vi.fn();
 const getAccounts = vi.fn();
+const getAllStrategies = vi.fn();
+const copyIntoGroup = vi.fn();
 vi.mock('@/api/strategy', () => ({
   getStrategies: (...a: unknown[]) => getStrategies(...a),
   getSignalTrades: () => Promise.resolve({ from: null, to: null, trades: [] }),
@@ -25,6 +27,8 @@ vi.mock('@/api/strategy', () => ({
   cloneGroup: (...a: unknown[]) => cloneGroup(...a),
   deleteGroup: (...a: unknown[]) => deleteGroup(...a),
   moveToGroup: (...a: unknown[]) => moveToGroup(...a),
+  getAllStrategies: (...a: unknown[]) => getAllStrategies(...a),
+  copyIntoGroup: (...a: unknown[]) => copyIntoGroup(...a),
 }));
 vi.mock('@/api/accounts', () => ({ getAccounts: (...a: unknown[]) => getAccounts(...a) }));
 vi.mock('@/api/entry', () => ({
@@ -204,5 +208,83 @@ describe('the card, by group', () => {
     expect(within(other).queryByText('Low win%', { selector: 'span' })).toBeNull();
     expect(within(other).getByRole('button', { name: /New strategy in Low win%/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /New group/ })).toBeDisabled();
+  });
+});
+
+describe('copying strategies into a group: from any account and group, into one that exists or a new one', () => {
+  const A1 = { id: 1, name: 'Acct 1' };
+  const A2 = { id: 2, name: 'Low win%' };
+  const everyone = [strat('a', 1, 'group-1', true), strat('b', 1, 'g-scalps'), strat('c', 1, null), strat('e', 2, 'group-2', true, true), strat('f', 2, 'group-2')];
+  const allGroups = [MAIN, SCALPS, OTHER];
+
+  it('[critical] the sources by account, then group: the one copied into left out, the shown account first, a search by name', () => {
+    const src = copySources(everyone, allGroups, [A1, A2], { exceptGroupId: 'group-1', firstAccount: 2 });
+    expect(src.map((a) => [a.accountName, a.sections.map((x) => [x.group?.id ?? null, x.strategies.map((y) => y.id)])])).toEqual([
+      ['Low win%', [['group-2', ['e', 'f']]]],
+      ['Acct 1', [['g-scalps', ['b']], [null, ['c']]]],
+    ]);
+    expect(copySources(everyone, allGroups, [A1, A2], { search: 'E' }).map((a) => a.sections.flatMap((x) => x.strategies.map((y) => y.id)))).toEqual([['e']]);
+    // No account list: names from the groups.
+    expect(copySources(everyone, allGroups, []).map((a) => a.accountName)).toEqual(['Acct 1', 'Low win%']);
+  });
+
+  const open = async (allStatus = status(everyone, allGroups)) => {
+    getStrategies.mockResolvedValue(status(everyone.filter((s) => s.accountId === 1), [MAIN, SCALPS]));
+    getAllStrategies.mockResolvedValue(allStatus);
+    getAccounts.mockResolvedValue({ accounts: [A1, A2] });
+    render(<SignalStrategiesCard />);
+    await screen.findByRole('region', { name: 'group Main desk' });
+  };
+
+  it('[critical] several strategies of another account, a whole group picked at once, into a group that exists', async () => {
+    copyIntoGroup.mockResolvedValue({ ok: true, group: SCALPS, strategies: [strat('e', 1, 'g-scalps'), { ...strat('f', 1, 'g-scalps'), name: 'F copy' }] });
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: /Copy strategies$/ }));
+    const sheet = await screen.findByRole('dialog');
+    // The shown account's first group is where it goes unless another is chosen.
+    await waitFor(() => expect(within(sheet).getByLabelText('Group to copy into')).toHaveValue('group-1'));
+    fireEvent.change(within(sheet).getByLabelText('Group to copy into'), { target: { value: 'g-scalps' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Pick all of Low win% (Low win%)' }));
+    expect(within(sheet).getByLabelText('picked')).toHaveTextContent('2 picked');
+    expect(within(sheet).getByLabelText('Copy E (Low win%)')).toBeChecked();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Copy 2 strategies' }));
+    await waitFor(() => expect(copyIntoGroup).toHaveBeenCalledWith(['e', 'f'], { groupId: 'g-scalps' }));
+    expect(await screen.findByText(/Copied 2 strategies into "Scalps" \(Acct 1\) — all switched off, live orders off\. 1 renamed with " copy"/)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('[critical] into a new group: its name and account; nothing sent until it has a name and a strategy', async () => {
+    copyIntoGroup.mockResolvedValue({ ok: true, group: grp('g-best', 'Best of both', 2, 'Low win%'), strategies: [strat('a', 2, 'g-best')] });
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: /Copy strategies$/ }));
+    const sheet = await screen.findByRole('dialog');
+    fireEvent.click(within(sheet).getByRole('radio', { name: 'A new group' }));
+    await waitFor(() => expect(within(sheet).getByLabelText('Copy A (Acct 1)')).toBeInTheDocument());
+    fireEvent.click(within(sheet).getByLabelText('Copy A (Acct 1)'));
+    expect(within(sheet).getByRole('button', { name: 'Copy 1 strategy' })).toBeDisabled();
+    fireEvent.change(within(sheet).getByLabelText('Name of the new group'), { target: { value: ' Best of both ' } });
+    fireEvent.change(within(sheet).getByLabelText('Account of the new group'), { target: { value: '2' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Copy 1 strategy' }));
+    await waitFor(() => expect(copyIntoGroup).toHaveBeenCalledWith(['a'], { newGroup: { name: 'Best of both', accountId: 2 } }));
+  });
+
+  it('from a group: into it, its own strategies not offered; from a strategy: it is ticked; a refusal is said in the sheet', async () => {
+    copyIntoGroup.mockRejectedValue(new Error('That account already has a group named "Scalps".'));
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy strategies into Main desk' }));
+    let sheet = await screen.findByRole('dialog', { name: 'Copy strategies into Main desk' });
+    await waitFor(() => expect(within(sheet).getByLabelText('Copy E (Low win%)')).toBeInTheDocument());
+    expect(within(sheet).queryByLabelText('Copy A (Acct 1)')).toBeNull();
+    expect(within(sheet).queryByLabelText('Group to copy into')).toBeNull();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy A to a group' }));
+    sheet = await screen.findByRole('dialog', { name: 'Copy strategies' });
+    await waitFor(() => expect(within(sheet).getByLabelText('picked')).toHaveTextContent('1 picked'));
+    fireEvent.change(within(sheet).getByLabelText('Group to copy into'), { target: { value: 'group-2' } });
+    expect(within(sheet).getByLabelText('Copy A (Acct 1)')).toBeChecked();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Copy 1 strategy' }));
+    expect(await within(sheet).findByRole('alert')).toHaveTextContent('already has a group named "Scalps"');
   });
 });
