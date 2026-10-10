@@ -49,12 +49,30 @@ never look at groups.
   is made in the group it was started from (the account's first, from the
   header button).
 - **Delete group**: two taps; its strategies stay, as they were, in no group.
+- **Copy strategies** (header, a group's copy-in button, or a strategy's "To
+  group"): pick any strategies, of any account and group -- by account, then
+  group, with a search and "Pick all" -- and copy them into a group that exists
+  or a new one, on any account. One transaction, all or nothing; every copy
+  switched off, live orders off; a name the account already has gets " copy"
+  (" copy 2", ...).
+- **Group tag**: wherever a strategy's name is shown -- desk Positions, Orders
+  and Trade history; the phone's Positions, Orders, History, a trade, and the
+  Strategies screen -- its group's name sits beside it, read from the small
+  `GET /api/strategy-groups/index` once for the page.
+- **Display order**: a group's Reorder button lists its strategies as short
+  rows with up/down buttons, saved as the whole list; the group moves up or
+  down among its account's. `strategies.position` / `strategy_groups.position`
+  (migration `strategy-011-display-order`), display only: the runner reads the
+  strategies in its own order (`all()`, oldest first), so which takes a signal
+  first is unchanged.
 - The phone's Strategies screen lists them by group too, read only.
 
 API: `POST /api/strategy-groups` (make), `POST /api/strategy-groups/:id`
 (rename), `POST /api/strategy-groups/:id/enabled`, `POST
 /api/strategy-groups/:id/clone`, `DELETE /api/strategy-groups/:id`, `POST
-/api/strategies/:id/group`; `GET /api/strategies` carries `groups`. Writes need
+/api/strategies/:id/group`, `POST /api/strategy-groups/copy-in`,
+`POST /api/strategy-groups/:id/order`, `POST /api/strategy-groups/order`,
+`GET /api/strategy-groups/index`; `GET /api/strategies` carries `groups`. Writes need
 a full session.
 
 ## One pass of the scheduler

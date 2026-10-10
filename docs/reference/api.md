@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-87 routes.
+89 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -111,8 +111,10 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/strategy-groups/:id` | signed in | Rename a group. |
 | POST | `/api/strategy-groups/:id/clone` | signed in | A copy of the group and every strategy in it -- to the same account, or to another (owner: "account 1 and 2, shuffle"). |
 | POST | `/api/strategy-groups/:id/enabled` | signed in | Every strategy of the group on, or off, at once -- each written as its own switch would write it. |
+| POST | `/api/strategy-groups/:id/order` | signed in | -- |
 | POST | `/api/strategy-groups/copy-in` | signed in | Strategies copied into a group (owner, 10 Oct 2026: "from another account's, another group's, into a new group or an existing one"). |
 | GET | `/api/strategy-groups/index` | signed in | Which group each strategy is in, every account's (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- desk and phone"). |
+| POST | `/api/strategy-groups/order` | signed in | -- |
 
 ## [stream.routes.ts](../../app/server/src/http/routes/stream.routes.ts)
 
