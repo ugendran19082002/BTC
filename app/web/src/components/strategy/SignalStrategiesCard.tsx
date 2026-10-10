@@ -1,7 +1,7 @@
 import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { AlertTriangle, Bot, CheckCircle2, Copy, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
 import { cloneStrategy, createGroup, deleteStrategy, getStrategies, moveToGroup, saveStrategy, setScheduler, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
@@ -10,6 +10,7 @@ import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { copySources } from '@/components/strategy/SignalRuleEditor';
 import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { StrategyGroupSection } from '@/components/strategy/StrategyGroupSection';
+import { CopyStrategiesSheet } from '@/components/strategy/CopyStrategiesSheet';
 import { defaultGroupFor, groupNameProblem, groupSections, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
@@ -266,6 +267,9 @@ export function SignalStrategiesCard() {
   const [formGroup, setFormGroup] = useState<StrategyGroup | null>(null);
   // The name of a group being made, while its field is open.
   const [newGroup, setNewGroup] = useState<string | null>(null);
+  // The copy sheet: into a group (or chosen there), with these strategies ticked; null: closed.
+  const [copying, setCopying] = useState<{ into: StrategyGroup | null; pick: string[] } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   /** Do it, read the list again, and say whether it was taken: a field that was refused goes back to what is saved. */
   const act = async (key: string, fn: () => Promise<unknown>): Promise<boolean> => {
@@ -561,6 +565,12 @@ export function SignalStrategiesCard() {
               <FolderPlus className="h-3.5 w-3.5" /> New group
             </Button>
           )}
+          {/* From any account and group, into a group that exists or a new one: copying needs no account tab. */}
+          {data?.groups && (
+            <Button size="sm" variant="outline" title="Copy strategies from any account or group into a group" onClick={() => setCopying({ into: null, pick: [] })}>
+              <CopyPlus className="h-3.5 w-3.5" /> Copy strategies
+            </Button>
+          )}
         </div>
       </div>
 
@@ -610,6 +620,7 @@ export function SignalStrategiesCard() {
         </p>
       )}
       {failed && <p role="alert" className="m-0 mb-2 text-[12px] text-[var(--down)]">{failed}</p>}
+      {notice && <p role="status" className="m-0 mb-2 text-[12px] text-[var(--up)]">{notice}</p>}
 
       {/*
         The strategies added up: what they allow between them, and what that takes.
@@ -718,6 +729,7 @@ export function SignalStrategiesCard() {
                   act={act}
                   canMake={canMakeForAccount()}
                   onNew={() => { setEditing(null); setFormGroup(sec.group); setFormOpen(true); }}
+                  onCopyIn={() => setCopying({ into: sec.group, pick: [] })}
                 >
                   {sec.strategies.map((s) => card(s))}
                 </StrategyGroupSection>

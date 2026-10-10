@@ -48,6 +48,32 @@ export function accountTag(g: Pick<StrategyGroup, 'name' | 'accountName'>): stri
   return a && a.toLowerCase() !== g.name.trim().toLowerCase() ? a : null;
 }
 
+/** One account's strategies to copy from, by group (the copy picker). */
+export type CopySource = { accountId: number | null; accountName: string; sections: GroupSection[] };
+
+/**
+ * What can be copied, by account and then by group (owner, 10 Oct 2026: "from another account's, another group's"):
+ * every account's strategies, those of the group being copied into left out -- they are in it already. The account
+ * being shown first, then the others in their order; a search keeps the strategies whose name has it.
+ */
+export function copySources(
+  strategies: readonly Strategy[], groups: readonly StrategyGroup[],
+  accounts: readonly { id: number; name: string }[],
+  o: { exceptGroupId?: string | null; firstAccount?: number | null; search?: string } = {},
+): CopySource[] {
+  const q = (o.search ?? '').trim().toLowerCase();
+  const pool = strategies.filter((s) => (!o.exceptGroupId || s.groupId !== o.exceptGroupId) && (!q || s.name.toLowerCase().includes(q)));
+  const ids = [...new Set([...accounts.map((a) => a.id as number | null), ...groups.map((g) => g.accountId), ...pool.map((s) => s.accountId ?? null)])];
+  ids.sort((a, b) => Number(b === (o.firstAccount ?? null)) - Number(a === (o.firstAccount ?? null)));
+  return ids.map((id) => {
+    const own = pool.filter((s) => (s.accountId ?? null) === id);
+    const sections = groupSections(own, groups.filter((g) => g.accountId === id && g.id !== o.exceptGroupId))
+      .filter((sec) => sec.strategies.length > 0);
+    const name = accounts.find((a) => a.id === id)?.name ?? groups.find((g) => g.accountId === id)?.accountName ?? (id === null ? 'No account' : `Account ${id}`);
+    return { accountId: id, accountName: name, sections };
+  }).filter((a) => a.sections.length > 0);
+}
+
 /** The server's rule (strategy/types.ts `groupNameProblem`), said before sending. */
 export function groupNameProblem(name: string): string | null {
   if (!name.trim()) return 'Give the group a name.';
