@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { getActivity, getStats, methodNames } from '@/api/phone';
+import { getActivity, getDaySignals, getStats, methodNames } from '@/api/phone';
 import type { EntryMethodInfo } from '@/api/entry';
 import type { SignalRun, StrategyRun } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
+import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
+import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
-import { Chip, Chips, Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
+import { Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
 
 /**
  * Strategies (6 Oct 2026, Level 2): what the strategies did today and why. The clock strategies' runs -- placed,
@@ -23,25 +25,50 @@ const SIGNAL_WORD: Record<SignalRun['status'], { word: string; tone: 'up' | 'dow
   skipped: { word: 'SKIPPED', tone: 'dim' },
   failed: { word: 'FAILED', tone: 'down' },
 };
-const taken = (r: SignalRun) => r.status === 'placed' || r.status === 'would-place' || r.status === 'claimed';
+/** Taken: an order placed, or -- live orders off -- written down as the order it would be. The rest were not taken, with why. */
+const taken = (r: Pick<SignalRun, 'status'>) => r.status === 'placed' || r.status === 'would-place' || r.status === 'claimed';
+
+/**
+ * The signals' three tabs (owner, 10 Oct 2026: "all count, taken count, not taken count, in tabs, user friendly"):
+ * equal tiles, the count over the word, as Positions' -- over the whole IST day, so the counts are the day's.
+ */
+type Feed = 'all' | 'taken' | 'not';
+const FEEDS: { key: Feed; label: string; tone: string; none: string }[] = [
+  { key: 'all', label: 'All', tone: 'text-foreground', none: 'No signal today yet.' },
+  { key: 'taken', label: 'Taken', tone: 'text-[var(--up)]', none: 'No signal taken today.' },
+  { key: 'not', label: 'Not taken', tone: 'text-[var(--warn)]', none: 'Every signal today was taken.' },
+];
+/** Rows a tab shows at first, and each "Show more" adds. */
+const PAGE = 40;
 
 export function StrategiesScreen() {
   const p = usePhone();
   const act = usePoll(() => getActivity(p.accountParam), 20_000, { deps: [p.accountParam] });
   const month = usePoll(() => getStats(daysAgoIst(29, p.now), todayIst(p.now), p.accountParam), 300_000, { deps: [p.accountParam] });
+  // The day's whole signal journal: `getActivity` carries only the latest sixty, any day -- too few to count by.
+  const day = todayIst(p.now);
+  const daySignals = usePoll(() => getDaySignals(day, p.accountParam), 20_000, { deps: [day, p.accountParam] });
   const [names, setNames] = useState<Map<string, EntryMethodInfo> | null>(null);
   useEffect(() => { methodNames().then(setNames).catch(() => setNames(new Map())); }, []);
-  const [feed, setFeed] = useState<'all' | 'taken' | 'not'>('all');
+  const [feed, setFeed] = usePersisted<Feed>('m-strategies-feed', 'all');
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => { setLimit(PAGE); }, [feed]);
 
   const a = act.data;
-  const today = a?.today ?? todayIst(p.now);
+  const today = a?.today ?? day;
   const nameOf = (id: string) => a?.strategies.find((x) => x.id === id)?.name ?? id;
   const methodOf = (id: string) => { const m = names?.get(id); return m ? `#${m.n} ${m.name}` : id; };
   const runs = (a?.runs ?? []).filter((r) => r.runDate === today);
-  const startOfToday = Date.parse(`${today}T00:00:00+05:30`);
-  const signalsToday = (a?.signalRuns ?? []).filter((r) => r.at >= startOfToday);
-  const signals = (a?.signalRuns ?? []).filter((r) => (feed === 'all' ? true : feed === 'taken' ? taken(r) : !taken(r))).slice(0, 40);
-  const tradesToday = runs.filter((r) => r.status === 'placed').length + signalsToday.filter((r) => r.status === 'placed').length;
+  const all = daySignals.data?.trades ?? null;
+  const tab = FEEDS.some((f) => f.key === feed) ? feed : 'all';
+  const takenN = all ? all.filter(taken).length : 0;
+  const count: Record<Feed, number> = { all: all?.length ?? 0, taken: takenN, not: (all?.length ?? 0) - takenN };
+  const inTab = (all ?? []).filter((r) => (tab === 'all' ? true : tab === 'taken' ? taken(r) : !taken(r)));
+  const signals = inTab.slice(0, limit);
+  // Under Taken, how many were real orders; under Not taken, why -- each a count.
+  const real = (all ?? []).filter((r) => r.status === 'placed').length;
+  const why = (['skipped', 'refused', 'failed'] as const).map((s) => [s, (all ?? []).filter((r) => r.status === s).length] as const).filter(([, n]) => n > 0);
+  const tradesToday = runs.filter((r) => r.status === 'placed').length + real;
   const methods = month.data?.byMethod ?? [];
 
   if (!a) return <Panel><Loading error={act.error} what="the strategies" /></Panel>;
@@ -49,7 +76,7 @@ export function StrategiesScreen() {
     <>
       <Stats cols={3}>
         <Stat label="Active">{a.strategies.filter((s) => s.enabled).length} of {a.strategies.length}</Stat>
-        <Stat label="Signals">{signalsToday.length}</Stat>
+        <Stat label="Signals">{all ? all.length : '…'}</Stat>
         <Stat label="Trades today">{tradesToday}</Stat>
       </Stats>
       {!a.schedulerOn && <p className="m-0 rounded-md bg-[var(--warn-bg)] px-3 py-2 text-[13.5px] text-[var(--warn)]">The scheduler is off: no strategy enters or exits on its own.</p>}
@@ -70,13 +97,30 @@ export function StrategiesScreen() {
         )}
       </Panel>
 
-      <Panel title="Signals">
-        <Chips label="Which signals">
-          <Chip on={feed === 'all'} onClick={() => setFeed('all')}>All</Chip>
-          <Chip on={feed === 'taken'} onClick={() => setFeed('taken')}>Taken</Chip>
-          <Chip on={feed === 'not'} onClick={() => setFeed('not')}>Not taken</Chip>
-        </Chips>
-        {signals.length === 0 ? <Empty>No signal here yet.</Empty> : (
+      <Panel title="Signals today">
+        <div role="group" aria-label="Which signals" className="grid grid-cols-3 gap-1.5">
+          {FEEDS.map((f) => {
+            const on = tab === f.key;
+            const n = count[f.key];
+            return (
+              <button
+                key={f.key} type="button" aria-pressed={on} aria-label={`${f.label} ${all ? n : 'reading'}`} onClick={() => setFeed(f.key)}
+                className={cn('flex h-14 min-w-0 flex-col items-center justify-center rounded-lg border border-solid px-1 font-[inherit]',
+                  on ? 'border-foreground/60 bg-muted' : 'border-border bg-transparent')}
+              >
+                <span className={cn('text-[17px] font-semibold leading-tight tabular-nums', !all || n === 0 ? 'text-muted-foreground' : f.tone)}>{all ? n : '…'}</span>
+                <span className={cn('max-w-full truncate text-[12px]', on ? 'text-foreground' : 'text-muted-foreground')}>{f.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        {all && tab === 'taken' && takenN > 0 && (
+          <p className="m-0 mt-2 text-[12.5px] text-muted-foreground">{real} real order{real === 1 ? '' : 's'} · {takenN - real} paper (live orders off)</p>
+        )}
+        {all && tab === 'not' && why.length > 0 && (
+          <p className="m-0 mt-2 text-[12.5px] text-muted-foreground">{why.map(([s, n]) => `${n} ${s}`).join(' · ')} — the reason is on each row</p>
+        )}
+        {!all ? <Loading error={daySignals.error} what="today's signals" /> : signals.length === 0 ? <Empty>{FEEDS.find((f) => f.key === tab)!.none}</Empty> : (
           <ul className="m-0 mt-1 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Signals">
             {signals.map((r) => {
               const w = SIGNAL_WORD[r.status];
@@ -100,6 +144,15 @@ export function StrategiesScreen() {
               );
             })}
           </ul>
+        )}
+        {/* Said, not cut off: how many of the tab are showing, and the rest a tap away. */}
+        {inTab.length > signals.length && (
+          <button
+            type="button" onClick={() => setLimit((l) => l + PAGE)}
+            className="m-0 mt-2 flex h-11 w-full appearance-none items-center justify-center rounded-lg border border-solid border-border bg-transparent font-[inherit] text-[13.5px] text-foreground"
+          >
+            Show {Math.min(PAGE, inTab.length - signals.length)} more · {signals.length} of {inTab.length}
+          </button>
         )}
       </Panel>
 
