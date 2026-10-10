@@ -51,7 +51,7 @@ export function ReorderList({ items, order, onChange, label }: {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [dragging]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dragging]);
 
   return (
     <ol aria-label={label} className="m-0 grid list-none gap-1 p-0">
