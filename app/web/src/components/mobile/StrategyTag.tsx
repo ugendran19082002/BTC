@@ -46,17 +46,17 @@ export function StrategyTag({ plan, className }: { plan: Pick<Plan, 'origin' | '
 }
 
 /**
- * The tag, then what else there is to say on the same line -- the signal, the account -- in grey, cut where the
- * line ends. The tag keeps up to three fifths of the line, so a long strategy name and a long signal name each
- * show their start.
+ * The tag, its group's, then what else there is to say on the same line -- the signal, the account -- in grey, cut
+ * where the line ends. The strategy's tag keeps up to 45% of the line and its group's up to a third, so a long
+ * strategy name, group name and signal name each show their start.
  */
 export function PlacedLine({ plan, rest, className }: { plan: Parameters<typeof StrategyTag>[0]['plan']; rest?: (string | null | undefined | false)[]; className?: string }) {
   const more = (rest ?? []).filter(Boolean).join(' · ');
   return (
     <span className={cn('flex min-w-0 items-center gap-1.5', className)}>
-      <StrategyTag plan={plan} className="max-w-[60%] shrink-0" />
-      {/* Its group, beside it: dropped first when the line is short -- the strategy's name is the one that must show. */}
-      <GroupTag strategyId={plan?.strategyId} className="max-w-[35%] flex-shrink" />
+      <StrategyTag plan={plan} className="max-w-[45%] shrink-0" />
+      {/* Its group, beside it, with room of its own: the signal's grey words are the ones cut first. */}
+      <GroupTag strategyId={plan?.strategyId} className="max-w-[32%] shrink-0" />
       {more && <span className="min-w-0 truncate text-[12px] text-muted-foreground">{more}</span>}
     </span>
   );

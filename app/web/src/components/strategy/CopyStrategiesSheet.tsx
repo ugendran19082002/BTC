@@ -45,7 +45,7 @@ export function CopyStrategiesSheet({ open, onOpenChange, into, pick, shownAccou
   useEffect(() => {
     if (!open) return;
     setPicked(new Set(pick)); setSearch(''); setFailed(null); setLoadFailed(null);
-    setMode('existing'); setNewName(''); setNewAccount(shownAccount);
+    setMode('existing'); setNewName(''); setNewAccount(shownAccount); setGroupId('');
     let live = true;
     getAllStrategies()
       .then((d) => { if (live) setAll({ strategies: d.strategies.filter((s) => s.config.trigger === 'signal'), groups: d.groups ?? [] }); })
@@ -57,9 +57,12 @@ export function CopyStrategiesSheet({ open, onOpenChange, into, pick, shownAccou
   const groups = all?.groups ?? [];
   // The target: the group it was opened from, else the one chosen -- the shown account's first by default.
   useEffect(() => {
-    if (into || groupId || groups.length === 0) return;
-    setGroupId((groups.find((g) => g.accountId === shownAccount) ?? groups[0]!).id);
-  }, [groups, into, groupId, shownAccount]);
+    if (!open || into || groupId || groups.length === 0) return;
+    // Not the group a picked strategy is in already: "To group" on a strategy means somewhere else.
+    const own = new Set((all?.strategies ?? []).filter((s) => pick.includes(s.id)).map((s) => s.groupId));
+    const elsewhere = groups.filter((g) => !own.has(g.id));
+    setGroupId((elsewhere.find((g) => g.accountId === shownAccount) ?? elsewhere[0] ?? groups[0]!).id);
+  }, [open, groups, into, groupId, shownAccount, all, pick]);
   const target = into ?? (mode === 'existing' ? groups.find((g) => g.id === groupId) ?? null : null);
   const accountChoices = accounts.length > 0 ? accounts
     : [...new Map(groups.filter((g) => g.accountId !== null).map((g) => [g.accountId!, { id: g.accountId!, name: g.accountName ?? `Account ${g.accountId}` }])).values()];
@@ -160,6 +163,20 @@ export function CopyStrategiesSheet({ open, onOpenChange, into, pick, shownAccou
               )}
             </span>
           </div>
+          {/* What is picked, at the top: from a strategy's "To group" it is that one, and the list is long. */}
+          {picked.size > 0 && all && (
+            <ul aria-label="picked strategies" className="m-0 mb-2 flex list-none flex-wrap gap-1.5 p-0">
+              {all.strategies.filter((s) => picked.has(s.id)).slice(0, 12).map((s) => (
+                <li key={s.id}>
+                  <button type="button" onClick={() => toggle([s.id], false)} aria-label={`Unpick ${s.name}`}
+                          className="inline-flex h-7 max-w-[12rem] items-center gap-1 rounded-full border-0 bg-[var(--accent-soft)] px-2.5 font-[inherit] text-[12px] text-[var(--accent)]">
+                    <span className="truncate">{s.name}</span><span aria-hidden>×</span>
+                  </button>
+                </li>
+              ))}
+              {picked.size > 12 && <li className="self-center text-[12px] text-muted-foreground">+{picked.size - 12} more</li>}
+            </ul>
+          )}
           <label className="relative mb-2 block">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <input aria-label="Search strategies" value={search} placeholder="Search by name"

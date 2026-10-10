@@ -40,8 +40,8 @@ describe('StrategyTag', () => {
       <PlacedLine plan={{ origin: 'strategy', strategyName: '2h time delta' }} rest={['#53 Microprice / queue imbalance · 2h', null, 'High Win%']} />,
     );
     expect(container.textContent).toBe('2h time delta#53 Microprice / queue imbalance · 2h · High Win%');
-    // the tag keeps at most three fifths of the line, so both ends show their start on a narrow phone
-    expect(screen.getByLabelText('Strategy: 2h time delta').className).toMatch(/max-w-\[60%\]/);
+    // the tag keeps at most 45% of the line and its group's tag (10 Oct 2026) up to a third, so all three show their start
+    expect(screen.getByLabelText('Strategy: 2h time delta').className).toMatch(/max-w-\[45%\]/);
     unmount();
     const alone = render(<PlacedLine plan={{ origin: 'manual' }} rest={[null, false]} />);
     expect(alone.container.textContent).toBe('By hand');

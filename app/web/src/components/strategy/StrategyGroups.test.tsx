@@ -282,6 +282,9 @@ describe('copying strategies into a group: from any account and group, into one 
     fireEvent.click(screen.getByRole('button', { name: 'Copy A to a group' }));
     sheet = await screen.findByRole('dialog', { name: 'Copy strategies' });
     await waitFor(() => expect(within(sheet).getByLabelText('picked')).toHaveTextContent('1 picked'));
+    // Somewhere else by default -- not A's own group -- and A said at the top, to unpick in one tap.
+    await waitFor(() => expect(within(sheet).getByLabelText('Group to copy into')).toHaveValue('g-scalps'));
+    expect(within(within(sheet).getByRole('list', { name: 'picked strategies' })).getByRole('button', { name: 'Unpick A' })).toBeInTheDocument();
     fireEvent.change(within(sheet).getByLabelText('Group to copy into'), { target: { value: 'group-2' } });
     expect(within(sheet).getByLabelText('Copy A (Acct 1)')).toBeChecked();
     fireEvent.click(within(sheet).getByRole('button', { name: 'Copy 1 strategy' }));
