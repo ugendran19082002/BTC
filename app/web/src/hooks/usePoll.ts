@@ -33,6 +33,10 @@ export function usePoll<T>(
   const inFlight = useRef<number | null>(null);
   const fn = useRef(fetcher);
   fn.current = fetcher;
+  // The last answer as text: an answer the same as the one before keeps the object already held, so whatever
+  // reads it -- a list of a hundred orders asked every ten seconds -- does not draw itself again for nothing
+  // (10 Oct 2026: the phone's Orders spent a fifth of its main thread redrawing unchanged rows).
+  const lastText = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     const mine = gen.current;
@@ -42,7 +46,12 @@ export function usePoll<T>(
     try {
       const next = await fn.current();
       if (gen.current !== mine) return; // the answer to an old question
-      setData(next);
+      let text: string | null = null;
+      try { text = JSON.stringify(next); } catch { /* not plain data: always taken as new */ }
+      if (text === null || text !== lastText.current) {
+        lastText.current = text;
+        setData(next);
+      }
       setUpdatedAt(Date.now());
       setError(null);
     } catch (e) {

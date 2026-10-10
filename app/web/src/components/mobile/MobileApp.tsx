@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, Bell, Home, IndianRupee, Layers, ListOrdered, Menu, RefreshCw } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getMe, logout, type Me } from '@/api/session';
@@ -8,25 +8,49 @@ import { getGlance } from '@/api/glance';
 import type { TradeStatus } from '@/types/trade';
 import { LoginPage } from '@/components/desk/LoginPage';
 import { Card, CardTitle } from '@/components/ui/card';
-import { TradeDetail } from '@/components/mobile/TradeDetail';
 import { Toasts } from '@/components/mobile/Toasts';
 import { useTradeToasts } from '@/components/mobile/useTradeToasts';
 import { PhoneContext, routeOf, searchOf, type PhoneData, type Route, type Tab } from '@/components/mobile/phone-context';
 import { HomeScreen } from '@/components/mobile/screens/HomeScreen';
-import { PnlScreen } from '@/components/mobile/screens/PnlScreen';
-import { PositionsScreen } from '@/components/mobile/screens/PositionsScreen';
-import { OrdersScreen } from '@/components/mobile/screens/OrdersScreen';
 import { MoreScreen, SUB_TITLE } from '@/components/mobile/screens/MoreScreen';
-import { HistoryScreen } from '@/components/mobile/screens/HistoryScreen';
-import { SignalPairsScreen } from '@/components/mobile/screens/SignalPairsScreen';
-import { PriceChangeScreen } from '@/components/mobile/screens/PriceChangeScreen';
-import { PressureScreen } from '@/components/mobile/screens/PressureScreen';
-import { AccountScreen } from '@/components/mobile/screens/AccountScreen';
-import { MarketScreen } from '@/components/mobile/screens/MarketScreen';
-import { StrategiesScreen } from '@/components/mobile/screens/StrategiesScreen';
-import { AlertsScreen } from '@/components/mobile/screens/AlertsScreen';
-import { SettingsScreen } from '@/components/mobile/screens/SettingsScreen';
-import { Chip, Chips } from '@/components/mobile/parts';
+import { Chip, Chips, Loading, Panel } from '@/components/mobile/parts';
+
+/*
+ * Home and the More list come with the phone; every other screen is a chunk of its own (10 Oct 2026), so the
+ * first screen paints without downloading the thirteen behind it. The four other tabs and a trade's story are
+ * fetched once the first screen is up and the phone is idle -- a tab tapped a second later opens at once -- and the
+ * screens under More, each opened now and then, when they are opened.
+ */
+const load = {
+  pnl: () => import('@/components/mobile/screens/PnlScreen'),
+  positions: () => import('@/components/mobile/screens/PositionsScreen'),
+  orders: () => import('@/components/mobile/screens/OrdersScreen'),
+  trade: () => import('@/components/mobile/TradeDetail'),
+};
+const PnlScreen = lazy(() => load.pnl().then((m) => ({ default: m.PnlScreen })));
+const PositionsScreen = lazy(() => load.positions().then((m) => ({ default: m.PositionsScreen })));
+const OrdersScreen = lazy(() => load.orders().then((m) => ({ default: m.OrdersScreen })));
+const TradeDetail = lazy(() => load.trade().then((m) => ({ default: m.TradeDetail })));
+const HistoryScreen = lazy(() => import('@/components/mobile/screens/HistoryScreen').then((m) => ({ default: m.HistoryScreen })));
+const SignalPairsScreen = lazy(() => import('@/components/mobile/screens/SignalPairsScreen').then((m) => ({ default: m.SignalPairsScreen })));
+const PriceChangeScreen = lazy(() => import('@/components/mobile/screens/PriceChangeScreen').then((m) => ({ default: m.PriceChangeScreen })));
+const PressureScreen = lazy(() => import('@/components/mobile/screens/PressureScreen').then((m) => ({ default: m.PressureScreen })));
+const AccountScreen = lazy(() => import('@/components/mobile/screens/AccountScreen').then((m) => ({ default: m.AccountScreen })));
+const MarketScreen = lazy(() => import('@/components/mobile/screens/MarketScreen').then((m) => ({ default: m.MarketScreen })));
+const StrategiesScreen = lazy(() => import('@/components/mobile/screens/StrategiesScreen').then((m) => ({ default: m.StrategiesScreen })));
+const AlertsScreen = lazy(() => import('@/components/mobile/screens/AlertsScreen').then((m) => ({ default: m.AlertsScreen })));
+const SettingsScreen = lazy(() => import('@/components/mobile/screens/SettingsScreen').then((m) => ({ default: m.SettingsScreen })));
+
+/** The tabs and a trade's story, fetched when the phone has a moment: idle, or two seconds after the first paint. */
+function usePrefetchTabs() {
+  useEffect(() => {
+    const go = () => { for (const f of Object.values(load)) void f().catch(() => undefined); };
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+    if (w.requestIdleCallback) { w.requestIdleCallback(go, { timeout: 2_000 }); return; }
+    const id = setTimeout(go, 2_000);
+    return () => clearTimeout(id);
+  }, []);
+}
 import { usePoll } from '@/hooks/usePoll';
 import { useStream } from '@/hooks/useStream';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -90,6 +114,7 @@ const TAB_ITEMS: { tab: Tab; label: string; icon: typeof Home }[] = [
 const TAB_TITLE: Record<Tab, string> = { home: 'BTC Desk', pnl: 'P&L', positions: 'Positions', orders: 'Orders', more: 'More' };
 
 function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
+  usePrefetchTabs();
   const [route, setRouteState] = useState<Route>(() => routeOf(window.location.search));
   // The route as of the last change, for `go` to read without being remade on every one.
   const current = useRef(route);
@@ -139,11 +164,12 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   const glance = usePoll(getGlance, GLANCE_MS);
   // What changed since the last reading, as toasts over whatever screen is open.
   const live = useTradeToasts(status.data?.open, `${shown}|${trading.map((a) => a.id).join(',')}`);
-  // The perp's last trade as it prints, for the SL / TGT line of a signal trade: the stream stops with the screen.
-  const stream = useStream(true);
-  const perpLive = stream.ltp !== null && Date.now() - stream.ltp.at < 30_000;
-  // At most twice a second: the perp can print many times in one, and the marker takes 0.7 s to slide anyway.
-  const perp = useThrottled(perpLive ? stream.ltp!.price : glance.data?.btc.perpMark ?? null, 500);
+  // The perp's last trade as it prints, for the SL / TGT line of a signal trade -- from `PerpFeed` below, which
+  // alone hears the stream: here it arrives at most twice a second, and only when the price moved.
+  const [feed, setFeed] = useState<{ price: number | null; live: boolean }>({ price: null, live: false });
+  const onPerp = useCallback((v: { price: number | null; live: boolean }) => setFeed((f) => (f.price === v.price && f.live === v.live ? f : v)), []);
+  const perpLive = feed.live && feed.price !== null;
+  const perp = perpLive ? feed.price : glance.data?.btc.perpMark ?? null;
 
   // Any "not signed in" -- the session expired, or was signed out from the desk -- goes back to the sign-in.
   const lost = [accounts.error, status.error, glance.error].some((e) => e instanceof NotSignedIn);
@@ -154,17 +180,19 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   const refreshAll = () => { void status.refresh(); void glance.refresh(); void accounts.refresh(); };
   const signOut = useCallback(async () => { await logout().catch(() => undefined); onSignedOut(); }, [onSignedOut]);
 
-  const data: PhoneData = {
+  // One object while nothing in it changed: every screen reads it, and a new one each render redrew them all.
+  const data: PhoneData = useMemo(() => ({
     me, status: status.data, statusError: status.error, statusAt: status.updatedAt, glance: glance.data, glanceError: glance.error,
     accounts: all, trading, shown, accountParam: shown === 'all' ? null : shown, now, perp, perpLive, go, openTrade,
     signOut: () => void signOut(), onSignedOut,
-  };
+  }), [me, status.data, status.error, status.updatedAt, glance.data, glance.error, all, trading, shown, now, perp, perpLive, go, openTrade, signOut, onSignedOut]);
   const alertCount = phoneAlerts(status.data, glance.data, perp).filter((a) => a.level !== 'green').length;
   const title = route.sub ? SUB_TITLE[route.sub] : TAB_TITLE[route.tab];
   const s = status.data;
 
   return (
     <PhoneContext.Provider value={data}>
+      <PerpFeed onPerp={onPerp} />
       <Frame
         header={
           <div className="flex items-center gap-2">
@@ -240,6 +268,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
           </div>
         )}
 
+        <Suspense fallback={<Panel><Loading error={null} what="this screen" /></Panel>}>
         {route.tab === 'home' ? <HomeScreen />
           : route.tab === 'pnl' ? <PnlScreen />
             : route.tab === 'positions' ? <PositionsScreen />
@@ -254,8 +283,9 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
                         : route.sub === 'alerts' ? <AlertsScreen />
                           : route.sub === 'settings' ? <SettingsScreen />
                             : <MoreScreen />}
+        </Suspense>
       </Frame>
-      {route.trade && <TradeDetail tradeId={route.trade} onClose={closeTrade} onSignedOut={onSignedOut} />}
+      {route.trade && <Suspense fallback={null}><TradeDetail tradeId={route.trade} onClose={closeTrade} onSignedOut={onSignedOut} /></Suspense>}
       <Toasts toasts={live.toasts} onOpen={(t) => (t.tradeId ? openTrade(t.tradeId) : go({ tab: 'orders', sub: null }))} onDismiss={live.dismiss} />
     </PhoneContext.Provider>
   );
@@ -283,6 +313,22 @@ function Frame({ header, nav, children }: { header?: ReactNode; nav?: ReactNode;
       )}
     </div>
   );
+}
+
+/**
+ * The stream, heard here and nowhere else (10 Oct 2026): every frame it sends -- each print of the perp, the
+ * desk's status, the board -- re-rendered the whole phone, two or three times a second, every screen with it.
+ * This renders nothing; it passes the perp up at most twice a second (the marker takes 0.7 s to slide anyway),
+ * and only when it moved or the stream came or went.
+ */
+function PerpFeed({ onPerp }: { onPerp: (v: { price: number | null; live: boolean }) => void }) {
+  const stream = useStream(true);
+  // Its own clock: a stream still open but no longer printing must stop counting as live without a frame to say so.
+  const now = useNow(5_000);
+  const live = stream.ltp !== null && now - stream.ltp.at < 30_000;
+  const price = useThrottled(live ? stream.ltp!.price : null, 500);
+  useEffect(() => { onPerp({ price, live }); }, [price, live, onPerp]);
+  return null;
 }
 
 /** A value that changes often, passed on at most once every `ms`: the newest one always arrives, late at worst. */
