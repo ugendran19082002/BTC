@@ -100,6 +100,26 @@ describe('the card, by group', () => {
     expect(within(main).queryByText('Acct 1')).toBeNull();
   });
 
+  it('[critical] a folded group keeps its heading and its expand button; expanded again, its strategies are back', async () => {
+    // The fold rule (styles.css) hides every child of a folded section but its `.fold-head`: the heading is that child,
+    // or the whole group -- expand button and all -- folds away with no way back (owner, 10 Oct 2026: "no expand option").
+    getStrategies.mockResolvedValue(status([strat('a', 1, 'group-1')], [MAIN]));
+    render(<SignalStrategiesCard />);
+    const main = await screen.findByRole('region', { name: 'group Main desk' });
+    const fold = within(main).getByRole('button', { name: /group Main desk/ });
+    expect(fold.closest('.fold-head')?.parentElement).toBe(main);
+    fireEvent.click(fold);
+    expect(main).toHaveAttribute('data-folded', 'true');
+    expect(fold).toHaveAttribute('aria-expanded', 'false');
+    expect(within(main).queryByText('A')).toBeNull();
+    expect(within(main).getByText('Main desk')).toBeInTheDocument();
+    expect([...main.children].filter((c) => !c.classList.contains('fold-head') && !c.classList.contains('fold-keep'))
+      .every((c) => !c.contains(fold))).toBe(true);
+    fireEvent.click(fold);
+    expect(fold).toHaveAttribute('aria-expanded', 'true');
+    expect(within(main).getByText('A')).toBeInTheDocument();
+  });
+
   it('a server from before groups: the one list it always was', async () => {
     getStrategies.mockResolvedValue(status([strat('a', 1, null)]));
     render(<SignalStrategiesCard />);

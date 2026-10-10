@@ -81,7 +81,8 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
 
   return (
     <section aria-label={`group ${group.name}`} className="fold-host rounded-xl border border-solid border-[var(--line)] bg-[var(--bg,#0a0d10)]/40 p-2" data-folded={!open}>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      {/* `fold-head`: the one row a folded section keeps (styles.css) -- without it the fold button folded away too. */}
+      <div className="fold-head flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <FoldButton open={open} onToggle={() => setOpen(!open)} label={`group ${group.name}`} />
         <FolderClosed className="h-4 w-4 flex-none text-[var(--accent)]" aria-hidden />
         {renaming === null ? (
