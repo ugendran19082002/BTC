@@ -60,7 +60,8 @@ never look at groups.
   Strategies screen -- its group's name sits beside it, read from the small
   `GET /api/strategy-groups/index` once for the page.
 - **Display order**: a group's Reorder button lists its strategies as short
-  rows with up/down buttons, saved as the whole list; the group moves up or
+  rows -- dragged by their grip, or moved with up/down buttons -- saved as the
+  whole list; the group moves up or
   down among its account's. `strategies.position` / `strategy_groups.position`
   (migration `strategy-011-display-order`), display only: the runner reads the
   strategies in its own order (`all()`, oldest first), so which takes a signal

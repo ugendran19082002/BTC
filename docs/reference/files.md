@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-466 files listed, 231 test files counted below, images and lockfiles left out.
+467 files listed, 231 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -454,6 +454,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
 | [GroupTag.tsx](../../app/web/src/components/strategy/GroupTag.tsx) | The group a strategy is in, as a small tag beside its name (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- user friendly, desk and phone"). |
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
+| [ReorderList.tsx](../../app/web/src/components/strategy/ReorderList.tsx) | A list put in order by dragging (owner, 10 Oct 2026: "drag to change the order, user friendly"). |
 | [SignalRuleEditor.tsx](../../app/web/src/components/strategy/SignalRuleEditor.tsx) | Which signals a signal strategy takes: the way (with the timeframe chain, or without it on one timeframe), and the methods -- picked from the 81, each with its record so far in that way, so the cho... |
 | [SignalStrategiesCard.tsx](../../app/web/src/components/strategy/SignalStrategiesCard.tsx) | The signal strategies, on the Live screen beside the methods that make the signals: each one's switch, its live-orders switch, what it is set to, and what the last signals did. |
 | [SignalStrategyForm.tsx](../../app/web/src/components/strategy/SignalStrategyForm.tsx) | A signal strategy: the desk's entry signals sold as options. |
