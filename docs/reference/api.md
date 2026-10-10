@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-79 routes.
+85 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -101,10 +101,16 @@ What: the first sentence of the comment directly above the route. A dash means t
 | DELETE | `/api/strategies/:id` | signed in | Delete a strategy. |
 | POST | `/api/strategies/:id/clone` | signed in | Copy a strategy, settings and all, as a new one that is not armed. |
 | POST | `/api/strategies/:id/enabled` | signed in | Switch one strategy on or off. |
+| POST | `/api/strategies/:id/group` | signed in | Move a strategy into a group of its own account, or out of any (`groupId` null). |
 | POST | `/api/strategies/max-open` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
 | GET | `/api/strategies/runs` | signed in | The run journal on its own, for the history panel. |
 | POST | `/api/strategies/scheduler` | signed in | The master switch for the whole scheduler. |
 | GET | `/api/strategies/signal-trades` | signed in | The signal strategies' trade history for a range of IST days (or minutes): the Live screen's Trade history and its date picker. |
+| POST | `/api/strategy-groups` | signed in | Make a group, empty, for one account. |
+| DELETE | `/api/strategy-groups/:id` | signed in | Remove a group. |
+| POST | `/api/strategy-groups/:id` | signed in | Rename a group. |
+| POST | `/api/strategy-groups/:id/clone` | signed in | A copy of the group and every strategy in it -- to the same account, or to another (owner: "account 1 and 2, shuffle"). |
+| POST | `/api/strategy-groups/:id/enabled` | signed in | Every strategy of the group on, or off, at once -- each written as its own switch would write it. |
 
 ## [stream.routes.ts](../../app/server/src/http/routes/stream.routes.ts)
 

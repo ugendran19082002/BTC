@@ -7,6 +7,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
+import { groupSections, onCount } from '@/lib/strategy-groups';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
 
@@ -154,21 +155,46 @@ export function StrategiesScreen() {
         </Panel>
       )}
 
+      {/*
+        Listed by group (owner, 10 Oct 2026), as on the desk: each group with how many are on, its strategies under
+        it, then those in none. Read only here -- groups are made, switched and cloned on the desk. A server from
+        before groups sends none, and the list is the one list it was.
+      */}
       <Panel title="Each strategy now">
-        <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
-          {a.strategies.map((s) => (
-            <li key={s.id} className="py-2">
-              <span className="flex items-center justify-between gap-2">
-                <span className="truncate text-[14.5px] font-medium">{s.name}</span>
-                {s.enabled ? <Pill tone="up">ON</Pill> : <Pill tone="dim">OFF</Pill>}
-              </span>
-              <span className="block text-[12.5px] leading-snug text-muted-foreground">
-                {s.config.trigger === 'signal' ? 'Signals' : `Clock ${s.config.entryTime}`}
-                {s.open ? ` · ${s.open.trades} open` : ''} · {s.status}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {groupSections(a.strategies, a.groups ?? []).map((sec) => {
+          const n = onCount(sec.strategies);
+          return (
+            <section key={sec.group?.id ?? 'no-group'} aria-label={sec.group ? `group ${sec.group.name}` : 'not in a group'}>
+              {(a.groups?.length ?? 0) > 0 && (
+                <h3 className="m-0 mt-2 flex items-center justify-between gap-2 border-b border-solid border-[var(--line)] pb-1 text-[13px] font-semibold first:mt-0">
+                  <span className="min-w-0 truncate">
+                    {sec.group ? sec.group.name : 'Not in a group'}
+                    {sec.group && p.accountParam === null && sec.group.accountName && (
+                      <span className="ml-1.5 text-[11.5px] font-normal text-muted-foreground">{sec.group.accountName}</span>
+                    )}
+                  </span>
+                  <span className={cn('flex-none text-[12px] font-normal tabular-nums', n.on > 0 ? 'text-[var(--up)]' : 'text-muted-foreground')}>
+                    {n.of === 0 ? 'empty' : `${n.on} of ${n.of} on`}
+                  </span>
+                </h3>
+              )}
+              <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
+                {sec.strategies.map((s) => (
+                  <li key={s.id} className="py-2">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[14.5px] font-medium">{s.name}</span>
+                      {s.enabled ? <Pill tone="up">ON</Pill> : <Pill tone="dim">OFF</Pill>}
+                    </span>
+                    <span className="block text-[12.5px] leading-snug text-muted-foreground">
+                      {s.config.trigger === 'signal' ? 'Signals' : `Clock ${s.config.entryTime}`}
+                      {s.open ? ` · ${s.open.trades} open` : ''} · {s.status}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          );
+        })}
       </Panel>
     </>
   );

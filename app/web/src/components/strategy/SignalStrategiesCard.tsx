@@ -1,14 +1,16 @@
-import { canMakeForAccount } from '@/lib/account-scope';
+import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { AlertTriangle, Bot, CheckCircle2, Copy, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { cloneStrategy, deleteStrategy, getStrategies, saveStrategy, setScheduler, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
-import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyStatus } from '@/types/strategy';
+import { AlertTriangle, Bot, CheckCircle2, Copy, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
+import { cloneStrategy, createGroup, deleteStrategy, getStrategies, moveToGroup, saveStrategy, setScheduler, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
+import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { copySources } from '@/components/strategy/SignalRuleEditor';
 import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
+import { StrategyGroupSection } from '@/components/strategy/StrategyGroupSection';
+import { defaultGroupFor, groupNameProblem, groupSections, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
 import { blockNow, hoursLabel, istMinuteOf, pickWords } from '@/lib/strategy-blocks';
@@ -260,6 +262,10 @@ export function SignalStrategiesCard() {
   const [confirmLive, setConfirmLive] = useState<string | null>(null);
   // Deleting needs a second tap too: it cannot be undone.
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // The group a new strategy is made in; null: none.
+  const [formGroup, setFormGroup] = useState<StrategyGroup | null>(null);
+  // The name of a group being made, while its field is open.
+  const [newGroup, setNewGroup] = useState<string | null>(null);
 
   /** Do it, read the list again, and say whether it was taken: a field that was refused goes back to what is saved. */
   const act = async (key: string, fn: () => Promise<unknown>): Promise<boolean> => {
@@ -287,6 +293,18 @@ export function SignalStrategiesCard() {
   };
 
   const mine = data?.strategies.filter((s) => s.config.trigger === 'signal') ?? [];
+  /*
+   * Listed by group (owner, 10 Oct 2026): each group with its strategies under it, then those in none. A server
+   * from before groups sends none, and the list is the one list it always was.
+   */
+  const groups = data?.groups ?? [];
+  const sections = groupSections(mine, groups);
+  const makeGroup = () => {
+    if (newGroup === null) return;
+    const bad = groupNameProblem(newGroup);
+    if (bad) { setFailed(bad); return; }
+    void act('new-group', () => createGroup(newGroup.trim(), accountScope())).then((ok) => { if (ok) setNewGroup(null); });
+  };
   // The switched-on strategies added up, and the worst case under the desk-wide limit.
   /*
    * The margin figures are a seller's: a short option needs margin, and the desk's limit is on lots short. A
@@ -332,6 +350,148 @@ export function SignalStrategiesCard() {
   const fit: Status = short ? { tone: 'danger', word: 'More than is free' }
     : freeUsd !== null && freeUsd > 0 && room.marginUsd > freeUsd * 0.8 ? { tone: 'warning', word: 'Tight' }
       : { tone: 'good', word: 'Fits in the free margin' };
+
+  /** One strategy's card, as it always was; listed under its group. */
+  const card = (s: Strategy) => {
+    const live = Boolean(s.config.liveOrders);
+    return (
+      <div key={s.id} className={cn('rounded-lg border border-solid px-2.5 py-2', s.enabled ? 'border-[var(--up)]' : 'border-[var(--line)]')}>
+        {/*
+          On a phone: the name with Edit, Copy and Delete as icons on one row, and the two switches that matter
+          -- on/off and live orders -- side by side under it, each half the width. One row on a wider screen.
+        */}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 sm:flex sm:flex-wrap sm:justify-between">
+          <div className="order-1 flex min-w-0 items-baseline gap-2">
+            <span className="truncate text-[13.5px] font-semibold text-foreground">{s.name}</span>
+            <span className={cn('text-[11px]', s.enabled ? 'text-[var(--up)]' : 'text-[var(--dim)]')}>{s.enabled ? 'on' : 'off'}</span>
+          </div>
+          <div className="order-3 col-span-2 grid grid-cols-2 gap-1.5 sm:order-2 sm:ml-auto sm:flex">
+            <Button size="sm" className="h-9 sm:h-8" variant={s.enabled ? 'outline' : 'default'} disabled={busy === s.id}
+                    onClick={() => void act(s.id, () => setStrategyEnabled(s.id, !s.enabled))}>
+              {busy === s.id && <Loader2 className="h-3 w-3 animate-spin" />}
+              {s.enabled ? 'Disable' : 'Enable'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className={cn('h-9 sm:h-8', (live || confirmLive === s.id) && 'border-[var(--down)] text-[var(--down)]')}
+              role="switch"
+              aria-checked={live}
+              aria-label={`Live orders for ${s.name}`}
+              disabled={busy === `live-${s.id}`}
+              onClick={() => setLive(s, !live)}
+            >
+              {busy === `live-${s.id}` && <Loader2 className="h-3 w-3 animate-spin" />}
+              {confirmLive === s.id ? `Tap again: real ${s.config.signal?.action === 'buy' ? 'buys' : 'orders'}` : live ? 'Live orders ON' : 'Live orders off'}
+            </Button>
+          </div>
+          <div className="order-2 flex flex-none items-center gap-0.5 sm:order-3 sm:gap-1.5">
+            <Button size="sm" variant="ghost" className="h-8 px-2 sm:px-2.5" onClick={() => { setEditing(s); setFormOpen(true); }}>
+              <Pencil className="h-3.5 w-3.5 sm:h-3 sm:w-3" /> <span className="sr-only sm:not-sr-only">Edit</span>
+            </Button>
+            {/*
+              Copy, then the copy opens to be renamed and changed: how a second strategy is actually made.
+              The server saves it switched off with live orders off -- a draft, not a second set of orders.
+            */}
+            <Button
+              size="sm" variant="ghost" className="h-8 px-2 sm:px-2.5"
+              aria-label={`Copy ${s.name}`}
+              title="A copy, switched off with live orders off, opened to rename and change"
+              disabled={busy === `copy-${s.id}`}
+              onClick={() => void act(`copy-${s.id}`, async () => {
+                const { strategy } = await cloneStrategy(s.id);
+                setEditing(strategy);
+                setFormOpen(true);
+              })}
+            >
+              {busy === `copy-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3.5 w-3.5 sm:h-3 sm:w-3" />}
+              <span className="sr-only sm:not-sr-only">Copy</span>
+            </Button>
+            {/* Delete, on a second tap within four seconds. Its trades and their history stay. */}
+            <Button
+              size="sm" variant="ghost" className="h-8 px-2 text-[var(--down)] sm:px-2.5"
+              aria-label={`Delete ${s.name}`}
+              title="Delete this strategy. Trades it has open keep their exits, and its history stays."
+              disabled={busy === `del-${s.id}`}
+              onClick={() => {
+                if (confirmDelete !== s.id) {
+                  setConfirmDelete(s.id);
+                  setTimeout(() => setConfirmDelete((cur) => (cur === s.id ? null : cur)), 4_000);
+                  return;
+                }
+                setConfirmDelete(null);
+                void act(`del-${s.id}`, () => deleteStrategy(s.id));
+              }}
+            >
+              {busy === `del-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 sm:h-3 sm:w-3" />}
+              {confirmDelete === s.id && 'Tap again to delete'}
+            </Button>
+          </div>
+        </div>
+        <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{signalLine(s)}</p>
+        <RuleNow s={s} />
+        {/*
+          The two numbers changed most often, on the card itself: the same settings as in the form (Edit),
+          saved the same way, so neither needs the form opened. They apply to the next signal; what is
+          already open keeps its size.
+        */}
+        <div role="group" aria-label={`quick settings of ${s.name}`} className="mt-1.5 grid grid-cols-2 items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground sm:flex sm:flex-wrap sm:gap-x-4 sm:gap-y-1.5">
+          <label className="inline-flex items-center justify-between gap-1.5 sm:justify-start">
+            <span className="whitespace-nowrap">Lots per signal</span>
+            <NumberCommit
+              label={`Lots per signal for ${s.name}`}
+              value={s.config.lots}
+              busy={busy === `quick-${s.id}`}
+              problem={(n) => (Number.isInteger(n) && n >= 1 ? null : 'Lots must be a whole number, at least 1.')}
+              onInvalid={setFailed}
+              onSave={(n) => act(`quick-${s.id}`, () => saveStrategy({ id: s.id, name: s.name, config: { ...s.config, lots: n } }))}
+              className="h-7 w-12 sm:w-14"
+            />
+          </label>
+          <label className="inline-flex items-center justify-between gap-1.5 sm:justify-start">
+            <span className="whitespace-nowrap">At most open</span>
+            <NumberCommit
+              label={`At most open for ${s.name}`}
+              value={s.config.signal?.maxOpen ?? 1}
+              busy={busy === `quick-${s.id}`}
+              problem={(n) => (Number.isInteger(n) && n >= 1 && n <= MAX_SIGNAL_OPEN ? null : `At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`)}
+              onInvalid={setFailed}
+              onSave={(n) => act(`quick-${s.id}`, () => saveStrategy({ id: s.id, name: s.name, config: { ...s.config, signal: { ...s.config.signal!, maxOpen: n } } }))}
+              className="h-7 w-12 sm:w-14"
+            />
+          </label>
+          <span className="col-span-2 text-[11px] text-[var(--dim)]">saved as you leave the field · from the next signal</span>
+        </div>
+        {s.open && (s.config.signal?.action === 'buy'
+          ? <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} buyCostPerLotUsd={buyCostPerLotUsd(s)} />
+          : <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} />)}
+      {/*
+        Which group it is listed in: one of its own account's (a group is one account's), or none. Listing only --
+        what it trades and when are its own settings, untouched.
+      */}
+      {groups.length > 0 && (s.groupId || moveTargets(s, groups).length > 0) && (
+        <label className="mt-1 inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+          <span className="text-[var(--dim)]">Group</span>
+          <select
+            aria-label={`Group of ${s.name}`}
+            value={s.groupId ?? ''}
+            disabled={busy === `move-${s.id}`}
+            onChange={(e) => void act(`move-${s.id}`, () => moveToGroup(s.id, e.target.value === '' ? null : e.target.value))}
+            className="m-0 h-7 max-w-[14rem] rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-1 font-[inherit] text-[12px] text-foreground disabled:opacity-50"
+          >
+            {groups.filter((g) => g.id === s.groupId).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            {moveTargets(s, groups).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            <option value="">No group</option>
+          </select>
+        </label>
+      )}
+        <p className="m-0 mt-0.5 text-[11.5px] text-[var(--dim)]">
+          {s.status}
+          {!live && (s.config.signal?.action === 'buy' ? ' · writes down what it would buy, sends nothing' : ' · writes down what it would sell, sends nothing')}
+        </p>
+      </div>
+    );
+  };
 
   return (
     <section className="live-signal-strategies fold-host mt-3 rounded-xl border border-solid border-border bg-[var(--panel)] p-3" data-folded={!open} aria-label="Signal strategies">
@@ -390,9 +550,17 @@ export function SignalStrategiesCard() {
           {/* A strategy belongs to one broker account, so it is made on that account's tab, never on "All accounts". */}
           <Button size="sm" disabled={!canMakeForAccount()}
                   title={canMakeForAccount() ? undefined : 'Choose an account tab first: a strategy belongs to one account'}
-                  onClick={() => { setEditing(null); setFormOpen(true); }}>
+                  onClick={() => { setEditing(null); setFormGroup(defaultGroupFor(accountScope(), groups)); setFormOpen(true); }}>
             <Plus className="h-3.5 w-3.5" /> New signal strategy
           </Button>
+          {/* A group is one account's too: made on its tab. */}
+          {data?.groups && (
+            <Button size="sm" variant="outline" disabled={!canMakeForAccount()}
+                    title={canMakeForAccount() ? 'A group of this account\'s strategies, to list and switch together' : 'Choose an account tab first: a group belongs to one account'}
+                    onClick={() => setNewGroup(newGroup === null ? '' : null)}>
+              <FolderPlus className="h-3.5 w-3.5" /> New group
+            </Button>
+          )}
         </div>
       </div>
 
@@ -519,128 +687,51 @@ export function SignalStrategiesCard() {
         </p>
       )}
 
-      <div className="grid gap-2">
-        {mine.map((s) => {
-          const live = Boolean(s.config.liveOrders);
-          return (
-            <div key={s.id} className={cn('rounded-lg border border-solid px-2.5 py-2', s.enabled ? 'border-[var(--up)]' : 'border-[var(--line)]')}>
-              {/*
-                On a phone: the name with Edit, Copy and Delete as icons on one row, and the two switches that matter
-                -- on/off and live orders -- side by side under it, each half the width. One row on a wider screen.
-              */}
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 sm:flex sm:flex-wrap sm:justify-between">
-                <div className="order-1 flex min-w-0 items-baseline gap-2">
-                  <span className="truncate text-[13.5px] font-semibold text-foreground">{s.name}</span>
-                  <span className={cn('text-[11px]', s.enabled ? 'text-[var(--up)]' : 'text-[var(--dim)]')}>{s.enabled ? 'on' : 'off'}</span>
-                </div>
-                <div className="order-3 col-span-2 grid grid-cols-2 gap-1.5 sm:order-2 sm:ml-auto sm:flex">
-                  <Button size="sm" className="h-9 sm:h-8" variant={s.enabled ? 'outline' : 'default'} disabled={busy === s.id}
-                          onClick={() => void act(s.id, () => setStrategyEnabled(s.id, !s.enabled))}>
-                    {busy === s.id && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {s.enabled ? 'Disable' : 'Enable'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className={cn('h-9 sm:h-8', (live || confirmLive === s.id) && 'border-[var(--down)] text-[var(--down)]')}
-                    role="switch"
-                    aria-checked={live}
-                    aria-label={`Live orders for ${s.name}`}
-                    disabled={busy === `live-${s.id}`}
-                    onClick={() => setLive(s, !live)}
-                  >
-                    {busy === `live-${s.id}` && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {confirmLive === s.id ? `Tap again: real ${s.config.signal?.action === 'buy' ? 'buys' : 'orders'}` : live ? 'Live orders ON' : 'Live orders off'}
-                  </Button>
-                </div>
-                <div className="order-2 flex flex-none items-center gap-0.5 sm:order-3 sm:gap-1.5">
-                  <Button size="sm" variant="ghost" className="h-8 px-2 sm:px-2.5" onClick={() => { setEditing(s); setFormOpen(true); }}>
-                    <Pencil className="h-3.5 w-3.5 sm:h-3 sm:w-3" /> <span className="sr-only sm:not-sr-only">Edit</span>
-                  </Button>
-                  {/*
-                    Copy, then the copy opens to be renamed and changed: how a second strategy is actually made.
-                    The server saves it switched off with live orders off -- a draft, not a second set of orders.
-                  */}
-                  <Button
-                    size="sm" variant="ghost" className="h-8 px-2 sm:px-2.5"
-                    aria-label={`Copy ${s.name}`}
-                    title="A copy, switched off with live orders off, opened to rename and change"
-                    disabled={busy === `copy-${s.id}`}
-                    onClick={() => void act(`copy-${s.id}`, async () => {
-                      const { strategy } = await cloneStrategy(s.id);
-                      setEditing(strategy);
-                      setFormOpen(true);
-                    })}
-                  >
-                    {busy === `copy-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3.5 w-3.5 sm:h-3 sm:w-3" />}
-                    <span className="sr-only sm:not-sr-only">Copy</span>
-                  </Button>
-                  {/* Delete, on a second tap within four seconds. Its trades and their history stay. */}
-                  <Button
-                    size="sm" variant="ghost" className="h-8 px-2 text-[var(--down)] sm:px-2.5"
-                    aria-label={`Delete ${s.name}`}
-                    title="Delete this strategy. Trades it has open keep their exits, and its history stays."
-                    disabled={busy === `del-${s.id}`}
-                    onClick={() => {
-                      if (confirmDelete !== s.id) {
-                        setConfirmDelete(s.id);
-                        setTimeout(() => setConfirmDelete((cur) => (cur === s.id ? null : cur)), 4_000);
-                        return;
-                      }
-                      setConfirmDelete(null);
-                      void act(`del-${s.id}`, () => deleteStrategy(s.id));
-                    }}
-                  >
-                    {busy === `del-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 sm:h-3 sm:w-3" />}
-                    {confirmDelete === s.id && 'Tap again to delete'}
-                  </Button>
-                </div>
-              </div>
-              <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{signalLine(s)}</p>
-              <RuleNow s={s} />
-              {/*
-                The two numbers changed most often, on the card itself: the same settings as in the form (Edit),
-                saved the same way, so neither needs the form opened. They apply to the next signal; what is
-                already open keeps its size.
-              */}
-              <div role="group" aria-label={`quick settings of ${s.name}`} className="mt-1.5 grid grid-cols-2 items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground sm:flex sm:flex-wrap sm:gap-x-4 sm:gap-y-1.5">
-                <label className="inline-flex items-center justify-between gap-1.5 sm:justify-start">
-                  <span className="whitespace-nowrap">Lots per signal</span>
-                  <NumberCommit
-                    label={`Lots per signal for ${s.name}`}
-                    value={s.config.lots}
-                    busy={busy === `quick-${s.id}`}
-                    problem={(n) => (Number.isInteger(n) && n >= 1 ? null : 'Lots must be a whole number, at least 1.')}
-                    onInvalid={setFailed}
-                    onSave={(n) => act(`quick-${s.id}`, () => saveStrategy({ id: s.id, name: s.name, config: { ...s.config, lots: n } }))}
-                    className="h-7 w-12 sm:w-14"
-                  />
-                </label>
-                <label className="inline-flex items-center justify-between gap-1.5 sm:justify-start">
-                  <span className="whitespace-nowrap">At most open</span>
-                  <NumberCommit
-                    label={`At most open for ${s.name}`}
-                    value={s.config.signal?.maxOpen ?? 1}
-                    busy={busy === `quick-${s.id}`}
-                    problem={(n) => (Number.isInteger(n) && n >= 1 && n <= MAX_SIGNAL_OPEN ? null : `At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`)}
-                    onInvalid={setFailed}
-                    onSave={(n) => act(`quick-${s.id}`, () => saveStrategy({ id: s.id, name: s.name, config: { ...s.config, signal: { ...s.config.signal!, maxOpen: n } } }))}
-                    className="h-7 w-12 sm:w-14"
-                  />
-                </label>
-                <span className="col-span-2 text-[11px] text-[var(--dim)]">saved as you leave the field · from the next signal</span>
-              </div>
-              {s.open && (s.config.signal?.action === 'buy'
-                ? <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} buyCostPerLotUsd={buyCostPerLotUsd(s)} />
-                : <UsageLine name={s.name} u={usageOf(s, data?.spot ?? null)} />)}
-              <p className="m-0 mt-0.5 text-[11.5px] text-[var(--dim)]">
-                {s.status}
-                {!live && (s.config.signal?.action === 'buy' ? ' · writes down what it would buy, sends nothing' : ' · writes down what it would sell, sends nothing')}
-              </p>
-            </div>
-          );
-        })}
-      </div>
+      {newGroup !== null && (
+        <div role="group" aria-label="new group" className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-[var(--line)] px-2.5 py-2">
+          <input
+            aria-label="Name of the new group" autoFocus maxLength={40} value={newGroup} placeholder="Group name, e.g. Scalps 5m"
+            onChange={(e) => setNewGroup(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') makeGroup(); if (e.key === 'Escape') setNewGroup(null); }}
+            className="m-0 h-8 w-56 max-w-full rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-2 font-[inherit] text-[13px] text-foreground"
+          />
+          <Button size="sm" className="h-8" disabled={busy === 'new-group'} onClick={makeGroup}>
+            {busy === 'new-group' && <Loader2 className="h-3 w-3 animate-spin" />} Make group
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8" onClick={() => setNewGroup(null)}>Cancel</Button>
+          <span className="basis-full text-[11px] text-[var(--dim)]">Made empty, on this account. Make strategies in it, or move them in from their cards.</span>
+        </div>
+      )}
+
+      {groups.length === 0
+        ? <div className="grid gap-2">{mine.map((s) => card(s))}</div>
+        : (
+          <div className="grid gap-3">
+            {sections.map((sec) => sec.group
+              ? (
+                <StrategyGroupSection
+                  key={sec.group.id}
+                  group={sec.group}
+                  strategies={sec.strategies}
+                  showAccount={accountScope() === null}
+                  busy={busy}
+                  act={act}
+                  canMake={canMakeForAccount()}
+                  onNew={() => { setEditing(null); setFormGroup(sec.group); setFormOpen(true); }}
+                >
+                  {sec.strategies.map((s) => card(s))}
+                </StrategyGroupSection>
+              )
+              : (
+                <section key="no-group" aria-label="not in a group" className="rounded-xl border border-dashed border-[var(--line)] p-2">
+                  <h3 className="m-0 mb-2 text-[13px] font-semibold text-muted-foreground">
+                    Not in a group <span className="font-normal tabular-nums text-[var(--dim)]">· {sec.strategies.length}</span>
+                  </h3>
+                  <div className="grid gap-2">{sec.strategies.map((s) => card(s))}</div>
+                </section>
+              ))}
+          </div>
+        )}
 
       {/* Every trade they took, or would have: SL, TGT, exit, result and money. */}
       {data && mine.length > 0 && <SignalTradeHistory strategies={data.strategies} />}
@@ -655,8 +746,9 @@ export function SignalStrategiesCard() {
       )}
       {data && (
         <SignalStrategyForm
-          key={editing?.id ?? 'new-signal'}
+          key={editing?.id ?? `new-signal-${formGroup?.id ?? ''}`}
           editing={editing}
+          group={editing ? null : formGroup}
           open={formOpen}
           onOpenChange={setFormOpen}
           onSaved={refresh}

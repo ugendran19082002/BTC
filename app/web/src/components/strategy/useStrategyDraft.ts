@@ -10,8 +10,10 @@ import { problemFor, strategyProblems, type FormField, type FormTab } from '@/li
  * on which tab, and saving -- the part both strategy forms share, so the
  * clock form and the signal form check and save the same way.
  */
-export function useStrategyDraft({ editing, initial, firstTab, balanceUsd, spot, onSaved, onClose }: {
+export function useStrategyDraft({ editing, initial, firstTab, balanceUsd, spot, onSaved, onClose, groupId = null }: {
   editing: Strategy | null;
+  /** The group a new strategy is made in (a saved one keeps its own: moving it is its own act); null: none. */
+  groupId?: string | null;
   /** The config a new strategy starts from. */
   initial: StrategyConfig;
   firstTab: FormTab;
@@ -67,7 +69,7 @@ export function useStrategyDraft({ editing, initial, firstTab, balanceUsd, spot,
     setBusy(true);
     setRefused([]);
     try {
-      await saveStrategy({ id: editing?.id, name: name.trim(), config: c });
+      await saveStrategy({ id: editing?.id, name: name.trim(), config: c, ...(editing || !groupId ? {} : { groupId }) });
       onSaved();
       onClose();
     } catch (e) {

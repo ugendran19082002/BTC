@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { SignalTrade, Strategy, StrategyConfig, StrategyStatus } from '@/types/strategy';
+import type { SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
 import { accountScope, withAccount } from '@/lib/account-scope';
 
 /** The strategies of the broker account being shown (lib/account-scope.ts); with none chosen, every account's. */
@@ -9,7 +9,7 @@ export const getStrategies = () => json<StrategyStatus>(withAccount('/api/strate
  * Save a strategy. The server validates and answers with what it stored, so
  * the screen shows the desk's answer rather than the number that was typed.
  */
-export const saveStrategy = (s: { id?: string; name: string; config: StrategyConfig }) =>
+export const saveStrategy = (s: { id?: string; name: string; config: StrategyConfig; groupId?: string | null }) =>
   // A new strategy is made for the account being shown; a saved one keeps its own (the server never moves it).
   post<{ ok: true; strategy: Strategy }>('/api/strategies', accountScope() === null ? s : { ...s, accountId: accountScope() });
 
@@ -39,6 +39,35 @@ export const setSignalMaxOpen = (max: number) =>
  */
 export const cloneStrategy = (id: string, name?: string) =>
   post<{ ok: true; strategy: Strategy }>(`/api/strategies/${encodeURIComponent(id)}/clone`, { name });
+
+/**
+ * Groups (owner, 10 Oct 2026). A group is one account's: made for the account being shown, its strategies made in it
+ * and moved between that account's groups. Its switch sets each strategy's own -- each by the same check as its own
+ * switch -- and a clone copies every strategy switched off, live orders off, to this account or another.
+ */
+export const createGroup = (name: string, accountId: number | null) =>
+  // No account (a server from before accounts): the desk's own.
+  post<{ ok: true; group: StrategyGroup }>('/api/strategy-groups', accountId === null ? { name } : { name, accountId });
+
+export const renameGroup = (id: string, name: string) =>
+  post<{ ok: true; group: StrategyGroup }>(`/api/strategy-groups/${encodeURIComponent(id)}`, { name });
+
+/** Every strategy in it on or off; one whose settings do not pass is left off, named in `leftOff` with why. */
+export const setGroupEnabled = (id: string, enabled: boolean) =>
+  post<{ ok: true; group: StrategyGroup; changed: string[]; leftOff: { id: string; name: string; problems: string[] }[] }>(
+    `/api/strategy-groups/${encodeURIComponent(id)}/enabled`, { enabled });
+
+/** A new group with a copy of each strategy, all switched off; no account: the group's own. */
+export const cloneGroup = (id: string, to: { name?: string; accountId?: number }) =>
+  post<{ ok: true; group: StrategyGroup; strategies: Strategy[] }>(`/api/strategy-groups/${encodeURIComponent(id)}/clone`, to);
+
+/** The group goes; its strategies stay, as they were, in no group. */
+export const deleteGroup = (id: string) =>
+  json<{ ok: true; ungrouped: number }>(`/api/strategy-groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+/** Into another of its account's groups, or out of any (null). */
+export const moveToGroup = (strategyId: string, groupId: string | null) =>
+  post<{ ok: true; strategy: Strategy }>(`/api/strategies/${encodeURIComponent(strategyId)}/group`, { groupId });
 
 export const deleteStrategy = (id: string) =>
   fetch(`/api/strategies/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' })

@@ -914,9 +914,29 @@ export type Strategy = {
    * not enter. Null or absent -- a desk with no account, a seed -- is the default account's.
    */
   accountId?: number | null;
+  /**
+   * The group it is kept in (owner, 10 Oct 2026), or null: not in one. A group is one account's -- the strategy's
+   * own -- and only a way of keeping them: what a strategy does is still its own switch and its own settings.
+   */
+  groupId?: string | null;
   createdAt: number;
   updatedAt: number;
 };
+
+/**
+ * A group of strategies (owner, 10 Oct 2026: "group strategy ... account 1 one group, account 2 another, clone and
+ * update"). One broker account's, as many as it wants; a strategy in it is that account's. The group's switch turns
+ * all of its strategies on or off at once -- each still trades by its own switch, so nothing about how one runs
+ * changes. Removing a group leaves its strategies, ungrouped.
+ */
+export type StrategyGroup = { id: string; name: string; accountId: number | null; createdAt: number; updatedAt: number };
+
+/** What is wrong with a group's name, in words; null when nothing. */
+export function groupNameProblem(name: string): string | null {
+  if (!name.trim()) return 'Give the group a name.';
+  if (name.trim().length > 40) return 'A group name is at most 40 characters.';
+  return null;
+}
 
 /** One attempt to run one strategy on one IST day. The audit trail. */
 export type StrategyRun = {

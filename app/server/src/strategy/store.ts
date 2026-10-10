@@ -13,8 +13,8 @@
  */
 import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
 import { perpAtMinutes } from '../market/perp-minute.js';
-import { one, query, rows } from '../db/pool.js';
-import { DEFAULT_CONFIG, type Strategy, type StrategyConfig, type StrategyRun } from './types.js';
+import { one, query, rows, tx } from '../db/pool.js';
+import { DEFAULT_CONFIG, type Strategy, type StrategyConfig, type StrategyGroup, type StrategyRun } from './types.js';
 
 /**
  * Settings a strategy no longer has (retired 22 Sep 2026): the safety gate,
@@ -243,6 +243,46 @@ const MIGRATIONS: Migration[] = [
        WHERE config->>'trigger' = 'signal' AND jsonb_typeof(config->'signal') = 'object' AND NOT (config->'signal' ? 'action');
     `,
   },
+  {
+    /*
+     * Groups of strategies (owner, 10 Oct 2026: "account 1's in one group, account 2's in another"). A group is one
+     * account's, its name its own within that account. Every account that has strategies gets a group named after it,
+     * holding them all; a strategy with no account stays out of any. Additive only: nothing a strategy is or does
+     * changes, and a strategy's group is a nullable column with no foreign key, for the reason the account's has none
+     * (strategy-008). Removing a group ungroups its strategies in code (`removeGroup`).
+     */
+    id: 'strategy-010-groups',
+    up: async (c) => {
+      await c.query(`
+        CREATE TABLE IF NOT EXISTS strategy_groups (
+          id                TEXT   PRIMARY KEY,
+          name              TEXT   NOT NULL,
+          broker_account_id BIGINT,
+          created_at        BIGINT NOT NULL,
+          updated_at        BIGINT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS strategy_groups_name_per_account ON strategy_groups (COALESCE(broker_account_id, 0), lower(name));
+        ALTER TABLE strategies ADD COLUMN IF NOT EXISTS group_id TEXT;
+        CREATE INDEX IF NOT EXISTS strategies_by_group ON strategies (group_id);
+      `);
+      const accounts = await c.query<{ there: string | null }>("SELECT to_regclass('public.broker_accounts')::text AS there");
+      const named = Boolean(accounts.rows[0]?.there);
+      const now = Date.now();
+      const held = await c.query<{ id: string }>('SELECT DISTINCT broker_account_id::text AS id FROM strategies WHERE broker_account_id IS NOT NULL ORDER BY 1');
+      for (const { id } of held.rows) {
+        const name = named ? (await c.query<{ name: string }>('SELECT name FROM broker_accounts WHERE id = $1', [id])).rows[0]?.name : undefined;
+        const gid = `group-${id}`;
+        await c.query(
+          `INSERT INTO strategy_groups (id, name, broker_account_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $4) ON CONFLICT DO NOTHING`,
+          [gid, (name ?? `Account ${id}`).slice(0, 40), id, now],
+        );
+        await c.query(
+          'UPDATE strategies SET group_id = $1 WHERE broker_account_id = $2 AND group_id IS NULL AND EXISTS (SELECT 1 FROM strategy_groups WHERE id = $1)',
+          [gid, id],
+        );
+      }
+    },
+  },
 ];
 
 /** A config without the settings the desk no longer has. */
@@ -252,7 +292,12 @@ function withoutRetired(cfg: StrategyConfig): StrategyConfig {
   return out as StrategyConfig;
 }
 
-type StrategyRow = { id: string; name: string; enabled: boolean; config: StrategyConfig; created_at: number; updated_at: number; broker_account_id: string | number | null };
+type StrategyRow = { id: string; name: string; enabled: boolean; config: StrategyConfig; created_at: number; updated_at: number; broker_account_id: string | number | null; group_id?: string | null };
+type GroupRow = { id: string; name: string; broker_account_id: string | number | null; created_at: string | number; updated_at: string | number };
+const groupFrom = (r: GroupRow): StrategyGroup => ({
+  id: r.id, name: r.name, accountId: r.broker_account_id === null ? null : Number(r.broker_account_id),
+  createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+});
 type RunRow = { id: number; strategy_id: string; run_date: string; status: StrategyRun['status']; detail: string; at: number };
 
 /** What became of one signal for one signal strategy. */
@@ -399,6 +444,7 @@ export class StrategyStore {
     // the defaults fill it rather than the screen showing undefined.
     config: withoutRetired({ ...DEFAULT_CONFIG, ...r.config }),
     accountId: r.broker_account_id === null || r.broker_account_id === undefined ? null : Number(r.broker_account_id),
+    groupId: r.group_id ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });
@@ -412,18 +458,68 @@ export class StrategyStore {
     return r ? this.hydrate(r) : null;
   }
 
-  /** `accountId`: the broker account a new strategy belongs to. Written when it is made; a saved one keeps its own. */
-  async save(s: { id: string; name: string; enabled: boolean; config: StrategyConfig; accountId?: number | null }): Promise<Strategy> {
+  /**
+   * `accountId`: the broker account a new strategy belongs to. Written when it is made; a saved one keeps its own.
+   * `groupId` likewise: the group a new one is made in. A saved one keeps its group -- it is moved by `setGroup`.
+   */
+  async save(s: { id: string; name: string; enabled: boolean; config: StrategyConfig; accountId?: number | null; groupId?: string | null }): Promise<Strategy> {
     const now = Date.now();
     await query(
-      `INSERT INTO strategies (id, name, enabled, config, created_at, updated_at, broker_account_id)
-       VALUES ($1, $2, $3, $4, $5, $5, $6)
+      `INSERT INTO strategies (id, name, enabled, config, created_at, updated_at, broker_account_id, group_id)
+       VALUES ($1, $2, $3, $4, $5, $5, $6, $7)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name, enabled = EXCLUDED.enabled,
          config = EXCLUDED.config, updated_at = EXCLUDED.updated_at`,
-      [s.id, s.name, s.enabled, JSON.stringify(s.config), now, s.accountId ?? null],
+      [s.id, s.name, s.enabled, JSON.stringify(s.config), now, s.accountId ?? null, s.groupId ?? null],
     );
     return (await this.get(s.id))!;
+  }
+
+  // ------------------------------------------------------------ groups (10 Oct 2026)
+
+  async groups(): Promise<StrategyGroup[]> {
+    return (await rows<GroupRow>('SELECT * FROM strategy_groups ORDER BY broker_account_id NULLS FIRST, created_at, id')).map(groupFrom);
+  }
+
+  async group(id: string): Promise<StrategyGroup | null> {
+    const r = await one<GroupRow>('SELECT * FROM strategy_groups WHERE id = $1', [id]);
+    return r ? groupFrom(r) : null;
+  }
+
+  /** Another group of the same account already has this name (case aside)? `except`: the group being renamed. */
+  async groupNameTaken(name: string, accountId: number | null, except: string | null = null): Promise<boolean> {
+    const r = await one<{ n: string }>(
+      `SELECT count(*) AS n FROM strategy_groups
+        WHERE COALESCE(broker_account_id, 0) = COALESCE($2::bigint, 0) AND lower(name) = lower($1) AND ($3::text IS NULL OR id <> $3)`,
+      [name.trim(), accountId, except],
+    );
+    return Number(r?.n ?? 0) > 0;
+  }
+
+  /** A new group, or a group renamed: its account is given when it is made and never changes. */
+  async saveGroup(g: { id: string; name: string; accountId: number | null }): Promise<StrategyGroup> {
+    const now = Date.now();
+    await query(
+      `INSERT INTO strategy_groups (id, name, broker_account_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, updated_at = EXCLUDED.updated_at`,
+      [g.id, g.name.trim(), g.accountId, now],
+    );
+    return (await this.group(g.id))!;
+  }
+
+  /** The group goes; its strategies stay, as they are, in no group. One transaction: never a strategy pointing at nothing. */
+  async removeGroup(id: string): Promise<number> {
+    return tx(async (c) => {
+      const moved = await c.query('UPDATE strategies SET group_id = NULL WHERE group_id = $1', [id]);
+      await c.query('DELETE FROM strategy_groups WHERE id = $1', [id]);
+      return moved.rowCount ?? 0;
+    });
+  }
+
+  /** Put a strategy in a group, or in none. Its switch, settings and account are not touched. */
+  async setGroup(strategyId: string, groupId: string | null): Promise<Strategy | null> {
+    const r = await query('UPDATE strategies SET group_id = $1, updated_at = $2 WHERE id = $3', [groupId, Date.now(), strategyId]);
+    return (r.rowCount ?? 0) > 0 ? this.get(strategyId) : null;
   }
 
   /** How many strategies belong to one broker account: an account with any is kept, not removed. */

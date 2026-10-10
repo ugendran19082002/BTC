@@ -9,8 +9,10 @@ import type { SignalTrade } from '@/types/strategy';
  * real orders and the reasons said, and a long list shown forty at a time rather than cut off.
  */
 const getDaySignals = vi.fn();
+const ONE = { today: '2026-10-10', schedulerOn: true, runs: [], signalRuns: [], strategies: [{ id: 's1', name: '30m time', enabled: true, config: { trigger: 'signal' }, status: 'taking signals' }] };
+let activity: Record<string, unknown> = ONE;
 vi.mock('@/api/phone', () => ({
-  getActivity: () => Promise.resolve({ today: '2026-10-10', schedulerOn: true, runs: [], signalRuns: [], strategies: [{ id: 's1', name: '30m time', enabled: true, config: { trigger: 'signal' }, status: 'taking signals' }] }),
+  getActivity: () => Promise.resolve(activity),
   getStats: () => Promise.resolve({ byMethod: [] }),
   methodNames: () => Promise.resolve(new Map([['breakout', { id: 'breakout', n: 1, name: 'Breakout' }]])),
   getDaySignals: (...a: unknown[]) => getDaySignals(...a),
@@ -31,7 +33,7 @@ const show = () => render(
 const tabs = () => within(screen.getByRole('group', { name: 'Which signals' }));
 const rows = () => within(screen.getByRole('list', { name: 'Signals' })).getAllByRole('listitem');
 
-beforeEach(() => { window.localStorage.clear(); getDaySignals.mockReset(); id = 0; });
+beforeEach(() => { window.localStorage.clear(); getDaySignals.mockReset(); id = 0; activity = ONE; });
 
 describe('StrategiesScreen: the day\'s signals in three tabs', () => {
   it('[critical] All, Taken and Not taken, each with its count; a tap shows only those, with the real orders and the reasons said', async () => {
@@ -74,5 +76,28 @@ describe('StrategiesScreen: the day\'s signals in three tabs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show 15 more · 80 of 95' }));
     expect(rows()).toHaveLength(95);
     expect(screen.queryByRole('button', { name: /Show \d+ more/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('StrategiesScreen: each strategy, by group', () => {
+  it('[critical] listed under its group, with how many are on and whose account; those in none last', async () => {
+    getDaySignals.mockResolvedValue({ trades: [] });
+    const s = (id: string, groupId: string | null, enabled: boolean) => ({ id, name: id.toUpperCase(), enabled, groupId, config: { trigger: 'signal' }, status: 'taking signals' });
+    activity = { ...ONE, strategies: [s('a', 'group-1', true), s('b', 'group-1', false), s('c', null, false)],
+      groups: [{ id: 'group-1', name: 'Main desk', accountId: 1, accountName: 'Acct 1', createdAt: 0, updatedAt: 0 }] };
+    show();
+    const main = await screen.findByRole('region', { name: 'group Main desk' });
+    expect(within(main).getByText('A')).toBeInTheDocument();
+    expect(within(main).getByText('B')).toBeInTheDocument();
+    expect(within(main).getByText('1 of 2 on')).toBeInTheDocument();
+    expect(within(main).getByText('Acct 1')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'not in a group' })).getByText('C')).toBeInTheDocument();
+  });
+
+  it('a server from before groups: the one list, no headings', async () => {
+    getDaySignals.mockResolvedValue({ trades: [] });
+    show();
+    expect(await screen.findByText('30m time')).toBeInTheDocument();
+    expect(screen.queryByText('Not in a group')).toBeNull();
   });
 });

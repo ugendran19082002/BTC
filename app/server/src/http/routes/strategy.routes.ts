@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type StrategyConfig, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -259,6 +259,13 @@ export function registerStrategyRoutes(app: FastifyInstance) {
    * run or a signal is kept by. Null: every account, nothing left out.
    */
   const OFF_ACCOUNT = 'not entering: its account is switched off';
+  /** An account's name, for a group's heading on "All accounts"; null where there is none. */
+  const accountNameOf = (id: number | null): string | null => {
+    if (id === null) return null;
+    try { return brokerAccounts().get(id)?.name ?? null; } catch { return null; }
+  };
+  /** A group as every answer gives it: with its account's name. */
+  const named = (g: StrategyGroup) => ({ ...g, accountName: accountNameOf(g.accountId) });
   const belongs = (x: { accountId?: number | null }, account: number | null) =>
     account === null || (x.accountId ?? null) === null || x.accountId === account;
   async function ofAccount(account: number | null): Promise<Set<string> | null> {
@@ -372,6 +379,11 @@ export function registerStrategyRoutes(app: FastifyInstance) {
           status: !here ? OFF_ACCOUNT : due.due ? 'due now' : due.because,
         };
       })),
+      /*
+       * The groups (10 Oct 2026): the account's, or every account's on "All accounts", each with its account's name.
+       * A strategy says its own (`groupId`); one in none is listed apart.
+       */
+      groups: (await s.groups()).filter((g) => belongs(g, account)).map(named),
       runs: kept(await s.runs(mine ? 200 : 40)).slice(0, 40),
       // Each signal a signal strategy saw, and what became of it.
       signalRuns: lite ? [] : kept(await s.signalRuns(mine ? 300 : 60)).slice(0, 60),
@@ -386,7 +398,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
 
   // Create or update a strategy, validated the way the form validates it.
   app.post('/api/strategies', async (req, reply) => {
-    const b = (req.body ?? {}) as { id?: string; name?: string; enabled?: boolean; config?: unknown; accountId?: unknown };
+    const b = (req.body ?? {}) as { id?: string; name?: string; enabled?: boolean; config?: unknown; accountId?: unknown; groupId?: unknown };
     const name = String(b.name ?? '').trim();
     if (!name) { reply.code(400); return { error: 'name is required' }; }
     // The account a new strategy is made for: the one named (the screen's selected tab), else the one the desk is on.
@@ -410,8 +422,18 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     // Arming and saving are separate acts. A new strategy is never born armed.
     const existing = await s.get(id);
     const enabled = existing ? existing.enabled : false;
+    // A new one may be made in a group -- one of its own account's. A saved one keeps its group (moved on its own route).
+    let groupId: string | null = null;
+    if (!existing && b.groupId !== undefined && b.groupId !== null && b.groupId !== '') {
+      const g = await s.group(String(b.groupId));
+      if (!g) return refuse(reply, 422, { error: 'No such group.', problems: ['No such group.'] });
+      if ((g.accountId ?? null) !== (accountId ?? null)) {
+        return refuse(reply, 422, { error: 'That group is another account\'s: a strategy is made in a group of its own account.', problems: ['That group is another account\'s.'] });
+      }
+      groupId = g.id;
+    }
     // A saved strategy keeps the account it was made for (the store never rewrites it).
-    return { ok: true, strategy: await s.save({ id, name, enabled, config, accountId }) };
+    return { ok: true, strategy: await s.save({ id, name, enabled, config, accountId, groupId }) };
   });
 
   /**
@@ -451,7 +473,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        * changed, and enabling it must not start real orders before it has been looked at (2 Oct 2026).
        */
       strategy: await s.save({
-        id: newId, name, enabled: false, accountId: from.accountId ?? null,
+        id: newId, name, enabled: false, accountId: from.accountId ?? null, groupId: from.groupId ?? null,
         config: from.config.trigger === 'signal' ? { ...from.config, liveOrders: false } : from.config,
       }),
     };
@@ -483,6 +505,151 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (!(await s.get(id))) { reply.code(404); return { error: 'no such strategy' }; }
     await s.remove(id);
     return { ok: true };
+  });
+
+  // ------------------------------------------------------------ groups (owner, 10 Oct 2026)
+  /*
+   * A group is one account's way of keeping its strategies: made, renamed, cloned -- to the same account or
+   * another -- and removed, and its switch turns every strategy in it on or off. Nothing here changes how a
+   * strategy runs: each still trades by its own switch, which is all the group's switch writes. Each answer is
+   * the group as it now stands, or the refusal in words.
+   */
+
+  /** A group's account, checked: the one named, else the one the desk is on. */
+  const groupAccountOf = (raw: unknown): { accountId: number | null } | { error: string } => {
+    if (raw === undefined || raw === null || raw === '') return { accountId: svc.accountId };
+    const n = Number(raw);
+    let known = false;
+    try { known = Number.isInteger(n) && brokerAccounts().get(n) !== null; } catch { known = false; }
+    return known ? { accountId: n } : { error: 'No such broker account.' };
+  };
+  /** A fresh id from a name: `g-` and the name's words, numbered when taken. */
+  const freshGroupId = async (name: string) => {
+    const base = `g-${idFrom(name)}`.slice(0, 44);
+    let id = base;
+    for (let n = 2; await strategyStore().group(id); n++) id = `${base}-${n}`;
+    return id;
+  };
+
+  // Make a group, empty, for one account.
+  app.post('/api/strategy-groups', async (req, reply) => {
+    const b = (req.body ?? {}) as { name?: unknown; accountId?: unknown };
+    const name = String(b.name ?? '').trim();
+    const bad = groupNameProblem(name);
+    if (bad) return refuse(reply, 422, { error: bad, problems: [bad] });
+    const acct = groupAccountOf(b.accountId);
+    if ('error' in acct) return refuse(reply, 422, { error: acct.error, problems: [acct.error] });
+    const s = strategyStore();
+    if (await s.groupNameTaken(name, acct.accountId)) {
+      const taken = `This account already has a group named "${name}".`;
+      return refuse(reply, 409, { error: taken, problems: [taken] });
+    }
+    return { ok: true, group: named(await s.saveGroup({ id: await freshGroupId(name), name, accountId: acct.accountId })) };
+  });
+
+  // Rename a group. Its account and its strategies are not touched.
+  app.post('/api/strategy-groups/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const s = strategyStore();
+    const g = await s.group(id);
+    if (!g) { reply.code(404); return { error: 'no such group' }; }
+    const name = String(((req.body ?? {}) as { name?: unknown }).name ?? '').trim();
+    const bad = groupNameProblem(name);
+    if (bad) return refuse(reply, 422, { error: bad, problems: [bad] });
+    if (await s.groupNameTaken(name, g.accountId, g.id)) {
+      const taken = `This account already has a group named "${name}".`;
+      return refuse(reply, 409, { error: taken, problems: [taken] });
+    }
+    return { ok: true, group: named(await s.saveGroup({ id: g.id, name, accountId: g.accountId })) };
+  });
+
+  /*
+   * Every strategy of the group on, or off, at once -- each written as its own switch would write it. On is held to
+   * the same check as one strategy's switch: a strategy whose settings no longer pass is left off and named, and the
+   * rest go on. Off always goes through: what is open keeps its exits, as for one strategy.
+   */
+  app.post('/api/strategy-groups/:id/enabled', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { enabled } = (req.body ?? {}) as { enabled?: unknown };
+    if (typeof enabled !== 'boolean') { reply.code(400); return { error: 'enabled must be true or false' }; }
+    const s = strategyStore();
+    const g = await s.group(id);
+    if (!g) { reply.code(404); return { error: 'no such group' }; }
+    const members = (await s.all()).filter((x) => x.groupId === g.id);
+    const changed: string[] = [];
+    const leftOff: { id: string; name: string; problems: string[] }[] = [];
+    for (const x of members) {
+      if (x.enabled === enabled) continue;
+      if (enabled) {
+        const problems = validateConfig(x.config);
+        if (problems.length) { leftOff.push({ id: x.id, name: x.name, problems }); continue; }
+      }
+      await s.setEnabled(x.id, enabled);
+      changed.push(x.id);
+    }
+    return { ok: true, group: named(g), changed, leftOff };
+  });
+
+  /*
+   * A copy of the group and every strategy in it -- to the same account, or to another (owner: "account 1 and 2,
+   * shuffle"). Every copy is made switched off, and a signal strategy's with live orders off: a copied group is a
+   * draft to look over, never a second set of orders. On the same account a copy is named "<name> copy"; on another
+   * account it keeps its name, the account telling the two apart.
+   */
+  app.post('/api/strategy-groups/:id/clone', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const b = (req.body ?? {}) as { name?: unknown; accountId?: unknown };
+    const s = strategyStore();
+    const from = await s.group(id);
+    if (!from) { reply.code(404); return { error: 'no such group' }; }
+    const acct = b.accountId === undefined || b.accountId === null || b.accountId === '' ? { accountId: from.accountId } : groupAccountOf(b.accountId);
+    if ('error' in acct) return refuse(reply, 422, { error: acct.error, problems: [acct.error] });
+    const sameAccount = (acct.accountId ?? null) === (from.accountId ?? null);
+    const name = String(b.name ?? (sameAccount ? `${from.name} copy` : from.name)).trim();
+    const bad = groupNameProblem(name);
+    if (bad) return refuse(reply, 422, { error: bad, problems: [bad] });
+    if (await s.groupNameTaken(name, acct.accountId)) {
+      const taken = `${sameAccount ? 'This' : 'That'} account already has a group named "${name}".`;
+      return refuse(reply, 409, { error: taken, problems: [taken] });
+    }
+    const group = await s.saveGroup({ id: await freshGroupId(name), name, accountId: acct.accountId });
+    const copies: Strategy[] = [];
+    for (const x of (await s.all()).filter((y) => y.groupId === from.id)) {
+      const copyName = sameAccount ? `${x.name} copy` : x.name;
+      const wanted = idFrom(copyName);
+      let newId = wanted;
+      for (let n = 2; await s.get(newId); n++) newId = `${wanted}-${n}`.slice(0, 48);
+      copies.push(await s.save({
+        id: newId, name: copyName, enabled: false, accountId: acct.accountId, groupId: group.id,
+        config: x.config.trigger === 'signal' ? { ...x.config, liveOrders: false } : x.config,
+      }));
+    }
+    return { ok: true, group: named(group), strategies: copies };
+  });
+
+  // Remove a group. Its strategies stay -- switch, settings and all -- in no group.
+  app.delete('/api/strategy-groups/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const s = strategyStore();
+    if (!(await s.group(id))) { reply.code(404); return { error: 'no such group' }; }
+    return { ok: true, ungrouped: await s.removeGroup(id) };
+  });
+
+  // Move a strategy into a group of its own account, or out of any (`groupId` null).
+  app.post('/api/strategies/:id/group', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const raw = ((req.body ?? {}) as { groupId?: unknown }).groupId;
+    const s = strategyStore();
+    const x = await s.get(id);
+    if (!x) { reply.code(404); return { error: 'no such strategy' }; }
+    if (raw === null || raw === undefined || raw === '') return { ok: true, strategy: await s.setGroup(id, null) };
+    const g: StrategyGroup | null = await s.group(String(raw));
+    if (!g) return refuse(reply, 422, { error: 'No such group.', problems: ['No such group.'] });
+    if ((g.accountId ?? null) !== (x.accountId ?? null)) {
+      const other = 'That group is another account\'s: a strategy goes in a group of its own account (clone the group to the other account instead).';
+      return refuse(reply, 422, { error: other, problems: [other] });
+    }
+    return { ok: true, strategy: await s.setGroup(id, g.id) };
   });
 
   /**

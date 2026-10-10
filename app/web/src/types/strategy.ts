@@ -347,6 +347,8 @@ export function asSignalConfig(c: StrategyConfig, fresh: boolean): StrategyConfi
 export type Strategy = {
   /** The broker account it belongs to; it enters only while the desk is on that account. Null: none. */
   accountId?: number | null;
+  /** The group it is listed in -- always one of its own account's; null or absent: in none. */
+  groupId?: string | null;
   id: string;
   name: string;
   enabled: boolean;
@@ -360,6 +362,20 @@ export type Strategy = {
   status: string;
   /** A signal strategy's open trades now -- positions and working orders -- and their lots. Absent on an older server. */
   open?: { trades: number; lots: number };
+};
+
+/**
+ * A group of one account's strategies (server: strategy/types.ts `StrategyGroup`). A way of listing them and of
+ * switching them together; it is not a switch of its own -- each strategy keeps its own, and the runner reads those.
+ */
+export type StrategyGroup = {
+  id: string;
+  name: string;
+  accountId: number | null;
+  /** The account's name as the desk knows it; null for none. */
+  accountName: string | null;
+  createdAt: number;
+  updatedAt: number;
 };
 
 export type StrategyRun = {
@@ -429,6 +445,8 @@ export type StrategyStatus = {
   balanceUsd: number | null;
   spot: number | null;
   strategies: Strategy[];
+  /** The groups of the account(s) shown, oldest first; absent on an older server. */
+  groups?: StrategyGroup[];
   runs: StrategyRun[];
   /** The latest signals the signal strategies took, or wrote down; absent on an older server. */
   signalRuns?: SignalRun[];

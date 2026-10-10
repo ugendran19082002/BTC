@@ -20,6 +20,43 @@ same minute, each on its own account. A strategy whose account is switched off
 does not enter, and its row says "not entering: its account is switched off".
 The default account is only the tab that opens first.
 
+## Groups of strategies
+
+Owner, 10 Oct 2026: "account 1's in one group, account 2's in another; clone
+and update". The Strategy screen lists the strategies **by group**, each group
+with its strategies under it, then any in no group. A group is a way of listing
+and switching an account's strategies together -- **not a switch of its own**:
+the scheduler and the runner read each strategy's own switch, as before, and
+never look at groups.
+
+- **One account's.** A group belongs to one broker account
+  (`strategy_groups.broker_account_id`) and holds only that account's
+  strategies; an account may have any number of groups. A group's name is its
+  own within its account (40 characters at most).
+- **First start** (migration `strategy-010-groups`): each account with
+  strategies gets a group named after it (`group-<account id>`), holding all of
+  them. Nothing else changes: switches, live orders and settings stay as they
+  were. A strategy with no account stays in no group.
+- **Turn all on / off** sets each strategy's own switch. On takes two taps and
+  says how many will have live orders; each strategy is checked as its own
+  switch checks it, and one that does not pass is left off and named. Off is one
+  tap; open trades keep their exits.
+- **Clone** makes a new group with a copy of every strategy -- on the same
+  account (names with " copy") or on another (names kept) -- **every copy
+  switched off, live orders off**. The source is not touched.
+- **Move**: a strategy's card has a Group picker of its own account's groups;
+  moving to another account's group is refused (clone instead). A new strategy
+  is made in the group it was started from (the account's first, from the
+  header button).
+- **Delete group**: two taps; its strategies stay, as they were, in no group.
+- The phone's Strategies screen lists them by group too, read only.
+
+API: `POST /api/strategy-groups` (make), `POST /api/strategy-groups/:id`
+(rename), `POST /api/strategy-groups/:id/enabled`, `POST
+/api/strategy-groups/:id/clone`, `DELETE /api/strategy-groups/:id`, `POST
+/api/strategies/:id/group`; `GET /api/strategies` carries `groups`. Writes need
+a full session.
+
 ## One pass of the scheduler
 
 Every 20 seconds (`TICK_MS`) [runner.ts](../../app/server/src/strategy/runner.ts)
