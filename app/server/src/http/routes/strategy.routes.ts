@@ -591,6 +591,60 @@ export function registerStrategyRoutes(app: FastifyInstance) {
   });
 
   /*
+   * Strategies copied into a group (owner, 10 Oct 2026: "from another account's, another group's, into a new group or
+   * an existing one"). Any strategies, of any account and group, into one group: one that exists (`groupId`), or one
+   * made for it (`newGroup: { name, accountId }`). Each copy belongs to the group's account, switched off, a signal
+   * strategy's with live orders off -- as every copy. It keeps its name unless the account has one by that name
+   * already: then "<name> copy" (" copy 2", ...). All or nothing: one transaction, everything checked first.
+   */
+  app.post('/api/strategy-groups/copy-in', async (req, reply) => {
+    const b = (req.body ?? {}) as { strategyIds?: unknown; groupId?: unknown; newGroup?: { name?: unknown; accountId?: unknown } | null };
+    const no = (code: number, error: string) => refuse(reply, code, { error, problems: [error] });
+    const ids = Array.isArray(b.strategyIds) ? [...new Set(b.strategyIds.map(String))] : [];
+    if (ids.length === 0) return no(422, 'Pick at least one strategy to copy.');
+    if (ids.length > 100) return no(422, 'At most 100 strategies at once.');
+    if ((b.groupId === undefined || b.groupId === null) === !b.newGroup) return no(422, 'Copy into one group: an existing one or a new one.');
+    const s = strategyStore();
+    const all = await s.all();
+    const from = ids.map((id) => all.find((x) => x.id === id));
+    const missing = ids.filter((_, i) => !from[i]);
+    if (missing.length) return no(422, `No such strateg${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')}.`);
+
+    let target: { groupId: string; accountId: number | null; newGroup: { id: string; name: string; accountId: number | null } | null };
+    if (b.newGroup) {
+      const name = String(b.newGroup.name ?? '').trim();
+      const bad = groupNameProblem(name);
+      if (bad) return no(422, bad);
+      const acct = groupAccountOf(b.newGroup.accountId);
+      if ('error' in acct) return no(422, acct.error);
+      if (await s.groupNameTaken(name, acct.accountId)) return no(409, `That account already has a group named "${name}".`);
+      const id = await freshGroupId(name);
+      target = { groupId: id, accountId: acct.accountId, newGroup: { id, name, accountId: acct.accountId } };
+    } else {
+      const g = await s.group(String(b.groupId));
+      if (!g) { reply.code(404); return { error: 'no such group' }; }
+      target = { groupId: g.id, accountId: g.accountId, newGroup: null };
+    }
+
+    // Names: the account's own, and each copy's as it is named, so two copies of one name are told apart too.
+    const names = new Set(all.filter((x) => (x.accountId ?? null) === target.accountId).map((x) => x.name.trim().toLowerCase()));
+    const takenIds = new Set(all.map((x) => x.id));
+    const copies = from.map((x) => {
+      let name = x!.name;
+      for (let n = 1; names.has(name.trim().toLowerCase()); n++) name = `${x!.name} copy${n > 1 ? ` ${n}` : ''}`;
+      names.add(name.trim().toLowerCase());
+      const wanted = idFrom(name);
+      let id = wanted;
+      for (let n = 2; takenIds.has(id); n++) id = `${wanted}-${n}`.slice(0, 48);
+      takenIds.add(id);
+      return { id, name, config: x!.config.trigger === 'signal' ? { ...x!.config, liveOrders: false } : x!.config };
+    });
+    const made = await s.copyIn({ newGroup: target.newGroup, groupId: target.groupId, accountId: target.accountId, copies });
+    const group = (await s.group(target.groupId))!;
+    return { ok: true, group: named(group), strategies: await Promise.all(made.map(async (id) => (await s.get(id))!)) };
+  });
+
+  /*
    * A copy of the group and every strategy in it -- to the same account, or to another (owner: "account 1 and 2,
    * shuffle"). Every copy is made switched off, and a signal strategy's with live orders off: a copied group is a
    * draft to look over, never a second set of orders. On the same account a copy is named "<name> copy"; on another

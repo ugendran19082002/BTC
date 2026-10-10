@@ -516,6 +516,32 @@ export class StrategyStore {
     });
   }
 
+  /**
+   * Copies made into a group -- a new one (`newGroup`, made here) or one that exists -- in one transaction: a copy that
+   * cannot be written leaves no group and no copy behind. Each is made as given (switched off, by the caller).
+   */
+  async copyIn(o: {
+    newGroup: { id: string; name: string; accountId: number | null } | null;
+    groupId: string; accountId: number | null;
+    copies: { id: string; name: string; config: StrategyConfig }[];
+  }): Promise<string[]> {
+    const now = Date.now();
+    await tx(async (c) => {
+      if (o.newGroup) {
+        await c.query('INSERT INTO strategy_groups (id, name, broker_account_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)',
+          [o.newGroup.id, o.newGroup.name.trim(), o.newGroup.accountId, now]);
+      }
+      for (const x of o.copies) {
+        await c.query(
+          `INSERT INTO strategies (id, name, enabled, config, created_at, updated_at, broker_account_id, group_id)
+           VALUES ($1, $2, false, $3, $4, $4, $5, $6)`,
+          [x.id, x.name, JSON.stringify(x.config), now, o.accountId, o.groupId],
+        );
+      }
+    });
+    return o.copies.map((x) => x.id);
+  }
+
   /** Put a strategy in a group, or in none. Its switch, settings and account are not touched. */
   async setGroup(strategyId: string, groupId: string | null): Promise<Strategy | null> {
     const r = await query('UPDATE strategies SET group_id = $1, updated_at = $2 WHERE id = $3', [groupId, Date.now(), strategyId]);
