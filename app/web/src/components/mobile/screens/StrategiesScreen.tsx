@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { accountTag, groupSections, onCount } from '@/lib/strategy-groups';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
+import { GroupTag } from '@/components/strategy/GroupTag';
 
 /**
  * Strategies (6 Oct 2026, Level 2): what the strategies did today and why. The clock strategies' runs -- placed,
@@ -88,7 +89,10 @@ export function StrategiesScreen() {
             {runs.map((r) => (
               <li key={r.id} className="py-2">
                 <span className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[14.5px] font-medium">{nameOf(r.strategyId)}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-[14.5px] font-medium">{nameOf(r.strategyId)}</span>
+                    <GroupTag strategyId={r.strategyId} />
+                  </span>
                   <Pill tone={RUN_TONE[r.status]}>{r.status.toUpperCase()}</Pill>
                 </span>
                 <span className="block text-[12.5px] leading-snug text-muted-foreground"><When>{clock(r.at)}</When> · {r.detail}</span>
@@ -213,7 +217,7 @@ const SignalRow = memo(function SignalRow({ r, method, strategy, openTrade }: {
         </span>
         <Pill tone={w.tone}>{w.word}</Pill>
       </span>
-      <span className="block text-[12.5px] leading-snug text-muted-foreground"><When>{clock(r.at)}</When> · {r.tf} · {strategy} · {r.detail}</span>
+      <span className="block text-[12.5px] leading-snug text-muted-foreground"><When>{clock(r.at)}</When> · {r.tf} · {strategy} <GroupTag strategyId={r.strategyId} /> · {r.detail}</span>
     </>
   );
   return (

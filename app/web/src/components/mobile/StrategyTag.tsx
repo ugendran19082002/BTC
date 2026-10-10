@@ -1,6 +1,7 @@
 import { Bot, CalendarClock, Hand } from 'lucide-react';
 import type { Trade } from '@/types/trade';
 import { cn } from '@/lib/utils';
+import { GroupTag } from '@/components/strategy/GroupTag';
 
 /**
  * Which strategy placed a trade, as a tag (owner, 8 Oct 2026: "strategy name tag -- orders history, trade history
@@ -54,6 +55,8 @@ export function PlacedLine({ plan, rest, className }: { plan: Parameters<typeof 
   return (
     <span className={cn('flex min-w-0 items-center gap-1.5', className)}>
       <StrategyTag plan={plan} className="max-w-[60%] shrink-0" />
+      {/* Its group, beside it: dropped first when the line is short -- the strategy's name is the one that must show. */}
+      <GroupTag strategyId={plan?.strategyId} className="max-w-[35%] flex-shrink" />
       {more && <span className="min-w-0 truncate text-[12px] text-muted-foreground">{more}</span>}
     </span>
   );

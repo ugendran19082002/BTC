@@ -239,6 +239,14 @@ test('[critical] removing a group keeps its strategies, as they were, in no grou
     assert.equal(s.enabled, enabled);
   }
   assert.equal((await api('DELETE', `/api/strategy-groups/${g.id}`)).status, 404);
+  // The index every screen that names a strategy reads: each strategy's group, every account's, and nothing more.
+  const idx = await api('GET', '/api/strategy-groups/index');
+  assert.equal(idx.status, 200);
+  assert.deepEqual(Object.keys(idx.body).sort(), ['groups', 'of']);
+  const listed = await list();
+  for (const st of listed.strategies) assert.equal(idx.body.of[st.id] ?? null, st.groupId ?? null, st.id);
+  assert.ok(idx.body.groups.some((x: any) => x.accountId === second && x.accountName === 'Low win%'));
+  assert.ok(JSON.stringify(idx.body).length < JSON.stringify(listed).length / 4, 'small: a lookup, not the list');
   // The phone's light read carries the groups too.
   assert.ok(Array.isArray((await api('GET', '/api/strategies?lite=1')).body.groups));
   assert.ok(strategyStore());

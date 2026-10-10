@@ -11,6 +11,7 @@ import { isLongTrade } from '@/lib/long-exits';
 import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
 import { PositionCard } from '@/components/mobile/PositionCard';
+import { GroupTag } from '@/components/strategy/GroupTag';
 
 /**
  * One trade, start to end, read only (the phone's Level 2, 6 Oct 2026): what it is and what it made, then its
@@ -84,7 +85,7 @@ export function TradeDetail({ tradeId, onClose, onSignedOut }: { tradeId: string
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 text-[13px] text-muted-foreground">
                   <div>{size(t!.entrySize || t!.requestedSize)} contracts · in at {price(t!.entryAvgPrice)}{t!.exitAvgPrice !== null ? ` · out at ${price(t!.exitAvgPrice)}` : ''}</div>
-                  {t!.plan?.strategyName && <div>Strategy “{t!.plan.strategyName}”</div>}
+                  {t!.plan?.strategyName && <div className="flex flex-wrap items-center gap-1.5">Strategy “{t!.plan.strategyName}” <GroupTag strategyId={t!.plan.strategyId} /></div>}
                   {t!.account && <div>Account {t!.account.name}</div>}
                 </div>
                 <div className="text-right">

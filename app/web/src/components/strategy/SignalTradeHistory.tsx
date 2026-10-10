@@ -10,6 +10,7 @@ import type { SignalTrade, Strategy } from '@/types/strategy';
 import { usePersisted } from '@/hooks/usePersisted';
 import { signedInr, stamp, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { GroupTag } from '@/components/strategy/GroupTag';
 
 /**
  * Every trade the signal strategies took, or with live orders off would have
@@ -384,7 +385,7 @@ function Row({ t, name }: { t: SignalTrade; name: string }) {
     <tr className="border-0 border-t border-solid border-border align-top">
       <td className="px-2 py-1.5">
         <span className={t.dir === 1 ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{said}</span>
-        <div className="text-[10.5px] text-[var(--dim)]">{t.mode === 'mtf' ? '5m + TF chain' : t.tf} · {name}</div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-[10.5px] text-[var(--dim)]">{t.mode === 'mtf' ? '5m + TF chain' : t.tf} · {name} <GroupTag strategyId={t.strategyId} /></div>
         <div className="text-[10.5px] text-[var(--dim)]">signal {stamp(t.at)}</div>
       </td>
       <td className="whitespace-nowrap px-2 py-1.5">
@@ -452,7 +453,7 @@ function SkippedRow({ t, name }: { t: SignalTrade; name: string }) {
     <tr className="border-0 border-t border-solid border-border align-top">
       <td className="px-2 py-1.5">
         <span className={t.dir === 1 ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{said}</span>
-        <div className="text-[10.5px] text-[var(--dim)]">{t.mode === 'mtf' ? '5m + TF chain' : t.tf} · {name}</div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-[10.5px] text-[var(--dim)]">{t.mode === 'mtf' ? '5m + TF chain' : t.tf} · {name} <GroupTag strategyId={t.strategyId} /></div>
         <div className="text-[10.5px] text-[var(--dim)]">signal {stamp(t.at)}</div>
       </td>
       <td colSpan={9} className="px-2 py-1.5" aria-label="why not taken">

@@ -24,6 +24,7 @@ import {
 } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { isLongTrade, longLevels } from '@/lib/long-exits';
+import { GroupTag } from '@/components/strategy/GroupTag';
 
 /**
  * Every order, looking back. Dates start on today, the window almost everyone
@@ -572,6 +573,8 @@ function OrderRow({ order, account }: { order: OrderRecord; account?: { id: numb
             <ActionTag action={order.plan?.action} />
             {/* Who asked for it: the ticket, a strategy, or the best-pick auto-trade. */}
             <OriginTag origin={order.plan?.origin} strategyName={order.plan?.strategyName ?? null} strategyId={order.plan?.strategyId ?? null} />
+            {/* The group the strategy is in, beside its name. */}
+            <GroupTag strategyId={order.plan?.strategyId} />
           </span>
         </span>
 

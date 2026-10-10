@@ -21,6 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 import { longLevels } from '@/lib/long-exits';
 import { Figure } from '@/components/ui/figure';
+import { GroupTag } from '@/components/strategy/GroupTag';
 
 /**
  * What is on right now.
@@ -323,6 +324,8 @@ function ContractName({ trade }: { trade: Trade }) {
       <ActionTag action={trade.plan?.action} />
       {/* Three things place orders here; which one did is the first question. */}
       <OriginTag origin={trade.plan?.origin} strategyName={trade.plan?.strategyName ?? null} strategyId={trade.plan?.strategyId ?? null} />
+      {/* The group the strategy is in, beside its name. */}
+      <GroupTag strategyId={trade.plan?.strategyId} />
     </div>
   );
 }

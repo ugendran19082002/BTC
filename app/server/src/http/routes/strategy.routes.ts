@@ -591,6 +591,18 @@ export function registerStrategyRoutes(app: FastifyInstance) {
   });
 
   /*
+   * Which group each strategy is in, every account's (owner, 10 Oct 2026: "wherever a strategy's name is, its group's
+   * name as a tag -- desk and phone"). Small on purpose: read by every screen that names a strategy -- positions,
+   * orders, history, a trade -- whichever account they show, and the strategies' own read is many times this.
+   */
+  app.get('/api/strategy-groups/index', async () => {
+    const s = strategyStore();
+    const of: Record<string, string> = {};
+    for (const x of await s.all()) if (x.groupId) of[x.id] = x.groupId;
+    return { groups: (await s.groups()).map((g) => ({ id: g.id, name: g.name, accountId: g.accountId, accountName: accountNameOf(g.accountId) })), of };
+  });
+
+  /*
    * Strategies copied into a group (owner, 10 Oct 2026: "from another account's, another group's, into a new group or
    * an existing one"). Any strategies, of any account and group, into one group: one that exists (`groupId`), or one
    * made for it (`newGroup: { name, accountId }`). Each copy belongs to the group's account, switched off, a signal
