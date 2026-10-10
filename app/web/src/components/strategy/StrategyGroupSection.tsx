@@ -137,7 +137,7 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
               {busy === key('off') && <Loader2 className="h-3 w-3 animate-spin" />} Turn all off
             </Button>
           )}
-          {of > 1 && (
+          {(of > 1 || onMoveGroup?.up || onMoveGroup?.down) && (
             <Button size="sm" variant={order ? 'default' : 'ghost'} className="h-8 px-2" aria-label={`Reorder ${group.name}`} aria-pressed={order !== null}
                     title="Change the order its strategies are listed in"
                     onClick={() => { setOrder(order ? null : strategies.map((s) => s.id)); if (!open) setOpen(true); }}>

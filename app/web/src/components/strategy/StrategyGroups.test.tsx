@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { SignalStrategiesCard } from '@/components/strategy/SignalStrategiesCard';
 import { DEFAULT_CONFIG, type Strategy, type StrategyGroup, type StrategyStatus } from '@/types/strategy';
 import { setAccountScope } from '@/lib/account-scope';
-import { accountTag, copySources, defaultGroupFor, groupNameProblem, groupSections, moveTargets, onCount } from '@/lib/strategy-groups';
+import { accountTag, byPosition, copySources, defaultGroupFor, inOrder, moved, groupNameProblem, groupSections, moveTargets, onCount } from '@/lib/strategy-groups';
 
 const getStrategies = vi.fn();
 const saveStrategy = vi.fn();
@@ -16,6 +16,8 @@ const moveToGroup = vi.fn();
 const getAccounts = vi.fn();
 const getAllStrategies = vi.fn();
 const copyIntoGroup = vi.fn();
+const orderGroup = vi.fn();
+const orderGroups = vi.fn();
 vi.mock('@/api/strategy', () => ({
   getStrategies: (...a: unknown[]) => getStrategies(...a),
   getSignalTrades: () => Promise.resolve({ from: null, to: null, trades: [] }),
@@ -29,6 +31,8 @@ vi.mock('@/api/strategy', () => ({
   moveToGroup: (...a: unknown[]) => moveToGroup(...a),
   getAllStrategies: (...a: unknown[]) => getAllStrategies(...a),
   copyIntoGroup: (...a: unknown[]) => copyIntoGroup(...a),
+  orderGroup: (...a: unknown[]) => orderGroup(...a),
+  orderGroups: (...a: unknown[]) => orderGroups(...a),
 }));
 vi.mock('@/api/accounts', () => ({ getAccounts: (...a: unknown[]) => getAccounts(...a) }));
 vi.mock('@/api/entry', () => ({
@@ -289,5 +293,41 @@ describe('copying strategies into a group: from any account and group, into one 
     expect(within(sheet).getByLabelText('Copy A (Acct 1)')).toBeChecked();
     fireEvent.click(within(sheet).getByRole('button', { name: 'Copy 1 strategy' }));
     expect(await within(sheet).findByRole('alert')).toHaveTextContent('already has a group named "Scalps"');
+  });
+});
+
+describe('the display order, set by hand', () => {
+  const at = (s: Strategy, position: number | null) => ({ ...s, position });
+  it('[critical] by the place set, those without one after in the order made; groups within their account; a move one place', () => {
+    const list = [at(strat('a', 1, 'group-1'), null), at(strat('b', 1, 'group-1'), 1), at(strat('c', 1, 'group-1'), 0), at(strat('d', 1, 'group-1'), null)];
+    expect(byPosition(list).map((x) => x.id)).toEqual(['c', 'b', 'a', 'd']);
+    expect(groupSections(list, [MAIN])[0]!.strategies.map((x) => x.id)).toEqual(['c', 'b', 'a', 'd']);
+    expect(inOrder([{ ...MAIN, position: 1 }, OTHER, { ...SCALPS, position: 0 }]).map((g) => g.id)).toEqual(['g-scalps', 'group-1', 'group-2']);
+    expect(moved(['x', 'y', 'z'], 2, -1)).toEqual(['x', 'z', 'y']);
+    expect(moved(['x', 'y', 'z'], 0, -1)).toEqual(['x', 'y', 'z']);
+    expect(moved(['x', 'y', 'z'], 2, 1)).toEqual(['x', 'y', 'z']);
+  });
+
+  it('[critical] Reorder: short rows with up and down, saved as the whole list; the group moved among its account\'s at once', async () => {
+    getStrategies.mockResolvedValue(status([at(strat('a', 1, 'group-1'), null), at(strat('b', 1, 'group-1'), null), at(strat('c', 1, 'group-1'), null)], [MAIN, SCALPS]));
+    orderGroup.mockResolvedValue({ ok: true });
+    orderGroups.mockResolvedValue({ ok: true });
+    render(<SignalStrategiesCard />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reorder Main desk' }));
+    const box = screen.getByRole('group', { name: 'order of Main desk' });
+    expect(within(box).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['1Aoff', '2Boff', '3Coff']);
+    expect(within(box).getByRole('button', { name: 'Move A up' })).toBeDisabled();
+    expect(within(box).getByRole('button', { name: 'Move C down' })).toBeDisabled();
+    fireEvent.click(within(box).getByRole('button', { name: 'Move C up' }));
+    fireEvent.click(within(box).getByRole('button', { name: 'Move C up' }));
+    expect(within(box).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['1Coff', '2Aoff', '3Boff']);
+    expect(orderGroup).not.toHaveBeenCalled();
+    // The group: first of its account's, so up is not offered; down saves the account's order at once.
+    expect(within(box).getByRole('button', { name: 'Move group Main desk up' })).toBeDisabled();
+    fireEvent.click(within(box).getByRole('button', { name: 'Move group Main desk down' }));
+    await waitFor(() => expect(orderGroups).toHaveBeenCalledWith(1, ['g-scalps', 'group-1']));
+    fireEvent.click(within(box).getByRole('button', { name: /Save order/ }));
+    await waitFor(() => expect(orderGroup).toHaveBeenCalledWith('group-1', ['c', 'a', 'b']));
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'order of Main desk' })).toBeNull());
   });
 });

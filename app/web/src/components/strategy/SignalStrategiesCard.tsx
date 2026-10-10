@@ -2,7 +2,7 @@ import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { cloneStrategy, createGroup, deleteStrategy, getStrategies, moveToGroup, saveStrategy, setScheduler, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
+import { cloneStrategy, createGroup, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setScheduler, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { StrategyGroupSection } from '@/components/strategy/StrategyGroupSection';
 import { CopyStrategiesSheet } from '@/components/strategy/CopyStrategiesSheet';
 import { refreshGroupIndex } from '@/hooks/useGroupOf';
-import { defaultGroupFor, groupNameProblem, groupSections, moveTargets } from '@/lib/strategy-groups';
+import { defaultGroupFor, groupNameProblem, groupSections, moved, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
 import { blockNow, hoursLabel, istMinuteOf, pickWords } from '@/lib/strategy-blocks';
@@ -306,6 +306,13 @@ export function SignalStrategiesCard() {
    */
   const groups = data?.groups ?? [];
   const sections = groupSections(mine, groups);
+  /** Up (-1) or down (+1) among its account's groups, in the order shown, saved at once. */
+  const moveGroup = (g: StrategyGroup, by: -1 | 1) => {
+    const ids = sections.filter((x) => x.group && (x.group.accountId ?? null) === (g.accountId ?? null)).map((x) => x.group!.id);
+    const i = ids.indexOf(g.id);
+    if (i < 0 || i + by < 0 || i + by >= ids.length) return undefined;
+    return () => void act(`group-move-${g.id}`, () => orderGroups(g.accountId ?? null, moved(ids, i, by)));
+  };
   const makeGroup = () => {
     if (newGroup === null) return;
     const bad = groupNameProblem(newGroup);
@@ -740,6 +747,7 @@ export function SignalStrategiesCard() {
                   canMake={canMakeForAccount()}
                   onNew={() => { setEditing(null); setFormGroup(sec.group); setFormOpen(true); }}
                   onCopyIn={() => setCopying({ into: sec.group, pick: [] })}
+                  onMoveGroup={{ up: moveGroup(sec.group, -1), down: moveGroup(sec.group, 1) }}
                 >
                   {sec.strategies.map((s) => card(s))}
                 </StrategyGroupSection>
