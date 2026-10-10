@@ -591,6 +591,39 @@ export function registerStrategyRoutes(app: FastifyInstance) {
   });
 
   /*
+   * The display order (owner, 10 Oct 2026: "change the strategy list's display order"). Of one group's strategies
+   * (`/:id/order`), or of one account's groups (`/order`): the whole list, in the order wanted. A list that is not
+   * exactly the group's -- one added or moved since the screen read it -- is refused, so nothing is half-ordered.
+   * Display only: the runner reads the strategies in its own order, as before.
+   */
+  const sameSet = (a: string[], b: string[]) => a.length === b.length && new Set(a).size === a.length && b.every((x) => a.includes(x));
+  const CHANGED = 'The list changed while it was being ordered: it has been read again. Order it once more.';
+  app.post('/api/strategy-groups/order', async (req, reply) => {
+    const b = (req.body ?? {}) as { accountId?: unknown; groupIds?: unknown };
+    const ids = Array.isArray(b.groupIds) ? b.groupIds.map(String) : null;
+    if (!ids) return refuse(reply, 400, { error: 'groupIds must be a list', problems: ['groupIds must be a list'] });
+    const acct = groupAccountOf(b.accountId);
+    if ('error' in acct) return refuse(reply, 422, { error: acct.error, problems: [acct.error] });
+    const s = strategyStore();
+    const theirs = (await s.groups()).filter((g) => (g.accountId ?? null) === acct.accountId).map((g) => g.id);
+    if (!sameSet(ids, theirs)) return refuse(reply, 409, { error: CHANGED, problems: [CHANGED] });
+    await s.setOrder('strategy_groups', ids);
+    return { ok: true };
+  });
+  app.post('/api/strategy-groups/:id/order', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const b = (req.body ?? {}) as { strategyIds?: unknown };
+    const ids = Array.isArray(b.strategyIds) ? b.strategyIds.map(String) : null;
+    if (!ids) return refuse(reply, 400, { error: 'strategyIds must be a list', problems: ['strategyIds must be a list'] });
+    const s = strategyStore();
+    if (!(await s.group(id))) { reply.code(404); return { error: 'no such group' }; }
+    const members = (await s.all()).filter((x) => x.groupId === id).map((x) => x.id);
+    if (!sameSet(ids, members)) return refuse(reply, 409, { error: CHANGED, problems: [CHANGED] });
+    await s.setOrder('strategies', ids);
+    return { ok: true };
+  });
+
+  /*
    * Which group each strategy is in, every account's (owner, 10 Oct 2026: "wherever a strategy's name is, its group's
    * name as a tag -- desk and phone"). Small on purpose: read by every screen that names a strategy -- positions,
    * orders, history, a trade -- whichever account they show, and the strategies' own read is many times this.

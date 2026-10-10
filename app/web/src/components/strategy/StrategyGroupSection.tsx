@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Copy, FolderClosed, FolderInput, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { cloneGroup, deleteGroup, renameGroup, setGroupEnabled } from '@/api/strategy';
+import { ArrowDown, ArrowUp, ArrowUpDown, Copy, FolderClosed, FolderInput, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { cloneGroup, deleteGroup, orderGroup, renameGroup, setGroupEnabled } from '@/api/strategy';
 import { getAccounts, type BrokerAccount } from '@/api/accounts';
 import { Button } from '@/components/ui/button';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { accountTag, groupNameProblem, onCount } from '@/lib/strategy-groups';
+import { accountTag, groupNameProblem, moved, onCount } from '@/lib/strategy-groups';
 import type { Strategy, StrategyGroup } from '@/types/strategy';
 import { cn } from '@/lib/utils';
 
@@ -17,8 +17,12 @@ import { cn } from '@/lib/utils';
  * own switch, and the runner reads those as before. On is two taps -- it can start orders -- and says how many
  * have live orders on; off is one, the safe way. A clone is every strategy copied switched off, live orders off.
  * Removing the group keeps its strategies, in no group.
+ *
+ * Reorder (owner, 10 Oct 2026: "change the display order, user friendly"): the cards give way to one short row each,
+ * with up and down buttons a thumb can hit -- no dragging, which a phone scrolls instead -- then Save; the group
+ * itself moves up or down among its account's at once. The order is the screens' only: the runner's is its own.
  */
-export function StrategyGroupSection({ group, strategies, showAccount, busy, act, canMake, onNew, onCopyIn, children }: {
+export function StrategyGroupSection({ group, strategies, showAccount, busy, act, canMake, onNew, onCopyIn, onMoveGroup, children }: {
   group: StrategyGroup;
   strategies: readonly Strategy[];
   /** On "All accounts": say whose group it is. */
@@ -30,6 +34,8 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
   onNew: () => void;
   /** Opens the copy sheet, into this group: strategies of any account and group copied in. */
   onCopyIn?: () => void;
+  /** Moves the group one place among its account's (-1 up, +1 down); absent where it cannot move that way. */
+  onMoveGroup?: { up?: () => void; down?: () => void };
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useFold(`strategy-group-${group.id}`);
@@ -38,6 +44,8 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
   const [cloning, setCloning] = useState<{ accountId: number | null; name: string } | null>(null);
   const [accounts, setAccounts] = useState<BrokerAccount[] | null>(null);
   const [said, setSaid] = useState<string | null>(null);
+  // The order being set, while Reorder is open: the strategies' ids, top first.
+  const [order, setOrder] = useState<string[] | null>(null);
   const { on, of } = onCount(strategies);
   const live = strategies.filter((s) => s.config.liveOrders && !s.enabled).length;
   const key = (what: string) => `group-${what}-${group.id}`;
@@ -129,6 +137,13 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
               {busy === key('off') && <Loader2 className="h-3 w-3 animate-spin" />} Turn all off
             </Button>
           )}
+          {of > 1 && (
+            <Button size="sm" variant={order ? 'default' : 'ghost'} className="h-8 px-2" aria-label={`Reorder ${group.name}`} aria-pressed={order !== null}
+                    title="Change the order its strategies are listed in"
+                    onClick={() => { setOrder(order ? null : strategies.map((s) => s.id)); if (!open) setOpen(true); }}>
+              <ArrowUpDown className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <Button size="sm" variant="ghost" className="h-8 px-2" aria-label={`Rename ${group.name}`} title="Rename"
                   onClick={() => setRenaming(group.name)}>
             <Pencil className="h-3.5 w-3.5" />
@@ -193,7 +208,52 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
 
       {said && <p role="status" className="m-0 mt-1.5 text-[12px] text-muted-foreground">{said}</p>}
 
-      {open && (
+      {open && order && (
+        <div role="group" aria-label={`order of ${group.name}`} className="mt-2 rounded-lg border border-dashed border-[var(--accent)]/50 p-2">
+          <p className="m-0 mb-1.5 text-[12px] text-muted-foreground">Move each one up or down, then Save. Only the order they are listed in changes.</p>
+          <ol className="m-0 grid list-none gap-1 p-0">
+            {order.map((id, i) => {
+              const s = strategies.find((x) => x.id === id);
+              if (!s) return null;
+              return (
+                <li key={id} className="flex items-center gap-2 rounded-md bg-muted px-2 py-1">
+                  <span className="w-5 flex-none text-right text-[12px] tabular-nums text-[var(--dim)]">{i + 1}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] text-foreground">{s.name}</span>
+                  <span className={cn('flex-none text-[11px]', s.enabled ? 'text-[var(--up)]' : 'text-[var(--dim)]')}>{s.enabled ? 'on' : 'off'}</span>
+                  <Button size="sm" variant="outline" className="h-9 w-9 flex-none p-0" aria-label={`Move ${s.name} up`} disabled={i === 0}
+                          onClick={() => setOrder(moved(order, i, -1))}>
+                    <ArrowUp className="h-4 w-4" />
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-9 w-9 flex-none p-0" aria-label={`Move ${s.name} down`} disabled={i === order.length - 1}
+                          onClick={() => setOrder(moved(order, i, 1))}>
+                    <ArrowDown className="h-4 w-4" />
+                  </Button>
+                </li>
+              );
+            })}
+          </ol>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button size="sm" className="h-9" disabled={busy === key('order')}
+                    onClick={() => void act(key('order'), () => orderGroup(group.id, order)).then((ok) => { if (ok) setOrder(null); })}>
+              {busy === key('order') && <Loader2 className="h-3 w-3 animate-spin" />} Save order
+            </Button>
+            <Button size="sm" variant="ghost" className="h-9" onClick={() => setOrder(null)}>Cancel</Button>
+            {(onMoveGroup?.up || onMoveGroup?.down) && (
+              <span className="ml-auto inline-flex items-center gap-1 text-[12px] text-muted-foreground">
+                The group
+                <Button size="sm" variant="outline" className="h-9 px-2" aria-label={`Move group ${group.name} up`} disabled={!onMoveGroup.up} onClick={onMoveGroup.up}>
+                  <ArrowUp className="h-4 w-4" /> Up
+                </Button>
+                <Button size="sm" variant="outline" className="h-9 px-2" aria-label={`Move group ${group.name} down`} disabled={!onMoveGroup.down} onClick={onMoveGroup.down}>
+                  <ArrowDown className="h-4 w-4" /> Down
+                </Button>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {open && !order && (
         <div className="mt-2 grid gap-2">
           {children}
           {of === 0 && (

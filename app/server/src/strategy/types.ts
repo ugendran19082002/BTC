@@ -919,6 +919,8 @@ export type Strategy = {
    * own -- and only a way of keeping them: what a strategy does is still its own switch and its own settings.
    */
   groupId?: string | null;
+  /** Its place in its group's list, set by hand; null: where it was made. Display only -- the runner never reads it. */
+  position?: number | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -929,7 +931,7 @@ export type Strategy = {
  * all of its strategies on or off at once -- each still trades by its own switch, so nothing about how one runs
  * changes. Removing a group leaves its strategies, ungrouped.
  */
-export type StrategyGroup = { id: string; name: string; accountId: number | null; createdAt: number; updatedAt: number };
+export type StrategyGroup = { id: string; name: string; accountId: number | null; createdAt: number; updatedAt: number; position?: number | null };
 
 /** What is wrong with a group's name, in words; null when nothing. */
 export function groupNameProblem(name: string): string | null {

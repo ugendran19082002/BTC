@@ -349,6 +349,8 @@ export type Strategy = {
   accountId?: number | null;
   /** The group it is listed in -- always one of its own account's; null or absent: in none. */
   groupId?: string | null;
+  /** Its place in its group's list, set by hand (Reorder); null: where it was made. Display only. */
+  position?: number | null;
   id: string;
   name: string;
   enabled: boolean;
@@ -376,6 +378,8 @@ export type StrategyGroup = {
   accountName: string | null;
   createdAt: number;
   updatedAt: number;
+  /** Its place among its account's groups, set by hand; null: where it was made. */
+  position?: number | null;
 };
 
 export type StrategyRun = {

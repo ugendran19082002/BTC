@@ -78,6 +78,14 @@ export const copyIntoGroup = (strategyIds: string[], to: { groupId: string } | {
       : { newGroup: to.newGroup.accountId === null ? { name: to.newGroup.name } : to.newGroup }),
   });
 
+/** The display order of a group's strategies: all of them, in the order wanted. Display only. */
+export const orderGroup = (id: string, strategyIds: string[]) =>
+  post<{ ok: true }>(`/api/strategy-groups/${encodeURIComponent(id)}/order`, { strategyIds });
+
+/** The display order of one account's groups: all of them, in the order wanted. */
+export const orderGroups = (accountId: number | null, groupIds: string[]) =>
+  post<{ ok: true }>('/api/strategy-groups/order', accountId === null ? { groupIds } : { accountId, groupIds });
+
 /** The group goes; its strategies stay, as they were, in no group. */
 export const deleteGroup = (id: string) =>
   json<{ ok: true; ungrouped: number }>(`/api/strategy-groups/${encodeURIComponent(id)}`, { method: 'DELETE' });

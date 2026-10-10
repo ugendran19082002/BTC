@@ -283,6 +283,19 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    /*
+     * The order the screens list strategies and groups in, set by hand (owner, 10 Oct 2026: "change the strategy
+     * list's display order, user friendly"). A display order and nothing more: the scheduler and the runner read the
+     * strategies as before (`all()`, oldest first), so which one takes a signal first does not change. Null is "where
+     * it was made": every row starts so, which is the order shown until now; one moved into a group goes to its end.
+     */
+    id: 'strategy-011-display-order',
+    up: `
+      ALTER TABLE strategies ADD COLUMN IF NOT EXISTS position INTEGER;
+      ALTER TABLE strategy_groups ADD COLUMN IF NOT EXISTS position INTEGER;
+    `,
+  },
 ];
 
 /** A config without the settings the desk no longer has. */
@@ -292,11 +305,11 @@ function withoutRetired(cfg: StrategyConfig): StrategyConfig {
   return out as StrategyConfig;
 }
 
-type StrategyRow = { id: string; name: string; enabled: boolean; config: StrategyConfig; created_at: number; updated_at: number; broker_account_id: string | number | null; group_id?: string | null };
-type GroupRow = { id: string; name: string; broker_account_id: string | number | null; created_at: string | number; updated_at: string | number };
+type StrategyRow = { id: string; name: string; enabled: boolean; config: StrategyConfig; created_at: number; updated_at: number; broker_account_id: string | number | null; group_id?: string | null; position?: number | null };
+type GroupRow = { id: string; name: string; broker_account_id: string | number | null; created_at: string | number; updated_at: string | number; position?: number | null };
 const groupFrom = (r: GroupRow): StrategyGroup => ({
   id: r.id, name: r.name, accountId: r.broker_account_id === null ? null : Number(r.broker_account_id),
-  createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+  createdAt: Number(r.created_at), updatedAt: Number(r.updated_at), position: r.position ?? null,
 });
 type RunRow = { id: number; strategy_id: string; run_date: string; status: StrategyRun['status']; detail: string; at: number };
 
@@ -445,6 +458,7 @@ export class StrategyStore {
     config: withoutRetired({ ...DEFAULT_CONFIG, ...r.config }),
     accountId: r.broker_account_id === null || r.broker_account_id === undefined ? null : Number(r.broker_account_id),
     groupId: r.group_id ?? null,
+    position: r.position ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });
@@ -542,9 +556,19 @@ export class StrategyStore {
     return o.copies.map((x) => x.id);
   }
 
-  /** Put a strategy in a group, or in none. Its switch, settings and account are not touched. */
+  /**
+   * The display order of a group's strategies, or of an account's groups: each given its place in one transaction.
+   * The caller has checked the list is the whole of them.
+   */
+  async setOrder(table: 'strategies' | 'strategy_groups', ids: string[]): Promise<void> {
+    await tx(async (c) => {
+      for (const [i, id] of ids.entries()) await c.query(`UPDATE ${table} SET position = $1 WHERE id = $2`, [i, id]);
+    });
+  }
+
+  /** Put a strategy in a group, or in none -- at its end. Its switch, settings and account are not touched. */
   async setGroup(strategyId: string, groupId: string | null): Promise<Strategy | null> {
-    const r = await query('UPDATE strategies SET group_id = $1, updated_at = $2 WHERE id = $3', [groupId, Date.now(), strategyId]);
+    const r = await query('UPDATE strategies SET group_id = $1, position = NULL, updated_at = $2 WHERE id = $3', [groupId, Date.now(), strategyId]);
     return (r.rowCount ?? 0) > 0 ? this.get(strategyId) : null;
   }
 

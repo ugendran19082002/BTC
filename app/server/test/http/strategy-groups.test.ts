@@ -225,6 +225,38 @@ test('[critical] copy in: strategies of any account and group, into a new group 
   assert.equal(still.strategies.length, after.strategies.length);
 });
 
+test('[critical] the display order: a group\'s strategies and an account\'s groups, by hand -- the whole list or nothing; the runner\'s order untouched', async () => {
+  const runnerBefore = (await strategyStore().all()).map((x) => x.id);
+  const b = await list();
+  const scalps = b.groups.find((g: any) => g.accountId === main() && g.name === 'Fast scalps');
+  const members = b.strategies.filter((x: any) => x.groupId === scalps.id).map((x: any) => x.id);
+  const wanted = [...members].reverse();
+  assert.equal((await api('POST', `/api/strategy-groups/${scalps.id}/order`, { strategyIds: wanted })).status, 200);
+  const after = await list();
+  const placed = after.strategies.filter((x: any) => x.groupId === scalps.id).sort((x: any, y: any) => x.position - y.position).map((x: any) => x.id);
+  assert.deepEqual(placed, wanted);
+  // Not the whole group, a stranger in it, twice the same: refused, nothing changed.
+  for (const strategyIds of [wanted.slice(1), [...wanted, 'old-two'], [wanted[0], ...wanted.slice(0, -1)]]) {
+    const r = await api('POST', `/api/strategy-groups/${scalps.id}/order`, { strategyIds });
+    assert.equal(r.status, 409, JSON.stringify(strategyIds));
+    assert.match(r.body.error, /The list changed while it was being ordered/);
+  }
+  assert.equal((await api('POST', '/api/strategy-groups/nope/order', { strategyIds: [] })).status, 404);
+  // An account's groups.
+  const mine = after.groups.filter((g: any) => g.accountId === main()).map((g: any) => g.id);
+  const turned = [...mine].reverse();
+  assert.equal((await api('POST', '/api/strategy-groups/order', { accountId: main(), groupIds: turned })).status, 200);
+  const gs = (await list()).groups.filter((g: any) => g.accountId === main()).sort((x: any, y: any) => x.position - y.position).map((g: any) => g.id);
+  assert.deepEqual(gs, turned);
+  assert.equal((await api('POST', '/api/strategy-groups/order', { accountId: main(), groupIds: turned.slice(1) })).status, 409);
+  // Moved to another group: at its end there (no place of its own yet).
+  const moved = await api('POST', `/api/strategies/${wanted[0]}/group`, { groupId: `group-${main()}` });
+  assert.equal(moved.body.strategy.position, null);
+  await api('POST', `/api/strategies/${wanted[0]}/group`, { groupId: scalps.id });
+  // The runner reads them as it always did.
+  assert.deepEqual((await strategyStore().all()).map((x) => x.id), runnerBefore);
+});
+
 test('[critical] removing a group keeps its strategies, as they were, in no group', async () => {
   const b = await list();
   const g = b.groups.find((x: any) => x.accountId === main() && x.name === 'Fast scalps copy');

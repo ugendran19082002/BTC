@@ -17,10 +17,33 @@ export type GroupSection = { group: StrategyGroup | null; strategies: Strategy[]
  */
 export function groupSections(strategies: readonly Strategy[], groups: readonly StrategyGroup[]): GroupSection[] {
   const known = new Set(groups.map((g) => g.id));
-  const sections: GroupSection[] = groups.map((g) => ({ group: g, strategies: strategies.filter((s) => s.groupId === g.id) }));
+  const sections: GroupSection[] = inOrder(groups).map((g) => ({ group: g, strategies: byPosition(strategies.filter((s) => s.groupId === g.id)) }));
   const loose = strategies.filter((s) => !s.groupId || !known.has(s.groupId));
   if (loose.length > 0) sections.push({ group: null, strategies: loose });
   return sections;
+}
+
+/**
+ * In the order set by hand (`position`, owner 10 Oct 2026: "change the display order"); those without one after,
+ * in the order given -- where they were made. Stable: equal places keep the order they came in.
+ */
+export function byPosition<T extends { position?: number | null }>(xs: readonly T[]): T[] {
+  return xs.map((x, i) => ({ x, i })).sort((a, b) => ((a.x.position ?? Infinity) - (b.x.position ?? Infinity)) || a.i - b.i).map((o) => o.x);
+}
+
+/** The groups, each account's together where it first comes, and within an account in its own order. */
+export function inOrder(groups: readonly StrategyGroup[]): StrategyGroup[] {
+  const accounts = [...new Set(groups.map((g) => g.accountId ?? null))];
+  return accounts.flatMap((a) => byPosition(groups.filter((g) => (g.accountId ?? null) === a)));
+}
+
+/** The list with one item moved one place up (-1) or down (+1); unchanged at either end. */
+export function moved<T>(xs: readonly T[], i: number, by: -1 | 1): T[] {
+  const j = i + by;
+  if (i < 0 || j < 0 || j >= xs.length) return [...xs];
+  const out = [...xs];
+  [out[i], out[j]] = [out[j]!, out[i]!];
+  return out;
 }
 
 /** "3 of 5 on": how many of a group's strategies are switched on. */

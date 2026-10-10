@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-462 files listed, 230 test files counted below, images and lockfiles left out.
+466 files listed, 231 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 122 |
-| `app/web` | 108 |
+| `app/web` | 109 |
 
 ## `(root)`
 
@@ -278,6 +278,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [phone.ts](../../app/web/src/api/phone.ts) | The phone's reads beyond the glance (Level 2, 6 Oct 2026): one trade's journal, the strategies' activity, and the closed trades' statistics. |
 | [report.ts](../../app/web/src/api/report.ts) | The P&L screen's calls: the record as a calendar, one day's mark-to-market line, and the spreadsheet download. |
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
+| [strategy-groups.ts](../../app/web/src/api/strategy-groups.ts) | Read quietly: the index only puts a tag beside a strategy's name, and a screen without it is the screen as it was -- so a failure is no answer (null), never an error said or logged. |
 | [strategy.ts](../../app/web/src/api/strategy.ts) | Copy one, settings and all, as a new draft. |
 | [trade.ts](../../app/web/src/api/trade.ts) | The order desk. |
 
@@ -449,7 +450,9 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [CopyStrategiesSheet.tsx](../../app/web/src/components/strategy/CopyStrategiesSheet.tsx) | Copy strategies into a group (owner, 10 Oct 2026: "from another account's, another group's, into a new group or an existing one -- user friendly, mobile friendly"). |
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
+| [GroupTag.tsx](../../app/web/src/components/strategy/GroupTag.tsx) | The group a strategy is in, as a small tag beside its name (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- user friendly, desk and phone"). |
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
 | [SignalRuleEditor.tsx](../../app/web/src/components/strategy/SignalRuleEditor.tsx) | Which signals a signal strategy takes: the way (with the timeframe chain, or without it on one timeframe), and the methods -- picked from the 81, each with its record so far in that way, so the cho... |
 | [SignalStrategiesCard.tsx](../../app/web/src/components/strategy/SignalStrategiesCard.tsx) | The signal strategies, on the Live screen beside the methods that make the signals: each one's switch, its live-orders switch, what it is set to, and what the last signals did. |
@@ -514,6 +517,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [useGroupOf.ts](../../app/web/src/hooks/useGroupOf.ts) | A strategy's group, for the tag beside its name on every screen (owner, 10 Oct 2026). |
 | [useMediaQuery.ts](../../app/web/src/hooks/useMediaQuery.ts) | Whether a CSS media query matches, following it as the window changes. |
 | [usePageVisible.ts](../../app/web/src/hooks/usePageVisible.ts) | False while the tab is hidden or the phone is locked, so polls stop -- a pocketed phone stops spending battery and filling the error log. |
 | [usePersisted.ts](../../app/web/src/hooks/usePersisted.ts) | State that survives a reload, kept in localStorage. |
