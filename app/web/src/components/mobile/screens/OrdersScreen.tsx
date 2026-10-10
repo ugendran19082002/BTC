@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { getOrders } from '@/api/phone';
 import type { OrderRecord, OrderStatus } from '@/types/trade';
 import { usePoll } from '@/hooks/usePoll';
 import { clock, contractLabel, price, size } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
-import { usePhone } from '@/components/mobile/phone-context';
-import { Chip, Chips, Empty, ListButton, Loading, Panel, Pill, When } from '@/components/mobile/parts';
+import { usePhoneData } from '@/components/mobile/phone-context';
+import { Chip, Chips, Empty, ListButton, Loading, Panel, When } from '@/components/mobile/parts';
 import { PlacedLine } from '@/components/mobile/StrategyTag';
+import { orderStatusWord } from '@/components/mobile/order-status';
 
 /**
  * Orders (6 Oct 2026): the day's orders as the desk placed them -- what was asked, what it filled at, and where
@@ -24,23 +25,19 @@ const FILTERS: { key: OrderStatus | 'all'; label: string }[] = [
   { key: 'rejected', label: 'Rejected' },
 ];
 
-const WORD: Record<OrderStatus, { label: string; tone: 'up' | 'down' | 'warn' | 'dim' }> = {
-  completed: { label: 'FILLED', tone: 'up' },
-  pending: { label: 'WORKING', tone: 'warn' },
-  cancelled: { label: 'CANCELLED', tone: 'dim' },
-  rejected: { label: 'REJECTED', tone: 'down' },
-};
-
-export const orderStatusWord = (o: Pick<OrderRecord, 'status'>) => <Pill tone={WORD[o.status].tone}>{WORD[o.status].label}</Pill>;
+// The status word lives with Home's copy of it (order-status.tsx); said here too for whatever read it from here.
+export { orderStatusWord };
 
 /** The day `n` back from today, IST; never in the future. */
 const dayBack = (n: number, now: number) => (n <= 0 ? todayIst(now) : daysAgoIst(n, now));
 
 export function OrdersScreen() {
-  const p = usePhone();
+  const p = usePhoneData();
   const [back, setBack] = useState(0);
   const [filter, setFilter] = useState<OrderStatus | 'all'>('all');
+  const [limit, setLimit] = useState(PAGE);
   const day = dayBack(back, p.now);
+  useEffect(() => { setLimit(PAGE); }, [day, filter, p.accountParam]);
   const orders = usePoll(() => getOrders(day, day, p.accountParam), back === 0 ? 10_000 : 120_000, { deps: [day, p.accountParam] });
   const all = (orders.data?.trades ?? []).slice().sort((a, b) => b.openedAt - a.openedAt);
   const shown = filter === 'all' ? all : all.filter((o) => o.status === filter);
@@ -71,15 +68,29 @@ export function OrdersScreen() {
           <Empty>{all.length === 0 ? 'No orders this day.' : 'None with this status.'}</Empty>
         ) : (
           <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Orders">
-            {shown.map((o) => <OrderRow key={`${o.account?.id ?? ''}-${o.tradeId}`} o={o} onOpen={() => p.openTrade(o.tradeId)} showAccount={p.shown === 'all'} />)}
+            {shown.slice(0, limit).map((o) => <OrderRow key={`${o.account?.id ?? ''}-${o.tradeId}`} o={o} openTrade={p.openTrade} showAccount={p.shown === 'all'} />)}
           </ul>
+        )}
+        {/* Forty at a time, the rest a tap away: a busy day's hundred-odd rows drawn at once were the screen's lag. */}
+        {shown.length > limit && (
+          <button
+            type="button" onClick={() => setLimit((l) => l + PAGE)}
+            className="m-0 mt-2 flex h-11 w-full appearance-none items-center justify-center rounded-lg border border-solid border-border bg-transparent font-[inherit] text-[13.5px] text-foreground"
+          >
+            Show {Math.min(PAGE, shown.length - limit)} more · {limit} of {shown.length}
+          </button>
         )}
       </Panel>
     </>
   );
 }
 
-function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => void; showAccount: boolean }) {
+/** Rows drawn at first, and each "Show more" adds. */
+const PAGE = 40;
+
+// Memoised: an order that has not changed since the last reading (the poll keeps its object) is not drawn again.
+const OrderRow = memo(function OrderRow({ o, openTrade, showAccount }: { o: OrderRecord; openTrade: (tradeId: string) => void; showAccount: boolean }) {
+  const onOpen = () => openTrade(o.tradeId);
   const buy = o.plan?.action === 'buy';
   const limit = o.plan?.entry.limitPrice ?? null;
   const signal = o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ${o.plan.signal.tf}` : null;
@@ -109,4 +120,4 @@ function OrderRow({ o, onOpen, showAccount }: { o: OrderRecord; onOpen: () => vo
       </ListButton>
     </li>
   );
-}
+});

@@ -14,6 +14,23 @@ describe('usePoll', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it('[critical] an answer the same as the last keeps the object already held -- what reads it does not redraw -- and a changed one replaces it (10 Oct 2026)', async () => {
+    let n = 0;
+    const fetcher = vi.fn(async () => ({ rows: [{ id: 1, pnl: n < 2 ? 5 : 7 }] }));
+    const { result } = renderHook(() => usePoll(fetcher, 1000));
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    const first = result.current.data;
+    n = 1;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1050); });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toBe(first);             // same content: the very same object
+    expect(result.current.updatedAt).not.toBeNull();       // and still said to be fresh
+    n = 2;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1050); });
+    expect(result.current.data).not.toBe(first);
+    expect(result.current.data).toEqual({ rows: [{ id: 1, pnl: 7 }] });
+  });
+
   it('keeps going on the interval', async () => {
     const fetcher = vi.fn().mockResolvedValue('x');
     renderHook(() => usePoll(fetcher, 1000));

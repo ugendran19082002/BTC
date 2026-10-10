@@ -1,6 +1,7 @@
 import { countdown, stamp } from '@/lib/format';
 import { usePhone } from '@/components/mobile/phone-context';
 import { Empty, Panel, Pill, Row, Rows } from '@/components/mobile/parts';
+import { nextSettlement } from '@/components/mobile/settlement';
 
 /**
  * Market (6 Oct 2026): BTC as the desk sees it -- the perp's last trade, mark and index, the day's change and
@@ -8,12 +9,8 @@ import { Empty, Panel, Pill, Row, Rows } from '@/components/mobile/parts';
  * chart and no extra call; the desk has the chart.
  */
 
-/** The next 17:30 IST (12:00 UTC): the daily contract's settlement, then Delta's launch auction to 17:34. */
-export function nextSettlement(now: number): number {
-  const d = new Date(now);
-  const today = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0);
-  return now < today ? today : today + 86_400_000;
-}
+// The next settlement lives with Home's copy of it (settlement.ts); said here too for whatever read it from here.
+export { nextSettlement };
 
 const n0 = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : Math.round(v).toLocaleString('en-US'));
 

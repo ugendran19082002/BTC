@@ -13,6 +13,23 @@ if (!el) throw new Error('#root missing');
 installGlobalErrorReporting();
 
 /*
+ * A deploy replaced the chunks this page was built with (10 Oct 2026: "Failed to fetch dynamically imported module
+ * .../AccountCard-CwGAwC3J.js", a tab left open over a deploy). The page that asks for a screen it no longer has
+ * the file for reloads once, onto the new build, rather than showing an error until someone reloads it by hand.
+ * Once a minute at most: a chunk that still cannot be fetched after a reload is a network down, not a deploy, and
+ * is left to the error boundary to say.
+ */
+window.addEventListener('vite:preloadError', (event) => {
+  const KEY = 'btc-desk:reloaded-for-new-build';
+  let last = 0;
+  try { last = Number(sessionStorage.getItem(KEY) ?? 0); } catch { /* storage blocked: reload anyway, once per load */ }
+  if (Date.now() - last < 60_000) return;
+  try { sessionStorage.setItem(KEY, String(Date.now())); } catch { /* as above */ }
+  event.preventDefault();
+  window.location.reload();
+});
+
+/*
  * /m is the phone (6 Oct 2026): the desk read at a glance, signed in view only. Its own chunk, so a phone on a
  * cell connection never downloads the chain, the chart and the order ticket it has no use for.
  */

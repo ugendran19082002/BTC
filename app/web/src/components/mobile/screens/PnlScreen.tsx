@@ -6,7 +6,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct, signedInr, usdToInr } from '@/lib/format';
 import { lossBudget } from '@/lib/position-risk';
 import { cn } from '@/lib/utils';
-import { usePhone } from '@/components/mobile/phone-context';
+import { usePhoneData } from '@/components/mobile/phone-context';
 import { AreaChart, Empty, Loading, LossMeter, Panel, Rupees, Stat, Stats } from '@/components/mobile/parts';
 import { describeRange } from '@/components/ui/date-range-picker';
 import { useDayRange } from '@/components/mobile/useDayRange';
@@ -45,7 +45,7 @@ const rsShort = (usd: number | null | undefined) => {
 const toneOf = (usd: number | null | undefined): 'up' | 'down' | undefined => (usd == null || usd === 0 ? undefined : usd > 0 ? 'up' : 'down');
 
 export function PnlScreen() {
-  const p = usePhone();
+  const p = usePhoneData();
   // The same filter as every other screen that reads days (`useDayRange`), remembered as P&L's own.
   const range = useDayRange('m-pnl', p.now);
   const { isToday, from, to, today } = range;

@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import type { BrokerAccount } from '@/api/accounts';
 import type { Glance } from '@/api/glance';
 import type { Me } from '@/api/session';
@@ -60,8 +60,28 @@ export type PhoneData = {
 
 export const PhoneContext = createContext<PhoneData | null>(null);
 
+/**
+ * The perp as it prints, apart from the rest (10 Oct 2026): it moves up to twice a second, and in the one
+ * context every screen redrew with it -- Orders' hundred rows among them, which never show it. The shell puts
+ * the slower reading (the glance's mark) in `PhoneContext` and the printing one here.
+ */
+export type PerpNow = { perp: number | null; perpLive: boolean };
+export const PerpContext = createContext<PerpNow | null>(null);
+
+/** Everything, the printing perp included: for the screens that show it (Home, Positions, Alerts, a trade). */
 export function usePhone(): PhoneData {
   const v = useContext(PhoneContext);
+  const fast = useContext(PerpContext);
   if (!v) throw new Error('usePhone outside the phone shell');
+  return useMemo(() => (fast ? { ...v, ...fast } : v), [v, fast]);
+}
+
+/**
+ * Everything but the printing perp -- `perp` here is the glance's mark, read every 15 s: for the screens that do
+ * not show it, which then redraw when their own figures move and not twice a second.
+ */
+export function usePhoneData(): PhoneData {
+  const v = useContext(PhoneContext);
+  if (!v) throw new Error('usePhoneData outside the phone shell');
   return v;
 }

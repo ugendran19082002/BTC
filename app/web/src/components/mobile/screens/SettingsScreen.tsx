@@ -1,6 +1,6 @@
 import { LogOut } from 'lucide-react';
 import { HealthCard } from '@/components/mobile/HealthCard';
-import { usePhone } from '@/components/mobile/phone-context';
+import { usePhoneData } from '@/components/mobile/phone-context';
 import { Panel, Pill, Row, Rows } from '@/components/mobile/parts';
 import { ago, stamp } from '@/lib/format';
 import { DeskSwitch } from '@/components/mobile/DeskSwitch';
@@ -11,7 +11,7 @@ import { DeskSwitch } from '@/components/mobile/DeskSwitch';
  * desk itself, behind a full sign-in.
  */
 export function SettingsScreen() {
-  const p = usePhone();
+  const p = usePhoneData();
   const b = p.glance?.build;
   const alerts = p.status?.alerts;
   return (

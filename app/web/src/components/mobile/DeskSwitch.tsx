@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Monitor } from 'lucide-react';
 import { logout } from '@/api/session';
-import { usePhone } from '@/components/mobile/phone-context';
+import { usePhoneData } from '@/components/mobile/phone-context';
 
 /**
  * From the phone to the full desk (6 Oct 2026). With a full sign-in, straight there. With a view-only one the desk
@@ -9,7 +9,7 @@ import { usePhone } from '@/components/mobile/phone-context';
  * offers the way: sign out here, then sign in on the desk. Never a way round the sign-in.
  */
 export function DeskSwitch() {
-  const p = usePhone();
+  const p = usePhoneData();
   const [asking, setAsking] = useState(false);
   const full = p.me.scope !== 'view';
 

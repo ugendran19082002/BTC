@@ -10,10 +10,11 @@ import { LoginPage } from '@/components/desk/LoginPage';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Toasts } from '@/components/mobile/Toasts';
 import { useTradeToasts } from '@/components/mobile/useTradeToasts';
-import { PhoneContext, routeOf, searchOf, type PhoneData, type Route, type Tab } from '@/components/mobile/phone-context';
+import { PerpContext, PhoneContext, routeOf, searchOf, usePhone, type PhoneData, type Route, type Tab } from '@/components/mobile/phone-context';
 import { HomeScreen } from '@/components/mobile/screens/HomeScreen';
 import { MoreScreen, SUB_TITLE } from '@/components/mobile/screens/MoreScreen';
 import { Chip, Chips, Loading, Panel } from '@/components/mobile/parts';
+import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 
 /*
  * Home and the More list come with the phone; every other screen is a chunk of its own (10 Oct 2026), so the
@@ -164,12 +165,6 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   const glance = usePoll(getGlance, GLANCE_MS);
   // What changed since the last reading, as toasts over whatever screen is open.
   const live = useTradeToasts(status.data?.open, `${shown}|${trading.map((a) => a.id).join(',')}`);
-  // The perp's last trade as it prints, for the SL / TGT line of a signal trade -- from `PerpFeed` below, which
-  // alone hears the stream: here it arrives at most twice a second, and only when the price moved.
-  const [feed, setFeed] = useState<{ price: number | null; live: boolean }>({ price: null, live: false });
-  const onPerp = useCallback((v: { price: number | null; live: boolean }) => setFeed((f) => (f.price === v.price && f.live === v.live ? f : v)), []);
-  const perpLive = feed.live && feed.price !== null;
-  const perp = perpLive ? feed.price : glance.data?.btc.perpMark ?? null;
 
   // Any "not signed in" -- the session expired, or was signed out from the desk -- goes back to the sign-in.
   const lost = [accounts.error, status.error, glance.error].some((e) => e instanceof NotSignedIn);
@@ -181,18 +176,19 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   const signOut = useCallback(async () => { await logout().catch(() => undefined); onSignedOut(); }, [onSignedOut]);
 
   // One object while nothing in it changed: every screen reads it, and a new one each render redrew them all.
+  // The printing perp is not in it but beside it (`PerpContext`): here, the glance's mark, which moves every 15 s.
+  const slowPerp = glance.data?.btc.perpMark ?? null;
   const data: PhoneData = useMemo(() => ({
     me, status: status.data, statusError: status.error, statusAt: status.updatedAt, glance: glance.data, glanceError: glance.error,
-    accounts: all, trading, shown, accountParam: shown === 'all' ? null : shown, now, perp, perpLive, go, openTrade,
+    accounts: all, trading, shown, accountParam: shown === 'all' ? null : shown, now, perp: slowPerp, perpLive: false, go, openTrade,
     signOut: () => void signOut(), onSignedOut,
-  }), [me, status.data, status.error, status.updatedAt, glance.data, glance.error, all, trading, shown, now, perp, perpLive, go, openTrade, signOut, onSignedOut]);
-  const alertCount = phoneAlerts(status.data, glance.data, perp).filter((a) => a.level !== 'green').length;
+  }), [me, status.data, status.error, status.updatedAt, glance.data, glance.error, all, trading, shown, now, slowPerp, go, openTrade, signOut, onSignedOut]);
   const title = route.sub ? SUB_TITLE[route.sub] : TAB_TITLE[route.tab];
   const s = status.data;
 
   return (
     <PhoneContext.Provider value={data}>
-      <PerpFeed onPerp={onPerp} />
+      <PerpProvider fallback={slowPerp}>
       <Frame
         header={
           <div className="flex items-center gap-2">
@@ -218,20 +214,14 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
             >
               <RefreshCw className="h-[18px] w-[18px]" />
             </button>
-            <button
-              type="button" aria-label={`Alerts${alertCount ? `: ${alertCount}` : ''}`} title="Alerts" onClick={() => go({ tab: 'more', sub: 'alerts' })}
-              className="relative -mr-2 grid h-11 w-11 shrink-0 place-items-center rounded-md border-0 bg-transparent text-muted-foreground active:bg-muted"
-            >
-              <Bell className="h-[19px] w-[19px]" />
-              {alertCount > 0 && <span aria-hidden="true" className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg)] bg-[var(--down)]" />}
-            </button>
+            <AlertBell onOpen={() => go({ tab: 'more', sub: 'alerts' })} />
           </div>
         }
         nav={
           <nav aria-label="Screens" className="grid grid-cols-5">
             {TAB_ITEMS.map((t) => {
               const on = route.tab === t.tab;
-              const badge = t.tab === 'positions' ? (s?.open.length ?? 0) : t.tab === 'more' ? alertCount : 0;
+              const badge = t.tab === 'positions' ? (s?.open.length ?? 0) : 0;
               return (
                 <button
                   key={t.tab} type="button" aria-current={on ? 'page' : undefined} onClick={() => go({ tab: t.tab, sub: null })}
@@ -240,14 +230,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
                   {on && <span aria-hidden="true" className="absolute top-0 h-[3px] w-8 rounded-b bg-[var(--up)]" />}
                   <t.icon aria-hidden="true" className="h-[22px] w-[22px]" />
                   <span>{t.label}</span>
-                  {badge > 0 && (
-                    <span className={cn(
-                      'absolute left-1/2 top-1.5 ml-2 min-w-[18px] rounded-full px-1 text-center text-[11px] font-semibold leading-[18px]',
-                      t.tab === 'more' ? 'bg-[var(--down)] text-white' : 'bg-[var(--panel-3)] text-foreground',
-                    )}>
-                      {badge}
-                    </span>
-                  )}
+                  {t.tab === 'more' ? <AlertBadge /> : <TabBadge n={badge} />}
                 </button>
               );
             })}
@@ -268,6 +251,11 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
           </div>
         )}
 
+        {/*
+          One screen failing -- its chunk not fetched on a dropped connection, or a fault drawing it -- is that screen
+          said wrong, never the whole phone gone blank (10 Oct 2026): the tabs stay, another tab clears it.
+        */}
+        <ErrorBoundary key={`${route.tab}|${route.sub ?? ''}`} where="This screen">
         <Suspense fallback={<Panel><Loading error={null} what="this screen" /></Panel>}>
         {route.tab === 'home' ? <HomeScreen />
           : route.tab === 'pnl' ? <PnlScreen />
@@ -284,9 +272,11 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
                           : route.sub === 'settings' ? <SettingsScreen />
                             : <MoreScreen />}
         </Suspense>
+        </ErrorBoundary>
       </Frame>
-      {route.trade && <Suspense fallback={null}><TradeDetail tradeId={route.trade} onClose={closeTrade} onSignedOut={onSignedOut} /></Suspense>}
+      {route.trade && <ErrorBoundary key={route.trade} where="This trade"><Suspense fallback={null}><TradeDetail tradeId={route.trade} onClose={closeTrade} onSignedOut={onSignedOut} /></Suspense></ErrorBoundary>}
       <Toasts toasts={live.toasts} onOpen={(t) => (t.tradeId ? openTrade(t.tradeId) : go({ tab: 'orders', sub: null }))} onDismiss={live.dismiss} />
+      </PerpProvider>
     </PhoneContext.Provider>
   );
 }
@@ -313,6 +303,62 @@ function Frame({ header, nav, children }: { header?: ReactNode; nav?: ReactNode;
       )}
     </div>
   );
+}
+
+/**
+ * The printing perp for the screens that show it (`PerpContext`), the glance's mark when the stream is not
+ * printing. Its state is here, not in the shell: a print re-renders this and the components that read the perp,
+ * and not the shell -- which, holding it, redrew every screen on every print (10 Oct 2026).
+ */
+function PerpProvider({ fallback, children }: { fallback: number | null; children: ReactNode }) {
+  const [feed, setFeed] = useState<{ price: number | null; live: boolean }>({ price: null, live: false });
+  const onPerp = useCallback((v: { price: number | null; live: boolean }) => setFeed((f) => (f.price === v.price && f.live === v.live ? f : v)), []);
+  const perpLive = feed.live && feed.price !== null;
+  const value = useMemo(() => ({ perp: perpLive ? feed.price : fallback, perpLive }), [perpLive, feed.price, fallback]);
+  return (
+    <PerpContext.Provider value={value}>
+      <PerpFeed onPerp={onPerp} />
+      {children}
+    </PerpContext.Provider>
+  );
+}
+
+/** What needs a look, counted with the printing perp: a price through a stop is an alert the moment it prints. */
+function useAlertCount(): number {
+  const p = usePhone();
+  return phoneAlerts(p.status, p.glance, p.perp).filter((a) => a.level !== 'green').length;
+}
+
+/** The bell, with a dot while anything needs a look -- its own component, so a print redraws the bell alone. */
+function AlertBell({ onOpen }: { onOpen: () => void }) {
+  const n = useAlertCount();
+  return (
+    <button
+      type="button" aria-label={`Alerts${n ? `: ${n}` : ''}`} title="Alerts" onClick={onOpen}
+      className="relative -mr-2 grid h-11 w-11 shrink-0 place-items-center rounded-md border-0 bg-transparent text-muted-foreground active:bg-muted"
+    >
+      <Bell className="h-[19px] w-[19px]" />
+      {n > 0 && <span aria-hidden="true" className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg)] bg-[var(--down)]" />}
+    </button>
+  );
+}
+
+/** A tab's count, over its icon. */
+function TabBadge({ n, alert = false }: { n: number; alert?: boolean }) {
+  if (n <= 0) return null;
+  return (
+    <span className={cn(
+      'absolute left-1/2 top-1.5 ml-2 min-w-[18px] rounded-full px-1 text-center text-[11px] font-semibold leading-[18px]',
+      alert ? 'bg-[var(--down)] text-white' : 'bg-[var(--panel-3)] text-foreground',
+    )}>
+      {n}
+    </span>
+  );
+}
+
+/** More's count: the alerts, in red. */
+function AlertBadge() {
+  return <TabBadge n={useAlertCount()} alert />;
 }
 
 /**

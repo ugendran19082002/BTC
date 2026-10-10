@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { getActivity, getDaySignals, getStats, methodNames } from '@/api/phone';
 import type { EntryMethodInfo } from '@/api/entry';
-import type { SignalRun, StrategyRun } from '@/types/strategy';
+import type { SignalRun, SignalTrade, StrategyRun } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
-import { usePhone } from '@/components/mobile/phone-context';
+import { usePhoneData } from '@/components/mobile/phone-context';
 import { Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
 
 /**
@@ -42,7 +42,7 @@ const FEEDS: { key: Feed; label: string; tone: string; none: string }[] = [
 const PAGE = 40;
 
 export function StrategiesScreen() {
-  const p = usePhone();
+  const p = usePhoneData();
   const act = usePoll(() => getActivity(p.accountParam), 20_000, { deps: [p.accountParam] });
   const month = usePoll(() => getStats(daysAgoIst(29, p.now), todayIst(p.now), p.accountParam), 300_000, { deps: [p.accountParam] });
   // The day's whole signal journal: `getActivity` carries only the latest sixty, any day -- too few to count by.
@@ -122,27 +122,9 @@ export function StrategiesScreen() {
         )}
         {!all ? <Loading error={daySignals.error} what="today's signals" /> : signals.length === 0 ? <Empty>{FEEDS.find((f) => f.key === tab)!.none}</Empty> : (
           <ul className="m-0 mt-1 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Signals">
-            {signals.map((r) => {
-              const w = SIGNAL_WORD[r.status];
-              const body = (
-                <>
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[14px] font-medium">
-                      <span className={r.dir === 1 ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{r.dir === 1 ? '▲ BUY' : '▼ SELL'}</span> {methodOf(r.method)}
-                    </span>
-                    <Pill tone={w.tone}>{w.word}</Pill>
-                  </span>
-                  <span className="block text-[12.5px] leading-snug text-muted-foreground"><When>{clock(r.at)}</When> · {r.tf} · {nameOf(r.strategyId)} · {r.detail}</span>
-                </>
-              );
-              return (
-                <li key={r.id}>
-                  {r.tradeId
-                    ? <ListButton onClick={() => p.openTrade(r.tradeId!)} label={`Signal ${methodOf(r.method)}: open its trade`}>{body}</ListButton>
-                    : <div className="py-2.5">{body}</div>}
-                </li>
-              );
-            })}
+            {signals.map((r) => (
+              <SignalRow key={r.id} r={r} method={methodOf(r.method)} strategy={nameOf(r.strategyId)} openTrade={p.openTrade} />
+            ))}
           </ul>
         )}
         {/* Said, not cut off: how many of the tab are showing, and the rest a tap away. */}
@@ -191,3 +173,28 @@ export function StrategiesScreen() {
     </>
   );
 }
+
+/** One signal: what, when, which strategy, and what became of it. Memoised: the list redraws with the clock, unchanged. */
+const SignalRow = memo(function SignalRow({ r, method, strategy, openTrade }: {
+  r: SignalTrade; method: string; strategy: string; openTrade: (tradeId: string) => void;
+}) {
+  const w = SIGNAL_WORD[r.status];
+  const body = (
+    <>
+      <span className="flex items-center justify-between gap-2">
+        <span className="truncate text-[14px] font-medium">
+          <span className={r.dir === 1 ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{r.dir === 1 ? '▲ BUY' : '▼ SELL'}</span> {method}
+        </span>
+        <Pill tone={w.tone}>{w.word}</Pill>
+      </span>
+      <span className="block text-[12.5px] leading-snug text-muted-foreground"><When>{clock(r.at)}</When> · {r.tf} · {strategy} · {r.detail}</span>
+    </>
+  );
+  return (
+    <li>
+      {r.tradeId
+        ? <ListButton onClick={() => openTrade(r.tradeId!)} label={`Signal ${method}: open its trade`}>{body}</ListButton>
+        : <div className="py-2.5">{body}</div>}
+    </li>
+  );
+});

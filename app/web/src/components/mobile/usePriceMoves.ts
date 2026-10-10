@@ -1,8 +1,8 @@
 import { getPriceChange } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import { priceMoves, type PriceMove } from '@/lib/price-change';
-import { usePhone } from '@/components/mobile/phone-context';
-import { nextSettlement } from '@/components/mobile/screens/MarketScreen';
+import { usePhoneData } from '@/components/mobile/phone-context';
+import { nextSettlement } from '@/components/mobile/settlement';
 
 /**
  * BTC's index now against each window back and the desk's own marks (7 Oct 2026), read once for the Price
@@ -12,7 +12,7 @@ import { nextSettlement } from '@/components/mobile/screens/MarketScreen';
 export function usePriceMoves(everyMs = 15_000): {
   at: number | null; index: number | null; read: boolean; error: Error | null; windows: PriceMove[]; marks: PriceMove[];
 } {
-  const p = usePhone();
+  const p = usePhoneData();
   const fills = (p.status?.open ?? []).filter((t) => t.position !== 0).flatMap((t) => t.fills.map((f) => f.ts)).filter((v) => v > 0);
   const entryMs = fills.length ? Math.min(...fills) : null;
   const expiryTs = Math.round(nextSettlement(p.now) / 1000);

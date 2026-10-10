@@ -1,7 +1,7 @@
 import type { BrokerAccount } from '@/api/accounts';
 import { ago, pct, signedInr, inr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { usePhone } from '@/components/mobile/phone-context';
+import { usePhoneData } from '@/components/mobile/phone-context';
 import { Bar, Empty, Panel, Rupees, Stat, Stats } from '@/components/mobile/parts';
 
 /**
@@ -10,7 +10,7 @@ import { Bar, Empty, Panel, Rupees, Stat, Stats } from '@/components/mobile/part
  * Never a key or a secret: the server sends only the key's last four, and this screen does not show even that.
  */
 export function AccountScreen() {
-  const p = usePhone();
+  const p = usePhoneData();
   const s = p.status;
   const g = p.glance;
   const parts = s?.combined?.accounts ?? null;

@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { getOrders } from '@/api/phone';
 import type { OrderRecord } from '@/types/trade';
 import { usePoll } from '@/hooks/usePoll';
 import { clock, contractLabel, price, signedInr, usdToInr } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { isLongTrade } from '@/lib/long-exits';
-import { usePhone } from '@/components/mobile/phone-context';
+import { usePhoneData } from '@/components/mobile/phone-context';
 import { Chip, Chips, Empty, ListButton, Loading, Panel, Rupees, Select, When } from '@/components/mobile/parts';
 import { PlacedLine, placedBy } from '@/components/mobile/StrategyTag';
 
@@ -26,7 +26,7 @@ const netOf = (o: OrderRecord) => o.netRealisedUsd ?? o.realisedPnl;
 const closedAt = (o: OrderRecord) => Math.max(o.updatedAt, ...o.fills.filter((f) => f.role !== 'entry').map((f) => f.ts));
 
 export function HistoryScreen() {
-  const p = usePhone();
+  const p = usePhoneData();
   const [days, setDays] = useState<Days>('0');
   const [result, setResult] = useState<Result>('all');
   const [opt, setOpt] = useState<Opt>('all');
@@ -47,6 +47,9 @@ export function HistoryScreen() {
     && (act === 'all' || (act === 'buy') === isLongTrade(o))
     && (strategy === 'all' || placedBy(o.plan).label === strategy));
   const total = shown.reduce((n, o) => n + netOf(o), 0);
+  // Forty rows at a time (10 Oct 2026): thirty days is a thousand-odd trades, drawn at once on a phone. The count and the total above are of all.
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => { setLimit(PAGE); }, [from, to, result, opt, act, strategy, p.accountParam]);
   const wins = shown.filter((o) => netOf(o) > 0).length;
 
   return (
@@ -75,30 +78,46 @@ export function HistoryScreen() {
           <Empty>{closed.length === 0 ? 'No trade closed in this range.' : 'None match these filters.'}</Empty>
         ) : (
           <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Closed trades">
-            {shown.map((o) => {
-              const net = netOf(o);
-              const long = isLongTrade(o);
-              return (
-                <li key={`${o.account?.id ?? ''}-${o.tradeId}`}>
-                  <ListButton onClick={() => p.openTrade(o.tradeId)} label={`${contractLabel(o.symbol)}: open the trade`}>
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[14.5px] font-semibold">{long ? 'BUY' : 'SELL'} {contractLabel(o.symbol)}</span>
-                      <span className={net > 0 ? 'font-semibold text-[var(--up)]' : net < 0 ? 'font-semibold text-[var(--down)]' : 'font-semibold'}>{signedInr(usdToInr(net))}</span>
-                    </span>
-                    <span className="block text-[12.5px] tabular-nums text-muted-foreground">
-                      <When>{clock(closedAt(o))}</When> · in {price(o.entryAvgPrice)} → out {price(o.exitAvgPrice)}
-                    </span>
-                    <PlacedLine
-                      plan={o.plan} className="mt-0.5"
-                      rest={[o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ${o.plan.signal.tf}` : null, p.shown === 'all' && o.account ? o.account.name : null]}
-                    />
-                  </ListButton>
-                </li>
-              );
-            })}
+            {shown.slice(0, limit).map((o) => (
+              <ClosedRow key={`${o.account?.id ?? ''}-${o.tradeId}`} o={o} openTrade={p.openTrade} showAccount={p.shown === 'all'} />
+            ))}
           </ul>
+        )}
+        {shown.length > limit && (
+          <button
+            type="button" onClick={() => setLimit((l) => l + PAGE)}
+            className="m-0 mt-2 flex h-11 w-full appearance-none items-center justify-center rounded-lg border border-solid border-border bg-transparent font-[inherit] text-[13.5px] text-foreground"
+          >
+            Show {Math.min(PAGE, shown.length - limit)} more · {limit} of {shown.length}
+          </button>
         )}
       </Panel>
     </>
   );
 }
+
+/** Rows drawn at first, and each "Show more" adds. */
+const PAGE = 40;
+
+// Memoised (10 Oct 2026): the screen redraws with the shell's clock every 5 s, and its forty rows with it, unchanged.
+const ClosedRow = memo(function ClosedRow({ o, openTrade, showAccount }: { o: OrderRecord; openTrade: (tradeId: string) => void; showAccount: boolean }) {
+  const net = netOf(o);
+  const long = isLongTrade(o);
+  return (
+    <li>
+      <ListButton onClick={() => openTrade(o.tradeId)} label={`${contractLabel(o.symbol)}: open the trade`}>
+        <span className="flex items-center justify-between gap-2">
+          <span className="truncate text-[14.5px] font-semibold">{long ? 'BUY' : 'SELL'} {contractLabel(o.symbol)}</span>
+          <span className={net > 0 ? 'font-semibold text-[var(--up)]' : net < 0 ? 'font-semibold text-[var(--down)]' : 'font-semibold'}>{signedInr(usdToInr(net))}</span>
+        </span>
+        <span className="block text-[12.5px] tabular-nums text-muted-foreground">
+          <When>{clock(closedAt(o))}</When> · in {price(o.entryAvgPrice)} → out {price(o.exitAvgPrice)}
+        </span>
+        <PlacedLine
+          plan={o.plan} className="mt-0.5"
+          rest={[o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ${o.plan.signal.tf}` : null, showAccount && o.account ? o.account.name : null]}
+        />
+      </ListButton>
+    </li>
+  );
+});

@@ -11,7 +11,7 @@ import { todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
 import { usePhone } from '@/components/mobile/phone-context';
 import { AreaChart, Bar, Empty, ListButton, Panel, Rupees, SidePill } from '@/components/mobile/parts';
-import { orderStatusWord } from '@/components/mobile/screens/OrdersScreen';
+import { orderStatusWord } from '@/components/mobile/order-status';
 import { usePressure, usePressureWindow } from '@/components/mobile/usePressure';
 import { usePriceMoves } from '@/components/mobile/usePriceMoves';
 import { PressureStrip } from '@/components/mobile/PressureStrip';

@@ -1353,3 +1353,17 @@ test('[critical] a no-entry window: saved with the strategy, a signal inside it 
     await api('POST', '/api/strategies/sig-quiet/enabled', { enabled: false });
   }
 });
+
+// ------------------------------------------------------------ the phone's light read (10 Oct 2026)
+
+test('[critical] ?lite=1: the strategies, runs and figures as always, without the signal journal and the trade history', async () => {
+  const full = (await api('GET', '/api/strategies')).body;
+  const lite = (await api('GET', '/api/strategies?lite=1')).body;
+  assert.ok(full.signalRuns.length > 0 && full.signalTrades.length > 0, 'the full read carries both');
+  assert.deepEqual(lite.signalRuns, []);
+  assert.deepEqual(lite.signalTrades, []);
+  // Everything else the same, key for key.
+  const rest = (b: Record<string, unknown>) => Object.fromEntries(Object.entries(b).filter(([k]) => !['signalRuns', 'signalTrades', 'balanceUsd', 'spot', 'walletUsd', 'marginUsedUsd'].includes(k)));
+  assert.deepEqual(Object.keys(lite).sort(), Object.keys(full).sort());
+  assert.deepEqual(rest(lite), rest(full));
+});

@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-458 files listed, 228 test files counted below, images and lockfiles left out.
+460 files listed, 228 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -262,7 +262,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [App.tsx](../../app/web/src/App.tsx) | The timeframes the market-state card offers, which the chart also draws. |
-| [main.tsx](../../app/web/src/main.tsx) | /m is the phone (6 Oct 2026): the desk read at a glance, signed in view only. |
+| [main.tsx](../../app/web/src/main.tsx) | A deploy replaced the chunks this page was built with (10 Oct 2026: "Failed to fetch dynamically imported module .../AccountCard-CwGAwC3J.js", a tab left open over a deploy). |
 | [styles.css](../../app/web/src/styles.css) | Slim, quiet scrollbars. |
 
 ## `app/web/src/api/`
@@ -377,15 +377,17 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ExitRail.tsx](../../app/web/src/components/mobile/ExitRail.tsx) | The price between its target and its stop, drawn (owner's reference, 6 Oct 2026): TGT at the left, SL at the right, the entry between, and a marker for the price now that slides as it moves -- the... |
 | [FilterPicker.tsx](../../app/web/src/components/mobile/FilterPicker.tsx) | The phone's tick-several filter (owner, 8 Oct 2026: "strategy select option, multiple select dropdown, mobile user friendly -- the same filter on the signal filters", then "same UI, add a methods f... |
 | [HealthCard.tsx](../../app/web/src/components/mobile/HealthCard.tsx) | The phone's desk-health card: one line first -- a word, an icon and a colour, never colour alone -- then the reasons in the server's words, then the six readings behind them. |
-| [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | The phone (6 Oct 2026): the desk read at a glance, and nothing that changes it. |
+| [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | Home and the More list come with the phone; every other screen is a chunk of its own (10 Oct 2026), so the first screen paints without downloading the thirteen behind it. |
 | [PairList.tsx](../../app/web/src/components/mobile/PairList.tsx) | One list of method + timeframe pairs on the phone (owner, 6 Oct 2026): the best, or the worst -- of the closed trades on P&L, or of the signal history under More. |
 | [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then entry, price now and P&L, then where the price stands between the stop and the target, drawn and moving (ExitRail) -- the BTC perp's... |
 | [PressureStrip.tsx](../../app/web/src/components/mobile/PressureStrip.tsx) | Home's four cards, in one row over today's P&L (owner, 7 Oct 2026): the call tape, the put tape, the big-move read, and BTC itself. |
 | [StrategyTag.tsx](../../app/web/src/components/mobile/StrategyTag.tsx) | Which strategy placed a trade, as a tag (owner, 8 Oct 2026: "strategy name tag -- orders history, trade history and positions, on the phone"): the strategy's name in a small coloured pill, the same... |
 | [Toasts.tsx](../../app/web/src/components/mobile/Toasts.tsx) | What just happened, said once, on whatever screen is open (owner, 6 Oct 2026): an order began waiting, an order filled, a position closed -- a card that slides down under the header and opens the t... |
 | [TradeDetail.tsx](../../app/web/src/components/mobile/TradeDetail.tsx) | One trade, start to end, read only (the phone's Level 2, 6 Oct 2026): what it is and what it made, then its whole journal as a line of steps -- signal, entry, fill, protection, exit, closed. |
+| [order-status.tsx](../../app/web/src/components/mobile/order-status.tsx) | An order's status as one word on a pill -- Home's latest order and the Orders list both say it. |
 | [parts.tsx](../../app/web/src/components/mobile/parts.tsx) | The phone's building blocks (6 Oct 2026): one way to show a figure, a row, a filter and a list item, so every screen reads the same. |
 | [phone-context.ts](../../app/web/src/components/mobile/phone-context.ts) | What every phone screen shares (6 Oct 2026): the desk's status and health, read once by the shell and handed down, the account being shown, the clock, and how to move -- so five screens do not poll... |
+| [settlement.ts](../../app/web/src/components/mobile/settlement.ts) | The next 17:30 IST (12:00 UTC): the daily contract's settlement, then Delta's launch auction to 17:34. |
 | [useDayRange.tsx](../../app/web/src/components/mobile/useDayRange.tsx) | The phone's date filter, one for every screen that reads IST days (6 Oct 2026): Today, the last 7, 30 or 90 days, or Custom -- last, as the owner asked -- which opens a sheet for any From and To. |
 | [usePressure.ts](../../app/web/src/components/mobile/usePressure.ts) | The phone's read of pressure (owner, 7 Oct 2026), once, for the Pressure screen and for Home's row of three: the option tape a side at a time and the big-move early warning. |
 | [usePriceMoves.ts](../../app/web/src/components/mobile/usePriceMoves.ts) | BTC's index now against each window back and the desk's own marks (7 Oct 2026), read once for the Price changes screen and for Home's BTC card. |

@@ -5,7 +5,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import { chosenTfs, methodsOfReport, pairsOfReport, pickTf, splitPairs, timeframesOf, type SignalPair } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
-import { usePhone } from '@/components/mobile/phone-context';
+import { usePhoneData } from '@/components/mobile/phone-context';
 import { Chip, Chips, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { useDayRange } from '@/components/mobile/useDayRange';
@@ -41,7 +41,7 @@ const pts = (n: number) => `${sign(Math.round(n))}${Math.abs(Math.round(n)).toLo
 const inR = (n: number) => `${sign(Number(n.toFixed(1)))}${Math.abs(n).toFixed(1)}R`;
 
 export function SignalPairsScreen() {
-  const p = usePhone();
+  const p = usePhoneData();
   const range = useDayRange('m-sigpairs', p.now);
   const { isToday, from, to, today } = range;
   const [way, setWay] = usePersisted<EntryMode>('m-sigpairs-way', 'single');

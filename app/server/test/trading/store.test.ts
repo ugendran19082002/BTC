@@ -135,3 +135,16 @@ test('[critical] an account\'s journal writes the trades from before accounts: t
   await mine.save({ ...fresh2, state: { ...fresh2.state, tradeId: 't2' } });
   assert.equal((await query("SELECT broker_account_id FROM trades WHERE trade_id = 't2'")).rows[0].broker_account_id, 1);
 });
+
+test('[critical] between() without events: the same trades, state and plan, and no journal read (10 Oct 2026, the reports)', async () => {
+  const store = await fresh();
+  const rec: TradeRecord = { ...record(), events: [{ t: 'entry_submitted', clientOrderId: 'c1', size: 1, limitPrice: 31, at: 1_100 } as unknown as TradeRecord['events'][number]] };
+  await store.save(rec);
+  const span = [0, Date.now() + 86_400_000] as const;
+  const full = await store.between(span[0], span[1], 500, null);
+  const light = await store.between(span[0], span[1], 500, null, { events: false });
+  assert.equal(full.length, 1);
+  assert.equal(full[0]!.events.length, 1, 'the default still reads the journal');
+  assert.deepEqual(light.map((r) => r.events), [[]]);
+  assert.deepEqual(light.map((r) => [r.state, r.plan]), full.map((r) => [r.state, r.plan]));
+});
