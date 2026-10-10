@@ -411,6 +411,13 @@ export function SignalStrategiesCard() {
               {busy === `copy-${s.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3.5 w-3.5 sm:h-3 sm:w-3" />}
               <span className="sr-only sm:not-sr-only">Copy</span>
             </Button>
+            {/* A copy into another group -- of this account or another -- picked on the copy sheet. */}
+            {groups.length > 0 && (
+              <Button size="sm" variant="ghost" className="h-8 px-2 sm:px-2.5" aria-label={`Copy ${s.name} to a group`}
+                      title="Copy to another group or account, switched off" onClick={() => setCopying({ into: null, pick: [s.id] })}>
+                <FolderInput className="h-3.5 w-3.5 sm:h-3 sm:w-3" /> <span className="sr-only sm:not-sr-only">To group</span>
+              </Button>
+            )}
             {/* Delete, on a second tap within four seconds. Its trades and their history stay. */}
             <Button
               size="sm" variant="ghost" className="h-8 px-2 text-[var(--down)] sm:px-2.5"
@@ -756,6 +763,14 @@ export function SignalStrategiesCard() {
           {' · '}running since {new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }).format(data.build.startedAt)} IST
         </p>
       )}
+      <CopyStrategiesSheet
+        open={copying !== null}
+        onOpenChange={(v) => { if (!v) setCopying(null); }}
+        into={copying?.into ?? null}
+        pick={copying?.pick ?? []}
+        shownAccount={accountScope()}
+        onDone={(said) => { setNotice(said); setFailed(null); refresh(); }}
+      />
       {data && (
         <SignalStrategyForm
           key={editing?.id ?? `new-signal-${formGroup?.id ?? ''}`}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, FolderClosed, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Copy, FolderClosed, FolderInput, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { cloneGroup, deleteGroup, renameGroup, setGroupEnabled } from '@/api/strategy';
 import { getAccounts, type BrokerAccount } from '@/api/accounts';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
  * have live orders on; off is one, the safe way. A clone is every strategy copied switched off, live orders off.
  * Removing the group keeps its strategies, in no group.
  */
-export function StrategyGroupSection({ group, strategies, showAccount, busy, act, canMake, onNew, children }: {
+export function StrategyGroupSection({ group, strategies, showAccount, busy, act, canMake, onNew, onCopyIn, children }: {
   group: StrategyGroup;
   strategies: readonly Strategy[];
   /** On "All accounts": say whose group it is. */
@@ -28,6 +28,8 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
   /** Whether a strategy can be made from the screen as it stands (an account's tab, not "All accounts"). */
   canMake: boolean;
   onNew: () => void;
+  /** Opens the copy sheet, into this group: strategies of any account and group copied in. */
+  onCopyIn?: () => void;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useFold(`strategy-group-${group.id}`);
@@ -131,6 +133,12 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
                   onClick={() => setRenaming(group.name)}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
+          {onCopyIn && (
+            <Button size="sm" variant="ghost" className="h-8 px-2" aria-label={`Copy strategies into ${group.name}`}
+                    title="Copy strategies in from any account or group, switched off" onClick={onCopyIn}>
+              <FolderInput className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <Button size="sm" variant="ghost" className="h-8 px-2" aria-label={`Clone ${group.name}`}
                   title="A new group with a copy of every strategy, all switched off, live orders off -- on this account or another"
                   onClick={() => (cloning ? setCloning(null) : startClone())}>
