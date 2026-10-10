@@ -106,7 +106,7 @@ describe('the card, by group', () => {
     getStrategies.mockResolvedValue(status([strat('a', 1, 'group-1')], [MAIN]));
     render(<SignalStrategiesCard />);
     const main = await screen.findByRole('region', { name: 'group Main desk' });
-    const fold = within(main).getByRole('button', { name: /group Main desk/ });
+    const fold = within(main).getByRole('button', { name: /^(Collapse|Expand) group Main desk$/ });
     expect(fold.closest('.fold-head')?.parentElement).toBe(main);
     fireEvent.click(fold);
     expect(main).toHaveAttribute('data-folded', 'true');
