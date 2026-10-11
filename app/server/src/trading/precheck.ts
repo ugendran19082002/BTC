@@ -136,6 +136,32 @@ export function maxShortContractsFor(
   return Math.min(want, ceiling);
 }
 
+/**
+ * What one contract short costs in margin, for the ceiling above: the desk's model, or what the exchange is
+ * charging per contract on the shorts held now, when that is the dearer.
+ *
+ * 11 Oct 2026, live: the screen read "still to open: 73 lots ... more than is free (105%)" with the desk's limit at
+ * 93 short. Both were right and they did not agree: the limit was the free margin over the desk's 200x model
+ * (~0.415 USD a contract), the screen priced the same lots at what Delta was charging (~0.44) -- so the gate would
+ * pass four lots the margin could not carry, and Delta refuse them. A cap above what the margin carries cannot
+ * fire; this is that, by five per cent.
+ *
+ * The exchange's figure is its margin in use over the contracts short. It is taken only when it reads as a margin
+ * per contract: above the model, and no more than `CEILING_MARGIN_MAX_RATIO` times it. Margin in use also holds
+ * what working orders block, so with a few contracts short and several entries resting it is many times a
+ * contract's margin -- and taken literally would halve the limit and refuse entries the margin can carry. Outside
+ * the band, the model stands, as it did before.
+ */
+export const CEILING_MARGIN_MAX_RATIO = 1.5;
+export function ceilingMarginPerContract(
+  modelUsd: number, marginUsedUsd: number | null, shortContracts: number,
+): number {
+  if (!(modelUsd > 0)) return modelUsd;
+  if (marginUsedUsd === null || !(marginUsedUsd > 0) || !(shortContracts > 0)) return modelUsd;
+  const theirs = marginUsedUsd / shortContracts;
+  return theirs > modelUsd && theirs <= modelUsd * CEILING_MARGIN_MAX_RATIO ? theirs : modelUsd;
+}
+
 export type PrecheckInput = {
   now: number;
   intent: {

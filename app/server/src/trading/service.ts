@@ -8,7 +8,7 @@ import { accountKey, accountSetting, settings as deskSettings, type Settings } f
 import { DeltaExchange } from './exchange/delta.js';
 import { PaperExchange } from './exchange/paper.js';
 import {
-  DEFAULT_LIMITS, dailyLossLimitFor, maxShortContractsFor, type RiskLimits,
+  DEFAULT_LIMITS, ceilingMarginPerContract, dailyLossLimitFor, maxShortContractsFor, type RiskLimits,
 } from './precheck.js';
 import { fundsRequiredPerContract } from './margin.js';
 import { DEFAULT_LEVERAGE, exitPriceProblem, longExitsFor, orderPlan, protectionFor, type ExitAsk, type PlaceInput } from './order-plan.js';
@@ -115,6 +115,8 @@ export class TradingService {
    * figure and must never be mistaken for one.
    */
   private lastShortContracts = 0;
+  /** Delta's margin in use (wallet balance less what is free) as last read; null where the exchange cannot say. */
+  private lastMarginUsedUsd: number | null = null;
   readonly alarms: { tradeId: string; message: string; at: number }[] = [];
   /** Phone alerts when an entry or an exit fills. Null unless TG_TOKEN and TG_CHAT_ID are both set. */
   readonly notifier: TelegramNotifier | null;
@@ -678,6 +680,14 @@ export class TradingService {
   product(symbol: string) { return this.exchange.getProduct(symbol); }
   positions() { return this.exchange.getPositions(); }
   async balance() {
+    // The wallet where the exchange has one: the same one read as the balance alone (Delta's `getBalanceUsd` is its
+    // wallet's `available`), and it says the margin in use as well -- which the short ceiling is priced with.
+    if (this.exchange.getWalletUsd) {
+      const w = await this.exchange.getWalletUsd();
+      this.lastBalance = w.available;
+      this.lastMarginUsedUsd = Math.max(0, w.balance - w.available);
+      return w.available;
+    }
     const usd = await this.exchange.getBalanceUsd();
     this.lastBalance = usd;
     return usd;
@@ -834,7 +844,9 @@ export class TradingService {
       spot, premium: 0, leverage: DEFAULT_LEVERAGE,
     });
     if (!(per > 0)) return null;
-    return Math.floor(this.lastBalance / per) + this.lastShortContracts;
+    // At what Delta is charging per contract on the shorts held, where that is the dearer (`ceilingMarginPerContract`).
+    const each = ceilingMarginPerContract(per, this.lastMarginUsedUsd, this.lastShortContracts);
+    return Math.floor(this.lastBalance / each) + this.lastShortContracts;
   }
 
   /** The long limit in force on this account: the one chosen, else the default. */
