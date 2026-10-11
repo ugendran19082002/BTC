@@ -851,6 +851,42 @@ test('65 and the next attempt places only the missing one', async () => {
   assert.equal(live.length, 2, 'exactly one of each');
 });
 
+test('65b [critical] a target Delta did not answer does not hold the stop back: the stop goes on in the same pass', async () => {
+  // 10 Oct 2026, 22:07 IST, live: the target's order got a 502 -- "may or may not exist" -- and the stop was not
+  // sent at all, the two legs sharing one failure. The short had neither exit at Delta until the retry, 6s on.
+  const { SubmitTimeout } = await import('../../src/trading/exchange/port.js');
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 1, stopPrice: 130 });
+  await r.engine.open(plan);
+
+  const real = r.ex.placeOrder.bind(r.ex);
+  let silent = true;
+  const sent: string[] = [];
+  r.ex.placeOrder = async (req) => {
+    sent.push(req.role ?? '?');
+    if (silent && req.role === 'take_profit') throw new SubmitTimeout(req.clientOrderId);
+    return real(req);
+  };
+  const s = await r.engine.poll(plan.tradeId);
+
+  assert.deepEqual(sent.filter((x) => x !== 'entry'), ['take_profit', 'stop_loss'], 'both legs tried in the one pass');
+  assert.ok(s?.protection.stopLoss, 'the stop is on, whatever became of the target');
+  assert.equal(s?.protection.takeProfit, null);
+  const book = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);
+  assert.deepEqual(book.map((o) => o.type), ['stop_limit'], 'one order at the exchange: the stop');
+  // Still said, and still tried again: the target is missing.
+  assert.ok(r.store.peek(plan.tradeId)!.events.some((e) => e.t === 'protection_failed' && /may or may not exist/.test(e.reason)));
+
+  // The next attempt places only the target, and leaves the stop it has alone.
+  silent = false;
+  const firstStop = s!.protection.stopLoss;
+  r.advance(3_000);
+  const again = await r.engine.poll(plan.tradeId);
+  assert.equal(again?.protection.stopLoss, firstStop, 'the same stop, not a second one');
+  assert.ok(again?.protection.takeProfit);
+  assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly).length, 2, 'exactly one of each');
+});
+
 test('66 [critical] two callers cannot collide on one client order id', async () => {
   // the poll loop steps every open trade once a second while the screen can ask
   // for a stop to be moved; both read, decide and write

@@ -1622,20 +1622,28 @@ export class TradeEngine {
           return only.clientOrderId ?? clientId(rec.state.tradeId, role, attempt);
         } catch (e) {
           // Some venues refuse an edit that a cancel-and-replace would allow.
-          // Fall through and do it the long way, verifying as we go.
-          failure = null;
+          // Fall through and do it the long way, verifying as we go. (Nothing is noted for a refused edit -- and
+          // nothing forgotten: this cleared `failure` once, the other leg's with it, so its retry was never set.)
           void e;
         }
       }
 
+      /*
+       * This leg's own trouble, apart from the other's (11 Oct 2026). The two shared one `failure`, so a target Delta
+       * did not answer (a 502, 10 Oct 22:07) made the stop return here without being sent: the position had neither
+       * until the retry, six seconds on -- and the retry backs off, so longer the next time. The stop is the leg
+       * that protects; the target's failure is not a reason to hold it back. What holds a leg back is its own
+       * cancel that did not take, as before.
+       */
+      let uncancelled = false;
       for (const o of live) {
         if (o === keep) continue;
         const gone = await this.cancelAndVerify(o);
         // A cancel that did not take means the book still holds it. Sending a
         // replacement now is what over-commits the position.
-        if (!gone) { failure ??= `could not cancel the ${role.replace('_', ' ')} already on the book`; }
+        if (!gone) { uncancelled = true; failure ??= `could not cancel the ${role.replace('_', ' ')} already on the book`; }
       }
-      if (failure !== null) return keep?.clientOrderId ?? null;
+      if (uncancelled) return keep?.clientOrderId ?? null;
       if (keep) return keep.clientOrderId;
       if (target === null) return null;
 
