@@ -726,12 +726,66 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     return { ok: true, group: named(group), strategies: copies };
   });
 
-  // Remove a group. Its strategies stay -- switch, settings and all -- in no group.
+  /*
+   * Several strategies removed in one act (owner, 11 Oct 2026: a group was removed with twelve still in it, which
+   * stayed behind in no group, after fourteen had been deleted one tap at a time). One removed alone may be switched
+   * on -- its open trades keep their exits. Many at once may not: a strategy still taking signals is turned off
+   * first, on purpose, so a whole group of live rules is never dropped by one tap.
+   */
+  const ON_FIRST = (n: number) => `${n} of them ${n === 1 ? 'is' : 'are'} switched on: turn ${n === 1 ? 'it' : 'them'} off first.`;
+
+  // Remove a group. Its strategies stay -- switch, settings and all -- in no group; or, asked to
+  // (`?strategies=delete`), go with it: all of them, in one transaction, and only if every one is switched off.
   app.delete('/api/strategy-groups/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
+    const withStrategies = (req.query as { strategies?: string }).strategies === 'delete';
     const s = strategyStore();
     if (!(await s.group(id))) { reply.code(404); return { error: 'no such group' }; }
-    return { ok: true, ungrouped: await s.removeGroup(id) };
+    if (!withStrategies) return { ok: true, ungrouped: await s.removeGroup(id), deleted: 0 };
+    const members = (await s.all()).filter((x) => x.groupId === id);
+    const on = members.filter((x) => x.enabled).length;
+    if (on > 0) return refuse(reply, 409, { error: ON_FIRST(on), problems: [ON_FIRST(on)] });
+    return { ok: true, ungrouped: 0, deleted: await s.removeMany(members.map((x) => x.id), id) };
+  });
+
+  // Remove several strategies together -- those in no group, say. All of them or none; each switched off.
+  app.post('/api/strategies/delete-many', async (req, reply) => {
+    const raw = ((req.body ?? {}) as { strategyIds?: unknown }).strategyIds;
+    const ids = Array.isArray(raw) ? [...new Set(raw.map(String))] : [];
+    if (ids.length === 0) return refuse(reply, 422, { error: 'Pick at least one strategy.', problems: ['Pick at least one strategy.'] });
+    const s = strategyStore();
+    const all = await s.all();
+    const found = ids.map((x) => all.find((y) => y.id === x));
+    const missing = ids.filter((_, i) => !found[i]);
+    if (missing.length) {
+      const said = 'The list changed: it has been read again.';
+      return refuse(reply, 409, { error: said, problems: [said] });
+    }
+    const on = found.filter((x) => x!.enabled).length;
+    if (on > 0) return refuse(reply, 409, { error: ON_FIRST(on), problems: [ON_FIRST(on)] });
+    return { ok: true, deleted: await s.removeMany(ids) };
+  });
+
+  // Put several strategies in a group together -- those in no group, say. Each must be the group's account's.
+  app.post('/api/strategy-groups/:id/take', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const raw = ((req.body ?? {}) as { strategyIds?: unknown }).strategyIds;
+    const ids = Array.isArray(raw) ? [...new Set(raw.map(String))] : [];
+    const s = strategyStore();
+    const g = await s.group(id);
+    if (!g) { reply.code(404); return { error: 'no such group' }; }
+    if (ids.length === 0) return refuse(reply, 422, { error: 'Pick at least one strategy.', problems: ['Pick at least one strategy.'] });
+    const all = await s.all();
+    const found = ids.map((x) => all.find((y) => y.id === x));
+    if (found.some((x) => !x)) {
+      const said = 'The list changed: it has been read again.';
+      return refuse(reply, 409, { error: said, problems: [said] });
+    }
+    if (found.some((x) => (x!.accountId ?? null) !== (g.accountId ?? null))) {
+      const said = "That group is another account's: a strategy stays on its own account. Copy it there instead.";
+      return refuse(reply, 422, { error: said, problems: [said] });
+    }
+    return { ok: true, group: named(g), moved: await s.setGroupMany(ids, g.id) };
   });
 
   // Move a strategy into a group of its own account, or out of any (`groupId` null).

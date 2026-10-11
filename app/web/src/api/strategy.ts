@@ -87,8 +87,18 @@ export const orderGroups = (accountId: number | null, groupIds: string[]) =>
   post<{ ok: true }>('/api/strategy-groups/order', accountId === null ? { groupIds } : { accountId, groupIds });
 
 /** The group goes; its strategies stay, as they were, in no group. */
-export const deleteGroup = (id: string) =>
-  json<{ ok: true; ungrouped: number }>(`/api/strategy-groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const deleteGroup = (id: string, withStrategies = false) =>
+  // `withStrategies`: its strategies go with it -- all of them, and only if every one is switched off.
+  json<{ ok: true; ungrouped: number; deleted: number }>(
+    `/api/strategy-groups/${encodeURIComponent(id)}${withStrategies ? '?strategies=delete' : ''}`, { method: 'DELETE' });
+
+/** Several strategies removed together -- all or none, each switched off. Their trades and history stay. */
+export const deleteStrategies = (strategyIds: string[]) =>
+  post<{ ok: true; deleted: number }>('/api/strategies/delete-many', { strategyIds });
+
+/** Several strategies put in one group of their account together. */
+export const takeIntoGroup = (groupId: string, strategyIds: string[]) =>
+  post<{ ok: true; group: StrategyGroup; moved: number }>(`/api/strategy-groups/${encodeURIComponent(groupId)}/take`, { strategyIds });
 
 /** Into another of its account's groups, or out of any (null). */
 export const moveToGroup = (strategyId: string, groupId: string | null) =>

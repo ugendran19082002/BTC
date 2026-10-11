@@ -18,6 +18,8 @@ const getAllStrategies = vi.fn();
 const copyIntoGroup = vi.fn();
 const orderGroup = vi.fn();
 const orderGroups = vi.fn();
+const deleteStrategies = vi.fn();
+const takeIntoGroup = vi.fn();
 vi.mock('@/api/strategy', () => ({
   getStrategies: (...a: unknown[]) => getStrategies(...a),
   getSignalTrades: () => Promise.resolve({ from: null, to: null, trades: [] }),
@@ -33,6 +35,8 @@ vi.mock('@/api/strategy', () => ({
   copyIntoGroup: (...a: unknown[]) => copyIntoGroup(...a),
   orderGroup: (...a: unknown[]) => orderGroup(...a),
   orderGroups: (...a: unknown[]) => orderGroups(...a),
+  deleteStrategies: (...a: unknown[]) => deleteStrategies(...a),
+  takeIntoGroup: (...a: unknown[]) => takeIntoGroup(...a),
 }));
 vi.mock('@/api/accounts', () => ({ getAccounts: (...a: unknown[]) => getAccounts(...a) }));
 vi.mock('@/api/entry', () => ({
@@ -189,12 +193,19 @@ describe('the card, by group', () => {
     fireEvent.keyDown(screen.getByLabelText('New name for Main desk'), { key: 'Enter' });
     await waitFor(() => expect(renameGroup).toHaveBeenCalledWith('group-1', 'Main'));
 
-    const del = screen.getByRole('button', { name: 'Delete group Main desk' });
-    fireEvent.click(del);
-    expect(del).toHaveTextContent('Tap again — its 1 stay');
+    // A group with strategies asks what becomes of them; "keep" removes the group alone.
+    fireEvent.click(screen.getByRole('button', { name: 'Delete group Main desk' }));
+    const ask = screen.getByRole('group', { name: 'delete Main desk' });
+    expect(ask).toHaveTextContent('Main desk has 1 strategy. What should happen to it?');
     expect(deleteGroup).not.toHaveBeenCalled();
-    fireEvent.click(del);
+    fireEvent.click(within(ask).getByRole('button', { name: 'Keep the 1 — delete the group only' }));
     await waitFor(() => expect(deleteGroup).toHaveBeenCalledWith('group-1'));
+    // An empty group: a second tap, as before.
+    const empty = screen.getByRole('button', { name: 'Delete group Scalps' });
+    fireEvent.click(empty);
+    expect(empty).toHaveTextContent('Tap again');
+    fireEvent.click(empty);
+    await waitFor(() => expect(deleteGroup).toHaveBeenCalledWith('g-scalps'));
 
     const pick = screen.getByLabelText('Group of A');
     expect(within(pick).getAllByRole('option').map((o) => o.textContent)).toEqual(['Main desk', 'Scalps', 'No group']);
@@ -289,7 +300,10 @@ describe('copying strategies into a group: from any account and group, into one 
     // Somewhere else by default -- not A's own group -- and A said at the top, to unpick in one tap.
     await waitFor(() => expect(within(sheet).getByLabelText('Group to copy into')).toHaveValue('g-scalps'));
     expect(within(within(sheet).getByRole('list', { name: 'picked strategies' })).getByRole('button', { name: 'Unpick A' })).toBeInTheDocument();
+    // Its own account has that name already (itself): said before copying, so a second set is a choice.
+    expect(within(sheet).getByRole('note', { name: 'names already there' })).toHaveTextContent('Acct 1 already has a strategy of this name: that copy will be named “… copy”. Copy again only if you want a second set.');
     fireEvent.change(within(sheet).getByLabelText('Group to copy into'), { target: { value: 'group-2' } });
+    expect(within(sheet).queryByRole('note', { name: 'names already there' })).toBeNull(); // the other account has no "A"
     expect(within(sheet).getByLabelText('Copy A (Acct 1)')).toBeChecked();
     fireEvent.click(within(sheet).getByRole('button', { name: 'Copy 1 strategy' }));
     expect(await within(sheet).findByRole('alert')).toHaveTextContent('already has a group named "Scalps"');
@@ -364,5 +378,58 @@ describe('dragging a row to its place', () => {
     expect(within(list).getAllByRole('listitem').map((li) => li.textContent?.replace(/off$/, ''))).toEqual(['1B', '2A', '3C', '4D']);
     fireEvent.click(screen.getByRole('button', { name: /Save order/ }));
     await waitFor(() => expect(orderGroup).toHaveBeenCalledWith('group-1', ['b', 'a', 'c', 'd']));
+  });
+});
+
+describe('removing many at once: said plainly, never by one tap, never one that is switched on', () => {
+  it('[critical] a group and its strategies: a second tap, and refused while one is on -- with the way out said', async () => {
+    // 11 Oct 2026, live: a group removed with twelve in it left them in no group; fourteen had gone one tap at a time.
+    getStrategies.mockResolvedValue(status([strat('a', 1, 'group-1'), strat('b', 1, 'group-1', true)], [MAIN]));
+    deleteGroup.mockResolvedValue({ ok: true, ungrouped: 0, deleted: 2 });
+    const { rerender } = render(<SignalStrategiesCard />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete group Main desk' }));
+    let ask = screen.getByRole('group', { name: 'delete Main desk' });
+    const all = within(ask).getByRole('button', { name: 'Delete Main desk and its 2 strategies' });
+    expect(all).toBeDisabled();
+    expect(ask).toHaveTextContent('1 is switched on: turn all off first.');
+
+    getStrategies.mockResolvedValue(status([strat('a', 1, 'group-1'), strat('b', 1, 'group-1')], [MAIN]));
+    rerender(<SignalStrategiesCard key="again" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete group Main desk' }));
+    ask = screen.getByRole('group', { name: 'delete Main desk' });
+    const go = within(ask).getByRole('button', { name: 'Delete Main desk and its 2 strategies' });
+    fireEvent.click(go);
+    expect(go).toHaveTextContent('Tap again: delete 2 strategies for good');
+    expect(deleteGroup).not.toHaveBeenCalled();
+    fireEvent.click(go);
+    await waitFor(() => expect(deleteGroup).toHaveBeenCalledWith('group-1', true));
+  });
+
+  it('[critical] those in no group: all moved into one of their account\'s groups, or all removed on a second tap', async () => {
+    getStrategies.mockResolvedValue(status([strat('a', 1, 'group-1'), strat('x', 1, null), strat('y', 1, null)], [MAIN, SCALPS, OTHER]));
+    takeIntoGroup.mockResolvedValue({ ok: true, group: SCALPS, moved: 2 });
+    deleteStrategies.mockResolvedValue({ ok: true, deleted: 2 });
+    render(<SignalStrategiesCard />);
+    const loose = await screen.findByRole('region', { name: 'not in a group' });
+    const to = within(loose).getByLabelText('Move all that are in no group to');
+    expect(within(to).getAllByRole('option').map((o) => o.textContent)).toEqual(['Move all 2 to…', 'Main desk', 'Scalps']);
+    fireEvent.change(to, { target: { value: 'g-scalps' } });
+    await waitFor(() => expect(takeIntoGroup).toHaveBeenCalledWith('g-scalps', ['x', 'y']));
+    expect(await screen.findByText('Moved 2 into "Scalps".')).toBeInTheDocument();
+
+    const del = within(loose).getByRole('button', { name: 'Delete all 2 that are in no group' });
+    fireEvent.click(del);
+    expect(del).toHaveTextContent('Tap again: delete 2 for good');
+    expect(deleteStrategies).not.toHaveBeenCalled();
+    fireEvent.click(del);
+    await waitFor(() => expect(deleteStrategies).toHaveBeenCalledWith(['x', 'y']));
+  });
+
+  it('one in no group switched on: delete-all is not offered until it is off', async () => {
+    getStrategies.mockResolvedValue(status([strat('x', 1, null, true), strat('y', 1, null)], [MAIN]));
+    render(<SignalStrategiesCard />);
+    const loose = await screen.findByRole('region', { name: 'not in a group' });
+    expect(within(loose).getByRole('button', { name: 'Delete all 2 that are in no group' })).toBeDisabled();
+    expect(loose).toHaveTextContent('1 switched on: turn it off to delete all together.');
   });
 });

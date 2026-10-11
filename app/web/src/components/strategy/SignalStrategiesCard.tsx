@@ -2,7 +2,7 @@ import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { cloneStrategy, createGroup, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setScheduler, setSignalMaxOpen, setStrategyEnabled } from '@/api/strategy';
+import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setScheduler, setSignalMaxOpen, setStrategyEnabled, takeIntoGroup } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -271,6 +271,8 @@ export function SignalStrategiesCard() {
   // The copy sheet: into a group (or chosen there), with these strategies ticked; null: closed.
   const [copying, setCopying] = useState<{ into: StrategyGroup | null; pick: string[] } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Removing every strategy that is in no group needs a second tap: it cannot be undone.
+  const [confirmLoose, setConfirmLoose] = useState(false);
 
   /** Do it, read the list again, and say whether it was taken: a field that was refused goes back to what is saved. */
   const act = async (key: string, fn: () => Promise<unknown>): Promise<boolean> => {
@@ -754,9 +756,59 @@ export function SignalStrategiesCard() {
               )
               : (
                 <section key="no-group" aria-label="not in a group" className="rounded-xl border border-dashed border-[var(--line)] p-2">
-                  <h3 className="m-0 mb-2 text-[13px] font-semibold text-muted-foreground">
-                    Not in a group <span className="font-normal tabular-nums text-[var(--dim)]">· {sec.strategies.length}</span>
-                  </h3>
+                  {/*
+                    Those in no group, dealt with together (owner, 11 Oct 2026: twelve left behind by a removed
+                    group): all into one of their account's groups, or all removed -- a second tap, and only with
+                    every one switched off. Offered when they are one account's, as on an account's tab.
+                  */}
+                  {(() => {
+                    const loose = sec.strategies;
+                    const accounts = new Set(loose.map((s) => s.accountId ?? null));
+                    const targets = accounts.size === 1 ? groups.filter((g) => (g.accountId ?? null) === [...accounts][0]) : [];
+                    const onNow = loose.filter((s) => s.enabled).length;
+                    const ids = loose.map((s) => s.id);
+                    return (
+                      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                        <h3 className="m-0 text-[13px] font-semibold text-muted-foreground">
+                          Not in a group <span className="font-normal tabular-nums text-[var(--dim)]">· {loose.length}</span>
+                        </h3>
+                        {accounts.size === 1 && (
+                          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                            {targets.length > 0 && (
+                              <select
+                                aria-label="Move all that are in no group to"
+                                value=""
+                                disabled={busy === 'loose-move'}
+                                onChange={(e) => {
+                                  const to = targets.find((g) => g.id === e.target.value);
+                                  if (to) void act('loose-move', () => takeIntoGroup(to.id, ids)).then((ok) => { if (ok) setNotice(`Moved ${ids.length} into "${to.name}".`); });
+                                }}
+                                className="m-0 h-8 max-w-[12rem] rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-1.5 font-[inherit] text-[12px] text-foreground disabled:opacity-50"
+                              >
+                                <option value="">Move all {loose.length} to…</option>
+                                {targets.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                              </select>
+                            )}
+                            <Button size="sm" variant="outline" className="h-8 border-[var(--down)] text-[var(--down)]"
+                                    aria-label={`Delete all ${loose.length} that are in no group`}
+                                    title={onNow > 0 ? `${onNow} ${onNow === 1 ? 'is' : 'are'} switched on: turn ${onNow === 1 ? 'it' : 'them'} off first` : 'Delete every strategy that is in no group. Their trades and history stay.'}
+                                    disabled={onNow > 0 || busy === 'loose-delete'}
+                                    onClick={() => {
+                                      if (!confirmLoose) { setConfirmLoose(true); setTimeout(() => setConfirmLoose(false), 4_000); return; }
+                                      setConfirmLoose(false);
+                                      void act('loose-delete', () => deleteStrategies(ids)).then((ok) => { if (ok) setNotice(`Deleted ${ids.length} strateg${ids.length === 1 ? 'y' : 'ies'} that ${ids.length === 1 ? 'was' : 'were'} in no group.`); });
+                                    }}>
+                              {busy === 'loose-delete' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                              {confirmLoose ? `Tap again: delete ${loose.length} for good` : `Delete all ${loose.length}`}
+                            </Button>
+                          </div>
+                        )}
+                        {accounts.size === 1 && onNow > 0 && (
+                          <span className="basis-full text-[11.5px] text-muted-foreground">{onNow} switched on: turn {onNow === 1 ? 'it' : 'them'} off to delete all together.</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="grid gap-2">{sec.strategies.map((s) => card(s))}</div>
                 </section>
               ))}

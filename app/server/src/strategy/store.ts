@@ -557,6 +557,28 @@ export class StrategyStore {
   }
 
   /**
+   * Strategies removed together, and with them -- when `groupId` is given -- the group they were in: one transaction,
+   * so a group is never left half-emptied. Their runs and trades stay, as for one removed alone (`remove`).
+   */
+  async removeMany(ids: string[], groupId: string | null = null): Promise<number> {
+    return tx(async (c) => {
+      const gone = ids.length ? await c.query('DELETE FROM strategies WHERE id = ANY($1::text[])', [ids]) : { rowCount: 0 };
+      if (groupId) {
+        await c.query('UPDATE strategies SET group_id = NULL WHERE group_id = $1', [groupId]);
+        await c.query('DELETE FROM strategy_groups WHERE id = $1', [groupId]);
+      }
+      return gone.rowCount ?? 0;
+    });
+  }
+
+  /** Several strategies put in one group, at its end, together. The caller has checked they are its account's. */
+  async setGroupMany(ids: string[], groupId: string): Promise<number> {
+    if (ids.length === 0) return 0;
+    const r = await query('UPDATE strategies SET group_id = $1, position = NULL, updated_at = $2 WHERE id = ANY($3::text[])', [groupId, Date.now(), ids]);
+    return r.rowCount ?? 0;
+  }
+
+  /**
    * The display order of a group's strategies, or of an account's groups: each given its place in one transaction.
    * The caller has checked the list is the whole of them.
    */

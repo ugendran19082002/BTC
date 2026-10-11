@@ -73,6 +73,16 @@ export function CopyStrategiesSheet({ open, onOpenChange, into, pick, shownAccou
     [all, groups, accountChoices, target, shownAccount, search],
   );
   const nameProblem = mode === 'new' && !into ? groupNameProblem(newName) : null;
+  /*
+   * Said before it is done (11 Oct 2026): the same fourteen were copied into one account twice, the second lot named
+   * "... copy" -- learnt only afterwards. How many of those picked the account already has by name, so a second copy
+   * is a choice and not a surprise.
+   */
+  const toAccount = target ? target.accountId : mode === 'new' && !into ? newAccount : null;
+  const sameName = useMemo(() => {
+    const there = new Set((all?.strategies ?? []).filter((x) => (x.accountId ?? null) === toAccount).map((x) => x.name.trim().toLowerCase()));
+    return (all?.strategies ?? []).filter((x) => picked.has(x.id) && there.has(x.name.trim().toLowerCase())).length;
+  }, [all, picked, toAccount]);
   const ready = picked.size > 0 && (into || (mode === 'existing' ? target !== null : nameProblem === null));
   const toggle = (ids: string[], on: boolean) => setPicked((cur) => {
     const next = new Set(cur);
@@ -243,6 +253,12 @@ export function CopyStrategiesSheet({ open, onOpenChange, into, pick, shownAccou
         <SheetFooter className="flex-col sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1 text-[11.5px] leading-snug text-muted-foreground">
             {failed ? <span role="alert" className="text-[var(--down)]">{failed}</span>
+              : sameName > 0 && (target || mode === 'new') ? (
+                <span role="note" aria-label="names already there" className="text-[var(--warn)]">
+                  {nameOf(toAccount)} already has {sameName === picked.size ? (sameName === 1 ? 'a strategy of this name' : `all ${sameName} of these names`) : `${sameName} of these names`}:
+                  {' '}{sameName === 1 ? 'that copy' : 'those copies'} will be named &ldquo;… copy&rdquo;. Copy again only if you want a second set.
+                </span>
+              )
               : target ? `Into "${target.name}" on ${target.accountName ?? nameOf(target.accountId)}. Copies start off, live orders off.`
                 : mode === 'new' ? `Into a new group on ${nameOf(newAccount)}. Copies start off, live orders off.` : 'Choose where to copy them.'}
           </div>

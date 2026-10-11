@@ -40,7 +40,9 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useFold(`strategy-group-${group.id}`);
-  const [confirm, setConfirm] = useState<'on' | 'delete' | null>(null);
+  const [confirm, setConfirm] = useState<'on' | 'delete' | 'delete-all' | null>(null);
+  // Removing a group that holds strategies asks what becomes of them (11 Oct 2026); null: not asked.
+  const [deleting, setDeleting] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [cloning, setCloning] = useState<{ accountId: number | null; name: string } | null>(null);
   const [accounts, setAccounts] = useState<BrokerAccount[] | null>(null);
@@ -51,7 +53,7 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
   const live = strategies.filter((s) => s.config.liveOrders && !s.enabled).length;
   const key = (what: string) => `group-${what}-${group.id}`;
 
-  const twoTaps = (what: 'on' | 'delete', then: () => void) => {
+  const twoTaps = (what: 'on' | 'delete' | 'delete-all', then: () => void) => {
     if (confirm !== what) {
       setConfirm(what);
       setTimeout(() => setConfirm((cur) => (cur === what ? null : cur)), 4_000);
@@ -160,12 +162,14 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
                   onClick={() => (cloning ? setCloning(null) : startClone())}>
             <Copy className="h-3.5 w-3.5" />
           </Button>
+          {/* An empty group goes on a second tap. One with strategies asks first what becomes of them. */}
           <Button size="sm" variant="ghost" className="h-8 px-2 text-[var(--down)]" aria-label={`Delete group ${group.name}`}
-                  title="The group goes; its strategies stay, as they are, in no group."
+                  title={of > 0 ? 'Delete the group: choose whether its strategies stay or go with it' : 'Delete this empty group'}
+                  aria-expanded={of > 0 ? deleting : undefined}
                   disabled={busy === key('delete')}
-                  onClick={() => twoTaps('delete', () => void act(key('delete'), () => deleteGroup(group.id)))}>
+                  onClick={() => (of > 0 ? setDeleting(!deleting) : twoTaps('delete', () => void act(key('delete'), () => deleteGroup(group.id))))}>
             {busy === key('delete') ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            {confirm === 'delete' && `Tap again${of > 0 ? ` — its ${of} stay` : ''}`}
+            {confirm === 'delete' && 'Tap again'}
           </Button>
         </div>
       </div>
@@ -204,6 +208,41 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
             {of === 0 ? 'Nothing to clone: the group is empty.'
               : `Every copy is switched off with live orders off${sameAccount ? ', named with " copy"' : ', names kept'}. Turn them on when ready.`}
           </span>
+        </div>
+      )}
+
+      {/*
+        What becomes of its strategies (owner, 11 Oct 2026): a group removed with twelve still in it left them in no
+        group, "Tap again -- its 12 stay" having gone unread. So the two are said side by side: the group alone, or the
+        group and all of them -- that one a second tap, and only with every one switched off.
+      */}
+      {deleting && of > 0 && (
+        <div role="group" aria-label={`delete ${group.name}`} className="mt-2 rounded-lg border border-solid border-[var(--down)]/40 bg-[var(--down)]/5 px-2.5 py-2 text-[12.5px]">
+          <p className="m-0 mb-2 text-foreground">
+            <b>{group.name}</b> has {of} strateg{of === 1 ? 'y' : 'ies'}. What should happen to {of === 1 ? 'it' : 'them'}?
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <Button size="sm" variant="outline" className="h-10 justify-start whitespace-normal text-left sm:h-9" disabled={busy === key('delete')}
+                      onClick={() => void act(key('delete'), () => deleteGroup(group.id))}>
+                Keep the {of} — delete the group only
+              </Button>
+              <span className="text-[11.5px] text-muted-foreground">They stay as they are, listed under &ldquo;Not in a group&rdquo;.</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Button size="sm" variant="outline" className="h-10 justify-start whitespace-normal border-[var(--down)] text-left text-[var(--down)] sm:h-9"
+                      aria-label={`Delete ${group.name} and its ${of} strateg${of === 1 ? 'y' : 'ies'}`}
+                      disabled={on > 0 || busy === key('delete')}
+                      onClick={() => twoTaps('delete-all', () => void act(key('delete'), () => deleteGroup(group.id, true)))}>
+                {busy === key('delete') && <Loader2 className="h-3 w-3 animate-spin" />}
+                {confirm === 'delete-all' ? `Tap again: delete ${of} strateg${of === 1 ? 'y' : 'ies'} for good` : `Delete the group and its ${of} strateg${of === 1 ? 'y' : 'ies'}`}
+              </Button>
+              <span className="text-[11.5px] text-muted-foreground">
+                {on > 0 ? `${on} ${on === 1 ? 'is' : 'are'} switched on: turn all off first.` : 'Cannot be undone. Their trades and history stay.'}
+              </span>
+            </div>
+          </div>
+          <Button size="sm" variant="ghost" className="mt-1 h-8" onClick={() => setDeleting(false)}>Cancel</Button>
         </div>
       )}
 

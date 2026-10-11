@@ -283,3 +283,56 @@ test('[critical] removing a group keeps its strategies, as they were, in no grou
   assert.ok(Array.isArray((await api('GET', '/api/strategies?lite=1')).body.groups));
   assert.ok(strategyStore());
 });
+
+test('[critical] a group removed with its strategies: all of them, only when every one is switched off; several moved or removed together', async () => {
+  // 11 Oct 2026, live: a group was removed with twelve still in it -- they stayed, in no group -- after fourteen had
+  // been deleted one tap at a time. The group can take its strategies with it, and those in none be dealt with together.
+  const g = (await api('POST', '/api/strategy-groups', { name: 'Bulk', accountId: main() })).body.group;
+  for (const name of ['Bulk a', 'Bulk b', 'Bulk c']) {
+    assert.equal((await api('POST', '/api/strategies', { name, accountId: main(), groupId: g.id, config })).status, 200);
+  }
+  assert.equal((await api('POST', '/api/strategies/bulk-a/enabled', { enabled: true })).status, 200);
+  const before = (await list()).strategies.length;
+  // One still on: refused, and nothing removed.
+  const held = await api('DELETE', `/api/strategy-groups/${g.id}?strategies=delete`);
+  assert.equal(held.status, 409);
+  assert.equal(held.body.error, '1 of them is switched on: turn it off first.');
+  assert.equal((await list()).strategies.length, before);
+  await api('POST', `/api/strategy-groups/${g.id}/enabled`, { enabled: false });
+  const gone = await api('DELETE', `/api/strategy-groups/${g.id}?strategies=delete`);
+  assert.equal(gone.status, 200, JSON.stringify(gone.body));
+  assert.equal(gone.body.deleted, 3);
+  const after = await list();
+  assert.equal(after.strategies.length, before - 3);
+  assert.equal(after.groups.some((x: any) => x.id === g.id), false);
+  assert.equal(after.strategies.some((x: any) => x.groupId === g.id), false);
+
+  // Those in no group: moved into a group of their account together, or removed together.
+  for (const name of ['Loose a', 'Loose b']) await api('POST', '/api/strategies', { name, accountId: main(), config });
+  const own = `group-${main()}`;
+  const theirs = after.groups.find((x: any) => x.accountId === second);
+  const wrong = await api('POST', `/api/strategy-groups/${theirs.id}/take`, { strategyIds: ['loose-a', 'loose-b'] });
+  assert.equal(wrong.status, 422);
+  assert.match(wrong.body.error, /another account's/);
+  const took = await api('POST', `/api/strategy-groups/${own}/take`, { strategyIds: ['loose-a', 'loose-b'] });
+  assert.equal(took.body.moved, 2);
+  assert.ok((await list()).strategies.filter((x: any) => x.id.startsWith('loose-')).every((x: any) => x.groupId === own));
+  assert.equal((await api('POST', `/api/strategy-groups/${own}/take`, { strategyIds: ['loose-a', 'nope'] })).status, 409);
+  assert.equal((await api('POST', '/api/strategy-groups/nope/take', { strategyIds: ['loose-a'] })).status, 404);
+
+  await api('POST', '/api/strategies/loose-b/enabled', { enabled: true });
+  const on = await api('POST', '/api/strategies/delete-many', { strategyIds: ['loose-a', 'loose-b'] });
+  assert.equal(on.status, 409);
+  assert.match(on.body.error, /1 of them is switched on/);
+  assert.equal((await list()).strategies.filter((x: any) => x.id.startsWith('loose-')).length, 2, 'all or none');
+  await api('POST', '/api/strategies/loose-b/enabled', { enabled: false });
+  assert.equal((await api('POST', '/api/strategies/delete-many', { strategyIds: [] })).status, 422);
+  assert.equal((await api('POST', '/api/strategies/delete-many', { strategyIds: ['loose-a', 'loose-b'] })).body.deleted, 2);
+  assert.equal((await api('POST', '/api/strategies/delete-many', { strategyIds: ['loose-a'] })).status, 409, 'gone already: the list changed');
+  // Removing a group alone still keeps its strategies -- the default, unchanged.
+  const keep = (await api('POST', '/api/strategy-groups', { name: 'Keepers', accountId: main() })).body.group;
+  await api('POST', '/api/strategies', { name: 'Kept one', accountId: main(), groupId: keep.id, config });
+  const alone = await api('DELETE', `/api/strategy-groups/${keep.id}`);
+  assert.deepEqual([alone.body.ungrouped, alone.body.deleted], [1, 0]);
+  assert.equal((await list()).strategies.find((x: any) => x.id === 'kept-one').groupId, null);
+});
