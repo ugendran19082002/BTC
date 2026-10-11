@@ -392,6 +392,8 @@ export type EngineDeps = {
   onAlarm?: (trade: TradeState, message: string, plan: TradePlan) => void;
   /** Pause before a confirming read (`syncPosition`). Tests pass one that does not wait. */
   wait?: (ms: number) => Promise<void>;
+  /** How long a poll waits for the exchange to answer its order lookups (`LOOKUP_BUDGET_MS`); a test sets it short. */
+  lookupBudgetMs?: number;
   /**
    * Every journal event as it is written, with the trade either side of it.
    *
@@ -492,6 +494,20 @@ export function addEligibility(s: TradeState, size: number): string | null {
 
 /** How long to wait before trying protection again after a refusal. */
 const PROTECT_RETRY_MS = 2_000;
+/**
+ * How long a poll waits for the exchange to say how the trade's three orders stand, before going on without it.
+ *
+ * 11 Oct 2026, 08:13 IST, live: the perp reached a signal's stop while Delta was not answering
+ * `/v2/orders/history` -- one read timed out twice (16s), one came back a server error. Those reads are the poll's
+ * first step, taken under the trade's queue, and the perp's levels are judged after them: so the stop waited on a
+ * read that had nothing to tell it, and the fast watch (`UnderlyingWatch`) waited behind the same queue. A lookup
+ * can be four reads deep, each 8s twice.
+ *
+ * A lookup that has not answered in this long is treated as one that could not be asked -- which the poll already
+ * allows for (each catches to null) -- and the poll goes on to judge the exits on what the desk holds. The next
+ * poll, a second later, asks again. Three seconds: a healthy lookup is a fraction of one.
+ */
+const LOOKUP_BUDGET_MS = 3_000;
 /**
  * How old a quote may be before the desk refuses to act on it.
  *
@@ -1270,6 +1286,17 @@ export class TradeEngine {
     return this.withTrade(tradeId, () => this.addInner(tradeId, req));
   }
 
+  /**
+   * `work`, or `otherwise` if it has not settled in `ms`. The work is not stopped -- a read of the exchange cannot
+   * be called back -- only no longer waited for; what it answers later is dropped.
+   */
+  private within<T>(work: Promise<T>, ms: number, otherwise: T): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => resolve(otherwise), ms);
+      work.then((v) => { clearTimeout(timer); resolve(v); }, (e) => { clearTimeout(timer); reject(e); });
+    });
+  }
+
   private async pollInner(tradeId: string): Promise<TradeState | null> {
     const rec0 = await this.d.store.get(tradeId);
     if (!rec0 || isDone(rec0.state)) return rec0?.state ?? null;
@@ -1287,8 +1314,11 @@ export class TradeEngine {
       ['take_profit', rec.state.protection.takeProfit],
       ['stop_loss', rec.state.protection.stopLoss],
     ] as const;
-    const found = await Promise.all(
-      legs.map(([, cid]) => (cid ? this.exchange.getOrderByClientId(cid, rec.plan.symbol).catch(() => null) : null)),
+    const found = await this.within(
+      Promise.all(legs.map(([, cid]) => (cid ? this.exchange.getOrderByClientId(cid, rec.plan.symbol).catch(() => null) : null))),
+      this.d.lookupBudgetMs ?? LOOKUP_BUDGET_MS,
+      // Not answered in time: as a lookup that could not be asked. The exits below are judged all the same.
+      legs.map(() => null),
     );
     for (const [i, [role]] of legs.entries()) {
       const o = found[i];

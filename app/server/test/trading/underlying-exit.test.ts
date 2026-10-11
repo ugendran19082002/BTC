@@ -37,6 +37,51 @@ test('[critical] between the levels nothing happens; the perp at the stop buys t
   assert.match(why.reason ?? '', /BTC perp at 84,000\.00 reached the signal's stop 84,000\.00/);
 });
 
+test('[critical] an exchange slow to say how the orders stand does not hold the stop back: the poll goes on without it', async () => {
+  // 11 Oct 2026, 08:13 IST, live: the perp reached a signal's stop while Delta was not answering /v2/orders/history
+  // (16s, twice over). The poll asks how its orders stand first, under the trade's queue, and judged the perp's
+  // levels only after -- so the stop, and the fast watch behind the same queue, waited on a read with nothing to say.
+  const perp = { price: 85_000, at: 0 };
+  const r = rig({
+    products: [peProduct(), ceProduct()],
+    quotes: [quote(PE, 100.5, 101), quote(CE, 100.5, 101)],
+    underlying: () => ({ price: perp.price, at: perp.at || r.now() }),
+    lookupBudgetMs: 40,
+  });
+  const plan = { ...planFor(peProduct(), { lots: 10, stopPrice: 300, takeProfitPrice: 1 }), underlying: { dir: 1 as const, stop: 84_000, target: 86_000, source: 'BTC perp' } };
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  const id = plan.tradeId;
+  const before = r.store.peek(id)!.state.protection;
+  assert.ok(before.takeProfit && before.stopLoss, 'protected, both legs on');
+
+  // From here the exchange takes 400ms to say how a target or a stop stands -- ten times what the poll will wait.
+  const real = r.ex.getOrderByClientId.bind(r.ex);
+  let slowAsked = 0;
+  r.ex.getOrderByClientId = async (cid, symbol) => {
+    if (cid === before.takeProfit || cid === before.stopLoss) { slowAsked++; await new Promise((res) => setTimeout(res, 400)); }
+    return real(cid, symbol);
+  };
+
+  // Between the levels: nothing to do, and the poll does not sit out the read.
+  let began = Date.now();
+  assert.equal((await r.engine.poll(id))?.position, -10);
+  assert.ok(Date.now() - began < 300, `the poll waited ${Date.now() - began}ms on a read it does not need`);
+  assert.ok(slowAsked >= 2, 'it did ask');
+  assert.deepEqual(r.store.peek(id)!.state.protection, before, 'what it holds is unchanged: not answered is not "gone"');
+
+  // The perp at the stop: closed at the market on this poll, not after the exchange gets round to answering.
+  perp.price = 84_000;
+  began = Date.now();
+  const hit = r.engine.exitOnUnderlying(id, { price: 84_000, at: r.now() }); // the fast watch, behind the same queue
+  const s = await r.engine.poll(id);
+  await hit;
+  assert.equal(s?.position, 0, 'closed when the perp reached 84,000');
+  const why = r.store.peek(id)!.events.find((e) => e.t === 'exit_submitted') as { reason?: string };
+  assert.match(why.reason ?? '', /BTC perp at 84,000\.00 reached the signal's stop 84,000\.00/);
+  assert.equal(r.store.peek(id)!.events.filter((e) => e.t === 'exit_submitted').length, 1, 'once: the poll and the watch do not both close it');
+});
+
 test('[critical] the perp at the target books it', async () => {
   const { r, perp, id } = await shortPut();
   perp.price = 86_050;
