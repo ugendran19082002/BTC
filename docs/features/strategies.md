@@ -48,7 +48,11 @@ never look at groups.
   moving to another account's group is refused (clone instead). A new strategy
   is made in the group it was started from (the account's first, from the
   header button).
-- **Delete group**: two taps; its strategies stay, as they were, in no group.
+- **Delete group**: an empty group goes on a second tap. One with strategies
+  asks what becomes of them: the group alone (they stay, as they were, in no
+  group), or the group and all of them -- a second tap, one transaction, and
+  only with every one switched off. Those in no group can be moved into a
+  group of their account together, or removed together, on the same terms.
 - **Copy strategies** (header, a group's copy-in button, or a strategy's "To
   group"): pick any strategies, of any account and group -- by account, then
   group, with a search and "Pick all" -- and copy them into a group that exists
@@ -73,7 +77,9 @@ API: `POST /api/strategy-groups` (make), `POST /api/strategy-groups/:id`
 /api/strategy-groups/:id/clone`, `DELETE /api/strategy-groups/:id`, `POST
 /api/strategies/:id/group`, `POST /api/strategy-groups/copy-in`,
 `POST /api/strategy-groups/:id/order`, `POST /api/strategy-groups/order`,
-`GET /api/strategy-groups/index`; `GET /api/strategies` carries `groups`. Writes need
+`GET /api/strategy-groups/index`, `DELETE /api/strategy-groups/:id?strategies=delete`,
+`POST /api/strategies/delete-many`, `POST /api/strategy-groups/:id/take`;
+`GET /api/strategies` carries `groups`. Writes need
 a full session.
 
 ## One pass of the scheduler

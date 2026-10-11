@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-89 routes.
+91 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -102,6 +102,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/strategies/:id/clone` | signed in | Copy a strategy, settings and all, as a new one that is not armed. |
 | POST | `/api/strategies/:id/enabled` | signed in | Switch one strategy on or off. |
 | POST | `/api/strategies/:id/group` | signed in | Move a strategy into a group of its own account, or out of any (`groupId` null). |
+| POST | `/api/strategies/delete-many` | signed in | Remove several strategies together -- those in no group, say. |
 | POST | `/api/strategies/max-open` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
 | GET | `/api/strategies/runs` | signed in | The run journal on its own, for the history panel. |
 | POST | `/api/strategies/scheduler` | signed in | The master switch for the whole scheduler. |
@@ -112,6 +113,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/strategy-groups/:id/clone` | signed in | A copy of the group and every strategy in it -- to the same account, or to another (owner: "account 1 and 2, shuffle"). |
 | POST | `/api/strategy-groups/:id/enabled` | signed in | Every strategy of the group on, or off, at once -- each written as its own switch would write it. |
 | POST | `/api/strategy-groups/:id/order` | signed in | -- |
+| POST | `/api/strategy-groups/:id/take` | signed in | Put several strategies in a group together -- those in no group, say. |
 | POST | `/api/strategy-groups/copy-in` | signed in | Strategies copied into a group (owner, 10 Oct 2026: "from another account's, another group's, into a new group or an existing one"). |
 | GET | `/api/strategy-groups/index` | signed in | Which group each strategy is in, every account's (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- desk and phone"). |
 | POST | `/api/strategy-groups/order` | signed in | -- |
