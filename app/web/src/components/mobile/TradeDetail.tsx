@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AlertOctagon, ArrowLeft, CheckCircle2, CircleDot, Info, LogIn, LogOut, Radio, ShieldCheck } from 'lucide-react';
+import { AlertOctagon, ArrowLeft, CheckCircle2, CircleDot, Info, LogIn, LogOut, Radio, ShieldCheck, Timer } from 'lucide-react';
 import { getTradeDetail } from '@/api/phone';
 import { NotSignedIn } from '@/api/client';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -24,6 +24,8 @@ const STAGE: Record<Stage, { icon: typeof Info; tone: string; label: string }> =
   entry: { icon: LogIn, tone: 'text-foreground', label: 'Entry' },
   fill: { icon: CircleDot, tone: 'text-[var(--up)]', label: 'Fill' },
   protection: { icon: ShieldCheck, tone: 'text-[var(--up)]', label: 'Protection' },
+  // A strategy's time step: its day's steps, or a target or stop moved by the clock. Only on a trade whose strategy has steps.
+  step: { icon: Timer, tone: 'text-[var(--accent)]', label: 'Time step' },
   exit: { icon: LogOut, tone: 'text-foreground', label: 'Exit' },
   closed: { icon: CheckCircle2, tone: 'text-[var(--up)]', label: 'Closed' },
   problem: { icon: AlertOctagon, tone: 'text-[var(--down)]', label: 'Problem' },

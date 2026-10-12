@@ -37,6 +37,11 @@ export type ExitStepperDeps = {
   move: (tradeId: string, ask: ExitAsk, stage: string) => Promise<unknown>;
   /** Said once per trade per stage, keyed by the trade it moved. */
   tell?: (text: string, tradeId: string) => void;
+  /**
+   * Written on the trade's own journal, for its timeline on the phone (12 Oct 2026): the day's steps once, and each
+   * move as it lands. Only ever called for a strategy that has steps, so a fixed target leaves no line.
+   */
+  note?: (tradeId: string, note: { kind: 'schedule' | 'moved'; title: string; detail?: string }) => Promise<unknown>;
   now: () => number;
 };
 
@@ -69,9 +74,14 @@ export class StrategyExitStepper {
 
     const trades = await this.d.openTrades(s.id);
     const moved: string[] = [];
+    const dynamic = target.steps.length > 0 || stop.steps.length > 0;
     for (const trade of trades) {
       const id = trade.state.tradeId;
       if (trade.state.position === 0 || trade.state.entryAvgPrice === null) continue;
+      // The day's steps, said once on a trade of a strategy that has any: the first time it is seen holding a position.
+      if (dynamic && this.d.note && !(trade.events ?? []).some((e) => e.t === 'exit_step' && e.kind === 'schedule')) {
+        await this.d.note(id, { kind: 'schedule', title: scheduleTitle(target, stop), detail: scheduleWords(s, target, stop) }).catch(() => {});
+      }
       // The stage written on the trade wins: it survives a restart, this map
       // does not. A trade with neither was placed with the starting values.
       const prev = trade.plan.exitStage ?? this.applied.get(id) ?? START;
@@ -82,17 +92,75 @@ export class StrategyExitStepper {
         ...(String(t.stage) !== prevTarget ? exitAsk(target, t.value, 'target') : {}),
         ...(String(st.stage) !== prevStop ? exitAsk(stop, st.value, 'stop') : {}),
       };
+      // What the exits rest at before the move: read now, as the record may be the one the move changes.
+      const was = { target: trade.plan.takeProfitPrice, stop: trade.plan.stopPrice };
       // Not marked until it lands: a move that throws is tried again next tick.
       await this.d.move(id, ask, key);
       this.applied.set(id, key);
       moved.push(id);
       this.d.tell?.(stepWords(s, trade.plan.symbol, target, t, prevTarget, stop, st, prevStop), id);
+      // On the trade's journal too: what moved, from what, at which step -- and the new buy-back price where it is known.
+      if (this.d.note) {
+        const after = (await Promise.resolve(this.d.openTrades(s.id)).catch(() => [] as TradeRecord[])).find((x) => x.state.tradeId === id) ?? null;
+        await this.d.note(id, movedNote(s, target, t, prevTarget, stop, st, prevStop, was, after)).catch(() => {});
+      }
     }
     // Forget trades that are gone, so the map does not grow for ever.
     const open = new Set(trades.filter((x) => x.state.position !== 0).map((x) => x.state.tradeId));
     for (const id of [...this.applied.keys()]) if (!open.has(id)) this.applied.delete(id);
     return moved;
   }
+}
+
+/** "Dynamic target on" / "Dynamic stop on" / both: which exits move by the clock. */
+function scheduleTitle(target: ExitRule, stop: ExitRule): string {
+  const which = [target.steps.length ? 'target' : null, stop.steps.length ? 'stop' : null].filter(Boolean).join(' and ');
+  return `Dynamic ${which} on`;
+}
+
+/** One exit's day in words: "70% · 75% from 11:30 PM · 80% from 1:30 AM". */
+function ruleDay(rule: ExitRule): string {
+  return [exitWords(rule, rule.value), ...rule.steps.map((st) => `${exitWords(rule, st.value)} from ${time12(st.at)}`)].join(' · ');
+}
+
+function scheduleWords(s: Strategy, target: ExitRule, stop: ExitRule): string {
+  const parts: string[] = [];
+  if (target.steps.length) parts.push(`Target ${ruleDay(target)}`);
+  if (stop.steps.length) parts.push(`Stop ${ruleDay(stop)}`);
+  return `${parts.join('. ')}. Set by ${s.name}.`;
+}
+
+/** The stage a leg was at, in its rule's words: 0 is the starting value, n the nth step. */
+function stageWords(rule: ExitRule, stage: string | undefined): string | null {
+  const n = Number(stage);
+  if (!Number.isInteger(n) || n < 0 || n > rule.steps.length) return null;
+  return exitWords(rule, n === 0 ? rule.value : rule.steps[n - 1]!.value);
+}
+
+/** What one step did, for the trade's timeline: "Target moved to 75%" / "11:30 PM step · was 70% · buy-back 6 → 5". */
+function movedNote(
+  s: Strategy,
+  target: ExitRule, t: { value: number; stage: number }, prevTarget: string | undefined,
+  stop: ExitRule, st: { value: number; stage: number }, prevStop: string | undefined,
+  before: { target: number | null | undefined; stop: number | null | undefined }, after: TradeRecord | null,
+): { kind: 'moved'; title: string; detail: string } {
+  const at = (rule: ExitRule, stage: number) => (stage === 0 ? time12(s.config.entryTime) : time12(rule.steps[stage - 1]!.at));
+  const px = (n: number | null | undefined) => (typeof n === 'number' && Number.isFinite(n) ? String(Math.round(n * 100) / 100) : null);
+  const titles: string[] = [];
+  const details: string[] = [];
+  if (String(t.stage) !== prevTarget) {
+    titles.push(`Target moved to ${exitWords(target, t.value)}`);
+    const was = stageWords(target, prevTarget);
+    const a = px(before.target), b = px(after?.plan.takeProfitPrice);
+    details.push([`${at(target, t.stage)} step`, was ? `was ${was}` : null, a && b && a !== b ? `buy-back ${a} → ${b}` : b ? `buy-back ${b}` : null].filter(Boolean).join(' · '));
+  }
+  if (String(st.stage) !== prevStop) {
+    titles.push(`Stop moved to ${exitWords(stop, st.value)}`);
+    const was = stageWords(stop, prevStop);
+    const a = px(before.stop), b = px(after?.plan.stopPrice);
+    details.push([`${at(stop, st.stage)} step`, was ? `was ${was}` : null, a && b && a !== b ? `stop ${a} → ${b}` : b ? `stop ${b}` : null].filter(Boolean).join(' · '));
+  }
+  return { kind: 'moved', title: titles.join(' · '), detail: details.join('. ') };
 }
 
 /** "80%" / "10 pts" / "off" -- a value in its rule's own units. */

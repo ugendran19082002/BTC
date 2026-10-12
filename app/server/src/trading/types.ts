@@ -381,4 +381,11 @@ export type TradeEvent =
   | { t: 'add_submitted'; add: AddWorking; at: number }
   /** The add is over: filled, cut off at its window, refused, or never found. */
   | { t: 'add_done'; filled: number; reason: string; at: number }
-  | { t: 'aborted'; reason: string; at: number };
+  | { t: 'aborted'; reason: string; at: number }
+  /**
+   * A strategy's time-based exits, said on the trade (owner, 12 Oct 2026: "the phone's timeline should show the
+   * dynamic target -- only when it is on"). Written by the exit stepper alone, so only a trade of a strategy with
+   * time steps ever has one: `schedule` once, what the day's steps are; `moved` each time a step moves its target
+   * or stop. A note and nothing more -- it changes nothing about the trade (`applyEvent` passes it through).
+   */
+  | { t: 'exit_step'; kind: 'schedule' | 'moved'; title: string; detail?: string; at: number };

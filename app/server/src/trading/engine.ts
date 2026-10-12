@@ -1287,6 +1287,19 @@ export class TradeEngine {
   }
 
   /**
+   * A time step, written on the trade's journal: what the strategy's steps are, or that one just moved an exit.
+   * Nothing about the trade changes -- the stepper has already moved the plan and the book through
+   * `updateProtection`. Not written on a trade that is over.
+   */
+  noteExitStep(tradeId: string, note: { kind: 'schedule' | 'moved'; title: string; detail?: string }): Promise<TradeState | null> {
+    return this.withTrade(tradeId, async () => {
+      const rec = await this.d.store.get(tradeId);
+      if (!rec || isDone(rec.state)) return rec?.state ?? null;
+      return (await this.commit(rec, { t: 'exit_step', ...note, at: this.now() })).state;
+    });
+  }
+
+  /**
    * `work`, or `otherwise` if it has not settled in `ms`. The work is not stopped -- a read of the exchange cannot
    * be called back -- only no longer waited for; what it answers later is dropped.
    */

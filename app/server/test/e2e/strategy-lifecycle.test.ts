@@ -201,13 +201,25 @@ test('9 [critical] at the step time the target moves on the book; the fixed stop
   const stepper = new StrategyExitStepper({
     openTrades: async (id) => (await tradingService().openTrades()).filter((t) => t.plan.strategyId === id),
     move: (id, ask) => tradingService().updateExits(id, ask),
+    // The steps said on the trade's own journal, as the runner wires it (12 Oct 2026).
+    note: (id, n) => tradingService().noteExitStep(id, n),
     now: () => stepAt,
   });
+  const beforeStep = (await one<{ position: number; phase: string }>('SELECT position, phase FROM trades WHERE trade_id = $1', [tradeId]))!;
   assert.deepEqual(await stepper.consider(s), [tradeId]);
   const book = (await paper().getOpenOrders(SYMBOL)).filter((o) => o.reduceOnly);
   assert.deepEqual(book.filter((o) => o.type === 'limit').map((o) => o.limitPrice), [3], '85% of 20');
   assert.deepEqual(book.filter((o) => o.type !== 'limit').map((o) => o.stopPrice), [BACKSTOP_70], 'the stop, as its backstop, unmoved');
   assert.equal((await one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [tradeId]))!.plan.takeProfitPrice, 3);
+  // On the trade's journal: the day's steps once, then the move -- in the real store, for the phone's timeline.
+  const notes = (await rows<{ event: any }>("SELECT event FROM trade_events WHERE trade_id = $1 AND kind = 'exit_step' ORDER BY seq", [tradeId])).map((r) => r.event);
+  assert.deepEqual(notes.map((n) => [n.kind, n.title]), [['schedule', 'Dynamic target on'], ['moved', 'Target moved to 85%']]);
+  assert.match(notes[0].detail, /^Target 80% · 85% from /);
+  assert.match(notes[1].detail, /step · was 80% · buy-back 4 → 3$/);
+  // A note and nothing more: the trade is as the move left it, and the phone's read of it carries the lines.
+  assert.deepEqual((await one<{ position: number; phase: string }>('SELECT position, phase FROM trades WHERE trade_id = $1', [tradeId]))!, beforeStep);
+  await stepper.consider(s);
+  assert.equal((await rows("SELECT 1 FROM trade_events WHERE trade_id = $1 AND kind = 'exit_step'", [tradeId])).length, 2, 'the next tick writes nothing more');
 });
 
 test('10 [critical] 22 Sep: editing the entry time while the position is open does not close it', async () => {

@@ -121,6 +121,8 @@ export class StrategyRunner {
     this.exitStepper = new StrategyExitStepper({
       openTrades: async (id) => (await tradingService().openTrades()).filter((t) => t.plan.strategyId === id),
       move: (tradeId, ask, stage) => tradingService().updateExits(tradeId, ask, stage),
+      // On the trade's own journal, for its timeline on the phone: the day's steps once, each move as it lands.
+      note: (tradeId, note) => tradingService().noteExitStep(tradeId, note),
       // Keyed by trade: a CE and a PE stepping in the same tick are two pieces
       // of news, and one key would have the second replace the first unsent.
       tell: (text, tradeId) => this.alert(() => ({ key: `exit-step:${tradeId}`, text })),

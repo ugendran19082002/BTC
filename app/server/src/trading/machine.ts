@@ -275,6 +275,10 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
 
     case 'aborted':
       return { ...s, phase: 'aborted', note: e.reason };
+
+    // A note of what a time step did. The step itself moved the plan and the book; this only says so.
+    case 'exit_step':
+      return { ...prev };
   }
 }
 

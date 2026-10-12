@@ -524,3 +524,81 @@ describe('real time: UG-PE as saved on 22 Sep -- price stop 70, target 80 → 85
     assert.equal((await r.ex.getOpenOrders(PE)).filter((o) => o.reduceOnly).length, 2, 'one target, one stop -- never two of either');
   });
 });
+
+/* ------------------------------------------------------------------ the steps, said on the trade's own journal */
+
+describe('time steps on the trade\'s timeline (owner, 12 Oct 2026: "show the dynamic target -- only when it is on")', () => {
+  /** A desk whose trades keep a journal, as the real one's do: a note written lands in the trade's events. */
+  function journalDesk() {
+    const d = fakeDesk();
+    const row = d.rows[0]! as unknown as { plan: Record<string, unknown>; events: Record<string, unknown>[] };
+    row.events = [];
+    row.plan.takeProfitPrice = 3;                       // sold at 15, 80% kept: bought back at 3
+    const notes: { tradeId: string; kind: string; title: string; detail?: string }[] = [];
+    const deps: ExitStepperDeps = {
+      ...d.deps,
+      // The move lands in the plan, as `updateExits` leaves it: the next read shows the new buy-back price.
+      move: async (tradeId, ask, stage) => {
+        await d.deps.move(tradeId, ask, stage);
+        if (ask.takeProfitPct) row.plan.takeProfitPrice = Math.round(15 * (1 - ask.takeProfitPct) * 100) / 100;
+      },
+      note: async (tradeId, note) => { notes.push({ tradeId, ...note }); row.events.push({ t: 'exit_step', ...note, at: d.clock.t }); },
+    };
+    return { ...d, deps, notes };
+  }
+
+  test('[critical] the day\'s steps are written once, when the trade is first seen -- in words a person reads', async () => {
+    const d = journalDesk();
+    const s = new StrategyExitStepper(d.deps);
+    await s.consider(morning());
+    assert.deepEqual(d.notes, [{
+      tradeId: 'T0', kind: 'schedule', title: 'Dynamic target on',
+      detail: 'Target 80% · 85% from 7:30 AM · 90% from 9:30 AM · 95% from 11:30 AM. Set by Morning.',
+    }]);
+    d.clock.t += 20_000;
+    await s.consider(morning());
+    await s.consider(morning());
+    assert.equal(d.notes.length, 1, 'once: not on every tick');
+    assert.equal(d.moves.length, 0, 'saying the steps moves nothing');
+  });
+
+  test('[critical] each step that moves the target is written as it lands: what to, which step, what from, the buy-back price', async () => {
+    const d = journalDesk();
+    const s = new StrategyExitStepper(d.deps);
+    await s.consider(morning());
+    d.clock.t = ist('07:30');
+    await s.consider(morning());
+    assert.deepEqual(d.notes.at(-1), { tradeId: 'T0', kind: 'moved', title: 'Target moved to 85%', detail: '7:30 AM step · was 80% · buy-back 3 → 2.25' });
+    d.clock.t = ist('09:30');
+    await s.consider(morning());
+    assert.deepEqual(d.notes.at(-1), { tradeId: 'T0', kind: 'moved', title: 'Target moved to 90%', detail: '9:30 AM step · was 85% · buy-back 2.25 → 1.5' });
+    assert.deepEqual(d.notes.map((n) => n.kind), ['schedule', 'moved', 'moved'], 'one line a step, the schedule not said again');
+  });
+
+  test('a stop that steps is said as a stop; both stepping at once are one line', async () => {
+    const d = journalDesk();
+    const s = new StrategyExitStepper(d.deps);
+    const both = morning({ targetSteps: [{ at: '08:00', value: 0.9 }], stopLossPct: 1, stopSteps: [{ at: '08:00', value: 2 }] });
+    await s.consider(both);
+    assert.equal(d.notes[0]!.title, 'Dynamic target and stop on');
+    assert.equal(d.notes[0]!.detail, 'Target 80% · 90% from 8:00 AM. Stop 100% · 200% from 8:00 AM. Set by Morning.');
+    d.clock.t = ist('08:00');
+    await s.consider(both);
+    assert.equal(d.notes.at(-1)!.title, 'Target moved to 90% · Stop moved to 200%');
+    assert.match(d.notes.at(-1)!.detail!, /^8:00 AM step · was 80% · buy-back 3 → 1\.5\. 8:00 AM step · was 100%/);
+  });
+
+  test('[critical] a fixed target writes nothing at all; and a note that cannot be written does not stop the move', async () => {
+    const d = journalDesk();
+    const s = new StrategyExitStepper(d.deps);
+    d.clock.t = ist('12:00');
+    await s.consider(strat({ entryTime: '05:30', exitTime: '17:29', takeProfitPct: 0.9 }));
+    assert.deepEqual(d.notes, [], 'no steps: no line on the trade');
+
+    const broken = journalDesk();
+    const t = new StrategyExitStepper({ ...broken.deps, note: async () => { throw new Error('journal down'); } });
+    broken.clock.t = ist('07:30');
+    assert.deepEqual(await t.consider(morning()), ['T0'], 'the target is moved all the same');
+    assert.equal(broken.moves.length, 1);
+  });
+});

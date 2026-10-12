@@ -34,6 +34,27 @@ describe('journalSteps', () => {
     expect(steps[5]!.title).toBe('The other exit (stop) was cancelled');
   });
 
+  it('[critical] a dynamic target is told in the timeline -- its steps once, each move where it happened -- and a fixed target has no such line', () => {
+    // Owner, 12 Oct 2026: "the phone's order timeline should show the dynamic target -- only when it is on".
+    const dynamic = [
+      ...EVENTS,
+      { t: 'exit_step', kind: 'schedule', title: 'Dynamic target on', detail: 'Target 70% · 75% from 11:30 PM · 80% from 1:30 AM. Set by 5m time.', at: 3_100 },
+      { t: 'exit_step', kind: 'moved', title: 'Target moved to 75%', detail: '11:30 PM step · was 70% · buy-back 6 → 5', at: 3_500 },
+      { t: 'exit_step', kind: 'moved', title: 'Target moved to 80%', detail: '1:30 AM step · was 75% · buy-back 5 → 4', at: 3_800 },
+    ];
+    const steps = journalSteps(trade(), dynamic);
+    expect(steps.map((s) => s.stage)).toEqual(['signal', 'entry', 'fill', 'protection', 'step', 'step', 'step', 'exit', 'info', 'closed']);
+    expect(steps.filter((s) => s.stage === 'step')).toEqual([
+      { at: 3_100, stage: 'step', title: 'Dynamic target on', detail: 'Target 70% · 75% from 11:30 PM · 80% from 1:30 AM. Set by 5m time.' },
+      { at: 3_500, stage: 'step', title: 'Target moved to 75%', detail: '11:30 PM step · was 70% · buy-back 6 → 5' },
+      { at: 3_800, stage: 'step', title: 'Target moved to 80%', detail: '1:30 AM step · was 75% · buy-back 5 → 4' },
+    ]);
+    // A fixed target: the desk writes none of these, and the timeline is the one it always was.
+    expect(journalSteps(trade(), EVENTS).some((s) => s.stage === 'step')).toBe(false);
+    // One with no words in it (a record cut short) still has a name.
+    expect(journalSteps(trade(), [{ t: 'exit_step', kind: 'moved', at: 3_500 }]).find((s) => s.stage === 'step')!.title).toBe('Time step');
+  });
+
   it('says what went wrong in the exchange\'s words', () => {
     const steps = journalSteps(trade({ position: -100, exitSize: 0 }), [
       { t: 'protection_failed', reason: 'price outside band', at: 1 },

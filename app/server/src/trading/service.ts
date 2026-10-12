@@ -555,6 +555,11 @@ export class TradingService {
     return this.engine.updateProtection(tradeId, protectionFor(entry, held !== undefined ? { ...ask, stopMaxPoints: held } : ask), follow, exitStage);
   }
 
+  /** A strategy's time step, said on the trade's journal (`TradeEngine.noteExitStep`). */
+  noteExitStep(tradeId: string, note: { kind: 'schedule' | 'moved'; title: string; detail?: string }) {
+    return this.engine.noteExitStep(tradeId, note);
+  }
+
   /**
    * Square off: buy back every position, pull every working order.
    *

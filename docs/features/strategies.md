@@ -207,6 +207,16 @@ market. A slippage alert measures both the same way: paying more than asked is
 against the desk. Both are re-read off the actual fill for a percentage or
 points (a fill at 42 against a 39 limit moves a 185% stop to 119.7).
 
+### Time steps on the trade's timeline
+
+A strategy whose target or stop has time steps says so on each of its trades:
+once, the day's steps ("Dynamic target on: 70% · 75% from 11:30 PM · 80% from
+1:30 AM"), then each move as it lands ("Target moved to 75% · was 70% ·
+buy-back 6 → 5"). These are `exit_step` events in the trade's journal, written
+by the exit stepper (`strategy/exit-steps.ts`) and shown as "Time step" lines
+in the phone's trade view. They are notes: nothing about the trade changes.
+A strategy with a fixed target writes none.
+
 ## Why a strategy is refused
 
 Every refusal is a sentence in `strategy_runs.detail`. The common ones:

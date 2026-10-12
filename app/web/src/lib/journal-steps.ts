@@ -9,7 +9,7 @@ import { price } from '@/lib/format';
  * screen is the one the desk itself acted on.
  */
 
-export type Stage = 'signal' | 'entry' | 'fill' | 'protection' | 'exit' | 'closed' | 'problem' | 'info';
+export type Stage = 'signal' | 'entry' | 'fill' | 'protection' | 'step' | 'exit' | 'closed' | 'problem' | 'info';
 
 export type Step = { at: number; stage: Stage; title: string; detail?: string };
 
@@ -69,6 +69,13 @@ function stepOf(e: JournalEvent): Step {
       return { at, stage: 'info', title: 'The entry\'s wait ran out' };
     case 'entry_cancelled':
       return { at, stage: 'info', title: `The rest of the entry was cancelled: ${qty(e.remaining)} not filled` };
+    /*
+     * A strategy's time-based exits (owner, 12 Oct 2026: "show the dynamic target in the timeline -- only when it is
+     * on"). The desk writes these on a trade only when its strategy has time steps -- the day's steps once, then each
+     * move -- in its own words, so a trade with a fixed target has no such line and nothing is worked out here.
+     */
+    case 'exit_step':
+      return { at, stage: 'step', title: str(e.title) ?? 'Time step', detail: str(e.detail) ?? undefined };
     case 'protection_placed': {
       const both = [e.takeProfit ? 'target' : null, e.stopLoss ? 'stop' : null].filter(Boolean).join(' and ');
       return { at, stage: 'protection', title: both ? `${both[0]!.toUpperCase()}${both.slice(1)} placed at the exchange` : 'Exits checked at the exchange', detail: n(e.size) !== null ? `Covering ${qty(e.size)} contracts` : undefined };
