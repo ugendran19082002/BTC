@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import type { OptionFlowSummary, SideFlow } from '@/api/desk';
 
 /** Pressure, under More (owner, 7 Oct 2026): the option tape a side at a time, and the big-move readings. */
@@ -80,19 +80,26 @@ describe('PressureScreen', () => {
 
   it('[critical] big move catch: every reading with its score, its lamp, and the reading and threshold in words', async () => {
     render(<PressureScreen />);
-    const list = within(await screen.findByRole('list', { name: 'Big move readings' }));
-    const rows = list.getAllByRole('listitem');
-    expect(rows.length).toBeGreaterThanOrEqual(8);
-    const burst = rows.find((r) => r.textContent!.includes('Volume burst'))!;
-    expect(burst).toHaveTextContent('96/100');
-    expect(burst).toHaveTextContent('WATCH');
-    expect(burst).toHaveTextContent('1.9× median · triggers ≥ 2.0×');
-    expect(within(burst).getByRole('meter', { name: 'Volume burst score' })).toHaveAttribute('aria-valuenow', '96');
-    expect(screen.getByText(/Measured sudden-move score 80 \(sudden\)/)).toBeInTheDocument();
-    expect(screen.getByText(/^(CALM|WATCH|HIGH|SUDDEN) · \d+\/100$/)).toBeInTheDocument();
-    // the strike the premium and IV changes are read on is the desk's own pick, the put first
-    expect(getChanges).toHaveBeenCalledWith('P-BTC-83200-071026', expect.objectContaining({ spot: 83_774, mark: 40, pcr: 2 }));
-    expect(screen.getByText(/read on 83,200 PE, the desk's own pick/)).toBeInTheDocument();
+    await screen.findByRole('list', { name: 'Big move readings' });
+    /*
+     * Waited for, each of them (12 Oct 2026): the list is drawn as soon as the perp is read, and the readings that
+     * come of later reads -- the changes on the picked strike, the measured score -- arrive after it. Asked the
+     * instant the list appeared, this failed now and then on a busy machine and passed on the next run.
+     */
+    await waitFor(() => {
+      const rows = within(screen.getByRole('list', { name: 'Big move readings' })).getAllByRole('listitem');
+      expect(rows.length).toBeGreaterThanOrEqual(8);
+      const burst = rows.find((r) => r.textContent!.includes('Volume burst'))!;
+      expect(burst).toHaveTextContent('96/100');
+      expect(burst).toHaveTextContent('WATCH');
+      expect(burst).toHaveTextContent('1.9× median · triggers ≥ 2.0×');
+      expect(within(burst).getByRole('meter', { name: 'Volume burst score' })).toHaveAttribute('aria-valuenow', '96');
+      expect(screen.getByText(/Measured sudden-move score 80 \(sudden\)/)).toBeInTheDocument();
+      expect(screen.getByText(/^(CALM|WATCH|HIGH|SUDDEN) · \d+\/100$/)).toBeInTheDocument();
+      // the strike the premium and IV changes are read on is the desk's own pick, the put first
+      expect(getChanges).toHaveBeenCalledWith('P-BTC-83200-071026', expect.objectContaining({ spot: 83_774, mark: 40, pcr: 2 }));
+      expect(screen.getByText(/read on 83,200 PE, the desk's own pick/)).toBeInTheDocument();
+    }, { timeout: 5_000 });
   });
 
   it('an answer that is not a chain (an error\'s body, another shape) is "not read", not a crash', async () => {
