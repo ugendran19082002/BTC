@@ -74,7 +74,7 @@ export function OpenLimits({ shown }: { /** The chosen account's read, already o
   // On "All accounts" each account is read for itself: a limit is one account's, and the read above is the desk's own.
   const each = usePoll(
     () => (every ? Promise.all(accounts.map((a) => getActivity(a.id).then((d) => ({ id: a.id, name: a.name, d })))) : Promise.resolve([])),
-    30_000, { deps: [every, accounts.map((a) => a.id).join(',')] },
+    30_000, { enabled: every, deps: [every, accounts.map((a) => a.id).join(',')] },
   );
   const blocks = every
     ? (each.data ?? []).filter((x) => x.d.openBySide && x.d.signalSideMaxPct)

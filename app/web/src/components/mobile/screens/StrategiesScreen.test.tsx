@@ -102,36 +102,53 @@ describe('StrategiesScreen: each strategy, by group', () => {
   });
 });
 
-describe('StrategiesScreen: each side its own limit under "at most open"', () => {
+describe('StrategiesScreen: the limits on open trades, as bars', () => {
+  const ACCOUNTS = [{ id: 1, name: 'Savings', active: true }, { id: 2, name: 'Expenses', active: true }, { id: 3, name: 'Old', active: false }];
   const at = (accountParam: number | null) => render(
-    <PhoneContext.Provider value={{ now: NOW, accountParam, openTrade: vi.fn(), go: vi.fn() } as unknown as PhoneData}>
+    <PhoneContext.Provider value={{ now: NOW, accountParam, accounts: ACCOUNTS, openTrade: vi.fn(), go: vi.fn() } as unknown as PhoneData}>
       <StrategiesScreen />
     </PhoneContext.Provider>,
   );
-  it('[critical] an account\'s limits, read only: each side\'s trades of its own limit, a side at it said so -- not on "All accounts"', async () => {
+  const LIMITS = { signalMaxOpen: 60, openNow: 56, signalSideMaxPct: { CE: 80, PE: 80 }, openBySide: { CE: 8, PE: 48 } };
+
+  it('[critical] an account chosen: the cap and each side\'s own limit as bars with the count in words; a side at its limit says what follows', async () => {
     getDaySignals.mockResolvedValue({ trades: [] });
-    activity = { ...ONE, signalMaxOpen: 60, signalSideMaxPct: { CE: 80, PE: 80 }, openBySide: { CE: 12, PE: 48 } };
-    const one = at(1);
-    const line = await screen.findByLabelText('CE and PE limits');
-    expect(line).toHaveTextContent('At most open 60 · each side its own');
-    expect(line).toHaveTextContent('CE 12 of 48');
-    expect(line).toHaveTextContent('PE 48 of 48 · full');
-    one.unmount();
-    at(null);
-    expect(await screen.findByText('30m time')).toBeInTheDocument();
-    expect(screen.queryByLabelText('CE and PE limits')).toBeNull();
+    activity = { ...ONE, ...LIMITS };
+    at(1);
+    const box = within(await screen.findByRole('region', { name: 'open limits' }));
+    expect(box.getByRole('progressbar', { name: 'open trades, of at most open' })).toHaveAttribute('aria-valuenow', '56');
+    expect(box.getByRole('progressbar', { name: 'open trades, of at most open' })).toHaveAttribute('aria-valuemax', '60');
+    expect(box.getByRole('progressbar', { name: 'CE open, of its limit' })).toHaveAttribute('aria-valuemax', '48');
+    expect(box.getByRole('progressbar', { name: 'PE open, of its limit' })).toHaveAttribute('aria-valuenow', '48');
+    expect(box.getByText('56 of 60')).toBeInTheDocument();
+    expect(box.getByText('8 of 48')).toBeInTheDocument();
+    expect(box.getByText('48 of 48 · full')).toBeInTheDocument();
+    expect(box.getAllByText('max 80%')).toHaveLength(2);
+    expect(box.getByText(/PE at its limit: the next signal that way is skipped until one closes\./)).toBeInTheDocument();
   });
 
-  it('no limit set, or a server from before the sides\' limits: nothing shown', async () => {
+  it('[critical] "All accounts": one block for each account that is switched on, by name', async () => {
     getDaySignals.mockResolvedValue({ trades: [] });
-    activity = { ...ONE, signalMaxOpen: 0, signalSideMaxPct: { CE: 80, PE: 80 }, openBySide: { CE: 12, PE: 20 } };
+    activity = { ...ONE, ...LIMITS, openBySide: { CE: 8, PE: 20 }, openNow: 28 };
+    at(null);
+    expect(await screen.findByRole('region', { name: 'open limits of Savings' })).toBeInTheDocument();
+    const exp = within(screen.getByRole('region', { name: 'open limits of Expenses' }));
+    expect(exp.getByRole('progressbar', { name: 'Expenses: PE open, of its limit' })).toHaveAttribute('aria-valuenow', '20');
+    expect(screen.queryByRole('region', { name: 'open limits of Old' })).toBeNull();
+    expect(screen.queryByText(/at its limit/)).toBeNull();
+  });
+
+  it('no limit set: said in words, no bars; a server from before the limits: no panel', async () => {
+    getDaySignals.mockResolvedValue({ trades: [] });
+    activity = { ...ONE, ...LIMITS, signalMaxOpen: 0 };
     const none = at(1);
-    expect(await screen.findByText('30m time')).toBeInTheDocument();
-    expect(screen.queryByLabelText('CE and PE limits')).toBeNull();
+    const box = within(await screen.findByRole('region', { name: 'open limits' }));
+    expect(box.getByText(/No “at most open” limit is set, so neither side has one/)).toBeInTheDocument();
+    expect(box.queryByRole('progressbar')).toBeNull();
     none.unmount();
     activity = { ...ONE, signalMaxOpen: 60 };
     at(1);
     expect(await screen.findByText('30m time')).toBeInTheDocument();
-    expect(screen.queryByLabelText('CE and PE limits')).toBeNull();
+    expect(screen.queryByText('Open limits')).toBeNull();
   });
 });
