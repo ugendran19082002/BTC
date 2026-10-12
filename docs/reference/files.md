@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-469 files listed, 232 test files counted below, images and lockfiles left out.
+470 files listed, 232 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -379,6 +379,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [FilterPicker.tsx](../../app/web/src/components/mobile/FilterPicker.tsx) | The phone's tick-several filter (owner, 8 Oct 2026: "strategy select option, multiple select dropdown, mobile user friendly -- the same filter on the signal filters", then "same UI, add a methods f... |
 | [HealthCard.tsx](../../app/web/src/components/mobile/HealthCard.tsx) | The phone's desk-health card: one line first -- a word, an icon and a colour, never colour alone -- then the reasons in the server's words, then the six readings behind them. |
 | [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | Home and the More list come with the phone; every other screen is a chunk of its own (10 Oct 2026), so the first screen paints without downloading the thirteen behind it. |
+| [OpenLimits.tsx](../../app/web/src/components/mobile/OpenLimits.tsx) | The limits on open trades, on the phone (owner, 12 Oct 2026: "show it on the phone -- user friendly, mobile friendly"): how much of "at most open" is in use, and each side's own limit under it -- c... |
 | [PairList.tsx](../../app/web/src/components/mobile/PairList.tsx) | One list of method + timeframe pairs on the phone (owner, 6 Oct 2026): the best, or the worst -- of the closed trades on P&L, or of the signal history under More. |
 | [PositionCard.tsx](../../app/web/src/components/mobile/PositionCard.tsx) | One open position, read only: what is wrong with it first, then entry, price now and P&L, then where the price stands between the stop and the target, drawn and moving (ExitRail) -- the BTC perp's... |
 | [PressureStrip.tsx](../../app/web/src/components/mobile/PressureStrip.tsx) | Home's four cards, in one row over today's P&L (owner, 7 Oct 2026): the call tape, the put tape, the big-move read, and BTC itself. |

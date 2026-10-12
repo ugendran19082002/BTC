@@ -113,7 +113,9 @@ over its limit takes no new signal until it is back under.
 
 Screen: beside "At most open", "CE max" and "PE max" -- 50 to 100 %, or Custom
 -- each with what that side holds of its limit, a full side said so. The
-phone's Strategies screen shows the same, read only, with an account chosen.
+phone's Strategies screen has an "Open limits" panel, read only: bars for all
+open trades, CE and PE -- the chosen account's, or one block per account on
+"All accounts".
 `POST /api/strategies/side-max { side, pct | null, accountId }` (null: back to
 80); `GET /api/strategies` carries `signalSideMaxPct` and `openBySide`.
 
