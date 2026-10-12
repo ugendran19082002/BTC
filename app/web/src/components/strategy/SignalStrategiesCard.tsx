@@ -2,7 +2,7 @@ import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setScheduler, setSignalMaxOpen, setStrategyEnabled, takeIntoGroup } from '@/api/strategy';
+import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setCeShare, setScheduler, setSignalMaxOpen, setStrategyEnabled, takeIntoGroup } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { copySources } from '@/components/strategy/SignalRuleEditor';
 import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { StrategyGroupSection } from '@/components/strategy/StrategyGroupSection';
 import { CopyStrategiesSheet } from '@/components/strategy/CopyStrategiesSheet';
+import { CePeSplit } from '@/components/strategy/CePeSplit';
 import { refreshGroupIndex } from '@/hooks/useGroupOf';
 import { defaultGroupFor, groupNameProblem, groupSections, moved, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
@@ -538,6 +539,17 @@ export function SignalStrategiesCard() {
               openNow={data.openNow ?? 0}
               busy={busy === 'max-open'}
               onSave={(n) => act('max-open', () => setSignalMaxOpen(n))}
+              onInvalid={setFailed}
+            />
+          )}
+          {/* The limit's two shares, beside the limit they divide. Absent on a server from before the split. */}
+          {data && data.signalMaxOpen !== undefined && data.openBySide && (
+            <CePeSplit
+              pct={data.signalCeSharePct ?? null}
+              cap={data.signalMaxOpen}
+              open={data.openBySide}
+              busy={busy === 'ce-share'}
+              onSave={(pct) => act('ce-share', () => setCeShare(pct))}
               onInvalid={setFailed}
             />
           )}

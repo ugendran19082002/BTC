@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-91 routes.
+92 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -102,6 +102,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/strategies/:id/clone` | signed in | Copy a strategy, settings and all, as a new one that is not armed. |
 | POST | `/api/strategies/:id/enabled` | signed in | Switch one strategy on or off. |
 | POST | `/api/strategies/:id/group` | signed in | Move a strategy into a group of its own account, or out of any (`groupId` null). |
+| POST | `/api/strategies/ce-share` | signed in | The cap's split between calls and puts: the calls' share in per cent (the puts have the rest); null takes it off. |
 | POST | `/api/strategies/delete-many` | signed in | Remove several strategies together -- those in no group, say. |
 | POST | `/api/strategies/max-open` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
 | GET | `/api/strategies/runs` | signed in | The run journal on its own, for the history panel. |

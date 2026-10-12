@@ -30,6 +30,13 @@ export const setSignalMaxOpen = (max: number) =>
   post<{ ok: true; signalMaxOpen: number }>('/api/strategies/max-open', accountScope() === null ? { max } : { max, accountId: accountScope() });
 
 /**
+ * The cap shared between calls and puts: the calls' share of "at most open", in whole per cent -- the puts have the
+ * rest -- or null for no split. One account's, as the cap is.
+ */
+export const setCeShare = (pct: number | null) =>
+  post<{ ok: true; signalCeSharePct: number | null }>('/api/strategies/ce-share', accountScope() === null ? { pct } : { pct, accountId: accountScope() });
+
+/**
  * Copy one, settings and all, as a new draft.
  *
  * The desk's strategies differ by a field or two, and building the second by

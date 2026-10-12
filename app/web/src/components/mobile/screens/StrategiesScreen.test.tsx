@@ -101,3 +101,32 @@ describe('StrategiesScreen: each strategy, by group', () => {
     expect(screen.queryByText('Not in a group')).toBeNull();
   });
 });
+
+describe('StrategiesScreen: the limit shared between calls and puts', () => {
+  const at = (accountParam: number | null) => render(
+    <PhoneContext.Provider value={{ now: NOW, accountParam, openTrade: vi.fn(), go: vi.fn() } as unknown as PhoneData}>
+      <StrategiesScreen />
+    </PhoneContext.Provider>,
+  );
+  it('[critical] an account\'s split, read only: each side\'s trades of its share, a side at its share said so -- not on "All accounts", not without a split', async () => {
+    getDaySignals.mockResolvedValue({ trades: [] });
+    activity = { ...ONE, signalMaxOpen: 60, signalCeSharePct: 67, openBySide: { CE: 12, PE: 20 } };
+    const one = at(1);
+    const line = await screen.findByLabelText('CE / PE split');
+    expect(line).toHaveTextContent('At most open 60, shared');
+    expect(line).toHaveTextContent('CE 12 of 40');
+    expect(line).toHaveTextContent('PE 20 of 20 · full');
+    one.unmount();
+    at(null);
+    expect(await screen.findByText('30m time')).toBeInTheDocument();
+    expect(screen.queryByLabelText('CE / PE split')).toBeNull();
+  });
+
+  it('no split set: nothing shown', async () => {
+    getDaySignals.mockResolvedValue({ trades: [] });
+    activity = { ...ONE, signalMaxOpen: 60, signalCeSharePct: null, openBySide: { CE: 12, PE: 20 } };
+    at(1);
+    expect(await screen.findByText('30m time')).toBeInTheDocument();
+    expect(screen.queryByLabelText('CE / PE split')).toBeNull();
+  });
+});

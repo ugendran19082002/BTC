@@ -1178,6 +1178,87 @@ test('[critical] at most open at once, across all strategies: one number over ev
   for (const id of ['sig-cap-a', 'sig-cap-b']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
 });
 
+test('[critical] the cap shared between calls and puts: each side held to its share of the open trades, the shares following the cap, off until set', async () => {
+  // Owner, 12 Oct 2026: "split the max open between CE and PE -- 60 as 40 and 20, or 30 and 30".
+  const { sideCaps } = await import('../../src/strategy/types.js');
+  const MSG = 'The CE share must be a whole number of per cent, from 0 to 100 -- or none, for no split.';
+  for (const bad of [-1, 101, 49.5, 'half']) {
+    const r = await api('POST', '/api/strategies/ce-share', { pct: bad });
+    assert.equal(r.status, 422, String(bad));
+    assert.deepEqual(r.body.problems, [MSG]);
+  }
+  // Nothing set: no split, and the list says how many of each side are open.
+  const sides = async () => {
+    const open = await tradingService().openTrades();
+    return { CE: open.filter((t) => t.plan.optionSide === 'CE').length, PE: open.filter((t) => t.plan.optionSide === 'PE').length, all: open.length };
+  };
+  const at0 = await sides();
+  let status = (await api('GET', '/api/strategies')).body;
+  assert.equal(status.signalCeSharePct, null);
+  assert.deepEqual(status.openBySide, { CE: at0.CE, PE: at0.PE });
+
+  const each = { ...config, signal: { ...config.signal, maxOpen: 20 }, liveOrders: true };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig side', config: each })).status, 200);
+  await api('POST', '/api/strategies/sig-side/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const quote = () => {
+    for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+      paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+    }
+  };
+  const last = async () => (await runsOf('sig-side')).at(-1)!;
+  const up = async () => { quote(); await runner.onSignal(signal()); return last(); };                    // a BUY: sells the put
+  const down = async () => {                                                                               // a SELL: sells the call
+    quote();
+    await runner.onSignal(signal({ dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1.25 } }));
+    return last();
+  };
+
+  // A cap with room for six more, shared so the puts have room for two and the calls for four.
+  const cap = at0.all + 6;
+  const want = { CE: at0.CE + 4, PE: at0.PE + 2 };
+  const pct = Array.from({ length: 101 }, (_, i) => i).find((i) => sideCaps(cap, i)!.CE === want.CE)!;
+  assert.ok(pct !== undefined, `a whole per cent gives ${want.CE} of ${cap}`);
+  await tradingService().settings.set('signal_max_open', String(cap));
+  const saved = await api('POST', '/api/strategies/ce-share', { pct });
+  assert.deepEqual([saved.status, saved.body.signalCeSharePct], [200, pct]);
+  assert.equal((await api('GET', '/api/strategies')).body.signalCeSharePct, pct);
+
+  // Two puts fill the puts' share; the third BUY is skipped in words though the desk has four places left.
+  assert.equal((await up()).status, 'placed');
+  assert.equal((await up()).status, 'placed');
+  const full = await up();
+  assert.equal(full.status, 'skipped', full.detail);
+  assert.equal(full.detail.split(' | ')[1], `the desk already has ${want.PE} PE open -- at most ${want.PE} PE of the ${cap} at once (CE ${want.CE} / PE ${want.PE})`);
+  assert.equal(full.trade_id, null, 'nothing sent');
+  // The calls' share is its own: a SELL is taken.
+  const call = await down();
+  assert.equal(call.status, 'placed', call.detail);
+  status = (await api('GET', '/api/strategies')).body;
+  assert.deepEqual(status.openBySide, { CE: at0.CE + 1, PE: want.PE });
+
+  // The shares are of the cap as it stands: a larger cap, the same per cent, and the puts have room again.
+  const more = cap + 10;
+  assert.ok(sideCaps(more, pct)!.PE > want.PE, 'the puts\' share grew with the cap');
+  await tradingService().settings.set('signal_max_open', String(more));
+  assert.equal((await up()).status, 'placed', 'rescaled with the cap, nothing re-saved');
+  // With no cap there is nothing to share: the split binds nothing.
+  await tradingService().settings.set('signal_max_open', '0');
+  assert.equal((await up()).status, 'placed');
+  // And none takes the split off: the cap is one number again.
+  await tradingService().settings.set('signal_max_open', String((await sides()).all + 1));
+  await api('POST', '/api/strategies/ce-share', { pct: 0 });
+  assert.match((await down()).detail, /at most 0 CE of the \d+ at once/, 'a share of nothing takes no call at all');
+  const off = await api('POST', '/api/strategies/ce-share', { pct: null });
+  assert.deepEqual([off.status, off.body.signalCeSharePct], [200, null]);
+  assert.equal((await api('GET', '/api/strategies')).body.signalCeSharePct, null);
+  assert.equal((await down()).status, 'placed', 'the last place, either side');
+
+  await tradingService().settings.set('signal_max_open', '0');
+  await api('POST', '/api/strategies/sig-side/enabled', { enabled: false });
+});
+
 // ------------------------------------------------------------ the limits, as real money needs them
 
 test('[critical] the limits under load: a ticket trade takes a place, a burst of signals stops exactly at the cap, a fill at the zone is held to it, and a cancelled entry frees its place', async () => {

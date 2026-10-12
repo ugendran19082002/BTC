@@ -7,7 +7,7 @@ import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { GLOBAL_MAX_OPEN_KEY, actionOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { CE_SHARE_KEY, GLOBAL_MAX_OPEN_KEY, actionOf, ceShareOf, sideCaps, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -527,6 +527,20 @@ export class StrategyRunner {
     if (cap > 0 && openNow.length >= cap) {
       await finish('skipped', `the desk already has ${openNow.length} open (positions and working orders, all strategies) -- at most ${cap} at once across all`);
       return;
+    }
+    /*
+     * The cap's two shares (owner, 12 Oct 2026): where the account splits it between calls and puts, the side this
+     * signal trades is held to its own -- every open trade of that side, whichever strategy or hand opened it. A
+     * side that is full skips the signal though the other has room: that is the point of a share.
+     */
+    const shares = sideCaps(cap, ceShareOf(accountSetting(svc.settings, CE_SHARE_KEY, svc.accountId)));
+    if (shares) {
+      const side = legOfSignal(dir, actionOf(rule));
+      const held = openNow.filter((t) => t.plan.optionSide === side).length;
+      if (held >= shares[side]) {
+        await finish('skipped', `the desk already has ${held} ${side} open -- at most ${shares[side]} ${side} of the ${cap} at once (CE ${shares.CE} / PE ${shares.PE})`);
+        return;
+      }
     }
 
     const snap = await this.signalBoard().catch(() => null);

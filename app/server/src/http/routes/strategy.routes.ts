@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { CE_SHARE_KEY, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, ceShareOf, ceShareProblem, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -318,6 +318,13 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       signalMaxOpen: globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, account ?? svc.accountId)),
       // What the desk holds is the trading account's; another account, looked at, holds nothing of it.
       openNow: elsewhere ? 0 : openTrades.length,
+      // The cap's split between calls and puts -- the calls' share in per cent, null for none -- and how many of
+      // each side are open now, which each share is counted against.
+      signalCeSharePct: ceShareOf(accountSetting(svc.settings, CE_SHARE_KEY, account ?? svc.accountId)),
+      openBySide: {
+        CE: elsewhere ? 0 : openTrades.filter((t) => t.plan.optionSide === 'CE').length,
+        PE: elsewhere ? 0 : openTrades.filter((t) => t.plan.optionSide === 'PE').length,
+      },
       /*
        * The desk's limit on lots short at once (the order gate's MAX_POSITION), and
        * the lots the desk holds short now, working entries at the size they asked
@@ -833,6 +840,18 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
     await svc.settings.set(accountKey(GLOBAL_MAX_OPEN_KEY, account), String(max));
     return { ok: true, signalMaxOpen: max as number };
+  });
+
+  // The cap's split between calls and puts: the calls' share in per cent (the puts have the rest); null takes it off.
+  app.post('/api/strategies/ce-share', async (req, reply) => {
+    const { pct, accountId } = (req.body ?? {}) as { pct?: unknown; accountId?: unknown };
+    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const share = pct === undefined ? null : pct;
+    const problem = ceShareProblem(share);
+    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+    // Stored empty for "no split": read back as none (`ceShareOf`), on this account alone.
+    await svc.settings.set(accountKey(CE_SHARE_KEY, account), share === null ? '' : String(share));
+    return { ok: true, signalCeSharePct: share as number | null };
   });
 
   /** The run journal on its own, for the history panel. */

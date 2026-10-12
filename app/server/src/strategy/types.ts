@@ -598,6 +598,38 @@ export function globalMaxOpenProblem(v: unknown, allowed = 0): string | null {
   return null;
 }
 
+/**
+ * The desk-wide cap shared between calls and puts (owner, 12 Oct 2026: "split the max open between CE and PE trades
+ * -- 60 as 40 and 20, or 30 and 30; it should follow the max open").
+ *
+ * One number beside the cap: the calls' share of it, in whole per cent. The puts have the rest. Each side is held to
+ * its own share of the open trades -- positions and working orders, as the cap counts them -- so a run of signals one
+ * way cannot fill the whole desk with one side. The shares are of the cap as it stands: change the cap and both follow.
+ * Kept per broker account, as the cap is. Absent: no split, and the cap is the one number it always was.
+ */
+export const CE_SHARE_KEY = 'signal_ce_share_pct';
+/** The setting as stored: the calls' share, 0 to 100; null when absent or unreadable -- no split. */
+export function ceShareOf(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 100 ? n : null;
+}
+/** Why a share cannot be saved, in words; null when it can. `null` itself is "no split", and can. */
+export function ceShareProblem(v: unknown): string | null {
+  if (v === null) return null;
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 100
+    ? null : 'The CE share must be a whole number of per cent, from 0 to 100 -- or none, for no split.';
+}
+/**
+ * How many of each side may be open at once: the calls' share of the cap, to the nearest trade, and the puts the
+ * rest -- so the two always add up to the cap. Null where there is nothing to share: no cap, or no split.
+ */
+export function sideCaps(cap: number, cePct: number | null): { CE: number; PE: number } | null {
+  if (!(cap > 0) || cePct === null) return null;
+  const ce = Math.min(cap, Math.max(0, Math.round((cap * cePct) / 100)));
+  return { CE: ce, PE: cap - ce };
+}
+
 /** What the switched-on signal strategies allow between them: the sum of each one's own "at most open". */
 export function signalEntriesAllowed(strategies: readonly Pick<Strategy, 'enabled' | 'config'>[]): number {
   return strategies

@@ -8,6 +8,7 @@ import { clock, pct } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
 import { accountTag, groupSections, onCount } from '@/lib/strategy-groups';
+import { sideCaps } from '@/lib/ce-pe-split';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
 import { GroupTag } from '@/components/strategy/GroupTag';
@@ -82,6 +83,26 @@ export function StrategiesScreen() {
         <Stat label="Trades today">{tradesToday}</Stat>
       </Stats>
       {!a.schedulerOn && <p className="m-0 rounded-md bg-[var(--warn-bg)] px-3 py-2 text-[13.5px] text-[var(--warn)]">The scheduler is off: no strategy enters or exits on its own.</p>}
+      {/*
+        The limit on open trades shared between calls and puts (12 Oct 2026), read only here: what each side may hold
+        and holds, a side at its share said so. One account's -- so shown with an account chosen, not on "All accounts".
+      */}
+      {(() => {
+        const caps = p.accountParam === null ? null : sideCaps(a.signalMaxOpen ?? 0, a.signalCeSharePct);
+        const open = a.openBySide;
+        if (!caps || !open) return null;
+        const side = (name: 'CE' | 'PE') => (
+          <span className={cn('tabular-nums', open[name] >= caps[name] && 'font-semibold text-[var(--warn)]')}>
+            {name} {open[name]} of {caps[name]}{open[name] >= caps[name] ? ' · full' : ''}
+          </span>
+        );
+        return (
+          <p aria-label="CE / PE split" className="m-0 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md bg-muted px-3 py-2 text-[13.5px]">
+            <span className="text-muted-foreground">At most open {a.signalMaxOpen}, shared</span>
+            <span className="flex gap-3">{side('CE')}{side('PE')}</span>
+          </p>
+        );
+      })()}
 
       <Panel title="Today's runs">
         {runs.length === 0 ? <Empty>No scheduled run today yet.</Empty> : (

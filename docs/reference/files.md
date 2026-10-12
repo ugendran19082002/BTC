@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-467 files listed, 231 test files counted below, images and lockfiles left out.
+469 files listed, 232 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 122 |
-| `app/web` | 109 |
+| `app/web` | 110 |
 
 ## `(root)`
 
@@ -450,6 +450,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [CePeSplit.tsx](../../app/web/src/components/strategy/CePeSplit.tsx) | "At most open" shared between calls and puts (owner, 12 Oct 2026: "split the max open between CE and PE trades -- 60 as 40 and 20, or 30 and 30; user friendly"). |
 | [CopyStrategiesSheet.tsx](../../app/web/src/components/strategy/CopyStrategiesSheet.tsx) | Copy strategies into a group (owner, 10 Oct 2026: "from another account's, another group's, into a new group or an existing one -- user friendly, mobile friendly"). |
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
 | [GroupTag.tsx](../../app/web/src/components/strategy/GroupTag.tsx) | The group a strategy is in, as a small tag beside its name (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- user friendly, desk and phone"). |
@@ -530,6 +531,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [account-scope.ts](../../app/web/src/lib/account-scope.ts) | Which broker account the account-based screens are showing (owner, 5 Oct 2026): strategies, orders and P&L are read for one account at a time, chosen on the tabs above them. |
+| [ce-pe-split.ts](../../app/web/src/lib/ce-pe-split.ts) | "At most open" shared between calls and puts (owner, 12 Oct 2026: "60 as 40 and 20, or 30 and 30 -- it should follow the max open"). |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [custom-range.ts](../../app/web/src/lib/custom-range.ts) | A custom range of IST days for the phone's P&L (owner, 6 Oct 2026): quick picks, and the rules a range must keep -- the same the server holds it to (`report.routes.ts` `rangeOf`: from not after to,... |
 | [ev-view.ts](../../app/web/src/lib/ev-view.ts) | Reading the server's per-strike arithmetic onto the screen. |

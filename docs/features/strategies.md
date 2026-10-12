@@ -82,6 +82,32 @@ API: `POST /api/strategy-groups` (make), `POST /api/strategy-groups/:id`
 `GET /api/strategies` carries `groups`. Writes need
 a full session.
 
+## "At most open", shared between calls and puts
+
+Owner, 12 Oct 2026: "split the max open between CE and PE trades -- 60 as 40
+and 20, or 30 and 30; it should follow the max open". On Savings that day the
+60 open trades were 8 calls and 52 puts: a run of signals one way had filled
+the desk with one side.
+
+One number beside the account's "At most open": the **calls' share of it, in
+whole per cent** (`signal_ce_share_pct`, kept per account as the cap is); the
+puts have the rest. `sideCaps(cap, pct)` gives each side its trades -- the
+calls' share to the nearest trade, the puts the remainder, so the two always
+add up to the cap. After the cap itself, the runner holds the signal's side to
+its share of the **open trades** (positions and working orders, whoever opened
+them): a side that is full skips the signal, in words, though the other has
+room. The shares are of the cap as it stands -- change the cap and both
+follow; with no cap there is nothing to share. **Off until set**: no split is
+the desk as it was. A trade already open is never closed by a share; a side
+over its share takes no new signal until it is back under.
+
+Screen: beside "At most open", a list -- No split, CE 30/40/50/60/70 %, or
+Custom (any whole per cent; 67 is "40 and 20" of 60) -- and what each side
+holds of its share, a full side said so. The phone's Strategies screen shows
+the same, read only, with an account chosen. `POST /api/strategies/ce-share
+{ pct | null, accountId }`; `GET /api/strategies` carries `signalCeSharePct`
+and `openBySide`.
+
 ## One pass of the scheduler
 
 Every 20 seconds (`TICK_MS`) [runner.ts](../../app/server/src/strategy/runner.ts)
