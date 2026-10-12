@@ -434,9 +434,9 @@ export type StrategyStatus = {
   signalMaxOpen?: number;
   /** Open trades the desk holds now -- positions and working orders -- which that cap is counted against. */
   openNow?: number;
-  /** The cap's split between calls and puts: the calls' share in per cent (the puts have the rest); null: no split. */
-  signalCeSharePct?: number | null;
-  /** How many of each side are open now, which each share is counted against. Absent on an older server. */
+  /** Each side's own limit under that cap, per cent of it -- independent, 80 each where none is chosen. Absent on an older server. */
+  signalSideMaxPct?: { CE: number; PE: number };
+  /** How many of each side are open now, which each limit is counted against. Absent on an older server. */
   openBySide?: { CE: number; PE: number };
   /** The desk's limit on lots short at once (the order gate's), and the lots it holds short now. Absent on an older server. */
   shortCap?: number;

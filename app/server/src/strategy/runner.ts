@@ -7,7 +7,7 @@ import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { CE_SHARE_KEY, GLOBAL_MAX_OPEN_KEY, actionOf, ceShareOf, sideCaps, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
 import type { MethodRead } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -529,16 +529,22 @@ export class StrategyRunner {
       return;
     }
     /*
-     * The cap's two shares (owner, 12 Oct 2026): where the account splits it between calls and puts, the side this
-     * signal trades is held to its own -- every open trade of that side, whichever strategy or hand opened it. A
-     * side that is full skips the signal though the other has room: that is the point of a share.
+     * Each side's own limit under the cap (owner, 12 Oct 2026: "CE max 80%, PE max 80%, each on its own"; 80 and 80
+     * where none is chosen). The signal's side is held to its own: that side's open trades -- whichever strategy or
+     * hand opened them -- against its per cent of the cap. A side at its limit skips the signal though the desk has
+     * room, and the other side is not touched. The cap above has already held the two together.
      */
-    const shares = sideCaps(cap, ceShareOf(accountSetting(svc.settings, CE_SHARE_KEY, svc.accountId)));
-    if (shares) {
+    const sidePct = {
+      CE: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, svc.accountId)),
+      PE: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, svc.accountId)),
+    };
+    const sides = sideCaps(cap, sidePct);
+    if (sides) {
       const side = legOfSignal(dir, actionOf(rule));
+      const most = sides[side];
       const held = openNow.filter((t) => t.plan.optionSide === side).length;
-      if (held >= shares[side]) {
-        await finish('skipped', `the desk already has ${held} ${side} open -- at most ${shares[side]} ${side} of the ${cap} at once (CE ${shares.CE} / PE ${shares.PE})`);
+      if (held >= most) {
+        await finish('skipped', `the desk already has ${held} ${side} open -- at most ${most} ${side} at once (${sidePct[side]}% of the ${cap})`);
         return;
       }
     }

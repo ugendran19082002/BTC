@@ -102,31 +102,36 @@ describe('StrategiesScreen: each strategy, by group', () => {
   });
 });
 
-describe('StrategiesScreen: the limit shared between calls and puts', () => {
+describe('StrategiesScreen: each side its own limit under "at most open"', () => {
   const at = (accountParam: number | null) => render(
     <PhoneContext.Provider value={{ now: NOW, accountParam, openTrade: vi.fn(), go: vi.fn() } as unknown as PhoneData}>
       <StrategiesScreen />
     </PhoneContext.Provider>,
   );
-  it('[critical] an account\'s split, read only: each side\'s trades of its share, a side at its share said so -- not on "All accounts", not without a split', async () => {
+  it('[critical] an account\'s limits, read only: each side\'s trades of its own limit, a side at it said so -- not on "All accounts"', async () => {
     getDaySignals.mockResolvedValue({ trades: [] });
-    activity = { ...ONE, signalMaxOpen: 60, signalCeSharePct: 67, openBySide: { CE: 12, PE: 20 } };
+    activity = { ...ONE, signalMaxOpen: 60, signalSideMaxPct: { CE: 80, PE: 80 }, openBySide: { CE: 12, PE: 48 } };
     const one = at(1);
-    const line = await screen.findByLabelText('CE / PE split');
-    expect(line).toHaveTextContent('At most open 60, shared');
-    expect(line).toHaveTextContent('CE 12 of 40');
-    expect(line).toHaveTextContent('PE 20 of 20 · full');
+    const line = await screen.findByLabelText('CE and PE limits');
+    expect(line).toHaveTextContent('At most open 60 · each side its own');
+    expect(line).toHaveTextContent('CE 12 of 48');
+    expect(line).toHaveTextContent('PE 48 of 48 · full');
     one.unmount();
     at(null);
     expect(await screen.findByText('30m time')).toBeInTheDocument();
-    expect(screen.queryByLabelText('CE / PE split')).toBeNull();
+    expect(screen.queryByLabelText('CE and PE limits')).toBeNull();
   });
 
-  it('no split set: nothing shown', async () => {
+  it('no limit set, or a server from before the sides\' limits: nothing shown', async () => {
     getDaySignals.mockResolvedValue({ trades: [] });
-    activity = { ...ONE, signalMaxOpen: 60, signalCeSharePct: null, openBySide: { CE: 12, PE: 20 } };
+    activity = { ...ONE, signalMaxOpen: 0, signalSideMaxPct: { CE: 80, PE: 80 }, openBySide: { CE: 12, PE: 20 } };
+    const none = at(1);
+    expect(await screen.findByText('30m time')).toBeInTheDocument();
+    expect(screen.queryByLabelText('CE and PE limits')).toBeNull();
+    none.unmount();
+    activity = { ...ONE, signalMaxOpen: 60 };
     at(1);
     expect(await screen.findByText('30m time')).toBeInTheDocument();
-    expect(screen.queryByLabelText('CE / PE split')).toBeNull();
+    expect(screen.queryByLabelText('CE and PE limits')).toBeNull();
   });
 });

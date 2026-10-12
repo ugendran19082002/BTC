@@ -102,11 +102,11 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/strategies/:id/clone` | signed in | Copy a strategy, settings and all, as a new one that is not armed. |
 | POST | `/api/strategies/:id/enabled` | signed in | Switch one strategy on or off. |
 | POST | `/api/strategies/:id/group` | signed in | Move a strategy into a group of its own account, or out of any (`groupId` null). |
-| POST | `/api/strategies/ce-share` | signed in | The cap's split between calls and puts: the calls' share in per cent (the puts have the rest); null takes it off. |
 | POST | `/api/strategies/delete-many` | signed in | Remove several strategies together -- those in no group, say. |
 | POST | `/api/strategies/max-open` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
 | GET | `/api/strategies/runs` | signed in | The run journal on its own, for the history panel. |
 | POST | `/api/strategies/scheduler` | signed in | The master switch for the whole scheduler. |
+| POST | `/api/strategies/side-max` | signed in | One side's own limit under the cap: per cent of "at most open" for calls, or for puts; null is back to the default. |
 | GET | `/api/strategies/signal-trades` | signed in | The signal strategies' trade history for a range of IST days (or minutes): the Live screen's Trade history and its date picker. |
 | POST | `/api/strategy-groups` | signed in | Make a group, empty, for one account. |
 | DELETE | `/api/strategy-groups/:id` | signed in | Remove a group. |

@@ -599,35 +599,40 @@ export function globalMaxOpenProblem(v: unknown, allowed = 0): string | null {
 }
 
 /**
- * The desk-wide cap shared between calls and puts (owner, 12 Oct 2026: "split the max open between CE and PE trades
- * -- 60 as 40 and 20, or 30 and 30; it should follow the max open").
+ * Each side's own limit under the desk-wide cap (owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own --
+ * not a split that adds up to 100; and the total still held to the max open"; "default 80%, independent").
  *
- * One number beside the cap: the calls' share of it, in whole per cent. The puts have the rest. Each side is held to
- * its own share of the open trades -- positions and working orders, as the cap counts them -- so a run of signals one
- * way cannot fill the whole desk with one side. The shares are of the cap as it stands: change the cap and both follow.
- * Kept per broker account, as the cap is. Absent: no split, and the cap is the one number it always was.
+ * Two numbers beside the cap, one for calls and one for puts: the most of the cap that side may hold, in whole per
+ * cent. They are independent -- 80 and 80 is the default, and means neither side can fill the desk alone -- and the
+ * cap itself still holds the two together: at 80 and 80 the desk is full at 100, never 160. Each is counted in open
+ * trades (positions and working orders), as the cap is, and is of the cap as it stands: change the cap and both
+ * follow. Kept per broker account. 100 is no limit of a side's own: the cap is reached first.
  */
-export const CE_SHARE_KEY = 'signal_ce_share_pct';
-/** The setting as stored: the calls' share, 0 to 100; null when absent or unreadable -- no split. */
-export function ceShareOf(raw: string | null | undefined): number | null {
-  if (raw === null || raw === undefined || raw === '') return null;
+export const SIDE_MAX_KEYS = { CE: 'signal_ce_max_pct', PE: 'signal_pe_max_pct' } as const;
+export type Side = keyof typeof SIDE_MAX_KEYS;
+/** A side's most where none has been chosen: four fifths of the cap, each side. */
+export const SIDE_MAX_DEFAULT_PCT = 80;
+/** The setting as stored: that side's most, 0 to 100; the default where absent, empty or unreadable. */
+export function sideMaxOf(raw: string | null | undefined): number {
+  if (raw === null || raw === undefined || raw === '') return SIDE_MAX_DEFAULT_PCT;
   const n = Number(raw);
-  return Number.isInteger(n) && n >= 0 && n <= 100 ? n : null;
+  return Number.isInteger(n) && n >= 0 && n <= 100 ? n : SIDE_MAX_DEFAULT_PCT;
 }
-/** Why a share cannot be saved, in words; null when it can. `null` itself is "no split", and can. */
-export function ceShareProblem(v: unknown): string | null {
+/** Why a side's most cannot be saved, in words; null when it can. `null` itself is "back to the default", and can. */
+export function sideMaxProblem(v: unknown): string | null {
   if (v === null) return null;
   return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 100
-    ? null : 'The CE share must be a whole number of per cent, from 0 to 100 -- or none, for no split.';
+    ? null : 'A side\'s limit must be a whole number of per cent of "at most open", from 0 to 100.';
 }
 /**
- * How many of each side may be open at once: the calls' share of the cap, to the nearest trade, and the puts the
- * rest -- so the two always add up to the cap. Null where there is nothing to share: no cap, or no split.
+ * How many trades each side may hold: its per cent of the cap to the nearest trade -- at least one where the per
+ * cent is above nothing, so a small cap never shuts a side that was given a share. Null where there is no cap:
+ * nothing to take a per cent of.
  */
-export function sideCaps(cap: number, cePct: number | null): { CE: number; PE: number } | null {
-  if (!(cap > 0) || cePct === null) return null;
-  const ce = Math.min(cap, Math.max(0, Math.round((cap * cePct) / 100)));
-  return { CE: ce, PE: cap - ce };
+export function sideCaps(cap: number, pct: { CE: number; PE: number }): { CE: number; PE: number } | null {
+  if (!(cap > 0)) return null;
+  const of = (p: number) => (p <= 0 ? 0 : Math.min(cap, Math.max(1, Math.round((cap * p) / 100))));
+  return { CE: of(pct.CE), PE: of(pct.PE) };
 }
 
 /** What the switched-on signal strategies allow between them: the sum of each one's own "at most open". */

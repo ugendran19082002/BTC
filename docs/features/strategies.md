@@ -82,31 +82,40 @@ API: `POST /api/strategy-groups` (make), `POST /api/strategy-groups/:id`
 `GET /api/strategies` carries `groups`. Writes need
 a full session.
 
-## "At most open", shared between calls and puts
+## Each side its own limit under "At most open"
 
-Owner, 12 Oct 2026: "split the max open between CE and PE trades -- 60 as 40
-and 20, or 30 and 30; it should follow the max open". On Savings that day the
-60 open trades were 8 calls and 52 puts: a run of signals one way had filled
-the desk with one side.
+Owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own -- not a split
+that adds up to 100; the total still held to the max open"; "default 80%,
+independent". That day Savings' 60 open trades were 8 calls and 52 puts: a run
+of signals one way had filled the desk with one side.
 
-One number beside the account's "At most open": the **calls' share of it, in
-whole per cent** (`signal_ce_share_pct`, kept per account as the cap is); the
-puts have the rest. `sideCaps(cap, pct)` gives each side its trades -- the
-calls' share to the nearest trade, the puts the remainder, so the two always
-add up to the cap. After the cap itself, the runner holds the signal's side to
-its share of the **open trades** (positions and working orders, whoever opened
-them): a side that is full skips the signal, in words, though the other has
-room. The shares are of the cap as it stands -- change the cap and both
-follow; with no cap there is nothing to share. **Off until set**: no split is
-the desk as it was. A trade already open is never closed by a share; a side
-over its share takes no new signal until it is back under.
+Two numbers beside the account's "At most open", one for calls and one for
+puts: the most of the cap that side may hold, **in whole per cent, each
+independent of the other** (`signal_ce_max_pct`, `signal_pe_max_pct`, kept per
+account as the cap is). **80 and 80 where none is chosen.** `sideCaps` gives
+each side its trades -- its per cent of the cap to the nearest trade, at least
+one where the per cent is above nothing. After the cap itself, the runner
+holds the signal's side to its own limit, counted in **open trades**
+(positions and working orders, whoever opened them): a side at its limit
+skips the signal, in words, though the desk has room -- and the other side is
+not touched. The cap still holds the two together: 80 and 80 is a full desk at
+100, never 160. The limits are of the cap as it stands -- change the cap and
+both follow; with no cap there is nothing to take a per cent of. 100 is no
+limit of a side's own. A trade already open is never closed by a limit; a side
+over its limit takes no new signal until it is back under.
 
-Screen: beside "At most open", a list -- No split, CE 30/40/50/60/70 %, or
-Custom (any whole per cent; 67 is "40 and 20" of 60) -- and what each side
-holds of its share, a full side said so. The phone's Strategies screen shows
-the same, read only, with an account chosen. `POST /api/strategies/ce-share
-{ pct | null, accountId }`; `GET /api/strategies` carries `signalCeSharePct`
-and `openBySide`.
+| Open now (cap 60, 80 / 80 = 48 each) | New CE | New PE |
+|---|---|---|
+| CE 0, PE 0 | taken | taken |
+| CE 48, PE 0 | skipped | taken |
+| CE 24, PE 24 | taken | taken |
+| CE 30, PE 30 (the cap) | skipped | skipped |
+
+Screen: beside "At most open", "CE max" and "PE max" -- 50 to 100 %, or Custom
+-- each with what that side holds of its limit, a full side said so. The
+phone's Strategies screen shows the same, read only, with an account chosen.
+`POST /api/strategies/side-max { side, pct | null, accountId }` (null: back to
+80); `GET /api/strategies` carries `signalSideMaxPct` and `openBySide`.
 
 ## One pass of the scheduler
 

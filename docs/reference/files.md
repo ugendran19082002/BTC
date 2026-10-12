@@ -450,12 +450,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [CePeSplit.tsx](../../app/web/src/components/strategy/CePeSplit.tsx) | "At most open" shared between calls and puts (owner, 12 Oct 2026: "split the max open between CE and PE trades -- 60 as 40 and 20, or 30 and 30; user friendly"). |
 | [CopyStrategiesSheet.tsx](../../app/web/src/components/strategy/CopyStrategiesSheet.tsx) | Copy strategies into a group (owner, 10 Oct 2026: "from another account's, another group's, into a new group or an existing one -- user friendly, mobile friendly"). |
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
 | [GroupTag.tsx](../../app/web/src/components/strategy/GroupTag.tsx) | The group a strategy is in, as a small tag beside its name (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- user friendly, desk and phone"). |
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
 | [ReorderList.tsx](../../app/web/src/components/strategy/ReorderList.tsx) | A list put in order by dragging (owner, 10 Oct 2026: "drag to change the order, user friendly"). |
+| [SideMax.tsx](../../app/web/src/components/strategy/SideMax.tsx) | Each side's own limit under "at most open" (owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own; the total still held to the max open; user friendly"). |
 | [SignalRuleEditor.tsx](../../app/web/src/components/strategy/SignalRuleEditor.tsx) | Which signals a signal strategy takes: the way (with the timeframe chain, or without it on one timeframe), and the methods -- picked from the 81, each with its record so far in that way, so the cho... |
 | [SignalStrategiesCard.tsx](../../app/web/src/components/strategy/SignalStrategiesCard.tsx) | The signal strategies, on the Live screen beside the methods that make the signals: each one's switch, its live-orders switch, what it is set to, and what the last signals did. |
 | [SignalStrategyForm.tsx](../../app/web/src/components/strategy/SignalStrategyForm.tsx) | A signal strategy: the desk's entry signals sold as options. |
@@ -531,7 +531,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [account-scope.ts](../../app/web/src/lib/account-scope.ts) | Which broker account the account-based screens are showing (owner, 5 Oct 2026): strategies, orders and P&L are read for one account at a time, chosen on the tabs above them. |
-| [ce-pe-split.ts](../../app/web/src/lib/ce-pe-split.ts) | "At most open" shared between calls and puts (owner, 12 Oct 2026: "60 as 40 and 20, or 30 and 30 -- it should follow the max open"). |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [custom-range.ts](../../app/web/src/lib/custom-range.ts) | A custom range of IST days for the phone's P&L (owner, 6 Oct 2026): quick picks, and the rules a range must keep -- the same the server holds it to (`report.routes.ts` `rangeOf`: from not after to,... |
 | [ev-view.ts](../../app/web/src/lib/ev-view.ts) | Reading the server's per-strike arithmetic onto the screen. |
@@ -553,6 +552,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [price-change.ts](../../app/web/src/lib/price-change.ts) | The phone's Price changes screen (owner, 7 Oct 2026): BTC's index now against each window back -- a minute out to half a day -- and against the desk's own marks, the first entry of what it holds an... |
 | [report-error.ts](../../app/web/src/lib/report-error.ts) | Send a browser failure to the server so it lands in the same log as everything else. |
 | [report.ts](../../app/web/src/lib/report.ts) | The calendar's arithmetic, kept out of the drawing so it can be checked. |
+| [side-max.ts](../../app/web/src/lib/side-max.ts) | Each side's own limit under "at most open" (owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own -- not a split that adds up to 100"; "default 80%"). |
 | [stop-hold.ts](../../app/web/src/lib/stop-hold.ts) | Where a sold option's stop can sit, and what the desk does with one asked for past that (8 Oct 2026). |
 | [strategy-blocks.ts](../../app/web/src/lib/strategy-blocks.ts) | A signal strategy's strike rule over its window, as the form works with it. |
 | [strategy-checks.ts](../../app/web/src/lib/strategy-checks.ts) | Things that are allowed but probably not meant -- said as warnings, not refused. |

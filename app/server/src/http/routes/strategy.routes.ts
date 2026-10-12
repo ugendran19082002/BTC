@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { CE_SHARE_KEY, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIGNAL_TFS, ceShareOf, ceShareProblem, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -318,9 +318,12 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       signalMaxOpen: globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, account ?? svc.accountId)),
       // What the desk holds is the trading account's; another account, looked at, holds nothing of it.
       openNow: elsewhere ? 0 : openTrades.length,
-      // The cap's split between calls and puts -- the calls' share in per cent, null for none -- and how many of
-      // each side are open now, which each share is counted against.
-      signalCeSharePct: ceShareOf(accountSetting(svc.settings, CE_SHARE_KEY, account ?? svc.accountId)),
+      // Each side's own limit under the cap -- per cent of it, 80 where none is chosen -- and how many of each side
+      // are open now, which each is counted against.
+      signalSideMaxPct: {
+        CE: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, account ?? svc.accountId)),
+        PE: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, account ?? svc.accountId)),
+      },
       openBySide: {
         CE: elsewhere ? 0 : openTrades.filter((t) => t.plan.optionSide === 'CE').length,
         PE: elsewhere ? 0 : openTrades.filter((t) => t.plan.optionSide === 'PE').length,
@@ -842,16 +845,23 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     return { ok: true, signalMaxOpen: max as number };
   });
 
-  // The cap's split between calls and puts: the calls' share in per cent (the puts have the rest); null takes it off.
-  app.post('/api/strategies/ce-share', async (req, reply) => {
-    const { pct, accountId } = (req.body ?? {}) as { pct?: unknown; accountId?: unknown };
+  // One side's own limit under the cap: per cent of "at most open" for calls, or for puts; null is back to the default.
+  app.post('/api/strategies/side-max', async (req, reply) => {
+    const { side, pct, accountId } = (req.body ?? {}) as { side?: unknown; pct?: unknown; accountId?: unknown };
+    if (side !== 'CE' && side !== 'PE') return refuse(reply, 422, { error: 'side must be CE or PE', problems: ['side must be CE or PE'] });
     const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
-    const share = pct === undefined ? null : pct;
-    const problem = ceShareProblem(share);
+    const most = pct === undefined ? null : pct;
+    const problem = sideMaxProblem(most);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    // Stored empty for "no split": read back as none (`ceShareOf`), on this account alone.
-    await svc.settings.set(accountKey(CE_SHARE_KEY, account), share === null ? '' : String(share));
-    return { ok: true, signalCeSharePct: share as number | null };
+    // Stored empty for "the default": read back as that (`sideMaxOf`), on this account alone.
+    await svc.settings.set(accountKey(SIDE_MAX_KEYS[side], account), most === null ? '' : String(most));
+    return {
+      ok: true,
+      signalSideMaxPct: {
+        CE: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, account)),
+        PE: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, account)),
+      },
+    };
   });
 
   /** The run journal on its own, for the history panel. */
