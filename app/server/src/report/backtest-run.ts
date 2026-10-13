@@ -1,0 +1,112 @@
+import { Worker } from 'node:worker_threads';
+import { clearSignalBacktestCache as clearHere, signalBacktestHere, type Ask, type SignalBacktest } from './signal-backtest.js';
+import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
+
+/**
+ * Where a signal backtest is worked out: in a thread of its own once the server has asked for one
+ * (`useBacktestThread`, from index.ts), and otherwise here -- a test, a script, a tool.
+ *
+ * The thread is started at the first backtest and kept: its cache of days already worked is what makes the second
+ * one quick. It never keeps the process alive. A backtest that fails there is an answer in words to whoever asked;
+ * a thread that will not start at all is given up on for a while and the backtest is worked here instead, as it
+ * always was -- slower for the rest of the desk, but an answer.
+ */
+
+/** A backtest that has not answered in this long is given up on, and its thread with it. */
+export const BACKTEST_TIMEOUT_MS = 120_000;
+/** After a thread fails to start, none is tried again for this long. */
+const GIVE_UP_MS = 10 * 60_000;
+
+let wanted = false;
+let worker: Worker | null = null;
+let gaveUpAt = 0;
+/** Whether a thread has ever answered: one that never has, and fails, could not be started here at all. */
+let proven = false;
+let seq = 0;
+const waiting = new Map<number, { done: (a: BacktestAnswer) => void; fail: (e: Error) => void; timer: NodeJS.Timeout }>();
+let onTrouble: (message: string) => void = () => {};
+/** The thread's own file, where a test names another; null is the one beside this. */
+let fileGiven: URL | null = null;
+
+/** From now on backtests are worked in their own thread. `trouble` hears of a thread that died or would not start. */
+export function useBacktestThread(trouble?: (message: string) => void, file?: URL): void {
+  wanted = true;
+  if (trouble) onTrouble = trouble;
+  fileGiven = file ?? null;
+}
+
+function drop(why: string): void {
+  const w = worker;
+  worker = null;
+  for (const [id, x] of waiting) { clearTimeout(x.timer); waiting.delete(id); x.fail(new Error(why)); }
+  if (w) void w.terminate().catch(() => {});
+}
+
+function thread(): Worker {
+  if (worker) return worker;
+  // The same file as this one's sibling, whichever of the two the process runs: the built `.js`, or the `.ts` under tsx.
+  const file = import.meta.url.endsWith('.ts') ? './backtest-worker.ts' : './backtest-worker.js';
+  const w = new Worker(fileGiven ?? new URL(file, import.meta.url), { name: 'signal-backtest', resourceLimits: { maxOldGenerationSizeMb: 1_024 } });
+  w.unref();
+  w.on('message', (a: BacktestAnswer) => {
+    proven = true;
+    const x = waiting.get(a.id);
+    if (!x) return;
+    clearTimeout(x.timer); waiting.delete(a.id);
+    x.done(a);
+  });
+  w.on('error', (e) => { if (worker === w) { onTrouble(`the backtest thread failed: ${e.message}`); drop(`The backtest thread failed: ${e.message}`); } });
+  w.on('exit', (code) => { if (worker === w) { if (code !== 0) onTrouble(`the backtest thread stopped (code ${code})`); drop('The backtest thread stopped before it answered.'); } });
+  worker = w;
+  return w;
+}
+
+function ask(m: { kind: 'run'; ask: Ask } | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<BacktestAnswer> {
+  return new Promise((done, fail) => {
+    const id = ++seq;
+    const w = thread();
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      fail(new Error('The backtest took too long and was stopped.'));
+      // Whatever it was doing, it is still doing it: a new thread for the next one.
+      if (worker === w) { onTrouble('a backtest ran past its time; its thread was stopped'); drop('The backtest thread was stopped.'); }
+    }, timeoutMs);
+    timer.unref();
+    waiting.set(id, { done, fail, timer });
+    w.postMessage({ id, ...m } satisfies BacktestAsk);
+  });
+}
+
+/** One backtest: in its thread where there is one, here where there is not. */
+export async function signalBacktest(o: Ask): Promise<SignalBacktest> {
+  if (!wanted || Date.now() - gaveUpAt < GIVE_UP_MS) return signalBacktestHere(o);
+  let a: BacktestAnswer;
+  try {
+    a = await ask({ kind: 'run', ask: o });
+  } catch (e) {
+    // No thread has ever answered: it cannot be started here. Work it in this one, and do not try again for a while.
+    if (!proven) {
+      gaveUpAt = Date.now();
+      onTrouble(`no backtest thread could be started, so backtests are worked in the desk's own for now: ${(e as Error).message}`);
+      return signalBacktestHere(o);
+    }
+    throw e;
+  }
+  if (!a.ok) throw new Error(a.error);
+  return a.result as SignalBacktest;
+}
+
+/** Forget every day worked so far, wherever they are kept. */
+export async function clearSignalBacktestCache(): Promise<void> {
+  clearHere();
+  if (worker) await ask({ kind: 'clear' }, 5_000).catch(() => {});
+}
+
+/** Stop the thread, closing its connections first: for a process shutting down, and for a test. */
+export async function stopBacktestThread(): Promise<void> {
+  if (worker) {
+    await ask({ kind: 'close' }, 5_000).catch(() => {});
+    drop('The backtest thread was stopped.');
+  }
+  wanted = false; proven = false; gaveUpAt = 0; fileGiven = null;
+}

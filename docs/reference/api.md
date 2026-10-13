@@ -72,8 +72,8 @@ What: the first sentence of the comment directly above the route. A dash means t
 
 | Method | Path | Session | What |
 |---|---|---|---|
-| GET | `/api/market-report` | signed in | Each expiry day with its figures, its kind and its results; the results by kind of day and by family. |
-| GET | `/api/market-report/breakdown` | signed in | One day, one kind of day, one family or the whole range: both records by pair, timeframe, method and strategy. |
+| GET | `/api/market-report` | signed in | Each expiry day with its figures, its kind and both records' totals. |
+| GET | `/api/market-report/breakdown` | signed in | One expiry day opened (`?day=`): both records by pair, timeframe, method and strategy. |
 | GET | `/api/signal-backtest` | signed in | The signal history traded as options on the contracts' own recorded prices (13 Oct 2026): every signal in the trade, an option sold at its fill and bought back at the perp's stop or target, the opt... |
 
 ## [report.routes.ts](../../app/server/src/http/routes/report.routes.ts)

@@ -335,6 +335,13 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   // a timeframe, a method, the lots, another strike rule
   const tf = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tf=1h`);
   assert.equal(tf.body.total.n, 2);
+  // the counts are of what is shown: the two 1h signals, both traded -- and of the desk's hours, the 1h ones left out
+  assert.deepEqual([tf.body.signals, Object.values(tf.body.skipped).reduce((a: any, b: any) => a + b, 0)], [2, 0]);
+  const deskTf = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&tf=15m`);
+  assert.equal(deskTf.body.signals, deskTf.body.total.n + deskTf.body.skipped['outside-window'], 'signals = traded + not traded, under a filter too');
+  assert.equal(deskTf.body.signals, 3, 'the three 15m signals, not the day\'s six');
+  const oneMethod = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&method=breakout`);
+  assert.deepEqual([oneMethod.body.signals, oneMethod.body.total.n], [4, 4]);
   assert.equal(tf.body.choices.timeframes.length, 3, 'the list to choose from is not narrowed by the choice');
   assert.deepEqual(all.body.choices.methods.map((m: any) => [m.name, m.n, m.wins]), [['#1 Breakout', 4, 3], [all.body.choices.methods[1].name, 2, 0]], 'each method with its trades and how many won');
   assert.deepEqual(tf.body.choices.methods.map((m: any) => m.n), [0, 2], 'on the timeframes chosen');
@@ -399,4 +406,40 @@ test('[critical] the backtest by a saved strategy: its methods and timeframe, it
   const gone = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&strategy=nope`);
   assert.equal(gone.status, 404);
   assert.match(gone.body.error, /No such signal strategy/);
+});
+
+test('[critical] the backtest says what each day\'s options were priced on, and works a day again when Delta\'s minutes for it arrive', async () => {
+  const { storeMarks } = await import('../../src/market/option-marks.js');
+  const before = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all`);
+  assert.deepEqual(before.body.priced, { 'own-1m': 0, 'mark-1m': 0, '5m': 2 }, 'nothing but the five-minute record yet');
+  assert.deepEqual(before.body.days.map((d: any) => d.grain), ['5m', '5m']);
+
+  // Delta's minutes for one of the climb's two contracts only: half a board is not used
+  const code = `${CLIMB.slice(8, 10)}${CLIMB.slice(5, 7)}${CLIMB.slice(2, 4)}`;
+  const { from } = sessionOf(CLIMB);
+  const minutes = Array.from({ length: 1_440 }, (_, m) => { const mark = 41 - 36 * m / 1_435; return { time: from / 1_000 + m * 60, open: mark, high: mark, low: mark, close: mark, volume: 0 }; });
+  await storeMarks(`P-BTC-83200-${code}`, code, minutes, Date.now());
+  const half = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all`);
+  assert.deepEqual([half.body.priced['mark-1m'], half.body.total.net], [0, before.body.total.net]);
+
+  // both: the day is priced a minute at a time, and said so
+  await storeMarks(`C-BTC-86400-${code}`, code, minutes, Date.now());
+  const after = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all`);
+  assert.deepEqual(after.body.priced, { 'own-1m': 0, 'mark-1m': 1, '5m': 1 });
+  assert.deepEqual(after.body.days.map((d: any) => [d.day, d.grain]), [[CLIMB, 'mark-1m'], [QUIET, '5m']]);
+  assert.equal(after.body.total.n, 6, 'the same six trades');
+  // each was bought back when the perp reached its target, about minute 480: on the five-minute record at the next
+  // reading, a minute at a time at that minute -- sooner, when the decaying put still cost a little more
+  assert.ok(after.body.total.net < before.body.total.net && before.body.total.net - after.body.total.net < 0.05, `${after.body.total.net} against ${before.body.total.net}`);
+
+  // the desk's own minute record over the whole day comes first
+  await query(
+    `INSERT INTO option_snapshots_1m (at, symbol, expiry, cp, strike, spot, mark, bid, ask, delta)
+     SELECT $1::bigint + g * 60000, s.symbol, $2, s.cp, s.strike, 84000, 41 - 36 * g / 1435.0, 40 - 36 * g / 1435.0, 42 - 36 * g / 1435.0, s.delta
+       FROM generate_series(0, 1439) g, (VALUES ($3, 'P', 83200, -0.09), ($4, 'C', 86400, 0.09)) AS s(symbol, cp, strike, delta)`,
+    [from, code, `P-BTC-83200-${code}`, `C-BTC-86400-${code}`]);
+  clearSignalBacktestCache();
+  const own = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all`);
+  assert.deepEqual(own.body.priced, { 'own-1m': 1, 'mark-1m': 0, '5m': 1 });
+  assert.ok(Math.abs(own.body.total.net - after.body.total.net) < 1e-6, 'the same prices a minute at a time, whoever recorded them');
 });

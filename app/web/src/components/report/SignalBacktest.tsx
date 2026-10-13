@@ -6,7 +6,7 @@ import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
 import type { PairStat } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
 import { time12 } from '@/lib/time';
-import type { BacktestParams, BacktestQuery, BtExit, BtRow, BtTot } from '@/types/signal-backtest';
+import type { BacktestParams, BacktestQuery, BoardGrain, BtExit, BtRow, BtTot } from '@/types/signal-backtest';
 import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
@@ -31,8 +31,8 @@ const RULES: { key: BacktestParams['rule']; label: string; spoken: string }[] = 
   { key: 'premium', label: 'Strike by premium', spoken: 'Pick the strike by premium' },
 ];
 const WINDOWS: { key: BacktestParams['window']; label: string; spoken: string }[] = [
-  { key: 'desk', label: '9:30 PM → 3:59 PM', spoken: 'Only signals from 9:30 PM to 3:59 PM, as the strategies trade' },
-  { key: 'all', label: 'Whole expiry day', spoken: 'Signals of the whole expiry day' },
+  { key: 'desk', label: '9:30 PM–3:59 PM', spoken: 'Only signals from 9:30 PM to 3:59 PM, as the strategies trade' },
+  { key: 'all', label: 'Whole day', spoken: 'Signals of the whole expiry day' },
   { key: 'custom', label: 'Custom', spoken: 'Signals in hours of your own' },
 ];
 
@@ -189,7 +189,7 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
   const from = copyFrom.findIndex((x) => Math.round(x.pct * 100) === Math.round(start * 100) && JSON.stringify(x.steps) === JSON.stringify(steps));
   const field = 'h-11 min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] tabular-nums text-foreground [color-scheme:dark]';
   return (
-    <div className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-2 rounded-md border border-[var(--line-soft)] p-3 max-sm:p-2">
       {copyFrom.length > 0 ? (
         // The steps are the strategies' own (owner, 13 Oct 2026: "don't fill steps in -- the strategy has them, take them from there"): choosing one uses it at once.
         <label className="grid gap-1">
@@ -215,12 +215,12 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
       </label>
       <ol className="m-0 grid list-none gap-1.5 p-0" aria-label="Target steps">
         {rows.map((r, i) => (
-          <li key={i} className="flex items-center gap-2">
-            <input type="time" aria-label={`Step ${i + 1} time, IST`} value={r.at} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, at: e.target.value } : x)))} className={cn(field, 'w-0 flex-1')} />
-            <input type="number" inputMode="decimal" min={1} max={99} aria-label={`Step ${i + 1} per cent`} value={r.pct} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, pct: e.target.value } : x)))} className={cn(field, 'w-20')} />
+          <li key={i} className="flex items-center gap-2 max-sm:gap-1.5">
+            <input type="time" aria-label={`Step ${i + 1} time, IST`} value={r.at} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, at: e.target.value } : x)))} className={cn(field, 'w-0 min-w-[7.75rem] flex-1 max-sm:px-1.5')} />
+            <input type="number" inputMode="decimal" min={1} max={99} aria-label={`Step ${i + 1} per cent`} value={r.pct} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, pct: e.target.value } : x)))} className={cn(field, 'w-20 max-sm:w-14')} />
             <span className="text-[12.5px] text-muted-foreground">%</span>
             <button type="button" aria-label={`Remove step ${i + 1}`} onClick={() => setRows(rows.filter((_, k) => k !== i))}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[18px] text-muted-foreground">×</button>
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[18px] text-muted-foreground max-sm:w-9">×</button>
           </li>
         ))}
       </ol>
@@ -240,7 +240,8 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
 /** One group of settings under its own heading. */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section aria-label={title} className="grid min-w-0 gap-2.5 rounded-md border border-[var(--line-soft)] p-3">
+    // One column that may be narrower than what is in it: a bare `grid` column is as wide as its widest child, and pushed the phone's page sideways.
+    <section aria-label={title} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5 rounded-md border border-[var(--line-soft)] p-3 max-sm:rounded-none max-sm:border-0 max-sm:border-t max-sm:px-0 max-sm:pb-1 max-sm:pt-3 max-sm:first:border-t-0 max-sm:first:pt-0">
       <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">{title}</h3>
       {children}
     </section>
@@ -309,13 +310,51 @@ function ChipRow({ label, children }: { label: string; wide?: boolean; children:
  * Rows of one grouping as a table of four columns, which is what a 360px phone holds: trades, how many made money,
  * and the net with what one trade made under it. What the same trades made on the perp goes under the name.
  */
+/**
+ * Three money figures: three tiles side by side from 640px, and under it a list -- the name on the left, the whole
+ * figure on the right. A third of a phone is 96px and "−₹1,23,456" is not: the tiles cut it to "−₹1,23,…" (seen 13 Oct 2026).
+ */
+function Ledger({ children }: { children: React.ReactNode }) {
+  return <dl className="m-0 grid grid-cols-[minmax(0,1fr)] gap-px overflow-hidden rounded-md bg-muted sm:grid-cols-3 sm:gap-2 sm:overflow-visible sm:bg-transparent">{children}</dl>;
+}
+function Entry({ label, children, tone }: { label: string; children: React.ReactNode; tone?: 'up' | 'down' }) {
+  return (
+    <div className="flex min-w-0 items-baseline justify-between gap-3 px-2.5 py-1.5 sm:block sm:rounded-md sm:bg-muted sm:py-2">
+      <dt className="min-w-0 text-[12.5px] text-muted-foreground sm:truncate sm:text-[11.5px]">{label}</dt>
+      <dd className={cn('m-0 whitespace-nowrap text-[15px] font-semibold tabular-nums sm:truncate', tone === 'up' && 'text-[var(--up)]', tone === 'down' && 'text-[var(--down)]')}>{children}</dd>
+    </div>
+  );
+}
+
+/*
+ * A four-column table whose rows fold to two lines under 640px (owner, 13 Oct 2026: "the By method section is too
+ * wide on the phone"): the name with the net beside it, and the trades and the share won under the name. Four
+ * columns with a method's full name need about 330px and a phone's panel has 300, so the table pushed the whole
+ * page sideways. The cells are the same ones in the same order -- only where they sit changes.
+ *
+ * The page's own `th` (styles.css) does not wrap, is small capitals and sticks to the top: a row's name undoes that.
+ */
+const FOLD_CELL = 'max-sm:border-0 max-sm:p-0';
+const FOLD_UNDER = `${FOLD_CELL} max-sm:row-start-2 max-sm:text-left max-sm:text-[11.5px] max-sm:text-muted-foreground`;
+const FOLD = {
+  table: 'w-full border-collapse text-[13px] tabular-nums max-sm:block',
+  head: 'max-sm:sr-only',
+  body: 'max-sm:block',
+  row: 'border-t border-[var(--line-soft)] align-top max-sm:grid max-sm:grid-cols-[auto_minmax(0,1fr)_auto] max-sm:gap-x-1.5 max-sm:py-2',
+  name: `static whitespace-normal bg-transparent py-1.5 pr-2 text-left text-[13px] font-medium normal-case tracking-normal text-foreground [overflow-wrap:anywhere] max-sm:col-span-2 max-sm:col-start-1 max-sm:row-start-1 ${FOLD_CELL}`,
+  trades: `py-1.5 pr-2 text-right max-sm:col-start-1 max-sm:after:content-['_trades_·'] ${FOLD_UNDER}`,
+  won: `py-1.5 pr-2 text-right max-sm:col-start-2 max-sm:after:content-['_won'] ${FOLD_UNDER}`,
+  inProfit: `py-1.5 pr-2 text-right max-sm:col-start-2 max-sm:after:content-['_in_profit'] ${FOLD_UNDER}`,
+  net: `py-1.5 text-right max-sm:col-start-3 max-sm:row-span-2 max-sm:row-start-1 ${FOLD_CELL} max-sm:pl-2`,
+} as const;
+
 function Table({ caption, first, rows, perp = false, days = false }: { caption: string; first: string; rows: readonly BtRow[]; perp?: boolean; days?: boolean }) {
   const shown = rows.filter((r) => r.n > 0);
   if (shown.length === 0) return <Empty>No trade here.</Empty>;
   return (
-    <table className="w-full border-collapse text-[13px] tabular-nums">
+    <table className={FOLD.table}>
       <caption className="sr-only">{caption}</caption>
-      <thead>
+      <thead className={FOLD.head}>
         <tr className="text-left text-[11.5px] text-muted-foreground">
           <th scope="col" className="py-1 pr-2 font-medium">{first}</th>
           <th scope="col" className="py-1 pr-2 text-right font-medium">Trades</th>
@@ -323,17 +362,17 @@ function Table({ caption, first, rows, perp = false, days = false }: { caption: 
           <th scope="col" className="py-1 text-right font-medium">Net</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody className={FOLD.body}>
         {shown.map((r) => (
-          <tr key={r.key} className="border-t border-[var(--line-soft)] align-top">
-            <th scope="row" className="py-1.5 pr-2 text-left font-medium [overflow-wrap:anywhere]">
-              <span className="normal-case tracking-normal">{r.name}</span>
+          <tr key={r.key} className={FOLD.row}>
+            <th scope="row" className={FOLD.name}>
+              <span>{r.name}</span>
               {days && r.days ? <span className="block text-[11.5px] font-normal text-muted-foreground">{r.days} day{r.days === 1 ? '' : 's'}</span> : null}
               {perp && <span className={cn('block text-[11.5px] font-normal', netClass(r.perpPts))}>perp {ptsText(r.perpPts)}</span>}
             </th>
-            <td className="py-1.5 pr-2 text-right">{count(r.n)}</td>
-            <td className="py-1.5 pr-2 text-right">{pct(rate(r), 0)}</td>
-            <td className="py-1.5 text-right">
+            <td className={FOLD.trades}>{count(r.n)}</td>
+            <td className={FOLD.won}>{pct(rate(r), 0)}</td>
+            <td className={FOLD.net}>
               <span className={cn('block whitespace-nowrap font-semibold', netClass(r.net))}>{moneyText(r.net)}</span>
               <span className={cn('block whitespace-nowrap text-[11.5px]', netClass(r.net))}>{each(r)}</span>
               {/* What the fees took, under what was left: the net is after them. */}
@@ -344,6 +383,21 @@ function Table({ caption, first, rows, perp = false, days = false }: { caption: 
       </tbody>
     </table>
   );
+}
+
+/** A day's pricing in a word, beside its name. */
+const GRAIN: Record<BoardGrain, string> = { 'own-1m': '1m prices', 'mark-1m': '1m est.', '5m': '5m prices' };
+
+/** What the options were priced on, in a sentence: said only when the server says it. */
+function pricedWords(p: Record<BoardGrain, number> | undefined): string | null {
+  if (!p) return null;
+  const own = p['own-1m'] ?? 0, mark = p['mark-1m'] ?? 0, five = p['5m'] ?? 0, all = own + mark + five;
+  if (all === 0) return null;
+  const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+  const fine = [own ? `${days(own)} on the desk's own 1-minute record` : null, mark ? `${days(mark)} on Delta's 1-minute mark with the desk's recorded spread (an estimate)` : null].filter(Boolean).join(', ');
+  if (five === 0) return `Option prices a minute at a time: ${fine}.`;
+  const rest = `${days(five)} on 5-minute prices -- a day still running, or one whose 1-minute prices are still being fetched from Delta`;
+  return fine ? `Option prices a minute at a time on ${own + mark} of ${days(all)}: ${fine}. The other ${rest}.` : `Option prices: ${rest}.`;
 }
 
 /** Every method as options, across its timeframes: those in profit and those in loss, ten of each to begin with. */
@@ -463,7 +517,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         </select>
       </label>
         {!byStrategy && <>
-      <Segmented label="Which signals" value={params.window} options={WINDOWS}
+      <Segmented dense label="Which signals" value={params.window} options={WINDOWS}
         // Custom opens the hours every time it is tapped: chosen already, a tap is "change the hours".
         onChange={(window) => { if (window === 'custom') setPickingHours(true); else { set({ window }); setPickingHours(false); } }} />
       {params.window === 'custom' && !pickingHours && params.hoursFrom && params.hoursTo && (
@@ -481,14 +535,14 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       </Section>
       {!byStrategy && (
         <Section title="Strike and exits">
-      <Segmented label="How the strike is picked" value={params.rule} options={RULES} onChange={(rule) => set({ rule, value: rule === 'delta' ? 0.1 : 50 })} />
+      <Segmented dense label="How the strike is picked" value={params.rule} options={RULES} onChange={(rule) => set({ rule, value: rule === 'delta' ? 0.1 : 50 })} />
       <ChipRow wide={wide} label={params.rule === 'delta' ? 'Sell the nearest strike with a delta of at most' : 'Sell the dearest strike priced at most'}>
         {values.map((v) => <Chip key={v} on={params.value === v} onClick={() => set({ value: v })}>{params.rule === 'delta' ? v.toFixed(2) : `$${v}`}</Chip>)}
         <CustomValue key={params.rule} value={params.value} presets={values} spec={params.rule === 'delta' ? CUSTOM.delta : CUSTOM.premium}
           name={params.rule === 'delta' ? 'Delta limit' : 'Premium limit'} onChange={(value) => set({ value })} />
       </ChipRow>
       {/* First which kind of target, then its own settings (owner, 13 Oct 2026). */}
-      <Segmented label="The option's own target" value={dynamic ? 'dynamic' : 'fixed'}
+      <Segmented dense label="The option's own target" value={dynamic ? 'dynamic' : 'fixed'}
         options={[{ key: 'fixed', label: 'Fixed target', spoken: 'One target all day' }, { key: 'dynamic', label: 'Dynamic · by time', spoken: 'A target that moves by the clock' }]}
         onChange={(m) => {
           if (m === 'fixed') { setDynamicDraft(false); set({ targetSteps: undefined, targetPct: params.targetPct > 0 ? params.targetPct : 0.9 }); return; }
@@ -521,7 +575,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         </>}
         {/* Off to begin with (owner, 13 Oct 2026). Shown with a strategy too: it is asked of the market, not of the strategy. */}
         <div className="grid gap-1 border-0 border-b border-solid border-[var(--line-soft)] pb-3">
-          <Segmented label="Volatility when the signal fills" value={params.vol ?? 'off'} onChange={(vol) => set({ vol })}
+          <Segmented dense label="Volatility when the signal fills" value={params.vol ?? 'off'} onChange={(vol) => set({ vol })}
             options={[
               { key: 'off', label: 'Off', spoken: 'Volatility filter off: every signal' },
               { key: 'low', label: 'Low', spoken: 'Only signals in low volatility' },
@@ -626,7 +680,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       )}
     >
       <p className={cn('m-0 text-[13px] leading-snug', settingsOpen && 'hidden', wide && 'xl:hidden')}>{summary}</p>
-      <div className={cn('grid min-w-0 gap-3', !settingsOpen && 'hidden', wide && 'xl:grid')}>{setup}</div>
+      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', !settingsOpen && 'hidden', wide && 'xl:grid')}>{setup}</div>
     </Panel>
   );
   const title = wide && (
@@ -684,11 +738,11 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             </div>
             {/* Before charges, the charges, after them: the net above is the last of the three. */}
             <div className="mt-2">
-              <Stats cols={3}>
-                <Stat label="Before charges" tone={t.net + t.charges > 0 ? 'up' : t.net + t.charges < 0 ? 'down' : undefined}>{moneyText(t.net + t.charges)}</Stat>
-                <Stat label="Charges" tone="down">{moneyText(-t.charges)}</Stat>
-                <Stat label="After charges" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net)}</Stat>
-              </Stats>
+              <Ledger>
+                <Entry label="Before charges" tone={t.net + t.charges > 0 ? 'up' : t.net + t.charges < 0 ? 'down' : undefined}>{moneyText(t.net + t.charges)}</Entry>
+                <Entry label="Charges" tone="down">{moneyText(-t.charges)}</Entry>
+                <Entry label="After charges" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net)}</Entry>
+              </Ledger>
             </div>
             <p className="m-0 mt-1 px-1 text-[12px] text-muted-foreground">
               Charges: Delta&apos;s fee on each fill (the lower of 0.01% of the BTC value and 3.5% of the premium) and 18% GST on it, on the sale and on the buy-back -- {t.n > 0 ? moneyText(-t.charges / t.n) : '—'} a trade, {t.net + t.charges !== 0 ? `${Math.round((100 * t.charges) / Math.abs(t.net + t.charges))}% of the result before them` : ''}.
@@ -697,11 +751,11 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             {r.margin && r.margin.peakUsd > 0 && (
               <>
                 <div className="mt-2">
-                  <Stats cols={3}>
-                    <Stat label="Margin at most">{moneyText(r.margin.peakUsd).replace('+', '')}</Stat>
-                    <Stat label="On that margin" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{`${t.net >= 0 ? '+' : '−'}${Math.abs((100 * t.net) / r.margin.peakUsd).toFixed(1)}%`}</Stat>
-                    <Stat label="A day's most, average">{moneyText(r.margin.avgDailyPeakUsd).replace('+', '')}</Stat>
-                  </Stats>
+                  <Ledger>
+                    <Entry label="Margin at most">{moneyText(r.margin.peakUsd).replace('+', '')}</Entry>
+                    <Entry label="On that margin" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{`${t.net >= 0 ? '+' : '−'}${Math.abs((100 * t.net) / r.margin.peakUsd).toFixed(1)}%`}</Entry>
+                    <Entry label="A day's most, average">{moneyText(r.margin.avgDailyPeakUsd).replace('+', '')}</Entry>
+                  </Ledger>
                 </div>
                 <p className="m-0 mt-1 px-1 text-[12px] leading-snug text-muted-foreground">
                   Estimated by the desk&apos;s 200x model, as on the Signal Strategies card: the most at once was {r.margin.peakOpen} trade{r.margin.peakOpen === 1 ? '' : 's'} open
@@ -744,9 +798,9 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             r.skipped['no-board'] ? `${count(r.skipped['no-board'])} with no option prices recorded then` : null,
             r.skipped['no-exit-price'] ? `${count(r.skipped['no-exit-price'])} with no price to exit at` : null,
           ].filter(Boolean).join(', ')}.</>}
-          {/* With a limit on open trades the filters choose the signals before the day is played, so the counts are already theirs. */}
-          {(tfs.length > 0 || methods.length > 0) && params.deskMax === 0 && ' The counts in this line are before the time frame and method filters.'}
+          {/* The counts are of the time frames and methods chosen, as the tiles above are (13 Oct 2026: they were of every signal). */}
         </p>
+        {pricedWords(r.priced) && <p className="m-0 mt-1.5 text-[12.5px] leading-snug text-muted-foreground">{pricedWords(r.priced)}</p>}
       </Panel>
 
       {r.strategy && (
@@ -790,9 +844,9 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         <>
           <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
             <Panel title="Closed by which exit">
-              <table className="w-full border-collapse text-[13px] tabular-nums">
+              <table className={FOLD.table}>
                 <caption className="sr-only">Backtest: which exit closed the trades</caption>
-                <thead>
+                <thead className={FOLD.head}>
                   <tr className="text-left text-[11.5px] text-muted-foreground">
                     <th scope="col" className="py-1 pr-2 font-medium">Closed by</th>
                     <th scope="col" className="py-1 pr-2 text-right font-medium">Trades</th>
@@ -800,15 +854,15 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                     <th scope="col" className="py-1 text-right font-medium">Net</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className={FOLD.body}>
                   {EXITS.flatMap((e) => {
                     const x = t.exits[e.key];
                     return x && x.n > 0 ? [(
-                      <tr key={e.key} className="border-t border-[var(--line-soft)] align-top">
-                        <th scope="row" className="py-1.5 pr-2 text-left font-medium">{e.label}</th>
-                        <td className="py-1.5 pr-2 text-right">{count(x.n)}</td>
-                        <td className="py-1.5 pr-2 text-right">{pct(x.wins / x.n, 0)}</td>
-                        <td className="py-1.5 text-right">
+                      <tr key={e.key} className={FOLD.row}>
+                        <th scope="row" className={FOLD.name}>{e.label}</th>
+                        <td className={FOLD.trades}>{count(x.n)}</td>
+                        <td className={FOLD.inProfit}>{pct(x.wins / x.n, 0)}</td>
+                        <td className={FOLD.net}>
                           <span className={cn('block whitespace-nowrap font-semibold', netClass(x.net))}>{moneyText(x.net)}</span>
                           <span className={cn('block whitespace-nowrap text-[11.5px]', netClass(x.net))}>{moneyText(x.net / x.n)}</span>
                         </td>
@@ -842,7 +896,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               <div className="mt-2"><Table caption="Backtest by kind of day" first={grouping === 'family' ? 'Family' : 'Market type'} rows={grouping === 'family' ? r.byFamily : r.byPattern} days /></div>
             </Panel>
             <Panel title="By expiry day">
-              <Table caption="Backtest by expiry day" first="Expiry day" rows={[...r.days].reverse().map((d) => ({ ...d, key: d.day, name: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}` }))} />
+              <Table caption="Backtest by expiry day" first="Expiry day" rows={[...r.days].reverse().map((d) => ({ ...d, key: d.day, name: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}${d.grain ? ` · ${GRAIN[d.grain]}` : ''}` }))} />
             </Panel>
           </div>
         </>
@@ -851,8 +905,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
         How it is worked out: at each signal&apos;s fill on the perp, the put (a BUY) or the call (a SELL) of that expiry day&apos;s contract is sold at its bid, at the
         strike the rule picks; it is bought back at the offer when the perp reaches the signal&apos;s stop or TGT1, or sooner if the option reaches its own
-        target or stop, or at the end of the window; charges are taken on both fills. The perp is read a minute at a time; the options every five
-        minutes, which is how often the desk records the whole board, so an exit is priced up to five minutes late.
+        target or stop, or at the end of the window; charges are taken on both fills. The perp is read a minute at a time, and so are the options
+        wherever there are one-minute prices: the desk&apos;s own record from 13 Oct 2026 on, and before it Delta&apos;s one-minute mark with the bid
+        and the offer as far from it as the desk&apos;s last five-minute reading had them (an estimate: about $2 of premium from the real quote
+        on average where both exist). A day still on five-minute prices has an exit priced up to five minutes late.
         {r.strategy || params.deskMax > 0 ? ' The limits on open trades are counted as set above; margin and the order queue are not' : ' No limit on open trades unless one is set above, no margin and no queue'}
         {' '}— so the total is not what an account would have made: read what a trade of each kind made.
       </p>

@@ -23,6 +23,8 @@ export type BtTot = {
   charges: number;
   exits: Partial<Record<BtExit, { n: number; wins: number; net: number }>>;
 };
+/** What a day's options were priced on: the desk's own one-minute record, Delta's one-minute mark with the desk's spread, or the five-minute record alone. */
+export type BoardGrain = 'own-1m' | 'mark-1m' | '5m';
 export type BtRow = BtTot & { key: string; name: string; tf?: string; days?: number };
 export type SignalBacktestResponse = {
   from: string; to: string; params: BacktestParams;
@@ -36,7 +38,9 @@ export type SignalBacktestResponse = {
   deskLimits: { account: string; max: number; ce: number; pe: number }[];
   signals: number; skipped: Record<BtSkip, number>;
   total: BtTot;
-  days: (BtTot & { day: string; pattern: string | null; live: boolean })[];
+  days: (BtTot & { day: string; pattern: string | null; live: boolean; grain?: BoardGrain })[];
+  /** Expiry days by what their options were priced on. An older server sends none. */
+  priced?: Record<BoardGrain, number>;
   pairs: BtRow[]; byTf: BtRow[]; byMethod: BtRow[]; byPattern: BtRow[]; byFamily: BtRow[];
   /** By the volatility when each signal filled: low, medium, high. An older server sends none. */
   byVol?: BtRow[];

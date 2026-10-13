@@ -34,7 +34,7 @@ export function useExpiryRange(prefix: string, now: number): { range: { from: st
 
   const control = (
     <div className="grid min-w-0 gap-1.5">
-      <Segmented
+      <Segmented dense
         label="Expiry days" value={choice} options={OPTIONS}
         // Custom opens the sheet every time it is tapped: chosen already, a tap is "change the dates".
         onChange={(key) => { if (key === 'custom') setPicking(true); else setChoice(key); }}

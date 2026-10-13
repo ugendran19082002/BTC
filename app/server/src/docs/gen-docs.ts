@@ -333,6 +333,7 @@ async function migrateEverything(): Promise<void> {
   const { marketSchema } = await import('../market/oi-history.js');
   const { errorLog } = await import('../observability/errors.js');
   const { optionSnapshotsSchema } = await import('../market/option-snapshots.js');
+  const { optionMarksSchema } = await import('../market/option-marks.js');
   const { flowSchema } = await import('../market/flow.js');
   const { initStrategyStore } = await import('../http/routes/strategy.routes.js');
   const { AuthStore } = await import('../auth/store.js');
@@ -348,6 +349,7 @@ async function migrateEverything(): Promise<void> {
   await marketSchema();
   await errorLog().ready;
   await optionSnapshotsSchema();
+  await optionMarksSchema();
   await flowSchema();
   await initStrategyStore();
   await AuthStore.open();

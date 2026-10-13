@@ -30,7 +30,7 @@ time; a symbol prefix chooses what the candle is *of*.
 |---|---|---|
 | BTC OHLCV | `BTCUSD` | `1m 5m 15m 30m 1h 2h 4h 6h 1d`. **No `12h`** -- it returns nothing (measured 26 Sep 2026); the desk folds pairs of 6h bars. |
 | Option OHLCV (traded price) | the contract, e.g. `C-BTC-80000-190926` | `1m` |
-| Option mark | `MARK:<contract>` | `1m` (desk, harvester), `15m` (research) |
+| Option mark | `MARK:<contract>` | `1m` (desk, harvester, and the backtest's past days -- settled contracts are served too), `15m` (research) |
 | Option open interest | `OI:<contract>` | `15m` (research) |
 
 **There is no history of greeks, IV, bid / ask or the order book.** Delta
@@ -49,7 +49,8 @@ In PostgreSQL. Retention is enforced as each recorder writes.
 | Table | What | Grain | Kept |
 |---|---|---|---|
 | `option_snapshots` | every strike of the two nearest live expiries: quotes, IV, greeks, OI, volume, spot | 5 min | 90 days (~16 MB a day) |
-| `option_snapshots_1m` | the same, for the premium's last-minute velocity | 1 min | 6 hours |
+| `option_snapshots_1m` | the same a minute at a time: the premium's last-minute velocity, and what the [signal backtest](../features/signal-backtest.md) prices its options on | 1 min | 90 days since 13 Oct 2026 (~59 MB a day, ~5.3 GB); six hours before |
+| `option_marks_1m` | Delta's own one-minute mark (`MARK:<contract>` candles) of the settled contracts the desk has only five-minute readings of, fetched once in the background; `option_marks_fetched` says which have been asked for | 1 min | 90 days |
 | `oi_snapshots` | OI per strike, with spot and ATM IV | 5 min | 48 hours |
 | `chain_features` | the board summarised: straddle, skew, PCR, walls, max pain, OI change | 5 min | 400 days |
 | `trade_flow_1m` | the perpetual's tape per minute by aggressor side, large-print counts | 1 min | a year |

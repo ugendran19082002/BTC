@@ -298,3 +298,118 @@ test('[critical] the volatility filter keeps only the signals of the level asked
   assert.equal(run('medium').skipped.volatility, 4, 'one whose level cannot be said is not of the level asked for');
   assert.equal(typeof volReader, 'function');
 });
+
+test('[critical] target steps typed out of clock order are read in clock order: the last one the clock reached is in force, not the last one typed', async () => {
+  const { planOfParams } = await import('../../src/report/signal-backtest.js');
+  const flat = perp([[0, 84_000], [1_439, 84_100]]);
+  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 4]]);      // sold at 40, offered at bid + 2
+  const run = (targetSteps: { at: string; pct: number }[]) => simulateDay({ from, to, signals: [sig(0)], bars: flat, board, plan: planOfParams({ ...P, stopPct: 0, targetPct: 0.5, targetSteps }, { from, to }) }).trades[0]!;
+  // 50% to begin with, 60% from 11:30 PM (minute 360), 80% from 3:30 AM (minute 600): from then the buy rests at 8
+  const inOrder = run([{ at: '23:30', pct: 0.6 }, { at: '03:30', pct: 0.8 }]);
+  const typedBackwards = run([{ at: '03:30', pct: 0.8 }, { at: '23:30', pct: 0.6 }]);
+  assert.equal(inOrder.by, 'option-tgt');
+  assert.ok(Math.abs(inOrder.exit - 8) < 1e-9, `at 80% of 40 kept: ${inOrder.exit}`);
+  assert.equal((inOrder.exitAt - from) / 60_000, 1_360, 'the first reading offered at 8 or under');
+  assert.deepEqual([typedBackwards.exit, typedBackwards.exitAt, typedBackwards.netUsd], [inOrder.exit, inOrder.exitAt, inOrder.netUsd], 'the same trade however the steps were typed');
+});
+
+test('[critical] two strikes level on the rule: the nearer the money, whichever order the board came in', () => {
+  const row = (cp: 'C' | 'P', strike: number, delta: number, bid: number): BoardRow => ({ at: 0, cp, strike, spot: 84_000, bid, ask: bid + 2, mark: bid, delta });
+  const puts = [row('P', 82_800, -0.04, 30), row('P', 83_000, -0.05, 30), row('P', 82_600, -0.03, 30)];
+  for (const board of [puts, [...puts].reverse(), [puts[1]!, puts[2]!, puts[0]!]]) {
+    assert.equal(pickStrike(board, 'P', { rule: 'premium', value: 50 })!.strike, 83_000, 'three puts bid at 30: the nearest');
+  }
+  const calls = [row('C', 85_400, 0.08, 40), row('C', 85_200, 0.08, 44)];
+  assert.equal(pickStrike(calls, 'C', { rule: 'delta', value: 0.1 })!.strike, 85_200);
+  assert.equal(pickStrike([...calls].reverse(), 'C', { rule: 'delta', value: 0.1 })!.strike, 85_200, 'the same delta: the nearer call');
+});
+
+test('[critical] every signal not traded is named with its reason, and they add up: signals = traded + not traded', () => {
+  const up = perp([[0, 84_000], [1_439, 84_100]]);
+  const board = byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 4]])]);     // no call on the board at all
+  const signals = [sig(100), sig(300, { tf: '1h' }), sig(400, { dir: -1, stop: 84_300, target: 83_500, method: 'fade' }), sig(1_438, { tf: '5m' })];
+  const r = simulateDay({ from, to, signals, bars: up, board, params: P });
+  assert.equal(r.trades.length, 2);
+  assert.deepEqual(r.refused.map((x) => [x.signal.method, x.signal.tf, x.why]), [['fade', '15m', 'no-strike'], ['breakout', '5m', 'outside-window']]);
+  assert.equal(r.trades.length + r.refused.length, signals.length);
+  assert.equal(Object.values(r.skipped).reduce((a, b) => a + b, 0), r.refused.length);
+});
+
+test('the fee on the way out is worked from BTC as it stood at the exit, not at the entry', () => {
+  // a put sold at 300 with BTC at 84,000; the perp's stop is hit about minute 30 and it is bought back at the next
+  // reading, where the board has BTC at 60,000. On both fills the notional fee (0.01% of BTC) is the smaller, so BTC
+  // is what the fee is: 0.084 in, 0.060 out.
+  const rows = byTime(contract('P', 83_200, -0.09, [[0, 300], [100, 500], [1_435, 500]])).map((r) => (r.at >= from + 5 * MIN ? { ...r, spot: 60_000 } : r));
+  const bars = perp([[0, 84_000], [100, 83_000], [1_439, 83_000]]);
+  const t = simulateDay({ from, to, signals: [sig(0)], bars, board: rows, params: { ...P, targetPct: 0, stopPct: 0 } }).trades[0]!;
+  assert.equal(t.by, 'perp-sl');
+  const inUsd = fillChargesUsd({ price: t.entry, contracts: 10, contractValue: 0.001, spot: 84_000 }).totalUsd;
+  const outUsd = fillChargesUsd({ price: t.exit, contracts: 10, contractValue: 0.001, spot: 60_000 }).totalUsd;
+  assert.ok(Math.abs(inUsd - 0.084 * 1.18) < 1e-9 && Math.abs(outUsd - 0.06 * 1.18) < 1e-9, 'the notional fee binds on both');
+  assert.ok(Math.abs(t.chargesUsd - (inUsd + outUsd)) < 1e-9, `charges ${t.chargesUsd}`);
+  assert.ok(Math.abs(t.netUsd - ((t.entry - t.exit) * 10 * 0.001 - inUsd - outUsd)) < 1e-9);
+});
+
+// ------------------------------------------------------------ a minute at a time
+
+test('[critical] a board a minute at a time: the desk\'s own minutes first, its five-minute readings where a minute has none, and Delta\'s mark between -- with the last reading\'s spread around it', async () => {
+  const { minuteBoard } = await import('../../src/report/signal-backtest.js');
+  const row = (min: number, bid: number | null, o: Partial<BoardRow> = {}): BoardRow => ({ at: from + min * MIN, cp: 'P', strike: 83_200, spot: 84_000, bid, ask: bid === null ? null : bid + 3, mark: bid === null ? 41 : bid + 1, delta: -0.09, oi: 500, ...o });
+  const five = [row(0, 40), row(5, 38), row(10, 36)];
+  const mark = (min: number, open: number) => ({ cp: 'P' as const, strike: 83_200, at: from + min * MIN, open });
+
+  // Delta's mark at minutes 1 to 4 and 6: each estimated from the reading before it (mark 1 over the bid, the offer 2 over the mark)
+  const est = minuteBoard({ five, own: [], marks: [mark(0, 99), mark(1, 40.5), mark(2, 39.5), mark(6, 37.2), mark(21, 30)] }).board;
+  assert.deepEqual(est.map((r) => (r.at - from) / MIN), [0, 1, 2, 5, 6, 10], 'oldest first; minute 0 has a reading of its own; minute 21 is over ten minutes from any');
+  const m1 = est[1]!;
+  assert.deepEqual([m1.est, m1.mark, m1.bid, m1.ask, m1.delta, m1.spot, m1.oi], [true, 40.5, 39.5, 42.5, -0.09, 84_000, 500], 'the mark is Delta\'s; the spread, the delta and BTC are the last reading\'s');
+  assert.equal(est[0]!.est, undefined, 'a reading of the desk\'s own is not an estimate');
+  assert.deepEqual([est[4]!.bid, est[4]!.ask], [37.2 - 1, 37.2 + 2], 'minute 6 from the reading at minute 5, not the one at 10 that came after');
+
+  // the desk's own minute wins over the five-minute reading of the same minute, and over Delta's mark
+  const own = minuteBoard({ five, own: [row(5, 38.4), row(6, 37.9)], marks: [mark(6, 12)] }).board;
+  assert.deepEqual(own.filter((r) => (r.at - from) / MIN >= 5).map((r) => [(r.at - from) / MIN, r.bid, r.est ?? false]), [[5, 38.4, false], [6, 37.9, false], [10, 36, false]]);
+
+  // no bid at the last reading: none is invented; a mark under the spread is a bid of nothing, never a negative one
+  const thin = minuteBoard({ five: [row(0, null), row(5, 2, { mark: 6, ask: 9 })], own: [], marks: [mark(1, 40), mark(6, 3)] }).board;
+  assert.deepEqual([thin[1]!.bid, thin[1]!.ask], [null, null]);
+  assert.deepEqual([thin[3]!.bid, thin[3]!.ask], [0, 6]);
+
+  // what a day was priced on: four fifths of its minutes with a reading is "a minute at a time"
+  const day = (step: number) => Array.from({ length: Math.floor(1_440 / step) }, (_, i) => row(i * step, 40));
+  const marks = Array.from({ length: 1_440 }, (_, i) => mark(i, 41));
+  assert.equal(minuteBoard({ five: day(5), own: [], marks: [] }).grain, '5m');
+  assert.equal(minuteBoard({ five: day(5), own: [], marks }).grain, 'mark-1m');
+  assert.equal(minuteBoard({ five: day(5), own: day(1), marks: [] }).grain, 'own-1m');
+  assert.equal(minuteBoard({ five: day(5), own: day(1).slice(0, 360), marks: [] }).grain, '5m', 'six hours of the desk\'s minutes is not the day');
+  assert.equal(minuteBoard({ five: [], own: [], marks }).grain, '5m', 'marks alone, with no reading to take a spread from, are no board');
+});
+
+test('[critical] on a board a minute at a time the exit is priced at the minute after the perp\'s, not up to five minutes on -- and the option\'s own target is seen the minute it is reached', async () => {
+  const { minuteBoard } = await import('../../src/report/signal-backtest.js');
+  // the perp falls through the stop (83,700) at about minute 60 of a slide from 84,000 to 83,500 over minutes 0 to 100
+  const bars = perp([[0, 84_000], [100, 83_500], [1_439, 83_500]]);
+  const five = contract('P', 83_200, -0.09, [[0, 40], [58, 40], [70, 100], [1_435, 100]]);        // the put jumps from 40 to 100 over minutes 58 to 70
+  const marks = Array.from({ length: 1_440 }, (_, m) => ({ cp: 'P' as const, strike: 83_200, at: from + m * MIN, open: (m <= 58 ? 40 : m >= 70 ? 100 : 40 + (m - 58) * 5) + 1 }));
+  const p = { ...P, targetPct: 0, stopPct: 0 };
+  const coarse = simulateDay({ from, to, signals: [sig(0)], bars, board: five, params: p }).trades[0]!;
+  const fine = simulateDay({ from, to, signals: [sig(0)], bars, board: minuteBoard({ five, own: [], marks }).board, params: p }).trades[0]!;
+  assert.deepEqual([coarse.by, fine.by], ['perp-sl', 'perp-sl']);
+  assert.equal(coarse.exitAt, fine.exitAt, 'the perp\'s own minute is the same');
+  const stopMinute = (fine.exitAt - from) / MIN;
+  assert.ok(stopMinute > 55 && stopMinute < 62, `the stop about minute 60: ${stopMinute}`);
+  // five-minute record: the reading at minute 65 (bid 75, offered 77); a minute at a time: that very minute's
+  const nextFive = Math.ceil(stopMinute / 5) * 5;
+  assert.equal(coarse.exit, (nextFive <= 58 ? 40 : 40 + (nextFive - 58) * 5) + 2);
+  assert.ok(fine.exit < coarse.exit, `bought back sooner, for less: ${fine.exit} against ${coarse.exit}`);
+  assert.ok(Math.abs(fine.exit - ((stopMinute <= 58 ? 40 : 40 + (stopMinute - 58) * 5) + 1 + 1)) < 1e-9, 'Delta\'s mark that minute, with the offer the last reading had over its mark (1)');
+
+  // the option's own stop at +100% (an offer of 80): seen at minute 66 a minute at a time, at minute 70 on the five-minute record
+  const stopped = { ...P, targetPct: 0, stopPct: 1 };
+  const quiet = perp([[0, 84_000], [1_439, 84_100]]);
+  const c = simulateDay({ from, to, signals: [sig(0)], bars: quiet, board: five, params: stopped }).trades[0]!;
+  const f = simulateDay({ from, to, signals: [sig(0)], bars: quiet, board: minuteBoard({ five, own: [], marks }).board, params: stopped }).trades[0]!;
+  assert.deepEqual([c.by, (c.exitAt - from) / MIN, c.exit], ['option-sl', 70, 102]);
+  assert.deepEqual([f.by, (f.exitAt - from) / MIN], ['option-sl', 66]);
+  assert.ok(f.exit >= 80 && f.exit < 86, `at the first minute's offer over the stop: ${f.exit}`);
+});

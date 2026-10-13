@@ -1,6 +1,7 @@
 import { rows } from '../db/pool.js';
 import { flowSchema } from '../market/flow.js';
 import { optionSnapshotsSchema } from '../market/option-snapshots.js';
+import { marksFetchedBy, marksWanted, optionMarksSchema } from '../market/option-marks.js';
 import { entrySchema } from '../entry/paper.js';
 import { methodsSchema } from '../entry/catalogue.js';
 import { fillChargesUsd } from '../trading/charges.js';
@@ -30,10 +31,16 @@ import {
  * WHAT IT IS PRICED ON, and what that makes it:
  *
  *   the perp        one-minute highs and lows (`trade_flow_1m`); a bar that holds both levels is taken as the stop.
- *   the option      the whole board every five minutes (`option_snapshots`): the one-minute board is kept for six
- *                   hours only. Sold at the BID of the reading nearest the fill, bought back at the OFFER of the
- *                   first reading at or after the exit -- so an exit is priced up to five minutes late, and the
- *                   option's own target and stop are seen only at a reading.
+ *   the option      the whole board A MINUTE AT A TIME wherever there is one (13 Oct 2026: "backtest on one-minute
+ *                   option prices; where the database has none, take them from Delta's API"), in this order:
+ *                     1. the desk's own one-minute record (`option_snapshots_1m`, kept 90 days from that day on);
+ *                     2. before it: Delta's own one-minute mark of each contract (`option_marks_1m`), with the
+ *                        bid and the offer put around it at the distance the desk's last five-minute reading
+ *                        had them (`minuteBoard`) -- an estimate, and said as one;
+ *                     3. where neither has arrived yet: the five-minute record (`option_snapshots`) alone.
+ *                   Sold at the BID of the reading nearest the fill, bought back at the OFFER of the first reading
+ *                   at or after the exit -- so an exit is priced up to a minute late (five on the days still on
+ *                   the five-minute record), and the option's own target and stop are seen only at a reading.
  *   charges         the desk's own (`fillChargesUsd`), on both fills.
  *
  * It takes EVERY signal -- no "at most N open", no margin, no order queue -- so its total is not what an account
@@ -137,7 +144,66 @@ export type BtSignal = {
   /** TGT1, and the further targets where the signal has them: a strategy may be set to exit at TGT2 or TGT3. */
   target: number; tp2?: number | null; tp3?: number | null;
 };
-export type BoardRow = { at: number; cp: 'C' | 'P'; strike: number; spot: number | null; bid: number | null; ask: number | null; mark: number | null; delta: number | null; oi?: number | null };
+export type BoardRow = {
+  at: number; cp: 'C' | 'P'; strike: number; spot: number | null; bid: number | null; ask: number | null; mark: number | null; delta: number | null; oi?: number | null;
+  /** Set on a minute the desk did not record: Delta's mark, with the spread of the desk's last reading around it. */
+  est?: boolean;
+};
+
+/** One contract's minute from Delta's mark candles: its mark as the minute opened, which is when the desk's own record reads a minute. */
+export type MarkMinute = { cp: 'C' | 'P'; strike: number; at: number; open: number };
+/** What a day's options were priced on: the desk's own minutes, Delta's mark a minute at a time, or the five-minute record alone. */
+export type BoardGrain = 'own-1m' | 'mark-1m' | '5m';
+export const BOARD_GRAINS: readonly BoardGrain[] = ['own-1m', 'mark-1m', '5m'];
+/** A spread is carried from a reading no older than this: two five-minute readings, so one missed does not leave a hole. */
+const SPREAD_KEEP_MS = 10 * 60_000;
+/** A day is "a minute at a time" when this share of its minutes has a reading. */
+const MINUTE_SHARE = 0.8;
+
+/**
+ * A day's board a minute at a time, from what there is: the desk's own minute readings first, its five-minute
+ * readings where a minute has none, and -- for a contract and a minute neither has -- Delta's mark with the bid
+ * and the offer as far from it as they stood at the desk's last reading of that contract. The delta, BTC and the
+ * open interest of an estimated minute are that reading's too. Pure; oldest first.
+ *
+ * Only a reading at or before the minute is used for the spread, never a later one: nothing in a minute's row
+ * was unknown at that minute.
+ */
+export function minuteBoard(o: { five: readonly BoardRow[]; own: readonly BoardRow[]; marks: readonly MarkMinute[] }): { board: BoardRow[]; grain: BoardGrain } {
+  const real = new Map<string, BoardRow[]>();
+  const put = (r: BoardRow) => { const k = `${r.cp}${r.strike}`; const xs = real.get(k); if (xs) xs.push(r); else real.set(k, [r]); };
+  const seen = new Set<string>();
+  for (const r of o.own) { seen.add(`${r.cp}${r.strike}|${r.at}`); put(r); }
+  for (const r of o.five) if (!seen.has(`${r.cp}${r.strike}|${r.at}`)) put(r);
+  const board: BoardRow[] = [];
+  for (const xs of real.values()) { xs.sort((a, b) => a.at - b.at); board.push(...xs); }
+  const byContract = new Map<string, MarkMinute[]>();
+  for (const m of o.marks) { const k = `${m.cp}${m.strike}`; const xs = byContract.get(k); if (xs) xs.push(m); else byContract.set(k, [m]); }
+  for (const [k, ms] of byContract) {
+    const xs = real.get(k);
+    if (!xs) continue;
+    ms.sort((a, b) => a.at - b.at);
+    let i = 0;
+    for (const m of ms) {
+      while (i + 1 < xs.length && xs[i + 1]!.at <= m.at) i++;
+      const prior = xs[i]!;
+      if (prior.at >= m.at || m.at - prior.at > SPREAD_KEEP_MS || prior.mark === null || !(prior.mark > 0) || !(m.open >= 0)) continue;
+      const ask = prior.ask === null || !(prior.ask > 0) ? null : m.open + (prior.ask - prior.mark);
+      board.push({
+        at: m.at, cp: m.cp, strike: m.strike, spot: prior.spot, mark: m.open, delta: prior.delta, oi: prior.oi ?? null, est: true,
+        bid: prior.bid === null ? null : Math.max(0, m.open - (prior.mark - prior.bid)),
+        ask: ask !== null && ask > 0 ? ask : null,
+      });
+    }
+  }
+  board.sort((a, b) => a.at - b.at);
+  const times = new Set<number>(), ownTimes = new Set<number>();
+  for (const r of board) times.add(r.at);
+  for (const r of o.own) ownTimes.add(r.at);
+  const span = board.length ? (board[board.length - 1]!.at - board[0]!.at) / 60_000 + 1 : 0;
+  const grain: BoardGrain = span > 0 && ownTimes.size >= MINUTE_SHARE * span ? 'own-1m' : span > 0 && times.size >= MINUTE_SHARE * span ? 'mark-1m' : '5m';
+  return { board, grain };
+}
 export type BtTrade = {
   signal: BtSignal; cp: 'C' | 'P'; strike: number; lots: number;
   entryAt: number; entry: number; exitAt: number; exit: number; by: BtExit;
@@ -278,6 +344,14 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }, 
   };
 }
 
+/** The index of the first item later than `t`, in a list sorted by time. */
+function firstAfter<T>(xs: readonly T[], t: number, at: (x: T) => number): number {
+  let lo = 0, hi = xs.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (at(xs[mid]!) <= t) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+const atOf = (x: { at: number }) => x.at;
+
 const TF_RANK: Record<string, number> = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1_800, '1h': 3_600, '2h': 7_200, '4h': 14_400 };
 /**
  * The order signals are taken in: as they filled; and those that filled in the same second -- many do, the graders
@@ -293,13 +367,72 @@ export function signalOrder(a: BtSignal, b: BtSignal): number {
     || a.fillPrice - b.fillPrice || a.stop - b.stop;
 }
 
+/** One contract's readings as columns, oldest first; a figure the board did not have is NaN. */
+type Series = { cp: 'C' | 'P'; strike: number; n: number; at: Float64Array; spot: Float64Array; bid: Float64Array; ask: Float64Array; mark: Float64Array; delta: Float64Array; oi: Float64Array };
+/**
+ * A day's board made ready to be played: every reading time, and each contract's readings as columns of numbers.
+ * A day a minute at a time is a hundred thousand readings and is read by thousands of trades; as rows of objects
+ * that was most of a second a day, and too much to keep. Made once (`prepareBoard`) and kept by the backtest's
+ * thread for the days that will not change.
+ */
+export type PreparedBoard = { times: Float64Array; series: Map<string, Series>; all: Series[] };
+
+const NONE = Number.NaN;
+const orNone = (v: number | null | undefined) => (v === null || v === undefined ? NONE : v);
+const orNull = (v: number) => (Number.isNaN(v) ? null : v);
+const isPrepared = (b: readonly BoardRow[] | PreparedBoard): b is PreparedBoard => !Array.isArray(b);
+
+export function prepareBoard(board: readonly BoardRow[]): PreparedBoard {
+  const rowsOf = new Map<string, BoardRow[]>();
+  const seen = new Set<number>();
+  for (const r of board) {
+    seen.add(r.at);
+    const k = `${r.cp}${r.strike}`;
+    const xs = rowsOf.get(k);
+    if (xs) xs.push(r); else rowsOf.set(k, [r]);
+  }
+  const series = new Map<string, Series>();
+  for (const [k, xs] of rowsOf) {
+    // Oldest first, as every board is given; put right where one is not.
+    for (let i = 1; i < xs.length; i++) if (xs[i]!.at < xs[i - 1]!.at) { xs.sort((a, b) => a.at - b.at); break; }
+    const n = xs.length;
+    const s: Series = { cp: xs[0]!.cp, strike: xs[0]!.strike, n, at: new Float64Array(n), spot: new Float64Array(n), bid: new Float64Array(n), ask: new Float64Array(n), mark: new Float64Array(n), delta: new Float64Array(n), oi: new Float64Array(n) };
+    for (let i = 0; i < n; i++) {
+      const r = xs[i]!;
+      s.at[i] = r.at; s.spot[i] = orNone(r.spot); s.bid[i] = orNone(r.bid); s.ask[i] = orNone(r.ask); s.mark[i] = orNone(r.mark); s.delta[i] = orNone(r.delta); s.oi[i] = orNone(r.oi);
+    }
+    series.set(k, s);
+  }
+  return { times: Float64Array.from(seen).sort(), series, all: [...series.values()] };
+}
+
+/** The first index of a sorted column later than `t`. */
+function after(xs: Float64Array, t: number, n = xs.length): number {
+  let lo = 0, hi = n;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (xs[mid]! <= t) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+/** One reading of the board as rows again -- every contract that has that time -- for a strike rule to pick from. */
+function readingAt(b: PreparedBoard, t: number): BoardRow[] {
+  const out: BoardRow[] = [];
+  for (const s of b.all) {
+    const i = after(s.at, t, s.n) - 1;
+    if (i < 0 || s.at[i] !== t) continue;
+    out.push({ at: t, cp: s.cp, strike: s.strike, spot: orNull(s.spot[i]!), bid: orNull(s.bid[i]!), ask: orNull(s.ask[i]!), mark: orNull(s.mark[i]!), delta: orNull(s.delta[i]!), oi: orNull(s.oi[i]!) });
+  }
+  return out;
+}
+
 /**
  * One expiry day: every signal filled in it, traded on its board. `from`/`to` are the day's span; `bars` its perp
  * minutes; `board` every reading of the contract that settles at `to`, oldest first. The signals are taken in the
  * order they filled, which is what "at most N open" is counted in.
  */
 export function simulateDay(o: {
-  from: number; to: number; signals: readonly BtSignal[]; bars: readonly MinuteBar[]; board: readonly BoardRow[]; params?: BacktestParams; plan?: DayPlan;
+  from: number; to: number; signals: readonly BtSignal[]; bars: readonly MinuteBar[];
+  /** The board as rows, or one already made ready (`prepareBoard`). */
+  board: readonly BoardRow[] | PreparedBoard; params?: BacktestParams; plan?: DayPlan;
   /** The volatility at a moment (`volReader`), and the one level to keep where the filter is on. */
   volAt?: (at: number) => VolLevel | null; volOnly?: VolLevel | null;
 }): { trades: BtTrade[]; skipped: Record<BtSkip, number>; /** Each signal not traded, with why: what the time frame and method filters count. */ refused: { signal: BtSignal; why: BtSkip }[] } {
@@ -308,18 +441,13 @@ export function simulateDay(o: {
   const skipped = noSkips();
   const refusals: { signal: BtSignal; why: BtSkip }[] = [];
   const trades: BtTrade[] = [];
-  // The board by reading, and each contract's readings in order.
-  const times: number[] = [];
-  const byTime = new Map<number, BoardRow[]>();
-  const bySymbol = new Map<string, BoardRow[]>();
-  for (const r of o.board) {
-    let at = byTime.get(r.at);
-    if (!at) { at = []; byTime.set(r.at, at); times.push(r.at); }
-    at.push(r);
-    const key = `${r.cp}${r.strike}`;
-    const s = bySymbol.get(key);
-    if (s) s.push(r); else bySymbol.set(key, [r]);
-  }
+  const board = isPrepared(o.board) ? o.board : prepareBoard(o.board);
+  const times = board.times;
+  // A strike rule's pick depends on the reading and the side alone: thousands of signals share a few hundred of them.
+  const picks = new Map<number, ReturnType<DayPlan['pick']>>();
+  // The target and the stop by the clock depend on the minute alone.
+  const tgtPcts = new Map<number, number>(), stopPcts = new Map<number, number>();
+  const pctAt = (memo: Map<number, number>, f: (at: number) => number, at: number) => { let v = memo.get(at); if (v === undefined) { v = f(at); memo.set(at, v); } return v; };
   const lastBar = o.bars[o.bars.length - 1];
   /** When each trade still open ends, and its side: what "at most N open" and each side's limit count. */
   let open: { until: number; side: 'CE' | 'PE' }[] = [];
@@ -339,12 +467,14 @@ export function simulateDay(o: {
     if (desk && open.length >= desk.max) { skip('desk-limit'); continue; }
     const side: 'CE' | 'PE' = sig.dir === 1 ? 'PE' : 'CE';
     if (desk?.side && open.filter((x) => x.side === side).length >= desk.side[side]) { skip('side-limit'); continue; }
-    // The reading nearest the fill.
-    let near = -1;
-    for (let i = 0; i < times.length; i++) if (near === -1 || Math.abs(times[i]! - t0) < Math.abs(times[near]! - t0)) near = i;
+    // The reading nearest the fill; of two as near, the earlier.
+    const next = after(times, t0);
+    const near = next === 0 ? (times.length ? 0 : -1) : next === times.length || t0 - times[next - 1]! <= times[next]! - t0 ? next - 1 : next;
     if (near === -1 || Math.abs(times[near]! - t0) > BOARD_NEAR_MS) { skip('no-board'); continue; }
     const cp = sig.dir === 1 ? 'P' as const : 'C' as const;
-    const picked = plan.pick(byTime.get(times[near]!)!, cp, times[near]!);
+    const pickKey = near * 2 + (cp === 'P' ? 1 : 0);
+    let picked = picks.get(pickKey);
+    if (picked === undefined) { picked = plan.pick(readingAt(board, times[near]!), cp, times[near]!); picks.set(pickKey, picked); }
     if (!picked) { skip('no-strike'); continue; }
     const pick = picked.row, lots = picked.lots;
     const entry = pick.bid!, entryAt = times[near]!;
@@ -353,47 +483,51 @@ export function simulateDay(o: {
     // The perp: the first minute after the fill's own that holds the stop or the target; both in one bar is the stop.
     let perpAt = to - MIN, perpBy: 'perp-tgt' | 'perp-sl' | 'window-end' = 'window-end', perpPx = lastBar?.close ?? sig.fillPrice;
     const fillMinute = Math.floor(t0 / MIN) * MIN;
-    for (const b of o.bars) {
-      if (b.at <= fillMinute) continue;
+    for (let i = firstAfter(o.bars, fillMinute, atOf); i < o.bars.length; i++) {
+      const b = o.bars[i]!;
       const stop = sig.dir === 1 ? b.low <= sig.stop : b.high >= sig.stop;
       const tgt = sig.dir === 1 ? b.high >= target : b.low <= target;
       if (stop || tgt) { perpAt = b.at + MIN; perpBy = stop ? 'perp-sl' : 'perp-tgt'; perpPx = stop ? sig.stop : target; break; }
     }
 
     // The option's own readings between: its target (a resting buy, filled at its price) and its stop (bought at the offer).
-    const series = bySymbol.get(`${cp}${pick.strike}`) ?? [];
+    const series = board.series.get(`${cp}${pick.strike}`);
     // The option's own levels at a moment: fixed all day, or by the clock where the plan has steps.
-    const tgtLevel = (at: number) => { const pc = plan.targetPctAt ? plan.targetPctAt(at) : plan.targetPct; return pc > 0 ? entry * (1 - pc) : null; };
-    const stopLevel = (at: number) => { const pc = plan.stopPctAt ? plan.stopPctAt(at) : plan.stopPct; return pc > 0 ? entry * (1 + pc) : null; };
-    let restingAt = tgtLevel(entryAt);
+    const tgtAtFn = plan.targetPctAt, stopAtFn = plan.stopPctAt;
+    const level = (pc: number, sign: 1 | -1) => (pc > 0 ? entry * (1 + sign * pc) : null);
+    const fixedTgt = level(plan.targetPct, -1), fixedStop = level(plan.stopPct, 1);
+    let restingAt = tgtAtFn ? level(pctAt(tgtPcts, tgtAtFn, entryAt), -1) : fixedTgt;
     let exit: number | null = null, exitAt = perpAt, by: BtExit = perpBy;
     // BTC at the reading the exit is priced on: what the exit's own fee is worked from.
     let exitSpot = pick.spot;
-    for (const r of series) {
-      if (r.at <= entryAt) continue;
-      if (r.at >= perpAt) {
-        // The first reading at or after the perp's exit: what buying back costs then.
-        exit = r.ask !== null && r.ask > 0 ? r.ask : r.mark !== null && r.mark > 0 ? r.mark : null;
-        exitSpot = r.spot ?? exitSpot;
-        break;
+    if (series) {
+      const { at, ask, mark, spot, n } = series;
+      for (let i = after(at, entryAt, n); i < n; i++) {
+        const t = at[i]!, offer = ask[i]!;
+        if (t >= perpAt) {
+          // The first reading at or after the perp's exit: what buying back costs then.
+          exit = offer > 0 ? offer : mark[i]! > 0 ? mark[i]! : null;
+          exitSpot = orNull(spot[i]!) ?? exitSpot;
+          break;
+        }
+        if (!(offer > 0)) continue;
+        // Prices are on a tick and the levels are products of shares: a level reached exactly must not be missed by a rounding.
+        const tgtAt = tgtAtFn ? level(pctAt(tgtPcts, tgtAtFn, t), -1) : fixedTgt;
+        const stopAt = stopAtFn ? level(pctAt(stopPcts, stopAtFn, t), 1) : fixedStop;
+        if (tgtAt !== null && offer <= tgtAt + 1e-9) {
+          // A resting buy fills at its own price as the offer comes down to it. One just moved UP over the offer by a
+          // time step (a lower share kept) is a buy placed through the market: it fills at the offer.
+          exit = restingAt !== null && tgtAt > restingAt + 1e-9 ? Math.min(tgtAt, offer) : tgtAt;
+          exitAt = t; by = 'option-tgt'; exitSpot = orNull(spot[i]!) ?? exitSpot; break;
+        }
+        restingAt = tgtAt;
+        if (stopAt !== null && offer >= stopAt - 1e-9) { exit = offer; exitAt = t; by = 'option-sl'; exitSpot = orNull(spot[i]!) ?? exitSpot; break; }
       }
-      if (r.ask === null || !(r.ask > 0)) continue;
-      // Prices are on a tick and the levels are products of shares: a level reached exactly must not be missed by a rounding.
-      const tgtAt = tgtLevel(r.at), stopAt = stopLevel(r.at);
-      if (tgtAt !== null && r.ask <= tgtAt + 1e-9) {
-        // A resting buy fills at its own price as the offer comes down to it. One just moved UP over the offer by a
-        // time step (a lower share kept) is a buy placed through the market: it fills at the offer.
-        exit = restingAt !== null && tgtAt > restingAt + 1e-9 ? Math.min(tgtAt, r.ask) : tgtAt;
-        exitAt = r.at; by = 'option-tgt'; exitSpot = r.spot ?? exitSpot; break;
+      if (exit === null && n > 0 && at[n - 1]! > entryAt) {
+        // No reading at or after the exit -- held to the end, or out in the day's last minutes: the last reading the contract has.
+        exit = ask[n - 1]! > 0 ? ask[n - 1]! : orNull(mark[n - 1]!);
+        if (exit !== null) exitSpot = orNull(spot[n - 1]!) ?? exitSpot;
       }
-      restingAt = tgtAt;
-      if (stopAt !== null && r.ask >= stopAt - 1e-9) { exit = r.ask; exitAt = r.at; by = 'option-sl'; exitSpot = r.spot ?? exitSpot; break; }
-    }
-    if (exit === null) {
-      // No reading at or after the exit -- held to the end, or out in the day's last minutes: the last reading the contract has.
-      const last = series[series.length - 1];
-      exit = last && last.at > entryAt ? (last.ask !== null && last.ask > 0 ? last.ask : last.mark) : null;
-      if (exit !== null) exitSpot = last!.spot ?? exitSpot;
     }
     if (exit === null || !(exit >= 0)) { skip('no-exit-price'); continue; }
 
@@ -452,9 +586,11 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
 type Span = { at: number; until: number; margin: number; tf: string; method: string };
 /** A day's signals by what they are filtered by: how many there were of a time frame and method, and why those not traded were not. */
 type Tally = { tf: string; method: string; signals: number; skipped: Record<BtSkip, number> };
-type HeldDay = { at: number; cells: BtCell[]; tally: Tally[]; spans: Span[] };
+type HeldDay = { at: number; cells: BtCell[]; tally: Tally[]; spans: Span[]; grain: BoardGrain };
 const held = new Map<string, HeldDay>();
-export function clearSignalBacktestCache(): void { held.clear(); }
+/** At most this many worked days are kept -- some sixty sets of settings over a fortnight; the longest unasked-for goes first. */
+const HELD_MAX = 800;
+export function clearSignalBacktestCache(): void { held.clear(); raw.clear(); }
 /** The SL or the TGT outside the range asked for: nearer than a minimum, or further than a maximum. 0 is no bound. */
 function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMin' | 'slMax' | 'tgtMin' | 'tgtMax'>): boolean {
   const sl = Math.abs(sig.fillPrice - sig.stop), tgt = Math.abs(sig.fillPrice - target);
@@ -475,13 +611,26 @@ const SETTLED_MS = 6 * 3_600_000;
 
 const expiryCodeOf = (day: string) => `${day.slice(8, 10)}${day.slice(5, 7)}${day.slice(2, 4)}`;
 
-/** One day under one set of rules. `takes` narrows the signals to those the rules are about at all (a strategy's methods and timeframes). */
-async function dayOf(day: string, key: string, now: number, planFor: (span: { from: number; to: number }) => DayPlan, takes: (sig: BtSignal) => boolean, vol: { only: VolLevel | null; baseline: number | null }): Promise<HeldDay> {
-  const id = `${day}|${key}`;
-  const h = held.get(id);
+/**
+ * A day as it was read: its signals in the order they are taken, its perp minutes (from two hours before it, for
+ * the volatility at its first signals), and its board made ready. Kept by the thread that works the backtests --
+ * a settled day does not change, and reading and preparing a day a minute at a time is most of what one costs;
+ * with it kept, another set of settings is only the arithmetic again.
+ */
+type RawDay = { at: number; signals: BtSignal[]; minutes: MinuteBar[]; board: PreparedBoard; grain: BoardGrain };
+const raw = new Map<string, RawDay>();
+/** At most this many days are kept ready (about 7 MB each a minute at a time); the oldest read goes first. */
+const RAW_DAYS = 45;
+
+async function rawDay(day: string, now: number, marksSeen: number): Promise<RawDay> {
+  // With how many of its contracts' minutes have been fetched: a day read on the five-minute record is read again when they arrive.
+  const id = `${day}|marks:${marksSeen}`;
+  const h = raw.get(id);
   const { from, to } = sessionOf(day);
   if (h && (h.at >= to + SETTLED_MS || now - h.at < FRESH_MS)) return h;
-  const [sig, bars, board] = await Promise.all([
+  type Reading = { at: string; cp: 'C' | 'P'; strike: number; spot: number | null; bid: number | null; ask: number | null; mark: number | null; delta: number | null; oi: number | null };
+  const code = expiryCodeOf(day);
+  const [sig, bars, five, own, wanted] = await Promise.all([
     rows<Record<string, string | number | null>>(
       `SELECT method, mode, tf, dir, filled_at, fill_price, stop, tp1, tp2, tp3 FROM entry_setups
         WHERE filled_at IS NOT NULL AND filled_at >= $1 AND filled_at < $2 AND first_seen >= $3 AND fill_price IS NOT NULL
@@ -489,20 +638,50 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
     rows<{ at: string; high: number; low: number; vwap: number }>(
       // From two hours before the day: the volatility at its first signals is read from the candles behind them.
       'SELECT at, high, low, vwap FROM trade_flow_1m WHERE at >= $1 AND at < $2 AND high IS NOT NULL AND low IS NOT NULL AND vwap IS NOT NULL ORDER BY at', [from - VOL_CANDLES * 900_000, to]),
-    rows<{ at: string; cp: 'C' | 'P'; strike: number; spot: number | null; bid: number | null; ask: number | null; mark: number | null; delta: number | null; oi: number | null }>(
-      'SELECT at, cp, strike, spot, bid, ask, mark, delta, oi FROM option_snapshots WHERE expiry = $1 AND at >= $2 AND at <= $3 ORDER BY at', [expiryCodeOf(day), from - BOARD_NEAR_MS, to]),
+    rows<Reading>('SELECT at, cp, strike, spot, bid, ask, mark, delta, oi FROM option_snapshots WHERE expiry = $1 AND at >= $2 AND at <= $3 ORDER BY at', [code, from - BOARD_NEAR_MS, to]),
+    rows<Reading>('SELECT at, cp, strike, spot, bid, ask, mark, delta, oi FROM option_snapshots_1m WHERE expiry = $1 AND at >= $2 AND at <= $3 ORDER BY at', [code, from - BOARD_NEAR_MS, to]),
+    // Delta's minutes are used for a day only once every contract of it has been fetched: half a board would pick other strikes.
+    to <= now ? marksWanted(day, { from, to }) : Promise.resolve(['still running']),
   ]);
+  // A contract's minutes as one line of text each -- "time:mark,time:mark" -- not a row a minute: a hundred thousand rows a day is mostly the cost of carrying them.
+  const marks = wanted.length ? [] : await rows<{ symbol: string; xs: string }>(
+    `SELECT m.symbol, string_agg(m.at::text || ':' || m.open::text, ',' ORDER BY m.at) AS xs
+       FROM option_marks_fetched f JOIN option_marks_1m m ON m.symbol = f.symbol
+      WHERE f.expiry = $1 AND m.at >= $2 AND m.at <= $3 GROUP BY m.symbol`, [code, from - BOARD_NEAR_MS, to]);
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const signals: BtSignal[] = sig.map((x): BtSignal => ({
     method: String(x.method), mode: x.mode === 'mtf' ? 'mtf' : 'single', tf: String(x.tf), dir: Number(x.dir) === 1 ? 1 : -1,
     filledAt: Number(x.filled_at) * 1_000, fillPrice: Number(x.fill_price), stop: Number(x.stop), target: Number(x.tp1), tp2: num(x.tp2), tp3: num(x.tp3),
-  })).filter(takes);
+  })).sort(signalOrder);
   const minutes: MinuteBar[] = bars.map((b) => ({ at: Number(b.at), high: Number(b.high), low: Number(b.low), close: Number(b.vwap) }));
+  const reading = (b: Reading): BoardRow => ({ at: Number(b.at), cp: b.cp, strike: Number(b.strike), spot: num(b.spot), bid: num(b.bid), ask: num(b.ask), mark: num(b.mark), delta: num(b.delta), oi: num(b.oi) });
+  const minuteMarks: MarkMinute[] = [];
+  for (const m of marks) {
+    // `P-BTC-80000-091026`: the side and the strike are in the contract's own name.
+    const part = m.symbol.split('-'), cp = part[0] === 'P' ? 'P' as const : 'C' as const, strike = Number(part[2]);
+    for (const pair of m.xs.split(',')) { const cut = pair.indexOf(':'); minuteMarks.push({ cp, strike, at: Number(pair.slice(0, cut)), open: Number(pair.slice(cut + 1)) }); }
+  }
+  const priced = minuteBoard({ five: five.map(reading), own: own.map(reading), marks: minuteMarks });
+  const out: RawDay = { at: now, signals, minutes, board: prepareBoard(priced.board), grain: priced.grain };
+  for (const k of [...raw.keys()]) if (k.startsWith(`${day}|`)) raw.delete(k);
+  raw.set(id, out);
+  while (raw.size > RAW_DAYS) raw.delete(raw.keys().next().value!);
+  return out;
+}
+
+/** One day under one set of rules. `takes` narrows the signals to those the rules are about at all (a strategy's methods and timeframes). */
+async function dayOf(day: string, key: string, now: number, planFor: (span: { from: number; to: number }) => DayPlan, takes: (sig: BtSignal) => boolean, vol: { only: VolLevel | null; baseline: number | null }, marksSeen = 0): Promise<HeldDay> {
+  const id = `${day}|${key}|marks:${marksSeen}`;
+  const h = held.get(id);
+  const { from, to } = sessionOf(day);
+  if (h && (h.at >= to + SETTLED_MS || now - h.at < FRESH_MS)) { held.delete(id); held.set(id, h); return h; }
+  const d = await rawDay(day, now, marksSeen);
+  const signals = d.signals.filter(takes);
   const r = simulateDay({
     from, to, signals, plan: planFor({ from, to }),
-    volAt: volReader(minutes, vol.baseline), volOnly: vol.only,
-    bars: minutes.filter((b) => b.at >= from),
-    board: board.map((b) => ({ at: Number(b.at), cp: b.cp, strike: Number(b.strike), spot: num(b.spot), bid: num(b.bid), ask: num(b.ask), mark: num(b.mark), delta: num(b.delta), oi: num(b.oi) })),
+    volAt: volReader(d.minutes, vol.baseline), volOnly: vol.only,
+    bars: d.minutes.filter((b) => b.at >= from),
+    board: d.board,
   });
   const tally = new Map<string, Tally>();
   const tallyOf = (sig: BtSignal) => {
@@ -514,10 +693,12 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
   for (const sig of signals) tallyOf(sig).signals++;
   for (const x of r.refused) tallyOf(x.signal).skipped[x.why]++;
   const out: HeldDay = {
-    at: now, cells: cellsOf(day, r.trades), tally: [...tally.values()],
+    at: now, cells: cellsOf(day, r.trades), tally: [...tally.values()], grain: d.grain,
     spans: r.trades.map((t) => ({ at: t.signal.filledAt, until: t.exitAt, margin: t.marginUsd, tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, method: t.signal.method })),
   };
+  held.delete(id);
   held.set(id, out);
+  while (held.size > HELD_MAX) held.delete(held.keys().next().value!);
   return out;
 }
 
@@ -552,7 +733,12 @@ export type SignalBacktest = {
   /** Signals in the trade in the range, how many were traded, and why the rest were not. */
   signals: number; skipped: Record<BtSkip, number>;
   total: BtTot;
-  days: (BtTot & { day: string; pattern: PatternKey | null; live: boolean })[];
+  days: (BtTot & { day: string; pattern: PatternKey | null; live: boolean; grain: BoardGrain })[];
+  /**
+   * What the options were priced on, in expiry days: the desk's own minute record, Delta's minute mark with the
+   * desk's spread, or the five-minute record alone -- the last where a day's minutes are still to be fetched.
+   */
+  priced: Record<BoardGrain, number>;
   pairs: BtRow[]; byTf: BtRow[]; byMethod: BtRow[]; byPattern: BtRow[]; byFamily: BtRow[];
   /** By how volatile the market was when each signal filled: low, medium, high, in that order; those it could not be said of are left out. */
   byVol: BtRow[];
@@ -567,19 +753,23 @@ const tfKeyOf = (c: Pick<BtCell, 'mode' | 'tf'>) => (c.mode === 'mtf' ? CHAIN_KE
 let working: Promise<unknown> = Promise.resolve();
 
 /** The whole range, one request at a time: a cold range reads every day's board, and two at once would read it twice. */
-type Ask = { from: string; to: string; now: number; params: BacktestParams; tfs: readonly string[] | null; methods: readonly string[] | null; strategy?: Strategy | null; spot?: number | null };
+export type Ask = { from: string; to: string; now: number; params: BacktestParams; tfs: readonly string[] | null; methods: readonly string[] | null; strategy?: Strategy | null; spot?: number | null };
 
 /** A strategy the backtest can be asked about: one that trades signals by selling. */
 export const backtestable = (s: Strategy): boolean => s.config.trigger === 'signal' && !!s.config.signal && actionOf(s.config.signal) === 'sell';
 
-export function signalBacktest(o: Ask): Promise<SignalBacktest> {
+/**
+ * A backtest worked in the thread that asks for it, one at a time. The server asks through `backtest-run.ts`,
+ * which gives it a thread of its own; this is that thread's work, and what a test or a script calls.
+ */
+export function signalBacktestHere(o: Ask): Promise<SignalBacktest> {
   const run = working.then(() => signalBacktestNow(o));
   working = run.catch(() => { });
   return run;
 }
 
 async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
-  await Promise.all([flowSchema(), optionSnapshotsSchema(), entrySchema(), methodsSchema()]);
+  await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
   // With the eight expiry days before the range: each day's volatility is read against the five before it.
   const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
   const known = await marketDays(before, o.to, o.now);
@@ -600,6 +790,9 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   const ownOnly = (sig: BtSignal) => !rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method));
   const caps = deskCapsOf(o.params);
   const spansByDay = new Map<string, Span[]>();
+  const fetched = await marksFetchedBy(days.map((d) => expiryCodeOf(d.day)));
+  const marksSeen = (day: string) => fetched.get(expiryCodeOf(day))?.contracts ?? 0;
+  const grainOf = new Map<string, BoardGrain>();
   /*
    * With a limit on what is open, which signals are traded at all decides who gets a place: the time frame and
    * method filters then choose the signals before the day is played, not the rows after it. Without one, every
@@ -610,7 +803,8 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   const filterKey = caps === null ? '' : `|tf:${(o.tfs ?? []).join(',')}|m:${(o.methods ?? []).join(',')}`;
   const key = (st ? `${strategyKey(st)}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|vol:${volOnly}` : paramsKey(o.params)) + filterKey;
   for (const d of days) {
-    const h = await dayOf(d.day, key, o.now, (span) => (st ? planOfStrategy(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day) });
+    const h = await dayOf(d.day, key, o.now, (span) => (st ? planOfStrategy(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day) }, marksSeen(d.day));
+    grainOf.set(d.day, h.grain);
     // The counts follow the time frame and method filters as the rows do: "N signals, M traded" is of what is shown.
     for (const x of h.tally) {
       if ((o.tfs && !o.tfs.includes(x.tf)) || (o.methods && !o.methods.includes(x.method))) continue;
@@ -625,7 +819,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   if (caps !== null) {
     const free = { ...o.params, deskMax: 0 };
     for (const d of days) {
-      const h = await dayOf(d.day, st ? `${strategyKey(st)}|vol:${volOnly}` : paramsKey(free), o.now, (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)), ownOnly, { only: volOnly, baseline: baselineOf(d.day) });
+      const h = await dayOf(d.day, st ? `${strategyKey(st)}|vol:${volOnly}` : paramsKey(free), o.now, (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)), ownOnly, { only: volOnly, baseline: baselineOf(d.day) }, marksSeen(d.day));
       listCells.push(...h.cells);
     }
   } else listCells.push(...every);
@@ -671,7 +865,8 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
     margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, avgTradeUsd: tradeN ? tradeMargin / tradeN : 0 },
     strategy: st ? { id: st.id, name: st.name, accountId: st.accountId ?? null, caveats: strategyCaveats(st), real: real! } : null,
     total: cells.reduce((t, c) => addBt(t, c.tot), zeroBt()),
-    days: days.map((d) => ({ ...cells.filter((c) => c.day === d.day).reduce((t, c) => addBt(t, c.tot), zeroBt()), day: d.day, pattern: d.pattern, live: d.live })),
+    days: days.map((d) => ({ ...cells.filter((c) => c.day === d.day).reduce((t, c) => addBt(t, c.tot), zeroBt()), day: d.day, pattern: d.pattern, live: d.live, grain: grainOf.get(d.day) ?? '5m' })),
+    priced: { 'own-1m': 0, 'mark-1m': 0, '5m': 0, ...Object.fromEntries(BOARD_GRAINS.map((g) => [g, days.filter((d) => grainOf.get(d.day) === g).length])) } as Record<BoardGrain, number>,
     pairs: group((c) => `${c.method}|${c.mode}|${c.tf}`, (c) => ({ name: nameOf(c.method), tf: c.mode === 'mtf' ? `${c.tf} + TF chain` : c.tf })).sort(byNet),
     byTf: group(tfKeyOf, (c) => ({ name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf })).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
     byMethod: group((c) => c.method, (c) => ({ name: nameOf(c.method) })).sort(byNet),

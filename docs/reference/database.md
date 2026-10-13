@@ -17,7 +17,7 @@ ambiguous (`auth_sessions`, `strategy_runs`).
 | sign-in | `auth_user`, `auth_sessions`, `auth_recovery_codes`, `auth_limits`, `auth_events` | the sign-in | The one user, sessions, recovery codes, rate limits, the security log. |
 | broker | `broker_accounts` | the Accounts screen | Whose API key the desk trades with: the accounts, their keys sealed, and which is the default. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
-| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `trade_flow_1m`, `option_flow_1m`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `option_marks_1m`, `option_marks_fetched`, `trade_flow_1m`, `option_flow_1m`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | chart | none | -- | `chart_annotations` (levels saved on the price chart) was dropped on 4 Oct 2026 with the chart's layers (`chart-002-drop-annotations`); it held no rows. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
@@ -547,7 +547,8 @@ the live desk: ~350 bytes a row, 161 strikes a bucket.
 | Table | Grain | Kept | Size | Answers |
 |---|---|---|---|---|
 | `option_snapshots` | 5 minutes | 90 days | ~16 MB a day, ~1.4 GB at 90 days | the hour-ago and day-ago reads, ΔOI, IV change |
-| `option_snapshots_1m` | 1 minute | 6 hours | ~20 MB, rolling | the 1-minute window and the premium's velocity |
+| `option_snapshots_1m` | 1 minute | 90 days (13 Oct 2026; six hours before) | ~59 MB a day, ~5.3 GB at 90 days | the 1-minute window and the premium's velocity; the signal backtest's option prices |
+| `option_marks_1m` | 1 minute | 90 days | ~0.7 M rows for thirteen days | Delta's own minute mark of settled contracts, for the backtest's days before the minute record was kept (`option_marks_fetched` beside it: which contracts were asked for) |
 
 Why two: a minute grain kept like the other would be ~30 GB a year, which this
 disk does not have; a five-minute grain alone cannot answer "what has this
@@ -557,6 +558,12 @@ a window under five minutes read against the bucket "now" comes from would say
 the recorder wakes every minute and skips the five-minute write when its bucket
 exists. The retention was a year until 22 Sep 2026; at ~16 MB a day that reaches
 ~5.9 GB, against 12 GB free.
+
+**The minute grain is kept since 13 Oct 2026** ("from now on, save the one-minute data"): measured that day,
+118 rows a minute at ~346 bytes with indexes -- ~59 MB a day, ~5.3 GB at 90 days, on a disk with 28 GB free. The
+30 GB a year above was every strike for a year; this is two expiries for a quarter. What it buys: the signal
+backtest prices options a minute at a time instead of every five. For the days before it, Delta's own minute
+mark of each contract is fetched once (`option_marks_1m`, `market/option-marks.ts`).
 
 The freshness bar's "OI record" reads the newest of the two, so it moves every
 minute; `/api/health` still reports the five-minute bucket.

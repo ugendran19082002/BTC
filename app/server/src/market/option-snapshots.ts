@@ -4,8 +4,8 @@ import { migrate, type Migration } from '../db/migrate.js';
 import { one, query } from '../db/pool.js';
 
 /**
- * Every strike of the traded expiries: a five-minute record kept for months,
- * and a one-minute record kept for hours.
+ * Every strike of the traded expiries: a five-minute record and a one-minute
+ * record, both kept for months.
  *
  * Delta publishes greeks, IV and quotes live only (docs/reference/market-data.md, "Historical"); without
  * this, "how did the 78,000 call's IV and OI move through the morning" has no
@@ -21,9 +21,15 @@ import { one, query } from '../db/pool.js';
  *
  *   five minutes, 90 days   the record the hour-ago and day-ago reads use.
  *                           ~16 MB a day, ~1.4 GB at 90 days.
- *   one minute, 6 hours     what the last hour actually did, minute by minute:
- *                           the 1m window and the premium's velocity. ~81 MB a
- *                           day if it were kept, ~20 MB as a rolling six hours.
+ *   one minute, 90 days     what the last hour actually did, minute by minute
+ *                           (the 1m window and the premium's velocity) -- and,
+ *                           since 13 Oct 2026, what the signal backtest prices
+ *                           its options on. It was a rolling six hours until
+ *                           then; the owner: "from now on, save the one-minute
+ *                           data". Measured that day on the live desk: 118 rows
+ *                           a minute, ~346 bytes a row with its indexes --
+ *                           ~59 MB a day, ~5.3 GB at 90 days, on a disk with
+ *                           28 GB free.
  *
  * Neither costs an extra request: the recorder already wakes every minute and
  * the five-minute write is skipped when its bucket exists.
@@ -32,9 +38,9 @@ import { one, query } from '../db/pool.js';
 export const OPTION_SNAPSHOT_BUCKET_MS = 5 * 60_000;
 /** 90 days of the five-minute record: ~1.4 GB, against a disk with 12 GB free. */
 export const OPTION_SNAPSHOT_KEEP_MS = 90 * 24 * 3600_000;
-/** The fine record: every minute, six hours deep. */
+/** The fine record: every minute, kept as long as the five-minute one (13 Oct 2026; six hours until then). */
 export const OPTION_SNAPSHOT_1M_BUCKET_MS = 60_000;
-export const OPTION_SNAPSHOT_1M_KEEP_MS = 6 * 3600_000;
+export const OPTION_SNAPSHOT_1M_KEEP_MS = OPTION_SNAPSHOT_KEEP_MS;
 /** How many of the nearest expiries are recorded. */
 export const OPTION_SNAPSHOT_EXPIRIES = 2;
 

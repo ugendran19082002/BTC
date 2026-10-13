@@ -82,17 +82,21 @@ export function Pill({ tone, children }: { tone: 'up' | 'down' | 'warn' | 'dim' 
 export const SidePill = ({ long }: { long: boolean }) => <Pill tone={long ? 'buy' : 'down'}>{long ? 'BUY' : 'SELL'}</Pill>;
 
 /** One choice of a few, as a single control: the chosen one filled. For ranges -- Today, 7 days, 30 days. */
-export function Segmented<T extends string>({ label, value, options, onChange }: {
+export function Segmented<T extends string>({ label, value, options, onChange, dense = false }: {
   label: string; value: T; options: readonly { key: T; label: string; spoken?: string }[]; onChange: (v: T) => void;
+  /** Smaller words and less room around them under 640px: for one that sits inside a panel's own box, where four words must fit about 290px. */
+  dense?: boolean;
 }) {
   return (
     // Each segment as wide as its word needs, the spare room shared out: five fit a 360px phone without one spilling.
-    <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-muted p-1">
+    // Inside a narrower box -- a panel within a panel -- the last ones go to a second line instead of out of it.
+    <div role="radiogroup" aria-label={label} className="flex min-w-0 flex-wrap rounded-lg bg-muted p-1">
       {options.map((o) => (
         <button
           key={o.key} type="button" role="radio" aria-checked={value === o.key} aria-label={o.spoken} onClick={() => onChange(o.key)}
           className={cn(
             'h-10 flex-auto whitespace-nowrap rounded-md border-0 px-2 font-[inherit] text-[13.5px] font-semibold',
+            dense && 'max-sm:px-1 max-sm:text-[12.5px]',
             value === o.key ? 'bg-[var(--up)] text-[var(--bg)]' : 'bg-transparent text-muted-foreground',
           )}
         >

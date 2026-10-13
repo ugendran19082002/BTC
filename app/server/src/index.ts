@@ -18,7 +18,12 @@ import { wallWithinEm } from './http/routes/desk.routes.js';
 import { captureIndex, indexSchema } from './market/index-1m.js';
 import { capturePerpSnapshot, flowSchema, flushTradeFlow, onPerpPrint, perpMinuteFromTape, perpTape, startFlowSocket } from './market/flow.js';
 import { gradeLive, LIVE_GRADE_MS } from './entry/live-grade.js';
-import { noteSignalRun } from './observability/desk-metrics.js';
+import { deskMetrics, noteSignalRun } from './observability/desk-metrics.js';
+import { fetchOptionMarks } from './market/option-marks.js';
+import { signalBacktest, useBacktestThread } from './report/backtest-run.js';
+import { DEFAULT_PARAMS } from './report/signal-backtest.js';
+import { sessionDayOf, sessionDays, sessionOf } from './report/market-day.js';
+import { REPORT_FIRST_DAY } from './report/market-report.js';
 import { bookHeatSchema, flushBookHeat, startBookHeat } from './market/book-heat.js';
 import { noteError } from './observability/errors.js';
 import { entrySchema, gradeSetups, onSetupFilled, recordSetups } from './entry/paper.js';
@@ -179,6 +184,41 @@ setTimeout(recordOptions, 15_000).unref();
 const recordBoardNow = () => { captureBoard(Date.now(), wallWithinEm()).catch(warn('board-record')); };
 setInterval(recordBoardNow, 5 * 60_000).unref();
 setTimeout(recordBoardNow, 25_000).unref();
+
+/*
+ * Delta's own one-minute mark of the contracts the desk recorded only every five minutes (13 Oct 2026,
+ * market/option-marks.ts): what the signal backtest prices the expiry days before the one-minute record was kept.
+ * A bounded run every five minutes -- at most 150 requests, unsigned, one at a time with a pause -- and none at
+ * all while the desk has used half its own Delta quota: history is never worth a slow order. It runs dry in an
+ * hour or so and then finds nothing to ask.
+ */
+// The backtest itself is worked in a thread of its own (report/backtest-run.ts): nothing it does can hold up a look at a stop.
+useBacktestThread((message) => noteError({ source: 'server', level: 'warn', where: 'signal-backtest', message }));
+/*
+ * And its first answer is got ready before anyone asks: the screen's own opening question -- since the report's
+ * first day, the desk's rules -- three minutes after the start, in that thread. Reading a fortnight of days a
+ * minute at a time is ten seconds or more; asked for here, the first tap on Backtest after a restart is not the
+ * one that waits for it. No more than the 45 days the thread keeps ready.
+ */
+setTimeout(() => {
+  const now = Date.now();
+  const to = sessionDayOf(now);
+  const earliest = new Date(Date.parse(`${to}T00:00:00Z`) - 44 * 86_400_000).toISOString().slice(0, 10);
+  signalBacktest({ from: earliest > REPORT_FIRST_DAY ? earliest : REPORT_FIRST_DAY, to, now, params: DEFAULT_PARAMS, tfs: null, methods: null })
+    .catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'signal-backtest', message: `the backtest's first answer was not got ready: ${e.message}` }));
+}, 3 * 60_000).unref();
+const DELTA_BUSY_PCT = 50;
+const fetchMarks = () => {
+  const now = Date.now();
+  const busy = () => deskMetrics().delta.usedPct > DELTA_BUSY_PCT;
+  if (busy()) return;
+  const days = sessionDays(REPORT_FIRST_DAY, sessionDayOf(now)).map((day) => ({ day, ...sessionOf(day) }));
+  fetchOptionMarks({ days, now, maxRequests: 150, busy, onError: warn('option-marks') })
+    .then((r) => { if (r.contracts) app.log.info(`option marks: ${r.contracts} contracts, ${r.candles} minutes fetched from Delta; ${r.left} contracts left`); })
+    .catch(warn('option-marks'));
+};
+setInterval(fetchMarks, 5 * 60_000).unref();
+setTimeout(fetchMarks, 90_000).unref();
 
 /*
  * The perpetual's tape, off its own socket: every print, summed per minute

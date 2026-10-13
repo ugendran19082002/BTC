@@ -59,14 +59,13 @@ raising `MARKET_DAY_VERSION`, which has every kept day named again.
 | 4f | Path ≥ 3.5× the range | 8 RANGE_ZIGZAG |
 | 4g | Otherwise | 7 RANGE_CLEAN |
 
-Four **families** group them, because with a dozen days on record most kinds have one day or two: Up trend
-(1, 2, 3, 11, 13), Down trend (4, 5, 6, 12, 14), Range (7, 8, 9, 10, 15, 17), Turn / event (16, 18, 19, 20).
-Every group carries its count of days.
+Four **families** group them (`familyOf`): Up trend (1, 2, 3, 11, 13), Down trend (4, 5, 6, 12, 14), Range
+(7, 8, 9, 10, 15, 17), Turn / event (16, 18, 19, 20). The report itself no longer groups by them (below); the
+[backtest](signal-backtest.md) does, under **By kind of day**.
 
 ## The two records
 
-Never added together: one is shown in the lists at a time (the switch at the top), and each day and each kind
-of day says both in a line.
+Never added together: each day says both in a line, and a day opened shows one at a time (the switch inside it).
 
 | | Signal history | Real orders |
 |---|---|---|
@@ -77,27 +76,29 @@ of day says both in a line.
 
 ## What is on the screen
 
-1. **Filters**: since 1 Oct / 7 days / 30 days; real orders / signal history; time frames (`chain` is the
-   timeframe chain); methods; strategies (by the name an order was placed under -- they narrow the orders only).
-2. **What stands out**, for the record chosen: the family that made the most and the one that lost the most,
-   the exit that paid and the exit that cost, the best and worst pair, the best and worst day.
-3. **Market report**: the families as tiles, both records' totals, and which exit closed the trades (count,
-   share, net).
-4. **By kind of day**: each kind (or family) that happened, its days, both records, its best and worst pair;
-   opened, its exits, every pair in profit and in loss, by time frame and by strategy.
-5. **Each expiry day**, newest first: its kind and one sentence of why, the day as a line with its high and low
-   marked, the figures, both records; opened, the same breakdown for that day alone.
+Since the evening of 13 Oct 2026 ("only the each-expiry-day, newest-first section; nothing else"), one thing:
+
+- the range -- since 1 Oct, 7 days, 30 days, or **Custom** expiry days -- and, on a desk with more than one
+  trading account, whose orders;
+- **Each expiry day**, newest first: its kind and one sentence of why, the day as a line with its high and low
+  marked, the figures, and both records in a line. Opened: for that day alone, which exit closed the trades,
+  every pair in profit and in loss, by time frame, by method and by strategy -- for the record the switch inside
+  it shows (real orders or signal history).
+
+Gone with that request: the filters by time frame, method and strategy, "What stands out", the family tiles and
+the range's totals panel, and "By kind of day". Their sums are still what the backtest reads a strategy's real
+orders through (`ReportFilters`, kept inside `market-report.ts`).
 
 ## The API
 
-`GET /api/market-report?from=&to=&account=&tf=&method=&strategy=` -- `days` (each with `stats`, `pattern`,
-`why`, `family`, `signal`, `real`), `total`, `ends` (the range's three best and worst pairs in each record),
-`patterns`, `families`, `catalogue` (the twenty), `choices` (what there is to filter by). `from` and `to` are
-expiry days; without them, 1 Oct 2026 to the day in progress; at most 190 days.
+`GET /api/market-report?from=&to=&account=` -- `days` (each with `stats`, `pattern`, `why`, `family`, `signal`,
+`real`), `total`, `catalogue` (the twenty). `from` and `to` are expiry days; without them, 1 Oct 2026 to the day
+in progress; at most 190 days.
 
-`GET /api/market-report/breakdown` with the same, and one of `?day=`, `?pattern=`, `?family=` (none: the whole
-range) -- `signal` and `real`, each with `total`, `pairs`, `byTf`, `byMethod`, `byStrategy`.
+`GET /api/market-report/breakdown?day=&account=` -- that day's `signal` and `real`, each with `total`, `pairs`,
+`byTf`, `byMethod`, `byStrategy`.
 
 A day's trades are added up in memory and kept for a minute while the day can still change -- twelve hours past
 its settlement for orders, four days for signals -- and for good after. Thirteen days read in about a second
-cold and under a tenth of one after.
+cold and under a tenth of one after. While a new answer is on its way the old one is greyed and marked
+(`Updating.tsx`).

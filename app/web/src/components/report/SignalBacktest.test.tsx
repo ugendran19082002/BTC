@@ -496,6 +496,44 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery().params.vol).toBe('off'));
   });
 
+  it('[critical] says what the options were priced on -- the desk\'s 1-minute record, Delta\'s 1-minute mark, or 5-minute prices -- and each expiry day with it', async () => {
+    getSignalBacktest.mockResolvedValue({ ...RESULT, priced: { 'own-1m': 1, 'mark-1m': 10, '5m': 2 }, days: RESULT.days.map((d, i) => ({ ...d, grain: i ? '5m' : 'mark-1m' })) });
+    const first = show();
+    expect(await screen.findByText("Option prices a minute at a time on 11 of 13 days: 1 day on the desk's own 1-minute record, 10 days on Delta's 1-minute mark with the desk's recorded spread (an estimate). The other 2 days on 5-minute prices -- a day still running, or one whose 1-minute prices are still being fetched from Delta.")).toBeInTheDocument();
+    expect(rowsOf('Backtest by expiry day').map((x) => x.split(/\d{3}/)[0])).toEqual(['Tue 13 Oct · so far · 5m prices', 'Mon 12 Oct · 1m est.']);
+    first.unmount();
+
+    getSignalBacktest.mockResolvedValue({ ...RESULT, priced: { 'own-1m': 13, 'mark-1m': 0, '5m': 0 } });
+    const second = show();
+    expect(await screen.findByText("Option prices a minute at a time: 13 days on the desk's own 1-minute record.")).toBeInTheDocument();
+    second.unmount();
+
+    // an older server says nothing about it: nothing is claimed
+    getSignalBacktest.mockResolvedValue(RESULT);
+    show();
+    await screen.findByText('Backtest result');
+    expect(screen.queryByText(/Option prices/)).toBeNull();
+  });
+
+  it('[critical] a table row folds to two lines under 640px -- the name with the net beside it, trades and share won beneath -- so no table is wider than a phone', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    for (const name of ['Backtest: methods in profit', 'Backtest: methods in loss', 'Backtest by time frame', 'Backtest by expiry day', 'Backtest: which exit closed the trades']) {
+      const table = screen.queryByRole('table', { name });
+      if (!table) continue;
+      const row = within(table).getAllByRole('row')[1]!;
+      expect(row.className).toContain('max-sm:grid');
+      const head = within(row).getByRole('rowheader');
+      // the page's own header cells never wrap: a row's name must
+      expect(head.className).toContain('whitespace-normal');
+      expect(head.className).toContain('max-sm:col-span-2');
+      const cells = within(row).getAllByRole('cell');
+      expect(cells.map((c) => /max-sm:row-start-(\d)/.exec(c.className)?.[1])).toEqual(['2', '2', '1']);
+      expect(cells[2]!.className).toContain('max-sm:row-span-2');
+    }
+    expect(screen.getByRole('table', { name: 'Backtest: methods in loss' }).className).toContain('max-sm:block');
+  });
+
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {
     getSignalBacktest.mockResolvedValue({ ...RESULT, total: tot(), signals: 300, skipped: { ...RESULT.skipped, 'no-strike': 0, 'no-exit-price': 0 }, pairs: [], byTf: [], days: [], byFamily: [], byPattern: [] });
     const { unmount } = show();

@@ -19,45 +19,54 @@
  * another's rows.
  */
 import { randomBytes } from 'node:crypto';
+import { isMainThread } from 'node:worker_threads';
 import pg from 'pg';
 
-const ADMIN_URL = process.env.TEST_PG_URL ?? 'postgres://postgres:postgres@127.0.0.1:5433/postgres';
-const name = `btc_test_${randomBytes(6).toString('hex')}`;
+/*
+ * Only in the process's own thread. A worker thread is started with the same `--import`, so this file runs in it
+ * too -- and made it a second, empty database of its own (13 Oct 2026, the signal backtest's thread: it answered
+ * "no signals" beside a test that had just written three). A thread is given its parent's environment as it
+ * stands, so the database this made is already the one it will open.
+ */
+if (isMainThread) {
+  const ADMIN_URL = process.env.TEST_PG_URL ?? 'postgres://postgres:postgres@127.0.0.1:5433/postgres';
+  const name = `btc_test_${randomBytes(6).toString('hex')}`;
 
-const admin = new pg.Client({ connectionString: ADMIN_URL, connectionTimeoutMillis: 5_000 });
-try {
-  await admin.connect();
-} catch (e) {
-  console.error(
-    `\ntest/env.ts: no PostgreSQL at ${ADMIN_URL.replace(/:[^:@/]+@/, ':***@')} — `
-    + `run \`deploy/test-db.sh up\` first (or set TEST_PG_URL).\n`,
-  );
-  throw e;
+  const admin = new pg.Client({ connectionString: ADMIN_URL, connectionTimeoutMillis: 5_000 });
+  try {
+    await admin.connect();
+  } catch (e) {
+    console.error(
+      `\ntest/env.ts: no PostgreSQL at ${ADMIN_URL.replace(/:[^:@/]+@/, ':***@')} — `
+      + `run \`deploy/test-db.sh up\` first (or set TEST_PG_URL).\n`,
+    );
+    throw e;
+  }
+  await admin.query(`CREATE DATABASE ${name}`);
+  await admin.end();
+
+  const url = new URL(ADMIN_URL);
+  url.pathname = `/${name}`;
+  process.env.DATABASE_URL = url.toString();
+
+  // Drop it on the way out. `beforeExit` rather than `exit` because dropping is
+  // async; the pool is closed first because PostgreSQL will not drop a database
+  // with a connection open on it.
+  let dropping = false;
+  process.on('beforeExit', () => {
+    if (dropping) return;
+    dropping = true;
+    void (async () => {
+      try {
+        const { closePool } = await import('../src/db/pool.js');
+        await closePool();
+        const c = new pg.Client({ connectionString: ADMIN_URL });
+        await c.connect();
+        await c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+        await c.end();
+      } catch (e) {
+        console.error(`test/env.ts: could not drop ${name}: ${(e as Error).message}`);
+      }
+    })();
+  });
 }
-await admin.query(`CREATE DATABASE ${name}`);
-await admin.end();
-
-const url = new URL(ADMIN_URL);
-url.pathname = `/${name}`;
-process.env.DATABASE_URL = url.toString();
-
-// Drop it on the way out. `beforeExit` rather than `exit` because dropping is
-// async; the pool is closed first because PostgreSQL will not drop a database
-// with a connection open on it.
-let dropping = false;
-process.on('beforeExit', () => {
-  if (dropping) return;
-  dropping = true;
-  void (async () => {
-    try {
-      const { closePool } = await import('../src/db/pool.js');
-      await closePool();
-      const c = new pg.Client({ connectionString: ADMIN_URL });
-      await c.connect();
-      await c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-      await c.end();
-    } catch (e) {
-      console.error(`test/env.ts: could not drop ${name}: ${(e as Error).message}`);
-    }
-  })();
-});

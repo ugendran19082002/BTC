@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-488 files listed, 241 test files counted below, images and lockfiles left out.
+491 files listed, 243 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 127 |
+| `app/server` | 129 |
 | `app/web` | 114 |
 
 ## `(root)`
@@ -173,7 +173,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [index-1m.ts](../../app/server/src/market/index-1m.ts) | BTC, once a minute, kept. |
 | [moves.ts](../../app/server/src/market/moves.ts) | A multi-timeframe read of BTC itself, from the same public candles. |
 | [oi-history.ts](../../app/server/src/market/oi-history.ts) | What open interest was, so the board can say what it has changed by. |
-| [option-snapshots.ts](../../app/server/src/market/option-snapshots.ts) | Every strike of the traded expiries: a five-minute record kept for months, and a one-minute record kept for hours. |
+| [option-marks.ts](../../app/server/src/market/option-marks.ts) | Delta's own one-minute mark price of the contracts the desk recorded only every five minutes (owner, 13 Oct 2026: "backtest on one-minute option prices; where the database has none, take them from... |
+| [option-snapshots.ts](../../app/server/src/market/option-snapshots.ts) | Every strike of the traded expiries: a five-minute record and a one-minute record, both kept for months. |
 | [perp-minute.ts](../../app/server/src/market/perp-minute.ts) | The BTC perp's price in each of these minutes (epoch ms, on the minute): its average traded price over the minute (`trade_flow_1m.vwap`, the tape), else its mark at the minute (`index_1m.mark`). |
 | [price-change.ts](../../app/server/src/market/price-change.ts) | BTC now against then: how far the price has moved over each window back, and since the desk's own marks -- the first entry of the open positions, and the contract's day start (the previous 17:30 IS... |
 | [shock-now.ts](../../app/server/src/market/shock-now.ts) | One sudden-move reading from a live board, assembled the way the live screen assembles it, from parts the chain route already holds. |
@@ -198,6 +199,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [backtest-run.ts](../../app/server/src/report/backtest-run.ts) | Where a signal backtest is worked out: in a thread of its own once the server has asked for one (`useBacktestThread`, from index.ts), and otherwise here -- a test, a script, a tool. |
+| [backtest-worker.ts](../../app/server/src/report/backtest-worker.ts) | The signal backtest's own thread (13 Oct 2026). |
 | [market-day.ts](../../app/server/src/report/market-day.ts) | One expiry day of the BTC perp, measured and named (owner, 13 Oct 2026). |
 | [market-report.ts](../../app/server/src/report/market-report.ts) | The market report (owner, 13 Oct 2026): every expiry day from 1 Oct on -- what kind of day the BTC perp had (`market-day.ts`) -- and, against it, what the methods made on it. |
 | [signal-backtest.ts](../../app/server/src/report/signal-backtest.ts) | The signal history, traded as options on the prices the contracts really had (owner, 13 Oct 2026). |
@@ -446,7 +449,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
 | [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | The days and the running total they add up to, as one chart (owner, 6 Oct 2026). |
 | [ExpiryRange.tsx](../../app/web/src/components/report/ExpiryRange.tsx) | Which expiry days a report covers (13 Oct 2026): since 1 Oct, the last 7 or 30, or a range of the owner's own ("I want a custom date"). |
-| [MarketReport.tsx](../../app/web/src/components/report/MarketReport.tsx) | The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole expiry went -- and on that, which pair is best": each expiry day with its high and low in... |
+| [MarketReport.tsx](../../app/web/src/components/report/MarketReport.tsx) | The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole expiry went": each expiry day, newest first, with its high and low in points, its zigzag,... |
 | [MethodReport.tsx](../../app/web/src/components/report/MethodReport.tsx) | The Methods report (owner, 1 Oct 2026: "a tab of its own; two sections, 81 + 81: win rate, trades, win, loss, profit, loss, net"). |
 | [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | One day, minute by minute: what the day was worth at each reading, with every fall from a high shaded underneath. |
 | [PerformanceStats.tsx](../../app/web/src/components/report/PerformanceStats.tsx) | -- |
