@@ -13,6 +13,10 @@ is written by hand and says **why**.
   with the incident that forced it. Read before changing `trading/`.
 - [features/strategies.md](features/strategies.md) -- scheduled strategies: the
   scheduler, strike rules, entries, exits, and why a run is refused.
+- [features/market-report.md](features/market-report.md) -- the market report: each expiry day's
+  kind of market (twenty names), and what the signal history and the real orders made on it.
+- [features/signal-backtest.md](features/signal-backtest.md) -- the backtest: the signal history sold as
+  options on the contracts' recorded prices, the perp's TGT and SL kept.
 - [features/price-chart.md](features/price-chart.md) -- the price chart: every
   layer, detection rule and setup, and what the research says about each.
 - [features/entry-setups.md](features/entry-setups.md) -- the 24 entry setups: twelve

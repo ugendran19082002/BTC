@@ -1,4 +1,4 @@
-import { Activity, ArrowDownUp, Bell, Bot, CalendarRange, Gauge, History, Landmark, LineChart, Settings } from 'lucide-react';
+import { Activity, ArrowDownUp, Bell, Bot, CalendarRange, FlaskConical, Gauge, History, Landmark, LineChart, Settings } from 'lucide-react';
 import { usePhone, type Sub } from '@/components/mobile/phone-context';
 import { Panel, ListButton } from '@/components/mobile/parts';
 import { phoneAlerts } from '@/lib/phone-alerts';
@@ -10,6 +10,7 @@ const ITEMS: { sub: Sub; label: string; hint: string; icon: typeof Bell }[] = [
   { sub: 'history', label: 'Trade history', hint: 'Closed trades, filtered', icon: History },
   { sub: 'pairs', label: 'Signal history pairs', hint: 'Best and worst method + time frame', icon: ArrowDownUp },
   { sub: 'report', label: 'Market report', hint: 'Each expiry day\'s market type, and the best pairs on it', icon: CalendarRange },
+  { sub: 'backtest', label: 'Backtest', hint: 'Signal history sold as options, on the contracts\' real prices', icon: FlaskConical },
   { sub: 'price', label: 'Price changes', hint: 'BTC now against 1m to 12h, from → now', icon: Activity },
   { sub: 'pressure', label: 'Pressure', hint: 'Option flow CE / PE, big move catch', icon: Gauge },
   { sub: 'account', label: 'Account', hint: 'Wallet, margin, each account', icon: Landmark },
@@ -20,7 +21,7 @@ const ITEMS: { sub: Sub; label: string; hint: string; icon: typeof Bell }[] = [
 ];
 
 export const SUB_TITLE: Record<Sub, string> = {
-  history: 'Trade history', pairs: 'Signal pairs', report: 'Market report', price: 'Price change', pressure: 'Pressure', account: 'Account', market: 'Market', strategies: 'Strategies', alerts: 'Alerts', settings: 'Status',
+  history: 'Trade history', pairs: 'Signal pairs', report: 'Market report', backtest: 'Backtest', price: 'Price change', pressure: 'Pressure', account: 'Account', market: 'Market', strategies: 'Strategies', alerts: 'Alerts', settings: 'Status',
 };
 
 export function MoreScreen() {

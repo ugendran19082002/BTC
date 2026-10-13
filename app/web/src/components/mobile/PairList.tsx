@@ -68,7 +68,8 @@ function PairRow({ rank, pair: g, amount, note, ends }: {
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 pl-6 text-[12px] text-muted-foreground">
         <Pill tone="accent">{g.tf}</Pill>
-        <span className="whitespace-nowrap tabular-nums">
+        {/* May wrap: with thousands of trades and a note it is wider than a 360px phone (the backtest, 13 Oct 2026). */}
+        <span className="min-w-0 tabular-nums">
           {g.trades} trade{g.trades === 1 ? '' : 's'} · {pct(g.winRate, 0)} won{pf ? ` · ${pf}` : ''}{note ? ` · ${note}` : ''}
         </span>
       </div>

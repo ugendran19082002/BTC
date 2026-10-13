@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { PATTERNS, FAMILIES, sessionDayOf, type PatternFamily, type PatternKey } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters, type Scope } from '../../report/market-report.js';
+import { DEFAULT_PARAMS, signalBacktest, type BacktestParams } from '../../report/signal-backtest.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
 
@@ -46,7 +47,45 @@ function scopeOf(q: { day?: unknown; pattern?: unknown; family?: unknown }): Sco
   return { kind: 'all' };
 }
 
+/**
+ * The backtest's settings, checked: `?rule=delta|premium`, `?value=` (a delta from 0.02 to 0.5, or a premium from
+ * 10 to 500 dollars), `?lots=` (1 to 1,000), `?tp=` and `?sl=` (the option's own target and stop as shares of the
+ * premium; 0 is none), `?window=desk|all`. Absent ones are the defaults.
+ */
+function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
+  const num = (name: string, fallback: number) => (q[name] === undefined || q[name] === '' ? fallback : Number(q[name]));
+  const rule = q.rule === undefined || q.rule === '' ? DEFAULT_PARAMS.rule : q.rule;
+  if (rule !== 'delta' && rule !== 'premium') return 'The strike rule is "delta" or "premium".';
+  const value = num('value', rule === 'delta' ? 0.1 : 50);
+  if (rule === 'delta' ? !(value >= 0.02 && value <= 0.5) : !(value >= 10 && value <= 500)) {
+    return rule === 'delta' ? 'A delta limit is from 0.02 to 0.5.' : 'A premium limit is from 10 to 500 dollars.';
+  }
+  const lots = num('lots', DEFAULT_PARAMS.lots);
+  if (!Number.isInteger(lots) || lots < 1 || lots > 1_000) return 'Lots are a whole number from 1 to 1,000.';
+  const targetPct = num('tp', DEFAULT_PARAMS.targetPct), stopPct = num('sl', DEFAULT_PARAMS.stopPct);
+  if (!(targetPct >= 0 && targetPct <= 0.99)) return 'The option target is a share of the premium from 0 (none) to 0.99.';
+  if (!(stopPct >= 0 && stopPct <= 10)) return 'The option stop is a share of the premium from 0 (none) to 10.';
+  const window = q.window === undefined || q.window === '' ? DEFAULT_PARAMS.window : q.window;
+  if (window !== 'desk' && window !== 'all') return 'The window is "desk" or "all".';
+  return { rule, value, lots, targetPct, stopPct, window };
+}
+
 export function registerMarketRoutes(app: FastifyInstance) {
+  /**
+   * The signal history traded as options on the contracts' own recorded prices (13 Oct 2026): every signal in the
+   * trade, an option sold at its fill and bought back at the perp's stop or target, the option's own target or
+   * stop, or the window's end. `?from=&to=` are expiry days; `?tf=` and `?method=` narrow it. Read-only, and it
+   * takes every signal: no limit on what is open.
+   */
+  app.get('/api/signal-backtest', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const r = rangeOf(q);
+    if (typeof r === 'string') return refuse(reply, 400, { error: r });
+    const params = backtestParamsOf(q);
+    if (typeof params === 'string') return refuse(reply, 400, { error: params });
+    return signalBacktest({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method') });
+  });
+
   /** Each expiry day with its figures, its kind and its results; the results by kind of day and by family. */
   app.get('/api/market-report', async (req, reply) => {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });

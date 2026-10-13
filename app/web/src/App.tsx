@@ -59,6 +59,7 @@ const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m)
 const SignalStrategiesCard = lazy(() => import('@/components/strategy/SignalStrategiesCard').then((m) => ({ default: m.SignalStrategiesCard })));
 const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
 const MethodReport = lazy(() => import('@/components/report/MethodReport').then((m) => ({ default: m.MethodReport })));
+const SignalBacktest = lazy(() => import('@/components/report/SignalBacktest').then((m) => ({ default: m.SignalBacktest })));
 const MarketReport = lazy(() => import('@/components/report/MarketReport').then((m) => ({ default: m.MarketReport })));
 const SignalHistory = lazy(() => import('@/components/desk/entry/SignalHistory').then((m) => ({ default: m.SignalHistory })));
 const LogsPanel = lazy(() => import('@/components/layout/LogsPanel').then((m) => ({ default: m.LogsPanel })));
@@ -872,6 +873,10 @@ export default function App() {
           {/* Under the methods' record and their signals (13 Oct 2026): the kind of market each expiry day had, and what they made on it. */}
           <ErrorBoundary where="Market report">
             <MarketReport key={`market-${shown}`} account={shownId} wide />
+          </ErrorBoundary>
+          {/* And last, the same signals sold as options on the prices the contracts really had. */}
+          <ErrorBoundary where="Backtest">
+            <SignalBacktest wide />
           </ErrorBoundary>
         </div>
       ) : (

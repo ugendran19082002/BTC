@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-92 routes.
+95 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -67,6 +67,14 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/errors` | signed in | The browser reports here. |
 | POST | `/api/errors/delete` | signed in | Delete rather than hide. |
 | POST | `/api/errors/resolve` | signed in | Mark one error row, or all of them, resolved: off the list, still on record. |
+
+## [market.routes.ts](../../app/server/src/http/routes/market.routes.ts)
+
+| Method | Path | Session | What |
+|---|---|---|---|
+| GET | `/api/market-report` | signed in | Each expiry day with its figures, its kind and its results; the results by kind of day and by family. |
+| GET | `/api/market-report/breakdown` | signed in | One day, one kind of day, one family or the whole range: both records by pair, timeframe, method and strategy. |
+| GET | `/api/signal-backtest` | signed in | The signal history traded as options on the contracts' own recorded prices (13 Oct 2026): every signal in the trade, an option sold at its fill and bought back at the perp's stop or target, the opt... |
 
 ## [report.routes.ts](../../app/server/src/http/routes/report.routes.ts)
 

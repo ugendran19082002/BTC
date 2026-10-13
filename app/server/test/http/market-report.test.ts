@@ -30,12 +30,15 @@ const { entrySchema } = await import('../../src/entry/paper.js');
 const { methodsSchema } = await import('../../src/entry/catalogue.js');
 const { sessionDayOf, sessionOf } = await import('../../src/report/market-day.js');
 const { clearMarketReportCache } = await import('../../src/report/market-report.js');
+const { optionSnapshotsSchema } = await import('../../src/market/option-snapshots.js');
+const { clearSignalBacktestCache } = await import('../../src/report/signal-backtest.js');
 
 await initTradingService();
 await initStrategyStore();
 await flowSchema();
 await entrySchema();
 await methodsSchema();
+await optionSnapshotsSchema();
 const auth = await AuthStore.open();
 await auth.seedUser('desk', hashPassword('correct horse battery'), Date.now());
 await auth.createSession({ token: 'market-session', stage: 'full', now: Date.now(), ttlMs: 3_600_000, ip: null, userAgent: null });
@@ -154,7 +157,18 @@ before(async () => {
   await order(QUIET, 61, { entry: 30, exit: 20, by: 'manual' });
   // An order entered the evening before the climb's day began belongs to the day before, not to it.
   await order(dayBack(3), 1_400, { entry: 40, exit: 4, by: 'option-tgt' });
+  // The climb's own contract, every five minutes: a put and a call 0.09 of delta out, each decaying from 40 to 4 bid, offered 2 over.
+  const code = `${CLIMB.slice(8, 10)}${CLIMB.slice(5, 7)}${CLIMB.slice(2, 4)}`;
+  const at: number[] = [], bid: number[] = [];
+  for (let m = 0; m < 1_440; m += 5) { at.push(sessionOf(CLIMB).from + m * 60_000); bid.push(40 - 36 * m / 1_435); }
+  for (const [cp, strike, delta] of [['P', 83_200, -0.09], ['C', 86_400, 0.09]] as const) {
+    await query(
+      `INSERT INTO option_snapshots (at, symbol, expiry, cp, strike, spot, mark, bid, ask, delta)
+       SELECT a, $3, $4, $5, $6, 84000, b + 1, b, b + 2, $7 FROM unnest($1::bigint[], $2::float8[]) AS t(a, b)`,
+      [at, bid, `${cp}-BTC-${strike}-${code}`, code, cp, strike, delta]);
+  }
   clearMarketReportCache();
+  clearSignalBacktestCache();
 });
 
 // ------------------------------------------------------------ the days
@@ -292,4 +306,56 @@ test('a bad range, day or kind is refused in words', async () => {
   // a day with no tape at all is listed without figures, not left out
   const empty = await get(`/api/market-report?from=${dayBack(6)}&to=${dayBack(6)}`);
   assert.deepEqual(empty.body.days.map((d: any) => [d.day, d.bars, d.stats, d.pattern]), [[dayBack(6), 0, null, null]]);
+});
+
+// ------------------------------------------------------------ the backtest
+
+test('[critical] the backtest: every signal in the trade sold as an option on the day\'s own board, by the desk\'s hours or the whole day', async () => {
+  // The climb's six signals in the trade are all BUYs with the target at 84,500, which the perp reaches about a third of the way in.
+  const all = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all`);
+  assert.equal(all.status, 200, JSON.stringify(all.body).slice(0, 300));
+  assert.deepEqual(all.body.params, { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all' });
+  assert.equal(all.body.signals, 6, 'the one never filled is not a signal in the trade');
+  assert.equal(all.body.total.n, 6);
+  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(Object.keys(all.body.total.exits), ['perp-tgt'], 'each bought back when the perp reached its target');
+  assert.equal(all.body.total.exits['perp-tgt'].n, 6);
+  assert.equal(all.body.total.perpPts, 6 * 500);
+  // sold at minutes 30, 90 and 200 and bought back near minute 480 after hours of decay: in profit. The two sold at 300 and
+  // 400 decayed less than the spread and the two fees; the one filled at minute 600, past the target already, is bought
+  // straight back for exactly those.
+  assert.deepEqual([all.body.total.wins, all.body.total.losses], [3, 3]);
+  assert.deepEqual(all.body.byTf.map((t: any) => [t.key, t.n]), [['15m', 3], ['1h', 2], ['chain', 1]]);
+  assert.ok(all.body.byTf[2].net < 0 && all.body.byTf[0].net > 0);
+  assert.deepEqual(all.body.pairs.map((p: any) => [p.name, p.tf, p.n]), [['#1 Breakout', '15m', 3], [all.body.pairs[1].name, '1h', 2], ['#1 Breakout', '5m + TF chain', 1]]);
+  assert.deepEqual(all.body.byPattern.map((p: any) => [p.name, p.days, p.n]), [['#1 Up trend · clean', 1, 6]]);
+  assert.deepEqual(all.body.byFamily.map((p: any) => [p.name, p.n]), [['Up trend', 6]]);
+  assert.deepEqual(all.body.days.map((d: any) => [d.day, d.pattern, d.n]), [[CLIMB, 'UP_TREND_CLEAN', 6]]);
+
+  // the desk's hours (the default): the three filled before 9:30 PM are left out, and said
+  const desk = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}`);
+  assert.equal(desk.body.params.window, 'desk');
+  assert.deepEqual([desk.body.total.n, desk.body.skipped['outside-window']], [3, 3]);
+  // a timeframe, a method, the lots, another strike rule
+  const tf = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tf=1h`);
+  assert.equal(tf.body.total.n, 2);
+  assert.equal(tf.body.choices.timeframes.length, 3, 'the list to choose from is not narrowed by the choice');
+  const lots = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&lots=1`);
+  assert.ok(Math.abs(lots.body.total.net * 10 - all.body.total.net) < 1e-9);
+  const cheap = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&rule=premium&value=20`);
+  assert.ok(cheap.body.skipped['no-strike'] > 0, 'no put is offered at 20 or under until late in the day');
+  // a day with no board: its signals are counted, none traded
+  const quiet = await get(`/api/signal-backtest?from=${QUIET}&to=${QUIET}&window=all`);
+  assert.deepEqual([quiet.body.signals, quiet.body.total.n, quiet.body.skipped['no-board']], [1, 0, 1]);
+});
+
+test('the backtest refuses settings it cannot mean', async () => {
+  for (const [q, why] of [
+    ['rule=gamma', /"delta" or "premium"/], ['rule=delta&value=0.9', /0\.02 to 0\.5/], ['rule=premium&value=5', /10 to 500/],
+    ['lots=0', /whole number from 1 to 1,000/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk" or "all"/],
+  ] as const) {
+    const r = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&${q}`);
+    assert.equal(r.status, 400, q);
+    assert.match(r.body.error, why);
+  }
 });

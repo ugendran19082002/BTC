@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-470 files listed, 233 test files counted below, images and lockfiles left out.
+485 files listed, 239 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 123 |
-| `app/web` | 110 |
+| `app/server` | 126 |
+| `app/web` | 113 |
 
 ## `(root)`
 
@@ -151,6 +151,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts) | The desk's read routes: health, the option chain, spot and candles, what changed, the perpetual's tape, book and big prints for the chart, the trend plan's paper log, chain.db reloads and the desk... |
 | [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | The entry section's routes: the 24 reads (twelve methods, with the timeframe chain and without it) and their paper record. |
 | [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts) | The error log, readable and writable from the browser. |
+| [market.routes.ts](../../app/server/src/http/routes/market.routes.ts) | The market report (13 Oct 2026): every expiry day -- 5:30 PM IST to 5:30 PM IST -- with the kind of day the BTC perp had, and what the signal history and the real orders made on it. |
 | [report.routes.ts](../../app/server/src/http/routes/report.routes.ts) | The record as a calendar, and a day as a line. |
 | [session.routes.ts](../../app/server/src/http/routes/session.routes.ts) | Sign-in, two-step setup, and the account page. |
 | [strategy.routes.ts](../../app/server/src/http/routes/strategy.routes.ts) | The strategy desk: what is saved, what is armed, and when it next runs. |
@@ -192,6 +193,14 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [desk-metrics.ts](../../app/server/src/observability/desk-metrics.ts) | What the desk costs and how long it takes, counted -- so the next change to its speed is decided on numbers. |
 | [errors.ts](../../app/server/src/observability/errors.ts) | Every failure this system has, in one table. |
 | [glance.ts](../../app/server/src/observability/glance.ts) | "Is everything all right?" in one answer, for the phone (6 Oct 2026). |
+
+## `app/server/src/report/`
+
+| File | What it is |
+|---|---|
+| [market-day.ts](../../app/server/src/report/market-day.ts) | One expiry day of the BTC perp, measured and named (owner, 13 Oct 2026). |
+| [market-report.ts](../../app/server/src/report/market-report.ts) | The market report (owner, 13 Oct 2026): every expiry day from 1 Oct on -- what kind of day the BTC perp had (`market-day.ts`) -- and, against it, what the methods made on it. |
+| [signal-backtest.ts](../../app/server/src/report/signal-backtest.ts) | The signal history, traded as options on the prices the contracts really had (owner, 13 Oct 2026). |
 
 ## `app/server/src/strategy/`
 
@@ -275,9 +284,11 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
 | [errors.ts](../../app/web/src/api/errors.ts) | The error log: read it, resolve or delete a row, and report a failure from this browser into the same table the server writes to. |
 | [glance.ts](../../app/web/src/api/glance.ts) | The desk's health for the phone (6 Oct 2026): GET /api/desk/glance, judged at the server in observability/glance.ts. |
+| [market-report.ts](../../app/web/src/api/market-report.ts) | -- |
 | [phone.ts](../../app/web/src/api/phone.ts) | The phone's reads beyond the glance (Level 2, 6 Oct 2026): one trade's journal, the strategies' activity, and the closed trades' statistics. |
 | [report.ts](../../app/web/src/api/report.ts) | The P&L screen's calls: the record as a calendar, one day's mark-to-market line, and the spreadsheet download. |
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
+| [signal-backtest.ts](../../app/web/src/api/signal-backtest.ts) | -- |
 | [strategy-groups.ts](../../app/web/src/api/strategy-groups.ts) | Read quietly: the index only puts a tag beside a strategy's name, and a screen without it is the screen as it was -- so a failure is no answer (null), never an error said or logged. |
 | [strategy.ts](../../app/web/src/api/strategy.ts) | Copy one, settings and all, as a new draft. |
 | [trade.ts](../../app/web/src/api/trade.ts) | The order desk. |
@@ -401,8 +412,10 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [AccountScreen.tsx](../../app/web/src/components/mobile/screens/AccountScreen.tsx) | Account (6 Oct 2026): each broker account's money -- wallet, available, margin, open P&L, today -- and whether everything the desk depends on is answering: the account's key, Delta's API, the marke... |
 | [AlertsScreen.tsx](../../app/web/src/components/mobile/screens/AlertsScreen.tsx) | Alerts (6 Oct 2026): what needs a look right now, worked out from the live figures (lib/phone-alerts.ts), and what the desk has said on Telegram -- fills, exits, problems -- with whether each messa... |
+| [BacktestScreen.tsx](../../app/web/src/components/mobile/screens/BacktestScreen.tsx) | More → Backtest (owner, 13 Oct 2026): the signal history sold as options on the prices the contracts really had. |
 | [HistoryScreen.tsx](../../app/web/src/components/mobile/screens/HistoryScreen.tsx) | Trade history (6 Oct 2026): the closed trades, not the orders -- what each made after charges -- filtered by result, CE or PE, sold or bought and strategy, with the total of what is shown. |
 | [HomeScreen.tsx](../../app/web/src/components/mobile/screens/HomeScreen.tsx) | Home (6 Oct 2026): everything in one screen a person needs to know the desk is fine -- today's money, the desk's health, the open positions, the margin, the last order -- each tapping through to it... |
+| [MarketReportScreen.tsx](../../app/web/src/components/mobile/screens/MarketReportScreen.tsx) | More → Market report (owner, 13 Oct 2026): every expiry day's kind of market and what the signal history and the real orders made on it. |
 | [MarketScreen.tsx](../../app/web/src/components/mobile/screens/MarketScreen.tsx) | Market (6 Oct 2026): BTC as the desk sees it -- the perp's last trade, mark and index, the day's change and range, funding and open interest -- and the next daily settlement. |
 | [MoreScreen.tsx](../../app/web/src/components/mobile/screens/MoreScreen.tsx) | More (6 Oct 2026): the screens that do not need a tab of their own, one tap each. |
 | [OrdersScreen.tsx](../../app/web/src/components/mobile/screens/OrdersScreen.tsx) | Orders (6 Oct 2026): the day's orders as the desk placed them -- what was asked, what it filled at, and where each stands -- filtered by status, a day at a time. |
@@ -431,6 +444,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
 | [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | The days and the running total they add up to, as one chart (owner, 6 Oct 2026). |
+| [MarketReport.tsx](../../app/web/src/components/report/MarketReport.tsx) | The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole expiry went -- and on that, which pair is best": each expiry day with its high and low in... |
 | [MethodReport.tsx](../../app/web/src/components/report/MethodReport.tsx) | The Methods report (owner, 1 Oct 2026: "a tab of its own; two sections, 81 + 81: win rate, trades, win, loss, profit, loss, net"). |
 | [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | One day, minute by minute: what the day was worth at each reading, with every fall from a high shaded underneath. |
 | [PerformanceStats.tsx](../../app/web/src/components/report/PerformanceStats.tsx) | -- |
@@ -438,6 +452,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [PnlCurveChart.tsx](../../app/web/src/components/report/PnlCurveChart.tsx) | -- |
 | [PnlKpiCards.tsx](../../app/web/src/components/report/PnlKpiCards.tsx) | -- |
 | [ReportPanel.tsx](../../app/web/src/components/report/ReportPanel.tsx) | How the trading has actually gone. |
+| [SignalBacktest.tsx](../../app/web/src/components/report/SignalBacktest.tsx) | The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price? |
 | [WinLossAnalysis.tsx](../../app/web/src/components/report/WinLossAnalysis.tsx) | -- |
 | [pnl-dashboard.css](../../app/web/src/components/report/pnl-dashboard.css) | ───────────────────────────────────────────────────────────────────────────── P&L Dashboard Upgraded Styling (Institutional / Premium Dark Theme) ───────────────────────────────────────────────────... |
 
@@ -544,6 +559,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [journal-steps.ts](../../app/web/src/lib/journal-steps.ts) | A trade's journal as a person reads it (the phone's trade detail, 6 Oct 2026): the signal that started it, then every step the desk and the exchange took, in order, each in a sentence -- signal, en... |
 | [live-bar.ts](../../app/web/src/lib/live-bar.ts) | The forming bar, carried to the last traded price. |
 | [long-exits.ts](../../app/web/src/lib/long-exits.ts) | A bought option's target and stop as prices, off the price paid (the server's `longLevels`): the target over it, the stop under it. |
+| [market-report.ts](../../app/web/src/lib/market-report.ts) | The market report's words and sums (13 Oct 2026): an expiry day's date, a record's net in its own unit -- perp points for the signal history, rupees for real orders -- and the exits in the order th... |
 | [merge-status.ts](../../app/web/src/lib/merge-status.ts) | Several accounts' desks as one (5 Oct 2026): the "All accounts" tab on Positions and on P&L. |
 | [method-pairs.ts](../../app/web/src/lib/method-pairs.ts) | Which entry method works on which timeframe, and which does not (owner, 6 Oct 2026): a method on a timeframe is a pair, and the pairs are split into those in profit and those in loss. |
 | [overview.ts](../../app/web/src/lib/overview.ts) | ------------------------------------------------------------------ volatility |
@@ -584,7 +600,9 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [desk.ts](../../app/web/src/types/desk.ts) | What one strike is worth on average, and whether it clears the eligibility rules. |
 | [entry.ts](../../app/web/src/types/entry.ts) | The entry section's shapes, mirroring app/server/src/entry/types.ts: twelve entry methods, each read with the timeframe chain and without it. |
 | [errors.ts](../../app/web/src/types/errors.ts) | Mirrors app/server/src/observability/errors.ts |
+| [market-report.ts](../../app/web/src/types/market-report.ts) | The market report as `/api/market-report` gives it (server: `report/market-day.ts`, `report/market-report.ts`). |
 | [report.ts](../../app/web/src/types/report.ts) | Mirrors app/server/src/trading/pnl-history.ts. |
+| [signal-backtest.ts](../../app/web/src/types/signal-backtest.ts) | The signal history traded as options, as `/api/signal-backtest` gives it (server: `report/signal-backtest.ts`). |
 | [strategy.ts](../../app/web/src/types/strategy.ts) | The shapes the strategy API returns. |
 | [trade.ts](../../app/web/src/types/trade.ts) | Mirrors app/server/src/trading/types.ts. |
 
@@ -656,7 +674,9 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [entry-methods-reference.md](../features/entry-methods-reference.md) | Entry methods — the reference formulas, and the audit against them |
 | [entry-setups.md](../features/entry-setups.md) | Entry setups — 12 methods × with / without timeframe |
 | [entry-sl-tgt.md](../features/entry-sl-tgt.md) | Entry, SL, TGT and exit -- all 81 methods, both ways |
+| [market-report.md](../features/market-report.md) | The market report |
 | [price-chart.md](../features/price-chart.md) | The price chart |
+| [signal-backtest.md](../features/signal-backtest.md) | The backtest: the signal history sold as options |
 | [strategies.md](../features/strategies.md) | Scheduled strategies |
 
 ## `docs/guides/`

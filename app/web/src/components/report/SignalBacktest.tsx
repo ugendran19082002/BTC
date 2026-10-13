@@ -1,0 +1,295 @@
+import { getSignalBacktest } from '@/api/signal-backtest';
+import { usePoll } from '@/hooks/usePoll';
+import { usePersisted } from '@/hooks/usePersisted';
+import { pct } from '@/lib/format';
+import { dayLabel, moneyText, ptsText, rangeOf, type RangeKey } from '@/lib/market-report';
+import type { PairStat } from '@/lib/method-pairs';
+import { cn } from '@/lib/utils';
+import type { BacktestParams, BacktestQuery, BtExit, BtRow, BtTot } from '@/types/signal-backtest';
+import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
+import { PairList } from '@/components/mobile/PairList';
+import { FilterBar, FilterPicker, METHODS } from '@/components/mobile/FilterPicker';
+
+/**
+ * The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price?
+ * Keep the perp's TGT and SL. When the perp's SL is hit the contract has often decayed, and the trade is a profit."
+ *
+ * Every signal that went in the trade, sold as an option at its fill -- the put on a BUY, the call on a SELL, at
+ * the strike the rule picks from the board as it stood -- and bought back when the perp reached the signal's stop
+ * or target, or the option its own target or stop first, or at the window's end. The owner's question has a panel
+ * of its own: of the trades the perp's SL closed, how many were a profit all the same.
+ *
+ * One component for the phone's More menu and the foot of the desk's Methods screen, like the market report.
+ * The settings are few and are chips, not fields: a backtest that needs typing is not read on a phone.
+ */
+
+const RANGES: { key: RangeKey; label: string; spoken: string }[] = [
+  { key: 'all', label: 'Since 1 Oct', spoken: 'Every expiry day since 1 October' },
+  { key: '7', label: '7 days', spoken: 'The last 7 expiry days' },
+  { key: '30', label: '30 days', spoken: 'The last 30 expiry days' },
+];
+const RULES: { key: BacktestParams['rule']; label: string; spoken: string }[] = [
+  { key: 'delta', label: 'Strike by delta', spoken: 'Pick the strike by delta' },
+  { key: 'premium', label: 'Strike by premium', spoken: 'Pick the strike by premium' },
+];
+const WINDOWS: { key: BacktestParams['window']; label: string; spoken: string }[] = [
+  { key: 'desk', label: '9:30 PM → 3:59 PM', spoken: 'Only signals from 9:30 PM to 3:59 PM, as the strategies trade' },
+  { key: 'all', label: 'Whole expiry day', spoken: 'Signals of the whole expiry day' },
+];
+const DELTAS = [0.05, 0.1, 0.15, 0.2];
+const PREMIUMS = [25, 50, 75, 100];
+const STOPS: { value: number; label: string }[] = [{ value: 1, label: '+100%' }, { value: 1.5, label: '+150%' }, { value: 3, label: '+300%' }, { value: 0, label: 'No stop' }];
+const LOTS = [1, 10, 16];
+const EXITS: { key: BtExit; label: string }[] = [
+  { key: 'perp-tgt', label: 'Perp TGT' }, { key: 'perp-sl', label: 'Perp SL' }, { key: 'option-tgt', label: 'Option TGT' },
+  { key: 'option-sl', label: 'Option SL' }, { key: 'window-end', label: 'Window end' },
+];
+const DEFAULTS: BacktestParams = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk' };
+
+const netClass = (n: number) => (n > 0 ? 'text-[var(--up)]' : n < 0 ? 'text-[var(--down)]' : '');
+const rate = (t: Pick<BtTot, 'n' | 'wins'>) => (t.n > 0 ? t.wins / t.n : null);
+const each = (t: Pick<BtTot, 'n' | 'net'>) => (t.n > 0 ? moneyText(t.net / t.n) : '—');
+const count = (n: number) => n.toLocaleString('en-US');
+
+function ChipRow({ label, wide, children }: { label: string; wide: boolean; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1 px-1 text-[12px] text-muted-foreground">{label}</div>
+      <div role="group" aria-label={label} className={cn('flex gap-2', wide ? 'flex-wrap' : '-mx-4 overflow-x-auto px-4 pb-1')}>{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Rows of one grouping as a table of four columns, which is what a 360px phone holds: trades, how many made money,
+ * and the net with what one trade made under it. What the same trades made on the perp goes under the name.
+ */
+function Table({ caption, first, rows, perp = false, days = false }: { caption: string; first: string; rows: readonly BtRow[]; perp?: boolean; days?: boolean }) {
+  const shown = rows.filter((r) => r.n > 0);
+  if (shown.length === 0) return <Empty>No trade here.</Empty>;
+  return (
+    <table className="w-full border-collapse text-[13px] tabular-nums">
+      <caption className="sr-only">{caption}</caption>
+      <thead>
+        <tr className="text-left text-[11.5px] text-muted-foreground">
+          <th scope="col" className="py-1 pr-2 font-medium">{first}</th>
+          <th scope="col" className="py-1 pr-2 text-right font-medium">Trades</th>
+          <th scope="col" className="py-1 pr-2 text-right font-medium">Won</th>
+          <th scope="col" className="py-1 text-right font-medium">Net</th>
+        </tr>
+      </thead>
+      <tbody>
+        {shown.map((r) => (
+          <tr key={r.key} className="border-t border-[var(--line-soft)] align-top">
+            <th scope="row" className="py-1.5 pr-2 text-left font-medium [overflow-wrap:anywhere]">
+              <span className="normal-case tracking-normal">{r.name}</span>
+              {days && r.days ? <span className="block text-[11.5px] font-normal text-muted-foreground">{r.days} day{r.days === 1 ? '' : 's'}</span> : null}
+              {perp && <span className={cn('block text-[11.5px] font-normal', netClass(r.perpPts))}>perp {ptsText(r.perpPts)}</span>}
+            </th>
+            <td className="py-1.5 pr-2 text-right">{count(r.n)}</td>
+            <td className="py-1.5 pr-2 text-right">{pct(rate(r), 0)}</td>
+            <td className="py-1.5 text-right">
+              <span className={cn('block whitespace-nowrap font-semibold', netClass(r.net))}>{moneyText(r.net)}</span>
+              <span className={cn('block whitespace-nowrap text-[11.5px]', netClass(r.net))}>{each(r)}</span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+const pairOf = (r: BtRow): PairStat => ({
+  key: r.key, name: r.name, tf: r.tf ?? '', trades: r.n, wins: r.wins, losses: r.losses,
+  winRate: rate(r), profitFactor: r.lost > 0 ? r.won / r.lost : null, net: r.net,
+});
+
+export function SignalBacktest({ now = Date.now(), wide = false }: { now?: number; wide?: boolean }) {
+  const [rangeKey, setRangeKey] = usePersisted<RangeKey>('signalBacktest.range', 'all');
+  const [stored, setParams] = usePersisted<BacktestParams>('signalBacktest.params', DEFAULTS);
+  const [tfs, setTfs] = usePersisted<string[]>('signalBacktest.tfs', []);
+  const [methods, setMethods] = usePersisted<string[]>('signalBacktest.methods', []);
+  const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('signalBacktest.grouping', 'family');
+  // Anything remembered from an older build falls back to the defaults rather than asking for what the server refuses.
+  const params: BacktestParams = { ...DEFAULTS, ...stored };
+  const set = (o: Partial<BacktestParams>) => setParams({ ...params, ...o });
+  const range = rangeOf(RANGES.some((r) => r.key === rangeKey) ? rangeKey : 'all', now);
+  const query: BacktestQuery = { ...range, params, tfs, methods };
+  const read = usePoll(() => getSignalBacktest(query), 300_000, {
+    deps: [range.from, range.to, params.rule, params.value, params.lots, params.targetPct, params.stopPct, params.window, tfs.join(), methods.join()],
+  });
+  const r = read.data;
+  const values = params.rule === 'delta' ? DELTAS : PREMIUMS;
+
+  const settings = (
+    <>
+      {wide && <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>}
+      <Segmented label="Expiry days" value={rangeKey} options={RANGES} onChange={setRangeKey} />
+      <Segmented label="Which signals" value={params.window} options={WINDOWS} onChange={(window) => set({ window })} />
+      <Segmented label="How the strike is picked" value={params.rule} options={RULES} onChange={(rule) => set({ rule, value: rule === 'delta' ? 0.1 : 50 })} />
+      <ChipRow wide={wide} label={params.rule === 'delta' ? 'Sell the nearest strike with a delta of at most' : 'Sell the dearest strike priced at most'}>
+        {values.map((v) => <Chip key={v} on={params.value === v} onClick={() => set({ value: v })}>{params.rule === 'delta' ? v.toFixed(2) : `$${v}`}</Chip>)}
+      </ChipRow>
+      <ChipRow wide={wide} label="The option's own stop, over the premium sold">
+        {STOPS.map((s) => <Chip key={s.value} on={params.stopPct === s.value} onClick={() => set({ stopPct: s.value })}>{s.label}</Chip>)}
+      </ChipRow>
+      <ChipRow wide={wide} label="Lots a signal">
+        {LOTS.map((n) => <Chip key={n} on={params.lots === n} onClick={() => set({ lots: n })}>{n}</Chip>)}
+      </ChipRow>
+      {r && r.choices.timeframes.length > 0 && (
+        <ChipRow wide={wide} label="Time frame">
+          <Chip on={tfs.length === 0} onClick={() => setTfs([])}>All time frames</Chip>
+          {r.choices.timeframes.map((t) => (
+            <Chip key={t.key} on={tfs.includes(t.key)} onClick={() => setTfs(tfs.includes(t.key) ? tfs.filter((x) => x !== t.key) : [...tfs, t.key])}>
+              {t.key === 'chain' ? 'TF chain' : t.name}
+            </Chip>
+          ))}
+        </ChipRow>
+      )}
+      {r && (r.choices.methods.length > 1 || methods.length > 0) && (
+        <div className={wide ? 'px-4' : undefined}>
+          <FilterBar onClear={methods.length ? () => setMethods([]) : null}>
+            <FilterPicker noun={METHODS} options={r.choices.methods} picked={methods} onChange={setMethods} />
+          </FilterBar>
+        </div>
+      )}
+    </>
+  );
+
+  if (!r) return <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{settings}<Panel><Loading error={read.error} what="the backtest (a first read of a range takes a few seconds)" /></Panel></div>;
+
+  const t = r.total;
+  const sl = t.exits['perp-sl'], tg = t.exits['perp-tgt'];
+  const notTraded = r.skipped['outside-window'] + r.skipped['no-board'] + r.skipped['no-strike'] + r.skipped['no-exit-price'];
+  const best = r.pairs.filter((p) => p.n > 0 && p.net > 0).map(pairOf);
+  const worst = r.pairs.filter((p) => p.n > 0 && p.net < 0).map(pairOf).sort((a, b) => a.net - b.net || b.trades - a.trades);
+  const perpOf = new Map(r.pairs.map((p) => [p.key, p.perpPts]));
+  const note = (p: PairStat) => `perp ${ptsText(perpOf.get(p.key) ?? 0)}`;
+  const amount = (p: { net: number }) => moneyText(p.net);
+  const rule = params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`;
+
+  return (
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+      {settings}
+
+      <Panel title="Backtest result">
+        <p className="m-0 text-[13px] text-muted-foreground">
+          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target 90%, stop {STOPS.find((s) => s.value === params.stopPct)?.label ?? `${params.stopPct * 100}%`}
+        </p>
+        {t.n === 0 ? <div className="mt-2"><Empty>No signal could be traded with these settings in this range.</Empty></div> : (
+          <>
+            <div className={cn('mt-1 text-[26px] font-semibold tabular-nums', netClass(t.net))}>
+              {moneyText(t.net)} <span className="text-[14px] font-medium text-muted-foreground">{each(t)} a trade</span>
+            </div>
+            <div className="mt-2">
+              <Stats cols={3}>
+                <Stat label="Trades">{count(t.n)}</Stat>
+                <Stat label="Won">{pct(rate(t), 0)}</Stat>
+                <Stat label="Profit factor">{t.lost > 0 ? (t.won / t.lost).toFixed(2) : '—'}</Stat>
+              </Stats>
+            </div>
+            {/* Two to a row: six-figure rupees do not fit a third of a phone. */}
+            <div className="mt-2">
+              <Stats cols={2}>
+                <Stat label="Winners made" tone="up">{moneyText(t.won)}</Stat>
+                <Stat label="Losers lost" tone="down">{moneyText(-t.lost)}</Stat>
+              </Stats>
+            </div>
+            <p className="m-0 mt-2 text-[13px]">
+              <span className="text-muted-foreground">The same trades on the perp: </span>
+              <b className={cn('font-semibold tabular-nums', netClass(t.perpPts))}>{ptsText(t.perpPts)}</b>
+            </p>
+          </>
+        )}
+        <p className="m-0 mt-2 text-[12.5px] leading-snug text-muted-foreground">
+          {count(r.signals)} signals went in the trade; {count(r.signals - notTraded)} were traded here.
+          {notTraded > 0 && <> Not traded: {[
+            r.skipped['outside-window'] ? `${count(r.skipped['outside-window'])} outside the hours chosen` : null,
+            r.skipped['no-strike'] ? `${count(r.skipped['no-strike'])} with no strike inside the rule worth $10` : null,
+            r.skipped['no-board'] ? `${count(r.skipped['no-board'])} with no option prices recorded then` : null,
+            r.skipped['no-exit-price'] ? `${count(r.skipped['no-exit-price'])} with no price to exit at` : null,
+          ].filter(Boolean).join(', ')}.</>}
+          {(tfs.length > 0 || methods.length > 0) && ' The counts in this line are before the time frame and method filters.'}
+        </p>
+      </Panel>
+
+      {sl && sl.n > 0 && (
+        <Panel title="When the perp's SL was hit">
+          <p className="m-0 text-[14px] leading-snug">
+            The perp reached the signal&apos;s stop on <b>{count(sl.n)}</b> trades. The option was <b className="text-[var(--up)]">still a profit on {count(sl.wins)}</b> of them
+            ({pct(sl.wins / sl.n, 0)}) and a loss on {count(sl.n - sl.wins)}. Together: <b className={netClass(sl.net)}>{moneyText(sl.net)}</b>, {moneyText(sl.net / sl.n)} a trade.
+          </p>
+          {tg && tg.n > 0 && (
+            <p className="m-0 mt-2 text-[13px] leading-snug text-muted-foreground">
+              For comparison, the perp reached the target on {count(tg.n)} trades: the option was a profit on {pct(tg.wins / tg.n, 0)} of them,{' '}
+              <span className={netClass(tg.net)}>{moneyText(tg.net)}</span> together, {moneyText(tg.net / tg.n)} a trade.
+            </p>
+          )}
+        </Panel>
+      )}
+
+      {t.n > 0 && (
+        <>
+          <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
+            <Panel title="Closed by which exit">
+              <table className="w-full border-collapse text-[13px] tabular-nums">
+                <caption className="sr-only">Backtest: which exit closed the trades</caption>
+                <thead>
+                  <tr className="text-left text-[11.5px] text-muted-foreground">
+                    <th scope="col" className="py-1 pr-2 font-medium">Closed by</th>
+                    <th scope="col" className="py-1 pr-2 text-right font-medium">Trades</th>
+                    <th scope="col" className="py-1 pr-2 text-right font-medium">In profit</th>
+                    <th scope="col" className="py-1 text-right font-medium">Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {EXITS.flatMap((e) => {
+                    const x = t.exits[e.key];
+                    return x && x.n > 0 ? [(
+                      <tr key={e.key} className="border-t border-[var(--line-soft)] align-top">
+                        <th scope="row" className="py-1.5 pr-2 text-left font-medium">{e.label}</th>
+                        <td className="py-1.5 pr-2 text-right">{count(x.n)}</td>
+                        <td className="py-1.5 pr-2 text-right">{pct(x.wins / x.n, 0)}</td>
+                        <td className="py-1.5 text-right">
+                          <span className={cn('block whitespace-nowrap font-semibold', netClass(x.net))}>{moneyText(x.net)}</span>
+                          <span className={cn('block whitespace-nowrap text-[11.5px]', netClass(x.net))}>{moneyText(x.net / x.n)}</span>
+                        </td>
+                      </tr>
+                    )] : [];
+                  })}
+                </tbody>
+              </table>
+            </Panel>
+            <Panel title="By time frame">
+              <Table caption="Backtest by time frame" first="Time frame" rows={r.byTf.map((x) => (x.key === 'chain' ? { ...x, name: 'TF chain' } : x))} perp />
+            </Panel>
+          </div>
+
+          <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
+            <PairList title="Best pairs as options" tone="up" pairs={best} amount={amount} note={note} empty="No method and time frame in profit as an option here." />
+            <PairList title="Worst pairs as options" tone="down" pairs={worst} amount={amount} note={note} empty="No method and time frame in loss as an option here." />
+          </div>
+
+          <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
+            <Panel title="By kind of day">
+              <Segmented label="Group the days by" value={grouping} onChange={setGrouping}
+                options={[{ key: 'family', label: 'Trend family', spoken: 'By family: up trend, down trend, range, turn' }, { key: 'kind', label: 'Market type', spoken: 'By each market type' }]} />
+              <div className="mt-2"><Table caption="Backtest by kind of day" first={grouping === 'family' ? 'Family' : 'Market type'} rows={grouping === 'family' ? r.byFamily : r.byPattern} days /></div>
+            </Panel>
+            <Panel title="By expiry day">
+              <Table caption="Backtest by expiry day" first="Expiry day" rows={[...r.days].reverse().map((d) => ({ ...d, key: d.day, name: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}` }))} />
+            </Panel>
+          </div>
+        </>
+      )}
+
+      <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
+        How it is worked out: at each signal&apos;s fill on the perp, the put (a BUY) or the call (a SELL) of that expiry day&apos;s contract is sold at its bid, at the
+        strike the rule picks; it is bought back at the offer when the perp reaches the signal&apos;s stop or TGT1, or sooner if the option reaches its own
+        target or stop, or at the end of the window; charges are taken on both fills. The perp is read a minute at a time; the options every five
+        minutes, which is how often the desk records the whole board, so an exit is priced up to five minutes late. Every signal is taken — there is no
+        limit on open trades, no margin and no queue — so the total is not what an account would have made: read what a trade of each kind made.
+      </p>
+    </div>
+  );
+}
