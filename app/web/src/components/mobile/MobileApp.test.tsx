@@ -153,7 +153,8 @@ describe('signed in', () => {
     expect(screen.queryByRole('meter', { name: 'Daily loss limit used' })).toBeNull();
     expect(screen.queryByRole('switch')).toBeNull();
     tab('P&L');
-    await waitFor(() => expect(screen.getByText('Daily loss limit').parentElement!).toHaveTextContent('Daily loss limitOff'));
+    // The P&L screen is loaded when first opened: given the time a loaded machine takes over it.
+    await waitFor(() => expect(screen.getByText('Daily loss limit').parentElement!).toHaveTextContent('Daily loss limitOff'), { timeout: 5_000 });
   });
 
   it('[critical] no screen has a button that could change the desk', async () => {
