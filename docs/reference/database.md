@@ -18,6 +18,7 @@ ambiguous (`auth_sessions`, `strategy_runs`).
 | broker | `broker_accounts` | the Accounts screen | Whose API key the desk trades with: the accounts, their keys sealed, and which is the default. |
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
 | market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `option_marks_1m`, `option_marks_fetched`, `trade_flow_1m`, `option_flow_1m`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
+| report | `backtest_saves`, `backtest_portfolios` | the Backtest screen | Backtests kept by name (their settings as JSON, never a result) and the sets of them run together ([signal-backtest.md](../features/signal-backtest.md#saved-backtests-and-portfolios)). |
 | chart | none | -- | `chart_annotations` (levels saved on the price chart) was dropped on 4 Oct 2026 with the chart's layers (`chart-002-drop-annotations`); it held no rows. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |

@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-492 files listed, 243 test files counted below, images and lockfiles left out.
+498 files listed, 243 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -148,6 +148,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts) | The broker accounts (Logs -> Accounts): add, name, test, switch on and off, choose the default, remove -- the last only with a fresh authenticator code. |
+| [backtest-saves.routes.ts](../../app/server/src/http/routes/backtest-saves.routes.ts) | Backtests kept by name, and run together (owner, 13 Oct 2026: "save a backtest's settings, run a saved one; several saved as a portfolio, and the total of them all"). |
 | [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts) | The desk's read routes: health, the option chain, spot and candles, what changed, the perpetual's tape, book and big prints for the chart, the trend plan's paper log, chain.db reloads and the desk... |
 | [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | The entry section's routes: the 24 reads (twelve methods, with the timeframe chain and without it) and their paper record. |
 | [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts) | The error log, readable and writable from the browser. |
@@ -200,6 +201,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [backtest-run.ts](../../app/server/src/report/backtest-run.ts) | Where a signal backtest is worked out: in a thread of its own once the server has asked for one (`useBacktestThread`, from index.ts), and otherwise here -- a test, a script, a tool. |
+| [backtest-saves.ts](../../app/server/src/report/backtest-saves.ts) | Backtests kept by name, and sets of them run together (owner, 13 Oct 2026: "save a backtest's settings and run a saved one; several saved ones as a portfolio, with the total of them all"). |
 | [backtest-worker.ts](../../app/server/src/report/backtest-worker.ts) | The signal backtest's own thread (13 Oct 2026). |
 | [market-day.ts](../../app/server/src/report/market-day.ts) | One expiry day of the BTC perp, measured and named (owner, 13 Oct 2026). |
 | [market-report.ts](../../app/server/src/report/market-report.ts) | The market report (owner, 13 Oct 2026): every expiry day from 1 Oct on -- what kind of day the BTC perp had (`market-day.ts`) -- and, against it, what the methods made on it. |
@@ -283,6 +285,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [accounts.ts](../../app/web/src/api/accounts.ts) | -- |
+| [backtest-saves.ts](../../app/web/src/api/backtest-saves.ts) | -- |
 | [client.ts](../../app/web/src/api/client.ts) | One place that knows how to talk to the API: JSON in and out, the session cookie, "not signed in" as its own error, and which failures are worth reporting to the error log. |
 | [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
@@ -457,9 +460,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [PnlCurveChart.tsx](../../app/web/src/components/report/PnlCurveChart.tsx) | -- |
 | [PnlKpiCards.tsx](../../app/web/src/components/report/PnlKpiCards.tsx) | -- |
 | [ReportPanel.tsx](../../app/web/src/components/report/ReportPanel.tsx) | How the trading has actually gone. |
+| [SavedBacktests.tsx](../../app/web/src/components/report/SavedBacktests.tsx) | Backtests kept by name, and run together (owner, 13 Oct 2026: "save a backtest's settings and run a saved one; several saved ones as a portfolio, with the total of them all"). |
 | [SignalBacktest.tsx](../../app/web/src/components/report/SignalBacktest.tsx) | The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price? |
 | [Updating.tsx](../../app/web/src/components/report/Updating.tsx) | A read that knows which question its answer is to (owner, 13 Oct 2026: "after choosing a filter it should say it is loading; the old values stay on the screen"). |
 | [WinLossAnalysis.tsx](../../app/web/src/components/report/WinLossAnalysis.tsx) | -- |
+| [backtest-parts.tsx](../../app/web/src/components/report/backtest-parts.tsx) | The pieces the backtest's panels are made of -- the screen itself (`SignalBacktest.tsx`) and the saved backtests run together (`SavedBacktests.tsx`): a table whose rows fold on a phone, three money... |
+| [backtest-words.ts](../../app/web/src/components/report/backtest-words.ts) | A backtest's settings as the screen starts with them, and in words. |
 | [pnl-dashboard.css](../../app/web/src/components/report/pnl-dashboard.css) | ───────────────────────────────────────────────────────────────────────────── P&L Dashboard Upgraded Styling (Institutional / Premium Dark Theme) ───────────────────────────────────────────────────... |
 
 ## `app/web/src/components/research/`

@@ -32,6 +32,7 @@ For every signal that went "in the trade" (`entry_setups` with a fill), in the e
 | Option target | **Fixed**: 70%, 80%, 90% of the premium kept, or none. **Dynamic · by time**: a share to start with and time steps (IST) from which another share is in force, for every trade open then and every one sold after -- taken from a strategy that has such steps ("Target steps of"), or typed. Steps are read in clock order from 5:30 PM however they are typed. `?tp=&tsteps=23:30:73,01:30:76` | fixed 90% |
 | Volatility when the signal fills | Off, Low, Medium, High: the last two hours of 15-minute candles at the fill against the mean 15-minute ATR of the five expiry days before -- under 0.8× is low, over 1.3× high (`volReader`). A signal whose level cannot be said (no five days before) is none of the three. `?vol=` | off |
 | Lots a signal | 1, 10, 16 | 10 |
+| Minimum premium | Off, $10, $15, $20 or Custom (0 to 500; typing 0 is off): a strike bid under it when the signal fills is not sold, and the signal is counted as "no strike". `?minprem=` | $10 |
 
 Each of the strike limit, option target, option stop and lots has a **Custom** choice: typed in the row's own
 unit (a stop of +200% is typed as 200), checked against the same limits the server holds it to, applied on Use
@@ -58,7 +59,7 @@ or a time frame by hand ends it. (To use a strategy's own strike, lots, exits an
 **Backtest by**.)
 | Time frame, method | as on the market report | all |
 
-Always out of the money, and never for under $10 (`MIN_PREMIUM`), as the strategies' own floor.
+Always out of the money, and never for under the minimum premium -- $10 (`MIN_PREMIUM`, the strategies' own floor) unless another is set; with it off, anything with a bid.
 
 ## Backtest by a saved strategy
 
@@ -122,8 +123,9 @@ under every filter.
 
 ## What is on the screen
 
-1. **Backtest result**: the net and what one trade made, trades, win rate, profit factor, what the same trades
-   made on the perp, and how many signals were not traded and why.
+1. **Backtest result**: the net and what one trade made, trades, win rate, profit factor, **a day on average**
+   (over the expiry days that traded; the days in profit and the days in loss each on their own, with how many),
+   what the same trades made on the perp, and how many signals were not traded and why.
 2. **When the perp's SL was hit**: how many trades the perp's stop closed, on how many the option was a profit
    all the same, and what they made together -- beside the same for the perp's target.
 3. **Closed by which exit** and **By time frame**: trades, share in profit, net and one trade's.
@@ -137,6 +139,34 @@ are a list with the whole figure, not tiles that cut it to "−₹79,2…" (`Led
 in the panel and their controls keep to one line (`Segmented dense`), and a time step's field shows its whole
 time. Nothing is wider than the screen from 320px up; from 1280px the settings are a column of their own beside
 the result.
+
+## Saved backtests, and portfolios
+
+"Save a backtest's settings and run a saved one; several saved ones as a portfolio, with the total of them all"
+(13 Oct 2026). The **Saved backtests** panel, under the filters
+([SavedBacktests.tsx](../../app/web/src/components/report/SavedBacktests.tsx)):
+
+- **Save** keeps the settings on the screen under a name -- the strike rule, the exits, the hours, the limits,
+  the filters, or the strategy it is worked by. Not the days and not the result: a saved backtest is run over
+  whatever days the screen is on. The desk checks a saved one's settings as it checks the screen's.
+- Each row says its settings in a line. **Tapping one** puts them back on the screen; the one whose settings are
+  on the screen is marked. Changed since, it can be **updated** in place or saved as another. **×** asks once more.
+- **Tick two or more** (twelve at most) and **Run these together**: each is worked on its own, exactly as it is
+  alone -- its own signals, its own limits; one does not take a place from another, and a signal two of them take
+  is traded by each -- and added up: the total, each one, each expiry day. The margin is **not** the sum of each
+  one's most: their trades are laid on one clock and the most held at once is found across all of them, which is
+  what running them side by side on one account would have needed; the sum is shown beside it.
+- The set can be **kept as a portfolio** under a name and run again in one tap. A portfolio holds its saved
+  backtests by id, so one changed is changed in every portfolio it is in; one deleted leaves them, and a portfolio
+  left with fewer than two goes with it -- said. A saved backtest whose strategy has since been deleted is listed
+  in a run with why, and counts as nothing.
+
+`backtest_saves` (id, name unique whatever its capitals, `query` as JSON) and `backtest_portfolios` (id, name,
+`save_ids`), `report/backtest-saves.ts`; at most 100 and 30. `GET/POST /api/backtest-saves`,
+`DELETE /api/backtest-saves/:id`, `POST /api/backtest-portfolios`, `DELETE /api/backtest-portfolios/:id`,
+`GET /api/backtest-portfolio?ids=&from=&to=` (worked in the backtest's thread, `portfolioBacktest`). Checked on
+1-12 Oct with two saved: each member is its own backtest to the cent, the total their sum, every day its members'
+sum, the margin together ($1,583 with 374 open) between the larger one's own and the two added ($1,643).
 
 ## The first read (1-13 Oct 2026, delta 0.10, 10 lots, +300% stop, desk hours, all time frames)
 

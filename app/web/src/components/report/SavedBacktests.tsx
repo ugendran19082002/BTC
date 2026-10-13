@@ -251,8 +251,9 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
                 {picked.length >= 2 && (
                   <>
                     <button type="button" className={cn(solid, 'w-full')} onClick={() => setRun({ ids: picked, title: picked.map(nameOf).join(' + ') })}>Run these {picked.length} together</button>
+                    <span className="text-[12px] text-muted-foreground">Or keep these {picked.length} as a portfolio, to run again in one tap:</span>
                     <form className="flex min-w-0 gap-2" onSubmit={(e) => { e.preventDefault(); if (portfolioName.trim() && !busy) void keepPortfolio(); }}>
-                      <input value={portfolioName} onChange={(e) => setPortfolioName(e.target.value)} maxLength={60} aria-label="Name for the portfolio" placeholder="Keep them as a portfolio: a name" className={field} />
+                      <input value={portfolioName} onChange={(e) => setPortfolioName(e.target.value)} maxLength={60} aria-label="Name for the portfolio" placeholder="Portfolio name" className={field} />
                       <button type="submit" disabled={!portfolioName.trim() || busy} className={quiet}>Keep</button>
                     </form>
                   </>

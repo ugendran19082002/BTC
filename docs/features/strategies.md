@@ -298,6 +298,13 @@ rupees after charges, since 1 Oct. Every method is tried on all its signals in t
 ticked or not, with "at most open" left out so one method's place is not taken by another's. It is asked again
 0.4 s after a rule that changes it changes (not when a method is ticked): `useOptionRecord` ->
 `POST /api/signal-backtest/methods { config }`, the [backtest](signal-backtest.md)'s own engine, in its thread.
+**As options · Backtest settings** beside it is the Backtest screen's own method list -- its settings as last
+left in this browser, on the form's way and timeframes -- for when the two are compared ("the backtest says 33 in
+profit and the strategy form 31: look at the backtest and copy it"). They differ wherever the rules do: "4h time"
+sells by premium ≤ $50 with strike blocks at 16 lots and takes only signals with SL ≥ 150 points, and by those
+*Pulled wall* loses ₹85 where delta ≤ 0.10 at 10 lots makes ₹162 -- 31 in profit and 8 in loss against 35 and 6;
+its twin "4h time delta" is 35 and 5. Both counts are said in a line under the switch, and the strategy's own
+rules stay the list the form opens on: they are what the strategy would have been paid.
 **Perp points** beside it is the old record (the Methods tab's: the signal's own trade to its SL or TGT), and is
 what is shown for a strategy that buys, or while the option record cannot be had -- the line under the switch
 says which and why. Checked on the 22 saved strategies against a separate working-out: every method's trades,

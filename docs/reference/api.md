@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-96 routes.
+102 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -23,6 +23,17 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/accounts/:id/remove` | signed in | Remove an account and its key for good -- only with a fresh authenticator code (owner, 5 Oct 2026). |
 | GET | `/api/accounts/:id/summary` | signed in | -- |
 | POST | `/api/accounts/:id/test` | signed in | Ask Delta, signed with this account's key, for the wallet: the key is known, the secret matches, this server may use it. |
+
+## [backtest-saves.routes.ts](../../app/server/src/http/routes/backtest-saves.routes.ts)
+
+| Method | Path | Session | What |
+|---|---|---|---|
+| GET | `/api/backtest-portfolio` | signed in | Saved backtests run together over one range of expiry days, and their total: `?ids=a,b,c&from=&to=`. |
+| POST | `/api/backtest-portfolios` | signed in | Keep a portfolio: a name, and two or more saved backtests in order. |
+| DELETE | `/api/backtest-portfolios/:id` | signed in | -- |
+| GET | `/api/backtest-saves` | signed in | Every saved backtest and every portfolio, by name. |
+| POST | `/api/backtest-saves` | signed in | Keep a backtest's settings under a name; with `id`, the same one again -- other settings, or another name. |
+| DELETE | `/api/backtest-saves/:id` | signed in | Delete a saved backtest. |
 
 ## [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts)
 
