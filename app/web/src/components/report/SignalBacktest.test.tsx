@@ -12,6 +12,9 @@ import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context'
 const getSignalBacktest = vi.fn();
 vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a) }));
 
+const saves = { getBacktestSaves: vi.fn(), saveBacktest: vi.fn(), deleteBacktestSave: vi.fn(), savePortfolio: vi.fn(), deletePortfolio: vi.fn(), getBacktestPortfolio: vi.fn() };
+vi.mock('@/api/backtest-saves', () => Object.fromEntries(Object.keys(saves).map((k) => [k, (...a: unknown[]) => (saves as Record<string, (...x: unknown[]) => unknown>)[k]!(...a)])));
+
 const { SignalBacktest } = await import('@/components/report/SignalBacktest');
 const { BacktestScreen } = await import('@/components/mobile/screens/BacktestScreen');
 
@@ -72,6 +75,8 @@ beforeEach(() => {
   window.localStorage.clear();
   getSignalBacktest.mockReset();
   getSignalBacktest.mockResolvedValue(RESULT);
+  for (const f of Object.values(saves)) f.mockReset();
+  saves.getBacktestSaves.mockResolvedValue({ saves: [], portfolios: [] });
 });
 
 describe('SignalBacktest', () => {
@@ -557,5 +562,115 @@ describe('SignalBacktest', () => {
     phone.unmount();
     show(true);
     expect(await screen.findByRole('heading', { level: 2, name: /^Backtest ·/ })).toBeInTheDocument();
+  });
+
+  it('[critical] the minimum premium: $10 to begin with, another floor on a tap or typed, 0 or Off for none -- asked for, and said', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const row = screen.getByRole('group', { name: 'Minimum premium: sell only for at least' });
+    expect(within(row).getByRole('button', { name: '$10' })).toHaveAttribute('aria-pressed', 'true');
+    expect(lastQuery().params.minPremium).toBeUndefined();
+    expect(screen.getByText('A strike bid under $10 when the signal fills is not sold: the signal is counted as "no strike".')).toBeInTheDocument();
+
+    fireEvent.click(within(row).getByRole('button', { name: '$20' }));
+    await waitFor(() => expect(lastQuery().params.minPremium).toBe(20));
+    expect(screen.getByText(/95 with no strike inside the rule worth \$20/)).toBeInTheDocument();
+
+    // off: no floor at all, and the line that counts the signals says no worth
+    fireEvent.click(within(row).getByRole('button', { name: 'Off' }));
+    await waitFor(() => expect(lastQuery().params.minPremium).toBe(0));
+    expect(screen.getByText('Off: any strike with a bid is sold, however little it pays. Type 0 for off, a number for a floor.')).toBeInTheDocument();
+    expect(screen.getByText(/95 with no strike inside the rule, 5 with no price/)).toBeInTheDocument();
+
+    // typed: 12.5 dollars
+    fireEvent.click(within(row).getByRole('button', { name: /^Custom/ }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Minimum premium/ }), { target: { value: '12.5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use' }));
+    await waitFor(() => expect(lastQuery().params.minPremium).toBe(12.5));
+  });
+
+  it('[critical] a day on average: over the expiry days that traded, and the days in profit and the days in loss each on their own', async () => {
+    show();
+    const panel = within((await screen.findByText('Backtest result')).closest('section, div')!.parentElement!);
+    // 12 Oct +$40, 13 Oct -$160: -$120 over two days
+    const tile = (label: string) => panel.getByText(label).parentElement!.textContent!.replace(label, '');
+    expect(tile('A day, on average · 2 days')).toBe('−₹5,100');           // -$60 at ₹85
+    expect(tile('A day in profit · 1 day')).toBe('+₹3,400');
+    expect(tile('A day in loss · 1 day')).toBe('−₹13,600');
+  });
+
+  it('[critical] saved backtests: the settings on the screen kept by name, put back on a tap, and two run together with their total above the result', async () => {
+    const saved = (id: string, name: string, params: object, tfs: string[] = []) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, ...params }, tfs, methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
+    const A = saved('a1', 'Desk rules', {}), B = saved('b2', '16 lots on 4h', { lots: 16 }, ['4h']);
+    saves.getBacktestSaves.mockResolvedValue({ saves: [], portfolios: [] });
+    saves.saveBacktest.mockImplementation(async () => { saves.getBacktestSaves.mockResolvedValue({ saves: [A], portfolios: [] }); return { ok: true, save: A }; });
+    show();
+    await screen.findByText('Backtest result');
+    const panel = () => within(screen.getByText('Saved backtests').closest('section, div')!.parentElement!);
+    expect(await panel().findByText(/Nothing saved yet\./)).toBeInTheDocument();
+
+    // kept by name: what is asked to be saved is what is on the screen
+    fireEvent.change(panel().getByLabelText('Name for the saved backtest'), { target: { value: 'Desk rules' } });
+    fireEvent.click(panel().getByRole('button', { name: 'Save' }));
+    expect(await panel().findByText('Saved as "Desk rules".')).toBeInTheDocument();
+    expect(saves.saveBacktest.mock.calls[0]![0]).toMatchObject({ name: 'Desk rules', query: { params: { rule: 'delta', value: 0.1, lots: 10 }, tfs: [], methods: [], strategy: null } });
+    expect(await panel().findByText(/The settings on the screen are saved as/)).toHaveTextContent('saved as Desk rules.');
+    expect(panel().getByRole('button', { name: 'Run Desk rules' })).toHaveTextContent('Desk rules · on the screendelta ≤ 0.10 · 10 lots · TGT 90% · SL +300% · 9:30 PM → 3:59 PM · no open limit');
+  });
+
+  it('[critical] a saved backtest tapped puts its settings on the screen; two ticked are run together, and the set kept as a portfolio', async () => {
+    const saved = (id: string, name: string, params: object, tfs: string[] = []) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, ...params }, tfs, methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
+    const A = saved('a1', 'Desk rules', {}), B = saved('b2', '16 lots on 4h', { lots: 16 }, ['4h']);
+    saves.getBacktestSaves.mockResolvedValue({ saves: [B, A], portfolios: [] });
+    const member = (m: typeof A, n: number, net: number) => ({ id: m.id, name: m.name, problem: null, signals: n + 10, total: tot({ n, wins: Math.round(n / 2), losses: n - Math.round(n / 2), net, won: Math.max(net, 0) + 10, lost: 10 - Math.min(net, 0), charges: 4 }), marginPeakUsd: 100, priced: null });
+    saves.getBacktestPortfolio.mockResolvedValue({
+      from: '2026-10-01', to: '2026-10-13', members: [member(B, 100, 30), member(A, 1_000, -120)],
+      total: tot({ n: 1_100, wins: 550, losses: 550, net: -90, won: 40, lost: 130, charges: 8 }),
+      days: [{ day: '2026-10-12', live: false, n: 700, wins: 350, net: 60, charges: 5, byMember: [20, 40] }, { day: '2026-10-13', live: true, n: 400, wins: 200, net: -150, charges: 3, byMember: [10, -160] }],
+      margin: { peakUsd: 150, peakDay: '2026-10-13', peakAt: Date.parse('2026-10-13T04:29:00+05:30'), peakOpen: 61, avgDailyPeakUsd: 120, sumOfPeaksUsd: 200 },
+    });
+    show();
+    await screen.findByText('Backtest result');
+    const panel = () => within(screen.getByText('Saved backtests').closest('section, div')!.parentElement!);
+    expect(await panel().findByRole('button', { name: 'Run 16 lots on 4h' })).toHaveTextContent('16 lots on 4hdelta ≤ 0.10 · 16 lots · TGT 90% · SL +300% · 9:30 PM → 3:59 PM · no open limit · on 4h');
+
+    // tapped: its settings and its filter are the screen's, and the backtest is asked for them
+    fireEvent.click(panel().getByRole('button', { name: 'Run 16 lots on 4h' }));
+    await waitFor(() => expect([lastQuery().params.lots, lastQuery().tfs]).toEqual([16, ['4h']]));
+    expect(panel().getByRole('button', { name: 'Run 16 lots on 4h' })).toHaveAttribute('aria-current', 'true');
+    // changed after: it can be updated in place, or saved as another
+    fireEvent.click(within(screen.getByRole('group', { name: 'Lots a signal' })).getByRole('button', { name: '1' }));
+    expect(await panel().findByRole('button', { name: 'Or update “16 lots on 4h” to these settings' })).toBeInTheDocument();
+
+    // two ticked: run together, over the days on the screen
+    expect(panel().getByText('Tick two or more to run them together and see what they come to as one: a portfolio.')).toBeInTheDocument();
+    fireEvent.click(panel().getByRole('checkbox', { name: 'Run 16 lots on 4h together with others' }));
+    fireEvent.click(panel().getByRole('checkbox', { name: 'Run Desk rules together with others' }));
+    fireEvent.click(panel().getByRole('button', { name: 'Run these 2 together' }));
+    const run = within((await screen.findByText('Run together · 16 lots on 4h + Desk rules')).closest('section, div')!.parentElement!);
+    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['b2', 'a1'], { from: '2026-10-01', to: '2026-10-13' });
+    expect(run.getByText(/a trade$/).parentElement!.textContent).toMatch(/^−₹7,650 −₹[\d.]+ a trade$/);                 // -$90 together
+    expect(rowsOf('Run together: each saved backtest')).toEqual(['16 lots on 4h10050%₹₹charges ₹', 'Desk rules1,00050%₹₹charges ₹']);
+    expect(rowsOf('Run together: by expiry day').map((x) => x.split('%')[0])).toEqual(['Tue 13 Oct · so far40050', 'Mon 12 Oct70050']);
+    const tile = (label: string) => run.getByText(label).parentElement!.textContent!.replace(label, '');
+    expect([tile('Margin at most, together'), tile("Each one's most, added")]).toEqual(['₹12,750', '₹17,000']);
+    expect(run.getByText(/the most held at once was 61 trades at 4:29 AM on the Tue 13 Oct expiry/)).toBeInTheDocument();
+
+    // kept as a portfolio, and run again from its own row
+    saves.savePortfolio.mockImplementation(async () => { saves.getBacktestSaves.mockResolvedValue({ saves: [B, A], portfolios: [{ id: 'p1', name: 'Both', saveIds: ['b2', 'a1'], createdAt: 1, updatedAt: 1 }] }); return { ok: true, portfolio: { id: 'p1', name: 'Both', saveIds: ['b2', 'a1'] } }; });
+    fireEvent.change(panel().getByLabelText('Name for the portfolio'), { target: { value: 'Both' } });
+    fireEvent.click(panel().getByRole('button', { name: 'Keep' }));
+    expect(await panel().findByText('Kept as the portfolio "Both".')).toBeInTheDocument();
+    expect(saves.savePortfolio).toHaveBeenCalledWith({ name: 'Both', saveIds: ['b2', 'a1'] });
+    fireEvent.click(await panel().findByRole('button', { name: 'Run the portfolio Both' }));
+    expect(await screen.findByText('Run together · Both')).toBeInTheDocument();
+
+    // deleting asks once more; what the desk says of it is said
+    saves.deleteBacktestSave.mockImplementation(async () => { saves.getBacktestSaves.mockResolvedValue({ saves: [A], portfolios: [] }); return { ok: true, portfoliosDeleted: ['Both'] }; });
+    fireEvent.click(panel().getByRole('button', { name: 'Delete 16 lots on 4h' }));
+    expect(saves.deleteBacktestSave).not.toHaveBeenCalled();
+    fireEvent.click(panel().getByRole('button', { name: 'Delete' }));
+    expect(await panel().findByText('Deleted "16 lots on 4h". The portfolio "Both" had fewer than two left and went with it.')).toBeInTheDocument();
+    expect(screen.queryByText('Run together · Both')).toBeNull();
   });
 });
