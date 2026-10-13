@@ -134,3 +134,13 @@ last place followed the database's row order (12 Oct came out 759 or 873). "Trad
 every reason a signal was not traded, the limits on open trades included.
 
 The Strategy filter's search finds a strategy by its account's name too ("Savings", "Expenses").
+
+## Margin
+
+The result card shows the margin the trades shown would have held, by the desk's own estimate at 200x
+(`fundsRequiredPerContract`, the same model as the Signal Strategies card's "margin with all of it open"): each
+trade's at its entry premium and BTC, times its lots. **Margin at most** is the most held at once in the range
+(a sweep over the trades' times, `peakMargin`; a trade ending as another starts has made room for it), with when
+and how many trades were open then; **On that margin** is the result after charges over it; **A day's most,
+average** is each expiry day's most, averaged. It follows the filters, as the rows do. Delta's own figure moves
+with the premium and is often a little higher. `margin` in the answer.

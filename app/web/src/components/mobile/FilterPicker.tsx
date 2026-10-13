@@ -30,7 +30,11 @@ export type FilterOption = {
   tone?: 'up' | 'down';
   /** More words the search box finds it by, beside its name: a strategy's account (13 Oct 2026, "filter by typing the account name"). */
   also?: string;
+  /** What it made, in any unit: the In profit and In loss tabs are sorted by it (`split`). */
+  value?: number;
 };
+
+type Side = 'all' | 'up' | 'down';
 
 /** What is being chosen, as the button and the list name it: `{ label: 'Strategy', many: 'strategies' }`. */
 export type FilterNoun = { label: string; many: string };
@@ -71,15 +75,22 @@ export function FilterBar({ children, onClear }: {
   );
 }
 
-export function FilterPicker({ noun, options, picked, onChange }: {
+export function FilterPicker({ noun, options, picked, onChange, split = false }: {
   noun: FilterNoun;
   options: readonly FilterOption[];
   /** The keys chosen; empty is every one. */
   picked: readonly string[];
   onChange: (next: string[]) => void;
+  /**
+   * Tabs for the options' profit and loss (owner, 13 Oct 2026: "a profit / loss tab in the methods dropdown"):
+   * All, In profit -- the most first -- and In loss -- the worst first -- by each option's `tone` and `value`,
+   * each with a tap that chooses every one in it.
+   */
+  split?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [find, setFind] = useState('');
+  const [side, setSide] = useState<Side>('all');
   if (options.length === 0) return null;
   const chosen = options.filter((o) => picked.includes(o.key)).map((o) => o.key);
   const words = pickedWords(options, picked, noun);
@@ -87,11 +98,15 @@ export function FilterPicker({ noun, options, picked, onChange }: {
   const toggle = (key: string) => onChange(chosen.includes(key) ? chosen.filter((k) => k !== key) : [...chosen, key]);
   const searchable = options.length >= SEARCH_FROM;
   const wanted = find.trim().toLowerCase();
-  const shown = searchable && wanted ? options.filter((o) => `${o.name} ${o.also ?? ''}`.toLowerCase().includes(wanted)) : options;
+  const tabs = split && options.some((o) => o.tone);
+  const ofSide = (x: Side) => (x === 'all' ? options : options.filter((o) => o.tone === x)
+    .slice().sort((a, b) => (x === 'up' ? (b.value ?? 0) - (a.value ?? 0) : (a.value ?? 0) - (b.value ?? 0))));
+  const onSide = tabs ? ofSide(side) : options;
+  const shown = searchable && wanted ? onSide.filter((o) => `${o.name} ${o.also ?? ''}`.toLowerCase().includes(wanted)) : onSide;
   const listName = noun.many[0]!.toUpperCase() + noun.many.slice(1);
 
   return (
-    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setFind(''); }}>
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setFind(''); setSide('all'); } }}>
       <PopoverTrigger asChild>
         <button
           type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${noun.label} filter: ${words}`}
@@ -123,12 +138,38 @@ export function FilterPicker({ noun, options, picked, onChange }: {
             />
           </div>
         )}
+        {tabs && (
+          <div role="group" aria-label={`${listName} by profit and loss`} className="flex shrink-0 gap-1 border-0 border-b border-solid border-[var(--line-soft)] p-1.5">
+            {(['all', 'up', 'down'] as const).map((x) => (
+              <button
+                key={x} type="button" aria-pressed={side === x} onClick={() => setSide(x)}
+                className={cn(
+                  'm-0 h-9 flex-1 appearance-none whitespace-nowrap rounded-md border-0 px-1.5 font-[inherit] text-[13px] font-semibold',
+                  side === x ? (x === 'up' ? 'bg-[var(--up-bg)] text-[var(--up)]' : x === 'down' ? 'bg-[var(--down-bg)] text-[var(--down)]' : 'bg-muted text-foreground') : 'bg-transparent text-muted-foreground',
+                )}
+              >
+                {x === 'all' ? 'All' : x === 'up' ? 'In profit' : 'In loss'} <span className="tabular-nums opacity-80">{ofSide(x).length}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <ul role="listbox" aria-multiselectable="true" aria-label={listName} className="m-0 min-h-0 flex-1 list-none overflow-y-auto p-1">
-          {!wanted && <Row on={chosen.length === 0} name={`All ${noun.many}`} note={`${options.length} in this list`} onClick={() => onChange([])} />}
+          {!wanted && side === 'all' && <Row on={chosen.length === 0} name={`All ${noun.many}`} note={`${options.length} in this list`} onClick={() => onChange([])} />}
+          {!wanted && side !== 'all' && onSide.length > 0 && (
+            <Row
+              on={chosen.length === onSide.length && onSide.every((o) => chosen.includes(o.key))}
+              name={`Only the ${onSide.length} ${side === 'up' ? 'in profit' : 'in loss'}`} note={`Choose every ${noun.label.toLowerCase()} on this tab, and no other`}
+              onClick={() => onChange(onSide.map((o) => o.key))}
+            />
+          )}
           {shown.map((o) => (
             <Row key={o.key} on={chosen.includes(o.key)} name={o.name} note={o.note} tone={o.tone} onClick={() => toggle(o.key)} />
           ))}
-          {shown.length === 0 && <li className="m-0 px-2 py-3 text-[13px] text-muted-foreground">No {noun.label.toLowerCase()} matches “{find.trim()}”.</li>}
+          {shown.length === 0 && (
+            <li className="m-0 px-2 py-3 text-[13px] text-muted-foreground">
+              {wanted ? `No ${noun.label.toLowerCase()} matches “${find.trim()}”.` : `No ${noun.label.toLowerCase()} is ${side === 'up' ? 'in profit' : 'in loss'} here.`}
+            </li>
+          )}
         </ul>
         <div className="flex shrink-0 items-center gap-2 border-0 border-t border-solid border-[var(--line-soft)] p-2">
           <button
