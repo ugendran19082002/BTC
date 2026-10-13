@@ -30,7 +30,7 @@ const RESULT: SignalBacktestResponse = {
   params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 },
   deskLimits: [{ account: 'Savings', max: 58, ce: 80, pe: 80 }, { account: 'Expenses', max: 35, ce: 80, pe: 80 }],
   margin: { peakUsd: 300, peakDay: '2026-10-13', peakAt: Date.parse('2026-10-13T04:29:00+05:30'), peakOpen: 58, avgDailyPeakUsd: 200, avgTradeUsd: 5.2 },
-  signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
+  signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
   strategy: null,
   strategies: [
     { id: '1h-time', name: '1h time', enabled: true, account: 'Savings', methods: ['gamma'], tfs: ['4h'], target: { pct: 0.7, steps: [{ at: '23:30', pct: 0.75 }, { at: '03:30', pct: 0.85 }] } },
@@ -474,6 +474,26 @@ describe('SignalBacktest', () => {
     expect(screen.getByLabelText('Step 9 per cent')).toHaveValue(97);
     fireEvent.click(screen.getByRole('button', { name: 'Use these steps' }));
     await waitFor(() => expect(lastQuery().params).toMatchObject({ targetPct: 0.7, targetSteps: expect.arrayContaining([{ at: '15:30', pct: 0.97 }]) }));
+  });
+
+  it('[critical] the volatility filter: off to begin with, one tap asks for a level, and the result says what it left out and shows each level', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const group = screen.getByRole('radiogroup', { name: 'Volatility when the signal fills' });
+    expect(within(group).getByRole('radio', { name: 'Volatility filter off: every signal' })).toBeChecked();
+    expect(lastQuery().params.vol).toBeUndefined();
+    expect(screen.queryByText('By volatility when the signal filled')).toBeNull();
+
+    getSignalBacktest.mockResolvedValue({ ...RESULT, params: { ...RESULT.params, vol: 'high' }, signals: 1_400, total: { ...TOTAL, n: 200 },
+      skipped: { ...RESULT.skipped, 'outside-window': 300, volatility: 800, 'no-strike': 95, 'no-exit-price': 5 },
+      byVol: [row('high', 'High volatility', { n: 200, wins: 90, losses: 110, net: -20, won: 30, lost: 50, perpPts: 900 })] });
+    fireEvent.click(within(group).getByRole('radio', { name: 'Only signals in high volatility' }));
+    await waitFor(() => expect(lastQuery().params.vol).toBe('high'));
+    expect(await screen.findByText(/1,400 signals went in the trade; 200 were traded here\. Not traded: 300 outside the hours chosen, 800 not in high volatility, 95 with no strike/)).toBeInTheDocument();
+    expect(rowsOf('Backtest by volatility')).toEqual(['High volatility20045%₹₹charges ₹']);
+
+    fireEvent.click(within(group).getByRole('radio', { name: 'Volatility filter off: every signal' }));
+    await waitFor(() => expect(lastQuery().params.vol).toBe('off'));
   });
 
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {
