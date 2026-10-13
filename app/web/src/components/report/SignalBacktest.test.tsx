@@ -376,7 +376,7 @@ describe('SignalBacktest', () => {
     fireEvent.keyDown(range.getByLabelText('TGT at most, points'), { key: 'Enter' });
     await waitFor(() => expect(lastQuery().params.tgtMax).toBe(900));
     expect(await screen.findByText(/77 with the SL or TGT outside the range set/)).toBeInTheDocument();
-    expect(screen.getByText(/· SL ≥ 150, TGT ≥ 150 ≤ 900 pts/)).toBeInTheDocument();
+    expect(screen.getAllByText(/· SL ≥ 150, TGT ≥ 150 ≤ 900 pts/).length).toBe(2);       // on the result, and on the settings' own line
     fireEvent.click(range.getByRole('button', { name: 'Turn the range off' }));
     await waitFor(() => expect(lastQuery().params).toMatchObject({ slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0 }));
   });
@@ -389,6 +389,32 @@ describe('SignalBacktest', () => {
     expect(tile('On that margin')).toBe('−40.0%');                      // −$120 on $300
     expect(tile("A day's most, average")).toMatch(/^₹17,000/);
     expect(panel.getByText(/the most at once was 58 trades open at 4:29 AM on the Tue 13 Oct expiry; a trade held ₹442/)).toBeInTheDocument();
+  });
+
+  it('[critical] the settings in sections, folded to one line on a phone and open in a column of their own on the desk; the filters always open', async () => {
+    const phone = show();
+    await screen.findByText('Backtest result');
+    const settings = within(screen.getByRole('complementary', { name: 'Backtest settings' }));
+    for (const name of ['What to backtest', 'Strike and exits', 'Which signals are taken', 'Filters']) expect(settings.getByRole('region', { name })).toBeInTheDocument();
+    // folded on a phone to begin with: what the result is of, in a line, and Change
+    const toggle = settings.getByRole('button', { name: 'Change' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(settings.getByText('delta ≤ 0.10 · 10 lots · TGT 90% · SL +300% · 9:30 PM → 3:59 PM · no open limit')).toBeInTheDocument();
+    expect(settings.getByRole('region', { name: 'What to backtest' }).parentElement).toHaveClass('hidden');
+    expect(settings.getByRole('region', { name: 'Filters' }).parentElement).not.toHaveClass('hidden');
+    fireEvent.click(toggle);
+    expect(settings.getByRole('button', { name: 'Hide' })).toHaveAttribute('aria-expanded', 'true');
+    expect(settings.getByRole('region', { name: 'What to backtest' }).parentElement).not.toHaveClass('hidden');
+    // the line follows the settings
+    fireEvent.click(within(settings.getByRole('group', { name: 'Lots a signal' })).getByRole('button', { name: '16' }));
+    fireEvent.click(settings.getByRole('button', { name: 'Savings · 58 · CE 80% · PE 80%' }));
+    expect(settings.getByText('delta ≤ 0.10 · 16 lots · TGT 90% · SL +300% · 9:30 PM → 3:59 PM · at most 58 open · CE 80% · PE 80%')).toBeInTheDocument();
+    phone.unmount();
+    // the desk: open to begin with, and remembered apart from the phone's
+    show(true);
+    await screen.findByText('Backtest result');
+    expect(screen.getByRole('button', { name: 'Hide' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('complementary', { name: 'Backtest settings' })).toHaveClass('xl:sticky');
   });
 
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {

@@ -165,3 +165,50 @@ describe('searching by more than the name', () => {
     expect(screen.getByText('No strategy matches “nobody”.')).toBeInTheDocument();
   });
 });
+
+describe('profit and loss tabs', () => {
+  const options: FilterOption[] = [
+    { key: 'a', name: '#1 Breakout', note: '12 trades · +₹265', tone: 'up', value: 265 },
+    { key: 'b', name: '#2 Retest', note: '8 trades · −₹40', tone: 'down', value: -40 },
+    { key: 'c', name: '#3 Sweep', note: '30 trades · +₹900', tone: 'up', value: 900 },
+    { key: 'd', name: '#4 FVG', note: '5 trades · −₹310', tone: 'down', value: -310 },
+    { key: 'e', name: '#5 Order block', note: 'no trade' },
+  ];
+  function Host({ split = true }: { split?: boolean }) {
+    const [picked, setPicked] = useState<string[]>([]);
+    return <FilterPicker noun={METHODS} options={options} picked={picked} onChange={setPicked} split={split} />;
+  }
+  const names = () => within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent ?? '');
+
+  it('[critical] All, In profit (the most first) and In loss (the worst first), each with its count', () => {
+    render(<Host />);
+    fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
+    const tabs = within(screen.getByRole('group', { name: 'Methods by profit and loss' }));
+    expect(tabs.getAllByRole('button').map((b) => b.textContent)).toEqual(['All 5', 'In profit 2', 'In loss 2']);
+    expect(names().length).toBe(6);                                   // "All methods" and the five
+    fireEvent.click(tabs.getByRole('button', { name: /In profit/ }));
+    expect(names().slice(1).map((t) => t.slice(0, 8))).toEqual(['#3 Sweep', '#1 Break']);
+    fireEvent.click(tabs.getByRole('button', { name: /In loss/ }));
+    expect(names().slice(1).map((t) => t.slice(0, 6))).toEqual(['#4 FVG', '#2 Ret']);
+    expect(tabs.getByRole('button', { name: /In loss/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('[critical] one tap chooses every method on a tab and no other', () => {
+    render(<Host />);
+    fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Methods by profit and loss' })).getByRole('button', { name: /In profit/ }));
+    fireEvent.click(screen.getByText('Only the 2 in profit'));
+    expect(screen.getByRole('button', { name: 'Method filter: 2 of 5 methods' })).toBeInTheDocument();
+    expect(within(screen.getByRole('listbox')).getAllByRole('option', { selected: true }).length).toBe(3);   // the row itself, and its two
+  });
+
+  it('no tabs where they were not asked for, or where nothing has made or lost', () => {
+    const { unmount } = render(<Host split={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
+    expect(screen.queryByRole('group', { name: 'Methods by profit and loss' })).not.toBeInTheDocument();
+    unmount();
+    render(<FilterPicker noun={METHODS} options={[{ key: 'x', name: 'X' }, { key: 'y', name: 'Y' }]} picked={[]} onChange={() => {}} split />);
+    fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
+    expect(screen.queryByRole('group', { name: 'Methods by profit and loss' })).not.toBeInTheDocument();
+  });
+});
