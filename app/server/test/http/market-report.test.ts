@@ -492,3 +492,83 @@ test('[critical] the backtest says what each day\'s options were priced on, and 
   assert.deepEqual(own.body.priced, { 'own-1m': 1, 'mark-1m': 0, '5m': 1 });
   assert.ok(Math.abs(own.body.total.net - after.body.total.net) < 1e-6, 'the same prices a minute at a time, whoever recorded them');
 });
+
+// ------------------------------------------------------------ saved backtests, and portfolios of them
+
+test('[critical] a backtest saved by name, run again, and several run together as a portfolio: each as it is alone, and the total of them all', async () => {
+  const del = async (url: string) => { const r = await app.inject({ method: 'DELETE', url, headers: cookie }); return { status: r.statusCode, body: r.json() as Record<string, any> }; };
+  const WHOLE = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all', deskMax: 0, cePct: 100, pePct: 100 };
+  assert.deepEqual((await get('/api/backtest-saves')).body, { saves: [], portfolios: [] });
+
+  // saved: its settings checked as the screen's are, its filters kept
+  const a = await post('/api/backtest-saves', { name: '  Whole day,  10 lots ', query: { params: WHOLE, tfs: [], methods: [], strategy: null } });
+  assert.equal(a.status, 200, JSON.stringify(a.body));
+  assert.equal(a.body.save.name, 'Whole day, 10 lots', 'spaces tidied');
+  assert.deepEqual([a.body.save.query.params.window, a.body.save.query.params.vol, a.body.save.query.tfs], ['all', 'off', []]);
+  const b = await post('/api/backtest-saves', { name: '15m, 3 lots, dynamic', query: { params: { ...WHOLE, lots: 3, targetPct: 0.7, targetSteps: [{ at: '23:30', pct: 0.75 }] }, tfs: ['15m'], methods: ['breakout'], strategy: null } });
+  assert.deepEqual([b.status, b.body.save.query.params.targetSteps, b.body.save.query.tfs, b.body.save.query.methods], [200, [{ at: '23:30', pct: 0.75 }], ['15m'], ['breakout']]);
+  // refused in words: the same name again, no name, settings that cannot be meant
+  const same = await post('/api/backtest-saves', { name: 'whole day, 10 LOTS', query: { params: WHOLE } });
+  assert.equal(same.status, 409);
+  assert.match(same.body.error, /called "whole day, 10 LOTS" already/);
+  assert.equal((await post('/api/backtest-saves', { name: ' ', query: { params: WHOLE } })).status, 422);
+  const badLots = await post('/api/backtest-saves', { name: 'bad', query: { params: { ...WHOLE, lots: 0 } } });
+  assert.equal(badLots.status, 422);
+  assert.match(badLots.body.error, /Lots are a whole number/);
+  // the same one again under its id: other settings, the name kept
+  const again = await post('/api/backtest-saves', { id: b.body.save.id, name: '15m, 3 lots, dynamic', query: { params: { ...WHOLE, lots: 3 }, tfs: ['15m'], methods: [], strategy: null } });
+  assert.deepEqual([again.status, again.body.save.id, again.body.save.query.params.lots, again.body.save.query.params.targetSteps], [200, b.body.save.id, 3, undefined]);
+  assert.deepEqual((await get('/api/backtest-saves')).body.saves.map((s: any) => s.name), ['15m, 3 lots, dynamic', 'Whole day, 10 lots'], 'by name');
+
+  // run together: each is what it is alone, and the total is their sum
+  const aloneA = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all`);
+  const aloneB = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all&lots=3&tf=15m`);
+  const run = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}`);
+  assert.equal(run.status, 200, JSON.stringify(run.body).slice(0, 300));
+  assert.deepEqual(run.body.members.map((m: any) => [m.name, m.problem, m.total.n]), [['Whole day, 10 lots', null, aloneA.body.total.n], ['15m, 3 lots, dynamic', null, aloneB.body.total.n]]);
+  const close = (x: number, y: number) => Math.abs(x - y) < 1e-9;
+  assert.ok(close(run.body.members[0].total.net, aloneA.body.total.net) && close(run.body.members[1].total.net, aloneB.body.total.net));
+  assert.equal(run.body.total.n, aloneA.body.total.n + aloneB.body.total.n);
+  assert.ok(close(run.body.total.net, aloneA.body.total.net + aloneB.body.total.net) && close(run.body.total.charges, aloneA.body.total.charges + aloneB.body.total.charges));
+  assert.equal(run.body.total.exits['perp-tgt'].n, aloneA.body.total.exits['perp-tgt'].n + aloneB.body.total.exits['perp-tgt'].n);
+  // day by day, with each one's own share
+  assert.deepEqual(run.body.days.map((d: any) => [d.day, d.n]), [[CLIMB, aloneA.body.total.n + aloneB.body.total.n], [QUIET, 0]]);
+  assert.ok(close(run.body.days[0].byMember[0], aloneA.body.days[0].net) && close(run.body.days[0].byMember[1], aloneB.body.days[0].net));
+  // the margin: the most held at once across both -- the two were open together, so it is both peaks, and never more than their sum
+  const m = run.body.margin;
+  assert.ok(close(m.sumOfPeaksUsd, aloneA.body.margin.peakUsd + aloneB.body.margin.peakUsd));
+  assert.ok(m.peakUsd > aloneA.body.margin.peakUsd && m.peakUsd <= m.sumOfPeaksUsd + 1e-9, JSON.stringify(m));
+  assert.equal(m.peakDay, CLIMB);
+
+  // kept as a portfolio; two or more, each a saved one
+  const p = await post('/api/backtest-portfolios', { name: 'Both', saveIds: [a.body.save.id, b.body.save.id] });
+  assert.deepEqual([p.status, p.body.portfolio.saveIds], [200, [a.body.save.id, b.body.save.id]]);
+  assert.equal((await post('/api/backtest-portfolios', { name: 'One', saveIds: [a.body.save.id] })).status, 422);
+  assert.equal((await post('/api/backtest-portfolios', { name: 'Ghost', saveIds: [a.body.save.id, 'no-such'] })).status, 422);
+  assert.equal((await post('/api/backtest-portfolios', { name: 'both', saveIds: [a.body.save.id, b.body.save.id] })).status, 409);
+
+  // a saved backtest worked by a strategy since deleted is listed with why, and counts as nothing
+  const made = await post('/api/strategies', { name: 'BT gone', config: {
+    trigger: 'signal', signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 5, enterOn: 'zone', action: 'sell' },
+    liveOrders: false, entryTime: '17:35', exitTime: '17:29', lots: 1, legs: 'both', strikeRule: 'delta', delta: { max: 0.1 }, premium: { mode: 'atMost', usd: 50, fallbackUsd: null },
+    entryPrice: 'offer', crossAfterSec: 5, maxCrossSpreadPct: 0.5, takeProfitPct: 0.9, stopLossPct: 3, minPremiumUsd: 1, weekdays: [0, 1, 2, 3, 4, 5, 6], graceMin: 60 } });
+  const c = await post('/api/backtest-saves', { name: 'By a strategy', query: { params: WHOLE, tfs: [], methods: [], strategy: made.body.strategy.id } });
+  const withIt = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${c.body.save.id}&from=${CLIMB}&to=${QUIET}`);
+  assert.deepEqual(withIt.body.members.map((x: any) => [x.problem, x.total.n]), [[null, 6], [null, 3]], 'by its own rules: the three 15m breakouts');
+  assert.equal((await del(`/api/strategies/${made.body.strategy.id}`)).status, 200);
+  const without = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${c.body.save.id}&from=${CLIMB}&to=${QUIET}`);
+  assert.match(without.body.members[1].problem, /strategy it is worked by has been deleted/);
+  assert.deepEqual([without.body.members[1].total.n, without.body.total.n], [0, 6]);
+
+  // refused: none named, one that is gone, too many
+  assert.equal((await get(`/api/backtest-portfolio?from=${CLIMB}&to=${QUIET}`)).status, 400);
+  assert.equal((await get(`/api/backtest-portfolio?ids=nope&from=${CLIMB}&to=${QUIET}`)).status, 404);
+  assert.equal((await get(`/api/backtest-portfolio?ids=${Array.from({ length: 13 }, (_, i) => `x${i}`).join(',')}`)).status, 400);
+
+  // deleted: it leaves its portfolio, and a portfolio left with one is deleted with it -- said
+  const gone = await del(`/api/backtest-saves/${b.body.save.id}`);
+  assert.deepEqual([gone.status, gone.body.portfoliosDeleted], [200, ['Both']]);
+  const left = await get('/api/backtest-saves');
+  assert.deepEqual([left.body.saves.map((s: any) => s.name), left.body.portfolios], [['By a strategy', 'Whole day, 10 lots'], []]);
+  assert.equal((await del(`/api/backtest-saves/${b.body.save.id}`)).status, 404);
+});

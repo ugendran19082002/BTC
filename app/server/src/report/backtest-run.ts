@@ -1,5 +1,5 @@
 import { Worker } from 'node:worker_threads';
-import { clearSignalBacktestCache as clearHere, signalBacktestHere, type Ask, type SignalBacktest } from './signal-backtest.js';
+import { clearSignalBacktestCache as clearHere, portfolioBacktestHere, signalBacktestHere, type Ask, type BacktestPortfolioResult, type PortfolioAsk, type SignalBacktest } from './signal-backtest.js';
 import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
 /**
@@ -61,7 +61,7 @@ function thread(): Worker {
   return w;
 }
 
-function ask(m: { kind: 'run'; ask: Ask } | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<BacktestAnswer> {
+function ask(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<BacktestAnswer> {
   return new Promise((done, fail) => {
     const id = ++seq;
     const w = thread();
@@ -77,24 +77,31 @@ function ask(m: { kind: 'run'; ask: Ask } | { kind: 'clear' } | { kind: 'close' 
   });
 }
 
-/** One backtest: in its thread where there is one, here where there is not. */
-export async function signalBacktest(o: Ask): Promise<SignalBacktest> {
-  if (!wanted || Date.now() - gaveUpAt < GIVE_UP_MS) return signalBacktestHere(o);
+/** In its thread where there is one, here where there is not. */
+async function worked<T>(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioAsk }, here: () => Promise<T>, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<T> {
+  if (!wanted || Date.now() - gaveUpAt < GIVE_UP_MS) return here();
   let a: BacktestAnswer;
   try {
-    a = await ask({ kind: 'run', ask: o });
+    a = await ask(m, timeoutMs);
   } catch (e) {
     // No thread has ever answered: it cannot be started here. Work it in this one, and do not try again for a while.
     if (!proven) {
       gaveUpAt = Date.now();
       onTrouble(`no backtest thread could be started, so backtests are worked in the desk's own for now: ${(e as Error).message}`);
-      return signalBacktestHere(o);
+      return here();
     }
     throw e;
   }
   if (!a.ok) throw new Error(a.error);
-  return a.result as SignalBacktest;
+  return a.result as T;
 }
+
+/** One backtest. */
+export const signalBacktest = (o: Ask): Promise<SignalBacktest> => worked({ kind: 'run', ask: o }, () => signalBacktestHere(o));
+
+/** Several over the same days, and their total: each is a whole backtest, so it is given a whole backtest's time each. */
+export const portfolioBacktest = (o: PortfolioAsk): Promise<BacktestPortfolioResult> =>
+  worked({ kind: 'portfolio', ask: o }, () => portfolioBacktestHere(o), BACKTEST_TIMEOUT_MS * Math.max(1, o.members.length));
 
 /** Forget every day worked so far, wherever they are kept. */
 export async function clearSignalBacktestCache(): Promise<void> {

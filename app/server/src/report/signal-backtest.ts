@@ -786,7 +786,79 @@ export function signalBacktestHere(o: Ask): Promise<SignalBacktest> {
   return run;
 }
 
-async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
+/**
+ * Several backtests over the same days, and what they come to together (owner, 13 Oct 2026: "several saved
+ * backtests as a portfolio, with the total of them all").
+ *
+ * Each is worked on its own, exactly as it is alone -- its own signals, its own limits; one does not take a place
+ * from another -- and the results are added: the trades, the money, the charges, day by day. The margin is not a
+ * sum of each one's most: their trades are laid on one clock and the most held at once is found across all of
+ * them (`peakMargin`), which is what running them side by side on one account would have needed.
+ */
+export type PortfolioAsk = {
+  from: string; to: string; now: number; spot?: number | null;
+  /** Each with its settings; one that cannot be worked -- its strategy deleted -- carries why, and is listed with nothing. */
+  members: { id: string; name: string; ask: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'> | null; problem?: string | null }[];
+};
+export type BacktestPortfolioResult = {
+  from: string; to: string;
+  members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
+  total: BtTot;
+  /** Each expiry day: all of them together, and each one's own net in the members' order. */
+  days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];
+  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
+};
+
+export function portfolioBacktestHere(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
+  const run = working.then(() => portfolioNow(o));
+  working = run.catch(() => { });
+  return run;
+}
+
+async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
+  const members: BacktestPortfolioResult['members'] = [];
+  const results: (SignalBacktest | null)[] = [];
+  const spans = new Map<string, Span[]>();
+  for (const m of o.members) {
+    if (!m.ask || m.problem) {
+      members.push({ id: m.id, name: m.name, problem: m.problem ?? 'It cannot be worked out.', signals: 0, total: zeroBt(), marginPeakUsd: 0, priced: null });
+      results.push(null);
+      continue;
+    }
+    const own = new Map<string, Span[]>();
+    const r = await signalBacktestNow({ ...m.ask, from: o.from, to: o.to, now: o.now, spot: o.spot ?? null }, own);
+    for (const [day, xs] of own) { const all = spans.get(day); if (all) all.push(...xs); else spans.set(day, [...xs]); }
+    members.push({ id: m.id, name: m.name, problem: null, signals: r.signals, total: r.total, marginPeakUsd: r.margin.peakUsd, priced: r.priced });
+    results.push(r);
+  }
+  const worked = results.filter((r): r is SignalBacktest => r !== null);
+  const dayList = worked[0]?.days.map((d) => ({ day: d.day, live: d.live })) ?? [];
+  const days = dayList.map((d, i) => {
+    const each = results.map((r) => r?.days[i] ?? null);
+    return {
+      ...d,
+      n: each.reduce((a, x) => a + (x?.n ?? 0), 0), wins: each.reduce((a, x) => a + (x?.wins ?? 0), 0),
+      net: each.reduce((a, x) => a + (x?.net ?? 0), 0), charges: each.reduce((a, x) => a + (x?.charges ?? 0), 0),
+      byMember: each.map((x) => x?.net ?? 0),
+    };
+  });
+  let peak = { usd: 0, at: null as number | null, open: 0, day: null as string | null }, daily = 0, dailyN = 0;
+  for (const [day, xs] of spans) {
+    if (!xs.length) continue;
+    const p = peakMargin(xs);
+    if (p.usd > peak.usd) peak = { ...p, day };
+    daily += p.usd; dailyN++;
+  }
+  return {
+    from: o.from, to: o.to, members,
+    total: worked.reduce((t, r) => addBt(t, r.total), zeroBt()),
+    days,
+    margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: members.reduce((a, m) => a + m.marginPeakUsd, 0) },
+  };
+}
+
+/** `shownOut`, where given, is filled with the trades shown -- their times and margin -- by expiry day: what a portfolio lays on one clock. */
+async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promise<SignalBacktest> {
   await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
   // With the eight expiry days before the range: each day's volatility is read against the five before it.
   const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
@@ -859,6 +931,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   let daily = 0, dailyN = 0, tradeMargin = 0, tradeN = 0;
   for (const [day, all] of spansByDay) {
     const shown = all.filter((x) => (!o.tfs || o.tfs.includes(x.tf)) && (!o.methods || o.methods.includes(x.method)));
+    shownOut?.set(day, shown);
     if (!shown.length) continue;
     const p = peakMargin(shown);
     if (p.usd > peak.usd) peak = { ...p, day };

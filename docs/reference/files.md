@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-491 files listed, 243 test files counted below, images and lockfiles left out.
+492 files listed, 243 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -485,6 +485,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [StrategyGroupSection.tsx](../../app/web/src/components/strategy/StrategyGroupSection.tsx) | One group of strategies on the Signal Strategies card (owner, 10 Oct 2026): its name, whose account, how many are on, and what is done to the group as one -- every strategy on or off, renamed, clon... |
 | [StrikeBlocksEditor.tsx](../../app/web/src/components/strategy/StrikeBlocksEditor.tsx) | A signal strategy's strike rule, over its window (4 Oct 2026). |
 | [form-parts.tsx](../../app/web/src/components/strategy/form-parts.tsx) | The strategy forms' parts: every field group a strategy has, written once. |
+| [useOptionRecord.ts](../../app/web/src/components/strategy/useOptionRecord.ts) | Every method's record as options under the strategy on the form (owner, 13 Oct 2026: "in the strategy form the signal filter's profit and loss must be by the option's TGT and SL, not the perp's"). |
 | [useStrategyDraft.ts](../../app/web/src/components/strategy/useStrategyDraft.ts) | A strategy being edited: the config, the name, what is wrong with them and on which tab, and saving -- the part both strategy forms share, so the clock form and the signal form check and save the s... |
 
 ## `app/web/src/components/trade/`

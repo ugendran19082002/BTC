@@ -289,6 +289,21 @@ way (`useStrategyDraft`).
 | No-entry window | since 9 Oct 2026, on the **When** tab under the two times: a switch, off by default, and up to six windows of **No entry from** / **Until** (`noEntry: { on, windows: [{ from, to }] }`). Inside one, no new entry: a signal is claimed and written down as `skipped` -- "inside the no-entry window 4:48 PM – 5:13 PM — no new entry until 5:13 PM" -- at the moment it would have entered (the zone's fill for one entering there), so it is not taken after the window either. **Nothing open is closed**: a trade taken before keeps its SL, TGT and exit time. From the until time signals are taken again (from is in the window, until is not; a window may run past midnight). Each window must lie wholly inside the strategy's own `entryTime` – `exitTime` -- a window partly outside is refused, not half-applied -- must not cover all of it, and must not overlap another; the pickers offer only those times, and the server refuses the rest in the same words (`noEntryProblems`). Switched off, the times are kept. A clock strategy has none: it enters once, at its own time. While one is in force the strategy's line says "no new entry until 5:13 PM (no-entry window 4:48 PM – 5:13 PM) -- what is open keeps its exits". |
 | **Live orders** | **off by default** ([decision 0013](../decisions/0013-entry-setups-measured-before-trusted.md)): each signal is written down as the order it would have been ("would sell PE 84000 x1 @ 18 · perp SL 84600 · TGT 85500") and nothing is sent. On, it places the order. The switch sits in the form's footer on every tab, and on each row of Signal Strategies (turning it on takes a second tap); the list marks the row LIVE ORDERS. |
 
+**The method list's profit and loss is the option's, not the perp's** (13 Oct 2026: "in the strategy form the
+signal filter's profit and loss must be by the option's TGT and SL, not the perp's -- now it is the perp's"). The
+**Profit / Loss / No trades** chips, the win-rate filter, **Pick profitable** and the figures beside each method
+read each method's record **as options under the strategy on the form**: sold at its strike rule and lots in its
+hours, bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT as it closes live --
+rupees after charges, since 1 Oct. Every method is tried on all its signals in the form's way and timeframes,
+ticked or not, with "at most open" left out so one method's place is not taken by another's. It is asked again
+0.4 s after a rule that changes it changes (not when a method is ticked): `useOptionRecord` ->
+`POST /api/signal-backtest/methods { config }`, the [backtest](signal-backtest.md)'s own engine, in its thread.
+**Perp points** beside it is the old record (the Methods tab's: the signal's own trade to its SL or TGT), and is
+what is shown for a strategy that buys, or while the option record cannot be had -- the line under the switch
+says which and why. Checked on the 22 saved strategies against a separate working-out: every method's trades,
+wins and money agree. On "5m time" 19 methods are in profit as options and 49 in loss; on "15m time" 45 and 14.
+
+
 How a signal becomes an order (`StrategyRunner.onSignal`, `strategy/runner.ts`):
 
 1. The entry recorder writes a new TRADE (3 s after each minute closes) and

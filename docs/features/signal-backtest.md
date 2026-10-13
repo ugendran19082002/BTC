@@ -104,6 +104,17 @@ settings. `GET /api/signal-backtest?strategy=<id>`; every answer carries `strate
   queue -- and the total is not what an account would have made. What a trade of each kind made, and how often,
   is what it is for.
 
+**Which exit is first** (checked 13 Oct 2026 on every trade of three sets of exits, 34,000 to 42,000 each, by
+finding it again from the raw minutes: all agree). The perp is walked a minute at a time from the minute after
+the fill; the option's readings before the perp's exit are looked at in order, and the first with the offer at
+its target or its stop closes the trade there. A reading opens its minute, so in the minute the perp reaches its
+level the option's own exit is first. Otherwise the trade is bought back at the offer of the first reading at or
+after the perp's exit -- the same minute on a day a minute at a time -- unless that offer is already at or under
+the option's own target: the buy resting there filled on the way down, at its own price, so the trade is the
+target's and is not bought back for less than its own order stood at (38 to 458 trades, a few cents each, every
+one of them in the backtest's favour before). Where the desk recorded a bid or an offer for the minute, that is
+the price used (no exception found); only a minute with no recording is Delta's mark with the recorded spread.
+
 Not traded, and counted: outside the hours chosen; SL or TGT outside the range; not in the volatility asked for;
 over a limit on open trades; no board reading within five minutes; no strike inside the rule worth $10; no price
 to exit at. The counts are of the time frames and methods chosen, as the tiles are: signals = traded + not traded

@@ -10,6 +10,7 @@ import { registerErrorRoutes } from './routes/errors.routes.js';
 import { registerStrategyRoutes } from './routes/strategy.routes.js';
 import { registerReportRoutes } from './routes/report.routes.js';
 import { registerMarketRoutes } from './routes/market.routes.js';
+import { registerBacktestSavesRoutes } from './routes/backtest-saves.routes.js';
 import { registerStreamRoutes } from './routes/stream.routes.js';
 import { registerEntryRoutes } from './routes/entry.routes.js';
 import { registerAccountRoutes } from './routes/accounts.routes.js';
@@ -228,6 +229,7 @@ export async function buildApp(o: {
   registerStrategyRoutes(app);
   registerReportRoutes(app);
   registerMarketRoutes(app);
+  registerBacktestSavesRoutes(app);
   registerStreamRoutes(app);
   // Telegram for the entry section's test alert; none when the trading service or Telegram is not set up.
   registerEntryRoutes(app, () => { try { return tradingService().notifier; } catch { return null; } });

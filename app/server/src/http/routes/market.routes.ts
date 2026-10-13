@@ -24,7 +24,7 @@ import { accountOf } from '../account-query.js';
  */
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-function rangeOf(q: { from?: unknown; to?: unknown }, now = Date.now()): { from: string; to: string } | string {
+export function rangeOf(q: { from?: unknown; to?: unknown }, now = Date.now()): { from: string; to: string } | string {
   const today = sessionDayOf(now);
   const from = q.from === undefined || q.from === '' ? REPORT_FIRST_DAY : String(q.from);
   const to = q.to === undefined || q.to === '' ? today : String(q.to);
@@ -48,7 +48,7 @@ const NO_FILTERS: ReportFilters = { account: null, tfs: null, methods: null, str
  * 10 to 500 dollars), `?lots=` (1 to 1,000), `?tp=` and `?sl=` (the option's own target and stop as shares of the
  * premium; 0 is none), `?window=desk|all`. Absent ones are the defaults.
  */
-function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
+export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
   const num = (name: string, fallback: number) => (q[name] === undefined || q[name] === '' ? fallback : Number(q[name]));
   const rule = q.rule === undefined || q.rule === '' ? DEFAULT_PARAMS.rule : q.rule;
   if (rule !== 'delta' && rule !== 'premium') return 'The strike rule is "delta" or "premium".';
@@ -101,6 +101,17 @@ function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
     rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol,
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}),
   };
+}
+
+/** A set of settings as an object -- a saved one -- held to the same rules as one in a query string. */
+export function backtestParamsFrom(p: unknown): BacktestParams | string {
+  if (!p || typeof p !== 'object') return 'A backtest\'s settings are needed.';
+  const x = p as Partial<BacktestParams>;
+  return backtestParamsOf({
+    rule: x.rule, value: x.value, lots: x.lots, tp: x.targetPct, sl: x.stopPct, window: x.window, hfrom: x.hoursFrom, hto: x.hoursTo,
+    max: x.deskMax, ce: x.cePct, pe: x.pePct, slmin: x.slMin, slmax: x.slMax, tgtmin: x.tgtMin, tgtmax: x.tgtMax, vol: x.vol,
+    tsteps: Array.isArray(x.targetSteps) && x.targetSteps.length ? x.targetSteps.map((s) => `${s.at}:${Math.round(s.pct * 10_000) / 100}`).join(',') : undefined,
+  });
 }
 
 /** A strategy's option target as the backtest's settings take one: where it starts and its time steps, or null where it is not a per cent. */
