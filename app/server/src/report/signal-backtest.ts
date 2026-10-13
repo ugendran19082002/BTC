@@ -634,7 +634,7 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
 }
 
 /** A trade's time open and the margin it held, with what it is filtered by: what the day's peak margin is worked from. */
-type Span = { at: number; until: number; margin: number; tf: string; method: string };
+type Span = { at: number; until: number; margin: number; lots: number; tf: string; method: string };
 /** A day's signals by what they are filtered by: how many there were of a time frame and method, and why those not traded were not. */
 type Tally = { tf: string; method: string; signals: number; skipped: Record<BtSkip, number> };
 type HeldDay = { at: number; cells: BtCell[]; tally: Tally[]; spans: Span[]; grain: BoardGrain };
@@ -745,7 +745,7 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
   for (const x of r.refused) tallyOf(x.signal).skipped[x.why]++;
   const out: HeldDay = {
     at: now, cells: cellsOf(day, r.trades), tally: [...tally.values()], grain: d.grain,
-    spans: r.trades.map((t) => ({ at: t.signal.filledAt, until: t.exitAt, margin: t.marginUsd, tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, method: t.signal.method })),
+    spans: r.trades.map((t) => ({ at: t.signal.filledAt, until: t.exitAt, margin: t.marginUsd, lots: t.lots, tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, method: t.signal.method })),
   };
   held.delete(id);
   held.set(id, out);
@@ -757,14 +757,14 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
  * The most margin open at once over a day's trades, and when: a sweep over their times. A trade ending at the moment
  * another starts has made room for it -- as "at most N open" counts (`until > at`).
  */
-export function peakMargin(spans: readonly { at: number; until: number; margin: number }[]): { usd: number; at: number | null; open: number } {
-  const ev: [number, number, number][] = [];
-  for (const x of spans) { ev.push([x.at, 1, x.margin]); ev.push([x.until, 0, -x.margin]); }
+export function peakMargin(spans: readonly { at: number; until: number; margin: number; lots?: number }[]): { usd: number; at: number | null; open: number; /** The lots those trades were of, together: what the margin is so many times a lot's. */ lots: number } {
+  const ev: [number, number, number, number][] = [];
+  for (const x of spans) { ev.push([x.at, 1, x.margin, x.lots ?? 0]); ev.push([x.until, 0, -x.margin, -(x.lots ?? 0)]); }
   ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  let usd = 0, open = 0, best = { usd: 0, at: null as number | null, open: 0 };
-  for (const [at, kind, m] of ev) {
-    usd += m; open += kind === 1 ? 1 : -1;
-    if (usd > best.usd + 1e-9) best = { usd, at, open };
+  let usd = 0, open = 0, lots = 0, best = { usd: 0, at: null as number | null, open: 0, lots: 0 };
+  for (const [at, kind, m, l] of ev) {
+    usd += m; open += kind === 1 ? 1 : -1; lots += l;
+    if (usd > best.usd + 1e-9) best = { usd, at, open, lots };
   }
   return best;
 }
@@ -780,7 +780,7 @@ export type SignalBacktest = {
    * The margin the trades shown would have held, by the desk's 200x estimate: the most open at once in the range
    * (and when, and how many trades that was), an average day's most, and an average trade's.
    */
-  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; avgDailyPeakUsd: number; avgTradeUsd: number };
+  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, together. */ peakLots: number; avgDailyPeakUsd: number; avgTradeUsd: number };
   /** Signals in the trade in the range, how many were traded, and why the rest were not. */
   signals: number; skipped: Record<BtSkip, number>;
   total: BtTot;
@@ -855,7 +855,7 @@ export type BacktestPortfolioResult = {
   total: BtTot;
   /** Each expiry day: all of them together, and each one's own net in the members' order. */
   days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];
-  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
+  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, across all of them. */ peakLots: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
 };
 
 export function portfolioBacktestHere(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
@@ -891,7 +891,7 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
   const totals = o.members.map(() => zeroBt()), signals = o.members.map(() => 0), peaks = o.members.map(() => 0);
   const priced = o.members.map((): Record<BoardGrain, number> => ({ 'own-1m': 0, 'mark-1m': 0, '5m': 0 }));
   const rows: BacktestPortfolioResult['days'] = [];
-  let peak = { usd: 0, at: null as number | null, open: 0, day: null as string | null }, daily = 0, dailyN = 0, turnedAway = 0;
+  let peak = { usd: 0, at: null as number | null, open: 0, lots: 0, day: null as string | null }, daily = 0, dailyN = 0, turnedAway = 0;
   for (const d of days) {
     const { from, to } = sessionOf(d.day);
     const raw = await rawDay(d.day, o.now, fetched.get(expiryCodeOf(d.day))?.contracts ?? 0);
@@ -902,7 +902,7 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
       books: live.map(({ b }) => ({ signals: raw.signals.filter(b.takes), plan: b.planFor({ from, to }), volAt, volOnly: b.volOnly })),
     });
     const row = { day: d.day, live: d.live, n: 0, wins: 0, net: 0, charges: 0, byMember: o.members.map(() => 0) };
-    const all: { at: number; until: number; margin: number }[] = [];
+    const all: { at: number; until: number; margin: number; lots: number }[] = [];
     live.forEach(({ i }, k) => {
       const out = outs[k]!;
       const t = cellsOf(d.day, out.trades).reduce((a, c) => addBt(a, c.tot), zeroBt());
@@ -911,7 +911,7 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
       turnedAway += out.skipped['desk-limit'] + out.skipped['side-limit'];
       priced[i]![raw.grain]++;
       row.n += t.n; row.wins += t.wins; row.net += t.net; row.charges += t.charges; row.byMember[i] = t.net;
-      const mine = out.trades.map((x) => ({ at: x.signal.filledAt, until: x.exitAt, margin: x.marginUsd }));
+      const mine = out.trades.map((x) => ({ at: x.signal.filledAt, until: x.exitAt, margin: x.marginUsd, lots: x.lots }));
       peaks[i] = Math.max(peaks[i]!, peakMargin(mine).usd);
       all.push(...mine);
     });
@@ -930,7 +930,7 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
     shared: { max: caps.max, ce: caps.side?.CE ?? caps.max, pe: caps.side?.PE ?? caps.max, cePct: o.shared!.cePct, pePct: o.shared!.pePct, turnedAway },
     total: totals.reduce((t, x) => addBt(t, x), zeroBt()),
     days: rows,
-    margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: peaks.reduce((a, x) => a + x, 0) },
+    margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, peakLots: peak.lots, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: peaks.reduce((a, x) => a + x, 0) },
   };
 }
 
@@ -963,7 +963,7 @@ async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
       byMember: each.map((x) => x?.net ?? 0),
     };
   });
-  let peak = { usd: 0, at: null as number | null, open: 0, day: null as string | null }, daily = 0, dailyN = 0;
+  let peak = { usd: 0, at: null as number | null, open: 0, lots: 0, day: null as string | null }, daily = 0, dailyN = 0;
   for (const [day, xs] of spans) {
     if (!xs.length) continue;
     const p = peakMargin(xs);
@@ -974,7 +974,7 @@ async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
     from: o.from, to: o.to, members, shared: null,
     total: worked.reduce((t, r) => addBt(t, r.total), zeroBt()),
     days,
-    margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: members.reduce((a, m) => a + m.marginPeakUsd, 0) },
+    margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, peakLots: peak.lots, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: members.reduce((a, m) => a + m.marginPeakUsd, 0) },
   };
 }
 
@@ -1048,7 +1048,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
     : null;
   const cells = every.filter((c) => (!o.tfs || o.tfs.includes(tfKeyOf(c))) && (!o.methods || o.methods.includes(c.method)));
   // The margin of the trades shown: the same filters as the rows.
-  let peak = { usd: 0, at: null as number | null, open: 0, day: null as string | null };
+  let peak = { usd: 0, at: null as number | null, open: 0, lots: 0, day: null as string | null };
   let daily = 0, dailyN = 0, tradeMargin = 0, tradeN = 0;
   for (const [day, all] of spansByDay) {
     const shown = all.filter((x) => (!o.tfs || o.tfs.includes(x.tf)) && (!o.methods || o.methods.includes(x.method)));
@@ -1075,7 +1075,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
   const distinct = (xs: { key: string; name: string }[]) => [...new Map(xs.map((x) => [x.key, x])).values()];
   return {
     from: o.from, to: o.to, params, signals, skipped,
-    margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, avgTradeUsd: tradeN ? tradeMargin / tradeN : 0 },
+    margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, peakLots: peak.lots, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, avgTradeUsd: tradeN ? tradeMargin / tradeN : 0 },
     strategy: st ? { id: st.id, name: st.name, accountId: st.accountId ?? null, caveats: strategyCaveats(st), real: real! } : null,
     total: cells.reduce((t, c) => addBt(t, c.tot), zeroBt()),
     days: days.map((d) => ({ ...cells.filter((c) => c.day === d.day).reduce((t, c) => addBt(t, c.tot), zeroBt()), day: d.day, pattern: d.pattern, live: d.live, grain: grainOf.get(d.day) ?? '5m' })),
