@@ -178,12 +178,13 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
   onApply: (start: number, steps: Step[]) => void;
 }) {
   const asRows = (xs: readonly Step[]) => xs.map((x) => ({ at: x.at, pct: String(Math.round(x.pct * 10_000) / 100) }));
-  const [first, setFirst] = useState(String(Math.round(start * 100)));
+  // With no steps in use yet the first ready ladder is offered whole: its own start with its own steps.
+  const [first, setFirst] = useState(String(Math.round((steps.length ? start : LADDERS[0]!.start) * 100)));
   const [rows, setRows] = useState(() => asRows(steps.length ? steps : LADDERS[0]!.steps));
   const startOk = Number(first) >= 1 && Number(first) <= 99;
   const problem = !startOk ? 'The target starts at 1% to 99% of the premium.' : stepsProblem(rows);
   const parsed = (): Step[] => rows.map((r) => ({ at: r.at, pct: Math.round(Number(r.pct) * 100) / 10_000 })).sort((a, b) => dayOrder(a.at) - dayOrder(b.at));
-  const same = Math.round(start * 100) === Number(first) && JSON.stringify(parsed()) === JSON.stringify(steps);
+  const same = steps.length > 0 && Math.round(start * 100) === Number(first) && JSON.stringify(parsed()) === JSON.stringify(steps);
   const load = (s: number, xs: readonly Step[]) => { setFirst(String(Math.round(s * 100))); setRows(asRows(xs)); };
   const field = 'h-11 min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] tabular-nums text-foreground [color-scheme:dark]';
   return (
