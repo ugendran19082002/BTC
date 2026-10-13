@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
 import { useStrategyDraft } from '@/components/strategy/useStrategyDraft';
 import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
 import { useOptionRecord } from '@/components/strategy/useOptionRecord';
+import { getBacktestSaves } from '@/api/backtest-saves';
+import { usePoll } from '@/hooks/usePoll';
 import { StrikeBlocksEditor } from '@/components/strategy/StrikeBlocksEditor';
 import {
   DaysField, EntryPriceFields, num, FormFooter, FormTabBar, MinPremiumField, NameField, OptionExitFields, RuleSentence,
@@ -71,6 +73,9 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
   const rule: SignalRule = c.signal ?? DEFAULT_SIGNAL_RULE;
   // Each method's record as options under the rules as they stand, for the method list: asked for only while that list is showing.
   const optionRecord = useOptionRecord(c, open && tab === 'signal');
+  // The saved backtests with methods ticked: their pick can be taken into this strategy in one step (`SignalRuleEditor`).
+  const { data: backtests } = usePoll(() => (open ? getBacktestSaves() : Promise.resolve(null)), 300_000, { deps: [open] });
+  const savedBacktests = (backtests?.saves ?? []).filter((b) => b.query.methods.length > 0).map((b) => ({ id: b.id, name: b.name, methods: b.query.methods, tfs: b.query.tfs }));
   const setRule = <K extends keyof SignalRule>(k: K, v: SignalRule[K]) =>
     d.setC((p) => ({ ...p, signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), [k]: v } }));
   // Bought or sold: the leg, the entry and the option's exits all follow it.
@@ -107,6 +112,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               errors={{ mode: err('signalMode'), tf: err('signalTf'), methods: err('signalMethods'), slPts: err('signalSlPts') }}
               copyFrom={copyFrom}
               optionRecord={optionRecord}
+              savedBacktests={savedBacktests}
             />
           )}
 

@@ -138,7 +138,7 @@ const sourceWords = (s: Strategy) => {
   return `${n} method${n === 1 ? '' : 's'} · ${r.mode === 'mtf' ? 'with the chain' : ruleTfs(r).join(' + ')}${s.enabled ? '' : ' · off'}`;
 };
 
-export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], optionRecord }: {
+export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], optionRecord, savedBacktests = [] }: {
   rule: SignalRule;
   onChange: (r: SignalRule) => void;
   errors: { mode?: string | null; tf?: string | null; methods?: string | null; slPts?: string | null };
@@ -150,6 +150,13 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
   copyFrom?: readonly Strategy[];
   /** Every method's record as options under the rules on the form (`useOptionRecord`). Absent: the perp's points only. */
   optionRecord?: OptionRecordState;
+  /**
+   * The Backtest screen's saved backtests that have methods ticked: their pick can be taken in one step (owner, 13
+   * Oct 2026: "the backtest's methods do not match the signal strategy's"). A list ticked there and a list ticked
+   * here drift apart -- the in-profit list moves with every new signal -- so the way to have them the same is to
+   * take one from the other, not to tick both by hand.
+   */
+  savedBacktests?: readonly { id: string; name: string; methods: readonly string[]; tfs: readonly string[] }[];
 }) {
   const [query, setQuery] = useState('');
   // What the last copy replaced, so it can be undone; cleared by any other change to the pick.
@@ -257,6 +264,15 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
     setCopy({ name: from.name, took: ids, before: rule.methods });
     set('methods', ids);
   };
+  const copyBacktest = (id: string) => {
+    const from = savedBacktests.find((b) => b.id === id);
+    if (!from) return;
+    const ids = [...new Set(from.methods)].filter((m) => !known.size || known.has(m));
+    setCopy({ name: `the saved backtest “${from.name}”`, took: ids, before: rule.methods });
+    set('methods', ids);
+  };
+  /** The pick made exactly the list shown -- no more, no fewer: what "Only the N in profit" is on the Backtest screen. */
+  const pickOnly = (ids: string[], what: string) => { setCopy({ name: what, took: ids, before: rule.methods }); set('methods', ids); };
   // Said, with its Undo, only while the pick is still the copied one: a change made after it is the owner's own.
   const copied = copy && copy.took.join(',') === rule.methods.join(',') ? copy : null;
   const toggle = (id: string) => set('methods', picked.has(id) ? rule.methods.filter((x) => x !== id) : [...rule.methods, id]);
@@ -397,6 +413,15 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
                 {copyFrom.map((s) => <option key={s.id} value={s.id}>{s.name} — {sourceWords(s)}</option>)}
               </select>
             )}
+            {/* A saved backtest's pick, the same way: the methods ticked on the Backtest screen, here. */}
+            {savedBacktests.length > 0 && (
+              <select aria-label="copy methods from a saved backtest" value="" onChange={(e) => copyBacktest(e.target.value)}
+                      title="Take the methods ticked in a saved backtest -- they replace the ones picked here"
+                      className="h-8 max-w-[min(100%,20rem)] rounded-md border border-solid border-border bg-background px-2 text-[12px] text-foreground">
+                <option value="" disabled>Copy methods from a saved backtest…</option>
+                {savedBacktests.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.methods.length} method{b.methods.length === 1 ? '' : 's'}{b.tfs.length ? ` · ${b.tfs.map((t) => (t === 'chain' ? 'with the chain' : t)).join(' + ')}` : ''}</option>)}
+              </select>
+            )}
           </span>
           <span className="text-[11.5px] tabular-nums text-foreground" aria-live="polite">
             {rule.methods.length} of {methods.length || 81} picked
@@ -532,6 +557,12 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           <button type="button" className={link} disabled={!shown.length} onClick={() => addAll(shown.map((m) => m.id))}>
             Pick all shown ({shown.length})
           </button>
+          {/* Exactly the list shown: the ones not on it are unticked too. */}
+          <button type="button" className={link} disabled={!shown.length || (shown.length === rule.methods.length && shown.every((m) => picked.has(m.id)))}
+                  title="Tick exactly the methods shown and untick every other: the pick becomes this list"
+                  onClick={() => pickOnly(shown.map((m) => m.id), 'the list shown')}>
+            Pick only these ({shown.length})
+          </button>
           <button type="button" className={link} disabled={!winners.length}
                   title={`Net ${asOptions ? 'as options, after charges,' : 'points'} above zero over at least ${minT} trade${minT === 1 ? '' : 's'}, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
                   onClick={() => addAll(winners)}>
@@ -559,6 +590,29 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           ))}
           {minT < 3 && <span className="text-[var(--warn)]">— one or two trades is luck, not a record</span>}
         </div>
+        {/*
+          How the pick stands against the record shown (owner, 13 Oct 2026: "check the signal strategy's methods"):
+          how many of the ticked are in profit, in loss and without a trade, and the ones in profit that are not
+          ticked -- so a pick that has drifted from the list is seen, and named, before it is saved.
+        */}
+        {recordOf.size > 0 && rule.methods.length > 0 && (() => {
+          const up = (id: string) => { const r = recordOf.get(id); return Boolean(r && r.trades > 0 && r.net > 0); };
+          const down = (id: string) => { const r = recordOf.get(id); return Boolean(r && r.trades > 0 && r.net < 0); };
+          const tickedUp = rule.methods.filter(up).length, tickedDown = rule.methods.filter(down);
+          const missed = [...recordOf.keys()].filter((id) => up(id) && !picked.has(id));
+          const tag = (id: string) => { const m = nameOf(id); return m ? `#${m.n} ${m.name}` : id; };
+          return (
+            <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground" aria-label="the pick against the record">
+              Of the {rule.methods.length} picked: <b className="font-medium text-[var(--up)]">{tickedUp} in profit</b>,{' '}
+              <b className={cn('font-medium', tickedDown.length ? 'text-[var(--down)]' : '')}>{tickedDown.length} in loss</b>, {rule.methods.length - tickedUp - tickedDown.length} with no trade
+              {asOptions ? ' as options' : ' on the perp'}.
+              {tickedDown.length > 0 && <> In loss: {tickedDown.slice(0, 4).map(tag).join(', ')}{tickedDown.length > 4 ? ` and ${tickedDown.length - 4} more` : ''}.</>}
+              {missed.length > 0
+                ? <> In profit and not picked: <b className="font-medium text-foreground">{missed.length}</b> ({missed.slice(0, 4).map(tag).join(', ')}{missed.length > 4 ? ` and ${missed.length - 4} more` : ''}).</>
+                : ' Every method in profit is picked.'}
+            </p>
+          );
+        })()}
         {errors.methods && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.methods}</p>}
         {catalogueError && !methods.length && (
           <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">Could not load the methods: {catalogueError.message}</p>

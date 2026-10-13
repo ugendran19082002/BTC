@@ -133,18 +133,22 @@ export function rulesApart(c: StrategyConfig, p: BacktestParams): string[] {
   return out;
 }
 
-/** A backtest's answer as a record of methods: its pairs, added up by method, each with its timeframes. */
+/**
+ * A backtest's answer as a record of methods: the figures of its own Method list (`choices.methods` -- each method
+ * on the timeframes asked for, with no limit on open trades, which is what that list shows), so this is that list
+ * to the rupee; each method's timeframes come from its pairs.
+ */
 function recordOf(r: SignalBacktestResponse): MethodOptionRecord {
-  const by = new Map<string, MethodOptionRecord['methods'][number]>();
+  const tfs = new Map<string, MethodOptionRecord['methods'][number]['byTf']>();
   for (const p of r.pairs) {
     // A pair's key is its method, its way and its timeframe; with the chain the timeframe is the chain itself.
     const [method, mode, tf] = p.key.split('|') as [string, string, string];
-    let m = by.get(method);
-    if (!m) { m = { method, trades: 0, wins: 0, net: 0, byTf: [] }; by.set(method, m); }
-    m.trades += p.n; m.wins += p.wins; m.net += p.net;
-    m.byTf.push({ tf: mode === 'mtf' ? 'chain' : tf, trades: p.n, wins: p.wins, net: p.net });
+    const xs = tfs.get(method) ?? [];
+    tfs.set(method, xs);
+    xs.push({ tf: mode === 'mtf' ? 'chain' : tf, trades: p.n, wins: p.wins, net: p.net });
   }
-  return { from: r.from, to: r.to, priced: r.priced, caveats: [], signals: r.signals, trades: r.total.n, methods: [...by.values()] };
+  const methods = r.choices.methods.filter((m) => m.n > 0).map((m) => ({ method: m.key, trades: m.n, wins: m.wins, net: m.net, byTf: tfs.get(m.key) ?? [] }));
+  return { from: r.from, to: r.to, priced: r.priced, caveats: [], signals: r.signals, trades: r.total.n, methods };
 }
 
 /**
