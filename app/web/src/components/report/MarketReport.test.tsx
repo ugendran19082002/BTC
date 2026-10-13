@@ -71,8 +71,12 @@ const REPORT: MarketReportResponse = {
   ],
   choices: {
     timeframes: [{ key: '15m', name: '15m' }, { key: '1h', name: '1h' }, { key: 'chain', name: 'With timeframe chain' }],
-    methods: [{ key: 'pd-rejection', name: '#16 Previous day H/L rejection' }, { key: 'replenish', name: '#54 Liquidity replenishment' }],
-    strategies: [{ key: '15m time', name: '15m time' }, { key: '1h time', name: '1h time' }],
+    methods: [
+      { key: 'pd-rejection', name: '#16 Previous day H/L rejection', signal: { n: 120, wins: 70, net: 4_200 }, real: { n: 6, wins: 5, net: 3.1 } },
+      { key: 'replenish', name: '#54 Liquidity replenishment', signal: { n: 300, wins: 120, net: -2_750 }, real: { n: 10, wins: 2, net: -11.8 } },
+      { key: 'quiet', name: '#70 Never traded', signal: { n: 0, wins: 0, net: 0 }, real: { n: 0, wins: 0, net: 0 } },
+    ],
+    strategies: [{ key: '15m time', name: '15m time', n: 6, wins: 5, net: 3.1 }, { key: '1h time', name: '1h time', n: 10, wins: 2, net: -11.8 }],
   },
 };
 const BREAKDOWN: MarketBreakdownResponse = {
@@ -238,6 +242,33 @@ describe('MarketReport', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Every expiry day since 1 October' }));
     await waitFor(() => expect(lastQuery()).toMatchObject({ from: '2026-10-01', to: '2026-10-13' }));
     expect(screen.queryByRole('button', { name: 'Change dates' })).not.toBeInTheDocument();
+  });
+
+  it('[critical] the methods\' profit and loss: in the list they are chosen from, and in a table of their own -- for the record shown', async () => {
+    show();
+    await screen.findByText(/What stands out/);
+    // the table: in profit and in loss, with closed trades and the win rate
+    const profit = within(screen.getByRole('table', { name: 'Methods in profit, real orders' }));
+    expect(profit.getAllByRole('row').slice(1).map((r) => r.textContent!.replace(/[+−]₹[\d,.]+/, '₹'))).toEqual(['#16 Previous day H/L rejection683%₹']);
+    const loss = within(screen.getByRole('table', { name: 'Methods in loss, real orders' }));
+    expect(loss.getAllByRole('row').slice(1).map((r) => r.textContent!.replace(/[+−]₹[\d,.]+/, '₹'))).toEqual(['#54 Liquidity replenishment1020%₹']);
+    expect(screen.getByText('2 with a closed trade')).toBeInTheDocument();
+    // the list: every method with what it made, green or red; one that never traded says so
+    fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
+    const list = within(screen.getByRole('listbox'));
+    expect(list.getByText(/^6 closed · 83% won · \+₹/)).toBeInTheDocument();
+    expect(list.getByText(/^10 closed · 20% won · −₹/)).toBeInTheDocument();
+    expect(list.getByText('no order closed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    // the strategies' list the same way
+    fireEvent.click(screen.getByRole('button', { name: 'Strategy filter: All strategies' }));
+    expect(within(screen.getByRole('listbox')).getByText(/^10 closed · 20% won · −₹/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    // the signal history: the same methods in points
+    fireEvent.click(screen.getByRole('radio', { name: /Signal history, in BTC perp points/ }));
+    expect(within(screen.getByRole('table', { name: 'Methods in profit, signal history' })).getByText('+4,200 pts')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
+    expect(within(screen.getByRole('listbox')).getByText('300 closed · 40% won · −2,750 pts')).toBeInTheDocument();
   });
 
   it('on the desk it says where it begins, and shows both records\' exits side by side', async () => {

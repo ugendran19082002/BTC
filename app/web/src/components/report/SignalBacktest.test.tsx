@@ -43,13 +43,16 @@ const RESULT: SignalBacktestResponse = {
     row('4h', '4h', { n: 100, wins: 79, losses: 21, net: 10.3, won: 20, lost: 9.7, perpPts: -171 }),
     row('chain', 'With timeframe chain', { n: 200, wins: 70, losses: 130, net: -30, won: 20, lost: 50, perpPts: 900 }),
   ],
-  byMethod: [],
+  byMethod: [
+    row('gamma', '#50 Gamma wall reaction', { n: 458, wins: 311, losses: 147, net: 35, won: 60, lost: 25, perpPts: 42_585 }),
+    row('pulled', '#55 Pulled wall (spoof / pull)', { n: 2_421, wins: 700, losses: 1_721, net: -105.6, won: 60, lost: 165.6, perpPts: 4_210 }),
+  ],
   byPattern: [row('REVERSAL_ZIGZAG', '#16 Reversal', { days: 1, n: 400, wins: 140, losses: 260, net: -160, won: 180, lost: 340 })],
   byFamily: [
     row('range', 'Range', { days: 1, n: 600, wins: 300, losses: 300, net: 40, won: 300, lost: 260 }),
     row('turn', 'Turn / event', { days: 1, n: 400, wins: 140, losses: 260, net: -160, won: 180, lost: 340 }),
   ],
-  choices: { timeframes: [{ key: '5m', name: '5m' }, { key: '4h', name: '4h' }, { key: 'chain', name: 'With timeframe chain' }], methods: [{ key: 'gamma', name: '#50 Gamma wall reaction' }, { key: 'pulled', name: '#55 Pulled wall (spoof / pull)' }] },
+  choices: { timeframes: [{ key: '5m', name: '5m' }, { key: '4h', name: '4h' }, { key: 'chain', name: 'With timeframe chain' }], methods: [{ key: 'gamma', name: '#50 Gamma wall reaction', n: 458, wins: 311, net: 35 }, { key: 'pulled', name: '#55 Pulled wall (spoof / pull)', n: 2_421, wins: 700, net: -105.6 }] },
 };
 
 // Tue 13 Oct 2026, 11:00 IST
@@ -150,6 +153,17 @@ describe('SignalBacktest', () => {
     fireEvent.click(sheet.getByRole('button', { name: 'Show' }));
     await waitFor(() => expect(lastQuery()).toMatchObject({ from: '2026-10-09', to: '2026-10-11' }));
     expect(screen.getByText('Fri 9 Oct → Sun 11 Oct')).toBeInTheDocument();
+  });
+
+  it('[critical] the methods\' profit and loss as options: in the method list, and in a table of those in profit and those in loss', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    expect(rowsOf('Backtest: methods in profit')).toEqual(['#50 Gamma wall reactionperp +42,585 pts45868%₹₹']);
+    expect(rowsOf('Backtest: methods in loss')).toEqual(['#55 Pulled wall (spoof / pull)perp +4,210 pts2,42129%₹₹']);
+    fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
+    const list = within(screen.getByRole('listbox'));
+    expect(list.getByText(/^458 trades · 68% won · \+₹/)).toBeInTheDocument();
+    expect(list.getByText(/^2,421 trades · 29% won · −₹/)).toBeInTheDocument();
   });
 
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {

@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import {
-  Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListChecks, ListOrdered, RefreshCw, Smartphone,
+  Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListChecks, ListOrdered, RefreshCw, Smartphone, CalendarRange, FlaskConical,
 } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getCandles, getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
@@ -85,7 +85,7 @@ const Board = memo(ChainTable);
 /** One empty list, so "no bars yet" is the same prop every render. */
 const NO_BARS: never[] = [];
 
-type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'methods' | 'errors';
+type Tab = 'desk' | 'trade' | 'orders' | 'strategy' | 'pnl' | 'methods' | 'market' | 'backtest' | 'errors';
 
 /** Of two answers to the same question, the one that arrived last; either may be missing. */
 function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | null): T | null {
@@ -102,7 +102,7 @@ function newer<T>(a: T | null, aAt: number | null, b: T | null, bAt: number | nu
  * that exists in three places and not in the fourth is invisible.
  */
 // In the menu's own order. Strategy is first (4 Oct 2026): the signal strategies are what the desk trades.
-export const TABS: readonly Tab[] = ['strategy', 'desk', 'trade', 'orders', 'pnl', 'methods', 'errors'];
+export const TABS: readonly Tab[] = ['strategy', 'desk', 'trade', 'orders', 'pnl', 'methods', 'market', 'backtest', 'errors'];
 /** The screen a browser that remembers none opens on. */
 export const FIRST_TAB: Tab = 'strategy';
 export const asTab = (v: string): Tab => (TABS as readonly string[]).includes(v) ? (v as Tab) : 'desk';
@@ -626,6 +626,13 @@ export default function App() {
         <button className={tab === 'methods' ? 'on' : ''} onClick={() => setTab('methods')}>
           <ListChecks aria-hidden /> <span>Methods</span>
         </button>
+        {/* Menus of their own (owner, 13 Oct 2026): they were under Methods for an hour, a long scroll from the top. */}
+        <button className={tab === 'market' ? 'on' : ''} onClick={() => setTab('market')}>
+          <CalendarRange aria-hidden /> <span>Market report</span>
+        </button>
+        <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>
+          <FlaskConical aria-hidden /> <span>Backtest</span>
+        </button>
         <button className={tab === 'errors' ? 'on' : ''} onClick={() => setTab('errors')}>
           <AlertTriangle aria-hidden /> <span>Logs</span>
           {errors && errors.summary.unresolved > 0 && (
@@ -870,15 +877,17 @@ export default function App() {
           <ErrorBoundary where="Signal history">
             <SignalHistory />
           </ErrorBoundary>
-          {/* Under the methods' record and their signals (13 Oct 2026): the kind of market each expiry day had, and what they made on it. */}
-          <ErrorBoundary where="Market report">
-            <MarketReport key={`market-${shown}`} account={shownId} wide />
-          </ErrorBoundary>
-          {/* And last, the same signals sold as options on the prices the contracts really had. */}
-          <ErrorBoundary where="Backtest">
-            <SignalBacktest wide />
-          </ErrorBoundary>
         </div>
+      ) : tab === 'market' ? (
+        // The kind of market each expiry day had, and what the methods made on it -- for the account shown.
+        <ErrorBoundary where="Market report">
+          <MarketReport key={`market-${shown}`} account={shownId} wide />
+        </ErrorBoundary>
+      ) : tab === 'backtest' ? (
+        // The signals sold as options on the prices the contracts really had.
+        <ErrorBoundary where="Backtest">
+          <SignalBacktest wide />
+        </ErrorBoundary>
       ) : (
         <ErrorBoundary where="Logs">
           <LogsPanel />
