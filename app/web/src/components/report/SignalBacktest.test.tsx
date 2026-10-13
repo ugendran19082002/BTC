@@ -28,7 +28,9 @@ const TOTAL = tot({
 const RESULT: SignalBacktestResponse = {
   from: '2026-10-01', to: '2026-10-13',
   params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk' },
-  signals: 1_400, skipped: { 'outside-window': 300, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
+  signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
+  strategy: null,
+  strategies: [{ id: '1h-time', name: '1h time', enabled: true, account: 'Savings' }, { id: '4h-old', name: '4h old', enabled: false, account: 'Expenses' }],
   total: TOTAL,
   days: [
     { ...tot({ n: 600, wins: 300, losses: 300, net: 40, won: 300, lost: 260 }), day: '2026-10-12', pattern: 'FALSE_BREAKOUT_RANGE', live: false },
@@ -72,7 +74,7 @@ describe('SignalBacktest', () => {
     show();
     await screen.findByText('Backtest result');
     expect(lastQuery()).toEqual({
-      from: '2026-10-01', to: '2026-10-13', tfs: [], methods: [],
+      from: '2026-10-01', to: '2026-10-13', tfs: [], methods: [], strategy: null,
       params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk' },
     });
     expect(screen.getByText(/Thu 1 Oct → Tue 13 Oct · delta ≤ 0\.10 · 10 lots a signal · option target 90%, stop \+300%/)).toBeInTheDocument();
@@ -164,6 +166,38 @@ describe('SignalBacktest', () => {
     const list = within(screen.getByRole('listbox'));
     expect(list.getByText(/^458 trades · 68% won · \+₹/)).toBeInTheDocument();
     expect(list.getByText(/^2,421 trades · 29% won · −₹/)).toBeInTheDocument();
+  });
+
+  it('[critical] backtest by a saved strategy: chosen from the list, its own rules said, its real orders beside -- and back to the settings', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const by = screen.getByRole('combobox', { name: 'Backtest by' });
+    expect([...by.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['These settings (every signal)', '1h time · Savings', '4h old · Expenses · off']);
+    getSignalBacktest.mockResolvedValue({
+      ...RESULT, skipped: { ...RESULT.skipped, 'outside-window': 40, 'no-entry-window': 12, distance: 30, 'at-limit': 200 },
+      strategy: { id: '1h-time', name: '1h time', accountId: 1, caveats: ['Its timed target and stop steps are not replayed: the starting target and stop are used all day.'], real: { n: 46, wins: 8, open: 22, net: -37.4 } },
+    });
+    fireEvent.change(by, { target: { value: '1h-time' } });
+    await waitFor(() => expect(lastQuery().strategy).toBe('1h-time'));
+    expect(await screen.findByText(/By .*'s own rules/)).toHaveTextContent("By 1h time's own rules");
+    expect(screen.getByText(/timed target and stop steps are not replayed/)).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Lots a signal' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'Pick the strike by delta' })).not.toBeInTheDocument();
+    const vs = (await screen.findByText('Backtest against its real orders')).closest('section, div')!.parentElement!;
+    expect(vs.textContent).toMatch(/Real orders46 closed · 17% won · 22 open · −₹/);
+    expect(screen.getByText(/40 outside its days and hours, 12 inside its no-entry window, 30 with the SL or TGT outside its distances, 200 while it already had its most open/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Backtest by' }), { target: { value: '' } });
+    await waitFor(() => expect(lastQuery().strategy).toBeNull());
+    expect(screen.getByRole('group', { name: 'Lots a signal' })).toBeInTheDocument();
+  });
+
+  it('a strategy remembered from before and deleted since falls back to the settings', async () => {
+    window.localStorage.setItem(Object.keys(window.localStorage)[0] ?? 'x', '0');
+    getSignalBacktest.mockImplementation((q: { strategy?: string | null }) => (q.strategy ? Promise.reject(new Error('No such signal strategy to backtest: it may have been deleted')) : Promise.resolve(RESULT)));
+    show();
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Backtest by' }), { target: { value: '1h-time' } });
+    await waitFor(() => expect(lastQuery().strategy).toBeNull());
+    expect(await screen.findByText('Backtest result')).toBeInTheDocument();
   });
 
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {

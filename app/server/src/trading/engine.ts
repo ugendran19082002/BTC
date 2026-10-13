@@ -5,7 +5,7 @@ import { CHASE_STEPS, exitPriceProblem, longLevels, protectionFor, type ExitAsk,
 import type { Candle } from '../market/delta.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import {
-  priceFor, lotsToContracts, roundToTick, slippageOf, stopFillLimit, stopPriceFor, targetTickFor, SLIPPAGE_ALERT_PCT,
+  priceFor, lotsToContracts, roundToTick, slippageOf, stopFillLimit, stopPriceFor, targetTickFor, SLIPPAGE_ALERT_PCT, STOP_LIMIT_MIN_TICKS, STOP_LIMIT_SLACK,
 } from './money.js';
 import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits, precheckBuy } from './precheck.js';
 import { clampLeverage, fundsRequiredPerContract, liquidationRoom, premiumUsd } from './margin.js';
@@ -578,6 +578,20 @@ export function underlyingTouched(
  * moved, not one stray quote.
  */
 export const STOP_CONFIRM_MS = 15_000;
+/**
+ * A run, not a stray quote (13 Oct 2026). At 09:02 IST the 83,400 call was offered at 145 and a minute later at
+ * 274: thirteen shorts with their stops at 160-172 waited out their fifteen seconds, the exchange's backstop at
+ * ~235 fired first, and they were bought back at 254-266 -- about 90 points past the stops. Fifteen seconds keeps
+ * one stray offer from closing a good trade; it is too long for a market that is really moving. So:
+ *
+ *   - the offer AND the mark both at or through the stop, for `STOP_CONFIRM_FAST_MS`: closed. Two prices from
+ *     two sources agreeing is a moved market; the mark alone printing through a quiet book (26 Sep) is not, and
+ *     the offer alone keeps its fifteen seconds.
+ *   - the offer `STOP_RUN_SHARE` of the way from the stop to the backstop: closed at once. The backstop is about
+ *     to buy at whatever is offered; the desk's own close, with its price capped, comes first.
+ */
+export const STOP_CONFIRM_FAST_MS = 3_000;
+export const STOP_RUN_SHARE = 0.5;
 
 /**
  * How long a shared contract's position may fail to add up before the desk
@@ -595,6 +609,16 @@ export const LEFTOVER_ALARM_MS = 60_000;
 
 /** How long a close at the market has to fill before what is left is sent again. */
 export const CLOSE_FOLLOW_UP_MS = 3_000;
+
+/**
+ * The price a stop's close is capped at: the offer it was judged on and the same slack as the exchange stop
+ * (`STOP_LIMIT_SLACK`, 15%, five ticks at least), rounded up to the tick. It still crosses a normal book; it does
+ * not buy whatever is offered on an empty one.
+ */
+export function closeLimitFor(offer: number, tick: number): number {
+  const slack = Math.max(offer * STOP_LIMIT_SLACK, tick * STOP_LIMIT_MIN_TICKS);
+  return Math.ceil((offer + slack) / tick - 1e-9) * tick;
+}
 /** Closes at the market for one exit, the first included, before the desk stops and says so. */
 export const MAX_CLOSE_TRIES = 3;
 
@@ -684,6 +708,8 @@ export function roleOfClientId(clientOrderId: string | null, stem: string): Orde
 export class TradeEngine {
   /** When each trade's offer was first seen at or through its stop, for the confirmation. In memory: a restart starts the count again. */
   private readonly stopSince = new Map<string, number>();
+  /** When each trade's offer and mark were first seen through its stop together (`STOP_CONFIRM_FAST_MS`). In memory, like `stopSince`. */
+  private readonly bothSince = new Map<string, number>();
   /** Trades whose close has been given up on at the market, so that is said once. */
   private readonly gaveUpClosing = new Set<string>();
   /** When a shared contract's position first stopped adding up, per trade, and whether it has been said. */
@@ -2145,15 +2171,30 @@ export class TradeEngine {
     // A missing, stale, or nonsensical offer is not a reason to do anything -- nor to forget the count.
     if (quote === null || this.now() - quote.ts > MARK_STALE_MS) return rec;
     if (ask === null || !Number.isFinite(ask) || ask <= 0) return rec;
-    if (ask < stop) { this.stopSince.delete(id); return rec; }
+    if (ask < stop) { this.stopSince.delete(id); this.bothSince.delete(id); return rec; }
     const since = this.stopSince.get(id) ?? this.now();
     this.stopSince.set(id, since);
-    if (this.now() - since < STOP_CONFIRM_MS) return rec;
+    // The mark through the stop too: counted on its own, from when both first agreed.
+    const mark = quote.mark;
+    const both = mark !== null && Number.isFinite(mark) && mark >= stop;
+    if (!both) this.bothSince.delete(id);
+    const bothSince = both ? this.bothSince.get(id) ?? this.now() : null;
+    if (bothSince !== null) this.bothSince.set(id, bothSince);
+    const backstop = backstopOf(rec);
+    const run = backstop !== null && backstop > stop && ask >= stop + (backstop - stop) * STOP_RUN_SHARE;
+    const held = this.now() - since;
+    const why = run
+      ? `stop reached: the offer at ${ask} is ${Math.round(STOP_RUN_SHARE * 100)}% of the way from the stop ${stop} to the backstop ${backstop} -- a run, closed at once`
+      : bothSince !== null && this.now() - bothSince >= STOP_CONFIRM_FAST_MS
+        ? `stop reached: the offer at ${ask} and the mark at ${Math.round(mark! * 100) / 100} both through the stop ${stop} for ${Math.round((this.now() - bothSince) / 1000)} s`
+        : held >= STOP_CONFIRM_MS ? `stop reached: the offer held at ${ask} (stop ${stop}) for ${Math.round(held / 1000)} s` : null;
+    if (why === null) return rec;
     this.stopSince.delete(id);
+    this.bothSince.delete(id);
 
-    // Closing at the market gives up the spread, and for a stop that is the
-    // trade being made: an exit that happens beats a better price that might not.
-    await this.closeNowInner(id, `stop reached: the offer held at ${ask} (stop ${stop}) for ${Math.round((this.now() - since) / 1000)} s`);
+    // An exit that happens beats a better price that might not -- but not at any price: the close is a buy limit
+    // through the offer it was judged on (`closeLimitFor`), and what it cannot fill is sent again at the market.
+    await this.closeNowInner(id, why, undefined, ask);
     return await this.d.store.get(id) ?? rec;
   }
 
@@ -2293,7 +2334,7 @@ export class TradeEngine {
    * over what is left; that path is the one the desk already trusts after
    * every add.
    */
-  private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number): Promise<TradeState | null> {
+  private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number, offer?: number): Promise<TradeState | null> {
     let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     // Size from the exchange, not from memory: someone may have closed part of
@@ -2334,10 +2375,16 @@ export class TradeEngine {
       at: this.now(),
     });
     try {
+      const side = rec.state.position > 0 ? 'sell' as const : 'buy' as const;
+      // A short's stop, closed on the offer it was judged by: a buy limit through that offer, not a market order that
+      // sweeps a thin book (13 Oct 2026: closes at 252 and 260 against an offer of 211). What it cannot fill at once is
+      // cancelled and sent again at the market by `followUpClose`, so the close still happens.
+      const limit = side === 'buy' && offer !== undefined && offer > 0 ? closeLimitFor(offer, product?.tickSize ?? 0.1) : null;
       const ack = await this.exchange.placeOrder({
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
         // A short is bought back; a bought position is sold. Reduce-only either way: a close never opens.
-        side: rec.state.position > 0 ? 'sell' : 'buy', type: 'market', size, reduceOnly: true, role: 'exit',
+        side, size, reduceOnly: true, role: 'exit',
+        ...(limit !== null ? { type: 'limit' as const, limitPrice: limit } : { type: 'market' as const }),
       });
       rec = await this.absorb(rec, ack, 'exit');
     } catch (e) {

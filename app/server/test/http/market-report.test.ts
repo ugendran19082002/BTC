@@ -49,6 +49,10 @@ before(async () => { app = await buildApp({ auth: new AuthService({ store: auth,
 after(async () => { tradingService().stop(); await app.close(); await closePool(); });
 
 const cookie = { cookie: `${COOKIE}=${encodeURIComponent('market-session')}` };
+const post = async (url: string, payload: object) => {
+  const r = await app.inject({ method: 'POST', url, headers: cookie, payload });
+  return { status: r.statusCode, body: r.json() as Record<string, any> };
+};
 const get = async (url: string) => {
   const r = await app.inject({ method: 'GET', url, headers: cookie });
   return { status: r.statusCode, body: r.json() as Record<string, any> };
@@ -325,7 +329,7 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   assert.deepEqual(all.body.params, { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all' });
   assert.equal(all.body.signals, 6, 'the one never filled is not a signal in the trade');
   assert.equal(all.body.total.n, 6);
-  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
   assert.deepEqual(Object.keys(all.body.total.exits), ['perp-tgt'], 'each bought back when the perp reached its target');
   assert.equal(all.body.total.exits['perp-tgt'].n, 6);
   assert.equal(all.body.total.perpPts, 6 * 500);
@@ -368,4 +372,37 @@ test('the backtest refuses settings it cannot mean', async () => {
     assert.equal(r.status, 400, q);
     assert.match(r.body.error, why);
   }
+});
+
+test('[critical] the backtest by a saved strategy: its methods and timeframe, its strike rule, its lots, its "at most N open"', async () => {
+  const config = {
+    trigger: 'signal', signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 1, enterOn: 'zone', action: 'sell' },
+    liveOrders: false, entryTime: '17:35', exitTime: '17:29', lots: 3, legs: 'both',
+    strikeRule: 'delta', delta: { max: 0.1 }, premium: { mode: 'atMost', usd: 50, fallbackUsd: null },
+    entryPrice: 'offer', crossAfterSec: 5, maxCrossSpreadPct: 0.5, takeProfitPct: 0.9, stopLossPct: 3, minPremiumUsd: 1,
+    weekdays: [0, 1, 2, 3, 4, 5, 6], graceMin: 60,
+  };
+  const made = await post('/api/strategies', { name: 'BT fifteen', config });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  const id = made.body.strategy.id;
+
+  const r = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&strategy=${id}`);
+  assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
+  assert.ok(r.body.strategies.some((s: any) => s.id === id && s.name === 'BT fifteen'), 'the list to choose from');
+  assert.equal(r.body.strategy.name, 'BT fifteen');
+  assert.deepEqual(r.body.strategy.caveats, []);
+  // only its own signals: 15m breakout, three on the climb -- the 1h pullbacks and the chain's are not its
+  assert.equal(r.body.signals, 3);
+  // at most one open: the first is sold, and it is still open (the perp reaches the target hours later) when the other two fill
+  assert.equal(r.body.total.n, 1);
+  assert.equal(r.body.skipped['at-limit'], 2);
+  assert.equal(r.body.byTf[0].key, '15m');
+  assert.deepEqual([r.body.params.rule, r.body.params.value, r.body.params.lots], ['delta', 0.1, 3]);
+  // what its real orders made in the range: none were placed under this name
+  assert.equal(r.body.strategy.real.n, 0);
+
+  // a strategy that does not exist, or no longer does, is said so
+  const gone = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&strategy=nope`);
+  assert.equal(gone.status, 404);
+  assert.match(gone.body.error, /No such signal strategy/);
 });

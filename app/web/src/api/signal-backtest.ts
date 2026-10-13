@@ -9,5 +9,6 @@ export function getSignalBacktest(q: BacktestQuery) {
   });
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));
+  if (q.strategy) p.set('strategy', q.strategy);
   return json<SignalBacktestResponse>(`/api/signal-backtest?${p}`);
 }

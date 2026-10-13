@@ -23,7 +23,16 @@ const sent = new Map<string, number>();
 const QUIET_MS = 30_000;
 let reporting = false;
 
+/**
+ * The page is reloading for a new build (main.tsx, `vite:preloadError`). A screen whose chunk was asked for in the
+ * moment before -- the old file gone from the server -- gets nothing back and fails ("Cannot read properties of
+ * undefined (reading 'SettingsScreen')", 13 Oct 2026). That is the reload doing its job, not a fault: not reported.
+ */
+let reloadingForNewBuild = false;
+export function reloadingForBuild(): void { reloadingForNewBuild = true; }
+
 export function reportError(r: BrowserReport): void {
+  if (reloadingForNewBuild) return;
   try {
     const key = `${r.where ?? ''}|${r.message}`;
     const last = sent.get(key);

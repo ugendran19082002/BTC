@@ -62,7 +62,7 @@ test('[critical] a BUY sells the put at the bid of the reading nearest its fill,
   // the perp reaches 84,500 in minute 302; the put decays from 40 to 10 over the day
   const r = simulateDay({ from, to, params: P, signals: [sig(31)], bars: perp([[0, 84_000], [300, 84_490], [310, 84_560], [1_439, 84_600]]),
     board: byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]), ...contract('C', 85_000, 0.09, [[0, 40], [1_435, 10]])]) });
-  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
   const [t] = r.trades;
   assert.equal(t!.cp, 'P'); assert.equal(t!.strike, 83_200);
   assert.equal(t!.entryAt, from + 30 * MIN, 'the 5-minute reading nearest minute 31');

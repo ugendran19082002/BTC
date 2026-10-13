@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getSignalBacktest } from '@/api/signal-backtest';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -136,21 +136,41 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [tfs, setTfs] = usePersisted<string[]>('signalBacktest.tfs', []);
   const [methods, setMethods] = usePersisted<string[]>('signalBacktest.methods', []);
   const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('signalBacktest.grouping', 'family');
+  // A saved strategy to backtest by (owner, 13 Oct 2026); null is the settings below.
+  const [strategyId, setStrategyId] = usePersisted<string | null>('signalBacktest.strategy', null);
   // Anything remembered from an older build falls back to the defaults rather than asking for what the server refuses.
   const params: BacktestParams = { ...DEFAULTS, ...stored };
   const set = (o: Partial<BacktestParams>) => setParams({ ...params, ...o });
   const range = expiry.range;
-  const query: BacktestQuery = { ...range, params, tfs, methods };
+  const query: BacktestQuery = { ...range, params, tfs, methods, strategy: strategyId };
   const read = usePoll(() => getSignalBacktest(query), 300_000, {
-    deps: [range.from, range.to, params.rule, params.value, params.lots, params.targetPct, params.stopPct, params.window, tfs.join(), methods.join()],
+    deps: [range.from, range.to, params.rule, params.value, params.lots, params.targetPct, params.stopPct, params.window, tfs.join(), methods.join(), strategyId],
   });
   const r = read.data;
+  // A strategy remembered from before that is gone now (deleted): back to the settings, rather than an error every time.
+  const gone = strategyId !== null && read.error !== null && /No such signal strategy/.test(read.error.message);
+  useEffect(() => { if (gone) setStrategyId(null); }, [gone, setStrategyId]);
+  const byStrategy = strategyId !== null;
+  const strategies = r?.strategies ?? [];
   const values = params.rule === 'delta' ? DELTAS : PREMIUMS;
 
   const settings = (
     <>
       {wide && <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>}
       {expiry.control}
+      <label className="grid gap-1 px-1">
+        <span className="text-[12px] text-muted-foreground">Backtest by</span>
+        <select
+          value={strategyId ?? ''} onChange={(e) => setStrategyId(e.target.value === '' ? null : e.target.value)}
+          className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[15px] text-foreground [color-scheme:dark]"
+        >
+          <option value="">These settings (every signal)</option>
+          {strategies.map((x) => (
+            <option key={x.id} value={x.id}>{x.name}{x.account ? ` · ${x.account}` : ''}{x.enabled ? '' : ' · off'}</option>
+          ))}
+        </select>
+      </label>
+      {!byStrategy && <>
       <Segmented label="Which signals" value={params.window} options={WINDOWS} onChange={(window) => set({ window })} />
       <Segmented label="How the strike is picked" value={params.rule} options={RULES} onChange={(rule) => set({ rule, value: rule === 'delta' ? 0.1 : 50 })} />
       <ChipRow wide={wide} label={params.rule === 'delta' ? 'Sell the nearest strike with a delta of at most' : 'Sell the dearest strike priced at most'}>
@@ -162,6 +182,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       <ChipRow wide={wide} label="Lots a signal">
         {LOTS.map((n) => <Chip key={n} on={params.lots === n} onClick={() => set({ lots: n })}>{n}</Chip>)}
       </ChipRow>
+      </>}
       {r && r.choices.timeframes.length > 0 && (
         <ChipRow wide={wide} label="Time frame">
           <Chip on={tfs.length === 0} onClick={() => setTfs([])}>All time frames</Chip>
@@ -204,6 +225,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       {settings}
 
       <Panel title="Backtest result">
+        {r.strategy && (
+          <div className="mb-2 grid gap-1">
+            <p className="m-0 text-[14px]">By <b>{r.strategy.name}</b>&apos;s own rules: its methods and time frames, its hours and no-entry window, its SL / TGT distances, its strike rule at each hour, its lots, its TGT and its &ldquo;at most open&rdquo;.</p>
+            {r.strategy.caveats.map((c) => <p key={c} className="m-0 text-[12.5px] text-[var(--warn)]">{c}</p>)}
+          </div>
+        )}
         <p className="m-0 text-[13px] text-muted-foreground">
           {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target 90%, stop {STOPS.find((s) => s.value === params.stopPct)?.label ?? `${params.stopPct * 100}%`}
         </p>
@@ -235,7 +262,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         <p className="m-0 mt-2 text-[12.5px] leading-snug text-muted-foreground">
           {count(r.signals)} signals went in the trade; {count(r.signals - notTraded)} were traded here.
           {notTraded > 0 && <> Not traded: {[
-            r.skipped['outside-window'] ? `${count(r.skipped['outside-window'])} outside the hours chosen` : null,
+            r.skipped['outside-window'] ? `${count(r.skipped['outside-window'])} outside ${byStrategy ? 'its days and hours' : 'the hours chosen'}` : null,
+            r.skipped['no-entry-window'] ? `${count(r.skipped['no-entry-window'])} inside its no-entry window` : null,
+            r.skipped.distance ? `${count(r.skipped.distance)} with the SL or TGT outside its distances` : null,
+            r.skipped['at-limit'] ? `${count(r.skipped['at-limit'])} while it already had its most open` : null,
             r.skipped['no-strike'] ? `${count(r.skipped['no-strike'])} with no strike inside the rule worth $10` : null,
             r.skipped['no-board'] ? `${count(r.skipped['no-board'])} with no option prices recorded then` : null,
             r.skipped['no-exit-price'] ? `${count(r.skipped['no-exit-price'])} with no price to exit at` : null,
@@ -243,6 +273,28 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           {(tfs.length > 0 || methods.length > 0) && ' The counts in this line are before the time frame and method filters.'}
         </p>
       </Panel>
+
+      {r.strategy && (
+        <Panel title="Backtest against its real orders">
+          <dl className="m-0 grid gap-1 text-[13.5px]">
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-muted-foreground">Backtest</dt>
+              <dd className="m-0 text-right tabular-nums">{count(t.n)} trades · {pct(rate(t), 0)} won · <b className={netClass(t.net)}>{moneyText(t.net)}</b></dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-muted-foreground">Real orders</dt>
+              <dd className="m-0 text-right tabular-nums">
+                {r.strategy.real.n === 0 && r.strategy.real.open === 0 ? 'none in this range' : (
+                  <>{count(r.strategy.real.n)} closed · {pct(r.strategy.real.n ? r.strategy.real.wins / r.strategy.real.n : null, 0)} won{r.strategy.real.open ? ` · ${r.strategy.real.open} open` : ''} · <b className={netClass(r.strategy.real.net)}>{moneyText(r.strategy.real.net)}</b></>
+                )}
+              </dd>
+            </div>
+          </dl>
+          <p className="m-0 mt-2 text-[12px] leading-snug text-muted-foreground">
+            They differ where the desk did: real orders wait in the line, meet the desk-wide limit and margin, fill a little worse or better, and exit on time steps the backtest does not replay.
+          </p>
+        </Panel>
+      )}
 
       {sl && sl.n > 0 && (
         <Panel title="When the perp's SL was hit">

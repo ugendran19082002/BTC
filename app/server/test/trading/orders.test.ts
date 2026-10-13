@@ -270,14 +270,13 @@ test('16 a stop that only partly fills leaves the rest short, and the desk keeps
   r.ex.configure({ slippageLadder: [{ price: back + 1, size: 40 }] });
   r.ex.tick(quote(CE, back, back + 1, { mark: back + 1, ts: r.now() }));
   const s = await r.engine.poll(plan.tradeId);
-  // 40 by the exchange backstop; then, the offer being far through the stop,
-  // the desk's own watch starts its count on the rest. It used to stop at 60
-  // short: a partial stop fill put the trade in exit_pending, where the desk
-  // stopped watching the stop.
-  assert.equal(s?.position, -60, 'still short — the exit is not done');
-  assert.notEqual(s?.phase, 'flat');
+  // 40 by the exchange backstop; then, the offer being at the backstop -- a run (STOP_RUN_SHARE) -- the desk
+  // closes the rest at once rather than counting fifteen seconds. It used to stop at 60 short: a partial stop fill
+  // put the trade in exit_pending, where the desk stopped watching the stop.
+  assert.ok((s?.position ?? -100) > -60, `the desk keeps getting out at once: ${s?.position}`);
+  assert.notEqual(s?.position, 0, 'only what is offered fills: the exit is not done');
   const { held } = await holdOffer(r, CE, back, back + 1, plan.tradeId);
-  assert.ok((held?.position ?? -60) > -60, 'and the desk keeps getting out');
+  assert.ok((held?.position ?? -100) > (s?.position ?? -100) || held?.position === 0, 'and it carries on getting out');
 });
 
 // --------------------------------------------------------------- 17 & 18 OCO

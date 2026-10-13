@@ -1,7 +1,7 @@
 /** The signal history traded as options, as `/api/signal-backtest` gives it (server: `report/signal-backtest.ts`). */
 
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'window-end';
-export type BtSkip = 'outside-window' | 'no-board' | 'no-strike' | 'no-exit-price';
+export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'at-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
 export type BacktestParams = { rule: 'delta' | 'premium'; value: number; lots: number; targetPct: number; stopPct: number; window: 'desk' | 'all' };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */
@@ -12,10 +12,14 @@ export type BtTot = {
 export type BtRow = BtTot & { key: string; name: string; tf?: string; days?: number };
 export type SignalBacktestResponse = {
   from: string; to: string; params: BacktestParams;
+  /** The strategy backtested, what of it could not be replayed, and what its real orders made in the range. Null: the screen's own settings. */
+  strategy: { id: string; name: string; accountId: number | null; caveats: string[]; real: { n: number; wins: number; open: number; net: number } } | null;
+  /** The signal strategies there are to backtest by: those that sell. */
+  strategies: { id: string; name: string; enabled: boolean; account: string | null }[];
   signals: number; skipped: Record<BtSkip, number>;
   total: BtTot;
   days: (BtTot & { day: string; pattern: string | null; live: boolean })[];
   pairs: BtRow[]; byTf: BtRow[]; byMethod: BtRow[]; byPattern: BtRow[]; byFamily: BtRow[];
   choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string; n: number; wins: number; net: number }[] };
 };
-export type BacktestQuery = { from: string; to: string; params: BacktestParams; tfs: readonly string[]; methods: readonly string[] };
+export type BacktestQuery = { from: string; to: string; params: BacktestParams; tfs: readonly string[]; methods: readonly string[]; strategy?: string | null };

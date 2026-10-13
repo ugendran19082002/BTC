@@ -4,7 +4,7 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
-import { installGlobalErrorReporting } from '@/lib/report-error';
+import { installGlobalErrorReporting, reloadingForBuild } from '@/lib/report-error';
 
 const el = document.getElementById('root');
 if (!el) throw new Error('#root missing');
@@ -26,6 +26,8 @@ window.addEventListener('vite:preloadError', (event) => {
   if (Date.now() - last < 60_000) return;
   try { sessionStorage.setItem(KEY, String(Date.now())); } catch { /* as above */ }
   event.preventDefault();
+  // What fails between here and the reload is the old build's chunk missing: not a fault to report.
+  reloadingForBuild();
   window.location.reload();
 });
 

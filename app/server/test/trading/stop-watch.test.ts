@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { OptionStopWatch, STOP_WATCH_BOARD_STALE_MS, STOP_WATCH_QUOTA_PCT, STOP_WATCH_RECHECK_MS, stopWatchedOf, type StopWatched } from '../../src/trading/stop-watch.js';
-import { STOP_CONFIRM_MS, type TradeRecord } from '../../src/trading/engine.js';
+import { STOP_CONFIRM_FAST_MS, STOP_CONFIRM_MS, backstopFor, closeLimitFor, type TradeRecord } from '../../src/trading/engine.js';
 import { ceProduct, peProduct, planFor, quote, rig, T0 } from './harness.js';
 
 /**
@@ -153,7 +153,8 @@ async function book() {
   for (const id of ['ce-1', 'ce-2', 'pe-1']) assert.equal((await state(id)).position, -10, id);
   return { r, state };
 }
-const offer = (r: Awaited<ReturnType<typeof book>>['r'], symbol: string, bid: number, ask: number) => r.ex.tick(quote(symbol, bid, ask, { ts: r.now() }));
+/** The book's offer moved; the mark stays under every stop unless said, so the offer alone is what is judged. */
+const offer = (r: Awaited<ReturnType<typeof book>>['r'], symbol: string, bid: number, ask: number, mark = 100) => r.ex.tick(quote(symbol, bid, ask, { ts: r.now(), mark }));
 
 test('[critical] the engine\'s check for one contract: the count starts at the first look and the close is at the first look fifteen seconds on', async () => {
   const { r, state } = await book();
@@ -202,7 +203,7 @@ test('[critical] one quote for the contract, every trade on it judged by its own
   assert.equal((await state('pe-1')).position, -10, 'the put was not touched');
 
   // a quote from before the feed went quiet is not evidence about now
-  offer(r, PE, 125, 126);
+  offer(r, PE, 115, 116);                         // through the 110 stop, short of a run
   await r.engine.checkStops(PE, ['pe-1']);
   r.advance(60_000);                               // no new quote for a minute
   assert.deepEqual(await r.engine.checkStops(PE, ['pe-1']), []);
@@ -233,4 +234,75 @@ test('[critical] the watch and the engine together: a stop reached is closed fif
   assert.equal(closedAt, began + STOP_CONFIRM_MS, 'closed at fifteen seconds, not at the loop\'s next turn');
   assert.equal(w.size, 2, 'and no longer watched');
   assert.equal((await state('ce-2')).position, -10);
+});
+
+// ------------------------------------------------------------------ a run, not a stray quote (13 Oct 2026)
+
+test('[critical] the offer and the mark both through the stop: closed after three seconds, not fifteen', async () => {
+  const { r, state } = await book();
+  offer(r, CE, 111, 112, 111.5);                   // ce-1's stop is 110: the offer and the mark agree
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), []);
+  r.advance(STOP_CONFIRM_FAST_MS - 1_000); offer(r, CE, 111, 112, 111.5);
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), [], 'two seconds: not yet');
+  r.advance(1_000); offer(r, CE, 111, 112, 111.5);
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), ['ce-1']);
+  const why = (await r.store.get('ce-1'))!.events.find((e) => e.t === 'exit_submitted') as { reason?: string };
+  assert.equal(why.reason, 'stop reached: the offer at 112 and the mark at 111.5 both through the stop 110 for 3 s');
+  assert.equal((await state('ce-2')).position, -10, 'ce-2\'s stop of 120 is not reached');
+});
+
+test('[critical] the mark alone through the stop, the offer under it, is not a stop: a mark prints prices nothing trades at', async () => {
+  const { r, state } = await book();
+  for (let s = 0; s <= 30; s += 3) {
+    offer(r, CE, 104, 105, 140);
+    await r.engine.checkStops(CE, ['ce-1']);
+    r.advance(3_000);
+  }
+  assert.equal((await state('ce-1')).position, -10);
+  // and the mark dropping back under while the offer stays through falls back to the fifteen seconds
+  offer(r, CE, 111, 112, 111.5);
+  await r.engine.checkStops(CE, ['ce-1']);
+  r.advance(2_000); offer(r, CE, 111, 112, 100);
+  r.advance(2_000); offer(r, CE, 111, 112, 100);
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), [], 'the mark went back: no fast close');
+  r.advance(STOP_CONFIRM_MS - 4_000); offer(r, CE, 111, 112, 100);
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), ['ce-1'], 'the offer held fifteen seconds: closed as before');
+});
+
+test('[critical] a run -- the offer half way from the stop to the backstop -- is closed at the first look', async () => {
+  const { r, state } = await book();
+  const rec = (await r.store.get('ce-1'))!;
+  const back = backstopFor(110, rec.state.entryAvgPrice);
+  const half = Math.ceil(110 + (back - 110) * 0.5);
+  offer(r, CE, half - 1, half);                    // the mark under the stop: the run alone decides
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), ['ce-1'], 'no fifteen seconds: the backstop would buy at the market first');
+  const why = (await r.store.get('ce-1'))!.events.find((e) => e.t === 'exit_submitted') as { reason?: string };
+  assert.match(why.reason!, new RegExp(`^stop reached: the offer at ${half} is 50% of the way from the stop 110 to the backstop ${back}`));
+  assert.equal((await state('ce-2')).position, -10, 'ce-2 is judged by its own stop and backstop');
+});
+
+test('[critical] a stop\'s close is a buy limit 15% through the offer it was judged on -- what it cannot fill is sent again at the market', async () => {
+  assert.equal(closeLimitFor(200, 0.1), 230);
+  assert.equal(closeLimitFor(2, 0.1), 2.5, 'five ticks at least');
+  assert.equal(closeLimitFor(171.3, 0.5), 197, 'up to the tick: 196.995 is 197');
+
+  const { r, state } = await book();
+  // Only 4 are offered within the cap; the rest of the book is far above it.
+  r.ex.configure({ slippageLadder: [{ price: 112, size: 4 }, { price: 140, size: 50 }] });
+  offer(r, CE, 111, 112, 111.5);
+  await r.engine.checkStops(CE, ['ce-1']);
+  r.advance(STOP_CONFIRM_FAST_MS); offer(r, CE, 111, 112, 111.5);
+  await r.engine.checkStops(CE, ['ce-1']);
+  const rec = (await r.store.get('ce-1'))!;
+  const exit = rec.events.find((e) => e.t === 'exit_submitted') as { clientOrderId: string };
+  const order = await r.ex.getOrderByClientId(exit.clientOrderId);
+  assert.equal(order?.type, 'limit');
+  assert.equal(order?.limitPrice, closeLimitFor(112, 0.1));
+  assert.equal(rec.state.position, -6, 'four filled inside the cap; nothing bought at 140');
+  // the follow-up: what is left goes at the market and the trade is closed
+  r.advance(4_000); offer(r, CE, 111, 112, 111.5);
+  await r.engine.poll('ce-1');
+  r.advance(4_000);
+  await r.engine.poll('ce-1');
+  assert.equal((await state('ce-1')).position, 0, 'the rest at the market: the close still happens');
 });
