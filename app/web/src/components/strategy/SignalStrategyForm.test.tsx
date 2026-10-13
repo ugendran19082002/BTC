@@ -20,8 +20,10 @@ vi.mock('@/api/entry', () => ({
 }));
 
 const getMethodOptionRecord = vi.fn();
+const getSignalBacktest = vi.fn();
 vi.mock('@/api/signal-backtest', () => ({
   getMethodOptionRecord: (...a: unknown[]) => getMethodOptionRecord(...a),
+  getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a),
 }));
 
 /**
@@ -94,6 +96,7 @@ beforeEach(() => {
   getEntryBoard.mockResolvedValue(BOARD);
   // No record as options unless a test gives one: the list is then the perp's points, as it was before 13 Oct 2026.
   getMethodOptionRecord.mockRejectedValue(new Error('No record as options on this desk.'));
+  getSignalBacktest.mockRejectedValue(new Error('No backtest on this desk.'));
 });
 
 describe('a form of its own: only what a signal strategy has', () => {
@@ -1264,7 +1267,7 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
   it('[critical] Profit, Loss, the figures and "Pick profitable" are by what each method made as options under this strategy -- not by its perp points', async () => {
     show(signalStrategy({ methods: [] }, { lots: 2, takeProfitPct: 0.7, stopLossPct: 3 }));
     tab('Signals');
-    await waitFor(() => expect(basis('As options')).toHaveAttribute('aria-checked', 'true'), { timeout: 4_000 });
+    await waitFor(() => expect(basis('As options · this strategy')).toHaveAttribute('aria-checked', 'true'), { timeout: 4_000 });
     // asked with the form's own rules -- its lots, its option target and stop -- and no method named
     const asked = getMethodOptionRecord.mock.calls.at(-1)![0] as Strategy['config'];
     expect([asked.lots, asked.takeProfitPct, asked.stopLossPct, asked.signal!.mode, asked.signal!.methods]).toEqual([2, 0.7, 3, 'mtf', []]);
@@ -1301,7 +1304,7 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     show(signalStrategy({ methods: [] }));
     tab('Signals');
     await waitFor(() => expect(getMethodOptionRecord).toHaveBeenCalledTimes(1), { timeout: 4_000 });
-    await waitFor(() => expect(basis('As options')).toHaveAttribute('aria-checked', 'true'));
+    await waitFor(() => expect(basis('As options · this strategy')).toHaveAttribute('aria-checked', 'true'));
     fireEvent.click(await screen.findByLabelText('#6 BOS'));
     fireEvent.click(screen.getByLabelText('#1 Breakout'));
     await new Promise((r) => setTimeout(r, 700));
@@ -1322,7 +1325,7 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     show(signalStrategy({ methods: [] }));
     tab('Signals');
     expect(await screen.findByText(/As options cannot be shown: Entry time must be a time of day, like 5:30 AM\. Showing the perp's points\./, undefined, { timeout: 4_000 })).toBeInTheDocument();
-    expect(basis('As options')).toBeDisabled();
+    expect(basis('As options · this strategy')).toBeDisabled();
     expect(basis('Perp points')).toHaveAttribute('aria-checked', 'true');
     const by = await results();
     await waitFor(() => expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']));
@@ -1336,5 +1339,35 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     expect(await screen.findByText(/As options cannot be shown: A record as options is worked out for strategies that sell\./)).toBeInTheDocument();
     await new Promise((r) => setTimeout(r, 600));
     expect(getMethodOptionRecord).not.toHaveBeenCalled();
+  });
+
+  it('[critical] "Backtest settings" is the Backtest screen\'s own method list -- its settings, this strategy\'s timeframes -- beside the strategy\'s, with both counts said', async () => {
+    // the Backtest screen was left on delta 0.10 at 16 lots; by those settings the breakout is in profit, where by this strategy's premium rule it loses
+    window.localStorage.setItem('btc-desk:signalBacktest.params', JSON.stringify({ rule: 'delta', value: 0.1, lots: 16, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 58, cePct: 80, pePct: 80 }));
+    const pair = (method: string, n: number, wins: number, net: number) => ({ key: `${method}|mtf|5m`, name: method, n, wins, net });
+    getSignalBacktest.mockResolvedValue({ from: '2026-10-01', to: '2026-10-13', signals: 40, total: { n: 24 }, pairs: [pair('breakout', 12, 9, 3.1), pair('bos', 9, 6, 2.2), pair('liquidity-sweep', 3, 1, -0.4)] });
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    await waitFor(() => expect(basis('As options · this strategy')).toHaveAttribute('aria-checked', 'true'), { timeout: 4_000 });
+    await waitFor(() => expect(basis('As options · Backtest settings')).toBeEnabled(), { timeout: 4_000 });
+    // asked as the Backtest screen asks: its settings, since 1 Oct, the chain's signals, every method
+    const asked = getSignalBacktest.mock.calls.at(-1)![0] as { from: string; params: { lots: number; deskMax: number }; tfs: string[]; methods: string[]; strategy: null };
+    expect([asked.from, asked.params.lots, asked.params.deskMax, asked.tfs, asked.methods, asked.strategy]).toEqual(['2026-10-01', 16, 58, ['chain'], [], null]);
+    // both counts, side by side
+    expect(screen.getByLabelText('the two records as options')).toHaveTextContent("By this strategy's rules: 2 in profit, 1 in loss. By the Backtest screen's settings: 2 in profit, 1 in loss. They differ where the rules do");
+
+    const by = await results();
+    fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
+    expect(boxes()).toEqual(['#1 Breakout']);                                   // by this strategy's own rules
+    fireEvent.click(basis('As options · Backtest settings'));
+    expect(boxes()).toEqual(['#3 Liquidity sweep']);                             // by the Backtest screen's
+    expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']);
+    fireEvent.click(within(by).getByRole('button', { name: /^Profit/ }));
+    expect(boxes()).toEqual(['#1 Breakout', '#6 BOS']);
+    expect(screen.getByLabelText('#1 Breakout').closest('label')!.textContent).toMatch(/75% win · 12t · \+₹[\d,.]+/);
+    expect(screen.getByText(/The Backtest screen's own list: each method by its settings as you last left them \(delta ≤ 0\.10 · 16 lots · TGT 90% · SL \+300% · 9:30 PM → 3:59 PM · at most 58 open · CE 80% · PE 80%\), on this strategy's timeframes, Thu 1 Oct to Tue 13 Oct/)).toBeInTheDocument();
+    // "Pick profitable" follows the list shown
+    fireEvent.click(screen.getByRole('button', { name: /^Pick profitable with the chain \(2\)/ }));
+    expect(screen.getByLabelText('#1 Breakout')).toBeChecked();
   });
 });

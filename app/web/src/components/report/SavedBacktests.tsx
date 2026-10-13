@@ -26,7 +26,7 @@ function shapeOf(q: SavedQuery): string {
     hours: p.window === 'custom' ? [p.hoursFrom ?? '', p.hoursTo ?? ''] : null,
     deskMax: p.deskMax ?? 0, cePct: p.cePct ?? 100, pePct: p.pePct ?? 100,
     range: [p.slMin ?? 0, p.slMax ?? 0, p.tgtMin ?? 0, p.tgtMax ?? 0],
-    steps: (p.targetSteps ?? []).map((s) => [s.at, Math.round(s.pct * 10_000)]), vol: p.vol ?? 'off', minPremium: p.minPremium ?? null,
+    steps: (p.targetSteps ?? []).map((s) => [s.at, Math.round(s.pct * 10_000)]), vol: p.vol ?? 'off', minPremium: p.minPremium ?? 10,
     tfs: [...q.tfs].sort(), methods: [...q.methods].sort(), strategy: q.strategy,
   });
 }

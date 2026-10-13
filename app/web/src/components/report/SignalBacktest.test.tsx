@@ -601,7 +601,7 @@ describe('SignalBacktest', () => {
 
   it('[critical] saved backtests: the settings on the screen kept by name, put back on a tap, and two run together with their total above the result', async () => {
     const saved = (id: string, name: string, params: object, tfs: string[] = []) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, ...params }, tfs, methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
-    const A = saved('a1', 'Desk rules', {}), B = saved('b2', '16 lots on 4h', { lots: 16 }, ['4h']);
+    const A = saved('a1', 'Desk rules', {});
     saves.getBacktestSaves.mockResolvedValue({ saves: [], portfolios: [] });
     saves.saveBacktest.mockImplementation(async () => { saves.getBacktestSaves.mockResolvedValue({ saves: [A], portfolios: [] }); return { ok: true, save: A }; });
     show();
@@ -647,7 +647,9 @@ describe('SignalBacktest', () => {
     fireEvent.click(panel().getByRole('checkbox', { name: 'Run 16 lots on 4h together with others' }));
     fireEvent.click(panel().getByRole('checkbox', { name: 'Run Desk rules together with others' }));
     fireEvent.click(panel().getByRole('button', { name: 'Run these 2 together' }));
-    const run = within((await screen.findByText('Run together · 16 lots on 4h + Desk rules')).closest('section, div')!.parentElement!);
+    // the panel is there at once, saying it is being worked out; then the result
+    await screen.findByRole('table', { name: 'Run together: each saved backtest' });
+    const run = within(screen.getByText('Run together · 16 lots on 4h + Desk rules').closest('section, div')!.parentElement!);
     expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['b2', 'a1'], { from: '2026-10-01', to: '2026-10-13' });
     expect(run.getByText(/a trade$/).parentElement!.textContent).toMatch(/^−₹7,650 −₹[\d.]+ a trade$/);                 // -$90 together
     expect(rowsOf('Run together: each saved backtest')).toEqual(['16 lots on 4h10050%₹₹charges ₹', 'Desk rules1,00050%₹₹charges ₹']);

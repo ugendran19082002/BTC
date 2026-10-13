@@ -44,8 +44,11 @@ const GROUPS = [
 ] as const;
 type GroupFilter = (typeof GROUPS)[number]['id'];
 
-/** What a method's record is of: the option the strategy would have sold, or the signal's own trade on the perp. */
-export type RecordBasis = 'options' | 'perp';
+/**
+ * What a method's record is of: the option this strategy would have sold (`options`), the option the Backtest
+ * screen's own settings sell (`screen`), or the signal's own trade on the perp.
+ */
+export type RecordBasis = 'options' | 'screen' | 'perp';
 /** A method's record in its basis's own unit: dollars after charges as options, BTC points on the perp. */
 export type MethodRecord = { trades: number; wins: number; winPct: number | null; net: number };
 
@@ -179,17 +182,23 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
   }, [report, rule.mode, tfKey]);
   // As options to begin with; the choice is kept in this browser. Without an option record there is only the perp's.
   const [basisPick, setBasisPick] = usePersisted<RecordBasis>('signal-rule:record', 'options');
-  const options = optionRecord?.data ?? null;
-  const basis: RecordBasis = basisPick === 'options' && options ? 'options' : 'perp';
-  const recordOf = useMemo((): Map<string, MethodRecord> => (basis === 'options'
-    ? new Map(options!.methods.map((m) => [m.method, { trades: m.trades, wins: m.wins, winPct: m.trades ? (m.wins / m.trades) * 100 : null, net: m.net }]))
+  const own = optionRecord?.data ?? null;
+  const screen = optionRecord?.screen?.data ?? null;
+  // The one asked for where it can be had; else the other record as options; else the perp's.
+  const basis: RecordBasis = basisPick === 'perp' ? 'perp'
+    : basisPick === 'screen' ? (screen ? 'screen' : own ? 'options' : 'perp')
+      : own ? 'options' : 'perp';
+  const options = basis === 'screen' ? screen : basis === 'options' ? own : null;
+  const asOptions = options !== null;
+  const recordOf = useMemo((): Map<string, MethodRecord> => (options
+    ? new Map(options.methods.map((m) => [m.method, { trades: m.trades, wins: m.wins, winPct: m.trades ? (m.wins / m.trades) * 100 : null, net: m.net }]))
     : new Map(rows.map((r) => [r.method, { trades: r.trades, wins: r.wins, winPct: r.winPct, net: r.netPts }]))),
   [basis, options, rows]);
   // Without the chain on more than one timeframe: each method's record on each, under the sum, so the pick can be checked.
   const byTf = useMemo((): Map<string, { tf: SignalTf; row: MethodRecord | undefined }[]> => {
     if (rule.mode !== 'single' || tfs.length < 2) return new Map();
-    if (basis === 'options') {
-      return new Map(options!.methods.map((m) => [m.method, tfs.map((tf) => {
+    if (options) {
+      return new Map(options.methods.map((m) => [m.method, tfs.map((tf) => {
         const x = m.byTf.find((t) => t.tf === tf);
         return { tf, row: x ? { trades: x.trades, wins: x.wins, winPct: x.trades ? (x.wins / x.trades) * 100 : null, net: x.net } : undefined };
       })]));
@@ -201,7 +210,9 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report, rule.mode, tfKey, basis, options]);
   /** A net in the basis's own words: rupees as options, points on the perp. */
-  const netWords = (n: number, unit = true) => (basis === 'options' ? moneyText(n) : `${pts(n)}${unit ? ' pts' : ''}`);
+  const netWords = (n: number, unit = true) => (asOptions ? moneyText(n) : `${pts(n)}${unit ? ' pts' : ''}`);
+  /** How many methods a record has in profit and in loss: the two records as options, said side by side. */
+  const tally = (r: typeof own) => (r ? { up: r.methods.filter((m) => m.trades > 0 && m.net > 0).length, down: r.methods.filter((m) => m.trades > 0 && m.net < 0).length } : null);
   const board = boards?.[0] ?? null;
   const reads = useMemo(() => (boards ?? []).flatMap((b, i) => b.reads.filter((r) => (rule.mode === 'mtf' ? r.mode === 'mtf' : r.mode === 'single' && r.tf === boardTfs[i]))),
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -243,7 +254,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
   const copied = copy && copy.took.join(',') === rule.methods.join(',') ? copy : null;
   const toggle = (id: string) => set('methods', picked.has(id) ? rule.methods.filter((x) => x !== id) : [...rule.methods, id]);
   const addAll = (ids: string[]) => set('methods', [...new Set([...rule.methods, ...ids])]);
-  const winners = basis === 'options'
+  const winners = asOptions
     ? [...recordOf].filter(([, r]) => r.trades >= minT && r.net > 0).map(([id]) => id)
     : profitableIds(rows, minT);
   const live = matchingSignals(reads, rule);
@@ -411,25 +422,43 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           <div className="mt-1.5">
             <div role="radiogroup" aria-label="profit and loss by" className="flex flex-wrap items-center gap-1">
               <span className="mr-1 text-[11.5px] text-muted-foreground">Profit and loss by</span>
-              <button type="button" role="radio" aria-checked={basis === 'options'} disabled={!options} onClick={() => setBasisPick('options')}
+              <button type="button" role="radio" aria-checked={basis === 'options'} disabled={!own} onClick={() => setBasisPick('options')}
+                      title="Each method as an option under this strategy's own strike rule, lots, hours and exits"
                       className={cn(chip(basis === 'options'), 'disabled:opacity-50')}>
-                As options
+                As options · this strategy
               </button>
+              {optionRecord.screen && (
+                <button type="button" role="radio" aria-checked={basis === 'screen'} disabled={!screen} onClick={() => setBasisPick('screen')}
+                        title="Each method as an option under the Backtest screen's own settings: the list its Method filter shows"
+                        className={cn(chip(basis === 'screen'), 'disabled:opacity-50')}>
+                  As options · Backtest settings
+                </button>
+              )}
               <button type="button" role="radio" aria-checked={basis === 'perp'} onClick={() => setBasisPick('perp')} className={chip(basis === 'perp')}>
                 Perp points
               </button>
-              {optionRecord.busy && <span aria-live="polite" className="text-[11.5px] text-muted-foreground">working out…</span>}
+              {(optionRecord.busy || optionRecord.screen?.busy) && <span aria-live="polite" className="text-[11.5px] text-muted-foreground">working out…</span>}
             </div>
             <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
               {basis === 'options'
-                ? `Each method sold as this strategy would sell it and bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT -- money after charges, ${dayLabel(options!.from)} to ${dayLabel(options!.to)}. Every method on all its signals: "at most open" is not counted.`
-                : !options && optionRecord.error
-                  ? `As options cannot be shown: ${optionRecord.error} Showing the perp's points.`
-                  : !options
-                    ? (optionRecord.busy ? "Working out each method's record as options; the perp's points until it arrives." : "The perp's points: the signal's own trade to its SL or TGT, as the Methods tab counts it.")
-                    : "The perp's points: the signal's own trade to its SL or TGT -- not what the option made."}
+                ? `Each method sold as this strategy would sell it and bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT -- money after charges, ${dayLabel(own!.from)} to ${dayLabel(own!.to)}. Every method on all its signals: "at most open" is not counted.`
+                : basis === 'screen'
+                  ? `The Backtest screen's own list: each method by its settings as you last left them (${optionRecord.screen!.words}), on this strategy's timeframes, ${dayLabel(screen!.from)} to ${dayLabel(screen!.to)} -- not by this strategy's strike rule, lots or distances.`
+                  : !own && optionRecord.error
+                    ? `As options cannot be shown: ${optionRecord.error} Showing the perp's points.`
+                    : !own
+                      ? (optionRecord.busy ? "Working out each method's record as options; the perp's points until it arrives." : "The perp's points: the signal's own trade to its SL or TGT, as the Methods tab counts it.")
+                      : "The perp's points: the signal's own trade to its SL or TGT -- not what the option made."}
             </p>
-            {basis === 'options' && options!.caveats.map((c) => <p key={c} className="m-0 mt-0.5 text-[11px] leading-snug text-[var(--warn)]">{c}</p>)}
+            {/* Both records as options beside each other, where both are had: the two lists differ wherever the rules do, and that is said in numbers. */}
+            {own && screen && (
+              <p className="m-0 mt-0.5 text-[11px] leading-snug text-muted-foreground" aria-label="the two records as options">
+                By this strategy&apos;s rules: <b className="font-medium text-[var(--up)]">{tally(own)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(own)!.down} in loss</b>.
+                {' '}By the Backtest screen&apos;s settings: <b className="font-medium text-[var(--up)]">{tally(screen)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(screen)!.down} in loss</b>.
+                {' '}They differ where the rules do -- the strike rule, the lots, the SL and TGT distances, the exits.
+              </p>
+            )}
+            {basis === 'options' && own!.caveats.map((c) => <p key={c} className="m-0 mt-0.5 text-[11px] leading-snug text-[var(--warn)]">{c}</p>)}
           </div>
         )}
         {/* By record, with counts: the profitable ones, the losing ones, the ones with nothing yet. */}
@@ -489,7 +518,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
             Pick all shown ({shown.length})
           </button>
           <button type="button" className={link} disabled={!winners.length}
-                  title={`Net ${basis === 'options' ? 'as options, after charges,' : 'points'} above zero over at least ${minT} trade${minT === 1 ? '' : 's'}, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
+                  title={`Net ${asOptions ? 'as options, after charges,' : 'points'} above zero over at least ${minT} trade${minT === 1 ? '' : 's'}, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
                   onClick={() => addAll(winners)}>
             Pick profitable {rule.mode === 'mtf' ? 'with the chain' : `on ${tfs.join(' + ') || '—'}`} ({winners.length})
           </button>
@@ -593,6 +622,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
         <p className="m-0 mt-1 text-[10.5px] text-[var(--dim)]">
           {basis === 'options'
             ? `Record: win rate · trades · net as options after charges, ${way}, by this strategy's own strike, lots and exits (the Backtest).`
+            : basis === 'screen' ? `Record: win rate · trades · net as options after charges, ${way}, by the Backtest screen's settings (its Method list).`
             : `Record: win rate · trades · net BTC points, every signal so far ${way} (the Methods tab).`}
         </p>
       </div>
