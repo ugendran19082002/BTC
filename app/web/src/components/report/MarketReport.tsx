@@ -360,6 +360,8 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
 
   const filters = (
     <>
+      {/* On the desk it sits under two other reports: it says where it begins. The phone's screen title says it there. */}
+      {wide && <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Market report <span className="text-[12.5px] font-normal text-muted-foreground">· each expiry day&apos;s kind of market, and what the methods made on it</span></h2>}
       <Segmented label="Expiry days" value={rangeKey} options={RANGES} onChange={setRangeKey} />
       <Segmented label="Which record the lists show" value={source} options={SOURCES} onChange={setSource} />
       {r && r.choices.timeframes.length > 0 && (
@@ -373,10 +375,13 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
         </div>
       )}
       {r && (r.choices.methods.length > 1 || r.choices.strategies.length > 1 || methods.length > 0 || strategies.length > 0) && (
-        <FilterBar onClear={methods.length || strategies.length ? () => { setMethods([]); setStrategies([]); } : null}>
-          <FilterPicker noun={METHODS} options={r.choices.methods} picked={methods} onChange={setMethods} />
-          {r.choices.strategies.length > 0 && <FilterPicker noun={STRATEGIES} options={r.choices.strategies} picked={strategies} onChange={setStrategies} />}
-        </FilterBar>
+        // The bar bleeds to a phone's edges (-16px); on the desk the same 16px is given back, so it sits inside the screen.
+        <div className={wide ? 'px-4' : undefined}>
+          <FilterBar onClear={methods.length || strategies.length ? () => { setMethods([]); setStrategies([]); } : null}>
+            <FilterPicker noun={METHODS} options={r.choices.methods} picked={methods} onChange={setMethods} />
+            {r.choices.strategies.length > 0 && <FilterPicker noun={STRATEGIES} options={r.choices.strategies} picked={strategies} onChange={setStrategies} />}
+          </FilterBar>
+        </div>
       )}
     </>
   );
