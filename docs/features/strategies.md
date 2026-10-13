@@ -229,6 +229,8 @@ Every refusal is a sentence in `strategy_runs.detail`. The common ones:
 | `Spread is X%, limit is 15% for an order that crosses it.` | `precheck` | The book is too wide to cross. |
 | `The stop is X over a fill at the B bid, inside the S spread` | `precheck` `STOP_INSIDE_SPREAD` | A stop no wider than the spread would be reached as the entry fills (the offer is already there) and bought back seconds later. Widen the stop or wait for a tighter book. Not checked when `monitorOn` is `close`. |
 | `Would take total short to N, limit is M.` | `precheck` `MAX_POSITION` | The desk's `max_short_contracts` cap. |
+| `Worst case $X exceeds the $Y left in today's loss budget.` | `precheck` `DAILY_LOSS_LIMIT` | The order's worst case is more than what is left of the account's loss budget for the day (05:30 IST to 05:30 IST, booked losses only). |
+| `Today's loss budget is used up: $L lost against a budget of $B.` | `precheck` `DAILY_LOSS_LIMIT` | The day has already lost the whole budget, so every new order is refused. The budget is the account's own: half its balance until an amount is set, and it can be raised or switched off on the **Account** card (**Daily loss limit**: the switch, and **Change the amount**). The change holds from the next order. |
 
 To see a day's runs:
 

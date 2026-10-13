@@ -110,6 +110,10 @@ export function HomeScreen() {
             <Bar value={budget.usedPct} tone={budget.usedPct >= 0.8 ? 'down' : budget.usedPct >= 0.5 ? 'warn' : 'up'} label="Daily loss limit used" />
           </div>
         )}
+        {/* Switched off on the desk's Account card (13 Oct 2026): said here, where it is read -- this screen changes nothing. */}
+        {s && !budget && s.limits?.dailyLossOn === false && (
+          <div className="mt-2.5 flex justify-between text-[12px] text-muted-foreground"><span>Daily loss limit</span><span className="font-semibold text-[var(--warn)]">Off</span></div>
+        )}
       </Panel>
 
       <Panel title={s ? `Positions · ${running} running${waitingN ? ` · ${waitingN} waiting` : ''}` : 'Positions'} right={s && s.open.length > 0 ? <button type="button" onClick={() => p.go({ tab: 'positions' })} className="-my-[13px] inline-flex min-h-[44px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">Risk →</button> : undefined}>

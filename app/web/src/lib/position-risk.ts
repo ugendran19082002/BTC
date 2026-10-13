@@ -120,6 +120,8 @@ export function lossBudget(s: TradeStatus): { limitUsd: number; leftUsd: number;
     const { lossLimitUsd, lossLeftUsd } = s.combined;
     return lossLimitUsd > 0 ? { limitUsd: lossLimitUsd, leftUsd: lossLeftUsd, usedPct: usedOf(lossLimitUsd, lossLeftUsd) } : null;
   }
+  // Switched off (13 Oct 2026), there is no budget to be left: nothing to meter, nothing to warn about.
+  if (s.limits?.dailyLossOn === false) return null;
   const limitUsd = s.limits?.maxDailyLossUsd ?? 0;
   if (!(limitUsd > 0)) return null;
   const leftUsd = Math.max(0, limitUsd + Math.min(0, s.realisedTodayUsd ?? 0));

@@ -27,6 +27,8 @@ export function mergeStatuses(parts: readonly StatusPart[]): TradeStatus | null 
   };
   const lostOf = (s: TradeStatus) => Math.max(0, -(s.realisedTodayUsd ?? 0));
   const totalOf = (s: TradeStatus) => (s.walletUsd != null ? s.walletUsd : null);
+  // The accounts keeping a loss budget today: one with its budget switched off adds nothing to the limit or to what is left.
+  const kept = st.filter((s) => s.limits.dailyLossOn !== false);
 
   return {
     ...first,
@@ -53,7 +55,8 @@ export function mergeStatuses(parts: readonly StatusPart[]): TradeStatus | null 
       ...first.limits,
       maxShortContracts: sum(st.map((s) => s.limits.maxShortContracts)),
       maxLongContracts: sum(st.map((s) => s.limits.maxLongContracts ?? 0)),
-      maxDailyLossUsd: sum(st.map((s) => s.limits.maxDailyLossUsd)),
+      maxDailyLossUsd: sum(kept.map((s) => s.limits.maxDailyLossUsd)),
+      dailyLossOn: kept.length > 0,
     },
     combined: {
       accounts: parts.map((p) => ({
@@ -65,8 +68,8 @@ export function mergeStatuses(parts: readonly StatusPart[]): TradeStatus | null 
         netTodayUsd: todayOf(p.status).netUsd,
         positions: p.status.open.filter((t) => t.position !== 0).length,
       })),
-      lossLeftUsd: sum(st.map((s) => Math.max(0, s.limits.maxDailyLossUsd - lostOf(s)))),
-      lossLimitUsd: sum(st.map((s) => s.limits.maxDailyLossUsd)),
+      lossLeftUsd: sum(kept.map((s) => Math.max(0, s.limits.maxDailyLossUsd - lostOf(s)))),
+      lossLimitUsd: sum(kept.map((s) => s.limits.maxDailyLossUsd)),
     },
   };
 }

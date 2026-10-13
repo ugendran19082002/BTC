@@ -149,6 +149,9 @@ export function PnlScreen() {
           </dl>
         )}
         {budget && <LossMeter {...budget} />}
+        {isToday && s && !budget && s.limits?.dailyLossOn === false && (
+          <div className="mt-3 flex justify-between gap-2 text-[13px]"><span className="text-muted-foreground">Daily loss limit</span><span className="font-semibold text-[var(--warn)]">Off</span></div>
+        )}
         {isToday && narrowed && (
           <p className="m-0 mt-2 text-[12px] text-muted-foreground">
             This figure and its line are the whole account&apos;s: open positions are not split by strategy, method or time frame. The trades, the win rate and the pairs below are of {whose.join(', ')}.

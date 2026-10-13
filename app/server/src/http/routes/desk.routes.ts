@@ -11,7 +11,7 @@ import { DEFAULT_WALL_WITHIN_EM, optionStructure } from '../../domain/structure.
 import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { reloadCalibration } from '../../domain/calibration.js';
 import { loadDays, reloadDays } from '../../backtest/backtest.js';
-import { tradingService, LONG_CAP_KEY, SHORT_CAP_KEY } from '../../trading/service.js';
+import { tradingService, LONG_CAP_KEY, LOSS_LIMIT_KEY, LOSS_LIMIT_ON_KEY, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange } from '../../market/flow.js';
@@ -589,6 +589,8 @@ export function registerDeskRoutes(app: FastifyInstance) {
       },
       /** The long limit: no margin ceiling -- a bought option is paid for in full. */
       longCap: { inForce: svc.maxLongContracts, chosen: svc.longCapSetting },
+      /** The day's loss budget on this account: on or off, the amount in force, half the account, and the one chosen. */
+      lossLimit: svc.lossLimit,
     };
   });
 
@@ -638,6 +640,22 @@ export function registerDeskRoutes(app: FastifyInstance) {
       const res = await svc.setLongCap(Number(value));
       if (!res.ok) return refuse(reply, 422, { error: res.reason });
       return { ok: true, key, value: String(res.cap), longCap: { inForce: res.cap, chosen: svc.longCapSetting } };
+    }
+
+    /*
+     * The day's loss budget, per account (13 Oct 2026): its amount in USD -- empty or "default" goes back to half
+     * the account -- and whether it stops orders at all.
+     */
+    if (key === LOSS_LIMIT_KEY || key === LOSS_LIMIT_ON_KEY) {
+      const svc = tradingService();
+      if (key === LOSS_LIMIT_ON_KEY && value !== '0' && value !== '1') {
+        reply.code(400);
+        return { error: 'the loss budget switch is "1" (on) or "0" (off)' };
+      }
+      const back = value.trim() === '' || value.trim() === 'default';
+      const res = await svc.setDailyLoss(key === LOSS_LIMIT_ON_KEY ? { on: value === '1' } : { usd: back ? null : Number(value) });
+      if (!res.ok) return refuse(reply, 422, { error: res.reason });
+      return { ok: true, key, value: key === LOSS_LIMIT_ON_KEY ? value : String(res.lossLimit.chosenUsd ?? ''), lossLimit: res.lossLimit };
     }
 
     const allowed = ALLOWED_SETTINGS[key];

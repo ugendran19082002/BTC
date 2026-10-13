@@ -189,6 +189,8 @@ Keys the desk reads:
 | `expiry_default` | `first` \| `next_entry` | Which contract the board opens on. Seeded by `trading-002-default-settings`. |
 | `mode` | `live` \| `paper` | Which book the desk is trading. Written by the mode switch, so a mode chosen in the browser outlives a restart. |
 | `max_short_contracts` | a whole number | The most contracts the desk may be short across every strike at once. |
+| `daily_loss_limit_usd` | an amount in USD, or empty | The day's loss budget chosen for an account (`@<account id>`). Empty or absent: half the account's balance, as it was before 13 Oct 2026. Up to 1,000,000. |
+| `daily_loss_limit_on` | `1` \| `0` | Whether the day's loss budget stops new orders on an account (`@<account id>`). Absent: on. Off, the order gate is held to no figure at all (`dailyLossGateUsd` is `Infinity`). |
 | `signal_max_open` | a whole number, 0-500 | The most open trades the desk may hold at once across every strategy -- positions and working orders. A signal past it is skipped. 0 or absent: no cap. |
 | `alerts_enabled`, `best_trade_min_premium`, `scheduler_enabled`, `signal_max_open`, `rebalance_*`, `wall_within_em` | | The other remembered switches; each is documented where it is read. |
 
@@ -376,6 +378,7 @@ any.
 | today's booked P&L -- the daily-loss gate, the day's summary | each desk's own scoped journal | yes: each account's own |
 | "At most open" over a set of strategies | `settings` `signal_max_open@<id>` | yes |
 | the most lots short | `settings` `max_short_contracts@<id>` | yes |
+| the day's loss budget: its amount, and whether it is kept | `settings` `daily_loss_limit_usd@<id>`, `daily_loss_limit_on@<id>` | yes |
 | the wallet, margin and positions on a screen | Delta, as the account being shown | yes: the shown account's own desk (blank for one that is switched off) |
 | paper or live, the scheduler switch, the alerts switch | `settings` `mode`, `scheduler_enabled`, `alerts_enabled` | no: one desk, one switch |
 | entry signals, setups, gates, methods; market data | `entry_*`, the market tables | no: they are the market's, not an account's |

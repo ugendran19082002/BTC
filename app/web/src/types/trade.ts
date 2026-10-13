@@ -248,6 +248,8 @@ export type TradeStatus = {
     /** The long limit: the most contracts held bought, across the book. Absent on a server from before it. */
     maxLongContracts?: number;
     maxDailyLossUsd: number;
+    /** Whether the day's loss budget stops new orders (13 Oct 2026). Absent on a server from before the switch: on. */
+    dailyLossOn?: boolean;
     minPremiumUsd: number;
     allowPyramiding: boolean;
   };
@@ -396,7 +398,8 @@ export type TradeRoom = {
   freeUsd: number | null;
   sell: { limit: number; held: number; byLimit: number; byMargin: number | null; perLotUsd: number | null; lots: number };
   buy: {
-    limit: number; held: number; byLimit: number; lossRoomUsd: number;
-    byPremium: { premium: number; perLotUsd: number; lots: number; byFree: number | null; byLoss: number }[];
+    /** `lossRoomUsd` and `byLoss` are null with the day's loss budget switched off: it bounds nothing. */
+    limit: number; held: number; byLimit: number; lossRoomUsd: number | null;
+    byPremium: { premium: number; perLotUsd: number; lots: number; byFree: number | null; byLoss: number | null }[];
   };
 };

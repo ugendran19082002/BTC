@@ -493,6 +493,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
       limits: {
         ...DEFAULT_LIMITS,
         maxDailyLossUsd: svc.dailyLossLimitUsd,
+        // Whether that budget stops orders at all: switched off, the figure above is shown and nothing is held to it.
+        dailyLossOn: svc.dailyLossOn,
         maxShortContracts: svc.maxShortContracts,
         maxLongContracts: svc.maxLongContracts,
       },
@@ -505,7 +507,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
       room: roomOf({
         trades: trades.map((t) => t.state.position), freeUsd: balance, spot: svc.spot,
         shortLimit: svc.maxShortContracts, longLimit: svc.maxLongContracts,
-        lossRoomUsd: svc.dailyLossLimitUsd + Math.min(0, today.realisedUsd),
+        lossRoomUsd: svc.lossRoomUsd(today.realisedUsd),
       }),
     };
   }
@@ -590,7 +592,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
         // The limit in force, which is set from the balance rather than fixed.
       limits: {
         ...DEFAULT_LIMITS,
-        maxDailyLossUsd: svc.dailyLossLimitUsd,
+        // The gate's own figure, as the order will meet it: no bound while the budget is switched off.
+        maxDailyLossUsd: svc.dailyLossGateUsd,
         maxShortContracts: svc.maxShortContracts,
       },
       });
@@ -967,7 +970,8 @@ const ROOM_PREMIUMS = [10, 25, 50, 100, 200] as const;
 /** The room left to sell and to buy (status `room`). Pure, from figures the status already has. */
 export function roomOf(i: {
   trades: number[]; freeUsd: number | null; spot: number | null;
-  shortLimit: number; longLimit: number; lossRoomUsd: number;
+  /** Null: the day's loss budget is switched off, so it bounds nothing. */
+  shortLimit: number; longLimit: number; lossRoomUsd: number | null;
 }) {
   const shortHeld = i.trades.reduce((n, p) => n + Math.max(0, -p), 0);
   const longHeld = i.trades.reduce((n, p) => n + Math.max(0, p), 0);
@@ -975,7 +979,7 @@ export function roomOf(i: {
   const sellByLimit = Math.max(0, i.shortLimit - shortHeld);
   const sellByMargin = sellPerLotUsd && i.freeUsd !== null ? Math.max(0, Math.floor(i.freeUsd / sellPerLotUsd)) : null;
   const buyByLimit = Math.max(0, i.longLimit - longHeld);
-  const lossRoom = Math.max(0, i.lossRoomUsd);
+  const lossRoom = i.lossRoomUsd === null ? null : Math.max(0, i.lossRoomUsd);
   return {
     freeUsd: i.freeUsd,
     sell: {
@@ -987,8 +991,8 @@ export function roomOf(i: {
       byPremium: ROOM_PREMIUMS.map((premium) => {
         const perLotUsd = premium * 0.001 + fillChargesUsd({ price: premium, contracts: 1, contractValue: 0.001, spot: i.spot }).totalUsd;
         const byFree = i.freeUsd === null ? null : Math.max(0, Math.floor(i.freeUsd / perLotUsd));
-        const byLoss = Math.max(0, Math.floor(lossRoom / perLotUsd));
-        return { premium, perLotUsd, lots: Math.min(buyByLimit, byLoss, byFree ?? Infinity), byFree, byLoss };
+        const byLoss = lossRoom === null ? null : Math.max(0, Math.floor(lossRoom / perLotUsd));
+        return { premium, perLotUsd, lots: Math.min(buyByLimit, byLoss ?? Infinity, byFree ?? Infinity), byFree, byLoss };
       }),
     },
   };

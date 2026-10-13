@@ -55,6 +55,9 @@ export type RiskLimits = {
    * an account holding fifty-nine cents is not a risk limit, it is decoration,
    * and a gate that can never fire is worse than no gate because it reads as
    * protection. See dailyLossLimitFor().
+   *
+   * `Infinity` is the budget switched off (13 Oct 2026, the Account card): no day's loss refuses an order, and
+   * nothing below is special-cased for it -- no worst case is more than it.
    */
   maxDailyLossUsd: number;
   /**
@@ -93,6 +96,20 @@ export type RiskLimits = {
  */
 export const dailyLossLimitFor = (balanceUsd: number | null): number =>
   Math.max(1, (balanceUsd ?? 0) * 0.5);
+
+/**
+ * What the day's loss budget refuses an order with.
+ *
+ * With the budget already spent the room left is below zero, and the old one sentence read "Worst case $0
+ * exceeds the $-82 left" (13 Oct 2026, every signal of the afternoon): true, and no use to the person reading
+ * it. Spent, it says so -- how much was lost against how much was allowed, and where that is changed.
+ */
+function lossRefusal(worst: string, limitUsd: number, dayPnlUsd: number, places: number): string {
+  const room = limitUsd + Math.min(0, dayPnlUsd);
+  if (room > 0) return `Worst case $${worst} exceeds the $${room.toFixed(places)} left in today's loss budget.`;
+  return `Today's loss budget is used up: $${Math.max(0, -dayPnlUsd).toFixed(2)} lost against a budget of $${limitUsd.toFixed(2)}. `
+    + 'New orders wait for tomorrow, a larger budget, or the budget switched off (Account card).';
+}
 
 export const DEFAULT_LIMITS: RiskLimits = {
   maxQuoteAgeMs: 3_000,
@@ -383,7 +400,7 @@ export function precheck(input: PrecheckInput): PrecheckResult {
     const room = limits.maxDailyLossUsd + Math.min(0, input.dayPnlUsd);
     if (input.worstCaseLossUsd > room) {
       add('DAILY_LOSS_LIMIT', Number.isFinite(input.worstCaseLossUsd)
-        ? `Worst case $${input.worstCaseLossUsd.toFixed(0)} exceeds the $${room.toFixed(0)} left in today's loss budget.`
+        ? lossRefusal(input.worstCaseLossUsd.toFixed(0), limits.maxDailyLossUsd, input.dayPnlUsd, 0)
         // No option stop, and no BTC price yet to work out where Delta would close it: refused, not guessed.
         : 'The worst case cannot be priced yet: no option stop, and no BTC price to work out the close-out. Set a stop, or wait for the price.');
     }
@@ -473,7 +490,7 @@ export function precheckBuy(input: PrecheckBuyInput): PrecheckResult {
   // The most a bought option can lose is what was paid for it: that is its worst case against the day's budget.
   const room = limits.maxDailyLossUsd + Math.min(0, input.dayPnlUsd);
   if (input.costUsd !== null && input.costUsd > room) {
-    add('DAILY_LOSS_LIMIT', `Worst case $${input.costUsd.toFixed(2)} (the premium paid) exceeds the $${room.toFixed(2)} left in today's loss budget.`);
+    add('DAILY_LOSS_LIMIT', lossRefusal(`${input.costUsd.toFixed(2)} (the premium paid)`, limits.maxDailyLossUsd, input.dayPnlUsd, 2));
   }
   return f.length === 0 ? { ok: true } : { ok: false, failures: f };
 }

@@ -5,8 +5,9 @@ import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { KV } from '@/components/ui/kv';
 import { Money } from '@/components/ui/money';
 import { getSettings, setLongCap, setShortCap, type LongCap, type ShortCap } from '@/api/desk';
+import { LossBudget } from '@/components/trade/LossBudget';
 import { usePersisted } from '@/hooks/usePersisted';
-import { inr, pct, signedInr, usdToInr } from '@/lib/format';
+import { inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -33,12 +34,8 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
     ? status.walletUsd!
     : heldMargin === null || status.balanceUsd === null ? null : status.balanceUsd + heldMargin;
 
-  // Several accounts together ("All accounts"): the budget left is each account's own, added up.
+  // Several accounts together ("All accounts"): the sums, with each account's own part in a table below.
   const combined = status.combined ?? null;
-  const limit = combined ? combined.lossLimitUsd : status.limits.maxDailyLossUsd;
-  const lost = Math.max(0, -booked);
-  const left = combined ? combined.lossLeftUsd : Math.max(0, limit - lost);
-  const used = limit > 0 ? Math.min(1, Math.max(0, 1 - left / limit)) : 0;
 
   return (
     <CollapsibleCard
@@ -105,34 +102,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
 
         {/* The daily loss limit beside the short / long limit: two columns, each label over its figure, so they fit a phone.
             What is left to sell or buy, and the ₹ note, sit under the loss limit. */}
-        <PositionLimits status={status} heldShort={held} lossCell={
-          <div>
-            <dl className="m-0">
-              <dt className="m-0 text-[12px] text-muted-foreground">Daily loss limit</dt>
-              <dd className="m-0 mt-0.5 text-[13px] tabular-nums text-foreground" aria-label="loss budget left">
-                <span>{inr(usdToInr(left))}</span>{' '}
-                <span className="text-[11.5px] text-[var(--dim)]">of {inr(usdToInr(limit))} left</span>
-              </dd>
-            </dl>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--line)]">
-              <div
-                className={cn('h-full rounded-full', used > 0.75 ? 'bg-[var(--down)]' : 'bg-[var(--warn)]')}
-                style={{ width: `${Math.min(100, used * 100)}%` }}
-              />
-            </div>
-            {combined ? (
-              <p className="m-0 mt-1 text-[11px] text-muted-foreground">Each account&apos;s own limit, added up.</p>
-            ) : used >= 1 ? (
-              <p className="m-0 mt-1 text-[11px] font-medium text-[var(--down)]">
-                Limit reached. New trades are blocked until tomorrow.
-              </p>
-            ) : used > 0 ? (
-              <p className="m-0 mt-1 text-[11px] text-muted-foreground">
-                {pct(used, 0)} used. New trades stop at 100%.
-              </p>
-            ) : null}
-          </div>
-        } note={unrealised !== 0 && (
+        <PositionLimits status={status} heldShort={held} lossCell={<LossBudget status={status} dense />        } note={unrealised !== 0 && (
           <p className="m-0 mt-2 text-[11px] text-[var(--dim)]">₹ shown at ₹85 per $1.</p>
         )} />
       </div>
@@ -212,7 +182,7 @@ function PositionLimits({ status, heldShort, lossCell, note }: { status: TradeSt
           <div aria-label="room to buy" className="mt-2 text-[11.5px] leading-snug text-muted-foreground">
             <span className="block">Limit leaves <b className="text-foreground tabular-nums">{room.buy.byLimit.toLocaleString('en-US')} lots</b></span>
             {room.freeUsd !== null && <span className="block">Free {inr(usdToInr(room.freeUsd))}</span>}
-            <span className="block">Loss budget {inr(usdToInr(room.buy.lossRoomUsd))} left</span>
+            <span className="block">{room.buy.lossRoomUsd === null ? 'Loss budget off' : `Loss budget ${inr(usdToInr(room.buy.lossRoomUsd))} left`}</span>
             {/* The detail and the table by premium behind a toggle, remembered. */}
             <button
               type="button" aria-expanded={buyDetail} aria-controls="buy-room-detail" onClick={() => setBuyDetail(!buyDetail)}
@@ -259,7 +229,11 @@ function PositionLimits({ status, heldShort, lossCell, note }: { status: TradeSt
               ))}
             </tbody>
           </table>
-          <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">Each row is the smallest of the limit, the free balance and the loss budget, at that premium, fees included.</p>
+          <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">
+            {room.buy.lossRoomUsd === null
+              ? 'Each row is the smaller of the limit and the free balance, at that premium, fees included. The loss budget is off.'
+              : 'Each row is the smallest of the limit, the free balance and the loss budget, at that premium, fees included.'}
+          </p>
         </div>
       )}
     </div>

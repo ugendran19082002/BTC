@@ -69,6 +69,14 @@ export const SHORT_CAP_KEY = 'max_short_contracts';
 export const LONG_CAP_KEY = 'max_long_contracts';
 /** The most a long limit may be set to: a typo guard. A bought option's real bound is the free balance. */
 export const MAX_LONG_CAP = 100_000;
+/** Where the day's loss budget chosen for an account is kept, in USD. Unset or empty, it is half the balance. */
+export const LOSS_LIMIT_KEY = 'daily_loss_limit_usd';
+/** Whether the day's loss budget stops new orders on an account: '0' is off, anything else is on. */
+export const LOSS_LIMIT_ON_KEY = 'daily_loss_limit_on';
+/** The most a loss budget may be set to: a typo guard, nothing more. */
+export const MAX_LOSS_LIMIT_USD = 1_000_000;
+/** What the screen is told about the day's loss budget on one account. */
+export type LossLimit = { on: boolean; inForceUsd: number; defaultUsd: number; chosenUsd: number | null };
 export type DeskMode = 'live' | 'paper';
 
 export type ModeSwitch =
@@ -176,7 +184,7 @@ export class TradingService {
       // Re-read on every gate check, so the limit follows the account rather
       // than whatever it was when the process started.
       limits: { ...DEFAULT_LIMITS, ...limits, get maxDailyLossUsd() {
-        return limits.maxDailyLossUsd ?? dailyLossLimitFor(self.lastBalance);
+        return limits.maxDailyLossUsd ?? self.dailyLossGateUsd;
       }, get maxLongContracts() {
         return limits.maxLongContracts ?? self.maxLongContracts;
       }, get maxShortContracts() {
@@ -842,8 +850,69 @@ export class TradingService {
     return inflight;
   }
 
-  /** What the desk will let today lose, given what is in the account. */
-  get dailyLossLimitUsd() { return dailyLossLimitFor(this.lastBalance); }
+  /** Half of what is in the account: the loss budget an account has until one is chosen for it. */
+  get dailyLossDefaultUsd(): number { return dailyLossLimitFor(this.lastBalance); }
+
+  /** The loss budget chosen for the account being traded, in USD, if one was. */
+  get dailyLossSetting(): number | null {
+    const n = Number(accountSetting(this.settings, LOSS_LIMIT_KEY, this.currentAccountId) || NaN);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  /** Whether the day's loss budget stops new orders on this account. On, until it is switched off. */
+  get dailyLossOn(): boolean {
+    return accountSetting(this.settings, LOSS_LIMIT_ON_KEY, this.currentAccountId) !== '0';
+  }
+
+  /** What the desk will let today lose: the amount chosen, else half the account. The figure, on or off. */
+  get dailyLossLimitUsd(): number { return this.dailyLossSetting ?? this.dailyLossDefaultUsd; }
+
+  /** What the order gate is held to: the budget, or no bound at all while it is switched off. */
+  get dailyLossGateUsd(): number { return this.dailyLossOn ? this.dailyLossLimitUsd : Infinity; }
+
+  /** What is left of today's budget on this account, after `realisedUsd` booked today. Null: switched off. */
+  lossRoomUsd(realisedUsd: number): number | null {
+    return this.dailyLossOn ? this.dailyLossLimitUsd + Math.min(0, realisedUsd) : null;
+  }
+
+  get lossLimit(): LossLimit {
+    return { on: this.dailyLossOn, inForceUsd: this.dailyLossLimitUsd, defaultUsd: this.dailyLossDefaultUsd, chosenUsd: this.dailyLossSetting };
+  }
+
+  /**
+   * Change the day's loss budget on this account: switch it on or off, set an amount, or go back to half the
+   * account (`usd: null`).
+   *
+   * The owner's to set (13 Oct 2026: "loss budget naa UI set pandra maari venum"). Until then it was half the
+   * balance and nothing else, and on an afternoon that had lost more than that every signal was refused with no
+   * way to say "carry on" short of a deposit. Unlike the short cap there is no ceiling to hold it under -- the
+   * margin bounds a position, nothing bounds a choice about a day -- so the only refusals are a figure that is
+   * not a positive amount, and a typo.
+   *
+   * It takes effect on the next order: the gate reads the setting each time it runs.
+   */
+  async setDailyLoss(ask: { on?: boolean; usd?: number | null }): Promise<{ ok: true; lossLimit: LossLimit } | { ok: false; reason: string }> {
+    if (ask.usd !== undefined && ask.usd !== null && !(Number.isFinite(ask.usd) && ask.usd > 0 && ask.usd <= MAX_LOSS_LIMIT_USD)) {
+      return { ok: false, reason: `The loss budget must be an amount above 0, up to $${MAX_LOSS_LIMIT_USD.toLocaleString('en-US')}.` };
+    }
+    // Empty is "no choice": a setting cannot be deleted, and an account with none of its own reads the desk-wide one.
+    if (ask.usd !== undefined) await this.settings.set(accountKey(LOSS_LIMIT_KEY, this.currentAccountId), ask.usd === null ? '' : String(ask.usd));
+    if (ask.on !== undefined) await this.settings.set(accountKey(LOSS_LIMIT_ON_KEY, this.currentAccountId), ask.on ? '1' : '0');
+    this.forgetStatus();
+    return { ok: true, lossLimit: this.lossLimit };
+  }
+
+  /**
+   * Drop the status held for the polls, so the next one is worked out afresh.
+   *
+   * For a change made on the screen that the status itself reports: answered from the copy held for up to a
+   * second, the card showed the old budget beside the switch that had just changed it. An answer already being
+   * worked out is left to finish -- it is replaced at the next refresh, a second later.
+   */
+  private forgetStatus(): void {
+    this.statusLast = null;
+    if (!this.coalesced.get('status')?.inflight) this.coalesced.delete('status');
+  }
 
   /** The last balance seen, for screens that price a size before it is sent. */
   get lastBalanceUsd(): number | null { return this.lastBalance; }

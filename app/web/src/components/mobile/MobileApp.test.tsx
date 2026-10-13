@@ -142,6 +142,20 @@ describe('signed in', () => {
     expect(screen.getByRole('meter', { name: 'Daily loss limit used' })).toHaveAttribute('aria-valuenow', '20');
   });
 
+  it('the daily loss limit switched off (13 Oct 2026): Home and P&L say Off, with no meter and nothing to press', async () => {
+    const off = status([trade()]);
+    off.limits.dailyLossOn = false;
+    getTradeStatus.mockResolvedValue(off);
+    render(<MobileApp />);
+    await screen.findByText('Today\'s P&L');
+    const line = (await screen.findByText('Daily loss limit')).parentElement!;
+    expect(line).toHaveTextContent('Daily loss limitOff');
+    expect(screen.queryByRole('meter', { name: 'Daily loss limit used' })).toBeNull();
+    expect(screen.queryByRole('switch')).toBeNull();
+    tab('P&L');
+    await waitFor(() => expect(screen.getByText('Daily loss limit').parentElement!).toHaveTextContent('Daily loss limitOff'));
+  });
+
   it('[critical] no screen has a button that could change the desk', async () => {
     render(<MobileApp />);
     await screen.findByText('Today\'s P&L');

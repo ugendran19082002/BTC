@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-498 files listed, 243 test files counted below, images and lockfiles left out.
+499 files listed, 245 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 129 |
-| `app/web` | 114 |
+| `app/server` | 130 |
+| `app/web` | 115 |
 
 ## `(root)`
 
@@ -508,6 +508,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [EditExitsSheet.tsx](../../app/web/src/components/trade/EditExitsSheet.tsx) | Change the stop and the target on a position that is already on. |
 | [ExitBars.tsx](../../app/web/src/components/trade/ExitBars.tsx) | The two exits, each behind a tick box, each a number you type. |
 | [LongExitsForm.tsx](../../app/web/src/components/trade/LongExitsForm.tsx) | A bought position's exits (5 Oct 2026): the mirror of a short's. |
+| [LossBudget.tsx](../../app/web/src/components/trade/LossBudget.tsx) | The day's loss budget, and the two things the owner can do to it (13 Oct 2026): switch it on or off, and set its amount. |
 | [ModeBanner.tsx](../../app/web/src/components/trade/ModeBanner.tsx) | The alarm across the top of the page: a position with nothing behind it -- no stop, no target -- interrupts everything else until it is dealt with. |
 | [ModeSwitch.tsx](../../app/web/src/components/trade/ModeSwitch.tsx) | Which book the desk is trading on, and the switch between them. |
 | [OrderTicket.tsx](../../app/web/src/components/trade/OrderTicket.tsx) | The order ticket. |
