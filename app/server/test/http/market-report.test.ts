@@ -605,6 +605,39 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.match(without.body.members[1].problem, /strategy it is worked by has been deleted/);
   assert.deepEqual([without.body.members[1].total.n, without.body.total.n], [0, 6]);
 
+  /*
+   * The hours for the run (13 Oct 2026): as saved unless asked, else one choice over every member worked by
+   * settings -- each then exactly what it is alone with those hours -- and nothing saved is changed by it.
+   */
+  const pair = `/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own`;
+  const asSaved = await get(pair);
+  assert.equal(asSaved.body.hours, null, 'not asked: each as it was saved');
+  assert.deepEqual((await get(`${pair}&hours=saved`)).body.total, asSaved.body.total);
+  const whole = await get(`${pair}&hours=all`);
+  assert.deepEqual(whole.body.hours, { window: 'all', own: [] });
+  assert.deepEqual(whole.body.total, asSaved.body.total, 'both were saved on the whole day: the same run');
+  for (const [ask, alone] of [['hours=desk', 'window=desk'], ['hours=custom&hfrom=22:00&hto=02:00', 'window=custom&hfrom=22:00&hto=02:00']] as const) {
+    const run = await get(`${pair}&${ask}`);
+    assert.equal(run.status, 200, JSON.stringify(run.body).slice(0, 300));
+    const one = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&${alone}`);
+    const two = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&${alone}&lots=3&tf=15m`);
+    assert.deepEqual(run.body.members.map((m: any) => m.total.n), [one.body.total.n, two.body.total.n], `${ask}: each as it is alone in those hours`);
+    assert.ok(close(run.body.total.net, one.body.total.net + two.body.total.net), ask);
+  }
+  assert.deepEqual((await get(`${pair}&hours=custom&hfrom=22:00&hto=02:00`)).body.hours, { window: 'custom', hoursFrom: '22:00', hoursTo: '02:00', own: [] });
+  assert.ok((await get(`${pair}&hours=desk`)).body.total.n < asSaved.body.total.n, 'the desk\'s hours are fewer signals than the whole day');
+  assert.deepEqual((await get('/api/backtest-saves')).body.saves.find((s: any) => s.id === a.body.save.id).query.params.window, 'all', 'the saved backtest itself is as it was');
+  // one worked by a strategy keeps the strategy's hours, and is named as having kept them
+  const mixed = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${c.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&hours=desk`);
+  assert.deepEqual(mixed.body.hours, { window: 'desk', own: [c.body.save.id] });
+  // refused in words
+  for (const [bad, said] of [['hours=night', /The hours are "saved", "desk", "all" or "custom"/], ['hours=custom', /Custom hours are a From and a To time/],
+    ['hours=custom&hfrom=22:00&hto=22:00', /must differ/], ['hours=custom&hfrom=25:00&hto=02:00', /Custom hours are a From and a To time/]] as const) {
+    const r = await get(`${pair}&${bad}`);
+    assert.equal(r.status, 400, bad);
+    assert.match(r.body.error, said);
+  }
+
   // refused: none named, one that is gone, too many
   assert.equal((await get(`/api/backtest-portfolio?from=${CLIMB}&to=${QUIET}`)).status, 400);
   assert.equal((await get(`/api/backtest-portfolio?ids=nope&from=${CLIMB}&to=${QUIET}`)).status, 404);

@@ -3,7 +3,7 @@ import { tradingService } from '../../trading/service.js';
 import {
   PORTFOLIO_MEMBERS_MAX, dropPortfolio, dropSave, keepPortfolio, keepSave, listSaves, nameProblem, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
-import { backtestable } from '../../report/signal-backtest.js';
+import { backtestable, type BacktestParams } from '../../report/signal-backtest.js';
 import { portfolioBacktest } from '../../report/backtest-run.js';
 import { backtestParamsFrom, rangeOf } from './market.routes.js';
 import { strategyStore } from './strategy.routes.js';
@@ -101,13 +101,34 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
         if (top) shared = { deskMax: top.deskMax!, cePct: top.cePct ?? 100, pePct: top.pePct ?? 100 };
       }
     }
-    return portfolioBacktest({
+    /*
+     * The hours, for the run (owner, 13 Oct 2026: the single backtest's hours choice, "wanted in the portfolio
+     * section"): `?hours=saved` -- each as it was saved, the default -- or `desk`, `all` or `custom` with
+     * `hfrom` / `hto`, put over every member worked by settings for this run only; nothing saved is changed.
+     * A member worked by a strategy keeps that strategy's own days and hours, as it does alone: `hours.own`
+     * names them, so the screen can say which were not moved.
+     */
+    const hoursAsk = q.hours === undefined || q.hours === '' ? 'saved' : q.hours;
+    if (hoursAsk !== 'saved' && hoursAsk !== 'desk' && hoursAsk !== 'all' && hoursAsk !== 'custom') return refuse(reply, 400, { error: 'The hours are "saved", "desk", "all" or "custom".' });
+    const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const hoursFrom = typeof q.hfrom === 'string' ? q.hfrom : '', hoursTo = typeof q.hto === 'string' ? q.hto : '';
+    if (hoursAsk === 'custom' && (!hhmm.test(hoursFrom) || !hhmm.test(hoursTo))) return refuse(reply, 400, { error: 'Custom hours are a From and a To time, HH:MM (IST).' });
+    if (hoursAsk === 'custom' && hoursFrom === hoursTo) return refuse(reply, 400, { error: 'The From and To times must differ.' });
+    const over: Pick<BacktestParams, 'window' | 'hoursFrom' | 'hoursTo'> | null = hoursAsk === 'saved' ? null
+      : { window: hoursAsk, hoursFrom: hoursAsk === 'custom' ? hoursFrom : undefined, hoursTo: hoursAsk === 'custom' ? hoursTo : undefined };
+    const result = await portfolioBacktest({
       ...r, now: Date.now(), spot: tradingService().spot, shared,
       members: saves.map((s) => {
         const strategy = s.query.strategy === null ? null : strategies.find((x) => x.id === s.query.strategy) ?? null;
         if (s.query.strategy !== null && !strategy) return { id: s.id, name: s.name, ask: null, problem: 'The strategy it is worked by has been deleted, or buys now rather than sells.' };
-        return { id: s.id, name: s.name, ask: { params: s.query.params, tfs: s.query.tfs.length ? s.query.tfs : null, methods: s.query.methods.length ? s.query.methods : null, strategy } };
+        const params = over && !strategy ? { ...s.query.params, ...over } : s.query.params;
+        return { id: s.id, name: s.name, ask: { params, tfs: s.query.tfs.length ? s.query.tfs : null, methods: s.query.methods.length ? s.query.methods : null, strategy } };
       }),
     });
+    return {
+      ...result,
+      /** The hours the run was held to; null, each member's own as saved. `own`: the members a strategy works, whose hours are its own. */
+      hours: over ? { window: over.window, ...(over.hoursFrom ? { hoursFrom: over.hoursFrom, hoursTo: over.hoursTo } : {}), own: saves.filter((s) => s.query.strategy !== null).map((s) => s.id) } : null,
+    };
   });
 }

@@ -78,6 +78,11 @@ export type BacktestPortfolioResult = {
    * calls and `pe` puts -- and how many signals found it full. Null: each kept its own limit and they were added up.
    */
   shared?: { max: number; ce: number; pe: number; cePct: number; pePct: number; turnedAway: number } | null;
+  /**
+   * The hours the run was held to, over every member worked by settings; `own` names the members a strategy works,
+   * which kept that strategy's hours. Null or absent: each as it was saved.
+   */
+  hours?: { window: BacktestParams['window']; hoursFrom?: string; hoursTo?: string; own: string[] } | null;
   members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
   total: BtTot;
   days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];

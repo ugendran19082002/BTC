@@ -2,6 +2,7 @@ import type { TradeRecord, TradeStore } from './engine.js';
 import type { MtmSample } from './pnl-history.js';
 import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
 import { query, rows, tx } from '../db/pool.js';
+import { tradeCharges } from './charges.js';
 import { recompute, realisedBreakdownSinceOf } from './machine.js';
 import type { TradeEvent, TradeState } from './types.js';
 
@@ -322,9 +323,42 @@ export class PgTradeStore implements TradeStore {
     return { ...value };
   }
 
-  private async realisedRead(fromMs: number, accountId: number | null): Promise<{ realisedUsd: number; profitUsd: number; lossUsd: number }> {
+  /**
+   * The state of every trade touched from `fromMs` on, held until the journal is next written.
+   *
+   * One read behind both of the day's sums -- what was booked, and what Delta charged. The charges were not held:
+   * they came from `between`, which reads each trade's plan and every one of its events as well, and they were
+   * asked for with every status -- once a second for each desk and each screen's stream. On 13 Oct 2026 that was
+   * 324 trades and 2,000 events read and parsed twice a second: 706,000 rows in two and a half minutes, and the
+   * largest single thing the process did. A day's trades only change when one is saved.
+   */
+  private async statesSince(fromMs: number, accountId: number | null): Promise<readonly TradeState[]> {
+    const held = this.dayHeld;
+    if (held && held.fromMs === fromMs && held.accountId === accountId && held.writes === this.writes) return held.states;
+    const writes = this.writes;
     const found = await rows<{ state: TradeState }>(
       'SELECT state FROM trades WHERE updated_at >= $1 AND ($2::bigint IS NULL OR broker_account_id = $2)', [fromMs, accountId]);
+    const states = found.map((r) => r.state);
+    this.dayHeld = { fromMs, accountId, writes, states };
+    return states;
+  }
+  private dayHeld: { fromMs: number; accountId: number | null; writes: number; states: readonly TradeState[] } | null = null;
+
+  /**
+   * Delta's charges on every fill from `fromMs` on, in USD, at `spot` -- the day's fees, for "Net today".
+   *
+   * Every trade of the day, where `between` stopped at its newest 500: a day of more trades than that would have
+   * shown less than it paid.
+   */
+  async chargesSince(fromMs: number, accountId: number | null, spot: number | null): Promise<number> {
+    const states = await this.statesSince(fromMs, this.scope ?? accountId);
+    let usd = 0;
+    for (const s of states) usd += tradeCharges(s, { spot, since: fromMs }).totalUsd;
+    return usd;
+  }
+
+  private async realisedRead(fromMs: number, accountId: number | null): Promise<{ realisedUsd: number; profitUsd: number; lossUsd: number }> {
+    const found = (await this.statesSince(fromMs, accountId)).map((state) => ({ state }));
     return found.reduce(
       (acc, r) => {
         const b = realisedBreakdownSinceOf(r.state, fromMs);

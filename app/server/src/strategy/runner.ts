@@ -11,7 +11,7 @@ import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, sideCaps, sideMaxOf, ente
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
-import { liveLtp } from '../market/flow.js';
+import { lastPerp } from '../market/flow.js';
 import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyExitStepper } from './exit-steps.js';
 import { DEFAULT_LEVERAGE, stopHeldWords, stopRoomInside } from '../trading/order-plan.js';
@@ -115,7 +115,7 @@ const hoursLeft = (expiryTs: number, nowMs: number): number => (expiryTs * 1_000
 
 /** The perp's last trade, when fresh: what a signal entered at, for the labels. */
 function perpNow(): number | null {
-  const l = liveLtp();
+  const l = lastPerp();
   return l && Date.now() - l.at <= 15_000 ? l.price : null;
 }
 

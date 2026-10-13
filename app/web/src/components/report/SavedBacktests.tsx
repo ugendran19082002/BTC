@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioLimit } from '@/api/backtest-saves';
+import { AS_SAVED, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
+import { time12 } from '@/lib/time';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BtRow, SavedQuery } from '@/types/signal-backtest';
@@ -139,17 +140,38 @@ function PortfolioResult({ title, r, wide }: { title: string; r: BacktestPortfol
 export type TogetherRun = { ids: string[]; title: string };
 
 /**
+ * Which hours a run together was held to, when they are not each saved backtest's own (13 Oct 2026) -- and which of
+ * them, worked by a strategy, kept that strategy's hours all the same. Said over the result, so a total is never
+ * read as the saved backtests' own when the hours were changed for the run.
+ */
+function HoursNote({ r }: { r: BacktestPortfolioResult }) {
+  const h = r.hours;
+  if (!h) return null;
+  const said = h.window === 'desk' ? '9:30 PM → 3:59 PM' : h.window === 'all' ? 'the whole expiry day' : `${time12(h.hoursFrom ?? '')} → ${time12(h.hoursTo ?? '')}`;
+  const own = r.members.filter((m) => h.own.includes(m.id)).map((m) => m.name);
+  return (
+    <p role="note" aria-label="The hours of this run" className="m-0 rounded-md border border-[var(--chosen-line)] bg-[var(--chosen-soft)] px-3 py-2 text-[13px] leading-snug text-foreground">
+      Signals of <b>{said}</b> (IST) for this run, in place of each saved backtest&apos;s own hours. Nothing saved is changed.
+      {own.length > 0 && <> {own.join(', ')} {own.length === 1 ? 'is' : 'are'} worked by a strategy and kept {own.length === 1 ? 'its' : 'their'} strategy&apos;s own hours.</>}
+    </p>
+  );
+}
+
+/**
  * The run together, where the results are shown: asked with the days on the screen, and again when they change.
  * Each one is a whole backtest, so the first run of a set takes a moment.
  */
-export function PortfolioRun({ run, range, limit = 'shared', cap = null, wide = false, onClose }: {
+export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours = AS_SAVED, wide = false, onClose }: {
   run: TogetherRun; range: { from: string; to: string }; limit?: PortfolioLimit;
   /** One account's limit as the screen shows it; null, the desk's own rule (the largest among the saved backtests). */
   cap?: PortfolioCap | null;
+  /** The hours the run is held to: each saved backtest's own unless the screen chose others for the run. */
+  hours?: PortfolioHours;
   wide?: boolean; onClose: () => void;
 }) {
   const asked = limit === 'shared' ? cap : null;
-  const result = useAnswer(`${run.ids.join(',')}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}`, () => getBacktestPortfolio(run.ids, range, limit, asked), 300_000);
+  const hoursKey = hours.window === 'custom' ? `custom:${hours.hoursFrom}-${hours.hoursTo}` : hours.window;
+  const result = useAnswer(`${run.ids.join(',')}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}`, () => getBacktestPortfolio(run.ids, range, limit, asked, hours), 300_000);
   if (result.error && !result.data) {
     return (
       <Panel title={`Run together · ${run.title}`}>
@@ -163,6 +185,7 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, wide = 
   }
   return (
     <Updating busy={result.stale} what="the run together">
+      <HoursNote r={result.data} />
       <PortfolioResult title={run.title} r={result.data} wide={wide} />
       <button type="button" className={cn(link, 'justify-self-start')} onClick={onClose}>Close the run together</button>
     </Updating>

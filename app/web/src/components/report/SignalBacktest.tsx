@@ -14,7 +14,7 @@ import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
-import type { PortfolioCap, PortfolioLimit } from '@/api/backtest-saves';
+import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit } from '@/api/backtest-saves';
 import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, settingsWords } from '@/components/report/backtest-words';
 
 /**
@@ -38,6 +38,11 @@ const WINDOWS: { key: BacktestParams['window']; label: string; spoken: string }[
   { key: 'desk', label: '9:30 PM–3:59 PM', spoken: 'Only signals from 9:30 PM to 3:59 PM, as the strategies trade' },
   { key: 'all', label: 'Whole day', spoken: 'Signals of the whole expiry day' },
   { key: 'custom', label: 'Custom', spoken: 'Signals in hours of your own' },
+];
+/** The same choice over a run together, with the one it starts on: each saved backtest's own hours. */
+const RUN_WINDOWS: { key: PortfolioHours['window']; label: string; spoken: string }[] = [
+  { key: 'saved', label: 'As saved', spoken: 'Each saved backtest keeps its own hours' },
+  ...WINDOWS,
 ];
 
 /**
@@ -483,6 +488,9 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [limit, setLimit] = usePersisted<PortfolioLimit>('signalBacktest.together.limit', 'shared');
   // One account's limit: typed here and kept, or (null) the default worked out below.
   const [capTyped, setCapTyped] = usePersisted<PortfolioCap | null>('signalBacktest.together.cap', null);
+  // The hours a run together is held to (owner, 13 Oct 2026: the hours choice, "wanted in the portfolio section"): each saved backtest's own to begin with.
+  const [runHours, setRunHours] = usePersisted<PortfolioHours>('signalBacktest.together.hours', AS_SAVED);
+  const [pickingRunHours, setPickingRunHours] = useState(false);
   const [savedList, setSavedList] = useState<BacktestSave[]>([]);
   /** A saved backtest's settings put on the screen: the result below is then worked for them, over the days chosen. */
   const load = (q: SavedQuery) => {
@@ -703,6 +711,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     ...(capOfSaved ? [{ label: 'Saved backtests', cap: capOfSaved }] : []),
   ];
   const cap = capTyped ?? capDefault;
+  // Custom without both its times (kept from a visit cut short) is each one's own hours, not a refusal.
+  const hoursAsked: PortfolioHours = runHours.window === 'custom' && !(runHours.hoursFrom && runHours.hoursTo) ? AS_SAVED : runHours;
   const title = wide && (
     <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>
   );
@@ -739,6 +749,22 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               <Panel title="Run over">
                 <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5">
                   {expiry.control}
+                  <Segmented dense label="Which signals, for the run" value={runHours.window} options={RUN_WINDOWS}
+                    // Custom opens the hours every time it is tapped: chosen already, a tap is "change the hours".
+                    onChange={(window) => { if (window === 'custom') setPickingRunHours(true); else { setRunHours({ window }); setPickingRunHours(false); } }} />
+                  {runHours.window === 'custom' && !pickingRunHours && runHours.hoursFrom && runHours.hoursTo && (
+                    <p className="m-0 px-1 text-[13px] text-muted-foreground">Signals filled <span className="text-foreground">{time12(runHours.hoursFrom)} → {time12(runHours.hoursTo)}</span> IST</p>
+                  )}
+                  {pickingRunHours && (
+                    <CustomHours from={runHours.hoursFrom ?? '21:30'} to={runHours.hoursTo ?? '00:30'}
+                      onApply={(hoursFrom, hoursTo) => { setRunHours({ window: 'custom', hoursFrom, hoursTo }); setPickingRunHours(false); }}
+                      onClose={() => setPickingRunHours(false)} />
+                  )}
+                  <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
+                    {runHours.window === 'saved'
+                      ? 'Each saved backtest keeps the hours saved in it.'
+                      : 'These hours are put over every saved backtest in the run, for the run only -- nothing saved is changed. One worked by a strategy keeps the strategy’s own hours.'}
+                  </p>
                   <Segmented dense label="The limit on open trades" value={limit} onChange={setLimit}
                     options={[
                       { key: 'shared', label: 'One account', spoken: 'One account: one limit on open trades across all of them' },
@@ -756,7 +782,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             </aside>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
               {together
-                ? <PortfolioRun run={together} range={range} limit={limit} cap={cap} wide={wide} onClose={() => setTogether(null)} />
+                ? <PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} wide={wide} onClose={() => setTogether(null)} />
                 : <Panel title="Run together"><Empty>Run a portfolio, or tick two or more saved backtests and run them together: each is worked as it is alone, and they are added up -- the total, each one, each expiry day, and the margin held across all of them.</Empty></Panel>}
             </div>
           </>

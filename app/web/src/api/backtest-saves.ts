@@ -19,11 +19,19 @@ export const deletePortfolio = (id: string) =>
   json<{ ok: true }>(`/api/backtest-portfolios/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 /** Saved backtests run together over one range of expiry days, with their total: as one account, or each on its own limit. */
-export const getBacktestPortfolio = (ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null) =>
+export const getBacktestPortfolio = (ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED) =>
   json<BacktestPortfolioResult>(`/api/backtest-portfolio?${new URLSearchParams({
     ids: ids.join(','), from: range.from, to: range.to,
     ...(limit === 'own' ? { limit: 'own' } : cap ? { max: String(cap.max), ce: String(cap.ce), pe: String(cap.pe) } : {}),
+    ...(hours.window === 'saved' ? {} : { hours: hours.window, ...(hours.window === 'custom' ? { hfrom: hours.hoursFrom ?? '', hto: hours.hoursTo ?? '' } : {}) }),
   })}`);
+
+/**
+ * The hours a run together is held to: `saved`, each saved backtest's own; or the desk's hours, the whole expiry
+ * day, or hours of the owner's own -- put over every one of them worked by settings, for the run only.
+ */
+export type PortfolioHours = { window: 'saved' | 'desk' | 'all' | 'custom'; hoursFrom?: string; hoursTo?: string };
+export const AS_SAVED: PortfolioHours = { window: 'saved' };
 
 /** One account's limit as it is asked for: at most this many open together, and each side this per cent of it. */
 export type PortfolioCap = { max: number; ce: number; pe: number };

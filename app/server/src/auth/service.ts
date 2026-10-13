@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { hashPassword, verifyPassword } from '../http/session.js';
 import { passwordProblems } from './password.js';
 import { Secrets, newRecoveryCodes } from './secrets.js';
-import { AuthStore, tokenHash, type Scope, type SessionRow, type Stage, type User } from './store.js';
+import { AuthStore, LAST_SEEN_EVERY_MS, tokenHash, type Scope, type SessionRow, type Stage, type User } from './store.js';
 import { newSecret, otpauthUrl, verifyTotp } from './totp.js';
 
 /**
@@ -79,8 +79,17 @@ export class AuthService {
 
   /** True once there is a user to sign in as, and a key to seal their secret with. */
   async configured(): Promise<boolean> {
-    return this.d.secrets !== null && (await this.d.store.user()) !== null;
+    if (this.d.secrets === null) return false;
+    /*
+     * Once there is a user, there is one: nothing on the desk removes it. The question was put to the database
+     * with every request of every screen -- as many statements as the session read itself (13 Oct 2026) -- to be
+     * told the same thing each time. Until there is one it is still asked, so a user made while the server runs
+     * (`npm run auth`) is seen at the next request.
+     */
+    if (!this.userSeen) this.userSeen = (await this.d.store.user()) !== null;
+    return this.userSeen;
   }
+  private userSeen = false;
 
   async username(): Promise<string | null> {
     return (await this.d.store.user())?.username ?? null;
@@ -218,7 +227,9 @@ export class AuthService {
     if (!token) return null;
     const now = this.d.now();
     const s = await this.d.store.session(token, now);
-    if (s?.stage === 'full') await this.d.store.touch(s.tokenHash, now);
+    // Only when it is due: the row just read says when it was last touched, and asking the database to find that
+    // out again was a statement on every request of every screen (13 Oct 2026: one in nine of all it was sent).
+    if (s?.stage === 'full' && s.lastSeenAt < now - LAST_SEEN_EVERY_MS) await this.d.store.touch(s.tokenHash, now);
     return s;
   }
 

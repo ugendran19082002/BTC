@@ -2,7 +2,7 @@ import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowSocket, printOf, perpTickerOf, type Print } from '../../src/market/flow-socket.js';
 import {
-  bookOf, capturePerpSnapshot, flowSchema, flowSummary, oiRead, perpOiChange, flushTradeFlow, formingBar, liveLtp, minuteOf, minutesOf,
+  bookOf, capturePerpSnapshot, flowSchema, flowSummary, oiRead, perpOiChange, flushTradeFlow, formingBar, lastPerp, liveLtp, minuteOf, minutesOf,
   useFlowSocket, FLOW_BUCKET_MS, LARGE_PRINT_CONTRACTS,
 } from '../../src/market/flow.js';
 import { closePool, one, query, rows } from '../../src/db/pool.js';
@@ -140,6 +140,7 @@ test('[critical] the candle in progress is the perp\'s own prints since it opene
 
 test('[critical] the live price is the socket\'s last perp trade, with the 1m and 5m candles in progress', () => {
   assert.equal(liveLtp(T0), null, 'no socket, no price');
+  assert.equal(lastPerp(), null);
   const s = new FlowSocket({ now: () => T0 });
   const send = (x: Print & { symbol?: string }) => s.receive(JSON.stringify({ type: 'all_trades', symbol: x.symbol ?? 'BTCUSD', price: String(x.price), size: x.size, timestamp: x.at * 1000, buyer_role: x.side === 'buy' ? 'taker' : 'maker', seller_role: x.side === 'buy' ? 'maker' : 'taker' }));
   const t1 = Math.floor(T0 / 60_000) * 60_000;
@@ -152,6 +153,8 @@ test('[critical] the live price is the socket\'s last perp trade, with the 1m an
   assert.deepEqual(live.bars['1m'], { time: t1 / 1000, open: 81_100, high: 81_100, low: 81_100, close: 81_100, volume: 2 });
   // 06:00:50 and 06:02:01 are both in the 06:00 five-minute candle.
   assert.equal(live.bars['5m']!.volume, 7);
+  // The price alone, for everything that asks what BTC is at: the same trade, and no candle built to find it.
+  assert.deepEqual(lastPerp(), { price: 81_100, at: t1 + 1_000 });
 });
 
 test('[critical] the current minute\'s flow is the perpetual\'s alone: an option print is not counted in it', async () => {

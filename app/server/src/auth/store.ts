@@ -106,6 +106,9 @@ export type User = {
   totpPendingAt: number | null;
 };
 
+/** How often a session's last-seen is written down: at most once in this long. */
+export const LAST_SEEN_EVERY_MS = 60_000;
+
 export type SessionRow = {
   tokenHash: string;
   stage: Stage;
@@ -226,9 +229,9 @@ export class AuthStore {
     return r ? sessionOf(r) : null;
   }
 
-  /** Last seen, written at most once a minute: the desk polls every second. */
+  /** Last seen, written at most once a minute: the desk polls every second. The caller asks only when it is due (`LAST_SEEN_EVERY_MS`). */
   async touch(hash: string, now: number): Promise<void> {
-    await query('UPDATE auth_sessions SET last_seen_at = $1 WHERE token_hash = $2 AND last_seen_at < $3', [now, hash, now - 60_000]);
+    await query('UPDATE auth_sessions SET last_seen_at = $1 WHERE token_hash = $2 AND last_seen_at < $3', [now, hash, now - LAST_SEEN_EVERY_MS]);
   }
 
   async bumpAttempts(hash: string): Promise<number> {

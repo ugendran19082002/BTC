@@ -15,13 +15,12 @@ import { DEFAULT_LEVERAGE, exitPriceProblem, longExitsFor, orderPlan, protection
 
 export { stopFor, stopPriceFor, targetFor, targetPriceFor } from './order-plan.js';
 import { isDone, isLong } from './machine.js';
-import { tradeCharges } from './charges.js';
 import { unrealisedPnlUsd } from './margin.js';
 import { midOf } from './money.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { cachedAsks, candles } from '../market/delta.js';
-import { liveLtp, onPerpPrint, perpRange } from '../market/flow.js';
+import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
@@ -202,7 +201,7 @@ export class TradingService {
       // the close rather than on the touch.
       candles: (symbol, startSec, endSec, resolution) => candles(symbol, startSec, endSec, resolution),
       // The perpetual's last trade off the tape, for a signal strategy's exits on the underlying.
-      underlying: () => { const l = liveLtp(); return l ? { price: l.price, at: l.at } : null; },
+      underlying: () => lastPerp(),
       // Every trade of the perp since a moment, off the same tape: a touch between two looks is still a touch.
       underlyingRange: (sinceMs) => perpRange(sinceMs),
       onSwallowed: (what, order, error) => {
@@ -397,7 +396,7 @@ export class TradingService {
    */
   readonly underlyingWatch = new UnderlyingWatch({
     open: async () => watchedOf(await this.store.open()),
-    price: () => { const l = liveLtp(); return l ? { price: l.price, at: l.at } : null; },
+    price: () => lastPerp(),
     exit: (tradeId, seen) => this.engine.exitOnUnderlying(tradeId, seen),
   });
 
@@ -424,7 +423,7 @@ export class TradingService {
    * by the sampler for the line -- so the number on the header and the last
    * point on the graph can never be two different numbers.
    */
-  async todayFigures(now = Date.now()): Promise<Omit<MtmSample, 'at' | 'day'> & { lossUsd: number; profitUsd: number }> {
+  async todayFigures(now = Date.now(), open?: readonly TradeRecord[]): Promise<Omit<MtmSample, 'at' | 'day'> & { lossUsd: number; profitUsd: number }> {
     const dayStart = startOfDayIst(now);
     // The account the desk is on: "today" on the screen and in the day's line is that account's day.
     const breakdown = await this.store.realisedBreakdownSince(dayStart, this.currentAccountId);
@@ -433,7 +432,8 @@ export class TradingService {
     const profitUsd = breakdown.profitUsd;
     const positions = await this.positionsForDisplay(now);
     let unrealisedUsd = 0;
-    for (const rec of await this.openTrades()) {
+    // The caller's own list when it has just read one (the status, the sampler): the same trades, not read twice.
+    for (const rec of open ?? await this.openTrades()) {
       const live = positions.find((p) => p.symbol === rec.state.symbol) ?? null;
       const quote = await this.quoteForDisplay(rec.state.symbol, now);
       const mark = live?.markPrice ?? quote?.mark ?? midOf(quote?.bid ?? null, quote?.ask ?? null);
@@ -444,8 +444,8 @@ export class TradingService {
         size: rec.state.position, contractValue: rec.state.contractValue, long: rec.state.position > 0,
       }) ?? 0;
     }
-    const chargesUsd = (await this.store.between(dayStart, now + 1, 500, this.currentAccountId))
-      .reduce((n, rec) => n + tradeCharges(rec.state, { spot: this.currentSpot(), since: dayStart }).totalUsd, 0);
+    // Off the day's states the journal holds between writes (`chargesSince`): no trade is read again to add its fees.
+    const chargesUsd = await this.store.chargesSince(dayStart, this.currentAccountId, this.currentSpot());
     return { realisedUsd, lossUsd, profitUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
   }
 
@@ -458,8 +458,9 @@ export class TradingService {
    */
   async sampleMtm(now = Date.now()): Promise<void> {
     try {
-      const f = await this.todayFigures(now);
-      if ((await this.openTrades()).length === 0 && f.realisedUsd === 0 && f.chargesUsd === 0) return;
+      const open = await this.openTrades();
+      const f = await this.todayFigures(now, open);
+      if (open.length === 0 && f.realisedUsd === 0 && f.chargesUsd === 0) return;
       await this.store.sampleMtm({ at: now, day: istDate(now), ...f }, this.currentAccountId);
     } catch (e) {
       noteError({
@@ -642,7 +643,7 @@ export class TradingService {
    * be priced yet" -- eight minutes after a deploy, with the desk's own feed live the whole time (2 Oct 2026).
    */
   private currentSpot(): number | null {
-    const l = liveLtp();
+    const l = lastPerp();
     if (l && l.price > 0 && Date.now() - l.at <= 15_000) {
       this.lastSpot = l.price;
       return l.price;

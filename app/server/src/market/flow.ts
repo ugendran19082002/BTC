@@ -345,6 +345,19 @@ export function liveLtp(nowMs = Date.now()): LiveLtp | null {
   return { price: last.price, at: last.at, side: last.side, bars: { '1m': formingBar(prints, 60, nowMs), '5m': formingBar(prints, 300, nowMs) } };
 }
 
+/**
+ * The perpetual's last trade and when -- nothing else.
+ *
+ * For everything that asks what BTC is at: the stop watch, the order gate's worst case, a signal's label, the
+ * entry board. They asked `liveLtp`, which also builds the 1m and 5m candles in progress from every print of
+ * the last five minutes -- thousands of them, on every call, to be thrown away (13 Oct 2026: 3.7% of the
+ * process, for a figure the socket already holds). The candles are the price stream's alone.
+ */
+export function lastPerp(): { price: number; at: number } | null {
+  const last = socket?.lastPerpPrint();
+  return last ? { price: last.price, at: last.at } : null;
+}
+
 let lastFlushedMinute = 0;
 
 /**

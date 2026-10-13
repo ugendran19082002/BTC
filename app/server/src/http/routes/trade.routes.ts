@@ -429,7 +429,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
       svc.positionsForDisplay().catch(() => []),
       svc.walletForDisplay().catch(() => null),
     ]);
-    const trades = await forScreens(await svc.openTrades());
+    const openNow = await svc.openTrades();
+    const trades = await forScreens(openNow);
     // Both cached at the server for under a second, so this costs nothing per poll.
     const symbols = [...new Set(trades.map((t) => t.state.symbol))];
     // Each trade carries its own contract value, so there is no product to look
@@ -449,7 +450,7 @@ export function registerTradeRoutes(app: FastifyInstance) {
         bySymbol.get(r.state.symbol) ?? null, svc.spot,
         restingBy.get(r.state.symbol) ?? null,
       ));
-    const today = await svc.todayFigures();
+    const today = await svc.todayFigures(Date.now(), openNow);
     return {
       mode: svc.mode,
       /** True only when a real order would reach the real exchange. */
