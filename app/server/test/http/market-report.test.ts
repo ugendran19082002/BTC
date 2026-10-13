@@ -553,6 +553,22 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.equal((await post('/api/backtest-portfolios', { name: 'Ghost', saveIds: [a.body.save.id, 'no-such'] })).status, 422);
   assert.equal((await post('/api/backtest-portfolios', { name: 'both', saveIds: [a.body.save.id, b.body.save.id] })).status, 409);
 
+  // edited: a portfolio's name and what is in it, under its id; a saved backtest's name
+  const third = await post('/api/backtest-saves', { name: 'Premium rule', query: { params: { ...WHOLE, rule: 'premium', value: 50 }, tfs: [], methods: [], strategy: null } });
+  const edited = await post('/api/backtest-portfolios', { id: p.body.portfolio.id, name: 'Whole and premium', saveIds: [a.body.save.id, third.body.save.id] });
+  assert.deepEqual([edited.status, edited.body.portfolio.id, edited.body.portfolio.name, edited.body.portfolio.saveIds], [200, p.body.portfolio.id, 'Whole and premium', [a.body.save.id, third.body.save.id]]);
+  assert.equal((await get('/api/backtest-saves')).body.portfolios.length, 1, 'the same portfolio, not another');
+  assert.equal((await post('/api/backtest-portfolios', { id: p.body.portfolio.id, name: 'Whole and premium', saveIds: [a.body.save.id] })).status, 422, 'still two or more');
+  assert.equal((await post('/api/backtest-portfolios', { id: 'no-such', name: 'Ghost', saveIds: [a.body.save.id, third.body.save.id] })).status, 404);
+  const renamed = await post('/api/backtest-saves', { id: third.body.save.id, name: 'Premium at most 50', query: third.body.save.query });
+  assert.deepEqual([renamed.status, renamed.body.save.name, renamed.body.save.query.params.rule], [200, 'Premium at most 50', 'premium']);
+  assert.equal((await post('/api/backtest-saves', { id: third.body.save.id, name: 'Whole day, 10 lots', query: third.body.save.query })).status, 409, 'not to a name another has');
+  assert.equal((await post('/api/backtest-saves', { id: 'no-such', name: 'Nobody', query: third.body.save.query })).status, 404);
+  // back to the two it began with, for what follows
+  await post('/api/backtest-portfolios', { id: p.body.portfolio.id, name: 'Both', saveIds: [a.body.save.id, b.body.save.id] });
+  const { status: thirdGone } = await del(`/api/backtest-saves/${third.body.save.id}`);
+  assert.equal(thirdGone, 200);
+
   // a saved backtest worked by a strategy since deleted is listed with why, and counts as nothing
   const made = await post('/api/strategies', { name: 'BT gone', config: {
     trigger: 'signal', signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 5, enterOn: 'zone', action: 'sell' },

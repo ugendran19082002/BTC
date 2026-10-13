@@ -16,6 +16,9 @@ import { Entry, Ledger, Table, count, each, netClass, rate } from '@/components/
  * settings back and the result below is worked for whatever days are chosen. Ticking two or more and running them
  * together works each on its own, as it is alone, and adds them up; the set can be kept under a name as a
  * portfolio and run again in one tap.
+ *
+ * Both can be edited: a saved backtest's settings (put on the screen, changed there) and its name; a portfolio's
+ * members (ticked in the list) and its name. Nothing changes until Save changes.
  */
 
 /** A query as it is compared: every setting named, lists in one order -- the screen leaves out what is off, the desk sends it. */
@@ -151,6 +154,14 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
   const [fromId, setFromId] = useState<string | null>(null);
   const [ticked, setTicked] = useState<string[]>([]);
   const [asking, setAsking] = useState<string | null>(null);
+  /*
+   * What is being edited, and its name as typed (owner, 13 Oct 2026: "edit a saved backtest, and edit a
+   * portfolio"). A saved backtest: its settings are put on the screen to be changed there, and its name here. A
+   * portfolio: its members are ticked in the list to be changed there, and its name here. Nothing is kept until
+   * Save changes; Cancel leaves it as it was.
+   */
+  const [editing, setEditing] = useState<{ kind: 'save' | 'portfolio'; id: string } | null>(null);
+  const [editName, setEditName] = useState('');
   const setRun = onRun;
 
   const refresh = useCallback(() => getBacktestSaves().then((x) => { setList(x); setFailed(null); return x; }, (e: Error) => { setFailed(e.message); return null; }), []);
@@ -178,8 +189,26 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
   const remove = (s: BacktestSave) => act(async () => {
     const r = await deleteBacktestSave(s.id);
     setTicked((t) => t.filter((x) => x !== s.id)); setAsking(null);
+    if (editing?.kind === 'save' && editing.id === s.id) setEditing(null);
     if (run?.ids.includes(s.id)) setRun(null);
     return `Deleted "${s.name}".${r.portfoliosDeleted.length ? ` The portfolio${r.portfoliosDeleted.length === 1 ? '' : 's'} ${r.portfoliosDeleted.map((x) => `"${x}"`).join(', ')} had fewer than two left and went with it.` : ''}`;
+  });
+  const editedSave = editing?.kind === 'save' ? saves.find((s) => s.id === editing.id) ?? null : null;
+  const editedPortfolio = editing?.kind === 'portfolio' ? portfolios.find((p) => p.id === editing.id) ?? null : null;
+  const editSave = (s: BacktestSave) => { onLoad(s.query); setFromId(s.id); setEditing({ kind: 'save', id: s.id }); setEditName(s.name); setSaid(null); setAsking(null); };
+  const editPortfolio = (p: { id: string; name: string; saveIds: string[] }) => { setTicked(p.saveIds); setEditing({ kind: 'portfolio', id: p.id }); setEditName(p.name); setSaid(null); };
+  const saveEdit = () => act(async () => {
+    if (editedSave) {
+      const r = await saveBacktest({ id: editedSave.id, name: editName, query: current });
+      setEditing(null);
+      return `Saved the changes to "${r.save.name}"${r.save.name !== editedSave.name ? ` (it was "${editedSave.name}")` : ''}.`;
+    }
+    const was = editedPortfolio!;
+    const r = await savePortfolio({ id: was.id, name: editName, saveIds: picked });
+    // A run of it on the screen is of what it is now.
+    if (run?.title === was.name) setRun({ ids: r.portfolio.saveIds, title: r.portfolio.name });
+    setEditing(null);
+    return `Saved the changes to the portfolio "${r.portfolio.name}"${r.portfolio.name !== was.name ? ` (it was "${was.name}")` : ''}: ${r.portfolio.saveIds.length} saved backtests.`;
   });
   const keepPortfolio = () => act(async () => {
     const r = await savePortfolio({ name: portfolioName, saveIds: picked });
@@ -191,8 +220,23 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
       <Panel title="Saved backtests" right={<span className="text-[11.5px] text-muted-foreground">{saves.length} saved{portfolios.length ? ` · ${portfolios.length} portfolio${portfolios.length === 1 ? '' : 's'}` : ''}</span>}>
         {failed && !list ? <p role="alert" className="m-0 text-[13px] text-[var(--down)]">The saved backtests could not be read: {failed}</p> : !list ? <Loading error={null} what="the saved backtests" /> : (
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
-            {/* Keep what is on the screen. */}
-            {shown ? (
+            {/* Keep what is on the screen -- or, while a saved one is edited, the changes to it. */}
+            {editedSave ? (
+              <form aria-label={`Edit ${editedSave.name}`} className="grid gap-1.5 rounded-md border border-solid border-[var(--accent)] px-2.5 py-2"
+                onSubmit={(e) => { e.preventDefault(); if (editName.trim() && !busy) void saveEdit(); }}>
+                <p className="m-0 text-[13px] leading-snug">
+                  Editing <b className="font-semibold">{editedSave.name}</b>. Its settings are on the screen: change them above, and its name here.
+                </p>
+                <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={60} aria-label="Name of the saved backtest" className={field} />
+                <p className="m-0 text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
+                  {shapeOf(editedSave.query) === shape ? 'Settings unchanged so far.' : `It will be: ${wordsOf(current)}`}
+                </p>
+                <span className="flex gap-2">
+                  <button type="submit" disabled={!editName.trim() || busy || (shapeOf(editedSave.query) === shape && editName.trim() === editedSave.name)} className={cn(solid, 'flex-1')}>Save changes</button>
+                  <button type="button" className={quiet} onClick={() => { setEditing(null); setSaid(null); }}>Cancel</button>
+                </span>
+              </form>
+            ) : shown ? (
               <p className="m-0 text-[13px] text-muted-foreground">The settings on the screen are saved as <b className="font-semibold text-foreground">{shown.name}</b>.</p>
             ) : (
               <form className="grid gap-1.5" onSubmit={(e) => { e.preventDefault(); if (name.trim() && !busy) void keep(); }}>
@@ -233,8 +277,12 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
                           <button type="button" onClick={() => setAsking(null)} className={link}>Keep</button>
                         </span>
                       ) : (
-                        <button type="button" aria-label={`Delete ${s.name}`} onClick={() => setAsking(s.id)}
-                          className="m-0 grid h-11 w-9 appearance-none place-items-center border-0 bg-transparent p-0 text-[18px] text-muted-foreground">×</button>
+                        <span className="flex items-center">
+                          <button type="button" aria-label={`Edit ${s.name}`} aria-pressed={editedSave?.id === s.id} onClick={() => editSave(s)}
+                            className={cn(link, 'h-11 px-1.5', editedSave?.id === s.id && 'font-semibold underline')}>Edit</button>
+                          <button type="button" aria-label={`Delete ${s.name}`} onClick={() => setAsking(s.id)}
+                            className="m-0 grid h-11 w-8 appearance-none place-items-center border-0 bg-transparent p-0 text-[18px] text-muted-foreground">×</button>
+                        </span>
                       )}
                     </li>
                   );
@@ -242,8 +290,25 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
               </ul>
             )}
 
+            {/* A portfolio being edited: its members are the ticks above, its name here. */}
+            {editedPortfolio && (
+              <form aria-label={`Edit the portfolio ${editedPortfolio.name}`} className="grid gap-1.5 rounded-md border border-solid border-[var(--accent)] px-2.5 py-2"
+                onSubmit={(e) => { e.preventDefault(); if (editName.trim() && picked.length >= 2 && !busy) void saveEdit(); }}>
+                <p className="m-0 text-[13px] leading-snug">
+                  Editing the portfolio <b className="font-semibold">{editedPortfolio.name}</b>. Tick or untick the saved backtests above to change what is in it, and its name here.
+                </p>
+                <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={60} aria-label="Name of the portfolio" className={field} />
+                <p role={picked.length < 2 ? 'alert' : undefined} className={cn('m-0 text-[12px] leading-snug [overflow-wrap:anywhere]', picked.length < 2 ? 'text-[var(--down)]' : 'text-muted-foreground')}>
+                  {picked.length < 2 ? 'A portfolio is two saved backtests or more: tick another.' : `In it: ${picked.map(nameOf).join(' + ')}.`}
+                </p>
+                <span className="flex gap-2">
+                  <button type="submit" disabled={!editName.trim() || picked.length < 2 || busy} className={cn(solid, 'flex-1')}>Save changes</button>
+                  <button type="button" className={quiet} onClick={() => { setEditing(null); setTicked([]); setSaid(null); }}>Cancel</button>
+                </span>
+              </form>
+            )}
             {/* Two or more ticked: run them together, and keep the set. */}
-            {saves.length >= 2 && (
+            {saves.length >= 2 && !editedPortfolio && (
               <div className="grid gap-2 rounded-md bg-muted px-2.5 py-2">
                 <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
                   {picked.length < 2 ? 'Tick two or more to run them together and see what they come to as one: a portfolio.' : `${picked.length} ticked: ${picked.map(nameOf).join(', ')}.`}
@@ -266,14 +331,16 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
                 <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">Portfolios</h3>
                 <ul className="m-0 grid list-none gap-0 p-0">
                   {portfolios.map((p) => (
-                    <li key={p.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 border-0 border-t border-solid border-[var(--line-soft)] py-1.5 first:border-t-0">
+                    <li key={p.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-x-1.5 border-0 border-t border-solid border-[var(--line-soft)] py-1.5 first:border-t-0">
                       <span className="min-w-0">
                         <span className="block text-[14px] font-semibold [overflow-wrap:anywhere]">{p.name}</span>
                         <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{p.saveIds.map(nameOf).join(' + ')}</span>
                       </span>
                       <button type="button" aria-label={`Run the portfolio ${p.name}`} className={cn(quiet, 'h-10')} onClick={() => setRun({ ids: p.saveIds, title: p.name })}>Run</button>
+                      <button type="button" aria-label={`Edit the portfolio ${p.name}`} aria-pressed={editedPortfolio?.id === p.id} onClick={() => editPortfolio(p)}
+                        className={cn(link, 'h-10 px-1', editedPortfolio?.id === p.id && 'font-semibold underline')}>Edit</button>
                       <button type="button" aria-label={`Delete the portfolio ${p.name}`} disabled={busy}
-                        onClick={() => void act(async () => { await deletePortfolio(p.id); if (run?.title === p.name) setRun(null); return `Deleted the portfolio "${p.name}". Its saved backtests are kept.`; })}
+                        onClick={() => void act(async () => { await deletePortfolio(p.id); if (run?.title === p.name) setRun(null); if (editedPortfolio?.id === p.id) setEditing(null); return `Deleted the portfolio "${p.name}". Its saved backtests are kept.`; })}
                         className="m-0 grid h-10 w-9 appearance-none place-items-center border-0 bg-transparent p-0 text-[18px] text-muted-foreground">×</button>
                     </li>
                   ))}

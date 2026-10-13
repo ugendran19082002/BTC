@@ -292,23 +292,26 @@ way (`useStrategyDraft`).
 **The method list's profit and loss is the option's, not the perp's** (13 Oct 2026: "in the strategy form the
 signal filter's profit and loss must be by the option's TGT and SL, not the perp's -- now it is the perp's"). The
 **Profit / Loss / No trades** chips, the win-rate filter, **Pick profitable** and the figures beside each method
-read each method's record **as options under the strategy on the form**: sold at its strike rule and lots in its
-hours, bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT as it closes live --
-rupees after charges, since 1 Oct. Every method is tried on all its signals in the form's way and timeframes,
-ticked or not, with "at most open" left out so one method's place is not taken by another's. It is asked again
-0.4 s after a rule that changes it changes (not when a method is ticked): `useOptionRecord` ->
-`POST /api/signal-backtest/methods { config }`, the [backtest](signal-backtest.md)'s own engine, in its thread.
-**As options · Backtest settings** beside it is the Backtest screen's own method list -- its settings as last
-left in this browser, on the form's way and timeframes -- for when the two are compared ("the backtest says 33 in
-profit and the strategy form 31: look at the backtest and copy it"). They differ wherever the rules do: "4h time"
-sells by premium ≤ $50 with strike blocks at 16 lots and takes only signals with SL ≥ 150 points, and by those
-*Pulled wall* loses ₹85 where delta ≤ 0.10 at 10 lots makes ₹162 -- 31 in profit and 8 in loss against 35 and 6;
-its twin "4h time delta" is 35 and 5. Both counts are said in a line under the switch, and the strategy's own
-rules stay the list the form opens on: they are what the strategy would have been paid.
-**Perp points** beside it is the old record (the Methods tab's: the signal's own trade to its SL or TGT), and is
-what is shown for a strategy that buys, or while the option record cannot be had -- the line under the switch
-says which and why. Checked on the 22 saved strategies against a separate working-out: every method's trades,
-wins and money agree. On "5m time" 19 methods are in profit as options and 49 in loss; on "15m time" 45 and 14.
+read each method's record as options, in rupees after charges, since 1 Oct. **Profit and loss by** chooses whose:
+
+- **As options · Backtest** (what the form opens on): the same list as the Backtest screen's Method filter -- the
+  Backtest's settings as last left in this browser, on the form's way and timeframes
+  (`useOptionRecord` -> `GET /api/signal-backtest`). The owner works a strategy out on the Backtest screen and
+  comes to the form to tick the methods it found, so the two must show one list ("the backtest's profit and loss
+  list is right and the strategy form's does not match it", asked twice the same evening).
+- **As options · this strategy's rules**: each method sold as the strategy *as saved* would sell it -- its strike
+  rule at each hour, its lots, its hours, its SL and TGT distances -- and bought back at its option TGT or SL, or
+  when the perp reaches the signal's SL or TGT; every method on all its signals, "at most open" left out
+  (`POST /api/signal-backtest/methods { config }`, asked again 0.4 s after a rule changes, not when a method is
+  ticked).
+- **Perp points**: the old record (the Methods tab's: the signal's own trade to its SL or TGT); also what is
+  shown for a strategy that buys, or while no record as options can be had -- the line under the switch says why.
+
+Both counts as options are said in a line, and why they differ when they do: the strategy is not yet set as the
+Backtest is. That evening "4h time" was saved as premium ≤ $50 with strike blocks, 16 lots, TGT 90%, SL +300%, SL
+and TGT ≥ 150 points, and the owner's saved backtest of the same name was delta ≤ 0.10, 2 lots, TGT 70%, SL
++160%, SL and TGT ≥ 250 -- 31 in profit and 8 in loss by the first, 34 and 6 by the second.
+Checked on the 22 saved strategies against a separate working-out: every method's trades, wins and money agree.
 
 
 How a signal becomes an order (`StrategyRunner.onSignal`, `strategy/runner.ts`):

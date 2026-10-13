@@ -675,4 +675,98 @@ describe('SignalBacktest', () => {
     expect(await panel().findByText('Deleted "16 lots on 4h". The portfolio "Both" had fewer than two left and went with it.')).toBeInTheDocument();
     expect(screen.queryByText('Run together · Both')).toBeNull();
   });
+
+  it('[critical] a saved backtest edited: its settings go on the screen to be changed there, its name is changed beside them, and nothing is kept until Save changes', async () => {
+    const saved = (id: string, name: string, params: object, tfs: string[] = []) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, ...params }, tfs, methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
+    const A = saved('a1', 'Desk rules', {}), B = saved('b2', '16 lots on 4h', { lots: 16 }, ['4h']);
+    saves.getBacktestSaves.mockResolvedValue({ saves: [B, A], portfolios: [] });
+    show();
+    await screen.findByText('Backtest result');
+    const panel = () => within(screen.getByText('Saved backtests').closest('section, div')!.parentElement!);
+
+    fireEvent.click(await panel().findByRole('button', { name: 'Edit 16 lots on 4h' }));
+    // its settings are the screen's now, and the backtest is asked for them
+    await waitFor(() => expect([lastQuery().params.lots, lastQuery().tfs]).toEqual([16, ['4h']]));
+    const form = () => within(panel().getByRole('form', { name: 'Edit 16 lots on 4h' }));
+    expect(form().getByLabelText('Name of the saved backtest')).toHaveValue('16 lots on 4h');
+    expect(form().getByText('Settings unchanged so far.')).toBeInTheDocument();
+    expect(form().getByRole('button', { name: 'Save changes' })).toBeDisabled();           // nothing changed yet
+    expect(panel().queryByLabelText('Name for the saved backtest')).toBeNull();            // not a new one: this one
+
+    // one lot instead of sixteen, and another name
+    fireEvent.click(within(screen.getByRole('group', { name: 'Lots a signal' })).getByRole('button', { name: '1' }));
+    expect(await form().findByText(/^It will be: delta ≤ 0\.10 · 1 lot · TGT 90% · SL \+300% · 9:30 PM → 3:59 PM · no open limit · on 4h$/)).toBeInTheDocument();
+    fireEvent.change(form().getByLabelText('Name of the saved backtest'), { target: { value: 'One lot on 4h' } });
+    expect(saves.saveBacktest).not.toHaveBeenCalled();
+    const after = { ...B, name: 'One lot on 4h', query: { ...B.query, params: { ...B.query.params, lots: 1 } } };
+    saves.saveBacktest.mockImplementation(async () => { saves.getBacktestSaves.mockResolvedValue({ saves: [A, after], portfolios: [] }); return { ok: true, save: after }; });
+    fireEvent.click(form().getByRole('button', { name: 'Save changes' }));
+    expect(await panel().findByText('Saved the changes to "One lot on 4h" (it was "16 lots on 4h").')).toBeInTheDocument();
+    expect(saves.saveBacktest.mock.calls[0]![0]).toMatchObject({ id: 'b2', name: 'One lot on 4h', query: { params: { lots: 1 }, tfs: ['4h'] } });
+    expect(panel().queryByRole('form')).toBeNull();
+    expect(panel().getByRole('button', { name: 'Run One lot on 4h' })).toHaveAttribute('aria-current', 'true');
+
+    // Cancel keeps it as it was
+    fireEvent.click(panel().getByRole('button', { name: 'Edit Desk rules' }));
+    fireEvent.change(within(panel().getByRole('form', { name: 'Edit Desk rules' })).getByLabelText('Name of the saved backtest'), { target: { value: 'Something else' } });
+    fireEvent.click(within(panel().getByRole('form', { name: 'Edit Desk rules' })).getByRole('button', { name: 'Cancel' }));
+    expect(panel().queryByRole('form')).toBeNull();
+    expect(saves.saveBacktest).toHaveBeenCalledTimes(1);
+
+    // a name the desk will not take is said, and the edit stays open to put right
+    saves.saveBacktest.mockRejectedValue(new Error('There is a saved backtest called "One lot on 4h" already: give this one another name, or update that one.'));
+    fireEvent.click(panel().getByRole('button', { name: 'Edit Desk rules' }));
+    fireEvent.change(within(panel().getByRole('form', { name: 'Edit Desk rules' })).getByLabelText('Name of the saved backtest'), { target: { value: 'One lot on 4h' } });
+    fireEvent.click(within(panel().getByRole('form', { name: 'Edit Desk rules' })).getByRole('button', { name: 'Save changes' }));
+    expect(await panel().findByRole('alert')).toHaveTextContent('There is a saved backtest called "One lot on 4h" already');
+    expect(panel().getByRole('form', { name: 'Edit Desk rules' })).toBeInTheDocument();
+  });
+
+  it('[critical] a portfolio edited: its members are the ticks in the list, its name beside them -- two or more, kept on Save changes', async () => {
+    const saved = (id: string, name: string) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, lots: id.length + 20 }, tfs: [], methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
+    const all = [saved('a1', 'Alpha'), saved('b22', 'Beta'), saved('c333', 'Gamma')];
+    const BOTH = { id: 'p1', name: 'Both', saveIds: ['a1', 'b22'], createdAt: 1, updatedAt: 1 };
+    saves.getBacktestSaves.mockResolvedValue({ saves: all, portfolios: [BOTH] });
+    saves.getBacktestPortfolio.mockResolvedValue({ from: '2026-10-01', to: '2026-10-13', members: [], total: tot(), days: [], margin: { peakUsd: 0, peakDay: null, peakAt: null, peakOpen: 0, avgDailyPeakUsd: 0, sumOfPeaksUsd: 0 } });
+    show();
+    await screen.findByText('Backtest result');
+    const panel = () => within(screen.getByText('Saved backtests').closest('section, div')!.parentElement!);
+    const tick = (name: string) => panel().getByRole('checkbox', { name: `Run ${name} together with others` });
+
+    // it is on the screen as a run, to see that the run follows the edit
+    fireEvent.click(await panel().findByRole('button', { name: 'Run the portfolio Both' }));
+    await screen.findByText('Run together · Both');
+
+    fireEvent.click(panel().getByRole('button', { name: 'Edit the portfolio Both' }));
+    const form = () => within(panel().getByRole('form', { name: 'Edit the portfolio Both' }));
+    expect([tick('Alpha'), tick('Beta'), tick('Gamma')].map((c) => (c as HTMLInputElement).checked)).toEqual([true, true, false]);
+    expect(form().getByLabelText('Name of the portfolio')).toHaveValue('Both');
+    expect(form().getByText('In it: Alpha + Beta.')).toBeInTheDocument();
+    expect(panel().queryByRole('button', { name: /^Run these/ })).toBeNull();               // editing, not starting another
+
+    // one alone is not a portfolio
+    fireEvent.click(tick('Beta'));
+    expect(form().getByRole('alert')).toHaveTextContent('A portfolio is two saved backtests or more: tick another.');
+    expect(form().getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    // Gamma in Beta's place, and another name
+    fireEvent.click(tick('Gamma'));
+    expect(form().getByText('In it: Alpha + Gamma.')).toBeInTheDocument();
+    fireEvent.change(form().getByLabelText('Name of the portfolio'), { target: { value: 'Alpha and Gamma' } });
+    const after = { ...BOTH, name: 'Alpha and Gamma', saveIds: ['a1', 'c333'] };
+    saves.savePortfolio.mockImplementation(async () => { saves.getBacktestSaves.mockResolvedValue({ saves: all, portfolios: [after] }); return { ok: true, portfolio: after }; });
+    fireEvent.click(form().getByRole('button', { name: 'Save changes' }));
+    expect(await panel().findByText('Saved the changes to the portfolio "Alpha and Gamma" (it was "Both"): 2 saved backtests.')).toBeInTheDocument();
+    expect(saves.savePortfolio).toHaveBeenCalledWith({ id: 'p1', name: 'Alpha and Gamma', saveIds: ['a1', 'c333'] });
+    expect(panel().queryByRole('form')).toBeNull();
+    // the run on the screen is of what the portfolio is now
+    expect(await screen.findByText('Run together · Alpha and Gamma')).toBeInTheDocument();
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'c333'], { from: '2026-10-01', to: '2026-10-13' }));
+
+    // Cancel: as it was, and the ticks cleared
+    fireEvent.click(panel().getByRole('button', { name: 'Edit the portfolio Alpha and Gamma' }));
+    fireEvent.click(within(panel().getByRole('form', { name: 'Edit the portfolio Alpha and Gamma' })).getByRole('button', { name: 'Cancel' }));
+    expect(panel().queryByRole('form')).toBeNull();
+    expect([tick('Alpha'), tick('Gamma')].map((c) => (c as HTMLInputElement).checked)).toEqual([false, false]);
+    expect(saves.savePortfolio).toHaveBeenCalledTimes(1);
+  });
 });

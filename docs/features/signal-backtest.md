@@ -156,6 +156,10 @@ the result.
   is traded by each -- and added up: the total, each one, each expiry day. The margin is **not** the sum of each
   one's most: their trades are laid on one clock and the most held at once is found across all of them, which is
   what running them side by side on one account would have needed; the sum is shown beside it.
+- **Edit** on a saved backtest puts its settings on the screen to be changed there, with its name beside them;
+  **Edit** on a portfolio ticks its members in the list to be changed there, with its name. Nothing is kept until
+  **Save changes** (the same one, under its id); **Cancel** leaves it as it was. A portfolio on the screen as a
+  run follows its edit.
 - The set can be **kept as a portfolio** under a name and run again in one tap. A portfolio holds its saved
   backtests by id, so one changed is changed in every portfolio it is in; one deleted leaves them, and a portfolio
   left with fewer than two goes with it -- said. A saved backtest whose strategy has since been deleted is listed

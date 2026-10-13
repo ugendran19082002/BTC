@@ -180,14 +180,21 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
     return combineRows(tfs.map((tf) => report.singleByTf[tf]).filter((x): x is NonNullable<typeof x> => Boolean(x)));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report, rule.mode, tfKey]);
-  // As options to begin with; the choice is kept in this browser. Without an option record there is only the perp's.
-  const [basisPick, setBasisPick] = usePersisted<RecordBasis>('signal-rule:record', 'options');
+  /*
+   * The Backtest screen's own list to begin with (owner, 13 Oct 2026, twice: "the backtest's profit and loss list
+   * is right and the strategy form's does not match it"): the owner works a strategy out on the Backtest screen
+   * -- its strike rule, lots, exits and distances there -- and comes here to tick the methods it found, so the
+   * list here must be that one. The strategy's own stored rules are the second choice: they differ from the
+   * Backtest's until the strategy is changed to match. The choice is kept in this browser (under a new name, so
+   * the first default -- the strategy's rules, for a few hours -- is not what anyone is left on).
+   */
+  const [basisPick, setBasisPick] = usePersisted<RecordBasis>('signal-rule:record-by', 'screen');
   const own = optionRecord?.data ?? null;
   const screen = optionRecord?.screen?.data ?? null;
   // The one asked for where it can be had; else the other record as options; else the perp's.
   const basis: RecordBasis = basisPick === 'perp' ? 'perp'
     : basisPick === 'screen' ? (screen ? 'screen' : own ? 'options' : 'perp')
-      : own ? 'options' : 'perp';
+      : own ? 'options' : screen ? 'screen' : 'perp';
   const options = basis === 'screen' ? screen : basis === 'options' ? own : null;
   const asOptions = options !== null;
   const recordOf = useMemo((): Map<string, MethodRecord> => (options
@@ -422,18 +429,18 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           <div className="mt-1.5">
             <div role="radiogroup" aria-label="profit and loss by" className="flex flex-wrap items-center gap-1">
               <span className="mr-1 text-[11.5px] text-muted-foreground">Profit and loss by</span>
-              <button type="button" role="radio" aria-checked={basis === 'options'} disabled={!own} onClick={() => setBasisPick('options')}
-                      title="Each method as an option under this strategy's own strike rule, lots, hours and exits"
-                      className={cn(chip(basis === 'options'), 'disabled:opacity-50')}>
-                As options · this strategy
-              </button>
               {optionRecord.screen && (
                 <button type="button" role="radio" aria-checked={basis === 'screen'} disabled={!screen} onClick={() => setBasisPick('screen')}
                         title="Each method as an option under the Backtest screen's own settings: the list its Method filter shows"
                         className={cn(chip(basis === 'screen'), 'disabled:opacity-50')}>
-                  As options · Backtest settings
+                  As options · Backtest
                 </button>
               )}
+              <button type="button" role="radio" aria-checked={basis === 'options'} disabled={!own} onClick={() => setBasisPick('options')}
+                      title="Each method as an option under this strategy's own strike rule, lots, hours and exits"
+                      className={cn(chip(basis === 'options'), 'disabled:opacity-50')}>
+                As options · this strategy&apos;s rules
+              </button>
               <button type="button" role="radio" aria-checked={basis === 'perp'} onClick={() => setBasisPick('perp')} className={chip(basis === 'perp')}>
                 Perp points
               </button>
@@ -443,7 +450,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
               {basis === 'options'
                 ? `Each method sold as this strategy would sell it and bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT -- money after charges, ${dayLabel(own!.from)} to ${dayLabel(own!.to)}. Every method on all its signals: "at most open" is not counted.`
                 : basis === 'screen'
-                  ? `The Backtest screen's own list: each method by its settings as you last left them (${optionRecord.screen!.words}), on this strategy's timeframes, ${dayLabel(screen!.from)} to ${dayLabel(screen!.to)} -- not by this strategy's strike rule, lots or distances.`
+                  ? `The same list as the Backtest screen's Method filter: each method by the Backtest's settings as you last left them (${optionRecord.screen!.words}), on this strategy's timeframes, ${dayLabel(screen!.from)} to ${dayLabel(screen!.to)}.`
                   : !own && optionRecord.error
                     ? `As options cannot be shown: ${optionRecord.error} Showing the perp's points.`
                     : !own
@@ -453,9 +460,11 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
             {/* Both records as options beside each other, where both are had: the two lists differ wherever the rules do, and that is said in numbers. */}
             {own && screen && (
               <p className="m-0 mt-0.5 text-[11px] leading-snug text-muted-foreground" aria-label="the two records as options">
-                By this strategy&apos;s rules: <b className="font-medium text-[var(--up)]">{tally(own)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(own)!.down} in loss</b>.
-                {' '}By the Backtest screen&apos;s settings: <b className="font-medium text-[var(--up)]">{tally(screen)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(screen)!.down} in loss</b>.
-                {' '}They differ where the rules do -- the strike rule, the lots, the SL and TGT distances, the exits.
+                By the Backtest: <b className="font-medium text-[var(--up)]">{tally(screen)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(screen)!.down} in loss</b>.
+                {' '}By this strategy&apos;s rules as saved: <b className="font-medium text-[var(--up)]">{tally(own)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(own)!.down} in loss</b>.
+                {tally(own)!.up !== tally(screen)!.up || tally(own)!.down !== tally(screen)!.down
+                  ? ' They differ because this strategy is not yet set as the Backtest is -- its strike rule, lots, option TGT and SL, or SL and TGT distances (Strike & lots, Entry & exit).'
+                  : ' The same.'}
               </p>
             )}
             {basis === 'options' && own!.caveats.map((c) => <p key={c} className="m-0 mt-0.5 text-[11px] leading-snug text-[var(--warn)]">{c}</p>)}
