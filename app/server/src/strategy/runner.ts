@@ -1,14 +1,14 @@
 import { liveChain, WHOLE_BOARD } from '../market/chain.js';
 import { scoreLegs } from '../domain/score.js';
 import { wallWithinEm } from '../http/routes/desk.routes.js';
-import { runAsDesk, tradingService, tradingServiceFor } from '../trading/service.js';
+import { runAsDesk, tradingService, tradingServiceFor, type TradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
 import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
-import type { MethodRead } from '../entry/types.js';
+import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
 import { liveLtp } from '../market/flow.js';
@@ -59,8 +59,27 @@ const TICK_MS = 20_000;
 /**
  * A fill the graders report this long after it printed is not entered: the candle grader can report one a
  * minute or more late, when the tape was down, and a late option entry is a different trade.
+ *
+ * This is the 5m signal's limit, and the least any signal has. A longer timeframe's is longer
+ * (`zoneFillFreshMs`).
  */
 export const ZONE_FILL_FRESH_MS = 90_000;
+/**
+ * How late a zone fill may be entered, by the signal's timeframe (13 Oct 2026). One 90 seconds for all of
+ * them dropped the wrong ones: at 9:30 PM on 11 Oct every timeframe's candle closed together, sixty orders
+ * waited their turn, and the 25 signals still waiting at 90 seconds -- seventeen 4h and eight 2h -- were
+ * written off as "too late", though a 4h signal's stop is hundreds of points off and a minute and a half
+ * moves the perp a small part of that.
+ *
+ * So the limit grows with the timeframe as the perp's reach does -- with the square root of the time, from
+ * the 5m signal's 90 seconds, to the half minute: the same share of the signal's own distance, whichever
+ * timeframe it is. Capped at ten minutes: past that the option board has moved on, whatever the perp did.
+ */
+const ZONE_FILL_FRESH_BY_TF: Partial<Record<Tf, number>> = {
+  '15m': 150_000, '30m': 210_000, '1h': 300_000, '2h': 450_000, '4h': 600_000,
+};
+/** The longest a zone fill of this timeframe's signal may have waited and still be entered (ms). */
+export const zoneFillFreshMs = (tf: Tf): number => ZONE_FILL_FRESH_BY_TF[tf] ?? ZONE_FILL_FRESH_MS;
 /** A signal strategy's entry rests at most this long; whatever is still unfilled then is cancelled. */
 export const SIGNAL_ENTRY_MS = 5 * 60_000;
 
@@ -100,6 +119,16 @@ function perpNow(): number | null {
   return l && Date.now() - l.at <= 15_000 ? l.price : null;
 }
 
+/** One signal's turn in one account's line. */
+type SignalTurn = { tfSec: number; seq: number; run: () => Promise<void>; done: () => void; failed: (e: unknown) => void };
+/** One account's line of signals, and whether one of them is being traded right now. */
+type SignalLane = { waiting: SignalTurn[]; busy: boolean };
+/** Whose line a desk's signals wait in: its account's -- one line for the desk that has no account. */
+const laneKeyOf = (desk: TradingService): number => desk.accountId ?? 0;
+/** The order of a line: the longer timeframe first; on the same one, the one that came first. */
+export const goesBefore = (a: Pick<SignalTurn, 'tfSec' | 'seq'>, b: Pick<SignalTurn, 'tfSec' | 'seq'>): boolean =>
+  a.tfSec !== b.tfSec ? a.tfSec > b.tfSec : a.seq < b.seq;
+
 export class StrategyRunner {
   private timer: NodeJS.Timeout | null = null;
   private ticking = false;
@@ -112,6 +141,8 @@ export class StrategyRunner {
     private readonly now: () => number = Date.now,
     /** The board a signal is traded on: the live one, or a test's. */
     private readonly signalBoard: () => Promise<SignalBoard | null> = liveSignalBoard,
+    /** The perp's last trade, when fresh: the tape's, or a test's. */
+    private readonly perp: () => number | null = perpNow,
   ) {
     /*
      * Time-based exits: at each step's time, the target or stop of every open
@@ -348,52 +379,23 @@ export class StrategyRunner {
    * with the gates' answer, which is how a method earns a live switch.
    */
   async onSignal(r: MethodRead): Promise<void> {
-    /*
-     * One signal at a time. The recorder hands over every new TRADE of a minute
-     * at once, and taken side by side each counted the open trades before any
-     * of them had placed -- so all of them passed "at most N open". In turn,
-     * each one sees the ones before it.
-     */
-    const mine = this.signalQueue.then(() => this.onSignalNow(r));
-    this.signalQueue = mine.catch(() => {});
-    return mine;
-  }
-
-  private signalQueue: Promise<void> = Promise.resolve();
-
-  private async onSignalNow(r: MethodRead): Promise<void> {
     if (r.state !== 'TRADE' || !r.plan || r.dir === null || r.triggerTime === null) return;
-    if (!this.armed()) return;
-    for (const s of await this.store.all()) {
-      if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
-      // On its own account's desk; none, when that account is switched off.
-      const desk = tradingServiceFor(s.accountId);
-      if (!desk) continue;
-      if (!signalMatches(s.config.signal, r)) continue;
+    return this.inTurn(r.tf, (s) => {
+      if (!signalMatches(s.config.signal!, r)) return null;
       // The ones that enter at the signal; the rest wait for the perp to reach the zone (`onSetupFilled`) --
       // and are made ready for it meanwhile.
-      if (entersOn(s.config.signal) !== 'signal') {
-        void runAsDesk(desk, () => this.warmFor(s, r)).catch(() => {});
-        continue;
-      }
-      await runAsDesk(desk, () => this.takeSignal(s, r, null)).catch((e) => this.note(s, 'signal', e));
-    }
+      if (entersOn(s.config.signal!) !== 'signal') return async () => { void this.warmFor(s, r).catch(() => {}); };
+      return () => this.takeSignal(s, r, null);
+    });
   }
 
   /**
    * A signal "in the trade": the perp traded into its entry zone, as the paper
    * log graded it (entry/paper.ts `onSetupFilled`). Every switched-on signal
    * strategy that enters at the zone -- the default -- and takes this signal
-   * sells its leg now. In turn with the signals, through the same queue.
+   * sells its leg now. In turn with the signals, through the same queues.
    */
   onSetupFilled(f: SetupFill): Promise<void> {
-    const mine = this.signalQueue.then(() => this.onSetupFilledNow(f));
-    this.signalQueue = mine.catch(() => {});
-    return mine;
-  }
-
-  private async onSetupFilledNow(f: SetupFill): Promise<void> {
-    if (!this.armed()) return;
     const m = METHODS.find((x) => x.id === f.method);
     // The signal as it was written: the same identity (and so the same claim) as the signal itself.
     const r = {
@@ -401,13 +403,89 @@ export class StrategyRunner {
       dir: f.dir === 1 ? 'long' : 'short', state: 'TRADE', triggerTime: f.triggerAt,
       plan: { entryLo: f.entryLo, entryHi: f.entryHi, stop: f.stop, tp1: f.tp1, tp2: f.tp2, tp3: f.tp3 },
     } as unknown as MethodRead;
-    for (const s of await this.store.all()) {
-      if (!s.enabled || s.config.trigger !== 'signal' || !s.config.signal) continue;
-      const desk = tradingServiceFor(s.accountId);
-      if (!desk) continue;
-      if (entersOn(s.config.signal) !== 'zone') continue;
-      if (!signalMatches(s.config.signal, r)) continue;
-      await runAsDesk(desk, () => this.takeSignal(s, r, f)).catch((e) => this.note(s, 'signal', e));
+    return this.inTurn(f.tf, (s) => (entersOn(s.config.signal!) === 'zone' && signalMatches(s.config.signal!, r)
+      ? () => this.takeSignal(s, r, f) : null));
+  }
+
+  /*
+   * THE QUEUES (13 Oct 2026).
+   *
+   * One signal at a time -- for one account. The recorder hands over every new
+   * TRADE of a minute at once, and taken side by side each counted the open
+   * trades before any of them had placed -- so all of them passed "at most N
+   * open". In turn, each one sees the ones before it. That is a fact about one
+   * account's count, and the queue was one for the whole desk: two accounts,
+   * with a limit each and a key each, waited on each other's orders. At 9:30 PM
+   * on 11 Oct that was sixty orders in one line, a second and a half apiece,
+   * and the last of them ninety seconds late.
+   *
+   * So: a line per account. And in a line, the longest timeframe goes first --
+   * a 4h signal comes six times a day and a 5m one every five minutes, so when
+   * something has to wait it is the one there will be another of -- and, on the
+   * same timeframe, whichever came first.
+   */
+  private readonly lanes = new Map<number, SignalLane>();
+  /** Signals handed over and not yet in their lines: no line picks its next while one is still on its way in. */
+  private arriving = 0;
+  private arrived = 0;
+
+  /**
+   * Put one signal (or one zone fill) in the line of every account with a strategy that takes it, and wait
+   * for each to have had its turn. `workOf` is what one strategy does about it -- null for "not mine".
+   *
+   * The strategies are read twice, on purpose: now, to know whose lines it joins; and again at its turn, so
+   * a strategy switched off -- or the desk disarmed -- while it waited is not traded.
+   */
+  private async inTurn(tf: Tf, workOf: (s: Strategy) => (() => Promise<void>) | null): Promise<void> {
+    const seq = this.arrived++;
+    const mine = (s: Strategy, desk: TradingService | null): desk is TradingService =>
+      !!desk && s.enabled && s.config.trigger === 'signal' && !!s.config.signal;
+    const turns: Promise<void>[] = [];
+    this.arriving++;
+    try {
+      if (!this.armed()) return;
+      const accounts = new Set<number>();
+      for (const s of await this.store.all()) {
+        // On its own account's desk; none, when that account is switched off.
+        const desk = tradingServiceFor(s.accountId);
+        if (mine(s, desk) && workOf(s)) accounts.add(laneKeyOf(desk));
+      }
+      for (const account of accounts) {
+        const run = async () => {
+          if (!this.armed()) return;
+          for (const s of await this.store.all()) {
+            const desk = tradingServiceFor(s.accountId);
+            if (!mine(s, desk) || laneKeyOf(desk) !== account) continue;
+            const work = workOf(s);
+            if (work) await runAsDesk(desk, work).catch((e) => this.note(s, 'signal', e));
+          }
+        };
+        turns.push(new Promise<void>((done, failed) => {
+          const lane = this.lanes.get(account) ?? { waiting: [], busy: false };
+          this.lanes.set(account, lane);
+          lane.waiting.push({ tfSec: TF_SEC[tf] ?? 0, seq, run, done, failed });
+        }));
+      }
+    } finally {
+      this.arriving--;
+      if (this.arriving === 0) for (const lane of this.lanes.values()) void this.serve(lane);
+    }
+    await Promise.all(turns);
+  }
+
+  /** Work through one account's line: the longest timeframe waiting, then the earliest, one at a time. */
+  private async serve(lane: SignalLane): Promise<void> {
+    if (lane.busy) return;
+    lane.busy = true;
+    try {
+      while (lane.waiting.length > 0 && this.arriving === 0) {
+        let next = 0;
+        for (let i = 1; i < lane.waiting.length; i++) if (goesBefore(lane.waiting[i]!, lane.waiting[next]!)) next = i;
+        const [turn] = lane.waiting.splice(next, 1);
+        await turn!.run().then(turn!.done, turn!.failed);
+      }
+    } finally {
+      lane.busy = false;
     }
   }
 
@@ -456,9 +534,26 @@ export class StrategyRunner {
         return;
       }
       const ago = now - fill.filledAt * 1_000;
-      if (ago > ZONE_FILL_FRESH_MS) {
-        await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round(ago / 1_000)}s ago -- too late to enter`);
+      const fresh = zoneFillFreshMs(r.tf);
+      if (ago > fresh) {
+        await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round(ago / 1_000)}s ago -- too late to enter (a ${r.tf} signal within ${Math.round(fresh / 1_000)}s)`);
         return;
+      }
+      /*
+       * And not one the perp has already finished (13 Oct 2026). A fill may now be entered minutes after it
+       * printed, on the long timeframes; if the perp has since reached the signal's stop or its target, the
+       * trade the signal described is over, and an option sold now would be bought straight back by the
+       * watch on those same levels -- two fees and a spread for nothing.
+       */
+      const at = this.perp();
+      if (at !== null) {
+        const goal = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
+        const past = (dir === 1 ? at <= plan.stop : at >= plan.stop) ? `SL ${Math.round(plan.stop)}`
+          : (dir === 1 ? at >= goal : at <= goal) ? `TGT ${Math.round(goal)}` : null;
+        if (past) {
+          await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round(ago / 1_000)}s ago and is at ${Math.round(at)} now, already at the signal's ${past} -- over before it could be entered`);
+          return;
+        }
       }
     }
 
@@ -478,7 +573,7 @@ export class StrategyRunner {
     const mostSl = maxSlPtsFor(rule, r.tf);
     const mostTgt = maxTgtPtsFor(rule, r.tf);
     if (needSl > 0 || needTgt > 0 || mostSl > 0 || mostTgt > 0) {
-      const from = fill?.fillPrice ?? perpNow() ?? (plan.entryLo + plan.entryHi) / 2;
+      const from = fill?.fillPrice ?? this.perp() ?? (plan.entryLo + plan.entryHi) / 2;
       // The target the trade would exit at: the rule's, TGT1 where the signal has no TGT2 / TGT3.
       const tgt = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
       // Which signals the number is for, in the row's words: "15m", or "timeframe-chain".
@@ -573,7 +668,7 @@ export class StrategyRunner {
         lots: chosen.lots, ask: chosen.ask, spot: snap.spot, cancelAfterMs: SIGNAL_ENTRY_MS,
       }),
       // The signal's own levels, on the perp: the trade's real exits. The premium stop stays at Delta as the backstop.
-      underlying: { dir, stop: plan.stop, target, source: 'BTC perp', entry: fill?.fillPrice ?? perpNow() },
+      underlying: { dir, stop: plan.stop, target, source: 'BTC perp', entry: fill?.fillPrice ?? this.perp() },
       signal: { method: r.id, n: r.n, name: r.name, mode: r.mode, tf: r.tf, dir, triggerTime: r.triggerTime! },
     };
     const perpIn = args.underlying.entry;
