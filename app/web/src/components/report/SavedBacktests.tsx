@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, saveBacktest, savePortfolio, type PortfolioLimit } from '@/api/backtest-saves';
+import { deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioLimit } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
@@ -141,8 +141,14 @@ export type TogetherRun = { ids: string[]; title: string };
  * The run together, where the results are shown: asked with the days on the screen, and again when they change.
  * Each one is a whole backtest, so the first run of a set takes a moment.
  */
-export function PortfolioRun({ run, range, limit = 'shared', wide = false, onClose }: { run: TogetherRun; range: { from: string; to: string }; limit?: PortfolioLimit; wide?: boolean; onClose: () => void }) {
-  const result = useAnswer(`${run.ids.join(',')}|${range.from}|${range.to}|${limit}`, () => getBacktestPortfolio(run.ids, range, limit), 300_000);
+export function PortfolioRun({ run, range, limit = 'shared', cap = null, wide = false, onClose }: {
+  run: TogetherRun; range: { from: string; to: string }; limit?: PortfolioLimit;
+  /** One account's limit as the screen shows it; null, the desk's own rule (the largest among the saved backtests). */
+  cap?: PortfolioCap | null;
+  wide?: boolean; onClose: () => void;
+}) {
+  const asked = limit === 'shared' ? cap : null;
+  const result = useAnswer(`${run.ids.join(',')}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}`, () => getBacktestPortfolio(run.ids, range, limit, asked), 300_000);
   if (result.error && !result.data) {
     return (
       <Panel title={`Run together · ${run.title}`}>
@@ -162,7 +168,7 @@ export function PortfolioRun({ run, range, limit = 'shared', wide = false, onClo
   );
 }
 
-export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run, onRun }: {
+export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run, onRun, onSaves }: {
   /**
    * Which of the screen's two sections this is in (owner, 13 Oct 2026: "the portfolio section or the backtest
    * section -- only one open at a time"). `single`: the saved backtests as a list to keep, put back on the screen,
@@ -179,6 +185,8 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
   /** The run together on the screen, if any, and how one is started or closed: its results are the screen's to place (`PortfolioRun`). */
   run: TogetherRun | null;
   onRun: (run: TogetherRun | null) => void;
+  /** Told the saved backtests whenever they are read: the screen works one account's default limit out from them. */
+  onSaves?: (saves: BacktestSave[]) => void;
 }) {
   const [list, setList] = useState<BacktestSaves | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -202,6 +210,8 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
 
   const refresh = useCallback(() => getBacktestSaves().then((x) => { setList(x); setFailed(null); return x; }, (e: Error) => { setFailed(e.message); return null; }), []);
   useEffect(() => { void refresh(); }, [refresh]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (list) onSaves?.(list.saves); }, [list]);
 
   const saves = list?.saves ?? [];
   const portfolios = list?.portfolios ?? [];

@@ -6,7 +6,7 @@ import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
 import type { PairStat } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
 import { time12 } from '@/lib/time';
-import type { BacktestParams, BacktestQuery, BoardGrain, BtExit, BtRow, SavedQuery } from '@/types/signal-backtest';
+import type { BacktestParams, BacktestQuery, BacktestSave, BoardGrain, BtExit, BtRow, SavedQuery } from '@/types/signal-backtest';
 import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
@@ -14,7 +14,7 @@ import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, netClass, rate } from '@/components/report/backtest-parts';
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
-import type { PortfolioLimit } from '@/api/backtest-saves';
+import type { PortfolioCap, PortfolioLimit } from '@/api/backtest-saves';
 import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, settingsWords } from '@/components/report/backtest-words';
 
 /**
@@ -311,6 +311,56 @@ function ChipRow({ label, children }: { label: string; wide?: boolean; children:
  * Rows of one grouping as a table of four columns, which is what a 360px phone holds: trades, how many made money,
  * and the net with what one trade made under it. What the same trades made on the perp goes under the name.
  */
+/**
+ * One account's limit on a run together, shown and typed (owner, 13 Oct 2026: "show the at-most-open field with
+ * its default value, editable"): at most open across all of them, and the CE and PE shares of it. It opens on the
+ * default -- what the saved backtests themselves carry, or the account's own limit -- and takes a typed one on
+ * leaving a field or Enter, checked as the desk checks it; Default puts it back.
+ */
+function SharedCap({ value, fallback, edited, onApply, onReset }: { value: PortfolioCap | null; fallback: PortfolioCap | null; edited: boolean; onApply: (c: PortfolioCap) => void; onReset: () => void }) {
+  const shown = value ?? fallback;
+  const text = (c: PortfolioCap | null) => ({ max: c ? String(c.max) : '', ce: c ? String(c.ce) : '', pe: c ? String(c.pe) : '' });
+  const [draft, setDraft] = useState(text(shown));
+  const key = shown ? `${shown.max}/${shown.ce}/${shown.pe}` : '';
+  // What is in force changed from outside -- another run, Default, a new default: the fields follow it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setDraft(text(shown)); }, [key]);
+  const max = Number(draft.max), ce = Number(draft.ce), pe = Number(draft.pe);
+  const problem = draft.max.trim() === '' ? (shown ? 'Type how many may be open together, or tap Default.' : null)
+    : !Number.isInteger(max) || max < 1 || max > 500 ? 'At most open is a whole number from 1 to 500.'
+      : !(ce >= 1 && ce <= 100) || !(pe >= 1 && pe <= 100) ? 'CE max and PE max are from 1% to 100%.'
+        : null;
+  const apply = () => { if (!problem && draft.max.trim() !== '' && `${max}/${ce}/${pe}` !== key) onApply({ max, ce, pe }); };
+  const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[16px] tabular-nums text-foreground';
+  const input = (name: 'max' | 'ce' | 'pe', label: string, unit: string) => (
+    <label className="grid min-w-0 gap-1">
+      <span className="text-[12px] text-muted-foreground">{label}</span>
+      <span className="flex min-w-0 items-center gap-1">
+        <input type="number" inputMode="numeric" aria-label={label} value={draft[name]} placeholder={name === 'max' ? 'none' : '100'}
+          onChange={(e) => setDraft({ ...draft, [name]: e.target.value })} onBlur={apply}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }} className={field} />
+        {unit && <span className="text-[12.5px] text-muted-foreground">{unit}</span>}
+      </span>
+    </label>
+  );
+  const said = (c: PortfolioCap) => `${c.max} open · CE ${c.ce}% · PE ${c.pe}%`;
+  return (
+    <div role="group" aria-label="One account's limit" className="grid min-w-0 gap-1.5">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2">
+        {input('max', 'At most open, together', '')}
+        {input('ce', 'CE max', '%')}
+        {input('pe', 'PE max', '%')}
+      </div>
+      <p role={problem ? 'alert' : 'status'} className={cn('m-0 px-1 text-[12px] leading-snug', problem ? 'text-[var(--down)]' : 'text-muted-foreground')}>
+        {problem ?? (!shown ? 'No saved backtest and no account has an “at most open”: none is shared until one is typed here.'
+          : edited ? `Your own: ${said(shown)}.${fallback ? ` The default is ${said(fallback)}.` : ''}`
+            : `The default: ${said(shown)} -- the largest “at most open” among the saved backtests run, or the account's own. Type another to try it.`)}
+        {edited && !problem && <> <button type="button" onClick={onReset} className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] font-medium text-[var(--accent)] underline">Default</button></>}
+      </p>
+    </div>
+  );
+}
+
 /** A day's pricing in a word, beside its name. */
 const GRAIN: Record<BoardGrain, string> = { 'own-1m': '1m prices', 'mark-1m': '1m est.', '5m': '5m prices' };
 
@@ -418,6 +468,9 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [together, setTogether] = usePersisted<TogetherRun | null>('signalBacktest.together', null);
   // One account's limit over a run together, or each saved backtest's own (`PortfolioLimit`): one account to begin with.
   const [limit, setLimit] = usePersisted<PortfolioLimit>('signalBacktest.together.limit', 'shared');
+  // One account's limit: typed here and kept, or (null) the default worked out below.
+  const [capTyped, setCapTyped] = usePersisted<PortfolioCap | null>('signalBacktest.together.cap', null);
+  const [savedList, setSavedList] = useState<BacktestSave[]>([]);
   /** A saved backtest's settings put on the screen: the result below is then worked for them, over the days chosen. */
   const load = (q: SavedQuery) => {
     setParams({ ...DEFAULTS, ...q.params }); setTfs(q.tfs); setMethods(q.methods); setStrategyId(q.strategy);
@@ -620,6 +673,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', !settingsOpen && 'hidden', wide && 'xl:grid')}>{setup}</div>
     </Panel>
   );
+  // The default: the largest "at most open" among the saved backtests run (all of them, before any is), with its shares; else the account's own.
+  const ran = together ? savedList.filter((x) => together.ids.includes(x.id)) : savedList;
+  const carried = ran.map((x) => x.query.params).filter((p) => (p.deskMax ?? 0) > 0).sort((a, b) => b.deskMax - a.deskMax)[0];
+  const ofAccount = [...(r?.deskLimits ?? [])].sort((a, b) => b.max - a.max)[0];
+  const capDefault: PortfolioCap | null = carried ? { max: carried.deskMax, ce: carried.cePct ?? 100, pe: carried.pePct ?? 100 } : ofAccount ? { max: ofAccount.max, ce: ofAccount.ce, pe: ofAccount.pe } : null;
+  const cap = capTyped ?? capDefault;
   const title = wide && (
     <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>
   );
@@ -661,18 +720,19 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                       { key: 'shared', label: 'One account', spoken: 'One account: one limit on open trades across all of them' },
                       { key: 'own', label: 'Each its own limit', spoken: 'Each saved backtest keeps its own limit' },
                     ]} />
+                  {limit === 'shared' && <SharedCap value={capTyped} fallback={capDefault} edited={capTyped !== null} onApply={setCapTyped} onReset={() => setCapTyped(null)} />}
                   <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
                     {limit === 'shared'
-                      ? 'One account: the desk’s “at most open” and its CE and PE shares are the account’s, so they are traded together for the same places -- the largest limit among the saved backtests, for all of them. The margin is then what one account would really have held.'
+                      ? 'One account: the desk’s “at most open” and its CE and PE shares are the account’s, so they are traded together for the same places. The margin is then what one account would really have held.'
                       : 'Each keeps the limit set in it and they are added up: more may be open together than one account would hold.'}
                   </p>
                 </div>
               </Panel>
-              <SavedBacktests mode="portfolio" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
+              <SavedBacktests mode="portfolio" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} onSaves={setSavedList} />
             </aside>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
               {together
-                ? <PortfolioRun run={together} range={range} limit={limit} wide={wide} onClose={() => setTogether(null)} />
+                ? <PortfolioRun run={together} range={range} limit={limit} cap={cap} wide={wide} onClose={() => setTogether(null)} />
                 : <Panel title="Run together"><Empty>Run a portfolio, or tick two or more saved backtests and run them together: each is worked as it is alone, and they are added up -- the total, each one, each expiry day, and the margin held across all of them.</Empty></Panel>}
             </div>
           </>

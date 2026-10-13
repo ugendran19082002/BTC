@@ -19,8 +19,14 @@ export const deletePortfolio = (id: string) =>
   json<{ ok: true }>(`/api/backtest-portfolios/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 /** Saved backtests run together over one range of expiry days, with their total: as one account, or each on its own limit. */
-export const getBacktestPortfolio = (ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared') =>
-  json<BacktestPortfolioResult>(`/api/backtest-portfolio?${new URLSearchParams({ ids: ids.join(','), from: range.from, to: range.to, ...(limit === 'own' ? { limit: 'own' } : {}) })}`);
+export const getBacktestPortfolio = (ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null) =>
+  json<BacktestPortfolioResult>(`/api/backtest-portfolio?${new URLSearchParams({
+    ids: ids.join(','), from: range.from, to: range.to,
+    ...(limit === 'own' ? { limit: 'own' } : cap ? { max: String(cap.max), ce: String(cap.ce), pe: String(cap.pe) } : {}),
+  })}`);
+
+/** One account's limit as it is asked for: at most this many open together, and each side this per cent of it. */
+export type PortfolioCap = { max: number; ce: number; pe: number };
 
 /**
  * Whose limit on open trades a run together is held to: `shared`, one account's -- the largest "at most open" among
