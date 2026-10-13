@@ -28,6 +28,8 @@ export type FilterOption = {
   note?: string;
   /** Colours the note: it made money, or lost it. */
   tone?: 'up' | 'down';
+  /** More words the search box finds it by, beside its name: a strategy's account (13 Oct 2026, "filter by typing the account name"). */
+  also?: string;
 };
 
 /** What is being chosen, as the button and the list name it: `{ label: 'Strategy', many: 'strategies' }`. */
@@ -85,7 +87,7 @@ export function FilterPicker({ noun, options, picked, onChange }: {
   const toggle = (key: string) => onChange(chosen.includes(key) ? chosen.filter((k) => k !== key) : [...chosen, key]);
   const searchable = options.length >= SEARCH_FROM;
   const wanted = find.trim().toLowerCase();
-  const shown = searchable && wanted ? options.filter((o) => o.name.toLowerCase().includes(wanted)) : options;
+  const shown = searchable && wanted ? options.filter((o) => `${o.name} ${o.also ?? ''}`.toLowerCase().includes(wanted)) : options;
   const listName = noun.many[0]!.toUpperCase() + noun.many.slice(1);
 
   return (
@@ -126,7 +128,7 @@ export function FilterPicker({ noun, options, picked, onChange }: {
           {shown.map((o) => (
             <Row key={o.key} on={chosen.includes(o.key)} name={o.name} note={o.note} tone={o.tone} onClick={() => toggle(o.key)} />
           ))}
-          {shown.length === 0 && <li className="m-0 px-2 py-3 text-[13px] text-muted-foreground">No {noun.label.toLowerCase()} named “{find.trim()}”.</li>}
+          {shown.length === 0 && <li className="m-0 px-2 py-3 text-[13px] text-muted-foreground">No {noun.label.toLowerCase()} matches “{find.trim()}”.</li>}
         </ul>
         <div className="flex shrink-0 items-center gap-2 border-0 border-t border-solid border-[var(--line-soft)] p-2">
           <button

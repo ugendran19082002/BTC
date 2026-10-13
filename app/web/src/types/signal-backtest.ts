@@ -13,6 +13,8 @@ export type BacktestParams = {
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */
 export type BtTot = {
   n: number; wins: number; losses: number; net: number; won: number; lost: number; perpPts: number;
+  /** The exchange's fees and GST on every fill, dollars: `net` is after them. */
+  charges: number;
   exits: Partial<Record<BtExit, { n: number; wins: number; net: number }>>;
 };
 export type BtRow = BtTot & { key: string; name: string; tf?: string; days?: number };

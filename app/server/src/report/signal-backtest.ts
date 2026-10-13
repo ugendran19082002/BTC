@@ -90,6 +90,8 @@ export type BtTrade = {
   entryAt: number; entry: number; exitAt: number; exit: number; by: BtExit;
   /** Dollars after charges. */
   netUsd: number;
+  /** The charges on both fills, dollars: the exchange's fee and its GST (`fillChargesUsd`). */
+  chargesUsd: number;
   /** What the same trade made on the perp, in points: to the level reached, or to the perp's price at the window's end. */
   perpPts: number;
 };
@@ -205,6 +207,21 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }, 
   };
 }
 
+const TF_RANK: Record<string, number> = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1_800, '1h': 3_600, '2h': 7_200, '4h': 14_400 };
+/**
+ * The order signals are taken in: as they filled; and those that filled in the same second -- many do, the graders
+ * work a minute at a time -- in the live queue's order (strategy/runner.ts `goesBefore`): the longer timeframe
+ * first. Then by method, way and direction, so the order never depends on how the database happened to return
+ * the rows (13 Oct 2026: with a limit on open trades, which of a tie took the last place changed the day's count
+ * from one read to the next -- 759 or 873 for 12 Oct).
+ */
+export function signalOrder(a: BtSignal, b: BtSignal): number {
+  return a.filledAt - b.filledAt
+    || (TF_RANK[b.tf] ?? 0) - (TF_RANK[a.tf] ?? 0)
+    || a.method.localeCompare(b.method) || a.mode.localeCompare(b.mode) || a.dir - b.dir
+    || a.fillPrice - b.fillPrice || a.stop - b.stop;
+}
+
 /**
  * One expiry day: every signal filled in it, traded on its board. `from`/`to` are the day's span; `bars` its perp
  * minutes; `board` every reading of the contract that settles at `to`, oldest first. The signals are taken in the
@@ -232,7 +249,7 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
   let open: { until: number; side: 'CE' | 'PE' }[] = [];
   const desk = plan.desk ?? null;
 
-  for (const sig of [...o.signals].sort((a, b) => a.filledAt - b.filledAt)) {
+  for (const sig of [...o.signals].sort(signalOrder)) {
     const t0 = sig.filledAt;
     const refused = plan.refuses(sig);
     if (refused) { skipped[refused]++; continue; }
@@ -292,7 +309,7 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
     open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE' });
     trades.push({
       signal: sig, cp, strike: pick.strike, lots, entryAt, entry, exitAt, exit, by,
-      netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges,
+      netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges, chargesUsd: charges,
       perpPts: (perpPx - sig.fillPrice) * sig.dir,
     });
   }
@@ -304,11 +321,13 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
 /** A count of backtested trades: money after charges, the same trades' perp points, and each exit with how many of its trades made money. */
 export type BtTot = {
   n: number; wins: number; losses: number; net: number; won: number; lost: number; perpPts: number;
+  /** The charges on every fill, dollars: `net` is after them, `net + charges` before. */
+  charges: number;
   exits: Partial<Record<BtExit, { n: number; wins: number; net: number }>>;
 };
-export const zeroBt = (): BtTot => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0, perpPts: 0, exits: {} });
+export const zeroBt = (): BtTot => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0, perpPts: 0, charges: 0, exits: {} });
 function addBt(a: BtTot, b: BtTot): BtTot {
-  a.n += b.n; a.wins += b.wins; a.losses += b.losses; a.net += b.net; a.won += b.won; a.lost += b.lost; a.perpPts += b.perpPts;
+  a.n += b.n; a.wins += b.wins; a.losses += b.losses; a.net += b.net; a.won += b.won; a.lost += b.lost; a.perpPts += b.perpPts; a.charges += b.charges;
   for (const k of BT_EXITS) {
     const x = b.exits[k];
     if (!x) continue;
@@ -327,7 +346,7 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
     const cell = by.get(key) ?? { day, method: s.method, mode: s.mode, tf: s.tf, tot: zeroBt() };
     by.set(key, cell);
     const x = cell.tot, win = t.netUsd > 0;
-    x.n++; x.net += t.netUsd; x.perpPts += t.perpPts;
+    x.n++; x.net += t.netUsd; x.perpPts += t.perpPts; x.charges += t.chargesUsd;
     if (win) { x.wins++; x.won += t.netUsd; } else { x.losses++; x.lost -= t.netUsd; }
     const e = x.exits[t.by] ?? (x.exits[t.by] = { n: 0, wins: 0, net: 0 });
     e.n++; e.net += t.netUsd; if (win) e.wins++;

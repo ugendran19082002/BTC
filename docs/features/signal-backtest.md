@@ -111,3 +111,20 @@ minutes.
 Changing any setting or filter shows a **Working out…** bar at once, and the result on the screen is greyed and
 marked as the previous settings' until the new one arrives (`Updating.tsx`, `useAnswer`: the answer is kept with
 the question it answers). The market report and its breakdowns do the same.
+
+## Charges, and how the counts are kept honest
+
+**Charges** are shown, not only taken off: the result has **Before charges**, **Charges** and **After charges**
+(the net), with what charges come to a trade and as a share of the result before them; every row of the tables
+carries its charges under its net. They are Delta's fee on each fill -- the lower of 0.01% of the BTC value and
+3.5% of the premium -- plus 18% GST, on the sale and on the buy-back (`fillChargesUsd`, `BtTot.charges`).
+
+**The counts** (checked on 13 Oct 2026 against the live data, every day from 4 to 13 Oct): every signal is either
+traded or skipped for one reason, and the two add up to the signals; the signals inside the desk's hours match a
+count straight from `entry_setups`; with a limit on, never more than that many are open, nor more than each side's
+share. Signals that fill in the same second are taken in a fixed order -- the longer timeframe first, as the live
+queue takes them (`signalOrder`) -- so a limit gives the same count every time; before, which of a tie took the
+last place followed the database's row order (12 Oct came out 759 or 873). "Traded here" in the summary counts
+every reason a signal was not traded, the limits on open trades included.
+
+The Strategy filter's search finds a strategy by its account's name too ("Savings", "Expenses").

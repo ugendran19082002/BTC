@@ -109,7 +109,7 @@ describe('FilterPicker', () => {
     expect(list.getAllByRole('option').map((o) => o.textContent)).toEqual(['#5 Liquidity sweep', '#10 Liquidity replenishment']);
     fireEvent.click(list.getByRole('option', { name: /#10/ }).querySelector('button')!);
     fireEvent.change(search, { target: { value: 'zzz' } });
-    expect(screen.getByText('No method named “zzz”.')).toBeInTheDocument();
+    expect(screen.getByText('No method matches “zzz”.')).toBeInTheDocument();
     fireEvent.change(search, { target: { value: '' } });
     expect(list.getAllByRole('option')).toHaveLength(13);
     expect(latest).toEqual(['m10']);
@@ -143,5 +143,25 @@ describe('FilterPicker', () => {
     expect(row.getByRole('button', { name: 'Method filter: All methods' })).toHaveTextContent(/^Method$/);
     // nothing chosen: nothing to clear
     expect(row.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument();
+  });
+});
+
+describe('searching by more than the name', () => {
+  it('[critical] a strategy is found by typing its account\'s name, as well as its own', () => {
+    const options: FilterOption[] = ['5m time', '15m time', '1h time', '2h time', '4h time'].flatMap((n, i) => [
+      { key: `s${i}`, name: n, note: 'Savings · 8 methods', also: 'Savings' },
+      { key: `e${i}`, name: `${n} delta`, note: 'Expenses · 8 methods', also: 'Expenses' },
+    ]);
+    render(<FilterPicker noun={STRATEGIES} options={options} picked={[]} onChange={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Strategy filter: All strategies' }));
+    const search = screen.getByLabelText('Search strategies');
+    const names = () => within(screen.getByRole('listbox')).queryAllByRole('option').map((o) => o.textContent ?? '');
+    fireEvent.change(search, { target: { value: 'expen' } });
+    expect(names().filter((t) => !t.startsWith('All')).every((t) => t.includes('delta'))).toBe(true);
+    expect(names().some((t) => t.startsWith('5m time delta'))).toBe(true);
+    fireEvent.change(search, { target: { value: '1h' } });
+    expect(names().filter((t) => !t.startsWith('All')).length).toBe(2);
+    fireEvent.change(search, { target: { value: 'nobody' } });
+    expect(screen.getByText('No strategy matches “nobody”.')).toBeInTheDocument();
   });
 });

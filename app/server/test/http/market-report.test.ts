@@ -366,6 +366,8 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   assert.deepEqual(tf.body.choices.methods.map((m: any) => m.n), [0, 2], 'on the timeframes chosen');
   const lots = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&lots=1`);
   assert.ok(Math.abs(lots.body.total.net * 10 - all.body.total.net) < 1e-9);
+  assert.ok(all.body.total.charges > 0, 'charges are counted and sent');
+  assert.ok(Math.abs(all.body.byTf.reduce((n: number, t: any) => n + t.charges, 0) - all.body.total.charges) < 1e-9, 'and add up across the time frames');
   const cheap = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&rule=premium&value=20`);
   assert.ok(cheap.body.skipped['no-strike'] > 0, 'no put is offered at 20 or under until late in the day');
   // a day with no board: its signals are counted, none traded

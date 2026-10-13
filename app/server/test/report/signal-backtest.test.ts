@@ -72,6 +72,8 @@ test('[critical] a BUY sells the put at the bid of the reading nearest its fill,
   const offer305 = 40 - 30 * 305 / 1_435 + 2;
   assert.ok(Math.abs(t!.exit - offer305) < 1e-9, 'bought back at the offer of the first reading at or after: minute 305');
   assert.ok(Math.abs(t!.netUsd - net(t!.entry, offer305)) < 1e-9, 'money after both fills\' charges');
+  assert.ok(Math.abs(t!.chargesUsd - charges(t!.entry) - charges(offer305)) < 1e-12, 'and the charges themselves, both fills');
+  assert.ok(t!.chargesUsd > 0);
   assert.equal(t!.perpPts, 500);
   // a SELL sells the call
   const short = simulateDay({ from, to, params: P, signals: [sig(31, { dir: -1, stop: 84_400, target: 83_500 })], bars: perp([[0, 84_000], [600, 83_480], [1_439, 83_400]]),
@@ -176,4 +178,18 @@ test('[critical] custom hours: only the signals filled from the From time to the
   assert.deepEqual(run('13:00', '14:00').trades.map((t) => (t.signal.filledAt - from) / 60_000), [1_200]);
   assert.deepEqual(run('22:00', '22:01').trades.map((t) => (t.signal.filledAt - from) / 60_000), [270], 'the From minute is in');
   assert.deepEqual(run('21:00', '22:00').trades, [], 'the To minute is not');
+});
+
+test('[critical] signals that filled in the same second are taken in a fixed order -- longest timeframe first -- so a limit gives the same count every time', async () => {
+  const { planOfParams, signalOrder } = await import('../../src/report/signal-backtest.js');
+  const bars = perp([[0, 84_000], [1_439, 84_050]]);
+  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  const at = 100;
+  const tie = [sig(at, { tf: '5m', method: 'b' }), sig(at, { tf: '4h', method: 'z' }), sig(at, { tf: '15m', method: 'a' }), sig(at, { tf: '4h', method: 'a' })];
+  assert.deepEqual([...tie].sort(signalOrder).map((x) => `${x.tf}:${x.method}`), ['4h:a', '4h:z', '15m:a', '5m:b']);
+  const plan = planOfParams({ ...P, deskMax: 2 }, { from, to });
+  const took = (xs: typeof tie) => simulateDay({ from, to, signals: xs, bars, board, plan }).trades.map((t) => `${t.signal.tf}:${t.signal.method}`);
+  // every order the database could return them in gives the same two trades
+  const orders = [tie, [...tie].reverse(), [tie[2]!, tie[0]!, tie[3]!, tie[1]!], [tie[1]!, tie[3]!, tie[0]!, tie[2]!]];
+  for (const xs of orders) assert.deepEqual(took(xs), ['4h:a', '4h:z']);
 });

@@ -15,11 +15,11 @@ vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) =
 const { SignalBacktest } = await import('@/components/report/SignalBacktest');
 const { BacktestScreen } = await import('@/components/mobile/screens/BacktestScreen');
 
-const tot = (o: Partial<BtTot> = {}): BtTot => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0, perpPts: 0, exits: {}, ...o });
+const tot = (o: Partial<BtTot> = {}): BtTot => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0, perpPts: 0, charges: 0, exits: {}, ...o });
 const row = (key: string, name: string, o: Partial<BtRow>): BtRow => ({ ...tot(o), key, name, ...o });
 
 const TOTAL = tot({
-  n: 1_000, wins: 440, losses: 560, net: -120, won: 480, lost: 600, perpPts: 13_600,
+  n: 1_000, wins: 440, losses: 560, net: -120, won: 480, lost: 600, perpPts: 13_600, charges: 40,
   exits: {
     'perp-tgt': { n: 350, wins: 250, net: 30 }, 'perp-sl': { n: 500, wins: 60, net: -550 },
     'option-tgt': { n: 130, wins: 130, net: 440 }, 'option-sl': { n: 5, wins: 0, net: -62 }, 'window-end': { n: 15, wins: 12, net: 22 },
@@ -107,12 +107,12 @@ describe('SignalBacktest', () => {
     show();
     await screen.findByText('Backtest result');
     expect(rowsOf('Backtest: which exit closed the trades')).toEqual(['Perp TGT35071%₹₹', 'Perp SL50012%₹₹', 'Option TGT130100%₹₹', 'Option SL50%₹₹', 'Window end1580%₹₹']);
-    expect(rowsOf('Backtest by time frame')).toEqual(['5mperp +2,300 pts70034%₹₹', '4hperp −171 pts10079%₹₹', 'TF chainperp +900 pts20035%₹₹']);
-    expect(rowsOf('Backtest by expiry day')).toEqual(['Tue 13 Oct · so far40035%₹₹', 'Mon 12 Oct60050%₹₹']);
+    expect(rowsOf('Backtest by time frame')).toEqual(['5mperp +2,300 pts70034%₹₹charges ₹', '4hperp −171 pts10079%₹₹charges ₹', 'TF chainperp +900 pts20035%₹₹charges ₹']);
+    expect(rowsOf('Backtest by expiry day')).toEqual(['Tue 13 Oct · so far40035%₹₹charges ₹', 'Mon 12 Oct60050%₹₹charges ₹']);
     // by family to begin with, by market type on a tap
-    expect(rowsOf('Backtest by kind of day')).toEqual(['Range1 day60050%₹₹', 'Turn / event1 day40035%₹₹']);
+    expect(rowsOf('Backtest by kind of day')).toEqual(['Range1 day60050%₹₹charges ₹', 'Turn / event1 day40035%₹₹charges ₹']);
     fireEvent.click(screen.getByRole('radio', { name: 'By each market type' }));
-    expect(rowsOf('Backtest by kind of day')).toEqual(['#16 Reversal1 day40035%₹₹']);
+    expect(rowsOf('Backtest by kind of day')).toEqual(['#16 Reversal1 day40035%₹₹charges ₹']);
   });
 
   it('[critical] the best and worst pairs as options, each with what the same trades made on the perp', async () => {
@@ -164,8 +164,8 @@ describe('SignalBacktest', () => {
   it('[critical] the methods\' profit and loss as options: in the method list, and in a table of those in profit and those in loss', async () => {
     show();
     await screen.findByText('Backtest result');
-    expect(rowsOf('Backtest: methods in profit')).toEqual(['#50 Gamma wall reactionperp +42,585 pts45868%₹₹']);
-    expect(rowsOf('Backtest: methods in loss')).toEqual(['#55 Pulled wall (spoof / pull)perp +4,210 pts2,42129%₹₹']);
+    expect(rowsOf('Backtest: methods in profit')).toEqual(['#50 Gamma wall reactionperp +42,585 pts45868%₹₹charges ₹']);
+    expect(rowsOf('Backtest: methods in loss')).toEqual(['#55 Pulled wall (spoof / pull)perp +4,210 pts2,42129%₹₹charges ₹']);
     fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
     const list = within(screen.getByRole('listbox'));
     expect(list.getByText(/^458 trades · 68% won · \+₹/)).toBeInTheDocument();
@@ -330,6 +330,26 @@ describe('SignalBacktest', () => {
     answer({ ...RESULT, params: { ...RESULT.params, lots: 16 } });
     await waitFor(() => expect(screen.queryByText(/Working out the backtest/)).not.toBeInTheDocument());
     expect(screen.getByText('Backtest result').closest('.opacity-40')).toBeNull();
+  });
+
+  it('[critical] the charges: before them, them, and after them -- a trade\'s share, and under each row of the tables', async () => {
+    show();
+    const panel = within((await screen.findByText('Backtest result')).closest('section, div')!.parentElement!);
+    const tile = (label: string) => panel.getByText(label).parentElement!.textContent!.replace(label, '');
+    // −$120 after $40 of charges: −$80 before them
+    expect(tile('Before charges')).toMatch(/^−₹6,800/);
+    expect(tile('Charges')).toMatch(/^−₹3,400/);
+    expect(tile('After charges')).toMatch(/^−₹10,200/);
+    expect(panel.getByText(/Delta's fee on each fill .* −₹3\.40 a trade, 50% of the result before them/)).toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: 'Backtest by time frame' })).getAllByText(/^charges /).length).toBe(3);
+  });
+
+  it('[critical] "traded here" counts every reason a signal was not traded -- the limits on open trades too', async () => {
+    getSignalBacktest.mockResolvedValue({ ...RESULT, signals: 6_681, total: { ...TOTAL, n: 2_846 },
+      skipped: { ...RESULT.skipped, 'outside-window': 1_540, 'desk-limit': 1_447, 'side-limit': 397, 'no-strike': 451, 'no-exit-price': 0 },
+      params: { ...RESULT.params, deskMax: 58, cePct: 80, pePct: 80 } });
+    show();
+    expect(await screen.findByText(/6,681 signals went in the trade; 2,846 were traded here\./)).toBeInTheDocument();
   });
 
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {

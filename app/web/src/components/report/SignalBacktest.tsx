@@ -180,6 +180,8 @@ function Table({ caption, first, rows, perp = false, days = false }: { caption: 
             <td className="py-1.5 text-right">
               <span className={cn('block whitespace-nowrap font-semibold', netClass(r.net))}>{moneyText(r.net)}</span>
               <span className={cn('block whitespace-nowrap text-[11.5px]', netClass(r.net))}>{each(r)}</span>
+              {/* What the fees took, under what was left: the net is after them. */}
+              <span className="block whitespace-nowrap text-[11px] text-muted-foreground">charges {moneyText(-r.charges)}</span>
             </td>
           </tr>
         ))}
@@ -360,7 +362,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                   setTfs([...new Set(chosen.flatMap((x) => x.tfs))]);
                 }}
                 options={strategies.map((x) => ({
-                  key: x.id, name: x.name,
+                  key: x.id, name: x.name, also: x.account ?? undefined,
                   note: `${x.account ? `${x.account} · ` : ''}${x.methods.length} method${x.methods.length === 1 ? '' : 's'} on ${x.tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ')}${x.enabled ? '' : ' · off'}`,
                 }))} />
             )}
@@ -386,7 +388,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
 
   const t = r.total;
   const sl = t.exits['perp-sl'], tg = t.exits['perp-tgt'];
-  const notTraded = r.skipped['outside-window'] + r.skipped['no-board'] + r.skipped['no-strike'] + r.skipped['no-exit-price'];
+  // Every reason a signal was not traded, the limits on open trades among them (13 Oct 2026: they were left out, and the line said 4,690 traded of 2,846).
+  const notTraded = Object.values(r.skipped).reduce((n, x) => n + (x ?? 0), 0);
   const best = r.pairs.filter((p) => p.n > 0 && p.net > 0).map(pairOf);
   const worst = r.pairs.filter((p) => p.n > 0 && p.net < 0).map(pairOf).sort((a, b) => a.net - b.net || b.trades - a.trades);
   const perpOf = new Map(r.pairs.map((p) => [p.key, p.perpPts]));
@@ -414,6 +417,17 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             <div className={cn('mt-1 text-[26px] font-semibold tabular-nums', netClass(t.net))}>
               {moneyText(t.net)} <span className="text-[14px] font-medium text-muted-foreground">{each(t)} a trade</span>
             </div>
+            {/* Before charges, the charges, after them: the net above is the last of the three. */}
+            <div className="mt-2">
+              <Stats cols={3}>
+                <Stat label="Before charges" tone={t.net + t.charges > 0 ? 'up' : t.net + t.charges < 0 ? 'down' : undefined}>{moneyText(t.net + t.charges)}</Stat>
+                <Stat label="Charges" tone="down">{moneyText(-t.charges)}</Stat>
+                <Stat label="After charges" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net)}</Stat>
+              </Stats>
+            </div>
+            <p className="m-0 mt-1 px-1 text-[12px] text-muted-foreground">
+              Charges: Delta&apos;s fee on each fill (the lower of 0.01% of the BTC value and 3.5% of the premium) and 18% GST on it, on the sale and on the buy-back -- {t.n > 0 ? moneyText(-t.charges / t.n) : '—'} a trade, {t.net + t.charges !== 0 ? `${Math.round((100 * t.charges) / Math.abs(t.net + t.charges))}% of the result before them` : ''}.
+            </p>
             <div className="mt-2">
               <Stats cols={3}>
                 <Stat label="Trades">{count(t.n)}</Stat>
@@ -447,7 +461,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             r.skipped['no-board'] ? `${count(r.skipped['no-board'])} with no option prices recorded then` : null,
             r.skipped['no-exit-price'] ? `${count(r.skipped['no-exit-price'])} with no price to exit at` : null,
           ].filter(Boolean).join(', ')}.</>}
-          {(tfs.length > 0 || methods.length > 0) && ' The counts in this line are before the time frame and method filters.'}
+          {/* With a limit on open trades the filters choose the signals before the day is played, so the counts are already theirs. */}
+          {(tfs.length > 0 || methods.length > 0) && params.deskMax === 0 && ' The counts in this line are before the time frame and method filters.'}
         </p>
       </Panel>
 
