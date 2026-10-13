@@ -546,6 +546,27 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.ok(m.peakUsd > aloneA.body.margin.peakUsd && m.peakUsd <= m.sumOfPeaksUsd + 1e-9, JSON.stringify(m));
   assert.equal(m.peakDay, CLIMB);
 
+  assert.equal(run.body.shared, null, 'neither has a limit of the desk\'s: there is none to share, and they are added up');
+  // as one account: at most 2 open across both. The same signals are asked for by both; the places are the account's
+  const one = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&max=2&ce=100&pe=100`);
+  assert.equal(one.status, 200, JSON.stringify(one.body).slice(0, 300));
+  assert.deepEqual([one.body.shared.max, one.body.shared.ce, one.body.shared.pe], [2, 2, 2]);
+  assert.ok(one.body.total.n < run.body.total.n, `${one.body.total.n} of ${run.body.total.n}: not every one of them finds a place`);
+  assert.equal(one.body.total.n + one.body.shared.turnedAway, run.body.total.n, 'each signal either traded or turned away by the account being full');
+  assert.equal(one.body.total.n, one.body.members.reduce((n: number, x: any) => n + x.total.n, 0));
+  assert.ok(one.body.margin.peakOpen <= 2 && one.body.margin.peakUsd < run.body.margin.peakUsd, JSON.stringify(one.body.margin));
+  assert.ok(close(one.body.days[0].net, one.body.days[0].byMember[0] + one.body.days[0].byMember[1]) && close(one.body.total.net, one.body.days[0].net));
+  // each its own, said: as before
+  const own = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&max=2`);
+  assert.deepEqual([own.body.shared, own.body.total.n], [null, run.body.total.n]);
+  // saved backtests that carry the account's limit themselves: the largest is the one shared
+  const l2 = await post('/api/backtest-saves', { name: 'Limited two', query: { params: { ...WHOLE, deskMax: 2, cePct: 100, pePct: 100 }, tfs: [], methods: [], strategy: null } });
+  const l1 = await post('/api/backtest-saves', { name: 'Limited one', query: { params: { ...WHOLE, lots: 3, deskMax: 1, cePct: 100, pePct: 100 }, tfs: ['15m'], methods: [], strategy: null } });
+  const carried = await get(`/api/backtest-portfolio?ids=${l2.body.save.id},${l1.body.save.id}&from=${CLIMB}&to=${QUIET}`);
+  assert.deepEqual([carried.body.shared.max, carried.body.total.n], [2, one.body.total.n], 'the same two places as asked for by hand');
+  assert.equal((await get(`/api/backtest-portfolio?ids=${a.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=some`)).status, 400);
+  for (const x of [l1, l2]) await del(`/api/backtest-saves/${x.body.save.id}`);
+
   // kept as a portfolio; two or more, each a saved one
   const p = await post('/api/backtest-portfolios', { name: 'Both', saveIds: [a.body.save.id, b.body.save.id] });
   assert.deepEqual([p.status, p.body.portfolio.saveIds], [200, [a.body.save.id, b.body.save.id]]);

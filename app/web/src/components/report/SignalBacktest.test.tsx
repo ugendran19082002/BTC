@@ -642,15 +642,24 @@ describe('SignalBacktest', () => {
     fireEvent.click(within(screen.getByRole('group', { name: 'Lots a signal' })).getByRole('button', { name: '1' }));
     expect(await panel().findByRole('button', { name: 'Or update “16 lots on 4h” to these settings' })).toBeInTheDocument();
 
+    // the other section: one open at a time -- the single backtest's settings and result give way to the portfolios
+    expect(panel().queryByRole('checkbox')).toBeNull();                                      // no ticks in the single backtest's list
+    fireEvent.click(screen.getByRole('radio', { name: 'Saved backtests run together, and their total' }));
+    expect(screen.queryByText('Backtest result')).toBeNull();
+    expect(screen.queryByRole('complementary', { name: 'Backtest settings' })).toBeNull();
+    expect(screen.getByText(/^Run a portfolio, or tick two or more saved backtests and run them together/)).toBeInTheDocument();
+    const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     // two ticked: run together, over the days on the screen
-    expect(panel().getByText('Tick two or more to run them together and see what they come to as one: a portfolio.')).toBeInTheDocument();
-    fireEvent.click(panel().getByRole('checkbox', { name: 'Run 16 lots on 4h together with others' }));
-    fireEvent.click(panel().getByRole('checkbox', { name: 'Run Desk rules together with others' }));
-    fireEvent.click(panel().getByRole('button', { name: 'Run these 2 together' }));
+    expect(await folio().findByText('Tick two or more to run them together and see what they come to as one.')).toBeInTheDocument();
+    fireEvent.click(folio().getByRole('checkbox', { name: 'Run 16 lots on 4h together with others' }));
+    fireEvent.click(folio().getByRole('checkbox', { name: 'Run Desk rules together with others' }));
+    fireEvent.click(folio().getByRole('button', { name: 'Run these 2 together' }));
     // the panel is there at once, saying it is being worked out; then the result
     await screen.findByRole('table', { name: 'Run together: each saved backtest' });
     const run = within(screen.getByText('Run together · 16 lots on 4h + Desk rules').closest('section, div')!.parentElement!);
-    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['b2', 'a1'], { from: '2026-10-01', to: '2026-10-13' });
+    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['b2', 'a1'], { from: '2026-10-01', to: '2026-10-13' }, 'shared');
+    // the days are chosen in this section too
+    expect(folio().getByRole('radiogroup', { name: 'Expiry days' })).toBeInTheDocument();
     expect(run.getByText(/a trade$/).parentElement!.textContent).toMatch(/^−₹7,650 −₹[\d.]+ a trade$/);                 // -$90 together
     expect(rowsOf('Run together: each saved backtest')).toEqual(['16 lots on 4h10050%₹₹charges ₹', 'Desk rules1,00050%₹₹charges ₹']);
     expect(rowsOf('Run together: by expiry day').map((x) => x.split('%')[0])).toEqual(['Tue 13 Oct · so far40050', 'Mon 12 Oct70050']);
@@ -660,20 +669,30 @@ describe('SignalBacktest', () => {
 
     // kept as a portfolio, and run again from its own row
     saves.savePortfolio.mockImplementation(async () => { saves.getBacktestSaves.mockResolvedValue({ saves: [B, A], portfolios: [{ id: 'p1', name: 'Both', saveIds: ['b2', 'a1'], createdAt: 1, updatedAt: 1 }] }); return { ok: true, portfolio: { id: 'p1', name: 'Both', saveIds: ['b2', 'a1'] } }; });
-    fireEvent.change(panel().getByLabelText('Name for the portfolio'), { target: { value: 'Both' } });
-    fireEvent.click(panel().getByRole('button', { name: 'Keep' }));
-    expect(await panel().findByText('Kept as the portfolio "Both".')).toBeInTheDocument();
+    fireEvent.change(folio().getByLabelText('Name for the portfolio'), { target: { value: 'Both' } });
+    fireEvent.click(folio().getByRole('button', { name: 'Keep' }));
+    expect(await folio().findByText('Kept as the portfolio "Both".')).toBeInTheDocument();
     expect(saves.savePortfolio).toHaveBeenCalledWith({ name: 'Both', saveIds: ['b2', 'a1'] });
-    fireEvent.click(await panel().findByRole('button', { name: 'Run the portfolio Both' }));
+    fireEvent.click(await folio().findByRole('button', { name: 'Run the portfolio Both' }));
     expect(await screen.findByText('Run together · Both')).toBeInTheDocument();
+    expect(folio().getByText('Both · running')).toBeInTheDocument();
+    // a day on average, as the single backtest says it: +$60 and -$150 over two days
+    const dayTile = (label: string) => screen.getByText(label).parentElement!.textContent!.replace(label, '');
+    expect([dayTile('A day, on average · 2 days'), dayTile('A day in profit · 1 day'), dayTile('A day in loss · 1 day')]).toEqual(['−₹3,825', '+₹5,100', '−₹12,750']);
 
-    // deleting asks once more; what the desk says of it is said
+    // back to the single backtest: its settings are as they were left, and a saved one is deleted there -- asked once more
+    fireEvent.click(screen.getByRole('radio', { name: 'One backtest: its settings, filters and result' }));
+    expect(await screen.findByText('Backtest result')).toBeInTheDocument();
+    expect(screen.queryByText('Run together · Both')).toBeNull();                              // one section at a time
     saves.deleteBacktestSave.mockImplementation(async () => { saves.getBacktestSaves.mockResolvedValue({ saves: [A], portfolios: [] }); return { ok: true, portfoliosDeleted: ['Both'] }; });
-    fireEvent.click(panel().getByRole('button', { name: 'Delete 16 lots on 4h' }));
+    fireEvent.click(await panel().findByRole('button', { name: 'Delete 16 lots on 4h' }));
     expect(saves.deleteBacktestSave).not.toHaveBeenCalled();
     fireEvent.click(panel().getByRole('button', { name: 'Delete' }));
     expect(await panel().findByText('Deleted "16 lots on 4h". The portfolio "Both" had fewer than two left and went with it.')).toBeInTheDocument();
+    // and the run of what it was in is closed with it
+    fireEvent.click(screen.getByRole('radio', { name: 'Saved backtests run together, and their total' }));
     expect(screen.queryByText('Run together · Both')).toBeNull();
+    expect(await folio().findByText(/A portfolio is two saved backtests or more, run together\. Save them under Single backtest first -- there is one so far\./)).toBeInTheDocument();
   });
 
   it('[critical] a saved backtest edited: its settings go on the screen to be changed there, its name is changed beside them, and nothing is kept until Save changes', async () => {
@@ -730,7 +749,8 @@ describe('SignalBacktest', () => {
     saves.getBacktestPortfolio.mockResolvedValue({ from: '2026-10-01', to: '2026-10-13', members: [], total: tot(), days: [], margin: { peakUsd: 0, peakDay: null, peakAt: null, peakOpen: 0, avgDailyPeakUsd: 0, sumOfPeaksUsd: 0 } });
     show();
     await screen.findByText('Backtest result');
-    const panel = () => within(screen.getByText('Saved backtests').closest('section, div')!.parentElement!);
+    fireEvent.click(screen.getByRole('radio', { name: 'Saved backtests run together, and their total' }));
+    const panel = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     const tick = (name: string) => panel().getByRole('checkbox', { name: `Run ${name} together with others` });
 
     // it is on the screen as a run, to see that the run follows the edit
@@ -760,7 +780,7 @@ describe('SignalBacktest', () => {
     expect(panel().queryByRole('form')).toBeNull();
     // the run on the screen is of what the portfolio is now
     expect(await screen.findByText('Run together · Alpha and Gamma')).toBeInTheDocument();
-    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'c333'], { from: '2026-10-01', to: '2026-10-13' }));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'c333'], { from: '2026-10-01', to: '2026-10-13' }, 'shared'));
 
     // Cancel: as it was, and the ticks cleared
     fireEvent.click(panel().getByRole('button', { name: 'Edit the portfolio Alpha and Gamma' }));
@@ -768,5 +788,38 @@ describe('SignalBacktest', () => {
     expect(panel().queryByRole('form')).toBeNull();
     expect([tick('Alpha'), tick('Gamma')].map((c) => (c as HTMLInputElement).checked)).toEqual([false, false]);
     expect(saves.savePortfolio).toHaveBeenCalledTimes(1);
+  });
+
+  it('[critical] a run together is held to one account\'s limit to begin with -- said, with how many it turned away -- or to each one\'s own on a tap', async () => {
+    const saved = (id: string, name: string) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, deskMax: 120, cePct: 80, pePct: 80, lots: id.length }, tfs: [], methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
+    const all = [saved('a1', 'Alpha'), saved('b22', 'Beta')];
+    saves.getBacktestSaves.mockResolvedValue({ saves: all, portfolios: [{ id: 'p1', name: 'Both', saveIds: ['a1', 'b22'], createdAt: 1, updatedAt: 1 }] });
+    const member = (id: string, name: string, n: number) => ({ id, name, problem: null, signals: n + 40, total: tot({ n, wins: n / 2, losses: n / 2, net: 10, won: 30, lost: 20, charges: 2 }), marginPeakUsd: 80, priced: null });
+    const answer = (shared: object | null, open: number) => ({
+      from: '2026-10-01', to: '2026-10-13', shared, members: [member('a1', 'Alpha', 200), member('b22', 'Beta', 100)],
+      total: tot({ n: 300, wins: 150, losses: 150, net: 20, won: 60, lost: 40, charges: 4 }),
+      days: [{ day: '2026-10-12', live: false, n: 300, wins: 150, net: 20, charges: 4, byMember: [10, 10] }],
+      margin: { peakUsd: open, peakDay: '2026-10-12', peakAt: Date.parse('2026-10-12T09:15:00+05:30'), peakOpen: open, avgDailyPeakUsd: open, sumOfPeaksUsd: 160 },
+    });
+    saves.getBacktestPortfolio.mockImplementation(async (_ids: string[], _range: object, limit: string) => (limit === 'own' ? answer(null, 152) : answer({ max: 120, ce: 96, pe: 96, cePct: 80, pePct: 80, turnedAway: 37 }, 120)));
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('radio', { name: 'Saved backtests run together, and their total' }));
+    const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
+    expect(folio().getByRole('radio', { name: 'One account: one limit on open trades across all of them' })).toBeChecked();
+    fireEvent.click(await folio().findByRole('button', { name: 'Run the portfolio Both' }));
+    await screen.findByRole('table', { name: 'Run together: each saved backtest' });
+    const run = () => within(screen.getByText('Run together · Both').closest('section, div')!.parentElement!);
+    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared');
+    expect(run().getByText(/2 saved backtests,/).textContent).toBe('Thu 1 Oct → Tue 13 Oct · 2 saved backtests, traded as one account: at most 120 open together (CE 96 · PE 96), the longer time frame first, as the desk takes them.');
+    expect(run().getByText('37 signals found the account, or their side of it, full and were not traded.')).toBeInTheDocument();
+    expect(run().getByText(/the most held at once was 120 trades at 9:15 AM on the Mon 12 Oct expiry -- never more than the account's 120 --/)).toBeInTheDocument();
+
+    // each its own: asked again, and said -- with the warning that it may be more than one account holds
+    fireEvent.click(folio().getByRole('radio', { name: 'Each saved backtest keeps its own limit' }));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'own'));
+    expect(await screen.findByText(/2 saved backtests, each worked as it is alone and added up\./)).toBeInTheDocument();
+    expect(run().getByText(/the most held at once was 152 trades .* Each kept its own limit here, so more may be open together than one account would hold: choose One account to hold them to one limit\./)).toBeInTheDocument();
+    expect(run().queryByText(/found the account/)).toBeNull();
   });
 });

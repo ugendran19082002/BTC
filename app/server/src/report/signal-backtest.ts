@@ -436,44 +436,77 @@ function readingAt(b: PreparedBoard, t: number): BoardRow[] {
  * minutes; `board` every reading of the contract that settles at `to`, oldest first. The signals are taken in the
  * order they filled, which is what "at most N open" is counted in.
  */
+export type DayOut = { trades: BtTrade[]; skipped: Record<BtSkip, number>; /** Each signal not traded, with why: what the time frame and method filters count. */ refused: { signal: BtSignal; why: BtSkip }[] };
+/** One backtest's part of a day: its signals, the rules it trades them by, and its volatility filter. */
+export type DayBook = {
+  signals: readonly BtSignal[]; plan: DayPlan;
+  /** The volatility at a moment (`volReader`), and the one level to keep where the filter is on. */
+  volAt?: (at: number) => VolLevel | null; volOnly?: VolLevel | null;
+};
+
 export function simulateDay(o: {
   from: number; to: number; signals: readonly BtSignal[]; bars: readonly MinuteBar[];
   /** The board as rows, or one already made ready (`prepareBoard`). */
   board: readonly BoardRow[] | PreparedBoard; params?: BacktestParams; plan?: DayPlan;
-  /** The volatility at a moment (`volReader`), and the one level to keep where the filter is on. */
   volAt?: (at: number) => VolLevel | null; volOnly?: VolLevel | null;
-}): { trades: BtTrade[]; skipped: Record<BtSkip, number>; /** Each signal not traded, with why: what the time frame and method filters count. */ refused: { signal: BtSignal; why: BtSkip }[] } {
-  const { from, to } = o;
-  const plan = o.plan ?? planOfParams(o.params ?? DEFAULT_PARAMS, { from, to });
-  const skipped = noSkips();
-  const refusals: { signal: BtSignal; why: BtSkip }[] = [];
-  const trades: BtTrade[] = [];
+}): DayOut {
+  const plan = o.plan ?? planOfParams(o.params ?? DEFAULT_PARAMS, { from: o.from, to: o.to });
+  return simulateTogether({ from: o.from, to: o.to, bars: o.bars, board: o.board, books: [{ signals: o.signals, plan, volAt: o.volAt, volOnly: o.volOnly }] })[0]!;
+}
+
+/**
+ * Several backtests on one day, on one clock (owner, 13 Oct 2026: "the portfolio's margin at most, together --
+ * work it out correctly"). Each book trades its own signals by its own rules; what they share is the order -- as
+ * they filled, the longer timeframe first, as the desk's one queue takes them -- and, where `shared` is given, ONE
+ * limit on what is open across all of them: the desk's "at most open" and its CE and PE shares are an account's,
+ * not a strategy's, so seven backtests of 120 each run side by side on one account are not 840 places but 120.
+ * Before, each kept its own 120 and the total said 152 open at once -- more than the account would ever hold, and
+ * a margin worked from trades it would not have taken.
+ *
+ * Without `shared` each book is counted against its own plan's limit, on its own trades: one book alone is
+ * `simulateDay`. A book's own "at most N open" (a strategy's) is always its own.
+ */
+export function simulateTogether(o: {
+  from: number; to: number; bars: readonly MinuteBar[]; board: readonly BoardRow[] | PreparedBoard;
+  books: readonly DayBook[];
+  /** One account's limit over every book; null or absent, each book's own. */
+  shared?: DayPlan['desk'];
+}): DayOut[] {
+  const { to } = o;
+  const outs: DayOut[] = o.books.map(() => ({ trades: [], skipped: noSkips(), refused: [] }));
   const board = isPrepared(o.board) ? o.board : prepareBoard(o.board);
   const times = board.times;
   // A strike rule's pick depends on the reading and the side alone: thousands of signals share a few hundred of them.
-  const picks = new Map<number, ReturnType<DayPlan['pick']>>();
+  const picksOf = o.books.map(() => new Map<number, ReturnType<DayPlan['pick']>>());
   // The target and the stop by the clock depend on the minute alone.
-  const tgtPcts = new Map<number, number>(), stopPcts = new Map<number, number>();
+  const tgtPctsOf = o.books.map(() => new Map<number, number>()), stopPctsOf = o.books.map(() => new Map<number, number>());
   const pctAt = (memo: Map<number, number>, f: (at: number) => number, at: number) => { let v = memo.get(at); if (v === undefined) { v = f(at); memo.set(at, v); } return v; };
   const lastBar = o.bars[o.bars.length - 1];
-  /** When each trade still open ends, and its side: what "at most N open" and each side's limit count. */
-  let open: { until: number; side: 'CE' | 'PE' }[] = [];
-  const desk = plan.desk ?? null;
+  /** When each trade still open ends, its side and whose it is: what "at most N open" and each side's limit count. */
+  let open: { until: number; side: 'CE' | 'PE'; book: number }[] = [];
+  const shared = o.shared ?? null;
+  // One line for all of them, in the order the desk takes signals; two books' same signal, in the books' own order.
+  const line = o.books.flatMap((b, book) => b.signals.map((sig) => ({ sig, book }))).sort((a, b) => signalOrder(a.sig, b.sig) || a.book - b.book);
 
-  for (const sig of [...o.signals].sort(signalOrder)) {
+  for (const { sig, book } of line) {
+    const me = o.books[book]!, plan = me.plan, out = outs[book]!;
+    const picks = picksOf[book]!, tgtPcts = tgtPctsOf[book]!, stopPcts = stopPctsOf[book]!;
+    const { trades } = out;
     const t0 = sig.filledAt;
-    const skip = (why: BtSkip) => { skipped[why]++; refusals.push({ signal: sig, why }); };
+    const skip = (why: BtSkip) => { out.skipped[why]++; out.refused.push({ signal: sig, why }); };
     const refused = plan.refuses(sig);
     if (refused) { skip(refused); continue; }
-    const vol = o.volAt ? o.volAt(t0) : null;
+    const vol = me.volAt ? me.volAt(t0) : null;
     // A signal whose volatility cannot be said is not one of the level asked for.
-    if (o.volOnly && vol !== o.volOnly) { skip('volatility'); continue; }
+    if (me.volOnly && vol !== me.volOnly) { skip('volatility'); continue; }
     open = open.filter((x) => x.until > t0);
+    const mine = shared ? open : open.filter((x) => x.book === book);
     // In the runner's order: its own limit, then the desk's, then the side's (strategy/runner.ts `takeSignal`).
-    if (plan.maxOpen !== null && open.length >= plan.maxOpen) { skip('at-limit'); continue; }
-    if (desk && open.length >= desk.max) { skip('desk-limit'); continue; }
+    if (plan.maxOpen !== null && (shared ? open.filter((x) => x.book === book) : mine).length >= plan.maxOpen) { skip('at-limit'); continue; }
+    const desk = shared ?? plan.desk ?? null;
+    if (desk && mine.length >= desk.max) { skip('desk-limit'); continue; }
     const side: 'CE' | 'PE' = sig.dir === 1 ? 'PE' : 'CE';
-    if (desk?.side && open.filter((x) => x.side === side).length >= desk.side[side]) { skip('side-limit'); continue; }
+    if (desk?.side && mine.filter((x) => x.side === side).length >= desk.side[side]) { skip('side-limit'); continue; }
     // The reading nearest the fill; of two as near, the earlier.
     const next = after(times, t0);
     const near = next === 0 ? (times.length ? 0 : -1) : next === times.length || t0 - times[next - 1]! <= times[next]! - t0 ? next - 1 : next;
@@ -551,7 +584,7 @@ export function simulateDay(o: {
 
     const charges = fillChargesUsd({ price: entry, contracts: lots, contractValue: CONTRACT_VALUE, spot: pick.spot }).totalUsd
       + fillChargesUsd({ price: exit, contracts: lots, contractValue: CONTRACT_VALUE, spot: exitSpot }).totalUsd;
-    open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE' });
+    open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE', book });
     trades.push({
       signal: sig, cp, strike: pick.strike, lots, entryAt, entry, exitAt, exit, by,
       netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges, chargesUsd: charges, vol,
@@ -559,7 +592,7 @@ export function simulateDay(o: {
       perpPts: (perpPx - sig.fillPrice) * sig.dir,
     });
   }
-  return { trades, skipped, refused: refusals };
+  return outs;
 }
 
 // ------------------------------------------------------------------ adding up
@@ -804,11 +837,20 @@ export function signalBacktestHere(o: Ask): Promise<SignalBacktest> {
  */
 export type PortfolioAsk = {
   from: string; to: string; now: number; spot?: number | null;
+  /**
+   * One account's limit over all of them: at most this many open together, and each side its per cent of it. With
+   * it the members are not worked alone and added up but traded on one clock, in the desk's own order, for the same
+   * places (`simulateTogether`); their own "at most open" settings are set aside for it. Null or absent: each as
+   * it is alone, its own limit on its own trades.
+   */
+  shared?: { deskMax: number; cePct: number; pePct: number } | null;
   /** Each with its settings; one that cannot be worked -- its strategy deleted -- carries why, and is listed with nothing. */
   members: { id: string; name: string; ask: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'> | null; problem?: string | null }[];
 };
 export type BacktestPortfolioResult = {
   from: string; to: string;
+  /** The one limit they were traded under together, as the desk rounds it; null where each kept its own. */
+  shared: { max: number; ce: number; pe: number; cePct: number; pePct: number; /** Signals that found the account, or their side of it, full. */ turnedAway: number } | null;
   members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
   total: BtTot;
   /** Each expiry day: all of them together, and each one's own net in the members' order. */
@@ -822,7 +864,79 @@ export function portfolioBacktestHere(o: PortfolioAsk): Promise<BacktestPortfoli
   return run;
 }
 
+/** What one backtest asks of a day's signals, with no limit of the desk's on it: which it is about, how it trades them, its volatility filter. */
+function bookOf(o: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>): { takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }) => DayPlan; volOnly: VolLevel | null } {
+  const st = o.strategy ?? null, rule = st?.config.signal ?? null;
+  const free = { ...o.params, deskMax: 0 };
+  return {
+    takes: (sig) => (!rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method)))
+      && (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method)),
+    planFor: (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)),
+    volOnly: o.params.vol && o.params.vol !== 'off' ? o.params.vol : null,
+  };
+}
+
+/** The members traded as one account: one clock, one line, one limit on what is open (`simulateTogether`). */
+async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typeof deskCapsOf>>): Promise<BacktestPortfolioResult> {
+  await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
+  const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
+  const known = await marketDays(before, o.to, o.now);
+  const days = known.filter((d) => d.day >= o.from);
+  const baselineOf = (day: string): number | null => {
+    const prior = known.filter((d) => d.day < day && d.stats && !d.live).slice(-5).map((d) => d.stats!.atr);
+    return prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
+  };
+  const fetched = await marksFetchedBy(days.map((d) => expiryCodeOf(d.day)));
+  const books = o.members.map((m) => (m.ask && !m.problem ? bookOf(m.ask) : null));
+  const totals = o.members.map(() => zeroBt()), signals = o.members.map(() => 0), peaks = o.members.map(() => 0);
+  const priced = o.members.map((): Record<BoardGrain, number> => ({ 'own-1m': 0, 'mark-1m': 0, '5m': 0 }));
+  const rows: BacktestPortfolioResult['days'] = [];
+  let peak = { usd: 0, at: null as number | null, open: 0, day: null as string | null }, daily = 0, dailyN = 0, turnedAway = 0;
+  for (const d of days) {
+    const { from, to } = sessionOf(d.day);
+    const raw = await rawDay(d.day, o.now, fetched.get(expiryCodeOf(d.day))?.contracts ?? 0);
+    const volAt = volReader(raw.minutes, baselineOf(d.day));
+    const live = books.flatMap((b, i) => (b ? [{ i, b }] : []));
+    const outs = simulateTogether({
+      from, to, bars: raw.minutes.filter((x) => x.at >= from), board: raw.board, shared: caps,
+      books: live.map(({ b }) => ({ signals: raw.signals.filter(b.takes), plan: b.planFor({ from, to }), volAt, volOnly: b.volOnly })),
+    });
+    const row = { day: d.day, live: d.live, n: 0, wins: 0, net: 0, charges: 0, byMember: o.members.map(() => 0) };
+    const all: { at: number; until: number; margin: number }[] = [];
+    live.forEach(({ i }, k) => {
+      const out = outs[k]!;
+      const t = cellsOf(d.day, out.trades).reduce((a, c) => addBt(a, c.tot), zeroBt());
+      addBt(totals[i]!, t);
+      signals[i]! += out.trades.length + out.refused.length;
+      turnedAway += out.skipped['desk-limit'] + out.skipped['side-limit'];
+      priced[i]![raw.grain]++;
+      row.n += t.n; row.wins += t.wins; row.net += t.net; row.charges += t.charges; row.byMember[i] = t.net;
+      const mine = out.trades.map((x) => ({ at: x.signal.filledAt, until: x.exitAt, margin: x.marginUsd }));
+      peaks[i] = Math.max(peaks[i]!, peakMargin(mine).usd);
+      all.push(...mine);
+    });
+    rows.push(row);
+    if (all.length) {
+      const p = peakMargin(all);
+      if (p.usd > peak.usd) peak = { ...p, day: d.day };
+      daily += p.usd; dailyN++;
+    }
+  }
+  const members = o.members.map((m, i) => (books[i]
+    ? { id: m.id, name: m.name, problem: null, signals: signals[i]!, total: totals[i]!, marginPeakUsd: peaks[i]!, priced: priced[i]! }
+    : { id: m.id, name: m.name, problem: m.problem ?? 'It cannot be worked out.', signals: 0, total: zeroBt(), marginPeakUsd: 0, priced: null }));
+  return {
+    from: o.from, to: o.to, members,
+    shared: { max: caps.max, ce: caps.side?.CE ?? caps.max, pe: caps.side?.PE ?? caps.max, cePct: o.shared!.cePct, pePct: o.shared!.pePct, turnedAway },
+    total: totals.reduce((t, x) => addBt(t, x), zeroBt()),
+    days: rows,
+    margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: peaks.reduce((a, x) => a + x, 0) },
+  };
+}
+
 async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
+  const caps = o.shared ? deskCapsOf(o.shared) : null;
+  if (caps) return portfolioShared(o, caps);
   const members: BacktestPortfolioResult['members'] = [];
   const results: (SignalBacktest | null)[] = [];
   const spans = new Map<string, Span[]>();
@@ -857,7 +971,7 @@ async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
     daily += p.usd; dailyN++;
   }
   return {
-    from: o.from, to: o.to, members,
+    from: o.from, to: o.to, members, shared: null,
     total: worked.reduce((t, r) => addBt(t, r.total), zeroBt()),
     days,
     margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: members.reduce((a, m) => a + m.marginPeakUsd, 0) },

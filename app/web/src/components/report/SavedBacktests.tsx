@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, saveBacktest, savePortfolio } from '@/api/backtest-saves';
+import { deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, saveBacktest, savePortfolio, type PortfolioLimit } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
@@ -49,7 +49,15 @@ function PortfolioResult({ title, r, wide }: { title: string; r: BacktestPortfol
   const failed = r.members.filter((m) => m.problem);
   return (
     <Panel title={`Run together · ${title}`}>
-      <p className="m-0 text-[13px] text-muted-foreground">{dayLabel(r.from)} → {dayLabel(r.to)} · {r.members.length} saved backtests, each worked as it is alone and added up.</p>
+      <p className="m-0 text-[13px] text-muted-foreground">
+        {dayLabel(r.from)} → {dayLabel(r.to)} · {r.members.length} saved backtests,{' '}
+        {r.shared
+          ? <>traded as <b className="font-medium text-foreground">one account</b>: at most {r.shared.max} open together (CE {r.shared.ce} · PE {r.shared.pe}), the longer time frame first, as the desk takes them.</>
+          : 'each worked as it is alone and added up.'}
+      </p>
+      {r.shared && r.shared.turnedAway > 0 && (
+        <p className="m-0 mt-0.5 text-[12.5px] text-muted-foreground">{count(r.shared.turnedAway)} signals found the account, or their side of it, full and were not traded.</p>
+      )}
       {failed.map((m) => <p key={m.id} role="alert" className="m-0 mt-1 text-[12.5px] text-[var(--warn)]"><b className="font-semibold">{m.name}</b> is left out: {m.problem}</p>)}
       {t.n === 0 ? <div className="mt-2"><Empty>None of them traded in this range.</Empty></div> : (
         <>
@@ -70,6 +78,23 @@ function PortfolioResult({ title, r, wide }: { title: string; r: BacktestPortfol
               <Stat label="Profit factor">{t.lost > 0 ? (t.won / t.lost).toFixed(2) : '—'}</Stat>
             </Stats>
           </div>
+          {(() => {
+            // A day on average, as the single backtest says it: over the days that traded, and the days in profit and in loss each on their own.
+            const traded = r.days.filter((d) => d.n > 0);
+            if (traded.length === 0) return null;
+            const up = traded.filter((d) => d.net > 0), down = traded.filter((d) => d.net < 0);
+            const mean = (xs: typeof traded) => xs.reduce((a, d) => a + d.net, 0) / xs.length;
+            const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+            return (
+              <div className="mt-2">
+                <Ledger>
+                  <Entry label={`A day, on average · ${days(traded.length)}`} tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net / traded.length)}</Entry>
+                  <Entry label={`A day in profit · ${days(up.length)}`} tone="up">{up.length ? moneyText(mean(up)) : '—'}</Entry>
+                  <Entry label={`A day in loss · ${days(down.length)}`} tone="down">{down.length ? moneyText(mean(down)) : '—'}</Entry>
+                </Ledger>
+              </div>
+            );
+          })()}
           {r.margin.peakUsd > 0 && (
             <>
               <div className="mt-2">
@@ -81,8 +106,10 @@ function PortfolioResult({ title, r, wide }: { title: string; r: BacktestPortfol
               </div>
               <p className="m-0 mt-1 px-1 text-[12px] leading-snug text-muted-foreground">
                 Their trades laid on one clock: the most held at once was {r.margin.peakOpen} trade{r.margin.peakOpen === 1 ? '' : 's'}
-                {r.margin.peakAt !== null ? ` at ${timeIst(r.margin.peakAt)}` : ''}{r.margin.peakDay ? ` on the ${dayLabel(r.margin.peakDay)} expiry` : ''} -- what running them side by side on one account would have needed, by the desk&apos;s 200x estimate.
+                {r.margin.peakAt !== null ? ` at ${timeIst(r.margin.peakAt)}` : ''}{r.margin.peakDay ? ` on the ${dayLabel(r.margin.peakDay)} expiry` : ''}
+                {r.shared ? <> -- never more than the account&apos;s {r.shared.max}</> : ''} -- what running them side by side on one account would have needed, by the desk&apos;s 200x estimate.
                 It is under the sum of each one&apos;s own most where their busiest moments differ.
+                {!r.shared && r.margin.peakOpen > 0 && ' Each kept its own limit here, so more may be open together than one account would hold: choose One account to hold them to one limit.'}
               </p>
             </>
           )}
@@ -97,7 +124,9 @@ function PortfolioResult({ title, r, wide }: { title: string; r: BacktestPortfol
             </section>
           </div>
           <p className="m-0 mt-2 text-[12px] leading-snug text-muted-foreground">
-            One does not take a place from another: each has its own limits, as set in it. A signal two of them both take is traded twice, once by each.
+            {r.shared
+              ? 'They share the account’s places: a signal is taken while there is room, the longer time frame first. A signal two of them both take is traded twice, once by each, where there is room for both.'
+              : 'One does not take a place from another: each has its own limits, as set in it. A signal two of them both take is traded twice, once by each.'}
           </p>
         </>
       )}
@@ -112,8 +141,8 @@ export type TogetherRun = { ids: string[]; title: string };
  * The run together, where the results are shown: asked with the days on the screen, and again when they change.
  * Each one is a whole backtest, so the first run of a set takes a moment.
  */
-export function PortfolioRun({ run, range, wide = false, onClose }: { run: TogetherRun; range: { from: string; to: string }; wide?: boolean; onClose: () => void }) {
-  const result = useAnswer(`${run.ids.join(',')}|${range.from}|${range.to}`, () => getBacktestPortfolio(run.ids, range), 300_000);
+export function PortfolioRun({ run, range, limit = 'shared', wide = false, onClose }: { run: TogetherRun; range: { from: string; to: string }; limit?: PortfolioLimit; wide?: boolean; onClose: () => void }) {
+  const result = useAnswer(`${run.ids.join(',')}|${range.from}|${range.to}|${limit}`, () => getBacktestPortfolio(run.ids, range, limit), 300_000);
   if (result.error && !result.data) {
     return (
       <Panel title={`Run together · ${run.title}`}>
@@ -133,7 +162,14 @@ export function PortfolioRun({ run, range, wide = false, onClose }: { run: Toget
   );
 }
 
-export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
+export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run, onRun }: {
+  /**
+   * Which of the screen's two sections this is in (owner, 13 Oct 2026: "the portfolio section or the backtest
+   * section -- only one open at a time"). `single`: the saved backtests as a list to keep, put back on the screen,
+   * edit and delete. `portfolio`: the portfolios to run, edit and delete, and the saved backtests as ticks to run
+   * together or keep as a new one.
+   */
+  mode?: 'single' | 'portfolio';
   /** The settings on the screen now. */
   current: SavedQuery;
   /** A query in one line of words, as the screen's own settings line says it. */
@@ -216,9 +252,55 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
     return `Kept as the portfolio "${r.portfolio.name}".`;
   });
 
+  const single = mode === 'single';
+  const savedRow = (s: BacktestSave) => (
+    <li key={s.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-0 border-t border-solid border-[var(--line-soft)] py-2 first:border-t-0">
+      <button type="button" aria-label={`Run ${s.name}`} aria-current={shown?.id === s.id ? 'true' : undefined}
+        onClick={() => { onLoad(s.query); setFromId(s.id); setSaid(null); }}
+        className="m-0 min-h-[44px] min-w-0 appearance-none border-0 bg-transparent p-0 text-left font-[inherit]">
+        <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', shown?.id === s.id ? 'text-[var(--chosen)]' : 'text-foreground')}>{s.name}{shown?.id === s.id ? ' · on the screen' : ''}</span>
+        <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{wordsOf(s.query)}</span>
+      </button>
+      {asking === s.id ? (
+        <span className="flex items-center gap-2 pt-1">
+          <button type="button" disabled={busy} onClick={() => void remove(s)} className="m-0 min-h-[36px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold text-[var(--down)]">Delete</button>
+          <button type="button" onClick={() => setAsking(null)} className={link}>Keep</button>
+        </span>
+      ) : (
+        <span className="flex items-center">
+          <button type="button" aria-label={`Edit ${s.name}`} aria-pressed={editedSave?.id === s.id} onClick={() => editSave(s)}
+            className={cn(link, 'h-11 px-1.5', editedSave?.id === s.id && 'font-semibold underline')}>Edit</button>
+          <button type="button" aria-label={`Delete ${s.name}`} onClick={() => setAsking(s.id)}
+            className="m-0 grid h-11 w-8 appearance-none place-items-center border-0 bg-transparent p-0 text-[18px] text-muted-foreground">×</button>
+        </span>
+      )}
+    </li>
+  );
+  /** In the portfolio section a saved backtest is a tick: the whole row is the box's own label. */
+  const tickRow = (s: BacktestSave) => {
+    const on = picked.includes(s.id);
+    return (
+      <li key={s.id} className="border-0 border-t border-solid border-[var(--line-soft)] first:border-t-0">
+        <label className={cn('grid min-h-[44px] cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 rounded-md px-1 py-2', on && 'bg-[var(--chosen-soft)]')}>
+          <input type="checkbox" checked={on} aria-label={`Run ${s.name} together with others`} disabled={!on && picked.length >= 12}
+            onChange={() => setTicked((t) => (t.includes(s.id) ? t.filter((x) => x !== s.id) : [...t, s.id]))}
+            className="mt-0.5 h-5 w-5 accent-[var(--chosen)]" />
+          <span className="min-w-0">
+            <span className="block text-[14px] font-semibold [overflow-wrap:anywhere]">{s.name}</span>
+            <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{wordsOf(s.query)}</span>
+          </span>
+        </label>
+      </li>
+    );
+  };
+  const saidLine = said && <p role={said.tone === 'bad' ? 'alert' : 'status'} className={cn('m-0 text-[13px]', said.tone === 'bad' ? 'text-[var(--down)]' : 'text-[var(--up)]')}>{said.text}</p>;
+  const howMany = single
+    ? `${saves.length} saved`
+    : `${portfolios.length} portfolio${portfolios.length === 1 ? '' : 's'} · ${saves.length} saved backtest${saves.length === 1 ? '' : 's'}`;
+
   return (
-      <Panel title="Saved backtests" right={<span className="text-[11.5px] text-muted-foreground">{saves.length} saved{portfolios.length ? ` · ${portfolios.length} portfolio${portfolios.length === 1 ? '' : 's'}` : ''}</span>}>
-        {failed && !list ? <p role="alert" className="m-0 text-[13px] text-[var(--down)]">The saved backtests could not be read: {failed}</p> : !list ? <Loading error={null} what="the saved backtests" /> : (
+      <Panel title={single ? 'Saved backtests' : 'Portfolios'} right={<span className="text-[11.5px] text-muted-foreground">{howMany}</span>}>
+        {failed && !list ? <p role="alert" className="m-0 text-[13px] text-[var(--down)]">The saved backtests could not be read: {failed}</p> : !list ? <Loading error={null} what="the saved backtests" /> : single ? (
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
             {/* Keep what is on the screen -- or, while a saved one is edited, the changes to it. */}
             {editedSave ? (
@@ -254,42 +336,44 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
                 )}
               </form>
             )}
-            {said && <p role={said.tone === 'bad' ? 'alert' : 'status'} className={cn('m-0 text-[13px]', said.tone === 'bad' ? 'text-[var(--down)]' : 'text-[var(--up)]')}>{said.text}</p>}
-
-            {saves.length === 0 ? <Empty>Nothing saved yet. Set the backtest up as you want it, give it a name and Save: it can be run again in one tap, and several run together.</Empty> : (
-              <ul aria-label="Saved backtests" className="m-0 grid list-none gap-0 p-0">
-                {saves.map((s) => {
-                  const on = picked.includes(s.id);
+            {saidLine}
+            {saves.length === 0
+              ? <Empty>Nothing saved yet. Set the backtest up as you want it, give it a name and Save: it can be run again in one tap, and several run together under Portfolio.</Empty>
+              : <ul aria-label="Saved backtests" className="m-0 grid list-none gap-0 p-0">{saves.map(savedRow)}</ul>}
+          </div>
+        ) : (
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+            {saidLine}
+            {/* The portfolios kept, first: one tap runs one. */}
+            {portfolios.length > 0 && (
+              <ul aria-label="Portfolios" className="m-0 grid list-none gap-0 p-0">
+                {portfolios.map((p) => {
+                  const on = run !== null && run.title === p.name;
                   return (
-                    <li key={s.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 border-0 border-t border-solid border-[var(--line-soft)] py-2 first:border-t-0">
-                      <input type="checkbox" checked={on} aria-label={`Run ${s.name} together with others`} disabled={!on && picked.length >= 12}
-                        onChange={() => setTicked((t) => (t.includes(s.id) ? t.filter((x) => x !== s.id) : [...t, s.id]))}
-                        className="mt-2.5 h-5 w-5 accent-[var(--chosen)]" />
-                      <button type="button" aria-label={`Run ${s.name}`} aria-current={shown?.id === s.id ? 'true' : undefined}
-                        onClick={() => { onLoad(s.query); setFromId(s.id); setSaid(null); }}
-                        className="m-0 min-h-[44px] min-w-0 appearance-none border-0 bg-transparent p-0 text-left font-[inherit]">
-                        <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', shown?.id === s.id ? 'text-[var(--chosen)]' : 'text-foreground')}>{s.name}{shown?.id === s.id ? ' · on the screen' : ''}</span>
-                        <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{wordsOf(s.query)}</span>
-                      </button>
-                      {asking === s.id ? (
-                        <span className="flex items-center gap-2 pt-1">
-                          <button type="button" disabled={busy} onClick={() => void remove(s)} className="m-0 min-h-[36px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold text-[var(--down)]">Delete</button>
-                          <button type="button" onClick={() => setAsking(null)} className={link}>Keep</button>
-                        </span>
-                      ) : (
-                        <span className="flex items-center">
-                          <button type="button" aria-label={`Edit ${s.name}`} aria-pressed={editedSave?.id === s.id} onClick={() => editSave(s)}
-                            className={cn(link, 'h-11 px-1.5', editedSave?.id === s.id && 'font-semibold underline')}>Edit</button>
-                          <button type="button" aria-label={`Delete ${s.name}`} onClick={() => setAsking(s.id)}
-                            className="m-0 grid h-11 w-8 appearance-none place-items-center border-0 bg-transparent p-0 text-[18px] text-muted-foreground">×</button>
-                        </span>
-                      )}
+                    <li key={p.id} className={cn('grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-x-1.5 border-0 border-t border-solid border-[var(--line-soft)] py-1.5 first:border-t-0', on && 'rounded-md bg-[var(--chosen-soft)] px-1.5')}>
+                      <span className="min-w-0">
+                        <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', on && 'text-[var(--chosen)]')}>{p.name}{on ? ' · running' : ''}</span>
+                        <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{p.saveIds.map(nameOf).join(' + ')}</span>
+                      </span>
+                      <button type="button" aria-label={`Run the portfolio ${p.name}`} className={cn(on ? quiet : solid, 'h-10')} onClick={() => setRun({ ids: p.saveIds, title: p.name })}>Run</button>
+                      <button type="button" aria-label={`Edit the portfolio ${p.name}`} aria-pressed={editedPortfolio?.id === p.id} onClick={() => editPortfolio(p)}
+                        className={cn(link, 'h-10 px-1', editedPortfolio?.id === p.id && 'font-semibold underline')}>Edit</button>
+                      <button type="button" aria-label={`Delete the portfolio ${p.name}`} disabled={busy}
+                        onClick={() => void act(async () => { await deletePortfolio(p.id); if (run?.title === p.name) setRun(null); if (editedPortfolio?.id === p.id) setEditing(null); return `Deleted the portfolio "${p.name}". Its saved backtests are kept.`; })}
+                        className="m-0 grid h-10 w-9 appearance-none place-items-center border-0 bg-transparent p-0 text-[18px] text-muted-foreground">×</button>
                     </li>
                   );
                 })}
               </ul>
             )}
-
+            {saves.length < 2 ? (
+              <Empty>A portfolio is two saved backtests or more, run together. Save them under Single backtest first{saves.length === 1 ? ' -- there is one so far' : ''}.</Empty>
+            ) : (
+              <section aria-label="Saved backtests to run together" className="grid gap-1">
+                <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">{editedPortfolio ? `In “${editedPortfolio.name}”` : portfolios.length ? 'Or tick saved backtests' : 'Tick saved backtests'}</h3>
+                <ul aria-label="Saved backtests" className="m-0 grid list-none gap-0 p-0">{saves.map(tickRow)}</ul>
+              </section>
+            )}
             {/* A portfolio being edited: its members are the ticks above, its name here. */}
             {editedPortfolio && (
               <form aria-label={`Edit the portfolio ${editedPortfolio.name}`} className="grid gap-1.5 rounded-md border border-solid border-[var(--accent)] px-2.5 py-2"
@@ -311,7 +395,7 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
             {saves.length >= 2 && !editedPortfolio && (
               <div className="grid gap-2 rounded-md bg-muted px-2.5 py-2">
                 <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
-                  {picked.length < 2 ? 'Tick two or more to run them together and see what they come to as one: a portfolio.' : `${picked.length} ticked: ${picked.map(nameOf).join(', ')}.`}
+                  {picked.length < 2 ? 'Tick two or more to run them together and see what they come to as one.' : `${picked.length} ticked: ${picked.map(nameOf).join(', ')}.`}
                 </p>
                 {picked.length >= 2 && (
                   <>
@@ -326,27 +410,6 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
               </div>
             )}
 
-            {portfolios.length > 0 && (
-              <section aria-label="Portfolios" className="grid gap-1">
-                <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">Portfolios</h3>
-                <ul className="m-0 grid list-none gap-0 p-0">
-                  {portfolios.map((p) => (
-                    <li key={p.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-x-1.5 border-0 border-t border-solid border-[var(--line-soft)] py-1.5 first:border-t-0">
-                      <span className="min-w-0">
-                        <span className="block text-[14px] font-semibold [overflow-wrap:anywhere]">{p.name}</span>
-                        <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{p.saveIds.map(nameOf).join(' + ')}</span>
-                      </span>
-                      <button type="button" aria-label={`Run the portfolio ${p.name}`} className={cn(quiet, 'h-10')} onClick={() => setRun({ ids: p.saveIds, title: p.name })}>Run</button>
-                      <button type="button" aria-label={`Edit the portfolio ${p.name}`} aria-pressed={editedPortfolio?.id === p.id} onClick={() => editPortfolio(p)}
-                        className={cn(link, 'h-10 px-1', editedPortfolio?.id === p.id && 'font-semibold underline')}>Edit</button>
-                      <button type="button" aria-label={`Delete the portfolio ${p.name}`} disabled={busy}
-                        onClick={() => void act(async () => { await deletePortfolio(p.id); if (run?.title === p.name) setRun(null); if (editedPortfolio?.id === p.id) setEditing(null); return `Deleted the portfolio "${p.name}". Its saved backtests are kept.`; })}
-                        className="m-0 grid h-10 w-9 appearance-none place-items-center border-0 bg-transparent p-0 text-[18px] text-muted-foreground">×</button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
           </div>
         )}
       </Panel>

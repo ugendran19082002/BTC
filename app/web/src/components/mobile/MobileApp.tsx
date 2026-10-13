@@ -82,6 +82,11 @@ const STALE_MS = 20_000;
 type Choice = number | 'all';
 
 export default function MobileApp() {
+  // The phone's own colour for what is chosen (styles.css `--chosen`): said on the root, since its menus open outside its frame.
+  useEffect(() => {
+    document.documentElement.dataset.view = 'phone';
+    return () => { delete document.documentElement.dataset.view; };
+  }, []);
   const [me, setMe] = useState<Me | null>(null);
   const refreshMe = useCallback(() => {
     getMe().then(setMe).catch(() => setMe({ required: true, signedIn: false, username: null, stage: 'none' }));

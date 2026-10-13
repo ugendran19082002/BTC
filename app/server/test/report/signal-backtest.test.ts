@@ -432,3 +432,43 @@ test('[critical] the perp exits while the offer is already under the option\'s o
   const over = simulateDay({ from, to, signals: [sig(0)], bars, board: five, plan: planOfParams({ ...P, targetPct: 0.9, stopPct: 0 }, { from, to }) }).trades[0]!;
   assert.deepEqual([over.by, over.exit], ['perp-tgt', 12]);
 });
+
+// ------------------------------------------------------------ several backtests as one account
+
+test('[critical] several backtests on one account: one line in the desk\'s order, and one limit on what is open across all of them', async () => {
+  const { planOfParams, simulateTogether, deskCapsOf } = await import('../../src/report/signal-backtest.js');
+  // the perp reaches neither level; a put and a call, each sold at 40 and held to the end of the day
+  const bars = perp([[0, 84_000], [1_439, 84_050]]);
+  const board = byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]), ...contract('C', 85_000, 0.09, [[0, 40], [1_435, 30]])]);
+  const plan = planOfParams({ ...P, targetPct: 0, stopPct: 0 }, { from, to });
+  // two books: one of 15m signals, one of 4h -- a BUY each at minute 10, and another each at minute 20
+  const quick = [sig(10, { tf: '15m' }), sig(20, { tf: '15m' })];
+  const slow = [sig(10, { tf: '4h', method: 'pullback' }), sig(20, { tf: '4h', method: 'pullback' })];
+  const books = [{ signals: quick, plan }, { signals: slow, plan }];
+
+  // each on its own: nothing to share -- all four are traded, four open at once
+  const alone = simulateTogether({ from, to, bars, board, books });
+  assert.deepEqual(alone.map((x) => x.trades.length), [2, 2]);
+
+  // one account, at most 3 open: the 4h signals go first at each minute, as the desk's queue takes them
+  const three = simulateTogether({ from, to, bars, board, books, shared: deskCapsOf({ deskMax: 3, cePct: 100, pePct: 100 }) });
+  assert.deepEqual(three.map((x) => x.trades.length), [1, 2], 'the 15m book gets the one place left at minute 10, and none at minute 20');
+  assert.deepEqual(three.map((x) => [x.skipped['desk-limit'], x.skipped['side-limit']]), [[1, 0], [0, 0]]);
+  assert.deepEqual(three[0]!.refused.map((r) => [(r.signal.filledAt - from) / MIN, r.why]), [[20, 'desk-limit']]);
+  const openAt = (t: number, outs: typeof three) => outs.flatMap((x) => x.trades).filter((x) => x.signal.filledAt <= t && x.exitAt > t).length;
+  assert.equal(openAt(from + 30 * MIN, three), 3, 'never more than the account holds');
+  assert.equal(openAt(from + 30 * MIN, alone), 4);
+
+  // the sides are the account's too: at most 4 open, each side half of it -- two puts, and the third BUY finds its side full
+  const calls = [{ signals: [sig(15, { dir: -1, stop: 84_300, target: 83_500, tf: '1h' })], plan }];
+  const sided = simulateTogether({ from, to, bars, board, books: [...books, ...calls], shared: deskCapsOf({ deskMax: 4, cePct: 50, pePct: 50 }) });
+  assert.deepEqual(sided.map((x) => x.trades.length), [1, 1, 1], 'a put for each book at minute 10, the call at minute 15');
+  assert.deepEqual(sided.map((x) => x.skipped['side-limit']), [1, 1, 0], 'both BUYs at minute 20: the puts are at their two');
+
+  // a place is free again when a trade ends: the same three places, turned over
+  const short = planOfParams({ ...P, targetPct: 0, stopPct: 0 }, { from, to });
+  const falls = perp([[0, 84_000], [100, 83_500], [1_439, 83_500]]);          // every BUY is stopped about minute 60
+  const later = [{ signals: [sig(10, { tf: '15m' }), sig(200, { tf: '15m', stop: 83_000 })], plan: short }, { signals: [sig(10, { tf: '4h' }), sig(200, { tf: '4h', stop: 83_000 })], plan: short }];
+  const turned = simulateTogether({ from, to, bars: falls, board, books: later, shared: deskCapsOf({ deskMax: 2, cePct: 100, pePct: 100 }) });
+  assert.deepEqual(turned.map((x) => x.trades.length), [2, 2], 'two at minute 10, stopped by minute 61, and two more at minute 200');
+});

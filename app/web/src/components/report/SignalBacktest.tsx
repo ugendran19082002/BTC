@@ -14,6 +14,7 @@ import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, netClass, rate } from '@/components/report/backtest-parts';
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
+import type { PortfolioLimit } from '@/api/backtest-saves';
 import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, settingsWords } from '@/components/report/backtest-words';
 
 /**
@@ -407,8 +408,16 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const saved: SavedQuery = { params, tfs, methods, strategy: strategyId };
   const summary = settingsWords(saved, strategies);
   const floor = params.minPremium ?? FLOOR;
-  // Saved backtests run together (`SavedBacktests`): which, if any, is on the screen above the result.
-  const [together, setTogether] = useState<TogetherRun | null>(null);
+  /*
+   * One section at a time (owner, 13 Oct 2026: "a single backtest, or a portfolio run -- the portfolio section or
+   * the backtest section, only one open at a time"): the settings, filters and result of one backtest; or the
+   * portfolios, the saved backtests to tick, and what they come to together. Which is open, and the last run
+   * together, are kept in this browser.
+   */
+  const [mode, setMode] = usePersisted<'single' | 'portfolio'>('signalBacktest.mode', 'single');
+  const [together, setTogether] = usePersisted<TogetherRun | null>('signalBacktest.together', null);
+  // One account's limit over a run together, or each saved backtest's own (`PortfolioLimit`): one account to begin with.
+  const [limit, setLimit] = usePersisted<PortfolioLimit>('signalBacktest.together.limit', 'shared');
   /** A saved backtest's settings put on the screen: the result below is then worked for them, over the days chosen. */
   const load = (q: SavedQuery) => {
     setParams({ ...DEFAULTS, ...q.params }); setTfs(q.tfs); setMethods(q.methods); setStrategyId(q.strategy);
@@ -614,20 +623,60 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const title = wide && (
     <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>
   );
-  /** The page: on a wide desk window the settings and filters a column of their own, the result beside them; else one above the other. */
+  const modeSwitch = (
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 sm:max-w-[420px]">
+      <Segmented label="What to run" value={mode} onChange={setMode}
+        options={[
+          { key: 'single', label: 'Single backtest', spoken: 'One backtest: its settings, filters and result' },
+          { key: 'portfolio', label: 'Portfolio', spoken: 'Saved backtests run together, and their total' },
+        ]} />
+    </div>
+  );
+  /**
+   * The page: which section is open, then -- on a wide desk window -- that section's controls in a column of their
+   * own with its result beside them; else one above the other.
+   */
   const page = (result: React.ReactNode) => (
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       {title}
+      {modeSwitch}
       <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:grid-cols-[400px_minmax(0,1fr)] xl:items-start')}>
-        <aside aria-label="Backtest settings" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
-          {settingsPanel}
-          {filterBlock}
-          <SavedBacktests current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
-        </aside>
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
-          {together && <PortfolioRun run={together} range={range} wide={wide} onClose={() => setTogether(null)} />}
-          {result}
-        </div>
+        {mode === 'single' ? (
+          <>
+            <aside aria-label="Backtest settings" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
+              {settingsPanel}
+              {filterBlock}
+              <SavedBacktests mode="single" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
+            </aside>
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{result}</div>
+          </>
+        ) : (
+          <>
+            <aside aria-label="Portfolio" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
+              <Panel title="Run over">
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5">
+                  {expiry.control}
+                  <Segmented dense label="The limit on open trades" value={limit} onChange={setLimit}
+                    options={[
+                      { key: 'shared', label: 'One account', spoken: 'One account: one limit on open trades across all of them' },
+                      { key: 'own', label: 'Each its own limit', spoken: 'Each saved backtest keeps its own limit' },
+                    ]} />
+                  <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
+                    {limit === 'shared'
+                      ? 'One account: the desk’s “at most open” and its CE and PE shares are the account’s, so they are traded together for the same places -- the largest limit among the saved backtests, for all of them. The margin is then what one account would really have held.'
+                      : 'Each keeps the limit set in it and they are added up: more may be open together than one account would hold.'}
+                  </p>
+                </div>
+              </Panel>
+              <SavedBacktests mode="portfolio" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
+            </aside>
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+              {together
+                ? <PortfolioRun run={together} range={range} limit={limit} wide={wide} onClose={() => setTogether(null)} />
+                : <Panel title="Run together"><Empty>Run a portfolio, or tick two or more saved backtests and run them together: each is worked as it is alone, and they are added up -- the total, each one, each expiry day, and the margin held across all of them.</Empty></Panel>}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

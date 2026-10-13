@@ -133,6 +133,12 @@ under every filter.
    best and worst pairs, each with its perp points.
 5. **By kind of day** (trend family or market type) and **By expiry day**, each day with what it was priced on.
 
+**One colour for what is chosen.** The Backtest and the Market report are built from the phone's parts, which
+filled a choice -- a segment, a chip, a ticked row, the button that does the thing -- with green; on the desk,
+beside yellow tabs and a yellow Save, that was a second theme on one screen, and green there is money ("use the
+same theme colour"). The parts now ask for `--chosen` (`styles.css`): the accent on the desk, the phone's own
+green on the phone (`:root[data-view='phone']`, set while the phone app is up).
+
 **On a phone** (13 Oct 2026, "the By method section is too wide on the phone"): under 640px every table row folds
 to two lines -- the name with the net beside it, trades and share won beneath (`FOLD`) -- the three money figures
 are a list with the whole figure, not tiles that cut it to "−₹79,2…" (`Ledger`), the settings sections sit flat
@@ -143,19 +149,41 @@ the result.
 ## Saved backtests, and portfolios
 
 "Save a backtest's settings and run a saved one; several saved ones as a portfolio, with the total of them all"
-(13 Oct 2026). The **Saved backtests** panel, under the filters
-([SavedBacktests.tsx](../../app/web/src/components/report/SavedBacktests.tsx)):
+(13 Oct 2026).
+
+**One section at a time** ("a single backtest, or a portfolio run -- the portfolio section or the backtest
+section, only one open at a time"). **What to run** at the top of the screen: **Single backtest** -- the settings,
+the filters, the saved backtests to keep and put back, and one result -- or **Portfolio** -- the days, the
+portfolios, the saved backtests as ticks, and what they come to together. Which is open, the last run together
+and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/components/report/SavedBacktests.tsx),
+`mode`.)
+
+**Under Single backtest**, the **Saved backtests** panel:
 
 - **Save** keeps the settings on the screen under a name -- the strike rule, the exits, the hours, the limits,
   the filters, or the strategy it is worked by. Not the days and not the result: a saved backtest is run over
   whatever days the screen is on. The desk checks a saved one's settings as it checks the screen's.
 - Each row says its settings in a line. **Tapping one** puts them back on the screen; the one whose settings are
   on the screen is marked. Changed since, it can be **updated** in place or saved as another. **×** asks once more.
-- **Tick two or more** (twelve at most) and **Run these together**: each is worked on its own, exactly as it is
-  alone -- its own signals, its own limits; one does not take a place from another, and a signal two of them take
-  is traded by each -- and added up: the total, each one, each expiry day. The margin is **not** the sum of each
-  one's most: their trades are laid on one clock and the most held at once is found across all of them, which is
-  what running them side by side on one account would have needed; the sum is shown beside it.
+
+**Under Portfolio:**
+
+- **Tick two or more** (twelve at most) and **Run these together**: the total, a day on average, each one, each
+  expiry day, and the margin -- the most held at once across all of them on one clock, with the sum of each one's
+  own most beside it.
+- **The limit on open trades: One account** (what it opens on) or **Each its own limit**. The desk's "at most
+  open" and its CE and PE shares are an *account's*, not a strategy's. Seven saved backtests of "at most 120" each
+  were first worked alone and added up, and the total said 152 open at once (179 a few hours later) -- more than
+  the account would ever hold, and a margin worked from trades it would not have taken ("the portfolio's margin at
+  most, together -- work it out correctly"). As **one account** they are traded on one clock, in the desk's own
+  order -- as they filled, the longer time frame first -- for the same places (`simulateTogether`): the largest
+  "at most open" among them, with its shares, for all of them; a signal that finds the account or its side full is
+  counted as turned away and said. With none of them carrying a limit there is none to share and they are added
+  up. **Each its own limit** is the first way, and says that more may be open than one account holds.
+  Checked on the owner's seven over 1-13 Oct: each on its own 3,627 trades, +₹6,833, ₹12,804 of margin with 179
+  open; as one account 3,377 trades, +₹6,115, 250 signals turned away, ₹8,624 with 120 open -- never over 120, 96
+  calls or 96 puts at any trade's start, nobody turned away while there was room, and no shorter time frame taken
+  ahead of a longer one for the last place.
 - **Edit** on a saved backtest puts its settings on the screen to be changed there, with its name beside them;
   **Edit** on a portfolio ticks its members in the list to be changed there, with its name. Nothing is kept until
   **Save changes** (the same one, under its id); **Cancel** leaves it as it was. A portfolio on the screen as a
@@ -168,7 +196,8 @@ the result.
 `backtest_saves` (id, name unique whatever its capitals, `query` as JSON) and `backtest_portfolios` (id, name,
 `save_ids`), `report/backtest-saves.ts`; at most 100 and 30. `GET/POST /api/backtest-saves`,
 `DELETE /api/backtest-saves/:id`, `POST /api/backtest-portfolios`, `DELETE /api/backtest-portfolios/:id`,
-`GET /api/backtest-portfolio?ids=&from=&to=` (worked in the backtest's thread, `portfolioBacktest`). Checked on
+`GET /api/backtest-portfolio?ids=&from=&to=&limit=shared|own&max=&ce=&pe=` (worked in the backtest's thread,
+`portfolioBacktest`; `shared` in the answer says the limit they were held to and how many it turned away). Checked on
 1-12 Oct with two saved: each member is its own backtest to the cent, the total their sum, every day its members'
 sum, the margin together ($1,583 with 374 open) between the larger one's own and the two added ($1,643).
 

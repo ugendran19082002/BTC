@@ -73,6 +73,11 @@ export type BacktestSaves = { saves: BacktestSave[]; portfolios: BacktestPortfol
 /** Several saved backtests over the same days: each as it is alone, and their total. */
 export type BacktestPortfolioResult = {
   from: string; to: string;
+  /**
+   * The one limit they were traded under together, as one account -- at most `max` open across all of them, `ce`
+   * calls and `pe` puts -- and how many signals found it full. Null: each kept its own limit and they were added up.
+   */
+  shared?: { max: number; ce: number; pe: number; cePct: number; pePct: number; turnedAway: number } | null;
   members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
   total: BtTot;
   days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];

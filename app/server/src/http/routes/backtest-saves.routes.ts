@@ -65,9 +65,16 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Saved backtests run together over one range of expiry days, and their total: `?ids=a,b,c&from=&to=`. Each is
-   * worked on its own -- as it is alone -- and added up; the margin is the most held at once across all of them.
-   * One whose strategy has been deleted is listed, with why, and counted as nothing.
+   * Saved backtests run together over one range of expiry days, and their total: `?ids=a,b,c&from=&to=`.
+   *
+   * `?limit=shared` (the default): as ONE ACCOUNT -- the desk's "at most open" and its CE and PE shares are an
+   * account's, so the members are traded on one clock, in the desk's own order, for the same places. The limit is
+   * `?max=&ce=&pe=` where given, else the largest "at most open" among the saved backtests themselves, with its
+   * shares; where none of them has one, there is no limit to share and they are simply added up.
+   * `?limit=own`: each worked as it is alone, its own limit on its own trades, and added up.
+   *
+   * Either way the margin is the most held at once across all of them. One whose strategy has been deleted is
+   * listed, with why, and counted as nothing.
    */
   app.get('/api/backtest-portfolio', async (req, reply) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
@@ -79,8 +86,23 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
     const saves = await savesByIds(ids);
     if (saves.length !== ids.length) return refuse(reply, 404, { error: 'One of those saved backtests is gone: it may have been deleted.' });
     const strategies = (await strategyStore().all().catch(() => [])).filter(backtestable);
+    if (q.limit !== undefined && q.limit !== '' && q.limit !== 'shared' && q.limit !== 'own') return refuse(reply, 400, { error: 'The limit is "shared" (one account) or "own" (each its own).' });
+    let shared: { deskMax: number; cePct: number; pePct: number } | null = null;
+    if (q.limit !== 'own') {
+      const num = (v: unknown) => (v === undefined || v === '' ? null : Number(v));
+      const max = num(q.max), ce = num(q.ce), pe = num(q.pe);
+      if (max !== null) {
+        if (!Number.isInteger(max) || max < 1 || max > 500) return refuse(reply, 400, { error: 'At most open is a whole number from 1 to 500.' });
+        if ((ce !== null && !(ce >= 1 && ce <= 100)) || (pe !== null && !(pe >= 1 && pe <= 100))) return refuse(reply, 400, { error: 'CE max and PE max are from 1% to 100%.' });
+        shared = { deskMax: max, cePct: ce ?? 100, pePct: pe ?? 100 };
+      } else {
+        // The account's limit as the saved backtests themselves carry it: the largest of them.
+        const top = saves.map((s) => s.query.params).filter((p) => (p.deskMax ?? 0) > 0).sort((a, b) => (b.deskMax ?? 0) - (a.deskMax ?? 0))[0];
+        if (top) shared = { deskMax: top.deskMax!, cePct: top.cePct ?? 100, pePct: top.pePct ?? 100 };
+      }
+    }
     return portfolioBacktest({
-      ...r, now: Date.now(), spot: tradingService().spot,
+      ...r, now: Date.now(), spot: tradingService().spot, shared,
       members: saves.map((s) => {
         const strategy = s.query.strategy === null ? null : strategies.find((x) => x.id === s.query.strategy) ?? null;
         if (s.query.strategy !== null && !strategy) return { id: s.id, name: s.name, ask: null, problem: 'The strategy it is worked by has been deleted, or buys now rather than sells.' };
