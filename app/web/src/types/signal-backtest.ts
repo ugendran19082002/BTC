@@ -3,7 +3,9 @@
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'window-end';
 export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
 export type BacktestParams = {
-  rule: 'delta' | 'premium'; value: number; lots: number; targetPct: number; stopPct: number; window: 'desk' | 'all';
+  rule: 'delta' | 'premium'; value: number; lots: number; targetPct: number; stopPct: number; window: 'desk' | 'all' | 'custom';
+  /** With `custom`: the signals filled from this IST time to this one, "HH:MM"; it may run past midnight. */
+  hoursFrom?: string; hoursTo?: string;
   /** The desk's limits: at most this many open at once (0: none), and each side at most this per cent of it. */
   deskMax: number; cePct: number; pePct: number;
 };

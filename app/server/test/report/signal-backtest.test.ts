@@ -162,3 +162,18 @@ test('[critical] the desk\'s limits: at most N open across every signal, and eac
   const early = simulateDay({ from, to, signals: [sig(10), sig(400)], bars: perp([[0, 84_000], [100, 84_000], [120, 84_600], [1_439, 84_600]]), board, plan: planOfParams({ ...P, deskMax: 1 }, { from, to }) });
   assert.equal(early.trades.length, 2, 'the first reached its target at minute ~110; the second found the place free');
 });
+
+test('[critical] custom hours: only the signals filled from the From time to the To time (IST), across midnight too', async () => {
+  const { planOfParams } = await import('../../src/report/signal-backtest.js');
+  const bars = perp([[0, 84_000], [1_439, 84_050]]);
+  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  // the expiry day begins at 5:30 PM IST: minute 270 is 10:00 PM, 450 is 1:00 AM, 1_200 is 1:30 PM
+  const signals = [sig(30), sig(270), sig(450), sig(1_200)];
+  const run = (hoursFrom: string, hoursTo: string) => simulateDay({ from, to, signals, bars, board, plan: planOfParams({ ...P, window: 'custom', hoursFrom, hoursTo }, { from, to }) });
+  const night = run('22:00', '02:00');
+  assert.deepEqual(night.trades.map((t) => (t.signal.filledAt - from) / 60_000), [270, 450], '10 PM and 1 AM; not 6 PM nor 1:30 PM');
+  assert.equal(night.skipped['outside-window'], 2);
+  assert.deepEqual(run('13:00', '14:00').trades.map((t) => (t.signal.filledAt - from) / 60_000), [1_200]);
+  assert.deepEqual(run('22:00', '22:01').trades.map((t) => (t.signal.filledAt - from) / 60_000), [270], 'the From minute is in');
+  assert.deepEqual(run('21:00', '22:00').trades, [], 'the To minute is not');
+});

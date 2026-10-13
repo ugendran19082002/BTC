@@ -6,6 +6,7 @@ import { pct } from '@/lib/format';
 import { dayLabel, moneyText, ptsText } from '@/lib/market-report';
 import type { PairStat } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
+import { time12 } from '@/lib/time';
 import type { BacktestParams, BacktestQuery, BtExit, BtRow, BtTot } from '@/types/signal-backtest';
 import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
@@ -32,7 +33,42 @@ const RULES: { key: BacktestParams['rule']; label: string; spoken: string }[] = 
 const WINDOWS: { key: BacktestParams['window']; label: string; spoken: string }[] = [
   { key: 'desk', label: '9:30 PM → 3:59 PM', spoken: 'Only signals from 9:30 PM to 3:59 PM, as the strategies trade' },
   { key: 'all', label: 'Whole expiry day', spoken: 'Signals of the whole expiry day' },
+  { key: 'custom', label: 'Custom', spoken: 'Signals in hours of your own' },
 ];
+
+/**
+ * Hours of the owner's own (13 Oct 2026, "custom"): a From and a To time, IST, the end not included -- read
+ * forward from the From time, as a strategy's own hours are, so 10:00 PM to 2:00 AM runs past midnight.
+ */
+function CustomHours({ from, to, onApply, onClose }: { from: string; to: string; onApply: (from: string, to: string) => void; onClose: () => void }) {
+  const [a, setA] = useState(from);
+  const [b, setB] = useState(to);
+  const ok = (v: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+  const problem = !ok(a) || !ok(b) ? 'Pick both times.' : a === b ? 'The From and To times must differ.' : null;
+  const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[16px] text-foreground [color-scheme:dark]';
+  return (
+    <div className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-[12.5px] text-[var(--time)]">From (IST)</span>
+          <input type="time" className={field} value={a} onChange={(e) => setA(e.target.value)} />
+        </label>
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-[12.5px] text-[var(--time)]">To (IST)</span>
+          <input type="time" className={field} value={b} onChange={(e) => setB(e.target.value)} />
+        </label>
+      </div>
+      <p role={problem ? 'alert' : 'status'} className={cn('m-0 text-[13px]', problem ? 'text-[var(--down)]' : 'text-muted-foreground')}>
+        {problem ?? `Signals filled from ${time12(a)} to ${time12(b)}${b < a ? ', past midnight' : ''}. A trade still exits by its own SL, TGT or the expiry.`}
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" onClick={onClose} className="h-11 rounded-lg border border-border bg-transparent font-[inherit] text-[14px] text-foreground">Cancel</button>
+        <button type="button" disabled={problem !== null} onClick={() => onApply(a, b)}
+          className="h-11 rounded-lg border-0 bg-[var(--up)] font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-40">Use these hours</button>
+      </div>
+    </div>
+  );
+}
 const DELTAS = [0.05, 0.1, 0.15, 0.2];
 const PREMIUMS = [25, 50, 75, 100];
 const STOPS: { value: number; label: string }[] = [{ value: 1, label: '+100%' }, { value: 1.5, label: '+150%' }, { value: 3, label: '+300%' }, { value: 0, label: 'No stop' }];
@@ -200,15 +236,17 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
    * methods and timeframes are what is asked for, and changing either by hand ends it.
    */
   const [fromStrategies, setFromStrategies] = usePersisted<string[]>('signalBacktest.fromStrategies', []);
+  const [pickingHours, setPickingHours] = useState(false);
   const pickMethods = (m: string[]) => { setMethods(m); setFromStrategies([]); };
   const pickTfs = (t: string[]) => { setTfs(t); setFromStrategies([]); };
   // Anything remembered from an older build falls back to the defaults rather than asking for what the server refuses.
-  const params: BacktestParams = { ...DEFAULTS, ...stored };
+  const merged: BacktestParams = { ...DEFAULTS, ...stored };
+  const params: BacktestParams = merged.window === 'custom' && !(merged.hoursFrom && merged.hoursTo) ? { ...merged, window: 'desk' } : merged;
   const set = (o: Partial<BacktestParams>) => setParams({ ...params, ...o });
   const range = expiry.range;
   const query: BacktestQuery = { ...range, params, tfs, methods, strategy: strategyId };
   const read = usePoll(() => getSignalBacktest(query), 300_000, {
-    deps: [range.from, range.to, params.rule, params.value, params.lots, params.targetPct, params.stopPct, params.window, params.deskMax, params.cePct, params.pePct, tfs.join(), methods.join(), strategyId],
+    deps: [range.from, range.to, params.rule, params.value, params.lots, params.targetPct, params.stopPct, params.window, params.hoursFrom, params.hoursTo, params.deskMax, params.cePct, params.pePct, tfs.join(), methods.join(), strategyId],
   });
   const r = read.data;
   // A strategy remembered from before that is gone now (deleted): back to the settings, rather than an error every time.
@@ -235,7 +273,20 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         </select>
       </label>
       {!byStrategy && <>
-      <Segmented label="Which signals" value={params.window} options={WINDOWS} onChange={(window) => set({ window })} />
+      <Segmented label="Which signals" value={params.window} options={WINDOWS}
+        // Custom opens the hours every time it is tapped: chosen already, a tap is "change the hours".
+        onChange={(window) => { if (window === 'custom') setPickingHours(true); else { set({ window }); setPickingHours(false); } }} />
+      {params.window === 'custom' && !pickingHours && params.hoursFrom && params.hoursTo && (
+        <p className="m-0 flex flex-wrap items-baseline justify-between gap-x-3 px-1 text-[13px]">
+          <span className="text-muted-foreground">Signals filled <span className="text-foreground">{time12(params.hoursFrom)} → {time12(params.hoursTo)}</span> IST</span>
+          <button type="button" onClick={() => setPickingHours(true)} className="min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] text-[var(--accent)]">Change hours</button>
+        </p>
+      )}
+      {pickingHours && (
+        <CustomHours from={params.hoursFrom ?? '21:30'} to={params.hoursTo ?? '00:30'}
+          onApply={(hoursFrom, hoursTo) => { set({ window: 'custom', hoursFrom, hoursTo }); setPickingHours(false); }}
+          onClose={() => setPickingHours(false)} />
+      )}
       <Segmented label="How the strike is picked" value={params.rule} options={RULES} onChange={(rule) => set({ rule, value: rule === 'delta' ? 0.1 : 50 })} />
       <ChipRow wide={wide} label={params.rule === 'delta' ? 'Sell the nearest strike with a delta of at most' : 'Sell the dearest strike priced at most'}>
         {values.map((v) => <Chip key={v} on={params.value === v} onClick={() => set({ value: v })}>{params.rule === 'delta' ? v.toFixed(2) : `$${v}`}</Chip>)}

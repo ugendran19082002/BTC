@@ -36,6 +36,15 @@ Each of the strike limit, option target, option stop and lots has a **Custom** c
 unit (a stop of +200% is typed as 200), checked against the same limits the server holds it to, applied on Use
 or Enter, and shown on the chip after ("Custom · +200%").
 
+**The desk's limits**, as on the Signal Strategies card: **At most open** across every trade (no limit, 20, 35,
+58 or Custom, 0-500), and with it **CE max** and **PE max** as a per cent of it (50-100% or Custom), counted as
+the desk rounds them -- 80% of 35 is 28 (`sideCaps`). Each trading account's limits as they stand are offered as
+one tap ("Savings · 58 · CE 80% · PE 80%"). Checked in the runner's order: a strategy's own "at most open", then
+the desk's, then the side's; what each skipped is counted. With a limit on, the time frame and method filters
+choose which signals compete for the places (without one they only choose what is shown); the method list's
+figures stay those of each method with no limit. They apply under **Backtest by** a strategy as well, on top of
+its own limit. `?max=&ce=&pe=`; every answer carries `deskLimits`.
+
 **Strategy** beside **Method**: tick one or more of your current strategies and their methods and time frames are
 ticked for the settings above -- a shortcut for those two filters, said in a line under them. Changing a method
 or a time frame by hand ends it. (To use a strategy's own strike, lots, exits and limits too, choose it under

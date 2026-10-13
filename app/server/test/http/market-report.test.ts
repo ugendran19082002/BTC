@@ -352,6 +352,9 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   assert.deepEqual(all.body.days.map((d: any) => [d.day, d.pattern, d.n]), [[CLIMB, 'UP_TREND_CLEAN', 6]]);
 
   // the desk's hours (the default): the three filled before 9:30 PM are left out, and said
+  // custom hours: 6 PM to 8 PM IST -- the fills at minutes 30 and 90 of the day (6:00 and 7:00 PM)
+  const evening = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=custom&hfrom=18:00&hto=20:00`);
+  assert.deepEqual([evening.body.params.hoursFrom, evening.body.params.hoursTo, evening.body.total.n], ['18:00', '20:00', 2]);
   const desk = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}`);
   assert.equal(desk.body.params.window, 'desk');
   assert.deepEqual([desk.body.total.n, desk.body.skipped['outside-window']], [3, 3]);
@@ -373,7 +376,7 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
 test('the backtest refuses settings it cannot mean', async () => {
   for (const [q, why] of [
     ['rule=gamma', /"delta" or "premium"/], ['rule=delta&value=0.9', /0\.02 to 0\.5/], ['rule=premium&value=5', /10 to 500/],
-    ['lots=0', /whole number from 1 to 1,000/], ['max=600', /0 \(no limit\) to 500/], ['max=10&ce=0', /1% to 100%/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk" or "all"/],
+    ['lots=0', /whole number from 1 to 1,000/], ['max=600', /0 \(no limit\) to 500/], ['max=10&ce=0', /1% to 100%/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk", "all" or "custom"/], ['window=custom&hfrom=22:00', /From and a To time/], ['window=custom&hfrom=22:00&hto=22:00', /must differ/], ['window=custom&hfrom=25:00&hto=02:00', /HH:MM/],
   ] as const) {
     const r = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&${q}`);
     assert.equal(r.status, 400, q);

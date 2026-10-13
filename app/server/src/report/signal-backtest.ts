@@ -49,7 +49,9 @@ export type BacktestParams = {
   /** The option's own target and stop, as shares of the premium sold: 0.9 buys back at a tenth; 3 at four times. 0 is none. */
   targetPct: number; stopPct: number;
   /** `desk`: only signals filled 9:30 PM to 3:59 PM IST, as the strategies trade. `all`: the whole expiry day. */
-  window: 'desk' | 'all';
+  window: 'desk' | 'all' | 'custom';
+  /** With `custom`: the signals filled from this IST time to this one ("HH:MM", the end not included); it may run past midnight. */
+  hoursFrom?: string; hoursTo?: string;
   /**
    * The desk's own limits (13 Oct 2026, "the At most open, CE max and PE max, in the backtest"): at most this many
    * open at once across every signal traded, 0 for none; and each side at most this per cent of it, as the desk
@@ -130,8 +132,14 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
   // The strategies' own hours: from 9:30 PM IST (four hours into the expiry day) to 3:59 PM (91 minutes before it ends).
   const opens = p.window === 'desk' ? span.from + 4 * 60 * MIN : span.from;
   const closes = p.window === 'desk' ? span.to - 91 * MIN : span.to - 5 * MIN;
+  // Hours of the owner's own (13 Oct 2026): by the IST clock, as a strategy's own hours are read -- forward from the start, so past midnight is the same sum.
+  const custom = p.window === 'custom' && p.hoursFrom && p.hoursTo ? { from: minutesOf(p.hoursFrom), to: minutesOf(p.hoursTo) } : null;
   return {
-    refuses: (sig) => (sig.filledAt < opens || sig.filledAt >= closes ? 'outside-window' : null),
+    refuses: (sig) => {
+      if (sig.filledAt < span.from || sig.filledAt >= span.to - 5 * MIN) return 'outside-window';
+      if (custom) return minutesForward(custom.from, istMinutes(sig.filledAt)) < minutesForward(custom.from, custom.to) ? null : 'outside-window';
+      return sig.filledAt < opens || sig.filledAt >= closes ? 'outside-window' : null;
+    },
     pick: (board, cp) => { const row = pickStrike(board, cp, p); return row ? { row, lots: p.lots } : null; },
     targetOf: (sig) => sig.target,
     targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null, desk: deskCapsOf(p),
@@ -330,7 +338,7 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
 type HeldDay = { at: number; cells: BtCell[]; skipped: Record<BtSkip, number>; signals: number };
 const held = new Map<string, HeldDay>();
 export function clearSignalBacktestCache(): void { held.clear(); }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}`;
+const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   const text = JSON.stringify(s.config);

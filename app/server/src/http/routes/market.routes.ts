@@ -70,12 +70,17 @@ function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
   if (!(targetPct >= 0 && targetPct <= 0.99)) return 'The option target is a share of the premium from 0 (none) to 0.99.';
   if (!(stopPct >= 0 && stopPct <= 10)) return 'The option stop is a share of the premium from 0 (none) to 10.';
   const window = q.window === undefined || q.window === '' ? DEFAULT_PARAMS.window : q.window;
-  if (window !== 'desk' && window !== 'all') return 'The window is "desk" or "all".';
+  if (window !== 'desk' && window !== 'all' && window !== 'custom') return 'The window is "desk", "all" or "custom".';
+  // Custom hours: `?hfrom=22:00&hto=02:00`, IST, the end not included.
+  const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const hoursFrom = typeof q.hfrom === 'string' ? q.hfrom : '', hoursTo = typeof q.hto === 'string' ? q.hto : '';
+  if (window === 'custom' && (!hhmm.test(hoursFrom) || !hhmm.test(hoursTo))) return 'Custom hours are a From and a To time, HH:MM (IST).';
+  if (window === 'custom' && hoursFrom === hoursTo) return 'The From and To times must differ.';
   // The desk's own limits, as the Signal Strategies card sets them: at most open 0 (none) to 500; each side 1 to 100%.
   const deskMax = num('max', 0), cePct = num('ce', 100), pePct = num('pe', 100);
   if (!Number.isInteger(deskMax) || deskMax < 0 || deskMax > 500) return 'At most open is a whole number from 0 (no limit) to 500.';
   if (!(cePct >= 1 && cePct <= 100) || !(pePct >= 1 && pePct <= 100)) return 'CE max and PE max are from 1% to 100%.';
-  return { rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct };
+  return { rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, ...(window === 'custom' ? { hoursFrom, hoursTo } : {}) };
 }
 
 export function registerMarketRoutes(app: FastifyInstance) {
