@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { PATTERNS, FAMILIES, sessionDayOf, type PatternFamily, type PatternKey } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters, type Scope } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, signalBacktest, type BacktestParams } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, backtestable, signalBacktest, type BacktestParams } from '../../report/signal-backtest.js';
+import { strategyStore } from './strategy.routes.js';
+import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
 
@@ -83,7 +85,22 @@ export function registerMarketRoutes(app: FastifyInstance) {
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
     const params = backtestParamsOf(q);
     if (typeof params === 'string') return refuse(reply, 400, { error: params });
-    return signalBacktest({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method') });
+    /*
+     * `?strategy=<id>`: backtest by that saved strategy's own rules instead of the screen's settings (owner, 13 Oct
+     * 2026: "a strategy list in the backtest -- choose one and backtest by it, else don't"). The list to choose from
+     * comes back with every answer: the signal strategies that sell, each with its account.
+     */
+    const every = (await strategyStore().all().catch(() => [])).filter(backtestable);
+    const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
+    const strategy = askedId === null ? null : every.find((s) => s.id === askedId) ?? null;
+    if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
+    const accountName = (id: number | null | undefined) => { try { return id == null ? null : brokerAccounts().get(id)?.name ?? null; } catch { return null; } };
+    const result = await signalBacktest({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot });
+    return {
+      ...result,
+      strategies: every.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled, account: accountName(s.accountId) }))
+        .sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true })),
+    };
   });
 
   /** Each expiry day with its figures, its kind and its results; the results by kind of day and by family. */
