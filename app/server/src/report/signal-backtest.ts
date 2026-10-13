@@ -157,13 +157,16 @@ export type BtTrade = {
 export function pickStrike(board: readonly BoardRow[], cp: 'C' | 'P', p: Pick<BacktestParams, 'rule' | 'value'>): BoardRow | null {
   const otm = board.filter((r) => r.cp === cp && r.spot !== null && (cp === 'P' ? r.strike < r.spot : r.strike > r.spot)
     && r.bid !== null && r.bid >= MIN_PREMIUM && r.ask !== null && r.ask > 0);
+  // Two strikes level on the rule (the same bid, far out, is common): the nearer the money, as the desk walks the
+  // board outward -- never whichever the database happened to return first (13 Oct 2026).
+  const nearer = (a: BoardRow, b: BoardRow) => Math.abs(a.strike - a.spot!) - Math.abs(b.strike - b.spot!);
   if (p.rule === 'delta') {
     // The nearest to the money whose delta is still inside the limit.
     const ok = otm.filter((r) => r.delta !== null && Math.abs(r.delta) <= p.value + 1e-9);
-    return ok.sort((a, b) => Math.abs(b.delta!) - Math.abs(a.delta!))[0] ?? null;
+    return ok.sort((a, b) => Math.abs(b.delta!) - Math.abs(a.delta!) || nearer(a, b))[0] ?? null;
   }
   // The dearest that is still at or under the price.
-  return otm.filter((r) => r.bid! <= p.value + 1e-9).sort((a, b) => b.bid! - a.bid!)[0] ?? null;
+  return otm.filter((r) => r.bid! <= p.value + 1e-9).sort((a, b) => b.bid! - a.bid! || nearer(a, b))[0] ?? null;
 }
 
 /**
@@ -196,6 +199,10 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
   const closes = p.window === 'desk' ? span.to - 91 * MIN : span.to - 5 * MIN;
   // Hours of the owner's own (13 Oct 2026): by the IST clock, as a strategy's own hours are read -- forward from the start, so past midnight is the same sum.
   const custom = p.window === 'custom' && p.hoursFrom && p.hoursTo ? { from: minutesOf(p.hoursFrom), to: minutesOf(p.hoursTo) } : null;
+  // The steps in the order the clock reaches them from 5:30 PM, however they were typed: the reader keeps the last
+  // one reached in the order it is given (13 Oct 2026: 03:30 typed above 23:30 left 23:30's share on all morning).
+  const start = minutesOf(DAY_START_IST);
+  const steps = [...(p.targetSteps ?? [])].sort((a, b) => minutesForward(start, minutesOf(a.at)) - minutesForward(start, minutesOf(b.at))).map((x) => ({ at: x.at, value: x.pct }));
   return {
     refuses: (sig) => {
       if (sig.filledAt < span.from || sig.filledAt >= span.to - 5 * MIN) return 'outside-window';
@@ -206,9 +213,7 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
     targetOf: (sig) => sig.target,
     targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null, desk: deskCapsOf(p),
     // By the clock, where steps are set: read by the function a strategy's own steps are (`exitValueAt`).
-    ...(p.targetSteps?.length ? {
-      targetPctAt: (at: number) => exitValueAt({ mode: 'pct', value: p.targetPct, steps: p.targetSteps!.map((x) => ({ at: x.at, value: x.pct })) }, DAY_START_IST, istMinutes(at)).value,
-    } : {}),
+    ...(steps.length ? { targetPctAt: (at: number) => exitValueAt({ mode: 'pct', value: p.targetPct, steps }, DAY_START_IST, istMinutes(at)).value } : {}),
   };
 }
 
@@ -297,10 +302,11 @@ export function simulateDay(o: {
   from: number; to: number; signals: readonly BtSignal[]; bars: readonly MinuteBar[]; board: readonly BoardRow[]; params?: BacktestParams; plan?: DayPlan;
   /** The volatility at a moment (`volReader`), and the one level to keep where the filter is on. */
   volAt?: (at: number) => VolLevel | null; volOnly?: VolLevel | null;
-}): { trades: BtTrade[]; skipped: Record<BtSkip, number> } {
+}): { trades: BtTrade[]; skipped: Record<BtSkip, number>; /** Each signal not traded, with why: what the time frame and method filters count. */ refused: { signal: BtSignal; why: BtSkip }[] } {
   const { from, to } = o;
   const plan = o.plan ?? planOfParams(o.params ?? DEFAULT_PARAMS, { from, to });
   const skipped = noSkips();
+  const refusals: { signal: BtSignal; why: BtSkip }[] = [];
   const trades: BtTrade[] = [];
   // The board by reading, and each contract's readings in order.
   const times: number[] = [];
@@ -321,24 +327,25 @@ export function simulateDay(o: {
 
   for (const sig of [...o.signals].sort(signalOrder)) {
     const t0 = sig.filledAt;
+    const skip = (why: BtSkip) => { skipped[why]++; refusals.push({ signal: sig, why }); };
     const refused = plan.refuses(sig);
-    if (refused) { skipped[refused]++; continue; }
+    if (refused) { skip(refused); continue; }
     const vol = o.volAt ? o.volAt(t0) : null;
     // A signal whose volatility cannot be said is not one of the level asked for.
-    if (o.volOnly && vol !== o.volOnly) { skipped.volatility++; continue; }
+    if (o.volOnly && vol !== o.volOnly) { skip('volatility'); continue; }
     open = open.filter((x) => x.until > t0);
     // In the runner's order: its own limit, then the desk's, then the side's (strategy/runner.ts `takeSignal`).
-    if (plan.maxOpen !== null && open.length >= plan.maxOpen) { skipped['at-limit']++; continue; }
-    if (desk && open.length >= desk.max) { skipped['desk-limit']++; continue; }
+    if (plan.maxOpen !== null && open.length >= plan.maxOpen) { skip('at-limit'); continue; }
+    if (desk && open.length >= desk.max) { skip('desk-limit'); continue; }
     const side: 'CE' | 'PE' = sig.dir === 1 ? 'PE' : 'CE';
-    if (desk?.side && open.filter((x) => x.side === side).length >= desk.side[side]) { skipped['side-limit']++; continue; }
+    if (desk?.side && open.filter((x) => x.side === side).length >= desk.side[side]) { skip('side-limit'); continue; }
     // The reading nearest the fill.
     let near = -1;
     for (let i = 0; i < times.length; i++) if (near === -1 || Math.abs(times[i]! - t0) < Math.abs(times[near]! - t0)) near = i;
-    if (near === -1 || Math.abs(times[near]! - t0) > BOARD_NEAR_MS) { skipped['no-board']++; continue; }
+    if (near === -1 || Math.abs(times[near]! - t0) > BOARD_NEAR_MS) { skip('no-board'); continue; }
     const cp = sig.dir === 1 ? 'P' as const : 'C' as const;
     const picked = plan.pick(byTime.get(times[near]!)!, cp, times[near]!);
-    if (!picked) { skipped['no-strike']++; continue; }
+    if (!picked) { skip('no-strike'); continue; }
     const pick = picked.row, lots = picked.lots;
     const entry = pick.bid!, entryAt = times[near]!;
     const target = plan.targetOf(sig);
@@ -360,11 +367,14 @@ export function simulateDay(o: {
     const stopLevel = (at: number) => { const pc = plan.stopPctAt ? plan.stopPctAt(at) : plan.stopPct; return pc > 0 ? entry * (1 + pc) : null; };
     let restingAt = tgtLevel(entryAt);
     let exit: number | null = null, exitAt = perpAt, by: BtExit = perpBy;
+    // BTC at the reading the exit is priced on: what the exit's own fee is worked from.
+    let exitSpot = pick.spot;
     for (const r of series) {
       if (r.at <= entryAt) continue;
       if (r.at >= perpAt) {
         // The first reading at or after the perp's exit: what buying back costs then.
         exit = r.ask !== null && r.ask > 0 ? r.ask : r.mark !== null && r.mark > 0 ? r.mark : null;
+        exitSpot = r.spot ?? exitSpot;
         break;
       }
       if (r.ask === null || !(r.ask > 0)) continue;
@@ -374,20 +384,21 @@ export function simulateDay(o: {
         // A resting buy fills at its own price as the offer comes down to it. One just moved UP over the offer by a
         // time step (a lower share kept) is a buy placed through the market: it fills at the offer.
         exit = restingAt !== null && tgtAt > restingAt + 1e-9 ? Math.min(tgtAt, r.ask) : tgtAt;
-        exitAt = r.at; by = 'option-tgt'; break;
+        exitAt = r.at; by = 'option-tgt'; exitSpot = r.spot ?? exitSpot; break;
       }
       restingAt = tgtAt;
-      if (stopAt !== null && r.ask >= stopAt - 1e-9) { exit = r.ask; exitAt = r.at; by = 'option-sl'; break; }
+      if (stopAt !== null && r.ask >= stopAt - 1e-9) { exit = r.ask; exitAt = r.at; by = 'option-sl'; exitSpot = r.spot ?? exitSpot; break; }
     }
     if (exit === null) {
       // No reading at or after the exit -- held to the end, or out in the day's last minutes: the last reading the contract has.
       const last = series[series.length - 1];
       exit = last && last.at > entryAt ? (last.ask !== null && last.ask > 0 ? last.ask : last.mark) : null;
+      if (exit !== null) exitSpot = last!.spot ?? exitSpot;
     }
-    if (exit === null || !(exit >= 0)) { skipped['no-exit-price']++; continue; }
+    if (exit === null || !(exit >= 0)) { skip('no-exit-price'); continue; }
 
     const charges = fillChargesUsd({ price: entry, contracts: lots, contractValue: CONTRACT_VALUE, spot: pick.spot }).totalUsd
-      + fillChargesUsd({ price: exit, contracts: lots, contractValue: CONTRACT_VALUE, spot: pick.spot }).totalUsd;
+      + fillChargesUsd({ price: exit, contracts: lots, contractValue: CONTRACT_VALUE, spot: exitSpot }).totalUsd;
     open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE' });
     trades.push({
       signal: sig, cp, strike: pick.strike, lots, entryAt, entry, exitAt, exit, by,
@@ -396,7 +407,7 @@ export function simulateDay(o: {
       perpPts: (perpPx - sig.fillPrice) * sig.dir,
     });
   }
-  return { trades, skipped };
+  return { trades, skipped, refused: refusals };
 }
 
 // ------------------------------------------------------------------ adding up
@@ -439,7 +450,9 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
 
 /** A trade's time open and the margin it held, with what it is filtered by: what the day's peak margin is worked from. */
 type Span = { at: number; until: number; margin: number; tf: string; method: string };
-type HeldDay = { at: number; cells: BtCell[]; skipped: Record<BtSkip, number>; signals: number; spans: Span[] };
+/** A day's signals by what they are filtered by: how many there were of a time frame and method, and why those not traded were not. */
+type Tally = { tf: string; method: string; signals: number; skipped: Record<BtSkip, number> };
+type HeldDay = { at: number; cells: BtCell[]; tally: Tally[]; spans: Span[] };
 const held = new Map<string, HeldDay>();
 export function clearSignalBacktestCache(): void { held.clear(); }
 /** The SL or the TGT outside the range asked for: nearer than a minimum, or further than a maximum. 0 is no bound. */
@@ -491,8 +504,17 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
     bars: minutes.filter((b) => b.at >= from),
     board: board.map((b) => ({ at: Number(b.at), cp: b.cp, strike: Number(b.strike), spot: num(b.spot), bid: num(b.bid), ask: num(b.ask), mark: num(b.mark), delta: num(b.delta), oi: num(b.oi) })),
   });
+  const tally = new Map<string, Tally>();
+  const tallyOf = (sig: BtSignal) => {
+    const tf = sig.mode === 'mtf' ? CHAIN_KEY : sig.tf, k = `${tf}|${sig.method}`;
+    let x = tally.get(k);
+    if (!x) { x = { tf, method: sig.method, signals: 0, skipped: noSkips() }; tally.set(k, x); }
+    return x;
+  };
+  for (const sig of signals) tallyOf(sig).signals++;
+  for (const x of r.refused) tallyOf(x.signal).skipped[x.why]++;
   const out: HeldDay = {
-    at: now, cells: cellsOf(day, r.trades), skipped: r.skipped, signals: signals.length,
+    at: now, cells: cellsOf(day, r.trades), tally: [...tally.values()],
     spans: r.trades.map((t) => ({ at: t.signal.filledAt, until: t.exitAt, margin: t.marginUsd, tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, method: t.signal.method })),
   };
   held.set(id, out);
@@ -589,8 +611,12 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   const key = (st ? `${strategyKey(st)}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|vol:${volOnly}` : paramsKey(o.params)) + filterKey;
   for (const d of days) {
     const h = await dayOf(d.day, key, o.now, (span) => (st ? planOfStrategy(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day) });
-    signals += h.signals;
-    for (const k of BT_SKIPS) skipped[k] += h.skipped[k];
+    // The counts follow the time frame and method filters as the rows do: "N signals, M traded" is of what is shown.
+    for (const x of h.tally) {
+      if ((o.tfs && !o.tfs.includes(x.tf)) || (o.methods && !o.methods.includes(x.method))) continue;
+      signals += x.signals;
+      for (const k of BT_SKIPS) skipped[k] += x.skipped[k];
+    }
     every.push(...h.cells);
     spansByDay.set(d.day, h.spans);
   }
@@ -608,7 +634,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
     ? {
       rule: st.config.strikeRule === 'delta' ? 'delta' : 'premium', value: st.config.strikeRule === 'delta' ? (st.config.delta?.max ?? 0) : (st.config.premium?.usd ?? 0), lots: st.config.lots,
       targetPct: exits.target.mode === 'pct' ? exits.target.value : 0, stopPct: exits.stop.mode === 'pct' ? exits.stop.value : 0, window: 'desk',
-      deskMax: o.params.deskMax ?? 0, cePct: o.params.cePct ?? 100, pePct: o.params.pePct ?? 100
+      deskMax: o.params.deskMax ?? 0, cePct: o.params.cePct ?? 100, pePct: o.params.pePct ?? 100, vol: o.params.vol ?? 'off',
     }
     : o.params;
   const real = st
