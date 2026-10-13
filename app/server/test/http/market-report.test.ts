@@ -408,6 +408,51 @@ test('[critical] the backtest by a saved strategy: its methods and timeframe, it
   assert.match(gone.body.error, /No such signal strategy/);
 });
 
+test('[critical] a form\'s draft: every method\'s record as options under its rules -- the ticked and the unticked, each on all its signals', async () => {
+  const draft = (over: Record<string, unknown> = {}, signal: Record<string, unknown> = {}) => ({
+    trigger: 'signal', signal: { mode: 'single', tf: '15m', tfs: ['15m', '1h'], methods: ['breakout'], target: 'tp1', maxOpen: 1, enterOn: 'zone', action: 'sell', ...signal },
+    liveOrders: false, entryTime: '17:35', exitTime: '17:29', lots: 3, legs: 'both',
+    strikeRule: 'delta', delta: { max: 0.1 }, premium: { mode: 'atMost', usd: 50, fallbackUsd: null },
+    entryPrice: 'offer', crossAfterSec: 5, maxCrossSpreadPct: 0.5, takeProfitPct: 0.9, stopLossPct: 3, minPremiumUsd: 1,
+    weekdays: [0, 1, 2, 3, 4, 5, 6], graceMin: 60, ...over,
+  });
+  const r = await post('/api/signal-backtest/methods', { config: draft() });
+  assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
+  // the climb's 15m and 1h signals: three of the breakout on 15m, two of the pullback on 1h -- the pullback is not ticked, and is there
+  const of = (m: string) => r.body.methods.find((x: any) => x.method === m);
+  assert.deepEqual([of('breakout').trades, of('breakout').byTf.map((x: any) => [x.tf, x.trades])], [3, [['15m', 3]]]);
+  assert.deepEqual([of('pullback').trades, of('pullback').byTf.map((x: any) => [x.tf, x.trades])], [2, [['1h', 2]]]);
+  assert.equal(r.body.trades, 5, '"at most 1 open" on the form does not keep one method\'s signals from another\'s record');
+  // the money is the option's, after charges, at the form's own lots: the same trades as the backtest by settings at 3 lots
+  const same = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all&lots=3&tf=15m,1h`);
+  const net = (m: string) => same.body.byMethod.find((x: any) => x.key === m).net;
+  assert.ok(Math.abs(of('breakout').net - net('breakout')) < 1e-9 && Math.abs(of('pullback').net - net('pullback')) < 1e-9, `${of('breakout').net} ${net('breakout')}`);
+  assert.deepEqual([of('breakout').wins, of('pullback').wins], [same.body.byMethod.find((x: any) => x.key === 'breakout').wins, same.body.byMethod.find((x: any) => x.key === 'pullback').wins]);
+  assert.deepEqual(r.body.methods.map((x: any) => x.net), [...r.body.methods.map((x: any) => x.net)].sort((a: number, b: number) => b - a), 'the most made first');
+  assert.ok(r.body.priced && r.body.from <= CLIMB && r.body.to >= QUIET);
+
+  // its own exits change the record: no option target at all, and each trade is held to the perp's own exit
+  const noTarget = await post('/api/signal-backtest/methods', { config: draft({ takeProfitPct: 0 }) });
+  assert.equal(noTarget.status, 200);
+  // with the chain: the one chain signal, under its own key
+  const chain = await post('/api/signal-backtest/methods', { config: draft({}, { mode: 'mtf' }) });
+  assert.deepEqual(chain.body.methods.map((x: any) => [x.method, x.trades, x.byTf.map((t: any) => t.tf)]), [['breakout', 1, ['chain']]]);
+
+  // nothing is saved by asking
+  assert.equal((await get('/api/strategies')).body.strategies.some((s: any) => s.name === 'draft'), false);
+  // a draft that cannot be meant says why; one that buys has no record as options; no settings at all is refused
+  const bad = await post('/api/signal-backtest/methods', { config: draft({ entryTime: 'soon' }) });
+  assert.equal(bad.status, 422);
+  assert.match(bad.body.error, /Entry time/);
+  const buys = await post('/api/signal-backtest/methods', { config: draft({ takeProfitPct: 0, stopLossPct: 0 }, { action: 'buy' }) });
+  assert.equal(buys.status, 422);
+  assert.match(buys.body.error, /strategies that sell/);
+  assert.equal((await post('/api/signal-backtest/methods', {})).status, 400);
+  // a draft with no method ticked yet is still answered: the record is what the ticking is done against
+  const none = await post('/api/signal-backtest/methods', { config: draft({}, { methods: [] }) });
+  assert.deepEqual([none.status, none.body.trades], [200, 5]);
+});
+
 test('[critical] the backtest says what each day\'s options were priced on, and works a day again when Delta\'s minutes for it arrive', async () => {
   const { storeMarks } = await import('../../src/market/option-marks.js');
   const before = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all`);

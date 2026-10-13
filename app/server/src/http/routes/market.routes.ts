@@ -2,10 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, backtestable, type BacktestParams } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, backtestable, strategyCaveats, type BacktestParams } from '../../report/signal-backtest.js';
+import { rows } from '../../db/pool.js';
+import { methodsSchema } from '../../entry/catalogue.js';
 import { signalBacktest } from '../../report/backtest-run.js';
-import { strategyStore } from './strategy.routes.js';
-import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, exitRules, globalMaxOpenOf, ruleTfs, sideMaxOf, type Strategy } from '../../strategy/types.js';
+import { cleanConfig, strategyStore } from './strategy.routes.js';
+import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
@@ -153,6 +155,55 @@ export function registerMarketRoutes(app: FastifyInstance) {
         target: targetOf(s),
       }))
         .sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true })),
+    };
+  });
+
+  /**
+   * Every method's record as options under a strategy's rules as they stand on the form (owner, 13 Oct 2026: "in
+   * the strategy form the signal filter's profit and loss must be by the option's TGT and SL, not the perp's --
+   * now it is the perp's"). The body is the form's own draft (`{ config }`), saved or not. Each method is tried
+   * on every one of its signals in the strategy's way and timeframes -- not only the methods ticked, and with no
+   * "at most open", so one method's place is not taken by another's -- sold as the strategy would sell it (its
+   * strike rule at each hour, its lots, its hours and no-entry window, its SL / TGT distances) and bought back as
+   * it would buy it back: the perp at the signal's stop or its target, or the option at its own target or stop
+   * first. The money is the option's, after charges. Read-only; nothing is saved.
+   */
+  app.post('/api/signal-backtest/methods', async (req, reply) => {
+    const raw = ((req.body ?? {}) as { config?: unknown }).config;
+    if (!raw || typeof raw !== 'object') return refuse(reply, 400, { error: 'A strategy\'s settings are needed: { config }.' });
+    await methodsSchema();
+    const every = (await rows<{ id: string }>('SELECT id FROM entry_methods ORDER BY id')).map((m) => m.id);
+    const asked = cleanConfig(raw);
+    if (asked.trigger !== 'signal' || !asked.signal) return refuse(reply, 422, { error: 'Only a signal strategy has methods to give a record.', problems: ['Only a signal strategy has methods to give a record.'] });
+    if (actionOf(asked.signal) !== 'sell') {
+      const why = 'A record as options is worked out for strategies that sell; one that buys is shown on the perp\'s points.';
+      return refuse(reply, 422, { error: why, problems: [why] });
+    }
+    // Every method, whichever are ticked; and (`draft` below) each on all its signals, with no place for one to take from another.
+    const config = { ...asked, signal: { ...asked.signal, methods: every } };
+    const problems = validateConfig(config);
+    if (problems.length) return refuse(reply, 422, { error: problems.join(' '), problems });
+    const now = Date.now();
+    const to = sessionDayOf(now);
+    // From the report's first day, and no further back than the days the backtest keeps ready.
+    const earliest = new Date(Date.parse(`${to}T00:00:00Z`) - 44 * 86_400_000).toISOString().slice(0, 10);
+    const from = earliest > REPORT_FIRST_DAY ? earliest : REPORT_FIRST_DAY;
+    const draft: Strategy = { id: 'draft', name: 'draft', enabled: false, config, accountId: null, createdAt: now, updatedAt: now };
+    const r = await signalBacktest({ from, to, now, params: { ...DEFAULT_PARAMS }, tfs: null, methods: null, strategy: draft, draft: true, spot: tradingService().spot });
+    type Rec = { trades: number; wins: number; net: number };
+    const by = new Map<string, Rec & { method: string; byTf: (Rec & { tf: string })[] }>();
+    for (const p of r.pairs) {
+      // A pair's key is its method, its way and its timeframe; with the chain the timeframe is the chain itself.
+      const [method, mode, tf] = p.key.split('|') as [string, string, string];
+      let m = by.get(method);
+      if (!m) { m = { method, trades: 0, wins: 0, net: 0, byTf: [] }; by.set(method, m); }
+      m.trades += p.n; m.wins += p.wins; m.net += p.net;
+      m.byTf.push({ tf: mode === 'mtf' ? 'chain' : tf, trades: p.n, wins: p.wins, net: p.net });
+    }
+    return {
+      from, to, priced: r.priced, caveats: strategyCaveats(draft),
+      signals: r.signals, trades: r.total.n,
+      methods: [...by.values()].sort((a, b) => b.net - a.net),
     };
   });
 

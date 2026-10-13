@@ -8,6 +8,7 @@ import { describeStrategy } from '@/lib/strategy-preview';
 import { cn } from '@/lib/utils';
 import { useStrategyDraft } from '@/components/strategy/useStrategyDraft';
 import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
+import { useOptionRecord } from '@/components/strategy/useOptionRecord';
 import { StrikeBlocksEditor } from '@/components/strategy/StrikeBlocksEditor';
 import {
   DaysField, EntryPriceFields, num, FormFooter, FormTabBar, MinPremiumField, NameField, OptionExitFields, RuleSentence,
@@ -68,6 +69,8 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
   });
   const { c, set, err, tab } = d;
   const rule: SignalRule = c.signal ?? DEFAULT_SIGNAL_RULE;
+  // Each method's record as options under the rules as they stand, for the method list: asked for only while that list is showing.
+  const optionRecord = useOptionRecord(c, open && tab === 'signal');
   const setRule = <K extends keyof SignalRule>(k: K, v: SignalRule[K]) =>
     d.setC((p) => ({ ...p, signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), [k]: v } }));
   // Bought or sold: the leg, the entry and the option's exits all follow it.
@@ -103,6 +106,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               onChange={(r) => set('signal', r)}
               errors={{ mode: err('signalMode'), tf: err('signalTf'), methods: err('signalMethods'), slPts: err('signalSlPts') }}
               copyFrom={copyFrom}
+              optionRecord={optionRecord}
             />
           )}
 

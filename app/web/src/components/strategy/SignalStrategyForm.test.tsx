@@ -19,6 +19,11 @@ vi.mock('@/api/entry', () => ({
   getEntryBoard: (...a: unknown[]) => getEntryBoard(...a),
 }));
 
+const getMethodOptionRecord = vi.fn();
+vi.mock('@/api/signal-backtest', () => ({
+  getMethodOptionRecord: (...a: unknown[]) => getMethodOptionRecord(...a),
+}));
+
 /**
  * A signal strategy on the form (2 Oct 2026): the desk's entry signals sold as
  * options -- BUY sells the put, SELL the call -- with the methods picked from
@@ -87,6 +92,8 @@ beforeEach(() => {
   getEntryMethods.mockResolvedValue({ methods: METHODS });
   getMethodReport.mockResolvedValue(REPORT);
   getEntryBoard.mockResolvedValue(BOARD);
+  // No record as options unless a test gives one: the list is then the perp's points, as it was before 13 Oct 2026.
+  getMethodOptionRecord.mockRejectedValue(new Error('No record as options on this desk.'));
 });
 
 describe('a form of its own: only what a signal strategy has', () => {
@@ -1230,5 +1237,104 @@ describe('the no-entry window: no new entry between two times, nothing open clos
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).toHaveBeenCalledTimes(1));
     expect(saved().config.noEntry).toEqual({ on: false, windows: [{ from: '16:29', to: '16:59' }] });
+  });
+});
+
+describe('the method list by the option, not the perp (13 Oct 2026)', () => {
+  /*
+   * With the chain, on the perp: breakout +900 over 12, the sweep +400 over 3, BOS -500 over 9 (REPORT). As options
+   * under this strategy it is the other way about: the breakout reaches its perp target and still loses money, BOS
+   * loses points and is paid.
+   */
+  const one = (method: string, trades: number, wins: number, net: number, tf = 'chain') => ({ method, trades, wins, net, byTf: [{ tf, trades, wins, net }] });
+  const RECORD = {
+    from: '2026-10-01', to: '2026-10-13', caveats: [], signals: 40, trades: 24,
+    methods: [one('bos', 9, 6, 2.4), one('liquidity-sweep', 3, 2, 0.6), one('breakout', 12, 5, -1.2)],
+  };
+  const results = () => screen.findByRole('group', { name: 'methods by result' });
+  const labels = (g: HTMLElement) => within(g).getAllByRole('button').map((b) => b.textContent);
+  const boxes = () => screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'));
+  const basis = (name: string) => within(screen.getByRole('radiogroup', { name: 'profit and loss by' })).getByRole('radio', { name });
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    getMethodOptionRecord.mockResolvedValue(RECORD);
+  });
+
+  it('[critical] Profit, Loss, the figures and "Pick profitable" are by what each method made as options under this strategy -- not by its perp points', async () => {
+    show(signalStrategy({ methods: [] }, { lots: 2, takeProfitPct: 0.7, stopLossPct: 3 }));
+    tab('Signals');
+    await waitFor(() => expect(basis('As options')).toHaveAttribute('aria-checked', 'true'), { timeout: 4_000 });
+    // asked with the form's own rules -- its lots, its option target and stop -- and no method named
+    const asked = getMethodOptionRecord.mock.calls.at(-1)![0] as Strategy['config'];
+    expect([asked.lots, asked.takeProfitPct, asked.stopLossPct, asked.signal!.mode, asked.signal!.methods]).toEqual([2, 0.7, 3, 'mtf', []]);
+
+    const by = await results();
+    expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']);
+    fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
+    expect(boxes()).toEqual(['#1 Breakout']);                                   // +900 points on the perp, a loss as an option
+    expect(screen.getByLabelText('#1 Breakout').closest('label')!.textContent).toMatch(/42% win · 12t · −₹[\d,.]+/);
+    fireEvent.click(within(by).getByRole('button', { name: /^Profit/ }));
+    expect(boxes()).toEqual(['#3 Liquidity sweep', '#6 BOS']);                   // BOS: -500 points on the perp, paid as an option
+    expect(screen.getByLabelText('#6 BOS').closest('label')!.textContent).toMatch(/67% win · 9t · \+₹[\d,.]+/);
+    expect(screen.queryByText(/pts$/)).toBeNull();
+    expect(screen.getByText(/Each method sold as this strategy would sell it and bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT -- money after charges, Thu 1 Oct to Tue 13 Oct\./)).toBeInTheDocument();
+    expect(screen.getByText(/^Record: win rate · trades · net as options after charges, with the chain/)).toBeInTheDocument();
+
+    // "Pick profitable": the one in profit as an option over five trades or more -- BOS, not the breakout
+    fireEvent.click(screen.getByRole('button', { name: /^Pick profitable with the chain \(1\)/ }));
+    fireEvent.click(within(by).getByRole('button', { name: /^All/ }));
+    expect(screen.getByLabelText('#6 BOS')).toBeChecked();
+    expect(screen.getByLabelText('#1 Breakout')).not.toBeChecked();
+    expect(screen.getByText('· 3 of 5 trades')).toBeInTheDocument();             // the sweep: in profit as an option, on too few
+
+    // the perp's points are one tap away, and are the old list
+    fireEvent.click(basis('Perp points'));
+    fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
+    expect(boxes()).toEqual(['#6 BOS']);
+    expect(screen.getByLabelText('#6 BOS').closest('label')!.textContent).toMatch(/22% win · 9t · -500 pts/);
+    expect(screen.getByText(/The perp's points: the signal's own trade to its SL or TGT -- not what the option made\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Pick profitable with the chain \(1\)/ })).toBeInTheDocument();   // the breakout, by its points
+  });
+
+  it('[critical] the record is asked again when a rule that changes it changes -- not when a method is ticked', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    await waitFor(() => expect(getMethodOptionRecord).toHaveBeenCalledTimes(1), { timeout: 4_000 });
+    await waitFor(() => expect(basis('As options')).toHaveAttribute('aria-checked', 'true'));
+    fireEvent.click(await screen.findByLabelText('#6 BOS'));
+    fireEvent.click(screen.getByLabelText('#1 Breakout'));
+    await new Promise((r) => setTimeout(r, 700));
+    expect(getMethodOptionRecord).toHaveBeenCalledTimes(1);
+
+    // without the chain, on 15m: other signals, another record -- said to be on its way, the old one still shown
+    getMethodOptionRecord.mockResolvedValue({ ...RECORD, methods: [one('order-flow', 7, 5, 1.1, '15m'), one('bos', 6, 1, -0.9, '15m')] });
+    radio('signal way', 'Without the chain');
+    fireEvent.click(screen.getByRole('button', { name: '15m', pressed: false }));
+    await waitFor(() => expect(getMethodOptionRecord).toHaveBeenCalledTimes(2), { timeout: 4_000 });
+    expect((getMethodOptionRecord.mock.calls.at(-1)![0] as Strategy['config']).signal!.mode).toBe('single');
+    const by = await results();
+    await waitFor(() => expect(labels(by)).toEqual(['All 4', 'Profit 1', 'Loss 1', 'No trades 2']));
+  });
+
+  it('[critical] where no record as options can be had -- a strategy that buys, or the desk says no -- the list is the perp\'s points, and says why', async () => {
+    getMethodOptionRecord.mockRejectedValue(new Error('Entry time must be a time of day, like 5:30 AM.'));
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    expect(await screen.findByText(/As options cannot be shown: Entry time must be a time of day, like 5:30 AM\. Showing the perp's points\./, undefined, { timeout: 4_000 })).toBeInTheDocument();
+    expect(basis('As options')).toBeDisabled();
+    expect(basis('Perp points')).toHaveAttribute('aria-checked', 'true');
+    const by = await results();
+    await waitFor(() => expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']));
+    fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
+    expect(boxes()).toEqual(['#6 BOS']);
+  });
+
+  it('a strategy that buys is not asked about: its list is the perp\'s points', async () => {
+    show(signalStrategy({ methods: [], action: 'buy' }));
+    tab('Signals');
+    expect(await screen.findByText(/As options cannot be shown: A record as options is worked out for strategies that sell\./)).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 600));
+    expect(getMethodOptionRecord).not.toHaveBeenCalled();
   });
 });

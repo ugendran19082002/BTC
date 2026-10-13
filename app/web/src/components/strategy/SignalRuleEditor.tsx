@@ -8,6 +8,8 @@ import { NumberField } from '@/components/ui/number-field';
 import { CHAIN_PTS, legOfSignal, ptsKeysOf, ruleTfs, SIGNAL_TFS, type PtsKey, type SignalRule, type SignalTf } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
 import type { Strategy } from '@/types/strategy';
+import type { OptionRecordState } from '@/components/strategy/useOptionRecord';
+import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 
 /**
@@ -15,6 +17,17 @@ import { cn } from '@/lib/utils';
  * without it on one timeframe), and the methods -- picked from the 81, each
  * with its record so far in that way, so the choice is made against what the
  * method has actually done rather than its name.
+ *
+ * The record is the method's AS OPTIONS under this strategy's own rules where
+ * that can be worked out (owner, 13 Oct 2026: "the signal filter's profit and
+ * loss must be by the option's TGT and SL, not the perp's -- now it is the
+ * perp's"): what each method made sold at this strategy's strike and lots and
+ * bought back at its option target and stop, or at the perp's stop and target
+ * as it closes live -- money after charges. A method that reaches its perp
+ * target often can still lose as an option, and the other way round; the pick
+ * is of what the strategy would have been paid. The perp's own points -- the
+ * Methods tab's record -- are one tap away, and are what is shown for a
+ * strategy that buys, or while the option record cannot be had.
  *
  * Under it, the live board: the picked methods' TRADE signals standing now,
  * each read as the order it would become -- the leg, and the stop and target
@@ -31,11 +44,16 @@ const GROUPS = [
 ] as const;
 type GroupFilter = (typeof GROUPS)[number]['id'];
 
+/** What a method's record is of: the option the strategy would have sold, or the signal's own trade on the perp. */
+export type RecordBasis = 'options' | 'perp';
+/** A method's record in its basis's own unit: dollars after charges as options, BTC points on the perp. */
+export type MethodRecord = { trades: number; wins: number; winPct: number | null; net: number };
+
 type ResultFilter = 'all' | 'profit' | 'loss' | 'none';
-const RESULTS: { id: ResultFilter; label: string; tone: string; test: (r: MethodReportRow | undefined) => boolean }[] = [
+const RESULTS: { id: ResultFilter; label: string; tone: string; test: (r: MethodRecord | undefined) => boolean }[] = [
   { id: 'all', label: 'All', tone: '', test: () => true },
-  { id: 'profit', label: 'Profit', tone: 'text-[var(--up)]', test: (r) => Boolean(r && r.trades > 0 && r.netPts > 0) },
-  { id: 'loss', label: 'Loss', tone: 'text-[var(--down)]', test: (r) => Boolean(r && r.trades > 0 && r.netPts < 0) },
+  { id: 'profit', label: 'Profit', tone: 'text-[var(--up)]', test: (r) => Boolean(r && r.trades > 0 && r.net > 0) },
+  { id: 'loss', label: 'Loss', tone: 'text-[var(--down)]', test: (r) => Boolean(r && r.trades > 0 && r.net < 0) },
   { id: 'none', label: 'No trades', tone: 'text-[var(--dim)]', test: (r) => !r || r.trades === 0 },
 ];
 
@@ -44,9 +62,10 @@ const RESULTS: { id: ResultFilter; label: string; tone: string; test: (r: Method
  * least the same number of trades "profitable" asks for -- a 100% on one trade is luck, not a record. 0 is any.
  */
 const WIN_PRESETS = [50, 75, 90] as const;
-export const winPctOf = (r: MethodReportRow | undefined): number | null =>
+type Won = Pick<MethodRecord, 'trades' | 'wins' | 'winPct'>;
+export const winPctOf = (r: Won | undefined): number | null =>
   (r && r.trades > 0 ? (r.winPct ?? (r.wins / r.trades) * 100) : null);
-export const winsAtLeast = (r: MethodReportRow | undefined, pct: number, minTrades: number): boolean => {
+export const winsAtLeast = (r: Won | undefined, pct: number, minTrades: number): boolean => {
   if (!(pct > 0)) return true;
   const w = winPctOf(r);
   return w !== null && r!.trades >= minTrades && w >= pct;
@@ -116,7 +135,7 @@ const sourceWords = (s: Strategy) => {
   return `${n} method${n === 1 ? '' : 's'} · ${r.mode === 'mtf' ? 'with the chain' : ruleTfs(r).join(' + ')}${s.enabled ? '' : ' · off'}`;
 };
 
-export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
+export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], optionRecord }: {
   rule: SignalRule;
   onChange: (r: SignalRule) => void;
   errors: { mode?: string | null; tf?: string | null; methods?: string | null; slPts?: string | null };
@@ -126,6 +145,8 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
    * ticking 12 of 81 again by hand is how one gets missed.
    */
   copyFrom?: readonly Strategy[];
+  /** Every method's record as options under the rules on the form (`useOptionRecord`). Absent: the perp's points only. */
+  optionRecord?: OptionRecordState;
 }) {
   const [query, setQuery] = useState('');
   // What the last copy replaced, so it can be undone; cleared by any other change to the pick.
@@ -156,15 +177,31 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
     return combineRows(tfs.map((tf) => report.singleByTf[tf]).filter((x): x is NonNullable<typeof x> => Boolean(x)));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report, rule.mode, tfKey]);
-  const recordOf = useMemo(() => new Map(rows.map((r) => [r.method, r])), [rows]);
+  // As options to begin with; the choice is kept in this browser. Without an option record there is only the perp's.
+  const [basisPick, setBasisPick] = usePersisted<RecordBasis>('signal-rule:record', 'options');
+  const options = optionRecord?.data ?? null;
+  const basis: RecordBasis = basisPick === 'options' && options ? 'options' : 'perp';
+  const recordOf = useMemo((): Map<string, MethodRecord> => (basis === 'options'
+    ? new Map(options!.methods.map((m) => [m.method, { trades: m.trades, wins: m.wins, winPct: m.trades ? (m.wins / m.trades) * 100 : null, net: m.net }]))
+    : new Map(rows.map((r) => [r.method, { trades: r.trades, wins: r.wins, winPct: r.winPct, net: r.netPts }]))),
+  [basis, options, rows]);
   // Without the chain on more than one timeframe: each method's record on each, under the sum, so the pick can be checked.
-  const byTf = useMemo((): Map<string, { tf: SignalTf; row: MethodReportRow | undefined }[]> => {
-    if (!report || rule.mode !== 'single' || tfs.length < 2) return new Map();
+  const byTf = useMemo((): Map<string, { tf: SignalTf; row: MethodRecord | undefined }[]> => {
+    if (rule.mode !== 'single' || tfs.length < 2) return new Map();
+    if (basis === 'options') {
+      return new Map(options!.methods.map((m) => [m.method, tfs.map((tf) => {
+        const x = m.byTf.find((t) => t.tf === tf);
+        return { tf, row: x ? { trades: x.trades, wins: x.wins, winPct: x.trades ? (x.wins / x.trades) * 100 : null, net: x.net } : undefined };
+      })]));
+    }
+    if (!report) return new Map();
     const per = tfs.map((tf) => ({ tf, rows: new Map((report.singleByTf[tf]?.rows ?? []).map((r) => [r.method, r])) }));
     const ids = [...new Set(per.flatMap((p) => [...p.rows.keys()]))];
-    return new Map(ids.map((id) => [id, per.map((p) => ({ tf: p.tf, row: p.rows.get(id) }))]));
+    return new Map(ids.map((id) => [id, per.map((p) => { const r = p.rows.get(id); return { tf: p.tf, row: r ? { trades: r.trades, wins: r.wins, winPct: r.winPct, net: r.netPts } : undefined }; })]));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [report, rule.mode, tfKey]);
+  }, [report, rule.mode, tfKey, basis, options]);
+  /** A net in the basis's own words: rupees as options, points on the perp. */
+  const netWords = (n: number, unit = true) => (basis === 'options' ? moneyText(n) : `${pts(n)}${unit ? ' pts' : ''}`);
   const board = boards?.[0] ?? null;
   const reads = useMemo(() => (boards ?? []).flatMap((b, i) => b.reads.filter((r) => (rule.mode === 'mtf' ? r.mode === 'mtf' : r.mode === 'single' && r.tf === boardTfs[i]))),
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,7 +243,9 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
   const copied = copy && copy.took.join(',') === rule.methods.join(',') ? copy : null;
   const toggle = (id: string) => set('methods', picked.has(id) ? rule.methods.filter((x) => x !== id) : [...rule.methods, id]);
   const addAll = (ids: string[]) => set('methods', [...new Set([...rule.methods, ...ids])]);
-  const winners = profitableIds(rows, minT);
+  const winners = basis === 'options'
+    ? [...recordOf].filter(([, r]) => r.trades >= minT && r.net > 0).map(([id]) => id)
+    : profitableIds(rows, minT);
   const live = matchingSignals(reads, rule);
   const way = rule.mode === 'mtf' ? 'with the chain' : `without it on ${tfs.join(' + ')}`;
   const toggleTf = (tf: SignalTf) => {
@@ -363,6 +402,36 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
             </button>
           ))}
         </div>
+        {/*
+          Whose profit and loss the filters below read (owner, 13 Oct 2026): the option this strategy would have
+          sold -- its own target and stop -- or the signal's trade on the perp. Offered only where there is a form
+          behind it to work the option record out from.
+        */}
+        {optionRecord && (
+          <div className="mt-1.5">
+            <div role="radiogroup" aria-label="profit and loss by" className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 text-[11.5px] text-muted-foreground">Profit and loss by</span>
+              <button type="button" role="radio" aria-checked={basis === 'options'} disabled={!options} onClick={() => setBasisPick('options')}
+                      className={cn(chip(basis === 'options'), 'disabled:opacity-50')}>
+                As options
+              </button>
+              <button type="button" role="radio" aria-checked={basis === 'perp'} onClick={() => setBasisPick('perp')} className={chip(basis === 'perp')}>
+                Perp points
+              </button>
+              {optionRecord.busy && <span role="status" className="text-[11.5px] text-muted-foreground">working out…</span>}
+            </div>
+            <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
+              {basis === 'options'
+                ? `Each method sold as this strategy would sell it and bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT -- money after charges, ${dayLabel(options!.from)} to ${dayLabel(options!.to)}. Every method on all its signals: "at most open" is not counted.`
+                : !options && optionRecord.error
+                  ? `As options cannot be shown: ${optionRecord.error} Showing the perp's points.`
+                  : !options
+                    ? (optionRecord.busy ? "Working out each method's record as options; the perp's points until it arrives." : "The perp's points: the signal's own trade to its SL or TGT, as the Methods tab counts it.")
+                    : "The perp's points: the signal's own trade to its SL or TGT -- not what the option made."}
+            </p>
+            {basis === 'options' && options!.caveats.map((c) => <p key={c} className="m-0 mt-0.5 text-[11px] leading-snug text-[var(--warn)]">{c}</p>)}
+          </div>
+        )}
         {/* By record, with counts: the profitable ones, the losing ones, the ones with nothing yet. */}
         <div role="group" aria-label="methods by result" className="mt-1.5 flex flex-wrap gap-1">
           {RESULTS.map((x) => (
@@ -420,7 +489,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
             Pick all shown ({shown.length})
           </button>
           <button type="button" className={link} disabled={!winners.length}
-                  title={`Net points above zero over at least ${minT} trade${minT === 1 ? '' : 's'}, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
+                  title={`Net ${basis === 'options' ? 'as options, after charges,' : 'points'} above zero over at least ${minT} trade${minT === 1 ? '' : 's'}, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
                   onClick={() => addAll(winners)}>
             Pick profitable {rule.mode === 'mtf' ? 'with the chain' : `on ${tfs.join(' + ') || '—'}`} ({winners.length})
           </button>
@@ -477,10 +546,10 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
                               <span title={rule.mode === 'single' && tfs.length > 1 ? `Over ${tfs.join(' + ')} together` : undefined}>
                                 {Math.round(rec.winPct ?? 0)}% win
                               </span> · {rec.trades}t ·{' '}
-                              <span className={rec.netPts > 0 ? 'text-[var(--up)]' : rec.netPts < 0 ? 'text-[var(--down)]' : ''}>
-                                {pts(rec.netPts)} pts
+                              <span className={rec.net > 0 ? 'text-[var(--up)]' : rec.net < 0 ? 'text-[var(--down)]' : ''}>
+                                {netWords(rec.net)}
                               </span>
-                              {rec.netPts > 0 && rec.trades < minT && (
+                              {rec.net > 0 && rec.trades < minT && (
                                 <span className="ml-1 text-[var(--warn)]" title={`Profitable, but on ${rec.trades} of the ${minT} trades "Pick profitable" asks for`}>
                                   · {rec.trades} of {minT} trades
                                 </span>
@@ -500,7 +569,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
                               ? (
                                 <>
                                   <span className="text-foreground">{Math.round((row.wins / row.trades) * 100)}%</span>{' '}
-                                  <span className={row.netPts > 0 ? 'text-[var(--up)]' : row.netPts < 0 ? 'text-[var(--down)]' : ''}>{pts(row.netPts)}</span>
+                                  <span className={row.net > 0 ? 'text-[var(--up)]' : row.net < 0 ? 'text-[var(--down)]' : ''}>{netWords(row.net, false)}</span>
                                   {' '}({row.trades}t)
                                 </>
                               )
@@ -522,7 +591,9 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [] }: {
           )}
         </ul>
         <p className="m-0 mt-1 text-[10.5px] text-[var(--dim)]">
-          Record: win rate · trades · net BTC points, every signal so far {way} (the Methods tab).
+          {basis === 'options'
+            ? `Record: win rate · trades · net as options after charges, ${way}, by this strategy's own strike, lots and exits (the Backtest).`
+            : `Record: win rate · trades · net BTC points, every signal so far ${way} (the Methods tab).`}
         </p>
       </div>
 

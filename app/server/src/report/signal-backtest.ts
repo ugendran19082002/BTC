@@ -8,7 +8,7 @@ import { fillChargesUsd } from '../trading/charges.js';
 import { fundsRequiredPerContract } from '../trading/margin.js';
 import { CHAIN_KEY } from '../trading/pnl-history.js';
 import { FAMILIES, PATTERNS, candles, familyOf, sessionOf, type MinuteBar, type PatternKey } from './market-day.js';
-import { marketDays, marketReport, type Tot } from './market-report.js';
+import { marketDays, marketReport, zeroTot, type Tot } from './market-report.js';
 import { selectLegs, type Candidate } from '../strategy/select.js';
 import { istMinutes, istWeekday } from '../strategy/schedule.js';
 import {
@@ -753,7 +753,14 @@ const tfKeyOf = (c: Pick<BtCell, 'mode' | 'tf'>) => (c.mode === 'mtf' ? CHAIN_KE
 let working: Promise<unknown> = Promise.resolve();
 
 /** The whole range, one request at a time: a cold range reads every day's board, and two at once would read it twice. */
-export type Ask = { from: string; to: string; now: number; params: BacktestParams; tfs: readonly string[] | null; methods: readonly string[] | null; strategy?: Strategy | null; spot?: number | null };
+export type Ask = {
+  from: string; to: string; now: number; params: BacktestParams; tfs: readonly string[] | null; methods: readonly string[] | null; strategy?: Strategy | null; spot?: number | null;
+  /**
+   * The strategy is a form's draft asked for its methods' records, not a saved one: it has placed no orders to
+   * read, and its "at most open" is left out -- each method is tried on all its signals.
+   */
+  draft?: boolean;
+};
 
 /** A strategy the backtest can be asked about: one that trades signals by selling. */
 export const backtestable = (s: Strategy): boolean => s.config.trigger === 'signal' && !!s.config.signal && actionOf(s.config.signal) === 'sell';
@@ -789,6 +796,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   // A strategy is only ever asked about its own signals: its way of reading, its timeframes, its methods.
   const ownOnly = (sig: BtSignal) => !rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method));
   const caps = deskCapsOf(o.params);
+  const strategyPlan = (s: Strategy, span: { from: number; to: number }, desk: DayPlan['desk']): DayPlan => (o.draft ? { ...planOfStrategy(s, span, desk), maxOpen: null } : planOfStrategy(s, span, desk));
   const spansByDay = new Map<string, Span[]>();
   const fetched = await marksFetchedBy(days.map((d) => expiryCodeOf(d.day)));
   const marksSeen = (day: string) => fetched.get(expiryCodeOf(day))?.contracts ?? 0;
@@ -801,9 +809,9 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   const chosen = (sig: BtSignal) => (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method));
   const takes = (sig: BtSignal) => ownOnly(sig) && (caps === null || chosen(sig));
   const filterKey = caps === null ? '' : `|tf:${(o.tfs ?? []).join(',')}|m:${(o.methods ?? []).join(',')}`;
-  const key = (st ? `${strategyKey(st)}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|vol:${volOnly}` : paramsKey(o.params)) + filterKey;
+  const key = (st ? `${strategyKey(st)}${o.draft ? '|draft' : ''}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|vol:${volOnly}` : paramsKey(o.params)) + filterKey;
   for (const d of days) {
-    const h = await dayOf(d.day, key, o.now, (span) => (st ? planOfStrategy(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day) }, marksSeen(d.day));
+    const h = await dayOf(d.day, key, o.now, (span) => (st ? strategyPlan(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day) }, marksSeen(d.day));
     grainOf.set(d.day, h.grain);
     // The counts follow the time frame and method filters as the rows do: "N signals, M traded" is of what is shown.
     for (const x of h.tally) {
@@ -819,7 +827,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   if (caps !== null) {
     const free = { ...o.params, deskMax: 0 };
     for (const d of days) {
-      const h = await dayOf(d.day, st ? `${strategyKey(st)}|vol:${volOnly}` : paramsKey(free), o.now, (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)), ownOnly, { only: volOnly, baseline: baselineOf(d.day) }, marksSeen(d.day));
+      const h = await dayOf(d.day, st ? `${strategyKey(st)}|vol:${volOnly}` : paramsKey(free), o.now, (span) => (st ? strategyPlan(st, span, null) : planOfParams(free, span)), ownOnly, { only: volOnly, baseline: baselineOf(d.day) }, marksSeen(d.day));
       listCells.push(...h.cells);
     }
   } else listCells.push(...every);
@@ -831,7 +839,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
       deskMax: o.params.deskMax ?? 0, cePct: o.params.cePct ?? 100, pePct: o.params.pePct ?? 100, vol: o.params.vol ?? 'off',
     }
     : o.params;
-  const real = st
+  const real = st && o.draft ? zeroTot() : st
     ? (await marketReport({ from: o.from, to: o.to, now: o.now, spot: o.spot ?? null, account: st.accountId ?? null, tfs: null, methods: null, strategies: [st.name] })).total.real
     : null;
   const cells = every.filter((c) => (!o.tfs || o.tfs.includes(tfKeyOf(c))) && (!o.methods || o.methods.includes(c.method)));

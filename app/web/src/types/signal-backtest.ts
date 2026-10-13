@@ -47,3 +47,17 @@ export type SignalBacktestResponse = {
   choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string; n: number; wins: number; net: number }[] };
 };
 export type BacktestQuery = { from: string; to: string; params: BacktestParams; tfs: readonly string[]; methods: readonly string[]; strategy?: string | null };
+
+/**
+ * Every method's record as options under one strategy's rules as they stand on its form (`POST
+ * /api/signal-backtest/methods`): each method on all its signals in the strategy's way and timeframes, sold and
+ * bought back as the strategy would, in dollars after charges.
+ */
+export type MethodOptionRecord = {
+  from: string; to: string;
+  priced?: Record<BoardGrain, number>;
+  /** What of the strategy could not be replayed, in words. */
+  caveats: string[];
+  signals: number; trades: number;
+  methods: { method: string; trades: number; wins: number; net: number; byTf: { tf: string; trades: number; wins: number; net: number }[] }[];
+};

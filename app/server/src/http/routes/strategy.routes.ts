@@ -55,7 +55,7 @@ function cleanSteps(raw: unknown): ExitStep[] {
  * which is also what retires a setting: a key the desk no longer has is
  * dropped on the next save of any strategy that still carried it.
  */
-function cleanConfig(raw: unknown): StrategyConfig {
+export function cleanConfig(raw: unknown): StrategyConfig {
   const c = (raw ?? {}) as Partial<StrategyConfig>;
   return {
     entryTime: String(c.entryTime ?? DEFAULT_CONFIG.entryTime),

@@ -1,5 +1,6 @@
-import { json } from '@/api/client';
-import type { BacktestQuery, SignalBacktestResponse } from '@/types/signal-backtest';
+import { json, post } from '@/api/client';
+import type { BacktestQuery, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
+import type { StrategyConfig } from '@/types/strategy';
 
 /** The signal history traded as options on the contracts' recorded prices, for a range of expiry days and one set of rules. */
 export function getSignalBacktest(q: BacktestQuery) {
@@ -17,3 +18,6 @@ export function getSignalBacktest(q: BacktestQuery) {
   if (q.strategy) p.set('strategy', q.strategy);
   return json<SignalBacktestResponse>(`/api/signal-backtest?${p}`);
 }
+
+/** Every method's record as options under a strategy's rules as they stand on its form -- saved or not; nothing is saved by asking. */
+export const getMethodOptionRecord = (config: StrategyConfig) => post<MethodOptionRecord>('/api/signal-backtest/methods', { config });
