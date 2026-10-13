@@ -107,7 +107,7 @@ describe('MarketReport', () => {
       ['Exit that paid most', 'Option TGT · 130 trades'], ['Exit that cost most', 'Perp SL · 126 trades'],
       ['Best pair', '#16 Previous day H/L rejection · 15m'], ['Worst pair', '#54 Liquidity replenishment · 1h'],
       ['Best day', 'Mon 12 Oct · False breakout'], ['Worst day', 'Tue 13 Oct · Reversal'],
-    ]) {
+    ] as const) {
       expect(out.getByText(label)).toBeInTheDocument();
       expect(out.getByText(text)).toBeInTheDocument();
     }
