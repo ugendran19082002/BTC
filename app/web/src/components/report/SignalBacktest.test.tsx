@@ -352,6 +352,34 @@ describe('SignalBacktest', () => {
     expect(await screen.findByText(/6,681 signals went in the trade; 2,846 were traded here\./)).toBeInTheDocument();
   });
 
+  it('[critical] the SL and TGT range: four fields as in the strategy form, checked, applied on leaving a field -- and said in the result', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const range = within(screen.getByRole('region', { name: 'SL and TGT range' }));
+    expect(range.getByText('Off: every signal, whatever its SL and TGT.')).toBeInTheDocument();
+    const slMin = range.getByLabelText('SL at least, points'), slMax = range.getByLabelText('SL at most, points');
+    const tgMin = range.getByLabelText('TGT at least, points');
+    fireEvent.change(slMin, { target: { value: '500' } });
+    fireEvent.change(slMax, { target: { value: '200' } });
+    fireEvent.blur(slMax);
+    expect(range.getByRole('alert')).toHaveTextContent('The SL maximum must not be under its minimum.');
+    expect(lastQuery().params.slMin ?? 0).toBe(0);                     // nothing sent while it is wrong
+    fireEvent.change(slMin, { target: { value: '150' } });
+    fireEvent.change(slMax, { target: { value: '0' } });
+    fireEvent.change(tgMin, { target: { value: '150' } });
+    fireEvent.blur(tgMin);
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ slMin: 150, slMax: 0, tgtMin: 150, tgtMax: 0 }));
+    expect(range.getByText('Taken: SL ≥ 150 pts · TGT ≥ 150 pts')).toBeInTheDocument();
+    getSignalBacktest.mockResolvedValue({ ...RESULT, params: { ...RESULT.params, slMin: 150, tgtMin: 150 }, skipped: { ...RESULT.skipped, distance: 77 } });
+    fireEvent.change(range.getByLabelText('TGT at most, points'), { target: { value: '900' } });
+    fireEvent.keyDown(range.getByLabelText('TGT at most, points'), { key: 'Enter' });
+    await waitFor(() => expect(lastQuery().params.tgtMax).toBe(900));
+    expect(await screen.findByText(/77 with the SL or TGT outside the range set/)).toBeInTheDocument();
+    expect(screen.getByText(/· SL ≥ 150, TGT ≥ 150 ≤ 900 pts/)).toBeInTheDocument();
+    fireEvent.click(range.getByRole('button', { name: 'Turn the range off' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0 }));
+  });
+
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {
     getSignalBacktest.mockResolvedValue({ ...RESULT, total: tot(), signals: 300, skipped: { ...RESULT.skipped, 'no-strike': 0, 'no-exit-price': 0 }, pairs: [], byTf: [], days: [], byFamily: [], byPattern: [] });
     const { unmount } = show();

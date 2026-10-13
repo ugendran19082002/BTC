@@ -80,7 +80,12 @@ function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
   const deskMax = num('max', 0), cePct = num('ce', 100), pePct = num('pe', 100);
   if (!Number.isInteger(deskMax) || deskMax < 0 || deskMax > 500) return 'At most open is a whole number from 0 (no limit) to 500.';
   if (!(cePct >= 1 && cePct <= 100) || !(pePct >= 1 && pePct <= 100)) return 'CE max and PE max are from 1% to 100%.';
-  return { rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, ...(window === 'custom' ? { hoursFrom, hoursTo } : {}) };
+  // The SL and TGT range, in BTC points: `?slmin=&slmax=&tgtmin=&tgtmax=`, 0 off.
+  const slMin = num('slmin', 0), slMax = num('slmax', 0), tgtMin = num('tgtmin', 0), tgtMax = num('tgtmax', 0);
+  for (const v of [slMin, slMax, tgtMin, tgtMax]) if (!(v >= 0 && v <= 20_000)) return 'An SL or TGT distance is from 0 (off) to 20,000 points.';
+  if (slMin > 0 && slMax > 0 && slMax < slMin) return 'The SL maximum must not be under its minimum.';
+  if (tgtMin > 0 && tgtMax > 0 && tgtMax < tgtMin) return 'The TGT maximum must not be under its minimum.';
+  return { rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, ...(window === 'custom' ? { hoursFrom, hoursTo } : {}) };
 }
 
 export function registerMarketRoutes(app: FastifyInstance) {

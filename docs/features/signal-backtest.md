@@ -36,6 +36,12 @@ Each of the strike limit, option target, option stop and lots has a **Custom** c
 unit (a stop of +200% is typed as 200), checked against the same limits the server holds it to, applied on Use
 or Enter, and shown on the chip after ("Custom · +200%").
 
+**Take a signal only if its SL and TGT are in range**, as in the strategy form: SL ≥ and ≤, TGT ≥ and ≤, BTC
+points from the perp entry (the fill) to the signal's SL and to its TGT1; 0 is off, each bound its own condition,
+one set for every time frame. A signal outside is skipped and counted ("with the SL or TGT outside the range
+set"); a maximum under its minimum is refused. Typed and applied on leaving a field or on Enter. With **Backtest
+by** a strategy, its own per-time-frame distances apply instead. `?slmin=&slmax=&tgtmin=&tgtmax=`.
+
 **The desk's limits**, as on the Signal Strategies card: **At most open** across every trade (no limit, 20, 35,
 58 or Custom, 0-500), and with it **CE max** and **PE max** as a per cent of it (50-100% or Custom), counted as
 the desk rounds them -- 80% of 35 is 28 (`sideCaps`). Each trading account's limits as they stand are offered as

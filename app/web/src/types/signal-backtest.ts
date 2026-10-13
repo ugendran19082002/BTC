@@ -8,6 +8,8 @@ export type BacktestParams = {
   hoursFrom?: string; hoursTo?: string;
   /** The desk's limits: at most this many open at once (0: none), and each side at most this per cent of it. */
   deskMax: number; cePct: number; pePct: number;
+  /** A signal only if its SL and TGT are in range: BTC points from the perp entry, minimum and maximum, 0 off. */
+  slMin?: number; slMax?: number; tgtMin?: number; tgtMax?: number;
 };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */

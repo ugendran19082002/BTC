@@ -193,3 +193,22 @@ test('[critical] signals that filled in the same second are taken in a fixed ord
   const orders = [tie, [...tie].reverse(), [tie[2]!, tie[0]!, tie[3]!, tie[1]!], [tie[1]!, tie[3]!, tie[0]!, tie[2]!]];
   for (const xs of orders) assert.deepEqual(took(xs), ['4h:a', '4h:z']);
 });
+
+test('[critical] a signal only if its SL and TGT are in range: points from the fill to each, minimum and maximum, 0 off', async () => {
+  const { planOfParams } = await import('../../src/report/signal-backtest.js');
+  const bars = perp([[0, 84_000], [1_439, 84_050]]);
+  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  // fills at 84,000: SL 300 away, TGT 500 away
+  const near = sig(10, { stop: 83_900, target: 84_150 });          // SL 100, TGT 150
+  const usual = sig(20);                                            // SL 300 (stop 83,700 from the 84,000 fill), TGT 500
+  const far = sig(30, { stop: 83_000, target: 86_000 });           // SL 1,000, TGT 2,000
+  const run = (o: Partial<BacktestParams>) => {
+    const r = simulateDay({ from, to, signals: [near, usual, far], bars, board, plan: planOfParams({ ...P, ...o }, { from, to }) });
+    return { took: r.trades.map((t) => (t.signal.filledAt - from) / 60_000), skipped: r.skipped.distance };
+  };
+  assert.deepEqual(run({}), { took: [10, 20, 30], skipped: 0 }, 'all off');
+  assert.deepEqual(run({ slMin: 150, tgtMin: 150 }), { took: [20, 30], skipped: 1 }, 'the strategy form\'s 150 / 150: the near one skipped');
+  assert.deepEqual(run({ slMin: 300 }), { took: [20, 30], skipped: 1 }, 'at the minimum is in');
+  assert.deepEqual(run({ slMax: 500 }), { took: [10, 20], skipped: 1 }, 'further than the maximum is out');
+  assert.deepEqual(run({ tgtMin: 200, tgtMax: 500 }), { took: [20], skipped: 2 }, 'each bound on its own');
+});

@@ -8,6 +8,7 @@ export function getSignalBacktest(q: BacktestQuery) {
     tp: String(q.params.targetPct), sl: String(q.params.stopPct), window: q.params.window,
     max: String(q.params.deskMax), ce: String(q.params.cePct), pe: String(q.params.pePct),
   });
+  for (const [k, v] of [['slmin', q.params.slMin], ['slmax', q.params.slMax], ['tgtmin', q.params.tgtMin], ['tgtmax', q.params.tgtMax]] as const) if (v) p.set(k, String(v));
   if (q.params.window === 'custom' && q.params.hoursFrom && q.params.hoursTo) { p.set('hfrom', q.params.hoursFrom); p.set('hto', q.params.hoursTo); }
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));

@@ -58,6 +58,11 @@ export type BacktestParams = {
    * rounds it (`sideCaps`). Absent: none.
    */
   deskMax?: number; cePct?: number; pePct?: number;
+  /**
+   * Take a signal only if its SL and TGT are in range (13 Oct 2026, as the strategy form's): the BTC points from
+   * the perp entry to the signal's SL, and to its TGT, at least the minimum and at most the maximum. 0 is off.
+   */
+  slMin?: number; slMax?: number; tgtMin?: number; tgtMax?: number;
 };
 export const DEFAULT_PARAMS: BacktestParams = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 };
 /** The desk's limits of a set of settings: null with none. */
@@ -139,8 +144,8 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
   return {
     refuses: (sig) => {
       if (sig.filledAt < span.from || sig.filledAt >= span.to - 5 * MIN) return 'outside-window';
-      if (custom) return minutesForward(custom.from, istMinutes(sig.filledAt)) < minutesForward(custom.from, custom.to) ? null : 'outside-window';
-      return sig.filledAt < opens || sig.filledAt >= closes ? 'outside-window' : null;
+      if (custom ? !(minutesForward(custom.from, istMinutes(sig.filledAt)) < minutesForward(custom.from, custom.to)) : sig.filledAt < opens || sig.filledAt >= closes) return 'outside-window';
+      return outOfRange(sig, sig.target, p) ? 'distance' : null;
     },
     pick: (board, cp) => { const row = pickStrike(board, cp, p); return row ? { row, lots: p.lots } : null; },
     targetOf: (sig) => sig.target,
@@ -357,7 +362,13 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
 type HeldDay = { at: number; cells: BtCell[]; skipped: Record<BtSkip, number>; signals: number };
 const held = new Map<string, HeldDay>();
 export function clearSignalBacktestCache(): void { held.clear(); }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}`;
+/** The SL or the TGT outside the range asked for: nearer than a minimum, or further than a maximum. 0 is no bound. */
+function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMin' | 'slMax' | 'tgtMin' | 'tgtMax'>): boolean {
+  const sl = Math.abs(sig.fillPrice - sig.stop), tgt = Math.abs(sig.fillPrice - target);
+  const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
+  return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
+}
+const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   const text = JSON.stringify(s.config);

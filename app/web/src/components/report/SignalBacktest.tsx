@@ -91,6 +91,59 @@ const CUSTOM = {
   sidePct: { unit: '%', min: 1, max: 100, step: 5, toShown: (v) => v, fromShown: (v) => Math.round(v), label: (v) => `${v}%` },
 } satisfies Record<string, Custom>;
 
+type Range = { slMin: number; slMax: number; tgtMin: number; tgtMax: number };
+const RANGE_KEYS = ['slMin', 'slMax', 'tgtMin', 'tgtMax'] as const;
+/** What is wrong with a range, in words, or null: as the server checks it. */
+export function rangeProblem(r: Range): string | null {
+  if (RANGE_KEYS.some((k) => !(r[k] >= 0 && r[k] <= 20_000))) return 'Each distance is from 0 (off) to 20,000 points.';
+  if (r.slMin > 0 && r.slMax > 0 && r.slMax < r.slMin) return 'The SL maximum must not be under its minimum.';
+  if (r.tgtMin > 0 && r.tgtMax > 0 && r.tgtMax < r.tgtMin) return 'The TGT maximum must not be under its minimum.';
+  return null;
+}
+
+/**
+ * "Take a signal only if its SL and TGT are in range" (owner, 13 Oct 2026), laid out as the strategy form lays it:
+ * SL ≥ and ≤, TGT ≥ and ≤, BTC points from the perp entry, 0 off. Typed into drafts and applied on leaving a field
+ * or on Enter, all four together -- a minimum is never sent with a maximum under it.
+ */
+function SlTgtRange({ value, onApply }: { value: Range; onApply: (r: Range) => void }) {
+  const [draft, setDraft] = useState<Record<keyof Range, string>>(() => ({ slMin: String(value.slMin), slMax: String(value.slMax), tgtMin: String(value.tgtMin), tgtMax: String(value.tgtMax) }));
+  const parsed: Range = { slMin: Number(draft.slMin || 0), slMax: Number(draft.slMax || 0), tgtMin: Number(draft.tgtMin || 0), tgtMax: Number(draft.tgtMax || 0) };
+  const problem = rangeProblem(parsed);
+  const apply = () => { if (problem === null && RANGE_KEYS.some((k) => parsed[k] !== value[k])) onApply(parsed); };
+  const field = (k: keyof Range, label: string) => (
+    <label className="flex min-w-0 items-center gap-1.5">
+      <span className="shrink-0 text-[13px] text-muted-foreground">{label}</span>
+      <span className="relative min-w-0 flex-1">
+        <input type="number" inputMode="numeric" min={0} max={20_000} step={10} aria-label={`${k.startsWith('sl') ? 'SL' : 'TGT'} ${k.endsWith('Min') ? 'at least' : 'at most'}, points`}
+          value={draft[k]} onChange={(e) => setDraft((d) => ({ ...d, [k]: e.target.value }))} onBlur={apply} onKeyDown={(e) => { if (e.key === 'Enter') apply(); }}
+          className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] pl-3 pr-9 text-[15px] tabular-nums text-foreground [color-scheme:dark]" />
+        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">pts</span>
+      </span>
+    </label>
+  );
+  const on = RANGE_KEYS.some((k) => value[k] > 0);
+  return (
+    <section aria-label="SL and TGT range" className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
+      <div className="text-[13px] font-semibold">Take a signal only if its SL and TGT are in range</div>
+      <p className="m-0 text-[12px] leading-snug text-muted-foreground">BTC points from the perp entry to the signal&apos;s SL, and to its TGT1: at least (≥) and at most (≤). 0 is off; each is its own condition.</p>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+        <div className="col-span-2 text-[12.5px] font-medium text-[var(--down)]">SL</div>
+        {field('slMin', '≥')}{field('slMax', '≤')}
+        <div className="col-span-2 text-[12.5px] font-medium text-[var(--up)]">TGT</div>
+        {field('tgtMin', '≥')}{field('tgtMax', '≤')}
+      </div>
+      <p role={problem ? 'alert' : 'status'} className={cn('m-0 text-[12.5px]', problem ? 'text-[var(--down)]' : 'text-muted-foreground')}>
+        {problem ?? (on
+          ? `Taken: SL ${value.slMin > 0 ? `≥ ${value.slMin}` : ''}${value.slMin > 0 && value.slMax > 0 ? ' and ' : ''}${value.slMax > 0 ? `≤ ${value.slMax}` : ''}${!(value.slMin > 0 || value.slMax > 0) ? 'any' : ''} pts · TGT ${value.tgtMin > 0 ? `≥ ${value.tgtMin}` : ''}${value.tgtMin > 0 && value.tgtMax > 0 ? ' and ' : ''}${value.tgtMax > 0 ? `≤ ${value.tgtMax}` : ''}${!(value.tgtMin > 0 || value.tgtMax > 0) ? 'any' : ''} pts`
+          : 'Off: every signal, whatever its SL and TGT.')}
+      </p>
+      {on && <button type="button" onClick={() => { setDraft({ slMin: '0', slMax: '0', tgtMin: '0', tgtMax: '0' }); onApply({ slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0 }); }}
+        className="justify-self-start min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] text-[var(--accent)]">Turn the range off</button>}
+    </section>
+  );
+}
+
 /** The "Custom" chip of a row and, once tapped, its field. On while the value is not one of the row's own. */
 function CustomValue({ value, presets, spec, name, onChange }: { value: number; presets: readonly number[]; spec: Custom; name: string; onChange: (v: number) => void }) {
   const mine = !presets.some((p) => Math.abs(p - value) < 1e-9);
@@ -306,6 +359,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         {LOTS.map((n) => <Chip key={n} on={params.lots === n} onClick={() => set({ lots: n })}>{n}</Chip>)}
         <CustomValue value={params.lots} presets={LOTS} spec={CUSTOM.lots} name="Lots" onChange={(lots) => set({ lots })} />
       </ChipRow>
+      <SlTgtRange value={{ slMin: params.slMin ?? 0, slMax: params.slMax ?? 0, tgtMin: params.tgtMin ?? 0, tgtMax: params.tgtMax ?? 0 }} onApply={(r) => set(r)} />
       </>}
       <section aria-label="The desk's limits" className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
         <div className="text-[13px] font-semibold">The desk&apos;s limits <span className="font-normal text-muted-foreground">· as on the Signal Strategies card</span></div>
@@ -410,7 +464,11 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           </div>
         )}
         <p className="m-0 text-[13px] text-muted-foreground">
-          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target {CUSTOM.target.label(params.targetPct)}, stop {CUSTOM.stop.label(params.stopPct)}{params.deskMax > 0 ? ` · at most ${params.deskMax} open, CE ${params.cePct}% · PE ${params.pePct}%` : ''}
+          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target {CUSTOM.target.label(params.targetPct)}, stop {CUSTOM.stop.label(params.stopPct)}{params.deskMax > 0 ? ` · at most ${params.deskMax} open, CE ${params.cePct}% · PE ${params.pePct}%` : ''}{(() => {
+            const b = (min = 0, max = 0) => [min > 0 ? `≥ ${min}` : null, max > 0 ? `≤ ${max}` : null].filter(Boolean).join(' ');
+            const sl = b(params.slMin, params.slMax), tg = b(params.tgtMin, params.tgtMax);
+            return !byStrategy && (sl || tg) ? ` · ${[sl ? `SL ${sl}` : null, tg ? `TGT ${tg}` : null].filter(Boolean).join(', ')} pts` : '';
+          })()}
         </p>
         {t.n === 0 ? <div className="mt-2"><Empty>No signal could be traded with these settings in this range.</Empty></div> : (
           <>
@@ -453,7 +511,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           {notTraded > 0 && <> Not traded: {[
             r.skipped['outside-window'] ? `${count(r.skipped['outside-window'])} outside ${byStrategy ? 'its days and hours' : 'the hours chosen'}` : null,
             r.skipped['no-entry-window'] ? `${count(r.skipped['no-entry-window'])} inside its no-entry window` : null,
-            r.skipped.distance ? `${count(r.skipped.distance)} with the SL or TGT outside its distances` : null,
+            r.skipped.distance ? `${count(r.skipped.distance)} with the SL or TGT outside ${byStrategy ? 'its distances' : 'the range set'}` : null,
             r.skipped['at-limit'] ? `${count(r.skipped['at-limit'])} while it already had its most open` : null,
             r.skipped['desk-limit'] ? `${count(r.skipped['desk-limit'])} while ${params.deskMax} were open (at most open)` : null,
             r.skipped['side-limit'] ? `${count(r.skipped['side-limit'])} while that side was at its CE / PE max` : null,
