@@ -29,7 +29,17 @@ For every signal that went "in the trade" (`entry_setups` with a fill), in the e
 | Which signals | 9:30 PM → 3:59 PM IST, as the strategies trade (`desk`); or the whole expiry day (`all`) | desk |
 | Strike rule | **by delta**: the nearest to the money with a delta of at most 0.05 / 0.10 / 0.15 / 0.20; **by premium**: the dearest priced at most $25 / $50 / $75 / $100 | delta 0.10 |
 | Option stop | +100%, +150%, +300% over the premium sold, or none | +300% |
+| Option target | 70%, 80%, 90% of the premium kept, or none | 90% |
 | Lots a signal | 1, 10, 16 | 10 |
+
+Each of the strike limit, option target, option stop and lots has a **Custom** choice: typed in the row's own
+unit (a stop of +200% is typed as 200), checked against the same limits the server holds it to, applied on Use
+or Enter, and shown on the chip after ("Custom · +200%").
+
+**Strategy** beside **Method**: tick one or more of your current strategies and their methods and time frames are
+ticked for the settings above -- a shortcut for those two filters, said in a line under them. Changing a method
+or a time frame by hand ends it. (To use a strategy's own strike, lots, exits and limits too, choose it under
+**Backtest by**.)
 | Time frame, method | as on the market report | all |
 
 Always out of the money, and never for under $10 (`MIN_PREMIUM`), as the strategies' own floor.

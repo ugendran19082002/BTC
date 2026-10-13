@@ -30,7 +30,10 @@ const RESULT: SignalBacktestResponse = {
   params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk' },
   signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
   strategy: null,
-  strategies: [{ id: '1h-time', name: '1h time', enabled: true, account: 'Savings' }, { id: '4h-old', name: '4h old', enabled: false, account: 'Expenses' }],
+  strategies: [
+    { id: '1h-time', name: '1h time', enabled: true, account: 'Savings', methods: ['gamma'], tfs: ['4h'] },
+    { id: '4h-old', name: '4h old', enabled: false, account: 'Expenses', methods: ['pulled', 'gamma'], tfs: ['chain'] },
+  ],
   total: TOTAL,
   days: [
     { ...tot({ n: 600, wins: 300, losses: 300, net: 40, won: 300, lost: 260 }), day: '2026-10-12', pattern: 'FALSE_BREAKOUT_RANGE', live: false },
@@ -239,6 +242,29 @@ describe('SignalBacktest', () => {
     fireEvent.click(row('Lots a signal').getByRole('button', { name: '10' }));
     await waitFor(() => expect(lastQuery().params.lots).toBe(10));
     expect(row('Lots a signal').getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('[critical] the Strategy filter beside Method: choosing strategies ticks their methods and time frames, by the settings', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('button', { name: 'Strategy filter: All strategies' }));
+    const list = within(screen.getByRole('listbox'));
+    expect(list.getByText('Savings · 1 method on 4h')).toBeInTheDocument();
+    expect(list.getByText('Expenses · 2 methods on TF chain · off')).toBeInTheDocument();
+    fireEvent.click(list.getByText('1h time'));
+    fireEvent.click(list.getByText('4h old'));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(lastQuery()).toMatchObject({ methods: ['gamma', 'pulled'], tfs: ['4h', 'chain'], strategy: null }));
+    expect(screen.getByText(/The methods and time frames of 1h time, 4h old: 2 methods on 4h, TF chain, by the settings above\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Method filter: 2 of 2 methods' })).toBeInTheDocument();
+    // a time frame changed by hand ends the shortcut: the line goes, the methods stay as they are
+    fireEvent.click(within(screen.getByRole('group', { name: 'Time frame' })).getByRole('button', { name: '5m' }));
+    await waitFor(() => expect(lastQuery().tfs).toEqual(['4h', 'chain', '5m']));
+    expect(screen.queryByText(/The methods and time frames of/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Strategy filter: All strategies' })).toBeInTheDocument();
+    // clear all: every method and time frame again
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+    await waitFor(() => expect(lastQuery()).toMatchObject({ methods: [], tfs: [] }));
   });
 
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {
