@@ -27,8 +27,9 @@ const TOTAL = tot({
 });
 const RESULT: SignalBacktestResponse = {
   from: '2026-10-01', to: '2026-10-13',
-  params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk' },
-  signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
+  params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 },
+  deskLimits: [{ account: 'Savings', max: 58, ce: 80, pe: 80 }, { account: 'Expenses', max: 35, ce: 80, pe: 80 }],
+  signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
   strategy: null,
   strategies: [
     { id: '1h-time', name: '1h time', enabled: true, account: 'Savings', methods: ['gamma'], tfs: ['4h'] },
@@ -78,7 +79,7 @@ describe('SignalBacktest', () => {
     await screen.findByText('Backtest result');
     expect(lastQuery()).toEqual({
       from: '2026-10-01', to: '2026-10-13', tfs: [], methods: [], strategy: null,
-      params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk' },
+      params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 },
     });
     expect(screen.getByText(/Thu 1 Oct → Tue 13 Oct · delta ≤ 0\.10 · 10 lots a signal · option target 90%, stop \+300%/)).toBeInTheDocument();
   });
@@ -143,7 +144,7 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery()).toMatchObject({ from: '2026-10-07', to: '2026-10-13' }));
     // back to delta: its own usual limit, not the premium's number
     fireEvent.click(screen.getByRole('radio', { name: 'Pick the strike by delta' }));
-    await waitFor(() => expect(lastQuery().params).toEqual({ rule: 'delta', value: 0.1, lots: 16, targetPct: 0.9, stopPct: 1.5, window: 'all' }));
+    await waitFor(() => expect(lastQuery().params).toEqual({ rule: 'delta', value: 0.1, lots: 16, targetPct: 0.9, stopPct: 1.5, window: 'all', deskMax: 0, cePct: 100, pePct: 100 }));
     const kept = Object.keys(window.localStorage).find((k) => k.endsWith('signalBacktest.params'))!;
     expect(JSON.parse(window.localStorage.getItem(kept)!)).toMatchObject({ lots: 16, stopPct: 1.5 });
   });
@@ -265,6 +266,31 @@ describe('SignalBacktest', () => {
     // clear all: every method and time frame again
     fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
     await waitFor(() => expect(lastQuery()).toMatchObject({ methods: [], tfs: [] }));
+  });
+
+  it('[critical] the desk\'s limits: an account\'s own in one tap, or each set -- the side limits said as counts, and what they skipped', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const limits = within(screen.getByRole('region', { name: "The desk's limits" }));
+    expect(limits.queryByRole('group', { name: /^CE max/ })).not.toBeInTheDocument();
+    fireEvent.click(limits.getByRole('button', { name: 'Expenses · 35 · CE 80% · PE 80%' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ deskMax: 35, cePct: 80, pePct: 80 }));
+    expect(limits.getByRole('group', { name: 'CE max: at most 28 CE open at once' })).toBeInTheDocument();
+    expect(limits.getByRole('button', { name: 'Expenses · 35 · CE 80% · PE 80%' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(limits.getByRole('group', { name: 'PE max: at most 28 PE open at once' })).getByRole('button', { name: '50%' }));
+    await waitFor(() => expect(lastQuery().params.pePct).toBe(50));
+    expect(limits.getByRole('group', { name: 'PE max: at most 18 PE open at once' })).toBeInTheDocument();
+    fireEvent.click(within(limits.getByRole('group', { name: 'At most open, every trade together' })).getByRole('button', { name: 'Custom' }));
+    const max = screen.getByRole('spinbutton', { name: 'At most open, your own' });
+    fireEvent.change(max, { target: { value: '45' } });
+    fireEvent.keyDown(max, { key: 'Enter' });
+    await waitFor(() => expect(lastQuery().params.deskMax).toBe(45));
+    getSignalBacktest.mockResolvedValue({ ...RESULT, params: { ...RESULT.params, deskMax: 45, cePct: 80, pePct: 50 }, skipped: { ...RESULT.skipped, 'desk-limit': 120, 'side-limit': 40 } });
+    fireEvent.click(within(limits.getByRole('group', { name: 'CE max: at most 36 CE open at once' })).getByRole('button', { name: '100% · no limit' }));
+    expect(await screen.findByText(/120 while 45 were open \(at most open\), 40 while that side was at its CE \/ PE max/)).toBeInTheDocument();
+    fireEvent.click(within(limits.getByRole('group', { name: 'At most open, every trade together' })).getByRole('button', { name: 'No limit' }));
+    await waitFor(() => expect(lastQuery().params.deskMax).toBe(0));
+    expect(limits.queryByRole('group', { name: /^PE max/ })).not.toBeInTheDocument();
   });
 
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {

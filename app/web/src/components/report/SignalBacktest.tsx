@@ -257,9 +257,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       </>}
       <section aria-label="The desk's limits" className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
         <div className="text-[13px] font-semibold">The desk&apos;s limits <span className="font-normal text-muted-foreground">· as on the Signal Strategies card</span></div>
-        {(r?.deskLimits.length ?? 0) > 0 && (
+        {/* An older server sends none: nothing offered rather than a blank screen. */}
+        {(r?.deskLimits?.length ?? 0) > 0 && (
           <ChipRow label="As an account has them now">
-            {r!.deskLimits.map((d) => (
+            {(r?.deskLimits ?? []).map((d) => (
               <Chip key={d.account} on={params.deskMax === d.max && params.cePct === d.ce && params.pePct === d.pe}
                 onClick={() => set({ deskMax: d.max, cePct: d.ce, pePct: d.pe })}>
                 {d.account} · {d.max} · CE {d.ce}% · PE {d.pe}%
