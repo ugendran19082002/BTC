@@ -61,3 +61,19 @@ export type MethodOptionRecord = {
   signals: number; trades: number;
   methods: { method: string; trades: number; wins: number; net: number; byTf: { tf: string; trades: number; wins: number; net: number }[] }[];
 };
+
+/** What a saved backtest asks: the screen's own settings and filters. `strategy` is a saved strategy's id, or null. */
+export type SavedQuery = { params: BacktestParams; tfs: string[]; methods: string[]; strategy: string | null };
+export type BacktestSave = { id: string; name: string; query: SavedQuery; createdAt: number; updatedAt: number };
+/** A name, and the saved backtests run together under it, in order. */
+export type BacktestPortfolio = { id: string; name: string; saveIds: string[]; createdAt: number; updatedAt: number };
+export type BacktestSaves = { saves: BacktestSave[]; portfolios: BacktestPortfolio[] };
+/** Several saved backtests over the same days: each as it is alone, and their total. */
+export type BacktestPortfolioResult = {
+  from: string; to: string;
+  members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
+  total: BtTot;
+  days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];
+  /** The most held at once across all of them, laid on one clock; and the sum of each one's own most, which it never exceeds. */
+  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
+};
