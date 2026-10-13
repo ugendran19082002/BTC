@@ -6,13 +6,14 @@ import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
 import type { PairStat } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
 import { time12 } from '@/lib/time';
-import type { BacktestParams, BacktestQuery, BoardGrain, BtExit, BtRow } from '@/types/signal-backtest';
+import type { BacktestParams, BacktestQuery, BoardGrain, BtExit, BtRow, SavedQuery } from '@/types/signal-backtest';
 import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, netClass, rate } from '@/components/report/backtest-parts';
+import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
 
 /**
  * The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price?
@@ -74,6 +75,9 @@ const DELTAS = [0.05, 0.1, 0.15, 0.2];
 const PREMIUMS = [25, 50, 75, 100];
 const STOPS: { value: number; label: string }[] = [{ value: 1, label: '+100%' }, { value: 1.5, label: '+150%' }, { value: 3, label: '+300%' }, { value: 0, label: 'No stop' }];
 const LOTS = [1, 10, 16];
+/** The least premium an option is sold for, dollars: the desk's own 10 to begin with; 0 is no floor (owner, 13 Oct 2026). */
+const MIN_PREMIUMS = [0, 10, 15, 20];
+const FLOOR = 10;
 const TARGETS: { value: number; label: string }[] = [{ value: 0.7, label: '70%' }, { value: 0.8, label: '80%' }, { value: 0.9, label: '90%' }, { value: 0, label: 'No target' }];
 
 /**
@@ -89,6 +93,7 @@ const CUSTOM = {
   target: { unit: '% kept', min: 0, max: 99, step: 5, toShown: (v) => Math.round(v * 100), fromShown: (v) => Math.round(v) / 100, label: (v) => (v > 0 ? `${Math.round(v * 100)}%` : 'No target') },
   lots: { unit: 'lots', min: 1, max: 1000, step: 1, whole: true, toShown: (v) => v, fromShown: (v) => v, label: (v) => String(v) },
   deskMax: { unit: 'open', min: 0, max: 500, step: 1, whole: true, toShown: (v) => v, fromShown: (v) => v, label: (v) => (v > 0 ? String(v) : 'No limit') },
+  minPremium: { unit: '$', min: 0, max: 500, step: 1, toShown: (v) => v, fromShown: (v) => Math.round(v * 10) / 10, label: (v) => (v > 0 ? `$${v}` : 'Off') },
   sidePct: { unit: '%', min: 1, max: 100, step: 5, toShown: (v) => v, fromShown: (v) => Math.round(v), label: (v) => `${v}%` },
 } satisfies Record<string, Custom>;
 
@@ -306,6 +311,36 @@ function ChipRow({ label, children }: { label: string; wide?: boolean; children:
  * Rows of one grouping as a table of four columns, which is what a 360px phone holds: trades, how many made money,
  * and the net with what one trade made under it. What the same trades made on the perp goes under the name.
  */
+/**
+ * A set of settings in one line: what a result is of. Said on the folded settings panel and on the result -- and,
+ * with its filters, under each saved backtest's name.
+ */
+function settingsWords(q: SavedQuery, strategies: readonly { id: string; name: string }[], withFilters = false): string {
+  const p: BacktestParams = { ...DEFAULTS, ...q.params };
+  const byStrategy = q.strategy !== null;
+  const range = (min = 0, max = 0) => [min > 0 ? `≥ ${min}` : null, max > 0 ? `≤ ${max}` : null].filter(Boolean).join(' ');
+  const target = p.targetSteps?.length
+    ? `${Math.round(p.targetPct * 100)}% → ${Math.round(p.targetSteps[p.targetSteps.length - 1]!.pct * 100)}% by time (${p.targetSteps.length} steps)`
+    : CUSTOM.target.label(p.targetPct);
+  const floor = p.minPremium ?? FLOOR;
+  return [
+    byStrategy ? `by ${strategies.find((x) => x.id === q.strategy)?.name ?? 'a strategy'}'s rules` : null,
+    !byStrategy ? (p.rule === 'delta' ? `delta ≤ ${p.value.toFixed(2)}` : `premium ≤ $${p.value}`) : null,
+    !byStrategy ? `${p.lots} lot${p.lots === 1 ? '' : 's'}` : null,
+    !byStrategy ? `TGT ${target}` : null,
+    !byStrategy ? `SL ${CUSTOM.stop.label(p.stopPct)}` : null,
+    !byStrategy && floor !== FLOOR ? (floor > 0 ? `premium ≥ $${floor}` : 'no premium floor') : null,
+    !byStrategy ? (p.window === 'desk' ? '9:30 PM → 3:59 PM' : p.window === 'all' ? 'whole day' : p.hoursFrom && p.hoursTo ? `${time12(p.hoursFrom)} → ${time12(p.hoursTo)}` : null) : null,
+    !byStrategy && (range(p.slMin, p.slMax) || range(p.tgtMin, p.tgtMax))
+      ? [range(p.slMin, p.slMax) && `SL ${range(p.slMin, p.slMax)}`, range(p.tgtMin, p.tgtMax) && `TGT ${range(p.tgtMin, p.tgtMax)}`].filter(Boolean).join(', ') + ' pts'
+      : null,
+    p.vol && p.vol !== 'off' ? `${p.vol} volatility` : null,
+    p.deskMax > 0 ? `at most ${p.deskMax} open · CE ${p.cePct}% · PE ${p.pePct}%` : 'no open limit',
+    withFilters && q.tfs.length ? `on ${q.tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ')}` : null,
+    withFilters && q.methods.length ? `${q.methods.length} method${q.methods.length === 1 ? '' : 's'}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
 /** A day's pricing in a word, beside its name. */
 const GRAIN: Record<BoardGrain, string> = { 'own-1m': '1m prices', 'mark-1m': '1m est.', '5m': '5m prices' };
 
@@ -400,20 +435,16 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const values = params.rule === 'delta' ? DELTAS : PREMIUMS;
 
   // The settings in one line: what the result below is of. Said on the folded panel and on the result.
-  const rangeWords = (min = 0, max = 0) => [min > 0 ? `≥ ${min}` : null, max > 0 ? `≤ ${max}` : null].filter(Boolean).join(' ');
-  const summary = [
-    byStrategy ? `by ${strategies.find((x) => x.id === strategyId)?.name ?? 'a strategy'}'s rules` : null,
-    !byStrategy ? (params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`) : null,
-    !byStrategy ? `${params.lots} lot${params.lots === 1 ? '' : 's'}` : null,
-    !byStrategy ? `TGT ${targetWords}` : null,
-    !byStrategy ? `SL ${CUSTOM.stop.label(params.stopPct)}` : null,
-    !byStrategy ? (params.window === 'desk' ? '9:30 PM → 3:59 PM' : params.window === 'all' ? 'whole day' : params.hoursFrom && params.hoursTo ? `${time12(params.hoursFrom)} → ${time12(params.hoursTo)}` : null) : null,
-    !byStrategy && (rangeWords(params.slMin, params.slMax) || rangeWords(params.tgtMin, params.tgtMax))
-      ? [rangeWords(params.slMin, params.slMax) && `SL ${rangeWords(params.slMin, params.slMax)}`, rangeWords(params.tgtMin, params.tgtMax) && `TGT ${rangeWords(params.tgtMin, params.tgtMax)}`].filter(Boolean).join(', ') + ' pts'
-      : null,
-    params.vol && params.vol !== 'off' ? `${params.vol} volatility` : null,
-    params.deskMax > 0 ? `at most ${params.deskMax} open · CE ${params.cePct}% · PE ${params.pePct}%` : 'no open limit',
-  ].filter(Boolean).join(' · ');
+  const saved: SavedQuery = { params, tfs, methods, strategy: strategyId };
+  const summary = settingsWords(saved, strategies);
+  const floor = params.minPremium ?? FLOOR;
+  // Saved backtests run together (`SavedBacktests`): which, if any, is on the screen above the result.
+  const [together, setTogether] = useState<TogetherRun | null>(null);
+  /** A saved backtest's settings put on the screen: the result below is then worked for them, over the days chosen. */
+  const load = (q: SavedQuery) => {
+    setParams({ ...DEFAULTS, ...q.params }); setTfs(q.tfs); setMethods(q.methods); setStrategyId(q.strategy);
+    setFromStrategies([]); setDynamicDraft(false); setPickingHours(false);
+  };
 
   /*
    * The settings, in four sections (owner, 13 Oct 2026: "a user-friendly backtest screen, responsive on the
@@ -488,6 +519,13 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         {LOTS.map((n) => <Chip key={n} on={params.lots === n} onClick={() => set({ lots: n })}>{n}</Chip>)}
         <CustomValue value={params.lots} presets={LOTS} spec={CUSTOM.lots} name="Lots" onChange={(lots) => set({ lots })} />
       </ChipRow>
+      <ChipRow wide={wide} label="Minimum premium: sell only for at least">
+        {MIN_PREMIUMS.map((v) => <Chip key={v} on={floor === v} onClick={() => set({ minPremium: v })}>{v > 0 ? `$${v}` : 'Off'}</Chip>)}
+        <CustomValue value={floor} presets={MIN_PREMIUMS} spec={CUSTOM.minPremium} name="Minimum premium" onChange={(minPremium) => set({ minPremium })} />
+      </ChipRow>
+      <p className="m-0 -mt-1 px-1 text-[12px] leading-snug text-muted-foreground">
+        {floor > 0 ? `A strike bid under $${floor} when the signal fills is not sold: the signal is counted as "no strike".` : 'Off: any strike with a bid is sold, however little it pays. Type 0 for off, a number for a floor.'}
+      </p>
         </Section>
       )}
       <Section title="Which signals are taken">
@@ -615,8 +653,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         <aside aria-label="Backtest settings" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
           {settingsPanel}
           {filterBlock}
+          <SavedBacktests current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
         </aside>
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{result}</div>
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+          {together && <PortfolioRun run={together} range={range} wide={wide} onClose={() => setTogether(null)} />}
+          {result}
+        </div>
       </div>
     </div>
   );
@@ -692,6 +734,26 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 <Stat label="Profit factor">{t.lost > 0 ? (t.won / t.lost).toFixed(2) : '—'}</Stat>
               </Stats>
             </div>
+            {/*
+              A day, on average (owner, 13 Oct 2026: "the average profit and loss per day"): over the expiry days
+              that traded, and the days in profit and the days in loss each on their own.
+            */}
+            {(() => {
+              const traded = r.days.filter((d) => d.n > 0);
+              if (traded.length === 0) return null;
+              const up = traded.filter((d) => d.net > 0), down = traded.filter((d) => d.net < 0);
+              const mean = (xs: typeof traded) => xs.reduce((a, d) => a + d.net, 0) / xs.length;
+              const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+              return (
+                <div className="mt-2">
+                  <Ledger>
+                    <Entry label={`A day, on average · ${days(traded.length)}`} tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net / traded.length)}</Entry>
+                    <Entry label={`A day in profit · ${days(up.length)}`} tone="up">{up.length ? moneyText(mean(up)) : '—'}</Entry>
+                    <Entry label={`A day in loss · ${days(down.length)}`} tone="down">{down.length ? moneyText(mean(down)) : '—'}</Entry>
+                  </Ledger>
+                </div>
+              );
+            })()}
             {/* Two to a row: six-figure rupees do not fit a third of a phone. */}
             <div className="mt-2">
               <Stats cols={2}>
@@ -715,7 +777,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             r.skipped['at-limit'] ? `${count(r.skipped['at-limit'])} while it already had its most open` : null,
             r.skipped['desk-limit'] ? `${count(r.skipped['desk-limit'])} while ${params.deskMax} were open (at most open)` : null,
             r.skipped['side-limit'] ? `${count(r.skipped['side-limit'])} while that side was at its CE / PE max` : null,
-            r.skipped['no-strike'] ? `${count(r.skipped['no-strike'])} with no strike inside the rule worth $10` : null,
+            r.skipped['no-strike'] ? `${count(r.skipped['no-strike'])} with no strike inside the rule${byStrategy ? ' worth its floor' : floor > 0 ? ` worth $${floor}` : ''}` : null,
             r.skipped['no-board'] ? `${count(r.skipped['no-board'])} with no option prices recorded then` : null,
             r.skipped['no-exit-price'] ? `${count(r.skipped['no-exit-price'])} with no price to exit at` : null,
           ].filter(Boolean).join(', ')}.</>}

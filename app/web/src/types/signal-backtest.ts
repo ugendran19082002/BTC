@@ -14,6 +14,8 @@ export type BacktestParams = {
   targetSteps?: { at: string; pct: number }[];
   /** Only signals that filled while the market was this volatile; `off` or absent, all. */
   vol?: 'off' | 'low' | 'medium' | 'high';
+  /** An option is not sold for less than this many dollars; 0 is no floor. Absent: the desk's own 10. */
+  minPremium?: number;
 };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */

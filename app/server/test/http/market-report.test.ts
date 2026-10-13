@@ -291,7 +291,7 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   // The climb's six signals in the trade are all BUYs with the target at 84,500, which the perp reaches about a third of the way in.
   const all = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all`);
   assert.equal(all.status, 200, JSON.stringify(all.body).slice(0, 300));
-  assert.deepEqual(all.body.params, { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all', deskMax: 0, cePct: 100, pePct: 100, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off' });
+  assert.deepEqual(all.body.params, { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all', deskMax: 0, cePct: 100, pePct: 100, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10 });
   assert.deepEqual(all.body.deskLimits, [], 'no broker account on this desk: no limits to offer');
   assert.equal(all.body.signals, 6, 'the one never filled is not a signal in the trade');
   assert.equal(all.body.total.n, 6);
@@ -359,6 +359,12 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   assert.ok(Math.abs(all.body.byTf.reduce((n: number, t: any) => n + t.charges, 0) - all.body.total.charges) < 1e-9, 'and add up across the time frames');
   const cheap = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&rule=premium&value=20`);
   assert.ok(cheap.body.skipped['no-strike'] > 0, 'no put is offered at 20 or under until late in the day');
+  // the least premium an option is sold for: 10 unless said; the put is bid at about 15 by minute 1,000 and 5 at the end
+  const floor30 = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&minprem=30`);
+  assert.deepEqual([floor30.body.params.minPremium, floor30.body.total.n, floor30.body.skipped['no-strike']], [30, 4, 2], 'sold at 39, 38, 35 and 32.5; not at 29.97 and 25 -- under the floor by the time of the fill');
+  const noFloor = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&minprem=0`);
+  assert.deepEqual([noFloor.body.params.minPremium, noFloor.body.total.n], [0, 6]);
+  assert.equal((await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&minprem=-1`)).status, 400);
   // a day with no board: its signals are counted, none traded
   const quiet = await get(`/api/signal-backtest?from=${QUIET}&to=${QUIET}&window=all`);
   assert.deepEqual([quiet.body.signals, quiet.body.total.n, quiet.body.skipped['no-board']], [1, 0, 1]);

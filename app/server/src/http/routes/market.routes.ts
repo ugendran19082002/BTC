@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, backtestable, strategyCaveats, type BacktestParams } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, backtestable, strategyCaveats, type BacktestParams } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { signalBacktest } from '../../report/backtest-run.js';
@@ -97,8 +97,11 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
   // The volatility when a signal fills: `?vol=off|low|medium|high`.
   const vol = q.vol === undefined || q.vol === '' ? 'off' : q.vol;
   if (vol !== 'off' && vol !== 'low' && vol !== 'medium' && vol !== 'high') return 'The volatility filter is "off", "low", "medium" or "high".';
+  // The least premium an option is sold for: `?minprem=`, dollars, 0 for no floor. Absent: 10.
+  const minPremium = num('minprem', MIN_PREMIUM);
+  if (!(minPremium >= 0 && minPremium <= 500)) return 'The minimum premium is from 0 (no floor) to 500 dollars.';
   return {
-    rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol,
+    rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol, minPremium,
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}),
   };
 }
@@ -109,7 +112,7 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
   const x = p as Partial<BacktestParams>;
   return backtestParamsOf({
     rule: x.rule, value: x.value, lots: x.lots, tp: x.targetPct, sl: x.stopPct, window: x.window, hfrom: x.hoursFrom, hto: x.hoursTo,
-    max: x.deskMax, ce: x.cePct, pe: x.pePct, slmin: x.slMin, slmax: x.slMax, tgtmin: x.tgtMin, tgtmax: x.tgtMax, vol: x.vol,
+    max: x.deskMax, ce: x.cePct, pe: x.pePct, slmin: x.slMin, slmax: x.slMax, tgtmin: x.tgtMin, tgtmax: x.tgtMax, vol: x.vol, minprem: x.minPremium,
     tsteps: Array.isArray(x.targetSteps) && x.targetSteps.length ? x.targetSteps.map((s) => `${s.at}:${Math.round(s.pct * 10_000) / 100}`).join(',') : undefined,
   });
 }

@@ -80,6 +80,12 @@ export type BacktestParams = {
   targetSteps?: { at: string; pct: number }[];
   /** Only the signals that filled while the market was this volatile (`volReader`); `off` or absent, all of them. */
   vol?: 'off' | VolLevel;
+  /**
+   * An option is not sold for less than this many dollars (owner, 13 Oct 2026: "a minimum premium filter, 10
+   * dollars to begin with; 0 switches it off"). Absent: `MIN_PREMIUM`, the strategies' own floor. 0: no floor --
+   * anything with a bid is sold.
+   */
+  minPremium?: number;
 };
 
 /**
@@ -126,7 +132,7 @@ export function deskCapsOf(p: Pick<BacktestParams, 'deskMax' | 'cePct' | 'pePct'
   if (!(max > 0)) return null;
   return { max, side: sideCaps(max, { CE: p.cePct ?? 100, PE: p.pePct ?? 100 }) };
 }
-/** An option is not sold for less than this, as the strategies' own floor. */
+/** An option is not sold for less than this, as the strategies' own floor; a backtest may set its own (`minPremium`). */
 export const MIN_PREMIUM = 10;
 const CONTRACT_VALUE = 0.001;
 const MIN = 60_000;
@@ -220,9 +226,10 @@ export type BtTrade = {
 };
 
 /** The strike a rule picks from one side of one reading of the board: out of the money, with a bid worth selling. Null with none. */
-export function pickStrike(board: readonly BoardRow[], cp: 'C' | 'P', p: Pick<BacktestParams, 'rule' | 'value'>): BoardRow | null {
+export function pickStrike(board: readonly BoardRow[], cp: 'C' | 'P', p: Pick<BacktestParams, 'rule' | 'value' | 'minPremium'>): BoardRow | null {
+  const floor = p.minPremium ?? MIN_PREMIUM;
   const otm = board.filter((r) => r.cp === cp && r.spot !== null && (cp === 'P' ? r.strike < r.spot : r.strike > r.spot)
-    && r.bid !== null && r.bid >= MIN_PREMIUM && r.ask !== null && r.ask > 0);
+    && r.bid !== null && r.bid > 0 && r.bid >= floor && r.ask !== null && r.ask > 0);
   // Two strikes level on the rule (the same bid, far out, is common): the nearer the money, as the desk walks the
   // board outward -- never whichever the database happened to return first (13 Oct 2026).
   const nearer = (a: BoardRow, b: BoardRow) => Math.abs(a.strike - a.spot!) - Math.abs(b.strike - b.spot!);
@@ -608,7 +615,7 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}`;
+const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|floor:${p.minPremium ?? MIN_PREMIUM}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   const text = JSON.stringify(s.config);
