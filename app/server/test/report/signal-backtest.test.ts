@@ -226,3 +226,38 @@ test('[critical] the margin: each trade\'s by the desk\'s 200x estimate, and the
   assert.ok(Math.abs(t.marginUsd - fundsRequiredPerContract({ spot: 84_000, premium: t.entry, leverage: 200, contractValue: 0.001 }) * 16) < 1e-9);
   assert.ok(t.marginUsd > 0);
 });
+
+test('[critical] a target by the clock: from each step\'s time the step\'s share, for trades open then and sold after -- read forward from 5:30 PM', async () => {
+  const { planOfParams } = await import('../../src/report/signal-backtest.js');
+  const flat = perp([[0, 84_000], [1_439, 84_100]]);                  // the perp reaches neither level
+  // the put decays 40 -> 4 bid over the day (offered 2 over): sold at 40 at minute 0
+  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 4]]);
+  const run = (o: Partial<BacktestParams>, at = 0) => simulateDay({ from, to, signals: [sig(at)], bars: flat, board, plan: planOfParams({ ...P, stopPct: 0, ...o }, { from, to }) }).trades[0]!;
+
+  // fixed 50%: bought back when the offer is at 20 -- bid 18, about minute 877 -> the reading at 880
+  const fixed = run({ targetPct: 0.5 });
+  assert.equal(fixed.by, 'option-tgt');
+  assert.ok(Math.abs(fixed.exit - 20) < 1e-9);
+  assert.equal((fixed.exitAt - from) / 60_000, 880);
+
+  // 50% to begin with, 80% from 11:30 PM (minute 360): at minute 880 the target is 8, not 20 -- it waits for an offer of 8
+  const stepped = run({ targetPct: 0.5, targetSteps: [{ at: '23:30', pct: 0.8 }] });
+  assert.equal(stepped.by, 'option-tgt');
+  assert.ok(Math.abs(stepped.exit - 8) < 1e-9, `at the stepped level: ${stepped.exit}`);
+  assert.ok((stepped.exitAt - from) / 60_000 > 1_300, 'and much later');
+  assert.ok(stepped.netUsd > fixed.netUsd, 'more of the premium kept');
+
+  // a step DOWN -- 90% to begin with, 20% from 1:30 AM (minute 480): the buy moves up to 32, over the offer, and fills at the offer
+  const down = run({ targetPct: 0.9, targetSteps: [{ at: '01:30', pct: 0.2 }] });
+  assert.equal(down.by, 'option-tgt');
+  assert.equal((down.exitAt - from) / 60_000, 480, 'at the step\'s own time');
+  const offer480 = 40 - 36 * 480 / 1_435 + 2;
+  assert.ok(Math.abs(down.exit - offer480) < 1e-9, 'at the offer (about 30), not at the 32 the target names');
+
+  // a trade sold after a step starts at the step's share: sold at minute 600 (~24.9), target 80% from 11:30 PM
+  const late = run({ targetPct: 0.5, targetSteps: [{ at: '23:30', pct: 0.8 }] }, 600);
+  assert.ok(Math.abs(late.exit - late.entry * 0.2) < 1e-9 || late.by !== 'option-tgt');
+  // steps in any order of the day are read forward from 5:30 PM: one at 6:00 PM applies before one at 3:00 PM
+  const early = run({ targetPct: 0.9, targetSteps: [{ at: '15:00', pct: 0.95 }, { at: '18:00', pct: 0.5 }] });
+  assert.ok(Math.abs(early.exit - 20) < 1e-9, 'the 6 PM step (50%) was in force from the day\'s first half hour');
+});

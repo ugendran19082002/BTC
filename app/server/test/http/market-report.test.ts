@@ -320,6 +320,10 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   // custom hours: 6 PM to 8 PM IST -- the fills at minutes 30 and 90 of the day (6:00 and 7:00 PM)
   const evening = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=custom&hfrom=18:00&hto=20:00`);
   assert.deepEqual([evening.body.params.hoursFrom, evening.body.params.hoursTo, evening.body.total.n], ['18:00', '20:00', 2]);
+  // a target by the clock is taken and said back, as shares
+  const timed = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tp=0.7&tsteps=23:30:73,01:30:76`);
+  assert.deepEqual(timed.body.params.targetSteps, [{ at: '23:30', pct: 0.73 }, { at: '01:30', pct: 0.76 }]);
+  assert.equal(timed.body.params.targetPct, 0.7);
   const desk = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}`);
   assert.equal(desk.body.params.window, 'desk');
   assert.deepEqual([desk.body.total.n, desk.body.skipped['outside-window']], [3, 3]);
@@ -351,7 +355,7 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
 test('the backtest refuses settings it cannot mean', async () => {
   for (const [q, why] of [
     ['rule=gamma', /"delta" or "premium"/], ['rule=delta&value=0.9', /0\.02 to 0\.5/], ['rule=premium&value=5', /10 to 500/],
-    ['lots=0', /whole number from 1 to 1,000/], ['max=600', /0 \(no limit\) to 500/], ['max=10&ce=0', /1% to 100%/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk", "all" or "custom"/], ['window=custom&hfrom=22:00', /From and a To time/], ['window=custom&hfrom=22:00&hto=22:00', /must differ/], ['window=custom&hfrom=25:00&hto=02:00', /HH:MM/], ['slmin=-1', /0 \(off\) to 20,000/], ['slmin=500&slmax=200', /SL maximum must not be under/], ['tgtmin=500&tgtmax=200', /TGT maximum/],
+    ['lots=0', /whole number from 1 to 1,000/], ['max=600', /0 \(no limit\) to 500/], ['max=10&ce=0', /1% to 100%/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk", "all" or "custom"/], ['window=custom&hfrom=22:00', /From and a To time/], ['window=custom&hfrom=22:00&hto=22:00', /must differ/], ['window=custom&hfrom=25:00&hto=02:00', /HH:MM/], ['slmin=-1', /0 \(off\) to 20,000/], ['tsteps=2330:73', /HH:MM:NN/], ['tsteps=23:30:0', /1% to 99%/], ['tsteps=23:30:150', /HH:MM:NN/], ['tsteps=23:30:73,23:30:80', /same time/], ['tp=0&tsteps=23:30:73', /needs a target to start from/], ['slmin=500&slmax=200', /SL maximum must not be under/], ['tgtmin=500&tgtmax=200', /TGT maximum/],
   ] as const) {
     const r = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&${q}`);
     assert.equal(r.status, 400, q);
@@ -373,7 +377,7 @@ test('[critical] the backtest by a saved strategy: its methods and timeframe, it
 
   const r = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&strategy=${id}`);
   assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
-  assert.deepEqual(r.body.strategies.find((s: any) => s.id === id), { id, name: 'BT fifteen', enabled: false, account: null, methods: ['breakout'], tfs: ['15m'] }, 'the list to choose from, with its methods and timeframes');
+  assert.deepEqual(r.body.strategies.find((s: any) => s.id === id), { id, name: 'BT fifteen', enabled: false, account: null, methods: ['breakout'], tfs: ['15m'], target: { pct: 0.9, steps: [] } }, 'the list to choose from, with its methods and timeframes');
   assert.equal(r.body.strategy.name, 'BT fifteen');
   assert.deepEqual(r.body.strategy.caveats, []);
   // only its own signals: 15m breakout, three on the climb -- the 1h pullbacks and the chain's are not its

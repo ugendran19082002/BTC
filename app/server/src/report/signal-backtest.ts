@@ -11,7 +11,7 @@ import { marketDays, marketReport, type Tot } from './market-report.js';
 import { selectLegs, type Candidate } from '../strategy/select.js';
 import { istMinutes, istWeekday } from '../strategy/schedule.js';
 import {
-  actionOf, exitRules, sideCaps, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
+  actionOf, exitRules, exitValueAt, sideCaps, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
   type Strategy,
 } from '../strategy/types.js';
 
@@ -64,7 +64,16 @@ export type BacktestParams = {
    * the perp entry to the signal's SL, and to its TGT, at least the minimum and at most the maximum. 0 is off.
    */
   slMin?: number; slMax?: number; tgtMin?: number; tgtMax?: number;
+  /**
+   * The option's target by the clock (13 Oct 2026, "fixed target, or dynamic time-based -- as the strategy form's"):
+   * `targetPct` to begin with, and from each step's IST time the step's share, for every trade open then and every
+   * one sold after. Read forward from 5:30 PM, the start of the expiry day, as a strategy's steps are from its entry
+   * time. Absent or empty: the one target all day.
+   */
+  targetSteps?: { at: string; pct: number }[];
 };
+/** The start of an expiry day on the IST clock: what a backtest's own time steps are read forward from. */
+export const DAY_START_IST = '17:30';
 export const DEFAULT_PARAMS: BacktestParams = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 };
 /** The desk's limits of a set of settings: null with none. */
 export function deskCapsOf(p: Pick<BacktestParams, 'deskMax' | 'cePct' | 'pePct'>): { max: number; side: { CE: number; PE: number } | null } | null {
@@ -131,6 +140,9 @@ export type DayPlan = {
   targetOf: (sig: BtSignal) => number;
   /** The option's own target and stop, as shares of the premium sold; 0 is none. */
   targetPct: number; stopPct: number;
+  /** The target and the stop in force at a moment, where they move with the clock; absent, the ones above all day. */
+  targetPctAt?: (at: number) => number;
+  stopPctAt?: (at: number) => number;
   /** At most this many open at once; null, any number. */
   maxOpen: number | null;
   /** The desk's own limits on top: at most this many across all, and each side at most so many. Null: none. */
@@ -153,6 +165,10 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
     pick: (board, cp) => { const row = pickStrike(board, cp, p); return row ? { row, lots: p.lots } : null; },
     targetOf: (sig) => sig.target,
     targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null, desk: deskCapsOf(p),
+    // By the clock, where steps are set: read by the function a strategy's own steps are (`exitValueAt`).
+    ...(p.targetSteps?.length ? {
+      targetPctAt: (at: number) => exitValueAt({ mode: 'pct', value: p.targetPct, steps: p.targetSteps!.map((x) => ({ at: x.at, value: x.pct })) }, DAY_START_IST, istMinutes(at)).value,
+    } : {}),
   };
 }
 
@@ -160,7 +176,6 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
 export function strategyCaveats(s: Strategy): string[] {
   const c = s.config, x = exitRules(c);
   const out: string[] = [];
-  if (x.target.steps.length || x.stop.steps.length) out.push('Its timed target and stop steps are not replayed: the starting target and stop are used all day.');
   if (x.target.mode !== 'pct' && x.target.value > 0) out.push('Its option target is set in points or as a price, which is not replayed: no option target is used.');
   if (x.stop.mode !== 'pct' && x.stop.value > 0) out.push('Its option stop is set in points or as a price, which is not replayed: no option stop is used.');
   if (c.strikeRule !== 'premium' && c.strikeRule !== 'delta' && c.strikeRule !== 'strict' && c.strikeRule !== 'distance') out.push('Its strike is picked by open interest, which the recorded board cannot replay: few or no trades can be made.');
@@ -210,6 +225,9 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }, 
     targetOf,
     targetPct: x.target.mode === 'pct' ? x.target.value : 0,
     stopPct: x.stop.mode === 'pct' ? x.stop.value : 0,
+    // Its timed steps, read as the runner's stepper reads them: forward from its entry time.
+    ...(x.target.mode === 'pct' && x.target.steps.length ? { targetPctAt: (at: number) => exitValueAt(x.target, c.entryTime, istMinutes(at)).value } : {}),
+    ...(x.stop.mode === 'pct' && x.stop.steps.length ? { stopPctAt: (at: number) => exitValueAt(x.stop, c.entryTime, istMinutes(at)).value } : {}),
     maxOpen: rule.maxOpen > 0 ? rule.maxOpen : null,
     desk,
   };
@@ -290,8 +308,10 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
 
     // The option's own readings between: its target (a resting buy, filled at its price) and its stop (bought at the offer).
     const series = bySymbol.get(`${cp}${pick.strike}`) ?? [];
-    const tgtAt = plan.targetPct > 0 ? entry * (1 - plan.targetPct) : null;
-    const stopAt = plan.stopPct > 0 ? entry * (1 + plan.stopPct) : null;
+    // The option's own levels at a moment: fixed all day, or by the clock where the plan has steps.
+    const tgtLevel = (at: number) => { const pc = plan.targetPctAt ? plan.targetPctAt(at) : plan.targetPct; return pc > 0 ? entry * (1 - pc) : null; };
+    const stopLevel = (at: number) => { const pc = plan.stopPctAt ? plan.stopPctAt(at) : plan.stopPct; return pc > 0 ? entry * (1 + pc) : null; };
+    let restingAt = tgtLevel(entryAt);
     let exit: number | null = null, exitAt = perpAt, by: BtExit = perpBy;
     for (const r of series) {
       if (r.at <= entryAt) continue;
@@ -302,7 +322,14 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
       }
       if (r.ask === null || !(r.ask > 0)) continue;
       // Prices are on a tick and the levels are products of shares: a level reached exactly must not be missed by a rounding.
-      if (tgtAt !== null && r.ask <= tgtAt + 1e-9) { exit = tgtAt; exitAt = r.at; by = 'option-tgt'; break; }
+      const tgtAt = tgtLevel(r.at), stopAt = stopLevel(r.at);
+      if (tgtAt !== null && r.ask <= tgtAt + 1e-9) {
+        // A resting buy fills at its own price as the offer comes down to it. One just moved UP over the offer by a
+        // time step (a lower share kept) is a buy placed through the market: it fills at the offer.
+        exit = restingAt !== null && tgtAt > restingAt + 1e-9 ? Math.min(tgtAt, r.ask) : tgtAt;
+        exitAt = r.at; by = 'option-tgt'; break;
+      }
+      restingAt = tgtAt;
       if (stopAt !== null && r.ask >= stopAt - 1e-9) { exit = r.ask; exitAt = r.at; by = 'option-sl'; break; }
     }
     if (exit === null) {
@@ -374,7 +401,7 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}`;
+const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   const text = JSON.stringify(s.config);

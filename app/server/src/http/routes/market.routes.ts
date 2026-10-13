@@ -4,7 +4,7 @@ import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
 import { DEFAULT_PARAMS, backtestable, signalBacktest, type BacktestParams } from '../../report/signal-backtest.js';
 import { strategyStore } from './strategy.routes.js';
-import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, globalMaxOpenOf, ruleTfs, sideMaxOf } from '../../strategy/types.js';
+import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, exitRules, globalMaxOpenOf, ruleTfs, sideMaxOf, type Strategy } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
@@ -74,7 +74,33 @@ function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
   for (const v of [slMin, slMax, tgtMin, tgtMax]) if (!(v >= 0 && v <= 20_000)) return 'An SL or TGT distance is from 0 (off) to 20,000 points.';
   if (slMin > 0 && slMax > 0 && slMax < slMin) return 'The SL maximum must not be under its minimum.';
   if (tgtMin > 0 && tgtMax > 0 && tgtMax < tgtMin) return 'The TGT maximum must not be under its minimum.';
-  return { rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, ...(window === 'custom' ? { hoursFrom, hoursTo } : {}) };
+  /*
+   * A target by the clock: `?tsteps=23:30:73,01:30:76` -- from each IST time, that per cent of the premium kept;
+   * `tp` is where it starts. Up to 24 steps, each time once, each 1 to 99%. Absent: the one target all day.
+   */
+  const targetSteps: { at: string; pct: number }[] = [];
+  if (typeof q.tsteps === 'string' && q.tsteps.trim() !== '') {
+    for (const part of q.tsteps.split(',')) {
+      const m = /^(([01]\d|2[0-3]):[0-5]\d):(\d{1,2}(?:\.\d+)?)$/.exec(part.trim());
+      if (!m) return 'A target step is a time and a per cent, HH:MM:NN -- for example 23:30:73.';
+      const pc = Number(m[3]);
+      if (!(pc >= 1 && pc <= 99)) return 'A target step keeps from 1% to 99% of the premium.';
+      targetSteps.push({ at: m[1]!, pct: Math.round(pc * 100) / 10_000 });
+    }
+    if (targetSteps.length > 24) return 'At most 24 target steps.';
+    if (new Set(targetSteps.map((x) => x.at)).size !== targetSteps.length) return 'Two target steps have the same time.';
+    if (!(targetPct > 0)) return 'A target by the clock needs a target to start from.';
+  }
+  return {
+    rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax,
+    ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}),
+  };
+}
+
+/** A strategy's option target as the backtest's settings take one: where it starts and its time steps, or null where it is not a per cent. */
+function targetOf(s: Strategy): { pct: number; steps: { at: string; pct: number }[] } | null {
+  const t = exitRules(s.config).target;
+  return t.mode === 'pct' && t.value > 0 ? { pct: t.value, steps: t.steps.map((x) => ({ at: x.at, pct: x.value })) } : null;
 }
 
 export function registerMarketRoutes(app: FastifyInstance) {
@@ -119,6 +145,8 @@ export function registerMarketRoutes(app: FastifyInstance) {
       strategies: every.map((s) => ({
         id: s.id, name: s.name, enabled: s.enabled, account: accountName(s.accountId),
         methods: [...s.config.signal!.methods], tfs: s.config.signal!.mode === 'mtf' ? ['chain'] : [...ruleTfs(s.config.signal!)],
+        // Its option target and time steps, for the screen to copy into a dynamic target (per cent of the premium kept).
+        target: targetOf(s),
       }))
         .sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true })),
     };
