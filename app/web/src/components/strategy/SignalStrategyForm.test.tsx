@@ -1352,7 +1352,13 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     // the Backtest screen was left on delta 0.10 at 16 lots; by those settings the breakout is in profit, where by this strategy's premium rule it loses
     window.localStorage.setItem('btc-desk:signalBacktest.params', JSON.stringify({ rule: 'delta', value: 0.1, lots: 16, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 58, cePct: 80, pePct: 80 }));
     const pair = (method: string, n: number, wins: number, net: number) => ({ key: `${method}|mtf|5m`, name: method, n, wins, net });
-    getSignalBacktest.mockResolvedValue({ from: '2026-10-01', to: '2026-10-13', signals: 40, total: { n: 24 }, pairs: [pair('breakout', 12, 9, 3.1), pair('bos', 9, 6, 2.2), pair('liquidity-sweep', 3, 1, -0.4)] });
+    // its Method list's own figures (`choices.methods`) are what the form reads: that list, to the rupee
+    const listed = (key: string, n: number, wins: number, net: number) => ({ key, name: key, n, wins, net });
+    getSignalBacktest.mockResolvedValue({
+      from: '2026-10-01', to: '2026-10-13', signals: 40, total: { n: 24 },
+      pairs: [pair('breakout', 12, 9, 3.1), pair('bos', 9, 6, 2.2), pair('liquidity-sweep', 3, 1, -0.4)],
+      choices: { timeframes: [], methods: [listed('breakout', 12, 9, 3.1), listed('bos', 9, 6, 2.2), listed('liquidity-sweep', 3, 1, -0.4), listed('order-flow', 0, 0, 0)] },
+    });
     show(signalStrategy({ methods: [] }));
     tab('Signals');
     // the Backtest's list is the one the form opens on

@@ -307,6 +307,16 @@ read each method's record as options, in rupees after charges, since 1 Oct. **Pr
 - **Perp points**: the old record (the Methods tab's: the signal's own trade to its SL or TGT); also what is
   shown for a strategy that buys, or while no record as options can be had -- the line under the switch says why.
 
+**Keeping the pick and the list the same** ("the backtest's methods do not match the signal strategy's"). With
+the settings alike the three lists are one -- checked on a copy of the data for all eight strategies -- and what
+drifts is the *ticks*: the in-profit list moves with every new signal and every setting changed, and a pick stays
+as it was made (the owner's saved "1h time" backtest had 37 ticked, his strategy 40, and the list was 41 by then).
+So the form says how the pick stands against the list shown -- how many of the ticked are in profit, in loss and
+without a trade, and the ones in profit left out, by name -- and has **Pick only these (N)**, which makes the pick
+exactly the list shown (the Backtest's "Only the N in profit"), and **Copy methods from a saved backtest…**, which
+takes the methods ticked in one. Both can be undone. The form's Backtest list reads the Backtest's own Method
+list figures (`choices.methods`, with no limit on open trades), so it is that list to the rupee.
+
 Both counts as options are said in a line, and under it **each setting of the strategy that is not the
 Backtest's, by name** (`rulesApart`): the strike and its blocks by time, the option's target and stop and their
 time steps, the SL and TGT distances on the form's timeframes, the perp target, the least premium, the hours, the

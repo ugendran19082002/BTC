@@ -180,9 +180,20 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
   "at most open" among them, with its shares, for all of them; a signal that finds the account or its side full is
   counted as turned away and said. The limit is **on the screen and can be typed** ("show the at-most-open field
   with its default value, editable"): **At most open, together**, **CE max** and **PE max**, opening on the
-  default -- the largest among the saved backtests run, else the account's own limit as it stands -- and taking
-  another on leaving a field or Enter (1 to 500, 1 to 100%); **Default** puts it back. With no limit anywhere the
-  fields are empty and none is shared until one is typed. **Each its own limit** is the first way, and says that more may be open than one account holds.
+  default -- **the account's own limit as it stands on the desk** (the trading account with the most room), and
+  only without one the largest among the saved backtests run -- and taking another on leaving a field or Enter (1
+  to 500, 1 to 100%); **Default** puts it back. Each trading account's limit and the saved backtests' own are
+  offered as one tap above the fields. With no limit anywhere the fields are empty and none is shared until one is
+  typed. (For an evening the default was the saved backtests' 120 while the account was set to 200 -- "one account"
+  that was not the owner's, and a margin that looked wrong for it: ₹8,626 at 120 open, ₹13,581 at the account's
+  200, of which 189 were ever needed.)
+- **The margin's working is on the screen**, in both sections ("I think the margin amount is shown wrongly -- check
+  every calculation"): how many trades and lots were open at its moment and what one lot holds -- BTC ÷ 200 ×
+  0.001 at the desk's 200x, as Delta's ticket says under Funds req. -- so the figure can be multiplied out
+  (`marginWorking`, `margin.peakLots`): "189 trades of 378 lots together × ₹35.93 a lot = ₹13,581". Worked out
+  again from the trades for the owner's own portfolio: every figure the screen gives -- trades, net, charges, each
+  member, each day, the margin, its moment and how many were open -- is the same; and the desk's real orders are
+  placed at 200x. **Each its own limit** is the first way, and says that more may be open than one account holds.
   Checked on the owner's seven over 1-13 Oct: each on its own 3,627 trades, +₹6,833, ₹12,804 of margin with 179
   open; as one account 3,377 trades, +₹6,115, 250 signals turned away, ₹8,624 with 120 open -- never over 120, 96
   calls or 96 puts at any trade's start, nobody turned away while there was room, and no shorter time frame taken
