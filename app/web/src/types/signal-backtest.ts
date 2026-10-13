@@ -1,7 +1,7 @@
 /** The signal history traded as options, as `/api/signal-backtest` gives it (server: `report/signal-backtest.ts`). */
 
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'window-end';
-export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
+export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
 export type BacktestParams = {
   rule: 'delta' | 'premium'; value: number; lots: number; targetPct: number; stopPct: number; window: 'desk' | 'all' | 'custom';
   /** With `custom`: the signals filled from this IST time to this one, "HH:MM"; it may run past midnight. */
@@ -12,6 +12,8 @@ export type BacktestParams = {
   slMin?: number; slMax?: number; tgtMin?: number; tgtMax?: number;
   /** A target by the clock: `targetPct` to begin with, then each step's share of the premium kept from its IST time. Absent or empty: fixed. */
   targetSteps?: { at: string; pct: number }[];
+  /** Only signals that filled while the market was this volatile; `off` or absent, all. */
+  vol?: 'off' | 'low' | 'medium' | 'high';
 };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */
@@ -36,6 +38,8 @@ export type SignalBacktestResponse = {
   total: BtTot;
   days: (BtTot & { day: string; pattern: string | null; live: boolean })[];
   pairs: BtRow[]; byTf: BtRow[]; byMethod: BtRow[]; byPattern: BtRow[]; byFamily: BtRow[];
+  /** By the volatility when each signal filled: low, medium, high. An older server sends none. */
+  byVol?: BtRow[];
   choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string; n: number; wins: number; net: number }[] };
 };
 export type BacktestQuery = { from: string; to: string; params: BacktestParams; tfs: readonly string[]; methods: readonly string[]; strategy?: string | null };

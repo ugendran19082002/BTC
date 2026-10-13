@@ -436,6 +436,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     !byStrategy && (rangeWords(params.slMin, params.slMax) || rangeWords(params.tgtMin, params.tgtMax))
       ? [rangeWords(params.slMin, params.slMax) && `SL ${rangeWords(params.slMin, params.slMax)}`, rangeWords(params.tgtMin, params.tgtMax) && `TGT ${rangeWords(params.tgtMin, params.tgtMax)}`].filter(Boolean).join(', ') + ' pts'
       : null,
+    params.vol && params.vol !== 'off' ? `${params.vol} volatility` : null,
     params.deskMax > 0 ? `at most ${params.deskMax} open · CE ${params.cePct}% · PE ${params.pePct}%` : 'no open limit',
   ].filter(Boolean).join(' · ');
 
@@ -518,6 +519,20 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         {!byStrategy && <>
       <SlTgtRange value={{ slMin: params.slMin ?? 0, slMax: params.slMax ?? 0, tgtMin: params.tgtMin ?? 0, tgtMax: params.tgtMax ?? 0 }} onApply={(r) => set(r)} />
         </>}
+        {/* Off to begin with (owner, 13 Oct 2026). Shown with a strategy too: it is asked of the market, not of the strategy. */}
+        <div className="grid gap-1 border-0 border-b border-solid border-[var(--line-soft)] pb-3">
+          <Segmented label="Volatility when the signal fills" value={params.vol ?? 'off'} onChange={(vol) => set({ vol })}
+            options={[
+              { key: 'off', label: 'Off', spoken: 'Volatility filter off: every signal' },
+              { key: 'low', label: 'Low', spoken: 'Only signals in low volatility' },
+              { key: 'medium', label: 'Medium', spoken: 'Only signals in medium volatility' },
+              { key: 'high', label: 'High', spoken: 'Only signals in high volatility' },
+            ]} />
+          <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
+            <b className="font-medium text-foreground">Volatility filter{(params.vol ?? 'off') === 'off' ? ' · off' : ''}.</b> The last two hours of 15-minute candles when the signal fills, against the average of the five expiry days before:
+            low is under 0.8×, high over 1.3×, medium between.
+          </p>
+        </div>
         <section aria-label="The desk's limits" className="grid gap-2">
           <div className="text-[13px] font-semibold">The desk&apos;s limits <span className="font-normal text-muted-foreground">· as on the Signal Strategies card</span></div>
         {/* An older server sends none: nothing offered rather than a blank screen. */}
@@ -721,6 +736,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             r.skipped['outside-window'] ? `${count(r.skipped['outside-window'])} outside ${byStrategy ? 'its days and hours' : 'the hours chosen'}` : null,
             r.skipped['no-entry-window'] ? `${count(r.skipped['no-entry-window'])} inside its no-entry window` : null,
             r.skipped.distance ? `${count(r.skipped.distance)} with the SL or TGT outside ${byStrategy ? 'its distances' : 'the range set'}` : null,
+            r.skipped.volatility ? `${count(r.skipped.volatility)} not in ${params.vol ?? 'that'} volatility` : null,
             r.skipped['at-limit'] ? `${count(r.skipped['at-limit'])} while it already had its most open` : null,
             r.skipped['desk-limit'] ? `${count(r.skipped['desk-limit'])} while ${params.deskMax} were open (at most open)` : null,
             r.skipped['side-limit'] ? `${count(r.skipped['side-limit'])} while that side was at its CE / PE max` : null,
@@ -802,6 +818,11 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 </tbody>
               </table>
             </Panel>
+            {(r.byVol?.length ?? 0) > 0 && (
+              <Panel title="By volatility when the signal filled">
+                <Table caption="Backtest by volatility" first="Volatility" rows={r.byVol!} />
+              </Panel>
+            )}
             <Panel title="By time frame">
               <Table caption="Backtest by time frame" first="Time frame" rows={r.byTf.map((x) => (x.key === 'chain' ? { ...x, name: 'TF chain' } : x))} perp />
             </Panel>
