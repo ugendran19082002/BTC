@@ -67,7 +67,7 @@ function CustomHours({ from, to, onApply, onClose }: { from: string; to: string;
       <div className="grid grid-cols-2 gap-3">
         <button type="button" onClick={onClose} className="h-11 rounded-lg border border-border bg-transparent font-[inherit] text-[14px] text-foreground">Cancel</button>
         <button type="button" disabled={problem !== null} onClick={() => onApply(a, b)}
-          className="h-11 rounded-lg border-0 bg-[var(--up)] font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-40">Use these hours</button>
+          className="h-11 rounded-lg border-0 bg-[var(--chosen)] font-[inherit] text-[14px] font-semibold text-[var(--chosen-ink)] disabled:opacity-40">Use these hours</button>
       </div>
     </div>
   );
@@ -237,7 +237,7 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
       </p>
       {!same && (
         <button type="button" disabled={problem !== null} onClick={() => onApply(Number(first) / 100, parsed())}
-          className="h-11 rounded-lg border-0 bg-[var(--up)] font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-40">Use these steps</button>
+          className="h-11 rounded-lg border-0 bg-[var(--chosen)] font-[inherit] text-[14px] font-semibold text-[var(--chosen-ink)] disabled:opacity-40">Use these steps</button>
       )}
     </div>
   );
@@ -280,7 +280,7 @@ function CustomValue({ value, presets, spec, name, onChange }: { value: number; 
           />
           <span className="text-[12.5px] text-muted-foreground">{spec.unit}</span>
           <button type="button" onClick={apply} disabled={problem !== null}
-            className="h-10 rounded-md border-0 bg-[var(--up)] px-3 font-[inherit] text-[13.5px] font-semibold text-[var(--bg)] disabled:opacity-40">Use</button>
+            className="h-10 rounded-md border-0 bg-[var(--chosen)] px-3 font-[inherit] text-[13.5px] font-semibold text-[var(--chosen-ink)] disabled:opacity-40">Use</button>
           {problem && <span role="alert" className="text-[12.5px] text-[var(--down)]">{problem}</span>}
         </span>
       )}

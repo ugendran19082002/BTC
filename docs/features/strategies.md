@@ -307,8 +307,15 @@ read each method's record as options, in rupees after charges, since 1 Oct. **Pr
 - **Perp points**: the old record (the Methods tab's: the signal's own trade to its SL or TGT); also what is
   shown for a strategy that buys, or while no record as options can be had -- the line under the switch says why.
 
-Both counts as options are said in a line, and why they differ when they do: the strategy is not yet set as the
-Backtest is. That evening "4h time" was saved as premium ≤ $50 with strike blocks, 16 lots, TGT 90%, SL +300%, SL
+Both counts as options are said in a line, and under it **each setting of the strategy that is not the
+Backtest's, by name** (`rulesApart`): the strike and its blocks by time, the option's target and stop and their
+time steps, the SL and TGT distances on the form's timeframes, the perp target, the least premium, the hours, the
+days. With none the line says the two are one list. (Lots are not named: they change the money, not which methods
+are in profit.) "I changed every strategy to delta and it still does not match" (13 Oct 2026): all eight had the
+Backtest's delta, lots, target and stop by then, and still a target by the clock (70% → 97% in nine steps, the
+Backtest's fixed at 70%) and nearer distances (100 to 200 points for the Backtest's 250). With those two made the
+same on a copy of that evening's data, every strategy's list matched its saved backtest to the trade and the
+rupee. That evening "4h time" was saved as premium ≤ $50 with strike blocks, 16 lots, TGT 90%, SL +300%, SL
 and TGT ≥ 150 points, and the owner's saved backtest of the same name was delta ≤ 0.10, 2 lots, TGT 70%, SL
 +160%, SL and TGT ≥ 250 -- 31 in profit and 8 in loss by the first, 34 and 6 by the second.
 Checked on the 22 saved strategies against a separate working-out: every method's trades, wins and money agree.

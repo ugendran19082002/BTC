@@ -97,7 +97,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, d
           className={cn(
             'h-10 flex-auto whitespace-nowrap rounded-md border-0 px-2 font-[inherit] text-[13.5px] font-semibold',
             dense && 'max-sm:px-1 max-sm:text-[12.5px]',
-            value === o.key ? 'bg-[var(--up)] text-[var(--bg)]' : 'bg-transparent text-muted-foreground',
+            value === o.key ? 'bg-[var(--chosen)] text-[var(--chosen-ink)]' : 'bg-transparent text-muted-foreground',
           )}
         >
           {o.label}
@@ -173,7 +173,7 @@ export function Chip({ on, onClick, children }: { on: boolean; onClick: () => vo
       type="button" aria-pressed={on} onClick={onClick}
       className={cn(
         'h-10 shrink-0 whitespace-nowrap rounded-full border px-4 text-[14px] font-medium',
-        on ? 'border-[var(--up)] bg-[var(--up-bg)] text-[var(--up)]' : 'border-border bg-transparent text-muted-foreground',
+        on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-border bg-transparent text-muted-foreground',
       )}
     >
       {children}

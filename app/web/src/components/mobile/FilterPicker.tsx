@@ -112,7 +112,7 @@ export function FilterPicker({ noun, options, picked, onChange, split = false }:
           type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${noun.label} filter: ${words}`}
           className={cn(
             'm-0 inline-flex h-10 max-w-[12rem] shrink-0 appearance-none items-center gap-1 whitespace-nowrap rounded-full border border-solid px-2.5 text-left font-[inherit] text-[13.5px] font-medium',
-            on ? 'border-[var(--up)] bg-[var(--up-bg)] text-[var(--up)]' : 'border-border bg-transparent text-foreground',
+            on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-border bg-transparent text-foreground',
           )}
         >
           {/* One chosen: its name alone, cut where it runs long -- the name says the kind. Otherwise the kind, and how many where several. */}
@@ -120,9 +120,9 @@ export function FilterPicker({ noun, options, picked, onChange, split = false }:
             ? <span className="min-w-0 truncate font-semibold">{words}</span>
             : <span className="shrink-0">{noun.label}</span>}
           {chosen.length > 1 && (
-            <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-[var(--up)] px-1 text-[11.5px] font-bold tabular-nums text-[var(--bg)]">{chosen.length}</span>
+            <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-[var(--chosen)] px-1 text-[11.5px] font-bold tabular-nums text-[var(--chosen-ink)]">{chosen.length}</span>
           )}
-          <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', on ? 'text-[var(--up)]' : 'text-muted-foreground', open && 'rotate-180')} aria-hidden />
+          <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', on ? 'text-[var(--chosen)]' : 'text-muted-foreground', open && 'rotate-180')} aria-hidden />
         </button>
       </PopoverTrigger>
       {/* As wide as a phone allows, whatever the chip's own width; kept clear of the screen's edges wherever the chip sits in the row. */}
@@ -180,7 +180,7 @@ export function FilterPicker({ noun, options, picked, onChange, split = false }:
           </button>
           <button
             type="button" onClick={() => { setOpen(false); setFind(''); }}
-            className="m-0 h-10 flex-1 appearance-none rounded-md border-0 bg-[var(--up)] font-[inherit] text-[13.5px] font-semibold text-[var(--bg)]"
+            className="m-0 h-10 flex-1 appearance-none rounded-md border-0 bg-[var(--chosen)] font-[inherit] text-[13.5px] font-semibold text-[var(--chosen-ink)]"
           >
             Done
           </button>
@@ -197,12 +197,12 @@ function Row({ on, name, note, tone, onClick }: { on: boolean; name: string; not
         type="button" onClick={onClick} tabIndex={0}
         className={cn(
           'm-0 flex min-h-[44px] w-full appearance-none items-center gap-2.5 rounded-md border-0 px-2 py-1.5 text-left font-[inherit]',
-          on ? 'bg-[var(--up-bg)]' : 'bg-transparent',
+          on ? 'bg-[var(--chosen-soft)]' : 'bg-transparent',
         )}
       >
         <span
           aria-hidden
-          className={cn('grid h-5 w-5 shrink-0 place-items-center rounded border border-solid', on ? 'border-[var(--up)] bg-[var(--up)] text-[var(--bg)]' : 'border-border bg-transparent')}
+          className={cn('grid h-5 w-5 shrink-0 place-items-center rounded border border-solid', on ? 'border-[var(--chosen)] bg-[var(--chosen)] text-[var(--chosen-ink)]' : 'border-border bg-transparent')}
         >
           {on && <Check className="h-3.5 w-3.5" strokeWidth={3} />}
         </span>

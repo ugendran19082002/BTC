@@ -55,9 +55,30 @@
   --down-bg: #2e131a;
   --warn-bg: #2b2410;
 
+  /*
+   * What is chosen, in the parts the desk and the phone share -- a segment, a chip, a ticked row, the button that
+   * does the thing (owner, 13 Oct 2026: "use the same theme colour"). The Backtest and the Market report are built
+   * from the phone's parts, which fill a choice with green; on the desk, beside yellow tabs and a yellow Save,
+   * that was a second theme on one screen -- and green there is money. So the parts ask for `--chosen` and each
+   * view says what it is: the accent here, the phone's own green there (`:root[data-view='phone']`, set while the
+   * phone app is up -- on the root, because its menus open outside its own frame).
+   */
+  --chosen: var(--accent);
+  --chosen-ink: var(--accent-ink);
+  --chosen-soft: var(--accent-soft);
+  --chosen-line: var(--accent-line);
+
   --ring: #fcd53580;
   --shadow-lift: 0 1px 2px #00000059, 0 8px 24px -12px #00000080;
   color-scheme: dark;
+}
+
+/* The phone app's chosen colour: its own green, as every screen of it has had. */
+:root[data-view='phone'] {
+  --chosen: var(--up);
+  --chosen-ink: var(--bg);
+  --chosen-soft: var(--up-bg);
+  --chosen-line: var(--up);
 }
 
 /* A raised surface gets a lit top edge and a shadow under it. */

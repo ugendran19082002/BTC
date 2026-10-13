@@ -35,7 +35,7 @@ function shapeOf(q: SavedQuery): string {
 }
 
 const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[16px] text-foreground';
-const solid = 'h-11 shrink-0 rounded-lg border-0 bg-[var(--up)] px-3 font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-40';
+const solid = 'h-11 shrink-0 rounded-lg border-0 bg-[var(--chosen)] px-3 font-[inherit] text-[14px] font-semibold text-[var(--chosen-ink)] disabled:opacity-40';
 const quiet = 'h-11 shrink-0 rounded-lg border border-solid border-border bg-transparent px-3 font-[inherit] text-[14px] text-foreground disabled:opacity-40';
 const link = 'm-0 min-h-[36px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[13px] font-medium text-[var(--accent)] disabled:opacity-40';
 
@@ -264,11 +264,11 @@ export function SavedBacktests({ current, wordsOf, onLoad, run, onRun }: {
                     <li key={s.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 border-0 border-t border-solid border-[var(--line-soft)] py-2 first:border-t-0">
                       <input type="checkbox" checked={on} aria-label={`Run ${s.name} together with others`} disabled={!on && picked.length >= 12}
                         onChange={() => setTicked((t) => (t.includes(s.id) ? t.filter((x) => x !== s.id) : [...t, s.id]))}
-                        className="mt-2.5 h-5 w-5 accent-[var(--up)]" />
+                        className="mt-2.5 h-5 w-5 accent-[var(--chosen)]" />
                       <button type="button" aria-label={`Run ${s.name}`} aria-current={shown?.id === s.id ? 'true' : undefined}
                         onClick={() => { onLoad(s.query); setFromId(s.id); setSaid(null); }}
                         className="m-0 min-h-[44px] min-w-0 appearance-none border-0 bg-transparent p-0 text-left font-[inherit]">
-                        <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', shown?.id === s.id ? 'text-[var(--up)]' : 'text-foreground')}>{s.name}{shown?.id === s.id ? ' · on the screen' : ''}</span>
+                        <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', shown?.id === s.id ? 'text-[var(--chosen)]' : 'text-foreground')}>{s.name}{shown?.id === s.id ? ' · on the screen' : ''}</span>
                         <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{wordsOf(s.query)}</span>
                       </button>
                       {asking === s.id ? (
