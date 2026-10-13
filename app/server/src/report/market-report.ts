@@ -7,7 +7,7 @@ import { CHAIN_KEY, closedNet } from '../trading/pnl-history.js';
 import { exitByOf } from '../strategy/store.js';
 import type { TradeRecord } from '../trading/engine.js';
 import {
-  FAMILIES, MARKET_DAY_VERSION, MIN_BARS, PATTERNS, classify, dayStats, familyOf, sessionDayOf, sessionDays, sessionOf,
+  MARKET_DAY_VERSION, MIN_BARS, PATTERNS, classify, dayStats, familyOf, sessionDayOf, sessionDays, sessionOf,
   type DayStats, type MinuteBar, type PatternFamily, type PatternKey,
 } from './market-day.js';
 
@@ -23,9 +23,9 @@ import {
  * A trade belongs to the expiry day it was entered in -- a signal by its fill on the perp, an order by its first
  * entry fill -- so a day's results are the results of the trades that day's market produced, wherever they ended.
  *
- * Read by method, timeframe, strategy and exit, for one day, one of the twenty kinds of day, one of their four
- * families, or all of them. With a dozen days on record most kinds have one day or two behind them: every group
- * carries its count of days, and the families are there because they fill sooner.
+ * Each day is read with both records' totals; opened, by method, timeframe, strategy and exit. The groups by
+ * kind of day and by family, and the filters, were taken out the day they were built (13 Oct 2026): the owner
+ * reads the days, newest first, and nothing else.
  *
  * A finished day's figures are worked out once and kept (`market_days`); the day in progress is worked out as
  * it is asked for. Trades and signals are added up in memory and kept for a minute while their day is recent,
@@ -333,42 +333,18 @@ function sideOf(cells: readonly Cell[], names: Names): Side {
   };
 }
 
-/** The three best and the three worst pairs of a group: only pairs with a closed trade, a pair in at most one list. */
-function ends(pairs: readonly Row[]): { best: Row[]; worst: Row[] } {
-  const closed = pairs.filter((p) => p.n > 0);
-  return { best: closed.filter((p) => p.net > 0).sort(byNet).slice(0, 3), worst: closed.filter((p) => p.net < 0).sort((a, b) => a.net - b.net || b.n - a.n).slice(0, 3) };
-}
 
-/** What a method or a strategy made, for the list it is chosen from: closed trades, how many won, and the net in the record's own unit. */
-export type Made = { n: number; wins: number; net: number };
-const madeOf = (cells: readonly Cell[]): Made => { const t = totalOf(cells); return { n: t.n, wins: t.wins, net: t.net }; };
-
-export type GroupRow = {
-  key: string; name: string; meaning?: string; id?: number;
-  /** The expiry days of this kind in the range, oldest first. */
-  days: string[];
-  signal: Tot; real: Tot;
-  signalEnds: { best: Row[]; worst: Row[] }; realEnds: { best: Row[]; worst: Row[] };
-};
-
+/**
+ * The report (trimmed 13 Oct 2026 to what the owner reads: "only each expiry day, newest first -- nothing else"):
+ * each expiry day with its figures, its kind and both records' totals. The groups by kind of day and by family,
+ * the range's best and worst pairs and the lists to filter by went with the panels that showed them.
+ */
 export type MarketReport = {
   from: string; to: string;
   days: (MarketDay & { family: PatternFamily | null; signal: Tot; real: Tot })[];
+  /** Both records over the whole range. The backtest reads a strategy's real orders from it. */
   total: { signal: Tot; real: Tot };
-  /** The three best and the three worst pairs of the whole range, in each record. */
-  ends: { signal: { best: Row[]; worst: Row[] }; real: { best: Row[]; worst: Row[] } };
-  patterns: GroupRow[]; families: GroupRow[];
   catalogue: typeof PATTERNS;
-  /**
-   * What there is to filter by in the range. The timeframes are every one there is. Each method carries what it
-   * made in both records, and each strategy what its orders made, as the other filters leave them -- a list is
-   * never narrowed by its own choice, so what is ticked can be seen beside what is not.
-   */
-  choices: {
-    timeframes: { key: string; name: string }[];
-    methods: { key: string; name: string; signal: Made; real: Made }[];
-    strategies: ({ key: string; name: string } & Made)[];
-  };
 };
 
 async function namesOf(): Promise<Names> {
@@ -392,21 +368,9 @@ async function readAll(o: { from: string; to: string; now: number; spot: number 
   return { days, signal: kept(signal, o, false), real: kept(real, o, true), every: { signal, real }, names: await namesOf() };
 }
 
-/** The whole range: each day with its kind and its results, and the results by kind of day and by family. */
+/** The whole range: each expiry day with its kind and both records' totals. */
 export async function marketReport(o: { from: string; to: string; now: number; spot: number | null } & ReportFilters): Promise<MarketReport> {
   const r = await readAll(o);
-  const of = (cells: readonly Cell[], days: ReadonlySet<string>) => cells.filter((c) => days.has(c.day));
-  const group = (key: string, name: string, days: string[], extra: Partial<GroupRow> = {}): GroupRow => {
-    const set = new Set(days);
-    const s = sideOf(of(r.signal, set), r.names), x = sideOf(of(r.real, set), r.names);
-    return { key, name, ...extra, days, signal: s.total, real: x.total, signalEnds: ends(s.pairs), realEnds: ends(x.pairs) };
-  };
-  const named = r.days.filter((d) => d.pattern !== null);
-  const choices = [...r.every.signal, ...r.every.real.filter((c) => o.account === null || c.account === o.account)];
-  const distinct = (xs: { key: string; name: string }[]) => [...new Map(xs.map((x) => [x.key, x])).values()];
-  // Each list from what the other choices leave, and not narrowed by its own.
-  const butMethods = { signal: kept(r.every.signal, { ...o, methods: null }, false), real: kept(r.every.real, { ...o, methods: null }, true) };
-  const butStrategies = kept(r.every.real, { ...o, strategies: null }, true);
   return {
     from: o.from, to: o.to,
     days: r.days.map((d) => ({
@@ -414,38 +378,16 @@ export async function marketReport(o: { from: string; to: string; now: number; s
       signal: totalOf(r.signal.filter((c) => c.day === d.day)), real: totalOf(r.real.filter((c) => c.day === d.day)),
     })),
     total: { signal: totalOf(r.signal), real: totalOf(r.real) },
-    ends: { signal: ends(sideOf(r.signal, r.names).pairs), real: ends(sideOf(r.real, r.names).pairs) },
-    patterns: PATTERNS.filter((p) => named.some((d) => d.pattern === p.key))
-      .map((p) => group(p.key, p.name, named.filter((d) => d.pattern === p.key).map((d) => d.day), { id: p.id, meaning: p.meaning })),
-    families: FAMILIES.filter((f) => named.some((d) => familyOf(d.pattern!) === f.key))
-      .map((f) => group(f.key, f.name, named.filter((d) => familyOf(d.pattern!) === f.key).map((d) => d.day))),
     catalogue: PATTERNS,
-    choices: {
-      timeframes: distinct(choices.map((c) => ({ key: tfKeyOf(c), name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf }))).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
-      methods: distinct(choices.map((c) => ({ key: c.method, name: r.names.method(c.method) })))
-        .map((m) => ({ ...m, signal: madeOf(butMethods.signal.filter((c) => c.method === m.key)), real: madeOf(butMethods.real.filter((c) => c.method === m.key)) }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),
-      strategies: distinct(r.every.real.filter((c) => o.account === null || c.account === o.account).map((c) => ({ key: c.strategy ?? BY_HAND, name: c.strategy ?? BY_HAND })))
-        .map((s) => ({ ...s, ...madeOf(butStrategies.filter((c) => (c.strategy ?? BY_HAND) === s.key)) }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),
-    },
   };
 }
 
-export type Scope = { kind: 'all' } | { kind: 'day'; day: string } | { kind: 'pattern'; key: PatternKey } | { kind: 'family'; key: PatternFamily };
-
-/** One day, one kind of day, one family, or the whole range: both records by pair, timeframe, method and strategy. */
-export async function marketBreakdown(o: { from: string; to: string; now: number; spot: number | null; scope: Scope } & ReportFilters): Promise<{ scope: Scope; days: string[]; signal: Side; real: Side }> {
+/** One expiry day opened: both records by pair, timeframe, method and strategy. */
+export async function marketBreakdown(o: { from: string; to: string; now: number; spot: number | null; day: string } & ReportFilters): Promise<{ day: string; signal: Side; real: Side }> {
   const r = await readAll(o);
-  const s = o.scope;
-  const days = new Set(r.days.filter((d) =>
-    s.kind === 'all' ? true
-      : s.kind === 'day' ? d.day === s.day
-        : s.kind === 'pattern' ? d.pattern === s.key
-          : d.pattern !== null && familyOf(d.pattern) === s.key).map((d) => d.day));
   return {
-    scope: s, days: [...days],
-    signal: sideOf(r.signal.filter((c) => days.has(c.day)), r.names),
-    real: sideOf(r.real.filter((c) => days.has(c.day)), r.names),
+    day: o.day,
+    signal: sideOf(r.signal.filter((c) => c.day === o.day), r.names),
+    real: sideOf(r.real.filter((c) => c.day === o.day), r.names),
   };
 }

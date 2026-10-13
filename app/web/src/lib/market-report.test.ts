@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dayLabel, exitLines, expiryDayOf, netText, pairOf, ptsText, rangeOf, sparkOf, standoutsOf, timeIst, winRate } from '@/lib/market-report';
-import type { MarketReportResponse, Tot } from '@/types/market-report';
+import { dayLabel, exitLines, expiryDayOf, netText, pairOf, ptsText, rangeOf, sparkOf, timeIst, winRate } from '@/lib/market-report';
+import type { Tot } from '@/types/market-report';
 
 const at = (iso: string) => Date.parse(`${iso}+05:30`);
 const tot = (o: Partial<Tot> = {}): Tot => ({ n: 0, wins: 0, losses: 0, open: 0, net: 0, won: 0, lost: 0, netR: 0, exits: {}, ...o });
@@ -51,47 +51,5 @@ describe('a record\'s figures', () => {
     expect(s.d).toBe('M0.0,50.0L50.0,0.0L100.0,25.0');
     expect(s.hi).toEqual([50, 0]); expect(s.lo).toEqual([0, 50]);
     expect(sparkOf([5], 100, 50)).toBeNull();
-  });
-});
-
-describe('what stands out', () => {
-  const group = (key: string, name: string, days: string[], real: number, n = 5) => ({
-    key, name, days, signal: tot(), real: tot({ n, wins: 3, net: real }), signalEnds: { best: [], worst: [] }, realEnds: { best: [], worst: [] },
-  });
-  const report: MarketReportResponse = {
-    from: '2026-10-01', to: '2026-10-03',
-    days: [
-      { day: '2026-10-01', from: 0, to: 0, live: false, bars: 1440, stats: null, pattern: 'RANGE_CLEAN', why: null, family: 'range', signal: tot(), real: tot({ n: 3, net: 40 }) },
-      { day: '2026-10-02', from: 0, to: 0, live: false, bars: 1440, stats: null, pattern: 'VOLATILITY_SPIKE', why: null, family: 'turn', signal: tot(), real: tot({ n: 4, net: -90 }) },
-      { day: '2026-10-03', from: 0, to: 0, live: true, bars: 300, stats: null, pattern: null, why: null, family: null, signal: tot(), real: tot() },
-    ],
-    total: { signal: tot(), real: tot({ n: 7, net: -50, exits: { 'option-tgt': { n: 4, net: 60 }, 'perp-sl': { n: 3, net: -110 } } }) },
-    ends: {
-      signal: { best: [], worst: [] },
-      real: { best: [{ ...tot({ n: 2, net: 30 }), key: 'a', name: '#1 Breakout', tf: '15m' }], worst: [{ ...tot({ n: 2, net: -70 }), key: 'b', name: '#9 Pullback', tf: '1h' }] },
-    },
-    patterns: [], families: [group('range', 'Range', ['2026-10-01'], 40), group('turn', 'Turn / event', ['2026-10-02'], -90)],
-    catalogue: [
-      { id: 7, key: 'RANGE_CLEAN', name: 'Range · clean', meaning: 'Tight horizontal range', family: 'range' },
-      { id: 20, key: 'VOLATILITY_SPIKE', name: 'Volatility spike', meaning: 'Sudden large movement', family: 'turn' },
-    ],
-    choices: { timeframes: [], methods: [], strategies: [] },
-  };
-
-  it('names the kind of day, the exit, the pair and the day at each end -- for the record asked', () => {
-    const lines = standoutsOf(report, 'real');
-    expect(lines.map((x) => [x.label, x.text, x.tone])).toEqual([
-      ['Made most on', 'Range days · 1 day', 'up'],
-      ['Lost most on', 'Turn / event days · 1 day', 'down'],
-      ['Exit that paid most', 'Option TGT · 4 trades', 'up'],
-      ['Exit that cost most', 'Perp SL · 3 trades', 'down'],
-      ['Best pair', '#1 Breakout · 15m', 'up'],
-      ['Worst pair', '#9 Pullback · 1h', 'down'],
-      ['Best day', 'Thu 1 Oct · Range · clean', 'up'],
-      ['Worst day', 'Fri 2 Oct · Volatility spike', 'down'],
-    ]);
-  });
-  it('says nothing where there is nothing: the signal history here has no trade', () => {
-    expect(standoutsOf(report, 'signal')).toEqual([]);
   });
 });

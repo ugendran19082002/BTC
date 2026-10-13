@@ -1,6 +1,6 @@
 import { signedInr, usdToInr } from '@/lib/format';
 import type { PairStat } from '@/lib/method-pairs';
-import type { ExitKey, MarketReportResponse, Row, Tot } from '@/types/market-report';
+import type { ExitKey, Row, Tot } from '@/types/market-report';
 
 /**
  * The market report's words and sums (13 Oct 2026): an expiry day's date, a record's net in its own unit --
@@ -65,40 +65,6 @@ export function exitLines(tot: Tot): ExitLine[] {
     const x = tot.exits[key];
     return x && x.n > 0 ? [{ key, label: EXIT_LABEL[key], n: x.n, net: x.net, share: tot.n > 0 ? x.n / tot.n : 0 }] : [];
   });
-}
-
-/** One thing worth knowing before reading the rest: what it is, of what, and how much. */
-export type Standout = { label: string; text: string; amount: string; tone: 'up' | 'down' };
-
-/**
- * What stands out in a range, for one record (13 Oct 2026, "a report that is useful to me"): the kind of day that
- * made the most and the one that lost the most, the exit that paid and the exit that cost, the best and the worst
- * pair, and the best and the worst day. Only what there is: a range with nothing in loss has no "lost most" line.
- */
-export function standoutsOf(r: MarketReportResponse, source: Source): Standout[] {
-  const out: Standout[] = [];
-  const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
-  const add = (label: string, text: string, net: number) => out.push({ label, text, amount: netText(source, net), tone: net >= 0 ? 'up' : 'down' });
-  const fams = r.families.filter((f) => f[source].n > 0);
-  const famBest = [...fams].sort((a, b) => b[source].net - a[source].net)[0];
-  const famWorst = [...fams].sort((a, b) => a[source].net - b[source].net)[0];
-  if (famBest && famBest[source].net > 0) add('Made most on', `${famBest.name} days · ${days(famBest.days.length)}`, famBest[source].net);
-  if (famWorst && famWorst[source].net < 0) add('Lost most on', `${famWorst.name} days · ${days(famWorst.days.length)}`, famWorst[source].net);
-  const exits = exitLines(r.total[source]);
-  const exitBest = [...exits].sort((a, b) => b.net - a.net)[0];
-  const exitWorst = [...exits].sort((a, b) => a.net - b.net)[0];
-  if (exitBest && exitBest.net > 0) add('Exit that paid most', `${exitBest.label} · ${exitBest.n.toLocaleString('en-US')} trades`, exitBest.net);
-  if (exitWorst && exitWorst.net < 0) add('Exit that cost most', `${exitWorst.label} · ${exitWorst.n.toLocaleString('en-US')} trades`, exitWorst.net);
-  const pairBest = r.ends[source].best[0], pairWorst = r.ends[source].worst[0];
-  if (pairBest) add('Best pair', `${pairBest.name} · ${pairBest.tf}`, pairBest.net);
-  if (pairWorst) add('Worst pair', `${pairWorst.name} · ${pairWorst.tf}`, pairWorst.net);
-  const traded = r.days.filter((d) => d[source].n > 0);
-  const kind = (key: string | null) => r.catalogue.find((p) => p.key === key)?.name ?? 'not named';
-  const dayBest = [...traded].sort((a, b) => b[source].net - a[source].net)[0];
-  const dayWorst = [...traded].sort((a, b) => a[source].net - b[source].net)[0];
-  if (dayBest && dayBest[source].net > 0) add('Best day', `${dayLabel(dayBest.day)} · ${kind(dayBest.pattern)}`, dayBest[source].net);
-  if (dayWorst && dayWorst[source].net < 0) add('Worst day', `${dayLabel(dayWorst.day)} · ${kind(dayWorst.pattern)}`, dayWorst[source].net);
-  return out;
 }
 
 /** A report row as the pair lists read one. */

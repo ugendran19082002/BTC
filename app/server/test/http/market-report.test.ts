@@ -241,37 +241,20 @@ test('[critical] the real orders of a day: by their entry, money after charges, 
   assert.equal(one.body.days[0].real.n, 5);
 });
 
-test('[critical] by kind of day and by family: the days of each, both records, and the best and worst pairs', async () => {
+test('[critical] the report is the days and nothing else: no groups, no pairs of the range, no lists to filter by', async () => {
   const r = await get(`/api/market-report?from=${CLIMB}&to=${QUIET}`);
-  assert.deepEqual(r.body.patterns.map((p: any) => [p.id, p.key, p.days]), [[1, 'UP_TREND_CLEAN', [CLIMB]], [10, 'RANGE_LOW_VOLATILITY', [QUIET]]]);
-  assert.deepEqual(r.body.families.map((f: any) => [f.key, f.name, f.days.length]), [['up', 'Up trend', 1], ['range', 'Range', 1]]);
-  const up = r.body.patterns[0];
-  assert.equal(up.meaning, 'Smooth upward movement');
-  assert.equal(up.signal.n, 5); assert.equal(up.real.n, 5);
-  // signal pairs: 15m breakout +600 (two targets, one stop), the chain's +200, 1h pullback +50 -- none in loss
-  assert.deepEqual(up.signalEnds.best.map((p: any) => [p.name, p.tf, p.net]), [['#1 Breakout', '15m', 600], ['#1 Breakout', '5m + TF chain', 200], [up.signalEnds.best[2].name, '1h', 50]]);
-  assert.deepEqual(up.signalEnds.worst, []);
-  // real pairs: 15m breakout lost on its perp stop less than it made; 1h pullback lost on the option stop
-  assert.equal(up.realEnds.worst[0].tf, '1h');
-  assert.ok(up.realEnds.worst[0].net < -1.2);
-  // and of the whole range: the quiet day's stop takes 250 off 15m breakout, which is still the best signal pair
-  assert.deepEqual(r.body.ends.signal.best.map((p: any) => [p.tf, p.net])[0], ['15m', 350]);
-  assert.deepEqual(r.body.ends.signal.worst, []);
-  assert.equal(r.body.ends.real.worst[0].tf, '1h');
-  assert.deepEqual(r.body.choices.timeframes.map((t: any) => t.key), ['15m', '1h', 'chain']);
-  assert.deepEqual(r.body.choices.strategies.map((s: any) => s.name), ['1h time', '15m time'], 'by name, the numbers in them read as numbers');
-  // each method with what it made in both records, each strategy with what its orders made
-  const breakout = r.body.choices.methods.find((m: any) => m.key === 'breakout');
-  assert.equal(breakout.name, '#1 Breakout');
-  assert.deepEqual(breakout.signal, { n: 5, wins: 3, net: 500 + 400 - 300 + 200 - 250 });
-  assert.deepEqual([breakout.real.n, breakout.real.wins], [4, 3]);
-  assert.deepEqual(r.body.choices.strategies.map((s: any) => [s.name, s.n, s.wins]), [['1h time', 2, 1], ['15m time', 4, 3]]);
+  assert.deepEqual(Object.keys(r.body).sort(), ['catalogue', 'days', 'from', 'to', 'total']);
+  assert.equal(r.body.total.signal.n, 6);
+  assert.equal(r.body.total.real.n, 6);
+  // the filters went with the panels they served: asked for, they change nothing
+  const asked = await get(`/api/market-report?from=${CLIMB}&to=${QUIET}&tf=1h&method=pullback&strategy=${encodeURIComponent('15m time')}`);
+  assert.deepEqual(asked.body.days.map((d: any) => [d.signal.n, d.real.n]), r.body.days.map((d: any) => [d.signal.n, d.real.n]));
 });
 
-test('[critical] the breakdown of a day, a kind of day, a family: pairs, timeframes, methods, strategies -- and the filters', async () => {
-  const day = await get(`/api/market-report/breakdown?from=${CLIMB}&to=${QUIET}&day=${CLIMB}`);
+test('[critical] a day opened: both records by pair, timeframe, method and strategy', async () => {
+  const day = await get(`/api/market-report/breakdown?day=${CLIMB}`);
   assert.equal(day.status, 200);
-  assert.deepEqual(day.body.days, [CLIMB]);
+  assert.equal(day.body.day, CLIMB);
   assert.deepEqual(day.body.signal.byTf.map((t: any) => [t.key, t.n, t.net]), [['15m', 3, 600], ['1h', 1, 50], ['chain', 1, 200]]);
   assert.deepEqual(day.body.real.byTf.map((t: any) => [t.key, t.n, t.open]), [['15m', 3, 0], ['1h', 2, 1]]);
   assert.deepEqual(day.body.real.byStrategy.map((s: any) => [s.name, s.n]).sort(), [['15m time', 3], ['1h time', 2]]);
@@ -279,37 +262,19 @@ test('[critical] the breakdown of a day, a kind of day, a family: pairs, timefra
   const pair = day.body.real.pairs.find((p: any) => p.tf === '15m');
   assert.deepEqual([pair.name, pair.n, pair.wins, pair.losses], ['#1 Breakout', 3, 2, 1]);
   assert.deepEqual(Object.keys(pair.exits).sort(), ['option-tgt', 'perp-sl', 'perp-tgt']);
-
-  const kind = await get(`/api/market-report/breakdown?from=${CLIMB}&to=${QUIET}&pattern=RANGE_LOW_VOLATILITY`);
-  assert.deepEqual([kind.body.days, kind.body.signal.total.n, kind.body.real.total.n], [[QUIET], 1, 1]);
-  const family = await get(`/api/market-report/breakdown?from=${CLIMB}&to=${QUIET}&family=up`);
-  assert.deepEqual([family.body.days, family.body.real.total.n], [[CLIMB], 5]);
-  const all = await get(`/api/market-report/breakdown?from=${CLIMB}&to=${QUIET}`);
-  assert.equal(all.body.real.total.n, 6);
-
-  // the filters: a timeframe and a method narrow both records; a strategy, the orders alone
-  const tf = await get(`/api/market-report/breakdown?from=${CLIMB}&to=${QUIET}&day=${CLIMB}&tf=1h`);
-  assert.deepEqual([tf.body.signal.total.n, tf.body.real.total.n], [1, 2]);
-  const chain = await get(`/api/market-report/breakdown?from=${CLIMB}&to=${QUIET}&day=${CLIMB}&tf=chain`);
-  assert.deepEqual([chain.body.signal.total.n, chain.body.real.total.n], [1, 0]);
-  const method = await get(`/api/market-report?from=${CLIMB}&to=${QUIET}&method=pullback`);
-  assert.deepEqual([method.body.days[0].signal.n, method.body.days[0].real.n], [1, 2]);
-  const strategy = await get(`/api/market-report?from=${CLIMB}&to=${QUIET}&strategy=${encodeURIComponent('15m time')}`);
-  assert.deepEqual([strategy.body.days[0].signal.n, strategy.body.days[0].real.n], [5, 3]);
-  assert.equal(strategy.body.choices.strategies.length, 2, 'the list to choose from is not narrowed by the choice');
-  assert.deepEqual(strategy.body.choices.strategies.map((s: any) => s.n), [2, 4], 'nor are its figures');
-  assert.equal(method.body.choices.methods.find((m: any) => m.key === 'breakout').signal.n, 5, 'a method not chosen still says what it made');
-  assert.equal(strategy.body.choices.methods.find((m: any) => m.key === 'pullback').real.n, 0, 'but a method\'s figures are of the strategies chosen');
+  assert.deepEqual(day.body.signal.pairs.map((p: any) => [p.name, p.tf, p.net]).slice(0, 2), [['#1 Breakout', '15m', 600], ['#1 Breakout', '5m + TF chain', 200]]);
+  assert.equal(day.body.signal.total.n, 5); assert.equal(day.body.real.total.n, 5);
+  const quiet = await get(`/api/market-report/breakdown?day=${QUIET}`);
+  assert.deepEqual([quiet.body.signal.total.n, quiet.body.real.total.n], [1, 1]);
 });
 
-test('a bad range, day or kind is refused in words', async () => {
+test('a bad range or day is refused in words', async () => {
   for (const [url, why] of [
     ['/api/market-report?from=13-10-2026', /YYYY-MM-DD/],
     [`/api/market-report?from=${TODAY}&to=${CLIMB}`, /must not be after/],
     ['/api/market-report?from=2020-01-01&to=2026-10-01', /At most 190 days/],
-    [`/api/market-report/breakdown?from=${CLIMB}&pattern=NOPE`, /No such market pattern/],
-    [`/api/market-report/breakdown?from=${CLIMB}&family=sideways`, /No such family/],
-    [`/api/market-report/breakdown?from=${CLIMB}&day=yesterday`, /YYYY-MM-DD/],
+    ['/api/market-report/breakdown', /Day must be YYYY-MM-DD/],
+    ['/api/market-report/breakdown?day=yesterday', /YYYY-MM-DD/],
   ] as const) {
     const r = await get(url);
     assert.equal(r.status, 400, url);

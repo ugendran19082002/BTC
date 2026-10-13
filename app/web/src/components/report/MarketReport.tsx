@@ -1,42 +1,39 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { getMarketBreakdown, getMarketReport } from '@/api/market-report';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import {
-  dayLabel, exitLines, netText, num, pairOf, ptsText, sparkOf, standoutsOf, timeIst, toneOf, winRate,
+  dayLabel, exitLines, netText, num, pairOf, ptsText, sparkOf, timeIst, toneOf, winRate,
   type Source,
 } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import type { DayStats, GroupRow, MarketDay, MarketQuery, MarketReportResponse, MarketScope, Row, Tot } from '@/types/market-report';
-import { Chip, Empty, Loading, Panel, Pill, Segmented, Stat, Stats } from '@/components/mobile/parts';
+import type { DayStats, MarketDay, MarketReportResponse, Row, Tot } from '@/types/market-report';
+import { Empty, Loading, Panel, Pill, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
-import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 
 /**
  * The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole
- * expiry went -- and on that, which pair is best": each expiry day with its high and low in points, its zigzag,
- * its ATR and where that stands, how far its largest candle stood out, and one of twenty names for its shape;
- * and against the kind of day, what the signal history and the real orders made -- by method and timeframe, by
- * strategy, and by which exit closed them: the perp's target or stop, the option's own target or stop.
+ * expiry went": each expiry day, newest first, with its high and low in points, its zigzag, its ATR and where
+ * that stands, how far its largest candle stood out, and one of twenty names for its shape; and what the signal
+ * history and the real orders made on it. A day opens onto which exit closed its trades -- the perp's target or
+ * stop, the option's own -- its best and worst pairs, and its timeframes and strategies.
  *
- * One component for both places it is asked for: the phone's More menu, and under the desk's Methods screen.
- * Laid out for a thumb first; `wide` lets the day cards and the lists sit side by side on a desk.
+ * Trimmed the same day to that and nothing else (owner: "only each expiry day, newest first -- nothing else"):
+ * the panels by kind of day and by method, what stood out, and the filters were taken out, here and on the server.
+ *
+ * One component for both places it is asked for: the phone's More menu, and the desk's own Market report menu.
+ * Laid out for a thumb first; `wide` lets the day cards sit side by side on a desk.
  *
  * Two records, never added together: the signal history is in BTC perp points (and R), the real orders in
- * rupees after charges. One is shown in the lists at a time (the switch at the top); each day and each kind of
- * day says both in a line.
+ * rupees after charges. Each day says both in a line; an opened day lists one at a time.
  */
 
 const SOURCES: { key: Source; label: string; spoken: string }[] = [
   { key: 'real', label: 'Real orders', spoken: 'Real orders, in rupees after charges' },
   { key: 'signal', label: 'Signal history', spoken: 'Signal history, in BTC perp points' },
-];
-const GROUPINGS: { key: 'kind' | 'family'; label: string; spoken: string }[] = [
-  { key: 'kind', label: 'Market type', spoken: 'By each of the twenty market types' },
-  { key: 'family', label: 'Trend family', spoken: 'By family: up trend, down trend, range, turn' },
 ];
 const FAMILY_TONE = { up: 'up', down: 'down', range: 'dim', turn: 'warn' } as const;
 
@@ -145,9 +142,12 @@ function RowsTable({ caption, first, rows, source }: { caption: string; first: s
   );
 }
 
-/** One day, one kind of day or one family, opened: the exits, the best and worst pairs, by timeframe and by strategy. */
-function Breakdown({ query, scope, source, wide }: { query: MarketQuery; scope: MarketScope; source: Source; wide: boolean }) {
-  const read = useAnswer(JSON.stringify([query, scope]), () => getMarketBreakdown(query, scope), 180_000);
+/**
+ * One expiry day opened: which exit closed its trades, its best and worst pairs, by timeframe and by strategy --
+ * of one record at a time, chosen here (the switch sat at the top of the page while the page had other panels).
+ */
+function Breakdown({ day, account, source, onSource, wide }: { day: string; account: number | null; source: Source; onSource: (s: Source) => void; wide: boolean }) {
+  const read = useAnswer(JSON.stringify([day, account]), () => getMarketBreakdown(day, account), 180_000);
   if (!read.data) return <Loading error={read.error} what="the breakdown" />;
   const side = read.data[source];
   const amount = (p: { net: number }) => netText(source, p.net);
@@ -155,25 +155,26 @@ function Breakdown({ query, scope, source, wide }: { query: MarketQuery; scope: 
   const worst = side.pairs.filter((p) => p.n > 0 && p.net < 0).map(pairOf).sort((a, b) => a.net - b.net || b.trades - a.trades);
   const what = source === 'signal' ? 'signal history' : 'real orders';
   return (
-    <div className="mt-3 border-t border-[var(--line-soft)] pt-3">
+    <div className="mt-3 grid gap-3 border-t border-[var(--line-soft)] pt-3">
+      <Segmented label="Which record the lists show" value={source} options={SOURCES} onChange={onSource} />
       <Updating busy={read.stale} what="the breakdown">
-      <Exits source={source} signal={read.data.signal.total} real={read.data.real.total} wide={wide} />
-      <div className={cn('grid gap-3', wide && 'lg:grid-cols-2')}>
-        <PairList title={`Best pairs · ${what}`} tone="up" pairs={best} amount={amount} empty="No method and time frame in profit here." />
-        <PairList title={`Worst pairs · ${what}`} tone="down" pairs={worst} amount={amount} empty="No method and time frame in loss here." />
-      </div>
-      <div className={cn('grid gap-3', wide && 'lg:grid-cols-2')}>
-        <section aria-label="By time frame">
-          <h4 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">By time frame · {what}</h4>
-          {side.byTf.some((r) => r.n > 0 || r.open > 0) ? <RowsTable caption={`By time frame, ${what}`} first="Time frame" rows={side.byTf} source={source} /> : <Empty>None here.</Empty>}
-        </section>
-        {source === 'real' && (
-          <section aria-label="By strategy">
-            <h4 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">By strategy · real orders</h4>
-            {side.byStrategy.length ? <RowsTable caption="By strategy, real orders" first="Strategy" rows={side.byStrategy} source="real" /> : <Empty>No order here.</Empty>}
+        <Exits source={source} signal={read.data.signal.total} real={read.data.real.total} wide={wide} />
+        <div className={cn('grid gap-3', wide && 'lg:grid-cols-2')}>
+          <PairList title={`Best pairs · ${what}`} tone="up" pairs={best} amount={amount} empty="No method and time frame in profit here." />
+          <PairList title={`Worst pairs · ${what}`} tone="down" pairs={worst} amount={amount} empty="No method and time frame in loss here." />
+        </div>
+        <div className={cn('grid gap-3', wide && 'lg:grid-cols-2')}>
+          <section aria-label="By time frame">
+            <h4 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">By time frame · {what}</h4>
+            {side.byTf.some((r) => r.n > 0 || r.open > 0) ? <RowsTable caption={`By time frame, ${what}`} first="Time frame" rows={side.byTf} source={source} /> : <Empty>None here.</Empty>}
           </section>
-        )}
-      </div>
+          {source === 'real' && (
+            <section aria-label="By strategy">
+              <h4 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">By strategy · real orders</h4>
+              {side.byStrategy.length ? <RowsTable caption="By strategy, real orders" first="Strategy" rows={side.byStrategy} source="real" /> : <Empty>No order here.</Empty>}
+            </section>
+          )}
+        </div>
       </Updating>
     </div>
   );
@@ -258,7 +259,7 @@ function PatternPill({ report, pattern, family }: { report: MarketReportResponse
   return <Pill tone={FAMILY_TONE[family ?? 'range']}>#{p.id} {p.name}</Pill>;
 }
 
-function DayCard({ report, d, query, source, wide }: { report: MarketReportResponse; d: MarketDay; query: MarketQuery; source: Source; wide: boolean }) {
+function DayCard({ report, d, account, source, onSource, wide }: { report: MarketReportResponse; d: MarketDay; account: number | null; source: Source; onSource: (s: Source) => void; wide: boolean }) {
   const [open, setOpen] = useState(false);
   const p = report.catalogue.find((x) => x.key === d.pattern);
   return (
@@ -286,103 +287,8 @@ function DayCard({ report, d, query, source, wide }: { report: MarketReportRespo
         <RecordLine label="Real orders" source="real" tot={d.real} />
       </div>
       <Toggle open={open} onClick={() => setOpen((v) => !v)} what="exits, pairs and time frames" />
-      {open && <Breakdown query={query} scope={{ day: d.day }} source={source} wide={wide} />}
+      {open && <Breakdown day={d.day} account={account} source={source} onSource={onSource} wide={wide} />}
     </Panel>
-  );
-}
-
-/** A kind of day, or a family of them: how many days, both records, the best and the worst pair -- and the rest one tap away. */
-function GroupCard({ g, query, source, scope, wide }: { g: GroupRow; query: MarketQuery; source: Source; scope: MarketScope; wide: boolean }) {
-  const [open, setOpen] = useState(false);
-  const ends = source === 'signal' ? g.signalEnds : g.realEnds;
-  const pair = (label: string, r: Row | undefined, tone: 'up' | 'down') => (
-    <div className="flex items-baseline justify-between gap-2 text-[13px]">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      {r ? (
-        <span className="min-w-0 text-right">
-          <span className="[overflow-wrap:anywhere]">{r.name}</span> <Pill tone="accent">{r.tf}</Pill>{' '}
-          <b className={cn('whitespace-nowrap font-semibold tabular-nums', tone === 'up' ? 'text-[var(--up)]' : 'text-[var(--down)]')}>{netText(source, r.net)}</b>
-        </span>
-      ) : <span className="text-muted-foreground">none</span>}
-    </div>
-  );
-  return (
-    <li className="py-3 first:pt-0 last:pb-0">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-        <h3 className="m-0 text-[14.5px] font-semibold">{g.id ? <span className="text-muted-foreground">#{g.id} </span> : null}{g.name}</h3>
-        <span className="text-[12px] tabular-nums text-muted-foreground">{g.days.length} day{g.days.length === 1 ? '' : 's'}</span>
-      </div>
-      {g.meaning && <p className="m-0 text-[12.5px] text-muted-foreground">{g.meaning}</p>}
-      <p className="m-0 mt-0.5 text-[11.5px] text-muted-foreground">{g.days.map(dayLabel).join(' · ')}</p>
-      <div className="mt-1.5 grid gap-1">
-        <RecordLine label="Signal history" source="signal" tot={g.signal} />
-        <RecordLine label="Real orders" source="real" tot={g.real} />
-        {pair('Best pair', ends.best[0], 'up')}
-        {pair('Worst pair', ends.worst[0], 'down')}
-      </div>
-      <Toggle open={open} onClick={() => setOpen((v) => !v)} what="exits, pairs and time frames" />
-      {open && <Breakdown query={query} scope={scope} source={source} wide={wide} />}
-    </li>
-  );
-}
-
-/** Every method with what it made in the record shown, the most first: the ten best and the ten worst, the rest one tap away. */
-function MethodsPanel({ rows, source, wide }: { rows: { key: string; name: string; n: number; wins: number; net: number }[]; source: Source; wide: boolean }) {
-  const [all, setAll] = useState(false);
-  const traded = rows.filter((m) => m.n > 0).sort((a, b) => b.net - a.net || b.n - a.n);
-  const what = source === 'signal' ? 'signal history' : 'real orders';
-  const FIRST = 10;
-  const best = traded.filter((m) => m.net > 0), worst = traded.filter((m) => m.net < 0).reverse();
-  const list = (title: string, xs: typeof traded, empty: string) => (
-    <section aria-label={title}>
-      <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">{title} · {xs.length}</h3>
-      {xs.length === 0 ? <Empty>{empty}</Empty> : (
-        <table className="w-full border-collapse text-[13px] tabular-nums">
-          <caption className="sr-only">{title}, {what}</caption>
-          <thead>
-            <tr className="text-left text-[11.5px] text-muted-foreground">
-              <th scope="col" className="py-1 pr-2 font-medium">Method</th>
-              <th scope="col" className="py-1 pr-2 text-right font-medium">Closed</th>
-              <th scope="col" className="py-1 pr-2 text-right font-medium">Won</th>
-              <th scope="col" className="py-1 text-right font-medium">Net</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(all ? xs : xs.slice(0, FIRST)).map((m) => (
-              <tr key={m.key} className="border-t border-[var(--line-soft)] align-top">
-                <th scope="row" className="py-1.5 pr-2 text-left font-medium [overflow-wrap:anywhere]"><span className="normal-case tracking-normal">{m.name}</span></th>
-                <td className="py-1.5 pr-2 text-right">{m.n.toLocaleString('en-US')}</td>
-                <td className="py-1.5 pr-2 text-right">{pct(m.wins / m.n, 0)}</td>
-                <td className={cn('whitespace-nowrap py-1.5 text-right font-semibold', netClass(m.net))}>{netText(source, m.net)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </section>
-  );
-  return (
-    <Panel title={`By method · ${what}`} right={<span className="text-[11.5px] text-muted-foreground">{traded.length} with a closed trade</span>}>
-      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4', wide && 'lg:grid-cols-2')}>
-        {list('Methods in profit', best, 'No method is in profit here.')}
-        {list('Methods in loss', worst, 'No method is in loss here.')}
-      </div>
-      {(best.length > FIRST || worst.length > FIRST) && (
-        <button type="button" onClick={() => setAll((v) => !v)} aria-expanded={all}
-          className="mt-2 min-h-[40px] w-full rounded-md border-0 bg-muted font-[inherit] text-[13px] font-medium text-foreground">
-          {all ? `Show the first ${FIRST} of each` : `Show all ${traded.length} methods`}
-        </button>
-      )}
-    </Panel>
-  );
-}
-
-function Tile({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="min-w-0 rounded-md bg-muted px-2.5 py-2">
-      <div className="truncate text-[11.5px] text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-[13px] tabular-nums">{children}</div>
-    </div>
   );
 }
 
@@ -390,149 +296,54 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
   /** The broker account whose real orders are read; null is every account's. The signal history has no account. */
   account: number | null;
   now?: number;
-  /** On the desk: the day cards and the lists may sit side by side. */
+  /** On the desk: the day cards may sit side by side. */
   wide?: boolean;
 }) {
   const expiry = useExpiryRange('marketReport', now);
   const [source, setSource] = usePersisted<Source>('marketReport.source', 'real');
-  const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('marketReport.grouping', 'kind');
-  const [tfs, setTfs] = usePersisted<string[]>('marketReport.tfs', []);
-  const [methods, setMethods] = usePersisted<string[]>('marketReport.methods', []);
-  const [strategies, setStrategies] = usePersisted<string[]>('marketReport.strategies', []);
   const [allDays, setAllDays] = useState(false);
   const range = expiry.range;
-  const query: MarketQuery = { ...range, account, tfs, methods, strategies };
-  // The answer is kept with what was asked: a report for the filters before is greyed while the new one is worked out.
-  const read = useAnswer(JSON.stringify(query), () => getMarketReport(query), 120_000);
+  // The answer is kept with what was asked: the days of the range before are greyed while the new one is read.
+  const read = useAnswer(JSON.stringify([range, account]), () => getMarketReport(range, account), 120_000);
   const r = read.data;
-
-  // Each method and strategy in its list with what it made (owner, 13 Oct 2026: "show the methods' profit and loss"):
-  // of the record the lists show, in its own unit, green or red.
-  const madeNote = (m: { n: number; wins: number; net: number }, src: Source) =>
-    (m.n > 0 ? `${m.n.toLocaleString('en-US')} closed · ${pct(m.wins / m.n, 0)} won · ${netText(src, m.net)}` : src === 'real' ? 'no order closed' : 'no trade closed');
-  const methodOptions = (r?.choices.methods ?? []).map((m) => ({ key: m.key, name: m.name, note: madeNote(m[source], source), tone: toneOf(m[source].net), value: m[source].net }));
-  const strategyOptions = (r?.choices.strategies ?? []).map((x) => ({ key: x.key, name: x.name, note: madeNote(x, 'real'), tone: toneOf(x.net), value: x.net }));
-
-  const filters = (
+  const head = (
     <>
-      {/* On the desk it sits under two other reports: it says where it begins. The phone's screen title says it there. */}
       {wide && <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Market report <span className="text-[12.5px] font-normal text-muted-foreground">· each expiry day&apos;s kind of market, and what the methods made on it</span></h2>}
       {expiry.control}
-      <Segmented label="Which record the lists show" value={source} options={SOURCES} onChange={setSource} />
-      {r && r.choices.timeframes.length > 0 && (
-        <div role="group" aria-label="Time frame" className={cn('flex gap-2', wide ? 'flex-wrap' : '-mx-4 overflow-x-auto px-4 pb-1')}>
-          <Chip on={tfs.length === 0} onClick={() => setTfs([])}>All time frames</Chip>
-          {r.choices.timeframes.map((t) => (
-            <Chip key={t.key} on={tfs.includes(t.key)} onClick={() => setTfs(tfs.includes(t.key) ? tfs.filter((x) => x !== t.key) : [...tfs, t.key])}>
-              {t.key === 'chain' ? 'TF chain' : t.name}
-            </Chip>
-          ))}
-        </div>
-      )}
-      {r && (r.choices.methods.length > 1 || r.choices.strategies.length > 1 || methods.length > 0 || strategies.length > 0) && (
-        // The bar bleeds to a phone's edges (-16px); on the desk the same 16px is given back, so it sits inside the screen.
-        <div className={wide ? 'px-4' : undefined}>
-          <FilterBar onClear={methods.length || strategies.length ? () => { setMethods([]); setStrategies([]); } : null}>
-            <FilterPicker noun={METHODS} options={methodOptions} picked={methods} onChange={setMethods} split />
-            {r.choices.strategies.length > 0 && <FilterPicker noun={STRATEGIES} options={strategyOptions} picked={strategies} onChange={setStrategies} split />}
-          </FilterBar>
-        </div>
-      )}
     </>
   );
+  if (!r) return <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{head}<Panel><Loading error={read.error} what="the market report" /></Panel></div>;
 
-  if (!r) return <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{filters}<Panel><Loading error={read.error} what="the market report" /></Panel></div>;
-
-  const groups = grouping === 'family' ? r.families : r.patterns;
   const newestFirst = [...r.days].reverse();
   const FIRST = wide ? 6 : 4;
   const shownDays = allDays ? newestFirst : newestFirst.slice(0, FIRST);
-  const measured = r.days.filter((d) => d.pattern !== null).length;
-
   return (
-    // One column exactly as wide as the screen: a bare grid sizes its column to the widest row inside it (the chips).
+    // One column exactly as wide as the screen: a bare grid sizes its column to the widest row inside it.
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
-      {filters}
-
+      {head}
       <Updating busy={read.stale} what="the market report">
-      {(() => {
-        const lines = standoutsOf(r, source);
-        return lines.length === 0 ? null : (
-          <Panel title={`What stands out · ${source === 'signal' ? 'signal history' : 'real orders'}`}>
-            <dl className={cn('m-0 grid gap-x-6', wide && 'lg:grid-cols-2')}>
-              {lines.map((x) => (
-                <div key={x.label} className="flex items-baseline justify-between gap-3 border-b border-[var(--line-soft)] py-2 last:border-b-0">
-                  <dt className="min-w-0">
-                    <span className="block text-[11.5px] text-muted-foreground">{x.label}</span>
-                    <span className="block text-[13.5px] font-medium [overflow-wrap:anywhere]">{x.text}</span>
-                  </dt>
-                  <dd className={cn('m-0 shrink-0 whitespace-nowrap text-[14px] font-semibold tabular-nums', x.tone === 'up' ? 'text-[var(--up)]' : 'text-[var(--down)]')}>{x.amount}</dd>
-                </div>
-              ))}
-            </dl>
-          </Panel>
-        );
-      })()}
-
-      <Panel title="Market report">
-        <p className="m-0 text-[13px] text-muted-foreground">
-          {r.days.length} expiry day{r.days.length === 1 ? '' : 's'}, {dayLabel(r.from)} → {dayLabel(r.to)}. Each runs 5:30 PM to 5:30 PM IST, one daily contract from open to settlement.
+        <section aria-label="Each expiry day" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+          <h2 className="m-0 px-1 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">Each expiry day, newest first</h2>
+          {newestFirst.length === 0 && <Panel><Empty>No expiry day in this range.</Empty></Panel>}
+          <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2 2xl:grid-cols-3')}>
+            {shownDays.map((d) => <DayCard key={d.day} report={r} d={d} account={account} source={source} onSource={setSource} wide={false} />)}
+          </div>
+          {newestFirst.length > FIRST && (
+            <button
+              type="button" onClick={() => setAllDays((v) => !v)} aria-expanded={allDays}
+              className="min-h-[44px] w-full rounded-md border-0 bg-muted font-[inherit] text-[13.5px] font-medium text-foreground"
+            >
+              {allDays ? `Show the newest ${FIRST}` : `Show all ${newestFirst.length} days`}
+            </button>
+          )}
+        </section>
+        <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
+          An expiry day runs 5:30 PM to 5:30 PM IST, one daily contract from open to settlement; a trade is counted in the day it was entered in. Signal
+          history: every signal that went in the trade, on the BTC perp, in points, without charges. Real orders: what the strategies sold on those signals,
+          in rupees after charges{account === null ? ', every account' : ''}. The figures are from the desk&apos;s one-minute tape of the perp: ATR is the
+          average true range of the day&apos;s 15-minute candles, its percentile is against the 30 expiry days before, volatility expansion against the 5
+          before, and candle expansion is the largest candle over the usual one.
         </p>
-        <div className={cn('mt-2 grid gap-2', wide ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2')}>
-          {r.families.map((f) => (
-            <Tile key={f.key} label={`${f.name} · ${f.days.length} day${f.days.length === 1 ? '' : 's'}`}>
-              <span className={cn('font-semibold', netClass(f[source].net))}>{netText(source, f[source].net)}</span>
-              <span className="text-muted-foreground"> · {pct(winRate(f[source]), 0)} won</span>
-            </Tile>
-          ))}
-        </div>
-        <div className="mt-2 grid gap-1 border-t border-[var(--line-soft)] pt-2">
-          <RecordLine label="Signal history, all days" source="signal" tot={r.total.signal} />
-          <RecordLine label="Real orders, all days" source="real" tot={r.total.real} />
-        </div>
-        <div className="mt-3"><Exits source={source} signal={r.total.signal} real={r.total.real} wide={wide} /></div>
-      </Panel>
-
-      <Panel title="By kind of day" right={<span className="text-[11.5px] text-muted-foreground">{measured} day{measured === 1 ? '' : 's'} named</span>}>
-        <Segmented label="Group the days by" value={grouping} options={GROUPINGS} onChange={setGrouping} />
-        {groups.length === 0 ? <div className="mt-2"><Empty>No expiry day in this range has enough tape to be named.</Empty></div> : (
-          <ul className="m-0 mt-3 list-none divide-y divide-[var(--line-soft)] p-0" aria-label={grouping === 'family' ? 'Trend families' : 'Market types'}>
-            {groups.map((g) => (
-              <GroupCard key={`${grouping}-${g.key}`} g={g} query={query} source={source} wide={wide}
-                scope={grouping === 'family' ? { family: g.key as NonNullable<MarketScope['family']> } : { pattern: g.key }} />
-            ))}
-          </ul>
-        )}
-        <p className="m-0 mt-3 text-[12px] leading-snug text-muted-foreground">
-          A kind of day with one or two days behind it is a note, not a rule: the count is beside each. The families fill sooner.
-          The other kinds of the twenty have not happened in this range yet.
-        </p>
-      </Panel>
-
-      <MethodsPanel source={source} wide={wide}
-        rows={r.choices.methods.filter((m) => methods.length === 0 || methods.includes(m.key)).map((m) => ({ key: m.key, name: m.name, ...m[source] }))} />
-
-      <section aria-label="Each expiry day" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
-        <h2 className="m-0 px-1 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">Each expiry day, newest first</h2>
-        <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2 2xl:grid-cols-3')}>
-          {shownDays.map((d) => <DayCard key={d.day} report={r} d={d} query={query} source={source} wide={false} />)}
-        </div>
-        {newestFirst.length > FIRST && (
-          <button
-            type="button" onClick={() => setAllDays((v) => !v)} aria-expanded={allDays}
-            className="min-h-[44px] w-full rounded-md border-0 bg-muted font-[inherit] text-[13.5px] font-medium text-foreground"
-          >
-            {allDays ? `Show the newest ${FIRST}` : `Show all ${newestFirst.length} days`}
-          </button>
-        )}
-      </section>
-
-      <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
-        A trade is counted in the expiry day it was entered in. Signal history: every signal that went in the trade, on the BTC perp, in points from fill to
-        exit, without charges. Real orders: what the strategies sold on those signals, in rupees after charges{account === null ? ', every account' : ''}.
-        The market figures are from the desk&apos;s own one-minute tape of the perp; ATR is the average true range of the day&apos;s 15-minute candles, its
-        percentile is against the 30 expiry days before, volatility expansion is against the 5 before, and candle expansion is the largest candle over the usual one.
-      </p>
       </Updating>
     </div>
   );

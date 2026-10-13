@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
-import { PATTERNS, FAMILIES, sessionDayOf, type PatternFamily, type PatternKey } from '../../report/market-day.js';
-import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters, type Scope } from '../../report/market-report.js';
+import { sessionDayOf } from '../../report/market-day.js';
+import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
 import { DEFAULT_PARAMS, backtestable, signalBacktest, type BacktestParams } from '../../report/signal-backtest.js';
 import { strategyStore } from './strategy.routes.js';
 import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, globalMaxOpenOf, ruleTfs, sideMaxOf } from '../../strategy/types.js';
@@ -37,19 +37,8 @@ function listOf(q: unknown, name: 'tf' | 'method' | 'strategy'): string[] | null
   const keys = [...new Set(raw.split(',').map((k) => k.trim()).filter((k) => k !== '' && k.length <= 120))].slice(0, 200);
   return keys.length ? keys : null;
 }
-const filtersOf = (q: unknown): ReportFilters => ({ account: accountOf(q), tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategies: listOf(q, 'strategy') });
-
-/** `?day=`, `?pattern=` or `?family=`: what the breakdown is of. None of them is the whole range. */
-function scopeOf(q: { day?: unknown; pattern?: unknown; family?: unknown }): Scope | string {
-  if (typeof q.day === 'string' && q.day !== '') return DAY.test(q.day) ? { kind: 'day', day: q.day } : 'Day must be YYYY-MM-DD.';
-  if (typeof q.pattern === 'string' && q.pattern !== '') {
-    return PATTERNS.some((p) => p.key === q.pattern) ? { kind: 'pattern', key: q.pattern as PatternKey } : 'No such market pattern.';
-  }
-  if (typeof q.family === 'string' && q.family !== '') {
-    return FAMILIES.some((f) => f.key === q.family) ? { kind: 'family', key: q.family as PatternFamily } : 'No such family of market patterns.';
-  }
-  return { kind: 'all' };
-}
+/** The report itself is not filtered any more (13 Oct 2026); the backtest still reads one strategy's orders through the same sums. */
+const NO_FILTERS: ReportFilters = { account: null, tfs: null, methods: null, strategies: null };
 
 /**
  * The backtest's settings, checked: `?rule=delta|premium`, `?value=` (a delta from 0.02 to 0.5, or a premium from
@@ -135,19 +124,17 @@ export function registerMarketRoutes(app: FastifyInstance) {
     };
   });
 
-  /** Each expiry day with its figures, its kind and its results; the results by kind of day and by family. */
+  /** Each expiry day with its figures, its kind and both records' totals. `?account=` is one broker account's orders. */
   app.get('/api/market-report', async (req, reply) => {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
-    return marketReport({ ...r, now: Date.now(), spot: tradingService().spot, ...filtersOf(req.query) });
+    return marketReport({ ...r, now: Date.now(), spot: tradingService().spot, ...NO_FILTERS, account: accountOf(req.query) });
   });
 
-  /** One day, one kind of day, one family or the whole range: both records by pair, timeframe, method and strategy. */
+  /** One expiry day opened (`?day=`): both records by pair, timeframe, method and strategy. */
   app.get('/api/market-report/breakdown', async (req, reply) => {
-    const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
-    if (typeof r === 'string') return refuse(reply, 400, { error: r });
-    const scope = scopeOf((req.query ?? {}) as { day?: unknown; pattern?: unknown; family?: unknown });
-    if (typeof scope === 'string') return refuse(reply, 400, { error: scope });
-    return marketBreakdown({ ...r, now: Date.now(), spot: tradingService().spot, scope, ...filtersOf(req.query) });
+    const day = (req.query as { day?: unknown } | null)?.day;
+    if (typeof day !== 'string' || !DAY.test(day) || Number.isNaN(Date.parse(day))) return refuse(reply, 400, { error: 'Day must be YYYY-MM-DD.' });
+    return marketBreakdown({ from: day, to: day, now: Date.now(), spot: tradingService().spot, day, ...NO_FILTERS, account: accountOf(req.query) });
   });
 }
