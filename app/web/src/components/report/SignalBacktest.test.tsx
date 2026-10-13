@@ -906,7 +906,7 @@ describe('SignalBacktest', () => {
     expect(await screen.findByRole('note', { name: 'The hours of this run' })).toHaveTextContent('Signals of 10:00 PM → 2:00 AM (IST) for this run');
     expect(folio().getByText('10:00 PM → 2:00 AM')).toBeInTheDocument();
     // kept in this browser, like the limit
-    expect(JSON.parse(window.localStorage.getItem('signalBacktest.together.hours')!)).toEqual({ window: 'custom', hoursFrom: '22:00', hoursTo: '02:00' });
+    expect(JSON.parse(window.localStorage.getItem(Object.keys(window.localStorage).find((k) => k.endsWith('signalBacktest.together.hours'))!)!)).toEqual({ window: 'custom', hoursFrom: '22:00', hoursTo: '02:00' });
 
     // and back to each one's own
     fireEvent.click(hours().getByRole('radio', { name: 'Each saved backtest keeps its own hours' }));
