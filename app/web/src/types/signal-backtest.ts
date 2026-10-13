@@ -10,6 +10,8 @@ export type BacktestParams = {
   deskMax: number; cePct: number; pePct: number;
   /** A signal only if its SL and TGT are in range: BTC points from the perp entry, minimum and maximum, 0 off. */
   slMin?: number; slMax?: number; tgtMin?: number; tgtMax?: number;
+  /** A target by the clock: `targetPct` to begin with, then each step's share of the premium kept from its IST time. Absent or empty: fixed. */
+  targetSteps?: { at: string; pct: number }[];
 };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */
@@ -25,7 +27,7 @@ export type SignalBacktestResponse = {
   /** The strategy backtested, what of it could not be replayed, and what its real orders made in the range. Null: the screen's own settings. */
   strategy: { id: string; name: string; accountId: number | null; caveats: string[]; real: { n: number; wins: number; open: number; net: number } } | null;
   /** The signal strategies there are to backtest by: those that sell. */
-  strategies: { id: string; name: string; enabled: boolean; account: string | null; methods: string[]; tfs: string[] }[];
+  strategies: { id: string; name: string; enabled: boolean; account: string | null; methods: string[]; tfs: string[]; target?: { pct: number; steps: { at: string; pct: number }[] } | null }[];
   /** The margin the trades shown would have held, by the desk's 200x estimate. */
   margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; avgDailyPeakUsd: number; avgTradeUsd: number };
   /** Each trading account's limits as they stand: offered as one tap. */

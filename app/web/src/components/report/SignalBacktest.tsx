@@ -144,6 +144,90 @@ function SlTgtRange({ value, onApply }: { value: Range; onApply: (r: Range) => v
   );
 }
 
+type Step = { at: string; pct: number };
+/** Every two hours from 11:30 PM to 3:30 PM: the times a schedule's steps fall on, as the owner's own strategies have them. */
+const STEP_TIMES = ['23:30', '01:30', '03:30', '05:30', '07:30', '09:30', '11:30', '13:30', '15:30'];
+/** A schedule from one share to another in even steps, every two hours: 70 → 97 is +3 each time. */
+const ladder = (from: number, to: number): Step[] => STEP_TIMES.map((at, i) => ({ at, pct: Math.round(from + ((to - from) * (i + 1)) / STEP_TIMES.length) / 100 }));
+const LADDERS: { label: string; start: number; steps: Step[] }[] = [
+  { label: '70% → 97%', start: 0.7, steps: ladder(70, 97) },
+  { label: '60% → 90%', start: 0.6, steps: ladder(60, 90) },
+  { label: '70% → 99%', start: 0.7, steps: ladder(70, 99) },
+];
+/** What is wrong with a schedule, in words, or null: as the server checks it. */
+export function stepsProblem(rows: readonly { at: string; pct: string }[]): string | null {
+  if (rows.length === 0) return 'Add at least one step, or choose Fixed.';
+  if (rows.length > 24) return 'At most 24 steps.';
+  if (rows.some((r) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(r.at))) return 'Give every step a time.';
+  if (rows.some((r) => r.pct.trim() === '' || !(Number(r.pct) >= 1 && Number(r.pct) <= 99))) return 'Each step keeps from 1% to 99% of the premium.';
+  if (new Set(rows.map((r) => r.at)).size !== rows.length) return 'Two steps have the same time.';
+  return null;
+}
+/** The expiry day's own order of the clock: forward from 5:30 PM, so 11:30 PM comes before 1:30 AM. */
+const dayOrder = (at: string) => { const [h, m] = at.split(':').map(Number) as [number, number]; return (h * 60 + m - (17 * 60 + 30) + 1_440) % 1_440; };
+
+/**
+ * A target by the clock (owner, 13 Oct 2026: "fixed, or dynamic time-based -- first which, then its settings"), as
+ * the strategy form has it: where it starts, then a time and a per cent for each step. Edited as a draft -- a
+ * ready ladder, a strategy's own steps copied, or typed -- and used with one tap, so a half-typed time is never
+ * backtested.
+ */
+function TargetSteps({ start, steps, copyFrom, onApply }: {
+  start: number; steps: readonly Step[];
+  copyFrom: { name: string; pct: number; steps: Step[] }[];
+  onApply: (start: number, steps: Step[]) => void;
+}) {
+  const asRows = (xs: readonly Step[]) => xs.map((x) => ({ at: x.at, pct: String(Math.round(x.pct * 10_000) / 100) }));
+  const [first, setFirst] = useState(String(Math.round(start * 100)));
+  const [rows, setRows] = useState(() => asRows(steps.length ? steps : LADDERS[0]!.steps));
+  const startOk = Number(first) >= 1 && Number(first) <= 99;
+  const problem = !startOk ? 'The target starts at 1% to 99% of the premium.' : stepsProblem(rows);
+  const parsed = (): Step[] => rows.map((r) => ({ at: r.at, pct: Math.round(Number(r.pct) * 100) / 10_000 })).sort((a, b) => dayOrder(a.at) - dayOrder(b.at));
+  const same = Math.round(start * 100) === Number(first) && JSON.stringify(parsed()) === JSON.stringify(steps);
+  const load = (s: number, xs: readonly Step[]) => { setFirst(String(Math.round(s * 100))); setRows(asRows(xs)); };
+  const field = 'h-11 min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] tabular-nums text-foreground [color-scheme:dark]';
+  return (
+    <div className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
+      <div role="group" aria-label="Ready schedules" className="flex flex-wrap items-center gap-2">
+        {LADDERS.map((l) => <Chip key={l.label} on={Number(first) === Math.round(l.start * 100) && JSON.stringify(parsed()) === JSON.stringify(l.steps)} onClick={() => load(l.start, l.steps)}>{l.label}</Chip>)}
+      </div>
+      {copyFrom.length > 0 && (
+        <label className="grid gap-1">
+          <span className="text-[12px] text-muted-foreground">Or copy a strategy&apos;s steps</span>
+          <select aria-label="Copy a strategy's target steps" value="" onChange={(e) => { const x = copyFrom[Number(e.target.value)]; if (x) load(x.pct, x.steps); }}
+            className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[15px] text-foreground [color-scheme:dark]">
+            <option value="">Choose a strategy…</option>
+            {copyFrom.map((x, i) => <option key={`${x.name}-${i}`} value={i}>{x.name} · {Math.round(x.pct * 100)}% → {Math.round((x.steps.at(-1)?.pct ?? x.pct) * 100)}%, {x.steps.length} steps</option>)}
+          </select>
+        </label>
+      )}
+      <label className="flex items-center gap-2">
+        <span className="w-24 shrink-0 text-[13px] text-muted-foreground">Starts at</span>
+        <input type="number" inputMode="decimal" min={1} max={99} aria-label="Target to start with, per cent" value={first} onChange={(e) => setFirst(e.target.value)} className={cn(field, 'w-24')} />
+        <span className="text-[12.5px] text-muted-foreground">% of the premium kept</span>
+      </label>
+      <ol className="m-0 grid list-none gap-1.5 p-0" aria-label="Target steps">
+        {rows.map((r, i) => (
+          <li key={i} className="flex items-center gap-2">
+            <input type="time" aria-label={`Step ${i + 1} time, IST`} value={r.at} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, at: e.target.value } : x)))} className={cn(field, 'w-0 flex-1')} />
+            <input type="number" inputMode="decimal" min={1} max={99} aria-label={`Step ${i + 1} per cent`} value={r.pct} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, pct: e.target.value } : x)))} className={cn(field, 'w-20')} />
+            <span className="text-[12.5px] text-muted-foreground">%</span>
+            <button type="button" aria-label={`Remove step ${i + 1}`} onClick={() => setRows(rows.filter((_, k) => k !== i))}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[18px] text-muted-foreground">×</button>
+          </li>
+        ))}
+      </ol>
+      <button type="button" onClick={() => setRows([...rows, { at: '', pct: rows.at(-1)?.pct ?? first }])} disabled={rows.length >= 24}
+        className="h-10 justify-self-start rounded-md border border-border bg-transparent px-3 font-[inherit] text-[13.5px] text-foreground disabled:opacity-40">Add a step</button>
+      <p role={problem ? 'alert' : 'status'} className={cn('m-0 text-[12.5px] leading-snug', problem ? 'text-[var(--down)]' : 'text-muted-foreground')}>
+        {problem ?? (same ? 'In use. At each time the target of every open trade moves to that share, and a trade sold after starts at it. Times are IST, read from 5:30 PM.' : 'Not in use yet.')}
+      </p>
+      <button type="button" disabled={problem !== null || same} onClick={() => onApply(Number(first) / 100, parsed())}
+        className="h-11 rounded-lg border-0 bg-[var(--up)] font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-40">Use these steps</button>
+    </div>
+  );
+}
+
 /** One group of settings under its own heading. */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -302,6 +386,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
    */
   const [fromStrategies, setFromStrategies] = usePersisted<string[]>('signalBacktest.fromStrategies', []);
   const [pickingHours, setPickingHours] = useState(false);
+  // Dynamic chosen and its steps not in use yet: the editor is open, the backtest still by what was last used.
+  const [dynamicDraft, setDynamicDraft] = useState(false);
   // Open on a desk, folded on a phone to begin with; the choice is remembered on each.
   const [settingsOpen, setSettingsOpen] = usePersisted<boolean>(`signalBacktest.settingsOpen.${wide ? 'desk' : 'phone'}`, wide);
   const pickMethods = (m: string[]) => { setMethods(m); setFromStrategies([]); };
@@ -310,6 +396,11 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const merged: BacktestParams = { ...DEFAULTS, ...stored };
   const params: BacktestParams = merged.window === 'custom' && !(merged.hoursFrom && merged.hoursTo) ? { ...merged, window: 'desk' } : merged;
   const set = (o: Partial<BacktestParams>) => setParams({ ...params, ...o });
+  const dynamic = (params.targetSteps?.length ?? 0) > 0 || dynamicDraft;
+  /** The target in words: one share, or where a schedule starts and ends. */
+  const targetWords = params.targetSteps?.length
+    ? `${Math.round(params.targetPct * 100)}% → ${Math.round(params.targetSteps[params.targetSteps.length - 1]!.pct * 100)}% by time (${params.targetSteps.length} steps)`
+    : CUSTOM.target.label(params.targetPct);
   const range = expiry.range;
   const query: BacktestQuery = { ...range, params, tfs, methods, strategy: strategyId };
   // The answer is kept with what was asked: a result for the settings before is greyed while the new one is worked out.
@@ -328,7 +419,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     byStrategy ? `by ${strategies.find((x) => x.id === strategyId)?.name ?? 'a strategy'}'s rules` : null,
     !byStrategy ? (params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`) : null,
     !byStrategy ? `${params.lots} lot${params.lots === 1 ? '' : 's'}` : null,
-    !byStrategy ? `TGT ${CUSTOM.target.label(params.targetPct)}` : null,
+    !byStrategy ? `TGT ${targetWords}` : null,
     !byStrategy ? `SL ${CUSTOM.stop.label(params.stopPct)}` : null,
     !byStrategy ? (params.window === 'desk' ? '9:30 PM → 3:59 PM' : params.window === 'all' ? 'whole day' : params.hoursFrom && params.hoursTo ? `${time12(params.hoursFrom)} → ${time12(params.hoursTo)}` : null) : null,
     !byStrategy && (rangeWords(params.slMin, params.slMax) || rangeWords(params.tgtMin, params.tgtMax))
@@ -384,10 +475,20 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         <CustomValue key={params.rule} value={params.value} presets={values} spec={params.rule === 'delta' ? CUSTOM.delta : CUSTOM.premium}
           name={params.rule === 'delta' ? 'Delta limit' : 'Premium limit'} onChange={(value) => set({ value })} />
       </ChipRow>
-      <ChipRow wide={wide} label="The option's own target, of the premium kept">
-        {TARGETS.map((x) => <Chip key={x.value} on={params.targetPct === x.value} onClick={() => set({ targetPct: x.value })}>{x.label}</Chip>)}
-        <CustomValue value={params.targetPct} presets={TARGETS.map((x) => x.value)} spec={CUSTOM.target} name="Option target" onChange={(targetPct) => set({ targetPct })} />
-      </ChipRow>
+      {/* First which kind of target, then its own settings (owner, 13 Oct 2026). */}
+      <Segmented label="The option's own target" value={dynamic ? 'dynamic' : 'fixed'}
+        options={[{ key: 'fixed', label: 'Fixed target', spoken: 'One target all day' }, { key: 'dynamic', label: 'Dynamic · by time', spoken: 'A target that moves by the clock' }]}
+        onChange={(m) => { if (m === 'fixed') { setDynamicDraft(false); set({ targetSteps: undefined, targetPct: params.targetPct > 0 ? params.targetPct : 0.9 }); } else setDynamicDraft(true); }} />
+      {!dynamic ? (
+        <ChipRow wide={wide} label="The option's own target, of the premium kept">
+          {TARGETS.map((x) => <Chip key={x.value} on={params.targetPct === x.value} onClick={() => set({ targetPct: x.value })}>{x.label}</Chip>)}
+          <CustomValue value={params.targetPct} presets={TARGETS.map((x) => x.value)} spec={CUSTOM.target} name="Option target" onChange={(targetPct) => set({ targetPct })} />
+        </ChipRow>
+      ) : (
+        <TargetSteps start={params.targetPct > 0 ? params.targetPct : 0.7} steps={params.targetSteps ?? []}
+          copyFrom={strategies.flatMap((x) => (x.target && x.target.steps.length ? [{ name: `${x.name}${x.account ? ` · ${x.account}` : ''}`, pct: x.target.pct, steps: x.target.steps }] : []))}
+          onApply={(targetPct, targetSteps) => set({ targetPct, targetSteps })} />
+      )}
       <ChipRow wide={wide} label="The option's own stop, over the premium sold">
         {STOPS.map((s) => <Chip key={s.value} on={params.stopPct === s.value} onClick={() => set({ stopPct: s.value })}>{s.label}</Chip>)}
         <CustomValue value={params.stopPct} presets={STOPS.map((x) => x.value)} spec={CUSTOM.stop} name="Option stop" onChange={(stopPct) => set({ stopPct })} />
@@ -540,7 +641,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           </div>
         )}
         <p className="m-0 text-[13px] text-muted-foreground">
-          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target {CUSTOM.target.label(params.targetPct)}, stop {CUSTOM.stop.label(params.stopPct)}{params.deskMax > 0 ? ` · at most ${params.deskMax} open, CE ${params.cePct}% · PE ${params.pePct}%` : ''}{(() => {
+          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target {targetWords}, stop {CUSTOM.stop.label(params.stopPct)}{params.deskMax > 0 ? ` · at most ${params.deskMax} open, CE ${params.cePct}% · PE ${params.pePct}%` : ''}{(() => {
             const b = (min = 0, max = 0) => [min > 0 ? `≥ ${min}` : null, max > 0 ? `≤ ${max}` : null].filter(Boolean).join(' ');
             const sl = b(params.slMin, params.slMax), tg = b(params.tgtMin, params.tgtMax);
             return !byStrategy && (sl || tg) ? ` · ${[sl ? `SL ${sl}` : null, tg ? `TGT ${tg}` : null].filter(Boolean).join(', ')} pts` : '';
