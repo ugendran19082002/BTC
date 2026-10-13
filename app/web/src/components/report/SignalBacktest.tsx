@@ -208,7 +208,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const range = expiry.range;
   const query: BacktestQuery = { ...range, params, tfs, methods, strategy: strategyId };
   const read = usePoll(() => getSignalBacktest(query), 300_000, {
-    deps: [range.from, range.to, params.rule, params.value, params.lots, params.targetPct, params.stopPct, params.window, tfs.join(), methods.join(), strategyId],
+    deps: [range.from, range.to, params.rule, params.value, params.lots, params.targetPct, params.stopPct, params.window, params.deskMax, params.cePct, params.pePct, tfs.join(), methods.join(), strategyId],
   });
   const r = read.data;
   // A strategy remembered from before that is gone now (deleted): back to the settings, rather than an error every time.
