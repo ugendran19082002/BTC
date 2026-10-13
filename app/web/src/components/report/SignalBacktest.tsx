@@ -124,7 +124,7 @@ function SlTgtRange({ value, onApply }: { value: Range; onApply: (r: Range) => v
   );
   const on = RANGE_KEYS.some((k) => value[k] > 0);
   return (
-    <section aria-label="SL and TGT range" className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
+    <section aria-label="SL and TGT range" className="grid gap-2 border-0 border-b border-solid border-[var(--line-soft)] pb-3">
       <div className="text-[13px] font-semibold">Take a signal only if its SL and TGT are in range</div>
       <p className="m-0 text-[12px] leading-snug text-muted-foreground">BTC points from the perp entry to the signal&apos;s SL, and to its TGT1: at least (≥) and at most (≤). 0 is off; each is its own condition.</p>
       <div className="grid grid-cols-2 gap-x-3 gap-y-2">
@@ -140,6 +140,16 @@ function SlTgtRange({ value, onApply }: { value: Range; onApply: (r: Range) => v
       </p>
       {on && <button type="button" onClick={() => { setDraft({ slMin: '0', slMax: '0', tgtMin: '0', tgtMax: '0' }); onApply({ slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0 }); }}
         className="justify-self-start min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] text-[var(--accent)]">Turn the range off</button>}
+    </section>
+  );
+}
+
+/** One group of settings under its own heading. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section aria-label={title} className="grid min-w-0 gap-2.5 rounded-md border border-[var(--line-soft)] p-3">
+      <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">{title}</h3>
+      {children}
     </section>
   );
 }
@@ -292,6 +302,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
    */
   const [fromStrategies, setFromStrategies] = usePersisted<string[]>('signalBacktest.fromStrategies', []);
   const [pickingHours, setPickingHours] = useState(false);
+  // Open on a desk, folded on a phone to begin with; the choice is remembered on each.
+  const [settingsOpen, setSettingsOpen] = usePersisted<boolean>(`signalBacktest.settingsOpen.${wide ? 'desk' : 'phone'}`, wide);
   const pickMethods = (m: string[]) => { setMethods(m); setFromStrategies([]); };
   const pickTfs = (t: string[]) => { setTfs(t); setFromStrategies([]); };
   // Anything remembered from an older build falls back to the defaults rather than asking for what the server refuses.
@@ -310,10 +322,31 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const strategies = r?.strategies ?? [];
   const values = params.rule === 'delta' ? DELTAS : PREMIUMS;
 
-  const settings = (
+  // The settings in one line: what the result below is of. Said on the folded panel and on the result.
+  const rangeWords = (min = 0, max = 0) => [min > 0 ? `≥ ${min}` : null, max > 0 ? `≤ ${max}` : null].filter(Boolean).join(' ');
+  const summary = [
+    byStrategy ? `by ${strategies.find((x) => x.id === strategyId)?.name ?? 'a strategy'}'s rules` : null,
+    !byStrategy ? (params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`) : null,
+    !byStrategy ? `${params.lots} lot${params.lots === 1 ? '' : 's'}` : null,
+    !byStrategy ? `TGT ${CUSTOM.target.label(params.targetPct)}` : null,
+    !byStrategy ? `SL ${CUSTOM.stop.label(params.stopPct)}` : null,
+    !byStrategy ? (params.window === 'desk' ? '9:30 PM → 3:59 PM' : params.window === 'all' ? 'whole day' : params.hoursFrom && params.hoursTo ? `${time12(params.hoursFrom)} → ${time12(params.hoursTo)}` : null) : null,
+    !byStrategy && (rangeWords(params.slMin, params.slMax) || rangeWords(params.tgtMin, params.tgtMax))
+      ? [rangeWords(params.slMin, params.slMax) && `SL ${rangeWords(params.slMin, params.slMax)}`, rangeWords(params.tgtMin, params.tgtMax) && `TGT ${rangeWords(params.tgtMin, params.tgtMax)}`].filter(Boolean).join(', ') + ' pts'
+      : null,
+    params.deskMax > 0 ? `at most ${params.deskMax} open · CE ${params.cePct}% · PE ${params.pePct}%` : 'no open limit',
+  ].filter(Boolean).join(' · ');
+
+  /*
+   * The settings, in four sections (owner, 13 Oct 2026: "a user-friendly backtest screen, responsive on the
+   * window and on the phone"). On a phone they fold into one line -- what the result is of, and Change -- so the
+   * result is on the screen without scrolling past them; on a wide desk window they are a column of their own
+   * beside the result, kept in view as it scrolls. The filters, used most, stay open in both.
+   */
+  const setup = (
     <>
-      {wide && <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>}
-      {expiry.control}
+      <Section title="What to backtest">
+        {expiry.control}
       <label className="grid gap-1 px-1">
         <span className="text-[12px] text-muted-foreground">Backtest by</span>
         <select
@@ -326,7 +359,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           ))}
         </select>
       </label>
-      {!byStrategy && <>
+        {!byStrategy && <>
       <Segmented label="Which signals" value={params.window} options={WINDOWS}
         // Custom opens the hours every time it is tapped: chosen already, a tap is "change the hours".
         onChange={(window) => { if (window === 'custom') setPickingHours(true); else { set({ window }); setPickingHours(false); } }} />
@@ -341,6 +374,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           onApply={(hoursFrom, hoursTo) => { set({ window: 'custom', hoursFrom, hoursTo }); setPickingHours(false); }}
           onClose={() => setPickingHours(false)} />
       )}
+        </>}
+      </Section>
+      {!byStrategy && (
+        <Section title="Strike and exits">
       <Segmented label="How the strike is picked" value={params.rule} options={RULES} onChange={(rule) => set({ rule, value: rule === 'delta' ? 0.1 : 50 })} />
       <ChipRow wide={wide} label={params.rule === 'delta' ? 'Sell the nearest strike with a delta of at most' : 'Sell the dearest strike priced at most'}>
         {values.map((v) => <Chip key={v} on={params.value === v} onClick={() => set({ value: v })}>{params.rule === 'delta' ? v.toFixed(2) : `$${v}`}</Chip>)}
@@ -359,10 +396,14 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         {LOTS.map((n) => <Chip key={n} on={params.lots === n} onClick={() => set({ lots: n })}>{n}</Chip>)}
         <CustomValue value={params.lots} presets={LOTS} spec={CUSTOM.lots} name="Lots" onChange={(lots) => set({ lots })} />
       </ChipRow>
+        </Section>
+      )}
+      <Section title="Which signals are taken">
+        {!byStrategy && <>
       <SlTgtRange value={{ slMin: params.slMin ?? 0, slMax: params.slMax ?? 0, tgtMin: params.tgtMin ?? 0, tgtMax: params.tgtMax ?? 0 }} onApply={(r) => set(r)} />
-      </>}
-      <section aria-label="The desk's limits" className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
-        <div className="text-[13px] font-semibold">The desk&apos;s limits <span className="font-normal text-muted-foreground">· as on the Signal Strategies card</span></div>
+        </>}
+        <section aria-label="The desk's limits" className="grid gap-2">
+          <div className="text-[13px] font-semibold">The desk&apos;s limits <span className="font-normal text-muted-foreground">· as on the Signal Strategies card</span></div>
         {/* An older server sends none: nothing offered rather than a blank screen. */}
         {(r?.deskLimits?.length ?? 0) > 0 && (
           <ChipRow label="As an account has them now">
@@ -392,7 +433,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             A signal is skipped while that many are open, as the desk does. With a limit, the time frame and method filters below choose which signals compete for the places.
           </p>
         )}
-      </section>
+        </section>
+      </Section>
+    </>
+  );
+  const filterBlock = (
+    <Section title="Filters">
       {r && r.choices.timeframes.length > 0 && (
         <ChipRow wide={wide} label="Time frame">
           <Chip on={tfs.length === 0} onClick={() => pickTfs([])}>All time frames</Chip>
@@ -404,7 +450,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         </ChipRow>
       )}
       {r && (r.choices.methods.length > 1 || methods.length > 0) && (
-        <div className={wide ? 'px-4' : undefined}>
+        // The bar bleeds 16px to a phone's edges; inside a section the same 16px is given back.
+        <div className="px-4">
           <FilterBar onClear={methods.length || tfs.length || fromStrategies.length ? () => { setMethods([]); setTfs([]); setFromStrategies([]); } : null}>
             {strategies.length > 0 && (
               <FilterPicker noun={STRATEGIES} picked={fromStrategies.filter((id) => strategies.some((x) => x.id === id))}
@@ -435,10 +482,40 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           )}
         </div>
       )}
-    </>
+    </Section>
+  );
+  const settingsPanel = (
+    <Panel
+      title="Settings"
+      right={(
+        <button type="button" onClick={() => setSettingsOpen((v) => !v)} aria-expanded={settingsOpen}
+          className={cn('min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] font-medium text-[var(--accent)]', wide && 'xl:hidden')}>
+          {settingsOpen ? 'Hide' : 'Change'}
+        </button>
+      )}
+    >
+      <p className={cn('m-0 text-[13px] leading-snug', settingsOpen && 'hidden', wide && 'xl:hidden')}>{summary}</p>
+      <div className={cn('grid min-w-0 gap-3', !settingsOpen && 'hidden', wide && 'xl:grid')}>{setup}</div>
+    </Panel>
+  );
+  const title = wide && (
+    <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>
+  );
+  /** The page: on a wide desk window the settings and filters a column of their own, the result beside them; else one above the other. */
+  const page = (result: React.ReactNode) => (
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+      {title}
+      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:grid-cols-[400px_minmax(0,1fr)] xl:items-start')}>
+        <aside aria-label="Backtest settings" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
+          {settingsPanel}
+          {filterBlock}
+        </aside>
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{result}</div>
+      </div>
+    </div>
   );
 
-  if (!r) return <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{settings}<Panel><Loading error={read.error} what="the backtest (a first read of a range takes a few seconds)" /></Panel></div>;
+  if (!r) return page(<Panel><Loading error={read.error} what="the backtest (a first read of a range takes a few seconds)" /></Panel>);
 
   const t = r.total;
   const sl = t.exits['perp-sl'], tg = t.exits['perp-tgt'];
@@ -451,9 +528,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const amount = (p: { net: number }) => moneyText(p.net);
   const rule = params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`;
 
-  return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
-      {settings}
+  return page(
+    <>
 
       <Updating busy={read.stale} what="the backtest">
       <Panel title="Backtest result">
@@ -644,6 +720,6 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         {' '}— so the total is not what an account would have made: read what a trade of each kind made.
       </p>
       </Updating>
-    </div>
+    </>
   );
 }
