@@ -4,8 +4,7 @@ Since 13 Oct 2026. "Can the signal history be backtested on the past contracts' 
 TGT and SL. I ask because when the perp's SL is hit the contract has often decayed by then, and the trade is a
 profit."
 
-Where: the phone, **More → Backtest**; the desk, the last thing on the **Methods** screen, under the market
-report. One component (`app/web/src/components/report/SignalBacktest.tsx`), one route
+Where: the phone, **More → Backtest**; the desk, its own **Backtest** menu. One component (`app/web/src/components/report/SignalBacktest.tsx`), one route
 (`GET /api/signal-backtest`), read-only. The work is `app/server/src/report/signal-backtest.ts`.
 
 ## What it does
@@ -34,6 +33,18 @@ For every signal that went "in the trade" (`entry_setups` with a fill), in the e
 | Time frame, method | as on the market report | all |
 
 Always out of the money, and never for under $10 (`MIN_PREMIUM`), as the strategies' own floor.
+
+## Backtest by a saved strategy
+
+**Backtest by** at the top lists the signal strategies that sell, with their account. Chosen, the settings below it
+go and the strategy's own rules are used (`planOfStrategy`): its methods and time frames, its days and hours, its
+no-entry window, its nearest and furthest SL and TGT, the strike rule in force at each hour (blocks included,
+picked by the runner's own `selectLegs` on the recorded board), its lots, its TGT1/2/3, the option's own target
+and stop, and its "at most N open". Not in it: other strategies' trades, the desk-wide limit and margin, and the
+order queue. What it cannot replay is said under the result (timed target or stop steps; a target or stop set
+in points or as a price; a strike by open interest). Beside the result, **Backtest against its real orders**:
+what the orders it really placed in the range made. A strategy deleted since it was chosen falls back to the
+settings. `GET /api/signal-backtest?strategy=<id>`; every answer carries `strategies`, the list to choose from.
 
 ## What it is priced on, and what that makes it
 

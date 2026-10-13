@@ -4,7 +4,7 @@ Since 13 Oct 2026. "Every day, the market's trend -- 5:31 PM to 5:29 PM, how the
 that, which pair is best": each expiry day of the BTC perp measured and given one of twenty names, and against
 the kind of day, what the **signal history** and the **real orders** made on it.
 
-Where: the phone, **More → Market report**; the desk, at the bottom of the **Methods** screen. One component
+Where: the phone, **More → Market report**; the desk, its own **Market report** menu (it sat under Methods for an hour on 13 Oct). One component
 (`app/web/src/components/report/MarketReport.tsx`), two routes (`/api/market-report`,
 `/api/market-report/breakdown`), read-only.
 

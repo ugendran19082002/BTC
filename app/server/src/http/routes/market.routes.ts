@@ -4,6 +4,7 @@ import { PATTERNS, FAMILIES, sessionDayOf, type PatternFamily, type PatternKey }
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters, type Scope } from '../../report/market-report.js';
 import { DEFAULT_PARAMS, backtestable, signalBacktest, type BacktestParams } from '../../report/signal-backtest.js';
 import { strategyStore } from './strategy.routes.js';
+import { ruleTfs } from '../../strategy/types.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
@@ -98,7 +99,11 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const result = await signalBacktest({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot });
     return {
       ...result,
-      strategies: every.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled, account: accountName(s.accountId) }))
+      // With its methods and timeframes, so the screen can tick a strategy's methods for the settings (`chain`: the timeframe chain).
+      strategies: every.map((s) => ({
+        id: s.id, name: s.name, enabled: s.enabled, account: accountName(s.accountId),
+        methods: [...s.config.signal!.methods], tfs: s.config.signal!.mode === 'mtf' ? ['chain'] : [...ruleTfs(s.config.signal!)],
+      }))
         .sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true })),
     };
   });

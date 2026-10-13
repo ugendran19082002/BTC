@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-485 files listed, 239 test files counted below, images and lockfiles left out.
+487 files listed, 241 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 126 |
-| `app/web` | 113 |
+| `app/server` | 127 |
+| `app/web` | 114 |
 
 ## `(root)`
 
@@ -229,6 +229,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [precheck.ts](../../app/server/src/trading/precheck.ts) | The gates a trade passes before a single byte goes to the exchange. |
 | [service.ts](../../app/server/src/trading/service.ts) | The one live trading service. |
 | [status.ts](../../app/server/src/trading/status.ts) | What a trade looks like in a list of orders. |
+| [stop-watch.ts](../../app/server/src/trading/stop-watch.ts) | The fast watch on a sold option's own stop (13 Oct 2026). |
 | [store.ts](../../app/server/src/trading/store.ts) | The trade journal. |
 | [types.ts](../../app/server/src/trading/types.ts) | The vocabulary of a live trade. |
 | [underlying-watch.ts](../../app/server/src/trading/underlying-watch.ts) | The fast watch on a signal trade's stop and target. |
@@ -444,6 +445,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
 | [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | The days and the running total they add up to, as one chart (owner, 6 Oct 2026). |
+| [ExpiryRange.tsx](../../app/web/src/components/report/ExpiryRange.tsx) | Which expiry days a report covers (13 Oct 2026): since 1 Oct, the last 7 or 30, or a range of the owner's own ("I want a custom date"). |
 | [MarketReport.tsx](../../app/web/src/components/report/MarketReport.tsx) | The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole expiry went -- and on that, which pair is best": each expiry day with its high and low in... |
 | [MethodReport.tsx](../../app/web/src/components/report/MethodReport.tsx) | The Methods report (owner, 1 Oct 2026: "a tab of its own; two sections, 81 + 81: win rate, trades, win, loss, profit, loss, net"). |
 | [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | One day, minute by minute: what the day was worth at each reading, with every fall from a high shaded underneath. |

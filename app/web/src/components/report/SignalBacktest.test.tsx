@@ -200,6 +200,47 @@ describe('SignalBacktest', () => {
     expect(await screen.findByText('Backtest result')).toBeInTheDocument();
   });
 
+  it('[critical] custom numbers: typed in the row\'s own unit, checked, applied on Use or Enter -- and said on the chip after', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const row = (name: string) => within(screen.getByRole('group', { name }));
+    // a delta of 0.12
+    fireEvent.click(row('Sell the nearest strike with a delta of at most').getByRole('button', { name: 'Custom' }));
+    const delta = screen.getByRole('spinbutton', { name: 'Delta limit, your own' });
+    fireEvent.change(delta, { target: { value: '0.9' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('From 0.02 to 0.5.');
+    expect(row('Sell the nearest strike with a delta of at most').getByRole('button', { name: 'Use' })).toBeDisabled();
+    fireEvent.change(delta, { target: { value: '0.12' } });
+    fireEvent.click(row('Sell the nearest strike with a delta of at most').getByRole('button', { name: 'Use' }));
+    await waitFor(() => expect(lastQuery().params.value).toBe(0.12));
+    expect(row('Sell the nearest strike with a delta of at most').getByRole('button', { name: 'Custom · 0.12' })).toHaveAttribute('aria-pressed', 'true');
+    // a stop of +200%, typed as a percentage, sent as a share; Enter applies
+    fireEvent.click(row("The option's own stop, over the premium sold").getByRole('button', { name: 'Custom' }));
+    const stop = screen.getByRole('spinbutton', { name: 'Option stop, your own' });
+    fireEvent.change(stop, { target: { value: '200' } });
+    fireEvent.keyDown(stop, { key: 'Enter' });
+    await waitFor(() => expect(lastQuery().params.stopPct).toBe(2));
+    expect(row("The option's own stop, over the premium sold").getByRole('button', { name: 'Custom · +200%' })).toBeInTheDocument();
+    // a target of 75% kept
+    fireEvent.click(row("The option's own target, of the premium kept").getByRole('button', { name: 'Custom' }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Option target, your own' }), { target: { value: '75' } });
+    fireEvent.click(row("The option's own target, of the premium kept").getByRole('button', { name: 'Use' }));
+    await waitFor(() => expect(lastQuery().params.targetPct).toBe(0.75));
+    // lots: whole numbers only
+    fireEvent.click(row('Lots a signal').getByRole('button', { name: 'Custom' }));
+    const lots = screen.getByRole('spinbutton', { name: 'Lots, your own' });
+    fireEvent.change(lots, { target: { value: '2.5' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('A whole number.');
+    fireEvent.change(lots, { target: { value: '25' } });
+    fireEvent.keyDown(lots, { key: 'Enter' });
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ rule: 'delta', value: 0.12, stopPct: 2, targetPct: 0.75, lots: 25 }));
+    expect(await screen.findByText(/option target 75%, stop \+200%/)).toBeInTheDocument();
+    // a preset is one tap back
+    fireEvent.click(row('Lots a signal').getByRole('button', { name: '10' }));
+    await waitFor(() => expect(lastQuery().params.lots).toBe(10));
+    expect(row('Lots a signal').getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {
     getSignalBacktest.mockResolvedValue({ ...RESULT, total: tot(), signals: 300, skipped: { ...RESULT.skipped, 'no-strike': 0, 'no-exit-price': 0 }, pairs: [], byTf: [], days: [], byFamily: [], byPattern: [] });
     const { unmount } = show();

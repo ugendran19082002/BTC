@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import type { BacktestParams, BacktestQuery, BtExit, BtRow, BtTot } from '@/types/signal-backtest';
 import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
-import { FilterBar, FilterPicker, METHODS } from '@/components/mobile/FilterPicker';
+import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 
 /**
@@ -37,6 +37,55 @@ const DELTAS = [0.05, 0.1, 0.15, 0.2];
 const PREMIUMS = [25, 50, 75, 100];
 const STOPS: { value: number; label: string }[] = [{ value: 1, label: '+100%' }, { value: 1.5, label: '+150%' }, { value: 3, label: '+300%' }, { value: 0, label: 'No stop' }];
 const LOTS = [1, 10, 16];
+const TARGETS: { value: number; label: string }[] = [{ value: 0.7, label: '70%' }, { value: 0.8, label: '80%' }, { value: 0.9, label: '90%' }, { value: 0, label: 'No target' }];
+
+/**
+ * One setting's own number (owner, 13 Oct 2026: "custom"): typed, in the unit the row reads in, checked against the
+ * same limits the server holds it to, and applied on Enter or on leaving the field. `toShown` and `fromShown` turn
+ * the stored value into what is typed and back -- a stop of 1.5 is typed as 150 (%).
+ */
+type Custom = { unit: string; min: number; max: number; step: number; whole?: boolean; toShown: (v: number) => number; fromShown: (v: number) => number; label: (v: number) => string };
+const CUSTOM = {
+  delta: { unit: 'delta', min: 0.02, max: 0.5, step: 0.01, toShown: (v) => v, fromShown: (v) => Math.round(v * 100) / 100, label: (v) => v.toFixed(2) },
+  premium: { unit: '$', min: 10, max: 500, step: 1, toShown: (v) => v, fromShown: (v) => Math.round(v * 10) / 10, label: (v) => `$${v}` },
+  stop: { unit: '% over', min: 0, max: 1000, step: 10, toShown: (v) => Math.round(v * 100), fromShown: (v) => Math.round(v) / 100, label: (v) => (v > 0 ? `+${Math.round(v * 100)}%` : 'No stop') },
+  target: { unit: '% kept', min: 0, max: 99, step: 5, toShown: (v) => Math.round(v * 100), fromShown: (v) => Math.round(v) / 100, label: (v) => (v > 0 ? `${Math.round(v * 100)}%` : 'No target') },
+  lots: { unit: 'lots', min: 1, max: 1000, step: 1, whole: true, toShown: (v) => v, fromShown: (v) => v, label: (v) => String(v) },
+} satisfies Record<string, Custom>;
+
+/** The "Custom" chip of a row and, once tapped, its field. On while the value is not one of the row's own. */
+function CustomValue({ value, presets, spec, name, onChange }: { value: number; presets: readonly number[]; spec: Custom; name: string; onChange: (v: number) => void }) {
+  const mine = !presets.some((p) => Math.abs(p - value) < 1e-9);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(String(spec.toShown(value)));
+  const n = Number(text);
+  const problem = text.trim() === '' || !Number.isFinite(n) ? 'Type a number.'
+    : n < spec.min || n > spec.max ? `From ${spec.min} to ${spec.max}.`
+      : spec.whole && !Number.isInteger(n) ? 'A whole number.' : null;
+  const apply = () => { if (problem === null) { onChange(spec.fromShown(n)); setOpen(false); } };
+  return (
+    <>
+      <Chip on={mine || open} onClick={() => { setText(String(spec.toShown(value))); setOpen((o) => !o); }}>
+        {mine && !open ? `Custom · ${spec.label(value)}` : 'Custom'}
+      </Chip>
+      {open && (
+        <span className="flex shrink-0 items-center gap-1.5">
+          <input
+            type="number" inputMode="decimal" aria-label={`${name}, your own`} autoFocus
+            min={spec.min} max={spec.max} step={spec.step} value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') apply(); if (e.key === 'Escape') setOpen(false); }}
+            className="h-10 w-24 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] text-foreground [color-scheme:dark]"
+          />
+          <span className="text-[12.5px] text-muted-foreground">{spec.unit}</span>
+          <button type="button" onClick={apply} disabled={problem !== null}
+            className="h-10 rounded-md border-0 bg-[var(--up)] px-3 font-[inherit] text-[13.5px] font-semibold text-[var(--bg)] disabled:opacity-40">Use</button>
+          {problem && <span role="alert" className="text-[12.5px] text-[var(--down)]">{problem}</span>}
+        </span>
+      )}
+    </>
+  );
+}
 const EXITS: { key: BtExit; label: string }[] = [
   { key: 'perp-tgt', label: 'Perp TGT' }, { key: 'perp-sl', label: 'Perp SL' }, { key: 'option-tgt', label: 'Option TGT' },
   { key: 'option-sl', label: 'Option SL' }, { key: 'window-end', label: 'Window end' },
@@ -48,11 +97,12 @@ const rate = (t: Pick<BtTot, 'n' | 'wins'>) => (t.n > 0 ? t.wins / t.n : null);
 const each = (t: Pick<BtTot, 'n' | 'net'>) => (t.n > 0 ? moneyText(t.net / t.n) : '—');
 const count = (n: number) => n.toLocaleString('en-US');
 
-function ChipRow({ label, wide, children }: { label: string; wide: boolean; children: React.ReactNode }) {
+function ChipRow({ label, children }: { label: string; wide?: boolean; children: React.ReactNode }) {
   return (
     <div>
       <div className="mb-1 px-1 text-[12px] text-muted-foreground">{label}</div>
-      <div role="group" aria-label={label} className={cn('flex gap-2', wide ? 'flex-wrap' : '-mx-4 overflow-x-auto px-4 pb-1')}>{children}</div>
+      {/* Wrapped, not scrolled sideways: a Custom field and what is wrong with it must stay on the screen. */}
+      <div role="group" aria-label={label} className="flex flex-wrap items-center gap-2">{children}</div>
     </div>
   );
 }
@@ -138,6 +188,14 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('signalBacktest.grouping', 'family');
   // A saved strategy to backtest by (owner, 13 Oct 2026); null is the settings below.
   const [strategyId, setStrategyId] = usePersisted<string | null>('signalBacktest.strategy', null);
+  /*
+   * Strategies whose methods and timeframes are ticked for these settings (owner, 13 Oct 2026: "a strategy list
+   * beside Methods; choosing one selects its methods"). A shortcut for the two filters, not a rule of its own: the
+   * methods and timeframes are what is asked for, and changing either by hand ends it.
+   */
+  const [fromStrategies, setFromStrategies] = usePersisted<string[]>('signalBacktest.fromStrategies', []);
+  const pickMethods = (m: string[]) => { setMethods(m); setFromStrategies([]); };
+  const pickTfs = (t: string[]) => { setTfs(t); setFromStrategies([]); };
   // Anything remembered from an older build falls back to the defaults rather than asking for what the server refuses.
   const params: BacktestParams = { ...DEFAULTS, ...stored };
   const set = (o: Partial<BacktestParams>) => setParams({ ...params, ...o });
@@ -175,19 +233,27 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       <Segmented label="How the strike is picked" value={params.rule} options={RULES} onChange={(rule) => set({ rule, value: rule === 'delta' ? 0.1 : 50 })} />
       <ChipRow wide={wide} label={params.rule === 'delta' ? 'Sell the nearest strike with a delta of at most' : 'Sell the dearest strike priced at most'}>
         {values.map((v) => <Chip key={v} on={params.value === v} onClick={() => set({ value: v })}>{params.rule === 'delta' ? v.toFixed(2) : `$${v}`}</Chip>)}
+        <CustomValue key={params.rule} value={params.value} presets={values} spec={params.rule === 'delta' ? CUSTOM.delta : CUSTOM.premium}
+          name={params.rule === 'delta' ? 'Delta limit' : 'Premium limit'} onChange={(value) => set({ value })} />
+      </ChipRow>
+      <ChipRow wide={wide} label="The option's own target, of the premium kept">
+        {TARGETS.map((x) => <Chip key={x.value} on={params.targetPct === x.value} onClick={() => set({ targetPct: x.value })}>{x.label}</Chip>)}
+        <CustomValue value={params.targetPct} presets={TARGETS.map((x) => x.value)} spec={CUSTOM.target} name="Option target" onChange={(targetPct) => set({ targetPct })} />
       </ChipRow>
       <ChipRow wide={wide} label="The option's own stop, over the premium sold">
         {STOPS.map((s) => <Chip key={s.value} on={params.stopPct === s.value} onClick={() => set({ stopPct: s.value })}>{s.label}</Chip>)}
+        <CustomValue value={params.stopPct} presets={STOPS.map((x) => x.value)} spec={CUSTOM.stop} name="Option stop" onChange={(stopPct) => set({ stopPct })} />
       </ChipRow>
       <ChipRow wide={wide} label="Lots a signal">
         {LOTS.map((n) => <Chip key={n} on={params.lots === n} onClick={() => set({ lots: n })}>{n}</Chip>)}
+        <CustomValue value={params.lots} presets={LOTS} spec={CUSTOM.lots} name="Lots" onChange={(lots) => set({ lots })} />
       </ChipRow>
       </>}
       {r && r.choices.timeframes.length > 0 && (
         <ChipRow wide={wide} label="Time frame">
-          <Chip on={tfs.length === 0} onClick={() => setTfs([])}>All time frames</Chip>
+          <Chip on={tfs.length === 0} onClick={() => pickTfs([])}>All time frames</Chip>
           {r.choices.timeframes.map((t) => (
-            <Chip key={t.key} on={tfs.includes(t.key)} onClick={() => setTfs(tfs.includes(t.key) ? tfs.filter((x) => x !== t.key) : [...tfs, t.key])}>
+            <Chip key={t.key} on={tfs.includes(t.key)} onClick={() => pickTfs(tfs.includes(t.key) ? tfs.filter((x) => x !== t.key) : [...tfs, t.key])}>
               {t.key === 'chain' ? 'TF chain' : t.name}
             </Chip>
           ))}
@@ -195,14 +261,34 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       )}
       {r && (r.choices.methods.length > 1 || methods.length > 0) && (
         <div className={wide ? 'px-4' : undefined}>
-          <FilterBar onClear={methods.length ? () => setMethods([]) : null}>
-            <FilterPicker noun={METHODS} picked={methods} onChange={setMethods}
+          <FilterBar onClear={methods.length || tfs.length || fromStrategies.length ? () => { setMethods([]); setTfs([]); setFromStrategies([]); } : null}>
+            {strategies.length > 0 && (
+              <FilterPicker noun={STRATEGIES} picked={fromStrategies.filter((id) => strategies.some((x) => x.id === id))}
+                // Ticks the strategies' own methods and timeframes, together; none ticked is every method again.
+                onChange={(ids) => {
+                  const chosen = strategies.filter((x) => ids.includes(x.id));
+                  setFromStrategies(chosen.map((x) => x.id));
+                  setMethods([...new Set(chosen.flatMap((x) => x.methods))]);
+                  setTfs([...new Set(chosen.flatMap((x) => x.tfs))]);
+                }}
+                options={strategies.map((x) => ({
+                  key: x.id, name: x.name,
+                  note: `${x.account ? `${x.account} · ` : ''}${x.methods.length} method${x.methods.length === 1 ? '' : 's'} on ${x.tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ')}${x.enabled ? '' : ' · off'}`,
+                }))} />
+            )}
+            <FilterPicker noun={METHODS} picked={methods} onChange={pickMethods}
               // Each method with what it made as options (owner, 13 Oct 2026: "show the methods' profit and loss").
               options={r.choices.methods.map((m) => ({
                 key: m.key, name: m.name, tone: m.net > 0 ? 'up' as const : m.net < 0 ? 'down' as const : undefined,
                 note: m.n > 0 ? `${count(m.n)} trades · ${pct(m.wins / m.n, 0)} won · ${moneyText(m.net)}` : 'no trade',
               }))} />
           </FilterBar>
+          {fromStrategies.length > 0 && (
+            <p className="m-0 mt-1 px-1 text-[12.5px] text-muted-foreground">
+              The methods and time frames of {strategies.filter((x) => fromStrategies.includes(x.id)).map((x) => x.name).join(', ')}: {methods.length} method{methods.length === 1 ? '' : 's'} on {tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ') || 'every time frame'}, by the settings above.
+              {' '}To use a strategy&apos;s own strike, lots, exits and limits too, choose it under Backtest by.
+            </p>
+          )}
         </div>
       )}
     </>
@@ -232,7 +318,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           </div>
         )}
         <p className="m-0 text-[13px] text-muted-foreground">
-          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target 90%, stop {STOPS.find((s) => s.value === params.stopPct)?.label ?? `${params.stopPct * 100}%`}
+          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target {CUSTOM.target.label(params.targetPct)}, stop {CUSTOM.stop.label(params.stopPct)}
         </p>
         {t.n === 0 ? <div className="mt-2"><Empty>No signal could be traded with these settings in this range.</Empty></div> : (
           <>

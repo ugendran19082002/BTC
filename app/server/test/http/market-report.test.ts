@@ -388,7 +388,7 @@ test('[critical] the backtest by a saved strategy: its methods and timeframe, it
 
   const r = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&strategy=${id}`);
   assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
-  assert.ok(r.body.strategies.some((s: any) => s.id === id && s.name === 'BT fifteen'), 'the list to choose from');
+  assert.deepEqual(r.body.strategies.find((s: any) => s.id === id), { id, name: 'BT fifteen', enabled: false, account: null, methods: ['breakout'], tfs: ['15m'] }, 'the list to choose from, with its methods and timeframes');
   assert.equal(r.body.strategy.name, 'BT fifteen');
   assert.deepEqual(r.body.strategy.caveats, []);
   // only its own signals: 15m breakout, three on the climb -- the 1h pullbacks and the chain's are not its

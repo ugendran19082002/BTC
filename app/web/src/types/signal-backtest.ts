@@ -15,7 +15,7 @@ export type SignalBacktestResponse = {
   /** The strategy backtested, what of it could not be replayed, and what its real orders made in the range. Null: the screen's own settings. */
   strategy: { id: string; name: string; accountId: number | null; caveats: string[]; real: { n: number; wins: number; open: number; net: number } } | null;
   /** The signal strategies there are to backtest by: those that sell. */
-  strategies: { id: string; name: string; enabled: boolean; account: string | null }[];
+  strategies: { id: string; name: string; enabled: boolean; account: string | null; methods: string[]; tfs: string[] }[];
   signals: number; skipped: Record<BtSkip, number>;
   total: BtTot;
   days: (BtTot & { day: string; pattern: string | null; live: boolean })[];
