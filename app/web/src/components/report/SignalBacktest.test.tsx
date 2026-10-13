@@ -657,7 +657,8 @@ describe('SignalBacktest', () => {
     // the panel is there at once, saying it is being worked out; then the result
     await screen.findByRole('table', { name: 'Run together: each saved backtest' });
     const run = within(screen.getByText('Run together · 16 lots on 4h + Desk rules').closest('section, div')!.parentElement!);
-    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['b2', 'a1'], { from: '2026-10-01', to: '2026-10-13' }, 'shared');
+    // no saved backtest carries a limit here: the account's own -- Savings, 58 open, CE and PE 80% -- is the one shown and asked for
+    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['b2', 'a1'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 58, ce: 80, pe: 80 });
     // the days are chosen in this section too
     expect(folio().getByRole('radiogroup', { name: 'Expiry days' })).toBeInTheDocument();
     expect(run.getByText(/a trade$/).parentElement!.textContent).toMatch(/^−₹7,650 −₹[\d.]+ a trade$/);                 // -$90 together
@@ -780,7 +781,7 @@ describe('SignalBacktest', () => {
     expect(panel().queryByRole('form')).toBeNull();
     // the run on the screen is of what the portfolio is now
     expect(await screen.findByText('Run together · Alpha and Gamma')).toBeInTheDocument();
-    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'c333'], { from: '2026-10-01', to: '2026-10-13' }, 'shared'));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'c333'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 58, ce: 80, pe: 80 }));
 
     // Cancel: as it was, and the ticks cleared
     fireEvent.click(panel().getByRole('button', { name: 'Edit the portfolio Alpha and Gamma' }));
@@ -810,14 +811,37 @@ describe('SignalBacktest', () => {
     fireEvent.click(await folio().findByRole('button', { name: 'Run the portfolio Both' }));
     await screen.findByRole('table', { name: 'Run together: each saved backtest' });
     const run = () => within(screen.getByText('Run together · Both').closest('section, div')!.parentElement!);
-    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared');
+    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 120, ce: 80, pe: 80 });
+    // the limit is on the screen, with the value it opens on: what the saved backtests themselves carry
+    const capOf = () => within(folio().getByRole('group', { name: "One account's limit" }));
+    expect([capOf().getByLabelText('At most open, together'), capOf().getByLabelText('CE max'), capOf().getByLabelText('PE max')].map((x) => (x as HTMLInputElement).value)).toEqual(['120', '80', '80']);
+    expect(capOf().getByRole('status')).toHaveTextContent('The default: 120 open · CE 80% · PE 80% -- the largest “at most open” among the saved backtests run, or the account\'s own. Type another to try it.');
+
+    // typed: 60 open, calls half of it -- asked for on leaving the field, and said as one's own, with the way back
+    fireEvent.change(capOf().getByLabelText('At most open, together'), { target: { value: '60' } });
+    fireEvent.change(capOf().getByLabelText('CE max'), { target: { value: '50' } });
+    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 120, ce: 80, pe: 80 });   // not yet
+    fireEvent.blur(capOf().getByLabelText('CE max'));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 60, ce: 50, pe: 80 }));
+    expect(capOf().getByRole('status')).toHaveTextContent('Your own: 60 open · CE 50% · PE 80%. The default is 120 open · CE 80% · PE 80%. Default');
+    // one that cannot be meant is said, and not asked for
+    fireEvent.change(capOf().getByLabelText('At most open, together'), { target: { value: '0' } });
+    fireEvent.blur(capOf().getByLabelText('At most open, together'));
+    expect(capOf().getByRole('alert')).toHaveTextContent('At most open is a whole number from 1 to 500.');
+    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 60, ce: 50, pe: 80 });
+    fireEvent.change(capOf().getByLabelText('At most open, together'), { target: { value: '60' } });
+    // Default: back to what the saved backtests carry
+    fireEvent.click(capOf().getByRole('button', { name: 'Default' }));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 120, ce: 80, pe: 80 }));
+    expect((capOf().getByLabelText('At most open, together') as HTMLInputElement).value).toBe('120');
     expect(run().getByText(/2 saved backtests,/).textContent).toBe('Thu 1 Oct → Tue 13 Oct · 2 saved backtests, traded as one account: at most 120 open together (CE 96 · PE 96), the longer time frame first, as the desk takes them.');
     expect(run().getByText('37 signals found the account, or their side of it, full and were not traded.')).toBeInTheDocument();
     expect(run().getByText(/the most held at once was 120 trades at 9:15 AM on the Mon 12 Oct expiry -- never more than the account's 120 --/)).toBeInTheDocument();
 
     // each its own: asked again, and said -- with the warning that it may be more than one account holds
     fireEvent.click(folio().getByRole('radio', { name: 'Each saved backtest keeps its own limit' }));
-    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'own'));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'own', null));
+    expect(folio().queryByRole('group', { name: "One account's limit" })).toBeNull();          // each its own: no shared limit to set
     expect(await screen.findByText(/2 saved backtests, each worked as it is alone and added up\./)).toBeInTheDocument();
     expect(run().getByText(/the most held at once was 152 trades .* Each kept its own limit here, so more may be open together than one account would hold: choose One account to hold them to one limit\./)).toBeInTheDocument();
     expect(run().queryByText(/found the account/)).toBeNull();
