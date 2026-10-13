@@ -166,6 +166,24 @@ export function startTickerSocket(log?: (line: string) => void): TickerSocket {
   return tickerSocket;
 }
 
+/**
+ * The offers the desk holds in memory for these contracts, and when that board was last refreshed -- off the
+ * socket each second, off the poll when the socket is quiet. Nothing is fetched: null before the first board.
+ * For the fast watch on the options' own stops (trading/stop-watch.ts), which only decides whom the engine
+ * looks at; the engine reads the exchange's own quote before it acts.
+ */
+export function cachedAsks(symbols: readonly string[]): { at: number; asks: Map<string, number> } | null {
+  if (!tickerCache) return null;
+  const want = new Set(symbols);
+  const asks = new Map<string, number>();
+  for (const t of tickerCache.data) {
+    if (!want.has(t.symbol)) continue;
+    const ask = Number(t.quotes?.best_ask ?? Number.NaN);
+    if (Number.isFinite(ask) && ask > 0) asks.set(t.symbol, ask);
+  }
+  return { at: tickerCache.at, asks };
+}
+
 /** Where the board is coming from, for /api/health and the screen. */
 export function tickerFeedHealth(): FeedHealth & { batchAt: number | null } {
   const h = tickerSocket?.health() ?? { source: 'none' as const, connected: false, lastMessageAt: null, symbols: 0, reconnects: 0 };

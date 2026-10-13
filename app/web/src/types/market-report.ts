@@ -38,6 +38,8 @@ export type GroupRow = {
   signalEnds: { best: Row[]; worst: Row[] }; realEnds: { best: Row[]; worst: Row[] };
 };
 export type Choice = { key: string; name: string };
+/** What a method or a strategy made, for the list it is chosen from: closed trades, how many won, the net in the record's unit. */
+export type Made = { n: number; wins: number; net: number };
 export type MarketReportResponse = {
   from: string; to: string;
   days: MarketDay[];
@@ -45,7 +47,7 @@ export type MarketReportResponse = {
   ends: { signal: { best: Row[]; worst: Row[] }; real: { best: Row[]; worst: Row[] } };
   patterns: GroupRow[]; families: GroupRow[];
   catalogue: { id: number; key: string; name: string; meaning: string; family: PatternFamily }[];
-  choices: { timeframes: Choice[]; methods: Choice[]; strategies: Choice[] };
+  choices: { timeframes: Choice[]; methods: (Choice & { signal: Made; real: Made })[]; strategies: (Choice & Made)[] };
 };
 export type Side = { total: Tot; pairs: Row[]; byTf: Row[]; byMethod: Row[]; byStrategy: Row[] };
 export type MarketBreakdownResponse = { days: string[]; signal: Side; real: Side };

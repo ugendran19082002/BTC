@@ -246,7 +246,8 @@ export type SignalBacktest = {
   total: BtTot;
   days: (BtTot & { day: string; pattern: PatternKey | null; live: boolean })[];
   pairs: BtRow[]; byTf: BtRow[]; byMethod: BtRow[]; byPattern: BtRow[]; byFamily: BtRow[];
-  choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string }[] };
+  /** What there is to filter by. Each method carries what it made on the timeframes chosen, whichever methods are ticked. */
+  choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string; n: number; wins: number; net: number }[] };
 };
 
 const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', CHAIN_KEY];
@@ -302,7 +303,12 @@ async function signalBacktestNow(o: { from: string; to: string; now: number; par
     byFamily: group((c) => { const p = patternOf.get(c.day); return p ? familyOf(p) : null; }, (c) => ({ name: FAMILIES.find((f) => f.key === familyOf(patternOf.get(c.day)!))!.name })).sort(byNet),
     choices: {
       timeframes: distinct(every.map((c) => ({ key: tfKeyOf(c), name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf }))).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
-      methods: distinct(every.map((c) => ({ key: c.method, name: nameOf(c.method) }))).sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),
+      methods: distinct(every.map((c) => ({ key: c.method, name: nameOf(c.method) })))
+        .map((m) => {
+          const t = every.filter((c) => c.method === m.key && (!o.tfs || o.tfs.includes(tfKeyOf(c)))).reduce((a, c) => addBt(a, c.tot), zeroBt());
+          return { ...m, n: t.n, wins: t.wins, net: t.net };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),
     },
   };
 }

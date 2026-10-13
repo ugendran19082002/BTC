@@ -140,6 +140,18 @@ describe('SignalBacktest', () => {
     expect(JSON.parse(window.localStorage.getItem(kept)!)).toMatchObject({ lots: 16, stopPct: 1.5 });
   });
 
+  it('[critical] a custom range of expiry days, picked in the same sheet as the market report\'s', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('radio', { name: 'A range of expiry days of your own' }));
+    const sheet = within(screen.getByRole('dialog', { name: 'Custom range' }));
+    fireEvent.change(sheet.getByLabelText('From'), { target: { value: '2026-10-09' } });
+    fireEvent.change(sheet.getByLabelText('To'), { target: { value: '2026-10-11' } });
+    fireEvent.click(sheet.getByRole('button', { name: 'Show' }));
+    await waitFor(() => expect(lastQuery()).toMatchObject({ from: '2026-10-09', to: '2026-10-11' }));
+    expect(screen.getByText('Fri 9 Oct → Sun 11 Oct')).toBeInTheDocument();
+  });
+
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {
     getSignalBacktest.mockResolvedValue({ ...RESULT, total: tot(), signals: 300, skipped: { ...RESULT.skipped, 'no-strike': 0, 'no-exit-price': 0 }, pairs: [], byTf: [], days: [], byFamily: [], byPattern: [] });
     const { unmount } = show();

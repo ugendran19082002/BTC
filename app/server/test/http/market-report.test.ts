@@ -256,7 +256,12 @@ test('[critical] by kind of day and by family: the days of each, both records, a
   assert.equal(r.body.ends.real.worst[0].tf, '1h');
   assert.deepEqual(r.body.choices.timeframes.map((t: any) => t.key), ['15m', '1h', 'chain']);
   assert.deepEqual(r.body.choices.strategies.map((s: any) => s.name), ['1h time', '15m time'], 'by name, the numbers in them read as numbers');
-  assert.ok(r.body.choices.methods.some((m: any) => m.key === 'breakout' && m.name === '#1 Breakout'));
+  // each method with what it made in both records, each strategy with what its orders made
+  const breakout = r.body.choices.methods.find((m: any) => m.key === 'breakout');
+  assert.equal(breakout.name, '#1 Breakout');
+  assert.deepEqual(breakout.signal, { n: 5, wins: 3, net: 500 + 400 - 300 + 200 - 250 });
+  assert.deepEqual([breakout.real.n, breakout.real.wins], [4, 3]);
+  assert.deepEqual(r.body.choices.strategies.map((s: any) => [s.name, s.n, s.wins]), [['1h time', 2, 1], ['15m time', 4, 3]]);
 });
 
 test('[critical] the breakdown of a day, a kind of day, a family: pairs, timeframes, methods, strategies -- and the filters', async () => {
@@ -288,6 +293,9 @@ test('[critical] the breakdown of a day, a kind of day, a family: pairs, timefra
   const strategy = await get(`/api/market-report?from=${CLIMB}&to=${QUIET}&strategy=${encodeURIComponent('15m time')}`);
   assert.deepEqual([strategy.body.days[0].signal.n, strategy.body.days[0].real.n], [5, 3]);
   assert.equal(strategy.body.choices.strategies.length, 2, 'the list to choose from is not narrowed by the choice');
+  assert.deepEqual(strategy.body.choices.strategies.map((s: any) => s.n), [2, 4], 'nor are its figures');
+  assert.equal(method.body.choices.methods.find((m: any) => m.key === 'breakout').signal.n, 5, 'a method not chosen still says what it made');
+  assert.equal(strategy.body.choices.methods.find((m: any) => m.key === 'pullback').real.n, 0, 'but a method\'s figures are of the strategies chosen');
 });
 
 test('a bad range, day or kind is refused in words', async () => {
@@ -340,6 +348,8 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   const tf = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tf=1h`);
   assert.equal(tf.body.total.n, 2);
   assert.equal(tf.body.choices.timeframes.length, 3, 'the list to choose from is not narrowed by the choice');
+  assert.deepEqual(all.body.choices.methods.map((m: any) => [m.name, m.n, m.wins]), [['#1 Breakout', 4, 3], [all.body.choices.methods[1].name, 2, 0]], 'each method with its trades and how many won');
+  assert.deepEqual(tf.body.choices.methods.map((m: any) => m.n), [0, 2], 'on the timeframes chosen');
   const lots = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&lots=1`);
   assert.ok(Math.abs(lots.body.total.net * 10 - all.body.total.net) < 1e-9);
   const cheap = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&rule=premium&value=20`);

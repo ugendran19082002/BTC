@@ -5,14 +5,15 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import {
-  dayLabel, exitLines, netText, num, pairOf, ptsText, rangeOf, sparkOf, standoutsOf, timeIst, toneOf, winRate,
-  type RangeKey, type Source,
+  dayLabel, exitLines, netText, num, pairOf, ptsText, sparkOf, standoutsOf, timeIst, toneOf, winRate,
+  type Source,
 } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import type { DayStats, GroupRow, MarketDay, MarketQuery, MarketReportResponse, MarketScope, Row, Tot } from '@/types/market-report';
 import { Chip, Empty, Loading, Panel, Pill, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
+import { useExpiryRange } from '@/components/report/ExpiryRange';
 
 /**
  * The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole
@@ -29,11 +30,6 @@ import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobil
  * day says both in a line.
  */
 
-const RANGES: { key: RangeKey; label: string; spoken: string }[] = [
-  { key: 'all', label: 'Since 1 Oct', spoken: 'Every expiry day since 1 October' },
-  { key: '7', label: '7 days', spoken: 'The last 7 expiry days' },
-  { key: '30', label: '30 days', spoken: 'The last 30 expiry days' },
-];
 const SOURCES: { key: Source; label: string; spoken: string }[] = [
   { key: 'real', label: 'Real orders', spoken: 'Real orders, in rupees after charges' },
   { key: 'signal', label: 'Signal history', spoken: 'Signal history, in BTC perp points' },
@@ -330,6 +326,57 @@ function GroupCard({ g, query, source, scope, wide }: { g: GroupRow; query: Mark
   );
 }
 
+/** Every method with what it made in the record shown, the most first: the ten best and the ten worst, the rest one tap away. */
+function MethodsPanel({ rows, source, wide }: { rows: { key: string; name: string; n: number; wins: number; net: number }[]; source: Source; wide: boolean }) {
+  const [all, setAll] = useState(false);
+  const traded = rows.filter((m) => m.n > 0).sort((a, b) => b.net - a.net || b.n - a.n);
+  const what = source === 'signal' ? 'signal history' : 'real orders';
+  const FIRST = 10;
+  const best = traded.filter((m) => m.net > 0), worst = traded.filter((m) => m.net < 0).reverse();
+  const list = (title: string, xs: typeof traded, empty: string) => (
+    <section aria-label={title}>
+      <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">{title} · {xs.length}</h3>
+      {xs.length === 0 ? <Empty>{empty}</Empty> : (
+        <table className="w-full border-collapse text-[13px] tabular-nums">
+          <caption className="sr-only">{title}, {what}</caption>
+          <thead>
+            <tr className="text-left text-[11.5px] text-muted-foreground">
+              <th scope="col" className="py-1 pr-2 font-medium">Method</th>
+              <th scope="col" className="py-1 pr-2 text-right font-medium">Closed</th>
+              <th scope="col" className="py-1 pr-2 text-right font-medium">Won</th>
+              <th scope="col" className="py-1 text-right font-medium">Net</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(all ? xs : xs.slice(0, FIRST)).map((m) => (
+              <tr key={m.key} className="border-t border-[var(--line-soft)] align-top">
+                <th scope="row" className="py-1.5 pr-2 text-left font-medium [overflow-wrap:anywhere]"><span className="normal-case tracking-normal">{m.name}</span></th>
+                <td className="py-1.5 pr-2 text-right">{m.n.toLocaleString('en-US')}</td>
+                <td className="py-1.5 pr-2 text-right">{pct(m.wins / m.n, 0)}</td>
+                <td className={cn('whitespace-nowrap py-1.5 text-right font-semibold', netClass(m.net))}>{netText(source, m.net)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+  return (
+    <Panel title={`By method · ${what}`} right={<span className="text-[11.5px] text-muted-foreground">{traded.length} with a closed trade</span>}>
+      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4', wide && 'lg:grid-cols-2')}>
+        {list('Methods in profit', best, 'No method is in profit here.')}
+        {list('Methods in loss', worst, 'No method is in loss here.')}
+      </div>
+      {(best.length > FIRST || worst.length > FIRST) && (
+        <button type="button" onClick={() => setAll((v) => !v)} aria-expanded={all}
+          className="mt-2 min-h-[40px] w-full rounded-md border-0 bg-muted font-[inherit] text-[13px] font-medium text-foreground">
+          {all ? `Show the first ${FIRST} of each` : `Show all ${traded.length} methods`}
+        </button>
+      )}
+    </Panel>
+  );
+}
+
 function Tile({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0 rounded-md bg-muted px-2.5 py-2">
@@ -346,23 +393,30 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
   /** On the desk: the day cards and the lists may sit side by side. */
   wide?: boolean;
 }) {
-  const [rangeKey, setRangeKey] = usePersisted<RangeKey>('marketReport.range', 'all');
+  const expiry = useExpiryRange('marketReport', now);
   const [source, setSource] = usePersisted<Source>('marketReport.source', 'real');
   const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('marketReport.grouping', 'kind');
   const [tfs, setTfs] = usePersisted<string[]>('marketReport.tfs', []);
   const [methods, setMethods] = usePersisted<string[]>('marketReport.methods', []);
   const [strategies, setStrategies] = usePersisted<string[]>('marketReport.strategies', []);
   const [allDays, setAllDays] = useState(false);
-  const range = rangeOf(RANGES.some((r) => r.key === rangeKey) ? rangeKey : 'all', now);
+  const range = expiry.range;
   const query: MarketQuery = { ...range, account, tfs, methods, strategies };
   const read = usePoll(() => getMarketReport(query), 120_000, { deps: [range.from, range.to, account, tfs.join(), methods.join(), strategies.join()] });
   const r = read.data;
+
+  // Each method and strategy in its list with what it made (owner, 13 Oct 2026: "show the methods' profit and loss"):
+  // of the record the lists show, in its own unit, green or red.
+  const madeNote = (m: { n: number; wins: number; net: number }, src: Source) =>
+    (m.n > 0 ? `${m.n.toLocaleString('en-US')} closed · ${pct(m.wins / m.n, 0)} won · ${netText(src, m.net)}` : src === 'real' ? 'no order closed' : 'no trade closed');
+  const methodOptions = (r?.choices.methods ?? []).map((m) => ({ key: m.key, name: m.name, note: madeNote(m[source], source), tone: toneOf(m[source].net) }));
+  const strategyOptions = (r?.choices.strategies ?? []).map((x) => ({ key: x.key, name: x.name, note: madeNote(x, 'real'), tone: toneOf(x.net) }));
 
   const filters = (
     <>
       {/* On the desk it sits under two other reports: it says where it begins. The phone's screen title says it there. */}
       {wide && <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Market report <span className="text-[12.5px] font-normal text-muted-foreground">· each expiry day&apos;s kind of market, and what the methods made on it</span></h2>}
-      <Segmented label="Expiry days" value={rangeKey} options={RANGES} onChange={setRangeKey} />
+      {expiry.control}
       <Segmented label="Which record the lists show" value={source} options={SOURCES} onChange={setSource} />
       {r && r.choices.timeframes.length > 0 && (
         <div role="group" aria-label="Time frame" className={cn('flex gap-2', wide ? 'flex-wrap' : '-mx-4 overflow-x-auto px-4 pb-1')}>
@@ -378,8 +432,8 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
         // The bar bleeds to a phone's edges (-16px); on the desk the same 16px is given back, so it sits inside the screen.
         <div className={wide ? 'px-4' : undefined}>
           <FilterBar onClear={methods.length || strategies.length ? () => { setMethods([]); setStrategies([]); } : null}>
-            <FilterPicker noun={METHODS} options={r.choices.methods} picked={methods} onChange={setMethods} />
-            {r.choices.strategies.length > 0 && <FilterPicker noun={STRATEGIES} options={r.choices.strategies} picked={strategies} onChange={setStrategies} />}
+            <FilterPicker noun={METHODS} options={methodOptions} picked={methods} onChange={setMethods} />
+            {r.choices.strategies.length > 0 && <FilterPicker noun={STRATEGIES} options={strategyOptions} picked={strategies} onChange={setStrategies} />}
           </FilterBar>
         </div>
       )}
@@ -452,6 +506,9 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
           The other kinds of the twenty have not happened in this range yet.
         </p>
       </Panel>
+
+      <MethodsPanel source={source} wide={wide}
+        rows={r.choices.methods.filter((m) => methods.length === 0 || methods.includes(m.key)).map((m) => ({ key: m.key, name: m.name, ...m[source] }))} />
 
       <section aria-label="Each expiry day" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
         <h2 className="m-0 px-1 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">Each expiry day, newest first</h2>

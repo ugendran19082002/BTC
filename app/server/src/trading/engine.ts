@@ -1141,6 +1141,37 @@ export class TradeEngine {
     });
   }
 
+  /**
+   * The option's own stop for the trades of one contract, and nothing else of a poll (13 Oct 2026).
+   *
+   * The stop is reached when the offer has been at or above it for `STOP_CONFIRM_MS` running, and a trade was only
+   * looked at on its turn in the loop: with fifty open that was every half minute or more, and stops were closed
+   * 35 seconds after they were reached at the median, 83 at worst. The fast watch (`stop-watch.ts`) calls this
+   * for a contract whose offer in memory is at a stop, every few seconds while it stays there.
+   *
+   * One quote is read from the exchange for the contract, and each trade is judged on it by the poll's own check
+   * (`stopIfReached`) in its own queue, one after another: the same count, the same close, the same guards. A
+   * trade a poll is closing, or has closed, has nothing left to do here.
+   *
+   * Returns the trades that need no more watching -- closed, closing, or gone -- so the watch stops asking about
+   * them without waiting for the loop's next read.
+   */
+  async checkStops(symbol: string, tradeIds: readonly string[]): Promise<string[]> {
+    const quote = await this.exchange.getQuote(symbol).catch(() => null);
+    if (!quote) return [];
+    const over: string[] = [];
+    for (const tradeId of tradeIds) {
+      await this.withTrade(tradeId, async () => {
+        const rec = await this.d.store.get(tradeId);
+        const closing = (r: TradeRecord) => isDone(r.state) || r.state.phase === 'exit_pending' || r.state.position === 0;
+        if (!rec || rec.plan.symbol !== symbol || closing(rec)) { over.push(tradeId); return; }
+        if (rec.state.phase === 'entry_unknown') return;
+        if (closing(await this.stopIfReached(rec, quote))) over.push(tradeId);
+      }).catch((e) => this.note('stop watch', { orderId: tradeId, symbol }, e));
+    }
+    return over;
+  }
+
   /** Take a working entry off the book and end the trade. */
   cancelEntry(tradeId: string): Promise<TradeState | null> {
     return this.withTrade(tradeId, () => this.cancelEntryInner(tradeId));
@@ -2088,7 +2119,7 @@ export class TradeEngine {
    * never comes down, the position stays on until it expires or you close it
    * -- that is what a target is.
    */
-  private async stopIfReached(rec: TradeRecord): Promise<TradeRecord> {
+  private async stopIfReached(rec: TradeRecord, read?: Quote | null): Promise<TradeRecord> {
     const stop = rec.plan.stopPrice;
     if (stop === null) return rec;
 
@@ -2108,7 +2139,8 @@ export class TradeEngine {
     }
 
     const id = rec.state.tradeId;
-    const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
+    // The quote the fast watch read for this contract a moment ago, or one read now.
+    const quote = read !== undefined ? read : await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
     const ask = quote?.ask ?? null;
     // A missing, stale, or nonsensical offer is not a reason to do anything -- nor to forget the count.
     if (quote === null || this.now() - quote.ts > MARK_STALE_MS) return rec;

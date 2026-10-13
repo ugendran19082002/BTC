@@ -1,14 +1,16 @@
+import { useState } from 'react';
 import { getSignalBacktest } from '@/api/signal-backtest';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
-import { dayLabel, moneyText, ptsText, rangeOf, type RangeKey } from '@/lib/market-report';
+import { dayLabel, moneyText, ptsText } from '@/lib/market-report';
 import type { PairStat } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
 import type { BacktestParams, BacktestQuery, BtExit, BtRow, BtTot } from '@/types/signal-backtest';
 import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS } from '@/components/mobile/FilterPicker';
+import { useExpiryRange } from '@/components/report/ExpiryRange';
 
 /**
  * The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price?
@@ -23,11 +25,6 @@ import { FilterBar, FilterPicker, METHODS } from '@/components/mobile/FilterPick
  * The settings are few and are chips, not fields: a backtest that needs typing is not read on a phone.
  */
 
-const RANGES: { key: RangeKey; label: string; spoken: string }[] = [
-  { key: 'all', label: 'Since 1 Oct', spoken: 'Every expiry day since 1 October' },
-  { key: '7', label: '7 days', spoken: 'The last 7 expiry days' },
-  { key: '30', label: '30 days', spoken: 'The last 30 expiry days' },
-];
 const RULES: { key: BacktestParams['rule']; label: string; spoken: string }[] = [
   { key: 'delta', label: 'Strike by delta', spoken: 'Pick the strike by delta' },
   { key: 'premium', label: 'Strike by premium', spoken: 'Pick the strike by premium' },
@@ -99,13 +96,42 @@ function Table({ caption, first, rows, perp = false, days = false }: { caption: 
   );
 }
 
+/** Every method as options, across its timeframes: those in profit and those in loss, ten of each to begin with. */
+function MethodsAsOptions({ rows, wide }: { rows: readonly BtRow[]; wide: boolean }) {
+  const [all, setAll] = useState(false);
+  const traded = rows.filter((m) => m.n > 0);
+  const best = traded.filter((m) => m.net > 0).sort((a, b) => b.net - a.net);
+  const worst = traded.filter((m) => m.net < 0).sort((a, b) => a.net - b.net);
+  const FIRST = 10;
+  return (
+    <Panel title="By method" right={<span className="text-[11.5px] text-muted-foreground">{traded.length} traded</span>}>
+      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4', wide && 'lg:grid-cols-2')}>
+        <section aria-label="Methods in profit as options">
+          <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">In profit · {best.length}</h3>
+          <Table caption="Backtest: methods in profit" first="Method" rows={all ? best : best.slice(0, FIRST)} perp />
+        </section>
+        <section aria-label="Methods in loss as options">
+          <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">In loss · {worst.length}</h3>
+          <Table caption="Backtest: methods in loss" first="Method" rows={all ? worst : worst.slice(0, FIRST)} perp />
+        </section>
+      </div>
+      {(best.length > FIRST || worst.length > FIRST) && (
+        <button type="button" onClick={() => setAll((v) => !v)} aria-expanded={all}
+          className="mt-2 min-h-[40px] w-full rounded-md border-0 bg-muted font-[inherit] text-[13px] font-medium text-foreground">
+          {all ? `Show the first ${FIRST} of each` : `Show all ${traded.length} methods`}
+        </button>
+      )}
+    </Panel>
+  );
+}
+
 const pairOf = (r: BtRow): PairStat => ({
   key: r.key, name: r.name, tf: r.tf ?? '', trades: r.n, wins: r.wins, losses: r.losses,
   winRate: rate(r), profitFactor: r.lost > 0 ? r.won / r.lost : null, net: r.net,
 });
 
 export function SignalBacktest({ now = Date.now(), wide = false }: { now?: number; wide?: boolean }) {
-  const [rangeKey, setRangeKey] = usePersisted<RangeKey>('signalBacktest.range', 'all');
+  const expiry = useExpiryRange('signalBacktest', now);
   const [stored, setParams] = usePersisted<BacktestParams>('signalBacktest.params', DEFAULTS);
   const [tfs, setTfs] = usePersisted<string[]>('signalBacktest.tfs', []);
   const [methods, setMethods] = usePersisted<string[]>('signalBacktest.methods', []);
@@ -113,7 +139,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   // Anything remembered from an older build falls back to the defaults rather than asking for what the server refuses.
   const params: BacktestParams = { ...DEFAULTS, ...stored };
   const set = (o: Partial<BacktestParams>) => setParams({ ...params, ...o });
-  const range = rangeOf(RANGES.some((r) => r.key === rangeKey) ? rangeKey : 'all', now);
+  const range = expiry.range;
   const query: BacktestQuery = { ...range, params, tfs, methods };
   const read = usePoll(() => getSignalBacktest(query), 300_000, {
     deps: [range.from, range.to, params.rule, params.value, params.lots, params.targetPct, params.stopPct, params.window, tfs.join(), methods.join()],
@@ -124,7 +150,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const settings = (
     <>
       {wide && <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>}
-      <Segmented label="Expiry days" value={rangeKey} options={RANGES} onChange={setRangeKey} />
+      {expiry.control}
       <Segmented label="Which signals" value={params.window} options={WINDOWS} onChange={(window) => set({ window })} />
       <Segmented label="How the strike is picked" value={params.rule} options={RULES} onChange={(rule) => set({ rule, value: rule === 'delta' ? 0.1 : 50 })} />
       <ChipRow wide={wide} label={params.rule === 'delta' ? 'Sell the nearest strike with a delta of at most' : 'Sell the dearest strike priced at most'}>
@@ -149,7 +175,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       {r && (r.choices.methods.length > 1 || methods.length > 0) && (
         <div className={wide ? 'px-4' : undefined}>
           <FilterBar onClear={methods.length ? () => setMethods([]) : null}>
-            <FilterPicker noun={METHODS} options={r.choices.methods} picked={methods} onChange={setMethods} />
+            <FilterPicker noun={METHODS} picked={methods} onChange={setMethods}
+              // Each method with what it made as options (owner, 13 Oct 2026: "show the methods' profit and loss").
+              options={r.choices.methods.map((m) => ({
+                key: m.key, name: m.name, tone: m.net > 0 ? 'up' as const : m.net < 0 ? 'down' as const : undefined,
+                note: m.n > 0 ? `${count(m.n)} trades · ${pct(m.wins / m.n, 0)} won · ${moneyText(m.net)}` : 'no trade',
+              }))} />
           </FilterBar>
         </div>
       )}
@@ -269,6 +300,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             <PairList title="Best pairs as options" tone="up" pairs={best} amount={amount} note={note} empty="No method and time frame in profit as an option here." />
             <PairList title="Worst pairs as options" tone="down" pairs={worst} amount={amount} note={note} empty="No method and time frame in loss as an option here." />
           </div>
+
+          <MethodsAsOptions rows={r.byMethod} wide={wide} />
 
           <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
             <Panel title="By kind of day">

@@ -339,6 +339,10 @@ function ends(pairs: readonly Row[]): { best: Row[]; worst: Row[] } {
   return { best: closed.filter((p) => p.net > 0).sort(byNet).slice(0, 3), worst: closed.filter((p) => p.net < 0).sort((a, b) => a.net - b.net || b.n - a.n).slice(0, 3) };
 }
 
+/** What a method or a strategy made, for the list it is chosen from: closed trades, how many won, and the net in the record's own unit. */
+export type Made = { n: number; wins: number; net: number };
+const madeOf = (cells: readonly Cell[]): Made => { const t = totalOf(cells); return { n: t.n, wins: t.wins, net: t.net }; };
+
 export type GroupRow = {
   key: string; name: string; meaning?: string; id?: number;
   /** The expiry days of this kind in the range, oldest first. */
@@ -355,8 +359,16 @@ export type MarketReport = {
   ends: { signal: { best: Row[]; worst: Row[] }; real: { best: Row[]; worst: Row[] } };
   patterns: GroupRow[]; families: GroupRow[];
   catalogue: typeof PATTERNS;
-  /** What there is to filter by in the range, not narrowed by the filters themselves. */
-  choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string }[]; strategies: { key: string; name: string }[] };
+  /**
+   * What there is to filter by in the range. The timeframes are every one there is. Each method carries what it
+   * made in both records, and each strategy what its orders made, as the other filters leave them -- a list is
+   * never narrowed by its own choice, so what is ticked can be seen beside what is not.
+   */
+  choices: {
+    timeframes: { key: string; name: string }[];
+    methods: { key: string; name: string; signal: Made; real: Made }[];
+    strategies: ({ key: string; name: string } & Made)[];
+  };
 };
 
 async function namesOf(): Promise<Names> {
@@ -392,6 +404,9 @@ export async function marketReport(o: { from: string; to: string; now: number; s
   const named = r.days.filter((d) => d.pattern !== null);
   const choices = [...r.every.signal, ...r.every.real.filter((c) => o.account === null || c.account === o.account)];
   const distinct = (xs: { key: string; name: string }[]) => [...new Map(xs.map((x) => [x.key, x])).values()];
+  // Each list from what the other choices leave, and not narrowed by its own.
+  const butMethods = { signal: kept(r.every.signal, { ...o, methods: null }, false), real: kept(r.every.real, { ...o, methods: null }, true) };
+  const butStrategies = kept(r.every.real, { ...o, strategies: null }, true);
   return {
     from: o.from, to: o.to,
     days: r.days.map((d) => ({
@@ -407,8 +422,11 @@ export async function marketReport(o: { from: string; to: string; now: number; s
     catalogue: PATTERNS,
     choices: {
       timeframes: distinct(choices.map((c) => ({ key: tfKeyOf(c), name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf }))).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
-      methods: distinct(choices.map((c) => ({ key: c.method, name: r.names.method(c.method) }))).sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),
+      methods: distinct(choices.map((c) => ({ key: c.method, name: r.names.method(c.method) })))
+        .map((m) => ({ ...m, signal: madeOf(butMethods.signal.filter((c) => c.method === m.key)), real: madeOf(butMethods.real.filter((c) => c.method === m.key)) }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),
       strategies: distinct(r.every.real.filter((c) => o.account === null || c.account === o.account).map((c) => ({ key: c.strategy ?? BY_HAND, name: c.strategy ?? BY_HAND })))
+        .map((s) => ({ ...s, ...madeOf(butStrategies.filter((c) => (c.strategy ?? BY_HAND) === s.key)) }))
         .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),
     },
   };

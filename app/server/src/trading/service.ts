@@ -20,7 +20,7 @@ import { unrealisedPnlUsd } from './margin.js';
 import { midOf } from './money.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
-import { candles } from '../market/delta.js';
+import { cachedAsks, candles } from '../market/delta.js';
 import { liveLtp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
@@ -31,6 +31,7 @@ import type { ExchangePort } from './exchange/port.js';
 import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-watch.js';
 import { deskMetrics, notePass } from '../observability/desk-metrics.js';
 import { ENTRY_WATCH_MS, EntryWatch } from './entry-watch.js';
+import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
 /**
@@ -333,6 +334,9 @@ export class TradingService {
     // The trades that cannot wait for the loop: a working entry, a position without its target yet.
     this.entryTimer ??= setInterval(() => { this.entryWatch.tick(); }, ENTRY_WATCH_MS);
     this.entryTimer.unref?.();
+    // A sold option's own stop: the board in memory against every stop once a second, not once a pass.
+    this.stopTimer ??= setInterval(() => { this.stopWatch.tick(); }, STOP_WATCH_MS);
+    this.stopTimer.unref?.();
     await this.store.pruneMtm(Date.now());
     return recovered;
   }
@@ -342,6 +346,7 @@ export class TradingService {
     if (this.mtmTimer) { clearInterval(this.mtmTimer); this.mtmTimer = null; }
     if (this.watchTimer) { clearInterval(this.watchTimer); this.watchTimer = null; }
     if (this.entryTimer) { clearInterval(this.entryTimer); this.entryTimer = null; }
+    if (this.stopTimer) { clearInterval(this.stopTimer); this.stopTimer = null; }
     if (this.stopPerpWatch) { this.stopPerpWatch(); this.stopPerpWatch = null; }
     if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
   }
@@ -349,6 +354,7 @@ export class TradingService {
   private mtmTimer: NodeJS.Timeout | null = null;
   private watchTimer: NodeJS.Timeout | null = null;
   private entryTimer: NodeJS.Timeout | null = null;
+  private stopTimer: NodeJS.Timeout | null = null;
   private stopPerpWatch: (() => void) | null = null;
 
   /**
@@ -361,6 +367,18 @@ export class TradingService {
     poll: (tradeId) => this.engine.poll(tradeId),
     quotaUsedPct: () => deskMetrics().delta.usedPct,
     onSettled: () => this.underlyingWatch.stale(),
+  });
+
+  /**
+   * The fast watch on the sold options' own stops (`stop-watch.ts`): the offers the desk holds in memory against
+   * every open short's stop, once a second; a trade at its stop is handed to the engine's own check at once and
+   * every few seconds while it stays there, instead of waiting its turn in the loop. The loop below still
+   * judges the same stops on every pass.
+   */
+  readonly stopWatch = new OptionStopWatch({
+    asks: cachedAsks,
+    check: (symbol, tradeIds) => this.engine.checkStops(symbol, tradeIds),
+    quotaUsedPct: () => deskMetrics().delta.usedPct,
   });
 
   /**
@@ -454,6 +472,7 @@ export class TradingService {
       // What was just read is what the fast watch looks at until the next pass.
       this.underlyingWatch.note(watchedOf(open));
       this.entryWatch.note(open);
+      this.stopWatch.note(stopWatchedOf(open));
       for (const rec of open) {
         await this.engine.poll(rec.state.tradeId).catch(() => {});
       }

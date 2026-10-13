@@ -207,6 +207,39 @@ describe('MarketReport', () => {
     expect(JSON.parse(window.localStorage.getItem(Object.keys(window.localStorage).find((k) => k.endsWith('marketReport.range'))!)!)).toBe('7');
   });
 
+  it('[critical] a custom range: the dates picked in the sheet are the expiry days asked for, shown, changeable and remembered', async () => {
+    show();
+    await screen.findByText(/What stands out/);
+    fireEvent.click(screen.getByRole('radio', { name: 'A range of expiry days of your own' }));
+    const sheet = within(screen.getByRole('dialog', { name: 'Custom range' }));
+    expect(lastQuery()).toMatchObject({ from: '2026-10-01', to: '2026-10-13' });      // nothing asked until Show
+    fireEvent.change(sheet.getByLabelText('From'), { target: { value: '2026-10-05' } });
+    fireEvent.change(sheet.getByLabelText('To'), { target: { value: '2026-10-09' } });
+    fireEvent.click(sheet.getByRole('button', { name: 'Show' }));
+    await waitFor(() => expect(lastQuery()).toMatchObject({ from: '2026-10-05', to: '2026-10-09' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'A range of expiry days of your own' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('Mon 5 Oct → Fri 9 Oct')).toBeInTheDocument();
+    expect(screen.getByText(/· 5 days/)).toBeInTheDocument();
+    // a day after today is refused in the sheet, in words, and Cancel changes nothing
+    fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
+    const again = within(screen.getByRole('dialog', { name: 'Custom range' }));
+    expect(again.getByLabelText('From')).toHaveValue('2026-10-05');
+    fireEvent.change(again.getByLabelText('To'), { target: { value: '2026-10-20' } });
+    expect(again.getByRole('alert')).toHaveTextContent('The To date cannot be after today.');
+    expect(again.getByRole('button', { name: 'Show' })).toBeDisabled();
+    fireEvent.click(again.getByRole('button', { name: 'Cancel' }));
+    expect(lastQuery()).toMatchObject({ from: '2026-10-05', to: '2026-10-09' });
+    // remembered: the next visit opens on the same dates
+    const keys = Object.keys(window.localStorage);
+    expect(JSON.parse(window.localStorage.getItem(keys.find((k) => k.endsWith('marketReport.custom'))!)!)).toEqual({ from: '2026-10-05', to: '2026-10-09' });
+    expect(JSON.parse(window.localStorage.getItem(keys.find((k) => k.endsWith('marketReport.range'))!)!)).toBe('custom');
+    // and a preset is one tap back
+    fireEvent.click(screen.getByRole('radio', { name: 'Every expiry day since 1 October' }));
+    await waitFor(() => expect(lastQuery()).toMatchObject({ from: '2026-10-01', to: '2026-10-13' }));
+    expect(screen.queryByRole('button', { name: 'Change dates' })).not.toBeInTheDocument();
+  });
+
   it('on the desk it says where it begins, and shows both records\' exits side by side', async () => {
     show(true);
     expect(await screen.findByRole('heading', { level: 2, name: /^Market report/ })).toBeInTheDocument();

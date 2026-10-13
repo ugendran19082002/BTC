@@ -16,6 +16,6 @@ export type SignalBacktestResponse = {
   total: BtTot;
   days: (BtTot & { day: string; pattern: string | null; live: boolean })[];
   pairs: BtRow[]; byTf: BtRow[]; byMethod: BtRow[]; byPattern: BtRow[]; byFamily: BtRow[];
-  choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string }[] };
+  choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string; n: number; wins: number; net: number }[] };
 };
 export type BacktestQuery = { from: string; to: string; params: BacktestParams; tfs: readonly string[]; methods: readonly string[] };
