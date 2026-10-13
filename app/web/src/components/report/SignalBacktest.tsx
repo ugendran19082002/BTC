@@ -51,6 +51,8 @@ const CUSTOM = {
   stop: { unit: '% over', min: 0, max: 1000, step: 10, toShown: (v) => Math.round(v * 100), fromShown: (v) => Math.round(v) / 100, label: (v) => (v > 0 ? `+${Math.round(v * 100)}%` : 'No stop') },
   target: { unit: '% kept', min: 0, max: 99, step: 5, toShown: (v) => Math.round(v * 100), fromShown: (v) => Math.round(v) / 100, label: (v) => (v > 0 ? `${Math.round(v * 100)}%` : 'No target') },
   lots: { unit: 'lots', min: 1, max: 1000, step: 1, whole: true, toShown: (v) => v, fromShown: (v) => v, label: (v) => String(v) },
+  deskMax: { unit: 'open', min: 0, max: 500, step: 1, whole: true, toShown: (v) => v, fromShown: (v) => v, label: (v) => (v > 0 ? String(v) : 'No limit') },
+  sidePct: { unit: '%', min: 1, max: 100, step: 5, toShown: (v) => v, fromShown: (v) => Math.round(v), label: (v) => `${v}%` },
 } satisfies Record<string, Custom>;
 
 /** The "Custom" chip of a row and, once tapped, its field. On while the value is not one of the row's own. */
@@ -90,7 +92,11 @@ const EXITS: { key: BtExit; label: string }[] = [
   { key: 'perp-tgt', label: 'Perp TGT' }, { key: 'perp-sl', label: 'Perp SL' }, { key: 'option-tgt', label: 'Option TGT' },
   { key: 'option-sl', label: 'Option SL' }, { key: 'window-end', label: 'Window end' },
 ];
-const DEFAULTS: BacktestParams = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk' };
+const DEFAULTS: BacktestParams = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 };
+const DESK_MAX = [0, 20, 35, 58];
+const SIDE_PCTS = [50, 60, 70, 80, 90, 100];
+/** Each side's most open, as the desk rounds it (strategy/types.ts `sideCaps`): at least one, never more than the whole. */
+const sideOf = (max: number, pctOf: number) => Math.min(max, Math.max(1, Math.round((max * pctOf) / 100)));
 
 const netClass = (n: number) => (n > 0 ? 'text-[var(--up)]' : n < 0 ? 'text-[var(--down)]' : '');
 const rate = (t: Pick<BtTot, 'n' | 'wins'>) => (t.n > 0 ? t.wins / t.n : null);
@@ -249,6 +255,37 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         <CustomValue value={params.lots} presets={LOTS} spec={CUSTOM.lots} name="Lots" onChange={(lots) => set({ lots })} />
       </ChipRow>
       </>}
+      <section aria-label="The desk's limits" className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
+        <div className="text-[13px] font-semibold">The desk&apos;s limits <span className="font-normal text-muted-foreground">· as on the Signal Strategies card</span></div>
+        {(r?.deskLimits.length ?? 0) > 0 && (
+          <ChipRow label="As an account has them now">
+            {r!.deskLimits.map((d) => (
+              <Chip key={d.account} on={params.deskMax === d.max && params.cePct === d.ce && params.pePct === d.pe}
+                onClick={() => set({ deskMax: d.max, cePct: d.ce, pePct: d.pe })}>
+                {d.account} · {d.max} · CE {d.ce}% · PE {d.pe}%
+              </Chip>
+            ))}
+          </ChipRow>
+        )}
+        <ChipRow label="At most open, every trade together">
+          {DESK_MAX.map((n) => <Chip key={n} on={params.deskMax === n} onClick={() => set({ deskMax: n })}>{n > 0 ? n : 'No limit'}</Chip>)}
+          <CustomValue value={params.deskMax} presets={DESK_MAX} spec={CUSTOM.deskMax} name="At most open" onChange={(deskMax) => set({ deskMax })} />
+        </ChipRow>
+        {params.deskMax > 0 && (['CE', 'PE'] as const).map((side) => {
+          const key = side === 'CE' ? 'cePct' : 'pePct';
+          return (
+            <ChipRow key={side} label={`${side} max: at most ${sideOf(params.deskMax, params[key])} ${side} open at once`}>
+              {SIDE_PCTS.map((p) => <Chip key={p} on={params[key] === p} onClick={() => set({ [key]: p })}>{p === 80 ? '80% · default' : p === 100 ? '100% · no limit' : `${p}%`}</Chip>)}
+              <CustomValue value={params[key]} presets={SIDE_PCTS} spec={CUSTOM.sidePct} name={`${side} max`} onChange={(v) => set({ [key]: v })} />
+            </ChipRow>
+          );
+        })}
+        {params.deskMax > 0 && (
+          <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+            A signal is skipped while that many are open, as the desk does. With a limit, the time frame and method filters below choose which signals compete for the places.
+          </p>
+        )}
+      </section>
       {r && r.choices.timeframes.length > 0 && (
         <ChipRow wide={wide} label="Time frame">
           <Chip on={tfs.length === 0} onClick={() => pickTfs([])}>All time frames</Chip>
@@ -318,7 +355,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           </div>
         )}
         <p className="m-0 text-[13px] text-muted-foreground">
-          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target {CUSTOM.target.label(params.targetPct)}, stop {CUSTOM.stop.label(params.stopPct)}
+          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target {CUSTOM.target.label(params.targetPct)}, stop {CUSTOM.stop.label(params.stopPct)}{params.deskMax > 0 ? ` · at most ${params.deskMax} open, CE ${params.cePct}% · PE ${params.pePct}%` : ''}
         </p>
         {t.n === 0 ? <div className="mt-2"><Empty>No signal could be traded with these settings in this range.</Empty></div> : (
           <>
@@ -352,6 +389,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             r.skipped['no-entry-window'] ? `${count(r.skipped['no-entry-window'])} inside its no-entry window` : null,
             r.skipped.distance ? `${count(r.skipped.distance)} with the SL or TGT outside its distances` : null,
             r.skipped['at-limit'] ? `${count(r.skipped['at-limit'])} while it already had its most open` : null,
+            r.skipped['desk-limit'] ? `${count(r.skipped['desk-limit'])} while ${params.deskMax} were open (at most open)` : null,
+            r.skipped['side-limit'] ? `${count(r.skipped['side-limit'])} while that side was at its CE / PE max` : null,
             r.skipped['no-strike'] ? `${count(r.skipped['no-strike'])} with no strike inside the rule worth $10` : null,
             r.skipped['no-board'] ? `${count(r.skipped['no-board'])} with no option prices recorded then` : null,
             r.skipped['no-exit-price'] ? `${count(r.skipped['no-exit-price'])} with no price to exit at` : null,

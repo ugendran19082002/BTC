@@ -4,7 +4,8 @@ import { PATTERNS, FAMILIES, sessionDayOf, type PatternFamily, type PatternKey }
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters, type Scope } from '../../report/market-report.js';
 import { DEFAULT_PARAMS, backtestable, signalBacktest, type BacktestParams } from '../../report/signal-backtest.js';
 import { strategyStore } from './strategy.routes.js';
-import { ruleTfs } from '../../strategy/types.js';
+import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, globalMaxOpenOf, ruleTfs, sideMaxOf } from '../../strategy/types.js';
+import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
@@ -70,7 +71,11 @@ function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
   if (!(stopPct >= 0 && stopPct <= 10)) return 'The option stop is a share of the premium from 0 (none) to 10.';
   const window = q.window === undefined || q.window === '' ? DEFAULT_PARAMS.window : q.window;
   if (window !== 'desk' && window !== 'all') return 'The window is "desk" or "all".';
-  return { rule, value, lots, targetPct, stopPct, window };
+  // The desk's own limits, as the Signal Strategies card sets them: at most open 0 (none) to 500; each side 1 to 100%.
+  const deskMax = num('max', 0), cePct = num('ce', 100), pePct = num('pe', 100);
+  if (!Number.isInteger(deskMax) || deskMax < 0 || deskMax > 500) return 'At most open is a whole number from 0 (no limit) to 500.';
+  if (!(cePct >= 1 && cePct <= 100) || !(pePct >= 1 && pePct <= 100)) return 'CE max and PE max are from 1% to 100%.';
+  return { rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct };
 }
 
 export function registerMarketRoutes(app: FastifyInstance) {
@@ -97,8 +102,20 @@ export function registerMarketRoutes(app: FastifyInstance) {
     if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
     const accountName = (id: number | null | undefined) => { try { return id == null ? null : brokerAccounts().get(id)?.name ?? null; } catch { return null; } };
     const result = await signalBacktest({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot });
+    // Each trading account's own limits as they stand, for the screen to offer as one tap.
+    const svc = tradingService();
+    let deskLimits: { account: string; max: number; ce: number; pe: number }[] = [];
+    try {
+      deskLimits = brokerAccounts().list().filter((a) => a.active).map((a) => ({
+        account: a.name,
+        max: globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, a.id)),
+        ce: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, a.id)),
+        pe: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, a.id)),
+      })).filter((x) => x.max > 0);
+    } catch { /* no account set up: none to offer */ }
     return {
       ...result,
+      deskLimits,
       // With its methods and timeframes, so the screen can tick a strategy's methods for the settings (`chain`: the timeframe chain).
       strategies: every.map((s) => ({
         id: s.id, name: s.name, enabled: s.enabled, account: accountName(s.accountId),

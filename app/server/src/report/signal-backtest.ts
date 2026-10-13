@@ -10,7 +10,7 @@ import { marketDays, marketReport, type Tot } from './market-report.js';
 import { selectLegs, type Candidate } from '../strategy/select.js';
 import { istMinutes, istWeekday } from '../strategy/schedule.js';
 import {
-  actionOf, exitRules, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
+  actionOf, exitRules, sideCaps, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
   type Strategy,
 } from '../strategy/types.js';
 
@@ -50,8 +50,20 @@ export type BacktestParams = {
   targetPct: number; stopPct: number;
   /** `desk`: only signals filled 9:30 PM to 3:59 PM IST, as the strategies trade. `all`: the whole expiry day. */
   window: 'desk' | 'all';
+  /**
+   * The desk's own limits (13 Oct 2026, "the At most open, CE max and PE max, in the backtest"): at most this many
+   * open at once across every signal traded, 0 for none; and each side at most this per cent of it, as the desk
+   * rounds it (`sideCaps`). Absent: none.
+   */
+  deskMax?: number; cePct?: number; pePct?: number;
 };
-export const DEFAULT_PARAMS: BacktestParams = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk' };
+export const DEFAULT_PARAMS: BacktestParams = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 };
+/** The desk's limits of a set of settings: null with none. */
+export function deskCapsOf(p: Pick<BacktestParams, 'deskMax' | 'cePct' | 'pePct'>): { max: number; side: { CE: number; PE: number } | null } | null {
+  const max = p.deskMax ?? 0;
+  if (!(max > 0)) return null;
+  return { max, side: sideCaps(max, { CE: p.cePct ?? 100, PE: p.pePct ?? 100 }) };
+}
 /** An option is not sold for less than this, as the strategies' own floor. */
 export const MIN_PREMIUM = 10;
 const CONTRACT_VALUE = 0.001;
@@ -61,9 +73,9 @@ const BOARD_NEAR_MS = 5 * MIN;
 
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'window-end';
 export const BT_EXITS: readonly BtExit[] = ['perp-tgt', 'perp-sl', 'option-tgt', 'option-sl', 'window-end'];
-export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'at-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
-export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'at-limit', 'no-board', 'no-strike', 'no-exit-price'];
-const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
+export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'at-limit', 'desk-limit', 'side-limit', 'no-board', 'no-strike', 'no-exit-price'];
+const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
 
 export type BtSignal = {
   method: string; mode: 'single' | 'mtf'; tf: string; dir: 1 | -1; filledAt: number; fillPrice: number; stop: number;
@@ -109,6 +121,8 @@ export type DayPlan = {
   targetPct: number; stopPct: number;
   /** At most this many open at once; null, any number. */
   maxOpen: number | null;
+  /** The desk's own limits on top: at most this many across all, and each side at most so many. Null: none. */
+  desk?: { max: number; side: { CE: number; PE: number } | null } | null;
 };
 
 /** The screen's own settings as a plan: every signal in the hours chosen, one strike rule, a fixed number of lots, no limit. */
@@ -120,7 +134,7 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
     refuses: (sig) => (sig.filledAt < opens || sig.filledAt >= closes ? 'outside-window' : null),
     pick: (board, cp) => { const row = pickStrike(board, cp, p); return row ? { row, lots: p.lots } : null; },
     targetOf: (sig) => sig.target,
-    targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null,
+    targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null, desk: deskCapsOf(p),
   };
 }
 
@@ -142,7 +156,7 @@ export function strategyCaveats(s: Strategy): string[] {
  * runner's own `selectLegs` from the board as it stood -- its lots, its target (TGT1, 2 or 3), the option's own
  * target and stop, and its "at most N open". Other strategies' trades, the desk-wide limit and margin are not in it.
  */
-export function planOfStrategy(s: Strategy, span: { from: number; to: number }): DayPlan {
+export function planOfStrategy(s: Strategy, span: { from: number; to: number }, desk: DayPlan['desk'] = null): DayPlan {
   const c = s.config;
   const rule = c.signal!;
   const x = exitRules(c);
@@ -179,6 +193,7 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }):
     targetPct: x.target.mode === 'pct' ? x.target.value : 0,
     stopPct: x.stop.mode === 'pct' ? x.stop.value : 0,
     maxOpen: rule.maxOpen > 0 ? rule.maxOpen : null,
+    desk,
   };
 }
 
@@ -205,17 +220,20 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
     if (s) s.push(r); else bySymbol.set(key, [r]);
   }
   const lastBar = o.bars[o.bars.length - 1];
-  /** When each trade still open ends: what "at most N open" counts. */
-  let openUntil: number[] = [];
+  /** When each trade still open ends, and its side: what "at most N open" and each side's limit count. */
+  let open: { until: number; side: 'CE' | 'PE' }[] = [];
+  const desk = plan.desk ?? null;
 
   for (const sig of [...o.signals].sort((a, b) => a.filledAt - b.filledAt)) {
     const t0 = sig.filledAt;
     const refused = plan.refuses(sig);
     if (refused) { skipped[refused]++; continue; }
-    if (plan.maxOpen !== null) {
-      openUntil = openUntil.filter((at) => at > t0);
-      if (openUntil.length >= plan.maxOpen) { skipped['at-limit']++; continue; }
-    }
+    open = open.filter((x) => x.until > t0);
+    // In the runner's order: its own limit, then the desk's, then the side's (strategy/runner.ts `takeSignal`).
+    if (plan.maxOpen !== null && open.length >= plan.maxOpen) { skipped['at-limit']++; continue; }
+    if (desk && open.length >= desk.max) { skipped['desk-limit']++; continue; }
+    const side: 'CE' | 'PE' = sig.dir === 1 ? 'PE' : 'CE';
+    if (desk?.side && open.filter((x) => x.side === side).length >= desk.side[side]) { skipped['side-limit']++; continue; }
     // The reading nearest the fill.
     let near = -1;
     for (let i = 0; i < times.length; i++) if (near === -1 || Math.abs(times[i]! - t0) < Math.abs(times[near]! - t0)) near = i;
@@ -263,7 +281,7 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
 
     const charges = fillChargesUsd({ price: entry, contracts: lots, contractValue: CONTRACT_VALUE, spot: pick.spot }).totalUsd
       + fillChargesUsd({ price: exit, contracts: lots, contractValue: CONTRACT_VALUE, spot: pick.spot }).totalUsd;
-    openUntil.push(exitAt);
+    open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE' });
     trades.push({
       signal: sig, cp, strike: pick.strike, lots, entryAt, entry, exitAt, exit, by,
       netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges,
@@ -312,7 +330,7 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
 type HeldDay = { at: number; cells: BtCell[]; skipped: Record<BtSkip, number>; signals: number };
 const held = new Map<string, HeldDay>();
 export function clearSignalBacktestCache(): void { held.clear(); }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}`;
+const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   const text = JSON.stringify(s.config);
@@ -387,7 +405,7 @@ export const backtestable = (s: Strategy): boolean => s.config.trigger === 'sign
 
 export function signalBacktest(o: Ask): Promise<SignalBacktest> {
   const run = working.then(() => signalBacktestNow(o));
-  working = run.catch(() => {});
+  working = run.catch(() => { });
   return run;
 }
 
@@ -402,17 +420,39 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   const st = o.strategy ?? null;
   const rule = st?.config.signal ?? null;
   // A strategy is only ever asked about its own signals: its way of reading, its timeframes, its methods.
-  const takes = (sig: BtSignal) => !rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method));
+  const ownOnly = (sig: BtSignal) => !rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method));
+  const caps = deskCapsOf(o.params);
+  /*
+   * With a limit on what is open, which signals are traded at all decides who gets a place: the time frame and
+   * method filters then choose the signals before the day is played, not the rows after it. Without one, every
+   * signal is traded and the filters only choose what is shown -- one run serves every choice.
+   */
+  const chosen = (sig: BtSignal) => (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method));
+  const takes = (sig: BtSignal) => ownOnly(sig) && (caps === null || chosen(sig));
+  const filterKey = caps === null ? '' : `|tf:${(o.tfs ?? []).join(',')}|m:${(o.methods ?? []).join(',')}`;
+  const key = (st ? `${strategyKey(st)}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}` : paramsKey(o.params)) + filterKey;
   for (const d of days) {
-    const h = await dayOf(d.day, st ? strategyKey(st) : paramsKey(o.params), o.now, (span) => (st ? planOfStrategy(st, span) : planOfParams(o.params, span)), takes);
+    const h = await dayOf(d.day, key, o.now, (span) => (st ? planOfStrategy(st, span, caps) : planOfParams(o.params, span)), takes);
     signals += h.signals;
     for (const k of BT_SKIPS) skipped[k] += h.skipped[k];
     every.push(...h.cells);
   }
+  // The method list's own figures: what each method makes when it is not competing for a place -- the run with no desk limit.
+  const listCells: BtCell[] = [];
+  if (caps !== null) {
+    const free = { ...o.params, deskMax: 0 };
+    for (const d of days) {
+      const h = await dayOf(d.day, st ? strategyKey(st) : paramsKey(free), o.now, (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)), ownOnly);
+      listCells.push(...h.cells);
+    }
+  } else listCells.push(...every);
   const exits = st ? exitRules(st.config) : null;
   const params: BacktestParams = st && exits
-    ? { rule: st.config.strikeRule === 'delta' ? 'delta' : 'premium', value: st.config.strikeRule === 'delta' ? (st.config.delta?.max ?? 0) : (st.config.premium?.usd ?? 0), lots: st.config.lots,
-        targetPct: exits.target.mode === 'pct' ? exits.target.value : 0, stopPct: exits.stop.mode === 'pct' ? exits.stop.value : 0, window: 'desk' }
+    ? {
+      rule: st.config.strikeRule === 'delta' ? 'delta' : 'premium', value: st.config.strikeRule === 'delta' ? (st.config.delta?.max ?? 0) : (st.config.premium?.usd ?? 0), lots: st.config.lots,
+      targetPct: exits.target.mode === 'pct' ? exits.target.value : 0, stopPct: exits.stop.mode === 'pct' ? exits.stop.value : 0, window: 'desk',
+      deskMax: o.params.deskMax ?? 0, cePct: o.params.cePct ?? 100, pePct: o.params.pePct ?? 100
+    }
     : o.params;
   const real = st
     ? (await marketReport({ from: o.from, to: o.to, now: o.now, spot: o.spot ?? null, account: st.accountId ?? null, tfs: null, methods: null, strategies: [st.name] })).total.real
@@ -443,10 +483,10 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
     byPattern: group((c) => patternOf.get(c.day) ?? null, (c) => { const p = PATTERNS.find((x) => x.key === patternOf.get(c.day))!; return { name: `#${p.id} ${p.name}` }; }).sort(byNet),
     byFamily: group((c) => { const p = patternOf.get(c.day); return p ? familyOf(p) : null; }, (c) => ({ name: FAMILIES.find((f) => f.key === familyOf(patternOf.get(c.day)!))!.name })).sort(byNet),
     choices: {
-      timeframes: distinct(every.map((c) => ({ key: tfKeyOf(c), name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf }))).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
-      methods: distinct(every.map((c) => ({ key: c.method, name: nameOf(c.method) })))
+      timeframes: distinct(listCells.map((c) => ({ key: tfKeyOf(c), name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf }))).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
+      methods: distinct(listCells.map((c) => ({ key: c.method, name: nameOf(c.method) })))
         .map((m) => {
-          const t = every.filter((c) => c.method === m.key && (!o.tfs || o.tfs.includes(tfKeyOf(c)))).reduce((a, c) => addBt(a, c.tot), zeroBt());
+          const t = listCells.filter((c) => c.method === m.key && (!o.tfs || o.tfs.includes(tfKeyOf(c)))).reduce((a, c) => addBt(a, c.tot), zeroBt());
           return { ...m, n: t.n, wins: t.wins, net: t.net };
         })
         .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),

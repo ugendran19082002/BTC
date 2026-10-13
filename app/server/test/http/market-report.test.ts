@@ -326,10 +326,17 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   // The climb's six signals in the trade are all BUYs with the target at 84,500, which the perp reaches about a third of the way in.
   const all = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all`);
   assert.equal(all.status, 200, JSON.stringify(all.body).slice(0, 300));
-  assert.deepEqual(all.body.params, { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all' });
+  assert.deepEqual(all.body.params, { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all', deskMax: 0, cePct: 100, pePct: 100 });
+  assert.deepEqual(all.body.deskLimits, [], 'no broker account on this desk: no limits to offer');
   assert.equal(all.body.signals, 6, 'the one never filled is not a signal in the trade');
   assert.equal(all.body.total.n, 6);
-  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  // at most two open at once: the first two are open when the others fill
+  const capped = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&max=2&ce=80&pe=80`);
+  assert.deepEqual([capped.body.params.deskMax, capped.body.total.n], [2, capped.body.total.n]);
+  assert.ok(capped.body.skipped['desk-limit'] + capped.body.skipped['side-limit'] > 0, JSON.stringify(capped.body.skipped));
+  assert.ok(capped.body.total.n < all.body.total.n);
+  assert.equal(capped.body.choices.methods.find((m: any) => m.key === 'breakout').n, all.body.choices.methods.find((m: any) => m.key === 'breakout').n, 'the method list says what each makes without a limit');
   assert.deepEqual(Object.keys(all.body.total.exits), ['perp-tgt'], 'each bought back when the perp reached its target');
   assert.equal(all.body.total.exits['perp-tgt'].n, 6);
   assert.equal(all.body.total.perpPts, 6 * 500);
@@ -366,7 +373,7 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
 test('the backtest refuses settings it cannot mean', async () => {
   for (const [q, why] of [
     ['rule=gamma', /"delta" or "premium"/], ['rule=delta&value=0.9', /0\.02 to 0\.5/], ['rule=premium&value=5', /10 to 500/],
-    ['lots=0', /whole number from 1 to 1,000/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk" or "all"/],
+    ['lots=0', /whole number from 1 to 1,000/], ['max=600', /0 \(no limit\) to 500/], ['max=10&ce=0', /1% to 100%/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk" or "all"/],
   ] as const) {
     const r = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&${q}`);
     assert.equal(r.status, 400, q);

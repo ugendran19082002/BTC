@@ -62,7 +62,7 @@ test('[critical] a BUY sells the put at the bid of the reading nearest its fill,
   // the perp reaches 84,500 in minute 302; the put decays from 40 to 10 over the day
   const r = simulateDay({ from, to, params: P, signals: [sig(31)], bars: perp([[0, 84_000], [300, 84_490], [310, 84_560], [1_439, 84_600]]),
     board: byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]), ...contract('C', 85_000, 0.09, [[0, 40], [1_435, 10]])]) });
-  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
   const [t] = r.trades;
   assert.equal(t!.cp, 'P'); assert.equal(t!.strike, 83_200);
   assert.equal(t!.entryAt, from + 30 * MIN, 'the 5-minute reading nearest minute 31');
@@ -137,4 +137,28 @@ test('[critical] the desk\'s hours, and what cannot be traded, are counted and n
   const one = simulateDay({ from, to, params: { ...P, lots: 1 }, signals: [sig(100)], bars, board }).trades[0]!;
   const ten = simulateDay({ from, to, params: P, signals: [sig(100)], bars, board }).trades[0]!;
   assert.ok(Math.abs(ten.netUsd - 10 * one.netUsd) < 1e-9);
+});
+
+test('[critical] the desk\'s limits: at most N open across every signal, and each side its per cent of it -- as the desk rounds it', async () => {
+  const { deskCapsOf, planOfParams } = await import('../../src/report/signal-backtest.js');
+  const bars = perp([[0, 84_000], [1_439, 84_050]]);             // the perp reaches nothing: every trade stays open all day
+  const board = byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]), ...contract('C', 85_000, 0.09, [[0, 40], [1_435, 30]])]);
+  const sell = { dir: -1 as const, stop: 84_400, target: 83_500 };
+  const signals = [sig(10), sig(20), sig(30), sig(40, sell), sig(50, sell)];
+  const run = (o: Partial<BacktestParams>) => simulateDay({ from, to, signals, bars, board, plan: planOfParams({ ...P, ...o }, { from, to }) });
+
+  const none = run({});
+  assert.equal(none.trades.length, 5, 'no limit: every signal');
+  const two = run({ deskMax: 2 });
+  assert.deepEqual(two.trades.map((t) => t.cp), ['P', 'P'], 'at most two open: the first two, and nothing while they are open');
+  assert.equal(two.skipped['desk-limit'], 3);
+  // four at once, puts at most half of it: two puts, then the third waits; the calls have their own room
+  const sides = run({ deskMax: 4, pePct: 50, cePct: 100 });
+  assert.deepEqual(sides.trades.map((t) => t.cp), ['P', 'P', 'C', 'C']);
+  assert.equal(sides.skipped['side-limit'], 1);
+  assert.deepEqual(deskCapsOf({ deskMax: 35, cePct: 80, pePct: 80 }), { max: 35, side: { CE: 28, PE: 28 } }, 'the desk\'s own rounding: 80% of 35 is 28');
+  assert.equal(deskCapsOf({ deskMax: 0, cePct: 80, pePct: 80 }), null, 'no "at most open": no side limit either');
+  // a trade that has closed frees its place
+  const early = simulateDay({ from, to, signals: [sig(10), sig(400)], bars: perp([[0, 84_000], [100, 84_000], [120, 84_600], [1_439, 84_600]]), board, plan: planOfParams({ ...P, deskMax: 1 }, { from, to }) });
+  assert.equal(early.trades.length, 2, 'the first reached its target at minute ~110; the second found the place free');
 });
