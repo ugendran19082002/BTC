@@ -178,8 +178,11 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
   most, together -- work it out correctly"). As **one account** they are traded on one clock, in the desk's own
   order -- as they filled, the longer time frame first -- for the same places (`simulateTogether`): the largest
   "at most open" among them, with its shares, for all of them; a signal that finds the account or its side full is
-  counted as turned away and said. With none of them carrying a limit there is none to share and they are added
-  up. **Each its own limit** is the first way, and says that more may be open than one account holds.
+  counted as turned away and said. The limit is **on the screen and can be typed** ("show the at-most-open field
+  with its default value, editable"): **At most open, together**, **CE max** and **PE max**, opening on the
+  default -- the largest among the saved backtests run, else the account's own limit as it stands -- and taking
+  another on leaving a field or Enter (1 to 500, 1 to 100%); **Default** puts it back. With no limit anywhere the
+  fields are empty and none is shared until one is typed. **Each its own limit** is the first way, and says that more may be open than one account holds.
   Checked on the owner's seven over 1-13 Oct: each on its own 3,627 trades, +₹6,833, ₹12,804 of margin with 179
   open; as one account 3,377 trades, +₹6,115, 250 signals turned away, ₹8,624 with 120 open -- never over 120, 96
   calls or 96 puts at any trade's start, nobody turned away while there was room, and no shorter time frame taken
