@@ -178,29 +178,35 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
   onApply: (start: number, steps: Step[]) => void;
 }) {
   const asRows = (xs: readonly Step[]) => xs.map((x) => ({ at: x.at, pct: String(Math.round(x.pct * 10_000) / 100) }));
-  // With no steps in use yet the first ready ladder is offered whole: its own start with its own steps.
-  const [first, setFirst] = useState(String(Math.round((steps.length ? start : LADDERS[0]!.start) * 100)));
-  const [rows, setRows] = useState(() => asRows(steps.length ? steps : LADDERS[0]!.steps));
+  const [first, setFirst] = useState(String(Math.round(start * 100)));
+  const [rows, setRows] = useState(() => asRows(steps));
   const startOk = Number(first) >= 1 && Number(first) <= 99;
   const problem = !startOk ? 'The target starts at 1% to 99% of the premium.' : stepsProblem(rows);
   const parsed = (): Step[] => rows.map((r) => ({ at: r.at, pct: Math.round(Number(r.pct) * 100) / 10_000 })).sort((a, b) => dayOrder(a.at) - dayOrder(b.at));
   const same = steps.length > 0 && Math.round(start * 100) === Number(first) && JSON.stringify(parsed()) === JSON.stringify(steps);
   const load = (s: number, xs: readonly Step[]) => { setFirst(String(Math.round(s * 100))); setRows(asRows(xs)); };
+  // Whose steps are in use, where they are a strategy's own unchanged: what the list shows as chosen.
+  const from = copyFrom.findIndex((x) => Math.round(x.pct * 100) === Math.round(start * 100) && JSON.stringify(x.steps) === JSON.stringify(steps));
   const field = 'h-11 min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] tabular-nums text-foreground [color-scheme:dark]';
   return (
     <div className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
-      <div role="group" aria-label="Ready schedules" className="flex flex-wrap items-center gap-2">
-        {LADDERS.map((l) => <Chip key={l.label} on={Number(first) === Math.round(l.start * 100) && JSON.stringify(parsed()) === JSON.stringify(l.steps)} onClick={() => load(l.start, l.steps)}>{l.label}</Chip>)}
-      </div>
-      {copyFrom.length > 0 && (
+      {copyFrom.length > 0 ? (
+        // The steps are the strategies' own (owner, 13 Oct 2026: "don't fill steps in -- the strategy has them, take them from there"): choosing one uses it at once.
         <label className="grid gap-1">
-          <span className="text-[12px] text-muted-foreground">Or copy a strategy&apos;s steps</span>
-          <select aria-label="Copy a strategy's target steps" value="" onChange={(e) => { const x = copyFrom[Number(e.target.value)]; if (x) load(x.pct, x.steps); }}
+          <span className="text-[12px] text-muted-foreground">Target steps of</span>
+          <select aria-label="Whose target steps" value={from === -1 ? '' : String(from)}
+            onChange={(e) => { const x = copyFrom[Number(e.target.value)]; if (e.target.value !== '' && x) { load(x.pct, x.steps); onApply(x.pct, x.steps); } }}
             className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[15px] text-foreground [color-scheme:dark]">
-            <option value="">Choose a strategy…</option>
-            {copyFrom.map((x, i) => <option key={`${x.name}-${i}`} value={i}>{x.name} · {Math.round(x.pct * 100)}% → {Math.round((x.steps.at(-1)?.pct ?? x.pct) * 100)}%, {x.steps.length} steps</option>)}
+            {from === -1 && <option value="">Your own steps, below</option>}
+            {copyFrom.map((x, i) => <option key={`${x.name}-${i}`} value={i}>{x.name} · {Math.round(x.pct * 100)}% → {Math.round((x.steps.at(-1)?.pct ?? x.pct) * 100)}%, {x.steps.length} step{x.steps.length === 1 ? '' : 's'}</option>)}
           </select>
         </label>
+      ) : (
+        // No strategy has time steps to take: a ready schedule to start from instead.
+        <div role="group" aria-label="Ready schedules" className="flex flex-wrap items-center gap-2">
+          <span className="text-[12.5px] text-muted-foreground">No strategy has target steps to take. Start from:</span>
+          {LADDERS.map((l) => <Chip key={l.label} on={false} onClick={() => load(l.start, l.steps)}>{l.label}</Chip>)}
+        </div>
       )}
       <label className="flex items-center gap-2">
         <span className="w-24 shrink-0 text-[13px] text-muted-foreground">Starts at</span>
@@ -221,10 +227,12 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
       <button type="button" onClick={() => setRows([...rows, { at: '', pct: rows.at(-1)?.pct ?? first }])} disabled={rows.length >= 24}
         className="h-10 justify-self-start rounded-md border border-border bg-transparent px-3 font-[inherit] text-[13.5px] text-foreground disabled:opacity-40">Add a step</button>
       <p role={problem ? 'alert' : 'status'} className={cn('m-0 text-[12.5px] leading-snug', problem ? 'text-[var(--down)]' : 'text-muted-foreground')}>
-        {problem ?? (same ? 'In use. At each time the target of every open trade moves to that share, and a trade sold after starts at it. Times are IST, read from 5:30 PM.' : 'Not in use yet.')}
+        {problem ?? (same ? 'In use. At each time the target of every open trade moves to that share, and a trade sold after starts at it. Times are IST, read from 5:30 PM.' : 'Changed: not in use yet.')}
       </p>
-      <button type="button" disabled={problem !== null || same} onClick={() => onApply(Number(first) / 100, parsed())}
-        className="h-11 rounded-lg border-0 bg-[var(--up)] font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-40">Use these steps</button>
+      {!same && (
+        <button type="button" disabled={problem !== null} onClick={() => onApply(Number(first) / 100, parsed())}
+          className="h-11 rounded-lg border-0 bg-[var(--up)] font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-40">Use these steps</button>
+      )}
     </div>
   );
 }
@@ -412,6 +420,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   useEffect(() => { if (gone) setStrategyId(null); }, [gone, setStrategyId]);
   const byStrategy = strategyId !== null;
   const strategies = r?.strategies ?? [];
+  // The strategies that have a target by the clock: whose steps a dynamic target here is taken from.
+  const stepSources = strategies.flatMap((x) => (x.target && x.target.steps.length ? [{ name: `${x.name}${x.account ? ` · ${x.account}` : ''}`, pct: x.target.pct, steps: x.target.steps, enabled: x.enabled }] : []));
   const values = params.rule === 'delta' ? DELTAS : PREMIUMS;
 
   // The settings in one line: what the result below is of. Said on the folded panel and on the result.
@@ -479,16 +489,20 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       {/* First which kind of target, then its own settings (owner, 13 Oct 2026). */}
       <Segmented label="The option's own target" value={dynamic ? 'dynamic' : 'fixed'}
         options={[{ key: 'fixed', label: 'Fixed target', spoken: 'One target all day' }, { key: 'dynamic', label: 'Dynamic · by time', spoken: 'A target that moves by the clock' }]}
-        onChange={(m) => { if (m === 'fixed') { setDynamicDraft(false); set({ targetSteps: undefined, targetPct: params.targetPct > 0 ? params.targetPct : 0.9 }); } else setDynamicDraft(true); }} />
+        onChange={(m) => {
+          if (m === 'fixed') { setDynamicDraft(false); set({ targetSteps: undefined, targetPct: params.targetPct > 0 ? params.targetPct : 0.9 }); return; }
+          // Dynamic: a strategy's own steps, in use at once -- one that is switched on first. With none to take, the editor opens empty.
+          const own = [...stepSources].sort((a, b) => Number(b.enabled) - Number(a.enabled))[0];
+          if (own) set({ targetPct: own.pct, targetSteps: own.steps }); else setDynamicDraft(true);
+        }} />
       {!dynamic ? (
         <ChipRow wide={wide} label="The option's own target, of the premium kept">
           {TARGETS.map((x) => <Chip key={x.value} on={params.targetPct === x.value} onClick={() => set({ targetPct: x.value })}>{x.label}</Chip>)}
           <CustomValue value={params.targetPct} presets={TARGETS.map((x) => x.value)} spec={CUSTOM.target} name="Option target" onChange={(targetPct) => set({ targetPct })} />
         </ChipRow>
       ) : (
-        <TargetSteps start={params.targetPct > 0 ? params.targetPct : 0.7} steps={params.targetSteps ?? []}
-          copyFrom={strategies.flatMap((x) => (x.target && x.target.steps.length ? [{ name: `${x.name}${x.account ? ` · ${x.account}` : ''}`, pct: x.target.pct, steps: x.target.steps }] : []))}
-          onApply={(targetPct, targetSteps) => set({ targetPct, targetSteps })} />
+        <TargetSteps key={JSON.stringify(params.targetSteps ?? [])} start={params.targetPct > 0 ? params.targetPct : 0.7} steps={params.targetSteps ?? []}
+          copyFrom={stepSources} onApply={(targetPct, targetSteps) => set({ targetPct, targetSteps })} />
       )}
       <ChipRow wide={wide} label="The option's own stop, over the premium sold">
         {STOPS.map((s) => <Chip key={s.value} on={params.stopPct === s.value} onClick={() => set({ stopPct: s.value })}>{s.label}</Chip>)}
