@@ -171,6 +171,13 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
 - **Tick two or more** (twelve at most) and **Run these together**: the total, a day on average, each one, each
   expiry day, and the margin -- the most held at once across all of them on one clock, with the sum of each one's
   own most beside it.
+- **Which signals, for the run: As saved** (what it opens on) · **9:30 PM–3:59 PM** · **Whole day** · **Custom** --
+  the single backtest's hours choice, over a run together (13 Oct 2026). Anything but As saved is put over every
+  saved backtest in the run that is worked by settings, for the run only: nothing saved is changed, and the result
+  says so over its total ("Signals of the whole expiry day (IST) for this run, in place of each saved backtest's own
+  hours"). One worked by a strategy keeps that strategy's own days and hours, as it does alone, and is named.
+  `?hours=saved|desk|all|custom&hfrom=&hto=`; the answer's `hours { window, hoursFrom?, hoursTo?, own[] }` (null as
+  saved). Kept in this browser (`signalBacktest.together.hours`).
 - **The limit on open trades: One account** (what it opens on) or **Each its own limit**. The desk's "at most
   open" and its CE and PE shares are an *account's*, not a strategy's. Seven saved backtests of "at most 120" each
   were first worked alone and added up, and the total said 152 open at once (179 a few hours later) -- more than
@@ -210,7 +217,7 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
 `backtest_saves` (id, name unique whatever its capitals, `query` as JSON) and `backtest_portfolios` (id, name,
 `save_ids`), `report/backtest-saves.ts`; at most 100 and 30. `GET/POST /api/backtest-saves`,
 `DELETE /api/backtest-saves/:id`, `POST /api/backtest-portfolios`, `DELETE /api/backtest-portfolios/:id`,
-`GET /api/backtest-portfolio?ids=&from=&to=&limit=shared|own&max=&ce=&pe=` (worked in the backtest's thread,
+`GET /api/backtest-portfolio?ids=&from=&to=&limit=shared|own&max=&ce=&pe=&hours=saved|desk|all|custom&hfrom=&hto=` (worked in the backtest's thread,
 `portfolioBacktest`; `shared` in the answer says the limit they were held to and how many it turned away). Checked on
 1-12 Oct with two saved: each member is its own backtest to the cent, the total their sum, every day its members'
 sum, the margin together ($1,583 with 374 open) between the larger one's own and the two added ($1,643).
