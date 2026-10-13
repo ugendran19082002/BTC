@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-487 files listed, 241 test files counted below, images and lockfiles left out.
+488 files listed, 241 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -455,6 +455,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [PnlKpiCards.tsx](../../app/web/src/components/report/PnlKpiCards.tsx) | -- |
 | [ReportPanel.tsx](../../app/web/src/components/report/ReportPanel.tsx) | How the trading has actually gone. |
 | [SignalBacktest.tsx](../../app/web/src/components/report/SignalBacktest.tsx) | The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price? |
+| [Updating.tsx](../../app/web/src/components/report/Updating.tsx) | A read that knows which question its answer is to (owner, 13 Oct 2026: "after choosing a filter it should say it is loading; the old values stay on the screen"). |
 | [WinLossAnalysis.tsx](../../app/web/src/components/report/WinLossAnalysis.tsx) | -- |
 | [pnl-dashboard.css](../../app/web/src/components/report/pnl-dashboard.css) | ───────────────────────────────────────────────────────────────────────────── P&L Dashboard Upgraded Styling (Institutional / Premium Dark Theme) ───────────────────────────────────────────────────... |
 

@@ -26,7 +26,7 @@ For every signal that went "in the trade" (`entry_setups` with a fill), in the e
 | Setting | Choices | Default |
 |---|---|---|
 | Expiry days | since 1 Oct, the last 7, the last 30 | since 1 Oct |
-| Which signals | 9:30 PM → 3:59 PM IST, as the strategies trade (`desk`); or the whole expiry day (`all`) | desk |
+| Which signals | 9:30 PM → 3:59 PM IST, as the strategies trade (`desk`); the whole expiry day (`all`); or **Custom** hours, a From and a To time IST that may run past midnight (`custom`, `?hfrom=&hto=`; the To minute not included; a trade still exits by its own SL, TGT or the expiry) | desk |
 | Strike rule | **by delta**: the nearest to the money with a delta of at most 0.05 / 0.10 / 0.15 / 0.20; **by premium**: the dearest priced at most $25 / $50 / $75 / $100 | delta 0.10 |
 | Option stop | +100%, +150%, +300% over the premium sold, or none | +300% |
 | Option target | 70%, 80%, 90% of the premium kept, or none | 90% |
@@ -105,3 +105,9 @@ a trade made −₹3.79 on 3m, −₹3.21 on 5m, −₹0.09 on 15m, +₹2.49 on 
 A range is worked out a day at a time and each day kept in memory by its settings: thirteen days take about
 five seconds the first time and under a tenth of one after. A day still running is worked again after five
 minutes.
+
+## While a new result is worked out
+
+Changing any setting or filter shows a **Working out…** bar at once, and the result on the screen is greyed and
+marked as the previous settings' until the new one arrives (`Updating.tsx`, `useAnswer`: the answer is kept with
+the question it answers). The market report and its breakdowns do the same.

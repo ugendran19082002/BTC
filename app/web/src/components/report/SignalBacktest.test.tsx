@@ -316,6 +316,22 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery().params.window).toBe('all'));
   });
 
+  it('[critical] a filter changed: "working" at once, the old result greyed and said to be the previous settings\' -- until the new one comes', async () => {
+    show();
+    expect(await screen.findByText('Backtest result')).toBeInTheDocument();
+    expect(screen.queryByText(/Working out/)).not.toBeInTheDocument();
+    let answer!: (v: unknown) => void;
+    getSignalBacktest.mockImplementation(() => new Promise((r) => { answer = r; }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Lots a signal' })).getByRole('button', { name: '16' }));
+    const bar = await screen.findByText(/Working out the backtest for the settings you chose/);
+    expect(bar.closest('[aria-busy]')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByText(/Below: the previous settings' result/)).toBeInTheDocument();
+    expect(screen.getByText('Backtest result').closest('.opacity-40')).not.toBeNull();
+    answer({ ...RESULT, params: { ...RESULT.params, lots: 16 } });
+    await waitFor(() => expect(screen.queryByText(/Working out the backtest/)).not.toBeInTheDocument());
+    expect(screen.getByText('Backtest result').closest('.opacity-40')).toBeNull();
+  });
+
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {
     getSignalBacktest.mockResolvedValue({ ...RESULT, total: tot(), signals: 300, skipped: { ...RESULT.skipped, 'no-strike': 0, 'no-exit-price': 0 }, pairs: [], byTf: [], days: [], byFamily: [], byPattern: [] });
     const { unmount } = show();
