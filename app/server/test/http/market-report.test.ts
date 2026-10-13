@@ -291,11 +291,11 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   // The climb's six signals in the trade are all BUYs with the target at 84,500, which the perp reaches about a third of the way in.
   const all = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all`);
   assert.equal(all.status, 200, JSON.stringify(all.body).slice(0, 300));
-  assert.deepEqual(all.body.params, { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all', deskMax: 0, cePct: 100, pePct: 100, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0 });
+  assert.deepEqual(all.body.params, { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all', deskMax: 0, cePct: 100, pePct: 100, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off' });
   assert.deepEqual(all.body.deskLimits, [], 'no broker account on this desk: no limits to offer');
   assert.equal(all.body.signals, 6, 'the one never filled is not a signal in the trade');
   assert.equal(all.body.total.n, 6);
-  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
   // at most two open at once: the first two are open when the others fill
   const capped = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&max=2&ce=80&pe=80`);
   assert.deepEqual([capped.body.params.deskMax, capped.body.total.n], [2, capped.body.total.n]);
@@ -324,6 +324,11 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   const timed = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tp=0.7&tsteps=23:30:73,01:30:76`);
   assert.deepEqual(timed.body.params.targetSteps, [{ at: '23:30', pct: 0.73 }, { at: '01:30', pct: 0.76 }]);
   assert.equal(timed.body.params.targetPct, 0.7);
+  // the volatility filter: this desk has no days before the climb to compare with, so no signal has a level -- none is "low"
+  const lowVol = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&vol=low`);
+  assert.deepEqual([lowVol.body.params.vol, lowVol.body.total.n, lowVol.body.skipped.volatility], ['low', 0, 6]);
+  assert.deepEqual(all.body.byVol, [], 'and with the filter off, no trade has a level to be listed under');
+  // the quiet day has the climb before it: its one signal has a level, though no board to be traded on
   const desk = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}`);
   assert.equal(desk.body.params.window, 'desk');
   assert.deepEqual([desk.body.total.n, desk.body.skipped['outside-window']], [3, 3]);
@@ -355,7 +360,7 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
 test('the backtest refuses settings it cannot mean', async () => {
   for (const [q, why] of [
     ['rule=gamma', /"delta" or "premium"/], ['rule=delta&value=0.9', /0\.02 to 0\.5/], ['rule=premium&value=5', /10 to 500/],
-    ['lots=0', /whole number from 1 to 1,000/], ['max=600', /0 \(no limit\) to 500/], ['max=10&ce=0', /1% to 100%/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk", "all" or "custom"/], ['window=custom&hfrom=22:00', /From and a To time/], ['window=custom&hfrom=22:00&hto=22:00', /must differ/], ['window=custom&hfrom=25:00&hto=02:00', /HH:MM/], ['slmin=-1', /0 \(off\) to 20,000/], ['tsteps=2330:73', /HH:MM:NN/], ['tsteps=23:30:0', /1% to 99%/], ['tsteps=23:30:150', /HH:MM:NN/], ['tsteps=23:30:73,23:30:80', /same time/], ['tp=0&tsteps=23:30:73', /needs a target to start from/], ['slmin=500&slmax=200', /SL maximum must not be under/], ['tgtmin=500&tgtmax=200', /TGT maximum/],
+    ['lots=0', /whole number from 1 to 1,000/], ['max=600', /0 \(no limit\) to 500/], ['max=10&ce=0', /1% to 100%/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk", "all" or "custom"/], ['window=custom&hfrom=22:00', /From and a To time/], ['window=custom&hfrom=22:00&hto=22:00', /must differ/], ['window=custom&hfrom=25:00&hto=02:00', /HH:MM/], ['slmin=-1', /0 \(off\) to 20,000/], ['vol=wild', /"off", "low", "medium" or "high"/], ['tsteps=2330:73', /HH:MM:NN/], ['tsteps=23:30:0', /1% to 99%/], ['tsteps=23:30:150', /HH:MM:NN/], ['tsteps=23:30:73,23:30:80', /same time/], ['tp=0&tsteps=23:30:73', /needs a target to start from/], ['slmin=500&slmax=200', /SL maximum must not be under/], ['tgtmin=500&tgtmax=200', /TGT maximum/],
   ] as const) {
     const r = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&${q}`);
     assert.equal(r.status, 400, q);

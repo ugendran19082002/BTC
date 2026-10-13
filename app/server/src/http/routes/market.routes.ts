@@ -91,8 +91,11 @@ function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
     if (new Set(targetSteps.map((x) => x.at)).size !== targetSteps.length) return 'Two target steps have the same time.';
     if (!(targetPct > 0)) return 'A target by the clock needs a target to start from.';
   }
+  // The volatility when a signal fills: `?vol=off|low|medium|high`.
+  const vol = q.vol === undefined || q.vol === '' ? 'off' : q.vol;
+  if (vol !== 'off' && vol !== 'low' && vol !== 'medium' && vol !== 'high') return 'The volatility filter is "off", "low", "medium" or "high".';
   return {
-    rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax,
+    rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol,
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}),
   };
 }

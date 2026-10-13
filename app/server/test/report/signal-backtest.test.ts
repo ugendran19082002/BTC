@@ -62,7 +62,7 @@ test('[critical] a BUY sells the put at the bid of the reading nearest its fill,
   // the perp reaches 84,500 in minute 302; the put decays from 40 to 10 over the day
   const r = simulateDay({ from, to, params: P, signals: [sig(31)], bars: perp([[0, 84_000], [300, 84_490], [310, 84_560], [1_439, 84_600]]),
     board: byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]), ...contract('C', 85_000, 0.09, [[0, 40], [1_435, 10]])]) });
-  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
   const [t] = r.trades;
   assert.equal(t!.cp, 'P'); assert.equal(t!.strike, 83_200);
   assert.equal(t!.entryAt, from + 30 * MIN, 'the 5-minute reading nearest minute 31');
@@ -260,4 +260,41 @@ test('[critical] a target by the clock: from each step\'s time the step\'s share
   // steps in any order of the day are read forward from 5:30 PM: one at 6:00 PM applies before one at 3:00 PM
   const early = run({ targetPct: 0.9, targetSteps: [{ at: '15:00', pct: 0.95 }, { at: '18:00', pct: 0.5 }] });
   assert.ok(Math.abs(early.exit - 20) < 1e-9, 'the 6 PM step (50%) was in force from the day\'s first half hour');
+});
+
+test('[critical] volatility at a signal: the last two hours of 15-minute candles against the five days before -- low, medium, high', async () => {
+  const { volReader, VOL_LOW, VOL_HIGH } = await import('../../src/report/signal-backtest.js');
+  // minutes whose 15-minute candles each span `size` points: a sawtooth of that height every 15 minutes
+  const saw = (size: number, minutes = 600): MinuteBar[] => Array.from({ length: minutes }, (_, i) => {
+    const close = 84_000 + (i % 15 < 8 ? (i % 15) * (size / 7) : (14 - (i % 15)) * (size / 7));
+    return { at: from + i * 60_000, high: close, low: close, close };
+  });
+  const at = from + 300 * 60_000;
+  assert.equal(volReader(saw(100), 100)(at), 'medium', 'the same as the days before');
+  assert.equal(volReader(saw(100), 200)(at), 'low', 'half of them: under 0.8');
+  assert.equal(volReader(saw(100), 60)(at), 'high', 'two thirds more: over 1.3');
+  assert.ok(VOL_LOW === 0.8 && VOL_HIGH === 1.3);
+  assert.equal(volReader(saw(100), null)(at), null, 'no days before to compare with: not said');
+  assert.equal(volReader(saw(100), 100)(from + 20 * 60_000), null, 'one closed candle is too few');
+  // only what had closed by then is read: a storm that begins at minute 300 is not seen at minute 300
+  const calmThenWild = [...saw(100, 300), ...saw(1_000, 300).map((b) => ({ ...b, at: b.at + 300 * 60_000 }))];
+  assert.equal(volReader(calmThenWild, 100)(from + 300 * 60_000), 'medium');
+  assert.equal(volReader(calmThenWild, 100)(from + 480 * 60_000), 'high');
+});
+
+test('[critical] the volatility filter keeps only the signals of the level asked for, and every trade says its level', async () => {
+  const { volReader, planOfParams } = await import('../../src/report/signal-backtest.js');
+  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  // quiet for five hours, wild after: a flat perp for the trades, the volatility read from another series
+  const bars = perp([[0, 84_000], [1_439, 84_050]]);
+  const volAt = (at: number) => ((at - from) / 60_000 < 300 ? 'low' as const : (at - from) / 60_000 < 600 ? 'high' as const : null);
+  const signals = [sig(100), sig(200), sig(400), sig(700)];
+  const run = (volOnly: 'low' | 'medium' | 'high' | null) => simulateDay({ from, to, signals, bars, board, plan: planOfParams(P, { from, to }), volAt, volOnly });
+  assert.deepEqual(run(null).trades.map((t) => t.vol), ['low', 'low', 'high', null], 'off: every signal, each with its level');
+  assert.deepEqual(run('low').trades.map((t) => (t.signal.filledAt - from) / 60_000), [100, 200]);
+  assert.equal(run('low').skipped.volatility, 2);
+  assert.deepEqual(run('high').trades.map((t) => (t.signal.filledAt - from) / 60_000), [400]);
+  assert.deepEqual(run('medium').trades, []);
+  assert.equal(run('medium').skipped.volatility, 4, 'one whose level cannot be said is not of the level asked for');
+  assert.equal(typeof volReader, 'function');
 });

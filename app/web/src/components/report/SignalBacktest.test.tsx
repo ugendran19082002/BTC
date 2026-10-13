@@ -417,48 +417,63 @@ describe('SignalBacktest', () => {
     expect(screen.getByRole('complementary', { name: 'Backtest settings' })).toHaveClass('xl:sticky');
   });
 
-  it('[critical] the target: fixed or dynamic first, then its settings -- a ready ladder, a strategy\'s steps copied, or typed; used with one tap', async () => {
+  it('[critical] the target: fixed or dynamic first -- dynamic takes a strategy\'s own steps at once, another\'s on a tap, or yours typed', async () => {
+    getSignalBacktest.mockResolvedValue({ ...RESULT, strategies: [
+      ...RESULT.strategies,
+      { id: '4h-time', name: '4h time', enabled: true, account: 'Savings', methods: ['gamma'], tfs: ['4h'], target: { pct: 0.7, steps: [{ at: '23:30', pct: 0.73 }, { at: '01:30', pct: 0.76 }, { at: '15:30', pct: 0.97 }] } },
+    ] });
     show();
     await screen.findByText('Backtest result');
     // fixed to begin with: the chips
     expect(screen.getByRole('radio', { name: 'One target all day' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('group', { name: "The option's own target, of the premium kept" })).toBeInTheDocument();
+    // dynamic: the first switched-on strategy's steps, in use at once -- nothing made up, nothing to fill in
     fireEvent.click(screen.getByRole('radio', { name: 'A target that moves by the clock' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ targetPct: 0.7, targetSteps: [{ at: '23:30', pct: 0.75 }, { at: '03:30', pct: 0.85 }] }));
     expect(screen.queryByRole('group', { name: "The option's own target, of the premium kept" })).not.toBeInTheDocument();
-    expect(lastQuery().params.targetSteps).toBeUndefined();            // nothing backtested until the steps are used
-    // the first ladder is offered ready: 70% and +3 every two hours to 97% at 3:30 PM
-    const steps = within(screen.getByRole('list', { name: 'Target steps' }));
-    expect(steps.getAllByRole('listitem').length).toBe(9);
-    expect(screen.getByLabelText('Step 1 time, IST')).toHaveValue('23:30');
-    expect(screen.getByLabelText('Step 1 per cent')).toHaveValue(73);
-    expect(screen.getByLabelText('Step 9 per cent')).toHaveValue(97);
-    expect(screen.getByText('Not in use yet.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Use these steps' }));
-    await waitFor(() => expect(lastQuery().params.targetSteps?.length).toBe(9));
-    expect(lastQuery().params).toMatchObject({ targetPct: 0.7, targetSteps: expect.arrayContaining([{ at: '23:30', pct: 0.73 }, { at: '15:30', pct: 0.97 }]) });
-    expect(screen.getByText(/^In use\./)).toBeInTheDocument();
-    expect(screen.getAllByText(/70% → 97% by time \(9 steps\)/).length).toBeGreaterThan(0);
-    // a strategy's own steps, copied
-    fireEvent.change(screen.getByLabelText("Copy a strategy's target steps"), { target: { value: '0' } });
-    expect(steps.getAllByRole('listitem').length).toBe(2);
+    expect(screen.queryByRole('group', { name: 'Ready schedules' })).not.toBeInTheDocument();
+    const whose = screen.getByLabelText('Whose target steps');
+    expect([...whose.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['1h time · Savings · 70% → 85%, 2 steps', '4h time · Savings · 70% → 97%, 3 steps']);
+    expect(whose).toHaveValue('0');
     expect(screen.getByLabelText('Step 2 time, IST')).toHaveValue('03:30');
-    // typed: a bad one is refused in words; a time out of order is put in the day's order when used
-    fireEvent.change(screen.getByLabelText('Step 2 per cent'), { target: { value: '150' } });
+    expect(screen.getByText(/^In use\./)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use these steps' })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/70% → 85% by time \(2 steps\)/).length).toBeGreaterThan(0);
+    // another strategy's, on a tap
+    fireEvent.change(whose, { target: { value: '1' } });
+    await waitFor(() => expect(lastQuery().params.targetSteps?.length).toBe(3));
+    expect(screen.getByLabelText('Step 3 per cent')).toHaveValue(97);
+    // your own: typed, checked, and used with a tap; a time out of order is put in the day's order
+    fireEvent.change(screen.getByLabelText('Step 3 per cent'), { target: { value: '150' } });
     expect(screen.getByRole('alert')).toHaveTextContent('Each step keeps from 1% to 99% of the premium.');
     expect(screen.getByRole('button', { name: 'Use these steps' })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Step 2 per cent'), { target: { value: '85' } });
+    fireEvent.change(screen.getByLabelText('Step 3 per cent'), { target: { value: '90' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add a step' }));
     expect(screen.getByRole('alert')).toHaveTextContent('Give every step a time.');
-    fireEvent.change(screen.getByLabelText('Step 3 time, IST'), { target: { value: '21:30' } });
-    fireEvent.change(screen.getByLabelText('Step 3 per cent'), { target: { value: '72' } });
+    fireEvent.change(screen.getByLabelText('Step 4 time, IST'), { target: { value: '21:30' } });
+    fireEvent.change(screen.getByLabelText('Step 4 per cent'), { target: { value: '72' } });
+    expect(screen.getByText('Changed: not in use yet.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Use these steps' }));
-    await waitFor(() => expect(lastQuery().params.targetSteps).toEqual([{ at: '21:30', pct: 0.72 }, { at: '23:30', pct: 0.75 }, { at: '03:30', pct: 0.85 }]));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove step 1' }));
-    expect(screen.getByText('Not in use yet.')).toBeInTheDocument();
+    await waitFor(() => expect(lastQuery().params.targetSteps).toEqual([{ at: '21:30', pct: 0.72 }, { at: '23:30', pct: 0.73 }, { at: '01:30', pct: 0.76 }, { at: '15:30', pct: 0.9 }]));
+    expect(screen.getByLabelText('Whose target steps')).toHaveValue('');
     // back to fixed: the steps go
     fireEvent.click(screen.getByRole('radio', { name: 'One target all day' }));
     await waitFor(() => expect(lastQuery().params.targetSteps).toBeUndefined());
     expect(screen.getByRole('group', { name: "The option's own target, of the premium kept" })).toBeInTheDocument();
+  });
+
+  it('with no strategy that has target steps, dynamic opens empty with a ready schedule to start from -- and nothing is backtested until one is used', async () => {
+    getSignalBacktest.mockResolvedValue({ ...RESULT, strategies: RESULT.strategies.map((x) => ({ ...x, target: { pct: 0.9, steps: [] } })) });
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('radio', { name: 'A target that moves by the clock' }));
+    expect(lastQuery().params.targetSteps).toBeUndefined();
+    expect(screen.getByRole('alert')).toHaveTextContent('Add at least one step, or choose Fixed.');
+    fireEvent.click(within(screen.getByRole('group', { name: 'Ready schedules' })).getByRole('button', { name: '70% → 97%' }));
+    expect(screen.getByLabelText('Step 1 per cent')).toHaveValue(73);
+    expect(screen.getByLabelText('Step 9 per cent')).toHaveValue(97);
+    fireEvent.click(screen.getByRole('button', { name: 'Use these steps' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ targetPct: 0.7, targetSteps: expect.arrayContaining([{ at: '15:30', pct: 0.97 }]) }));
   });
 
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {

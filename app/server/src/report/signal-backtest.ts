@@ -6,7 +6,7 @@ import { methodsSchema } from '../entry/catalogue.js';
 import { fillChargesUsd } from '../trading/charges.js';
 import { fundsRequiredPerContract } from '../trading/margin.js';
 import { CHAIN_KEY } from '../trading/pnl-history.js';
-import { FAMILIES, PATTERNS, familyOf, sessionOf, type MinuteBar, type PatternKey } from './market-day.js';
+import { FAMILIES, PATTERNS, candles, familyOf, sessionOf, type MinuteBar, type PatternKey } from './market-day.js';
 import { marketDays, marketReport, type Tot } from './market-report.js';
 import { selectLegs, type Candidate } from '../strategy/select.js';
 import { istMinutes, istWeekday } from '../strategy/schedule.js';
@@ -71,7 +71,45 @@ export type BacktestParams = {
    * time. Absent or empty: the one target all day.
    */
   targetSteps?: { at: string; pct: number }[];
+  /** Only the signals that filled while the market was this volatile (`volReader`); `off` or absent, all of them. */
+  vol?: 'off' | VolLevel;
 };
+
+/**
+ * How volatile the market was at a moment (owner, 13 Oct 2026: "a volatility filter: off, low, medium, high --
+ * default off"): the mean true range of the last two hours of 15-minute candles, over the mean 15-minute ATR of
+ * the five expiry days before. Under `VOL_LOW` is low, over `VOL_HIGH` high, between them medium.
+ *
+ * Read at the signal's own fill from candles already closed, so it is something the desk could have known then --
+ * a filter that can be asked of a live signal, not a label put on the day afterwards.
+ */
+export type VolLevel = 'low' | 'medium' | 'high';
+export const VOL_LEVELS: readonly VolLevel[] = ['low', 'medium', 'high'];
+export const VOL_LOW = 0.8;
+export const VOL_HIGH = 1.3;
+/** The candles looked back over, and the fewest of them that say anything. */
+export const VOL_CANDLES = 8;
+const VOL_MIN_CANDLES = 4;
+
+/**
+ * A day's reader: the level at any moment of it. `bars` run from two hours before the day begins, so its first
+ * signals have candles behind them; `baseline` is the mean ATR of the five expiry days before, null where there
+ * are none -- and then, as with too few candles, there is no level to say.
+ */
+export function volReader(bars: readonly MinuteBar[], baseline: number | null): (at: number) => VolLevel | null {
+  const c15 = candles(bars, 900);
+  const tr = c15.map((c, i) => (i === 0 ? c.high - c.low : Math.max(c.high - c.low, Math.abs(c.high - c15[i - 1]!.close), Math.abs(c.low - c15[i - 1]!.close))));
+  return (at) => {
+    if (baseline === null || !(baseline > 0)) return null;
+    // The candles closed by then: one that began less than fifteen minutes before is still forming.
+    let end = c15.length;
+    while (end > 0 && c15[end - 1]!.at + 900_000 > at) end--;
+    const recent = tr.slice(Math.max(0, end - VOL_CANDLES), end);
+    if (recent.length < VOL_MIN_CANDLES) return null;
+    const ratio = recent.reduce((a, x) => a + x, 0) / recent.length / baseline;
+    return ratio < VOL_LOW ? 'low' : ratio > VOL_HIGH ? 'high' : 'medium';
+  };
+}
 /** The start of an expiry day on the IST clock: what a backtest's own time steps are read forward from. */
 export const DAY_START_IST = '17:30';
 export const DEFAULT_PARAMS: BacktestParams = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 };
@@ -90,9 +128,9 @@ const BOARD_NEAR_MS = 5 * MIN;
 
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'window-end';
 export const BT_EXITS: readonly BtExit[] = ['perp-tgt', 'perp-sl', 'option-tgt', 'option-sl', 'window-end'];
-export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
-export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'at-limit', 'desk-limit', 'side-limit', 'no-board', 'no-strike', 'no-exit-price'];
-const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
+export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'volatility', 'at-limit', 'desk-limit', 'side-limit', 'no-board', 'no-strike', 'no-exit-price'];
+const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
 
 export type BtSignal = {
   method: string; mode: 'single' | 'mtf'; tf: string; dir: 1 | -1; filledAt: number; fillPrice: number; stop: number;
@@ -107,6 +145,8 @@ export type BtTrade = {
   netUsd: number;
   /** The charges on both fills, dollars: the exchange's fee and its GST (`fillChargesUsd`). */
   chargesUsd: number;
+  /** How volatile the market was when its signal filled; null where that could not be said. */
+  vol: VolLevel | null;
   /** The margin it held while open, dollars: the desk's own estimate at 200x (`fundsRequiredPerContract`), as the Signal Strategies card prices it. */
   marginUsd: number;
   /** What the same trade made on the perp, in points: to the level reached, or to the perp's price at the window's end. */
@@ -253,7 +293,11 @@ export function signalOrder(a: BtSignal, b: BtSignal): number {
  * minutes; `board` every reading of the contract that settles at `to`, oldest first. The signals are taken in the
  * order they filled, which is what "at most N open" is counted in.
  */
-export function simulateDay(o: { from: number; to: number; signals: readonly BtSignal[]; bars: readonly MinuteBar[]; board: readonly BoardRow[]; params?: BacktestParams; plan?: DayPlan }): { trades: BtTrade[]; skipped: Record<BtSkip, number> } {
+export function simulateDay(o: {
+  from: number; to: number; signals: readonly BtSignal[]; bars: readonly MinuteBar[]; board: readonly BoardRow[]; params?: BacktestParams; plan?: DayPlan;
+  /** The volatility at a moment (`volReader`), and the one level to keep where the filter is on. */
+  volAt?: (at: number) => VolLevel | null; volOnly?: VolLevel | null;
+}): { trades: BtTrade[]; skipped: Record<BtSkip, number> } {
   const { from, to } = o;
   const plan = o.plan ?? planOfParams(o.params ?? DEFAULT_PARAMS, { from, to });
   const skipped = noSkips();
@@ -279,6 +323,9 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
     const t0 = sig.filledAt;
     const refused = plan.refuses(sig);
     if (refused) { skipped[refused]++; continue; }
+    const vol = o.volAt ? o.volAt(t0) : null;
+    // A signal whose volatility cannot be said is not one of the level asked for.
+    if (o.volOnly && vol !== o.volOnly) { skipped.volatility++; continue; }
     open = open.filter((x) => x.until > t0);
     // In the runner's order: its own limit, then the desk's, then the side's (strategy/runner.ts `takeSignal`).
     if (plan.maxOpen !== null && open.length >= plan.maxOpen) { skipped['at-limit']++; continue; }
@@ -344,7 +391,7 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
     open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE' });
     trades.push({
       signal: sig, cp, strike: pick.strike, lots, entryAt, entry, exitAt, exit, by,
-      netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges, chargesUsd: charges,
+      netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges, chargesUsd: charges, vol,
       marginUsd: fundsRequiredPerContract({ spot: pick.spot ?? sig.fillPrice, premium: entry, leverage: 200, contractValue: CONTRACT_VALUE }) * lots,
       perpPts: (perpPx - sig.fillPrice) * sig.dir,
     });
@@ -372,14 +419,14 @@ function addBt(a: BtTot, b: BtTot): BtTot {
   }
   return a;
 }
-type BtCell = { day: string; method: string; mode: 'single' | 'mtf'; tf: string; tot: BtTot };
+type BtCell = { day: string; method: string; mode: 'single' | 'mtf'; tf: string; vol: VolLevel | null; tot: BtTot };
 
 function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
   const by = new Map<string, BtCell>();
   for (const t of trades) {
     const s = t.signal;
-    const key = `${s.method}|${s.mode}|${s.tf}`;
-    const cell = by.get(key) ?? { day, method: s.method, mode: s.mode, tf: s.tf, tot: zeroBt() };
+    const key = `${s.method}|${s.mode}|${s.tf}|${t.vol}`;
+    const cell = by.get(key) ?? { day, method: s.method, mode: s.mode, tf: s.tf, vol: t.vol, tot: zeroBt() };
     by.set(key, cell);
     const x = cell.tot, win = t.netUsd > 0;
     x.n++; x.net += t.netUsd; x.perpPts += t.perpPts; x.charges += t.chargesUsd;
@@ -401,7 +448,7 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}`;
+const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   const text = JSON.stringify(s.config);
@@ -416,7 +463,7 @@ const SETTLED_MS = 6 * 3_600_000;
 const expiryCodeOf = (day: string) => `${day.slice(8, 10)}${day.slice(5, 7)}${day.slice(2, 4)}`;
 
 /** One day under one set of rules. `takes` narrows the signals to those the rules are about at all (a strategy's methods and timeframes). */
-async function dayOf(day: string, key: string, now: number, planFor: (span: { from: number; to: number }) => DayPlan, takes: (sig: BtSignal) => boolean): Promise<HeldDay> {
+async function dayOf(day: string, key: string, now: number, planFor: (span: { from: number; to: number }) => DayPlan, takes: (sig: BtSignal) => boolean, vol: { only: VolLevel | null; baseline: number | null }): Promise<HeldDay> {
   const id = `${day}|${key}`;
   const h = held.get(id);
   const { from, to } = sessionOf(day);
@@ -427,7 +474,8 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
         WHERE filled_at IS NOT NULL AND filled_at >= $1 AND filled_at < $2 AND first_seen >= $3 AND fill_price IS NOT NULL
         ORDER BY filled_at`, [Math.floor(from / 1_000), Math.floor(to / 1_000), from - 5 * 86_400_000]),
     rows<{ at: string; high: number; low: number; vwap: number }>(
-      'SELECT at, high, low, vwap FROM trade_flow_1m WHERE at >= $1 AND at < $2 AND high IS NOT NULL AND low IS NOT NULL AND vwap IS NOT NULL ORDER BY at', [from, to]),
+      // From two hours before the day: the volatility at its first signals is read from the candles behind them.
+      'SELECT at, high, low, vwap FROM trade_flow_1m WHERE at >= $1 AND at < $2 AND high IS NOT NULL AND low IS NOT NULL AND vwap IS NOT NULL ORDER BY at', [from - VOL_CANDLES * 900_000, to]),
     rows<{ at: string; cp: 'C' | 'P'; strike: number; spot: number | null; bid: number | null; ask: number | null; mark: number | null; delta: number | null; oi: number | null }>(
       'SELECT at, cp, strike, spot, bid, ask, mark, delta, oi FROM option_snapshots WHERE expiry = $1 AND at >= $2 AND at <= $3 ORDER BY at', [expiryCodeOf(day), from - BOARD_NEAR_MS, to]),
   ]);
@@ -436,9 +484,11 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
     method: String(x.method), mode: x.mode === 'mtf' ? 'mtf' : 'single', tf: String(x.tf), dir: Number(x.dir) === 1 ? 1 : -1,
     filledAt: Number(x.filled_at) * 1_000, fillPrice: Number(x.fill_price), stop: Number(x.stop), target: Number(x.tp1), tp2: num(x.tp2), tp3: num(x.tp3),
   })).filter(takes);
+  const minutes: MinuteBar[] = bars.map((b) => ({ at: Number(b.at), high: Number(b.high), low: Number(b.low), close: Number(b.vwap) }));
   const r = simulateDay({
     from, to, signals, plan: planFor({ from, to }),
-    bars: bars.map((b) => ({ at: Number(b.at), high: Number(b.high), low: Number(b.low), close: Number(b.vwap) })),
+    volAt: volReader(minutes, vol.baseline), volOnly: vol.only,
+    bars: minutes.filter((b) => b.at >= from),
     board: board.map((b) => ({ at: Number(b.at), cp: b.cp, strike: Number(b.strike), spot: num(b.spot), bid: num(b.bid), ask: num(b.ask), mark: num(b.mark), delta: num(b.delta), oi: num(b.oi) })),
   });
   const out: HeldDay = {
@@ -482,6 +532,8 @@ export type SignalBacktest = {
   total: BtTot;
   days: (BtTot & { day: string; pattern: PatternKey | null; live: boolean })[];
   pairs: BtRow[]; byTf: BtRow[]; byMethod: BtRow[]; byPattern: BtRow[]; byFamily: BtRow[];
+  /** By how volatile the market was when each signal filled: low, medium, high, in that order; those it could not be said of are left out. */
+  byVol: BtRow[];
   /** What there is to filter by. Each method carries what it made on the timeframes chosen, whichever methods are ticked. */
   choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string; n: number; wins: number; net: number }[] };
 };
@@ -506,7 +558,15 @@ export function signalBacktest(o: Ask): Promise<SignalBacktest> {
 
 async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   await Promise.all([flowSchema(), optionSnapshotsSchema(), entrySchema(), methodsSchema()]);
-  const days = await marketDays(o.from, o.to, o.now);
+  // With the eight expiry days before the range: each day's volatility is read against the five before it.
+  const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
+  const known = await marketDays(before, o.to, o.now);
+  const days = known.filter((d) => d.day >= o.from);
+  const baselineOf = (day: string): number | null => {
+    const prior = known.filter((d) => d.day < day && d.stats && !d.live).slice(-5).map((d) => d.stats!.atr);
+    return prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
+  };
+  const volOnly: VolLevel | null = o.params.vol && o.params.vol !== 'off' ? o.params.vol : null;
   const names = new Map((await rows<{ id: string; n: number | null; name: string }>('SELECT id, n, name FROM entry_methods')).map((m) => [m.id, m.n === null ? m.name : `#${m.n} ${m.name}`]));
   const nameOf = (id: string) => names.get(id) ?? id;
   const skipped = noSkips();
@@ -526,9 +586,9 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   const chosen = (sig: BtSignal) => (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method));
   const takes = (sig: BtSignal) => ownOnly(sig) && (caps === null || chosen(sig));
   const filterKey = caps === null ? '' : `|tf:${(o.tfs ?? []).join(',')}|m:${(o.methods ?? []).join(',')}`;
-  const key = (st ? `${strategyKey(st)}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}` : paramsKey(o.params)) + filterKey;
+  const key = (st ? `${strategyKey(st)}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|vol:${volOnly}` : paramsKey(o.params)) + filterKey;
   for (const d of days) {
-    const h = await dayOf(d.day, key, o.now, (span) => (st ? planOfStrategy(st, span, caps) : planOfParams(o.params, span)), takes);
+    const h = await dayOf(d.day, key, o.now, (span) => (st ? planOfStrategy(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day) });
     signals += h.signals;
     for (const k of BT_SKIPS) skipped[k] += h.skipped[k];
     every.push(...h.cells);
@@ -539,7 +599,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   if (caps !== null) {
     const free = { ...o.params, deskMax: 0 };
     for (const d of days) {
-      const h = await dayOf(d.day, st ? strategyKey(st) : paramsKey(free), o.now, (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)), ownOnly);
+      const h = await dayOf(d.day, st ? `${strategyKey(st)}|vol:${volOnly}` : paramsKey(free), o.now, (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)), ownOnly, { only: volOnly, baseline: baselineOf(d.day) });
       listCells.push(...h.cells);
     }
   } else listCells.push(...every);
@@ -591,6 +651,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
     byMethod: group((c) => c.method, (c) => ({ name: nameOf(c.method) })).sort(byNet),
     byPattern: group((c) => patternOf.get(c.day) ?? null, (c) => { const p = PATTERNS.find((x) => x.key === patternOf.get(c.day))!; return { name: `#${p.id} ${p.name}` }; }).sort(byNet),
     byFamily: group((c) => { const p = patternOf.get(c.day); return p ? familyOf(p) : null; }, (c) => ({ name: FAMILIES.find((f) => f.key === familyOf(patternOf.get(c.day)!))!.name })).sort(byNet),
+    byVol: group((c) => c.vol, (c) => ({ name: c.vol === 'low' ? 'Low' : c.vol === 'high' ? 'High' : 'Medium' })).sort((a, b) => VOL_LEVELS.indexOf(a.key as VolLevel) - VOL_LEVELS.indexOf(b.key as VolLevel)),
     choices: {
       timeframes: distinct(listCells.map((c) => ({ key: tfKeyOf(c), name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf }))).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
       methods: distinct(listCells.map((c) => ({ key: c.method, name: nameOf(c.method) })))
