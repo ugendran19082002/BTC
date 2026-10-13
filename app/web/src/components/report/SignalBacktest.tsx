@@ -521,6 +521,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         </select>
       </label>
         {!byStrategy && <>
+      {/* Named in words: three chips of times with nothing over them did not say what they chose. */}
+      <span aria-hidden className="-mb-1.5 text-[12px] text-muted-foreground">Hours of the signals (IST)</span>
       <Segmented dense label="Which signals" value={params.window} options={WINDOWS}
         // Custom opens the hours every time it is tapped: chosen already, a tap is "change the hours".
         onChange={(window) => { if (window === 'custom') setPickingHours(true); else { set({ window }); setPickingHours(false); } }} />
@@ -749,6 +751,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               <Panel title="Run over">
                 <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5">
                   {expiry.control}
+                  <span aria-hidden className="-mb-1.5 px-1 text-[12px] text-muted-foreground">Hours of the signals (IST), for the run</span>
                   <Segmented dense label="Which signals, for the run" value={runHours.window} options={RUN_WINDOWS}
                     // Custom opens the hours every time it is tapped: chosen already, a tap is "change the hours".
                     onChange={(window) => { if (window === 'custom') setPickingRunHours(true); else { setRunHours({ window }); setPickingRunHours(false); } }} />
