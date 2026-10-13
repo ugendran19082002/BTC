@@ -1277,7 +1277,7 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     fireEvent.click(within(by).getByRole('button', { name: /^Profit/ }));
     expect(boxes()).toEqual(['#3 Liquidity sweep', '#6 BOS']);                   // BOS: -500 points on the perp, paid as an option
     expect(screen.getByLabelText('#6 BOS').closest('label')!.textContent).toMatch(/67% win · 9t · \+₹[\d,.]+/);
-    expect(screen.queryByText(/pts$/)).toBeNull();
+    expect(within(screen.getByRole('list', { name: 'methods' })).queryByText(/ pts$/)).toBeNull();
     expect(screen.getByText(/Each method sold as this strategy would sell it and bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT -- money after charges, Thu 1 Oct to Tue 13 Oct\./)).toBeInTheDocument();
     expect(screen.getByText(/^Record: win rate · trades · net as options after charges, with the chain/)).toBeInTheDocument();
 

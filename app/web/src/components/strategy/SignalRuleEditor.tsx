@@ -418,7 +418,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
               <button type="button" role="radio" aria-checked={basis === 'perp'} onClick={() => setBasisPick('perp')} className={chip(basis === 'perp')}>
                 Perp points
               </button>
-              {optionRecord.busy && <span role="status" className="text-[11.5px] text-muted-foreground">working out…</span>}
+              {optionRecord.busy && <span aria-live="polite" className="text-[11.5px] text-muted-foreground">working out…</span>}
             </div>
             <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
               {basis === 'options'

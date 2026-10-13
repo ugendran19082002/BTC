@@ -169,7 +169,8 @@ export function registerMarketRoutes(app: FastifyInstance) {
    * first. The money is the option's, after charges. Read-only; nothing is saved.
    */
   app.post('/api/signal-backtest/methods', async (req, reply) => {
-    const raw = ((req.body ?? {}) as { config?: unknown }).config;
+    const body = (req.body ?? {}) as { config?: unknown; from?: unknown; to?: unknown };
+    const raw = body.config;
     if (!raw || typeof raw !== 'object') return refuse(reply, 400, { error: 'A strategy\'s settings are needed: { config }.' });
     await methodsSchema();
     const every = (await rows<{ id: string }>('SELECT id FROM entry_methods ORDER BY id')).map((m) => m.id);
@@ -184,10 +185,18 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const problems = validateConfig(config);
     if (problems.length) return refuse(reply, 422, { error: problems.join(' '), problems });
     const now = Date.now();
-    const to = sessionDayOf(now);
-    // From the report's first day, and no further back than the days the backtest keeps ready.
-    const earliest = new Date(Date.parse(`${to}T00:00:00Z`) - 44 * 86_400_000).toISOString().slice(0, 10);
-    const from = earliest > REPORT_FIRST_DAY ? earliest : REPORT_FIRST_DAY;
+    // `from` and `to` (expiry days) where they are given; else from the report's first day, and no further back
+    // than the days the backtest keeps ready.
+    let from: string, to: string;
+    if (body.from !== undefined || body.to !== undefined) {
+      const given = rangeOf({ from: body.from, to: body.to }, now);
+      if (typeof given === 'string') return refuse(reply, 400, { error: given });
+      ({ from, to } = given);
+    } else {
+      to = sessionDayOf(now);
+      const earliest = new Date(Date.parse(`${to}T00:00:00Z`) - 44 * 86_400_000).toISOString().slice(0, 10);
+      from = earliest > REPORT_FIRST_DAY ? earliest : REPORT_FIRST_DAY;
+    }
     const draft: Strategy = { id: 'draft', name: 'draft', enabled: false, config, accountId: null, createdAt: now, updatedAt: now };
     const r = await signalBacktest({ from, to, now, params: { ...DEFAULT_PARAMS }, tfs: null, methods: null, strategy: draft, draft: true, spot: tradingService().spot });
     type Rec = { trades: number; wins: number; net: number };

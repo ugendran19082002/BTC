@@ -413,3 +413,22 @@ test('[critical] on a board a minute at a time the exit is priced at the minute 
   assert.deepEqual([f.by, (f.exitAt - from) / MIN], ['option-sl', 66]);
   assert.ok(f.exit >= 80 && f.exit < 86, `at the first minute's offer over the stop: ${f.exit}`);
 });
+
+test('[critical] the perp exits while the offer is already under the option\'s own target: the target\'s order filled first, at its own price', async () => {
+  const { planOfParams } = await import('../../src/report/signal-backtest.js');
+  // the put, sold at 40, is offered at 30 until minute 55 and at 12 from the reading at minute 60 -- a fall through the
+  // 50% target (20) between two readings; the perp reaches its target (84,500) in minute 57
+  const five = [...contract('P', 83_200, -0.09, [[0, 40], [5, 28], [55, 28], [60, 10], [1_435, 10]])];
+  const bars = perp([[0, 84_000], [50, 84_100], [57, 84_600], [1_439, 84_600]]);
+  const t = simulateDay({ from, to, signals: [sig(0)], bars, board: five, plan: planOfParams({ ...P, targetPct: 0.5, stopPct: 0 }, { from, to }) }).trades[0]!;
+  assert.equal(t.by, 'option-tgt', 'not the perp\'s exit: the option\'s own order was there first');
+  assert.ok(Math.abs(t.exit - 20) < 1e-9, `at its own 20, not the 12 offered afterwards: ${t.exit}`);
+  assert.equal((t.exitAt - from) / MIN, 60);
+  assert.equal(t.perpPts, 500, 'the perp\'s own trade is still its target');
+  // with no option target there is no such order: bought back at the offer when the perp exits
+  const plain = simulateDay({ from, to, signals: [sig(0)], bars, board: five, plan: planOfParams({ ...P, targetPct: 0, stopPct: 0 }, { from, to }) }).trades[0]!;
+  assert.deepEqual([plain.by, plain.exit], ['perp-tgt', 12]);
+  // and an offer over the target at the perp's exit is the perp's exit, as before
+  const over = simulateDay({ from, to, signals: [sig(0)], bars, board: five, plan: planOfParams({ ...P, targetPct: 0.9, stopPct: 0 }, { from, to }) }).trades[0]!;
+  assert.deepEqual([over.by, over.exit], ['perp-tgt', 12]);
+});

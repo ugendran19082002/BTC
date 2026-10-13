@@ -438,6 +438,10 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   const chain = await post('/api/signal-backtest/methods', { config: draft({}, { mode: 'mtf' }) });
   assert.deepEqual(chain.body.methods.map((x: any) => [x.method, x.trades, x.byTf.map((t: any) => t.tf)]), [['breakout', 1, ['chain']]]);
 
+  // a range of its own: the quiet day alone has no board, so no method has a trade
+  const quietOnly = await post('/api/signal-backtest/methods', { config: draft(), from: QUIET, to: QUIET });
+  assert.deepEqual([quietOnly.status, quietOnly.body.from, quietOnly.body.to, quietOnly.body.trades], [200, QUIET, QUIET, 0]);
+  assert.equal((await post('/api/signal-backtest/methods', { config: draft(), from: 'yesterday' })).status, 400);
   // nothing is saved by asking
   assert.equal((await get('/api/strategies')).body.strategies.some((s: any) => s.name === 'draft'), false);
   // a draft that cannot be meant says why; one that buys has no record as options; no settings at all is refused

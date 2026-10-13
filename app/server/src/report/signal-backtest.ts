@@ -508,6 +508,17 @@ export function simulateDay(o: {
           // The first reading at or after the perp's exit: what buying back costs then.
           exit = offer > 0 ? offer : mark[i]! > 0 ? mark[i]! : null;
           exitSpot = orNull(spot[i]!) ?? exitSpot;
+          /*
+           * Unless the offer is by then at or under the option's own target (13 Oct 2026, 38 to 458 trades in
+           * 34,000 to 42,000): the buy resting there filled on the way down, at its own price, before the desk had
+           * anything to close -- so the trade is the target's, and is not bought back for less than its own order
+           * stood at. A few cents a trade, and every one of them in the backtest's favour.
+           */
+          const resting = tgtAtFn ? level(pctAt(tgtPcts, tgtAtFn, t), -1) : fixedTgt;
+          if (offer > 0 && resting !== null && offer <= resting + 1e-9) {
+            exit = restingAt !== null && resting > restingAt + 1e-9 ? Math.min(resting, offer) : resting;
+            exitAt = t; by = 'option-tgt';
+          }
           break;
         }
         if (!(offer > 0)) continue;
