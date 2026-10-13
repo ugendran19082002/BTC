@@ -3,7 +3,9 @@ import { getMethodOptionRecord, getSignalBacktest } from '@/api/signal-backtest'
 import { usePersisted } from '@/hooks/usePersisted';
 import { rangeOf } from '@/lib/market-report';
 import { BACKTEST_DEFAULTS, settingsWords } from '@/components/report/backtest-words';
-import { actionOf, ruleTfs, type StrategyConfig } from '@/types/strategy';
+import { exitRules } from '@/lib/strategy-exits';
+import { time12 } from '@/lib/time';
+import { CHAIN_PTS, actionOf, ruleTfs, type StrategyConfig } from '@/types/strategy';
 import type { BacktestParams, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
 
 /**
@@ -26,7 +28,11 @@ export type OptionRecordState = {
    * differ wherever the strategy's rules do -- its strike rule, its lots, its SL and TGT distances -- so both are
    * offered, each said for what it is. `words` is those settings in a line.
    */
-  screen?: { data: MethodOptionRecord | null; error: string | null; busy: boolean; words: string };
+  screen?: {
+    data: MethodOptionRecord | null; error: string | null; busy: boolean; words: string;
+    /** Each setting of the strategy on the form that is not what the Backtest screen is set to, in words (`rulesApart`). */
+    apart: string[];
+  };
 };
 
 /** A change is asked about after this long without another. */
@@ -64,6 +70,67 @@ export function useOptionRecord(c: StrategyConfig, on: boolean): OptionRecordSta
   }, [key, ready, on, sells]);
   const screen = useScreenRecord(c, on && ready);
   return { ...state, screen };
+}
+
+/**
+ * Where a strategy's rules and the Backtest screen's settings part, in words (owner, 13 Oct 2026: "I changed every
+ * strategy to delta and it still does not match"): each setting that changes what a method makes and is not the
+ * same in both -- the strike, the option's target and stop and their time steps, the SL and TGT distances, the
+ * least premium, the hours. With none, the two lists are one list. The lots are left out: they change the money
+ * and not which methods are in profit.
+ *
+ * Found the evening it was asked: every strategy had been set to the Backtest's delta, lots, target and stop, and
+ * still carried a target by the clock (70% → 97% in nine steps) and nearer SL and TGT distances (100 to 200
+ * points for the Backtest's 250). With those two made the same, all eight lists matched to the trade.
+ */
+export function rulesApart(c: StrategyConfig, p: BacktestParams): string[] {
+  const rule = c.signal;
+  if (!rule) return [];
+  const out: string[] = [];
+  const pc = (v: number) => `${Math.round(v * 1000) / 10}%`;
+  // the strike
+  const mine = c.strikeRule === 'delta' ? `delta ≤ ${(c.delta?.max ?? 0).toFixed(2)}` : c.strikeRule === 'premium' ? `premium ${c.premium.mode === 'atMost' ? '≤' : '≥'} $${c.premium.usd}` : `by ${c.strikeRule}`;
+  const theirs = p.rule === 'delta' ? `delta ≤ ${p.value.toFixed(2)}` : `premium ≤ $${p.value}`;
+  if (mine !== theirs) out.push(`the strike (strategy: ${mine}; Backtest: ${theirs})`);
+  if ((c.strikeBlocks?.length ?? 0) > 0) out.push(`the strike changes by time here (${c.strikeBlocks!.length} blocks); the Backtest has one rule all day`);
+  // the option's own target and stop, and their steps by the clock
+  const x = exitRules(c);
+  const stepsOf = (xs: readonly { at: string; value: number }[]) => xs.map((s) => `${s.at}=${Math.round(s.value * 10_000)}`).join(',');
+  const theirSteps = (p.targetSteps ?? []).map((s) => `${s.at}=${Math.round(s.pct * 10_000)}`).join(',');
+  if (x.target.mode !== 'pct') out.push('the option target is in points or a price here; the Backtest takes a per cent');
+  else {
+    if (Math.abs(x.target.value - p.targetPct) > 1e-9) out.push(`the option target (strategy: ${x.target.value > 0 ? pc(x.target.value) : 'none'}; Backtest: ${p.targetPct > 0 ? pc(p.targetPct) : 'none'})`);
+    if (stepsOf(x.target.steps) !== theirSteps) {
+      const last = x.target.steps[x.target.steps.length - 1];
+      out.push(x.target.steps.length
+        ? `the target by time (strategy: ${x.target.steps.length} step${x.target.steps.length === 1 ? '' : 's'}, to ${pc(last!.value)} from ${time12(last!.at)}; Backtest: ${p.targetSteps?.length ? `${p.targetSteps.length} other step${p.targetSteps.length === 1 ? '' : 's'}` : `fixed at ${pc(p.targetPct)}`})`
+        : `the target by time (strategy: fixed; Backtest: ${p.targetSteps!.length} steps)`);
+    }
+  }
+  if (x.stop.mode !== 'pct') out.push('the option stop is in points or a price here; the Backtest takes a per cent');
+  else {
+    if (Math.abs(x.stop.value - p.stopPct) > 1e-9) out.push(`the option stop (strategy: ${x.stop.value > 0 ? `+${pc(x.stop.value)}` : 'none'}; Backtest: ${p.stopPct > 0 ? `+${pc(p.stopPct)}` : 'none'})`);
+    if (x.stop.steps.length) out.push(`the stop moves by time here (${x.stop.steps.length} steps); the Backtest's does not`);
+  }
+  // the SL and TGT distances, on the form's own timeframes
+  const keys: string[] = rule.mode === 'mtf' ? [CHAIN_PTS] : ruleTfs(rule);
+  const range = (min = 0, max = 0) => (min > 0 && max > 0 ? `${min} to ${max}` : min > 0 ? `≥ ${min}` : max > 0 ? `≤ ${max}` : 'any');
+  const of = (by: Partial<Record<string, number>> | undefined, k: string) => by?.[k] ?? 0;
+  for (const [name, minBy, maxBy, min, max] of [['SL', rule.minSlPts, rule.maxSlPts, p.slMin ?? 0, p.slMax ?? 0], ['TGT', rule.minTgtPts, rule.maxTgtPts, p.tgtMin ?? 0, p.tgtMax ?? 0]] as const) {
+    const off = keys.filter((k) => of(minBy, k) !== min || of(maxBy, k) !== max);
+    if (off.length) out.push(`the ${name} distance (strategy: ${off.map((k) => `${keys.length > 1 ? `${k} ` : ''}${range(of(minBy, k), of(maxBy, k))}`).join(', ')} pts; Backtest: ${range(min, max)} pts)`);
+  }
+  if (rule.target && rule.target !== 'tp1') out.push(`the perp target (strategy: ${rule.target === 'tp2' ? 'TGT2' : 'TGT3'}; Backtest: TGT1)`);
+  // the least premium
+  const floor = c.minPremiumUsd ?? 10, theirFloor = p.minPremium ?? 10;
+  if (floor !== theirFloor) out.push(`the minimum premium (strategy: $${floor}; Backtest: ${theirFloor > 0 ? `$${theirFloor}` : 'off'})`);
+  // the hours signals are taken in: the strategy's entry time to its first no-entry window or its exit; the Backtest's window
+  const stop = c.noEntry?.on ? c.noEntry.windows.map((w) => w.from).sort()[0] : undefined;
+  const myHours = `${c.entryTime}–${stop && c.noEntry!.windows.some((w) => w.from === stop && w.to >= c.exitTime) ? stop : c.exitTime}`;
+  const theirHours = p.window === 'desk' ? '21:30–15:59' : p.window === 'all' ? '17:30–17:25' : `${p.hoursFrom ?? ''}–${p.hoursTo ?? ''}`;
+  if (myHours !== theirHours) out.push(`the hours (strategy: ${myHours}; Backtest: ${theirHours})`);
+  if ((c.weekdays?.length ?? 7) < 7) out.push('the days of the week (the Backtest takes every day)');
+  return out;
 }
 
 /** A backtest's answer as a record of methods: its pairs, added up by method, each with its timeframes. */
@@ -105,5 +172,7 @@ function useScreenRecord(c: StrategyConfig, on: boolean): NonNullable<OptionReco
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, on]);
-  return { ...state, words: settingsWords({ params, tfs: [], methods: [], strategy: null }, []) };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const apart = useMemo(() => rulesApart(c, params), [JSON.stringify(c), params]);
+  return { ...state, words: settingsWords({ params, tfs: [], methods: [], strategy: null }, []), apart };
 }

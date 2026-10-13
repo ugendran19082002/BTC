@@ -462,10 +462,16 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
               <p className="m-0 mt-0.5 text-[11px] leading-snug text-muted-foreground" aria-label="the two records as options">
                 By the Backtest: <b className="font-medium text-[var(--up)]">{tally(screen)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(screen)!.down} in loss</b>.
                 {' '}By this strategy&apos;s rules as saved: <b className="font-medium text-[var(--up)]">{tally(own)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(own)!.down} in loss</b>.
-                {tally(own)!.up !== tally(screen)!.up || tally(own)!.down !== tally(screen)!.down
-                  ? ' They differ because this strategy is not yet set as the Backtest is -- its strike rule, lots, option TGT and SL, or SL and TGT distances (Strike & lots, Entry & exit).'
-                  : ' The same.'}
+                {optionRecord.screen!.apart.length === 0
+                  ? ' The strategy is set as the Backtest is: one list.'
+                  : ` Not the same settings -- ${optionRecord.screen!.apart.length} differ${optionRecord.screen!.apart.length === 1 ? 's' : ''}:`}
               </p>
+            )}
+            {/* Each setting that is not the Backtest's, by name: what to change for the two lists to be one. */}
+            {own && screen && optionRecord.screen!.apart.length > 0 && (
+              <ul aria-label="settings that differ from the Backtest" className="m-0 mt-0.5 list-disc pl-4 text-[11px] leading-snug text-[var(--warn)]">
+                {optionRecord.screen!.apart.map((d) => <li key={d}>{d}</li>)}
+              </ul>
             )}
             {basis === 'options' && own!.caveats.map((c) => <p key={c} className="m-0 mt-0.5 text-[11px] leading-snug text-[var(--warn)]">{c}</p>)}
           </div>

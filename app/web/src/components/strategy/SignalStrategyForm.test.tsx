@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
 import { copySources } from '@/components/strategy/SignalRuleEditor';
+import { rulesApart } from '@/components/strategy/useOptionRecord';
 import { combineRows, matchingSignals, profitableIds } from '@/components/strategy/SignalRuleEditor';
 import { DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, type SignalRule, type Strategy } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
@@ -1356,7 +1357,10 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     const asked = getSignalBacktest.mock.calls.at(-1)![0] as { from: string; params: { lots: number; deskMax: number }; tfs: string[]; methods: string[]; strategy: null };
     expect([asked.from, asked.params.lots, asked.params.deskMax, asked.tfs, asked.methods, asked.strategy]).toEqual(['2026-10-01', 16, 58, ['chain'], [], null]);
     // both counts, side by side; the same counts here, though of different methods
-    expect(screen.getByLabelText('the two records as options')).toHaveTextContent("By the Backtest: 2 in profit, 1 in loss. By this strategy's rules as saved: 2 in profit, 1 in loss. The same.");
+    expect(screen.getByLabelText('the two records as options')).toHaveTextContent(/^By the Backtest: 2 in profit, 1 in loss\. By this strategy's rules as saved: 2 in profit, 1 in loss\. Not the same settings -- \d+ differ:$/);
+    // and each setting that is not the Backtest's is named: this strategy sells by premium, the Backtest by delta
+    const apart = within(screen.getByRole('list', { name: 'settings that differ from the Backtest' })).getAllByRole('listitem').map((x) => x.textContent);
+    expect(apart[0]).toBe('the strike (strategy: premium ≥ $15; Backtest: delta ≤ 0.10)');
 
     const by = await results();
     expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']);
@@ -1375,5 +1379,43 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     // "Pick profitable" follows the list shown
     fireEvent.click(screen.getByRole('button', { name: /^Pick profitable with the chain \(2\)/ }));
     expect(screen.getByLabelText('#1 Breakout')).toBeChecked();
+  });
+
+  it('[critical] rulesApart: each setting of a strategy that is not the Backtest\'s, by name -- and none when it is set as the Backtest is', () => {
+    // the owner's own, the evening it was asked: every strategy set to the Backtest's delta, lots, target and stop --
+    // and still with a target by the clock and nearer SL and TGT distances
+    const BACKTEST = { rule: 'delta' as const, value: 0.1, lots: 2, targetPct: 0.7, stopPct: 1.6, window: 'desk' as const, deskMax: 120, cePct: 80, pePct: 80, slMin: 250, slMax: 0, tgtMin: 250, tgtMax: 0, vol: 'off' as const, minPremium: 10 };
+    const steps = ['23:30', '01:30', '03:30', '05:30', '07:30', '09:30', '11:30', '13:30', '15:30'].map((at, i) => ({ at, value: 0.73 + i * 0.03 }));
+    const fourHour = signalStrategy(
+      { mode: 'single', tf: '4h', tfs: ['4h'], minSlPts: { '4h': 150 }, minTgtPts: { '4h': 150 }, maxOpen: 100 },
+      { strikeRule: 'delta', delta: { max: 0.1 }, lots: 2, takeProfitPct: 0.7, stopLossPct: 1.6, targetSteps: steps, entryTime: '21:30', exitTime: '17:29', minPremiumUsd: 10, noEntry: { on: true, windows: [{ from: '15:59', to: '17:29' }] } },
+    ).config;
+    expect(rulesApart(fourHour, BACKTEST)).toEqual([
+      'the target by time (strategy: 9 steps, to 97% from 3:30 PM; Backtest: fixed at 70%)',
+      'the SL distance (strategy: ≥ 150 pts; Backtest: ≥ 250 pts)',
+      'the TGT distance (strategy: ≥ 150 pts; Backtest: ≥ 250 pts)',
+    ]);
+    // made the same: nothing apart -- the two lists are one (checked on the owner's data: all eight matched to the trade)
+    const same = { ...fourHour, targetSteps: [], signal: { ...fourHour.signal!, minSlPts: { '4h': 250 }, minTgtPts: { '4h': 250 } } };
+    expect(rulesApart(same, BACKTEST)).toEqual([]);
+    // the lots change the money, not which methods are in profit: not named
+    expect(rulesApart({ ...same, lots: 16 }, BACKTEST)).toEqual([]);
+
+    // the rest, each by name: the strike and its blocks, the target, the stop, the least premium, the hours, TGT2, the chain's own distances
+    const other = {
+      ...same, strikeRule: 'premium' as const, premium: { mode: 'atMost' as const, usd: 50, fallbackUsd: 75 }, strikeBlocks: [{ at: '00:30' }, { at: '03:30' }] as never,
+      takeProfitPct: 0.9, stopLossPct: 3, minPremiumUsd: 15, entryTime: '05:30', noEntry: null,
+      signal: { ...same.signal!, mode: 'mtf' as const, target: 'tp2' as const, minSlPts: { chain: 250 }, minTgtPts: { chain: 250 }, maxSlPts: { chain: 900 } },
+    };
+    expect(rulesApart(other, BACKTEST)).toEqual([
+      'the strike (strategy: premium ≤ $50; Backtest: delta ≤ 0.10)',
+      'the strike changes by time here (2 blocks); the Backtest has one rule all day',
+      'the option target (strategy: 90%; Backtest: 70%)',
+      'the option stop (strategy: +300%; Backtest: +160%)',
+      'the SL distance (strategy: 250 to 900 pts; Backtest: ≥ 250 pts)',
+      'the perp target (strategy: TGT2; Backtest: TGT1)',
+      'the minimum premium (strategy: $15; Backtest: $10)',
+      'the hours (strategy: 05:30–17:29; Backtest: 21:30–15:59)',
+    ]);
   });
 });
