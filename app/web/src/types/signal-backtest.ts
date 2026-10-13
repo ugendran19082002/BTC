@@ -26,6 +26,8 @@ export type SignalBacktestResponse = {
   strategy: { id: string; name: string; accountId: number | null; caveats: string[]; real: { n: number; wins: number; open: number; net: number } } | null;
   /** The signal strategies there are to backtest by: those that sell. */
   strategies: { id: string; name: string; enabled: boolean; account: string | null; methods: string[]; tfs: string[] }[];
+  /** The margin the trades shown would have held, by the desk's 200x estimate. */
+  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; avgDailyPeakUsd: number; avgTradeUsd: number };
   /** Each trading account's limits as they stand: offered as one tap. */
   deskLimits: { account: string; max: number; ce: number; pe: number }[];
   signals: number; skipped: Record<BtSkip, number>;

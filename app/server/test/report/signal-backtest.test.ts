@@ -212,3 +212,17 @@ test('[critical] a signal only if its SL and TGT are in range: points from the f
   assert.deepEqual(run({ slMax: 500 }), { took: [10, 20], skipped: 1 }, 'further than the maximum is out');
   assert.deepEqual(run({ tgtMin: 200, tgtMax: 500 }), { took: [20], skipped: 2 }, 'each bound on its own');
 });
+
+test('[critical] the margin: each trade\'s by the desk\'s 200x estimate, and the most open at once -- a trade ending as another starts makes room', async () => {
+  const { peakMargin, planOfParams } = await import('../../src/report/signal-backtest.js');
+  const { fundsRequiredPerContract } = await import('../../src/trading/margin.js');
+  assert.deepEqual(peakMargin([]), { usd: 0, at: null, open: 0 });
+  assert.deepEqual(peakMargin([{ at: 0, until: 10, margin: 5 }, { at: 5, until: 20, margin: 7 }, { at: 10, until: 30, margin: 9 }]), { usd: 16, at: 10, open: 2 },
+    'at 10 the first has ended: 7 + 9, not 5 + 7 + 9');
+  assert.deepEqual(peakMargin([{ at: 0, until: 100, margin: 5 }, { at: 1, until: 100, margin: 5 }, { at: 2, until: 100, margin: 5 }]), { usd: 15, at: 2, open: 3 });
+  // a trade's own: the model at its entry premium and BTC, times its lots
+  const r = simulateDay({ from, to, signals: [sig(10)], bars: perp([[0, 84_000], [1_439, 84_050]]), board: contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]), plan: planOfParams({ ...P, lots: 16 }, { from, to }) });
+  const t = r.trades[0]!;
+  assert.ok(Math.abs(t.marginUsd - fundsRequiredPerContract({ spot: 84_000, premium: t.entry, leverage: 200, contractValue: 0.001 }) * 16) < 1e-9);
+  assert.ok(t.marginUsd > 0);
+});

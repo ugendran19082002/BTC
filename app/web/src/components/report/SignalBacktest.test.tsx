@@ -29,6 +29,7 @@ const RESULT: SignalBacktestResponse = {
   from: '2026-10-01', to: '2026-10-13',
   params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 },
   deskLimits: [{ account: 'Savings', max: 58, ce: 80, pe: 80 }, { account: 'Expenses', max: 35, ce: 80, pe: 80 }],
+  margin: { peakUsd: 300, peakDay: '2026-10-13', peakAt: Date.parse('2026-10-13T04:29:00+05:30'), peakOpen: 58, avgDailyPeakUsd: 200, avgTradeUsd: 5.2 },
   signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
   strategy: null,
   strategies: [
@@ -378,6 +379,16 @@ describe('SignalBacktest', () => {
     expect(screen.getByText(/· SL ≥ 150, TGT ≥ 150 ≤ 900 pts/)).toBeInTheDocument();
     fireEvent.click(range.getByRole('button', { name: 'Turn the range off' }));
     await waitFor(() => expect(lastQuery().params).toMatchObject({ slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0 }));
+  });
+
+  it('[critical] the margin: the most at once, the result on it, an average day\'s most -- and when, with how many open', async () => {
+    show();
+    const panel = within((await screen.findByText('Backtest result')).closest('section, div')!.parentElement!);
+    const tile = (label: string) => panel.getByText(label).parentElement!.textContent!.replace(label, '');
+    expect(tile('Margin at most')).toMatch(/^₹25,500/);                 // $300 at ₹85
+    expect(tile('On that margin')).toBe('−40.0%');                      // −$120 on $300
+    expect(tile("A day's most, average")).toMatch(/^₹17,000/);
+    expect(panel.getByText(/the most at once was 58 trades open at 4:29 AM on the Tue 13 Oct expiry; a trade held ₹442/)).toBeInTheDocument();
   });
 
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {

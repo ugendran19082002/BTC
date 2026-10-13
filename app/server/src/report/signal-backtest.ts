@@ -4,6 +4,7 @@ import { optionSnapshotsSchema } from '../market/option-snapshots.js';
 import { entrySchema } from '../entry/paper.js';
 import { methodsSchema } from '../entry/catalogue.js';
 import { fillChargesUsd } from '../trading/charges.js';
+import { fundsRequiredPerContract } from '../trading/margin.js';
 import { CHAIN_KEY } from '../trading/pnl-history.js';
 import { FAMILIES, PATTERNS, familyOf, sessionOf, type MinuteBar, type PatternKey } from './market-day.js';
 import { marketDays, marketReport, type Tot } from './market-report.js';
@@ -97,6 +98,8 @@ export type BtTrade = {
   netUsd: number;
   /** The charges on both fills, dollars: the exchange's fee and its GST (`fillChargesUsd`). */
   chargesUsd: number;
+  /** The margin it held while open, dollars: the desk's own estimate at 200x (`fundsRequiredPerContract`), as the Signal Strategies card prices it. */
+  marginUsd: number;
   /** What the same trade made on the perp, in points: to the level reached, or to the perp's price at the window's end. */
   perpPts: number;
 };
@@ -315,6 +318,7 @@ export function simulateDay(o: { from: number; to: number; signals: readonly BtS
     trades.push({
       signal: sig, cp, strike: pick.strike, lots, entryAt, entry, exitAt, exit, by,
       netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges, chargesUsd: charges,
+      marginUsd: fundsRequiredPerContract({ spot: pick.spot ?? sig.fillPrice, premium: entry, leverage: 200, contractValue: CONTRACT_VALUE }) * lots,
       perpPts: (perpPx - sig.fillPrice) * sig.dir,
     });
   }
@@ -359,7 +363,9 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
   return [...by.values()];
 }
 
-type HeldDay = { at: number; cells: BtCell[]; skipped: Record<BtSkip, number>; signals: number };
+/** A trade's time open and the margin it held, with what it is filtered by: what the day's peak margin is worked from. */
+type Span = { at: number; until: number; margin: number; tf: string; method: string };
+type HeldDay = { at: number; cells: BtCell[]; skipped: Record<BtSkip, number>; signals: number; spans: Span[] };
 const held = new Map<string, HeldDay>();
 export function clearSignalBacktestCache(): void { held.clear(); }
 /** The SL or the TGT outside the range asked for: nearer than a minimum, or further than a maximum. 0 is no bound. */
@@ -408,9 +414,28 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
     bars: bars.map((b) => ({ at: Number(b.at), high: Number(b.high), low: Number(b.low), close: Number(b.vwap) })),
     board: board.map((b) => ({ at: Number(b.at), cp: b.cp, strike: Number(b.strike), spot: num(b.spot), bid: num(b.bid), ask: num(b.ask), mark: num(b.mark), delta: num(b.delta), oi: num(b.oi) })),
   });
-  const out: HeldDay = { at: now, cells: cellsOf(day, r.trades), skipped: r.skipped, signals: signals.length };
+  const out: HeldDay = {
+    at: now, cells: cellsOf(day, r.trades), skipped: r.skipped, signals: signals.length,
+    spans: r.trades.map((t) => ({ at: t.signal.filledAt, until: t.exitAt, margin: t.marginUsd, tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, method: t.signal.method })),
+  };
   held.set(id, out);
   return out;
+}
+
+/**
+ * The most margin open at once over a day's trades, and when: a sweep over their times. A trade ending at the moment
+ * another starts has made room for it -- as "at most N open" counts (`until > at`).
+ */
+export function peakMargin(spans: readonly { at: number; until: number; margin: number }[]): { usd: number; at: number | null; open: number } {
+  const ev: [number, number, number][] = [];
+  for (const x of spans) { ev.push([x.at, 1, x.margin]); ev.push([x.until, 0, -x.margin]); }
+  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let usd = 0, open = 0, best = { usd: 0, at: null as number | null, open: 0 };
+  for (const [at, kind, m] of ev) {
+    usd += m; open += kind === 1 ? 1 : -1;
+    if (usd > best.usd + 1e-9) best = { usd, at, open };
+  }
+  return best;
 }
 
 export type BtRow = BtTot & { key: string; name: string; tf?: string; days?: number };
@@ -420,6 +445,11 @@ export type SignalBacktest = {
   params: BacktestParams;
   /** The strategy backtested, with what of it could not be replayed and what its real orders made in the range. Null: the screen's own settings. */
   strategy: { id: string; name: string; accountId: number | null; caveats: string[]; real: Tot } | null;
+  /**
+   * The margin the trades shown would have held, by the desk's 200x estimate: the most open at once in the range
+   * (and when, and how many trades that was), an average day's most, and an average trade's.
+   */
+  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; avgDailyPeakUsd: number; avgTradeUsd: number };
   /** Signals in the trade in the range, how many were traded, and why the rest were not. */
   signals: number; skipped: Record<BtSkip, number>;
   total: BtTot;
@@ -460,6 +490,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   // A strategy is only ever asked about its own signals: its way of reading, its timeframes, its methods.
   const ownOnly = (sig: BtSignal) => !rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method));
   const caps = deskCapsOf(o.params);
+  const spansByDay = new Map<string, Span[]>();
   /*
    * With a limit on what is open, which signals are traded at all decides who gets a place: the time frame and
    * method filters then choose the signals before the day is played, not the rows after it. Without one, every
@@ -474,6 +505,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
     signals += h.signals;
     for (const k of BT_SKIPS) skipped[k] += h.skipped[k];
     every.push(...h.cells);
+    spansByDay.set(d.day, h.spans);
   }
   // The method list's own figures: what each method makes when it is not competing for a place -- the run with no desk limit.
   const listCells: BtCell[] = [];
@@ -496,6 +528,17 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
     ? (await marketReport({ from: o.from, to: o.to, now: o.now, spot: o.spot ?? null, account: st.accountId ?? null, tfs: null, methods: null, strategies: [st.name] })).total.real
     : null;
   const cells = every.filter((c) => (!o.tfs || o.tfs.includes(tfKeyOf(c))) && (!o.methods || o.methods.includes(c.method)));
+  // The margin of the trades shown: the same filters as the rows.
+  let peak = { usd: 0, at: null as number | null, open: 0, day: null as string | null };
+  let daily = 0, dailyN = 0, tradeMargin = 0, tradeN = 0;
+  for (const [day, all] of spansByDay) {
+    const shown = all.filter((x) => (!o.tfs || o.tfs.includes(x.tf)) && (!o.methods || o.methods.includes(x.method)));
+    if (!shown.length) continue;
+    const p = peakMargin(shown);
+    if (p.usd > peak.usd) peak = { ...p, day };
+    daily += p.usd; dailyN++;
+    for (const x of shown) { tradeMargin += x.margin; tradeN++; }
+  }
   const group = (keyOf: (c: BtCell) => string | null, nameFor: (c: BtCell) => { name: string; tf?: string }): BtRow[] => {
     const by = new Map<string, BtRow & { seen: Set<string> }>();
     for (const c of cells) {
@@ -512,6 +555,7 @@ async function signalBacktestNow(o: Ask): Promise<SignalBacktest> {
   const distinct = (xs: { key: string; name: string }[]) => [...new Map(xs.map((x) => [x.key, x])).values()];
   return {
     from: o.from, to: o.to, params, signals, skipped,
+    margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, avgTradeUsd: tradeN ? tradeMargin / tradeN : 0 },
     strategy: st ? { id: st.id, name: st.name, accountId: st.accountId ?? null, caveats: strategyCaveats(st), real: real! } : null,
     total: cells.reduce((t, c) => addBt(t, c.tot), zeroBt()),
     days: days.map((d) => ({ ...cells.filter((c) => c.day === d.day).reduce((t, c) => addBt(t, c.tot), zeroBt()), day: d.day, pattern: d.pattern, live: d.live })),

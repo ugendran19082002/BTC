@@ -367,6 +367,14 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   const lots = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&lots=1`);
   assert.ok(Math.abs(lots.body.total.net * 10 - all.body.total.net) < 1e-9);
   assert.ok(all.body.total.charges > 0, 'charges are counted and sent');
+  // the margin: all six were open together at the target's minute -- the peak is all of theirs
+  const m = all.body.margin;
+  assert.ok(m.peakUsd > 0 && m.peakDay === CLIMB && m.peakAt > 0, JSON.stringify(m));
+  assert.ok(m.peakOpen >= 1 && m.peakOpen <= 6);
+  assert.ok(Math.abs(m.avgDailyPeakUsd - m.peakUsd) < 1e-9, 'one day: its peak is the average day\'s');
+  assert.ok(m.avgTradeUsd > 0 && m.avgTradeUsd * m.peakOpen <= m.peakUsd * 1.5);
+  const one = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tf=1h`);
+  assert.ok(one.body.margin.peakUsd < m.peakUsd, 'the margin of the trades shown: the filters narrow it');
   assert.ok(Math.abs(all.body.byTf.reduce((n: number, t: any) => n + t.charges, 0) - all.body.total.charges) < 1e-9, 'and add up across the time frames');
   const cheap = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&rule=premium&value=20`);
   assert.ok(cheap.body.skipped['no-strike'] > 0, 'no put is offered at 20 or under until late in the day');

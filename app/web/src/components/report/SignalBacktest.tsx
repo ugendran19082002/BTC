@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { getSignalBacktest } from '@/api/signal-backtest';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
-import { dayLabel, moneyText, ptsText } from '@/lib/market-report';
+import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
 import type { PairStat } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
 import { time12 } from '@/lib/time';
@@ -486,6 +486,23 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             <p className="m-0 mt-1 px-1 text-[12px] text-muted-foreground">
               Charges: Delta&apos;s fee on each fill (the lower of 0.01% of the BTC value and 3.5% of the premium) and 18% GST on it, on the sale and on the buy-back -- {t.n > 0 ? moneyText(-t.charges / t.n) : '—'} a trade, {t.net + t.charges !== 0 ? `${Math.round((100 * t.charges) / Math.abs(t.net + t.charges))}% of the result before them` : ''}.
             </p>
+            {/* Margin (owner, 13 Oct 2026): what the trades would have tied up, and what the result is on it. An older server sends none. */}
+            {r.margin && r.margin.peakUsd > 0 && (
+              <>
+                <div className="mt-2">
+                  <Stats cols={3}>
+                    <Stat label="Margin at most">{moneyText(r.margin.peakUsd).replace('+', '')}</Stat>
+                    <Stat label="On that margin" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{`${t.net >= 0 ? '+' : '−'}${Math.abs((100 * t.net) / r.margin.peakUsd).toFixed(1)}%`}</Stat>
+                    <Stat label="A day's most, average">{moneyText(r.margin.avgDailyPeakUsd).replace('+', '')}</Stat>
+                  </Stats>
+                </div>
+                <p className="m-0 mt-1 px-1 text-[12px] leading-snug text-muted-foreground">
+                  Estimated by the desk&apos;s 200x model, as on the Signal Strategies card: the most at once was {r.margin.peakOpen} trade{r.margin.peakOpen === 1 ? '' : 's'} open
+                  {r.margin.peakAt !== null ? ` at ${timeIst(r.margin.peakAt)}` : ''}{r.margin.peakDay ? ` on the ${dayLabel(r.margin.peakDay)} expiry` : ''}; a trade held {moneyText(r.margin.avgTradeUsd).replace('+', '')} on average.
+                  Delta&apos;s own figure moves with the premium and is often a little higher.
+                </p>
+              </>
+            )}
             <div className="mt-2">
               <Stats cols={3}>
                 <Stat label="Trades">{count(t.n)}</Stat>
