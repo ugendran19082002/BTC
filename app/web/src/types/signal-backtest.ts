@@ -35,7 +35,7 @@ export type SignalBacktestResponse = {
   /** The signal strategies there are to backtest by: those that sell. */
   strategies: { id: string; name: string; enabled: boolean; account: string | null; methods: string[]; tfs: string[]; target?: { pct: number; steps: { at: string; pct: number }[] } | null }[];
   /** The margin the trades shown would have held, by the desk's 200x estimate. */
-  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; avgDailyPeakUsd: number; avgTradeUsd: number };
+  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, together. An older server sends none. */ peakLots?: number; avgDailyPeakUsd: number; avgTradeUsd: number };
   /** Each trading account's limits as they stand: offered as one tap. */
   deskLimits: { account: string; max: number; ce: number; pe: number }[];
   signals: number; skipped: Record<BtSkip, number>;
@@ -82,5 +82,5 @@ export type BacktestPortfolioResult = {
   total: BtTot;
   days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];
   /** The most held at once across all of them, laid on one clock; and the sum of each one's own most, which it never exceeds. */
-  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
+  margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, together. An older server sends none. */ peakLots?: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
 };

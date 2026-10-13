@@ -27,6 +27,11 @@ vi.mock('@/api/signal-backtest', () => ({
   getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a),
 }));
 
+const getBacktestSaves = vi.fn();
+vi.mock('@/api/backtest-saves', () => ({
+  getBacktestSaves: (...a: unknown[]) => getBacktestSaves(...a),
+}));
+
 /**
  * A signal strategy on the form (2 Oct 2026): the desk's entry signals sold as
  * options -- BUY sells the put, SELL the call -- with the methods picked from
@@ -98,6 +103,7 @@ beforeEach(() => {
   // No record as options unless a test gives one: the list is then the perp's points, as it was before 13 Oct 2026.
   getMethodOptionRecord.mockRejectedValue(new Error('No record as options on this desk.'));
   getSignalBacktest.mockRejectedValue(new Error('No backtest on this desk.'));
+  getBacktestSaves.mockResolvedValue({ saves: [], portfolios: [] });
 });
 
 describe('a form of its own: only what a signal strategy has', () => {
@@ -1417,5 +1423,49 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
       'the minimum premium (strategy: $15; Backtest: $10)',
       'the hours (strategy: 05:30–17:29; Backtest: 21:30–15:59)',
     ]);
+  });
+
+  it('[critical] the pick against the record: how many of the ticked are in profit, in loss and without a trade, and the ones in profit left out -- then "Pick only these" makes the pick exactly the list', async () => {
+    // as options under this strategy: BOS and the sweep in profit, the breakout in loss, order flow without a trade.
+    // Ticked: the breakout (in loss) and order flow (no trade) -- a pick that has drifted from the list.
+    show(signalStrategy({ methods: ['breakout', 'order-flow'] }));
+    tab('Signals');
+    await waitFor(() => expect(basis("As options · this strategy's rules")).toHaveAttribute('aria-checked', 'true'), { timeout: 4_000 });
+    expect(screen.getByLabelText('the pick against the record')).toHaveTextContent('Of the 2 picked: 0 in profit, 1 in loss, 1 with no trade as options. In loss: #1 Breakout. In profit and not picked: 2 (#6 BOS, #3 Liquidity sweep).');
+
+    // the list of those in profit, and exactly it: the two not on it are unticked, the two on it ticked
+    const by = await results();
+    fireEvent.click(within(by).getByRole('button', { name: /^Profit/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick only these (2)' }));
+    expect(screen.getByLabelText('the pick against the record')).toHaveTextContent('Of the 2 picked: 2 in profit, 0 in loss, 0 with no trade as options. Every method in profit is picked.');
+    fireEvent.click(within(by).getByRole('button', { name: /^All/ }));
+    expect(screen.getAllByRole('checkbox').filter((c) => (c as HTMLInputElement).checked).map((c) => c.getAttribute('aria-label'))).toEqual(['#3 Liquidity sweep', '#6 BOS']);
+    expect(screen.getByRole('button', { name: 'Pick only these (4)' })).toBeEnabled();
+    // said, with the way back
+    expect(screen.getByRole('status')).toHaveTextContent('Took the 2 methods of the list shown, in place of the 2 picked before.');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getAllByRole('checkbox').filter((c) => (c as HTMLInputElement).checked).map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout', '#11 Order flow']);
+
+    // saved: what was picked is what is kept
+    fireEvent.click(within(by).getByRole('button', { name: /^Profit/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick only these (2)' }));
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect([...saved().config.signal!.methods].sort()).toEqual(['bos', 'liquidity-sweep']);
+  });
+
+  it('[critical] the methods ticked in a saved backtest are taken in one step -- only those that have any -- and can be undone', async () => {
+    const save = (id: string, name: string, methods: string[], tfs: string[]) => ({ id, name, query: { params: {}, tfs, methods, strategy: null }, createdAt: 1, updatedAt: 1 });
+    getBacktestSaves.mockResolvedValue({ saves: [save('s1', '1h time', ['bos', 'order-flow', 'a-method-since-retired'], ['1h']), save('s2', 'Desk rules', [], []), save('s3', 'All frame', ['breakout'], ['chain'])], portfolios: [] });
+    show(signalStrategy({ methods: ['breakout'] }));
+    tab('Signals');
+    const pick = await screen.findByRole('combobox', { name: 'copy methods from a saved backtest' });
+    expect(within(pick).getAllByRole('option').map((o) => o.textContent)).toEqual(['Copy methods from a saved backtest…', '1h time — 3 methods · 1h', 'All frame — 1 method · with the chain']);
+    fireEvent.change(pick, { target: { value: 's1' } });
+    // the ones the desk still has: a method retired since is left behind
+    expect(screen.getAllByRole('checkbox').filter((c) => (c as HTMLInputElement).checked).map((c) => c.getAttribute('aria-label'))).toEqual(['#6 BOS', '#11 Order flow']);
+    expect(screen.getByRole('status')).toHaveTextContent('Took the 2 methods of the saved backtest “1h time”, in place of the 1 picked before.');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getAllByRole('checkbox').filter((c) => (c as HTMLInputElement).checked).map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout']);
   });
 });

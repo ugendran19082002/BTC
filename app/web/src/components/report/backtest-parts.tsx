@@ -89,3 +89,15 @@ export function Table({ caption, first, rows, perp = false, days = false }: { ca
     </table>
   );
 }
+
+/**
+ * A margin figure's working, in a sentence (owner, 13 Oct 2026: "I think the margin amount is shown wrongly --
+ * check every calculation"): how many trades and lots were open at its moment, and what one lot holds -- BTC ÷ 200
+ * × 0.001 at the desk's 200x, as Delta's own ticket says under "Funds req." -- so the figure can be multiplied
+ * out by whoever reads it. Null where the server does not say how many lots.
+ */
+export function marginWorking(m: { peakUsd: number; peakOpen: number; peakLots?: number }): string | null {
+  if (!m.peakLots || !(m.peakUsd > 0)) return null;
+  const lot = m.peakUsd / m.peakLots;
+  return `${count(m.peakOpen)} trade${m.peakOpen === 1 ? '' : 's'} of ${count(m.peakLots)} lot${m.peakLots === 1 ? '' : 's'} together × ${moneyText(lot).replace('+', '')} a lot (BTC ÷ 200 × 0.001, at 200x) = ${moneyText(m.peakUsd).replace('+', '')}.`;
+}

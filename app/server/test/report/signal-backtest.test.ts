@@ -216,10 +216,12 @@ test('[critical] a signal only if its SL and TGT are in range: points from the f
 test('[critical] the margin: each trade\'s by the desk\'s 200x estimate, and the most open at once -- a trade ending as another starts makes room', async () => {
   const { peakMargin, planOfParams } = await import('../../src/report/signal-backtest.js');
   const { fundsRequiredPerContract } = await import('../../src/trading/margin.js');
-  assert.deepEqual(peakMargin([]), { usd: 0, at: null, open: 0 });
-  assert.deepEqual(peakMargin([{ at: 0, until: 10, margin: 5 }, { at: 5, until: 20, margin: 7 }, { at: 10, until: 30, margin: 9 }]), { usd: 16, at: 10, open: 2 },
+  assert.deepEqual(peakMargin([]), { usd: 0, at: null, open: 0, lots: 0 });
+  assert.deepEqual(peakMargin([{ at: 0, until: 10, margin: 5 }, { at: 5, until: 20, margin: 7 }, { at: 10, until: 30, margin: 9 }]), { usd: 16, at: 10, open: 2, lots: 0 },
     'at 10 the first has ended: 7 + 9, not 5 + 7 + 9');
-  assert.deepEqual(peakMargin([{ at: 0, until: 100, margin: 5 }, { at: 1, until: 100, margin: 5 }, { at: 2, until: 100, margin: 5 }]), { usd: 15, at: 2, open: 3 });
+  assert.deepEqual(peakMargin([{ at: 0, until: 100, margin: 5 }, { at: 1, until: 100, margin: 5 }, { at: 2, until: 100, margin: 5 }]), { usd: 15, at: 2, open: 3, lots: 0 });
+  // and how many lots that was: what the margin is so many times a lot's
+  assert.deepEqual(peakMargin([{ at: 0, until: 10, margin: 5, lots: 2 }, { at: 5, until: 20, margin: 7, lots: 3 }, { at: 10, until: 30, margin: 9, lots: 4 }]), { usd: 16, at: 10, open: 2, lots: 7 });
   // a trade's own: the model at its entry premium and BTC, times its lots
   const r = simulateDay({ from, to, signals: [sig(10)], bars: perp([[0, 84_000], [1_439, 84_050]]), board: contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]), plan: planOfParams({ ...P, lots: 16 }, { from, to }) });
   const t = r.trades[0]!;

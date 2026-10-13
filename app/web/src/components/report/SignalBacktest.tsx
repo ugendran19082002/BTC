@@ -12,7 +12,7 @@ import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
-import { Entry, FOLD, Ledger, Table, count, each, netClass, rate } from '@/components/report/backtest-parts';
+import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
 import type { PortfolioCap, PortfolioLimit } from '@/api/backtest-saves';
 import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, settingsWords } from '@/components/report/backtest-words';
@@ -317,7 +317,12 @@ function ChipRow({ label, children }: { label: string; wide?: boolean; children:
  * default -- what the saved backtests themselves carry, or the account's own limit -- and takes a typed one on
  * leaving a field or Enter, checked as the desk checks it; Default puts it back.
  */
-function SharedCap({ value, fallback, edited, onApply, onReset }: { value: PortfolioCap | null; fallback: PortfolioCap | null; edited: boolean; onApply: (c: PortfolioCap) => void; onReset: () => void }) {
+function SharedCap({ value, fallback, picks = [], edited, onApply, onReset }: {
+  value: PortfolioCap | null; fallback: PortfolioCap | null;
+  /** Limits to take in one tap: each trading account's own as it stands, and the saved backtests' own. */
+  picks?: readonly { label: string; cap: PortfolioCap }[];
+  edited: boolean; onApply: (c: PortfolioCap) => void; onReset: () => void;
+}) {
   const shown = value ?? fallback;
   const text = (c: PortfolioCap | null) => ({ max: c ? String(c.max) : '', ce: c ? String(c.ce) : '', pe: c ? String(c.pe) : '' });
   const [draft, setDraft] = useState(text(shown));
@@ -344,8 +349,16 @@ function SharedCap({ value, fallback, edited, onApply, onReset }: { value: Portf
     </label>
   );
   const said = (c: PortfolioCap) => `${c.max} open · CE ${c.ce}% · PE ${c.pe}%`;
+  const same = (a: PortfolioCap, b: PortfolioCap | null) => b !== null && a.max === b.max && a.ce === b.ce && a.pe === b.pe;
   return (
     <div role="group" aria-label="One account's limit" className="grid min-w-0 gap-1.5">
+      {picks.length > 0 && (
+        <div role="group" aria-label="Limits to take" className="flex flex-wrap gap-1.5">
+          {picks.map((x) => (
+            <Chip key={`${x.label}|${said(x.cap)}`} on={same(x.cap, shown)} onClick={() => (same(x.cap, fallback) ? onReset() : onApply(x.cap))}>{x.label} · {x.cap.max} · CE {x.cap.ce}% · PE {x.cap.pe}%</Chip>
+          ))}
+        </div>
+      )}
       <div className="grid min-w-0 grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2">
         {input('max', 'At most open, together', '')}
         {input('ce', 'CE max', '%')}
@@ -354,7 +367,7 @@ function SharedCap({ value, fallback, edited, onApply, onReset }: { value: Portf
       <p role={problem ? 'alert' : 'status'} className={cn('m-0 px-1 text-[12px] leading-snug', problem ? 'text-[var(--down)]' : 'text-muted-foreground')}>
         {problem ?? (!shown ? 'No saved backtest and no account has an “at most open”: none is shared until one is typed here.'
           : edited ? `Your own: ${said(shown)}.${fallback ? ` The default is ${said(fallback)}.` : ''}`
-            : `The default: ${said(shown)} -- the largest “at most open” among the saved backtests run, or the account's own. Type another to try it.`)}
+            : `The default: ${said(shown)} -- the account's own limit as it stands on the desk (the saved backtests' own, where no account has one). Type another to try it.`)}
         {edited && !problem && <> <button type="button" onClick={onReset} className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] font-medium text-[var(--accent)] underline">Default</button></>}
       </p>
     </div>
@@ -673,11 +686,22 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', !settingsOpen && 'hidden', wide && 'xl:grid')}>{setup}</div>
     </Panel>
   );
-  // The default: the largest "at most open" among the saved backtests run (all of them, before any is), with its shares; else the account's own.
+  /*
+   * The default is the ACCOUNT's own limit as it stands on the desk -- the trading account with the most room --
+   * and only without one the largest "at most open" typed into the saved backtests run. It was the other way
+   * round for an evening, and "one account" was held to the 120 in the saved backtests while the account itself
+   * was set to 200: a margin of an account that was not the owner's ("the margin amount is shown wrongly").
+   * Both are offered as one tap beside the fields.
+   */
   const ran = together ? savedList.filter((x) => together.ids.includes(x.id)) : savedList;
   const carried = ran.map((x) => x.query.params).filter((p) => (p.deskMax ?? 0) > 0).sort((a, b) => b.deskMax - a.deskMax)[0];
-  const ofAccount = [...(r?.deskLimits ?? [])].sort((a, b) => b.max - a.max)[0];
-  const capDefault: PortfolioCap | null = carried ? { max: carried.deskMax, ce: carried.cePct ?? 100, pe: carried.pePct ?? 100 } : ofAccount ? { max: ofAccount.max, ce: ofAccount.ce, pe: ofAccount.pe } : null;
+  const accounts = [...(r?.deskLimits ?? [])].sort((a, b) => b.max - a.max);
+  const capOfSaved: PortfolioCap | null = carried ? { max: carried.deskMax, ce: carried.cePct ?? 100, pe: carried.pePct ?? 100 } : null;
+  const capDefault: PortfolioCap | null = accounts[0] ? { max: accounts[0].max, ce: accounts[0].ce, pe: accounts[0].pe } : capOfSaved;
+  const capPicks: { label: string; cap: PortfolioCap }[] = [
+    ...accounts.map((a) => ({ label: a.account, cap: { max: a.max, ce: a.ce, pe: a.pe } })),
+    ...(capOfSaved ? [{ label: 'Saved backtests', cap: capOfSaved }] : []),
+  ];
   const cap = capTyped ?? capDefault;
   const title = wide && (
     <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>
@@ -720,7 +744,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                       { key: 'shared', label: 'One account', spoken: 'One account: one limit on open trades across all of them' },
                       { key: 'own', label: 'Each its own limit', spoken: 'Each saved backtest keeps its own limit' },
                     ]} />
-                  {limit === 'shared' && <SharedCap value={capTyped} fallback={capDefault} edited={capTyped !== null} onApply={setCapTyped} onReset={() => setCapTyped(null)} />}
+                  {limit === 'shared' && <SharedCap value={capTyped} fallback={capDefault} picks={capPicks} edited={capTyped !== null} onApply={setCapTyped} onReset={() => setCapTyped(null)} />}
                   <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
                     {limit === 'shared'
                       ? 'One account: the desk’s “at most open” and its CE and PE shares are the account’s, so they are traded together for the same places. The margin is then what one account would really have held.'
@@ -802,6 +826,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                   Estimated by the desk&apos;s 200x model, as on the Signal Strategies card: the most at once was {r.margin.peakOpen} trade{r.margin.peakOpen === 1 ? '' : 's'} open
                   {r.margin.peakAt !== null ? ` at ${timeIst(r.margin.peakAt)}` : ''}{r.margin.peakDay ? ` on the ${dayLabel(r.margin.peakDay)} expiry` : ''}; a trade held {moneyText(r.margin.avgTradeUsd).replace('+', '')} on average.
                   Delta&apos;s own figure moves with the premium and is often a little higher.
+                  {marginWorking(r.margin) && <> <b className="font-medium text-foreground">The working:</b> {marginWorking(r.margin)}</>}
                 </p>
               </>
             )}

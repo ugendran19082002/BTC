@@ -32,7 +32,7 @@ const RESULT: SignalBacktestResponse = {
   from: '2026-10-01', to: '2026-10-13',
   params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 },
   deskLimits: [{ account: 'Savings', max: 58, ce: 80, pe: 80 }, { account: 'Expenses', max: 35, ce: 80, pe: 80 }],
-  margin: { peakUsd: 300, peakDay: '2026-10-13', peakAt: Date.parse('2026-10-13T04:29:00+05:30'), peakOpen: 58, avgDailyPeakUsd: 200, avgTradeUsd: 5.2 },
+  margin: { peakUsd: 300, peakDay: '2026-10-13', peakAt: Date.parse('2026-10-13T04:29:00+05:30'), peakOpen: 58, peakLots: 580, avgDailyPeakUsd: 200, avgTradeUsd: 5.2 },
   signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
   strategy: null,
   strategies: [
@@ -393,6 +393,8 @@ describe('SignalBacktest', () => {
     expect(tile('Margin at most')).toMatch(/^₹25,500/);                 // $300 at ₹85
     expect(tile('On that margin')).toBe('−40.0%');                      // −$120 on $300
     expect(tile("A day's most, average")).toMatch(/^₹17,000/);
+    // and its working, to be multiplied out by whoever reads it: 58 trades of ten lots, $300 over 580 lots
+    expect(panel.getByText(/The working:/).parentElement!.textContent).toContain('The working: 58 trades of 580 lots together × ₹43.97 a lot (BTC ÷ 200 × 0.001, at 200x) = ₹25,500.');
     expect(panel.getByText(/the most at once was 58 trades open at 4:29 AM on the Tue 13 Oct expiry; a trade held ₹442/)).toBeInTheDocument();
   });
 
@@ -800,7 +802,7 @@ describe('SignalBacktest', () => {
       from: '2026-10-01', to: '2026-10-13', shared, members: [member('a1', 'Alpha', 200), member('b22', 'Beta', 100)],
       total: tot({ n: 300, wins: 150, losses: 150, net: 20, won: 60, lost: 40, charges: 4 }),
       days: [{ day: '2026-10-12', live: false, n: 300, wins: 150, net: 20, charges: 4, byMember: [10, 10] }],
-      margin: { peakUsd: open, peakDay: '2026-10-12', peakAt: Date.parse('2026-10-12T09:15:00+05:30'), peakOpen: open, avgDailyPeakUsd: open, sumOfPeaksUsd: 160 },
+      margin: { peakUsd: open, peakDay: '2026-10-12', peakAt: Date.parse('2026-10-12T09:15:00+05:30'), peakOpen: open, peakLots: open * 2, avgDailyPeakUsd: open, sumOfPeaksUsd: 160 },
     });
     saves.getBacktestPortfolio.mockImplementation(async (_ids: string[], _range: object, limit: string) => (limit === 'own' ? answer(null, 152) : answer({ max: 120, ce: 96, pe: 96, cePct: 80, pePct: 80, turnedAway: 37 }, 120)));
     show();
@@ -811,11 +813,22 @@ describe('SignalBacktest', () => {
     fireEvent.click(await folio().findByRole('button', { name: 'Run the portfolio Both' }));
     await screen.findByRole('table', { name: 'Run together: each saved backtest' });
     const run = () => within(screen.getByText('Run together · Both').closest('section, div')!.parentElement!);
-    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 120, ce: 80, pe: 80 });
-    // the limit is on the screen, with the value it opens on: what the saved backtests themselves carry
+    // the limit is on the screen, with the value it opens on: the ACCOUNT's own as it stands on the desk (Savings: 58 open,
+    // CE and PE 80%) -- not the 120 typed into the saved backtests, which is offered beside it
+    expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 58, ce: 80, pe: 80 });
     const capOf = () => within(folio().getByRole('group', { name: "One account's limit" }));
-    expect([capOf().getByLabelText('At most open, together'), capOf().getByLabelText('CE max'), capOf().getByLabelText('PE max')].map((x) => (x as HTMLInputElement).value)).toEqual(['120', '80', '80']);
-    expect(capOf().getByRole('status')).toHaveTextContent('The default: 120 open · CE 80% · PE 80% -- the largest “at most open” among the saved backtests run, or the account\'s own. Type another to try it.');
+    expect([capOf().getByLabelText('At most open, together'), capOf().getByLabelText('CE max'), capOf().getByLabelText('PE max')].map((x) => (x as HTMLInputElement).value)).toEqual(['58', '80', '80']);
+    expect(capOf().getByRole('status')).toHaveTextContent('The default: 58 open · CE 80% · PE 80% -- the account\'s own limit as it stands on the desk (the saved backtests\' own, where no account has one). Type another to try it.');
+    const picks = () => within(capOf().getByRole('group', { name: 'Limits to take' }));
+    expect(picks().getAllByRole('button').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['Savings · 58 · CE 80% · PE 80%', 'true'], ['Expenses · 35 · CE 80% · PE 80%', 'false'], ['Saved backtests · 120 · CE 80% · PE 80%', 'false'],
+    ]);
+    // one tap takes another: the saved backtests' own 120
+    fireEvent.click(picks().getByRole('button', { name: 'Saved backtests · 120 · CE 80% · PE 80%' }));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 120, ce: 80, pe: 80 }));
+    expect((capOf().getByLabelText('At most open, together') as HTMLInputElement).value).toBe('120');
+    // the working of the margin is said, to be multiplied out: 120 trades of 240 lots at $0.50 a lot
+    expect(run().getByText(/The working:/).parentElement!.textContent).toContain('The working: 120 trades of 240 lots together × ₹42.50 a lot (BTC ÷ 200 × 0.001, at 200x) = ₹10,200.');
 
     // typed: 60 open, calls half of it -- asked for on leaving the field, and said as one's own, with the way back
     fireEvent.change(capOf().getByLabelText('At most open, together'), { target: { value: '60' } });
@@ -823,17 +836,17 @@ describe('SignalBacktest', () => {
     expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 120, ce: 80, pe: 80 });   // not yet
     fireEvent.blur(capOf().getByLabelText('CE max'));
     await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 60, ce: 50, pe: 80 }));
-    expect(capOf().getByRole('status')).toHaveTextContent('Your own: 60 open · CE 50% · PE 80%. The default is 120 open · CE 80% · PE 80%. Default');
+    expect(capOf().getByRole('status')).toHaveTextContent('Your own: 60 open · CE 50% · PE 80%. The default is 58 open · CE 80% · PE 80%. Default');
     // one that cannot be meant is said, and not asked for
     fireEvent.change(capOf().getByLabelText('At most open, together'), { target: { value: '0' } });
     fireEvent.blur(capOf().getByLabelText('At most open, together'));
     expect(capOf().getByRole('alert')).toHaveTextContent('At most open is a whole number from 1 to 500.');
     expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 60, ce: 50, pe: 80 });
     fireEvent.change(capOf().getByLabelText('At most open, together'), { target: { value: '60' } });
-    // Default: back to what the saved backtests carry
+    // Default: back to the account's own
     fireEvent.click(capOf().getByRole('button', { name: 'Default' }));
-    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 120, ce: 80, pe: 80 }));
-    expect((capOf().getByLabelText('At most open, together') as HTMLInputElement).value).toBe('120');
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 58, ce: 80, pe: 80 }));
+    expect((capOf().getByLabelText('At most open, together') as HTMLInputElement).value).toBe('58');
     expect(run().getByText(/2 saved backtests,/).textContent).toBe('Thu 1 Oct → Tue 13 Oct · 2 saved backtests, traded as one account: at most 120 open together (CE 96 · PE 96), the longer time frame first, as the desk takes them.');
     expect(run().getByText('37 signals found the account, or their side of it, full and were not traded.')).toBeInTheDocument();
     expect(run().getByText(/the most held at once was 120 trades at 9:15 AM on the Mon 12 Oct expiry -- never more than the account's 120 --/)).toBeInTheDocument();

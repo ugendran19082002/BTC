@@ -352,6 +352,7 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   const m = all.body.margin;
   assert.ok(m.peakUsd > 0 && m.peakDay === CLIMB && m.peakAt > 0, JSON.stringify(m));
   assert.ok(m.peakOpen >= 1 && m.peakOpen <= 6);
+  assert.equal(m.peakLots, m.peakOpen * 10, 'ten lots a trade: the lots open at the peak');
   assert.ok(Math.abs(m.avgDailyPeakUsd - m.peakUsd) < 1e-9, 'one day: its peak is the average day\'s');
   assert.ok(m.avgTradeUsd > 0 && m.avgTradeUsd * m.peakOpen <= m.peakUsd * 1.5);
   const one = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tf=1h`);
@@ -545,6 +546,7 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.ok(close(m.sumOfPeaksUsd, aloneA.body.margin.peakUsd + aloneB.body.margin.peakUsd));
   assert.ok(m.peakUsd > aloneA.body.margin.peakUsd && m.peakUsd <= m.sumOfPeaksUsd + 1e-9, JSON.stringify(m));
   assert.equal(m.peakDay, CLIMB);
+  assert.ok(m.peakLots > 0 && m.peakLots <= 6 * 10 + 3 * 3, `the lots open at that moment, across both: ${m.peakLots}`);
 
   assert.equal(run.body.shared, null, 'neither has a limit of the desk\'s: there is none to share, and they are added up');
   // as one account: at most 2 open across both. The same signals are asked for by both; the places are the account's

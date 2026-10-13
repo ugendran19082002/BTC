@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BtRow, SavedQuery } from '@/types/signal-backtest';
 import { Empty, Loading, Panel, Stat, Stats } from '@/components/mobile/parts';
 import { Updating, useAnswer } from '@/components/report/Updating';
-import { Entry, Ledger, Table, count, each, netClass, rate } from '@/components/report/backtest-parts';
+import { Entry, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
 
 /**
  * Backtests kept by name, and run together (owner, 13 Oct 2026: "save a backtest's settings and run a saved one;
@@ -109,6 +109,7 @@ function PortfolioResult({ title, r, wide }: { title: string; r: BacktestPortfol
                 {r.margin.peakAt !== null ? ` at ${timeIst(r.margin.peakAt)}` : ''}{r.margin.peakDay ? ` on the ${dayLabel(r.margin.peakDay)} expiry` : ''}
                 {r.shared ? <> -- never more than the account&apos;s {r.shared.max}</> : ''} -- what running them side by side on one account would have needed, by the desk&apos;s 200x estimate.
                 It is under the sum of each one&apos;s own most where their busiest moments differ.
+                {marginWorking(r.margin) && <> <b className="font-medium text-foreground">The working:</b> {marginWorking(r.margin)}</>}
                 {!r.shared && r.margin.peakOpen > 0 && ' Each kept its own limit here, so more may be open together than one account would hold: choose One account to hold them to one limit.'}
               </p>
             </>
