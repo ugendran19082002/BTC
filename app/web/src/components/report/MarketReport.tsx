@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { getMarketBreakdown, getMarketReport } from '@/api/market-report';
-import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import {
@@ -14,6 +13,7 @@ import { Chip, Empty, Loading, Panel, Pill, Segmented, Stat, Stats } from '@/com
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
+import { Updating, useAnswer } from '@/components/report/Updating';
 
 /**
  * The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole
@@ -147,9 +147,7 @@ function RowsTable({ caption, first, rows, source }: { caption: string; first: s
 
 /** One day, one kind of day or one family, opened: the exits, the best and worst pairs, by timeframe and by strategy. */
 function Breakdown({ query, scope, source, wide }: { query: MarketQuery; scope: MarketScope; source: Source; wide: boolean }) {
-  const read = usePoll(() => getMarketBreakdown(query, scope), 180_000, {
-    deps: [query.from, query.to, query.account, query.tfs.join(), query.methods.join(), query.strategies.join(), scope.day, scope.pattern, scope.family],
-  });
+  const read = useAnswer(JSON.stringify([query, scope]), () => getMarketBreakdown(query, scope), 180_000);
   if (!read.data) return <Loading error={read.error} what="the breakdown" />;
   const side = read.data[source];
   const amount = (p: { net: number }) => netText(source, p.net);
@@ -157,7 +155,8 @@ function Breakdown({ query, scope, source, wide }: { query: MarketQuery; scope: 
   const worst = side.pairs.filter((p) => p.n > 0 && p.net < 0).map(pairOf).sort((a, b) => a.net - b.net || b.trades - a.trades);
   const what = source === 'signal' ? 'signal history' : 'real orders';
   return (
-    <div className="mt-3 grid gap-3 border-t border-[var(--line-soft)] pt-3">
+    <div className="mt-3 border-t border-[var(--line-soft)] pt-3">
+      <Updating busy={read.stale} what="the breakdown">
       <Exits source={source} signal={read.data.signal.total} real={read.data.real.total} wide={wide} />
       <div className={cn('grid gap-3', wide && 'lg:grid-cols-2')}>
         <PairList title={`Best pairs · ${what}`} tone="up" pairs={best} amount={amount} empty="No method and time frame in profit here." />
@@ -175,6 +174,7 @@ function Breakdown({ query, scope, source, wide }: { query: MarketQuery; scope: 
           </section>
         )}
       </div>
+      </Updating>
     </div>
   );
 }
@@ -402,7 +402,8 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
   const [allDays, setAllDays] = useState(false);
   const range = expiry.range;
   const query: MarketQuery = { ...range, account, tfs, methods, strategies };
-  const read = usePoll(() => getMarketReport(query), 120_000, { deps: [range.from, range.to, account, tfs.join(), methods.join(), strategies.join()] });
+  // The answer is kept with what was asked: a report for the filters before is greyed while the new one is worked out.
+  const read = useAnswer(JSON.stringify(query), () => getMarketReport(query), 120_000);
   const r = read.data;
 
   // Each method and strategy in its list with what it made (owner, 13 Oct 2026: "show the methods' profit and loss"):
@@ -453,6 +454,7 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       {filters}
 
+      <Updating busy={read.stale} what="the market report">
       {(() => {
         const lines = standoutsOf(r, source);
         return lines.length === 0 ? null : (
@@ -531,6 +533,7 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
         The market figures are from the desk&apos;s own one-minute tape of the perp; ATR is the average true range of the day&apos;s 15-minute candles, its
         percentile is against the 30 expiry days before, volatility expansion is against the 5 before, and candle expansion is the largest candle over the usual one.
       </p>
+      </Updating>
     </div>
   );
 }

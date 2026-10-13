@@ -293,6 +293,29 @@ describe('SignalBacktest', () => {
     expect(limits.queryByRole('group', { name: /^PE max/ })).not.toBeInTheDocument();
   });
 
+  it('[critical] custom hours: a From and a To time, past midnight too, said after and changeable', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('radio', { name: 'Signals in hours of your own' }));
+    const from = screen.getByLabelText('From (IST)'), to = screen.getByLabelText('To (IST)');
+    expect(lastQuery().params.window).toBe('desk');                 // nothing asked until the hours are used
+    fireEvent.change(from, { target: { value: '22:00' } });
+    fireEvent.change(to, { target: { value: '22:00' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('The From and To times must differ.');
+    expect(screen.getByRole('button', { name: 'Use these hours' })).toBeDisabled();
+    fireEvent.change(to, { target: { value: '02:00' } });
+    expect(screen.getByText(/Signals filled from 10:00 PM to 2:00 AM, past midnight/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Use these hours' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ window: 'custom', hoursFrom: '22:00', hoursTo: '02:00' }));
+    expect(screen.getByRole('radio', { name: 'Signals in hours of your own' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('10:00 PM → 2:00 AM')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Change hours' }));
+    expect(screen.getByLabelText('From (IST)')).toHaveValue('22:00');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Signals of the whole expiry day' }));
+    await waitFor(() => expect(lastQuery().params.window).toBe('all'));
+  });
+
   it('nothing traded says so; a backtest that cannot be read says why; a first read says it takes a moment', async () => {
     getSignalBacktest.mockResolvedValue({ ...RESULT, total: tot(), signals: 300, skipped: { ...RESULT.skipped, 'no-strike': 0, 'no-exit-price': 0 }, pairs: [], byTf: [], days: [], byFamily: [], byPattern: [] });
     const { unmount } = show();

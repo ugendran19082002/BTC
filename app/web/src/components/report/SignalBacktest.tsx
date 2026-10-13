@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { getSignalBacktest } from '@/api/signal-backtest';
-import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, ptsText } from '@/lib/market-report';
@@ -12,6 +11,7 @@ import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/component
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
+import { Updating, useAnswer } from '@/components/report/Updating';
 
 /**
  * The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price?
@@ -245,9 +245,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const set = (o: Partial<BacktestParams>) => setParams({ ...params, ...o });
   const range = expiry.range;
   const query: BacktestQuery = { ...range, params, tfs, methods, strategy: strategyId };
-  const read = usePoll(() => getSignalBacktest(query), 300_000, {
-    deps: [range.from, range.to, params.rule, params.value, params.lots, params.targetPct, params.stopPct, params.window, params.hoursFrom, params.hoursTo, params.deskMax, params.cePct, params.pePct, tfs.join(), methods.join(), strategyId],
-  });
+  // The answer is kept with what was asked: a result for the settings before is greyed while the new one is worked out.
+  const read = useAnswer(JSON.stringify(query), () => getSignalBacktest(query), 300_000);
   const r = read.data;
   // A strategy remembered from before that is gone now (deleted): back to the settings, rather than an error every time.
   const gone = strategyId !== null && read.error !== null && /No such signal strategy/.test(read.error.message);
@@ -399,6 +398,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       {settings}
 
+      <Updating busy={read.stale} what="the backtest">
       <Panel title="Backtest result">
         {r.strategy && (
           <div className="mb-2 grid gap-1">
@@ -549,9 +549,11 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         How it is worked out: at each signal&apos;s fill on the perp, the put (a BUY) or the call (a SELL) of that expiry day&apos;s contract is sold at its bid, at the
         strike the rule picks; it is bought back at the offer when the perp reaches the signal&apos;s stop or TGT1, or sooner if the option reaches its own
         target or stop, or at the end of the window; charges are taken on both fills. The perp is read a minute at a time; the options every five
-        minutes, which is how often the desk records the whole board, so an exit is priced up to five minutes late. Every signal is taken — there is no
-        limit on open trades, no margin and no queue — so the total is not what an account would have made: read what a trade of each kind made.
+        minutes, which is how often the desk records the whole board, so an exit is priced up to five minutes late.
+        {r.strategy || params.deskMax > 0 ? ' The limits on open trades are counted as set above; margin and the order queue are not' : ' No limit on open trades unless one is set above, no margin and no queue'}
+        {' '}— so the total is not what an account would have made: read what a trade of each kind made.
       </p>
+      </Updating>
     </div>
   );
 }
