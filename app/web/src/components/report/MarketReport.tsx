@@ -410,8 +410,8 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
   // of the record the lists show, in its own unit, green or red.
   const madeNote = (m: { n: number; wins: number; net: number }, src: Source) =>
     (m.n > 0 ? `${m.n.toLocaleString('en-US')} closed · ${pct(m.wins / m.n, 0)} won · ${netText(src, m.net)}` : src === 'real' ? 'no order closed' : 'no trade closed');
-  const methodOptions = (r?.choices.methods ?? []).map((m) => ({ key: m.key, name: m.name, note: madeNote(m[source], source), tone: toneOf(m[source].net) }));
-  const strategyOptions = (r?.choices.strategies ?? []).map((x) => ({ key: x.key, name: x.name, note: madeNote(x, 'real'), tone: toneOf(x.net) }));
+  const methodOptions = (r?.choices.methods ?? []).map((m) => ({ key: m.key, name: m.name, note: madeNote(m[source], source), tone: toneOf(m[source].net), value: m[source].net }));
+  const strategyOptions = (r?.choices.strategies ?? []).map((x) => ({ key: x.key, name: x.name, note: madeNote(x, 'real'), tone: toneOf(x.net), value: x.net }));
 
   const filters = (
     <>
@@ -433,8 +433,8 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
         // The bar bleeds to a phone's edges (-16px); on the desk the same 16px is given back, so it sits inside the screen.
         <div className={wide ? 'px-4' : undefined}>
           <FilterBar onClear={methods.length || strategies.length ? () => { setMethods([]); setStrategies([]); } : null}>
-            <FilterPicker noun={METHODS} options={methodOptions} picked={methods} onChange={setMethods} />
-            {r.choices.strategies.length > 0 && <FilterPicker noun={STRATEGIES} options={strategyOptions} picked={strategies} onChange={setStrategies} />}
+            <FilterPicker noun={METHODS} options={methodOptions} picked={methods} onChange={setMethods} split />
+            {r.choices.strategies.length > 0 && <FilterPicker noun={STRATEGIES} options={strategyOptions} picked={strategies} onChange={setStrategies} split />}
           </FilterBar>
         </div>
       )}

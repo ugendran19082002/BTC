@@ -420,10 +420,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                   note: `${x.account ? `${x.account} · ` : ''}${x.methods.length} method${x.methods.length === 1 ? '' : 's'} on ${x.tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ')}${x.enabled ? '' : ' · off'}`,
                 }))} />
             )}
-            <FilterPicker noun={METHODS} picked={methods} onChange={pickMethods}
+            <FilterPicker noun={METHODS} picked={methods} onChange={pickMethods} split
               // Each method with what it made as options (owner, 13 Oct 2026: "show the methods' profit and loss").
               options={r.choices.methods.map((m) => ({
-                key: m.key, name: m.name, tone: m.net > 0 ? 'up' as const : m.net < 0 ? 'down' as const : undefined,
+                key: m.key, name: m.name, tone: m.net > 0 ? 'up' as const : m.net < 0 ? 'down' as const : undefined, value: m.net,
                 note: m.n > 0 ? `${count(m.n)} trades · ${pct(m.wins / m.n, 0)} won · ${moneyText(m.net)}` : 'no trade',
               }))} />
           </FilterBar>
