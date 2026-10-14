@@ -282,13 +282,20 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
   // one reached in the order it is given (13 Oct 2026: 03:30 typed above 23:30 left 23:30's share on all morning).
   const start = minutesOf(DAY_START_IST);
   const steps = [...(p.targetSteps ?? [])].sort((a, b) => minutesForward(start, minutesOf(a.at)) - minutesForward(start, minutesOf(b.at))).map((x) => ({ at: x.at, value: x.pct }));
+  const livePick = planOfStrategy(strategyOfParams(p, null, null), span).pick;
   return {
     refuses: (sig) => {
       if (sig.filledAt < span.from || sig.filledAt >= span.to - 5 * MIN) return 'outside-window';
       if (custom ? !(minutesForward(custom.from, istMinutes(sig.filledAt)) < minutesForward(custom.from, custom.to)) : sig.filledAt < opens || sig.filledAt >= closes) return 'outside-window';
       return outOfRange(sig, sig.target, p) ? 'distance' : null;
     },
-    pick: (board, cp) => { const row = pickStrike(board, cp, p); return row ? { row, lots: p.lots } : null; },
+    /*
+     * The strike as the desk picks it (owner, 14 Oct 2026: "the backtest a copy of the live logic"): through the live
+     * rules' own selection (`selectLegs`, by way of `strategyOfParams`), not a picker of the backtest's own. The two
+     * agreed on all but 9 of 35,902 trades over 1-14 Oct; on those 9 the backtest's sold a strike the desk's would
+     * not have, and the live check said so.
+     */
+    pick: livePick,
     targetOf: (sig) => sig.target,
     targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null, desk: deskCapsOf(p),
     // By the clock, where steps are set: read by the function a strategy's own steps are (`exitValueAt`).
