@@ -154,9 +154,8 @@ export class StrategyRunner {
       move: (tradeId, ask, stage) => tradingService().updateExits(tradeId, ask, stage),
       // On the trade's own journal, for its timeline on the phone: the day's steps once, each move as it lands.
       note: (tradeId, note) => tradingService().noteExitStep(tradeId, note),
-      // Keyed by trade: a CE and a PE stepping in the same tick are two pieces
-      // of news, and one key would have the second replace the first unsent.
-      tell: (text, tradeId) => this.alert(() => ({ key: `exit-step:${tradeId}`, text })),
+      // Not told on Telegram (owner, 14 Oct 2026: "dynamic tgt telegram alert vena, romba varuthu"): a step moves
+      // every open trade at once -- 55 messages at 11:30 that morning -- and each move is on the trade's timeline.
       now: this.now,
     });
   }
