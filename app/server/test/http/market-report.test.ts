@@ -421,6 +421,32 @@ test('[critical] the backtest by a saved strategy: its methods and timeframe, it
   assert.match(gone.body.error, /No such signal strategy/);
 });
 
+test('[critical] one expiry day of the backtest, trade by trade: the same trades as its day row, each with its entry, exit, levels and money (14 Oct 2026)', async () => {
+  const q = `from=${CLIMB}&to=${QUIET}&window=all`;
+  const whole = await get(`/api/signal-backtest?${q}`);
+  assert.equal(whole.status, 200);
+  const row = whole.body.days.find((x: any) => x.day === CLIMB);
+  assert.ok(row && row.n > 0, 'the day traded');
+  const d = await get(`/api/signal-backtest/day?${q}&day=${CLIMB}`);
+  assert.equal(d.status, 200, JSON.stringify(d.body).slice(0, 200));
+  assert.deepEqual([d.body.day, d.body.total, d.body.trades.length], [CLIMB, row.n, row.n]);
+  const sum = (k: string) => d.body.trades.reduce((n: number, t: any) => n + t[k], 0);
+  assert.ok(Math.abs(sum('netUsd') - row.net) < 1e-9, `the same money: ${sum('netUsd')} against ${row.net}`);
+  assert.ok(Math.abs(sum('chargesUsd') - row.charges) < 1e-9, 'and the same charges');
+  assert.equal(d.body.trades.filter((t: any) => t.netUsd > 0).length, row.wins);
+  const t = d.body.trades[0];
+  for (const k of ['at', 'method', 'name', 'tf', 'dir', 'perpEntry', 'perpSl', 'perpTgt', 'cp', 'strike', 'lots', 'entryAt', 'entry', 'exitAt', 'exit', 'by', 'perpPts', 'netUsd', 'chargesUsd']) {
+    assert.ok(t[k] !== undefined && t[k] !== null, `a trade says its ${k}`);
+  }
+  assert.ok('optTgt' in t && 'optStop' in t, 'and its option levels, or none');
+  assert.ok(d.body.trades.every((x: any, i: number, xs: any[]) => i === 0 || xs[i - 1].at <= x.at), 'by time');
+  // narrowed as the backtest is: only the time frame and method asked for
+  const narrow = await get(`/api/signal-backtest/day?${q}&tf=15m&method=breakout&day=${CLIMB}`);
+  assert.ok(narrow.body.trades.every((x: any) => x.tf === '15m' && x.method === 'breakout'));
+  assert.equal((await get(`/api/signal-backtest/day?${q}&day=2020-01-01`)).status, 400, 'a day outside the range');
+  assert.equal((await get(`/api/signal-backtest/day?${q}&day=today`)).status, 400);
+});
+
 test('[critical] the live check: by a strategy, its backtest beside the desk\'s own decisions; by settings, beside the live rules run with them', async () => {
   const config = {
     trigger: 'signal', signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 5, enterOn: 'zone', action: 'sell' },
@@ -683,7 +709,7 @@ test('[critical] a backtest saved by name, run again, and several run together a
     const row = r.body.days.find((x: any) => x.day === CLIMB);
     assert.equal(d.body.total, row.n, `${label}: as many trades as the day row`);
     assert.ok(close(d.body.trades.reduce((n: number, t: any) => n + t.netUsd, 0), row.net), `${label}: the same money`);
-    assert.ok(d.body.trades.every((t: any) => ['Whole day,  10 lots', 'On 15m, 3 lots'].some((m) => typeof t.member === 'string' && t.member.length > 0) && t.member), `${label}: each says whose it is`);
+    assert.ok(d.body.trades.length > 0 && d.body.trades.every((t: any) => typeof t.member === 'string' && t.member.length > 0), `${label}: each says whose it is`);
   }
   assert.equal((await get(`/api/backtest-portfolio/day?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&day=2020-01-01`)).status, 400, 'a day outside the run');
 
