@@ -415,6 +415,69 @@ test('[critical] the backtest by a saved strategy: its methods and timeframe, it
   assert.match(gone.body.error, /No such signal strategy/);
 });
 
+test('[critical] the live check: each strategy\'s backtest laid beside what the desk did with the same signals, and why for every one on one side only', async () => {
+  const config = {
+    trigger: 'signal', signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 5, enterOn: 'zone', action: 'sell' },
+    liveOrders: false, entryTime: '17:35', exitTime: '17:29', lots: 1, legs: 'both',
+    strikeRule: 'delta', delta: { max: 0.1 }, premium: { mode: 'atMost', usd: 50, fallbackUsd: null },
+    entryPrice: 'offer', crossAfterSec: 5, maxCrossSpreadPct: 0.5, takeProfitPct: 0.9, stopLossPct: 3, minPremiumUsd: 1,
+    weekdays: [0, 1, 2, 3, 4, 5, 6], graceMin: 60,
+  };
+  const made = await post('/api/strategies', { name: 'BT live', config });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  const id = made.body.strategy.id;
+  // nothing on the desk's record yet: every trade of the backtest is one the desk has no record of
+  const none = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}`);
+  assert.equal(none.status, 200, JSON.stringify(none.body).slice(0, 300));
+  const before = none.body.strategies.find((x: any) => x.id === id);
+  assert.deepEqual([before.live, before.backtest, before.same], [{ placed: 0, refused: 0, skipped: 0 }, 3, 0], 'by its own rules: the three 15m breakouts');
+  assert.deepEqual(before.backtestOnly.map((g: any) => [g.why, g.n]), [['no record on the desk: it or the strategy was not running then, or its rules were different', 3]]);
+  assert.equal(before.backtestOnly[0].first.length, 3);
+  assert.deepEqual([none.body.liveFrom, none.body.liveTo], [null, null]);
+
+  // the desk's record, keyed as a setup is: the first placed, the second refused by the day's loss limit, the third never seen
+  const { from } = sessionOf(CLIMB);
+  const setups = await import('../../src/db/pool.js').then((m) => m.rows<{ method: string; mode: string; tf: string; dir: number; trigger_at: string; filled_at: string }>(
+    'SELECT method, mode, tf, dir, trigger_at, filled_at FROM entry_setups WHERE filled_at >= $1 AND filled_at < $2 ORDER BY filled_at', [from / 1_000, from / 1_000 + 86_400]));
+  const keyOf = (x: (typeof setups)[number]) => `${x.method}|${x.mode}|${x.tf}|${x.dir}|${x.trigger_at}`;
+  const mine = setups.filter((x) => x.method === 'breakout' && x.mode === 'single' && x.tf === '15m');
+  const other = setups.find((x) => x.method !== 'breakout')!;
+  assert.equal(mine.length, 3);
+  const wrote = (x: (typeof setups)[number], status: string, detail: string) => query(
+    'INSERT INTO strategy_signal_runs (strategy_id, signal_key, method, mode, tf, dir, status, detail, at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+    [id, keyOf(x), x.method, x.mode, x.tf, x.dir, status, detail, Number(x.filled_at) * 1_000 + 4_000]);
+  await wrote(mine[0]!, 'placed', '#1 Breakout BUY | sell PE 81800 x1 @ 54 (delta 0.09) · perp filled 84000 · perp SL 83700 · TGT 84500');
+  await wrote(mine[1]!, 'refused', '#1 Breakout BUY | sell PE 81800 x1 @ 54 (delta 0.09) · perp filled 84000 · perp SL 83700 · TGT 84500 -- refused: Worst case $0 exceeds the $-82 left in today\'s loss budget.');
+  // and an order the desk placed on a signal that is not this strategy's by its rules as they stand
+  await wrote(other, 'placed', '#2 Pullback BUY | sell PE 81800 x1 @ 54 (delta 0.09) · perp filled 84000 · perp SL 83700 · TGT 84500');
+
+  const r = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}`);
+  const row = r.body.strategies.find((x: any) => x.id === id);
+  assert.deepEqual([row.name, row.live, row.backtest, row.same], ['BT live', { placed: 2, refused: 1, skipped: 0 }, 3, 1]);
+  assert.deepEqual(row.backtestOnly.map((g: any) => [g.why, g.n]), [
+    ['no record on the desk: it or the strategy was not running then, or its rules were different', 1],
+    ['the desk refused: the daily loss limit', 1],
+  ], 'each in the desk\'s own reason');
+  assert.deepEqual(row.backtestOnly[1].first, [{ at: Number(mine[1]!.filled_at) * 1_000, method: 'breakout', tf: '15m', dir: 1 }]);
+  assert.deepEqual(row.liveOnly.map((g: any) => [g.why, g.n]), [['its method or time frame is not in the strategy\'s rules now', 1]]);
+  // every strategy that sells signals is there, and the totals are their sum
+  const all = r.body.strategies as any[];
+  assert.ok(all.length >= 2 && all.some((x) => x.name === 'BT fifteen'));
+  assert.equal(r.body.total.backtest, all.reduce((n, x) => n + x.backtest, 0));
+  assert.deepEqual([r.body.total.placed, r.body.total.refused, r.body.total.same, r.body.total.liveOnly], [2, 1, 1, 1]);
+  assert.deepEqual(r.body.days.map((d: any) => d.day), [CLIMB]);
+  assert.deepEqual([r.body.days[0].same, r.body.days[0].backtest], [1, r.body.total.backtest]);
+  assert.equal(r.body.liveFrom, Number(setups[0]!.filled_at) * 1_000 + 4_000 <= r.body.liveFrom ? r.body.liveFrom : -1, 'the first moment the desk has a record');
+  assert.ok(r.body.liveTo >= r.body.liveFrom);
+
+  // one account alone, and a range or an account that cannot be meant
+  assert.deepEqual((await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&account=7`)).body.strategies, [], 'no strategy is that account\'s');
+  assert.equal((await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&account=x`)).status, 400);
+  assert.equal((await get('/api/signal-backtest/live-check?from=2026-13-40')).status, 400);
+  await query('DELETE FROM strategy_signal_runs WHERE strategy_id = $1', [id]);
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/strategies/${id}`, headers: cookie })).statusCode, 200);
+});
+
 test('[critical] a form\'s draft: every method\'s record as options under its rules -- the ticked and the unticked, each on all its signals', async () => {
   const draft = (over: Record<string, unknown> = {}, signal: Record<string, unknown> = {}) => ({
     trigger: 'signal', signal: { mode: 'single', tf: '15m', tfs: ['15m', '1h'], methods: ['breakout'], target: 'tp1', maxOpen: 1, enterOn: 'zone', action: 'sell', ...signal },

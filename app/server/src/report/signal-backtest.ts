@@ -1160,7 +1160,7 @@ const LIVE_GRACE_MS = 120_000;
 export function liveReason(status: string, detail: string): string {
   const said = detail.includes(' -- refused: ') ? detail.split(' -- refused: ')[1]! : detail.includes(' | ') ? detail.slice(detail.indexOf(' | ') + 3) : detail;
   const known: [RegExp, string][] = [
-    [/loss budget/i, 'the daily loss limit refused it'],
+    [/loss budget/i, 'the daily loss limit'],
     [/too near|too far/i, 'its SL / TGT distance'],
     [/over before it could be entered|in the same moment/i, 'over before it could be entered'],
     [/at most \d+ (CE|PE)|already has \d+ (CE|PE)/i, 'the account\'s CE / PE limit'],
