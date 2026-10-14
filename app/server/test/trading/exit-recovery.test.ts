@@ -125,7 +125,7 @@ test('[critical] Delta\'s "no reduce-only room left": held at once; back again a
   await cancelIt();
   assert.equal(target(), null, 'not put back');
   assert.deepEqual(said().length, 1);
-  assert.match(said()[0]!, /no reduce-only room left on the position \(no_position_left_for_reduce_only\) -- the contract's other trades' orders already cover it\. It is held off the book for 15 minutes/);
+  assert.match(said()[0]!, /the position has no reduce-only room left for it \(no_position_left_for_reduce_only\)\. It is held off the book for 15 minutes/);
   // after the hold it goes back on, and Delta takes it straight off again: off for the rest of the trade
   r.advance(TARGET_HOLD_MS);
   await r.engine.poll(id);

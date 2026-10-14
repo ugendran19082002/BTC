@@ -112,6 +112,16 @@ export type SignedRequest = {
 };
 
 export async function signed<T>(creds: Creds | null, req: SignedRequest): Promise<T> {
+  return (await signedPage<T>(creds, req)).result;
+}
+
+/**
+ * The same call, with Delta's page cursor (14 Oct 2026). Its list endpoints page by cursor -- "each response metadata
+ * contains a before and after cursor" (its API reference, Pagination) -- and `after` is null on the last page. Read
+ * one page only and the rest of the account's orders were not there: the desk took "not on the first 100" for "not on
+ * the book" and placed a second stop beside the first.
+ */
+export async function signedPage<T>(creds: Creds | null, req: SignedRequest): Promise<{ result: T; after: string | null }> {
   if (!creds) throw new NotConfigured();
   const { method, path, query = '', body } = req;
   const payload = body === undefined ? '' : JSON.stringify(body);
@@ -153,7 +163,7 @@ export async function signed<T>(creds: Creds | null, req: SignedRequest): Promis
   }
 
   const parsed = (await res.json().catch(() => null)) as
-    | { success?: boolean; result?: T; error?: { code?: string; context?: unknown } }
+    | { success?: boolean; result?: T; meta?: { after?: string | null }; error?: { code?: string; context?: unknown } }
     | null;
   counted(res.ok && parsed && parsed.success !== false ? 'ok' : 'refused');
 
@@ -172,5 +182,6 @@ export async function signed<T>(creds: Creds | null, req: SignedRequest): Promis
       detail,
     );
   }
-  return parsed.result as T;
+  const after = parsed.meta?.after;
+  return { result: parsed.result as T, after: typeof after === 'string' && after !== '' ? after : null };
 }

@@ -85,6 +85,13 @@ function stepOf(e: JournalEvent): Step {
     case 'exit_submitted':
       return { at, stage: 'exit', title: `${roleOf(e.role)} order sent`, detail: str(e.reason) ?? undefined };
     case 'sibling_cancelled':
+      // Delta's own cancel carries its reason (14 Oct 2026): not the desk tidying up, so not worded as if it were.
+      if (str(e.reason)) {
+        return {
+          at, stage: 'problem', title: `Delta cancelled the ${roleOf(e.role).toLowerCase()}`,
+          detail: str(e.reason) === 'no_position_left_for_reduce_only' ? 'No reduce-only room left on the position (no_position_left_for_reduce_only).' : str(e.reason) ?? undefined,
+        };
+      }
       return { at, stage: 'info', title: `The other exit (${roleOf(e.role).toLowerCase()}) was cancelled`, detail: 'So it cannot reopen the position.' };
     case 'reconciled':
       return { at, stage: 'info', title: `Checked with the exchange: ${n(e.position) === 0 ? 'no position' : `position ${n(e.position)}`}`, detail: str(e.note) ?? undefined };

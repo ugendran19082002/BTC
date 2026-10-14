@@ -267,7 +267,8 @@ test('[critical] a filled target past the account\'s newest twenty is found in i
     [/\/v2\/products\/C-BTC-88800-031026/, product('C-BTC-88800-031026', 7)],
     [/\/v2\/orders\/history\?product_ids=7/, [other, filled]],
     [/\/v2\/orders\/history\?client_order_id/, Array.from({ length: 20 }, () => other)],
-    [/\/v2\/orders\?client_order_id/, []],
+    // the contract's open book, by the documented filter: not there (it filled)
+    [/\/v2\/orders\?states=open,pending&page_size=100&product_ids=7/, []],
   ]);
   const ex = new DeltaExchange(creds);
   const o = await ex.getOrderByClientId('409261789344005840T1', 'C-BTC-88800-031026');

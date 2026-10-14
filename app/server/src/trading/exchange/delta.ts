@@ -1,4 +1,4 @@
-import { DeltaRefused, RateLimited, RequestTimedOut, signed, UnreadableReply, type Creds } from '../../delta/signed.js';
+import { DeltaRefused, RateLimited, RequestTimedOut, signed, signedPage, UnreadableReply, type Creds } from '../../delta/signed.js';
 import { stopFillLimit } from '../money.js';
 import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
@@ -226,6 +226,10 @@ const GONE_CODES = new Set(['open_order_not_found', 'order_already_filled']);
 /** How long a client id that the contract's history did not hold is left before that search is made again. */
 const DEEP_RETRY_MS = 30_000;
 
+/** Open orders are read a hundred to a page, and this many pages at most: past that the book is not known whole. */
+export const OPEN_ORDER_PAGE = 100;
+export const OPEN_ORDER_PAGES = 10;
+
 /**
  * A refusal that is an expected query or cancellation result rather than a fault.
  *
@@ -263,9 +267,19 @@ export class DeltaExchange implements ExchangePort {
 
   constructor(private readonly creds: Creds | null) {}
 
-  private async call<T>(
+  private call<T>(reqIn: Parameters<typeof signed>[1] & { quietRefusal?: (e: DeltaRefused) => boolean }): Promise<T> {
+    return this.attempt(reqIn, (req) => signed<T>(this.creds, req));
+  }
+
+  /** One page of a list, and the cursor to the next (null on the last). Asked and retried exactly as `call`. */
+  private page<T>(reqIn: Parameters<typeof signed>[1]): Promise<{ result: T[]; after: string | null }> {
+    return this.attempt(reqIn, (req) => signedPage<T[]>(this.creds, req));
+  }
+
+  private async attempt<R>(
     reqIn: Parameters<typeof signed>[1] & { quietRefusal?: (e: DeltaRefused) => boolean },
-  ): Promise<T> {
+    send: (req: Parameters<typeof signed>[1]) => Promise<R>,
+  ): Promise<R> {
     /*
      * A read that fails for Delta's reasons is safe to ask again: it changes
      * nothing. So a GET gets a shorter timeout and one quiet retry, for no
@@ -282,7 +296,7 @@ export class DeltaExchange implements ExchangePort {
     const req = isRead && reqIn.timeoutMs === undefined ? { ...reqIn, timeoutMs: READ_TIMEOUT_MS } : reqIn;
     for (let attempt = 1; ; attempt++) {
       try {
-        return await signed<T>(this.creds, req);
+        return await send(req);
       } catch (e) {
         if (isRead && attempt < READ_ATTEMPTS && retryableRead(e)) {
           await pause(300);
@@ -513,11 +527,18 @@ export class DeltaExchange implements ExchangePort {
     const direct = await this.call<DeltaOrder>({ method: 'GET', path: `/v2/orders/client_order_id/${cid}` }).catch(() => null);
     if (direct && !Array.isArray(direct) && direct.client_order_id === clientOrderId) return toOrder(direct);
 
-    const live = await this.call<DeltaOrder[]>({
-      method: 'GET', path: '/v2/orders', query: `?client_order_id=${cid}&states=open,pending&page_size=100`,
-    }).catch(refusedRead);
-    const hit = live.find((r) => r.client_order_id === clientOrderId);
-    if (hit) return toOrder(hit);
+    /*
+     * The open book, searched here: `client_order_id` is not a filter Delta documents for this endpoint, so the
+     * answer was the account's first hundred open orders -- and an order past them read as "not open" (14 Oct
+     * 2026, 77 trades open). With the contract known, its own book, whole (`getOpenOrders`).
+     */
+    const live = symbol
+      ? await this.getOpenOrders(symbol).catch(refusedRead)
+      : (await this.call<DeltaOrder[]>({
+        method: 'GET', path: '/v2/orders', query: `?states=open,pending&page_size=${OPEN_ORDER_PAGE}`,
+      }).catch(refusedRead)).map(toOrder);
+    const hit = live.find((r) => r.clientOrderId === clientOrderId);
+    if (hit) return hit;
 
     /*
      * Delta ignores `client_order_id` here -- asked for one order on 14 Sep
@@ -555,36 +576,42 @@ export class DeltaExchange implements ExchangePort {
   }
 
   /**
-   * The orders resting for one symbol.
+   * The orders resting for one symbol, or for the whole account -- every page of them.
    *
-   * **Delta ignores `product_symbol` on this endpoint when `states` is set.**
-   * Asking for one contract's orders returns the whole account's, and on
-   * 10 September 2026 that put a 76,800 PE's take-profit on an 80,800 CE row:
-   * two positions, one order between them, and both screens reading 25.60.
+   * Read by `product_ids`, the filter Delta documents for `GET /v2/orders` (its API reference: "comma separated
+   * product ids, max 10"), and followed page to page by its `after` cursor. Until 14 Oct 2026 the desk sent
+   * `product_symbol`, which that endpoint does not take, and read one page of a hundred: the answer was the whole
+   * account's first hundred orders. With 77 trades open (a stop and a target each) the older trades' orders were
+   * past it, `protect()` read their stop as missing and placed a second one beside it -- left on the book when the
+   * trade closed, triggered three hours later on a contract with no position (Delta's mail, 09:03), and over-filling
+   * the contract's reduce-only room so that Delta cancelled targets (`no_position_left_for_reduce_only`).
    *
-   * Display was the least of it. `protect()` reconciles against this list, so
-   * it saw the PE's order, decided the CE was already protected and never
-   * placed anything -- a live short with nothing behind it and a shield icon
-   * saying otherwise. `clearProtection()` reads the same list, so closing one
-   * position could have cancelled the other's target.
+   * The answer is still filtered by symbol here: a venue's filter is a request, not a guarantee (10 Sep 2026, a PE's
+   * target on a CE's row). And a book that could not be read whole is not an answer: past `OPEN_ORDER_PAGES` it
+   * throws, as an outage does, and every caller already reads a throw as "could not ask".
    *
-   * The filter is kept in the query anyway -- if Delta ever honours it the
-   * payload is smaller -- but the answer is filtered here regardless, because
-   * a venue's filter is a request, not a guarantee.
-   *
-   * Delta's default page size is 10. Without `page_size=100`, only the first 10
-   * open orders across the entire account were returned, hiding any symbols past
-   * the 10th order and causing phantom "Target not resting at Delta" retries.
-   *
-   * `PaperExchange` filters correctly, which is exactly why no test caught
-   * this. See docs/decisions/0002-simulator-is-not-the-venue.md.
+   * `PaperExchange` filters correctly, which is exactly why no test caught this. See
+   * docs/decisions/0002-simulator-is-not-the-venue.md.
    */
   async getOpenOrders(symbol?: string): Promise<ExchangeOrder[]> {
-    const q = symbol
-      ? `?states=open,pending&page_size=100&product_symbol=${encodeURIComponent(symbol)}`
-      : '?states=open,pending&page_size=100';
-    const rows = await this.call<DeltaOrder[]>({ method: 'GET', path: '/v2/orders', query: q });
-    const orders = rows.map(toOrder);
+    const product = symbol ? await this.getProduct(symbol).catch(() => null) : null;
+    const scope = product?.productId ? `&product_ids=${product.productId}` : '';
+    const rows = new Map<string, DeltaOrder>();
+    let after: string | null = null;
+    for (let page = 0; ; page++) {
+      if (page === OPEN_ORDER_PAGES) {
+        throw new ExchangeUnavailable(`more than ${OPEN_ORDER_PAGES * OPEN_ORDER_PAGE} open orders: the book was not read whole`);
+      }
+      const cursor = after === null ? '' : `&after=${encodeURIComponent(after)}`;
+      const res: { result: DeltaOrder[]; after: string | null } = await this.page<DeltaOrder>({
+        method: 'GET', path: '/v2/orders', query: `?states=open,pending&page_size=${OPEN_ORDER_PAGE}${scope}${cursor}`,
+      });
+      for (const r of res.result ?? []) rows.set(String(r.id), r);
+      // The last page says so with a null cursor; a cursor that does not move is treated the same, not followed.
+      if (res.after === null || res.after === after || (res.result ?? []).length === 0) break;
+      after = res.after;
+    }
+    const orders = [...rows.values()].map(toOrder);
     return symbol === undefined ? orders : orders.filter((o) => o.symbol === symbol);
   }
 

@@ -45,14 +45,28 @@ const row = (symbol: string, id: number, limit: string) => ({
   reduce_only: true,
 });
 
-/** An exchange that answers every symbol with the whole account, as Delta does. */
-function leakyExchange(rows: ReturnType<typeof row>[]) {
+/**
+ * An exchange that answers every symbol with the whole account, as Delta did. Pages of `perPage`, followed by an
+ * `after` cursor; `products` are what `/v2/products/{symbol}` knows (none by default).
+ */
+function leakyExchange(rows: ReturnType<typeof row>[], o: { perPage?: number; products?: Record<string, number> } = {}) {
   const ex = new DeltaExchange(null as never);
   const seen: string[] = [];
+  const perPage = o.perPage ?? 100;
   // The transport is private to TypeScript only; at runtime it is a property.
-  (ex as unknown as { call: (r: { query?: string }) => Promise<unknown> }).call = async (r) => {
+  (ex as unknown as { call: (r: { path: string }) => Promise<unknown> }).call = async (r) => {
+    const symbol = decodeURIComponent(r.path.replace('/v2/products/', ''));
+    const id = o.products?.[symbol];
+    if (r.path.startsWith('/v2/products/') && id) {
+      return { id, symbol, contract_type: symbol.startsWith('C') ? 'call_options' : 'put_options', state: 'live', trading_status: 'operational' };
+    }
+    return null;
+  };
+  (ex as unknown as { page: (r: { query?: string }) => Promise<unknown> }).page = async (r) => {
     seen.push(r.query ?? '');
-    return rows;                    // the filter in the query is ignored
+    const at = Number(/after=p(\d+)/.exec(r.query ?? '')?.[1] ?? 0);
+    const result = rows.slice(at, at + perPage);   // the filter in the query is ignored
+    return { result, after: at + perPage < rows.length ? `p${at + perPage}` : null };
   };
   return { ex, seen };
 }
@@ -93,12 +107,52 @@ test('asking for no symbol still returns the whole account', async () => {
   assert.equal((await ex.getOpenOrders()).length, 2);
 });
 
-test('the filter is still sent, so a venue that honours it sends less', async () => {
-  const { ex, seen } = leakyExchange([row(PE, 1, '25.6')]);
+test('[critical] the contract is asked for by product_ids, the filter Delta documents -- not product_symbol, which it does not take', async () => {
+  const { ex, seen } = leakyExchange([row(PE, 1, '25.6')], { products: { [PE]: 7 } });
   await ex.getOpenOrders(PE);
-  assert.ok(seen[0]!.includes('product_symbol='), 'the query should still ask');
+  assert.ok(seen[0]!.includes('product_ids=7'), seen[0]);
+  assert.ok(!seen[0]!.includes('product_symbol='), seen[0]);
   assert.ok(seen[0]!.includes('states=open,pending'));
   assert.ok(seen[0]!.includes('page_size=100'), 'must request page_size=100 to avoid Delta 10-order default cutoff');
+});
+
+/*
+ * 14 Oct 2026: 77 trades open, a stop and a target each -- 154 orders, of which one page of a hundred was read. The
+ * trades whose orders were past it read as unprotected, and a second stop went on beside the first.
+ */
+test('[critical] every page is read, by its cursor: an order on the second page is on the book', async () => {
+  const rows = Array.from({ length: 154 }, (_, i) => row(i % 2 ? PE : CE, i + 1, String(10 + i)));
+  const { ex, seen } = leakyExchange(rows);
+  const all = await ex.getOpenOrders();
+  assert.equal(all.length, 154);
+  assert.equal(seen.length, 2, 'two pages');
+  assert.ok(seen[1]!.includes('after=p100'), seen[1]);
+  assert.ok((await ex.getOpenOrders(CE)).some((o) => o.orderId === '153'), 'the 153rd order, the CE\'s, found');
+});
+
+test('[critical] a book too long to read whole is not an answer: it throws, and nothing is judged missing off part of it', async () => {
+  const rows = Array.from({ length: 1_005 }, (_, i) => row(CE, i + 1, '1'));
+  const { ex } = leakyExchange(rows);
+  await assert.rejects(ex.getOpenOrders(CE), /not read whole/);
+});
+
+test('a cursor that does not move is not followed round and round', async () => {
+  const { ex, seen } = leakyExchange([row(CE, 1, '1')]);
+  (ex as unknown as { page: (r: { query?: string }) => Promise<unknown> }).page = async (r) => {
+    seen.push(r.query ?? '');
+    return { result: [row(CE, 1, '1')], after: 'same' };
+  };
+  assert.equal((await ex.getOpenOrders(CE)).length, 1);
+  assert.equal(seen.length, 2, 'the second answer named the same cursor: stop there');
+});
+
+test('[critical] an open order is found by its client id on its contract\'s book, wherever it is in the account\'s', async () => {
+  const rows = Array.from({ length: 150 }, (_, i) => row(PE, i + 1, '1'));
+  rows.push({ ...row(CE, 999, '2.3'), client_order_id: '410261791933603779S0' });
+  const { ex } = leakyExchange(rows, { products: { [CE]: 5 } });
+  const found = await ex.getOrderByClientId('410261791933603779S0', CE);
+  assert.equal(found?.orderId, '999');
+  assert.equal(found?.status, 'open');
 });
 
 test('an unknown symbol gets nothing rather than everything', async () => {

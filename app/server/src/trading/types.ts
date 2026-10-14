@@ -389,4 +389,9 @@ export type TradeEvent =
    * time steps ever has one: `schedule` once, what the day's steps are; `moved` each time a step moves its target
    * or stop. A note and nothing more -- it changes nothing about the trade (`applyEvent` passes it through).
    */
-  | { t: 'exit_step'; kind: 'schedule' | 'moved'; title: string; detail?: string; at: number };
+  /*
+   * A time step's note; a target held off the book (`kind: 'held'`, 14 Oct 2026): `until` the moment it may go back,
+   * null for the rest of the trade -- written down rather than remembered, so a restart keeps the hold; or an exit the
+   * trade no longer wanted, swept off the book (`kind: 'swept'`). None of them changes the trade's state.
+   */
+  | { t: 'exit_step'; kind: 'schedule' | 'moved' | 'held' | 'swept'; title: string; detail?: string; until?: number | null; at: number };

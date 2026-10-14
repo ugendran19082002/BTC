@@ -488,6 +488,16 @@ export class TradingService {
       // A finished trade whose other exit could not be confirmed off the book is
       // not polled any more; this is what keeps trying it.
       await this.engine.sweepLeftovers().catch(() => {});
+      // And the exits nobody wants any more -- left behind by a closed trade, or replaced beside the one in use --
+      // taken off Delta's book once a minute (`sweepOrphans`).
+      const swept = await this.engine.sweepOrphans().catch(() => [] as string[]);
+      if (swept.length > 0) {
+        noteError({
+          source: 'trading', level: 'warn', where: 'service/sweepOrphans',
+          message: `Took ${swept.length} exit order${swept.length === 1 ? '' : 's'} no open trade wanted off Delta's book.`,
+          context: { accountId: this.currentAccountId, clientOrderIds: swept.slice(0, 20) },
+        });
+      }
       this.feedOk = true;
     } catch {
       this.feedOk = false;

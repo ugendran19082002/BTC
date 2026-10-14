@@ -621,6 +621,10 @@ export const TARGET_HOLD_MS = 15 * 60_000;
  * position, and a target put back is cancelled again. Definitive -- held on the first, not after a count.
  */
 export const NO_REDUCE_ONLY_ROOM = 'no_position_left_for_reduce_only';
+/** How often the account's whole book is read for exits left behind (`sweepOrphans`): two or three reads of weight 3. */
+export const ORPHAN_SWEEP_MS = 60_000;
+/** An exit younger than this is never called left behind: its trade may be writing it down at this moment. */
+export const ORPHAN_MIN_AGE_MS = 30_000;
 /** How many unknown orders behind a contract's fills one reconcile looks up, at most. */
 export const FILL_LOOKUPS = 40;
 
@@ -712,6 +716,18 @@ export const clientId = (tradeId: string, role: OrderRole | 'exit', n = 0): stri
 /** The part of every client id that names the trade. */
 export const clientStem = (tradeId: string): string => tradeId.replace(/[^A-Za-z0-9]/g, '').slice(-18);
 
+/**
+ * The trade a client id of ours was made for, on the contract it rests on -- or null. A trade's id is its contract and
+ * the moment it was opened (`${symbol}-${ms}`), and its client ids are the id's last 18 letters and digits: the
+ * contract's last five, then the moment. Only a candidate: the caller still finds it in the journal.
+ */
+export function tradeIdOfClientId(symbol: string, clientOrderId: string): string | null {
+  const m = /^([A-Za-z0-9]{5})(\d{13})[A-Z]\d+$/.exec(clientOrderId);
+  if (!m || symbol.replace(/[^A-Za-z0-9]/g, '').slice(-5) !== m[1]) return null;
+  const tradeId = `${symbol}-${m[2]}`;
+  return clientStem(tradeId) === `${m[1]}${m[2]}` ? tradeId : null;
+}
+
 /** Which of ours an exchange order is, read back off its client id -- or null if it is not ours. */
 export function roleOfClientId(clientOrderId: string | null, stem: string): OrderRole | null {
   if (!clientOrderId || !stem || !clientOrderId.startsWith(stem)) return null;
@@ -733,10 +749,8 @@ export class TradeEngine {
   private readonly unexplained = new Map<string, { since: number; said: boolean }>();
   /** Trades with an exit not yet confirmed off the book, since when, and whether it has been said. See `cancelSiblings`. */
   private readonly leftovers = new Map<string, { since: number; said: boolean }>();
-  /** Each trade's target held off the book until then, after the exchange kept cancelling it (`TARGET_CHURN_LIMIT`). */
-  private readonly targetHold = new Map<string, number>();
-  /** How many times each trade's target has been held: the second hold is for the rest of the trade (`noteTargetChurn`). */
-  private readonly targetHolds = new Map<string, number>();
+  /** When the account's book was last swept for exits no open trade owns (`sweepOrphans`). */
+  private orphansSweptAt = Number.NEGATIVE_INFINITY;
   /** Whose an exchange order is, by its client id, once looked up: a contract's fills are read again on each reconcile. */
   private readonly orderOwner = new Map<string, string | null>();
   private readonly limits: RiskLimits;
@@ -1402,8 +1416,14 @@ export class TradeEngine {
     // after another they added a round trip each to every poll; the results are
     // still absorbed in a fixed order, so the state they produce is unchanged.
     const entryId = clientId(tradeId, 'entry');
+    /*
+     * The entry is asked after only while it can still change: once all of it has filled it has nothing more to say,
+     * and asking anyway was one lookup per open trade every pass (14 Oct 2026, 59 trades open) -- a third of the
+     * desk's order reads. A part-filled entry is still asked: the rest of it may yet fill.
+     */
+    const entryDone = rec.state.requestedSize > 0 && rec.state.entrySize >= rec.state.requestedSize;
     const legs = [
-      ['entry', entryId],
+      ['entry', entryDone ? null : entryId],
       ['take_profit', rec.state.protection.takeProfit],
       ['stop_loss', rec.state.protection.stopLoss],
     ] as const;
@@ -1437,7 +1457,7 @@ export class TradeEngine {
           && o.status !== 'open' && o.status !== 'partial' && o.filledSize === 0) {
         // The exchange's own reason, where it cancelled it: what tells "Delta took it off" from "it went".
         rec = await this.commit(rec, { t: 'sibling_cancelled', role, at: this.now(), ...(o.reason ? { reason: o.reason } : {}) });
-        if (role === 'take_profit') this.noteTargetChurn(rec, o.reason ?? null);
+        if (role === 'take_profit') rec = await this.noteTargetChurn(rec, o.reason ?? null);
       }
     }
     const entry = found[0];
@@ -1513,7 +1533,7 @@ export class TradeEngine {
     const anchored = anchorExits(rec);
     const moved = anchored !== rec;
     rec = anchored;
-    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending' && (moved || missingProtection(rec))) {
+    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending' && (moved || missingProtection(rec, this.now()))) {
       rec = await this.protect(rec);
       if (moved) await this.d.store.save(rec);
     }
@@ -1805,7 +1825,7 @@ export class TradeEngine {
      * will pay; if nobody sells there, the position stays on.
      */
     // A target the exchange kept cancelling is held off the book for a while (`noteTargetChurn`): left as it is.
-    const holdTarget = (this.targetHold.get(rec.state.tradeId) ?? 0) > this.now();
+    const holdTarget = targetHoldOf(rec).until > this.now();
     const tp = holdTarget ? rec.state.protection.takeProfit : await settle(
       'take_profit',
       rec.plan.takeProfitPrice,
@@ -2043,26 +2063,31 @@ export class TradeEngine {
    * made a quarter-hourly alarm and another round of cancels. Said once each time it is held, and no more. The stop
    * is never held back, and the perp's exits are untouched.
    */
-  private noteTargetChurn(rec: TradeRecord, reason: string | null): void {
+  private async noteTargetChurn(rec: TradeRecord, reason: string | null): Promise<TradeRecord> {
     const now = this.now();
-    const id = rec.state.tradeId;
-    if ((this.targetHold.get(id) ?? 0) > now) return;
+    const hold = targetHoldOf(rec);
+    if (hold.until > now) return rec;
     const recent = rec.events.filter((e) => e.t === 'sibling_cancelled' && e.role === 'take_profit' && now - e.at <= TARGET_CHURN_WINDOW_MS).length;
     const definitive = reason === NO_REDUCE_ONLY_ROOM;
-    if (!definitive && recent < TARGET_CHURN_LIMIT) return;
-    const holds = (this.targetHolds.get(id) ?? 0) + 1;
-    this.targetHolds.set(id, holds);
-    if (this.targetHolds.size > 5_000) this.targetHolds.clear();
-    const forGood = holds >= 2;
-    this.targetHold.set(id, forGood ? Number.POSITIVE_INFINITY : now + TARGET_HOLD_MS);
+    if (!definitive && recent < TARGET_CHURN_LIMIT) return rec;
+    const forGood = hold.holds + 1 >= 2;
     const why = definitive
-      ? `Delta cancelled this trade's target: no reduce-only room left on the position (${reason}) -- the contract's other trades' orders already cover it`
+      ? `Delta cancelled this trade's target: the position has no reduce-only room left for it (${reason})`
       : `Delta cancelled this trade's target ${recent} times in ${Math.round(TARGET_CHURN_WINDOW_MS / 60_000)} minutes${reason ? ` (${reason})` : ''}`;
+    const minutes = Math.round(TARGET_HOLD_MS / 60_000);
+    // Written down, not remembered: a restart at 10:30 forgot four holds and put all four targets straight back.
+    rec = await this.commit(rec, {
+      t: 'exit_step', kind: 'held', at: now,
+      title: forGood ? 'Target kept off Delta for the rest of the trade' : `Target kept off Delta for ${minutes} minutes`,
+      detail: `${why}. The stop and the perp's exits stay.`,
+      until: forGood ? null : now + TARGET_HOLD_MS,
+    });
     this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: ${why}. `
       + (forGood
         ? 'It came straight back after the last hold, so it stays off the book for the rest of this trade; '
-        : `It is held off the book for ${Math.round(TARGET_HOLD_MS / 60_000)} minutes rather than re-placed again; `)
+        : `It is held off the book for ${minutes} minutes rather than re-placed again; `)
       + 'the stop and the perp\'s exits stay.', rec.plan);
+    return rec;
   }
 
   /** Keep count of a trade whose exits could not be confirmed off the book, and say so once it has gone on a minute. */
@@ -2098,6 +2123,55 @@ export class TradeEngine {
       });
     }
     return [...this.leftovers.keys()];
+  }
+
+  /**
+   * Take off the book the exits no trade wants any more (14 Oct 2026): a stop or target the desk placed whose trade
+   * has finished, or that its trade has since replaced. Reduce-only, so it cannot open anything -- but it is not
+   * harmless: it holds the contract's reduce-only room, so Delta cancels the targets that are wanted
+   * (`no_position_left_for_reduce_only`), it fires when its level is crossed on another trade's position, and Delta
+   * mails about each one. A stop of the 84,200 CE left that way at 06:03 triggered at 09:03 on a contract the desk
+   * had closed three hours before.
+   *
+   * The whole account's book once a minute -- every page of it (`getOpenOrders`) -- and only the desk's own orders:
+   * an order whose client id names no trade of this account's journal (one placed by hand in Delta's app) is never
+   * touched. Each cancel is made under its trade's lock, against the trade as it stands then, and verified.
+   *
+   * Returns the client ids taken off; the service writes them to the error log as a warning.
+   */
+  async sweepOrphans(): Promise<string[]> {
+    const now = this.now();
+    if (now - this.orphansSweptAt < ORPHAN_SWEEP_MS) return [];
+    this.orphansSweptAt = now;
+    const book = await this.exchange.getOpenOrders().catch(() => null);
+    // Not read whole is not read: nothing is judged left behind off part of the book.
+    if (book === null) return [];
+    const swept: string[] = [];
+    for (const o of book) {
+      if (!o.reduceOnly || !o.clientOrderId || (o.status !== 'open' && o.status !== 'partial')) continue;
+      if (now - o.createdAt < ORPHAN_MIN_AGE_MS) continue;
+      const tradeId = tradeIdOfClientId(o.symbol, o.clientOrderId);
+      if (!tradeId) continue;
+      await this.withTrade(tradeId, async () => {
+        const rec = await this.d.store.get(tradeId);
+        if (!rec) return;
+        const role = roleOfClientId(o.clientOrderId, clientStem(tradeId));
+        if (role !== 'take_profit' && role !== 'stop_loss') return;
+        // Still the trade's own exit: wanted.
+        const { protection } = rec.state;
+        if (!isDone(rec.state) && (o.clientOrderId === protection.takeProfit || o.clientOrderId === protection.stopLoss)) return;
+        if (!(await this.cancelAndVerify(o))) return;
+        swept.push(o.clientOrderId!);
+        // A note, not `sibling_cancelled`: that clears the trade's own exit from its state, and this was another order.
+        const leg = role === 'take_profit' ? 'target' : 'stop';
+        await this.commit(rec, {
+          t: 'exit_step', kind: 'swept', at: this.now(),
+          title: `A leftover ${leg} was taken off Delta`,
+          detail: `${o.clientOrderId} at ${o.stopPrice ?? o.limitPrice ?? '?'} was still resting and ${isDone(rec.state) ? 'the trade had closed' : 'the trade had replaced it'}.`,
+        });
+      });
+    }
+    return swept;
   }
 
   /**
@@ -2584,7 +2658,7 @@ export class TradeEngine {
     }
     // Contracts that filled on the spot need their target and stop resized now,
     // not on the next poll.
-    if (rec.state.position !== 0 && missingProtection(rec)) rec = await this.protect(rec);
+    if (rec.state.position !== 0 && missingProtection(rec, this.now())) rec = await this.protect(rec);
     return { ok: true, state: rec.state };
   }
 
@@ -2951,7 +3025,17 @@ const seedOf = (tradeId: string) => tradeId.replace(/[^A-Za-z0-9]/g, '').slice(-
  * a foreign id reads as missing, the next poll calls `protect()`, and the
  * reconciler places what is actually needed.
  */
-export function missingProtection(rec: TradeRecord): boolean {
+/**
+ * The target's hold, read off the journal (`noteTargetChurn`): how many times it has been held, and until when --
+ * forever once held for the rest of the trade, 0 when never held.
+ */
+export function targetHoldOf(rec: TradeRecord): { holds: number; until: number } {
+  const held = (rec.events ?? []).filter((e): e is Extract<TradeEvent, { t: 'exit_step' }> => e.t === 'exit_step' && e.kind === 'held');
+  const last = held[held.length - 1];
+  return { holds: held.length, until: !last ? 0 : last.until == null ? Number.POSITIVE_INFINITY : last.until };
+}
+
+export function missingProtection(rec: TradeRecord, now = Date.now()): boolean {
   // A bought position: only a target rests (`protectLong`), off `plan.longExits`.
   if (rec.state.position > 0) {
     const entry = rec.state.entryAvgPrice;
@@ -2962,7 +3046,12 @@ export function missingProtection(rec: TradeRecord): boolean {
       : tp !== null;
   }
   const wantsStop = rec.plan.stopPrice !== null;
-  const wantsTarget = rec.plan.takeProfitPrice !== null;
+  /*
+   * A target held off the book (`noteTargetChurn`) is not missing: it is meant to be away. Read as missing, every
+   * held trade sent `protect()` to Delta on every pass -- a positions read and a book read a second each, to change
+   * nothing (14 Oct 2026).
+   */
+  const wantsTarget = rec.plan.takeProfitPrice !== null && !(targetHoldOf(rec).until > now);
   const { tradeId, protection } = rec.state;
   const want = protectionSize(rec.state);
 
