@@ -115,6 +115,13 @@ describe('the live check, inside a result (owner, 14 Oct 2026: decisions, not fi
     expect(within(screen.getByRole('list', { name: 'The live rules only' })).getByRole('listitem')).toHaveTextContent('1 — the backtest would not: no strike its rule could sell on the recorded prices');
   });
 
+  it('more than one day: the whole range first, then each day, newest first', () => {
+    const two: Check = { ...NIGHT, days: [{ ...NIGHT.days[1]!, day: '2026-10-13', live: false, fate: { live: F({ taken: 50, notTaken: 9, skipped: 9 }), backtest: F({ taken: 50, notTaken: 9, skipped: 9 }) } }, NIGHT.days[1]!] };
+    render(<LiveCheckResult r={two} />);
+    const groups = within(screen.getByRole('table', { name: 'Live check by expiry day' })).getAllByRole('rowgroup').filter((g) => g.tagName === 'TBODY').map((g) => g.getAttribute('aria-label'));
+    expect(groups).toEqual(['All 2 days', 'Wed 14 Oct · so far', 'Tue 13 Oct']);
+  });
+
   it('nothing on either side, and an answer that could not be read, are said -- never a blank', async () => {
     const none: Check = { ...NIGHT, liveFrom: null, liveTo: null, strategies: [], total: { placed: 0, refused: 0, skipped: 0, backtest: 0, backtestSkipped: 0, same: 0, backtestOnly: 0, liveOnly: 0 }, liveWhy: { refused: [], skipped: [] }, days: [] };
     const { unmount } = render(<LiveCheck askKey="a" read={() => Promise.resolve(none)} />);
