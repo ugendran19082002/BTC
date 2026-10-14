@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { BacktestPortfolio, BacktestPortfolioResult, BacktestSave, BacktestSaves, SavedQuery } from '@/types/signal-backtest';
+import type { BacktestPortfolio, BacktestPortfolioResult, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
 
 /** Every saved backtest and portfolio, by name. */
 export const getBacktestSaves = () => json<BacktestSaves>('/api/backtest-saves');
@@ -20,12 +20,24 @@ export const deletePortfolio = (id: string) =>
 
 /** Saved backtests run together over one range of expiry days, with their total: as one account, or each on its own limit. */
 export const getBacktestPortfolio = (ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED, over: PortfolioOver = {}) =>
-  json<BacktestPortfolioResult>(`/api/backtest-portfolio?${new URLSearchParams({
+  json<BacktestPortfolioResult>(`/api/backtest-portfolio?${runSearch(ids, range, limit, cap, hours, over)}`);
+
+/** The same run laid beside the live desk, signal for signal: asked exactly as the run is, with the name it goes by. */
+export const getPortfolioLiveCheck = (name: string, ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED, over: PortfolioOver = {}) => {
+  const p = runSearch(ids, range, limit, cap, hours, over);
+  p.set('name', name);
+  return json<LiveCheck>(`/api/backtest-portfolio/live-check?${p}`);
+};
+
+/** A run together as the server reads it: the days, the saved backtests, whose limit, the hours and the settings over the run. */
+function runSearch(ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit, cap: PortfolioCap | null, hours: PortfolioHours, over: PortfolioOver): URLSearchParams {
+  return new URLSearchParams({
     ids: ids.join(','), from: range.from, to: range.to,
     ...(limit === 'own' ? { limit: 'own' } : cap ? { max: String(cap.max), ce: String(cap.ce), pe: String(cap.pe) } : {}),
     ...(hours.window === 'saved' ? {} : { hours: hours.window, ...(hours.window === 'custom' ? { hfrom: hours.hoursFrom ?? '', hto: hours.hoursTo ?? '' } : {}) }),
     ...overQuery(over),
-  })}`);
+  });
+}
 
 /**
  * Settings put over a run together (owner, 14 Oct 2026): each its own switch. One that is here is taken for the

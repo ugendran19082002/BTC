@@ -784,9 +784,12 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.equal(check.body.total.backtest, asSaved.body.total.n);
   assert.ok(close(check.body.money.backtest.net, asSaved.body.total.net), 'and the run\'s own money');
   assert.deepEqual(check.body.days.map((d: any) => [d.day, d.backtest]), asSaved.body.days.map((d: any) => [d.day, d.n]));
-  // the desk has no record here: every trade of the run is one it has none of, said once
-  assert.deepEqual([check.body.total.placed, check.body.total.same, check.body.total.backtestOnly], [0, 0, asSaved.body.total.n]);
-  assert.match(check.body.strategies[0].backtestOnly[0].why, /^no strategy on the desk has a record of it/);
+  // every order the desk placed is either a trade of the run too, or listed apart with why
+  assert.equal(check.body.total.same + check.body.total.liveOnly, check.body.total.placed);
+  assert.equal(check.body.liveOnly.reduce((n: number, g: any) => n + g.n, 0), check.body.total.liveOnly);
+  // and a trade of the run the desk has no order for says so in the desk's words, or that it has no record of it
+  const whys = check.body.strategies.flatMap((x: any) => x.backtestOnly.map((g: any) => g.why));
+  assert.ok(whys.length > 0 && whys.every((w: string) => /^(the desk |no strategy on the desk has a record of it)/.test(w)), JSON.stringify(whys));
   const checkLots = await get(`${pair.replace('/api/backtest-portfolio?', '/api/backtest-portfolio/live-check?')}&o_tf=x&hours=desk`);
   assert.equal(checkLots.body.total.backtest, (await get(`${pair}&hours=desk`)).body.total.n, 'the hours put over the run are over its check');
   assert.equal((await get('/api/backtest-portfolio/live-check?from=2026-10-01')).status, 400);

@@ -2,8 +2,8 @@ import { json, post } from '@/api/client';
 import type { BacktestQuery, LiveCheck, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
 import type { StrategyConfig } from '@/types/strategy';
 
-/** The signal history traded as options on the contracts' recorded prices, for a range of expiry days and one set of rules. */
-export function getSignalBacktest(q: BacktestQuery) {
+/** A backtest's question as the server reads it: the days, the settings, the filters, the strategy. Shared with its live check, so both are of the same thing. */
+function searchOf(q: BacktestQuery): URLSearchParams {
   const p = new URLSearchParams({
     from: q.from, to: q.to, rule: q.params.rule, value: String(q.params.value), lots: String(q.params.lots),
     tp: String(q.params.targetPct), sl: String(q.params.stopPct), window: q.params.window,
@@ -17,13 +17,17 @@ export function getSignalBacktest(q: BacktestQuery) {
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));
   if (q.strategy) p.set('strategy', q.strategy);
-  return json<SignalBacktestResponse>(`/api/signal-backtest?${p}`);
+  return p;
 }
+
+/** The signal history traded as options on the contracts' recorded prices, for a range of expiry days and one set of rules. */
+export const getSignalBacktest = (q: BacktestQuery) => json<SignalBacktestResponse>(`/api/signal-backtest?${searchOf(q)}`);
+
+/**
+ * The same backtest laid beside the live desk, signal for signal: by a strategy, its own rules against its own
+ * record; by the screen's settings, those settings against what the desk did with each signal under any strategy.
+ */
+export const getLiveCheck = (q: BacktestQuery) => json<LiveCheck>(`/api/signal-backtest/live-check?${searchOf(q)}`);
 
 /** Every method's record as options under a strategy's rules as they stand on its form -- saved or not; nothing is saved by asking. */
 export const getMethodOptionRecord = (config: StrategyConfig) => post<MethodOptionRecord>('/api/signal-backtest/methods', { config });
-
-/** Every signal strategy's backtest, by its own rules, beside what the live desk did with the same signals over a range of expiry days. */
-export const getLiveCheck = (range: { from: string; to: string }) =>
-  json<LiveCheck>(`/api/signal-backtest/live-check?${new URLSearchParams({ from: range.from, to: range.to })}`);
-

@@ -108,13 +108,21 @@ export type LiveCheckRow = {
   same: number;
   backtestOnly: LiveCheckWhy[]; liveOnly: LiveCheckWhy[];
 };
-/** The backtest against the live desk, signal for signal (`GET /api/signal-backtest/live-check`). */
+/** Trades counted with their money, as a day's row reads them: how many, how many made money, the net after charges (USD). */
+export type LiveCheckMoney = { n: number; wins: number; net: number };
+/** The backtest against the live desk, signal for signal (`/api/signal-backtest/live-check`, `/api/backtest-portfolio/live-check`). */
 export type LiveCheck = {
   from: string; to: string;
   liveFrom: number | null; liveTo: number | null; until: number;
+  /** What is on the backtest's side: each strategy by its own rules, or saved backtests / the screen's settings by name. */
+  against: { kind: 'strategies' } | { kind: 'portfolio'; name: string };
+  /** A row a strategy, or a saved backtest. */
   strategies: LiveCheckRow[];
   total: { placed: number; refused: number; skipped: number; backtest: number; backtestSkipped: number; same: number; backtestOnly: number; liveOnly: number };
+  /** Against saved backtests: the desk's orders none of them trades, by why. A strategy's own are on its row. */
+  liveOnly: LiveCheckWhy[];
   liveWhy: { refused: LiveCheckCount[]; skipped: LiveCheckCount[] };
-  days: { day: string; placed: number; backtest: number; same: number }[];
+  money: { real: LiveCheckMoney & { open: number }; backtest: LiveCheckMoney };
+  /** Each expiry day: the desk's orders placed and the backtest's trades, how many are the same signal, and the money on each side. */
+  days: { day: string; live: boolean; placed: number; backtest: number; same: number; real: LiveCheckMoney & { open: number }; bt: LiveCheckMoney }[];
 };
-
