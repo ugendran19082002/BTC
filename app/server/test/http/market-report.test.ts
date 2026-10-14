@@ -676,6 +676,17 @@ test('[critical] a backtest saved by name, run again, and several run together a
   // each its own, said: as before
   const own = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&max=2`);
   assert.deepEqual([own.body.shared, own.body.total.n], [null, run.body.total.n]);
+  // one expiry day, trade by trade (14 Oct 2026, "tap the count"): the trades add up to the day's row, each with whose it is
+  for (const [label, q, r] of [['one account', '&max=2&ce=100&pe=100', one], ['each its own', '&limit=own&max=2', own], ['added up', '', run]] as const) {
+    const d = await get(`/api/backtest-portfolio/day?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}${q}&day=${CLIMB}`);
+    assert.equal(d.status, 200, JSON.stringify(d.body).slice(0, 200));
+    const row = r.body.days.find((x: any) => x.day === CLIMB);
+    assert.equal(d.body.total, row.n, `${label}: as many trades as the day row`);
+    assert.ok(close(d.body.trades.reduce((n: number, t: any) => n + t.netUsd, 0), row.net), `${label}: the same money`);
+    assert.ok(d.body.trades.every((t: any) => ['Whole day,  10 lots', 'On 15m, 3 lots'].some((m) => typeof t.member === 'string' && t.member.length > 0) && t.member), `${label}: each says whose it is`);
+  }
+  assert.equal((await get(`/api/backtest-portfolio/day?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&day=2020-01-01`)).status, 400, 'a day outside the run');
+
   // saved backtests that carry the account's limit themselves: the largest is the one shared
   const l2 = await post('/api/backtest-saves', { name: 'Limited two', query: { params: { ...WHOLE, deskMax: 2, cePct: 100, pePct: 100 }, tfs: [], methods: [], strategy: null } });
   const l1 = await post('/api/backtest-saves', { name: 'Limited one', query: { params: { ...WHOLE, lots: 3, deskMax: 1, cePct: 100, pePct: 100 }, tfs: ['15m'], methods: [], strategy: null } });
