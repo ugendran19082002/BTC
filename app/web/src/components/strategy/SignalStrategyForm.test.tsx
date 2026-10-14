@@ -480,7 +480,7 @@ describe('the method list: profitable by a rule you can see, and filtered by res
     fireEvent.click(within(by).getByRole('button', { name: /^Profit/ }));
     expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout', '#3 Liquidity sweep']);
     fireEvent.click(screen.getByRole('button', { name: 'Reversal', pressed: false }));
-    expect(within(by).getAllByRole('button').map((b) => b.textContent)).toEqual(['All 1', 'Profit 1', 'Loss 0', 'No trades 0']);
+    expect(within(by).getAllByRole('button').map((b) => b.textContent)).toEqual(['All 1', 'Profit 1', 'Loss 0', 'No trades 0', 'Win ≥30% 1']);
   });
 
   it('[critical] Order side: Both / Buy / Sell under the result filter, each row marked, the counts of both rows following each other', async () => {
@@ -498,7 +498,7 @@ describe('the method list: profitable by a rule you can see, and filtered by res
 
     fireEvent.click(within(sides).getByRole('button', { name: /^Sell/ }));
     expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#3 Liquidity sweep', '#6 BOS']);
-    expect(labels(results)).toEqual(['All 2', 'Profit 1', 'Loss 1', 'No trades 0']); // the record's counts, of the SELL ones
+    expect(labels(results)).toEqual(['All 2', 'Profit 1', 'Loss 1', 'No trades 0', 'Win ≥30% 1']); // the record's counts, of the SELL ones
 
     // With a result chosen too, both hold: the profitable SELL ones -- and the side's counts are of the profitable ones.
     fireEvent.click(within(results).getByRole('button', { name: /^Profit/ }));
@@ -1273,7 +1273,7 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     expect([asked.lots, asked.takeProfitPct, asked.stopLossPct, asked.signal!.mode, asked.signal!.methods]).toEqual([2, 0.7, 3, 'mtf', []]);
 
     const by = await results();
-    expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']);
+    expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1', 'Win ≥30% 3']);
     fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
     expect(boxes()).toEqual(['#1 Breakout']);                                   // +900 points on the perp, a loss as an option
     expect(screen.getByLabelText('#1 Breakout').closest('label')!.textContent).toMatch(/42% win · 12t · −₹[\d,.]+/);
@@ -1317,7 +1317,7 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     await waitFor(() => expect(getMethodOptionRecord).toHaveBeenCalledTimes(2), { timeout: 4_000 });
     expect((getMethodOptionRecord.mock.calls.at(-1)![0] as Strategy['config']).signal!.mode).toBe('single');
     const by = await results();
-    await waitFor(() => expect(labels(by)).toEqual(['All 4', 'Profit 1', 'Loss 1', 'No trades 2']));
+    await waitFor(() => expect(labels(by)).toEqual(['All 4', 'Profit 1', 'Loss 1', 'No trades 2', 'Win ≥30% 1']));
   });
 
   it('[critical] where no record as options can be had -- a strategy that buys, or the desk says no -- the list is the perp\'s points, and says why', async () => {
@@ -1328,7 +1328,7 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     expect(basis("As options · this strategy's rules")).toBeDisabled();
     expect(basis('Perp points')).toHaveAttribute('aria-checked', 'true');
     const by = await results();
-    await waitFor(() => expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']));
+    await waitFor(() => expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1', 'Win ≥30% 2']));
     fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
     expect(boxes()).toEqual(['#6 BOS']);
   });
@@ -1368,7 +1368,7 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     expect(apart[0]).toBe('the strike (strategy: premium ≥ $15; Backtest: delta ≤ 0.10)');
 
     const by = await results();
-    expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']);
+    expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1', 'Win ≥30% 3']);
     fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
     expect(boxes()).toEqual(['#3 Liquidity sweep']);                             // by the Backtest
     fireEvent.click(within(by).getByRole('button', { name: /^Profit/ }));
