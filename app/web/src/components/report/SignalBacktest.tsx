@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getSignalBacktest } from '@/api/signal-backtest';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
@@ -626,6 +626,19 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [pickingRunHours, setPickingRunHours] = useState(false);
   // The other settings a run together can be given, each its own switch (`RunFilters`): all off to begin with.
   const [runOver, setRunOver] = usePersisted<PortfolioOver>('signalBacktest.together.over', {});
+  // Open on a desk, folded on a phone to begin with, as the Settings panel is; the choice is remembered on each.
+  const [runOpen, setRunOpen] = usePersisted<boolean>(`signalBacktest.runOpen.${wide ? 'desk' : 'phone'}`, wide);
+  /*
+   * A run started on a phone is shown: its result is under the portfolios and the saved backtests, a screen or two
+   * down, and a tap on Run that changed nothing in sight read as a tap that did nothing. Every tap on Run, the one
+   * already running too; a run closed, or renamed with its portfolio, moves nothing.
+   */
+  const resultRef = useRef<HTMLDivElement>(null);
+  const startRun = (next: TogetherRun | null) => {
+    const again = next !== null && (together === null || next.ids.join(',') !== together.ids.join(',') || next.title === together.title);
+    setTogether(next);
+    if (again && !wide) requestAnimationFrame(() => resultRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }));
+  };
   const [savedList, setSavedList] = useState<BacktestSave[]>([]);
   /** A saved backtest's settings put on the screen: the result below is then worked for them, over the days chosen. */
   const load = (q: SavedQuery) => {
@@ -850,6 +863,14 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const cap = capTyped ?? capDefault;
   // Custom without both its times (kept from a visit cut short) is each one's own hours, not a refusal.
   const hoursAsked: PortfolioHours = runHours.window === 'custom' && !(runHours.hoursFrom && runHours.hoursTo) ? AS_SAVED : runHours;
+  // The folded panel's one line: the days, the hours, whose limit, and any setting switched on over the run.
+  const overSaid = overWords(Object.assign({}, ...Object.values(runOver)) as Partial<BacktestParams>);
+  const runSummary = [
+    `${dayLabel(range.from)} → ${dayLabel(range.to)}`,
+    hoursAsked.window === 'saved' ? 'hours as saved' : hoursAsked.window === 'desk' ? '9:30 PM → 3:59 PM' : hoursAsked.window === 'all' ? 'whole day' : `${time12(hoursAsked.hoursFrom ?? '')} → ${time12(hoursAsked.hoursTo ?? '')}`,
+    limit === 'own' ? 'each its own limit' : cap ? `one account: ${cap.max} open · CE ${cap.ce}% · PE ${cap.pe}%` : 'one account',
+    overSaid.length ? overSaid.join(' · ') : 'settings as saved',
+  ].join(' · ');
   const title = wide && (
     <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>
   );
@@ -876,14 +897,29 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             <aside aria-label="Backtest settings" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
               {settingsPanel}
               {filterBlock}
-              <SavedBacktests mode="single" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
+              <SavedBacktests key="single" mode="single" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
             </aside>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{result}</div>
           </>
         ) : (
           <>
             <aside aria-label="Portfolio" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
-              <Panel title="Run over">
+              {/*
+                What the run is held to, in one panel that folds (14 Oct 2026): the days, the hours, the limit and the
+                six settings had grown to a screen and a half on a phone, above the portfolios and their Run buttons.
+                Folded it is one line of what is in force and Change; on a wide desk it is a column, always open.
+              */}
+              <Panel
+                title="For this run"
+                right={(
+                  <button type="button" onClick={() => setRunOpen((v) => !v)} aria-expanded={runOpen}
+                    className={cn('min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] font-medium text-[var(--accent)]', wide && 'xl:hidden')}>
+                    {runOpen ? 'Hide' : 'Change'}
+                  </button>
+                )}
+              >
+                <p aria-label="What the run is held to" className={cn('m-0 text-[13px] leading-snug', runOpen && 'hidden', wide && 'xl:hidden')}>{runSummary}</p>
+                <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', !runOpen && 'hidden', wide && 'xl:grid')}>
                 <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5">
                   {expiry.control}
                   <span aria-hidden className="-mb-1.5 px-1 text-[12px] text-muted-foreground">Hours of the signals (IST), for the run</span>
@@ -915,13 +951,17 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                       : 'Each keeps the limit set in it and they are added up: more may be open together than one account would hold.'}
                   </p>
                 </div>
-              </Panel>
-              <Panel title="For this run">
                 <RunFilters over={runOver} onChange={setRunOver} seed={params} stepSources={stepSources} wide={wide} />
+                </div>
               </Panel>
-              <SavedBacktests mode="portfolio" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} onSaves={setSavedList} />
+              {/*
+                Its own instance, by key. The two sections each hold a SavedBacktests, and when both came to sit at the
+                same place in their columns React kept one for both: the list was not read again on the way in, so the
+                saved backtests were never handed up here (14 Oct 2026 -- the "Saved backtests" limit went missing).
+              */}
+              <SavedBacktests key="portfolio" mode="portfolio" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={startRun} onSaves={setSavedList} />
             </aside>
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+            <div ref={resultRef} className="grid min-w-0 scroll-mt-2 grid-cols-[minmax(0,1fr)] gap-3">
               {together
                 ? <PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} onClose={() => setTogether(null)} />
                 : <Panel title="Run together"><Empty>Run a portfolio, or tick two or more saved backtests and run them together: each is worked as it is alone, and they are added up -- the total, each one, each expiry day, and the margin held across all of them.</Empty></Panel>}

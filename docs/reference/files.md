@@ -285,7 +285,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [accounts.ts](../../app/web/src/api/accounts.ts) | -- |
-| [backtest-saves.ts](../../app/web/src/api/backtest-saves.ts) | The hours a run together is held to: `saved`, each saved backtest's own; or the desk's hours, the whole expiry day, or hours of the owner's own -- put over every one of them worked by settings, for... |
+| [backtest-saves.ts](../../app/web/src/api/backtest-saves.ts) | Settings put over a run together (owner, 14 Oct 2026): each its own switch. |
 | [client.ts](../../app/web/src/api/client.ts) | One place that knows how to talk to the API: JSON in and out, the session cookie, "not signed in" as its own error, and which failures are worth reporting to the error log. |
 | [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |

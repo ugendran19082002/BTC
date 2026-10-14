@@ -150,7 +150,7 @@ export type TogetherRun = { ids: string[]; title: string };
  */
 function RunNote({ r }: { r: BacktestPortfolioResult }) {
   const h = r.hours ?? null, o = r.over ?? null;
-  if (!h && !o) return <p className="m-0 px-1 text-[12.5px] leading-snug text-muted-foreground">Each saved backtest ran with its own hours and settings, as saved. Switch one on under Run over to try the same set with it.</p>;
+  if (!h && !o) return <p className="m-0 px-1 text-[12.5px] leading-snug text-muted-foreground">Each saved backtest ran with its own hours and settings, as saved. Switch one on under For this run to try the same set with it.</p>;
   const hours = h ? (h.window === 'desk' ? '9:30 PM → 3:59 PM' : h.window === 'all' ? 'the whole expiry day' : `${time12(h.hoursFrom ?? '')} → ${time12(h.hoursTo ?? '')}`) : null;
   const settings = o ? overWords(o.settings) : [];
   const kept = new Set([...(h?.own ?? []), ...(o?.own ?? [])]);
@@ -333,7 +333,8 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
             className="mt-0.5 h-5 w-5 accent-[var(--chosen)]" />
           <span className="min-w-0">
             <span className="block text-[14px] font-semibold [overflow-wrap:anywhere]">{s.name}</span>
-            <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{wordsOf(s.query)}</span>
+            {/* Two lines on a phone: eight of these at five lines each were a screen and a half between Run and its result. All of it on a wider screen, and in the title. */}
+            <span title={wordsOf(s.query)} className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere] max-sm:overflow-hidden max-sm:[-webkit-box-orient:vertical] max-sm:[-webkit-line-clamp:2] max-sm:[display:-webkit-box]">{wordsOf(s.query)}</span>
           </span>
         </label>
       </li>

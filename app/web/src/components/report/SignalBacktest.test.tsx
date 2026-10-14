@@ -917,4 +917,103 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(last()).toEqual({ window: 'saved' }));
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
   });
+
+  it('[critical] the settings of a run together: each a switch -- off, every saved backtest\'s own; on, that one put over them all for the run', async () => {
+    const saved = (id: string, name: string) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10 }, tfs: [], methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
+    saves.getBacktestSaves.mockResolvedValue({ saves: [saved('a1', 'Alpha'), saved('b22', 'Beta')], portfolios: [{ id: 'p1', name: 'Both', saveIds: ['a1', 'b22'], createdAt: 1, updatedAt: 1 }] });
+    const member = (id: string, name: string) => ({ id, name, problem: null, signals: 50, total: tot({ n: 10, wins: 5, losses: 5, net: 1, won: 3, lost: 2, charges: 1 }), marginPeakUsd: 8, priced: null });
+    type Over = Record<string, Record<string, unknown>>;
+    // The server says back what it put over the run: the switched-on settings, flat.
+    saves.getBacktestPortfolio.mockImplementation(async (_i: string[], _r: object, _l: string, _c: object | null, _h: object, over: Over) => ({
+      from: '2026-10-01', to: '2026-10-13', shared: null, members: [member('a1', 'Alpha'), member('b22', 'Beta')], hours: null,
+      over: Object.keys(over).length ? { settings: Object.assign({}, ...Object.values(over)), own: [] } : null,
+      total: tot({ n: 20, wins: 10, losses: 10, net: 2, won: 6, lost: 4, charges: 2 }), days: [],
+      margin: { peakUsd: 0, peakDay: null, peakAt: null, peakOpen: 0, peakLots: 0, avgDailyPeakUsd: 0, sumOfPeaksUsd: 0 },
+    }));
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('radio', { name: 'Saved backtests run together, and their total' }));
+    const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
+    const set = () => within(folio().getByRole('region', { name: 'Settings for the run' }));
+    const sw = (name: string) => set().getByRole('switch', { name: `${name}, for the run` });
+    const NAMES = ['Strike', 'Option target', 'Option stop', 'Lots a signal', 'Minimum premium', 'SL and TGT range'];
+    // every one off to begin with, each saying whose settings run
+    expect(set().getAllByRole('switch').map((x) => [x.getAttribute('aria-label'), x.getAttribute('aria-checked')])).toEqual(NAMES.map((n) => [`${n}, for the run`, 'false']));
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(6);
+    expect(set().getByText('· all off')).toBeInTheDocument();
+    expect(set().queryByRole('button', { name: 'Switch all off' })).toBeNull();
+    // folded on a phone to begin with: one line of what the run is held to, and Change
+    const held = () => folio().getByLabelText('What the run is held to');
+    expect(held()).toHaveTextContent('Thu 1 Oct → Tue 13 Oct · hours as saved · one account: 58 open · CE 80% · PE 80% · settings as saved');
+    const fold = folio().getByRole('button', { name: 'Change' });
+    expect(fold).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(fold);
+    expect(folio().getByRole('button', { name: 'Hide' })).toHaveAttribute('aria-expanded', 'true');
+    expect(JSON.parse(window.localStorage.getItem(Object.keys(window.localStorage).find((k) => k.endsWith('signalBacktest.runOpen.phone'))!)!)).toBe(true);
+    fireEvent.click(await folio().findByRole('button', { name: 'Run the portfolio Both' }));
+    await screen.findByRole('table', { name: 'Run together: each saved backtest' });
+    const last = () => saves.getBacktestPortfolio.mock.calls.at(-1)![5];
+    expect(last()).toEqual({});
+
+    // lots: switched on, it starts from the Single backtest section's own and is asked for at once
+    fireEvent.click(sw('Lots a signal'));
+    await waitFor(() => expect(last()).toEqual({ lots: { lots: 10 } }));
+    expect(sw('Lots a signal')).toHaveAttribute('aria-checked', 'true');
+    expect(set().getByText('For the run: 10 lots a signal')).toBeInTheDocument();
+    fireEvent.click(within(set().getByRole('group', { name: 'Lots a signal' })).getByRole('button', { name: '16' }));
+    await waitFor(() => expect(last()).toEqual({ lots: { lots: 16 } }));
+    expect(await screen.findByRole('note', { name: 'What this run was held to' })).toHaveTextContent(
+      'For this run, every one of them with: 16 lots a signal.Everything else is each saved backtest\'s own. Nothing saved is changed.');
+
+    // the option's stop and its target beside it: each its own switch, the others untouched
+    fireEvent.click(sw('Option stop'));
+    fireEvent.click(within(set().getByRole('group', { name: 'The option\'s own stop, over the premium sold' })).getByRole('button', { name: '+150%' }));
+    await waitFor(() => expect(last()).toEqual({ lots: { lots: 16 }, stop: { stopPct: 1.5 } }));
+    fireEvent.click(sw('Option target'));
+    fireEvent.click(within(set().getByRole('group', { name: 'The option\'s own target, of the premium kept' })).getByRole('button', { name: '70%' }));
+    await waitFor(() => expect(last()).toEqual({ lots: { lots: 16 }, stop: { stopPct: 1.5 }, target: { targetPct: 0.7 } }));
+    expect(set().getByRole('radio', { name: 'One target all day, for the run' })).toBeChecked();
+
+    // the strike: its rule and its limit together
+    fireEvent.click(sw('Strike'));
+    await waitFor(() => expect(last().strike).toEqual({ rule: 'delta', value: 0.1 }));
+    fireEvent.click(set().getByRole('radio', { name: 'Pick the strike by premium' }));
+    await waitFor(() => expect(last().strike).toEqual({ rule: 'premium', value: 50 }));
+    expect(set().getByText('For the run: strike premium ≤ $50')).toBeInTheDocument();
+
+    // the premium floor off for all of them is a setting of its own; and the range, its four together
+    fireEvent.click(sw('Minimum premium'));
+    fireEvent.click(within(set().getByRole('group', { name: 'Minimum premium: sell only for at least' })).getByRole('button', { name: 'Off' }));
+    await waitFor(() => expect(last().minPremium).toEqual({ minPremium: 0 }));
+    expect(set().getByText('For the run: no premium floor')).toBeInTheDocument();
+    fireEvent.click(sw('SL and TGT range'));
+    await waitFor(() => expect(last().range).toEqual({ slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0 }));
+    expect(set().getByText('For the run: no SL / TGT range')).toBeInTheDocument();
+    expect(set().getByText('· 6 on')).toBeInTheDocument();
+    expect(held()).toHaveTextContent('hours as saved · one account: 58 open · CE 80% · PE 80% · strike premium ≤ $50 · target 70% · stop +150% · 16 lots a signal · no premium floor · no SL / TGT range');
+    expect(await screen.findByRole('note', { name: 'What this run was held to' })).toHaveTextContent(
+      'For this run, every one of them with: strike premium ≤ $50 · target 70% · stop +150% · 16 lots a signal · no premium floor · no SL / TGT range.');
+    // kept in this browser, like the hours and the limit
+    expect(Object.keys(JSON.parse(window.localStorage.getItem(Object.keys(window.localStorage).find((k) => k.endsWith('signalBacktest.together.over'))!)!)).sort())
+      .toEqual(['lots', 'minPremium', 'range', 'stop', 'strike', 'target']);
+
+    // one off again: that one is each saved backtest's own once more; then all of them
+    fireEvent.click(sw('Lots a signal'));
+    await waitFor(() => expect(Object.keys(last()).sort()).toEqual(['minPremium', 'range', 'stop', 'strike', 'target']));
+    fireEvent.click(set().getByRole('button', { name: 'Switch all off' }));
+    await waitFor(() => expect(last()).toEqual({}));
+    await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(6);
+  });
+
+  it('a run\'s settings as the route reads them: the single backtest\'s own names under o_, and nothing for a switch that is off', async () => {
+    const { overQuery } = await vi.importActual<typeof import('@/api/backtest-saves')>('@/api/backtest-saves');
+    expect(overQuery({})).toEqual({});
+    expect(overQuery({ lots: { lots: 2 }, stop: { stopPct: 1.6 } })).toEqual({ o_lots: '2', o_sl: '1.6' });
+    expect(overQuery({ strike: { rule: 'delta', value: 0.1 }, minPremium: { minPremium: 0 } })).toEqual({ o_rule: 'delta', o_value: '0.1', o_minprem: '0' });
+    expect(overQuery({ target: { targetPct: 0.7 } })).toEqual({ o_tp: '0.7' });
+    expect(overQuery({ target: { targetPct: 0.7, targetSteps: [{ at: '23:30', pct: 0.73 }, { at: '01:30', pct: 0.76 }] } })).toEqual({ o_tp: '0.7', o_tsteps: '23:30:73,01:30:76' });
+    // the range goes whole, zeros too: "no range for any of them" is asked for, not left out
+    expect(overQuery({ range: { slMin: 250, slMax: 0, tgtMin: 250, tgtMax: 0 } })).toEqual({ o_slmin: '250', o_slmax: '0', o_tgtmin: '250', o_tgtmax: '0' });
+  });
 });

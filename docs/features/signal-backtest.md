@@ -178,6 +178,20 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
   hours"). One worked by a strategy keeps that strategy's own days and hours, as it does alone, and is named.
   `?hours=saved|desk|all|custom&hfrom=&hto=`; the answer's `hours { window, hoursFrom?, hoursTo?, own[] }` (null as
   saved). Kept in this browser (`signalBacktest.together.hours`).
+- **Settings for the run** (14 Oct 2026): six switches -- **Strike**, **Option target** (fixed, or dynamic by
+  time), **Option stop**, **Lots a signal**, **Minimum premium**, **SL and TGT range**. Off, which is how each
+  starts, every saved backtest runs with its own. Switched on, the single backtest's own control for it appears,
+  starting from what the Single backtest section has, and that one setting is put over every saved backtest in the
+  run -- for the run only; nothing saved is changed. The result says what was put over it ("For this run, every
+  one of them with: stop +150% · 16 lots a signal") and that everything else is each one's own; one worked by a
+  strategy keeps the strategy's rules and is named. `?o_rule=&o_value=` · `o_tp=` with `o_tsteps=` · `o_sl=` ·
+  `o_lots=` · `o_minprem=` · `o_slmin=&o_slmax=&o_tgtmin=&o_tgtmax=`, each read by the single backtest's own
+  parser (`backtestParamsOf`), so each member is exactly what the single backtest gives with that setting; the
+  answer's `over { settings, own[] }` (null: none). Kept in this browser (`signalBacktest.together.over`).
+- **For this run** is one panel -- the days, the hours, the limit and these switches -- that folds on a phone to a
+  line of what is in force ("Thu 1 Oct → Wed 14 Oct · hours as saved · one account: 120 open · CE 80% · PE 80% ·
+  10 lots a signal") and **Change**; on a wide desk it is a column, always open. A tap on **Run** on a phone
+  brings the result into view.
 - **The limit on open trades: One account** (what it opens on) or **Each its own limit**. The desk's "at most
   open" and its CE and PE shares are an *account's*, not a strategy's. Seven saved backtests of "at most 120" each
   were first worked alone and added up, and the total said 152 open at once (179 a few hours later) -- more than
@@ -217,7 +231,7 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
 `backtest_saves` (id, name unique whatever its capitals, `query` as JSON) and `backtest_portfolios` (id, name,
 `save_ids`), `report/backtest-saves.ts`; at most 100 and 30. `GET/POST /api/backtest-saves`,
 `DELETE /api/backtest-saves/:id`, `POST /api/backtest-portfolios`, `DELETE /api/backtest-portfolios/:id`,
-`GET /api/backtest-portfolio?ids=&from=&to=&limit=shared|own&max=&ce=&pe=&hours=saved|desk|all|custom&hfrom=&hto=` (worked in the backtest's thread,
+`GET /api/backtest-portfolio?ids=&from=&to=&limit=shared|own&max=&ce=&pe=&hours=saved|desk|all|custom&hfrom=&hto=&o_…=` (worked in the backtest's thread,
 `portfolioBacktest`; `shared` in the answer says the limit they were held to and how many it turned away). Checked on
 1-12 Oct with two saved: each member is its own backtest to the cent, the total their sum, every day its members'
 sum, the margin together ($1,583 with 374 open) between the larger one's own and the two added ($1,643).
