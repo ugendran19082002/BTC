@@ -415,7 +415,7 @@ test('[critical] the backtest by a saved strategy: its methods and timeframe, it
   assert.match(gone.body.error, /No such signal strategy/);
 });
 
-test('[critical] the live check: each strategy\'s backtest laid beside what the desk did with the same signals, and why for every one on one side only', async () => {
+test('[critical] the live check: by a strategy, its backtest beside the desk\'s own decisions; by settings, beside the live rules run with them', async () => {
   const config = {
     trigger: 'signal', signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 5, enterOn: 'zone', action: 'sell' },
     liveOrders: false, entryTime: '17:35', exitTime: '17:29', lots: 1, legs: 'both',
@@ -426,19 +426,19 @@ test('[critical] the live check: each strategy\'s backtest laid beside what the 
   const made = await post('/api/strategies', { name: 'BT live', config });
   assert.equal(made.status, 200, JSON.stringify(made.body));
   const id = made.body.strategy.id;
-  // nothing on the desk's record yet: every trade of the backtest is one the desk has no record of
-  const none = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&all=1`);
-  assert.equal(none.status, 200, JSON.stringify(none.body).slice(0, 300));
-  const before = none.body.strategies.find((x: any) => x.id === id);
-  assert.deepEqual([before.live, before.backtest, before.same], [{ placed: 0, refused: 0, skipped: 0 }, 3, 0], 'by its own rules: the three 15m breakouts');
-  assert.deepEqual(before.backtestOnly.map((g: any) => [g.why, g.n]), [['no record on the desk: it or the strategy was not running then, or its rules were different', 3]]);
-  assert.equal(before.backtestOnly[0].first.length, 3);
-  assert.deepEqual([none.body.liveFrom, none.body.liveTo], [null, null]);
+  const check = (extra: string) => get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}${extra}`);
 
-  // the desk's record, keyed as a setup is: the first placed, the second refused by the day's loss limit, the third never seen
+  // nothing on the desk's record yet: the backtest's three trades are not compared -- set apart, counted, and why
+  const none = await check(`&strategy=${id}`);
+  assert.equal(none.status, 200, JSON.stringify(none.body).slice(0, 300));
+  assert.deepEqual([none.body.total.backtest, none.body.total.same, none.body.notCompared], [0, 0, { backtest: 3, desk: 0 }]);
+  assert.deepEqual(none.body.notComparedWhy.backtest.map((g: any) => [g.why, g.n]), [['the desk has no record of the signal: the strategy was off, not yet made, or its rules were different then', 3]]);
+  assert.deepEqual([none.body.liveFrom, none.body.liveTo, none.body.money.real], [null, null, null], 'never the desk\'s finished orders');
+
+  // the desk's record, keyed as a setup is: the first placed, the second refused by the day's loss limit, the third skipped
   const { from } = sessionOf(CLIMB);
-  const setups = await import('../../src/db/pool.js').then((m) => m.rows<{ method: string; mode: string; tf: string; dir: number; trigger_at: string; filled_at: string }>(
-    'SELECT method, mode, tf, dir, trigger_at, filled_at FROM entry_setups WHERE filled_at >= $1 AND filled_at < $2 ORDER BY filled_at', [from / 1_000, from / 1_000 + 86_400]));
+  const setups = await rows<{ method: string; mode: string; tf: string; dir: number; trigger_at: string; filled_at: string }>(
+    'SELECT method, mode, tf, dir, trigger_at, filled_at FROM entry_setups WHERE filled_at >= $1 AND filled_at < $2 ORDER BY filled_at', [from / 1_000, from / 1_000 + 86_400]);
   const keyOf = (x: (typeof setups)[number]) => `${x.method}|${x.mode}|${x.tf}|${x.dir}|${x.trigger_at}`;
   const mine = setups.filter((x) => x.method === 'breakout' && x.mode === 'single' && x.tf === '15m');
   const other = setups.find((x) => x.method !== 'breakout')!;
@@ -448,66 +448,45 @@ test('[critical] the live check: each strategy\'s backtest laid beside what the 
     [id, keyOf(x), x.method, x.mode, x.tf, x.dir, status, detail, Number(x.filled_at) * 1_000 + 4_000]);
   await wrote(mine[0]!, 'placed', '#1 Breakout BUY | sell PE 81800 x1 @ 54 (delta 0.09) · perp filled 84000 · perp SL 83700 · TGT 84500');
   await wrote(mine[1]!, 'refused', '#1 Breakout BUY | sell PE 81800 x1 @ 54 (delta 0.09) · perp filled 84000 · perp SL 83700 · TGT 84500 -- refused: Worst case $0 exceeds the $-82 left in today\'s loss budget.');
-  // and an order the desk placed on a signal that is not this strategy's by its rules as they stand
+  await wrote(mine[2]!, 'skipped', '#1 Breakout BUY | SL too near: the perp entry 84000 to the SL 83700 is 300 pts — this strategy takes 15m signals only at 400 pts or more');
+  // and an order on a signal outside the strategy's rules as they stand: set apart, not counted against it
   await wrote(other, 'placed', '#2 Pullback BUY | sell PE 81800 x1 @ 54 (delta 0.09) · perp filled 84000 · perp SL 83700 · TGT 84500');
 
-  const r = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&all=1`);
-  const row = r.body.strategies.find((x: any) => x.id === id);
-  assert.deepEqual([row.name, row.live, row.backtest, row.same], ['BT live', { placed: 2, refused: 1, skipped: 0 }, 3, 1]);
-  assert.deepEqual(row.backtestOnly.map((g: any) => [g.why, g.n]), [
-    ['no record on the desk: it or the strategy was not running then, or its rules were different', 1],
-    ['the desk refused: the daily loss limit', 1],
-  ], 'each in the desk\'s own reason');
-  assert.deepEqual(row.backtestOnly[1].first, [{ at: Number(mine[1]!.filled_at) * 1_000, method: 'breakout', tf: '15m', dir: 1 }]);
-  assert.deepEqual(row.liveOnly.map((g: any) => [g.why, g.n]), [['its method or time frame is not in the strategy\'s rules now', 1]]);
-  // every strategy that sells signals is there, and the totals are their sum
-  const all = r.body.strategies as any[];
-  assert.ok(all.length >= 2 && all.some((x) => x.name === 'BT fifteen'));
-  assert.equal(r.body.total.backtest, all.reduce((n, x) => n + x.backtest, 0));
-  assert.deepEqual([r.body.total.placed, r.body.total.refused, r.body.total.same, r.body.total.liveOnly], [2, 1, 1, 1]);
-  assert.deepEqual(r.body.days.map((d: any) => d.day), [CLIMB]);
-  assert.deepEqual([r.body.days[0].same, r.body.days[0].backtest], [1, r.body.total.backtest]);
-  assert.ok(r.body.liveFrom >= Number(setups[0]!.filled_at) * 1_000 && r.body.liveTo >= r.body.liveFrom, 'the first and the last moment the desk has a record');
-  // the refused and the skipped, counted by reason -- the strategy's own and the range's
-  await wrote(mine[2]!, 'skipped', '#1 Breakout BUY | SL too near: the perp entry 84000 to the SL 83700 is 300 pts — this strategy takes 15m signals only at 400 pts or more');
-  const counted = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&all=1`);
-  const mineNow = counted.body.strategies.find((x: any) => x.id === id);
-  assert.deepEqual(mineNow.live, { placed: 2, refused: 1, skipped: 1 });
-  assert.deepEqual(mineNow.liveWhy, { refused: [{ why: 'the daily loss limit', n: 1 }], skipped: [{ why: 'its SL / TGT distance', n: 1 }] });
-  assert.deepEqual(counted.body.liveWhy, mineNow.liveWhy, 'the only strategy with a record: the range\'s counts are its own');
-  assert.deepEqual(mineNow.backtestOnly.map((g: any) => [g.why, g.n]), [['the desk refused: the daily loss limit', 1], ['the desk skipped: its SL / TGT distance', 1]]);
-  assert.deepEqual(mineNow.backtestSkipped, [], 'the backtest traded all three');
-  // a strategy held to one open: what its backtest did not trade is counted by why as well
-  assert.deepEqual(counted.body.strategies.find((x: any) => x.name === 'BT fifteen').backtestSkipped, [{ why: 'its own most open at once', n: 2 }]);
-  assert.equal(counted.body.total.backtestSkipped, 2);
+  const r = await check(`&strategy=${id}`);
+  const row = r.body.strategies[0];
+  assert.deepEqual(r.body.strategies.map((x: any) => x.name), ['BT live'], 'the strategy asked for alone');
+  assert.deepEqual([row.live, row.backtest, row.same], [{ placed: 1, refused: 1, skipped: 1 }, 3, 1]);
+  assert.deepEqual(row.backtestOnly.map((g: any) => [g.why, g.n]), [['the desk refused: the daily loss limit', 1], ['the desk skipped: its SL / TGT distance', 1]], 'each in the desk\'s own reason');
+  assert.deepEqual(row.backtestOnly[0].first, [{ at: Number(mine[1]!.filled_at) * 1_000, method: 'breakout', tf: '15m', dir: 1 }]);
+  assert.deepEqual(row.liveOnly, []);
+  assert.deepEqual(r.body.notCompared, { backtest: 0, desk: 1 });
+  assert.deepEqual(r.body.notComparedWhy.desk.map((g: any) => [g.why, g.n]), [['outside the strategy\'s rules as they stand now', 1]]);
+  assert.deepEqual(row.liveWhy, { refused: [{ why: 'the daily loss limit', n: 1 }], skipped: [{ why: 'its SL / TGT distance', n: 1 }] });
+  assert.deepEqual(row.backtestSkipped, [], 'the backtest traded all three');
+  assert.deepEqual(r.body.days.map((d: any) => [d.day, d.placed, d.backtest, d.same, d.real]), [[CLIMB, 1, 3, 1, null]]);
+  assert.equal(r.body.days[0].bt.n, 3);
+  assert.ok(r.body.liveFrom >= Number(setups[0]!.filled_at) * 1_000 && r.body.liveTo >= r.body.liveFrom);
 
-  // each expiry day as the portfolio's day table reads: the count and the money on both sides
-  assert.deepEqual(counted.body.against, { kind: 'strategies' });
-  const day = counted.body.days[0];
-  assert.deepEqual([day.day, day.placed, day.same, day.backtest], [CLIMB, 2, 1, counted.body.total.backtest]);
-  assert.deepEqual(Object.keys(day.real).sort(), ['n', 'net', 'open', 'wins']);
-  assert.equal(day.bt.n, counted.body.total.backtest);
-  assert.ok(Math.abs(day.bt.net - counted.body.money.backtest.net) < 1e-9 && day.bt.wins <= day.bt.n);
+  // every strategy: the totals are their sum, and one held to one open counts what it did not trade by why
+  const all = await check('&all=1');
+  assert.ok(all.body.strategies.length >= 2);
+  assert.equal(all.body.total.backtest, all.body.strategies.reduce((n: number, x: any) => n + x.backtest, 0));
+  assert.deepEqual(all.body.against, { kind: 'strategies' });
 
-  // inside the single backtest: by a strategy, that strategy's row alone -- its own rules against its own record
-  const one = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&strategy=${id}`);
-  assert.deepEqual(one.body.strategies.map((x: any) => x.name), ['BT live']);
-  assert.deepEqual([one.body.total.placed, one.body.total.backtest, one.body.total.same, one.body.days[0].backtest], [2, 3, 1, 3]);
-  assert.equal((await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&strategy=nope`)).status, 404);
-  // by the screen's settings: one book, against what the desk did with each signal under any strategy
-  const screen = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&window=all&tf=15m&method=breakout`);
+  // by the screen's settings: the live rules run with those settings, on the same signals -- the same decisions, the same money
+  const screen = await check('&window=all&tf=15m&method=breakout');
   assert.equal(screen.status, 200, JSON.stringify(screen.body).slice(0, 300));
   assert.deepEqual(screen.body.against, { kind: 'portfolio', name: 'these settings' });
   const alone = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tf=15m&method=breakout`);
-  assert.deepEqual([screen.body.strategies.length, screen.body.strategies[0].name, screen.body.total.backtest], [1, 'These settings', alone.body.total.n], 'the same trades the single backtest makes');
-  assert.ok(Math.abs(screen.body.money.backtest.net - alone.body.total.net) < 1e-9, 'and the same money');
-  // the desk placed two orders: one on a 15m breakout the settings trade too, one on another method they do not
-  assert.deepEqual([screen.body.total.placed, screen.body.total.same, screen.body.total.liveOnly], [2, 1, 1]);
-  assert.deepEqual(screen.body.liveOnly.map((g: any) => [g.why, g.n]), [['no saved backtest of the portfolio has that method ticked on that time frame', 1]]);
-  assert.deepEqual(screen.body.strategies[0].backtestOnly.map((g: any) => [g.why, g.n]), [['the desk refused: the daily loss limit', 1], ['the desk skipped: its SL / TGT distance', 1]]);
-  // a range or settings that cannot be meant
+  assert.deepEqual([screen.body.total.backtest, screen.body.total.placed, screen.body.total.same, screen.body.total.backtestOnly, screen.body.total.liveOnly], [alone.body.total.n, alone.body.total.n, alone.body.total.n, 0, 0]);
+  assert.ok(Math.abs(screen.body.money.backtest.net - alone.body.total.net) < 1e-9 && Math.abs(screen.body.money.real.net - alone.body.total.net) < 1e-9, 'and the same money on both sides');
+  // a premium rule and a range too: still the same
+  const other2 = await check('&window=desk&rule=premium&value=50&slmin=100&tgtmin=100&lots=3');
+  assert.deepEqual([other2.body.total.backtestOnly, other2.body.total.liveOnly, other2.body.total.same === other2.body.total.backtest], [0, 0, true]);
+  // refused: a range or settings that cannot be meant, a strategy that is not there
   assert.equal((await get('/api/signal-backtest/live-check?from=2026-13-40')).status, 400);
-  assert.equal((await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&lots=0`)).status, 400);
+  assert.equal((await check('&lots=0')).status, 400);
+  assert.equal((await check('&strategy=nope')).status, 404);
   await query('DELETE FROM strategy_signal_runs WHERE strategy_id = $1', [id]);
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/strategies/${id}`, headers: cookie })).statusCode, 200);
 });
@@ -784,12 +763,9 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.equal(check.body.total.backtest, asSaved.body.total.n);
   assert.ok(close(check.body.money.backtest.net, asSaved.body.total.net), 'and the run\'s own money');
   assert.deepEqual(check.body.days.map((d: any) => [d.day, d.backtest]), asSaved.body.days.map((d: any) => [d.day, d.n]));
-  // every order the desk placed is either a trade of the run too, or listed apart with why
-  assert.equal(check.body.total.same + check.body.total.liveOnly, check.body.total.placed);
-  assert.equal(check.body.liveOnly.reduce((n: number, g: any) => n + g.n, 0), check.body.total.liveOnly);
-  // and a trade of the run the desk has no order for says so in the desk's words, or that it has no record of it
-  const whys = check.body.strategies.flatMap((x: any) => x.backtestOnly.map((g: any) => g.why));
-  assert.ok(whys.length > 0 && whys.every((w: string) => /^(the desk |no strategy on the desk has a record of it)/.test(w)), JSON.stringify(whys));
+  // the live rules run with each saved backtest's settings take the same trades, and make the same money
+  assert.deepEqual([check.body.total.placed, check.body.total.same, check.body.total.backtestOnly, check.body.total.liveOnly], [asSaved.body.total.n, asSaved.body.total.n, 0, 0]);
+  assert.ok(close(check.body.money.real.net, check.body.money.backtest.net));
   const checkLots = await get(`${pair.replace('/api/backtest-portfolio?', '/api/backtest-portfolio/live-check?')}&o_tf=x&hours=desk`);
   assert.equal(checkLots.body.total.backtest, (await get(`${pair}&hours=desk`)).body.total.n, 'the hours put over the run are over its check');
   assert.equal((await get('/api/backtest-portfolio/live-check?from=2026-10-01')).status, 400);
