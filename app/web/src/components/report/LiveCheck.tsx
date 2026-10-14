@@ -171,7 +171,7 @@ export function LiveCheckResult({ r }: { r: Check }) {
             <thead>
               <tr className="text-[10.5px] uppercase tracking-[0.4px] text-muted-foreground">
                 <th scope="col" className="py-1 text-left font-medium"><span className="sr-only">Side</span></th>
-                {FATE_COLS.map((c) => <th key={c.key} scope="col" className="py-1 pl-1 text-right font-medium" title={c.hint}>{c.label}</th>)}
+                {FATE_COLS.map((c) => <th key={c.key} scope="col" className="whitespace-normal py-1 pl-1 text-right align-bottom font-medium leading-tight" title={c.hint}>{c.label}</th>)}
               </tr>
             </thead>
             {[{ day: 'all', label: `All ${days.length} day${days.length === 1 ? '' : 's'}`, fate: r.fate, same: t.same, extraBt: t.backtestOnly, extraLive: t.liveOnly, bt: r.money.backtest, real: r.money.real }, ...days.map((d) => ({
@@ -182,14 +182,19 @@ export function LiveCheckResult({ r }: { r: Check }) {
                 <FateRow side={them} fate={x.fate.live} desk={!saved} />
                 <FateRow side="Backtest" fate={x.fate.backtest} desk={false} />
                 <tr>
-                  <td colSpan={7} className="pb-2 pt-0.5 text-[12px] leading-snug">
+                  {/* Wrapped, never wider than the phone: the desk's tables are nowrap by default. */}
+                  <td colSpan={7} className="whitespace-normal pb-2 pt-0.5 text-[12px] leading-snug">
                     <span className={cn('font-semibold', x.extraBt === 0 && x.extraLive === 0 && x.same > 0 ? 'text-[var(--up)]' : 'text-foreground')}>Same signal {count(x.same)}</span>
                     {x.extraBt === 0 && x.extraLive === 0 ? (x.same > 0 ? <span className="text-[var(--up)]"> · all match</span> : null) : <>
                       {x.extraBt > 0 && <span className="text-[var(--warn)]"> · +{count(x.extraBt)} backtest</span>}
                       {x.extraLive > 0 && <span className="text-[var(--warn)]"> · +{count(x.extraLive)} {saved ? 'live' : 'desk'}</span>}
                     </>}
-                    {x.bt.n > 0 && <span className="text-muted-foreground"> · backtest <span className={netClass(x.bt.net)}>{moneyText(x.bt.net)}</span>, won {pct(rate(x.bt), 0)}</span>}
-                    {x.real && x.real.n > 0 && <span className="text-muted-foreground"> · live rules <span className={netClass(x.real.net)}>{moneyText(x.real.net)}</span></span>}
+                    {(x.bt.n > 0 || (x.real && x.real.n > 0)) && (
+                      <span className="block text-muted-foreground">
+                        {x.bt.n > 0 && <>Backtest <span className={netClass(x.bt.net)}>{moneyText(x.bt.net)}</span>, won {pct(rate(x.bt), 0)}</>}
+                        {x.real && x.real.n > 0 && <>{x.bt.n > 0 ? ' · ' : ''}live rules <span className={netClass(x.real.net)}>{moneyText(x.real.net)}</span></>}
+                      </span>
+                    )}
                   </td>
                 </tr>
               </tbody>

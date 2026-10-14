@@ -50,7 +50,7 @@ describe('the live check, inside a result (owner, 14 Oct 2026: decisions, not fi
     expect(cells('Desk')).toEqual(['1602 waiting', '693', '676', '15', '1', '1']);
     // the backtest: what it took and skipped; the desk's own kinds of not taken are a dash, not a zero
     expect(cells('Backtest')).toEqual(['177', '676', '676', '—', '—', '—']);
-    expect(day.getByText(/^Same signal 162/).closest('td')).toHaveTextContent('Same signal 162 · +15 backtest · backtest −₹138, won 40%');
+    expect(day.getByText(/^Same signal 162/).closest('td')).toHaveTextContent('Same signal 162 · +15 backtestBacktest −₹138, won 40%');
     expect(screen.getByText(/its decisions, not their fills/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Not compared')).toBeNull();
   });
@@ -98,7 +98,7 @@ describe('the live check, inside a result (owner, 14 Oct 2026: decisions, not fi
     const cells = (side: string) => within(day.getByRole('rowheader', { name: side }).closest('tr')!).getAllByRole('cell').map((x) => x.textContent);
     expect(cells('Live rules')).toEqual(['181', '708', '708', '—', '—', '—']);
     expect(cells('Backtest')).toEqual(['181', '708', '708', '—', '—', '—']);
-    expect(day.getByText(/^Same signal 181/).closest('td')).toHaveTextContent('Same signal 181 · all match · backtest −₹273, won 40% · live rules −₹273');
+    expect(day.getByText(/^Same signal 181/).closest('td')).toHaveTextContent('Same signal 181 · all matchBacktest −₹273, won 40% · live rules −₹273');
     expect(screen.getByText(/through the same rules the desk trades by, and compared signal for signal/)).toBeInTheDocument();
   });
 
