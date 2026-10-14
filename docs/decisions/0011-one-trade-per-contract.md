@@ -1,6 +1,6 @@
 # 0011 — Two strategies may hold one contract; each trade keeps its own
 
-**Status:** accepted and built, 30 September 2026 · paper-tested; the one-lot live test is open
+**Status:** accepted and built, 30 September 2026 · **narrowed by [0014](0014-one-signal-trade-per-contract.md)**, 14 October 2026: the signal runner opens one trade per contract again · paper-tested; the one-lot live test is open
 ([TODO.md](../TODO.md)) · **Replaces:** "one trade per contract", the engine's
 unwritten rule until that day
 

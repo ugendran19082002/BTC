@@ -656,9 +656,21 @@ export class StrategyRunner {
     // The strike rule in force at this minute: the strategy's own, or the block the clock has reached.
     const at = strikePickAt(s.config, istMinutes(now));
     const block = at.block > 0 ? ` · block ${at.block + 1}, from ${time12(at.from)}` : '';
-    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
+    /*
+     * One trade per contract on an account (owner, 14 Oct 2026, after 30 positions closed at Delta unseen). Several
+     * trades sold on one strike share Delta's one position there, each with its own reduce-only target and stop;
+     * Delta holds a contract's reduce-only orders to its position and trims them as it moves, and the desk put
+     * them back -- 3,000 cancels and re-places in a night, on the contracts with 17 to 55 trades each and on no
+     * other, and fills the desk could no longer match. A contract this account already holds, or is entering, is
+     * taken off the board for this signal: the rule picks the next strike out, as it would if that one were not
+     * quoted. The backtest does the same (`simulateTogether`).
+     */
+    const heldHere = new Set(openNow.map((t) => t.plan.symbol));
+    const free = snap.candidates.filter((c) => !heldHere.has(`${c.cp}-BTC-${c.strike}-${snap.expiry}`));
+    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, free, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
     const chosen = sel.legs[0];
-    if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}`); return; }
+    const tookOut = snap.candidates.length - free.length;
+    if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}${tookOut ? ` · ${tookOut} strike${tookOut === 1 ? '' : 's'} already held on this account left out` : ''}`); return; }
 
     const target = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
     const args = {

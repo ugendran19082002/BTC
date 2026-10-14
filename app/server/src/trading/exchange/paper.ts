@@ -336,6 +336,15 @@ export class PaperExchange implements ExchangePort {
     return id ? { ...this.orders.get(id)! } : null;
   }
 
+  /** Its own orders' fills, one a filled order: the paper desk's answer to `GET /v2/fills`. */
+  async getFills(symbol: string, sinceMs: number): Promise<{ orderId: string; side: 'buy' | 'sell'; size: number; price: number; at: number }[]> {
+    this.guard();
+    return [...this.orders.values()]
+      .filter((o) => o.symbol === symbol && o.filledSize > 0 && o.updatedAt >= sinceMs && o.averageFillPrice !== null)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((o) => ({ orderId: o.orderId, side: o.side, size: o.filledSize, price: o.averageFillPrice!, at: o.updatedAt }));
+  }
+
   async getOrderHistory(symbol: string, limit = 50): Promise<ExchangeOrder[]> {
     this.guard();
     return [...this.orders.values()]

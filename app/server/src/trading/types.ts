@@ -374,7 +374,8 @@ export type TradeEvent =
       reason?: string;
       at: number;
     }
-  | { t: 'sibling_cancelled'; role: OrderRole; at: number }
+  /** `reason`: the exchange's own, where it cancelled the order itself (Delta's `cancellation_reason`). */
+  | { t: 'sibling_cancelled'; role: OrderRole; at: number; reason?: string }
   /** The exchange's own answer. It always wins over what we thought. */
   | { t: 'reconciled'; position: number; at: number; note?: string }
   /** More of the same contract was sent, to add to the position. */

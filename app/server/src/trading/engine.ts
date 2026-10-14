@@ -606,6 +606,17 @@ export const UNEXPLAINED_ALARM_MS = 60_000;
  * minute of them is an order that may still be resting with nothing to cover.
  */
 export const LEFTOVER_ALARM_MS = 60_000;
+/**
+ * A target the exchange keeps cancelling (14 Oct 2026: 3,000 cancels and re-places in a night on contracts shared
+ * by 17 to 55 trades). This many of one trade's targets cancelled by the exchange inside `TARGET_CHURN_WINDOW_MS`,
+ * and its target is held off the book for `TARGET_HOLD_MS` and said once: re-placing what the exchange takes off
+ * again only moves the trouble around a contract's trades. The stop is never held back.
+ */
+export const TARGET_CHURN_LIMIT = 4;
+export const TARGET_CHURN_WINDOW_MS = 10 * 60_000;
+export const TARGET_HOLD_MS = 15 * 60_000;
+/** How many unknown orders behind a contract's fills one reconcile looks up, at most. */
+export const FILL_LOOKUPS = 40;
 
 /** How long a close at the market has to fill before what is left is sent again. */
 export const CLOSE_FOLLOW_UP_MS = 3_000;
@@ -716,6 +727,10 @@ export class TradeEngine {
   private readonly unexplained = new Map<string, { since: number; said: boolean }>();
   /** Trades with an exit not yet confirmed off the book, since when, and whether it has been said. See `cancelSiblings`. */
   private readonly leftovers = new Map<string, { since: number; said: boolean }>();
+  /** Each trade's target held off the book until then, after the exchange kept cancelling it (`TARGET_CHURN_LIMIT`). */
+  private readonly targetHold = new Map<string, number>();
+  /** Whose an exchange order is, by its client id, once looked up: a contract's fills are read again on each reconcile. */
+  private readonly orderOwner = new Map<string, string | null>();
   private readonly limits: RiskLimits;
   /** Set while a trade is being resolved after a timeout. Nothing may be sent. */
   private entryDeadline = new Map<string, number>();
@@ -1412,7 +1427,9 @@ export class TradeEngine {
        */
       if (o && (role === 'take_profit' || role === 'stop_loss')
           && o.status !== 'open' && o.status !== 'partial' && o.filledSize === 0) {
-        rec = await this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
+        // The exchange's own reason, where it cancelled it: what tells "Delta took it off" from "it went".
+        rec = await this.commit(rec, { t: 'sibling_cancelled', role, at: this.now(), ...(o.reason ? { reason: o.reason } : {}) });
+        if (role === 'take_profit') this.noteTargetChurn(rec, o.reason ?? null);
       }
     }
     const entry = found[0];
@@ -1779,7 +1796,9 @@ export class TradeEngine {
      * 2.00 offer against a 1.00 target on two legs. A target is the price you
      * will pay; if nobody sells there, the position stays on.
      */
-    const tp = await settle(
+    // A target the exchange kept cancelling is held off the book for a while (`noteTargetChurn`): left as it is.
+    const holdTarget = (this.targetHold.get(rec.state.tradeId) ?? 0) > this.now();
+    const tp = holdTarget ? rec.state.protection.takeProfit : await settle(
       'take_profit',
       rec.plan.takeProfitPrice,
       (o) => o.type === 'limit',
@@ -2006,6 +2025,20 @@ export class TradeEngine {
     }
     this.noteLeftover(rec, unconfirmed);
     return rec;
+  }
+
+  /**
+   * A target the exchange took off again: counted, and past `TARGET_CHURN_LIMIT` in `TARGET_CHURN_WINDOW_MS` held off
+   * the book for `TARGET_HOLD_MS` -- said once, with the exchange's reason. The stop is untouched.
+   */
+  private noteTargetChurn(rec: TradeRecord, reason: string | null): void {
+    const now = this.now();
+    const recent = rec.events.filter((e) => e.t === 'sibling_cancelled' && e.role === 'take_profit' && now - e.at <= TARGET_CHURN_WINDOW_MS).length;
+    if (recent < TARGET_CHURN_LIMIT || (this.targetHold.get(rec.state.tradeId) ?? 0) > now) return;
+    this.targetHold.set(rec.state.tradeId, now + TARGET_HOLD_MS);
+    this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: Delta cancelled this trade's target ${recent} times in ${Math.round(TARGET_CHURN_WINDOW_MS / 60_000)} minutes`
+      + `${reason ? ` (${reason})` : ''}. It is held off the book for ${Math.round(TARGET_HOLD_MS / 60_000)} minutes rather than re-placed again; `
+      + 'the stop stays. Check the contract\'s open orders on Delta.', rec.plan);
   }
 
   /** Keep count of a trade whose exits could not be confirmed off the book, and say so once it has gone on a minute. */
@@ -2704,9 +2737,41 @@ export class TradeEngine {
   private async recoverFills(recIn: TradeRecord): Promise<TradeRecord> {
     let rec = recIn;
     const stem = clientStem(rec.state.tradeId);
-    const history = await this.exchange.getOrderHistory(rec.plan.symbol, 50).catch(() => null);
-    if (!history) return rec;
-    for (const o of history) {
+    // The contract's newest two hundred orders -- fifty was not enough beside a night of re-placed targets.
+    const history = await this.exchange.getOrderHistory(rec.plan.symbol, 200).catch(() => null);
+    for (const o of history ?? []) {
+      const role = roleOfClientId(o.clientOrderId, stem);
+      if (role === null || o.filledSize <= 0) continue;
+      rec = await this.absorb(rec, o, role);
+    }
+    return this.recoverFromFills(rec);
+  }
+
+  /**
+   * And the contract's fills since the trade began, for an exit the order history no longer reaches (14 Oct 2026: 30
+   * positions closed at Delta with "no buy-back of the desk's" to explain them, their P&L uncounted). A fill names
+   * only the exchange's order; the order, looked up by that id (open or closed alike), carries our client id, and so
+   * says whose it is. One already on the record adds nothing (`absorb` takes only what it has not seen).
+   */
+  private async recoverFromFills(recIn: TradeRecord): Promise<TradeRecord> {
+    let rec = recIn;
+    if (!this.exchange.getFills) return rec;
+    const stem = clientStem(rec.state.tradeId);
+    const began = rec.state.fills.find((f) => f.role === 'entry')?.ts ?? rec.events[0]?.at ?? this.now();
+    const fills = await this.exchange.getFills(rec.plan.symbol, began - 60_000).catch(() => null);
+    if (!fills?.length) return rec;
+    const known = new Set(rec.state.fills.map((f) => f.orderId));
+    const ids = [...new Set(fills.map((f) => f.orderId))].filter((id) => !known.has(id));
+    let asked = 0;
+    for (const id of ids) {
+      // Another trade's, from an earlier look: not this one's, and not asked again.
+      if (this.orderOwner.has(id) && roleOfClientId(this.orderOwner.get(id) ?? null, stem) === null) continue;
+      if (asked >= FILL_LOOKUPS) break;
+      asked++;
+      const o = await this.exchange.getOrderById(id).catch(() => null);
+      if (!o) continue;
+      if (this.orderOwner.size > 5_000) this.orderOwner.clear();
+      this.orderOwner.set(id, o.clientOrderId);
       const role = roleOfClientId(o.clientOrderId, stem);
       if (role === null || o.filledSize <= 0) continue;
       rec = await this.absorb(rec, o, role);

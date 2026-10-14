@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-501 files listed, 248 test files counted below, images and lockfiles left out.
+502 files listed, 249 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 131 |
+| `app/server` | 132 |
 | `app/web` | 117 |
 
 ## `(root)`
@@ -245,7 +245,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [delta.ts](../../app/server/src/trading/exchange/delta.ts) | The real account. |
 | [paper.ts](../../app/server/src/trading/exchange/paper.ts) | An exchange you can lie to. |
-| [port.ts](../../app/server/src/trading/exchange/port.ts) | `null` when the exchange has never heard of it -- which, after a timeout, is the answer that says the order never landed. |
+| [port.ts](../../app/server/src/trading/exchange/port.ts) | Everything the engine is allowed to do to an exchange. |
 
 ## `app/web/`
 
@@ -681,6 +681,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0011-one-trade-per-contract.md](../decisions/0011-one-trade-per-contract.md) | 0011 — Two strategies may hold one contract; each trade keeps its own |
 | [0012-generated-reference-docs.md](../decisions/0012-generated-reference-docs.md) | 0012 — Reference docs are generated from the code and tested |
 | [0013-entry-setups-measured-before-trusted.md](../decisions/0013-entry-setups-measured-before-trusted.md) | 0013 — The 24 entry setups are drawn and paper-logged, never traded, until their record says otherwise |
+| [0014-one-signal-trade-per-contract.md](../decisions/0014-one-signal-trade-per-contract.md) | 0014 — One signal trade per contract on an account; exits recovered from Delta's fills |
 | [README.md](../decisions/README.md) | Decisions |
 
 ## `docs/features/`

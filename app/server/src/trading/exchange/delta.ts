@@ -4,6 +4,7 @@ import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
 import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, type ExchangePort } from './port.js';
+import type { ExchangeFill } from './port.js';
 import { noteError } from '../../observability/errors.js';
 
 /** A read's timeout, and how many times it is tried. See `call`. */
@@ -54,6 +55,8 @@ type DeltaOrder = {
   created_at?: string;
   updated_at?: string;
   meta_data?: { reason?: string } | null;
+  /** Why Delta cancelled it, when it did: "Null unless state is cancelled" (its API reference). */
+  cancellation_reason?: string | null;
 };
 
 type DeltaProduct = {
@@ -135,7 +138,8 @@ function toOrder(o: DeltaOrder): ExchangeOrder {
     reduceOnly: o.reduce_only ?? false,
     createdAt: Date.parse(o.created_at ?? '') || Date.now(),
     updatedAt: Date.parse(o.updated_at ?? '') || Date.now(),
-    reason: o.meta_data?.reason,
+    // Delta's own reason for a cancel it made, where it gives one -- read before its older place in the meta data.
+    reason: o.cancellation_reason ?? o.meta_data?.reason,
   };
 }
 
@@ -447,6 +451,37 @@ export class DeltaExchange implements ExchangePort {
       return refusedRead(e);
     });
     return row ? toOrder(row) : null;
+  }
+
+  /**
+   * The account's fills on one contract since a moment (`GET /v2/fills`, its API reference): by product, from
+   * `start_time` in microseconds, a page at a time. Five pages at most -- five hundred fills on one contract is
+   * further back than a reconcile needs to look.
+   */
+  async getFills(symbol: string, sinceMs: number): Promise<ExchangeFill[]> {
+    const product = await this.getProduct(symbol).catch(() => null);
+    if (!product?.productId) return [];
+    type DeltaFill = { order_id: number | string; side: 'buy' | 'sell'; size: number; price: string | number; created_at: string; product_symbol?: string };
+    const out: ExchangeFill[] = [];
+    const start = Math.max(0, Math.floor(sinceMs)) * 1_000;
+    // Newest first, a hundred at a time: a full page is followed back by its oldest moment (`end_time`).
+    let end: number | null = null;
+    for (let page = 0; page < 5; page++) {
+      const query = `?product_ids=${product.productId}&start_time=${start}${end !== null ? `&end_time=${end}` : ''}&page_size=100`;
+      const rows = await this.call<DeltaFill[]>({ method: 'GET', path: '/v2/fills', query }).catch(() => null);
+      if (!rows || rows.length === 0) break;
+      for (const f of rows) {
+        if (f.product_symbol && f.product_symbol !== symbol) continue;
+        out.push({ orderId: String(f.order_id), side: f.side, size: Number(f.size), price: Number(f.price), at: Date.parse(f.created_at) || 0 });
+      }
+      if (rows.length < 100) break;
+      const oldest = Math.min(...rows.map((f) => Date.parse(f.created_at) || 0));
+      if (!(oldest > sinceMs)) break;
+      end = oldest * 1_000 - 1;
+    }
+    // Once each, however the pages overlapped at their edges.
+    const seen = new Set<string>();
+    return out.filter((f) => { const k = `${f.orderId}|${f.at}|${f.size}|${f.price}`; if (seen.has(k)) return false; seen.add(k); return true; });
   }
 
   async getOrderHistory(symbol: string, limit = 50): Promise<ExchangeOrder[]> {

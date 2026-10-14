@@ -22,7 +22,7 @@ const { buildApp } = await import('../../src/http/app.js');
 const { AuthService } = await import('../../src/auth/service.js');
 const { AuthStore } = await import('../../src/auth/store.js');
 const { Secrets } = await import('../../src/auth/secrets.js');
-const { closePool, one, rows } = await import('../../src/db/pool.js');
+const { closePool, one, query, rows } = await import('../../src/db/pool.js');
 const { initTradingService, tradingService } = await import('../../src/trading/service.js');
 const { initStrategyStore, strategyStore } = await import('../../src/http/routes/strategy.routes.js');
 const { StrategyRunner, signalKeyOf } = await import('../../src/strategy/runner.js');
@@ -103,6 +103,61 @@ const runsOf = (id: string) => rows<{ status: string; detail: string; trade_id: 
   'SELECT status, detail, trade_id, signal_key FROM strategy_signal_runs WHERE strategy_id = $1 ORDER BY id', [id]);
 
 // ------------------------------------------------------------ saving
+
+/**
+ * A clean account for a test that sells a strike of its own (14 Oct 2026). One trade per contract on an account: a
+ * contract an earlier test left open is taken off the board, and this file's board has one put and one call -- so a
+ * test that is about what it sells starts with nothing open, as the desk would on a fresh day.
+ */
+async function freshAccount(): Promise<void> {
+  // Through the desk itself, as a person would: each position bought back, each working entry taken off -- so the
+  // paper exchange's positions and resting orders go with them, and nothing is left for a later case to trip on.
+  const svc = tradingService();
+  for (const t of await svc.openTrades()) {
+    paper().setQuote({ symbol: t.plan.symbol, bid: 1, ask: 1.5, bidSize: 5_000, askSize: 5_000, mark: 1.2, ts: Date.now() });
+    if (t.state.position === 0) await svc.cancel(t.state.tradeId).catch(() => null);
+    else await svc.close(t.state.tradeId, undefined, 'test: a fresh account').catch(() => null);
+  }
+  await until(async () => (await svc.openTrades()).length, (n) => n === 0, 'every trade closed');
+  quoteBoard();
+}
+
+/**
+ * A fresh desk for a test of the limits on open trades: nothing open, and every strategy an earlier case left
+ * switched on switched off -- one trade per contract lets those find a strike of their own, and take a place the
+ * test is counting.
+ */
+async function freshDesk(): Promise<void> {
+  await freshAccount();
+  for (const st of await strategyStore().all()) {
+    if (st.enabled) await api('POST', `/api/strategies/${st.id}/enabled`, { enabled: false });
+  }
+}
+
+/**
+ * More strikes on the board, further out on both sides, for a test that sells several at once: one trade per
+ * contract (14 Oct 2026), so a run of signals needs as many strikes as it places. Returns what takes them off again.
+ */
+function extraStrikes(n: number): () => void {
+  const added: { cp: 'P' | 'C'; strike: number }[] = [];
+  for (let i = 0; i < n; i++) added.push({ cp: 'P', strike: PUT - 200 * (i + 1) }, { cp: 'C', strike: CALL + 200 * (i + 1) });
+  for (const [k, a] of added.entries()) {
+    const step = Math.floor(k / 2), symbol = `${a.cp}-BTC-${a.strike}-${EXPIRY}`;
+    paper().addProduct({ symbol, productId: 7100 + k, underlying: 'BTC', optionSide: a.cp === 'P' ? 'PE' : 'CE', strike: a.strike, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+    paper().setQuote({ symbol, bid: 17 - step, ask: 17.5 - step, bidSize: 5_000, askSize: 5_000, mark: 17.2 - step, ts: Date.now() });
+    board.candidates.push({ cp: a.cp, strike: a.strike, sellPrice: 17 - step, pOtm: 0.82 + step / 100, moneyness: 'OTM', ask: 17.5 - step });
+  }
+  return () => { board.candidates = board.candidates.filter((c) => !added.some((a) => a.cp === c.cp && a.strike === c.strike)); };
+}
+
+/** Keeps every strike on the board quoted -- the extra ones a little cheaper each step out. */
+function quoteBoard(): void {
+  for (const c of board.candidates) {
+    const main = (c.cp === 'P' && c.strike === PUT) || (c.cp === 'C' && c.strike === CALL);
+    const bid = main ? 18 : c.sellPrice ?? 15;
+    paper().setQuote({ symbol: `${c.cp}-BTC-${c.strike}-${EXPIRY}`, bid, ask: bid + 0.5, bidSize: 5_000, askSize: 5_000, mark: bid + 0.2, ts: Date.now() });
+  }
+}
 
 test('[critical] a signal strategy saves with its signals, live orders off -- and a bad one is refused in words', async () => {
   const bad = await api('POST', '/api/strategies', { name: 'Sig bad', config: { ...config, signal: { ...config.signal, methods: [] } } });
@@ -450,24 +505,44 @@ test('[critical] the trade history by IST day: today has them, a day before has 
   assert.match(bad.body.error, /on or before/);
 });
 
-test('[critical] two different signals, the same strike: both sold, each its own trade with its own perp levels', async () => {
+test('[critical] two different signals while the first is open: one trade per contract -- the second takes the next strike out, or none', async () => {
+  // 14 Oct 2026: trades sharing one contract shared Delta's one position and fought over its reduce-only orders.
   const two = { ...config, signal: { ...config.signal, maxOpen: 5 }, liveOrders: true };
   assert.equal((await api('POST', '/api/strategies', { name: 'Sig same strike', config: two })).status, 200);
   await api('POST', '/api/strategies/sig-same-strike/enabled', { enabled: true });
-  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
-    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  // A second put, further out and a little cheaper: the next strike the rule would take.
+  const NEXT = PUT - 200, nextSymbol = `P-BTC-${NEXT}-${EXPIRY}`;
+  paper().addProduct({ symbol: nextSymbol, productId: 7009, underlying: 'BTC', optionSide: 'PE', strike: NEXT, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`, nextSymbol]) {
+    paper().setQuote({ symbol: sym, bid: sym === nextSymbol ? 15 : 18, ask: sym === nextSymbol ? 15.5 : 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
   }
-  await runner.onSignal(signal());
-  await runner.onSignal(signal({ plan: { entryLo: 84_900, entryHi: 84_950, stop: 84_500, tp1: 85_400, tp2: null, tp3: null, tpWhy: [], rr: 1.4 } }));
-  const runs = await runsOf('sig-same-strike');
-  assert.deepEqual(runs.map((r) => r.status), ['placed', 'placed'], runs.map((r) => r.detail).join(' / '));
-  const plans = await Promise.all(runs.map((r) => one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [r.trade_id])));
-  assert.deepEqual(plans.map((p) => p!.plan.symbol), [`P-BTC-${PUT}-${EXPIRY}`, `P-BTC-${PUT}-${EXPIRY}`], 'one strike');
-  assert.deepEqual(plans.map((p) => p!.plan.underlying.stop), [84_600, 84_500], 'each signal its own SL');
-  await api('POST', '/api/strategies/sig-same-strike/enabled', { enabled: false });
+  board.candidates.push({ cp: 'P', strike: NEXT, sellPrice: 15, pOtm: 0.85, moneyness: 'OTM', ask: 15.5 });
+  // Whatever an earlier test left open on the account counts: the account holds the contract, whoever opened it.
+  const heldBefore = new Set((await tradingService().openTrades()).map((t) => t.plan.symbol));
+  try {
+    await runner.onSignal(signal());
+    await runner.onSignal(signal({ plan: { entryLo: 84_900, entryHi: 84_950, stop: 84_500, tp1: 85_400, tp2: null, tp3: null, tpWhy: [], rr: 1.4 } }));
+    await runner.onSignal(signal({ plan: { entryLo: 84_880, entryHi: 84_900, stop: 84_450, tp1: 85_300, tp2: null, tp3: null, tpWhy: [], rr: 1.3 } }));
+    const runs = await runsOf('sig-same-strike');
+    const placed = runs.filter((r) => r.status === 'placed');
+    const plans = await Promise.all(placed.map((r) => one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [r.trade_id])));
+    const symbols = plans.map((p) => p!.plan.symbol as string);
+    // never two of this account's trades on one contract, and never one on a contract already held
+    assert.equal(new Set(symbols).size, symbols.length, symbols.join(', '));
+    assert.ok(symbols.every((x) => !heldBefore.has(x)), `${symbols.join(', ')} against ${[...heldBefore].join(', ')}`);
+    // with both puts held, the third has nothing left to sell -- and says why
+    const last = runs.at(-1)!;
+    if (last.status !== 'placed') assert.match(last.detail, /already held on this account left out/);
+    assert.ok(placed.length >= 1, runs.map((r) => r.detail).join(' / '));
+    assert.deepEqual(plans.map((p) => p!.plan.underlying.stop), [84_600, 84_500, 84_450].slice(0, plans.length), 'each signal its own SL');
+  } finally {
+    board.candidates.pop();
+    await api('POST', '/api/strategies/sig-same-strike/enabled', { enabled: false });
+  }
 });
 
 test('[critical] option TP and SL at 0: nothing is placed on the option, no alarm -- the perp levels are its only exits', async () => {
+  await freshAccount();
   const bare = { ...config, signal: { ...config.signal, maxOpen: 5 }, liveOrders: true, takeProfitPct: 0, stopLossPct: 0 };
   // As live: the desk has BTC's price, so a trade with no option stop is priced by where Delta would close it out.
   tradingService().noteSpot(85_000);
@@ -493,6 +568,7 @@ test('[critical] option TP and SL at 0: nothing is placed on the option, no alar
 });
 
 test('[critical] live orders switched ON: the would-sells written down while it was off no longer count toward "at most N"', async () => {
+  await freshAccount();
   // sig-cap: at most 2, with 2 would-sells still in play in the paper log from the test above
   const cap = (await strategyStore().get('sig-cap'))!;
   await api('POST', '/api/strategies/sig-cap/enabled', { enabled: true });
@@ -551,6 +627,7 @@ test('a strategy saved without blocks has none; a clock strategy never carries t
 });
 
 test('[critical] each signal is sold under the block the clock has reached, and its row says which', async () => {
+  await freshAccount();
   const FAR = 83_600, FURTHER = 83_200;
   for (const [strike, pid, bid] of [[FAR, 7003, 9], [FURTHER, 7004, 4]] as const) {
     const symbol = `P-BTC-${strike}-${EXPIRY}`;
@@ -606,6 +683,7 @@ test('[critical] each signal is sold under the block the clock has reached, and 
 });
 
 test('[critical] "at least OTM n" on a premium rule and on a block: saved only when set, and it decides the strike in real runs', async () => {
+  await freshAccount();
   // Puts on the wide board: OTM 1 84,000 @ 18 · OTM 2 83,600 @ 9 · OTM 3 83,200 @ 4.
   const floored = {
     ...config, signal: { ...config.signal, maxOpen: 10 },
@@ -696,6 +774,7 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
 // ------------------------------------------------------------ by delta, by distance
 
 test('[critical] by delta and by distance: saved as sent, refused in words when unusable, and each signal is sold at the strike the rule names', async () => {
+  await freshAccount();
   const greeks = {
     ...config, signal: { ...config.signal, maxOpen: 10 }, strikeRule: 'delta', delta: { max: 0.1 },
     strikeBlocks: [{ at: '13:00', strikeRule: 'distance', strikeStep: 0, premium: { mode: 'atMost', usd: 20, fallbackUsd: null }, distance: { pct: 2, scale: 'fixed' } }],
@@ -760,6 +839,7 @@ test('[critical] by delta and by distance: saved as sent, refused in words when 
 // ------------------------------------------------------------ a stop held inside the close-out
 
 test('[critical] a 300% stop on a rich strike is held inside the close-out instead of refusing the signal, and its line says so', async () => {
+  await freshAccount();
   // 8 Oct 2026, live: "sell CE 83200 x5 @ 70 (delta 0.10) -- refused: Stop at 304.00 is past the 278.53 close-out
   // at 200x". Here BTC is 85,000: the close-out is 212.5 over the entry, the hold 191.2.
   const RICH = 83_800;
@@ -799,6 +879,7 @@ test('[critical] a 300% stop on a rich strike is held inside the close-out inste
 // ------------------------------------------------------------ the SL-distance filter
 
 test('[critical] SL distance per timeframe: a signal whose SL is nearer than its timeframe\'s points is skipped, and the history says why', async () => {
+  await freshAccount();
   // The signal: entry zone 84,950-85,000 (its middle 84,975 is the entry when the perp has no fresh print), SL 84,600 -- 375 pts.
   const filtered = {
     ...config, signal: { ...config.signal, tfs: ['5m', '15m'], maxOpen: 10, minSlPts: { '5m': 500, '15m': 375, '1h': 0, '4h': '' } },
@@ -846,6 +927,7 @@ test('[critical] SL distance per timeframe: a signal whose SL is nearer than its
 });
 
 test('[critical] a maximum too: a signal whose SL or TGT is further than its timeframe\'s most is skipped, 0 is off, and a most under its least is refused', async () => {
+  await freshAccount();
   // The signal: entry 84,975, SL 84,600 -- 375 pts; TGT1 85,500 -- 525 pts.
   const ranged = { ...config, signal: { ...config.signal, tfs: ['5m', '15m'], maxOpen: 10, maxSlPts: { '5m': 300, '15m': 0 }, maxTgtPts: { '5m': 400, '1h': '' } } };
   const crossed = await api('POST', '/api/strategies', { name: 'Sig max', config: { ...ranged, signal: { ...ranged.signal, minSlPts: { '5m': 500 } } } });
@@ -946,15 +1028,15 @@ test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put
   // Live orders on: it is a real order now -- bought at the offer, long on the exchange, its exits on the plan.
   const on = await own({ takeProfitPct: 3, stopLossPct: 0.4, liveOrders: true });
   assert.equal(on.status, 200, JSON.stringify(on.body));
-  // Earlier cases here left this account short the same call: a buy would close that position, so it is refused.
+  // One trade per contract (14 Oct 2026): a call this account already holds -- earlier cases here left one short -- is
+  // left off the board, so the buy is not sent onto a contract it would close; with no other call, it is refused in words.
   await runner.onSignal(signal());
   const blocked = await last();
-  assert.equal(blocked.status, 'refused', blocked.detail);
-  assert.match(blocked.detail, /refused: This account is short \d+ on this contract: a buy would close that position, not open one\.$/);
-  const callSym = (blocked.detail.match(/buy CE (\d+)/) ?? [])[1];
-  for (const t of await tradingService().openTrades()) {
-    if (t.plan.symbol === `C-BTC-${callSym}-${EXPIRY}`) await tradingService().close(t.state.tradeId, undefined, 'cleared for the buy case');
+  if (blocked.status !== 'placed') {
+    assert.equal(blocked.status, 'refused', blocked.detail);
+    assert.match(blocked.detail, /already held on this account left out$/);
   }
+  await freshAccount();
   await runner.onSignal(signal());
   const placed = await last();
   assert.equal(placed.status, 'placed', placed.detail);
@@ -978,6 +1060,7 @@ test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put
 });
 
 test('[critical] at the zone, the distance is measured from the fill -- and with the chain a timeframe\'s number is not read, the chain\'s own is', async () => {
+  await freshAccount();
   const zone = { ...config, signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 10, enterOn: 'zone', minSlPts: { '15m': 400 } } };
   assert.equal((await api('POST', '/api/strategies', { name: 'Sig sl zone', config: zone })).status, 200);
   const chain = { ...config, signal: { mode: 'mtf', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 10, enterOn: 'signal', minSlPts: { '5m': 5_000 } } };
@@ -1028,6 +1111,7 @@ test('[critical] at the zone, the distance is measured from the fill -- and with
 });
 
 test('[critical] TGT distance per timeframe: a signal whose target is nearer than its points is skipped, said in the history -- measured to the target the trade exits at', async () => {
+  await freshAccount();
   // The signal: entry 84,975 (the middle of its zone), SL 84,600 (375 pts), TGT1 85,500 (525 pts), TGT2 85,900 (925 pts).
   const withTgt = (over: Record<string, unknown>) => ({ ...config, signal: { ...config.signal, maxOpen: 10, ...over } });
   const bad = await api('POST', '/api/strategies', { name: 'Sig tgt', config: withTgt({ minTgtPts: { '5m': -5 } }) });
@@ -1088,6 +1172,9 @@ test('[critical] TGT distance per timeframe: a signal whose target is nearer tha
 // ------------------------------------------------------------ the desk-wide cap on open trades
 
 test('[critical] at most open at once, across all strategies: one number over every strategy, saved as a setting, and a signal past it is skipped in words', async () => {
+  await freshDesk();
+  const restoreStrikes = extraStrikes(10);
+  try {
   const MSG = 'At most open at once, across all strategies, must be a whole number from 0 (no limit) to 500.';
   for (const bad of [-1, 501, 1.5, 'six', null]) {
     const r = await api('POST', '/api/strategies/max-open', { max: bad });
@@ -1109,9 +1196,7 @@ test('[critical] at most open at once, across all strategies: one number over ev
   await tradingService().settings.set('scheduler_enabled', '1');
   clock = TEN;
   const quote = () => {
-    for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
-      paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
-    }
+    quoteBoard();
   };
   const lastOf = async (id: string) => (await runsOf(id)).at(-1)!;
 
@@ -1182,9 +1267,13 @@ test('[critical] at most open at once, across all strategies: one number over ev
   const free = await lastOf('sig-cap-b');
   assert.equal(free.status, 'placed', free.detail);
   for (const id of ['sig-cap-a', 'sig-cap-b']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+  } finally { restoreStrikes(); }
 });
 
 test('[critical] each side its own limit under the cap: calls and puts held separately, the cap still holding the two together, off until set', async () => {
+  await freshDesk();
+  const restoreStrikes = extraStrikes(10);
+  try {
   // Owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own -- not a split that adds up to 100".
   const { sideCaps } = await import('../../src/strategy/types.js');
   const MSG = 'A side\'s limit must be a whole number of per cent of "at most open", from 0 to 100.';
@@ -1216,11 +1305,8 @@ test('[critical] each side its own limit under the cap: calls and puts held sepa
   await api('POST', '/api/strategies/sig-side/enabled', { enabled: true });
   await tradingService().settings.set('scheduler_enabled', '1');
   clock = TEN;
-  const quote = () => {
-    for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
-      paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
-    }
-  };
+  // Every strike on the board, the extra ones included.
+  const quote = () => quoteBoard();
   const last = async () => (await runsOf('sig-side')).at(-1)!;
   const up = async () => { quote(); await runner.onSignal(signal()); return last(); };                    // a BUY: sells the put
   const down = async () => {                                                                               // a SELL: sells the call
@@ -1293,16 +1379,16 @@ test('[critical] each side its own limit under the cap: calls and puts held sepa
   for (const side of ['CE', 'PE']) await api('POST', '/api/strategies/side-max', { side, pct: 100 });
 
   await api('POST', '/api/strategies/sig-side/enabled', { enabled: false });
+  } finally { restoreStrikes(); }
 });
 
 // ------------------------------------------------------------ the limits, as real money needs them
 
 test('[critical] the limits under load: a ticket trade takes a place, a burst of signals stops exactly at the cap, a fill at the zone is held to it, and a cancelled entry frees its place', async () => {
-  const quote = () => {
-    for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
-      paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
-    }
-  };
+  await freshDesk();
+  const restorePuts = extraStrikes(10);
+  // Every strike on the board, the extra ones included.
+  const quote = () => quoteBoard();
   const open = async () => (await tradingService().openTrades()).length;
   // The cap is set straight into the settings here: the route holds it to what the strategies allow, and these
   // cases need it just above whatever earlier tests left open.
@@ -1391,6 +1477,7 @@ test('[critical] the limits under load: a ticket trade takes a place, a burst of
   assert.deepEqual(own, { trades: 2, lots: 2 }, 'and its card says 2 of 2');
 
   for (const id of ['sig-burst', 'sig-burst-zone']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+  restorePuts();
 });
 
 test('[critical] a zone-entry signal makes its contract ready and nothing else: no claim, no order, no trade -- and only with live orders on', async () => {
@@ -1425,6 +1512,7 @@ test('[critical] a zone-entry signal makes its contract ready and nothing else: 
 // ------------------------------------------------------------ the no-entry window (9 Oct 2026)
 
 test('[critical] a no-entry window: saved with the strategy, a signal inside it written down as skipped with the window, taken again from its to-time', async () => {
+  await freshDesk();
   const quiet = { ...config, signal: { ...config.signal, maxOpen: 10 }, noEntry: { on: true, windows: [{ from: '09:55', to: '10:30' }] } };
   // Refused in words first: on with nothing in it, and a window outside the strategy's 9:00 AM - 5:00 PM.
   const none = await api('POST', '/api/strategies', { name: 'Sig quiet', config: { ...quiet, noEntry: { on: true, windows: [] } } });

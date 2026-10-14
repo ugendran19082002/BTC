@@ -307,3 +307,35 @@ test('[critical] order_not_found refusal on direct client id lookup falls throug
   assert.equal(o, null, 'order_not_found on direct lookup is an expected miss, not a crash');
 });
 
+
+/**
+ * Delta's fills on a contract (14 Oct 2026), for an exit the order history no longer reaches: asked by the product id
+ * and from the trade's start in microseconds, as its API reference documents `GET /v2/fills`; a full page followed
+ * back by its oldest moment; each fill its own order id, side, size, price and moment.
+ */
+test('[critical] the fills on a contract: by product and start time, a full page followed back, each once', async () => {
+  const fill = (i: number, at: string) => ({ id: i, order_id: 1000 + i, product_id: 7, product_symbol: 'C-BTC-84600-141026', side: 'buy', size: 1, price: '6', created_at: at });
+  const page1 = Array.from({ length: 100 }, (_, i) => fill(i, new Date(Date.parse('2026-10-14T02:40:00Z') - i * 1_000).toISOString()));
+  const page2 = [fill(100, '2026-10-14T02:30:00Z'), { ...fill(101, '2026-10-14T02:29:00Z'), product_symbol: 'C-BTC-84400-141026' }];
+  const seen = routes([
+    [/\/v2\/products\/C-BTC-84600-141026/, product('C-BTC-84600-141026', 7)],
+    [/\/v2\/fills\?.*end_time=/, page2],
+    [/\/v2\/fills\?/, page1],
+  ]);
+  const since = Date.parse('2026-10-13T17:30:00Z');
+  const fills = await new DeltaExchange(creds).getFills('C-BTC-84600-141026', since);
+  assert.equal(fills.length, 101, 'a hundred, then the one more on the page behind -- another contract\'s left out');
+  assert.deepEqual(fills[0], { orderId: '1000', side: 'buy', size: 1, price: 6, at: Date.parse('2026-10-14T02:40:00Z') });
+  const asked = seen.filter((u) => /\/v2\/fills/.test(u));
+  assert.match(asked[0]!, new RegExp(`product_ids=7&start_time=${since * 1_000}&page_size=100`));
+  assert.match(asked[1]!, /end_time=\d+/);
+});
+
+test('[critical] Delta\'s own reason for a cancel it made is read off the order', async () => {
+  const o = { id: 6, client_order_id: 'cid-6', product_id: 7, product_symbol: 'C-BTC-84600-141026', side: 'buy',
+    order_type: 'limit_order', size: 1, unfilled_size: 1, limit_price: '6', state: 'cancelled', average_fill_price: null,
+    reduce_only: true, created_at: '2026-10-14T02:00:00Z', updated_at: '2026-10-14T02:01:00Z', cancellation_reason: 'reduce_only_order_cancelled' };
+  routes([[/\/v2\/orders\/6$/, o]]);
+  const got = await new DeltaExchange(creds).getOrderById('6');
+  assert.deepEqual([got?.status, got?.reason], ['cancelled', 'reduce_only_order_cancelled']);
+});

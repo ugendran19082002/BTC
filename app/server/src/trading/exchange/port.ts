@@ -10,6 +10,9 @@ import type {
  * real Delta account in production. If a behaviour cannot be reached through
  * these seven methods, it cannot happen to real money either.
  */
+/** One fill as the exchange reports it: its order, side, size, price and moment. */
+export type ExchangeFill = { orderId: string; side: 'buy' | 'sell'; size: number; price: number; at: number };
+
 export interface ExchangePort {
   /** May reject, may fill immediately, may time out. All three are normal. */
   placeOrder(req: PlaceOrderRequest): Promise<ExchangeOrder>;
@@ -52,6 +55,14 @@ export interface ExchangePort {
    * is short of.
    */
   getOrderHistory(symbol: string, limit?: number): Promise<ExchangeOrder[]>;
+  /**
+   * The account's fills on one contract since a moment, newest first (Delta's `GET /v2/fills`). A fill carries the
+   * exchange's own order id and nothing of ours, so what it belongs to is read off that order (`getOrderById`).
+   * What a reconcile reads when the order history, a contract's newest orders, no longer reaches the one that
+   * filled (14 Oct 2026: 3,000 re-placed targets on a night pushed it out of reach). Optional: a venue without it
+   * leaves the history as the only way back.
+   */
+  getFills?(symbol: string, sinceMs: number): Promise<ExchangeFill[]>;
   getOpenOrders(symbol?: string): Promise<ExchangeOrder[]>;
   getPositions(): Promise<ExchangePosition[]>;
   getBalanceUsd(): Promise<number>;

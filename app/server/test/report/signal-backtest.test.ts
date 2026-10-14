@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PARAMS, MIN_PREMIUM, pickStrike, simulateDay, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, pickStrike, planOfParams, simulateDay, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
 import { sessionOf, type MinuteBar } from '../../src/report/market-day.js';
 import { fillChargesUsd } from '../../src/trading/charges.js';
 
@@ -36,8 +36,18 @@ function contract(cp: 'C' | 'P', strike: number, delta: number, path: [number, n
   }
   return out;
 }
+/**
+ * The same contract and a ladder further out, each 200 further, priced and weighted alike (14 Oct 2026): one trade
+ * per contract, so overlapping signals each sell the next strike out -- and, priced alike, make what they made on
+ * the one strike before.
+ */
+function ladder(cp: 'C' | 'P', strike: number, delta: number, path: [number, number][], n = 12, spot = 84_000): BoardRow[] {
+  return Array.from({ length: n }, (_, i) => contract(cp, cp === 'P' ? strike - 200 * i : strike + 200 * i, delta, path, spot)).flat();
+}
 const sig = (min: number, o: Partial<BtSignal> = {}): BtSignal => ({ method: 'breakout', mode: 'single', tf: '15m', dir: 1, filledAt: from + min * MIN, fillPrice: 84_000, stop: 83_700, target: 84_500, ...o });
 const P: BacktestParams = { ...DEFAULT_PARAMS, window: 'all' };
+/** The settings' plan for the test's day. */
+const planOf = (p: BacktestParams = P) => planOfParams(p, { from, to });
 const byTime = (xs: BoardRow[]) => [...xs].sort((a, b) => a.at - b.at);
 const charges = (price: number, lots = 10) => fillChargesUsd({ price, contracts: lots, contractValue: 0.001, spot: 84_000 }).totalUsd;
 const net = (entry: number, exit: number, lots = 10) => (entry - exit) * lots * 0.001 - charges(entry, lots) - charges(exit, lots);
@@ -124,7 +134,7 @@ test('[critical] the option\'s own target and stop come first when a reading rea
 
 test('[critical] the desk\'s hours, and what cannot be traded, are counted and not guessed', () => {
   const bars = perp([[0, 84_000], [1_439, 84_100]]);
-  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]);
+  const board = ladder('P', 83_200, -0.09, [[0, 40], [1_435, 10]]);
   // 5:30-9:30 PM and after 3:59 PM are outside the strategies' window
   const desk = simulateDay({ from, to, params: { ...P, window: 'desk' }, signals: [sig(10), sig(239), sig(240), sig(1_348), sig(1_349)], bars, board });
   assert.equal(desk.trades.length, 2, '9:30 PM and 3:58 PM are inside it');
@@ -144,7 +154,7 @@ test('[critical] the desk\'s hours, and what cannot be traded, are counted and n
 test('[critical] the desk\'s limits: at most N open across every signal, and each side its per cent of it -- as the desk rounds it', async () => {
   const { deskCapsOf, planOfParams } = await import('../../src/report/signal-backtest.js');
   const bars = perp([[0, 84_000], [1_439, 84_050]]);             // the perp reaches nothing: every trade stays open all day
-  const board = byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]), ...contract('C', 85_000, 0.09, [[0, 40], [1_435, 30]])]);
+  const board = byTime([...ladder('P', 83_200, -0.09, [[0, 40], [1_435, 30]]), ...ladder('C', 85_000, 0.09, [[0, 40], [1_435, 30]])]);
   const sell = { dir: -1 as const, stop: 84_400, target: 83_500 };
   const signals = [sig(10), sig(20), sig(30), sig(40, sell), sig(50, sell)];
   const run = (o: Partial<BacktestParams>) => simulateDay({ from, to, signals, bars, board, plan: planOfParams({ ...P, ...o }, { from, to }) });
@@ -168,7 +178,7 @@ test('[critical] the desk\'s limits: at most N open across every signal, and eac
 test('[critical] custom hours: only the signals filled from the From time to the To time (IST), across midnight too', async () => {
   const { planOfParams } = await import('../../src/report/signal-backtest.js');
   const bars = perp([[0, 84_000], [1_439, 84_050]]);
-  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  const board = ladder('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
   // the expiry day begins at 5:30 PM IST: minute 270 is 10:00 PM, 450 is 1:00 AM, 1_200 is 1:30 PM
   const signals = [sig(30), sig(270), sig(450), sig(1_200)];
   const run = (hoursFrom: string, hoursTo: string) => simulateDay({ from, to, signals, bars, board, plan: planOfParams({ ...P, window: 'custom', hoursFrom, hoursTo }, { from, to }) });
@@ -183,7 +193,7 @@ test('[critical] custom hours: only the signals filled from the From time to the
 test('[critical] signals that filled in the same second are taken in a fixed order -- longest timeframe first -- so a limit gives the same count every time', async () => {
   const { planOfParams, signalOrder } = await import('../../src/report/signal-backtest.js');
   const bars = perp([[0, 84_000], [1_439, 84_050]]);
-  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  const board = ladder('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
   const at = 100;
   const tie = [sig(at, { tf: '5m', method: 'b' }), sig(at, { tf: '4h', method: 'z' }), sig(at, { tf: '15m', method: 'a' }), sig(at, { tf: '4h', method: 'a' })];
   assert.deepEqual([...tie].sort(signalOrder).map((x) => `${x.tf}:${x.method}`), ['4h:a', '4h:z', '15m:a', '5m:b']);
@@ -197,7 +207,7 @@ test('[critical] signals that filled in the same second are taken in a fixed ord
 test('[critical] a signal only if its SL and TGT are in range: points from the fill to each, minimum and maximum, 0 off', async () => {
   const { planOfParams } = await import('../../src/report/signal-backtest.js');
   const bars = perp([[0, 84_000], [1_439, 84_050]]);
-  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  const board = ladder('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
   // fills at 84,000: SL 300 away, TGT 500 away
   const near = sig(10, { stop: 83_900, target: 84_150 });          // SL 100, TGT 150
   const usual = sig(20);                                            // SL 300 (stop 83,700 from the 84,000 fill), TGT 500
@@ -286,7 +296,7 @@ test('[critical] volatility at a signal: the last two hours of 15-minute candles
 
 test('[critical] the volatility filter keeps only the signals of the level asked for, and every trade says its level', async () => {
   const { volReader, planOfParams } = await import('../../src/report/signal-backtest.js');
-  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  const board = ladder('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
   // quiet for five hours, wild after: a flat perp for the trades, the volatility read from another series
   const bars = perp([[0, 84_000], [1_439, 84_050]]);
   const volAt = (at: number) => ((at - from) / 60_000 < 300 ? 'low' as const : (at - from) / 60_000 < 600 ? 'high' as const : null);
@@ -328,7 +338,7 @@ test('[critical] two strikes level on the rule: the nearer the money, whichever 
 
 test('[critical] every signal not traded is named with its reason, and they add up: signals = traded + not traded', () => {
   const up = perp([[0, 84_000], [1_439, 84_100]]);
-  const board = byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 4]])]);     // no call on the board at all
+  const board = byTime([...ladder('P', 83_200, -0.09, [[0, 40], [1_435, 4]])]);     // no call on the board at all
   const signals = [sig(100), sig(300, { tf: '1h' }), sig(400, { dir: -1, stop: 84_300, target: 83_500, method: 'fade' }), sig(1_438, { tf: '5m' })];
   const r = simulateDay({ from, to, signals, bars: up, board, params: P });
   assert.equal(r.trades.length, 2);
@@ -441,7 +451,7 @@ test('[critical] several backtests on one account: one line in the desk\'s order
   const { planOfParams, simulateTogether, deskCapsOf } = await import('../../src/report/signal-backtest.js');
   // the perp reaches neither level; a put and a call, each sold at 40 and held to the end of the day
   const bars = perp([[0, 84_000], [1_439, 84_050]]);
-  const board = byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]), ...contract('C', 85_000, 0.09, [[0, 40], [1_435, 30]])]);
+  const board = byTime([...ladder('P', 83_200, -0.09, [[0, 40], [1_435, 30]]), ...ladder('C', 85_000, 0.09, [[0, 40], [1_435, 30]])]);
   const plan = planOfParams({ ...P, targetPct: 0, stopPct: 0 }, { from, to });
   // two books: one of 15m signals, one of 4h -- a BUY each at minute 10, and another each at minute 20
   const quick = [sig(10, { tf: '15m' }), sig(20, { tf: '15m' })];
@@ -473,4 +483,31 @@ test('[critical] several backtests on one account: one line in the desk\'s order
   const later = [{ signals: [sig(10, { tf: '15m' }), sig(200, { tf: '15m', stop: 83_000 })], plan: short }, { signals: [sig(10, { tf: '4h' }), sig(200, { tf: '4h', stop: 83_000 })], plan: short }];
   const turned = simulateTogether({ from, to, bars: falls, board, books: later, shared: deskCapsOf({ deskMax: 2, cePct: 100, pePct: 100 }) });
   assert.deepEqual(turned.map((x) => x.trades.length), [2, 2], 'two at minute 10, stopped by minute 61, and two more at minute 200');
+});
+
+/**
+ * One trade per contract on an account (14 Oct 2026), as the runner holds it: trades sharing one strike shared
+ * Delta's one position and its reduce-only orders, and 30 positions closed at Delta unseen. A strike still open is
+ * left off the board for the next signal: the rule takes the next one out -- or none, with none left.
+ */
+test('[critical] one trade per contract: a second signal while the first is open sells the next strike out, and with none left, none', async () => {
+  const { simulateTogether, deskCapsOf } = await import('../../src/report/signal-backtest.js');
+  // Two puts inside delta 0.10: 83,200 nearer the money, 83,000 further out. Both decay all day; the perp never reaches a level.
+  const two = byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]), ...contract('P', 83_000, -0.07, [[0, 30], [1_435, 8]])]);
+  const flat = perp([[0, 84_000], [1_439, 84_000]]);
+  const signals = [sig(31), sig(61), sig(91)];
+  const r = simulateDay({ from, to, params: P, signals, bars: flat, board: two });
+  assert.deepEqual(r.trades.map((t) => t.strike), [83_200, 83_000], 'the first takes the nearer; the second, with it held, the next out');
+  assert.equal(r.skipped['no-strike'], 1, 'the third finds both held: nothing left to sell');
+  // Once the first is closed, its strike is free again: a signal after both are out takes the nearer once more.
+  const out = perp([[0, 84_000], [100, 84_000], [110, 84_600], [1_439, 84_600]]);
+  const later = simulateDay({ from, to, params: P, signals: [sig(31), sig(61), sig(300)], bars: out, board: two });
+  assert.deepEqual(later.trades.map((t) => t.strike), [83_200, 83_000, 83_200], 'both out at the perp target by minute 111; the third sells the nearer again');
+  // Shared by an account, the rule is the account's: a second book does not sell the strike the first holds.
+  const books = [{ signals: [sig(31)], plan: planOf() }, { signals: [sig(32, { method: 'pullback' })], plan: planOf() }];
+  const together = simulateTogether({ from, to, bars: flat, board: two, books, shared: deskCapsOf({ deskMax: 10, cePct: 100, pePct: 100 }) });
+  assert.deepEqual(together.map((o) => o.trades.map((t) => t.strike)), [[83_200], [83_000]]);
+  // Each its own: the books are separate accounts, and each may sell the nearer.
+  const apart = simulateTogether({ from, to, bars: flat, board: two, books });
+  assert.deepEqual(apart.map((o) => o.trades.map((t) => t.strike)), [[83_200], [83_200]]);
 });

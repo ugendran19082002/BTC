@@ -31,8 +31,12 @@ before(async () => {
   await query(`INSERT INTO trade_flow_1m (at, buy_volume, sell_volume, buy_count, sell_count, large_buy_volume, large_sell_volume, vwap, high, low)
                SELECT $1::bigint + g * 60000, 1, 1, 1, 1, 0, 0, 84000 + g * 600.0 / 1439, 84003 + g * 600.0 / 1439, 83997 + g * 600.0 / 1439 FROM generate_series(0, 1439) g`, [from]);
   const code = `${DAY.slice(8, 10)}${DAY.slice(5, 7)}${DAY.slice(2, 4)}`;
-  await query(`INSERT INTO option_snapshots_1m (at, symbol, expiry, cp, strike, spot, mark, bid, ask, delta)
-               SELECT $1::bigint + g * 60000, $2, $3, 'P', 83200, 84000, 41 - 36 * g / 1439.0, 40 - 36 * g / 1439.0, 42 - 36 * g / 1439.0, -0.09 FROM generate_series(0, 1439) g`, [from, `P-BTC-83200-${code}`, code]);
+  // And two more puts further out, priced alike: one trade per contract (14 Oct 2026), so each of the day's
+  // overlapping signals sells a strike of its own.
+  for (const strike of [83_200, 83_000, 82_800]) {
+    await query(`INSERT INTO option_snapshots_1m (at, symbol, expiry, cp, strike, spot, mark, bid, ask, delta)
+                 SELECT $1::bigint + g * 60000, $2, $3, 'P', $4, 84000, 41 - 36 * g / 1439.0, 40 - 36 * g / 1439.0, 42 - 36 * g / 1439.0, -0.09 FROM generate_series(0, 1439) g`, [from, `P-BTC-${strike}-${code}`, code, strike]);
+  }
   let trigger = 1_780_000_000;
   for (const [min, tf] of [[30, '15m'], [200, '1h'], [700, '15m']] as const) {
     const filled = Math.floor(from / 1_000) + min * 60;

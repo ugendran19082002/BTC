@@ -165,7 +165,13 @@ before(async () => {
   const code = `${CLIMB.slice(8, 10)}${CLIMB.slice(5, 7)}${CLIMB.slice(2, 4)}`;
   const at: number[] = [], bid: number[] = [];
   for (let m = 0; m < 1_440; m += 5) { at.push(sessionOf(CLIMB).from + m * 60_000); bid.push(40 - 36 * m / 1_435); }
-  for (const [cp, strike, delta] of [['P', 83_200, -0.09], ['C', 86_400, 0.09]] as const) {
+  /*
+   * And a ladder of the same contract further out -- each 200 further, priced and weighted alike (14 Oct 2026). One
+   * trade per contract: a signal while another is open sells the next strike out, so the day's overlapping signals
+   * each need one. Priced alike, every trade makes what it made on the one strike before.
+   */
+  const ladder = (cp: 'P' | 'C', strike: number, delta: number) => Array.from({ length: 12 }, (_, i) => [cp, cp === 'P' ? strike - 200 * i : strike + 200 * i, delta] as const);
+  for (const [cp, strike, delta] of [...ladder('P', 83_200, -0.09), ...ladder('C', 86_400, 0.09)]) {
     await query(
       `INSERT INTO option_snapshots (at, symbol, expiry, cp, strike, spot, mark, bid, ask, delta)
        SELECT a, $3, $4, $5, $6, 84000, b + 1, b, b + 2, $7 FROM unnest($1::bigint[], $2::float8[]) AS t(a, b)`,
@@ -570,12 +576,13 @@ test('[critical] the backtest says what each day\'s options were priced on, and 
   const code = `${CLIMB.slice(8, 10)}${CLIMB.slice(5, 7)}${CLIMB.slice(2, 4)}`;
   const { from } = sessionOf(CLIMB);
   const minutes = Array.from({ length: 1_440 }, (_, m) => { const mark = 41 - 36 * m / 1_435; return { time: from / 1_000 + m * 60, open: mark, high: mark, low: mark, close: mark, volume: 0 }; });
-  await storeMarks(`P-BTC-83200-${code}`, code, minutes, Date.now());
+  // (the puts of the ladder: the calls not yet)
+  for (let i = 0; i < 12; i++) await storeMarks(`P-BTC-${83_200 - 200 * i}-${code}`, code, minutes, Date.now());
   const half = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all`);
   assert.deepEqual([half.body.priced['mark-1m'], half.body.total.net], [0, before.body.total.net]);
 
   // both: the day is priced a minute at a time, and said so
-  await storeMarks(`C-BTC-86400-${code}`, code, minutes, Date.now());
+  for (let i = 0; i < 12; i++) await storeMarks(`C-BTC-${86_400 + 200 * i}-${code}`, code, minutes, Date.now());
   const after = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=all`);
   assert.deepEqual(after.body.priced, { 'own-1m': 0, 'mark-1m': 1, '5m': 1 });
   assert.deepEqual(after.body.days.map((d: any) => [d.day, d.grain]), [[CLIMB, 'mark-1m'], [QUIET, '5m']]);
