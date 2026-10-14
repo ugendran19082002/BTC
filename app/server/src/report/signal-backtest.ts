@@ -1129,7 +1129,17 @@ export type LiveCheckAsk = {
   from: string; to: string; now: number;
   /** Each trading account's strategies and its limit on open trades as it stands (null: none). */
   accounts: { id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number } | null; strategies: Strategy[] }[];
+  /**
+   * Saved backtests to lay beside the desk in place of the strategies' own rules (owner, 14 Oct 2026: "check the
+   * backtest and the portfolio"): the members worked as they are in a portfolio run -- under one account's limit
+   * (`shared`) or each its own -- and every trade of theirs looked up in what the desk did with that signal under
+   * any strategy. Absent: each strategy by its own rules.
+   */
+  portfolio?: { name: string; shared: { deskMax: number; cePct: number; pePct: number } | null; members: { id: string; name: string; ask: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'> }[] } | null;
+  spot?: number | null;
 };
+/** Trades counted with their money, as a day's row reads them: how many, how many made money, and the net after charges. */
+export type LiveCheckMoney = { n: number; wins: number; net: number };
 /** Signals on one side only, by why, with the first few to look at. */
 export type LiveCheckWhy = { why: string; n: number; first: { at: number; method: string; tf: string; dir: 1 | -1 }[] };
 export type LiveCheckRow = {
@@ -1154,9 +1164,16 @@ export type LiveCheck = {
   until: number;
   strategies: LiveCheckRow[];
   total: { placed: number; refused: number; skipped: number; backtest: number; backtestSkipped: number; same: number; backtestOnly: number; liveOnly: number };
+  /** What is on the backtest's side: each strategy's own rules, or a portfolio of saved backtests by name. */
+  against: { kind: 'strategies' } | { kind: 'portfolio'; name: string };
+  /** With a portfolio: the desk's orders no saved backtest of it trades, by why (a strategy's own are on its row). */
+  liveOnly: LiveCheckWhy[];
+  /** The money on each side over the range: the desk's real orders after charges, and the backtest's trades. */
+  money: { real: LiveCheckMoney & { open: number }; backtest: LiveCheckMoney };
   /** Every refusal and every skip on the desk in the range, by reason, across the strategies. */
   liveWhy: { refused: { why: string; n: number }[]; skipped: { why: string; n: number }[] };
-  days: { day: string; placed: number; backtest: number; same: number }[];
+  /** Each expiry day, as the portfolio's own day table reads: the desk's real orders and the backtest's trades, with their money. */
+  days: { day: string; live: boolean; placed: number; backtest: number; same: number; real: LiveCheckMoney & { open: number }; bt: LiveCheckMoney }[];
 };
 
 /** How long the desk is given to write down what it did with a signal before its absence counts. */
@@ -1211,6 +1228,7 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
   const until = o.now - LIVE_GRACE_MS;
   const keyOf = (s: BtSignal) => `${s.method}|${s.mode}|${s.tf}|${s.dir}|${s.triggerAt}`;
   const every = o.accounts.flatMap((a) => a.strategies.filter(backtestable).map((st) => ({ st, account: a })));
+  const folio = o.portfolio ?? null;
   const span = days.length ? { from: sessionOf(days[0]!.day).from, to: sessionOf(days[days.length - 1]!.day).to } : null;
   type Live = { strategy_id: string; signal_key: string; status: string; detail: string; at: string };
   const live = span && every.length ? await rows<Live>(
@@ -1218,38 +1236,75 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
     [every.map((x) => x.st.id), span.from, Math.min(span.to, o.now) + LIVE_GRACE_MS]) : [];
   const liveBy = new Map<string, Map<string, Live>>();
   for (const r of live) (liveBy.get(r.strategy_id) ?? liveBy.set(r.strategy_id, new Map()).get(r.strategy_id)!).set(r.signal_key, r);
+  // Under any strategy: what the desk did with a signal at all -- an order where one was placed, else the refusal, else the skip.
+  const rank: Record<string, number> = { placed: 3, refused: 2, skipped: 1 };
+  const liveAny = new Map<string, Live>();
+  for (const r of live) { const h = liveAny.get(r.signal_key); if (!h || (rank[r.status] ?? 0) > (rank[h.status] ?? 0)) liveAny.set(r.signal_key, r); }
 
-  type Side = { traded: Map<string, BtSignal>; refused: Map<string, BtSkip>; known: Map<string, BtSignal> };
-  const bt = new Map<string, Side>(every.map((x) => [x.st.id, { traded: new Map(), refused: new Map(), known: new Map() }]));
+  /*
+   * What is laid beside the desk, as rows: each strategy by its own rules, the strategies of an account worked
+   * together under that account's limit as the desk holds them -- or, asked for a portfolio, its saved backtests
+   * as a portfolio run works them.
+   */
+  type Unit = { id: string; name: string; account: string | null; group: number; takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }) => DayPlan; mine: Map<string, Live> | null };
+  const groups: { caps: DayPlan['desk'] }[] = [];
+  const units: Unit[] = [];
+  if (folio) {
+    groups.push({ caps: folio.shared ? deskCapsOf(folio.shared) : null });
+    for (const m of folio.members) { const b = bookOf(m.ask); units.push({ id: m.id, name: m.name, account: null, group: 0, takes: b.takes, planFor: folio.shared ? b.planFor : (sp) => (m.ask.strategy ? planOfStrategy(m.ask.strategy, sp, null) : planOfParams(m.ask.params, sp)), mine: null }); }
+  } else {
+    o.accounts.forEach((a) => {
+      const mine = a.strategies.filter(backtestable);
+      if (!mine.length) return;
+      groups.push({ caps: a.caps ? deskCapsOf(a.caps) : null });
+      for (const st of mine) {
+        const rule = st.config.signal!;
+        units.push({
+          id: st.id, name: st.name, account: a.name, group: groups.length - 1,
+          takes: (sig) => sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method),
+          planFor: (sp) => planOfStrategy(st, sp, null), mine: liveBy.get(st.id) ?? new Map(),
+        });
+      }
+    });
+  }
+
+  type Side = { traded: Map<string, BtTrade>; refused: Map<string, BtSkip> };
+  const bt = units.map((): Side => ({ traded: new Map(), refused: new Map() }));
   const dayOfKey = new Map<string, string>();
-  const anyDay = new Set<string>();
   const fetched = await marksFetchedBy(days.map((d) => expiryCodeOf(d.day)));
+  const zero = (): LiveCheckMoney => ({ n: 0, wins: 0, net: 0 });
+  const btDay = new Map<string, LiveCheckMoney>(days.map((d) => [d.day, zero()]));
   for (const d of days) {
     const { from, to } = sessionOf(d.day);
     const raw = await rawDay(d.day, o.now, fetched.get(expiryCodeOf(d.day))?.contracts ?? 0);
     const upTo = raw.signals.filter((s) => s.filledAt <= until);
-    for (const s of upTo) { anyDay.add(keyOf(s)); dayOfKey.set(keyOf(s), d.day); }
+    for (const s of upTo) dayOfKey.set(keyOf(s), d.day);
     const bars = raw.minutes.filter((b) => b.at >= from);
-    for (const a of o.accounts) {
-      const mine = a.strategies.filter(backtestable);
-      if (!mine.length) continue;
-      const books = mine.map((st) => {
-        const rule = st.config.signal!;
-        const takes = (sig: BtSignal) => sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method);
-        return { signals: upTo.filter(takes), plan: planOfStrategy(st, { from, to }, null) };
+    groups.forEach((g, gi) => {
+      const at = units.flatMap((u, i) => (u.group === gi ? [i] : []));
+      const books = at.map((i) => ({ signals: upTo.filter(units[i]!.takes), plan: units[i]!.planFor({ from, to }) }));
+      // Each its own limit: worked alone, as a portfolio run of that kind works them. Else for the same places.
+      const outs = !folio || folio.shared ? simulateTogether({ from, to, bars, board: raw.board, books, shared: g.caps })
+        : books.map((b) => simulateDay({ from, to, bars, board: raw.board, signals: b.signals, plan: b.plan }));
+      at.forEach((i, k) => {
+        for (const t of outs[k]!.trades) {
+          bt[i]!.traded.set(keyOf(t.signal), t);
+          const m = btDay.get(d.day)!;
+          m.n++; m.net += t.netUsd; if (t.netUsd > 0) m.wins++;
+        }
+        for (const r of outs[k]!.refused) bt[i]!.refused.set(keyOf(r.signal), r.why);
       });
-      // As the desk holds them: the strategies of one account for the same places, under that account's limit.
-      const outs = simulateTogether({ from, to, bars, board: raw.board, books, shared: a.caps ? deskCapsOf(a.caps) : null });
-      mine.forEach((st, i) => {
-        const side = bt.get(st.id)!;
-        for (const s of books[i]!.signals) side.known.set(keyOf(s), s);
-        for (const t of outs[i]!.trades) side.traded.set(keyOf(t.signal), t.signal);
-        for (const r of outs[i]!.refused) side.refused.set(keyOf(r.signal), r.why);
-      });
-    }
+    });
   }
 
-  const groups = (xs: { why: string; sig: { at: number; method: string; tf: string; dir: 1 | -1 } }[]): LiveCheckWhy[] => {
+  const counted = (xs: string[]): { why: string; n: number }[] => {
+    const m = new Map<string, number>();
+    for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
+    return [...m.entries()].map(([why, n]) => ({ why, n })).sort((a, b) => b.n - a.n || a.why.localeCompare(b.why));
+  };
+  const merged = (xs: { why: string; n: number }[]) => counted(xs.flatMap((x) => Array.from({ length: x.n }, () => x.why)));
+  type One = { why: string; sig: { at: number; method: string; tf: string; dir: 1 | -1 } };
+  const groupsOf = (xs: One[]): LiveCheckWhy[] => {
     const m = new Map<string, LiveCheckWhy>();
     for (const x of xs) {
       const g = m.get(x.why) ?? m.set(x.why, { why: x.why, n: 0, first: [] }).get(x.why)!;
@@ -1258,20 +1313,18 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
     }
     return [...m.values()].sort((a, b) => b.n - a.n || a.why.localeCompare(b.why));
   };
-  const counted = (xs: string[]): { why: string; n: number }[] => {
-    const m = new Map<string, number>();
-    for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
-    return [...m.entries()].map(([why, n]) => ({ why, n })).sort((a, b) => b.n - a.n || a.why.localeCompare(b.why));
-  };
-  const merged = (xs: { why: string; n: number }[]) => counted(xs.flatMap((x) => Array.from({ length: x.n }, () => x.why)));
   const partsOf = (key: string, at: number) => { const p = key.split('|'); return { at, method: p[0] ?? '', tf: p[1] === 'mtf' ? CHAIN_KEY : p[2] ?? '', dir: (Number(p[3]) === 1 ? 1 : -1) as 1 | -1 }; };
-  const byDay = new Map<string, { day: string; placed: number; backtest: number; same: number }>(days.map((d) => [d.day, { day: d.day, placed: 0, backtest: 0, same: 0 }]));
-  const strategies: LiveCheckRow[] = every.map(({ st, account }) => {
-    const mine = liveBy.get(st.id) ?? new Map<string, Live>();
-    const side = bt.get(st.id)!;
-    const placed = [...mine.values()].filter((r) => r.status === 'placed');
+  const byDay = new Map<string, { placed: number; backtest: number; same: number }>(days.map((d) => [d.day, { placed: 0, backtest: 0, same: 0 }]));
+  const inAny = (key: string) => bt.some((x) => x.traded.has(key));
+  const NO_RECORD = folio ? 'no strategy on the desk has a record of it: none takes that method on that time frame, or the desk was not running'
+    : 'no record on the desk: it or the strategy was not running then, or its rules were different';
+
+  const rowsOut: LiveCheckRow[] = units.map((u, i) => {
+    const side = bt[i]!;
+    const mine = u.mine;
+    const placed = mine ? [...mine.values()].filter((r) => r.status === 'placed') : [];
     let same = 0;
-    const liveOnly: Parameters<typeof groups>[0] = [];
+    const liveOnly: One[] = [];
     for (const r of placed) {
       const day = dayOfKey.get(r.signal_key);
       if (day) byDay.get(day)!.placed++;
@@ -1280,41 +1333,71 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
       liveOnly.push({
         sig: partsOf(r.signal_key, Number(r.at)),
         why: why ? `the backtest would not: ${BT_WHY[why]}`
-          : anyDay.has(r.signal_key) ? 'its method or time frame is not in the strategy\'s rules now'
+          : dayOfKey.has(r.signal_key) ? 'its method or time frame is not in the strategy\'s rules now'
             : 'no filled setup is on record for that signal in these days',
       });
     }
-    const backtestOnly: Parameters<typeof groups>[0] = [];
-    for (const [key, sig] of side.traded) {
+    const backtestOnly: One[] = [];
+    for (const [key, t] of side.traded) {
       const day = dayOfKey.get(key);
       if (day) byDay.get(day)!.backtest++;
-      const r = mine.get(key);
-      if (r?.status === 'placed') continue;
+      const r = mine ? mine.get(key) : liveAny.get(key);
+      if (r?.status === 'placed') { if (!mine) same++; continue; }
       backtestOnly.push({
-        sig: { at: sig.filledAt, method: sig.method, tf: sig.mode === 'mtf' ? CHAIN_KEY : sig.tf, dir: sig.dir },
-        why: r ? liveReason(r.status, r.detail) : 'no record on the desk: it or the strategy was not running then, or its rules were different',
+        sig: { at: t.signal.filledAt, method: t.signal.method, tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, dir: t.signal.dir },
+        why: r ? liveReason(r.status, r.detail) : NO_RECORD,
       });
     }
-    const refused = [...mine.values()].filter((r) => r.status === 'refused'), skipped = [...mine.values()].filter((r) => r.status === 'skipped');
+    const refused = mine ? [...mine.values()].filter((r) => r.status === 'refused') : [], skipped = mine ? [...mine.values()].filter((r) => r.status === 'skipped') : [];
     return {
-      id: st.id, name: st.name, account: account.name,
+      id: u.id, name: u.name, account: u.account,
       live: { placed: placed.length, refused: refused.length, skipped: skipped.length },
       liveWhy: { refused: counted(refused.map((r) => liveWhy(r.detail))), skipped: counted(skipped.map((r) => liveWhy(r.detail))) },
       backtest: side.traded.size, backtestSkipped: counted([...side.refused.values()].map((w) => BT_WHY[w])),
-      same, backtestOnly: groups(backtestOnly), liveOnly: groups(liveOnly),
+      same, backtestOnly: groupsOf(backtestOnly), liveOnly: groupsOf(liveOnly),
     };
-  }).sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true }));
+  });
+  // Strategies keep the desk's order on its accounts' names; saved backtests the order they were given in.
+  const strategies = folio ? rowsOut : [...rowsOut].sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true }));
+
+  // With a portfolio the desk's side is every strategy's record together, and its orders are matched with any member's trade.
+  const all = { placed: live.filter((r) => r.status === 'placed'), refused: live.filter((r) => r.status === 'refused'), skipped: live.filter((r) => r.status === 'skipped') };
+  const deskOnly: One[] = [];
+  if (folio) {
+    for (const r of all.placed) {
+      const day = dayOfKey.get(r.signal_key);
+      if (day) byDay.get(day)!.placed++;
+      if (inAny(r.signal_key)) { if (day) byDay.get(day)!.same++; continue; }
+      const why = bt.map((x) => x.refused.get(r.signal_key)).find((w) => w !== undefined);
+      deskOnly.push({
+        sig: partsOf(r.signal_key, Number(r.at)),
+        why: why ? `the portfolio would not: ${BT_WHY[why]}`
+          : dayOfKey.has(r.signal_key) ? 'no saved backtest of the portfolio has that method ticked on that time frame'
+            : 'no filled setup is on record for that signal in these days',
+      });
+    }
+  }
   const sum = (f: (r: LiveCheckRow) => number) => strategies.reduce((n, r) => n + f(r), 0);
+  const report = span ? await marketReport({ from: o.from, to: o.to, now: o.now, spot: o.spot ?? null, account: null, tfs: null, methods: null, strategies: every.length ? every.map((x) => x.st.name) : null }) : null;
+  const realOf = (t: Tot | undefined): LiveCheckMoney & { open: number } => ({ n: t?.n ?? 0, wins: t?.wins ?? 0, net: t?.net ?? 0, open: t?.open ?? 0 });
+  const btAll = [...btDay.values()].reduce((a, m) => ({ n: a.n + m.n, wins: a.wins + m.wins, net: a.net + m.net }), zero());
   return {
     from: o.from, to: o.to, until,
     liveFrom: live.length ? Number(live[0]!.at) : null, liveTo: live.length ? Number(live[live.length - 1]!.at) : null,
+    against: folio ? { kind: 'portfolio', name: folio.name } : { kind: 'strategies' },
     strategies,
     total: {
-      placed: sum((r) => r.live.placed), refused: sum((r) => r.live.refused), skipped: sum((r) => r.live.skipped), backtest: sum((r) => r.backtest),
-      backtestSkipped: sum((r) => r.backtestSkipped.reduce((n, g) => n + g.n, 0)), same: sum((r) => r.same),
-      backtestOnly: sum((r) => r.backtestOnly.reduce((n, g) => n + g.n, 0)), liveOnly: sum((r) => r.liveOnly.reduce((n, g) => n + g.n, 0)),
+      placed: folio ? all.placed.length : sum((r) => r.live.placed), refused: folio ? all.refused.length : sum((r) => r.live.refused), skipped: folio ? all.skipped.length : sum((r) => r.live.skipped),
+      backtest: sum((r) => r.backtest), backtestSkipped: sum((r) => r.backtestSkipped.reduce((n, g) => n + g.n, 0)),
+      same: folio ? all.placed.length - deskOnly.length : sum((r) => r.same),
+      backtestOnly: sum((r) => r.backtestOnly.reduce((n, g) => n + g.n, 0)),
+      liveOnly: folio ? deskOnly.length : sum((r) => r.liveOnly.reduce((n, g) => n + g.n, 0)),
     },
-    liveWhy: { refused: merged(strategies.flatMap((r) => r.liveWhy.refused)), skipped: merged(strategies.flatMap((r) => r.liveWhy.skipped)) },
-    days: [...byDay.values()],
+    liveOnly: groupsOf(deskOnly),
+    liveWhy: folio
+      ? { refused: counted(all.refused.map((r) => liveWhy(r.detail))), skipped: counted(all.skipped.map((r) => liveWhy(r.detail))) }
+      : { refused: merged(strategies.flatMap((r) => r.liveWhy.refused)), skipped: merged(strategies.flatMap((r) => r.liveWhy.skipped)) },
+    money: { real: realOf(report?.total.real), backtest: btAll },
+    days: days.map((d) => ({ day: d.day, live: d.live, ...byDay.get(d.day)!, real: realOf(report?.days.find((x) => x.day === d.day)?.real), bt: btDay.get(d.day)! })),
   };
 }

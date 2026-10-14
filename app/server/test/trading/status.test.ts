@@ -198,3 +198,30 @@ test('with nothing computed yet the first request computes, and says so if it ca
   await assert.rejects(svc.status(), /status not provided/);
   svc.stop();
 });
+
+/**
+ * An order that waited out its time (owner, 14 Oct 2026: "is an order that waited and expired shown?"): filed
+ * under cancelled as before, and named for what happened -- with how long it had waited.
+ */
+test('[critical] an entry that ran out of time unfilled is cancelled by status and "expired" in words, with its wait', async () => {
+  const { expiredAfterMs } = await import('../../src/trading/status.js');
+  const sent: TradeEvent = { t: 'entry_submitted', clientOrderId: 'c1', size: 1, at: AT };
+  const timedOut: TradeEvent[] = [sent, { t: 'entry_timeout', at: AT + 300_000 }, { t: 'entry_cancelled', remaining: 1, at: AT + 300_400 }];
+  const s = replay(start(), timedOut);
+  assert.equal(orderStatusOf(s, timedOut), 'cancelled', 'the tabs and the counts are as they were');
+  assert.equal(expiredAfterMs(s, timedOut), 300_000);
+  assert.equal(orderOutcomeOf(s, timedOut), 'expired: not filled in 5 minutes — cancelled unfilled, no position taken');
+  // 45 seconds, and an hour and a half: said in the unit it is
+  const after = (ms: number): TradeEvent[] => [sent, { t: 'entry_timeout', at: AT + ms }, { t: 'entry_cancelled', remaining: 1, at: AT + ms + 100 }];
+  assert.match(orderOutcomeOf(replay(start(), after(45_000)), after(45_000)), /^expired: not filled in 45 seconds/);
+  assert.match(orderOutcomeOf(replay(start(), after(5_400_000)), after(5_400_000)), /^expired: not filled in 1 hour 30 minutes/);
+
+  // taken off by hand: cancelled, and not expired
+  const byHand: TradeEvent[] = [sent, { t: 'entry_cancelled', remaining: 1, at: AT + 20_000 }];
+  const h = replay(start(), byHand);
+  assert.deepEqual([orderStatusOf(h, byHand), expiredAfterMs(h, byHand)], ['cancelled', null]);
+  assert.equal(orderOutcomeOf(h, byHand), 'entry cancelled unfilled — no position taken');
+  // part filled before its time ran out: a position, not an expired order
+  const part: TradeEvent[] = [sent, fill(1, 20), { t: 'entry_timeout', at: AT + 300_000 }];
+  assert.equal(expiredAfterMs(replay(start(), part), part), null);
+});
