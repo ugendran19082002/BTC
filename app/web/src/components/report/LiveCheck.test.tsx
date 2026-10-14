@@ -41,9 +41,11 @@ describe('the live check, inside a result (owner, 14 Oct 2026: "a table that com
     const cells = within(rows[0]!).getAllByRole('cell').map((x) => x.textContent);
     expect(within(rows[0]!).getByRole('rowheader')).toHaveTextContent('Wed 14 Oct · so far');
     // the desk: 162 placed, the 90 closed made −$2.26 (−₹192), 19% of them won, 72 still open
-    expect(cells[0]).toBe('162−₹192won 19%72 still open');
+    expect(cells[0]).toBe('162−₹192won 19%72 open');
     expect(cells[1]).toBe('175−₹171won 36%');
     expect(cells[2]).toBe('162+13 backtest');
+    // one day with anything on it: no "latest day" line over a table of one
+    expect(screen.queryByLabelText('The latest expiry day')).toBeNull();
     expect(screen.getByText(/The desk's record runs 13 Oct, 9:30 PM → 14 Oct, 7:27 AM IST\./)).toBeInTheDocument();
   });
 
@@ -72,7 +74,7 @@ describe('the live check, inside a result (owner, 14 Oct 2026: "a table that com
     render(<LiveCheckResult r={{ ...NIGHT, total: { ...NIGHT.total, refused: 0, skipped: 0, backtest: 162, backtestOnly: 0 }, liveWhy: { refused: [], skipped: [] }, strategies: [NIGHT.strategies[0]!], days: [{ ...NIGHT.days[1]!, backtest: 162 }] }} />);
     expect(screen.getByRole('status', { name: 'Whether they match' })).toHaveTextContent('They match: all 162 orders the desk placed are trades in the backtest, and the backtest has no other.');
     expect(screen.queryByText(/Why they differ/)).toBeNull();
-    expect(within(screen.getByRole('table', { name: 'Live check by expiry day' })).getAllByRole('cell')[2]).toHaveTextContent(/^162$/);
+    expect(within(screen.getByRole('table', { name: 'Live check by expiry day' })).getAllByRole('cell')[2]).toHaveTextContent(/^162all match$/);
   });
 
   it('[critical] against saved backtests: the desk\'s orders none of them trades are listed too, and a row is a saved backtest', () => {
@@ -84,11 +86,18 @@ describe('the live check, inside a result (owner, 14 Oct 2026: "a table that com
         row({ name: '2h time', account: null, backtest: 36, same: 26, backtestOnly: [{ why: 'no strategy on the desk has a record of it: none takes that method on that time frame, or the desk was not running', n: 6, first: [] }, { ...LOSS, n: 4 }] }),
         row({ name: '30m time', account: null, backtest: 47, same: 43, backtestOnly: [{ ...LOSS, n: 4 }] }),
       ],
-      days: [{ ...NIGHT.days[1]!, backtest: 179, same: 158 }],
+      days: [
+        { ...NIGHT.days[1]!, day: '2026-10-13', live: false, placed: 101, backtest: 606, same: 79, real: { n: 101, wins: 53, net: -77.2, open: 0 }, bt: { n: 606, wins: 376, net: -2.65 } },
+        { ...NIGHT.days[1]!, backtest: 179, same: 158 },
+      ],
     };
     render(<LiveCheckResult r={folio} />);
     expect(screen.getByRole('status', { name: 'Whether they match' })).toHaveTextContent('The desk placed 162 orders, the backtest makes 179 trades: 158 are the same signal. 21 are in the backtest only. 4 are on the desk only.');
-    expect(within(screen.getByRole('table', { name: 'Live check by expiry day' })).getAllByRole('cell')[2]).toHaveTextContent('158+21 backtest · +4 desk');
+    // the latest day first, in a line of its own, then the whole range
+    expect(screen.getByLabelText('The latest expiry day')).toHaveTextContent('Wed 14 Oct, so far: the desk placed 162, the backtest makes 179, 158 the same signal. Over all 2 days:');
+    const rows = within(screen.getByRole('table', { name: 'Live check by expiry day' })).getAllByRole('row').slice(1);
+    expect(rows.map((x) => within(x).getByRole('rowheader').textContent)).toEqual(['Wed 14 Ocso far'.replace('Ocso', 'Oct' + 'so'), 'Tue 13 Oct']);
+    expect(within(rows[0]!).getAllByRole('cell')[2]).toHaveTextContent('158+21 backtest+4 desk');
     expect(within(screen.getByRole('list', { name: 'On the desk only' })).getByRole('listitem')).toHaveTextContent('4 — no saved backtest of the portfolio has that method ticked on that time frame');
     expect(within(screen.getByRole('list', { name: 'In the backtest only' })).getAllByRole('listitem').map((x) => x.textContent!.split(' — ')[0])).toEqual(['8', '6']);
     // a saved backtest has no orders of its own on the desk: its row says the backtest's side and the match

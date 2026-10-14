@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import type { LiveCheck as Check, LiveCheckCount, LiveCheckMoney, LiveCheckRow, LiveCheckWhy } from '@/types/signal-backtest';
 import { Empty, Loading, Panel } from '@/components/mobile/parts';
 import { Updating, useAnswer } from '@/components/report/Updating';
-import { FOLD, count, netClass, rate } from '@/components/report/backtest-parts';
+import { count, netClass, rate } from '@/components/report/backtest-parts';
 
 /**
  * The live check, inside a backtest's result and a portfolio's (owner, 14 Oct 2026: "the real trades since 9:30
@@ -26,10 +26,10 @@ const total = (xs: { n: number }[]) => xs.reduce((a, x) => a + x.n, 0);
 function Cell({ n, money, note }: { n: number; money: LiveCheckMoney; note?: string }) {
   return (
     <>
-      <span className="block font-semibold tabular-nums">{count(n)}</span>
-      {money.n > 0 && <span className={cn('block whitespace-nowrap text-[11.5px] font-semibold tabular-nums', netClass(money.net))}>{moneyText(money.net)}</span>}
-      {money.n > 0 && <span className="block whitespace-nowrap text-[11px] text-muted-foreground">won {pct(rate(money), 0)}</span>}
-      {note && <span className="block whitespace-nowrap text-[11px] text-muted-foreground">{note}</span>}
+      <span className="block text-[14px] font-semibold tabular-nums">{count(n)}</span>
+      {money.n > 0 && <span className={cn('block whitespace-nowrap text-[12px] font-semibold tabular-nums', netClass(money.net))}>{moneyText(money.net)}</span>}
+      {money.n > 0 && <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">won {pct(rate(money), 0)}</span>}
+      {note && <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">{note}</span>}
     </>
   );
 }
@@ -106,12 +106,19 @@ export function LiveCheckResult({ r }: { r: Check }) {
   const saved = r.against.kind === 'portfolio';
   const nothing = t.placed + t.refused + t.skipped + t.backtest === 0;
   const days = [...r.days].filter((d) => d.placed + d.backtest + d.real.n + d.real.open > 0).reverse();
+  const latest = days[0] ?? null;
   const backtestOnly = merged(r.strategies.flatMap((x) => x.backtestOnly));
   const deskOnly = saved ? r.liveOnly : merged(r.strategies.flatMap((x) => x.liveOnly));
   return (
     <Panel title="Live check · the desk beside this backtest">
       {nothing ? <Empty>The desk has no order, and the backtest no trade, in these days.</Empty> : (
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+          {latest && days.length > 1 && (
+            <p aria-label="The latest expiry day" className="m-0 text-[13.5px] leading-snug">
+              <b>{dayLabel(latest.day)}{latest.live ? ', so far' : ''}:</b> the desk placed <b>{count(latest.placed)}</b>, the backtest makes <b>{count(latest.backtest)}</b>, <b className={latest.same === latest.placed && latest.same === latest.backtest ? 'text-[var(--up)]' : ''}>{count(latest.same)}</b> the same signal.
+              {' '}Over all {days.length} days:
+            </p>
+          )}
           <p role="status" aria-label="Whether they match" className={cn('m-0 rounded-md px-3 py-2 text-[14px] font-medium leading-snug', differ === 0 ? 'bg-[rgba(38,161,123,0.14)] text-[var(--up)]' : 'bg-[var(--chosen-soft)] text-foreground')}>
             {differ === 0
               ? `They match: all ${count(t.placed)} orders the desk placed are trades in the backtest, and the backtest has no other.`
@@ -123,28 +130,39 @@ export function LiveCheckResult({ r }: { r: Check }) {
               </>}
           </p>
 
-          <table className={FOLD.table}>
-            <caption className="sr-only">Live check by expiry day</caption>
-            <thead className={FOLD.head}>
-              <tr className="text-left text-[11.5px] text-muted-foreground">
-                <th scope="col" className="py-1 pr-2 font-medium">Expiry day</th>
-                <th scope="col" className="py-1 pr-2 text-right font-medium">Desk</th>
-                <th scope="col" className="py-1 pr-2 text-right font-medium">Backtest</th>
+          {/* Four plain columns, each cell its lines stacked: what a 360px phone holds without folding anything away. */}
+          <table aria-label="Live check by expiry day" className="w-full table-fixed border-collapse text-[13px]">
+            <colgroup><col className="w-[30%]" /><col className="w-[24%]" /><col className="w-[24%]" /><col className="w-[22%]" /></colgroup>
+            <thead>
+              <tr className="text-[11px] uppercase tracking-[0.5px] text-muted-foreground">
+                <th scope="col" className="py-1 pr-1 text-left font-medium">Expiry day</th>
+                <th scope="col" className="py-1 pr-1 text-right font-medium">Desk</th>
+                <th scope="col" className="py-1 pr-1 text-right font-medium">Backtest</th>
                 <th scope="col" className="py-1 text-right font-medium">Same</th>
               </tr>
             </thead>
-            <tbody className={FOLD.body}>
-              {days.map((d) => (
-                <tr key={d.day} className={FOLD.row}>
-                  <th scope="row" className={FOLD.name}>{dayLabel(d.day)}{d.live ? ' · so far' : ''}</th>
-                  <td className={FOLD.trades}><Cell n={d.placed} money={d.real} note={d.real.open > 0 ? `${count(d.real.open)} still open` : undefined} /></td>
-                  <td className={FOLD.won}><Cell n={d.backtest} money={d.bt} /></td>
-                  <td className={cn(FOLD.net, 'font-semibold tabular-nums', d.same === d.placed && d.same === d.backtest ? 'text-[var(--up)]' : '')}>
-                    {count(d.same)}
-                    {(d.backtest !== d.same || d.placed !== d.same) && <span className="block whitespace-nowrap text-[11px] font-normal text-[var(--warn)]">{d.backtest - d.same > 0 ? `+${count(d.backtest - d.same)} backtest` : ''}{d.backtest - d.same > 0 && d.placed - d.same > 0 ? ' · ' : ''}{d.placed - d.same > 0 ? `+${count(d.placed - d.same)} desk` : ''}</span>}
-                  </td>
-                </tr>
-              ))}
+            <tbody>
+              {days.map((d) => {
+                const extraBt = d.backtest - d.same, extraDesk = d.placed - d.same;
+                const all = extraBt === 0 && extraDesk === 0;
+                return (
+                  <tr key={d.day} className="border-0 border-t border-solid border-[var(--line-soft)] align-top">
+                    <th scope="row" className="py-2 pr-1 text-left font-semibold">
+                      {dayLabel(d.day)}
+                      {d.live && <span className="block text-[11.5px] font-normal text-muted-foreground">so far</span>}
+                    </th>
+                    <td className="py-2 pr-1 text-right"><Cell n={d.placed} money={d.real} note={d.real.open > 0 ? `${count(d.real.open)} open` : undefined} /></td>
+                    <td className="py-2 pr-1 text-right"><Cell n={d.backtest} money={d.bt} /></td>
+                    <td className="py-2 text-right">
+                      <span className={cn('block text-[14px] font-semibold tabular-nums', all && d.same > 0 ? 'text-[var(--up)]' : '')}>{count(d.same)}</span>
+                      {all ? (d.same > 0 && <span className="block text-[11.5px] text-[var(--up)]">all match</span>) : <>
+                        {extraBt > 0 && <span className="block whitespace-nowrap text-[11.5px] text-[var(--warn)]">+{count(extraBt)} backtest</span>}
+                        {extraDesk > 0 && <span className="block whitespace-nowrap text-[11.5px] text-[var(--warn)]">+{count(extraDesk)} desk</span>}
+                      </>}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <p className="m-0 text-[12px] leading-snug text-muted-foreground">
@@ -177,6 +195,7 @@ export function LiveCheckResult({ r }: { r: Check }) {
             {saved
               ? 'Each trade here is looked up in what the desk did with that signal under any of its strategies, and each order the desk placed in the trades here.'
               : 'The strategy is backtested by its own rules as they stand now, beside its account\'s other strategies and under that account\'s limit, as the desk holds them.'}
+            {' '}On a day before a strategy&apos;s rules were last changed the two differ for that alone.
             {' '}The backtest replays the rules, not the account: a refusal by the daily loss limit or by margin, and a desk that was not running, are the desk&apos;s &mdash; a difference there is expected, and it is named.
             The money differs by more than the count: the desk fills at the price it got and exits when its own orders fill; the backtest at the recorded bid and offer.
           </p>
