@@ -120,7 +120,8 @@ export function LiveCheckResult({ r }: { r: Check }) {
   const apart = r.notCompared.backtest + r.notCompared.desk;
   const latest = days[0] ?? null;
   const backtestOnly = merged(r.strategies.flatMap((x) => x.backtestOnly));
-  const deskOnly = saved ? r.liveOnly : merged(r.strategies.flatMap((x) => x.liveOnly));
+  // Each side's own, added up across the rows: a strategy's against the desk, a saved backtest's against the live rules.
+  const deskOnly = merged([...r.liveOnly, ...r.strategies.flatMap((x) => x.liveOnly)]);
   return (
     <Panel title={saved ? 'Live check · the live rules with these settings' : 'Live check · the desk beside this backtest'}>
       {nothing ? <Empty>{apart > 0 ? `Nothing to compare in these days: ${apartWords(r)}.` : 'The desk has no order, and the backtest no trade, in these days.'}</Empty> : (
