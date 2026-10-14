@@ -5,7 +5,7 @@ import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type 
 import { DEFAULT_PARAMS, MIN_PREMIUM, backtestable, strategyCaveats, type BacktestParams } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
-import { liveCheck, signalBacktest } from '../../report/backtest-run.js';
+import { liveCheck, signalBacktest, signalBacktestDay } from '../../report/backtest-run.js';
 import { cleanConfig, strategyStore } from './strategy.routes.js';
 import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
@@ -188,6 +188,24 @@ export function registerMarketRoutes(app: FastifyInstance) {
       }))
         .sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true })),
     };
+  });
+
+  /**
+   * One expiry day of the backtest, trade by trade (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit,
+   * SL, TGT, points and money"): asked as the backtest itself is, and `?day=YYYY-MM-DD`, one of its days. Read-only.
+   */
+  app.get('/api/signal-backtest/day', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const r = rangeOf(q);
+    if (typeof r === 'string') return refuse(reply, 400, { error: r });
+    const params = backtestParamsOf(q);
+    if (typeof params === 'string') return refuse(reply, 400, { error: params });
+    const day = typeof q.day === 'string' ? q.day : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < r.from || day > r.to) return refuse(reply, 400, { error: 'The day is one of the backtest\'s expiry days, as YYYY-MM-DD.' });
+    const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
+    const strategy = askedId === null ? null : (await strategyStore().all().catch(() => [])).filter(backtestable).find((s) => s.id === askedId) ?? null;
+    if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
+    return signalBacktestDay({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot }, day);
   });
 
   /**

@@ -4,7 +4,7 @@ import {
   PORTFOLIO_MEMBERS_MAX, dropPortfolio, dropSave, keepPortfolio, keepSave, listSaves, nameProblem, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
 import { backtestable, type BacktestParams } from '../../report/signal-backtest.js';
-import { liveCheck, portfolioBacktest } from '../../report/backtest-run.js';
+import { liveCheck, portfolioBacktest, portfolioDay } from '../../report/backtest-run.js';
 import { backtestParamsFrom, backtestParamsOf, liveAccounts, rangeOf } from './market.routes.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
@@ -170,6 +170,19 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
     if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
     const result = await portfolioBacktest({ ...asked.r, now: Date.now(), spot: tradingService().spot, shared: asked.shared, members: asked.members });
     return { ...result, hours: asked.hours, over: asked.over };
+  });
+
+  /**
+   * One expiry day of the run, trade by trade (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL,
+   * TGT, points and money"): the same query as the run, and `?day=YYYY-MM-DD`, one of its days. Read-only.
+   */
+  app.get('/api/backtest-portfolio/day', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const asked = await portfolioQuery(q);
+    if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
+    const day = typeof q.day === 'string' ? q.day : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < asked.r.from || day > asked.r.to) return refuse(reply, 400, { error: 'The day is one of the run\'s expiry days, as YYYY-MM-DD.' });
+    return portfolioDay({ ...asked.r, now: Date.now(), spot: tradingService().spot, shared: asked.shared, members: asked.members }, day);
   });
 
   /**

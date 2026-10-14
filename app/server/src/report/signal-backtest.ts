@@ -229,6 +229,10 @@ export type BtTrade = {
   marginUsd: number;
   /** What the same trade made on the perp, in points: to the level reached, or to the perp's price at the window's end. */
   perpPts: number;
+  /** The option's own target and stop as they stood when it was sold; null where the rules set none. For the trade list. */
+  optTgt?: number | null; optStop?: number | null;
+  /** The perp level that ends it at its target, as the rules read the signal (TGT1, 2 or 3). */
+  perpTgt?: number;
 };
 
 /** The strike a rule picks from one side of one reading of the board: out of the money, with a bid worth selling. Null with none. */
@@ -587,6 +591,7 @@ export function simulateTogether(o: {
     const level = (pc: number, sign: 1 | -1) => (pc > 0 ? entry * (1 + sign * pc) : null);
     const fixedTgt = level(plan.targetPct, -1), fixedStop = level(plan.stopPct, 1);
     let restingAt = tgtAtFn ? level(pctAt(tgtPcts, tgtAtFn, entryAt), -1) : fixedTgt;
+    const tgtAtEntry = restingAt, stopAtEntry = stopAtFn ? level(pctAt(stopPcts, stopAtFn, entryAt), 1) : fixedStop;
     let exit: number | null = null, exitAt = perpAt, by: BtExit = perpBy;
     // BTC at the reading the exit is priced on: what the exit's own fee is worked from.
     let exitSpot = pick.spot;
@@ -640,6 +645,7 @@ export function simulateTogether(o: {
       netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges, chargesUsd: charges, vol,
       marginUsd: fundsRequiredPerContract({ spot: pick.spot ?? sig.fillPrice, premium: entry, leverage: 200, contractValue: CONTRACT_VALUE }) * lots,
       perpPts: (perpPx - sig.fillPrice) * sig.dir,
+      optTgt: tgtAtEntry, optStop: stopAtEntry, perpTgt: target,
     });
   }
   return outs;
@@ -1596,4 +1602,103 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
       backtest: strategies.reduce((a, r) => addFate(a, r.fate.backtest), noFate()),
     },
   };
+}
+
+// ------------------------------------------------------------------ one day's trades
+
+/**
+ * One trade of a backtest, as the screen lists it (owner, 14 Oct 2026: "tap the count -- trade by trade, the entry,
+ * the exit, the SL and TGT, the points and the money"): the signal on the perp, the option sold and bought back,
+ * the levels it was held to, and what it came to.
+ */
+export type BtTradeRow = {
+  /** The signal's fill on the perp, epoch ms. */
+  at: number;
+  method: string; name: string; tf: string; dir: 1 | -1;
+  perpEntry: number; perpSl: number; perpTgt: number;
+  cp: 'C' | 'P'; strike: number; lots: number;
+  entryAt: number; entry: number; exitAt: number; exit: number; by: BtExit;
+  /** The option's own target and stop when it was sold; null where the rules set none. */
+  optTgt: number | null; optStop: number | null;
+  perpPts: number; netUsd: number; chargesUsd: number;
+  /** In a portfolio: whose trade it is. */
+  member?: string;
+};
+export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };
+/** A day's list is cut here: a day of every signal can run to thousands, and a screen does not need them all at once. */
+const DAY_TRADES_MAX = 3_000;
+
+/** What one day needs to be played again: its readings, how volatile the days before were, and the methods' names. */
+async function dayContext(day: string, now: number) {
+  await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
+  const before = new Date(Date.parse(`${day}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
+  const known = await marketDays(before, day, now);
+  const prior = known.filter((d) => d.day < day && d.stats && !d.live).slice(-5).map((d) => d.stats!.atr);
+  const baseline = prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
+  const fetched = await marksFetchedBy([expiryCodeOf(day)]);
+  const raw = await rawDay(day, now, fetched.get(expiryCodeOf(day))?.contracts ?? 0);
+  const names = new Map((await rows<{ id: string; n: number | null; name: string }>('SELECT id, n, name FROM entry_methods')).map((m) => [m.id, m.n === null ? m.name : `#${m.n} ${m.name}`]));
+  return { raw, baseline, known, nameOf: (id: string) => names.get(id) ?? id, ...sessionOf(day) };
+}
+
+const rowOf = (t: BtTrade, nameOf: (id: string) => string, member?: string): BtTradeRow => ({
+  at: t.signal.filledAt, method: t.signal.method, name: nameOf(t.signal.method), tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, dir: t.signal.dir,
+  perpEntry: t.signal.fillPrice, perpSl: t.signal.stop, perpTgt: t.perpTgt ?? t.signal.target,
+  cp: t.cp, strike: t.strike, lots: t.lots, entryAt: t.entryAt, entry: t.entry, exitAt: t.exitAt, exit: t.exit, by: t.by,
+  optTgt: t.optTgt ?? null, optStop: t.optStop ?? null, perpPts: t.perpPts, netUsd: t.netUsd, chargesUsd: t.chargesUsd,
+  ...(member ? { member } : {}),
+});
+const listed = (day: string, xs: BtTradeRow[]): BtDayTrades => {
+  const sorted = xs.sort((a, b) => a.at - b.at || a.method.localeCompare(b.method));
+  return { day, total: sorted.length, trades: sorted.slice(0, DAY_TRADES_MAX) };
+};
+
+/** One expiry day of a backtest, played again with the same settings, trade by trade: what its day row adds up. */
+async function signalBacktestDayNow(o: Ask, day: string, member?: string): Promise<BtDayTrades> {
+  const c = await dayContext(day, o.now);
+  const st = o.strategy ?? null, rule = st?.config.signal ?? null;
+  const ownOnly = (sig: BtSignal) => !rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method));
+  const caps = deskCapsOf(o.params);
+  const chosen = (sig: BtSignal) => (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method));
+  // As the whole run takes them (`signalBacktestNow`): with a limit, the filters choose who competes for the places.
+  const takes = (sig: BtSignal) => ownOnly(sig) && (caps === null || chosen(sig));
+  const span = { from: c.from, to: c.to };
+  const plan = st ? (o.draft ? { ...planOfStrategy(st, span, caps), maxOpen: null } : planOfStrategy(st, span, caps)) : planOfParams(o.params, span);
+  const volOnly: VolLevel | null = o.params.vol && o.params.vol !== 'off' ? o.params.vol : null;
+  const r = simulateDay({
+    from: c.from, to: c.to, signals: c.raw.signals.filter(takes), plan,
+    volAt: volReader(c.raw.minutes, c.baseline), volOnly, bars: c.raw.minutes.filter((b) => b.at >= c.from), board: c.raw.board,
+  });
+  return listed(day, r.trades.filter((t) => chosen(t.signal)).map((t) => rowOf(t, c.nameOf, member)));
+}
+
+/** One expiry day of a portfolio, as its run works it: one account's clock and limit, or each member alone. */
+async function portfolioDayNow(o: PortfolioAsk, day: string): Promise<BtDayTrades> {
+  const caps = o.shared ? deskCapsOf(o.shared) : null;
+  const members = o.members.filter((m) => m.ask && !m.problem);
+  if (!caps) {
+    const all: BtTradeRow[] = [];
+    for (const m of members) all.push(...(await signalBacktestDayNow({ ...m.ask!, from: day, to: day, now: o.now, spot: o.spot ?? null }, day, m.name)).trades);
+    return listed(day, all);
+  }
+  const c = await dayContext(day, o.now);
+  const books = members.map((m) => ({ m, b: bookOf(m.ask!) }));
+  const volAt = volReader(c.raw.minutes, c.baseline);
+  const outs = simulateTogether({
+    from: c.from, to: c.to, bars: c.raw.minutes.filter((x) => x.at >= c.from), board: c.raw.board, shared: caps,
+    books: books.map(({ b }) => ({ signals: c.raw.signals.filter(b.takes), plan: b.planFor({ from: c.from, to: c.to }), volAt, volOnly: b.volOnly })),
+  });
+  return listed(day, books.flatMap(({ m }, k) => outs[k]!.trades.map((t) => rowOf(t, c.nameOf, m.name))));
+}
+
+/** In turn with the other backtests of this thread, as `signalBacktestHere` is. */
+export function signalBacktestDayHere(o: Ask, day: string): Promise<BtDayTrades> {
+  const run = working.then(() => signalBacktestDayNow(o, day));
+  working = run.catch(() => { });
+  return run;
+}
+export function portfolioDayHere(o: PortfolioAsk, day: string): Promise<BtDayTrades> {
+  const run = working.then(() => portfolioDayNow(o, day));
+  working = run.catch(() => { });
+  return run;
 }

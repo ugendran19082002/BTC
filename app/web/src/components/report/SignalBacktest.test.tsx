@@ -623,6 +623,7 @@ describe('SignalBacktest', () => {
   });
 
   it('[critical] saved backtests: the settings on the screen kept by name, put back on a tap, and two run together with their total above the result', async () => {
+    window.localStorage.setItem('btc-desk:savedBacktests.listOpen.phone', 'true');   // the list open, as a phone keeps it once opened
     const saved = (id: string, name: string, params: object, tfs: string[] = []) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, ...params }, tfs, methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
     const A = saved('a1', 'Desk rules', {});
     saves.getBacktestSaves.mockResolvedValue({ saves: [], portfolios: [] });
@@ -642,6 +643,7 @@ describe('SignalBacktest', () => {
   });
 
   it('[critical] a saved backtest tapped puts its settings on the screen; two ticked are run together, and the set kept as a portfolio', async () => {
+    window.localStorage.setItem('btc-desk:savedBacktests.listOpen.phone', 'true');   // the list open, as a phone keeps it once opened
     const saved = (id: string, name: string, params: object, tfs: string[] = []) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, ...params }, tfs, methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
     const A = saved('a1', 'Desk rules', {}), B = saved('b2', '16 lots on 4h', { lots: 16 }, ['4h']);
     saves.getBacktestSaves.mockResolvedValue({ saves: [B, A], portfolios: [] });
@@ -720,6 +722,7 @@ describe('SignalBacktest', () => {
   });
 
   it('[critical] a saved backtest edited: its settings go on the screen to be changed there, its name is changed beside them, and nothing is kept until Save changes', async () => {
+    window.localStorage.setItem('btc-desk:savedBacktests.listOpen.phone', 'true');   // the list open, as a phone keeps it once opened
     const saved = (id: string, name: string, params: object, tfs: string[] = []) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, ...params }, tfs, methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
     const A = saved('a1', 'Desk rules', {}), B = saved('b2', '16 lots on 4h', { lots: 16 }, ['4h']);
     saves.getBacktestSaves.mockResolvedValue({ saves: [B, A], portfolios: [] });
@@ -1034,5 +1037,28 @@ describe('SignalBacktest', () => {
     expect(overQuery({ target: { targetPct: 0.7, targetSteps: [{ at: '23:30', pct: 0.73 }, { at: '01:30', pct: 0.76 }] } })).toEqual({ o_tp: '0.7', o_tsteps: '23:30:73,01:30:76' });
     // the range goes whole, zeros too: "no range for any of them" is asked for, not left out
     expect(overQuery({ range: { slMin: 250, slMax: 0, tgtMin: 250, tgtMax: 0 } })).toEqual({ o_slmin: '250', o_slmax: '0', o_tgtmin: '250', o_tgtmax: '0' });
+  });
+});
+
+describe('saved backtests on a phone (14 Oct 2026)', () => {
+  it('[critical] the list folds to one line until opened, and says which one is on the screen; a wide desk always shows it', async () => {
+    const { SavedBacktests } = await import('@/components/report/SavedBacktests');
+    const saved = (id: string, name: string, params: object, tfs: string[] = []) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10, ...params }, tfs, methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
+    const A = saved('a1', 'Desk rules', {});
+    saves.getBacktestSaves.mockResolvedValue({ saves: [A, saved('b2', '16 lots on 4h', { lots: 16 }, ['4h'])], portfolios: [] });
+    const props = {
+      current: A.query, wordsOf: () => 'words', onLoad: () => {}, run: null, onRun: () => {},
+    } as unknown as Parameters<typeof SavedBacktests>[0];
+    const { unmount } = render(<SavedBacktests {...props} />);
+    const open = await screen.findByRole('button', { name: 'Show the 2 saved · Desk rules is on the screen' });
+    expect(screen.queryByRole('list', { name: 'Saved backtests' })).toBeNull();
+    fireEvent.click(open);
+    expect(screen.getByRole('list', { name: 'Saved backtests' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide the saved list' })).toHaveAttribute('aria-expanded', 'true');
+    unmount();
+    window.localStorage.clear();
+    render(<SavedBacktests {...props} wide />);
+    expect(await screen.findByRole('list', { name: 'Saved backtests' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Show the \d+ saved/ })).toBeNull();
   });
 });

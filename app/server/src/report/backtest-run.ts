@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import {
-  clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, signalBacktestHere,
-  type Ask, type BacktestPortfolioResult, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest,
+  clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, portfolioDayHere, signalBacktestDayHere, signalBacktestHere,
+  type Ask, type BacktestPortfolioResult, type BtDayTrades, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest,
 } from './signal-backtest.js';
 import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
@@ -17,6 +17,8 @@ import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
 /** A backtest that has not answered in this long is given up on, and its thread with it. */
 export const BACKTEST_TIMEOUT_MS = 120_000;
+/** What the thread is asked to work: a backtest, a portfolio, a live check, or one day of a backtest or a portfolio. */
+type Work = { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'day'; ask: Ask; day: string } | { kind: 'portfolio-day'; ask: PortfolioAsk; day: string };
 /** After a thread fails to start, none is tried again for this long. */
 const GIVE_UP_MS = 10 * 60_000;
 
@@ -64,7 +66,7 @@ function thread(): Worker {
   return w;
 }
 
-function ask(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<BacktestAnswer> {
+function ask(m: Work | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<BacktestAnswer> {
   return new Promise((done, fail) => {
     const id = ++seq;
     const w = thread();
@@ -81,7 +83,7 @@ function ask(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioA
 }
 
 /** In its thread where there is one, here where there is not. */
-async function worked<T>(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk }, here: () => Promise<T>, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<T> {
+async function worked<T>(m: Work, here: () => Promise<T>, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<T> {
   if (!wanted || Date.now() - gaveUpAt < GIVE_UP_MS) return here();
   let a: BacktestAnswer;
   try {
@@ -107,6 +109,12 @@ export const portfolioBacktest = (o: PortfolioAsk): Promise<BacktestPortfolioRes
   worked({ kind: 'portfolio', ask: o }, () => portfolioBacktestHere(o), BACKTEST_TIMEOUT_MS * Math.max(1, o.members.length));
 
 /** Forget every day worked so far, wherever they are kept. */
+/** One expiry day of a backtest, trade by trade (`signalBacktestDayHere`). */
+export const signalBacktestDay = (o: Ask, day: string): Promise<BtDayTrades> => worked({ kind: 'day', ask: o, day }, () => signalBacktestDayHere(o, day));
+/** One expiry day of a portfolio, trade by trade (`portfolioDayHere`). */
+export const portfolioDay = (o: PortfolioAsk, day: string): Promise<BtDayTrades> =>
+  worked({ kind: 'portfolio-day', ask: o, day }, () => portfolioDayHere(o, day), BACKTEST_TIMEOUT_MS * Math.max(1, o.members.length));
+
 /** The backtest of each strategy's own rules against what the desk did with the same signals (`liveCheckHere`). */
 export const liveCheck = (o: LiveCheckAsk): Promise<LiveCheck> => worked({ kind: 'live', ask: o }, () => liveCheckHere(o), BACKTEST_TIMEOUT_MS * 2);
 

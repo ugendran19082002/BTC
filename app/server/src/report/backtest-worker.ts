@@ -1,5 +1,5 @@
 import { parentPort } from 'node:worker_threads';
-import { clearSignalBacktestCache, liveCheckHere, portfolioBacktestHere, signalBacktestHere, type Ask, type LiveCheckAsk, type PortfolioAsk } from './signal-backtest.js';
+import { clearSignalBacktestCache, liveCheckHere, portfolioBacktestHere, portfolioDayHere, signalBacktestDayHere, signalBacktestHere, type Ask, type LiveCheckAsk, type PortfolioAsk } from './signal-backtest.js';
 import { closePool } from '../db/pool.js';
 
 /**
@@ -10,7 +10,9 @@ import { closePool } from '../db/pool.js';
  * desk's own thread it held everything else up for most of a second at a stretch -- the same thread that looks at
  * every open trade's stop once a second.
  */
-export type BacktestAsk = { id: number; kind: 'run'; ask: Ask } | { id: number; kind: 'portfolio'; ask: PortfolioAsk } | { id: number; kind: 'live'; ask: LiveCheckAsk } | { id: number; kind: 'clear' } | { id: number; kind: 'close' };
+export type BacktestAsk = { id: number; kind: 'run'; ask: Ask } | { id: number; kind: 'portfolio'; ask: PortfolioAsk } | { id: number; kind: 'live'; ask: LiveCheckAsk }
+  | { id: number; kind: 'day'; ask: Ask; day: string } | { id: number; kind: 'portfolio-day'; ask: PortfolioAsk; day: string }
+  | { id: number; kind: 'clear' } | { id: number; kind: 'close' };
 export type BacktestAnswer = { id: number; ok: true; result?: unknown } | { id: number; ok: false; error: string };
 
 const port = parentPort;
@@ -19,7 +21,8 @@ if (port) {
     const answer = (a: BacktestAnswer) => port.postMessage(a);
     if (m.kind === 'clear') { clearSignalBacktestCache(); answer({ id: m.id, ok: true }); return; }
     if (m.kind === 'close') { void closePool().then(() => answer({ id: m.id, ok: true }), () => answer({ id: m.id, ok: true })); return; }
-    (m.kind === 'portfolio' ? portfolioBacktestHere(m.ask) : m.kind === 'live' ? liveCheckHere(m.ask) : signalBacktestHere(m.ask)).then(
+    (m.kind === 'portfolio' ? portfolioBacktestHere(m.ask) : m.kind === 'live' ? liveCheckHere(m.ask)
+      : m.kind === 'day' ? signalBacktestDayHere(m.ask, m.day) : m.kind === 'portfolio-day' ? portfolioDayHere(m.ask, m.day) : signalBacktestHere(m.ask)).then(
       (result) => answer({ id: m.id, ok: true, result }),
       (e) => answer({ id: m.id, ok: false, error: e instanceof Error ? e.message : String(e) }),
     );
