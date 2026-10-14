@@ -23,12 +23,12 @@ const stamp = (ms: number) => `${dayLabel(new Date(ms + 19_800_000).toISOString(
 const total = (xs: { n: number }[]) => xs.reduce((a, x) => a + x.n, 0);
 
 /** One side of a day: the count, how many of the closed made money, and what they made after charges. */
-function Cell({ n, money, note }: { n: number; money: LiveCheckMoney; note?: string }) {
+function Cell({ n, money, note }: { n: number; money: LiveCheckMoney | null; note?: string }) {
   return (
     <>
       <span className="block text-[14px] font-semibold tabular-nums">{count(n)}</span>
-      {money.n > 0 && <span className={cn('block whitespace-nowrap text-[12px] font-semibold tabular-nums', netClass(money.net))}>{moneyText(money.net)}</span>}
-      {money.n > 0 && <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">won {pct(rate(money), 0)}</span>}
+      {money && money.n > 0 && <span className={cn('block whitespace-nowrap text-[12px] font-semibold tabular-nums', netClass(money.net))}>{moneyText(money.net)}</span>}
+      {money && money.n > 0 && <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">won {pct(rate(money), 0)}</span>}
       {note && <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">{note}</span>}
     </>
   );
@@ -71,6 +71,15 @@ function OneSide({ label, groups }: { label: string; groups: LiveCheckWhy[] }) {
   );
 }
 
+/** What is set apart, in a few words: "3 backtest trades the desk has no record of · 1 desk order outside the rules as they stand". */
+function apartWords(r: Check): string {
+  const n = r.notCompared;
+  return [
+    n.backtest > 0 ? `${count(n.backtest)} backtest trade${n.backtest === 1 ? '' : 's'} of signals the desk has no record of` : null,
+    n.desk > 0 ? `${count(n.desk)} desk order${n.desk === 1 ? '' : 's'} outside the rules as they stand now` : null,
+  ].filter(Boolean).join(' · ');
+}
+
 /** The same reason under several rows, added up: what the whole comparison differs by. */
 function merged(groups: LiveCheckWhy[]): LiveCheckWhy[] {
   const m = new Map<string, LiveCheckWhy>();
@@ -105,30 +114,36 @@ export function LiveCheckResult({ r }: { r: Check }) {
   const differ = t.backtestOnly + t.liveOnly;
   const saved = r.against.kind === 'portfolio';
   const nothing = t.placed + t.refused + t.skipped + t.backtest === 0;
-  const days = [...r.days].filter((d) => d.placed + d.backtest + d.real.n + d.real.open > 0).reverse();
+  const days = [...r.days].filter((d) => d.placed + d.backtest > 0).reverse();
+  // The other side: the desk's own decisions for a strategy, or the live rules run with these settings.
+  const them = saved ? 'Live rules' : 'Desk';
+  const apart = r.notCompared.backtest + r.notCompared.desk;
   const latest = days[0] ?? null;
   const backtestOnly = merged(r.strategies.flatMap((x) => x.backtestOnly));
   const deskOnly = saved ? r.liveOnly : merged(r.strategies.flatMap((x) => x.liveOnly));
   return (
-    <Panel title="Live check · the desk beside this backtest">
-      {nothing ? <Empty>The desk has no order, and the backtest no trade, in these days.</Empty> : (
+    <Panel title={saved ? 'Live check · the live rules with these settings' : 'Live check · the desk beside this backtest'}>
+      {nothing ? <Empty>{apart > 0 ? `Nothing to compare in these days: ${apartWords(r)}.` : 'The desk has no order, and the backtest no trade, in these days.'}</Empty> : (
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
           {latest && days.length > 1 && (
             <p aria-label="The latest expiry day" className="m-0 text-[13.5px] leading-snug">
-              <b>{dayLabel(latest.day)}{latest.live ? ', so far' : ''}:</b> the desk placed <b>{count(latest.placed)}</b>, the backtest makes <b>{count(latest.backtest)}</b>, <b className={latest.same === latest.placed && latest.same === latest.backtest ? 'text-[var(--up)]' : ''}>{count(latest.same)}</b> the same signal.
+              <b>{dayLabel(latest.day)}{latest.live ? ', so far' : ''}:</b> {saved ? 'the live rules take' : 'the desk placed'} <b>{count(latest.placed)}</b>, the backtest makes <b>{count(latest.backtest)}</b>, <b className={latest.same === latest.placed && latest.same === latest.backtest ? 'text-[var(--up)]' : ''}>{count(latest.same)}</b> the same signal.
               {' '}Over all {days.length} days:
             </p>
           )}
           <p role="status" aria-label="Whether they match" className={cn('m-0 rounded-md px-3 py-2 text-[14px] font-medium leading-snug', differ === 0 ? 'bg-[rgba(38,161,123,0.14)] text-[var(--up)]' : 'bg-[var(--chosen-soft)] text-foreground')}>
             {differ === 0
-              ? `They match: all ${count(t.placed)} orders the desk placed are trades in the backtest, and the backtest has no other.`
+              ? (saved
+                ? `They match: the live rules with these settings take the same ${count(t.backtest)} trades as the backtest${r.money.real && Math.abs(r.money.real.net - r.money.backtest.net) < 0.005 ? ', and make the same money' : ''}.`
+                : `They match: all ${count(t.placed)} orders the desk placed are trades in the backtest, and the backtest has no other.`)
               : <>
-                The desk placed <b>{count(t.placed)}</b> orders, the backtest makes <b>{count(t.backtest)}</b> trades: <b>{count(t.same)}</b> are the same signal.
+                {saved ? 'The live rules take' : 'The desk placed'} <b>{count(t.placed)}</b>{saved ? ' trades' : ' orders'}, the backtest makes <b>{count(t.backtest)}</b> trades: <b>{count(t.same)}</b> are the same signal.
                 {t.backtestOnly > 0 && <> <b>{count(t.backtestOnly)}</b> are in the backtest only.</>}
-                {t.liveOnly > 0 && <> <b>{count(t.liveOnly)}</b> are on the desk only.</>}
+                {t.liveOnly > 0 && <> <b>{count(t.liveOnly)}</b> are {saved ? 'the live rules\'' : 'on the desk'} only.</>}
                 {' '}Why is under the table.
               </>}
           </p>
+          {apart > 0 && <p aria-label="Not compared" className="m-0 text-[12.5px] leading-snug text-muted-foreground">Not compared: {apartWords(r)}.</p>}
 
           {/* Four plain columns, each cell its lines stacked: what a 360px phone holds without folding anything away. */}
           <table aria-label="Live check by expiry day" className="w-full table-fixed border-collapse text-[13px]">
@@ -136,7 +151,7 @@ export function LiveCheckResult({ r }: { r: Check }) {
             <thead>
               <tr className="text-[11px] uppercase tracking-[0.5px] text-muted-foreground">
                 <th scope="col" className="py-1 pr-1 text-left font-medium">Expiry day</th>
-                <th scope="col" className="py-1 pr-1 text-right font-medium">Desk</th>
+                <th scope="col" className="py-1 pr-1 text-right font-medium">{them}</th>
                 <th scope="col" className="py-1 pr-1 text-right font-medium">Backtest</th>
                 <th scope="col" className="py-1 text-right font-medium">Same</th>
               </tr>
@@ -151,13 +166,13 @@ export function LiveCheckResult({ r }: { r: Check }) {
                       {dayLabel(d.day)}
                       {d.live && <span className="block text-[11.5px] font-normal text-muted-foreground">so far</span>}
                     </th>
-                    <td className="py-2 pr-1 text-right"><Cell n={d.placed} money={d.real} note={d.real.open > 0 ? `${count(d.real.open)} open` : undefined} /></td>
+                    <td className="py-2 pr-1 text-right"><Cell n={d.placed} money={d.real} /></td>
                     <td className="py-2 pr-1 text-right"><Cell n={d.backtest} money={d.bt} /></td>
                     <td className="py-2 text-right">
                       <span className={cn('block text-[14px] font-semibold tabular-nums', all && d.same > 0 ? 'text-[var(--up)]' : '')}>{count(d.same)}</span>
                       {all ? (d.same > 0 && <span className="block text-[11.5px] text-[var(--up)]">all match</span>) : <>
                         {extraBt > 0 && <span className="block whitespace-nowrap text-[11.5px] text-[var(--warn)]">+{count(extraBt)} backtest</span>}
-                        {extraDesk > 0 && <span className="block whitespace-nowrap text-[11.5px] text-[var(--warn)]">+{count(extraDesk)} desk</span>}
+                        {extraDesk > 0 && <span className="block whitespace-nowrap text-[11.5px] text-[var(--warn)]">+{count(extraDesk)} {saved ? 'live' : 'desk'}</span>}
                       </>}
                     </td>
                   </tr>
@@ -166,8 +181,10 @@ export function LiveCheckResult({ r }: { r: Check }) {
             </tbody>
           </table>
           <p className="m-0 text-[12px] leading-snug text-muted-foreground">
-            Desk: the orders it placed, with what the closed ones made after charges. Backtest: the trades this backtest makes of the same days. Same: signals that are an order on the desk and a trade here.
-            {r.liveFrom !== null && r.liveTo !== null ? <> The desk&apos;s record runs {stamp(r.liveFrom)} → {stamp(r.liveTo)} IST.</> : ' The desk has no record of signals in these days.'}
+            {saved
+              ? 'Live rules: the trades the desk\'s own rules make with these settings, on the same signals, under the same limit. Backtest: this backtest\'s trades. Same: signals both trade.'
+              : <>Desk: the orders it decided to place on signals of this strategy &mdash; its decisions, not their fills. Backtest: the trades this backtest makes of the same signals. Same: signals that are both.
+                {r.liveFrom !== null && r.liveTo !== null ? <> The desk&apos;s record runs {stamp(r.liveFrom)} → {stamp(r.liveTo)} IST.</> : ' The desk has no record of signals in these days.'}</>}
           </p>
 
           {(differ > 0 || t.refused + t.skipped > 0) && (
@@ -175,7 +192,9 @@ export function LiveCheckResult({ r }: { r: Check }) {
               <summary className="min-h-[36px] cursor-pointer py-1.5 text-[13px] font-semibold">Why they differ{differ > 0 ? ` · ${count(differ)}` : ' · nothing does'}</summary>
               <div className="grid gap-3 pt-1">
                 <OneSide label="In the backtest only" groups={backtestOnly} />
-                <OneSide label="On the desk only" groups={deskOnly} />
+                <OneSide label={saved ? 'The live rules only' : 'On the desk only'} groups={deskOnly} />
+                <OneSide label="Not compared: the backtest's" groups={r.notComparedWhy.backtest} />
+                <OneSide label="Not compared: the desk's" groups={r.notComparedWhy.desk} />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Reasons label={`The desk refused · ${count(t.refused)}`} items={r.liveWhy.refused} tone="warn" />
                   <Reasons label={`The desk skipped · ${count(t.skipped)}`} items={r.liveWhy.skipped} />
@@ -193,11 +212,9 @@ export function LiveCheckResult({ r }: { r: Check }) {
 
           <p className="m-0 text-[12px] leading-snug text-muted-foreground">
             {saved
-              ? 'Each trade here is looked up in what the desk did with that signal under any of its strategies, and each order the desk placed in the trades here.'
-              : 'The strategy is backtested by its own rules as they stand now, beside its account\'s other strategies and under that account\'s limit, as the desk holds them.'}
-            {' '}On a day before a strategy&apos;s rules were last changed the two differ for that alone.
-            {' '}The backtest replays the rules, not the account: a refusal by the daily loss limit or by margin, and a desk that was not running, are the desk&apos;s &mdash; a difference there is expected, and it is named.
-            The money differs by more than the count: the desk fills at the price it got and exits when its own orders fill; the backtest at the recorded bid and offer.
+              ? 'Each saved backtest\'s settings are run as the strategy the desk would run with them -- its hours, strike rule, lots, target and stop, premium floor and SL / TGT range -- through the same rules the desk trades by, and compared signal for signal. Where they differ, the backtest is not doing what the desk would.'
+              : 'The strategy is backtested by its own rules as they stand now, beside its account\'s other strategies and under that account\'s limit, as the desk holds them, and laid beside what the desk decided with each signal. A signal the desk has no record of, and an order outside the strategy\'s rules as they stand, are set apart rather than counted.'}
+            {' '}The backtest replays the rules, not the account: a refusal by the daily loss limit or by margin is the desk&apos;s &mdash; a difference there is expected, and it is named.
           </p>
         </div>
       )}

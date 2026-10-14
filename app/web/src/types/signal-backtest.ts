@@ -122,7 +122,11 @@ export type LiveCheck = {
   /** Against saved backtests: the desk's orders none of them trades, by why. A strategy's own are on its row. */
   liveOnly: LiveCheckWhy[];
   liveWhy: { refused: LiveCheckCount[]; skipped: LiveCheckCount[] };
-  money: { real: LiveCheckMoney & { open: number }; backtest: LiveCheckMoney };
-  /** Each expiry day: the desk's orders placed and the backtest's trades, how many are the same signal, and the money on each side. */
-  days: { day: string; live: boolean; placed: number; backtest: number; same: number; real: LiveCheckMoney & { open: number }; bt: LiveCheckMoney }[];
+  /** What is set apart and not compared: the backtest's trades of signals the desk has no record of, the desk's orders outside the rules as they stand. */
+  notCompared: { backtest: number; desk: number };
+  notComparedWhy: { backtest: LiveCheckWhy[]; desk: LiveCheckWhy[] };
+  /** The backtest's money, and -- against settings or saved backtests -- the live rules' with them. Null on the desk's side: decisions, not finished orders. */
+  money: { real: LiveCheckMoney | null; backtest: LiveCheckMoney };
+  /** Each expiry day: the other side's takes and the backtest's trades, how many are the same signal, and the money where it is a replay. */
+  days: { day: string; live: boolean; placed: number; backtest: number; same: number; real: LiveCheckMoney | null; bt: LiveCheckMoney }[];
 };
