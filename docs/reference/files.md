@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-502 files listed, 249 test files counted below, images and lockfiles left out.
+503 files listed, 250 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 132 |
+| `app/server` | 133 |
 | `app/web` | 117 |
 
 ## `(root)`
@@ -682,6 +682,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0012-generated-reference-docs.md](../decisions/0012-generated-reference-docs.md) | 0012 — Reference docs are generated from the code and tested |
 | [0013-entry-setups-measured-before-trusted.md](../decisions/0013-entry-setups-measured-before-trusted.md) | 0013 — The 24 entry setups are drawn and paper-logged, never traded, until their record says otherwise |
 | [0014-one-signal-trade-per-contract.md](../decisions/0014-one-signal-trade-per-contract.md) | 0014 — One signal trade per contract on an account; exits recovered from Delta's fills |
+| [0015-read-the-whole-book.md](../decisions/0015-read-the-whole-book.md) | 0015 — Read Delta's whole book; sweep the exits no trade wants |
 | [README.md](../decisions/README.md) | Decisions |
 
 ## `docs/features/`
