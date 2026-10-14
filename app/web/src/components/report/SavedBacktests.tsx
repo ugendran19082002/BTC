@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
-import { AS_SAVED, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, overQuery, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
+import { AS_SAVED, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioDay, getPortfolioLiveCheck, overQuery, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { time12 } from '@/lib/time';
 import { overWords } from '@/components/report/backtest-words';
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BtRow, SavedQuery } from '@/types/signal-backtest';
+import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BtDayTrades, BtRow, SavedQuery } from '@/types/signal-backtest';
+import { DayTradesSheet } from '@/components/report/DayTrades';
 import { Empty, Loading, Panel, Stat, Stats } from '@/components/mobile/parts';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
@@ -44,7 +45,12 @@ const quiet = 'h-11 shrink-0 rounded-lg border border-solid border-border bg-tra
 const link = 'm-0 min-h-[36px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[13px] font-medium text-[var(--accent)] disabled:opacity-40';
 
 /** The saved backtests run together: the total, each one, each expiry day, and the margin held across all of them. */
-function PortfolioResult({ title, r, wide }: { title: string; r: BacktestPortfolioResult; wide: boolean }) {
+function PortfolioResult({ title, r, wide, readDay }: {
+  title: string; r: BacktestPortfolioResult; wide: boolean;
+  /** One of its expiry days, trade by trade, as the run worked it (`DayTradesSheet`). */
+  readDay?: (day: string) => Promise<BtDayTrades>;
+}) {
+  const [openDay, setOpenDay] = useState<string | null>(null);
   const t = r.total;
   const members: BtRow[] = r.members.map((m) => ({ ...m.total, key: m.id, name: m.name }));
   const days: BtRow[] = [...r.days].reverse().map((d) => ({
@@ -125,7 +131,9 @@ function PortfolioResult({ title, r, wide }: { title: string; r: BacktestPortfol
             </section>
             <section aria-label="Each expiry day, together">
               <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">By expiry day, together</h3>
-              <Table caption="Run together: by expiry day" first="Expiry day" rows={days} />
+              <Table caption="Run together: by expiry day" first="Expiry day" rows={days} onCount={readDay ? setOpenDay : undefined} />
+              {readDay && <p className="m-0 mt-1 text-[12px] text-muted-foreground">Tap a day&apos;s trade count for its trades, one by one, each with whose it is.</p>}
+              {readDay && <DayTradesSheet day={openDay} read={readDay} onClose={() => setOpenDay(null)} />}
             </section>
           </div>
           <p className="m-0 mt-2 text-[12px] leading-snug text-muted-foreground">
@@ -201,7 +209,7 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
   return (
     <Updating busy={result.stale} what="the run together">
       <RunNote r={result.data} />
-      <PortfolioResult title={run.title} r={result.data} wide={wide} />
+      <PortfolioResult title={run.title} r={result.data} wide={wide} readDay={(day) => getPortfolioDay(day, run.ids, range, limit, asked, hours, over)} />
       {/* The same run beside the live desk (14 Oct 2026): its own question, so the hours and settings over the run are over the check. */}
       <LiveCheck askKey={askKey} read={() => getPortfolioLiveCheck(run.title, run.ids, range, limit, asked, hours, over)} />
       <button type="button" className={cn(link, 'justify-self-start')} onClick={onClose}>Close the run together</button>

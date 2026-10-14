@@ -19,7 +19,8 @@ const EXIT_WORDS: Record<BtExit, string> = {
   'perp-tgt': 'Perp TGT', 'perp-sl': 'Perp SL', 'option-tgt': 'Option TGT', 'option-sl': 'Option SL', 'window-end': 'Window end',
 };
 const PAGE = 50;
-const opt = (v: number) => (Number.isInteger(v) ? v.toFixed(1) : v.toFixed(v < 10 ? 2 : 1).replace(/0$/, ''));
+/** An option price to the cent, with at least one decimal: 43.0, 73.13, 9.91. */
+const opt = (v: number) => { const r = Math.round(v * 100) / 100; return Number.isInteger(r) ? r.toFixed(1) : String(r); };
 const perp = (v: number) => Math.round(v).toLocaleString('en-US');
 
 type Only = 'all' | 'won' | 'lost' | BtExit;
