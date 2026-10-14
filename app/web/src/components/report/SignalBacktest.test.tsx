@@ -10,9 +10,16 @@ import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context'
  */
 
 const getSignalBacktest = vi.fn();
-vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a) }));
+/** The live check under a result, with nothing on either side: its own behaviour is LiveCheck.test.tsx's. */
+const NO_CHECK = {
+  from: '2026-10-01', to: '2026-10-13', liveFrom: null, liveTo: null, until: 0, against: { kind: 'strategies' }, strategies: [], liveOnly: [],
+  total: { placed: 0, refused: 0, skipped: 0, backtest: 0, backtestSkipped: 0, same: 0, backtestOnly: 0, liveOnly: 0 },
+  liveWhy: { refused: [], skipped: [] }, money: { real: { n: 0, wins: 0, net: 0, open: 0 }, backtest: { n: 0, wins: 0, net: 0 } }, days: [],
+};
+const getLiveCheck = vi.fn();
+vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a), getLiveCheck: (...a: unknown[]) => getLiveCheck(...a) }));
 
-const saves = { getBacktestSaves: vi.fn(), saveBacktest: vi.fn(), deleteBacktestSave: vi.fn(), savePortfolio: vi.fn(), deletePortfolio: vi.fn(), getBacktestPortfolio: vi.fn() };
+const saves = { getBacktestSaves: vi.fn(), saveBacktest: vi.fn(), deleteBacktestSave: vi.fn(), savePortfolio: vi.fn(), deletePortfolio: vi.fn(), getBacktestPortfolio: vi.fn(), getPortfolioLiveCheck: vi.fn() };
 vi.mock('@/api/backtest-saves', async () => ({
   ...Object.fromEntries(Object.keys(saves).map((k) => [k, (...a: unknown[]) => (saves as Record<string, (...x: unknown[]) => unknown>)[k]!(...a)])),
   AS_SAVED: { window: 'saved' },
@@ -82,6 +89,8 @@ beforeEach(() => {
   getSignalBacktest.mockResolvedValue(RESULT);
   for (const f of Object.values(saves)) f.mockReset();
   saves.getBacktestSaves.mockResolvedValue({ saves: [], portfolios: [] });
+  getLiveCheck.mockReset().mockResolvedValue(NO_CHECK);
+  saves.getPortfolioLiveCheck.mockResolvedValue(NO_CHECK);
 });
 
 describe('SignalBacktest', () => {
@@ -93,6 +102,11 @@ describe('SignalBacktest', () => {
       params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 },
     });
     expect(screen.getByText(/Thu 1 Oct → Tue 13 Oct · delta ≤ 0\.10 · 10 lots a signal · option target 90%, stop \+300%/)).toBeInTheDocument();
+    // the live check under the result is asked with the same question: it is the check of what is on the screen
+    await waitFor(() => expect(getLiveCheck).toHaveBeenLastCalledWith(lastQuery()));
+    expect(await screen.findByText('Live check · the desk beside this backtest')).toBeInTheDocument();
+    // and it is in the result, not a section of its own
+    expect(screen.getAllByRole('radio').filter((x) => /Single|Portfolio|Live/.test(x.textContent ?? '')).map((x) => x.textContent)).toEqual(['Single backtest', 'Portfolio']);
   });
 
   it('[critical] the result: the net and what one trade made, how many were traded -- and why the rest were not', async () => {
@@ -958,6 +972,9 @@ describe('SignalBacktest', () => {
     // lots: switched on, it starts from the Single backtest section's own and is asked for at once
     fireEvent.click(sw('Lots a signal'));
     await waitFor(() => expect(last()).toEqual({ lots: { lots: 10 } }));
+    // the live check under the run is asked with the run's own question: its name, its members, and what is over it
+    await waitFor(() => expect(saves.getPortfolioLiveCheck.mock.calls.at(-1)!.slice(0, 2)).toEqual(['Both', ['a1', 'b22']]));
+    await waitFor(() => expect(saves.getPortfolioLiveCheck.mock.calls.at(-1)![6]).toEqual({ lots: { lots: 10 } }));
     expect(sw('Lots a signal')).toHaveAttribute('aria-checked', 'true');
     expect(set().getByText('For the run: 10 lots a signal')).toBeInTheDocument();
     fireEvent.click(within(set().getByRole('group', { name: 'Lots a signal' })).getByRole('button', { name: '16' }));
