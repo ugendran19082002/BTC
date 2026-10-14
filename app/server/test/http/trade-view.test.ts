@@ -124,3 +124,31 @@ test('[critical] a bought position\'s card is told its own exits and its account
   const short = tradeView(await shortAt(20), [], 0.001, quote(CE, 9, 11, { mark: 10 }), 80_000);
   assert.deepEqual([short.plan.longExits, short.plan.accountId], [null, null]);
 });
+
+/**
+ * A waiting order's time limit (owner, 14 Oct 2026: "is a waiting order's expiry shown -- desk and phone?").
+ * It was not on either: the card said where the order rested and since when, never until when or what then.
+ */
+test('[critical] an order waiting to fill says when it was sent, when it gives up, and what follows', async () => {
+  const waiting = async (entry: { timeoutMs: number; marketFallback: boolean; chase: { steps: number; everyMs: number; maxCrossSpreadPct: number | null } | null }) => {
+    // Offered well over the book: it rests and does not fill.
+    const r = rig({ quotes: [quote(CE, 20, 20.5)] });
+    const plan = planFor(ceProduct(), { lots: 10, stopPrice: null, takeProfitPrice: null, entry: { type: 'limit', limitPrice: 40, ...entry } });
+    const sentAt = r.now();
+    await r.engine.open(plan);
+    const rec = r.store.peek(plan.tradeId)!;
+    assert.equal(rec.state.phase, 'entry_pending');
+    return { view: tradeView(rec, [], 0.001, quote(CE, 20, 20.5), 80_000), sentAt };
+  };
+  // a signal strategy's order: five minutes, walking toward the bid for five seconds on the way, the rest cancelled
+  const signal = await waiting({ timeoutMs: 300_000, marketFallback: false, chase: { steps: 5, everyMs: 1_000, maxCrossSpreadPct: 0.5 } });
+  assert.deepEqual(signal.view.entryWait, { sentAt: signal.sentAt, deadline: signal.sentAt + 300_000, then: 'cancel', chaseMs: 5_000 });
+  // a timed entry that crosses at the end of its wait
+  const crossing = await waiting({ timeoutMs: 30_000, marketFallback: true, chase: null });
+  assert.deepEqual(crossing.view.entryWait, { sentAt: crossing.sentAt, deadline: crossing.sentAt + 30_000, then: 'market', chaseMs: null });
+  // an order with no limit rests until it fills or is cancelled: no deadline, nothing follows
+  const resting = await waiting({ timeoutMs: 0, marketFallback: false, chase: null });
+  assert.deepEqual(resting.view.entryWait, { sentAt: resting.sentAt, deadline: null, then: null, chaseMs: null });
+  // a position that is in is not waiting: nothing is said of a limit that no longer applies
+  assert.equal('entryWait' in tradeView(await shortAt(20), [], 0.001, quote(CE, 9, 11), 80_000), false);
+});

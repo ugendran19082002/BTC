@@ -558,8 +558,9 @@ function OrderRow({ order, account }: { order: OrderRecord; account?: { id: numb
         <span className="min-w-0">
           <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="text-[13.5px] font-semibold text-foreground">{contractLabel(order.symbol)}</span>
-            <span className={cn('text-[11px] font-medium uppercase tracking-[0.5px]', STATUS_TONE[order.status])}>
-              {STATUS_LABEL[order.status]}
+            {/* A wait that ran out unfilled is filed under Cancelled and named Expired: not an order taken off by hand. */}
+            <span className={cn('text-[11px] font-medium uppercase tracking-[0.5px]', order.expired ? 'text-[var(--warn)]' : STATUS_TONE[order.status])}>
+              {order.expired ? 'Expired' : STATUS_LABEL[order.status]}
             </span>
             {!stillOpen && order.status === 'completed' && net !== 0 && (
               <Badge tone={net > 0 ? 'ok' : 'danger'} className="px-1.5 py-0 text-[9.5px] font-semibold tracking-wider">

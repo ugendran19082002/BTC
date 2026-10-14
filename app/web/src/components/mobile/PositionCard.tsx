@@ -1,3 +1,4 @@
+import { entryWaitWords } from '@/lib/entry-wait';
 import { AlertOctagon, ChevronDown, ChevronRight, Clock } from 'lucide-react';
 import type { Trade, TradeStatus } from '@/types/trade';
 import { Card } from '@/components/ui/card';
@@ -138,6 +139,7 @@ function WaitingCard({ trade, now, showAccount, onOpen }: { trade: Trade; now: n
   const long = isLongTrade(trade);
   const limit = trade.plan?.entry.limitPrice ?? null;
   const signal = trade.plan?.signal ? `#${trade.plan.signal.n} ${trade.plan.signal.name}` : null;
+  const wait = entryWaitWords(trade.entryWait, now);
   const body = (
     <span className="block w-full">
       {/* As the running card's head: the contract whole, WAITING to the line below when they do not fit. */}
@@ -152,8 +154,10 @@ function WaitingCard({ trade, now, showAccount, onOpen }: { trade: Trade; now: n
       </span>
       <span className="mt-0.5 block truncate text-[12.5px] tabular-nums text-muted-foreground">
         {limit !== null ? <>Resting at <b className="text-foreground">{price(limit)}</b></> : 'At market'}
-        {' · '}sent {duration(Math.max(0, now - trade.updatedAt))} ago
+        {' · '}sent {duration(Math.max(0, now - (trade.entryWait?.sentAt ?? trade.updatedAt)))} ago
       </span>
+      {/* Until when it waits, and what then (14 Oct 2026): a signal order is cancelled five minutes after it is sent. */}
+      {wait && <span aria-label="time limit" className={cn('mt-0.5 block text-[12.5px] leading-snug tabular-nums', wait.urgent ? 'font-medium text-[var(--warn)]' : 'text-muted-foreground')}>{wait.text}</span>}
       <PlacedLine plan={trade.plan} rest={[signal, showAccount && trade.account ? trade.account.name : null]} className="mt-1" />
     </span>
   );

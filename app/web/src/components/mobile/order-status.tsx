@@ -12,4 +12,7 @@ const WORD: Record<OrderStatus, { label: string; tone: 'up' | 'down' | 'warn' | 
   rejected: { label: 'REJECTED', tone: 'down' },
 };
 
-export const orderStatusWord = (o: Pick<OrderRecord, 'status'>) => <Pill tone={WORD[o.status].tone}>{WORD[o.status].label}</Pill>;
+/** An order whose wait ran out unfilled is a cancelled one by status; it is named for what happened to it (14 Oct 2026). */
+export const orderStatusWord = (o: Pick<OrderRecord, 'status' | 'expired'>) => (o.expired
+  ? <Pill tone="warn">EXPIRED</Pill>
+  : <Pill tone={WORD[o.status].tone}>{WORD[o.status].label}</Pill>);

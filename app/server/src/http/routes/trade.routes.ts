@@ -12,7 +12,7 @@ import { netIfClosedAt } from '../../trading/close-preview.js';
 import type { ExchangeOrder, ExchangePosition, Quote, TradeEvent } from '../../trading/types.js';
 import { midOf } from '../../trading/money.js';
 import {
-  ORDER_STATUSES, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
+  ORDER_STATUSES, expiredAfterMs, istDayEnd, istDayStart, istToday, orderOutcomeOf, orderStatusOf,
 } from '../../trading/status.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
@@ -963,6 +963,8 @@ export function registerTradeRoutes(app: FastifyInstance) {
           : tradeView(r, [], r.state.contractValue, null, svc.spot)),
         status: orderStatusOf(r.state, r.events),
         outcome: orderOutcomeOf(r.state, r.events),
+        // Its wait ran out with nothing filled: still "cancelled" for the tabs and counts, named apart on the row.
+        ...(expiredAfterMs(r.state, r.events) !== null ? { expired: true } : {}),
         openedAt: r.events[0]?.at ?? r.state.updatedAt,
       }))
       .filter((r) => !wanted || r.status === wanted);

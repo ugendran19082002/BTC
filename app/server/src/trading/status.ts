@@ -37,9 +37,38 @@ export function orderStatusOf(state: TradeState, events: TradeEvent[] = []): Ord
   return 'rejected';
 }
 
+/**
+ * An order that waited out its time and was cancelled with nothing filled (owner, 14 Oct 2026: "is an order that
+ * waited and expired shown -- desk and phone?"). It was, as "Cancelled" -- the same word as an order taken off by
+ * hand, with "entry cancelled unfilled" under it and nothing to say its time ran out. Null unless it is one; else
+ * how long it had waited, from the journal: the entry sent, to the timeout.
+ */
+export function expiredAfterMs(state: TradeState, events: TradeEvent[] = []): number | null {
+  if (orderStatusOf(state, events) !== 'cancelled') return null;
+  let timeout: number | null = null, sent: number | null = null;
+  for (const e of events) {
+    if (e.t === 'entry_submitted' && timeout === null) sent = e.at;
+    if (e.t === 'entry_timeout') timeout = e.at;
+  }
+  if (timeout === null) return null;
+  return sent === null ? 0 : Math.max(0, timeout - sent);
+}
+
+/** A wait in words: "5 minutes", "45 seconds", "1 hour 30 minutes". */
+function waitWords(ms: number): string {
+  const s = Math.round(ms / 1_000);
+  const unit = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  if (s < 60) return unit(s, 'second');
+  const m = Math.round(s / 60);
+  if (m < 60) return unit(m, 'minute');
+  return m % 60 === 0 ? unit(m / 60, 'hour') : `${unit(Math.floor(m / 60), 'hour')} ${unit(m % 60, 'minute')}`;
+}
+
 /** One line saying what happened, for the list and for the export. */
 export function orderOutcomeOf(state: TradeState, events: TradeEvent[] = []): string {
   const status = orderStatusOf(state, events);
+  const expired = expiredAfterMs(state, events);
+  if (expired !== null) return `expired: not filled in ${expired > 0 ? waitWords(expired) : 'its time'} — cancelled unfilled, no position taken`;
   switch (status) {
     case 'completed': {
       // Bought to open, the words turn over: bought, then sold back.

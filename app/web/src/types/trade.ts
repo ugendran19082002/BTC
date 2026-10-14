@@ -75,6 +75,8 @@ export type Trade = {
   /** The BTC perp's last trade as the option's first entry fill and last exit fill landed (signal trades). */
   perpEntry?: number | null;
   perpExit?: number | null;
+  /** An order still waiting to fill: when it was sent, when it gives up and what follows (`lib/entry-wait.ts`). Absent once it is in, and on an older server. */
+  entryWait?: import('@/lib/entry-wait').EntryWait;
   updatedAt: number;
   plan?: {
     lots: number;
@@ -378,6 +380,8 @@ export type OrderRecord = Trade & {
   status: OrderStatus;
   /** One line saying what happened. */
   outcome: string;
+  /** A cancelled order whose own wait ran out with nothing filled: shown as "Expired", not as one taken off by hand. */
+  expired?: boolean;
   openedAt: number;
 };
 

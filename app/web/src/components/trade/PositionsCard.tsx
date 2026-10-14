@@ -1,3 +1,4 @@
+import { entryWaitWords } from '@/lib/entry-wait';
 import { useMemo, useState } from 'react';
 import { Clock, Loader2, Pencil, Plus, Search, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { cancelAdd, cancelTrade, closeTrade, reconcileTrade } from '@/api/trade';
@@ -335,6 +336,8 @@ function WorkingRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void
   const [busy, setBusy] = useState(false);
   const lots = trade.plan?.lots ?? trade.requestedSize;
   const at = trade.plan?.entry.limitPrice ?? null;
+  // Until when it waits, and what then: the card is redrawn with every status, a second apart, so the clock runs.
+  const wait = entryWaitWords(trade.entryWait, Date.now());
 
   return (
     <div className="rounded-lg border border-border bg-muted p-3">
@@ -355,6 +358,12 @@ function WorkingRow({ trade, onChanged }: { trade: Trade; onChanged?: () => void
               ? <>{trade.plan?.action === 'buy' ? 'Buying' : 'Selling'} {fmtSize(lots)} lots @ {price(at)} · not filled yet</>
               : <>{trade.plan?.action === 'buy' ? 'Buying' : 'Selling'} {fmtSize(lots)} lots · not filled yet</>}
           </p>
+          {wait && (
+            <p aria-label="time limit" className={cn('m-0 mt-0.5 flex items-start gap-1 text-[12px] tabular-nums', wait.urgent ? 'font-medium text-[var(--warn)]' : 'text-muted-foreground')}>
+              <Clock aria-hidden className="mt-[2px] h-3 w-3 flex-none" />
+              <span>{wait.text}</span>
+            </p>
+          )}
         </div>
       </div>
 
