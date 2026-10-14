@@ -56,7 +56,7 @@ export function overWords(p: Partial<BacktestParams>): string[] {
   if (p.targetPct !== undefined) {
     out.push(p.targetSteps?.length
       ? `target ${Math.round(p.targetPct * 100)}% → ${Math.round(p.targetSteps[p.targetSteps.length - 1]!.pct * 100)}% by time (${p.targetSteps.length} step${p.targetSteps.length === 1 ? '' : 's'})`
-      : `target ${targetLabel(p.targetPct).toLowerCase()}`.replace('target no target', 'no target'));
+      : p.targetPct > 0 ? `target ${targetLabel(p.targetPct)}` : 'no target');
   }
   if (p.stopPct !== undefined) out.push(p.stopPct > 0 ? `stop ${stopLabel(p.stopPct)}` : 'no stop');
   if (p.lots !== undefined) out.push(`${p.lots} lot${p.lots === 1 ? '' : 's'} a signal`);

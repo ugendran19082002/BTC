@@ -14,8 +14,8 @@ import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
-import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit } from '@/api/backtest-saves';
-import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, settingsWords } from '@/components/report/backtest-words';
+import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
+import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, settingsWords } from '@/components/report/backtest-words';
 
 /**
  * The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price?
@@ -317,6 +317,139 @@ function ChipRow({ label, children }: { label: string; wide?: boolean; children:
  * and the net with what one trade made under it. What the same trades made on the perp goes under the name.
  */
 /**
+ * One setting of a run together, as a switch (owner, 14 Oct 2026: "on the portfolio side the filter is off and each
+ * backtest runs with its own filter; switched on, that filter is taken for now and applied to every backtest").
+ * Off, the row is one line and says so; on, it says the value in force and shows the single backtest's own control
+ * for it.
+ */
+function RunFilter({ name, on, said, onToggle, children }: { name: string; on: boolean; said: string; onToggle: () => void; children: React.ReactNode }) {
+  return (
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 border-0 border-t border-solid border-[var(--line-soft)] pt-1.5">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block text-[13.5px] font-medium text-foreground">{name}</span>
+          <span className={cn('block text-[12px] leading-snug', on ? 'text-foreground' : 'text-muted-foreground')}>{on ? `For the run: ${said}` : 'Off · each saved backtest’s own'}</span>
+        </span>
+        {/* A finger's height around a switch's width: the track alone is 24px tall. */}
+        <button type="button" role="switch" aria-checked={on} aria-label={`${name}, for the run`} onClick={onToggle}
+          className="m-0 inline-flex min-h-[44px] flex-none cursor-pointer appearance-none items-center border-0 bg-transparent p-0 pl-2">
+          <span className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors', on ? 'bg-[var(--chosen)]' : 'bg-[var(--line)]')}>
+            <span className={cn('block h-5 w-5 rounded-full shadow transition-transform', on ? 'translate-x-[22px] bg-[var(--chosen-ink)]' : 'translate-x-0.5 bg-muted-foreground')} />
+          </span>
+        </button>
+      </div>
+      {on && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5 pb-1.5">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * The settings a run together can be given for the run: the single backtest's strike, option target (fixed or by
+ * the clock), option stop, lots, minimum premium and SL / TGT range -- each off to begin with. One switched on
+ * starts from what the Single backtest section has for it, so "try all of them with what I have set up there" is
+ * a tap. The hours and the limit on open trades have rows of their own above.
+ */
+function RunFilters({ over, onChange, seed, stepSources, wide }: {
+  over: PortfolioOver; onChange: (o: PortfolioOver) => void;
+  /** The Single backtest section's settings: where a switch starts. */
+  seed: BacktestParams;
+  stepSources: { name: string; pct: number; steps: Step[]; enabled: boolean }[];
+  wide: boolean;
+}) {
+  // Dynamic chosen and its steps not in use yet: the editor is open, the run still by the fixed target.
+  const [dynamicDraft, setDynamicDraft] = useState(false);
+  const put = (o: PortfolioOver) => onChange({ ...over, ...o });
+  const flip = <K extends keyof PortfolioOver>(key: K, start: NonNullable<PortfolioOver[K]>) => {
+    if (over[key] === undefined) { put({ [key]: start }); return; }
+    const next = { ...over };
+    delete next[key];
+    onChange(next);
+  };
+  const { strike, target, stop, lots, minPremium, range } = over;
+  const values = strike?.rule === 'premium' ? PREMIUMS : DELTAS;
+  const dynamic = (target?.targetSteps?.length ?? 0) > 0 || dynamicDraft;
+  const switchedOn = Object.keys(over).length;
+  const said = (p: Partial<BacktestParams>) => overWords(p)[0] ?? '';
+  return (
+    <section aria-label="Settings for the run" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 px-1">
+        <span className="text-[13px] font-semibold">Settings for the run <span className="font-normal text-muted-foreground">· {switchedOn === 0 ? 'all off' : `${switchedOn} on`}</span></span>
+        {switchedOn > 0 && <button type="button" onClick={() => { setDynamicDraft(false); onChange({}); }} className="min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] text-[var(--accent)]">Switch all off</button>}
+      </div>
+      <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
+        Off, each saved backtest runs with its own. Switched on, that one setting is taken for this run and put over every saved backtest in it -- nothing saved is changed.
+      </p>
+
+      <RunFilter name="Strike" on={!!strike} said={strike ? said(strike) : ''} onToggle={() => flip('strike', { rule: seed.rule, value: seed.value })}>
+        {strike && <>
+          <Segmented dense label="How the strike is picked, for the run" value={strike.rule} options={RULES} onChange={(rule) => put({ strike: { rule, value: rule === 'delta' ? 0.1 : 50 } })} />
+          <ChipRow wide={wide} label={strike.rule === 'delta' ? 'Sell the nearest strike with a delta of at most' : 'Sell the dearest strike priced at most'}>
+            {values.map((v) => <Chip key={v} on={strike.value === v} onClick={() => put({ strike: { ...strike, value: v } })}>{strike.rule === 'delta' ? v.toFixed(2) : `$${v}`}</Chip>)}
+            <CustomValue key={strike.rule} value={strike.value} presets={values} spec={strike.rule === 'delta' ? CUSTOM.delta : CUSTOM.premium}
+              name={strike.rule === 'delta' ? 'Delta limit, for the run' : 'Premium limit, for the run'} onChange={(value) => put({ strike: { ...strike, value } })} />
+          </ChipRow>
+        </>}
+      </RunFilter>
+
+      <RunFilter name="Option target" on={!!target} said={target ? said(target.targetSteps?.length ? target : { targetPct: target.targetPct })  : ''}
+        onToggle={() => { setDynamicDraft(false); flip('target', { targetPct: seed.targetPct, ...(seed.targetSteps?.length ? { targetSteps: seed.targetSteps } : {}) }); }}>
+        {target && <>
+          <Segmented dense label="The option's own target, for the run" value={dynamic ? 'dynamic' : 'fixed'}
+            options={[{ key: 'fixed', label: 'Fixed target', spoken: 'One target all day, for the run' }, { key: 'dynamic', label: 'Dynamic · by time', spoken: 'A target that moves by the clock, for the run' }]}
+            onChange={(m) => {
+              if (m === 'fixed') { setDynamicDraft(false); put({ target: { targetPct: target.targetPct > 0 ? target.targetPct : 0.9 } }); return; }
+              // Dynamic: a strategy's own steps, in use at once -- one that is switched on first. With none to take, the editor opens empty.
+              const own = [...stepSources].sort((a, b) => Number(b.enabled) - Number(a.enabled))[0];
+              if (own) put({ target: { targetPct: own.pct, targetSteps: own.steps } }); else setDynamicDraft(true);
+            }} />
+          {!dynamic ? (
+            <ChipRow wide={wide} label="The option's own target, of the premium kept">
+              {TARGETS.map((x) => <Chip key={x.value} on={target.targetPct === x.value} onClick={() => put({ target: { targetPct: x.value } })}>{x.label}</Chip>)}
+              <CustomValue value={target.targetPct} presets={TARGETS.map((x) => x.value)} spec={CUSTOM.target} name="Option target, for the run" onChange={(targetPct) => put({ target: { targetPct } })} />
+            </ChipRow>
+          ) : (
+            <TargetSteps key={JSON.stringify(target.targetSteps ?? [])} start={target.targetPct > 0 ? target.targetPct : 0.7} steps={target.targetSteps ?? []}
+              copyFrom={stepSources} onApply={(targetPct, targetSteps) => { setDynamicDraft(false); put({ target: { targetPct, targetSteps } }); }} />
+          )}
+        </>}
+      </RunFilter>
+
+      <RunFilter name="Option stop" on={!!stop} said={stop ? said(stop) : ''} onToggle={() => flip('stop', { stopPct: seed.stopPct })}>
+        {stop && (
+          <ChipRow wide={wide} label="The option's own stop, over the premium sold">
+            {STOPS.map((s) => <Chip key={s.value} on={stop.stopPct === s.value} onClick={() => put({ stop: { stopPct: s.value } })}>{s.label}</Chip>)}
+            <CustomValue value={stop.stopPct} presets={STOPS.map((x) => x.value)} spec={CUSTOM.stop} name="Option stop, for the run" onChange={(stopPct) => put({ stop: { stopPct } })} />
+          </ChipRow>
+        )}
+      </RunFilter>
+
+      <RunFilter name="Lots a signal" on={!!lots} said={lots ? said(lots) : ''} onToggle={() => flip('lots', { lots: seed.lots })}>
+        {lots && (
+          <ChipRow wide={wide} label="Lots a signal">
+            {LOTS.map((n) => <Chip key={n} on={lots.lots === n} onClick={() => put({ lots: { lots: n } })}>{n}</Chip>)}
+            <CustomValue value={lots.lots} presets={LOTS} spec={CUSTOM.lots} name="Lots, for the run" onChange={(n) => put({ lots: { lots: n } })} />
+          </ChipRow>
+        )}
+      </RunFilter>
+
+      <RunFilter name="Minimum premium" on={!!minPremium} said={minPremium ? said(minPremium) : ''} onToggle={() => flip('minPremium', { minPremium: seed.minPremium ?? FLOOR })}>
+        {minPremium && (
+          <ChipRow wide={wide} label="Minimum premium: sell only for at least">
+            {MIN_PREMIUMS.map((v) => <Chip key={v} on={minPremium.minPremium === v} onClick={() => put({ minPremium: { minPremium: v } })}>{v > 0 ? `$${v}` : 'Off'}</Chip>)}
+            <CustomValue value={minPremium.minPremium} presets={MIN_PREMIUMS} spec={CUSTOM.minPremium} name="Minimum premium, for the run" onChange={(v) => put({ minPremium: { minPremium: v } })} />
+          </ChipRow>
+        )}
+      </RunFilter>
+
+      <RunFilter name="SL and TGT range" on={!!range} said={range ? said(range) : ''}
+        onToggle={() => flip('range', { slMin: seed.slMin ?? 0, slMax: seed.slMax ?? 0, tgtMin: seed.tgtMin ?? 0, tgtMax: seed.tgtMax ?? 0 })}>
+        {range && <SlTgtRange value={range} onApply={(r) => put({ range: r })} />}
+      </RunFilter>
+    </section>
+  );
+}
+
+/**
  * One account's limit on a run together, shown and typed (owner, 13 Oct 2026: "show the at-most-open field with
  * its default value, editable"): at most open across all of them, and the CE and PE shares of it. It opens on the
  * default -- what the saved backtests themselves carry, or the account's own limit -- and takes a typed one on
@@ -491,6 +624,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   // The hours a run together is held to (owner, 13 Oct 2026: the hours choice, "wanted in the portfolio section"): each saved backtest's own to begin with.
   const [runHours, setRunHours] = usePersisted<PortfolioHours>('signalBacktest.together.hours', AS_SAVED);
   const [pickingRunHours, setPickingRunHours] = useState(false);
+  // The other settings a run together can be given, each its own switch (`RunFilters`): all off to begin with.
+  const [runOver, setRunOver] = usePersisted<PortfolioOver>('signalBacktest.together.over', {});
   const [savedList, setSavedList] = useState<BacktestSave[]>([]);
   /** A saved backtest's settings put on the screen: the result below is then worked for them, over the days chosen. */
   const load = (q: SavedQuery) => {
@@ -781,11 +916,14 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                   </p>
                 </div>
               </Panel>
+              <Panel title="For this run">
+                <RunFilters over={runOver} onChange={setRunOver} seed={params} stepSources={stepSources} wide={wide} />
+              </Panel>
               <SavedBacktests mode="portfolio" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} onSaves={setSavedList} />
             </aside>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
               {together
-                ? <PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} wide={wide} onClose={() => setTogether(null)} />
+                ? <PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} onClose={() => setTogether(null)} />
                 : <Panel title="Run together"><Empty>Run a portfolio, or tick two or more saved backtests and run them together: each is worked as it is alone, and they are added up -- the total, each one, each expiry day, and the margin held across all of them.</Empty></Panel>}
             </div>
           </>
