@@ -138,3 +138,19 @@ export type LiveCheck = {
   /** The fates over the whole range. */
   fate: { live: LiveCheckFate; backtest: LiveCheckFate };
 };
+
+/** One trade of a backtest, as `/api/signal-backtest/day` lists it (server: `BtTradeRow`). */
+export type BtTradeRow = {
+  /** The signal's fill on the perp, epoch ms. */
+  at: number;
+  method: string; name: string; tf: string; dir: 1 | -1;
+  perpEntry: number; perpSl: number; perpTgt: number;
+  cp: 'C' | 'P'; strike: number; lots: number;
+  entryAt: number; entry: number; exitAt: number; exit: number; by: BtExit;
+  optTgt: number | null; optStop: number | null;
+  perpPts: number; netUsd: number; chargesUsd: number;
+  /** In a portfolio: whose trade it is. */
+  member?: string;
+};
+/** One expiry day's trades: `total` of them, the first `trades.length` listed. */
+export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };

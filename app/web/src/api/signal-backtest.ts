@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { BacktestQuery, LiveCheck, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
+import type { BacktestQuery, BtDayTrades, LiveCheck, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
 import type { StrategyConfig } from '@/types/strategy';
 
 /** A backtest's question as the server reads it: the days, the settings, the filters, the strategy. Shared with its live check, so both are of the same thing. */
@@ -27,6 +27,12 @@ export const getSignalBacktest = (q: BacktestQuery) => json<SignalBacktestRespon
  * The same backtest laid beside the live desk, signal for signal: by a strategy, its own rules against its own
  * record; by the screen's settings, those settings against what the desk did with each signal under any strategy.
  */
+/** One expiry day of the backtest on the screen, trade by trade. */
+export const getBacktestDay = (q: BacktestQuery, day: string) => {
+  const p = searchOf(q);
+  p.set('day', day);
+  return json<BtDayTrades>(`/api/signal-backtest/day?${p}`);
+};
 export const getLiveCheck = (q: BacktestQuery) => json<LiveCheck>(`/api/signal-backtest/live-check?${searchOf(q)}`);
 
 /** Every method's record as options under a strategy's rules as they stand on its form -- saved or not; nothing is saved by asking. */

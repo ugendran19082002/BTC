@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { BacktestPortfolio, BacktestPortfolioResult, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
+import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
 
 /** Every saved backtest and portfolio, by name. */
 export const getBacktestSaves = () => json<BacktestSaves>('/api/backtest-saves');
@@ -27,6 +27,13 @@ export const getPortfolioLiveCheck = (name: string, ids: readonly string[], rang
   const p = runSearch(ids, range, limit, cap, hours, over);
   p.set('name', name);
   return json<LiveCheck>(`/api/backtest-portfolio/live-check?${p}`);
+};
+
+/** One expiry day of a run together, trade by trade: asked exactly as the run is. */
+export const getPortfolioDay = (day: string, ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED, over: PortfolioOver = {}) => {
+  const p = runSearch(ids, range, limit, cap, hours, over);
+  p.set('day', day);
+  return json<BtDayTrades>(`/api/backtest-portfolio/day?${p}`);
 };
 
 /** A run together as the server reads it: the days, the saved backtests, whose limit, the hours and the settings over the run. */

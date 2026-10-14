@@ -53,7 +53,11 @@ export const FOLD = {
   net: `py-1.5 text-right max-sm:col-start-3 max-sm:row-span-2 max-sm:row-start-1 ${FOLD_CELL} max-sm:pl-2`,
 } as const;
 
-export function Table({ caption, first, rows, perp = false, days = false }: { caption: string; first: string; rows: readonly BtRow[]; perp?: boolean; days?: boolean }) {
+export function Table({ caption, first, rows, perp = false, days = false, onCount }: {
+  caption: string; first: string; rows: readonly BtRow[]; perp?: boolean; days?: boolean;
+  /** A row's trade count as a button that opens its trades (owner, 14 Oct 2026: "tap the count -- trade by trade"). */
+  onCount?: (key: string) => void;
+}) {
   const shown = rows.filter((r) => r.n > 0);
   if (shown.length === 0) return <Empty>No trade here.</Empty>;
   return (
@@ -75,7 +79,14 @@ export function Table({ caption, first, rows, perp = false, days = false }: { ca
               {days && r.days ? <span className="block text-[11.5px] font-normal text-muted-foreground">{r.days} day{r.days === 1 ? '' : 's'}</span> : null}
               {perp && <span className={cn('block text-[11.5px] font-normal', netClass(r.perpPts))}>perp {ptsText(r.perpPts)}</span>}
             </th>
-            <td className={FOLD.trades}>{count(r.n)}</td>
+            <td className={FOLD.trades}>
+              {onCount ? (
+                <button type="button" onClick={() => onCount(r.key)} aria-label={`See the ${count(r.n)} trades of ${r.name}`}
+                  className="m-0 min-h-[32px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[var(--accent)] underline decoration-dotted underline-offset-4">
+                  {count(r.n)} ›
+                </button>
+              ) : count(r.n)}
+            </td>
             <td className={FOLD.won}>{pct(rate(r), 0)}</td>
             <td className={FOLD.net}>
               <span className={cn('block whitespace-nowrap font-semibold', netClass(r.net))}>{moneyText(r.net)}</span>
