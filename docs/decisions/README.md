@@ -21,8 +21,9 @@ Read these before changing anything in `app/server/src/trading/`.
 | [0011](0011-one-trade-per-contract.md) | Two strategies may hold one contract; each trade keeps its own | 30 Sep 2026 |
 | [0012](0012-generated-reference-docs.md) | Reference docs are generated from the code and tested | 30 Sep 2026 |
 | [0013](0013-entry-setups-measured-before-trusted.md) | The 24 entry setups are drawn and paper-logged, never traded, until their record says otherwise | 30 Sep 2026 |
-| [0014](0014-one-signal-trade-per-contract.md) | One signal trade per contract on an account; missed exits recovered from Delta's fills | 14 Oct 2026 |
+| [0014](0014-one-signal-trade-per-contract.md) | One signal trade per contract on an account (lifted by 0016); missed exits recovered from Delta's fills | 14 Oct 2026 |
 | [0015](0015-read-the-whole-book.md) | Delta's open book is read whole, by `product_ids` and cursor; exits no trade wants are swept | 14 Oct 2026 |
+| [0016](0016-shared-contracts-again.md) | Several trades may share a contract, and several strategies one signal (replaces 0014's rule 1) | 14 Oct 2026 |
 
 A new decision gets the next number, the same headings, and a line here. A
 decision that is replaced is not deleted: its status says what replaced it.

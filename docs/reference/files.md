@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-503 files listed, 250 test files counted below, images and lockfiles left out.
+505 files listed, 250 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -600,6 +600,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [trade-events.ts](../../app/web/src/lib/trade-events.ts) | What changed between one reading of the desk's open trades and the next (the phone's live toasts, owner, 6 Oct 2026): an order began waiting, an order filled, a position closed, a waiting order wen... |
 | [utils.ts](../../app/web/src/lib/utils.ts) | Class-name helpers shared by every component. |
 | [vol-regime.ts](../../app/web/src/lib/vol-regime.ts) | Is the chart moving more or less than usual: the latest ATR(14) against the median ATR over the candles given. |
+| [win-line.ts](../../app/web/src/lib/win-line.ts) | The "won at least" line both method lists filter by (owner, 14 Oct 2026: "all, profit, loss, win -- 30% by default, a % I can edit; 30 shows 30 and over"): the Backtest's methods dropdown and the s... |
 
 ## `app/web/src/lib/smc/`
 
@@ -683,6 +684,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0013-entry-setups-measured-before-trusted.md](../decisions/0013-entry-setups-measured-before-trusted.md) | 0013 — The 24 entry setups are drawn and paper-logged, never traded, until their record says otherwise |
 | [0014-one-signal-trade-per-contract.md](../decisions/0014-one-signal-trade-per-contract.md) | 0014 — One signal trade per contract on an account; exits recovered from Delta's fills |
 | [0015-read-the-whole-book.md](../decisions/0015-read-the-whole-book.md) | 0015 — Read Delta's whole book; sweep the exits no trade wants |
+| [0016-shared-contracts-again.md](../decisions/0016-shared-contracts-again.md) | 0016 — Several trades may share a contract, and several strategies one signal |
 | [README.md](../decisions/README.md) | Decisions |
 
 ## `docs/features/`

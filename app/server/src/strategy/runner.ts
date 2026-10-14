@@ -656,20 +656,14 @@ export class StrategyRunner {
     const at = strikePickAt(s.config, istMinutes(now));
     const block = at.block > 0 ? ` · block ${at.block + 1}, from ${time12(at.from)}` : '';
     /*
-     * One trade per contract on an account (owner, 14 Oct 2026, after 30 positions closed at Delta unseen). Several
-     * trades sold on one strike share Delta's one position there, each with its own reduce-only target and stop;
-     * Delta holds a contract's reduce-only orders to its position and trims them as it moves, and the desk put
-     * them back -- 3,000 cancels and re-places in a night, on the contracts with 17 to 55 trades each and on no
-     * other, and fills the desk could no longer match. A contract this account already holds, or is entering, is
-     * taken off the board for this signal: the rule picks the next strike out, as it would if that one were not
-     * quoted. The backtest does the same (`simulateTogether`).
+     * Several trades may share a contract (0011), and several strategies may trade one signal (owner, 14 Oct 2026:
+     * "allow many trades on one strike; allow two strategies to take the same signal"). One trade per contract, from
+     * that morning, was lifted the same day: the reduce-only churn it answered was the desk reading only a hundred of
+     * the account's open orders (0015), and the rule cut the strategies to one trade in six.
      */
-    const heldHere = new Set(openNow.map((t) => t.plan.symbol));
-    const free = snap.candidates.filter((c) => !heldHere.has(`${c.cp}-BTC-${c.strike}-${snap.expiry}`));
-    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, free, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
+    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
     const chosen = sel.legs[0];
-    const tookOut = snap.candidates.length - free.length;
-    if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}${tookOut ? ` · ${tookOut} strike${tookOut === 1 ? '' : 's'} already held on this account left out` : ''}`); return; }
+    if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}`); return; }
 
     const target = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
     const args = {

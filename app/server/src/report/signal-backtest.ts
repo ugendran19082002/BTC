@@ -258,9 +258,8 @@ export type DayPlan = {
   refuses: (sig: BtSignal) => BtSkip | null;
   /**
    * The strike and the lots, from one reading of the board (both sides, as it stood at `at`). Null: nothing to sell.
-   * `held`: strikes of that side already open on the account, left out as the desk leaves them out (one trade per contract).
    */
-  pick: (board: readonly BoardRow[], cp: 'C' | 'P', at: number, held?: ReadonlySet<number>) => { row: BoardRow; lots: number } | null;
+  pick: (board: readonly BoardRow[], cp: 'C' | 'P', at: number) => { row: BoardRow; lots: number } | null;
   /** The perp level that ends the trade at its target. */
   targetOf: (sig: BtSignal) => number;
   /** The option's own target and stop, as shares of the premium sold; 0 is none. */
@@ -370,9 +369,7 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }, 
       if ((needSl > 0 && sl < needSl) || (needTgt > 0 && tgt < needTgt) || (mostSl > 0 && sl > mostSl) || (mostTgt > 0 && tgt > mostTgt)) return 'distance';
       return null;
     },
-    pick: (whole, cp, at, held) => {
-      // One trade per contract: a strike already held on the account is not on this board, as the runner leaves it off.
-      const board = held && held.size ? whole.filter((r) => r.cp !== cp || !held.has(r.strike)) : whole;
+    pick: (board, cp, at) => {
       const spot = board.find((r) => r.spot !== null)?.spot ?? null;
       const nearest = spot === null ? null : board.reduce<number | null>((best, r) => (best === null || Math.abs(r.strike - spot) < Math.abs(best - spot) ? r.strike : best), null);
       const candidates: Candidate[] = board.map((r) => ({
@@ -532,7 +529,7 @@ export function simulateTogether(o: {
   const pctAt = (memo: Map<number, number>, f: (at: number) => number, at: number) => { let v = memo.get(at); if (v === undefined) { v = f(at); memo.set(at, v); } return v; };
   const lastBar = o.bars[o.bars.length - 1];
   /** When each trade still open ends, its side and whose it is: what "at most N open" and each side's limit count. */
-  let open: { until: number; side: 'CE' | 'PE'; book: number; strike: number }[] = [];
+  let open: { until: number; side: 'CE' | 'PE'; book: number }[] = [];
   const shared = o.shared ?? null;
   // One line for all of them, in the order the desk takes signals; two books' same signal, in the books' own order.
   const line = o.books.flatMap((b, book) => b.signals.map((sig) => ({ sig, book }))).sort((a, b) => signalOrder(a.sig, b.sig) || a.book - b.book);
@@ -561,17 +558,12 @@ export function simulateTogether(o: {
     const near = next === 0 ? (times.length ? 0 : -1) : next === times.length || t0 - times[next - 1]! <= times[next]! - t0 ? next - 1 : next;
     if (near === -1 || Math.abs(times[near]! - t0) > BOARD_NEAR_MS) { skip('no-board'); continue; }
     const cp = sig.dir === 1 ? 'P' as const : 'C' as const;
-    /*
-     * One trade per contract on an account (14 Oct 2026), as the runner holds it: a strike of this side still open --
-     * on the account where the books share one, else in this book -- is left off the board for this signal. The pick
-     * is kept per reading only when nothing is held, which is the case it is worth keeping for.
-     */
-    const heldStrikes = new Set(mine.filter((x) => x.side === (cp === 'P' ? 'PE' : 'CE')).map((x) => x.strike));
+    // Several trades may share a contract, and several books one signal, as on the desk (the one-per-contract rule of 14 Oct morning was lifted).
     const pickKey = near * 2 + (cp === 'P' ? 1 : 0);
-    let picked = heldStrikes.size ? undefined : picks.get(pickKey);
+    let picked = picks.get(pickKey);
     if (picked === undefined) {
-      picked = plan.pick(readingAt(board, times[near]!), cp, times[near]!, heldStrikes);
-      if (!heldStrikes.size) picks.set(pickKey, picked);
+      picked = plan.pick(readingAt(board, times[near]!), cp, times[near]!);
+      picks.set(pickKey, picked);
     }
     if (!picked) { skip('no-strike'); continue; }
     const pick = picked.row, lots = picked.lots;
@@ -642,7 +634,7 @@ export function simulateTogether(o: {
 
     const charges = fillChargesUsd({ price: entry, contracts: lots, contractValue: CONTRACT_VALUE, spot: pick.spot }).totalUsd
       + fillChargesUsd({ price: exit, contracts: lots, contractValue: CONTRACT_VALUE, spot: exitSpot }).totalUsd;
-    open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE', book, strike: pick.strike });
+    open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE', book });
     trades.push({
       signal: sig, cp, strike: pick.strike, lots, entryAt, entry, exitAt, exit, by,
       netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges, chargesUsd: charges, vol,

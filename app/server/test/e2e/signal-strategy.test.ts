@@ -505,39 +505,40 @@ test('[critical] the trade history by IST day: today has them, a day before has 
   assert.match(bad.body.error, /on or before/);
 });
 
-test('[critical] two different signals while the first is open: one trade per contract -- the second takes the next strike out, or none', async () => {
-  // 14 Oct 2026: trades sharing one contract shared Delta's one position and fought over its reduce-only orders.
+test('[critical] two different signals, the same strike: both sold, each its own trade with its own perp levels (one trade per contract lifted, 14 Oct 2026)', async () => {
+  await freshDesk();
   const two = { ...config, signal: { ...config.signal, maxOpen: 5 }, liveOrders: true };
   assert.equal((await api('POST', '/api/strategies', { name: 'Sig same strike', config: two })).status, 200);
   await api('POST', '/api/strategies/sig-same-strike/enabled', { enabled: true });
-  // A second put, further out and a little cheaper: the next strike the rule would take.
-  const NEXT = PUT - 200, nextSymbol = `P-BTC-${NEXT}-${EXPIRY}`;
-  paper().addProduct({ symbol: nextSymbol, productId: 7009, underlying: 'BTC', optionSide: 'PE', strike: NEXT, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
-  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`, nextSymbol]) {
-    paper().setQuote({ symbol: sym, bid: sym === nextSymbol ? 15 : 18, ask: sym === nextSymbol ? 15.5 : 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
-  }
-  board.candidates.push({ cp: 'P', strike: NEXT, sellPrice: 15, pOtm: 0.85, moneyness: 'OTM', ask: 15.5 });
-  // Whatever an earlier test left open on the account counts: the account holds the contract, whoever opened it.
-  const heldBefore = new Set((await tradingService().openTrades()).map((t) => t.plan.symbol));
   try {
     await runner.onSignal(signal());
     await runner.onSignal(signal({ plan: { entryLo: 84_900, entryHi: 84_950, stop: 84_500, tp1: 85_400, tp2: null, tp3: null, tpWhy: [], rr: 1.4 } }));
-    await runner.onSignal(signal({ plan: { entryLo: 84_880, entryHi: 84_900, stop: 84_450, tp1: 85_300, tp2: null, tp3: null, tpWhy: [], rr: 1.3 } }));
     const runs = await runsOf('sig-same-strike');
-    const placed = runs.filter((r) => r.status === 'placed');
-    const plans = await Promise.all(placed.map((r) => one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [r.trade_id])));
-    const symbols = plans.map((p) => p!.plan.symbol as string);
-    // never two of this account's trades on one contract, and never one on a contract already held
-    assert.equal(new Set(symbols).size, symbols.length, symbols.join(', '));
-    assert.ok(symbols.every((x) => !heldBefore.has(x)), `${symbols.join(', ')} against ${[...heldBefore].join(', ')}`);
-    // with both puts held, the third has nothing left to sell -- and says why
-    const last = runs.at(-1)!;
-    if (last.status !== 'placed') assert.match(last.detail, /already held on this account left out/);
-    assert.ok(placed.length >= 1, runs.map((r) => r.detail).join(' / '));
-    assert.deepEqual(plans.map((p) => p!.plan.underlying.stop), [84_600, 84_500, 84_450].slice(0, plans.length), 'each signal its own SL');
+    assert.deepEqual(runs.map((r) => r.status), ['placed', 'placed'], runs.map((r) => r.detail).join(' / '));
+    const plans = await Promise.all(runs.map((r) => one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [r.trade_id])));
+    assert.deepEqual(plans.map((p) => p!.plan.symbol), [`P-BTC-${PUT}-${EXPIRY}`, `P-BTC-${PUT}-${EXPIRY}`], 'one strike, two trades');
+    assert.deepEqual(plans.map((p) => p!.plan.underlying.stop), [84_600, 84_500], 'each signal its own SL');
   } finally {
-    board.candidates.pop();
     await api('POST', '/api/strategies/sig-same-strike/enabled', { enabled: false });
+  }
+});
+
+test('[critical] two strategies of one account on the same signal: both sell it, each its own trade (owner, 14 Oct 2026: "allow")', async () => {
+  await freshDesk();
+  const cfg = { ...config, signal: { ...config.signal, maxOpen: 5 }, liveOrders: true };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig first', config: cfg })).status, 200);
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig second', config: cfg })).status, 200);
+  await api('POST', '/api/strategies/sig-first/enabled', { enabled: true });
+  await api('POST', '/api/strategies/sig-second/enabled', { enabled: true });
+  try {
+    await runner.onSignal(signal({ triggerTime: 1_791_900_000 }));
+    const first = (await runsOf('sig-first')).at(-1)!, second = (await runsOf('sig-second')).at(-1)!;
+    assert.equal(first.signal_key, second.signal_key, 'the same signal');
+    assert.deepEqual([first.status, second.status], ['placed', 'placed'], `${first.detail} / ${second.detail}`);
+    assert.notEqual(first.trade_id, second.trade_id, 'two trades');
+  } finally {
+    await api('POST', '/api/strategies/sig-first/enabled', { enabled: false });
+    await api('POST', '/api/strategies/sig-second/enabled', { enabled: false });
   }
 });
 
@@ -1028,14 +1029,7 @@ test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put
   // Live orders on: it is a real order now -- bought at the offer, long on the exchange, its exits on the plan.
   const on = await own({ takeProfitPct: 3, stopLossPct: 0.4, liveOrders: true });
   assert.equal(on.status, 200, JSON.stringify(on.body));
-  // One trade per contract (14 Oct 2026): a call this account already holds -- earlier cases here left one short -- is
-  // left off the board, so the buy is not sent onto a contract it would close; with no other call, it is refused in words.
-  await runner.onSignal(signal());
-  const blocked = await last();
-  if (blocked.status !== 'placed') {
-    assert.equal(blocked.status, 'refused', blocked.detail);
-    assert.match(blocked.detail, /already held on this account left out$/);
-  }
+  // A clean account: a call an earlier case left short would be closed by this buy rather than opened.
   await freshAccount();
   await runner.onSignal(signal());
   const placed = await last();

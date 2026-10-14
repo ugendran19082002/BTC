@@ -486,28 +486,24 @@ test('[critical] several backtests on one account: one line in the desk\'s order
 });
 
 /**
- * One trade per contract on an account (14 Oct 2026), as the runner holds it: trades sharing one strike shared
- * Delta's one position and its reduce-only orders, and 30 positions closed at Delta unseen. A strike still open is
- * left off the board for the next signal: the rule takes the next one out -- or none, with none left.
+ * Several trades may share a contract (one trade per contract, 14 Oct 2026 morning, was lifted that day: the churn it
+ * answered was the desk reading a hundred of its open orders, and it cut the strategies to one trade in six).
  */
-test('[critical] one trade per contract: a second signal while the first is open sells the next strike out, and with none left, none', async () => {
+test('[critical] signals while the first is open share its strike: each its own trade', async () => {
   const { simulateTogether, deskCapsOf } = await import('../../src/report/signal-backtest.js');
   // Two puts inside delta 0.10: 83,200 nearer the money, 83,000 further out. Both decay all day; the perp never reaches a level.
   const two = byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]), ...contract('P', 83_000, -0.07, [[0, 30], [1_435, 8]])]);
   const flat = perp([[0, 84_000], [1_439, 84_000]]);
-  const signals = [sig(31), sig(61), sig(91)];
-  const r = simulateDay({ from, to, params: P, signals, bars: flat, board: two });
-  assert.deepEqual(r.trades.map((t) => t.strike), [83_200, 83_000], 'the first takes the nearer; the second, with it held, the next out');
-  assert.equal(r.skipped['no-strike'], 1, 'the third finds both held: nothing left to sell');
-  // Once the first is closed, its strike is free again: a signal after both are out takes the nearer once more.
-  const out = perp([[0, 84_000], [100, 84_000], [110, 84_600], [1_439, 84_600]]);
-  const later = simulateDay({ from, to, params: P, signals: [sig(31), sig(61), sig(300)], bars: out, board: two });
-  assert.deepEqual(later.trades.map((t) => t.strike), [83_200, 83_000, 83_200], 'both out at the perp target by minute 111; the third sells the nearer again');
-  // Shared by an account, the rule is the account's: a second book does not sell the strike the first holds.
+  const r = simulateDay({ from, to, params: P, signals: [sig(31), sig(61), sig(91)], bars: flat, board: two });
+  assert.deepEqual(r.trades.map((t) => t.strike), [83_200, 83_200, 83_200], 'the rule\'s strike, each time');
+  assert.equal(r.skipped['no-strike'], 0);
+  // Two books of one account, two different signals: both sell the nearer.
   const books = [{ signals: [sig(31)], plan: planOf() }, { signals: [sig(32, { method: 'pullback' })], plan: planOf() }];
   const together = simulateTogether({ from, to, bars: flat, board: two, books, shared: deskCapsOf({ deskMax: 10, cePct: 100, pePct: 100 }) });
-  assert.deepEqual(together.map((o) => o.trades.map((t) => t.strike)), [[83_200], [83_000]]);
-  // Each its own: the books are separate accounts, and each may sell the nearer.
-  const apart = simulateTogether({ from, to, bars: flat, board: two, books });
-  assert.deepEqual(apart.map((o) => o.trades.map((t) => t.strike)), [[83_200], [83_200]]);
+  assert.deepEqual(together.map((o) => o.trades.map((t) => t.strike)), [[83_200], [83_200]]);
+  // And the same signal in two books of one account: both trade it, as two strategies on the desk both may.
+  const same = sig(31);
+  const both = simulateTogether({ from, to, bars: flat, board: two, books: [{ signals: [same], plan: planOf() }, { signals: [same], plan: planOf() }], shared: deskCapsOf({ deskMax: 10, cePct: 100, pePct: 100 }) });
+  assert.deepEqual(both.map((o) => o.trades.length), [1, 1]);
 });
+

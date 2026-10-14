@@ -1,8 +1,8 @@
 # 0014 — One signal trade per contract on an account; exits recovered from Delta's fills
 
-**Status:** accepted and built, 14 October 2026 · **Narrows:** [0011](0011-one-trade-per-contract.md) -- the
-engine still keeps several trades on one contract apart (a ticket trade beside a strategy's), but the signal
-runner no longer opens a second one.
+**Status:** accepted and built, 14 October 2026 · **Rule 1 lifted the same day** by
+[0016](0016-shared-contracts-again.md): several signal trades may share a contract again, and several strategies one
+signal. Rules 2 and 3 (exits recovered from Delta's fills, Delta's reason journaled, a target held) stand.
 
 ## Context
 
