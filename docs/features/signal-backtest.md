@@ -178,6 +178,17 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
   hours"). One worked by a strategy keeps that strategy's own days and hours, as it does alone, and is named.
   `?hours=saved|desk|all|custom&hfrom=&hto=`; the answer's `hours { window, hoursFrom?, hoursTo?, own[] }` (null as
   saved). Kept in this browser (`signalBacktest.together.hours`).
+- **Live check** (14 Oct 2026), under every result -- the single backtest's and a portfolio run's: the desk beside
+  the backtest, signal for signal. A table by expiry day (the desk's orders with the money of the closed ones and
+  how many won; the backtest's trades with theirs; how many are the same signal, and how many more on either
+  side), then **Why they differ**: each signal on one side only under its reason -- the desk's words for one it
+  refused or skipped ("the daily loss limit", "its SL / TGT distance"), the backtest's for one it would not trade,
+  "no record on the desk" for one it never saw -- and the desk's refused and skipped counted by reason. By a
+  strategy: its own rules against its own record, worked beside its account's other strategies under the
+  account's limit. By the screen's settings or a portfolio: against what the desk did with each signal under any
+  strategy. `GET /api/signal-backtest/live-check` (the single backtest's query; `?all=1` every strategy),
+  `GET /api/backtest-portfolio/live-check` (the run's query, `&name=`). It replays the rules, not the account: a
+  refusal by the loss limit or margin, and a desk that was not running, are where a difference is expected.
 - **Settings for the run** (14 Oct 2026): six switches -- **Strike**, **Option target** (fixed, or dynamic by
   time), **Option stop**, **Lots a signal**, **Minimum premium**, **SL and TGT range**. Off, which is how each
   starts, every saved backtest runs with its own. Switched on, the single backtest's own control for it appears,

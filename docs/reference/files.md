@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-499 files listed, 246 test files counted below, images and lockfiles left out.
+501 files listed, 248 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 131 |
-| `app/web` | 115 |
+| `app/web` | 117 |
 
 ## `(root)`
 
@@ -285,7 +285,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [accounts.ts](../../app/web/src/api/accounts.ts) | -- |
-| [backtest-saves.ts](../../app/web/src/api/backtest-saves.ts) | Settings put over a run together (owner, 14 Oct 2026): each its own switch. |
+| [backtest-saves.ts](../../app/web/src/api/backtest-saves.ts) | -- |
 | [client.ts](../../app/web/src/api/client.ts) | One place that knows how to talk to the API: JSON in and out, the session cookie, "not signed in" as its own error, and which failures are worth reporting to the error log. |
 | [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
@@ -452,6 +452,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
 | [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | The days and the running total they add up to, as one chart (owner, 6 Oct 2026). |
 | [ExpiryRange.tsx](../../app/web/src/components/report/ExpiryRange.tsx) | Which expiry days a report covers (13 Oct 2026): since 1 Oct, the last 7 or 30, or a range of the owner's own ("I want a custom date"). |
+| [LiveCheck.tsx](../../app/web/src/components/report/LiveCheck.tsx) | The live check, inside a backtest's result and a portfolio's (owner, 14 Oct 2026: "the real trades since 9:30 last night and the backtest's do not match in number -- check the calculation"; then "b... |
 | [MarketReport.tsx](../../app/web/src/components/report/MarketReport.tsx) | The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole expiry went": each expiry day, newest first, with its high and low in points, its zigzag,... |
 | [MethodReport.tsx](../../app/web/src/components/report/MethodReport.tsx) | The Methods report (owner, 1 Oct 2026: "a tab of its own; two sections, 81 + 81: win rate, trades, win, loss, profit, loss, net"). |
 | [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | One day, minute by minute: what the day was worth at each reading, with every fall from a high shaded underneath. |
@@ -563,6 +564,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [account-scope.ts](../../app/web/src/lib/account-scope.ts) | Which broker account the account-based screens are showing (owner, 5 Oct 2026): strategies, orders and P&L are read for one account at a time, chosen on the tabs above them. |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [custom-range.ts](../../app/web/src/lib/custom-range.ts) | A custom range of IST days for the phone's P&L (owner, 6 Oct 2026): quick picks, and the rules a range must keep -- the same the server holds it to (`report.routes.ts` `rangeOf`: from not after to,... |
+| [entry-wait.ts](../../app/web/src/lib/entry-wait.ts) | That limit in a line for the card of an order still waiting (owner, 14 Oct 2026: "is a waiting order's expiry shown -- desk and phone?"). |
 | [ev-view.ts](../../app/web/src/lib/ev-view.ts) | Reading the server's per-strike arithmetic onto the screen. |
 | [exit-checks.ts](../../app/web/src/lib/exit-checks.ts) | Whether a stop and a target make sense against the price right now. |
 | [exit-input.ts](../../app/web/src/lib/exit-input.ts) | How the ticket and Edit exits read one exit: |

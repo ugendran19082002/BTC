@@ -39,7 +39,7 @@ describe('the live check, inside a result (owner, 14 Oct 2026: "a table that com
     const rows = table.getAllByRole('row').slice(1);
     expect(rows).toHaveLength(1);
     const cells = within(rows[0]!).getAllByRole('cell').map((x) => x.textContent);
-    expect(within(rows[0]!).getByRole('rowheader')).toHaveTextContent('Wed 14 Oct · so far');
+    expect(within(rows[0]!).getByRole('rowheader')).toHaveTextContent('Wed 14 Octso far');
     // the desk: 162 placed, the 90 closed made −$2.26 (−₹192), 19% of them won, 72 still open
     expect(cells[0]).toBe('162−₹192won 19%72 open');
     expect(cells[1]).toBe('175−₹171won 36%');
@@ -96,7 +96,7 @@ describe('the live check, inside a result (owner, 14 Oct 2026: "a table that com
     // the latest day first, in a line of its own, then the whole range
     expect(screen.getByLabelText('The latest expiry day')).toHaveTextContent('Wed 14 Oct, so far: the desk placed 162, the backtest makes 179, 158 the same signal. Over all 2 days:');
     const rows = within(screen.getByRole('table', { name: 'Live check by expiry day' })).getAllByRole('row').slice(1);
-    expect(rows.map((x) => within(x).getByRole('rowheader').textContent)).toEqual(['Wed 14 Ocso far'.replace('Ocso', 'Oct' + 'so'), 'Tue 13 Oct']);
+    expect(rows.map((x) => within(x).getByRole('rowheader').textContent)).toEqual(['Wed 14 Octso far', 'Tue 13 Oct']);
     expect(within(rows[0]!).getAllByRole('cell')[2]).toHaveTextContent('158+21 backtest+4 desk');
     expect(within(screen.getByRole('list', { name: 'On the desk only' })).getByRole('listitem')).toHaveTextContent('4 — no saved backtest of the portfolio has that method ticked on that time frame');
     expect(within(screen.getByRole('list', { name: 'In the backtest only' })).getAllByRole('listitem').map((x) => x.textContent!.split(' — ')[0])).toEqual(['8', '6']);

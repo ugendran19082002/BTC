@@ -147,7 +147,7 @@ export function LiveCheckResult({ r }: { r: Check }) {
                 const all = extraBt === 0 && extraDesk === 0;
                 return (
                   <tr key={d.day} className="border-0 border-t border-solid border-[var(--line-soft)] align-top">
-                    <th scope="row" className="py-2 pr-1 text-left font-semibold">
+                    <th scope="row" className="py-2 pr-1 text-left text-[13px] font-semibold normal-case tracking-normal text-foreground">
                       {dayLabel(d.day)}
                       {d.live && <span className="block text-[11.5px] font-normal text-muted-foreground">so far</span>}
                     </th>
