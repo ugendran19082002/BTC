@@ -14,6 +14,7 @@ import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
+import { LiveCheck } from '@/components/report/LiveCheck';
 import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, settingsWords } from '@/components/report/backtest-words';
 
@@ -615,7 +616,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
    * portfolios, the saved backtests to tick, and what they come to together. Which is open, and the last run
    * together, are kept in this browser.
    */
-  const [mode, setMode] = usePersisted<'single' | 'portfolio'>('signalBacktest.mode', 'single');
+  const [mode, setMode] = usePersisted<'single' | 'portfolio' | 'live'>('signalBacktest.mode', 'single');
   const [together, setTogether] = usePersisted<TogetherRun | null>('signalBacktest.together', null);
   // One account's limit over a run together, or each saved backtest's own (`PortfolioLimit`): one account to begin with.
   const [limit, setLimit] = usePersisted<PortfolioLimit>('signalBacktest.together.limit', 'shared');
@@ -875,11 +876,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Backtest <span className="text-[12.5px] font-normal text-muted-foreground">· the signal history sold as options, on the prices the contracts really had</span></h2>
   );
   const modeSwitch = (
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 sm:max-w-[420px]">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 sm:max-w-[560px]">
       <Segmented label="What to run" value={mode} onChange={setMode}
         options={[
           { key: 'single', label: 'Single backtest', spoken: 'One backtest: its settings, filters and result' },
           { key: 'portfolio', label: 'Portfolio', spoken: 'Saved backtests run together, and their total' },
+          { key: 'live', label: 'Live check', spoken: 'The backtest against what the live desk did, signal for signal' },
         ]} />
     </div>
   );
@@ -891,8 +893,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       {title}
       {modeSwitch}
-      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:grid-cols-[400px_minmax(0,1fr)] xl:items-start')}>
-        {mode === 'single' ? (
+      {/* The live check has no settings of its own beside it: the strategies' rules are its settings, and it has the width. */}
+      {mode === 'live' && <LiveCheck now={now} />}
+      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:grid-cols-[400px_minmax(0,1fr)] xl:items-start', mode === 'live' && 'hidden')}>
+        {mode === 'live' ? null : mode === 'single' ? (
           <>
             <aside aria-label="Backtest settings" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
               {settingsPanel}

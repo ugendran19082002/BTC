@@ -94,3 +94,27 @@ export type BacktestPortfolioResult = {
   /** The most held at once across all of them, laid on one clock; and the sum of each one's own most, which it never exceeds. */
   margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, together. An older server sends none. */ peakLots?: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
 };
+
+/** Signals on one side only -- an order on the desk with no trade in the backtest, or the other way -- by why, with the first few. */
+export type LiveCheckWhy = { why: string; n: number; first: { at: number; method: string; tf: string; dir: 1 | -1 }[] };
+export type LiveCheckCount = { why: string; n: number };
+/** One strategy: what the desk did with the signals of its methods, and what the backtest of its own rules does with the same. */
+export type LiveCheckRow = {
+  id: string; name: string; account: string | null;
+  live: { placed: number; refused: number; skipped: number };
+  liveWhy: { refused: LiveCheckCount[]; skipped: LiveCheckCount[] };
+  backtest: number;
+  backtestSkipped: LiveCheckCount[];
+  same: number;
+  backtestOnly: LiveCheckWhy[]; liveOnly: LiveCheckWhy[];
+};
+/** The backtest against the live desk, signal for signal (`GET /api/signal-backtest/live-check`). */
+export type LiveCheck = {
+  from: string; to: string;
+  liveFrom: number | null; liveTo: number | null; until: number;
+  strategies: LiveCheckRow[];
+  total: { placed: number; refused: number; skipped: number; backtest: number; backtestSkipped: number; same: number; backtestOnly: number; liveOnly: number };
+  liveWhy: { refused: LiveCheckCount[]; skipped: LiveCheckCount[] };
+  days: { day: string; placed: number; backtest: number; same: number }[];
+};
+

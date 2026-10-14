@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { BacktestQuery, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
+import type { BacktestQuery, LiveCheck, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
 import type { StrategyConfig } from '@/types/strategy';
 
 /** The signal history traded as options on the contracts' recorded prices, for a range of expiry days and one set of rules. */
@@ -22,3 +22,8 @@ export function getSignalBacktest(q: BacktestQuery) {
 
 /** Every method's record as options under a strategy's rules as they stand on its form -- saved or not; nothing is saved by asking. */
 export const getMethodOptionRecord = (config: StrategyConfig) => post<MethodOptionRecord>('/api/signal-backtest/methods', { config });
+
+/** Every signal strategy's backtest, by its own rules, beside what the live desk did with the same signals over a range of expiry days. */
+export const getLiveCheck = (range: { from: string; to: string }) =>
+  json<LiveCheck>(`/api/signal-backtest/live-check?${new URLSearchParams({ from: range.from, to: range.to })}`);
+
