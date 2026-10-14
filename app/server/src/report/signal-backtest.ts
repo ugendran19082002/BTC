@@ -149,6 +149,12 @@ export type BtSignal = {
   method: string; mode: 'single' | 'mtf'; tf: string; dir: 1 | -1; filledAt: number; fillPrice: number; stop: number;
   /** TGT1, and the further targets where the signal has them: a strategy may be set to exit at TGT2 or TGT3. */
   target: number; tp2?: number | null; tp3?: number | null;
+  /**
+   * The bar the setup triggered on, epoch seconds: with the method, the way, the time frame and the direction it is
+   * what the live desk keys a signal by (`strategy_signal_runs.signal_key`), so a backtested trade can be matched
+   * with the order the desk did or did not place for it (`liveCheckHere`). Plays no part in the backtest itself.
+   */
+  triggerAt?: number;
 };
 export type BoardRow = {
   at: number; cp: 'C' | 'P'; strike: number; spot: number | null; bid: number | null; ask: number | null; mark: number | null; delta: number | null; oi?: number | null;
@@ -683,7 +689,7 @@ async function rawDay(day: string, now: number, marksSeen: number): Promise<RawD
   const code = expiryCodeOf(day);
   const [sig, bars, five, own, wanted] = await Promise.all([
     rows<Record<string, string | number | null>>(
-      `SELECT method, mode, tf, dir, filled_at, fill_price, stop, tp1, tp2, tp3 FROM entry_setups
+      `SELECT method, mode, tf, dir, trigger_at, filled_at, fill_price, stop, tp1, tp2, tp3 FROM entry_setups
         WHERE filled_at IS NOT NULL AND filled_at >= $1 AND filled_at < $2 AND first_seen >= $3 AND fill_price IS NOT NULL
         ORDER BY filled_at`, [Math.floor(from / 1_000), Math.floor(to / 1_000), from - 5 * 86_400_000]),
     rows<{ at: string; high: number; low: number; vwap: number }>(
@@ -703,6 +709,7 @@ async function rawDay(day: string, now: number, marksSeen: number): Promise<RawD
   const signals: BtSignal[] = sig.map((x): BtSignal => ({
     method: String(x.method), mode: x.mode === 'mtf' ? 'mtf' : 'single', tf: String(x.tf), dir: Number(x.dir) === 1 ? 1 : -1,
     filledAt: Number(x.filled_at) * 1_000, fillPrice: Number(x.fill_price), stop: Number(x.stop), target: Number(x.tp1), tp2: num(x.tp2), tp3: num(x.tp3),
+    triggerAt: Number(x.trigger_at),
   })).sort(signalOrder);
   const minutes: MinuteBar[] = bars.map((b) => ({ at: Number(b.at), high: Number(b.high), low: Number(b.low), close: Number(b.vwap) }));
   const reading = (b: Reading): BoardRow => ({ at: Number(b.at), cp: b.cp, strike: Number(b.strike), spot: num(b.spot), bid: num(b.bid), ask: num(b.ask), mark: num(b.mark), delta: num(b.delta), oi: num(b.oi) });
@@ -1095,5 +1102,198 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
         })
         .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),
     },
+  };
+}
+
+// ------------------------------------------------------------------------------------------------ the live check
+
+/**
+ * The backtest against what the live desk really did (owner, 14 Oct 2026: "the real trades since 9:30 last night
+ * and the backtest's trades do not match in number -- check the calculation").
+ *
+ * They are two records of the same signals and can be laid side by side signal for signal: the desk writes down
+ * what it did with every signal of a strategy's methods (`strategy_signal_runs`: placed, refused, skipped, with
+ * why), under the same key a setup has. So each strategy is backtested by its own rules as they stand, the
+ * strategies of an account together under that account's limit as the desk holds them, and every trade the
+ * backtest makes is looked up in the desk's record, and every order the desk placed in the backtest's.
+ *
+ * What comes back is the count on each side and, for every signal on one side only, why -- in the desk's own
+ * words for a signal it refused or skipped, in the backtest's for one it would not trade. On the night it was
+ * first run the answer was: all 162 orders the desk placed were trades in the backtest, and the backtest had
+ * 13 more -- the 13 the desk had refused, each "exceeds the $-82 left in today's loss budget".
+ *
+ * The backtest replays the rules; it does not replay the account. The daily loss limit, margin, and a desk that
+ * was switched off are the desk's, so those are where a difference is expected and it is named, not hidden.
+ */
+export type LiveCheckAsk = {
+  from: string; to: string; now: number;
+  /** Each trading account's strategies and its limit on open trades as it stands (null: none). */
+  accounts: { id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number } | null; strategies: Strategy[] }[];
+};
+/** Signals on one side only, by why, with the first few to look at. */
+export type LiveCheckWhy = { why: string; n: number; first: { at: number; method: string; tf: string; dir: 1 | -1 }[] };
+export type LiveCheckRow = {
+  id: string; name: string; account: string | null;
+  /** What the desk did with the signals of its methods: orders placed, refused at the gate, skipped by its rules. */
+  live: { placed: number; refused: number; skipped: number };
+  /** Trades the backtest makes of the same signals, by the strategy's rules as they stand. */
+  backtest: number;
+  /** Signals that are an order on the desk and a trade in the backtest. */
+  same: number;
+  backtestOnly: LiveCheckWhy[]; liveOnly: LiveCheckWhy[];
+};
+export type LiveCheck = {
+  from: string; to: string;
+  /** The first and the last moment the desk has a record in the range; null with none. */
+  liveFrom: number | null; liveTo: number | null;
+  /** Signals filled up to here are compared: the desk is given two minutes to have written a signal down. */
+  until: number;
+  strategies: LiveCheckRow[];
+  total: { placed: number; refused: number; skipped: number; backtest: number; same: number; backtestOnly: number; liveOnly: number };
+  days: { day: string; placed: number; backtest: number; same: number }[];
+};
+
+/** How long the desk is given to write down what it did with a signal before its absence counts. */
+const LIVE_GRACE_MS = 120_000;
+
+/** Why the desk did not place an order for a signal, from its own sentence: a few plain reasons, else the sentence without its figures. */
+export function liveReason(status: string, detail: string): string {
+  const said = detail.includes(' -- refused: ') ? detail.split(' -- refused: ')[1]! : detail.includes(' | ') ? detail.slice(detail.indexOf(' | ') + 3) : detail;
+  const known: [RegExp, string][] = [
+    [/loss budget/i, 'the daily loss limit refused it'],
+    [/too near|too far/i, 'its SL / TGT distance'],
+    [/over before it could be entered|in the same moment/i, 'over before it could be entered'],
+    [/at most \d+ (CE|PE)|already has \d+ (CE|PE)/i, 'the account\'s CE / PE limit'],
+    [/at most|already has|open trades/i, 'a limit on open trades'],
+    [/Needs \$|margin/i, 'not enough margin'],
+    [/pays|premium/i, 'the premium floor'],
+    [/Would take total short/i, 'the short limit'],
+    [/no-entry|no entry/i, 'its no-entry window'],
+    [/nothing out of the money|no strike/i, 'no strike the rule could sell'],
+  ];
+  const hit = known.find(([re]) => re.test(said));
+  const lead = status === 'refused' ? 'refused' : status === 'skipped' ? 'skipped' : status;
+  return `the desk ${lead}: ${hit ? hit[1] : said.replace(/[\d.,]+/g, 'N').slice(0, 90)}`;
+}
+
+const BT_WHY: Record<BtSkip, string> = {
+  'outside-window': 'outside its days and hours, as its rules stand now',
+  'no-entry-window': 'inside its no-entry window, as its rules stand now',
+  distance: 'its SL / TGT distance, as its rules stand now',
+  volatility: 'the volatility filter',
+  'at-limit': 'its own most open at once',
+  'desk-limit': 'the account\'s limit on open trades',
+  'side-limit': 'the account\'s CE / PE limit',
+  'no-board': 'no option prices on record at that minute',
+  'no-strike': 'no strike its rule could sell on the recorded prices',
+  'no-exit-price': 'no price on record to exit at',
+};
+
+export function liveCheckHere(o: LiveCheckAsk): Promise<LiveCheck> {
+  const run = working.then(() => liveCheckNow(o));
+  working = run.catch(() => { });
+  return run;
+}
+
+async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
+  await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
+  const days = (await marketDays(o.from, o.to, o.now)).filter((d) => d.day >= o.from);
+  const until = o.now - LIVE_GRACE_MS;
+  const keyOf = (s: BtSignal) => `${s.method}|${s.mode}|${s.tf}|${s.dir}|${s.triggerAt}`;
+  const every = o.accounts.flatMap((a) => a.strategies.filter(backtestable).map((st) => ({ st, account: a })));
+  const span = days.length ? { from: sessionOf(days[0]!.day).from, to: sessionOf(days[days.length - 1]!.day).to } : null;
+  type Live = { strategy_id: string; signal_key: string; status: string; detail: string; at: string };
+  const live = span && every.length ? await rows<Live>(
+    'SELECT strategy_id, signal_key, status, detail, at FROM strategy_signal_runs WHERE strategy_id = ANY($1) AND at >= $2 AND at < $3 ORDER BY at',
+    [every.map((x) => x.st.id), span.from, Math.min(span.to, o.now) + LIVE_GRACE_MS]) : [];
+  const liveBy = new Map<string, Map<string, Live>>();
+  for (const r of live) (liveBy.get(r.strategy_id) ?? liveBy.set(r.strategy_id, new Map()).get(r.strategy_id)!).set(r.signal_key, r);
+
+  type Side = { traded: Map<string, BtSignal>; refused: Map<string, BtSkip>; known: Map<string, BtSignal> };
+  const bt = new Map<string, Side>(every.map((x) => [x.st.id, { traded: new Map(), refused: new Map(), known: new Map() }]));
+  const dayOfKey = new Map<string, string>();
+  const anyDay = new Set<string>();
+  const fetched = await marksFetchedBy(days.map((d) => expiryCodeOf(d.day)));
+  for (const d of days) {
+    const { from, to } = sessionOf(d.day);
+    const raw = await rawDay(d.day, o.now, fetched.get(expiryCodeOf(d.day))?.contracts ?? 0);
+    const upTo = raw.signals.filter((s) => s.filledAt <= until);
+    for (const s of upTo) { anyDay.add(keyOf(s)); dayOfKey.set(keyOf(s), d.day); }
+    const bars = raw.minutes.filter((b) => b.at >= from);
+    for (const a of o.accounts) {
+      const mine = a.strategies.filter(backtestable);
+      if (!mine.length) continue;
+      const books = mine.map((st) => {
+        const rule = st.config.signal!;
+        const takes = (sig: BtSignal) => sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method);
+        return { signals: upTo.filter(takes), plan: planOfStrategy(st, { from, to }, null) };
+      });
+      // As the desk holds them: the strategies of one account for the same places, under that account's limit.
+      const outs = simulateTogether({ from, to, bars, board: raw.board, books, shared: a.caps ? deskCapsOf(a.caps) : null });
+      mine.forEach((st, i) => {
+        const side = bt.get(st.id)!;
+        for (const s of books[i]!.signals) side.known.set(keyOf(s), s);
+        for (const t of outs[i]!.trades) side.traded.set(keyOf(t.signal), t.signal);
+        for (const r of outs[i]!.refused) side.refused.set(keyOf(r.signal), r.why);
+      });
+    }
+  }
+
+  const groups = (xs: { why: string; sig: { at: number; method: string; tf: string; dir: 1 | -1 } }[]): LiveCheckWhy[] => {
+    const m = new Map<string, LiveCheckWhy>();
+    for (const x of xs) {
+      const g = m.get(x.why) ?? m.set(x.why, { why: x.why, n: 0, first: [] }).get(x.why)!;
+      g.n++;
+      if (g.first.length < 3) g.first.push(x.sig);
+    }
+    return [...m.values()].sort((a, b) => b.n - a.n || a.why.localeCompare(b.why));
+  };
+  const partsOf = (key: string, at: number) => { const p = key.split('|'); return { at, method: p[0] ?? '', tf: p[1] === 'mtf' ? CHAIN_KEY : p[2] ?? '', dir: (Number(p[3]) === 1 ? 1 : -1) as 1 | -1 }; };
+  const byDay = new Map<string, { day: string; placed: number; backtest: number; same: number }>(days.map((d) => [d.day, { day: d.day, placed: 0, backtest: 0, same: 0 }]));
+  const strategies: LiveCheckRow[] = every.map(({ st, account }) => {
+    const mine = liveBy.get(st.id) ?? new Map<string, Live>();
+    const side = bt.get(st.id)!;
+    const placed = [...mine.values()].filter((r) => r.status === 'placed');
+    let same = 0;
+    const liveOnly: Parameters<typeof groups>[0] = [];
+    for (const r of placed) {
+      const day = dayOfKey.get(r.signal_key);
+      if (day) byDay.get(day)!.placed++;
+      if (side.traded.has(r.signal_key)) { same++; if (day) byDay.get(day)!.same++; continue; }
+      const why = side.refused.get(r.signal_key);
+      liveOnly.push({
+        sig: partsOf(r.signal_key, Number(r.at)),
+        why: why ? `the backtest would not: ${BT_WHY[why]}`
+          : anyDay.has(r.signal_key) ? 'its method or time frame is not in the strategy\'s rules now'
+            : 'no filled setup is on record for that signal in these days',
+      });
+    }
+    const backtestOnly: Parameters<typeof groups>[0] = [];
+    for (const [key, sig] of side.traded) {
+      const day = dayOfKey.get(key);
+      if (day) byDay.get(day)!.backtest++;
+      const r = mine.get(key);
+      if (r?.status === 'placed') continue;
+      backtestOnly.push({
+        sig: { at: sig.filledAt, method: sig.method, tf: sig.mode === 'mtf' ? CHAIN_KEY : sig.tf, dir: sig.dir },
+        why: r ? liveReason(r.status, r.detail) : 'no record on the desk: it or the strategy was not running then, or its rules were different',
+      });
+    }
+    return {
+      id: st.id, name: st.name, account: account.name,
+      live: { placed: placed.length, refused: [...mine.values()].filter((r) => r.status === 'refused').length, skipped: [...mine.values()].filter((r) => r.status === 'skipped').length },
+      backtest: side.traded.size, same, backtestOnly: groups(backtestOnly), liveOnly: groups(liveOnly),
+    };
+  }).sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true }));
+  const sum = (f: (r: LiveCheckRow) => number) => strategies.reduce((n, r) => n + f(r), 0);
+  return {
+    from: o.from, to: o.to, until,
+    liveFrom: live.length ? Number(live[0]!.at) : null, liveTo: live.length ? Number(live[live.length - 1]!.at) : null,
+    strategies,
+    total: {
+      placed: sum((r) => r.live.placed), refused: sum((r) => r.live.refused), skipped: sum((r) => r.live.skipped), backtest: sum((r) => r.backtest), same: sum((r) => r.same),
+      backtestOnly: sum((r) => r.backtestOnly.reduce((n, g) => n + g.n, 0)), liveOnly: sum((r) => r.liveOnly.reduce((n, g) => n + g.n, 0)),
+    },
+    days: [...byDay.values()],
   };
 }

@@ -1,5 +1,8 @@
 import { Worker } from 'node:worker_threads';
-import { clearSignalBacktestCache as clearHere, portfolioBacktestHere, signalBacktestHere, type Ask, type BacktestPortfolioResult, type PortfolioAsk, type SignalBacktest } from './signal-backtest.js';
+import {
+  clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, signalBacktestHere,
+  type Ask, type BacktestPortfolioResult, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest,
+} from './signal-backtest.js';
 import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
 /**
@@ -61,7 +64,7 @@ function thread(): Worker {
   return w;
 }
 
-function ask(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<BacktestAnswer> {
+function ask(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<BacktestAnswer> {
   return new Promise((done, fail) => {
     const id = ++seq;
     const w = thread();
@@ -78,7 +81,7 @@ function ask(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioA
 }
 
 /** In its thread where there is one, here where there is not. */
-async function worked<T>(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioAsk }, here: () => Promise<T>, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<T> {
+async function worked<T>(m: { kind: 'run'; ask: Ask } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk }, here: () => Promise<T>, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<T> {
   if (!wanted || Date.now() - gaveUpAt < GIVE_UP_MS) return here();
   let a: BacktestAnswer;
   try {
@@ -104,6 +107,9 @@ export const portfolioBacktest = (o: PortfolioAsk): Promise<BacktestPortfolioRes
   worked({ kind: 'portfolio', ask: o }, () => portfolioBacktestHere(o), BACKTEST_TIMEOUT_MS * Math.max(1, o.members.length));
 
 /** Forget every day worked so far, wherever they are kept. */
+/** The backtest of each strategy's own rules against what the desk did with the same signals (`liveCheckHere`). */
+export const liveCheck = (o: LiveCheckAsk): Promise<LiveCheck> => worked({ kind: 'live', ask: o }, () => liveCheckHere(o), BACKTEST_TIMEOUT_MS * 2);
+
 export async function clearSignalBacktestCache(): Promise<void> {
   clearHere();
   if (worker) await ask({ kind: 'clear' }, 5_000).catch(() => {});

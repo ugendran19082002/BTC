@@ -5,7 +5,7 @@ import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type 
 import { DEFAULT_PARAMS, MIN_PREMIUM, backtestable, strategyCaveats, type BacktestParams } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
-import { signalBacktest } from '../../report/backtest-run.js';
+import { liveCheck, signalBacktest } from '../../report/backtest-run.js';
 import { cleanConfig, strategyStore } from './strategy.routes.js';
 import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
@@ -170,6 +170,34 @@ export function registerMarketRoutes(app: FastifyInstance) {
       }))
         .sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true })),
     };
+  });
+
+  /**
+   * The backtest against the live desk, signal for signal (owner, 14 Oct 2026: "the real trades since 9:30 last
+   * night and the backtest's do not match in number"): every signal strategy that sells, backtested by its own
+   * rules -- an account's strategies together under that account's limit, as the desk holds them -- and laid
+   * beside the desk's record of what it did with the same signals. For `?from=&to=` (expiry days, today's alone
+   * to begin with) and, with `?account=`, one trading account. Read-only.
+   */
+  app.get('/api/signal-backtest/live-check', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const r = rangeOf(q);
+    if (typeof r === 'string') return refuse(reply, 400, { error: r });
+    const only = q.account === undefined || q.account === '' ? null : Number(q.account);
+    if (only !== null && !(Number.isInteger(only) && only > 0)) return refuse(reply, 400, { error: 'The account is its number: ?account=1.' });
+    const every = (await strategyStore().all().catch(() => [])).filter(backtestable);
+    const svc = tradingService();
+    const nameOf = (id: number | null) => { try { return id == null ? null : brokerAccounts().get(id)?.name ?? null; } catch { return null; } };
+    const ids = [...new Set(every.map((s) => s.accountId ?? null))].filter((id) => only === null || id === only);
+    const accounts = ids.map((id) => {
+      const max = globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, id));
+      return {
+        id, name: nameOf(id),
+        caps: max > 0 ? { deskMax: max, cePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, id)), pePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, id)) } : null,
+        strategies: every.filter((s) => (s.accountId ?? null) === id),
+      };
+    });
+    return liveCheck({ ...r, now: Date.now(), accounts });
   });
 
   /**
