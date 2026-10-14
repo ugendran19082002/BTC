@@ -31,6 +31,12 @@ reached the buy-backs, and each was written off as "closed on Delta itself" with
    inside ten minutes, and its target is held off the book for fifteen -- said once, with the reason; the stop is
    never held back.
 
+**Then, the same morning (owner: "best practice update").** Journaling Delta's reason named it at once:
+`no_position_left_for_reduce_only` -- the position's reduce-only room is already taken by the contract's other
+trades' orders. That reason is definitive, so a target cancelled with it is held at once, not after four; and a
+target that comes straight back after its fifteen-minute hold stays off the book for the rest of the trade. Two
+alarms a trade at most, where the shared positions left from the night had raised one every quarter of an hour.
+
 ## Consequences
 
 - Fewer trades on a busy evening: a run of same-side signals walks out along the strikes the rule allows, and the

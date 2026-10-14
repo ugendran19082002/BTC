@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, ceProduct, planFor, quote } from './harness.js';
-import { TARGET_CHURN_LIMIT, TARGET_HOLD_MS, clientId } from '../../src/trading/engine.js';
+import { NO_REDUCE_ONLY_ROOM, TARGET_CHURN_LIMIT, TARGET_HOLD_MS, clientId } from '../../src/trading/engine.js';
 
 /**
  * 14 Oct 2026: on contracts shared by 17 to 55 trades the desk cancelled and re-placed targets 3,000 times in a
@@ -78,22 +78,23 @@ test('[critical] a target the exchange keeps cancelling is held off the book aft
   const target = () => r.store.peek(id)!.state.protection.takeProfit;
   const stop = () => r.store.peek(id)!.state.protection.stopLoss;
   const stopBefore = stop();
-  // Delta takes the target off, with its reason, again and again; each time the desk notices on its next look.
-  for (let i = 0; i < TARGET_CHURN_LIMIT; i++) {
-    const cid = target();
-    assert.ok(cid, `a target is on the book before cancel ${i + 1}`);
-    const o = [...orders.values()].find((x) => x.clientOrderId === cid)!;
+  // Delta takes the target off -- for no reason it names -- again and again; each time the desk notices on its next look.
+  const cancelIt = async (reason?: string) => {
+    const o = [...orders.values()].find((x) => x.clientOrderId === target())!;
     await r.ex.cancelOrder(o as never);
-    o.reason = 'reduce_only_order_cancelled';
+    if (reason) o.reason = reason;
     r.advance(30_000);
     await r.engine.poll(id);
-  }
+  };
+  for (let i = 0; i < TARGET_CHURN_LIMIT - 1; i++) { await cancelIt('cancelled_by_exchange'); assert.ok(target(), `put back after cancel ${i + 1}`); }
+  assert.equal(r.alarms.filter((a) => /Delta cancelled this trade's target/.test(a.message)).length, 0, 'not yet: three are not a pattern');
+  await cancelIt('cancelled_by_exchange');
   const cancels = r.store.peek(id)!.events.filter((e) => e.t === 'sibling_cancelled' && e.role === 'take_profit');
   assert.equal(cancels.length, TARGET_CHURN_LIMIT);
-  assert.ok(cancels.every((e) => e.t === 'sibling_cancelled' && e.reason === 'reduce_only_order_cancelled'), 'Delta\'s own reason, journaled');
+  assert.ok(cancels.every((e) => e.t === 'sibling_cancelled' && e.reason === 'cancelled_by_exchange'), 'Delta\'s own reason, journaled');
   const said = r.alarms.filter((a) => /Delta cancelled this trade's target/.test(a.message));
   assert.equal(said.length, 1, 'said once');
-  assert.match(said[0]!.message, /\(reduce_only_order_cancelled\)\. It is held off the book for 15 minutes rather than re-placed again; the stop stays/);
+  assert.match(said[0]!.message, /4 times in 10 minutes \(cancelled_by_exchange\)\. It is held off the book for 15 minutes rather than re-placed again; the stop and the perp's exits stay\.$/);
   // held: the next looks place no target, and the stop is where it was
   r.advance(60_000);
   await r.engine.poll(id);
@@ -105,4 +106,36 @@ test('[critical] a target the exchange keeps cancelling is held off the book aft
   await r.engine.poll(id);
   assert.ok(target(), 'the target is back once the hold is over');
   assert.equal(r.alarms.filter((a) => /Delta cancelled this trade's target/.test(a.message)).length, 1);
+});
+
+test('[critical] Delta\'s "no reduce-only room left": held at once; back again after the hold, it stays off for the rest of the trade -- two alarms, no more', async () => {
+  const { r, id } = await shortWithTarget();
+  const orders = (r.ex as unknown as { orders: Map<string, { status: string; reason?: string; clientOrderId: string | null }> }).orders;
+  const target = () => r.store.peek(id)!.state.protection.takeProfit;
+  const stopBefore = r.store.peek(id)!.state.protection.stopLoss;
+  const cancelIt = async () => {
+    const o = [...orders.values()].find((x) => x.clientOrderId === target())!;
+    await r.ex.cancelOrder(o as never);
+    o.reason = NO_REDUCE_ONLY_ROOM;
+    r.advance(30_000);
+    await r.engine.poll(id);
+  };
+  const said = () => r.alarms.filter((a) => /Delta cancelled this trade's target/.test(a.message)).map((a) => a.message);
+  // the first one with Delta's reason: held at once, for fifteen minutes
+  await cancelIt();
+  assert.equal(target(), null, 'not put back');
+  assert.deepEqual(said().length, 1);
+  assert.match(said()[0]!, /no reduce-only room left on the position \(no_position_left_for_reduce_only\) -- the contract's other trades' orders already cover it\. It is held off the book for 15 minutes/);
+  // after the hold it goes back on, and Delta takes it straight off again: off for the rest of the trade
+  r.advance(TARGET_HOLD_MS);
+  await r.engine.poll(id);
+  assert.ok(target(), 'tried once more after the hold');
+  await cancelIt();
+  assert.equal(said().length, 2);
+  assert.match(said()[1]!, /It came straight back after the last hold, so it stays off the book for the rest of this trade; the stop and the perp's exits stay\.$/);
+  // hours later: still off, no more alarms, the stop where it was
+  for (let i = 0; i < 6; i++) { r.advance(TARGET_HOLD_MS); await r.engine.poll(id); }
+  assert.equal(target(), null);
+  assert.equal(said().length, 2, 'no quarter-hourly alarm');
+  assert.equal(r.store.peek(id)!.state.protection.stopLoss, stopBefore);
 });

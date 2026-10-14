@@ -615,6 +615,12 @@ export const LEFTOVER_ALARM_MS = 60_000;
 export const TARGET_CHURN_LIMIT = 4;
 export const TARGET_CHURN_WINDOW_MS = 10 * 60_000;
 export const TARGET_HOLD_MS = 15 * 60_000;
+/**
+ * Delta's own word for "the position's reduce-only room is taken" (14 Oct 2026, read off its `cancellation_reason`
+ * once the desk began journaling it): the contract's other trades' orders already cover what is left of the
+ * position, and a target put back is cancelled again. Definitive -- held on the first, not after a count.
+ */
+export const NO_REDUCE_ONLY_ROOM = 'no_position_left_for_reduce_only';
 /** How many unknown orders behind a contract's fills one reconcile looks up, at most. */
 export const FILL_LOOKUPS = 40;
 
@@ -729,6 +735,8 @@ export class TradeEngine {
   private readonly leftovers = new Map<string, { since: number; said: boolean }>();
   /** Each trade's target held off the book until then, after the exchange kept cancelling it (`TARGET_CHURN_LIMIT`). */
   private readonly targetHold = new Map<string, number>();
+  /** How many times each trade's target has been held: the second hold is for the rest of the trade (`noteTargetChurn`). */
+  private readonly targetHolds = new Map<string, number>();
   /** Whose an exchange order is, by its client id, once looked up: a contract's fills are read again on each reconcile. */
   private readonly orderOwner = new Map<string, string | null>();
   private readonly limits: RiskLimits;
@@ -2028,17 +2036,33 @@ export class TradeEngine {
   }
 
   /**
-   * A target the exchange took off again: counted, and past `TARGET_CHURN_LIMIT` in `TARGET_CHURN_WINDOW_MS` held off
-   * the book for `TARGET_HOLD_MS` -- said once, with the exchange's reason. The stop is untouched.
+   * A target the exchange took off again. Held off the book rather than fought over (14 Oct 2026, owner: "best
+   * practice"): at once where Delta says the position has no reduce-only room left for it (`NO_REDUCE_ONLY_ROOM`),
+   * else after `TARGET_CHURN_LIMIT` cancels inside `TARGET_CHURN_WINDOW_MS`. The first hold is `TARGET_HOLD_MS`; a
+   * second -- it came straight back -- is for the rest of the trade: putting it back every quarter of an hour only
+   * made a quarter-hourly alarm and another round of cancels. Said once each time it is held, and no more. The stop
+   * is never held back, and the perp's exits are untouched.
    */
   private noteTargetChurn(rec: TradeRecord, reason: string | null): void {
     const now = this.now();
+    const id = rec.state.tradeId;
+    if ((this.targetHold.get(id) ?? 0) > now) return;
     const recent = rec.events.filter((e) => e.t === 'sibling_cancelled' && e.role === 'take_profit' && now - e.at <= TARGET_CHURN_WINDOW_MS).length;
-    if (recent < TARGET_CHURN_LIMIT || (this.targetHold.get(rec.state.tradeId) ?? 0) > now) return;
-    this.targetHold.set(rec.state.tradeId, now + TARGET_HOLD_MS);
-    this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: Delta cancelled this trade's target ${recent} times in ${Math.round(TARGET_CHURN_WINDOW_MS / 60_000)} minutes`
-      + `${reason ? ` (${reason})` : ''}. It is held off the book for ${Math.round(TARGET_HOLD_MS / 60_000)} minutes rather than re-placed again; `
-      + 'the stop stays. Check the contract\'s open orders on Delta.', rec.plan);
+    const definitive = reason === NO_REDUCE_ONLY_ROOM;
+    if (!definitive && recent < TARGET_CHURN_LIMIT) return;
+    const holds = (this.targetHolds.get(id) ?? 0) + 1;
+    this.targetHolds.set(id, holds);
+    if (this.targetHolds.size > 5_000) this.targetHolds.clear();
+    const forGood = holds >= 2;
+    this.targetHold.set(id, forGood ? Number.POSITIVE_INFINITY : now + TARGET_HOLD_MS);
+    const why = definitive
+      ? `Delta cancelled this trade's target: no reduce-only room left on the position (${reason}) -- the contract's other trades' orders already cover it`
+      : `Delta cancelled this trade's target ${recent} times in ${Math.round(TARGET_CHURN_WINDOW_MS / 60_000)} minutes${reason ? ` (${reason})` : ''}`;
+    this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: ${why}. `
+      + (forGood
+        ? 'It came straight back after the last hold, so it stays off the book for the rest of this trade; '
+        : `It is held off the book for ${Math.round(TARGET_HOLD_MS / 60_000)} minutes rather than re-placed again; `)
+      + 'the stop and the perp\'s exits stay.', rec.plan);
   }
 
   /** Keep count of a trade whose exits could not be confirmed off the book, and say so once it has gone on a minute. */
