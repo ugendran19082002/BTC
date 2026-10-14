@@ -14,7 +14,8 @@ const getSignalBacktest = vi.fn();
 const NO_CHECK = {
   from: '2026-10-01', to: '2026-10-13', liveFrom: null, liveTo: null, until: 0, against: { kind: 'strategies' }, strategies: [], liveOnly: [],
   total: { placed: 0, refused: 0, skipped: 0, backtest: 0, backtestSkipped: 0, same: 0, backtestOnly: 0, liveOnly: 0 },
-  liveWhy: { refused: [], skipped: [] }, money: { real: { n: 0, wins: 0, net: 0, open: 0 }, backtest: { n: 0, wins: 0, net: 0 } }, days: [],
+  liveWhy: { refused: [], skipped: [] }, money: { real: null, backtest: { n: 0, wins: 0, net: 0 } }, days: [],
+  notCompared: { backtest: 0, desk: 0 }, notComparedWhy: { backtest: [], desk: [] },
 };
 const getLiveCheck = vi.fn();
 vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a), getLiveCheck: (...a: unknown[]) => getLiveCheck(...a) }));

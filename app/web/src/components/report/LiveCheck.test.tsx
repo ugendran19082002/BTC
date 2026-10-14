@@ -9,101 +9,102 @@ const row = (o: Partial<LiveCheckRow> & { name: string }): LiveCheckRow => ({
   backtest: 0, backtestSkipped: [], same: 0, backtestOnly: [], liveOnly: [], ...o,
 });
 const LOSS = { why: 'the desk refused: the daily loss limit', n: 4, first: [{ at: at('2026-10-13T21:30:00'), method: 'gamma-wall', tf: '30m', dir: -1 as const }, { at: at('2026-10-13T21:38:00'), method: 'pulled-wall', tf: '30m', dir: 1 as const }] };
-/** The night it was first asked: every order the desk placed is in the backtest, which has the 13 the loss limit refused besides. */
+const NONE = { notCompared: { backtest: 0, desk: 0 }, notComparedWhy: { backtest: [], desk: [] } };
+/** 14 Oct 2026 by the strategies' own rules: every order the desk placed is a backtest trade; the backtest's 15 more are the 15 the loss limit refused. */
 const NIGHT: Check = {
   from: '2026-10-13', to: '2026-10-14', liveFrom: at('2026-10-13T21:30:04'), liveTo: at('2026-10-14T07:27:02'), until: 0,
   against: { kind: 'strategies' },
-  total: { placed: 162, refused: 13, skipped: 670, backtest: 175, backtestSkipped: 1_015, same: 162, backtestOnly: 13, liveOnly: 0 },
-  liveOnly: [],
-  liveWhy: { refused: [{ why: 'the daily loss limit', n: 13 }], skipped: [{ why: 'its SL / TGT distance', n: 667 }, { why: 'over before it could be entered', n: 3 }] },
-  money: { real: { n: 90, wins: 17, net: -2.26, open: 72 }, backtest: { n: 175, wins: 63, net: -2.01 } },
+  total: { placed: 162, refused: 15, skipped: 676, backtest: 177, backtestSkipped: 676, same: 162, backtestOnly: 15, liveOnly: 0 },
+  liveOnly: [], ...NONE,
+  liveWhy: { refused: [{ why: 'the daily loss limit', n: 15 }], skipped: [{ why: 'its SL / TGT distance', n: 673 }, { why: 'over before it could be entered', n: 3 }] },
+  money: { real: null, backtest: { n: 177, wins: 70, net: -1.62 } },
   days: [
-    { day: '2026-10-13', live: false, placed: 0, backtest: 0, same: 0, real: { n: 0, wins: 0, net: 0, open: 0 }, bt: { n: 0, wins: 0, net: 0 } },
-    { day: '2026-10-14', live: true, placed: 162, backtest: 175, same: 162, real: { n: 90, wins: 17, net: -2.26, open: 72 }, bt: { n: 175, wins: 63, net: -2.01 } },
+    { day: '2026-10-13', live: false, placed: 0, backtest: 0, same: 0, real: null, bt: { n: 0, wins: 0, net: 0 } },
+    { day: '2026-10-14', live: true, placed: 162, backtest: 177, same: 162, real: null, bt: { n: 177, wins: 70, net: -1.62 } },
   ],
   strategies: [
-    row({ name: '5m time', live: { placed: 21, refused: 0, skipped: 327 }, backtest: 21, backtestSkipped: [{ why: 'its SL / TGT distance, as its rules stand now', n: 327 }, { why: 'outside its days and hours, as its rules stand now', n: 139 }], same: 21 }),
+    row({ name: '5m time', live: { placed: 21, refused: 0, skipped: 327 }, backtest: 21, backtestSkipped: [{ why: 'its SL / TGT distance, as its rules stand now', n: 327 }], same: 21 }),
     row({ name: '30m time', live: { placed: 47, refused: 4, skipped: 25 }, backtest: 51, backtestSkipped: [{ why: 'its SL / TGT distance, as its rules stand now', n: 25 }], same: 47, backtestOnly: [LOSS] }),
-    row({ name: '2h time', live: { placed: 26, refused: 4, skipped: 1 }, backtest: 30, same: 26, backtestOnly: [{ ...LOSS, n: 9, first: [LOSS.first[0]!] }] }),
+    row({ name: '2h time', live: { placed: 26, refused: 11, skipped: 1 }, backtest: 37, same: 26, backtestOnly: [{ ...LOSS, n: 11, first: [LOSS.first[0]!] }] }),
   ],
 };
 
-describe('the live check, inside a result (owner, 14 Oct 2026: "a table that compares them -- no tab of its own")', () => {
-  it('[critical] the day table: the desk beside the backtest -- count, money, won -- and how many are the same signal', () => {
+describe('the live check, inside a result (owner, 14 Oct 2026: decisions, not finished orders; the live rules with the backtest\'s settings)', () => {
+  it('[critical] by a strategy: the desk\'s decisions beside the backtest\'s trades -- counts only on the desk\'s side, never its fills', () => {
     render(<LiveCheckResult r={NIGHT} />);
+    expect(screen.getByText('Live check · the desk beside this backtest')).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Whether they match' })).toHaveTextContent(
-      'The desk placed 162 orders, the backtest makes 175 trades: 162 are the same signal. 13 are in the backtest only. Why is under the table.');
+      'The desk placed 162 orders, the backtest makes 177 trades: 162 are the same signal. 15 are in the backtest only. Why is under the table.');
     const table = within(screen.getByRole('table', { name: 'Live check by expiry day' }));
     expect(table.getAllByRole('columnheader').map((x) => x.textContent)).toEqual(['Expiry day', 'Desk', 'Backtest', 'Same']);
-    // a day with nothing on either side is left out; the day in progress says so
     const rows = table.getAllByRole('row').slice(1);
     expect(rows).toHaveLength(1);
-    const cells = within(rows[0]!).getAllByRole('cell').map((x) => x.textContent);
     expect(within(rows[0]!).getByRole('rowheader')).toHaveTextContent('Wed 14 Octso far');
-    // the desk: 162 placed, the 90 closed made −$2.26 (−₹192), 19% of them won, 72 still open
-    expect(cells[0]).toBe('162−₹192won 19%72 open');
-    expect(cells[1]).toBe('175−₹171won 36%');
-    expect(cells[2]).toBe('162+13 backtest');
-    // one day with anything on it: no "latest day" line over a table of one
-    expect(screen.queryByLabelText('The latest expiry day')).toBeNull();
-    expect(screen.getByText(/The desk's record runs 13 Oct, 9:30 PM → 14 Oct, 7:27 AM IST\./)).toBeInTheDocument();
+    const cells = within(rows[0]!).getAllByRole('cell').map((x) => x.textContent);
+    // the desk: a count of its decisions, no money of finished orders beside it
+    expect(cells[0]).toBe('162');
+    expect(cells[1]).toBe('177−₹138won 40%');
+    expect(cells[2]).toBe('162+15 backtest');
+    expect(screen.getByText(/its decisions, not their fills/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Not compared')).toBeNull();
   });
 
-  it('[critical] why they differ: every signal on one side only under its reason, added up across the rows, with the desk\'s refused and skipped counted', () => {
+  it('[critical] why they differ: by reason, added up across the strategies, with the desk\'s refused and skipped counted', () => {
     render(<LiveCheckResult r={NIGHT} />);
     const only = within(screen.getByRole('list', { name: 'In the backtest only' })).getAllByRole('listitem');
-    expect(only).toHaveLength(1);
-    expect(only[0]).toHaveTextContent('13 — the desk refused: the daily loss limit');
-    expect(only[0]).toHaveTextContent('13 Oct, 9:30 PM · gamma-wall · 30m · SELL | 13 Oct, 9:38 PM · pulled-wall · 30m · BUY | 13 Oct, 9:30 PM · gamma-wall · 30m · SELL | and 10 more');
-    expect(screen.queryByRole('list', { name: 'On the desk only' })).toBeNull();
-    expect(within(screen.getByRole('list', { name: 'The desk refused · 13' })).getAllByRole('listitem').map((x) => x.textContent)).toEqual(['13the daily loss limit']);
-    expect(within(screen.getByRole('list', { name: 'The desk skipped · 670' })).getAllByRole('listitem').map((x) => x.textContent)).toEqual(['667its SL / TGT distance', '3over before it could be entered']);
-    // each strategy, behind a fold: its counts on both sides, and "Matches" or what differs
+    expect(only.map((x) => x.textContent!.split(' — ')[0])).toEqual(['15']);
+    expect(only[0]).toHaveTextContent('15 — the desk refused: the daily loss limit');
+    expect(within(screen.getByRole('list', { name: 'The desk refused · 15' })).getAllByRole('listitem').map((x) => x.textContent)).toEqual(['15the daily loss limit']);
+    expect(within(screen.getByRole('list', { name: 'The desk skipped · 676' })).getAllByRole('listitem').map((x) => x.textContent)).toEqual(['673its SL / TGT distance', '3over before it could be entered']);
     const each = within(screen.getByRole('list', { name: 'Each strategy' }));
-    const five = within(each.getByRole('listitem', { name: '5m time' }));
-    expect(five.getByText('Matches')).toBeInTheDocument();
-    expect(five.getByText(/Backtest/).closest('p')).toHaveTextContent('Desk 21 placed · 0 refused · 327 skipped · Backtest 21 traded · 466 not traded · same signal 21');
-    const thirty = within(each.getByRole('listitem', { name: '30m time' }));
-    expect(thirty.getByText('4 differ')).toBeInTheDocument();
-    expect(thirty.getByText(/in the backtest only/).closest('p')).toHaveTextContent('4 in the backtest only — the desk refused: the daily loss limit');
-    // what it is and is not, said once
-    expect(screen.getByText(/The backtest replays the rules, not the account/)).toBeInTheDocument();
+    expect(within(each.getByRole('listitem', { name: '5m time' })).getByText('Matches')).toBeInTheDocument();
+    expect(within(each.getByRole('listitem', { name: '30m time' })).getByText('4 differ')).toBeInTheDocument();
   });
 
-  it('[critical] a range on which they agree says so in one line, with nothing to explain', () => {
-    render(<LiveCheckResult r={{ ...NIGHT, total: { ...NIGHT.total, refused: 0, skipped: 0, backtest: 162, backtestOnly: 0 }, liveWhy: { refused: [], skipped: [] }, strategies: [NIGHT.strategies[0]!], days: [{ ...NIGHT.days[1]!, backtest: 162 }] }} />);
-    expect(screen.getByRole('status', { name: 'Whether they match' })).toHaveTextContent('They match: all 162 orders the desk placed are trades in the backtest, and the backtest has no other.');
-    expect(screen.queryByText(/Why they differ/)).toBeNull();
-    expect(within(screen.getByRole('table', { name: 'Live check by expiry day' })).getAllByRole('cell')[2]).toHaveTextContent(/^162all match$/);
+  it('[critical] what cannot be compared is set apart and named, not counted against either side', () => {
+    const apart: Check = {
+      ...NIGHT, notCompared: { backtest: 3_587, desk: 1 },
+      notComparedWhy: {
+        backtest: [{ why: 'the desk has no record of the signal: the strategy was off, not yet made, or its rules were different then', n: 3_587, first: [] }],
+        desk: [{ why: 'outside the strategy\'s rules as they stand now', n: 1, first: [] }],
+      },
+    };
+    render(<LiveCheckResult r={apart} />);
+    expect(screen.getByLabelText('Not compared')).toHaveTextContent('Not compared: 3,587 backtest trades of signals the desk has no record of · 1 desk order outside the rules as they stand now.');
+    expect(within(screen.getByRole('list', { name: "Not compared: the backtest's" })).getByRole('listitem')).toHaveTextContent('3,587 — the desk has no record of the signal');
+    expect(within(screen.getByRole('list', { name: "Not compared: the desk's" })).getByRole('listitem')).toHaveTextContent('1 — outside the strategy\'s rules as they stand now');
   });
 
-  it('[critical] against saved backtests: the desk\'s orders none of them trades are listed too, and a row is a saved backtest', () => {
+  it('[critical] by settings or a portfolio: the live rules run with them -- a match says so, with the money', () => {
     const folio: Check = {
-      ...NIGHT, against: { kind: 'portfolio', name: 'High Win%' },
-      total: { ...NIGHT.total, backtest: 179, same: 158, backtestOnly: 21, liveOnly: 4 },
-      liveOnly: [{ why: 'no saved backtest of the portfolio has that method ticked on that time frame', n: 4, first: [{ at: at('2026-10-14T01:05:00'), method: 'mss', tf: '30m', dir: 1 }] }],
-      strategies: [
-        row({ name: '2h time', account: null, backtest: 36, same: 26, backtestOnly: [{ why: 'no strategy on the desk has a record of it: none takes that method on that time frame, or the desk was not running', n: 6, first: [] }, { ...LOSS, n: 4 }] }),
-        row({ name: '30m time', account: null, backtest: 47, same: 43, backtestOnly: [{ ...LOSS, n: 4 }] }),
-      ],
-      days: [
-        { ...NIGHT.days[1]!, day: '2026-10-13', live: false, placed: 101, backtest: 606, same: 79, real: { n: 101, wins: 53, net: -77.2, open: 0 }, bt: { n: 606, wins: 376, net: -2.65 } },
-        { ...NIGHT.days[1]!, backtest: 179, same: 158 },
-      ],
+      ...NIGHT, against: { kind: 'portfolio', name: 'High Win%' }, liveFrom: null, liveTo: null,
+      total: { placed: 181, refused: 0, skipped: 708, backtest: 181, backtestSkipped: 708, same: 181, backtestOnly: 0, liveOnly: 0 },
+      liveWhy: { refused: [], skipped: [{ why: 'its SL / TGT distance, as its rules stand now', n: 708 }] },
+      money: { real: { n: 181, wins: 73, net: -3.21 }, backtest: { n: 181, wins: 73, net: -3.21 } },
+      days: [{ day: '2026-10-14', live: true, placed: 181, backtest: 181, same: 181, real: { n: 181, wins: 73, net: -3.21 }, bt: { n: 181, wins: 73, net: -3.21 } }],
+      strategies: [row({ name: '15m time', account: null, live: { placed: 33, refused: 0, skipped: 115 }, backtest: 33, same: 33 })],
     };
     render(<LiveCheckResult r={folio} />);
-    expect(screen.getByRole('status', { name: 'Whether they match' })).toHaveTextContent('The desk placed 162 orders, the backtest makes 179 trades: 158 are the same signal. 21 are in the backtest only. 4 are on the desk only.');
-    // the latest day first, in a line of its own, then the whole range
-    expect(screen.getByLabelText('The latest expiry day')).toHaveTextContent('Wed 14 Oct, so far: the desk placed 162, the backtest makes 179, 158 the same signal. Over all 2 days:');
-    const rows = within(screen.getByRole('table', { name: 'Live check by expiry day' })).getAllByRole('row').slice(1);
-    expect(rows.map((x) => within(x).getByRole('rowheader').textContent)).toEqual(['Wed 14 Octso far', 'Tue 13 Oct']);
-    expect(within(rows[0]!).getAllByRole('cell')[2]).toHaveTextContent('158+21 backtest+4 desk');
-    expect(within(screen.getByRole('list', { name: 'On the desk only' })).getByRole('listitem')).toHaveTextContent('4 — no saved backtest of the portfolio has that method ticked on that time frame');
-    expect(within(screen.getByRole('list', { name: 'In the backtest only' })).getAllByRole('listitem').map((x) => x.textContent!.split(' — ')[0])).toEqual(['8', '6']);
-    // a saved backtest has no orders of its own on the desk: its row says the backtest's side and the match
-    const two = within(within(screen.getByRole('list', { name: 'Each saved backtest' })).getByRole('listitem', { name: '2h time' }));
-    expect(two.getByText(/Backtest/).closest('p')).toHaveTextContent(/^Backtest 36 traded · 0 not traded · same signal 26$/);
-    expect(screen.getByText(/looked up in what the desk did with that signal under any of its strategies/)).toBeInTheDocument();
+    expect(screen.getByText('Live check · the live rules with these settings')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Whether they match' })).toHaveTextContent('They match: the live rules with these settings take the same 181 trades as the backtest, and make the same money.');
+    const table = within(screen.getByRole('table', { name: 'Live check by expiry day' }));
+    expect(table.getAllByRole('columnheader').map((x) => x.textContent)).toEqual(['Expiry day', 'Live rules', 'Backtest', 'Same']);
+    const cells = table.getAllByRole('cell').map((x) => x.textContent);
+    expect(cells).toEqual(['181−₹273won 40%', '181−₹273won 40%', '181all match']);
+    expect(screen.getByText(/through the same rules the desk trades by, and compared signal for signal/)).toBeInTheDocument();
+  });
+
+  it('a difference with the live rules is said as theirs, not the desk\'s', () => {
+    const differ: Check = {
+      ...NIGHT, against: { kind: 'portfolio', name: 'these settings' },
+      total: { placed: 10, refused: 0, skipped: 0, backtest: 11, backtestSkipped: 0, same: 9, backtestOnly: 2, liveOnly: 1 },
+      days: [{ day: '2026-10-14', live: true, placed: 10, backtest: 11, same: 9, real: { n: 10, wins: 5, net: 1 }, bt: { n: 11, wins: 5, net: 1 } }],
+      strategies: [row({ name: 'These settings', account: null, backtest: 11, same: 9, backtestOnly: [{ why: 'the live rules would not: its SL / TGT distance, as its rules stand now', n: 2, first: [] }], liveOnly: [{ why: 'the backtest would not: no strike its rule could sell on the recorded prices', n: 1, first: [] }] })],
+    };
+    render(<LiveCheckResult r={differ} />);
+    expect(screen.getByRole('status', { name: 'Whether they match' })).toHaveTextContent('The live rules take 10 trades, the backtest makes 11 trades: 9 are the same signal. 2 are in the backtest only. 1 are the live rules\' only.');
+    expect(within(screen.getAllByRole('table')[0]!).getAllByRole('cell')[2]).toHaveTextContent('9+2 backtest+1 live');
+    expect(within(screen.getByRole('list', { name: 'The live rules only' })).getByRole('listitem')).toHaveTextContent('1 — the backtest would not: no strike its rule could sell on the recorded prices');
   });
 
   it('nothing on either side, and an answer that could not be read, are said -- never a blank', async () => {
