@@ -44,3 +44,26 @@ export function settingsWords(q: SavedQuery, strategies: readonly { id: string; 
     withFilters && q.methods.length ? `${q.methods.length} method${q.methods.length === 1 ? '' : 's'}` : null,
   ].filter(Boolean).join(' · ');
 }
+
+/**
+ * Settings put over a run together, each in a few words -- only those that were (`BacktestPortfolioResult.over`).
+ * The same words a saved backtest's own line uses, so "delta ≤ 0.10" over the run reads as it does under a name.
+ */
+export function overWords(p: Partial<BacktestParams>): string[] {
+  const range = (min = 0, max = 0) => [min > 0 ? `≥ ${min}` : null, max > 0 ? `≤ ${max}` : null].filter(Boolean).join(' ');
+  const out: string[] = [];
+  if (p.rule !== undefined && p.value !== undefined) out.push(p.rule === 'delta' ? `strike delta ≤ ${p.value.toFixed(2)}` : `strike premium ≤ $${p.value}`);
+  if (p.targetPct !== undefined) {
+    out.push(p.targetSteps?.length
+      ? `target ${Math.round(p.targetPct * 100)}% → ${Math.round(p.targetSteps[p.targetSteps.length - 1]!.pct * 100)}% by time (${p.targetSteps.length} step${p.targetSteps.length === 1 ? '' : 's'})`
+      : `target ${targetLabel(p.targetPct).toLowerCase()}`.replace('target no target', 'no target'));
+  }
+  if (p.stopPct !== undefined) out.push(p.stopPct > 0 ? `stop ${stopLabel(p.stopPct)}` : 'no stop');
+  if (p.lots !== undefined) out.push(`${p.lots} lot${p.lots === 1 ? '' : 's'} a signal`);
+  if (p.minPremium !== undefined) out.push(p.minPremium > 0 ? `premium ≥ $${p.minPremium}` : 'no premium floor');
+  if (p.slMin !== undefined) {
+    const sl = range(p.slMin, p.slMax), tgt = range(p.tgtMin, p.tgtMax);
+    out.push(sl || tgt ? `${[sl && `SL ${sl}`, tgt && `TGT ${tgt}`].filter(Boolean).join(', ')} pts` : 'no SL / TGT range');
+  }
+  return out;
+}

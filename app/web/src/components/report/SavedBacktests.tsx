@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AS_SAVED, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit } from '@/api/backtest-saves';
+import { AS_SAVED, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, overQuery, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { time12 } from '@/lib/time';
+import { overWords } from '@/components/report/backtest-words';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BtRow, SavedQuery } from '@/types/signal-backtest';
@@ -136,24 +137,33 @@ function PortfolioResult({ title, r, wide }: { title: string; r: BacktestPortfol
   );
 }
 
+const NO_OVER: PortfolioOver = {};
+
 /** Which saved backtests are run together, and what the run is called: a portfolio's name, or theirs. */
 export type TogetherRun = { ids: string[]; title: string };
 
 /**
- * Which hours a run together was held to, when they are not each saved backtest's own (13 Oct 2026) -- and which of
- * them, worked by a strategy, kept that strategy's hours all the same. Said over the result, so a total is never
- * read as the saved backtests' own when the hours were changed for the run.
+ * What a run together was held to, when it is not each saved backtest's own (13 and 14 Oct 2026): the hours, and
+ * any setting switched on over the run -- and which of them, worked by a strategy, kept that strategy's rules all
+ * the same. Said over the result, so a total is never read as the saved backtests' own when they were changed for
+ * the run; and said when nothing was, so "which settings was this?" is never open.
  */
-function HoursNote({ r }: { r: BacktestPortfolioResult }) {
-  const h = r.hours;
-  if (!h) return null;
-  const said = h.window === 'desk' ? '9:30 PM → 3:59 PM' : h.window === 'all' ? 'the whole expiry day' : `${time12(h.hoursFrom ?? '')} → ${time12(h.hoursTo ?? '')}`;
-  const own = r.members.filter((m) => h.own.includes(m.id)).map((m) => m.name);
+function RunNote({ r }: { r: BacktestPortfolioResult }) {
+  const h = r.hours ?? null, o = r.over ?? null;
+  if (!h && !o) return <p className="m-0 px-1 text-[12.5px] leading-snug text-muted-foreground">Each saved backtest ran with its own hours and settings, as saved. Switch one on under Run over to try the same set with it.</p>;
+  const hours = h ? (h.window === 'desk' ? '9:30 PM → 3:59 PM' : h.window === 'all' ? 'the whole expiry day' : `${time12(h.hoursFrom ?? '')} → ${time12(h.hoursTo ?? '')}`) : null;
+  const settings = o ? overWords(o.settings) : [];
+  const kept = new Set([...(h?.own ?? []), ...(o?.own ?? [])]);
+  const own = r.members.filter((m) => kept.has(m.id)).map((m) => m.name);
   return (
-    <p role="note" aria-label="The hours of this run" className="m-0 rounded-md border border-[var(--chosen-line)] bg-[var(--chosen-soft)] px-3 py-2 text-[13px] leading-snug text-foreground">
-      Signals of <b>{said}</b> (IST) for this run, in place of each saved backtest&apos;s own hours. Nothing saved is changed.
-      {own.length > 0 && <> {own.join(', ')} {own.length === 1 ? 'is' : 'are'} worked by a strategy and kept {own.length === 1 ? 'its' : 'their'} strategy&apos;s own hours.</>}
-    </p>
+    <div role="note" aria-label="What this run was held to" className="grid gap-1 rounded-md border border-[var(--chosen-line)] bg-[var(--chosen-soft)] px-3 py-2 text-[13px] leading-snug text-foreground">
+      {hours && <p className="m-0">Signals of <b>{hours}</b> (IST) for this run, in place of each saved backtest&apos;s own hours.</p>}
+      {settings.length > 0 && <p className="m-0">For this run, every one of them with: <b>{settings.join(' · ')}</b>.</p>}
+      <p className="m-0 text-muted-foreground">
+        Everything else is each saved backtest&apos;s own. Nothing saved is changed.
+        {own.length > 0 && <> {own.join(', ')} {own.length === 1 ? 'is' : 'are'} worked by a strategy and kept {own.length === 1 ? 'its' : 'their'} strategy&apos;s own rules.</>}
+      </p>
+    </div>
   );
 }
 
@@ -161,17 +171,19 @@ function HoursNote({ r }: { r: BacktestPortfolioResult }) {
  * The run together, where the results are shown: asked with the days on the screen, and again when they change.
  * Each one is a whole backtest, so the first run of a set takes a moment.
  */
-export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours = AS_SAVED, wide = false, onClose }: {
+export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours = AS_SAVED, over = NO_OVER, wide = false, onClose }: {
   run: TogetherRun; range: { from: string; to: string }; limit?: PortfolioLimit;
   /** One account's limit as the screen shows it; null, the desk's own rule (the largest among the saved backtests). */
   cap?: PortfolioCap | null;
   /** The hours the run is held to: each saved backtest's own unless the screen chose others for the run. */
   hours?: PortfolioHours;
+  /** The settings switched on over the run; none, each saved backtest's own. */
+  over?: PortfolioOver;
   wide?: boolean; onClose: () => void;
 }) {
   const asked = limit === 'shared' ? cap : null;
   const hoursKey = hours.window === 'custom' ? `custom:${hours.hoursFrom}-${hours.hoursTo}` : hours.window;
-  const result = useAnswer(`${run.ids.join(',')}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}`, () => getBacktestPortfolio(run.ids, range, limit, asked, hours), 300_000);
+  const result = useAnswer(`${run.ids.join(',')}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`, () => getBacktestPortfolio(run.ids, range, limit, asked, hours, over), 300_000);
   if (result.error && !result.data) {
     return (
       <Panel title={`Run together · ${run.title}`}>
@@ -185,7 +197,7 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
   }
   return (
     <Updating busy={result.stale} what="the run together">
-      <HoursNote r={result.data} />
+      <RunNote r={result.data} />
       <PortfolioResult title={run.title} r={result.data} wide={wide} />
       <button type="button" className={cn(link, 'justify-self-start')} onClick={onClose}>Close the run together</button>
     </Updating>

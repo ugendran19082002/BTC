@@ -19,12 +19,44 @@ export const deletePortfolio = (id: string) =>
   json<{ ok: true }>(`/api/backtest-portfolios/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 /** Saved backtests run together over one range of expiry days, with their total: as one account, or each on its own limit. */
-export const getBacktestPortfolio = (ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED) =>
+export const getBacktestPortfolio = (ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED, over: PortfolioOver = {}) =>
   json<BacktestPortfolioResult>(`/api/backtest-portfolio?${new URLSearchParams({
     ids: ids.join(','), from: range.from, to: range.to,
     ...(limit === 'own' ? { limit: 'own' } : cap ? { max: String(cap.max), ce: String(cap.ce), pe: String(cap.pe) } : {}),
     ...(hours.window === 'saved' ? {} : { hours: hours.window, ...(hours.window === 'custom' ? { hfrom: hours.hoursFrom ?? '', hto: hours.hoursTo ?? '' } : {}) }),
+    ...overQuery(over),
   })}`);
+
+/**
+ * Settings put over a run together (owner, 14 Oct 2026): each its own switch. One that is here is taken for the
+ * run and applied to every saved backtest in it; one that is not is each saved backtest's own. Nothing is saved.
+ */
+export type PortfolioOver = {
+  strike?: { rule: 'delta' | 'premium'; value: number };
+  /** The option's own target: one share all day, or -- with steps -- one that moves by the clock. */
+  target?: { targetPct: number; targetSteps?: { at: string; pct: number }[] };
+  stop?: { stopPct: number };
+  lots?: { lots: number };
+  minPremium?: { minPremium: number };
+  /** The SL and TGT range, BTC points, the four together; 0 is off. */
+  range?: { slMin: number; slMax: number; tgtMin: number; tgtMax: number };
+};
+
+/** The run's settings as the route reads them: the single backtest's own names, each under `o_`. */
+export function overQuery(o: PortfolioOver): Record<string, string> {
+  const q: Record<string, string> = {};
+  if (o.strike) { q.o_rule = o.strike.rule; q.o_value = String(o.strike.value); }
+  if (o.target) {
+    q.o_tp = String(o.target.targetPct);
+    if (o.target.targetSteps?.length) q.o_tsteps = o.target.targetSteps.map((x) => `${x.at}:${Math.round(x.pct * 10_000) / 100}`).join(',');
+  }
+  if (o.stop) q.o_sl = String(o.stop.stopPct);
+  if (o.lots) q.o_lots = String(o.lots.lots);
+  if (o.minPremium) q.o_minprem = String(o.minPremium.minPremium);
+  // All four, zeros too: "no range, for all of them" is a setting, not the absence of one.
+  if (o.range) { q.o_slmin = String(o.range.slMin); q.o_slmax = String(o.range.slMax); q.o_tgtmin = String(o.range.tgtMin); q.o_tgtmax = String(o.range.tgtMax); }
+  return q;
+}
 
 /**
  * The hours a run together is held to: `saved`, each saved backtest's own; or the desk's hours, the whole expiry

@@ -83,6 +83,11 @@ export type BacktestPortfolioResult = {
    * which kept that strategy's hours. Null or absent: each as it was saved.
    */
   hours?: { window: BacktestParams['window']; hoursFrom?: string; hoursTo?: string; own: string[] } | null;
+  /**
+   * The settings put over the run -- only those switched on -- as the server read them; `own` as for the hours.
+   * Null or absent: none, each as it was saved. A target put over it carries `targetSteps` ([] where it is fixed).
+   */
+  over?: { settings: Partial<BacktestParams>; own: string[] } | null;
   members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
   total: BtTot;
   days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];

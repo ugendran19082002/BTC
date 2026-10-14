@@ -5,7 +5,7 @@ import {
 } from '../../report/backtest-saves.js';
 import { backtestable, type BacktestParams } from '../../report/signal-backtest.js';
 import { portfolioBacktest } from '../../report/backtest-run.js';
-import { backtestParamsFrom, rangeOf } from './market.routes.js';
+import { backtestParamsFrom, backtestParamsOf, rangeOf } from './market.routes.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 
@@ -116,12 +116,40 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
     if (hoursAsk === 'custom' && hoursFrom === hoursTo) return refuse(reply, 400, { error: 'The From and To times must differ.' });
     const over: Pick<BacktestParams, 'window' | 'hoursFrom' | 'hoursTo'> | null = hoursAsk === 'saved' ? null
       : { window: hoursAsk, hoursFrom: hoursAsk === 'custom' ? hoursFrom : undefined, hoursTo: hoursAsk === 'custom' ? hoursTo : undefined };
+    /*
+     * The other settings, for the run (owner, 14 Oct 2026: "on the portfolio side the filter is off and each
+     * backtest runs with its own; switched on, that filter is taken for now and applied to every backtest").
+     * Each is its own switch: `o_rule` + `o_value` (the strike), `o_tp` with `o_tsteps` (the option's target,
+     * fixed or by the clock), `o_sl` (its stop), `o_lots`, `o_minprem`, and `o_slmin` / `o_slmax` / `o_tgtmin` /
+     * `o_tgtmax` (the SL and TGT range, the four together). One that is absent is off: each member's own. They are
+     * read and held to their limits by the single backtest's own parser, so a value means here what it means there.
+     */
+    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax'] as const;
+    const asked: Record<string, unknown> = {};
+    for (const k of O_KEYS) if (q[`o_${k}`] !== undefined && q[`o_${k}`] !== '') asked[k] = q[`o_${k}`];
+    const has = (k: (typeof O_KEYS)[number]) => k in asked;
+    if (has('value') && !has('rule')) return refuse(reply, 400, { error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' });
+    if (has('rule') && !has('value')) return refuse(reply, 400, { error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' });
+    if (has('tsteps') && !has('tp')) return refuse(reply, 400, { error: 'A target by the clock for the run needs the target it starts from: o_tp.' });
+    const read = backtestParamsOf(asked);
+    if (typeof read === 'string') return refuse(reply, 400, { error: `For the run: ${read}` });
+    const range = has('slmin') || has('slmax') || has('tgtmin') || has('tgtmax');
+    const settings: Partial<BacktestParams> = {
+      ...(has('rule') ? { rule: read.rule, value: read.value } : {}),
+      // A fixed target put over a member whose own moves by the clock takes its steps away: named, and undefined.
+      ...(has('tp') ? { targetPct: read.targetPct, targetSteps: read.targetSteps } : {}),
+      ...(has('sl') ? { stopPct: read.stopPct } : {}),
+      ...(has('lots') ? { lots: read.lots } : {}),
+      ...(has('minprem') ? { minPremium: read.minPremium } : {}),
+      ...(range ? { slMin: read.slMin, slMax: read.slMax, tgtMin: read.tgtMin, tgtMax: read.tgtMax } : {}),
+    };
+    const changed = Object.keys(settings).length > 0;
     const result = await portfolioBacktest({
       ...r, now: Date.now(), spot: tradingService().spot, shared,
       members: saves.map((s) => {
         const strategy = s.query.strategy === null ? null : strategies.find((x) => x.id === s.query.strategy) ?? null;
         if (s.query.strategy !== null && !strategy) return { id: s.id, name: s.name, ask: null, problem: 'The strategy it is worked by has been deleted, or buys now rather than sells.' };
-        const params = over && !strategy ? { ...s.query.params, ...over } : s.query.params;
+        const params = (over || changed) && !strategy ? { ...s.query.params, ...settings, ...(over ?? {}) } : s.query.params;
         return { id: s.id, name: s.name, ask: { params, tfs: s.query.tfs.length ? s.query.tfs : null, methods: s.query.methods.length ? s.query.methods : null, strategy } };
       }),
     });
@@ -129,6 +157,8 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
       ...result,
       /** The hours the run was held to; null, each member's own as saved. `own`: the members a strategy works, whose hours are its own. */
       hours: over ? { window: over.window, ...(over.hoursFrom ? { hoursFrom: over.hoursFrom, hoursTo: over.hoursTo } : {}), own: saves.filter((s) => s.query.strategy !== null).map((s) => s.id) } : null,
+      /** The settings put over the run, as they were read -- only those switched on; null, none. `own` as for the hours. */
+      over: changed ? { settings: { ...settings, ...(has('tp') ? { targetSteps: read.targetSteps ?? [] } : {}) }, own: saves.filter((s) => s.query.strategy !== null).map((s) => s.id) } : null,
     };
   });
 }

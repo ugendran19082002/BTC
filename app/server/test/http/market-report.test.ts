@@ -638,6 +638,44 @@ test('[critical] a backtest saved by name, run again, and several run together a
     assert.match(r.body.error, said);
   }
 
+  /*
+   * The other settings for the run (14 Oct 2026): each its own switch. Off -- absent -- every member is as it was
+   * saved; on, that one setting is put over every member worked by settings, and each is then exactly what the
+   * single backtest gives with it. Nothing saved is changed.
+   */
+  assert.equal(asSaved.body.over, null, 'none asked: none put over');
+  const single = (extra: string) => get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}${extra.includes('window=') ? '' : '&window=all'}${extra}`);
+  for (const [ask, a1, b1, settings] of [
+    ['o_lots=5', '&lots=5', '&lots=5&tf=15m', { lots: 5 }],
+    ['o_rule=premium&o_value=50', '&rule=premium&value=50', '&rule=premium&value=50&lots=3&tf=15m', { rule: 'premium', value: 50 }],
+    ['o_sl=1', '&sl=1', '&sl=1&lots=3&tf=15m', { stopPct: 1 }],
+    ['o_minprem=0', '&minprem=0', '&minprem=0&lots=3&tf=15m', { minPremium: 0 }],
+    ['o_tp=0.7&o_tsteps=23:30:75', '&tp=0.7&tsteps=23:30:75', '&tp=0.7&tsteps=23:30:75&lots=3&tf=15m', { targetPct: 0.7, targetSteps: [{ at: '23:30', pct: 0.75 }] }],
+    ['o_tp=0.8', '&tp=0.8', '&tp=0.8&lots=3&tf=15m', { targetPct: 0.8, targetSteps: [] }],
+    ['o_slmin=100&o_tgtmax=900', '&slmin=100&tgtmax=900', '&slmin=100&tgtmax=900&lots=3&tf=15m', { slMin: 100, slMax: 0, tgtMin: 0, tgtMax: 900 }],
+    ['o_lots=5&o_sl=1&hours=desk', '&lots=5&sl=1&window=desk', '&lots=5&sl=1&window=desk&tf=15m', { stopPct: 1, lots: 5 }],
+  ] as const) {
+    const run = await get(`${pair}&${ask}`);
+    assert.equal(run.status, 200, `${ask}: ${JSON.stringify(run.body).slice(0, 300)}`);
+    const [one, two] = [await single(a1), await single(b1)];
+    assert.deepEqual(run.body.members.map((m: any) => m.total.n), [one.body.total.n, two.body.total.n], `${ask}: each as the single backtest gives it`);
+    assert.ok(close(run.body.members[0].total.net, one.body.total.net) && close(run.body.members[1].total.net, two.body.total.net), `${ask}: to the cent`);
+    assert.ok(close(run.body.total.charges, one.body.total.charges + two.body.total.charges), ask);
+    assert.deepEqual(run.body.over, { settings, own: [] }, `${ask}: said back as it was read`);
+  }
+  // a setting put over the run is not a setting saved
+  const kept = (await get('/api/backtest-saves')).body.saves.find((s: any) => s.id === a.body.save.id).query.params;
+  assert.deepEqual([kept.lots, kept.rule, kept.stopPct], [10, 'delta', 3]);
+  // one worked by a strategy keeps the strategy's own rules, and is named
+  assert.deepEqual((await get(`/api/backtest-portfolio?ids=${a.body.save.id},${c.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&o_lots=5`)).body.over, { settings: { lots: 5 }, own: [c.body.save.id] });
+  // refused in the single backtest's own words, and in the run's where a pair is half given
+  for (const [bad, said] of [['o_lots=0', /For the run: Lots are a whole number/], ['o_value=0.1', /A strike for the run is its rule and its limit/], ['o_rule=delta', /A strike for the run is its rule and its limit/],
+    ['o_rule=delta&o_value=0.9', /For the run: A delta limit is from 0\.02 to 0\.5/], ['o_tsteps=23:30:75', /needs the target it starts from/], ['o_slmin=500&o_slmax=100', /SL maximum must not be under its minimum/]] as const) {
+    const r = await get(`${pair}&${bad}`);
+    assert.equal(r.status, 400, bad);
+    assert.match(r.body.error, said);
+  }
+
   // refused: none named, one that is gone, too many
   assert.equal((await get(`/api/backtest-portfolio?from=${CLIMB}&to=${QUIET}`)).status, 400);
   assert.equal((await get(`/api/backtest-portfolio?ids=nope&from=${CLIMB}&to=${QUIET}`)).status, 404);

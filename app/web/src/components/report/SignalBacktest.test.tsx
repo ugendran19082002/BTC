@@ -887,6 +887,8 @@ describe('SignalBacktest', () => {
     const last = () => saves.getBacktestPortfolio.mock.calls.at(-1)![4];
     expect(last()).toEqual({ window: 'saved' });
     expect(screen.queryByRole('note', { name: 'The hours of this run' })).toBeNull();
+    // as saved is said as well: the result always names the hours it is of
+    expect(screen.getByText(/Hours: each saved backtest's own, as saved\./)).toBeInTheDocument();
 
     // the whole day, for the run: asked again, and said -- with the one a strategy works keeping its own
     fireEvent.click(hours().getByRole('radio', { name: 'Signals of the whole expiry day' }));
