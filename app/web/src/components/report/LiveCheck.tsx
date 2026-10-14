@@ -22,18 +22,6 @@ const side = (dir: 1 | -1) => (dir === 1 ? 'BUY' : 'SELL');
 const stamp = (ms: number) => `${dayLabel(new Date(ms + 19_800_000).toISOString().slice(0, 10)).split(' ').slice(1).join(' ')}, ${timeIst(ms)}`;
 const total = (xs: { n: number }[]) => xs.reduce((a, x) => a + x.n, 0);
 
-/** One side of a day: the count, how many of the closed made money, and what they made after charges. */
-function Cell({ n, money, note }: { n: number; money: LiveCheckMoney | null; note?: string }) {
-  return (
-    <>
-      <span className="block text-[14px] font-semibold tabular-nums">{count(n)}</span>
-      {money && money.n > 0 && <span className={cn('block whitespace-nowrap text-[12px] font-semibold tabular-nums', netClass(money.net))}>{moneyText(money.net)}</span>}
-      {money && money.n > 0 && <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">won {pct(rate(money), 0)}</span>}
-      {note && <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">{note}</span>}
-    </>
-  );
-}
-
 /** The seven columns of a side's fate: what it took, and each way a signal was not taken. */
 const FATE_COLS: { key: keyof LiveCheckFate; label: string; hint: string; desk?: boolean }[] = [
   { key: 'taken', label: 'Taken', hint: 'Entered: the order filled (the desk), or the trade made (the backtest)' },
@@ -51,7 +39,7 @@ function FateRow({ side, fate, desk }: { side: string; fate: LiveCheckFate; desk
       <th scope="row" className="py-0.5 text-left text-[12px] font-medium normal-case tracking-normal text-muted-foreground">{side}</th>
       {FATE_COLS.map((c) => (
         <td key={c.key} className={cn('py-0.5 pl-1 text-right tabular-nums', c.key === 'taken' ? 'font-semibold text-foreground' : c.desk && desk && fate[c.key] > 0 ? 'text-[var(--warn)]' : '')}>
-          {c.desk && !desk ? <span className="text-muted-foreground">—</span> : count(fate[c.key] + (c.key === 'taken' && fate.waiting ? 0 : 0))}
+          {c.desk && !desk ? <span className="text-muted-foreground">—</span> : count(fate[c.key])}
           {c.key === 'taken' && fate.waiting > 0 && <span className="block text-[10.5px] font-normal text-muted-foreground">{count(fate.waiting)} waiting</span>}
         </td>
       ))}
@@ -188,7 +176,7 @@ export function LiveCheckResult({ r }: { r: Check }) {
             </thead>
             {[{ day: 'all', label: `All ${days.length} day${days.length === 1 ? '' : 's'}`, fate: r.fate, same: t.same, extraBt: t.backtestOnly, extraLive: t.liveOnly, bt: r.money.backtest, real: r.money.real }, ...days.map((d) => ({
               day: d.day, label: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}`, fate: d.fate, same: d.same, extraBt: d.backtest - d.same, extraLive: d.placed - d.same, bt: d.bt, real: d.real,
-            }))].filter((x, i) => i > 0 || days.length > 1).map((x) => (
+            }))].filter((_, i) => i > 0 || days.length > 1).map((x) => (
               <tbody key={x.day} aria-label={x.label} className="border-0 border-t border-solid border-[var(--line-soft)]">
                 <tr><th scope="rowgroup" colSpan={7} className="pb-0.5 pt-2 text-left text-[13px] font-semibold normal-case tracking-normal text-foreground">{x.label}</th></tr>
                 <FateRow side={them} fate={x.fate.live} desk={!saved} />
