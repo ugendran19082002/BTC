@@ -102,12 +102,16 @@ export type LiveCheckCount = { why: string; n: number };
 export type LiveCheckRow = {
   id: string; name: string; account: string | null;
   live: { placed: number; refused: number; skipped: number };
+  /** The other side's fate of the signals, and the backtest's. */
+  fate: { live: LiveCheckFate; backtest: LiveCheckFate };
   liveWhy: { refused: LiveCheckCount[]; skipped: LiveCheckCount[] };
   backtest: number;
   backtestSkipped: LiveCheckCount[];
   same: number;
   backtestOnly: LiveCheckWhy[]; liveOnly: LiveCheckWhy[];
 };
+/** What became of the signals on one side: taken, still waiting, and the kinds of not taken -- the last four the desk's alone. */
+export type LiveCheckFate = { taken: number; waiting: number; notTaken: number; skipped: number; refused: number; rejected: number; expired: number; cancelled: number };
 /** Trades counted with their money, as a day's row reads them: how many, how many made money, the net after charges (USD). */
 export type LiveCheckMoney = { n: number; wins: number; net: number };
 /** The backtest against the live desk, signal for signal (`/api/signal-backtest/live-check`, `/api/backtest-portfolio/live-check`). */
@@ -128,5 +132,7 @@ export type LiveCheck = {
   /** The backtest's money, and -- against settings or saved backtests -- the live rules' with them. Null on the desk's side: decisions, not finished orders. */
   money: { real: LiveCheckMoney | null; backtest: LiveCheckMoney };
   /** Each expiry day: the other side's takes and the backtest's trades, how many are the same signal, and the money where it is a replay. */
-  days: { day: string; live: boolean; placed: number; backtest: number; same: number; real: LiveCheckMoney | null; bt: LiveCheckMoney }[];
+  days: { day: string; live: boolean; placed: number; backtest: number; same: number; real: LiveCheckMoney | null; bt: LiveCheckMoney; fate: { live: LiveCheckFate; backtest: LiveCheckFate } }[];
+  /** The fates over the whole range. */
+  fate: { live: LiveCheckFate; backtest: LiveCheckFate };
 };

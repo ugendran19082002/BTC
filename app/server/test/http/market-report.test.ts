@@ -467,6 +467,23 @@ test('[critical] the live check: by a strategy, its backtest beside the desk\'s 
   assert.equal(r.body.days[0].bt.n, 3);
   assert.ok(r.body.liveFrom >= Number(setups[0]!.filled_at) * 1_000 && r.body.liveTo >= r.body.liveFrom);
 
+  // what became of each signal, on each side: the desk's taken and its kinds of not taken; the backtest's taken and not
+  assert.deepEqual(row.fate.live, { taken: 2, waiting: 0, notTaken: 2, skipped: 1, refused: 1, rejected: 0, expired: 0, cancelled: 0 }, 'the order outside its rules counts as taken: it is the desk\'s record');
+  assert.deepEqual(row.fate.backtest, { taken: 3, waiting: 0, notTaken: 0, skipped: 0, refused: 0, rejected: 0, expired: 0, cancelled: 0 });
+  assert.deepEqual(r.body.days[0].fate, row.fate);
+  assert.deepEqual(r.body.fate, row.fate);
+  // an order the desk placed whose wait ran out unfilled: not taken in the end, and not the same as the backtest's trade
+  await query(`INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at) VALUES ('lc-expired', 'C-BTC-84000-x', 'aborted', 0, '{}', '{"entrySize": 0}', $1)`, [Date.now()]);
+  await query(`INSERT INTO trade_events (trade_id, seq, at, kind, event) VALUES ('lc-expired', 0, $1, 'entry_timeout', '{"t": "entry_timeout"}')`, [Date.now()]);
+  await query('UPDATE strategy_signal_runs SET trade_id = $1 WHERE strategy_id = $2 AND signal_key = $3', ['lc-expired', id, keyOf(mine[0]!)]);
+  const expired = (await check(`&strategy=${id}`)).body;
+  assert.deepEqual([expired.strategies[0].same, expired.strategies[0].fate.live.taken, expired.strategies[0].fate.live.expired, expired.strategies[0].fate.live.notTaken], [0, 1, 1, 3]);
+  assert.deepEqual(expired.strategies[0].backtestOnly.map((g: any) => [g.why, g.n]), [
+    ['the desk placed it and the order expired unfilled', 1], ['the desk refused: the daily loss limit', 1], ['the desk skipped: its SL / TGT distance', 1]]);
+  await query("DELETE FROM trade_events WHERE trade_id = 'lc-expired'");
+  await query("DELETE FROM trades WHERE trade_id = 'lc-expired'");
+  await query('UPDATE strategy_signal_runs SET trade_id = NULL WHERE strategy_id = $1', [id]);
+
   // every strategy: the totals are their sum, and one held to one open counts what it did not trade by why
   const all = await check('&all=1');
   assert.ok(all.body.strategies.length >= 2);
@@ -479,6 +496,9 @@ test('[critical] the live check: by a strategy, its backtest beside the desk\'s 
   assert.deepEqual(screen.body.against, { kind: 'portfolio', name: 'these settings' });
   const alone = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tf=15m&method=breakout`);
   assert.deepEqual([screen.body.total.backtest, screen.body.total.placed, screen.body.total.same, screen.body.total.backtestOnly, screen.body.total.liveOnly], [alone.body.total.n, alone.body.total.n, alone.body.total.n, 0, 0]);
+  // the live rules' fate is the backtest's: taken and skipped alike, and none of the desk's own kinds of not taken
+  assert.deepEqual(screen.body.fate.live, screen.body.fate.backtest);
+  assert.equal(screen.body.fate.live.taken, alone.body.total.n);
   assert.ok(Math.abs(screen.body.money.backtest.net - alone.body.total.net) < 1e-9 && Math.abs(screen.body.money.real.net - alone.body.total.net) < 1e-9, 'and the same money on both sides');
   // a premium rule and a range too: still the same
   const other2 = await check('&window=desk&rule=premium&value=50&slmin=100&tgtmin=100&lots=3');

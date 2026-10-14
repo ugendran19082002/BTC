@@ -1173,12 +1173,23 @@ export type LiveCheckAsk = {
 };
 /** Trades counted with their money, as a day's row reads them: how many, how many made money, and the net after charges. */
 export type LiveCheckMoney = { n: number; wins: number; net: number };
+/**
+ * What became of the signals on one side (owner, 14 Oct 2026: "taken, not taken, skipped, refused, rejected,
+ * expired -- columns in the live check"). The desk's: taken (its order filled), still waiting to fill, and not
+ * taken -- skipped by its rules, refused at its own gate, rejected by Delta, expired unfilled, cancelled before a
+ * fill. The backtest's and the live rules': taken, and not taken (skipped by the rules); the rest are the desk's
+ * alone and stay 0 there.
+ */
+export type LiveCheckFate = { taken: number; waiting: number; notTaken: number; skipped: number; refused: number; rejected: number; expired: number; cancelled: number };
+export const noFate = (): LiveCheckFate => ({ taken: 0, waiting: 0, notTaken: 0, skipped: 0, refused: 0, rejected: 0, expired: 0, cancelled: 0 });
 /** Signals on one side only, by why, with the first few to look at. */
 export type LiveCheckWhy = { why: string; n: number; first: { at: number; method: string; tf: string; dir: 1 | -1 }[] };
 export type LiveCheckRow = {
   id: string; name: string; account: string | null;
   /** What the desk did with the signals of its methods: orders placed, refused at the gate, skipped by its rules. */
   live: { placed: number; refused: number; skipped: number };
+  /** The other side's fate of the signals of its methods -- the desk's own record, or the live rules' -- and the backtest's. */
+  fate: { live: LiveCheckFate; backtest: LiveCheckFate };
   /** Why the desk refused, and why it skipped: every one of them, by reason, the most common first (owner, 14 Oct 2026: "show the skipped and rejected counts"). */
   liveWhy: { refused: { why: string; n: number }[]; skipped: { why: string; n: number }[] };
   /** Trades the backtest makes of the same signals, by the strategy's rules as they stand. */
@@ -1219,8 +1230,15 @@ export type LiveCheck = {
   /** Every refusal and every skip on the desk in the range, by reason, across the strategies. */
   liveWhy: { refused: { why: string; n: number }[]; skipped: { why: string; n: number }[] };
   /** Each expiry day, as the portfolio's own day table reads: the desk's real orders and the backtest's trades, with their money. */
-  days: { day: string; live: boolean; placed: number; backtest: number; same: number; real: LiveCheckMoney | null; bt: LiveCheckMoney }[];
+  days: { day: string; live: boolean; placed: number; backtest: number; same: number; real: LiveCheckMoney | null; bt: LiveCheckMoney; fate: { live: LiveCheckFate; backtest: LiveCheckFate } }[];
+  /** The fates over the whole range. */
+  fate: { live: LiveCheckFate; backtest: LiveCheckFate };
 };
+
+const addFate = (a: LiveCheckFate, b: LiveCheckFate): LiveCheckFate => ({
+  taken: a.taken + b.taken, waiting: a.waiting + b.waiting, notTaken: a.notTaken + b.notTaken, skipped: a.skipped + b.skipped,
+  refused: a.refused + b.refused, rejected: a.rejected + b.rejected, expired: a.expired + b.expired, cancelled: a.cancelled + b.cancelled,
+});
 
 /** How long the desk is given to write down what it did with a signal before its absence counts. */
 const LIVE_GRACE_MS = 120_000;
@@ -1282,6 +1300,32 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
     [every.map((x) => x.st.id), span.from, Math.min(span.to, o.now) + LIVE_GRACE_MS]) : [];
   const liveBy = new Map<string, Map<string, Live>>();
   for (const r of live) (liveBy.get(r.strategy_id) ?? liveBy.set(r.strategy_id, new Map()).get(r.strategy_id)!).set(r.signal_key, r);
+  /*
+   * What became of each order the desk placed: filled (taken), still working, rejected by Delta, expired -- its wait
+   * ran out with nothing filled -- or cancelled before a fill. Read from the journal: the entry's fill, and the
+   * events that end an entry unfilled.
+   */
+  type OrderFate = 'taken' | 'waiting' | 'rejected' | 'expired' | 'cancelled';
+  const orderFate = new Map<string, OrderFate>();
+  const placedIds = live.filter((r) => r.status === 'placed' && r.trade_id).map((r) => r.trade_id!);
+  if (placedIds.length) {
+    const found = await rows<{ trade_id: string; phase: string; filled: string; timed_out: boolean; rejected: boolean }>(
+      `SELECT t.trade_id, t.phase, coalesce((t.state->>'entrySize')::numeric, 0) AS filled,
+              EXISTS (SELECT 1 FROM trade_events e WHERE e.trade_id = t.trade_id AND e.kind = 'entry_timeout') AS timed_out,
+              EXISTS (SELECT 1 FROM trade_events e WHERE e.trade_id = t.trade_id AND e.kind IN ('entry_rejected', 'precheck_failed')) AS rejected
+         FROM trades t WHERE t.trade_id = ANY($1)`, [placedIds]);
+    for (const t of found) {
+      orderFate.set(t.trade_id, Number(t.filled) > 0 ? 'taken' : t.phase !== 'flat' && t.phase !== 'aborted' ? 'waiting' : t.rejected ? 'rejected' : t.timed_out ? 'expired' : 'cancelled');
+    }
+  }
+  // An order the journal has no row for is taken as placed: the desk's decision was to place it.
+  const fateOf = (r: { trade_id: string | null }): OrderFate => (r.trade_id ? orderFate.get(r.trade_id) ?? 'taken' : 'taken');
+  const FATE_WHY: Record<Exclude<OrderFate, 'taken' | 'waiting'>, string> = {
+    rejected: 'the desk placed it and Delta rejected the order',
+    expired: 'the desk placed it and the order expired unfilled',
+    cancelled: 'the desk placed it and the order was cancelled before it filled',
+  };
+
   // Under any strategy: what the desk did with a signal at all -- an order where one was placed, else the refusal, else the skip.
   const rank: Record<string, number> = { placed: 3, refused: 2, skipped: 1 };
   const liveAny = new Map<string, Live>();
@@ -1401,6 +1445,18 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
   };
   const NO_RECORD = 'the desk has no record of the signal: the strategy was off, not yet made, or its rules were different then';
 
+  const fateByDay = new Map<string, { live: LiveCheckFate; backtest: LiveCheckFate }>(days.map((d) => [d.day, { live: noFate(), backtest: noFate() }]));
+  /** A backtest's -- or the live rules' -- taken and not taken, into a row's count and each day's. Hours are a setting: a signal outside them is no one's. */
+  const btFate = (x: Side, into: LiveCheckFate, sideName: 'live' | 'backtest' = 'backtest') => {
+    for (const key of x.traded.keys()) { const day = dayOfKey.get(key); if (!day) continue; into.taken++; fateByDay.get(day)![sideName].taken++; }
+    for (const [key, why] of x.refused) {
+      if (OUTSIDE.has(why)) continue;
+      const day = dayOfKey.get(key); if (!day) continue;
+      into.skipped++; into.notTaken++;
+      const d = fateByDay.get(day)![sideName]; d.skipped++; d.notTaken++;
+    }
+  };
+
   const rowsOut: LiveCheckRow[] = units.flatMap((u, i): LiveCheckRow[] => {
     if (!shown(u)) return [];
     const side = bt[i]!;
@@ -1423,8 +1479,11 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
         liveOnly.push({ sig: sigOf(t), why: why ? `the backtest would not: ${BT_WHY[why]}` : 'the backtest did not see it' });
       }
       const skipped = [...other.refused.values()].filter((w) => !OUTSIDE.has(w));
+      const rowFate = { live: noFate(), backtest: noFate() };
+      btFate(other, rowFate.live, 'live');
+      btFate(side, rowFate.backtest);
       return [{
-        id: u.id, name: u.name, account: u.account,
+        id: u.id, name: u.name, account: u.account, fate: rowFate,
         live: { placed: other.traded.size, refused: 0, skipped: skipped.length },
         liveWhy: { refused: [], skipped: counted(skipped.map((w) => BT_WHY[w])) },
         backtest: traded, backtestSkipped: counted([...side.refused.values()].filter((w) => !OUTSIDE.has(w)).map((w) => BT_WHY[w])),
@@ -1438,11 +1497,19 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
       if (!r) { notBt++; notBtWhy.push({ why: NO_RECORD, sig: sigOf(t) }); continue; }
       traded++;
       countBt(t, key);
-      if (r.status === 'placed') { same++; countOther(key, true); continue; }
+      if (r.status === 'placed') {
+        const f = fateOf(r);
+        if (f === 'taken' || f === 'waiting') { same++; countOther(key, true); continue; }
+        // Placed, and never filled: the desk did not take it in the end -- said as such, not as the same trade.
+        backtestOnly.push({ sig: sigOf(t), why: FATE_WHY[f] });
+        continue;
+      }
       backtestOnly.push({ sig: sigOf(t), why: liveReason(r.status, r.detail) });
     }
     for (const r of records.values()) {
       if (r.status !== 'placed' || side.traded.has(r.signal_key)) continue;
+      // An order that never filled, on a signal the backtest did not trade either: neither side took it.
+      if (fateOf(r) !== 'taken' && fateOf(r) !== 'waiting') continue;
       if (!inScope(side, r.signal_key)) {
         notDesk++;
         notDeskWhy.push({ sig: partsOf(r.signal_key, Number(r.at)), why: dayOfKey.has(r.signal_key) ? 'outside the strategy\'s rules as they stand now' : 'no filled setup is on record for that signal in these days' });
@@ -1452,8 +1519,17 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
       liveOnly.push({ sig: partsOf(r.signal_key, Number(r.at)), why: `the backtest would not: ${BT_WHY[side.refused.get(r.signal_key)!]}` });
     }
     const refused = [...records.values()].filter((r) => r.status === 'refused'), skipped = [...records.values()].filter((r) => r.status === 'skipped');
+    // The desk's fate of every signal of this strategy in the range, and the backtest's, by day and over the range.
+    const rowFate = { live: noFate(), backtest: noFate() };
+    for (const r of records.values()) {
+      const day = dayOfKey.get(r.signal_key);
+      if (!day) continue;
+      const f: keyof LiveCheckFate = r.status === 'placed' ? fateOf(r) : r.status === 'refused' ? 'refused' : 'skipped';
+      for (const x of [rowFate.live, fateByDay.get(day)!.live]) { x[f]++; if (f !== 'taken' && f !== 'waiting') x.notTaken++; }
+    }
+    btFate(side, rowFate.backtest);
     return [{
-      id: u.id, name: u.name, account: u.account,
+      id: u.id, name: u.name, account: u.account, fate: rowFate,
       live: { placed: same + liveOnly.length, refused: refused.length, skipped: skipped.length },
       liveWhy: { refused: counted(refused.map((r) => liveWhy(r.detail))), skipped: counted(skipped.map((r) => liveWhy(r.detail))) },
       backtest: traded, backtestSkipped: counted([...side.refused.values()].filter((w) => !OUTSIDE.has(w)).map((w) => BT_WHY[w])),
@@ -1482,6 +1558,10 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
     notComparedWhy: { backtest: groupsOf(notBtWhy), desk: groupsOf(notDeskWhy) },
     liveWhy: { refused: merged(strategies.flatMap((r) => r.liveWhy.refused)), skipped: merged(strategies.flatMap((r) => r.liveWhy.skipped)) },
     money: { real: folio ? add([...lvMoney.values()]) : null, backtest: add([...btMoney.values()]) },
-    days: days.map((d) => ({ day: d.day, live: d.live, ...byDay.get(d.day)!, real: folio ? lvMoney.get(d.day)! : null, bt: btMoney.get(d.day)! })),
+    days: days.map((d) => ({ day: d.day, live: d.live, ...byDay.get(d.day)!, real: folio ? lvMoney.get(d.day)! : null, bt: btMoney.get(d.day)!, fate: fateByDay.get(d.day)! })),
+    fate: {
+      live: strategies.reduce((a, r) => addFate(a, r.fate.live), noFate()),
+      backtest: strategies.reduce((a, r) => addFate(a, r.fate.backtest), noFate()),
+    },
   };
 }

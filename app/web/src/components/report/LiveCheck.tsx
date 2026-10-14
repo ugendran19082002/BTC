@@ -1,7 +1,7 @@
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import type { LiveCheck as Check, LiveCheckCount, LiveCheckMoney, LiveCheckRow, LiveCheckWhy } from '@/types/signal-backtest';
+import type { LiveCheck as Check, LiveCheckCount, LiveCheckFate, LiveCheckMoney, LiveCheckRow, LiveCheckWhy } from '@/types/signal-backtest';
 import { Empty, Loading, Panel } from '@/components/mobile/parts';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { count, netClass, rate } from '@/components/report/backtest-parts';
@@ -31,6 +31,31 @@ function Cell({ n, money, note }: { n: number; money: LiveCheckMoney | null; not
       {money && money.n > 0 && <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">won {pct(rate(money), 0)}</span>}
       {note && <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">{note}</span>}
     </>
+  );
+}
+
+/** The seven columns of a side's fate: what it took, and each way a signal was not taken. */
+const FATE_COLS: { key: keyof LiveCheckFate; label: string; hint: string; desk?: boolean }[] = [
+  { key: 'taken', label: 'Taken', hint: 'Entered: the order filled (the desk), or the trade made (the backtest)' },
+  { key: 'notTaken', label: 'Not taken', hint: 'Every signal of its methods not entered: the columns to the right, added' },
+  { key: 'skipped', label: 'Skipped', hint: 'Left by the rules: its hours, SL / TGT distance, at its most open, no strike' },
+  { key: 'refused', label: 'Refused', hint: 'Turned down at the desk\'s own gate: the daily loss limit, margin, a limit on open trades', desk: true },
+  { key: 'rejected', label: 'Rejected', hint: 'Sent, and rejected by Delta', desk: true },
+  { key: 'expired', label: 'Expired', hint: 'Sent, and its wait ran out with nothing filled', desk: true },
+];
+
+/** One side's row: its counts, with a dash where the column is not a thing that side can do. */
+function FateRow({ side, fate, desk }: { side: string; fate: LiveCheckFate; desk: boolean }) {
+  return (
+    <tr>
+      <th scope="row" className="py-0.5 text-left text-[12px] font-medium normal-case tracking-normal text-muted-foreground">{side}</th>
+      {FATE_COLS.map((c) => (
+        <td key={c.key} className={cn('py-0.5 pl-1 text-right tabular-nums', c.key === 'taken' ? 'font-semibold text-foreground' : c.desk && desk && fate[c.key] > 0 ? 'text-[var(--warn)]' : '')}>
+          {c.desk && !desk ? <span className="text-muted-foreground">—</span> : count(fate[c.key] + (c.key === 'taken' && fate.waiting ? 0 : 0))}
+          {c.key === 'taken' && fate.waiting > 0 && <span className="block text-[10.5px] font-normal text-muted-foreground">{count(fate.waiting)} waiting</span>}
+        </td>
+      ))}
+    </tr>
   );
 }
 
@@ -146,40 +171,41 @@ export function LiveCheckResult({ r }: { r: Check }) {
           </p>
           {apart > 0 && <p aria-label="Not compared" className="m-0 text-[12.5px] leading-snug text-muted-foreground">Not compared: {apartWords(r)}.</p>}
 
-          {/* Four plain columns, each cell its lines stacked: what a 360px phone holds without folding anything away. */}
-          <table aria-label="Live check by expiry day" className="w-full table-fixed border-collapse text-[13px]">
-            <colgroup><col className="w-[30%]" /><col className="w-[24%]" /><col className="w-[24%]" /><col className="w-[22%]" /></colgroup>
+          {/*
+            What became of the signals on each side, day by day (owner, 14 Oct 2026: "taken, not taken, skipped, refused,
+            rejected, expired -- columns, in the live check and the backtest"). Two rows a day -- the desk (or the live
+            rules) and the backtest -- under the same seven columns, and a line for the same signals and the money.
+            Refused, rejected and expired are the desk's alone: the backtest has no gate of the account's and fills
+            every order it decides on, so its cells there are a dash, not a zero.
+          */}
+          <table aria-label="Live check by expiry day" className="w-full table-fixed border-collapse text-[12.5px]">
+            <colgroup><col className="w-[19%]" /><col /><col /><col /><col /><col /><col /></colgroup>
             <thead>
-              <tr className="text-[11px] uppercase tracking-[0.5px] text-muted-foreground">
-                <th scope="col" className="py-1 pr-1 text-left font-medium">Expiry day</th>
-                <th scope="col" className="py-1 pr-1 text-right font-medium">{them}</th>
-                <th scope="col" className="py-1 pr-1 text-right font-medium">Backtest</th>
-                <th scope="col" className="py-1 text-right font-medium">Same</th>
+              <tr className="text-[10.5px] uppercase tracking-[0.4px] text-muted-foreground">
+                <th scope="col" className="py-1 text-left font-medium"><span className="sr-only">Side</span></th>
+                {FATE_COLS.map((c) => <th key={c.key} scope="col" className="py-1 pl-1 text-right font-medium" title={c.hint}>{c.label}</th>)}
               </tr>
             </thead>
-            <tbody>
-              {days.map((d) => {
-                const extraBt = d.backtest - d.same, extraDesk = d.placed - d.same;
-                const all = extraBt === 0 && extraDesk === 0;
-                return (
-                  <tr key={d.day} className="border-0 border-t border-solid border-[var(--line-soft)] align-top">
-                    <th scope="row" className="py-2 pr-1 text-left text-[13px] font-semibold normal-case tracking-normal text-foreground">
-                      {dayLabel(d.day)}
-                      {d.live && <span className="block text-[11.5px] font-normal text-muted-foreground">so far</span>}
-                    </th>
-                    <td className="py-2 pr-1 text-right"><Cell n={d.placed} money={d.real} /></td>
-                    <td className="py-2 pr-1 text-right"><Cell n={d.backtest} money={d.bt} /></td>
-                    <td className="py-2 text-right">
-                      <span className={cn('block text-[14px] font-semibold tabular-nums', all && d.same > 0 ? 'text-[var(--up)]' : '')}>{count(d.same)}</span>
-                      {all ? (d.same > 0 && <span className="block text-[11.5px] text-[var(--up)]">all match</span>) : <>
-                        {extraBt > 0 && <span className="block whitespace-nowrap text-[11.5px] text-[var(--warn)]">+{count(extraBt)} backtest</span>}
-                        {extraDesk > 0 && <span className="block whitespace-nowrap text-[11.5px] text-[var(--warn)]">+{count(extraDesk)} {saved ? 'live' : 'desk'}</span>}
-                      </>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
+            {[{ day: 'all', label: `All ${days.length} day${days.length === 1 ? '' : 's'}`, fate: r.fate, same: t.same, extraBt: t.backtestOnly, extraLive: t.liveOnly, bt: r.money.backtest, real: r.money.real }, ...days.map((d) => ({
+              day: d.day, label: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}`, fate: d.fate, same: d.same, extraBt: d.backtest - d.same, extraLive: d.placed - d.same, bt: d.bt, real: d.real,
+            }))].filter((x, i) => i > 0 || days.length > 1).map((x) => (
+              <tbody key={x.day} aria-label={x.label} className="border-0 border-t border-solid border-[var(--line-soft)]">
+                <tr><th scope="rowgroup" colSpan={7} className="pb-0.5 pt-2 text-left text-[13px] font-semibold normal-case tracking-normal text-foreground">{x.label}</th></tr>
+                <FateRow side={them} fate={x.fate.live} desk={!saved} />
+                <FateRow side="Backtest" fate={x.fate.backtest} desk={false} />
+                <tr>
+                  <td colSpan={7} className="pb-2 pt-0.5 text-[12px] leading-snug">
+                    <span className={cn('font-semibold', x.extraBt === 0 && x.extraLive === 0 && x.same > 0 ? 'text-[var(--up)]' : 'text-foreground')}>Same signal {count(x.same)}</span>
+                    {x.extraBt === 0 && x.extraLive === 0 ? (x.same > 0 ? <span className="text-[var(--up)]"> · all match</span> : null) : <>
+                      {x.extraBt > 0 && <span className="text-[var(--warn)]"> · +{count(x.extraBt)} backtest</span>}
+                      {x.extraLive > 0 && <span className="text-[var(--warn)]"> · +{count(x.extraLive)} {saved ? 'live' : 'desk'}</span>}
+                    </>}
+                    {x.bt.n > 0 && <span className="text-muted-foreground"> · backtest <span className={netClass(x.bt.net)}>{moneyText(x.bt.net)}</span>, won {pct(rate(x.bt), 0)}</span>}
+                    {x.real && x.real.n > 0 && <span className="text-muted-foreground"> · live rules <span className={netClass(x.real.net)}>{moneyText(x.real.net)}</span></span>}
+                  </td>
+                </tr>
+              </tbody>
+            ))}
           </table>
           <p className="m-0 text-[12px] leading-snug text-muted-foreground">
             {saved
