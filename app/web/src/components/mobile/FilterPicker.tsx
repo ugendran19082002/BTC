@@ -32,9 +32,19 @@ export type FilterOption = {
   also?: string;
   /** What it made, in any unit: the In profit and In loss tabs are sorted by it (`split`). */
   value?: number;
+  /** The share of its trades won, 0 to 1; absent with no trade. The Win tab keeps those at or over its line (`split`). */
+  winRate?: number;
 };
 
-type Side = 'all' | 'up' | 'down';
+type Side = 'all' | 'up' | 'down' | 'win';
+
+/** The Win tab's line until it is changed (owner, 14 Oct 2026: "default 30%"). */
+export const WIN_AT_LEAST_PCT = 30;
+
+/** Whole percent, 0 to 100: what the Win tab's box will take. */
+const asPct = (v: number) => Math.min(100, Math.max(0, Math.round(v)));
+/** A share won read against a whole-percent line, so 3 of 10 counts at 30%: at or over, never a float short of it. */
+const wonAtLeast = (o: FilterOption, pct: number) => o.winRate !== undefined && Math.round(o.winRate * 10_000) >= pct * 100;
 
 /** What is being chosen, as the button and the list name it: `{ label: 'Strategy', many: 'strategies' }`. */
 export type FilterNoun = { label: string; many: string };
@@ -75,7 +85,7 @@ export function FilterBar({ children, onClear }: {
   );
 }
 
-export function FilterPicker({ noun, options, picked, onChange, split = false }: {
+export function FilterPicker({ noun, options, picked, onChange, split = false, winAtLeast, onWinAtLeast }: {
   noun: FilterNoun;
   options: readonly FilterOption[];
   /** The keys chosen; empty is every one. */
@@ -87,10 +97,19 @@ export function FilterPicker({ noun, options, picked, onChange, split = false }:
    * each with a tap that chooses every one in it.
    */
   split?: boolean;
+  /**
+   * The Win tab's line, in whole percent (owner, 14 Oct 2026: "all, profit, loss, win -- 30% by default, a % I can
+   * edit; 30 shows 30 and over"). Kept by the caller so it lasts; without it, the picker keeps its own from 30.
+   */
+  winAtLeast?: number;
+  onWinAtLeast?: (pct: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [find, setFind] = useState('');
   const [side, setSide] = useState<Side>('all');
+  const [ownLine, setOwnLine] = useState(WIN_AT_LEAST_PCT);
+  const line = asPct(winAtLeast ?? ownLine);
+  const setLine = (pct: number) => { setOwnLine(asPct(pct)); onWinAtLeast?.(asPct(pct)); };
   if (options.length === 0) return null;
   const chosen = options.filter((o) => picked.includes(o.key)).map((o) => o.key);
   const words = pickedWords(options, picked, noun);
@@ -99,8 +118,16 @@ export function FilterPicker({ noun, options, picked, onChange, split = false }:
   const searchable = options.length >= SEARCH_FROM;
   const wanted = find.trim().toLowerCase();
   const tabs = split && options.some((o) => o.tone);
-  const ofSide = (x: Side) => (x === 'all' ? options : options.filter((o) => o.tone === x)
-    .slice().sort((a, b) => (x === 'up' ? (b.value ?? 0) - (a.value ?? 0) : (a.value ?? 0) - (b.value ?? 0))));
+  const winTab = tabs && options.some((o) => o.winRate !== undefined);
+  const ofSide = (x: Side): FilterOption[] => {
+    if (x === 'all') return [...options];
+    // The most won first; between equals, the one with more trades behind it.
+    if (x === 'win') return options.filter((o) => wonAtLeast(o, line)).sort((a, b) => (b.winRate ?? 0) - (a.winRate ?? 0) || (b.value ?? 0) - (a.value ?? 0));
+    return options.filter((o) => o.tone === x)
+      .sort((a, b) => (x === 'up' ? (b.value ?? 0) - (a.value ?? 0) : (a.value ?? 0) - (b.value ?? 0)));
+  };
+  const sides: Side[] = winTab ? ['all', 'up', 'down', 'win'] : ['all', 'up', 'down'];
+  const sideWords = (x: Side) => (x === 'all' ? 'All' : x === 'up' ? 'In profit' : x === 'down' ? 'In loss' : `Win ≥${line}%`);
   const onSide = tabs ? ofSide(side) : options;
   const shown = searchable && wanted ? onSide.filter((o) => `${o.name} ${o.also ?? ''}`.toLowerCase().includes(wanted)) : onSide;
   const listName = noun.many[0]!.toUpperCase() + noun.many.slice(1);
@@ -140,25 +167,27 @@ export function FilterPicker({ noun, options, picked, onChange, split = false }:
         )}
         {tabs && (
           <div role="group" aria-label={`${listName} by profit and loss`} className="flex shrink-0 gap-1 border-0 border-b border-solid border-[var(--line-soft)] p-1.5">
-            {(['all', 'up', 'down'] as const).map((x) => (
+            {sides.map((x) => (
               <button
                 key={x} type="button" aria-pressed={side === x} onClick={() => setSide(x)}
+                // The name, its count under it: four side by side fit a 360px phone that way (measured, 14 Oct 2026).
                 className={cn(
-                  'm-0 h-9 flex-1 appearance-none whitespace-nowrap rounded-md border-0 px-1.5 font-[inherit] text-[13px] font-semibold',
-                  side === x ? (x === 'up' ? 'bg-[var(--up-bg)] text-[var(--up)]' : x === 'down' ? 'bg-[var(--down-bg)] text-[var(--down)]' : 'bg-muted text-foreground') : 'bg-transparent text-muted-foreground',
+                  'm-0 flex min-h-[44px] min-w-0 flex-1 appearance-none flex-col items-center justify-center rounded-md border-0 px-1 py-1 font-[inherit] text-[12.5px] font-semibold leading-tight',
+                  side === x ? (x === 'up' ? 'bg-[var(--up-bg)] text-[var(--up)]' : x === 'down' ? 'bg-[var(--down-bg)] text-[var(--down)]' : x === 'win' ? 'bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'bg-muted text-foreground') : 'bg-transparent text-muted-foreground',
                 )}
               >
-                {x === 'all' ? 'All' : x === 'up' ? 'In profit' : 'In loss'} <span className="tabular-nums opacity-80">{ofSide(x).length}</span>
+                <span className="whitespace-nowrap">{sideWords(x)}</span> <span className="text-[11.5px] tabular-nums opacity-80">{ofSide(x).length}</span>
               </button>
             ))}
           </div>
         )}
+        {winTab && side === 'win' && <WinLine pct={line} onChange={setLine} />}
         <ul role="listbox" aria-multiselectable="true" aria-label={listName} className="m-0 min-h-0 flex-1 list-none overflow-y-auto p-1">
           {!wanted && side === 'all' && <Row on={chosen.length === 0} name={`All ${noun.many}`} note={`${options.length} in this list`} onClick={() => onChange([])} />}
           {!wanted && side !== 'all' && onSide.length > 0 && (
             <Row
               on={chosen.length === onSide.length && onSide.every((o) => chosen.includes(o.key))}
-              name={`Only the ${onSide.length} ${side === 'up' ? 'in profit' : 'in loss'}`} note={`Choose every ${noun.label.toLowerCase()} on this tab, and no other`}
+              name={`Only the ${onSide.length} ${side === 'up' ? 'in profit' : side === 'down' ? 'in loss' : `that won ${line}% or more`}`} note={`Choose every ${noun.label.toLowerCase()} on this tab, and no other`}
               onClick={() => onChange(onSide.map((o) => o.key))}
             />
           )}
@@ -167,7 +196,9 @@ export function FilterPicker({ noun, options, picked, onChange, split = false }:
           ))}
           {shown.length === 0 && (
             <li className="m-0 px-2 py-3 text-[13px] text-muted-foreground">
-              {wanted ? `No ${noun.label.toLowerCase()} matches “${find.trim()}”.` : `No ${noun.label.toLowerCase()} is ${side === 'up' ? 'in profit' : 'in loss'} here.`}
+              {wanted ? `No ${noun.label.toLowerCase()} matches “${find.trim()}”.`
+                : side === 'win' ? `No ${noun.label.toLowerCase()} won ${line}% or more here. Lower the line above.`
+                : `No ${noun.label.toLowerCase()} is ${side === 'up' ? 'in profit' : 'in loss'} here.`}
             </li>
           )}
         </ul>
@@ -187,6 +218,38 @@ export function FilterPicker({ noun, options, picked, onChange, split = false }:
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * The Win tab's line: a whole percent typed in, or stepped five at a time. What is typed is kept as typed while it is
+ * being typed -- an empty box is not 0 -- and the list follows each whole number as it lands.
+ */
+function WinLine({ pct, onChange }: { pct: number; onChange: (pct: number) => void }) {
+  const [text, setText] = useState(String(pct));
+  const step = (by: number) => { const next = asPct(pct + by); setText(String(next)); onChange(next); };
+  const stepper = 'm-0 grid h-10 w-10 shrink-0 appearance-none place-items-center rounded-md border border-solid border-border bg-transparent font-[inherit] text-[18px] font-semibold text-foreground disabled:opacity-40';
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-0 border-b border-solid border-[var(--line-soft)] px-2 py-1.5">
+      <label htmlFor="win-at-least" className="min-w-0 flex-1 text-[13px] text-muted-foreground">Won at least</label>
+      <button type="button" aria-label="Five less" disabled={pct <= 0} onClick={() => step(-5)} className={stepper}>−</button>
+      <span className="relative">
+        <input
+          id="win-at-least" aria-label="Win rate at least, percent" value={text}
+          inputMode="numeric" autoComplete="off" maxLength={3}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^0-9]/g, '');
+            setText(raw);
+            if (raw !== '') onChange(asPct(Number(raw)));
+          }}
+          onBlur={() => setText(String(pct))}
+          // 16px: a smaller font makes iOS zoom the whole page when the box is tapped.
+          className="m-0 h-10 w-[4.5rem] appearance-none rounded-md border border-solid border-border bg-background pl-2 pr-6 text-right font-[inherit] text-[16px] tabular-nums text-foreground outline-none"
+        />
+        <span aria-hidden className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[14px] text-muted-foreground">%</span>
+      </span>
+      <button type="button" aria-label="Five more" disabled={pct >= 100} onClick={() => step(5)} className={stepper}>+</button>
+    </div>
   );
 }
 

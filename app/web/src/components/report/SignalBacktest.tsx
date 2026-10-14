@@ -9,7 +9,7 @@ import { time12 } from '@/lib/time';
 import type { BacktestParams, BacktestQuery, BacktestSave, BoardGrain, BtExit, BtRow, SavedQuery } from '@/types/signal-backtest';
 import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
-import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
+import { FilterBar, FilterPicker, METHODS, STRATEGIES, WIN_AT_LEAST_PCT } from '@/components/mobile/FilterPicker';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
@@ -567,6 +567,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [stored, setParams] = usePersisted<BacktestParams>('signalBacktest.params', DEFAULTS);
   const [tfs, setTfs] = usePersisted<string[]>('signalBacktest.tfs', []);
   const [methods, setMethods] = usePersisted<string[]>('signalBacktest.methods', []);
+  // The methods dropdown's Win tab line, kept on this browser like the rest of the filters (default 30%).
+  const [winAtLeast, setWinAtLeast] = usePersisted<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
   const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('signalBacktest.grouping', 'family');
   // A saved strategy to backtest by (owner, 13 Oct 2026); null is the settings below.
   const [strategyId, setStrategyId] = usePersisted<string | null>('signalBacktest.strategy', null);
@@ -817,9 +819,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 }))} />
             )}
             <FilterPicker noun={METHODS} picked={methods} onChange={pickMethods} split
-              // Each method with what it made as options (owner, 13 Oct 2026: "show the methods' profit and loss").
+              winAtLeast={typeof winAtLeast === 'number' ? winAtLeast : WIN_AT_LEAST_PCT} onWinAtLeast={setWinAtLeast}
+              // Each method with what it made as options (owner, 13 Oct 2026: "show the methods' profit and loss"),
+              // and how often it won, for the Win tab (14 Oct 2026).
               options={r.choices.methods.map((m) => ({
                 key: m.key, name: m.name, tone: m.net > 0 ? 'up' as const : m.net < 0 ? 'down' as const : undefined, value: m.net,
+                winRate: m.n > 0 ? m.wins / m.n : undefined,
                 note: m.n > 0 ? `${count(m.n)} trades · ${pct(m.wins / m.n, 0)} won · ${moneyText(m.net)}` : 'no trade',
               }))} />
           </FilterBar>
