@@ -184,7 +184,7 @@ describe('profit and loss tabs', () => {
     render(<Host />);
     fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
     const tabs = within(screen.getByRole('group', { name: 'Methods by profit and loss' }));
-    expect(tabs.getAllByRole('button').map((b) => b.textContent)).toEqual(['All 5', 'In profit 2', 'In loss 2']);
+    expect(tabs.getAllByRole('button').map((b) => b.textContent)).toEqual(['All 5', 'In profit 2', 'In loss 2']);   // no win rates: no Win tab
     expect(names().length).toBe(6);                                   // "All methods" and the five
     fireEvent.click(tabs.getByRole('button', { name: /In profit/ }));
     expect(names().slice(1).map((t) => t.slice(0, 8))).toEqual(['#3 Sweep', '#1 Break']);
@@ -210,5 +210,73 @@ describe('profit and loss tabs', () => {
     render(<FilterPicker noun={METHODS} options={[{ key: 'x', name: 'X' }, { key: 'y', name: 'Y' }]} picked={[]} onChange={() => {}} split />);
     fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
     expect(screen.queryByRole('group', { name: 'Methods by profit and loss' })).not.toBeInTheDocument();
+  });
+});
+
+describe('the Win tab: won at least a line, 30% to begin with', () => {
+  // 3 of 10 is 30% exactly, 1 of 4 is 25%, 2 of 3 is 67%; one with no trade has no rate at all.
+  const options: FilterOption[] = [
+    { key: 'a', name: '#1 Breakout', tone: 'up', value: 265, winRate: 3 / 10 },
+    { key: 'b', name: '#2 Retest', tone: 'down', value: -40, winRate: 1 / 4 },
+    { key: 'c', name: '#3 Sweep', tone: 'up', value: 900, winRate: 2 / 3 },
+    { key: 'd', name: '#4 FVG', tone: 'down', value: -310, winRate: 0.5 },
+    { key: 'e', name: '#5 Order block' },
+  ];
+  function Host({ line }: { line?: number }) {
+    const [picked, setPicked] = useState<string[]>([]);
+    const [pct, setPct] = useState(line);
+    return (
+      <>
+        <FilterPicker noun={METHODS} options={options} picked={picked} onChange={setPicked} split
+          winAtLeast={pct} onWinAtLeast={line === undefined ? undefined : setPct} />
+        <output aria-label="kept line">{pct ?? ''}</output>
+      </>
+    );
+  }
+  const open = () => {
+    fireEvent.click(screen.getByRole('button', { name: /Method filter/ }));
+    return within(screen.getByRole('group', { name: 'Methods by profit and loss' }));
+  };
+  const names = () => within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent ?? '');
+
+  it('[critical] 30% by default, at or over it -- 3 of 10 counts -- the most won first', () => {
+    render(<Host />);
+    const tabs = open();
+    expect(tabs.getAllByRole('button').map((b) => b.textContent)).toEqual(['All 5', 'In profit 2', 'In loss 2', 'Win ≥30% 3']);
+    fireEvent.click(tabs.getByRole('button', { name: /Win/ }));
+    expect(screen.getByRole('textbox', { name: 'Win rate at least, percent' })).toHaveValue('30');
+    expect(names().slice(1).map((t) => t.slice(0, 6))).toEqual(['#3 Swe', '#4 FVG', '#1 Bre']);
+    expect(names()[0]).toContain('Only the 3 that won 30% or more');
+  });
+
+  it('[critical] the line is typed: 50 keeps 50% and over, and is handed back to be kept', () => {
+    render(<Host line={30} />);
+    fireEvent.click(open().getByRole('button', { name: /Win/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Win rate at least, percent' }), { target: { value: '50' } });
+    expect(names().slice(1).map((t) => t.slice(0, 6))).toEqual(['#3 Swe', '#4 FVG']);
+    expect(screen.getByRole('button', { name: /Win ≥50%/ })).toBeInTheDocument();
+    expect(screen.getByLabelText('kept line')).toHaveTextContent('50');
+    // an empty box while typing is not 0%: the list holds until a number lands
+    fireEvent.change(screen.getByRole('textbox', { name: 'Win rate at least, percent' }), { target: { value: '' } });
+    expect(names().slice(1).length).toBe(2);
+    // and nothing over 100, nothing but digits
+    fireEvent.change(screen.getByRole('textbox', { name: 'Win rate at least, percent' }), { target: { value: '150' } });
+    expect(screen.getByLabelText('kept line')).toHaveTextContent('100');
+  });
+
+  it('steps five at a time; one tap chooses every method on the tab', () => {
+    render(<Host line={30} />);
+    fireEvent.click(open().getByRole('button', { name: /Win/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Five less' }));
+    expect(screen.getByRole('textbox', { name: 'Win rate at least, percent' })).toHaveValue('25');
+    expect(names().slice(1).length).toBe(4);
+    fireEvent.click(screen.getByText('Only the 4 that won 25% or more'));
+    expect(screen.getByRole('button', { name: 'Method filter: 4 of 5 methods' })).toBeInTheDocument();
+  });
+
+  it('a line nothing reaches says so, and how to widen it', () => {
+    render(<Host line={90} />);
+    fireEvent.click(open().getByRole('button', { name: /Win/ }));
+    expect(screen.getByText('No method won 90% or more here. Lower the line above.')).toBeInTheDocument();
   });
 });

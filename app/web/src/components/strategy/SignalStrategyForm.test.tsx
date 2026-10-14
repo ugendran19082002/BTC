@@ -184,43 +184,36 @@ describe('picking the methods', () => {
     expect(screen.getByText(/0 of 4 picked/)).toBeInTheDocument();
   });
 
-  it('[critical] by win rate: 50 / 75 / 90% or a custom number, each with its count, over at least the trades set, on top of the other filters (10 Oct 2026)', async () => {
+  it('[critical] Win: the Backtest\'s own win filter -- 30% to begin with, at or over, a number typed or stepped, on top of the other filters (14 Oct 2026)', async () => {
     show(signalStrategy({ methods: [] }));
     tab('Signals');
     await screen.findByRole('checkbox', { name: '#1 Breakout' });
-    const winRow = () => within(screen.getByRole('group', { name: 'methods by win rate' }));
+    const results = () => within(screen.getByRole('group', { name: 'methods by result' }));
     const listed = () => screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'));
-    // With the chain: breakout 8 of 12 (67%), the sweep 3 of 3 (100%, but 3 trades), BOS 2 of 9 (22%), order flow none.
-    await waitFor(() => expect(winRow().getByRole('button', { name: 'Win rate 50% or more' })).toHaveTextContent('50%+ 1'));
-    expect(winRow().getByRole('button', { name: /^Any/ })).toHaveTextContent('Any 4');
-    expect(winRow().getByRole('button', { name: 'Win rate 75% or more' })).toHaveTextContent('75%+ 0');
-    fireEvent.click(winRow().getByRole('button', { name: 'Win rate 50% or more' }));
-    expect(listed()).toEqual(['#1 Breakout']);
-    expect(screen.getByText(/Won 50% or more of their trades, over at least 5 trades/)).toBeInTheDocument();
-    // Fewer trades asked for: the sweep's 3 of 3 now counts.
-    fireEvent.click(screen.getByRole('button', { name: '3', pressed: false }));
-    expect(winRow().getByRole('button', { name: 'Win rate 90% or more' })).toHaveTextContent('90%+ 1');
-    fireEvent.click(winRow().getByRole('button', { name: 'Win rate 90% or more' }));
-    expect(listed()).toEqual(['#3 Liquidity sweep']);
-    // A number of one's own: Custom opens at 60%, and takes any 1 to 100.
-    fireEvent.click(winRow().getByRole('button', { name: /^Custom/ }));
-    const own = screen.getByLabelText('least win rate, percent');
-    expect(own).toHaveValue('60');
+    // With the chain: breakout 8 of 12 (67%), the sweep 3 of 3 (100%), BOS 2 of 9 (22%), order flow none.
+    // No hidden minimum of trades: the sweep's three count, as they do on the Backtest.
+    await waitFor(() => expect(results().getByRole('button', { name: /^Win/ })).toHaveTextContent('Win ≥30% 2'));
+    fireEvent.click(results().getByRole('button', { name: /^Win/ }));
+    const box = screen.getByRole('textbox', { name: 'Win rate at least, percent' });
+    expect(box).toHaveValue('30');
     expect(listed()).toEqual(['#1 Breakout', '#3 Liquidity sweep']);
-    fireEvent.change(own, { target: { value: '20' } });
+    expect(screen.getByText(/Won 30% or more of their trades, as on the Backtest/)).toBeInTheDocument();
+    // 22 keeps 22% and over: BOS's 2 of 9 is 22.2%
+    fireEvent.change(box, { target: { value: '22' } });
     expect(listed()).toEqual(['#1 Breakout', '#3 Liquidity sweep', '#6 BOS']);
-    // On top of the record filter: the losing ones that still won 20%+.
-    fireEvent.click(within(screen.getByRole('group', { name: 'methods by result' })).getByRole('button', { name: /^Loss/ }));
-    expect(listed()).toEqual(['#6 BOS']);
+    expect(results().getByRole('button', { name: /^Win/ })).toHaveTextContent('Win ≥22% 3');
+    // five at a time; 70 leaves the sweep alone
+    fireEvent.change(box, { target: { value: '65' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Five more' }));
+    expect(screen.getByRole('textbox', { name: 'Win rate at least, percent' })).toHaveValue('70');
+    expect(listed()).toEqual(['#3 Liquidity sweep']);
     fireEvent.click(screen.getByRole('button', { name: /Pick all shown \(1\)/ }));
-    expect(screen.getByRole('checkbox', { name: '#6 BOS' })).toBeChecked();
-    // Any again: every method back, whatever its record.
-    fireEvent.click(within(screen.getByRole('group', { name: 'methods by result' })).getByRole('button', { name: /^All/ }));
-    fireEvent.click(winRow().getByRole('button', { name: /^Any/ }));
+    expect(screen.getByRole('checkbox', { name: '#3 Liquidity sweep' })).toBeChecked();
+    // Back to All: every method, and the box goes away. Put back as the tests after this one expect it.
+    fireEvent.change(screen.getByRole('textbox', { name: 'Win rate at least, percent' }), { target: { value: '30' } });
+    fireEvent.click(results().getByRole('button', { name: /^All/ }));
     expect(listed()).toHaveLength(4);
-    expect(screen.queryByLabelText('least win rate, percent')).not.toBeInTheDocument();
-    // Remembered in this browser: put back as the tests after this one expect it.
-    fireEvent.click(screen.getByRole('button', { name: '5', pressed: false }));
+    expect(screen.queryByRole('textbox', { name: 'Win rate at least, percent' })).not.toBeInTheDocument();
   });
 
   it('[critical] copy the methods of another strategy of the account: they replace the pick, are saved, and can be undone (9 Oct 2026)', async () => {
@@ -481,7 +474,7 @@ describe('the method list: profitable by a rule you can see, and filtered by res
     show(signalStrategy({ methods: [] }));
     tab('Signals');
     const by = await screen.findByRole('group', { name: 'methods by result' });
-    await waitFor(() => expect(within(by).getAllByRole('button').map((b) => b.textContent)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1']));
+    await waitFor(() => expect(within(by).getAllByRole('button').map((b) => b.textContent)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1', 'Win ≥30% 2']));
     fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
     expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))).toEqual(['#6 BOS']);
     fireEvent.click(within(by).getByRole('button', { name: /^Profit/ }));

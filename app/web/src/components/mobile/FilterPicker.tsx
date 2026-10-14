@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, Search, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { asPct, WIN_AT_LEAST_PCT, wonAtLeast } from '@/lib/win-line';
 
 /**
  * The phone's tick-several filter (owner, 8 Oct 2026: "strategy select option, multiple select dropdown, mobile
@@ -38,13 +39,7 @@ export type FilterOption = {
 
 type Side = 'all' | 'up' | 'down' | 'win';
 
-/** The Win tab's line until it is changed (owner, 14 Oct 2026: "default 30%"). */
-export const WIN_AT_LEAST_PCT = 30;
 
-/** Whole percent, 0 to 100: what the Win tab's box will take. */
-const asPct = (v: number) => Math.min(100, Math.max(0, Math.round(v)));
-/** A share won read against a whole-percent line, so 3 of 10 counts at 30%: at or over, never a float short of it. */
-const wonAtLeast = (o: FilterOption, pct: number) => o.winRate !== undefined && Math.round(o.winRate * 10_000) >= pct * 100;
 
 /** What is being chosen, as the button and the list name it: `{ label: 'Strategy', many: 'strategies' }`. */
 export type FilterNoun = { label: string; many: string };
@@ -122,7 +117,7 @@ export function FilterPicker({ noun, options, picked, onChange, split = false, w
   const ofSide = (x: Side): FilterOption[] => {
     if (x === 'all') return [...options];
     // The most won first; between equals, the one with more trades behind it.
-    if (x === 'win') return options.filter((o) => wonAtLeast(o, line)).sort((a, b) => (b.winRate ?? 0) - (a.winRate ?? 0) || (b.value ?? 0) - (a.value ?? 0));
+    if (x === 'win') return options.filter((o) => wonAtLeast(o.winRate, line)).sort((a, b) => (b.winRate ?? 0) - (a.winRate ?? 0) || (b.value ?? 0) - (a.value ?? 0));
     return options.filter((o) => o.tone === x)
       .sort((a, b) => (x === 'up' ? (b.value ?? 0) - (a.value ?? 0) : (a.value ?? 0) - (b.value ?? 0)));
   };
@@ -225,17 +220,18 @@ export function FilterPicker({ noun, options, picked, onChange, split = false, w
  * The Win tab's line: a whole percent typed in, or stepped five at a time. What is typed is kept as typed while it is
  * being typed -- an empty box is not 0 -- and the list follows each whole number as it lands.
  */
-function WinLine({ pct, onChange }: { pct: number; onChange: (pct: number) => void }) {
+export function WinLine({ pct, onChange, className }: { pct: number; onChange: (pct: number) => void; className?: string }) {
   const [text, setText] = useState(String(pct));
+  const id = useId();
   const step = (by: number) => { const next = asPct(pct + by); setText(String(next)); onChange(next); };
   const stepper = 'm-0 grid h-10 w-10 shrink-0 appearance-none place-items-center rounded-md border border-solid border-border bg-transparent font-[inherit] text-[18px] font-semibold text-foreground disabled:opacity-40';
   return (
-    <div className="flex shrink-0 items-center gap-2 border-0 border-b border-solid border-[var(--line-soft)] px-2 py-1.5">
-      <label htmlFor="win-at-least" className="min-w-0 flex-1 text-[13px] text-muted-foreground">Won at least</label>
+    <div className={className ?? 'flex shrink-0 items-center gap-2 border-0 border-b border-solid border-[var(--line-soft)] px-2 py-1.5'}>
+      <label htmlFor={id} className="min-w-0 flex-1 text-[13px] text-muted-foreground">Won at least</label>
       <button type="button" aria-label="Five less" disabled={pct <= 0} onClick={() => step(-5)} className={stepper}>−</button>
       <span className="relative">
         <input
-          id="win-at-least" aria-label="Win rate at least, percent" value={text}
+          id={id} aria-label="Win rate at least, percent" value={text}
           inputMode="numeric" autoComplete="off" maxLength={3}
           onChange={(e) => {
             const raw = e.target.value.replace(/[^0-9]/g, '');

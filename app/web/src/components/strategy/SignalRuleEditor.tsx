@@ -11,6 +11,8 @@ import type { Strategy } from '@/types/strategy';
 import type { OptionRecordState } from '@/components/strategy/useOptionRecord';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
+import { WIN_AT_LEAST_PCT, asPct, wonAtLeast } from '@/lib/win-line';
+import { WinLine } from '@/components/mobile/FilterPicker';
 
 /**
  * Which signals a signal strategy takes: the way (with the timeframe chain, or
@@ -52,7 +54,7 @@ export type RecordBasis = 'options' | 'screen' | 'perp';
 /** A method's record in its basis's own unit: dollars after charges as options, BTC points on the perp. */
 export type MethodRecord = { trades: number; wins: number; winPct: number | null; net: number };
 
-type ResultFilter = 'all' | 'profit' | 'loss' | 'none';
+type ResultFilter = 'all' | 'profit' | 'loss' | 'none' | 'win';
 const RESULTS: { id: ResultFilter; label: string; tone: string; test: (r: MethodRecord | undefined) => boolean }[] = [
   { id: 'all', label: 'All', tone: '', test: () => true },
   { id: 'profit', label: 'Profit', tone: 'text-[var(--up)]', test: (r) => Boolean(r && r.trades > 0 && r.net > 0) },
@@ -61,18 +63,12 @@ const RESULTS: { id: ResultFilter; label: string; tone: string; test: (r: Method
 ];
 
 /**
- * By win rate (owner, 10 Oct 2026: "win % 50, 75, 90, custom %"): at least this share of its trades won, over at
- * least the same number of trades "profitable" asks for -- a 100% on one trade is luck, not a record. 0 is any.
+ * Won at least a line (owner, 14 Oct 2026: "the Backtest methods' win filter, copied here -- the one here is wrong"):
+ * the same rule and the same box as the Backtest's methods dropdown (`lib/win-line`), 30% to begin with, at or over.
+ * It replaced 50 / 75 / 90 / Custom over the "profitable" minimum of trades, which counted differently from the
+ * Backtest and started at Any.
  */
-const WIN_PRESETS = [50, 75, 90] as const;
-type Won = Pick<MethodRecord, 'trades' | 'wins' | 'winPct'>;
-export const winPctOf = (r: Won | undefined): number | null =>
-  (r && r.trades > 0 ? (r.winPct ?? (r.wins / r.trades) * 100) : null);
-export const winsAtLeast = (r: Won | undefined, pct: number, minTrades: number): boolean => {
-  if (!(pct > 0)) return true;
-  const w = winPctOf(r);
-  return w !== null && r!.trades >= minTrades && w >= pct;
-};
+const winShare = (r: Pick<MethodRecord, 'trades' | 'wins'> | undefined): number | null => (r && r.trades > 0 ? r.wins / r.trades : null);
 
 /** By the method's order side in the owner's list (5 Oct 2026): both, the BUY ones, the SELL ones. */
 type SideFilter = 'both' | 'BUY' | 'SELL';
@@ -239,21 +235,24 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
     return methods.filter((m) => (group === 'all' || m.group === group)
       && (!q || String(m.n) === q || m.name.toLowerCase().includes(q) || m.summary.toLowerCase().includes(q)));
   }, [methods, query, group]);
-  const resultTab = RESULTS.find((x) => x.id === result) ?? RESULTS[0]!;
+  // The Win tab's line, kept in this browser like the rest (`lib/win-line`).
+  const [winAtLeast, setWinAtLeast] = usePersisted<number>('signal-rule:win-at-least', WIN_AT_LEAST_PCT);
+  const line = asPct(typeof winAtLeast === 'number' ? winAtLeast : WIN_AT_LEAST_PCT);
+  const tabs = [...RESULTS, {
+    id: 'win' as const, label: `Win ≥${line}%`, tone: 'text-[var(--up)]',
+    test: (r: MethodRecord | undefined) => wonAtLeast(winShare(r), line),
+  }];
+  const resultTab = tabs.find((x) => x.id === result) ?? tabs[0]!;
   // How many trades a record needs before "profitable" -- or a win rate -- means anything; kept in this browser.
   const [minTrades, setMinTrades] = usePersisted<number>('signal-rule:min-trades', MIN_TRADES_FOR_RECORD);
   const minT = Math.max(1, Math.trunc(minTrades) || 1);
-  // The least win rate, 0 = any; a number that is not one of the quick picks is a custom one.
-  const [winMin, setWinMin] = usePersisted<number>('signal-rule:win-min', 0);
-  const win = Math.min(100, Math.max(0, Math.round(Number(winMin)) || 0));
-  const [customWin, setCustomWin] = useState(() => win > 0 && !(WIN_PRESETS as readonly number[]).includes(win));
-  const passes = (m: EntryMethodInfo, o: { side?: SideFilter; result?: (typeof RESULTS)[number]; win?: number } = {}) => {
+  const passes = (m: EntryMethodInfo, o: { side?: SideFilter; result?: (typeof tabs)[number] } = {}) => {
     const rec = recordOf.get(m.id);
-    return onSide(m, o.side ?? side) && (o.result ?? resultTab).test(rec) && winsAtLeast(rec, o.win ?? win, minT);
+    return onSide(m, o.side ?? side) && (o.result ?? resultTab).test(rec);
   };
   const shown = useMemo(() => searched.filter((m) => passes(m)),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-    [searched, resultTab, recordOf, side, win, minT]);
+    [searched, resultTab, recordOf, side, line]);
   const picked = new Set(rule.methods);
   // Only the methods the desk still has: a strategy saved before one was retired would carry an id the save refuses.
   const known = new Set(methods.map((m) => m.id));
@@ -503,45 +502,21 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
         )}
         {/* By record, with counts: the profitable ones, the losing ones, the ones with nothing yet. */}
         <div role="group" aria-label="methods by result" className="mt-1.5 flex flex-wrap gap-1">
-          {RESULTS.map((x) => (
+          {tabs.map((x) => (
             <button key={x.id} type="button" aria-pressed={resultTab.id === x.id} onClick={() => setResult(x.id)} className={chip(resultTab.id === x.id)}>
               <span className={x.tone}>{x.label}</span>{' '}
               <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => passes(m, { result: x })).length}</span>
             </button>
           ))}
         </div>
-        {/*
-          By win rate, under the record (owner, 10 Oct 2026): any, 50 / 75 / 90% or more, or a number of one's own --
-          each with how many it leaves, on top of the other filters, over at least the trades set below.
-        */}
-        <div role="group" aria-label="methods by win rate" className="mt-1.5 flex flex-wrap items-center gap-1">
-          <span className="mr-1 text-[11.5px] text-muted-foreground">Win rate</span>
-          <button type="button" aria-pressed={win === 0 && !customWin} onClick={() => { setCustomWin(false); setWinMin(0); }} className={chip(win === 0 && !customWin)}>
-            Any <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => passes(m, { win: 0 })).length}</span>
-          </button>
-          {WIN_PRESETS.map((n) => {
-            const on = !customWin && win === n;
-            return (
-              <button key={n} type="button" aria-pressed={on} aria-label={`Win rate ${n}% or more`} onClick={() => { setCustomWin(false); setWinMin(n); }} className={chip(on)}>
-                <span className="text-[var(--up)]">{n}%+</span> <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => passes(m, { win: n })).length}</span>
-              </button>
-            );
-          })}
-          <button type="button" aria-pressed={customWin} onClick={() => { setCustomWin(true); if ((WIN_PRESETS as readonly number[]).includes(win) || win === 0) setWinMin(60); }} className={chip(customWin)}>
-            Custom{customWin && win > 0 ? <> <span className="tabular-nums text-[var(--dim)]">{shown.length}</span></> : null}
-          </button>
-          {customWin && (
-            <span className="flex items-center gap-1">
-              <Input value={String(win)} aria-label="least win rate, percent" inputMode="numeric" className="h-8 w-14 px-1.5 text-center text-[12px]"
-                     onChange={(e) => setWinMin(Math.min(100, Math.max(0, Math.trunc(Number(e.target.value)) || 0)))} />
-              <span className="text-[11.5px] text-muted-foreground">% or more</span>
-            </span>
-          )}
-        </div>
-        {win > 0 && (
-          <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
-            Won {win}% or more of their trades, over at least {minT} trade{minT === 1 ? '' : 's'} (set below) — a method with fewer, or none, is not shown.
-          </p>
+        {/* The Win tab's line, under the tabs while it is the one chosen: typed, or five at a time. */}
+        {resultTab.id === 'win' && (
+          <>
+            <WinLine pct={line} onChange={setWinAtLeast} className="mt-1.5 flex max-w-[22rem] items-center gap-2" />
+            <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
+              Won {line}% or more of their trades, as on the Backtest&apos;s Method list. A method with no trade is not shown.
+            </p>
+          </>
         )}
         {/* By order side, under the record: the methods marked BUY, the ones marked SELL, or both. */}
         <div role="group" aria-label="methods by order side" className="mt-1.5 flex flex-wrap items-center gap-1">
