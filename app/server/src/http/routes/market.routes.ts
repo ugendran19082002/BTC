@@ -48,6 +48,24 @@ const NO_FILTERS: ReportFilters = { account: null, tfs: null, methods: null, str
  * 10 to 500 dollars), `?lots=` (1 to 1,000), `?tp=` and `?sl=` (the option's own target and stop as shares of the
  * premium; 0 is none), `?window=desk|all`. Absent ones are the defaults.
  */
+/**
+ * Each trading account's signal strategies that sell, with its limit on open trades as it stands: the desk's side
+ * of a live check (`liveCheckHere`), which works an account's strategies together under that limit.
+ */
+export async function liveAccounts(): Promise<{ id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number } | null; strategies: Strategy[] }[]> {
+  const every = (await strategyStore().all().catch(() => [])).filter(backtestable);
+  const svc = tradingService();
+  const nameOf = (id: number | null) => { try { return id == null ? null : brokerAccounts().get(id)?.name ?? null; } catch { return null; } };
+  return [...new Set(every.map((s) => s.accountId ?? null))].map((id) => {
+    const max = globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, id));
+    return {
+      id, name: nameOf(id),
+      caps: max > 0 ? { deskMax: max, cePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, id)), pePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, id)) } : null,
+      strategies: every.filter((s) => (s.accountId ?? null) === id),
+    };
+  });
+}
+
 export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | string {
   const num = (name: string, fallback: number) => (q[name] === undefined || q[name] === '' ? fallback : Number(q[name]));
   const rule = q.rule === undefined || q.rule === '' ? DEFAULT_PARAMS.rule : q.rule;
@@ -176,28 +194,32 @@ export function registerMarketRoutes(app: FastifyInstance) {
    * The backtest against the live desk, signal for signal (owner, 14 Oct 2026: "the real trades since 9:30 last
    * night and the backtest's do not match in number"): every signal strategy that sells, backtested by its own
    * rules -- an account's strategies together under that account's limit, as the desk holds them -- and laid
-   * beside the desk's record of what it did with the same signals. For `?from=&to=` (expiry days, today's alone
-   * to begin with) and, with `?account=`, one trading account. Read-only.
+   * beside the desk's record of what it did with the same signals. Asked as the single backtest is, so it is the
+   * check of what is on the screen: `?strategy=<id>`, that strategy's own rules against its own record; else the
+   * screen's settings and filters, as one book, against what the desk did with each signal under any strategy;
+   * `?all=1`, every strategy by its own rules. `?from=&to=` are expiry days. Read-only.
    */
   app.get('/api/signal-backtest/live-check', async (req, reply) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const r = rangeOf(q);
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
-    const only = q.account === undefined || q.account === '' ? null : Number(q.account);
-    if (only !== null && !(Number.isInteger(only) && only > 0)) return refuse(reply, 400, { error: 'The account is its number: ?account=1.' });
-    const every = (await strategyStore().all().catch(() => [])).filter(backtestable);
-    const svc = tradingService();
-    const nameOf = (id: number | null) => { try { return id == null ? null : brokerAccounts().get(id)?.name ?? null; } catch { return null; } };
-    const ids = [...new Set(every.map((s) => s.accountId ?? null))].filter((id) => only === null || id === only);
-    const accounts = ids.map((id) => {
-      const max = globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, id));
-      return {
-        id, name: nameOf(id),
-        caps: max > 0 ? { deskMax: max, cePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, id)), pePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, id)) } : null,
-        strategies: every.filter((s) => (s.accountId ?? null) === id),
-      };
+    const accounts = await liveAccounts();
+    const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
+    const base = { ...r, now: Date.now(), spot: tradingService().spot, accounts };
+    // By a strategy: its own rules against its own record, worked with its account's other strategies as the desk holds them.
+    if (askedId !== null) {
+      if (!accounts.some((a) => a.strategies.some((s) => s.id === askedId))) return refuse(reply, 404, { error: 'No such signal strategy to check: it may have been deleted, or it buys rather than sells.' });
+      return liveCheck({ ...base, only: [askedId] });
+    }
+    // Every strategy's own rules: asked for with nothing else.
+    if (q.all === '1') return liveCheck(base);
+    // The settings on the screen, as the single backtest reads them: one book, against what the desk did under any strategy.
+    const params = backtestParamsOf(q);
+    if (typeof params === 'string') return refuse(reply, 400, { error: params });
+    return liveCheck({
+      ...base,
+      portfolio: { name: 'these settings', shared: (params.deskMax ?? 0) > 0 ? { deskMax: params.deskMax!, cePct: params.cePct ?? 100, pePct: params.pePct ?? 100 } : null, members: [{ id: 'screen', name: 'These settings', ask: { params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy: null } }] },
     });
-    return liveCheck({ ...r, now: Date.now(), accounts });
   });
 
   /**

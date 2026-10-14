@@ -4,8 +4,8 @@ import {
   PORTFOLIO_MEMBERS_MAX, dropPortfolio, dropSave, keepPortfolio, keepSave, listSaves, nameProblem, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
 import { backtestable, type BacktestParams } from '../../report/signal-backtest.js';
-import { portfolioBacktest } from '../../report/backtest-run.js';
-import { backtestParamsFrom, backtestParamsOf, rangeOf } from './market.routes.js';
+import { liveCheck, portfolioBacktest } from '../../report/backtest-run.js';
+import { backtestParamsFrom, backtestParamsOf, liveAccounts, rangeOf } from './market.routes.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 
@@ -24,6 +24,95 @@ function savedQueryOf(raw: unknown): SavedQuery | string {
   const params = backtestParamsFrom(q.params);
   if (typeof params === 'string') return params;
   return { params, tfs: keys(q.tfs, 20), methods: keys(q.methods, 200), strategy: typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null };
+}
+
+/**
+ * A run together as it is asked for in a query: the days, the saved backtests, whose limit, and the hours and the
+ * settings put over the run. Read in one place because two things are asked with it -- the run itself, and the
+ * same run laid beside the live desk (`/api/backtest-portfolio/live-check`) -- and they must mean the same run.
+ * Or why it cannot be meant, with the status to refuse it by.
+ */
+async function portfolioQuery(q: Record<string, unknown>) {
+    const r = rangeOf(q);
+    if (typeof r === 'string') return { code: 400, error: r };
+    const ids = keys(typeof q.ids === 'string' ? q.ids.split(',') : [], PORTFOLIO_MEMBERS_MAX + 1);
+    if (ids.length === 0) return { code: 400, error: 'Which saved backtests: ?ids=a,b.' };
+    if (ids.length > PORTFOLIO_MEMBERS_MAX) return { code: 400, error: `At most ${PORTFOLIO_MEMBERS_MAX} saved backtests at once.` };
+    const saves = await savesByIds(ids);
+    if (saves.length !== ids.length) return { code: 404, error: 'One of those saved backtests is gone: it may have been deleted.' };
+    const strategies = (await strategyStore().all().catch(() => [])).filter(backtestable);
+    if (q.limit !== undefined && q.limit !== '' && q.limit !== 'shared' && q.limit !== 'own') return { code: 400, error: 'The limit is "shared" (one account) or "own" (each its own).' };
+    let shared: { deskMax: number; cePct: number; pePct: number } | null = null;
+    if (q.limit !== 'own') {
+      const num = (v: unknown) => (v === undefined || v === '' ? null : Number(v));
+      const max = num(q.max), ce = num(q.ce), pe = num(q.pe);
+      if (max !== null) {
+        if (!Number.isInteger(max) || max < 1 || max > 500) return { code: 400, error: 'At most open is a whole number from 1 to 500.' };
+        if ((ce !== null && !(ce >= 1 && ce <= 100)) || (pe !== null && !(pe >= 1 && pe <= 100))) return { code: 400, error: 'CE max and PE max are from 1% to 100%.' };
+        shared = { deskMax: max, cePct: ce ?? 100, pePct: pe ?? 100 };
+      } else {
+        // The account's limit as the saved backtests themselves carry it: the largest of them.
+        const top = saves.map((s) => s.query.params).filter((p) => (p.deskMax ?? 0) > 0).sort((a, b) => (b.deskMax ?? 0) - (a.deskMax ?? 0))[0];
+        if (top) shared = { deskMax: top.deskMax!, cePct: top.cePct ?? 100, pePct: top.pePct ?? 100 };
+      }
+    }
+    /*
+     * The hours, for the run (owner, 13 Oct 2026: the single backtest's hours choice, "wanted in the portfolio
+     * section"): `?hours=saved` -- each as it was saved, the default -- or `desk`, `all` or `custom` with
+     * `hfrom` / `hto`, put over every member worked by settings for this run only; nothing saved is changed.
+     * A member worked by a strategy keeps that strategy's own days and hours, as it does alone: `hours.own`
+     * names them, so the screen can say which were not moved.
+     */
+    const hoursAsk = q.hours === undefined || q.hours === '' ? 'saved' : q.hours;
+    if (hoursAsk !== 'saved' && hoursAsk !== 'desk' && hoursAsk !== 'all' && hoursAsk !== 'custom') return { code: 400, error: 'The hours are "saved", "desk", "all" or "custom".' };
+    const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const hoursFrom = typeof q.hfrom === 'string' ? q.hfrom : '', hoursTo = typeof q.hto === 'string' ? q.hto : '';
+    if (hoursAsk === 'custom' && (!hhmm.test(hoursFrom) || !hhmm.test(hoursTo))) return { code: 400, error: 'Custom hours are a From and a To time, HH:MM (IST).' };
+    if (hoursAsk === 'custom' && hoursFrom === hoursTo) return { code: 400, error: 'The From and To times must differ.' };
+    const over: Pick<BacktestParams, 'window' | 'hoursFrom' | 'hoursTo'> | null = hoursAsk === 'saved' ? null
+      : { window: hoursAsk, hoursFrom: hoursAsk === 'custom' ? hoursFrom : undefined, hoursTo: hoursAsk === 'custom' ? hoursTo : undefined };
+    /*
+     * The other settings, for the run (owner, 14 Oct 2026: "on the portfolio side the filter is off and each
+     * backtest runs with its own; switched on, that filter is taken for now and applied to every backtest").
+     * Each is its own switch: `o_rule` + `o_value` (the strike), `o_tp` with `o_tsteps` (the option's target,
+     * fixed or by the clock), `o_sl` (its stop), `o_lots`, `o_minprem`, and `o_slmin` / `o_slmax` / `o_tgtmin` /
+     * `o_tgtmax` (the SL and TGT range, the four together). One that is absent is off: each member's own. They are
+     * read and held to their limits by the single backtest's own parser, so a value means here what it means there.
+     */
+    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax'] as const;
+    const asked: Record<string, unknown> = {};
+    for (const k of O_KEYS) if (q[`o_${k}`] !== undefined && q[`o_${k}`] !== '') asked[k] = q[`o_${k}`];
+    const has = (k: (typeof O_KEYS)[number]) => k in asked;
+    if (has('value') && !has('rule')) return { code: 400, error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' };
+    if (has('rule') && !has('value')) return { code: 400, error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' };
+    if (has('tsteps') && !has('tp')) return { code: 400, error: 'A target by the clock for the run needs the target it starts from: o_tp.' };
+    const read = backtestParamsOf(asked);
+    if (typeof read === 'string') return { code: 400, error: `For the run: ${read}` };
+    const range = has('slmin') || has('slmax') || has('tgtmin') || has('tgtmax');
+    const settings: Partial<BacktestParams> = {
+      ...(has('rule') ? { rule: read.rule, value: read.value } : {}),
+      // A fixed target put over a member whose own moves by the clock takes its steps away: named, and undefined.
+      ...(has('tp') ? { targetPct: read.targetPct, targetSteps: read.targetSteps } : {}),
+      ...(has('sl') ? { stopPct: read.stopPct } : {}),
+      ...(has('lots') ? { lots: read.lots } : {}),
+      ...(has('minprem') ? { minPremium: read.minPremium } : {}),
+      ...(range ? { slMin: read.slMin, slMax: read.slMax, tgtMin: read.tgtMin, tgtMax: read.tgtMax } : {}),
+    };
+    const changed = Object.keys(settings).length > 0;
+    const own = saves.filter((s) => s.query.strategy !== null).map((s) => s.id);
+    return {
+      r, shared,
+      members: saves.map((s) => {
+        const strategy = s.query.strategy === null ? null : strategies.find((x) => x.id === s.query.strategy) ?? null;
+        if (s.query.strategy !== null && !strategy) return { id: s.id, name: s.name, ask: null, problem: 'The strategy it is worked by has been deleted, or buys now rather than sells.' };
+        const params = (over || changed) && !strategy ? { ...s.query.params, ...settings, ...(over ?? {}) } : s.query.params;
+        return { id: s.id, name: s.name, ask: { params, tfs: s.query.tfs.length ? s.query.tfs : null, methods: s.query.methods.length ? s.query.methods : null, strategy } };
+      }),
+      /** The hours the run was held to; null, each member's own as saved. `own`: the members a strategy works, whose hours are its own. */
+      hours: over ? { window: over.window, ...(over.hoursFrom ? { hoursFrom: over.hoursFrom, hoursTo: over.hoursTo } : {}), own } : null,
+      /** The settings put over the run, as they were read -- only those switched on; null, none. `own` as for the hours. */
+      over: changed ? { settings: { ...settings, ...(has('tp') ? { targetSteps: read.targetSteps ?? [] } : {}) }, own } : null,
+    };
 }
 
 export function registerBacktestSavesRoutes(app: FastifyInstance) {
@@ -77,88 +166,27 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
    * listed, with why, and counted as nothing.
    */
   app.get('/api/backtest-portfolio', async (req, reply) => {
+    const asked = await portfolioQuery((req.query ?? {}) as Record<string, unknown>);
+    if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
+    const result = await portfolioBacktest({ ...asked.r, now: Date.now(), spot: tradingService().spot, shared: asked.shared, members: asked.members });
+    return { ...result, hours: asked.hours, over: asked.over };
+  });
+
+  /**
+   * The same run laid beside the live desk, signal for signal (owner, 14 Oct 2026: "bring the live check inside
+   * the backtest and the portfolio -- no tab of its own"): every trade of the saved backtests looked up in what
+   * the desk did with that signal, every order the desk placed looked up in theirs, and each expiry day's count
+   * and money on both sides. The query is the run's own, so the hours and settings put over the run are over
+   * this too. Read-only.
+   */
+  app.get('/api/backtest-portfolio/live-check', async (req, reply) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
-    const r = rangeOf(q);
-    if (typeof r === 'string') return refuse(reply, 400, { error: r });
-    const ids = keys(typeof q.ids === 'string' ? q.ids.split(',') : [], PORTFOLIO_MEMBERS_MAX + 1);
-    if (ids.length === 0) return refuse(reply, 400, { error: 'Which saved backtests: ?ids=a,b.' });
-    if (ids.length > PORTFOLIO_MEMBERS_MAX) return refuse(reply, 400, { error: `At most ${PORTFOLIO_MEMBERS_MAX} saved backtests at once.` });
-    const saves = await savesByIds(ids);
-    if (saves.length !== ids.length) return refuse(reply, 404, { error: 'One of those saved backtests is gone: it may have been deleted.' });
-    const strategies = (await strategyStore().all().catch(() => [])).filter(backtestable);
-    if (q.limit !== undefined && q.limit !== '' && q.limit !== 'shared' && q.limit !== 'own') return refuse(reply, 400, { error: 'The limit is "shared" (one account) or "own" (each its own).' });
-    let shared: { deskMax: number; cePct: number; pePct: number } | null = null;
-    if (q.limit !== 'own') {
-      const num = (v: unknown) => (v === undefined || v === '' ? null : Number(v));
-      const max = num(q.max), ce = num(q.ce), pe = num(q.pe);
-      if (max !== null) {
-        if (!Number.isInteger(max) || max < 1 || max > 500) return refuse(reply, 400, { error: 'At most open is a whole number from 1 to 500.' });
-        if ((ce !== null && !(ce >= 1 && ce <= 100)) || (pe !== null && !(pe >= 1 && pe <= 100))) return refuse(reply, 400, { error: 'CE max and PE max are from 1% to 100%.' });
-        shared = { deskMax: max, cePct: ce ?? 100, pePct: pe ?? 100 };
-      } else {
-        // The account's limit as the saved backtests themselves carry it: the largest of them.
-        const top = saves.map((s) => s.query.params).filter((p) => (p.deskMax ?? 0) > 0).sort((a, b) => (b.deskMax ?? 0) - (a.deskMax ?? 0))[0];
-        if (top) shared = { deskMax: top.deskMax!, cePct: top.cePct ?? 100, pePct: top.pePct ?? 100 };
-      }
-    }
-    /*
-     * The hours, for the run (owner, 13 Oct 2026: the single backtest's hours choice, "wanted in the portfolio
-     * section"): `?hours=saved` -- each as it was saved, the default -- or `desk`, `all` or `custom` with
-     * `hfrom` / `hto`, put over every member worked by settings for this run only; nothing saved is changed.
-     * A member worked by a strategy keeps that strategy's own days and hours, as it does alone: `hours.own`
-     * names them, so the screen can say which were not moved.
-     */
-    const hoursAsk = q.hours === undefined || q.hours === '' ? 'saved' : q.hours;
-    if (hoursAsk !== 'saved' && hoursAsk !== 'desk' && hoursAsk !== 'all' && hoursAsk !== 'custom') return refuse(reply, 400, { error: 'The hours are "saved", "desk", "all" or "custom".' });
-    const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
-    const hoursFrom = typeof q.hfrom === 'string' ? q.hfrom : '', hoursTo = typeof q.hto === 'string' ? q.hto : '';
-    if (hoursAsk === 'custom' && (!hhmm.test(hoursFrom) || !hhmm.test(hoursTo))) return refuse(reply, 400, { error: 'Custom hours are a From and a To time, HH:MM (IST).' });
-    if (hoursAsk === 'custom' && hoursFrom === hoursTo) return refuse(reply, 400, { error: 'The From and To times must differ.' });
-    const over: Pick<BacktestParams, 'window' | 'hoursFrom' | 'hoursTo'> | null = hoursAsk === 'saved' ? null
-      : { window: hoursAsk, hoursFrom: hoursAsk === 'custom' ? hoursFrom : undefined, hoursTo: hoursAsk === 'custom' ? hoursTo : undefined };
-    /*
-     * The other settings, for the run (owner, 14 Oct 2026: "on the portfolio side the filter is off and each
-     * backtest runs with its own; switched on, that filter is taken for now and applied to every backtest").
-     * Each is its own switch: `o_rule` + `o_value` (the strike), `o_tp` with `o_tsteps` (the option's target,
-     * fixed or by the clock), `o_sl` (its stop), `o_lots`, `o_minprem`, and `o_slmin` / `o_slmax` / `o_tgtmin` /
-     * `o_tgtmax` (the SL and TGT range, the four together). One that is absent is off: each member's own. They are
-     * read and held to their limits by the single backtest's own parser, so a value means here what it means there.
-     */
-    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax'] as const;
-    const asked: Record<string, unknown> = {};
-    for (const k of O_KEYS) if (q[`o_${k}`] !== undefined && q[`o_${k}`] !== '') asked[k] = q[`o_${k}`];
-    const has = (k: (typeof O_KEYS)[number]) => k in asked;
-    if (has('value') && !has('rule')) return refuse(reply, 400, { error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' });
-    if (has('rule') && !has('value')) return refuse(reply, 400, { error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' });
-    if (has('tsteps') && !has('tp')) return refuse(reply, 400, { error: 'A target by the clock for the run needs the target it starts from: o_tp.' });
-    const read = backtestParamsOf(asked);
-    if (typeof read === 'string') return refuse(reply, 400, { error: `For the run: ${read}` });
-    const range = has('slmin') || has('slmax') || has('tgtmin') || has('tgtmax');
-    const settings: Partial<BacktestParams> = {
-      ...(has('rule') ? { rule: read.rule, value: read.value } : {}),
-      // A fixed target put over a member whose own moves by the clock takes its steps away: named, and undefined.
-      ...(has('tp') ? { targetPct: read.targetPct, targetSteps: read.targetSteps } : {}),
-      ...(has('sl') ? { stopPct: read.stopPct } : {}),
-      ...(has('lots') ? { lots: read.lots } : {}),
-      ...(has('minprem') ? { minPremium: read.minPremium } : {}),
-      ...(range ? { slMin: read.slMin, slMax: read.slMax, tgtMin: read.tgtMin, tgtMax: read.tgtMax } : {}),
-    };
-    const changed = Object.keys(settings).length > 0;
-    const result = await portfolioBacktest({
-      ...r, now: Date.now(), spot: tradingService().spot, shared,
-      members: saves.map((s) => {
-        const strategy = s.query.strategy === null ? null : strategies.find((x) => x.id === s.query.strategy) ?? null;
-        if (s.query.strategy !== null && !strategy) return { id: s.id, name: s.name, ask: null, problem: 'The strategy it is worked by has been deleted, or buys now rather than sells.' };
-        const params = (over || changed) && !strategy ? { ...s.query.params, ...settings, ...(over ?? {}) } : s.query.params;
-        return { id: s.id, name: s.name, ask: { params, tfs: s.query.tfs.length ? s.query.tfs : null, methods: s.query.methods.length ? s.query.methods : null, strategy } };
-      }),
+    const asked = await portfolioQuery(q);
+    if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
+    const members = asked.members.flatMap((m) => (m.ask ? [{ id: m.id, name: m.name, ask: m.ask }] : []));
+    return liveCheck({
+      ...asked.r, now: Date.now(), spot: tradingService().spot, accounts: await liveAccounts(),
+      portfolio: { name: typeof q.name === 'string' && q.name.trim() !== '' ? q.name.trim().slice(0, 120) : 'these saved backtests', shared: asked.shared, members },
     });
-    return {
-      ...result,
-      /** The hours the run was held to; null, each member's own as saved. `own`: the members a strategy works, whose hours are its own. */
-      hours: over ? { window: over.window, ...(over.hoursFrom ? { hoursFrom: over.hoursFrom, hoursTo: over.hoursTo } : {}), own: saves.filter((s) => s.query.strategy !== null).map((s) => s.id) } : null,
-      /** The settings put over the run, as they were read -- only those switched on; null, none. `own` as for the hours. */
-      over: changed ? { settings: { ...settings, ...(has('tp') ? { targetSteps: read.targetSteps ?? [] } : {}) }, own: saves.filter((s) => s.query.strategy !== null).map((s) => s.id) } : null,
-    };
   });
 }

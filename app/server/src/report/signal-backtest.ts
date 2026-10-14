@@ -1137,6 +1137,8 @@ export type LiveCheckAsk = {
    */
   portfolio?: { name: string; shared: { deskMax: number; cePct: number; pePct: number } | null; members: { id: string; name: string; ask: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'> }[] } | null;
   spot?: number | null;
+  /** Only these strategies are reported -- one chosen on the screen; its account's others are still worked beside it, for the same places. */
+  only?: string[];
 };
 /** Trades counted with their money, as a day's row reads them: how many, how many made money, and the net after charges. */
 export type LiveCheckMoney = { n: number; wins: number; net: number };
@@ -1268,6 +1270,7 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
     });
   }
 
+  const shown = (u: Unit) => folio !== null || !o.only || o.only.includes(u.id);
   type Side = { traded: Map<string, BtTrade>; refused: Map<string, BtSkip> };
   const bt = units.map((): Side => ({ traded: new Map(), refused: new Map() }));
   const dayOfKey = new Map<string, string>();
@@ -1289,6 +1292,7 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
       at.forEach((i, k) => {
         for (const t of outs[k]!.trades) {
           bt[i]!.traded.set(keyOf(t.signal), t);
+          if (!shown(units[i]!)) continue;
           const m = btDay.get(d.day)!;
           m.n++; m.net += t.netUsd; if (t.netUsd > 0) m.wins++;
         }
@@ -1319,7 +1323,8 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
   const NO_RECORD = folio ? 'no strategy on the desk has a record of it: none takes that method on that time frame, or the desk was not running'
     : 'no record on the desk: it or the strategy was not running then, or its rules were different';
 
-  const rowsOut: LiveCheckRow[] = units.map((u, i) => {
+  const rowsOut: LiveCheckRow[] = units.flatMap((u, i): LiveCheckRow[] => {
+    if (!shown(u)) return [];
     const side = bt[i]!;
     const mine = u.mine;
     const placed = mine ? [...mine.values()].filter((r) => r.status === 'placed') : [];
@@ -1349,13 +1354,13 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
       });
     }
     const refused = mine ? [...mine.values()].filter((r) => r.status === 'refused') : [], skipped = mine ? [...mine.values()].filter((r) => r.status === 'skipped') : [];
-    return {
+    return [{
       id: u.id, name: u.name, account: u.account,
       live: { placed: placed.length, refused: refused.length, skipped: skipped.length },
       liveWhy: { refused: counted(refused.map((r) => liveWhy(r.detail))), skipped: counted(skipped.map((r) => liveWhy(r.detail))) },
       backtest: side.traded.size, backtestSkipped: counted([...side.refused.values()].map((w) => BT_WHY[w])),
       same, backtestOnly: groupsOf(backtestOnly), liveOnly: groupsOf(liveOnly),
-    };
+    }];
   });
   // Strategies keep the desk's order on its accounts' names; saved backtests the order they were given in.
   const strategies = folio ? rowsOut : [...rowsOut].sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true }));
@@ -1378,12 +1383,15 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
     }
   }
   const sum = (f: (r: LiveCheckRow) => number) => strategies.reduce((n, r) => n + f(r), 0);
-  const report = span ? await marketReport({ from: o.from, to: o.to, now: o.now, spot: o.spot ?? null, account: null, tfs: null, methods: null, strategies: every.length ? every.map((x) => x.st.name) : null }) : null;
+  // The desk's orders whose money is read: every strategy's, or the one asked for.
+  const reported = folio || !o.only ? every : every.filter((x) => o.only!.includes(x.st.id));
+  const report = span ? await marketReport({ from: o.from, to: o.to, now: o.now, spot: o.spot ?? null, account: null, tfs: null, methods: null, strategies: reported.length ? reported.map((x) => x.st.name) : null }) : null;
+  const seen = folio ? live : live.filter((r) => reported.some((x) => x.st.id === r.strategy_id));
   const realOf = (t: Tot | undefined): LiveCheckMoney & { open: number } => ({ n: t?.n ?? 0, wins: t?.wins ?? 0, net: t?.net ?? 0, open: t?.open ?? 0 });
   const btAll = [...btDay.values()].reduce((a, m) => ({ n: a.n + m.n, wins: a.wins + m.wins, net: a.net + m.net }), zero());
   return {
     from: o.from, to: o.to, until,
-    liveFrom: live.length ? Number(live[0]!.at) : null, liveTo: live.length ? Number(live[live.length - 1]!.at) : null,
+    liveFrom: seen.length ? Number(seen[0]!.at) : null, liveTo: seen.length ? Number(seen[seen.length - 1]!.at) : null,
     against: folio ? { kind: 'portfolio', name: folio.name } : { kind: 'strategies' },
     strategies,
     total: {

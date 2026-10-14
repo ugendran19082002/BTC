@@ -427,7 +427,7 @@ test('[critical] the live check: each strategy\'s backtest laid beside what the 
   assert.equal(made.status, 200, JSON.stringify(made.body));
   const id = made.body.strategy.id;
   // nothing on the desk's record yet: every trade of the backtest is one the desk has no record of
-  const none = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}`);
+  const none = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&all=1`);
   assert.equal(none.status, 200, JSON.stringify(none.body).slice(0, 300));
   const before = none.body.strategies.find((x: any) => x.id === id);
   assert.deepEqual([before.live, before.backtest, before.same], [{ placed: 0, refused: 0, skipped: 0 }, 3, 0], 'by its own rules: the three 15m breakouts');
@@ -451,7 +451,7 @@ test('[critical] the live check: each strategy\'s backtest laid beside what the 
   // and an order the desk placed on a signal that is not this strategy's by its rules as they stand
   await wrote(other, 'placed', '#2 Pullback BUY | sell PE 81800 x1 @ 54 (delta 0.09) · perp filled 84000 · perp SL 83700 · TGT 84500');
 
-  const r = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}`);
+  const r = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&all=1`);
   const row = r.body.strategies.find((x: any) => x.id === id);
   assert.deepEqual([row.name, row.live, row.backtest, row.same], ['BT live', { placed: 2, refused: 1, skipped: 0 }, 3, 1]);
   assert.deepEqual(row.backtestOnly.map((g: any) => [g.why, g.n]), [
@@ -470,7 +470,7 @@ test('[critical] the live check: each strategy\'s backtest laid beside what the 
   assert.ok(r.body.liveFrom >= Number(setups[0]!.filled_at) * 1_000 && r.body.liveTo >= r.body.liveFrom, 'the first and the last moment the desk has a record');
   // the refused and the skipped, counted by reason -- the strategy's own and the range's
   await wrote(mine[2]!, 'skipped', '#1 Breakout BUY | SL too near: the perp entry 84000 to the SL 83700 is 300 pts — this strategy takes 15m signals only at 400 pts or more');
-  const counted = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}`);
+  const counted = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&all=1`);
   const mineNow = counted.body.strategies.find((x: any) => x.id === id);
   assert.deepEqual(mineNow.live, { placed: 2, refused: 1, skipped: 1 });
   assert.deepEqual(mineNow.liveWhy, { refused: [{ why: 'the daily loss limit', n: 1 }], skipped: [{ why: 'its SL / TGT distance', n: 1 }] });
@@ -481,10 +481,33 @@ test('[critical] the live check: each strategy\'s backtest laid beside what the 
   assert.deepEqual(counted.body.strategies.find((x: any) => x.name === 'BT fifteen').backtestSkipped, [{ why: 'its own most open at once', n: 2 }]);
   assert.equal(counted.body.total.backtestSkipped, 2);
 
-  // one account alone, and a range or an account that cannot be meant
-  assert.deepEqual((await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&account=7`)).body.strategies, [], 'no strategy is that account\'s');
-  assert.equal((await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&account=x`)).status, 400);
+  // each expiry day as the portfolio's day table reads: the count and the money on both sides
+  assert.deepEqual(counted.body.against, { kind: 'strategies' });
+  const day = counted.body.days[0];
+  assert.deepEqual([day.day, day.placed, day.same, day.backtest], [CLIMB, 2, 1, counted.body.total.backtest]);
+  assert.deepEqual(Object.keys(day.real).sort(), ['n', 'net', 'open', 'wins']);
+  assert.equal(day.bt.n, counted.body.total.backtest);
+  assert.ok(Math.abs(day.bt.net - counted.body.money.backtest.net) < 1e-9 && day.bt.wins <= day.bt.n);
+
+  // inside the single backtest: by a strategy, that strategy's row alone -- its own rules against its own record
+  const one = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&strategy=${id}`);
+  assert.deepEqual(one.body.strategies.map((x: any) => x.name), ['BT live']);
+  assert.deepEqual([one.body.total.placed, one.body.total.backtest, one.body.total.same, one.body.days[0].backtest], [2, 3, 1, 3]);
+  assert.equal((await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&strategy=nope`)).status, 404);
+  // by the screen's settings: one book, against what the desk did with each signal under any strategy
+  const screen = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&window=all&tf=15m&method=breakout`);
+  assert.equal(screen.status, 200, JSON.stringify(screen.body).slice(0, 300));
+  assert.deepEqual(screen.body.against, { kind: 'portfolio', name: 'these settings' });
+  const alone = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&tf=15m&method=breakout`);
+  assert.deepEqual([screen.body.strategies.length, screen.body.strategies[0].name, screen.body.total.backtest], [1, 'These settings', alone.body.total.n], 'the same trades the single backtest makes');
+  assert.ok(Math.abs(screen.body.money.backtest.net - alone.body.total.net) < 1e-9, 'and the same money');
+  // the desk placed two orders: one on a 15m breakout the settings trade too, one on another method they do not
+  assert.deepEqual([screen.body.total.placed, screen.body.total.same, screen.body.total.liveOnly], [2, 1, 1]);
+  assert.deepEqual(screen.body.liveOnly.map((g: any) => [g.why, g.n]), [['no saved backtest of the portfolio has that method ticked on that time frame', 1]]);
+  assert.deepEqual(screen.body.strategies[0].backtestOnly.map((g: any) => [g.why, g.n]), [['the desk refused: the daily loss limit', 1], ['the desk skipped: its SL / TGT distance', 1]]);
+  // a range or settings that cannot be meant
   assert.equal((await get('/api/signal-backtest/live-check?from=2026-13-40')).status, 400);
+  assert.equal((await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&lots=0`)).status, 400);
   await query('DELETE FROM strategy_signal_runs WHERE strategy_id = $1', [id]);
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/strategies/${id}`, headers: cookie })).statusCode, 200);
 });
@@ -749,6 +772,24 @@ test('[critical] a backtest saved by name, run again, and several run together a
     assert.equal(r.status, 400, bad);
     assert.match(r.body.error, said);
   }
+
+  /*
+   * The same run beside the live desk (14 Oct 2026: "the live check inside the portfolio"): asked with the run's own
+   * query, so it is the run's own trades that are looked up -- its count and money, and the settings put over it.
+   */
+  const check = await get(`${pair.replace('/api/backtest-portfolio?', '/api/backtest-portfolio/live-check?')}&name=Both`);
+  assert.equal(check.status, 200, JSON.stringify(check.body).slice(0, 300));
+  assert.deepEqual(check.body.against, { kind: 'portfolio', name: 'Both' });
+  assert.deepEqual(check.body.strategies.map((x: any) => [x.name, x.backtest]), asSaved.body.members.map((m: any) => [m.name, m.total.n]), 'each saved backtest, with the trades its run makes');
+  assert.equal(check.body.total.backtest, asSaved.body.total.n);
+  assert.ok(close(check.body.money.backtest.net, asSaved.body.total.net), 'and the run\'s own money');
+  assert.deepEqual(check.body.days.map((d: any) => [d.day, d.backtest]), asSaved.body.days.map((d: any) => [d.day, d.n]));
+  // the desk has no record here: every trade of the run is one it has none of, said once
+  assert.deepEqual([check.body.total.placed, check.body.total.same, check.body.total.backtestOnly], [0, 0, asSaved.body.total.n]);
+  assert.match(check.body.strategies[0].backtestOnly[0].why, /^no strategy on the desk has a record of it/);
+  const checkLots = await get(`${pair.replace('/api/backtest-portfolio?', '/api/backtest-portfolio/live-check?')}&o_tf=x&hours=desk`);
+  assert.equal(checkLots.body.total.backtest, (await get(`${pair}&hours=desk`)).body.total.n, 'the hours put over the run are over its check');
+  assert.equal((await get('/api/backtest-portfolio/live-check?from=2026-10-01')).status, 400);
 
   // refused: none named, one that is gone, too many
   assert.equal((await get(`/api/backtest-portfolio?from=${CLIMB}&to=${QUIET}`)).status, 400);
