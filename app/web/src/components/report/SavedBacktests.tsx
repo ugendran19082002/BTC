@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AS_SAVED, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, overQuery, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
+import { AS_SAVED, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, overQuery, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { time12 } from '@/lib/time';
 import { overWords } from '@/components/report/backtest-words';
+import { LiveCheck } from '@/components/report/LiveCheck';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BtRow, SavedQuery } from '@/types/signal-backtest';
@@ -183,7 +184,8 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
 }) {
   const asked = limit === 'shared' ? cap : null;
   const hoursKey = hours.window === 'custom' ? `custom:${hours.hoursFrom}-${hours.hoursTo}` : hours.window;
-  const result = useAnswer(`${run.ids.join(',')}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`, () => getBacktestPortfolio(run.ids, range, limit, asked, hours, over), 300_000);
+  const askKey = `${run.ids.join(',')}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`;
+  const result = useAnswer(askKey, () => getBacktestPortfolio(run.ids, range, limit, asked, hours, over), 300_000);
   if (result.error && !result.data) {
     return (
       <Panel title={`Run together · ${run.title}`}>
@@ -199,6 +201,8 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
     <Updating busy={result.stale} what="the run together">
       <RunNote r={result.data} />
       <PortfolioResult title={run.title} r={result.data} wide={wide} />
+      {/* The same run beside the live desk (14 Oct 2026): its own question, so the hours and settings over the run are over the check. */}
+      <LiveCheck askKey={askKey} read={() => getPortfolioLiveCheck(run.title, run.ids, range, limit, asked, hours, over)} />
       <button type="button" className={cn(link, 'justify-self-start')} onClick={onClose}>Close the run together</button>
     </Updating>
   );

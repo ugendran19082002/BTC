@@ -1209,6 +1209,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         {' '}— so the total is not what an account would have made: read what a trade of each kind made.
       </p>
       </Updating>
+      {/* The same backtest beside the live desk (14 Oct 2026): asked with the question on the screen, so it is the check of this result. */}
+      <LiveCheck askKey={JSON.stringify(query)} read={() => getLiveCheck(query)} />
     </>
   );
 }
