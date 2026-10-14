@@ -1,7 +1,7 @@
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import type { LiveCheck as Check, LiveCheckCount, LiveCheckFate, LiveCheckMoney, LiveCheckRow, LiveCheckWhy } from '@/types/signal-backtest';
+import type { LiveCheck as Check, LiveCheckCount, LiveCheckFate, LiveCheckRow, LiveCheckWhy } from '@/types/signal-backtest';
 import { Empty, Loading, Panel } from '@/components/mobile/parts';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { count, netClass, rate } from '@/components/report/backtest-parts';

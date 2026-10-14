@@ -16,6 +16,7 @@ const NO_CHECK = {
   total: { placed: 0, refused: 0, skipped: 0, backtest: 0, backtestSkipped: 0, same: 0, backtestOnly: 0, liveOnly: 0 },
   liveWhy: { refused: [], skipped: [] }, money: { real: null, backtest: { n: 0, wins: 0, net: 0 } }, days: [],
   notCompared: { backtest: 0, desk: 0 }, notComparedWhy: { backtest: [], desk: [] },
+  fate: { live: { taken: 0, waiting: 0, notTaken: 0, skipped: 0, refused: 0, rejected: 0, expired: 0, cancelled: 0 }, backtest: { taken: 0, waiting: 0, notTaken: 0, skipped: 0, refused: 0, rejected: 0, expired: 0, cancelled: 0 } },
 };
 const getLiveCheck = vi.fn();
 vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a), getLiveCheck: (...a: unknown[]) => getLiveCheck(...a) }));
