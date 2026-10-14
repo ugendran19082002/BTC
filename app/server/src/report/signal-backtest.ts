@@ -1136,8 +1136,12 @@ export type LiveCheckRow = {
   id: string; name: string; account: string | null;
   /** What the desk did with the signals of its methods: orders placed, refused at the gate, skipped by its rules. */
   live: { placed: number; refused: number; skipped: number };
+  /** Why the desk refused, and why it skipped: every one of them, by reason, the most common first (owner, 14 Oct 2026: "show the skipped and rejected counts"). */
+  liveWhy: { refused: { why: string; n: number }[]; skipped: { why: string; n: number }[] };
   /** Trades the backtest makes of the same signals, by the strategy's rules as they stand. */
   backtest: number;
+  /** The signals of its methods the backtest did not trade, by why: beside the desk's skipped, the same rules should give the same counts. */
+  backtestSkipped: { why: string; n: number }[];
   /** Signals that are an order on the desk and a trade in the backtest. */
   same: number;
   backtestOnly: LiveCheckWhy[]; liveOnly: LiveCheckWhy[];
@@ -1149,7 +1153,9 @@ export type LiveCheck = {
   /** Signals filled up to here are compared: the desk is given two minutes to have written a signal down. */
   until: number;
   strategies: LiveCheckRow[];
-  total: { placed: number; refused: number; skipped: number; backtest: number; same: number; backtestOnly: number; liveOnly: number };
+  total: { placed: number; refused: number; skipped: number; backtest: number; backtestSkipped: number; same: number; backtestOnly: number; liveOnly: number };
+  /** Every refusal and every skip on the desk in the range, by reason, across the strategies. */
+  liveWhy: { refused: { why: string; n: number }[]; skipped: { why: string; n: number }[] };
   days: { day: string; placed: number; backtest: number; same: number }[];
 };
 
@@ -1158,6 +1164,11 @@ const LIVE_GRACE_MS = 120_000;
 
 /** Why the desk did not place an order for a signal, from its own sentence: a few plain reasons, else the sentence without its figures. */
 export function liveReason(status: string, detail: string): string {
+  return `the desk ${status === 'refused' ? 'refused' : status === 'skipped' ? 'skipped' : status}: ${liveWhy(detail)}`;
+}
+
+/** The reason alone, as the counts by reason name it. */
+export function liveWhy(detail: string): string {
   const said = detail.includes(' -- refused: ') ? detail.split(' -- refused: ')[1]! : detail.includes(' | ') ? detail.slice(detail.indexOf(' | ') + 3) : detail;
   const known: [RegExp, string][] = [
     [/loss budget/i, 'the daily loss limit'],
@@ -1172,8 +1183,7 @@ export function liveReason(status: string, detail: string): string {
     [/nothing out of the money|no strike/i, 'no strike the rule could sell'],
   ];
   const hit = known.find(([re]) => re.test(said));
-  const lead = status === 'refused' ? 'refused' : status === 'skipped' ? 'skipped' : status;
-  return `the desk ${lead}: ${hit ? hit[1] : said.replace(/[\d.,]+/g, 'N').slice(0, 90)}`;
+  return hit ? hit[1] : said.replace(/[\d.,]+/g, 'N').slice(0, 90);
 }
 
 const BT_WHY: Record<BtSkip, string> = {
@@ -1248,6 +1258,12 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
     }
     return [...m.values()].sort((a, b) => b.n - a.n || a.why.localeCompare(b.why));
   };
+  const counted = (xs: string[]): { why: string; n: number }[] => {
+    const m = new Map<string, number>();
+    for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
+    return [...m.entries()].map(([why, n]) => ({ why, n })).sort((a, b) => b.n - a.n || a.why.localeCompare(b.why));
+  };
+  const merged = (xs: { why: string; n: number }[]) => counted(xs.flatMap((x) => Array.from({ length: x.n }, () => x.why)));
   const partsOf = (key: string, at: number) => { const p = key.split('|'); return { at, method: p[0] ?? '', tf: p[1] === 'mtf' ? CHAIN_KEY : p[2] ?? '', dir: (Number(p[3]) === 1 ? 1 : -1) as 1 | -1 }; };
   const byDay = new Map<string, { day: string; placed: number; backtest: number; same: number }>(days.map((d) => [d.day, { day: d.day, placed: 0, backtest: 0, same: 0 }]));
   const strategies: LiveCheckRow[] = every.map(({ st, account }) => {
@@ -1279,10 +1295,13 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
         why: r ? liveReason(r.status, r.detail) : 'no record on the desk: it or the strategy was not running then, or its rules were different',
       });
     }
+    const refused = [...mine.values()].filter((r) => r.status === 'refused'), skipped = [...mine.values()].filter((r) => r.status === 'skipped');
     return {
       id: st.id, name: st.name, account: account.name,
-      live: { placed: placed.length, refused: [...mine.values()].filter((r) => r.status === 'refused').length, skipped: [...mine.values()].filter((r) => r.status === 'skipped').length },
-      backtest: side.traded.size, same, backtestOnly: groups(backtestOnly), liveOnly: groups(liveOnly),
+      live: { placed: placed.length, refused: refused.length, skipped: skipped.length },
+      liveWhy: { refused: counted(refused.map((r) => liveWhy(r.detail))), skipped: counted(skipped.map((r) => liveWhy(r.detail))) },
+      backtest: side.traded.size, backtestSkipped: counted([...side.refused.values()].map((w) => BT_WHY[w])),
+      same, backtestOnly: groups(backtestOnly), liveOnly: groups(liveOnly),
     };
   }).sort((a, b) => (a.account ?? '').localeCompare(b.account ?? '') || a.name.localeCompare(b.name, 'en', { numeric: true }));
   const sum = (f: (r: LiveCheckRow) => number) => strategies.reduce((n, r) => n + f(r), 0);
@@ -1291,9 +1310,11 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
     liveFrom: live.length ? Number(live[0]!.at) : null, liveTo: live.length ? Number(live[live.length - 1]!.at) : null,
     strategies,
     total: {
-      placed: sum((r) => r.live.placed), refused: sum((r) => r.live.refused), skipped: sum((r) => r.live.skipped), backtest: sum((r) => r.backtest), same: sum((r) => r.same),
+      placed: sum((r) => r.live.placed), refused: sum((r) => r.live.refused), skipped: sum((r) => r.live.skipped), backtest: sum((r) => r.backtest),
+      backtestSkipped: sum((r) => r.backtestSkipped.reduce((n, g) => n + g.n, 0)), same: sum((r) => r.same),
       backtestOnly: sum((r) => r.backtestOnly.reduce((n, g) => n + g.n, 0)), liveOnly: sum((r) => r.liveOnly.reduce((n, g) => n + g.n, 0)),
     },
+    liveWhy: { refused: merged(strategies.flatMap((r) => r.liveWhy.refused)), skipped: merged(strategies.flatMap((r) => r.liveWhy.skipped)) },
     days: [...byDay.values()],
   };
 }

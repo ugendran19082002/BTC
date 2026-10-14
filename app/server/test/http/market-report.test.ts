@@ -467,8 +467,19 @@ test('[critical] the live check: each strategy\'s backtest laid beside what the 
   assert.deepEqual([r.body.total.placed, r.body.total.refused, r.body.total.same, r.body.total.liveOnly], [2, 1, 1, 1]);
   assert.deepEqual(r.body.days.map((d: any) => d.day), [CLIMB]);
   assert.deepEqual([r.body.days[0].same, r.body.days[0].backtest], [1, r.body.total.backtest]);
-  assert.equal(r.body.liveFrom, Number(setups[0]!.filled_at) * 1_000 + 4_000 <= r.body.liveFrom ? r.body.liveFrom : -1, 'the first moment the desk has a record');
-  assert.ok(r.body.liveTo >= r.body.liveFrom);
+  assert.ok(r.body.liveFrom >= Number(setups[0]!.filled_at) * 1_000 && r.body.liveTo >= r.body.liveFrom, 'the first and the last moment the desk has a record');
+  // the refused and the skipped, counted by reason -- the strategy's own and the range's
+  await wrote(mine[2]!, 'skipped', '#1 Breakout BUY | SL too near: the perp entry 84000 to the SL 83700 is 300 pts — this strategy takes 15m signals only at 400 pts or more');
+  const counted = await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}`);
+  const mineNow = counted.body.strategies.find((x: any) => x.id === id);
+  assert.deepEqual(mineNow.live, { placed: 2, refused: 1, skipped: 1 });
+  assert.deepEqual(mineNow.liveWhy, { refused: [{ why: 'the daily loss limit', n: 1 }], skipped: [{ why: 'its SL / TGT distance', n: 1 }] });
+  assert.deepEqual(counted.body.liveWhy, mineNow.liveWhy, 'the only strategy with a record: the range\'s counts are its own');
+  assert.deepEqual(mineNow.backtestOnly.map((g: any) => [g.why, g.n]), [['the desk refused: the daily loss limit', 1], ['the desk skipped: its SL / TGT distance', 1]]);
+  assert.deepEqual(mineNow.backtestSkipped, [], 'the backtest traded all three');
+  // a strategy held to one open: what its backtest did not trade is counted by why as well
+  assert.deepEqual(counted.body.strategies.find((x: any) => x.name === 'BT fifteen').backtestSkipped, [{ why: 'its own most open at once', n: 2 }]);
+  assert.equal(counted.body.total.backtestSkipped, 2);
 
   // one account alone, and a range or an account that cannot be meant
   assert.deepEqual((await get(`/api/signal-backtest/live-check?from=${CLIMB}&to=${CLIMB}&account=7`)).body.strategies, [], 'no strategy is that account\'s');
