@@ -151,6 +151,20 @@ export function ownExits(r: TradeRecord, resting: readonly ExchangeOrder[]): { t
   return { target: pick(r.state.protection.takeProfit, (o) => o.type === 'limit'), stop: pick(r.state.protection.stopLoss, isStop) };
 }
 
+/** When a waiting entry was sent, when it gives up and what follows: `tradeView`'s `entryWait`. Pure. */
+export function entryWaitOf(r: TradeRecord): { sentAt: number | null; deadline: number | null; then: 'cancel' | 'market' | null; chaseMs: number | null } {
+  let sentAt: number | null = null;
+  for (let i = r.events.length - 1; i >= 0; i--) { const e = r.events[i]!; if (e.t === 'entry_submitted') { sentAt = e.at; break; } }
+  const e = r.plan.entry;
+  const limited = e.timeoutMs > 0;
+  return {
+    sentAt,
+    deadline: limited && sentAt !== null ? sentAt + e.timeoutMs : null,
+    then: limited ? (e.marketFallback ? 'market' : 'cancel') : null,
+    chaseMs: e.chase ? e.chase.steps * e.chase.everyMs : null,
+  };
+}
+
 export const tradeView = (
   r: TradeRecord,
   positions: ExchangePosition[] = [],
@@ -230,6 +244,14 @@ export const tradeView = (
   }
   return {
     ...r.state,
+    /*
+     * A waiting order's time limit (owner, 14 Oct 2026: "is a waiting order's expiry shown -- desk and phone?").
+     * It was not: the card said what price it rested at and since when, never until when or what then. From the
+     * journal and the plan, so it reads the same after a restart: when the entry was sent, when it gives up
+     * (`plan.entry.timeoutMs` after that; null with no limit, and it rests until it fills or is cancelled), what
+     * follows (the rest cancelled, or sent at the market), and how long it walks toward the bid on the way.
+     */
+    ...(r.state.phase === 'entry_pending' ? { entryWait: entryWaitOf(r) } : {}),
     protectionProblem,
     exitReason: lastReason,
     exitBy: closed ? exitByOf(lastReason, r.state.exitWinner ?? null) : null,
