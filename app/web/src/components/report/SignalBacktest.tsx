@@ -11,6 +11,7 @@ import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/component
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES } from '@/components/mobile/FilterPicker';
 import { WIN_AT_LEAST_PCT } from '@/lib/win-line';
+import { BacktestCurve } from '@/components/report/BacktestCurve';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
@@ -529,6 +530,34 @@ function pricedWords(p: Record<BoardGrain, number> | undefined): string | null {
   return fine ? `Option prices a minute at a time on ${own + mark} of ${days(all)}: ${fine}. The other ${rest}.` : `Option prices: ${rest}.`;
 }
 
+/**
+ * The result's sections as a row of chips that jump to each (owner, 14 Oct 2026: "the backtest screen, user
+ * friendly"): on a phone the result runs to a dozen screens, the live check at the bottom of them. Kept at the top of
+ * the screen while the result is scrolled, and sideways-scrolling where it does not fit.
+ */
+const RESULT_PARTS = [
+  { id: 'bt-summary', label: 'Summary' },
+  { id: 'bt-exits', label: 'Exits & time frames' },
+  { id: 'bt-pairs', label: 'Pairs' },
+  { id: 'bt-methods', label: 'Methods' },
+  { id: 'bt-days', label: 'Days' },
+  { id: 'bt-live', label: 'Live check' },
+] as const;
+
+function ResultNav({ has }: { has: (id: string) => boolean }) {
+  const parts = RESULT_PARTS.filter((x) => has(x.id));
+  return (
+    <nav aria-label="Jump to a part of the result" className="sticky top-0 z-10 -mx-1 flex gap-1.5 overflow-x-auto bg-[var(--bg)] px-1 py-1.5">
+      {parts.map((x) => (
+        <button key={x.id} type="button" onClick={() => document.getElementById(x.id)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+          className="m-0 h-9 shrink-0 appearance-none whitespace-nowrap rounded-full border border-solid border-border bg-transparent px-3 font-[inherit] text-[13px] font-medium text-foreground">
+          {x.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 /** Every method as options, across its timeframes: those in profit and those in loss, ten of each to begin with. */
 function MethodsAsOptions({ rows, wide }: { rows: readonly BtRow[]; wide: boolean }) {
   const [all, setAll] = useState(false);
@@ -906,7 +935,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             <aside aria-label="Backtest settings" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
               {settingsPanel}
               {filterBlock}
-              <SavedBacktests key="single" mode="single" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
+              <SavedBacktests key="single" mode="single" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
             </aside>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{result}</div>
           </>
@@ -968,7 +997,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 same place in their columns React kept one for both: the list was not read again on the way in, so the
                 saved backtests were never handed up here (14 Oct 2026 -- the "Saved backtests" limit went missing).
               */}
-              <SavedBacktests key="portfolio" mode="portfolio" current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={startRun} onSaves={setSavedList} />
+              <SavedBacktests key="portfolio" mode="portfolio" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={startRun} onSaves={setSavedList} />
             </aside>
             <div ref={resultRef} className="grid min-w-0 scroll-mt-2 grid-cols-[minmax(0,1fr)] gap-3">
               {together
@@ -997,7 +1026,9 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   return page(
     <>
 
+      <ResultNav has={(id) => id === 'bt-summary' || id === 'bt-live' || t.n > 0} />
       <Updating busy={read.stale} what="the backtest">
+      <div id="bt-summary" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
       <Panel title="Backtest result">
         {r.strategy && (
           <div className="mb-2 grid gap-1">
@@ -1073,6 +1104,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 </div>
               );
             })()}
+            <BacktestCurve days={r.days} />
             {/* Two to a row: six-figure rupees do not fit a third of a phone. */}
             <div className="mt-2">
               <Stats cols={2}>
@@ -1104,6 +1136,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         </p>
         {pricedWords(r.priced) && <p className="m-0 mt-1.5 text-[12.5px] leading-snug text-muted-foreground">{pricedWords(r.priced)}</p>}
       </Panel>
+      </div>
 
       {r.strategy && (
         <Panel title="Backtest against its real orders">
@@ -1144,7 +1177,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
 
       {t.n > 0 && (
         <>
-          <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
+          <div id="bt-exits" className={cn('grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
             <Panel title="Closed by which exit">
               <table className={FOLD.table}>
                 <caption className="sr-only">Backtest: which exit closed the trades</caption>
@@ -1184,14 +1217,14 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             </Panel>
           </div>
 
-          <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
+          <div id="bt-pairs" className={cn('grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
             <PairList title="Best pairs as options" tone="up" pairs={best} amount={amount} note={note} empty="No method and time frame in profit as an option here." />
             <PairList title="Worst pairs as options" tone="down" pairs={worst} amount={amount} note={note} empty="No method and time frame in loss as an option here." />
           </div>
 
-          <MethodsAsOptions rows={r.byMethod} wide={wide} />
+          <div id="bt-methods" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><MethodsAsOptions rows={r.byMethod} wide={wide} /></div>
 
-          <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
+          <div id="bt-days" className={cn('grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
             <Panel title="By kind of day">
               <Segmented label="Group the days by" value={grouping} onChange={setGrouping}
                 options={[{ key: 'family', label: 'Trend family', spoken: 'By family: up trend, down trend, range, turn' }, { key: 'kind', label: 'Market type', spoken: 'By each market type' }]} />
@@ -1216,7 +1249,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       </p>
       </Updating>
       {/* The same backtest beside the live desk (14 Oct 2026): asked with the question on the screen, so it is the check of this result. */}
-      <LiveCheck askKey={JSON.stringify(query)} read={() => getLiveCheck(query)} />
+      <div id="bt-live" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><LiveCheck askKey={JSON.stringify(query)} read={() => getLiveCheck(query)} /></div>
     </>
   );
 }

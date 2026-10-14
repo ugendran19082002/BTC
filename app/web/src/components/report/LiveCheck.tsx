@@ -103,6 +103,30 @@ function merged(groups: LiveCheckWhy[]): LiveCheckWhy[] {
   return [...m.values()].sort((a, b) => b.n - a.n || a.why.localeCompare(b.why));
 }
 
+/** "12 lots", "12 or 16 lots", "1 to 12 lots": the lots orders were sold with, in words. */
+const lotsWords = (xs: readonly number[]) => {
+  const lots = (n: number) => `lot${n === 1 ? '' : 's'}`;
+  if (xs.length === 1) return `${count(xs[0]!)} ${lots(xs[0]!)}`;
+  if (xs.length === 2) return `${count(xs[0]!)} or ${count(xs[1]!)} lots`;
+  return `${count(xs[0]!)} to ${count(xs[xs.length - 1]!)} lots`;
+};
+/** "+300%", "none, +160% or +300%": the option stops orders were sold with. */
+const stopWords = (xs: readonly number[]) => {
+  const one = (x: number) => (x > 0 ? `+${Math.round(x * 100)}%` : 'none');
+  const w = xs.map(one);
+  return w.length === 1 ? w[0]! : `${w.slice(0, -1).join(', ')} or ${w[w.length - 1]}`;
+};
+
+/**
+ * The desk sold with other settings then (14 Oct 2026 audit): the backtest replays every day by the rules as they
+ * stand now, so where the lots or the option stop have changed since, its money is not what the desk made -- said
+ * out loud rather than left to look like a calculation gone wrong.
+ */
+export function rulesThenWords(x: NonNullable<LiveCheckRow['rulesThen']>): string {
+  return `The desk's ${count(x.orders)} order${x.orders === 1 ? ' was' : 's were'} sold with ${lotsWords(x.lots)} and an option stop of ${stopWords(x.stopPct)}; `
+    + `this backtest uses the strategy as it is now: ${lotsWords([x.now.lots])}, option stop ${stopWords([x.now.stopPct])}. Its money is by today's settings, not what the desk made.`;
+}
+
 function Row({ r, saved }: { r: LiveCheckRow; saved: boolean }) {
   const differ = total(r.backtestOnly) + total(r.liveOnly);
   const notTraded = total(r.backtestSkipped);
@@ -116,6 +140,7 @@ function Row({ r, saved }: { r: LiveCheckRow; saved: boolean }) {
         {!saved && <>Desk <b className="text-foreground">{count(r.live.placed)}</b> placed · {count(r.live.refused)} refused · {count(r.live.skipped)} skipped · </>}
         Backtest <b className="text-foreground">{count(r.backtest)}</b> traded · {count(notTraded)} not traded · same signal <b className="text-foreground">{count(r.same)}</b>
       </p>
+      {r.rulesThen && <p className="m-0 rounded-md bg-[var(--chosen-soft)] px-2 py-1 text-[12.5px] leading-snug text-foreground">{rulesThenWords(r.rulesThen)}</p>}
       {r.backtestOnly.map((g) => <p key={`b${g.why}`} className="m-0 text-[12.5px] leading-snug"><b className="tabular-nums text-[var(--warn)]">{count(g.n)}</b> in the backtest only &mdash; {g.why}</p>)}
       {r.liveOnly.map((g) => <p key={`l${g.why}`} className="m-0 text-[12.5px] leading-snug"><b className="tabular-nums text-[var(--warn)]">{count(g.n)}</b> on the desk only &mdash; {g.why}</p>)}
     </li>
@@ -158,6 +183,18 @@ export function LiveCheckResult({ r }: { r: Check }) {
               </>}
           </p>
           {apart > 0 && <p aria-label="Not compared" className="m-0 text-[12.5px] leading-snug text-muted-foreground">Not compared: {apartWords(r)}.</p>}
+          {/* Settings changed since the desk traded: the decisions are compared, but the money cannot be (14 Oct 2026 audit). */}
+          {r.strategies.some((x) => x.rulesThen) && (
+            <p aria-label="Settings changed since" className="m-0 rounded-md bg-[var(--chosen-soft)] px-3 py-2 text-[12.5px] leading-snug text-foreground">
+              {r.strategies.length === 1
+                // One strategy: its own words here, as there is no list of strategies below to name it in.
+                ? rulesThenWords(r.strategies[0]!.rulesThen!)
+                : <>
+                  {(() => { const n = r.strategies.filter((x) => x.rulesThen).length; return `${n} strateg${n === 1 ? 'y was' : 'ies were'} traded with other lots or another stop than ${n === 1 ? 'it has' : 'they have'} now`; })()}
+                  {' '}-- the backtest uses today&apos;s settings, so its money is not what the desk made. Each one is named under &ldquo;Each strategy&rdquo; below.
+                </>}
+            </p>
+          )}
 
           {/*
             What became of the signals on each side, day by day (owner, 14 Oct 2026: "taken, not taken, skipped, refused,

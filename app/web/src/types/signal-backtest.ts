@@ -109,6 +109,8 @@ export type LiveCheckRow = {
   backtestSkipped: LiveCheckCount[];
   same: number;
   backtestOnly: LiveCheckWhy[]; liveOnly: LiveCheckWhy[];
+  /** The lots and option stop the desk's orders were sold with, where not the strategy's now (server: `LiveCheckRow`). */
+  rulesThen?: { lots: number[]; stopPct: number[]; orders: number; now: { lots: number; stopPct: number } } | null;
 };
 /** What became of the signals on one side: taken, still waiting, and the kinds of not taken -- the last four the desk's alone. */
 export type LiveCheckFate = { taken: number; waiting: number; notTaken: number; skipped: number; refused: number; rejected: number; expired: number; cancelled: number };

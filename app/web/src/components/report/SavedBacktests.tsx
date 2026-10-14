@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
 import { AS_SAVED, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, overQuery, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { time12 } from '@/lib/time';
@@ -208,7 +209,7 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
   );
 }
 
-export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run, onRun, onSaves }: {
+export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run, onRun, onSaves, wide = false }: {
   /**
    * Which of the screen's two sections this is in (owner, 13 Oct 2026: "the portfolio section or the backtest
    * section -- only one open at a time"). `single`: the saved backtests as a list to keep, put back on the screen,
@@ -227,6 +228,8 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
   onRun: (run: TogetherRun | null) => void;
   /** Told the saved backtests whenever they are read: the screen works one account's default limit out from them. */
   onSaves?: (saves: BacktestSave[]) => void;
+  /** A wide desk: the list is always open. On a phone it folds to one line (`listOpen`). */
+  wide?: boolean;
 }) {
   const [list, setList] = useState<BacktestSaves | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -246,6 +249,12 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
    */
   const [editing, setEditing] = useState<{ kind: 'save' | 'portfolio'; id: string } | null>(null);
   const [editName, setEditName] = useState('');
+  /*
+   * On a phone the saved list folds to one line (owner, 14 Oct 2026: "the backtest screen, user friendly"): eight
+   * saved backtests were 1,200px between the settings and the result. Kept as last left, in this browser.
+   */
+  const [listOpen, setListOpen] = usePersisted<boolean>('savedBacktests.listOpen.phone', false);
+  const listShown = wide || listOpen;
   const setRun = onRun;
 
   const refresh = useCallback(() => getBacktestSaves().then((x) => { setList(x); setFailed(null); return x; }, (e: Error) => { setFailed(e.message); return null; }), []);
@@ -390,7 +399,13 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
             {saidLine}
             {saves.length === 0
               ? <Empty>Nothing saved yet. Set the backtest up as you want it, give it a name and Save: it can be run again in one tap, and several run together under Portfolio.</Empty>
-              : <ul aria-label="Saved backtests" className="m-0 grid list-none gap-0 p-0">{saves.map(savedRow)}</ul>}
+              : listShown ? <ul aria-label="Saved backtests" className="m-0 grid list-none gap-0 p-0">{saves.map(savedRow)}</ul> : null}
+            {!wide && saves.length > 0 && (
+              <button type="button" aria-expanded={listOpen} onClick={() => setListOpen((v) => !v)}
+                className="m-0 min-h-[44px] w-full appearance-none rounded-md border border-solid border-border bg-transparent px-3 font-[inherit] text-[13.5px] font-medium text-foreground">
+                {listOpen ? 'Hide the saved list' : `Show the ${saves.length} saved${shown ? ` · ${shown.name} is on the screen` : ''}`}
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">

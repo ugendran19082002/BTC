@@ -1212,6 +1212,12 @@ export type LiveCheckRow = {
   /** Signals that are an order on the desk and a trade in the backtest. */
   same: number;
   backtestOnly: LiveCheckWhy[]; liveOnly: LiveCheckWhy[];
+  /**
+   * Where the desk's orders in the range were sold with other lots or another option stop than the strategy has now
+   * (14 Oct 2026 audit: on 13 Oct a strategy sold 12-16 lots with a 300% stop; the backtest replays every day by the
+   * rules as they stand -- 2 lots, 160% -- so its money is not the desk's). Null when they all match, or by settings.
+   */
+  rulesThen?: { lots: number[]; stopPct: number[]; orders: number; now: { lots: number; stopPct: number } } | null;
 };
 export type LiveCheck = {
   from: string; to: string;
@@ -1320,14 +1326,18 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
    */
   type OrderFate = 'taken' | 'waiting' | 'rejected' | 'expired' | 'cancelled';
   const orderFate = new Map<string, OrderFate>();
+  // The lots and the option stop each placed order was sold with: what the strategy's rules were then.
+  const orderRules = new Map<string, { lots: number; stopPct: number }>();
   const placedIds = live.filter((r) => r.status === 'placed' && r.trade_id).map((r) => r.trade_id!);
   if (placedIds.length) {
-    const found = await rows<{ trade_id: string; phase: string; filled: string; timed_out: boolean; rejected: boolean }>(
+    const found = await rows<{ trade_id: string; phase: string; filled: string; timed_out: boolean; rejected: boolean; lots: string | null; stop_pct: string | null }>(
       `SELECT t.trade_id, t.phase, coalesce((t.state->>'entrySize')::numeric, 0) AS filled,
+              t.plan->>'lots' AS lots, t.plan->'exitAsk'->>'stopLossPct' AS stop_pct,
               EXISTS (SELECT 1 FROM trade_events e WHERE e.trade_id = t.trade_id AND e.kind = 'entry_timeout') AS timed_out,
               EXISTS (SELECT 1 FROM trade_events e WHERE e.trade_id = t.trade_id AND e.kind IN ('entry_rejected', 'precheck_failed')) AS rejected
          FROM trades t WHERE t.trade_id = ANY($1)`, [placedIds]);
     for (const t of found) {
+      if (t.lots !== null) orderRules.set(t.trade_id, { lots: Number(t.lots), stopPct: Number(t.stop_pct ?? 0) });
       orderFate.set(t.trade_id, Number(t.filled) > 0 ? 'taken' : t.phase !== 'flat' && t.phase !== 'aborted' ? 'waiting' : t.rejected ? 'rejected' : t.timed_out ? 'expired' : 'cancelled');
     }
   }
@@ -1349,7 +1359,7 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
    * together under that account's limit as the desk holds them -- or, asked for a portfolio, its saved backtests
    * as a portfolio run works them.
    */
-  type Unit = { id: string; name: string; account: string | null; group: number; takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }) => DayPlan; mine: Map<string, Live> | null };
+  type Unit = { id: string; name: string; account: string | null; group: number; takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }) => DayPlan; mine: Map<string, Live> | null; now?: { lots: number; stopPct: number } };
   const groups: { caps: DayPlan['desk'] }[] = [];
   const units: Unit[] = [];
   if (folio) {
@@ -1366,6 +1376,7 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
           id: st.id, name: st.name, account: a.name, group: groups.length - 1,
           takes: (sig) => sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method),
           planFor: (sp) => planOfStrategy(st, sp, null), mine: liveBy.get(st.id) ?? new Map(),
+          now: { lots: st.config.lots, stopPct: st.config.stopLossPct ?? 0 },
         });
       }
     });
@@ -1541,8 +1552,16 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
       for (const x of [rowFate.live, fateByDay.get(day)!.live]) { x[f]++; if (f !== 'taken' && f !== 'waiting') x.notTaken++; }
     }
     btFate(side, rowFate.backtest);
+    // The rules the desk's orders were sold by, beside the strategy's now: only where they differ.
+    const then = [...records.values()].flatMap((r) => (r.status === 'placed' && r.trade_id && orderRules.has(r.trade_id) ? [orderRules.get(r.trade_id)!] : []));
+    const uniq = (xs: number[]) => [...new Set(xs.map((x) => Math.round(x * 1_000) / 1_000))].sort((a, b) => a - b);
+    const lotsThen = uniq(then.map((x) => x.lots)), stopThen = uniq(then.map((x) => x.stopPct));
+    const now = u.now ?? null;
+    const differs = now !== null && then.length > 0
+      && (lotsThen.some((x) => x !== now.lots) || stopThen.some((x) => Math.abs(x - now.stopPct) > 1e-9));
     return [{
       id: u.id, name: u.name, account: u.account, fate: rowFate,
+      rulesThen: differs ? { lots: lotsThen, stopPct: stopThen, orders: then.length, now: now! } : null,
       live: { placed: same + liveOnly.length, refused: refused.length, skipped: skipped.length },
       liveWhy: { refused: counted(refused.map((r) => liveWhy(r.detail))), skipped: counted(skipped.map((r) => liveWhy(r.detail))) },
       backtest: traded, backtestSkipped: counted([...side.refused.values()].filter((w) => !OUTSIDE.has(w)).map((w) => BT_WHY[w])),

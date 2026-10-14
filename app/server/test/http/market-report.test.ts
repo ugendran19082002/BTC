@@ -490,6 +490,18 @@ test('[critical] the live check: by a strategy, its backtest beside the desk\'s 
   await query("DELETE FROM trades WHERE trade_id = 'lc-expired'");
   await query('UPDATE strategy_signal_runs SET trade_id = NULL WHERE strategy_id = $1', [id]);
 
+  // the settings the desk's order was sold with, where not the strategy's now (14 Oct 2026 audit): said, so the money is not misread
+  assert.equal(expired.strategies[0].rulesThen ?? null, null, 'an order with no lots of its own says nothing');
+  await query(`INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at) VALUES ('lc-then', 'C-BTC-84000-x', 'flat', 0, $1, '{"entrySize": 16}', $2)`,
+    [JSON.stringify({ lots: 16, exitAsk: { stopLossPct: 3, takeProfitPct: 0.9 } }), Date.now()]);
+  await query('UPDATE strategy_signal_runs SET trade_id = $1 WHERE strategy_id = $2 AND signal_key = $3', ['lc-then', id, keyOf(mine[0]!)]);
+  const then = (await check(`&strategy=${id}`)).body.strategies[0];
+  assert.deepEqual(then.rulesThen, { lots: [16], stopPct: [3], orders: 1, now: { lots: 1, stopPct: 3 } }, 'sold with 16 lots then; 1 now');
+  await query("UPDATE trades SET plan = $1 WHERE trade_id = 'lc-then'", [JSON.stringify({ lots: 1, exitAsk: { stopLossPct: 3 } })]);
+  assert.equal((await check(`&strategy=${id}`)).body.strategies[0].rulesThen, null, 'the same settings: nothing to say');
+  await query("DELETE FROM trades WHERE trade_id = 'lc-then'");
+  await query('UPDATE strategy_signal_runs SET trade_id = NULL WHERE strategy_id = $1', [id]);
+
   // every strategy: the totals are their sum, and one held to one open counts what it did not trade by why
   const all = await check('&all=1');
   assert.ok(all.body.strategies.length >= 2);
