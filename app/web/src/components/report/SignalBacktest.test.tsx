@@ -414,6 +414,24 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery().params).toMatchObject({ slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0 }));
   });
 
+  it('[critical] a saved backtest put on the screen: the SL / TGT fields show its range, not the last one\'s (15 Oct 2026)', async () => {
+    window.localStorage.setItem('btc-desk:savedBacktests.listOpen.phone', 'true');
+    const saved = (id: string, name: string, params: object) => ({ id, name, query: { params: { ...RESULT.params, slMax: 0, tgtMax: 0, vol: 'off', minPremium: 10, ...params }, tfs: [], methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
+    saves.getBacktestSaves.mockResolvedValue({ saves: [saved('a', 'Wide', { slMin: 250, tgtMin: 100 }), saved('b', 'Near', { slMin: 200, tgtMin: 200 })], portfolios: [] });
+    show();
+    await screen.findByText('Backtest result');
+    const range = () => within(screen.getByRole('region', { name: 'SL and TGT range' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Run Wide' }));
+    await waitFor(() => expect(range().getByLabelText('SL at least, points')).toHaveValue(250));
+    expect(range().getByLabelText('TGT at least, points')).toHaveValue(100);
+    fireEvent.click(screen.getByRole('button', { name: 'Run Near' }));
+    await waitFor(() => expect(range().getByLabelText('SL at least, points')).toHaveValue(200));
+    expect(range().getByLabelText('TGT at least, points')).toHaveValue(200);
+    // and leaving a field puts back nothing stale
+    fireEvent.blur(range().getByLabelText('SL at least, points'));
+    expect(lastQuery().params).toMatchObject({ slMin: 200, tgtMin: 200 });
+  });
+
   it('[critical] the no-entry window: the strategy form\'s own, in the settings -- sent, said in the result, kept with a saved backtest (15 Oct 2026)', async () => {
     show();
     await screen.findByText('Backtest result');

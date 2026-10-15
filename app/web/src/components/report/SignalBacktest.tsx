@@ -128,6 +128,14 @@ export function rangeProblem(r: Range): string | null {
  */
 function SlTgtRange({ value, onApply }: { value: Range; onApply: (r: Range) => void }) {
   const [draft, setDraft] = useState<Record<keyof Range, string>>(() => ({ slMin: String(value.slMin), slMax: String(value.slMax), tgtMin: String(value.tgtMin), tgtMax: String(value.tgtMax) }));
+  /*
+   * The fields follow the range in force when it changes from outside (15 Oct 2026): a saved backtest put on the
+   * screen showed its 200s below and the last one's 250s in the fields -- and leaving a field would have put the 250s
+   * back. Nothing is applied while a field is being typed in, so this never overwrites typing.
+   */
+  useEffect(() => {
+    setDraft({ slMin: String(value.slMin), slMax: String(value.slMax), tgtMin: String(value.tgtMin), tgtMax: String(value.tgtMax) });
+  }, [value.slMin, value.slMax, value.tgtMin, value.tgtMax]);
   const parsed: Range = { slMin: Number(draft.slMin || 0), slMax: Number(draft.slMax || 0), tgtMin: Number(draft.tgtMin || 0), tgtMax: Number(draft.tgtMax || 0) };
   const problem = rangeProblem(parsed);
   const apply = () => { if (problem === null && RANGE_KEYS.some((k) => parsed[k] !== value[k])) onApply(parsed); };
@@ -416,7 +424,7 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
               <CustomValue value={target.targetPct} presets={TARGETS.map((x) => x.value)} spec={CUSTOM.target} name="Option target, for the run" onChange={(targetPct) => put({ target: { targetPct } })} />
             </ChipRow>
           ) : (
-            <TargetSteps key={JSON.stringify(target.targetSteps ?? [])} start={target.targetPct > 0 ? target.targetPct : 0.7} steps={target.targetSteps ?? []}
+            <TargetSteps key={`${target.targetPct}|${JSON.stringify(target.targetSteps ?? [])}`} start={target.targetPct > 0 ? target.targetPct : 0.7} steps={target.targetSteps ?? []}
               copyFrom={stepSources} onApply={(targetPct, targetSteps) => { setDynamicDraft(false); put({ target: { targetPct, targetSteps } }); }} />
           )}
         </>}
@@ -766,7 +774,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           <CustomValue value={params.targetPct} presets={TARGETS.map((x) => x.value)} spec={CUSTOM.target} name="Option target" onChange={(targetPct) => set({ targetPct })} />
         </ChipRow>
       ) : (
-        <TargetSteps key={JSON.stringify(params.targetSteps ?? [])} start={params.targetPct > 0 ? params.targetPct : 0.7} steps={params.targetSteps ?? []}
+        <TargetSteps key={`${params.targetPct}|${JSON.stringify(params.targetSteps ?? [])}`} start={params.targetPct > 0 ? params.targetPct : 0.7} steps={params.targetSteps ?? []}
           copyFrom={stepSources} onApply={(targetPct, targetSteps) => set({ targetPct, targetSteps })} />
       )}
       <ChipRow wide={wide} label="The option's own stop, over the premium sold">
