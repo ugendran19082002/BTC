@@ -4,7 +4,7 @@ import {
   PORTFOLIO_MEMBERS_MAX, dropPortfolio, dropSave, keepPortfolio, keepSave, listSaves, nameProblem, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
 import { backtestable, type BacktestParams } from '../../report/signal-backtest.js';
-import { liveCheck, portfolioBacktest, portfolioDay } from '../../report/backtest-run.js';
+import { liveCheck, portfolioBacktest, portfolioTrades } from '../../report/backtest-run.js';
 import { backtestParamsFrom, backtestParamsOf, liveAccounts, rangeOf } from './market.routes.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
@@ -173,16 +173,21 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
   });
 
   /**
-   * One expiry day of the run, trade by trade (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL,
-   * TGT, points and money"): the same query as the run, and `?day=YYYY-MM-DD`, one of its days. Read-only.
+   * The run's trades, one by one (owner, 14 Oct 2026: "tap the count"; 15 Oct: "by session too"): the same query as
+   * the run, narrowed by `?day=`, `?sfrom=&sto=` and `?smethod=` as the single backtest's are. Read-only.
    */
-  app.get('/api/backtest-portfolio/day', async (req, reply) => {
+  app.get('/api/backtest-portfolio/trades', async (req, reply) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const asked = await portfolioQuery(q);
     if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
-    const day = typeof q.day === 'string' ? q.day : '';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < asked.r.from || day > asked.r.to) return refuse(reply, 400, { error: 'The day is one of the run\'s expiry days, as YYYY-MM-DD.' });
-    return portfolioDay({ ...asked.r, now: Date.now(), spot: tradingService().spot, shared: asked.shared, members: asked.members }, day);
+    // Which trades (`TradePick`): one of its days, or all; a session of the day as fifteen-minute slots; one method.
+    const day = typeof q.day === 'string' && q.day !== '' ? q.day : null;
+    if (day !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < asked.r.from || day > asked.r.to)) return refuse(reply, 400, { error: 'The day is one of the expiry days asked for, as YYYY-MM-DD.' });
+    const slot = (k: string) => (q[k] === undefined || q[k] === '' ? null : Number(q[k]));
+    const slotFrom = slot('sfrom'), slotTo = slot('sto');
+    if ([slotFrom, slotTo].some((x) => x !== null && !(Number.isInteger(x) && x >= 0 && x <= 95))) return refuse(reply, 400, { error: 'A session is fifteen-minute slots from 0 (5:30 PM) to 95.' });
+    const pick = { day, slotFrom, slotTo, method: typeof q.smethod === 'string' && q.smethod !== '' ? q.smethod : null };
+    return portfolioTrades({ ...asked.r, now: Date.now(), spot: tradingService().spot, shared: asked.shared, members: asked.members }, pick);
   });
 
   /**

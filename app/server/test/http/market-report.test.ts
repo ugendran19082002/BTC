@@ -427,7 +427,7 @@ test('[critical] one expiry day of the backtest, trade by trade: the same trades
   assert.equal(whole.status, 200);
   const row = whole.body.days.find((x: any) => x.day === CLIMB);
   assert.ok(row && row.n > 0, 'the day traded');
-  const d = await get(`/api/signal-backtest/day?${q}&day=${CLIMB}`);
+  const d = await get(`/api/signal-backtest/trades?${q}&day=${CLIMB}`);
   assert.equal(d.status, 200, JSON.stringify(d.body).slice(0, 200));
   assert.deepEqual([d.body.day, d.body.total, d.body.trades.length], [CLIMB, row.n, row.n]);
   const sum = (k: string) => d.body.trades.reduce((n: number, t: any) => n + t[k], 0);
@@ -441,10 +441,27 @@ test('[critical] one expiry day of the backtest, trade by trade: the same trades
   assert.ok('optTgt' in t && 'optStop' in t, 'and its option levels, or none');
   assert.ok(d.body.trades.every((x: any, i: number, xs: any[]) => i === 0 || xs[i - 1].at <= x.at), 'by time');
   // narrowed as the backtest is: only the time frame and method asked for
-  const narrow = await get(`/api/signal-backtest/day?${q}&tf=15m&method=breakout&day=${CLIMB}`);
+  const narrow = await get(`/api/signal-backtest/trades?${q}&tf=15m&method=breakout&day=${CLIMB}`);
   assert.ok(narrow.body.trades.every((x: any) => x.tf === '15m' && x.method === 'breakout'));
-  assert.equal((await get(`/api/signal-backtest/day?${q}&day=2020-01-01`)).status, 400, 'a day outside the range');
-  assert.equal((await get(`/api/signal-backtest/day?${q}&day=today`)).status, 400);
+  assert.equal((await get(`/api/signal-backtest/trades?${q}&day=2020-01-01`)).status, 400, 'a day outside the range');
+  assert.equal((await get(`/api/signal-backtest/trades?${q}&day=today`)).status, 400);
+
+  // by session of the day (15 Oct 2026): each method in each fifteen-minute slot, adding up to the whole
+  const rowsS = whole.body.bySession as { slot: number; method: string; name: string; n: number; wins: number; net: number; charges: number }[];
+  assert.ok(rowsS.length > 0 && rowsS.every((x) => Number.isInteger(x.slot) && x.slot >= 0 && x.slot <= 95 && x.name));
+  assert.equal(rowsS.reduce((n, x) => n + x.n, 0), whole.body.total.n, 'every trade in one slot');
+  assert.ok(Math.abs(rowsS.reduce((n, x) => n + x.net, 0) - whole.body.total.net) < 1e-9);
+  // a session's trades, over every day: as many as its rows, and that money -- and one method of it alone
+  const first = rowsS[0]!, lo = first.slot - (first.slot % 4), hi = lo + 3;
+  const inSession = rowsS.filter((x) => x.slot >= lo && x.slot <= hi);
+  const s = await get(`/api/signal-backtest/trades?${q}&sfrom=${lo}&sto=${hi}`);
+  assert.equal(s.status, 200, JSON.stringify(s.body).slice(0, 200));
+  assert.equal(s.body.total, inSession.reduce((n, x) => n + x.n, 0), 'the hour\'s trades, every day');
+  assert.ok(Math.abs(s.body.trades.reduce((n: number, t: any) => n + t.netUsd, 0) - inSession.reduce((n, x) => n + x.net, 0)) < 1e-9);
+  const one = await get(`/api/signal-backtest/trades?${q}&sfrom=${lo}&sto=${hi}&smethod=${first.method}`);
+  assert.equal(one.body.total, inSession.filter((x) => x.method === first.method).reduce((n, x) => n + x.n, 0));
+  assert.ok(one.body.trades.every((t: any) => t.method === first.method));
+  assert.equal((await get(`/api/signal-backtest/trades?${q}&sfrom=96`)).status, 400, 'no slot past the day');
 });
 
 test('[critical] the live check: by a strategy, its backtest beside the desk\'s own decisions; by settings, beside the live rules run with them', async () => {
@@ -704,14 +721,20 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.deepEqual([own.body.shared, own.body.total.n], [null, run.body.total.n]);
   // one expiry day, trade by trade (14 Oct 2026, "tap the count"): the trades add up to the day's row, each with whose it is
   for (const [label, q, r] of [['one account', '&max=2&ce=100&pe=100', one], ['each its own', '&limit=own&max=2', own], ['added up', '', run]] as const) {
-    const d = await get(`/api/backtest-portfolio/day?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}${q}&day=${CLIMB}`);
+    const d = await get(`/api/backtest-portfolio/trades?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}${q}&day=${CLIMB}`);
     assert.equal(d.status, 200, JSON.stringify(d.body).slice(0, 200));
     const row = r.body.days.find((x: any) => x.day === CLIMB);
     assert.equal(d.body.total, row.n, `${label}: as many trades as the day row`);
     assert.ok(close(d.body.trades.reduce((n: number, t: any) => n + t.netUsd, 0), row.net), `${label}: the same money`);
     assert.ok(d.body.trades.length > 0 && d.body.trades.every((t: any) => typeof t.member === 'string' && t.member.length > 0), `${label}: each says whose it is`);
   }
-  assert.equal((await get(`/api/backtest-portfolio/day?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&day=2020-01-01`)).status, 400, 'a day outside the run');
+  assert.equal((await get(`/api/backtest-portfolio/trades?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&day=2020-01-01`)).status, 400, 'a day outside the run');
+  // by session, all of them together: the rows add up to the run, and a session's trades to its rows
+  for (const r of [run, one, own]) assert.equal(r.body.bySession.reduce((n: number, x: any) => n + x.n, 0), r.body.total.n);
+  const sess = one.body.bySession[0], from4 = sess.slot - (sess.slot % 4);
+  const want = one.body.bySession.filter((x: any) => x.slot >= from4 && x.slot <= from4 + 3).reduce((n: number, x: any) => n + x.n, 0);
+  const got = await get(`/api/backtest-portfolio/trades?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&max=2&ce=100&pe=100&sfrom=${from4}&sto=${from4 + 3}`);
+  assert.equal(got.body.total, want, 'one account: the session\'s trades, as its rows count them');
 
   // saved backtests that carry the account's limit themselves: the largest is the one shared
   const l2 = await post('/api/backtest-saves', { name: 'Limited two', query: { params: { ...WHOLE, deskMax: 2, cePct: 100, pePct: 100 }, tfs: [], methods: [], strategy: null } });

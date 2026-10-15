@@ -671,14 +671,41 @@ function addBt(a: BtTot, b: BtTot): BtTot {
   }
   return a;
 }
-type BtCell = { day: string; method: string; mode: 'single' | 'mtf'; tf: string; vol: VolLevel | null; tot: BtTot };
+/**
+ * The fifteen minutes of the trading day a signal filled in: 0 is 5:30-5:45 PM IST, when the daily contract's day
+ * begins, 95 the last quarter before the next 5:30 PM. Sessions of any length the screen asks for -- 15 minutes to six
+ * hours -- are made of these (owner, 15 Oct 2026: "by session, 1h by default, 15m to 6h").
+ */
+export const SLOT_MS = 15 * 60_000;
+export const slotOf = (ms: number): number => {
+  const day = 86_400_000, sinceStart = (ms + 330 * 60_000 - (17 * 60 + 30) * 60_000) % day;
+  return Math.floor(((sinceStart + day) % day) / SLOT_MS);
+};
+type BtCell = { day: string; method: string; mode: 'single' | 'mtf'; tf: string; vol: VolLevel | null; slot: number; tot: BtTot };
+/** One method's trades in one fifteen-minute slot, over the range: what the session table is added up from. */
+export type BtSlotRow = { slot: number; method: string; name: string; n: number; wins: number; net: number; charges: number };
+function slotRows(cells: readonly Pick<BtCell, 'slot' | 'method' | 'tot'>[], nameOf: (id: string) => string, into = new Map<string, BtSlotRow>()): Map<string, BtSlotRow> {
+  for (const c of cells) {
+    const k = `${c.slot}|${c.method}`;
+    const r = into.get(k) ?? { slot: c.slot, method: c.method, name: nameOf(c.method), n: 0, wins: 0, net: 0, charges: 0 };
+    r.n += c.tot.n; r.wins += c.tot.wins; r.net += c.tot.net; r.charges += c.tot.charges;
+    into.set(k, r);
+  }
+  return into;
+}
+const slotList = (m: Map<string, BtSlotRow>) => [...m.values()].sort((a, b) => a.slot - b.slot || b.net - a.net);
+/** Each method's name as the screens say it: "#50 Gamma wall reaction". */
+async function methodNames(): Promise<Map<string, string>> {
+  return new Map((await rows<{ id: string; n: number | null; name: string }>('SELECT id, n, name FROM entry_methods')).map((m) => [m.id, m.n === null ? m.name : `#${m.n} ${m.name}`]));
+}
 
 function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
   const by = new Map<string, BtCell>();
   for (const t of trades) {
     const s = t.signal;
-    const key = `${s.method}|${s.mode}|${s.tf}|${t.vol}`;
-    const cell = by.get(key) ?? { day, method: s.method, mode: s.mode, tf: s.tf, vol: t.vol, tot: zeroBt() };
+    const slot = slotOf(s.filledAt);
+    const key = `${s.method}|${s.mode}|${s.tf}|${t.vol}|${slot}`;
+    const cell = by.get(key) ?? { day, method: s.method, mode: s.mode, tf: s.tf, vol: t.vol, slot, tot: zeroBt() };
     by.set(key, cell);
     const x = cell.tot, win = t.netUsd > 0;
     x.n++; x.net += t.netUsd; x.perpPts += t.perpPts; x.charges += t.chargesUsd;
@@ -850,6 +877,8 @@ export type SignalBacktest = {
   pairs: BtRow[]; byTf: BtRow[]; byMethod: BtRow[]; byPattern: BtRow[]; byFamily: BtRow[];
   /** By how volatile the market was when each signal filled: low, medium, high, in that order; those it could not be said of are left out. */
   byVol: BtRow[];
+  /** Each method in each fifteen-minute slot of the day (`slotOf`), over the range: the session table's own figures. */
+  bySession: BtSlotRow[];
   /** What there is to filter by. Each method carries what it made on the timeframes chosen, whichever methods are ticked. */
   choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string; n: number; wins: number; net: number }[] };
 };
@@ -908,6 +937,8 @@ export type BacktestPortfolioResult = {
   from: string; to: string;
   /** The one limit they were traded under together, as the desk rounds it; null where each kept its own. */
   shared: { max: number; ce: number; pe: number; cePct: number; pePct: number; /** Signals that found the account, or their side of it, full. */ turnedAway: number } | null;
+  /** Each method in each fifteen-minute slot, all of them together (`BtSlotRow`). */
+  bySession: BtSlotRow[];
   members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
   total: BtTot;
   /** Each expiry day: all of them together, and each one's own net in the members' order. */
@@ -944,6 +975,8 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
     return prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
   };
   const fetched = await marksFetchedBy(days.map((d) => expiryCodeOf(d.day)));
+  const names = await methodNames();
+  const sessions = new Map<string, BtSlotRow>();
   const books = o.members.map((m) => (m.ask && !m.problem ? bookOf(m.ask) : null));
   const totals = o.members.map(() => zeroBt()), signals = o.members.map(() => 0), peaks = o.members.map(() => 0);
   const priced = o.members.map((): Record<BoardGrain, number> => ({ 'own-1m': 0, 'mark-1m': 0, '5m': 0 }));
@@ -962,7 +995,9 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
     const all: { at: number; until: number; margin: number; lots: number }[] = [];
     live.forEach(({ i }, k) => {
       const out = outs[k]!;
-      const t = cellsOf(d.day, out.trades).reduce((a, c) => addBt(a, c.tot), zeroBt());
+      const dayCells = cellsOf(d.day, out.trades);
+      slotRows(dayCells, (id) => names.get(id) ?? id, sessions);
+      const t = dayCells.reduce((a, c) => addBt(a, c.tot), zeroBt());
       addBt(totals[i]!, t);
       signals[i]! += out.trades.length + out.refused.length;
       turnedAway += out.skipped['desk-limit'] + out.skipped['side-limit'];
@@ -983,7 +1018,7 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
     ? { id: m.id, name: m.name, problem: null, signals: signals[i]!, total: totals[i]!, marginPeakUsd: peaks[i]!, priced: priced[i]! }
     : { id: m.id, name: m.name, problem: m.problem ?? 'It cannot be worked out.', signals: 0, total: zeroBt(), marginPeakUsd: 0, priced: null }));
   return {
-    from: o.from, to: o.to, members,
+    from: o.from, to: o.to, members, bySession: slotList(sessions),
     shared: { max: caps.max, ce: caps.side?.CE ?? caps.max, pe: caps.side?.PE ?? caps.max, cePct: o.shared!.cePct, pePct: o.shared!.pePct, turnedAway },
     total: totals.reduce((t, x) => addBt(t, x), zeroBt()),
     days: rows,
@@ -1027,8 +1062,13 @@ async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
     if (p.usd > peak.usd) peak = { ...p, day };
     daily += p.usd; dailyN++;
   }
+  const sessions = new Map<string, BtSlotRow>();
+  for (const r of worked) for (const x of r.bySession) {
+    const k = `${x.slot}|${x.method}`, h = sessions.get(k);
+    if (h) { h.n += x.n; h.wins += x.wins; h.net += x.net; h.charges += x.charges; } else sessions.set(k, { ...x });
+  }
   return {
-    from: o.from, to: o.to, members, shared: null,
+    from: o.from, to: o.to, members, shared: null, bySession: slotList(sessions),
     total: worked.reduce((t, r) => addBt(t, r.total), zeroBt()),
     days,
     margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, peakLots: peak.lots, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: members.reduce((a, m) => a + m.marginPeakUsd, 0) },
@@ -1143,6 +1183,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
     byPattern: group((c) => patternOf.get(c.day) ?? null, (c) => { const p = PATTERNS.find((x) => x.key === patternOf.get(c.day))!; return { name: `#${p.id} ${p.name}` }; }).sort(byNet),
     byFamily: group((c) => { const p = patternOf.get(c.day); return p ? familyOf(p) : null; }, (c) => ({ name: FAMILIES.find((f) => f.key === familyOf(patternOf.get(c.day)!))!.name })).sort(byNet),
     byVol: group((c) => c.vol, (c) => ({ name: c.vol === 'low' ? 'Low' : c.vol === 'high' ? 'High' : 'Medium' })).sort((a, b) => VOL_LEVELS.indexOf(a.key as VolLevel) - VOL_LEVELS.indexOf(b.key as VolLevel)),
+    bySession: slotList(slotRows(cells, nameOf)),
     choices: {
       timeframes: distinct(listCells.map((c) => ({ key: tfKeyOf(c), name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf }))).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
       methods: distinct(listCells.map((c) => ({ key: c.method, name: nameOf(c.method) })))
@@ -1625,6 +1666,15 @@ export type BtTradeRow = {
   member?: string;
 };
 export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };
+/**
+ * Which trades to list: one expiry day, or every day of the range; and within them a session of the day -- fifteen-
+ * minute slots `slotFrom` to `slotTo`, both in (`slotOf`) -- and one method. Absent is all.
+ */
+export type TradePick = { day?: string | null; slotFrom?: number | null; slotTo?: number | null; method?: string | null };
+const picked = (pick: TradePick) => (t: BtTradeRow) => {
+  const slot = slotOf(t.at);
+  return (pick.slotFrom == null || slot >= pick.slotFrom) && (pick.slotTo == null || slot <= pick.slotTo) && (!pick.method || t.method === pick.method);
+};
 /** A day's list is cut here: a day of every signal can run to thousands, and a screen does not need them all at once. */
 const DAY_TRADES_MAX = 3_000;
 
@@ -1654,7 +1704,7 @@ const listed = (day: string, xs: BtTradeRow[]): BtDayTrades => {
 };
 
 /** One expiry day of a backtest, played again with the same settings, trade by trade: what its day row adds up. */
-async function signalBacktestDayNow(o: Ask, day: string, member?: string): Promise<BtDayTrades> {
+async function signalBacktestDayRows(o: Ask, day: string, member?: string): Promise<BtTradeRow[]> {
   const c = await dayContext(day, o.now);
   const st = o.strategy ?? null, rule = st?.config.signal ?? null;
   const ownOnly = (sig: BtSignal) => !rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method));
@@ -1669,17 +1719,17 @@ async function signalBacktestDayNow(o: Ask, day: string, member?: string): Promi
     from: c.from, to: c.to, signals: c.raw.signals.filter(takes), plan,
     volAt: volReader(c.raw.minutes, c.baseline), volOnly, bars: c.raw.minutes.filter((b) => b.at >= c.from), board: c.raw.board,
   });
-  return listed(day, r.trades.filter((t) => chosen(t.signal)).map((t) => rowOf(t, c.nameOf, member)));
+  return r.trades.filter((t) => chosen(t.signal)).map((t) => rowOf(t, c.nameOf, member));
 }
 
 /** One expiry day of a portfolio, as its run works it: one account's clock and limit, or each member alone. */
-async function portfolioDayNow(o: PortfolioAsk, day: string): Promise<BtDayTrades> {
+async function portfolioDayRows(o: PortfolioAsk, day: string): Promise<BtTradeRow[]> {
   const caps = o.shared ? deskCapsOf(o.shared) : null;
   const members = o.members.filter((m) => m.ask && !m.problem);
   if (!caps) {
     const all: BtTradeRow[] = [];
-    for (const m of members) all.push(...(await signalBacktestDayNow({ ...m.ask!, from: day, to: day, now: o.now, spot: o.spot ?? null }, day, m.name)).trades);
-    return listed(day, all);
+    for (const m of members) all.push(...await signalBacktestDayRows({ ...m.ask!, from: day, to: day, now: o.now, spot: o.spot ?? null }, day, m.name));
+    return all;
   }
   const c = await dayContext(day, o.now);
   const books = members.map((m) => ({ m, b: bookOf(m.ask!) }));
@@ -1688,17 +1738,33 @@ async function portfolioDayNow(o: PortfolioAsk, day: string): Promise<BtDayTrade
     from: c.from, to: c.to, bars: c.raw.minutes.filter((x) => x.at >= c.from), board: c.raw.board, shared: caps,
     books: books.map(({ b }) => ({ signals: c.raw.signals.filter(b.takes), plan: b.planFor({ from: c.from, to: c.to }), volAt, volOnly: b.volOnly })),
   });
-  return listed(day, books.flatMap(({ m }, k) => outs[k]!.trades.map((t) => rowOf(t, c.nameOf, m.name))));
+  return books.flatMap(({ m }, k) => outs[k]!.trades.map((t) => rowOf(t, c.nameOf, m.name)));
 }
 
-/** In turn with the other backtests of this thread, as `signalBacktestHere` is. */
-export function signalBacktestDayHere(o: Ask, day: string): Promise<BtDayTrades> {
-  const run = working.then(() => signalBacktestDayNow(o, day));
+/** The expiry days a pick covers: its one day, or every day of the range that has a record. */
+async function pickDays(from: string, to: string, now: number, pick: TradePick): Promise<string[]> {
+  if (pick.day) return [pick.day];
+  return (await marketDays(from, to, now)).filter((d) => d.day >= from && d.day <= to).map((d) => d.day);
+}
+/** A backtest's trades by session, method or day (`TradePick`), each day played again as its row was. */
+async function signalBacktestTradesNow(o: Ask, pick: TradePick): Promise<BtDayTrades> {
+  const all: BtTradeRow[] = [];
+  for (const day of await pickDays(o.from, o.to, o.now, pick)) all.push(...(await signalBacktestDayRows(o, day)).filter(picked(pick)));
+  return listed(pick.day ?? `${o.from}..${o.to}`, all);
+}
+async function portfolioTradesNow(o: PortfolioAsk, pick: TradePick): Promise<BtDayTrades> {
+  const all: BtTradeRow[] = [];
+  for (const day of await pickDays(o.from, o.to, o.now, pick)) all.push(...(await portfolioDayRows(o, day)).filter(picked(pick)));
+  return listed(pick.day ?? `${o.from}..${o.to}`, all);
+}
+export function signalBacktestTradesHere(o: Ask, pick: TradePick): Promise<BtDayTrades> {
+  const run = working.then(() => signalBacktestTradesNow(o, pick));
   working = run.catch(() => { });
   return run;
 }
-export function portfolioDayHere(o: PortfolioAsk, day: string): Promise<BtDayTrades> {
-  const run = working.then(() => portfolioDayNow(o, day));
+export function portfolioTradesHere(o: PortfolioAsk, pick: TradePick): Promise<BtDayTrades> {
+  const run = working.then(() => portfolioTradesNow(o, pick));
   working = run.catch(() => { });
   return run;
 }
+

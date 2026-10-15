@@ -46,6 +46,8 @@ export type SignalBacktestResponse = {
   pairs: BtRow[]; byTf: BtRow[]; byMethod: BtRow[]; byPattern: BtRow[]; byFamily: BtRow[];
   /** By the volatility when each signal filled: low, medium, high. An older server sends none. */
   byVol?: BtRow[];
+  /** Each method in each fifteen-minute slot of the day, over the range (`BtSlotRow`); absent from an older server. */
+  bySession?: BtSlotRow[];
   choices: { timeframes: { key: string; name: string }[]; methods: { key: string; name: string; n: number; wins: number; net: number }[] };
 };
 export type BacktestQuery = { from: string; to: string; params: BacktestParams; tfs: readonly string[]; methods: readonly string[]; strategy?: string | null };
@@ -93,6 +95,8 @@ export type BacktestPortfolioResult = {
   days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];
   /** The most held at once across all of them, laid on one clock; and the sum of each one's own most, which it never exceeds. */
   margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, together. An older server sends none. */ peakLots?: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
+  /** Each method in each fifteen-minute slot, all of them together; absent from an older server. */
+  bySession?: BtSlotRow[];
 };
 
 /** Signals on one side only -- an order on the desk with no trade in the backtest, or the other way -- by why, with the first few. */
@@ -154,3 +158,10 @@ export type BtTradeRow = {
 };
 /** One expiry day's trades: `total` of them, the first `trades.length` listed. */
 export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };
+/**
+ * One method's trades in one fifteen-minute slot of the trading day, over the range (server: `BtSlotRow`). Slot 0 is
+ * 5:30-5:45 PM IST, when the daily contract's day begins; 95 the last quarter before the next 5:30 PM.
+ */
+export type BtSlotRow = { slot: number; method: string; name: string; n: number; wins: number; net: number; charges: number };
+/** Which trades to list: one expiry day or all of them, a session of the day (slots, both in), one method. */
+export type TradePick = { day?: string | null; slotFrom?: number | null; slotTo?: number | null; method?: string | null };

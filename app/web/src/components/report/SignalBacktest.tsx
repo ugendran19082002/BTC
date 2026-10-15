@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { getBacktestDay, getLiveCheck, getSignalBacktest } from '@/api/signal-backtest';
+import { getBacktestTrades, getLiveCheck, getSignalBacktest } from '@/api/signal-backtest';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
 import type { PairStat } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
 import { time12 } from '@/lib/time';
-import type { BacktestParams, BacktestQuery, BacktestSave, BoardGrain, BtExit, BtRow, SavedQuery } from '@/types/signal-backtest';
+import type { BacktestParams, BacktestQuery, BacktestSave, BoardGrain, BtExit, BtRow, SavedQuery, TradePick } from '@/types/signal-backtest';
 import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES, type FilterSort } from '@/components/mobile/FilterPicker';
 import { WIN_AT_LEAST_PCT } from '@/lib/win-line';
 import { BacktestCurve } from '@/components/report/BacktestCurve';
 import { DayTradesSheet } from '@/components/report/DayTrades';
+import { SessionTable } from '@/components/report/SessionTable';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
@@ -541,6 +542,7 @@ const RESULT_PARTS = [
   { id: 'bt-exits', label: 'Exits & time frames' },
   { id: 'bt-pairs', label: 'Pairs' },
   { id: 'bt-methods', label: 'Methods' },
+  { id: 'bt-sessions', label: 'Sessions' },
   { id: 'bt-days', label: 'Days' },
   { id: 'bt-live', label: 'Live check' },
 ] as const;
@@ -602,8 +604,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [winAtLeast, setWinAtLeast] = usePersisted<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
   // How the method lists are ordered, the same in every one of them (`FilterSort`): kept in this browser.
   const [methodSort, setMethodSort] = usePersisted<FilterSort>('methods.sort', 'default');
-  // The expiry day whose trades are open, one by one (`DayTradesSheet`); null: none.
-  const [openDay, setOpenDay] = useState<string | null>(null);
+  // The trades open one by one (`DayTradesSheet`): of an expiry day, a session, a method in one; null: none.
+  const [openTrades, setOpenTrades] = useState<{ key: string; title?: string; pick: TradePick } | null>(null);
   const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('signalBacktest.grouping', 'family');
   // A saved strategy to backtest by (owner, 13 Oct 2026); null is the settings below.
   const [strategyId, setStrategyId] = usePersisted<string | null>('signalBacktest.strategy', null);
@@ -1230,6 +1232,15 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
 
           <div id="bt-methods" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><MethodsAsOptions rows={r.byMethod} wide={wide} /></div>
 
+          {/* By session of the day (owner, 15 Oct 2026): 1h by default, 15m to 6h, each with its methods. */}
+          {(r.bySession?.length ?? 0) > 0 && (
+            <div id="bt-sessions" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
+              <Panel title="By session of the day">
+                <SessionTable rows={r.bySession!} onOpen={(pick, title) => setOpenTrades({ key: `session:${pick.slotFrom}-${pick.slotTo}:${pick.method ?? ''}`, title, pick })} />
+              </Panel>
+            </div>
+          )}
+
           <div id="bt-days" className={cn('grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
             <Panel title="By kind of day">
               <Segmented label="Group the days by" value={grouping} onChange={setGrouping}
@@ -1237,7 +1248,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               <div className="mt-2"><Table caption="Backtest by kind of day" first={grouping === 'family' ? 'Family' : 'Market type'} rows={grouping === 'family' ? r.byFamily : r.byPattern} days /></div>
             </Panel>
             <Panel title="By expiry day">
-              <Table caption="Backtest by expiry day" first="Expiry day" onCount={setOpenDay} rows={[...r.days].reverse().map((d) => ({ ...d, key: d.day, name: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}${d.grain ? ` · ${GRAIN[d.grain]}` : ''}` }))} />
+              <Table caption="Backtest by expiry day" first="Expiry day" onCount={(day) => setOpenTrades({ key: day, pick: { day } })} rows={[...r.days].reverse().map((d) => ({ ...d, key: d.day, name: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}${d.grain ? ` · ${GRAIN[d.grain]}` : ''}` }))} />
               <p className="m-0 mt-1 text-[12px] text-muted-foreground">Tap a day&apos;s trade count for its trades, one by one.</p>
             </Panel>
           </div>
@@ -1257,7 +1268,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       </Updating>
       {/* The same backtest beside the live desk (14 Oct 2026): asked with the question on the screen, so it is the check of this result. */}
       <div id="bt-live" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><LiveCheck askKey={JSON.stringify(query)} read={() => getLiveCheck(query)} /></div>
-      <DayTradesSheet day={openDay} read={(d) => getBacktestDay(query, d)} onClose={() => setOpenDay(null)} />
+      <DayTradesSheet day={openTrades?.key ?? null} title={openTrades?.title} read={() => getBacktestTrades(query, openTrades!.pick)} onClose={() => setOpenTrades(null)} />
     </>
   );
 }

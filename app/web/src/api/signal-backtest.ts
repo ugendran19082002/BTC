@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { BacktestQuery, BtDayTrades, LiveCheck, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
+import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
 import type { StrategyConfig } from '@/types/strategy';
 
 /** A backtest's question as the server reads it: the days, the settings, the filters, the strategy. Shared with its live check, so both are of the same thing. */
@@ -27,12 +27,21 @@ export const getSignalBacktest = (q: BacktestQuery) => json<SignalBacktestRespon
  * The same backtest laid beside the live desk, signal for signal: by a strategy, its own rules against its own
  * record; by the screen's settings, those settings against what the desk did with each signal under any strategy.
  */
-/** One expiry day of the backtest on the screen, trade by trade. */
-export const getBacktestDay = (q: BacktestQuery, day: string) => {
+/** The backtest on the screen's trades, one by one: of a day, a session of the day, a method (`TradePick`). */
+export const getBacktestTrades = (q: BacktestQuery, pick: TradePick) => {
   const p = searchOf(q);
-  p.set('day', day);
-  return json<BtDayTrades>(`/api/signal-backtest/day?${p}`);
+  for (const [k, v] of pickQuery(pick)) p.set(k, v);
+  return json<BtDayTrades>(`/api/signal-backtest/trades?${p}`);
 };
+/** A pick as the routes read it: `day`, `sfrom`/`sto`, `smethod`. */
+export function pickQuery(pick: TradePick): [string, string][] {
+  return [
+    ...(pick.day ? [['day', pick.day]] as [string, string][] : []),
+    ...(pick.slotFrom != null ? [['sfrom', String(pick.slotFrom)]] as [string, string][] : []),
+    ...(pick.slotTo != null ? [['sto', String(pick.slotTo)]] as [string, string][] : []),
+    ...(pick.method ? [['smethod', pick.method]] as [string, string][] : []),
+  ];
+}
 export const getLiveCheck = (q: BacktestQuery) => json<LiveCheck>(`/api/signal-backtest/live-check?${searchOf(q)}`);
 
 /** Every method's record as options under a strategy's rules as they stand on its form -- saved or not; nothing is saved by asking. */

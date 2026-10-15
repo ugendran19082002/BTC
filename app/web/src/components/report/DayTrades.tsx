@@ -40,9 +40,11 @@ const perp = (v: number) => Math.round(v).toLocaleString('en-US');
 type Only = 'all' | 'won' | 'lost' | BtExit;
 type Order = 'time' | 'best' | 'worst';
 
-export function DayTradesSheet({ day, read, onClose }: {
-  /** The expiry day open, or null: closed. */
+export function DayTradesSheet({ day, title, read, onClose }: {
+  /** What is open -- an expiry day, or a key of the caller's own (a session, a method in one) -- or null: closed. */
   day: string | null;
+  /** The sheet's title; an expiry day's by default. */
+  title?: string;
   read: (day: string) => Promise<BtDayTrades>;
   onClose: () => void;
 }) {
@@ -101,7 +103,7 @@ export function DayTradesSheet({ day, read, onClose }: {
   return (
     <Sheet open={day !== null} onOpenChange={(v) => { if (!v) onClose(); }}>
       {day && (
-        <SheetContent className="sm:w-[min(960px,94vw)] sm:max-h-[88vh]" title={`${dayLabel(day)} · trade by trade`}
+        <SheetContent className="sm:w-[min(960px,94vw)] sm:max-h-[88vh]" title={title ?? `${dayLabel(day)} · trade by trade`}
           description={data ? `${count(data.total)} trades · ${pct(day$.n ? day$.won / day$.n : null, 0)} won · ${moneyText(day$.net)} after charges` : undefined}>
           {!data ? <Loading error={got?.error ?? null} what="the day's trades (the day is played again: a moment)" /> : (
             <div className="grid min-w-0 gap-2">
