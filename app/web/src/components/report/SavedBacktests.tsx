@@ -36,6 +36,7 @@ function shapeOf(q: SavedQuery): string {
     deskMax: p.deskMax ?? 0, cePct: p.cePct ?? 100, pePct: p.pePct ?? 100,
     range: [p.slMin ?? 0, p.slMax ?? 0, p.tgtMin ?? 0, p.tgtMax ?? 0],
     steps: (p.targetSteps ?? []).map((s) => [s.at, Math.round(s.pct * 10_000)]), vol: p.vol ?? 'off', minPremium: p.minPremium ?? 10,
+    noEntry: p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`) : null,
     tfs: [...q.tfs].sort(), methods: [...q.methods].sort(), strategy: q.strategy,
   });
 }

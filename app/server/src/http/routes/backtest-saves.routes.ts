@@ -76,17 +76,18 @@ async function portfolioQuery(q: Record<string, unknown>) {
      * backtest runs with its own; switched on, that filter is taken for now and applied to every backtest").
      * Each is its own switch: `o_rule` + `o_value` (the strike), `o_tp` with `o_tsteps` (the option's target,
      * fixed or by the clock), `o_sl` (its stop), `o_lots`, `o_minprem`, and `o_slmin` / `o_slmax` / `o_tgtmin` /
-     * `o_tgtmax` (the SL and TGT range, the four together). One that is absent is off: each member's own. They are
+     * `o_tgtmax` (the SL and TGT range, the four together), `o_noentry` (no-entry windows, 15 Oct 2026). One that is absent is off: each member's own. They are
      * read and held to their limits by the single backtest's own parser, so a value means here what it means there.
      */
-    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax'] as const;
+    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax', 'noentry'] as const;
     const asked: Record<string, unknown> = {};
     for (const k of O_KEYS) if (q[`o_${k}`] !== undefined && q[`o_${k}`] !== '') asked[k] = q[`o_${k}`];
     const has = (k: (typeof O_KEYS)[number]) => k in asked;
     if (has('value') && !has('rule')) return { code: 400, error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' };
     if (has('rule') && !has('value')) return { code: 400, error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' };
     if (has('tsteps') && !has('tp')) return { code: 400, error: 'A target by the clock for the run needs the target it starts from: o_tp.' };
-    const read = backtestParamsOf(asked);
+    // The no-entry windows for the run are held to the whole day: each member keeps its own hours, or the run's.
+    const read = backtestParamsOf(has('noentry') ? { ...asked, window: 'all' } : asked);
     if (typeof read === 'string') return { code: 400, error: `For the run: ${read}` };
     const range = has('slmin') || has('slmax') || has('tgtmin') || has('tgtmax');
     const settings: Partial<BacktestParams> = {
@@ -97,6 +98,7 @@ async function portfolioQuery(q: Record<string, unknown>) {
       ...(has('lots') ? { lots: read.lots } : {}),
       ...(has('minprem') ? { minPremium: read.minPremium } : {}),
       ...(range ? { slMin: read.slMin, slMax: read.slMax, tgtMin: read.tgtMin, tgtMax: read.tgtMax } : {}),
+      ...(has('noentry') ? { noEntry: read.noEntry } : {}),
     };
     const changed = Object.keys(settings).length > 0;
     const own = saves.filter((s) => s.query.strategy !== null).map((s) => s.id);

@@ -1,6 +1,7 @@
 import { json, post } from '@/api/client';
 import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
 import type { StrategyConfig } from '@/types/strategy';
+import { noEntryQuery } from '@/lib/backtest-no-entry';
 
 /** A backtest's question as the server reads it: the days, the settings, the filters, the strategy. Shared with its live check, so both are of the same thing. */
 function searchOf(q: BacktestQuery): URLSearchParams {
@@ -14,6 +15,9 @@ function searchOf(q: BacktestQuery): URLSearchParams {
   if (q.params.vol && q.params.vol !== 'off') p.set('vol', q.params.vol);
   if (q.params.minPremium !== undefined && q.params.minPremium !== 10) p.set('minprem', String(q.params.minPremium));
   if (q.params.window === 'custom' && q.params.hoursFrom && q.params.hoursTo) { p.set('hfrom', q.params.hoursFrom); p.set('hto', q.params.hoursTo); }
+  // Only windows that are right for the hours: the editor says what is wrong with any other.
+  const noEntry = noEntryQuery(q.params);
+  if (noEntry) p.set('noentry', noEntry);
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));
   if (q.strategy) p.set('strategy', q.strategy);

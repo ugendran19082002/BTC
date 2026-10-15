@@ -7,7 +7,7 @@ import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades } from '../../report/backtest-run.js';
 import { cleanConfig, strategyStore } from './strategy.routes.js';
-import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
+import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
@@ -118,9 +118,21 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
   // The least premium an option is sold for: `?minprem=`, dollars, 0 for no floor. Absent: 10.
   const minPremium = num('minprem', MIN_PREMIUM);
   if (!(minPremium >= 0 && minPremium <= 500)) return 'The minimum premium is from 0 (no floor) to 500 dollars.';
+  /*
+   * No-entry windows: `?noentry=00:30-01:30,03:00-04:00`, IST, from (taken) until (not). Held to the strategy form's
+   * own rules (`noEntryProblems`) against these settings' hours: each inside them, none all of them, no overlaps.
+   */
+  let noEntry: { on: boolean; windows: { from: string; to: string }[] } | undefined;
+  if (typeof q.noentry === 'string' && q.noentry.trim() !== '') {
+    const windows = q.noentry.split(',').map((x) => { const [from = '', to = ''] = x.trim().split('-'); return { from, to }; });
+    const [entry, exit] = window === 'desk' ? ['21:30', '15:59'] : window === 'custom' ? [hoursFrom, hoursTo] : ['17:30', '17:25'];
+    const bad = noEntryProblems({ on: true, windows }, entry, exit, true);
+    if (bad.length) return bad[0]!.replace("this strategy's", 'the hours\'').replace('Switch the strategy off instead.', 'Take the window off instead.');
+    noEntry = { on: true, windows };
+  }
   return {
     rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol, minPremium,
-    ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}),
+    ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}), ...(noEntry ? { noEntry } : {}),
   };
 }
 
@@ -132,6 +144,8 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
     rule: x.rule, value: x.value, lots: x.lots, tp: x.targetPct, sl: x.stopPct, window: x.window, hfrom: x.hoursFrom, hto: x.hoursTo,
     max: x.deskMax, ce: x.cePct, pe: x.pePct, slmin: x.slMin, slmax: x.slMax, tgtmin: x.tgtMin, tgtmax: x.tgtMax, vol: x.vol, minprem: x.minPremium,
     tsteps: Array.isArray(x.targetSteps) && x.targetSteps.length ? x.targetSteps.map((s) => `${s.at}:${Math.round(s.pct * 10_000) / 100}`).join(',') : undefined,
+    // Kept off with its times, as the form keeps them; only an on switch is a rule.
+    noentry: x.noEntry?.on && Array.isArray(x.noEntry.windows) ? x.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : undefined,
   });
 }
 

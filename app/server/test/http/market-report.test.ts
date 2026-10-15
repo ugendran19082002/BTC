@@ -421,6 +421,34 @@ test('[critical] the backtest by a saved strategy: its methods and timeframe, it
   assert.match(gone.body.error, /No such signal strategy/);
 });
 
+test('[critical] no-entry windows in the backtest\'s settings: read, held to the hours, and taking the signals inside out (15 Oct 2026)', async () => {
+  const q = `from=${CLIMB}&to=${QUIET}&window=all`;
+  const whole = await get(`/api/signal-backtest?${q}`);
+  assert.equal(whole.status, 200);
+  // the whole expiry day's hours, one window over all of it but the last five minutes: nothing traded in it
+  const most = await get(`/api/signal-backtest?${q}&noentry=17:30-17:20`);
+  assert.equal(most.status, 200, JSON.stringify(most.body).slice(0, 200));
+  assert.equal(most.body.total.n, 0, 'every signal is inside it');
+  assert.ok(whole.body.total.n > 0 && most.body.skipped['no-entry-window'] >= whole.body.total.n, 'each of them skipped as inside the window');
+  // the strategy form's own rules, on these hours
+  for (const [bad, said] of [['00:30-00:30', /empty/], ['21:00-22:00,21:30-23:00', /overlap/], ['17:30-17:25', /covers all/], ['nonsense', /from and an until time/]] as const) {
+    const r = await get(`/api/signal-backtest?${q}&noentry=${bad}`);
+    assert.equal(r.status, 400, bad);
+    assert.match(r.body.error, said);
+  }
+  // the desk's hours: a window outside 9:30 PM - 3:59 PM is refused, in the hours' words
+  const outside = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&window=desk&noentry=18:00-19:00`);
+  assert.equal(outside.status, 400);
+  assert.match(outside.body.error, /inside the hours' 9:30 PM – 3:59 PM/);
+  // saved with a backtest, and back as it was
+  const del = async (url: string) => { const r = await app.inject({ method: 'DELETE', url, headers: cookie }); return { status: r.statusCode }; };
+  const params = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'all', deskMax: 0, cePct: 100, pePct: 100, noEntry: { on: true, windows: [{ from: '00:30', to: '01:30' }] } };
+  const saved = await post('/api/backtest-saves', { name: 'With a quiet hour', query: { params, tfs: [], methods: [], strategy: null } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.deepEqual(saved.body.save.query.params.noEntry, { on: true, windows: [{ from: '00:30', to: '01:30' }] });
+  await del(`/api/backtest-saves/${saved.body.save.id}`);
+});
+
 test('[critical] one expiry day of the backtest, trade by trade: the same trades as its day row, each with its entry, exit, levels and money (14 Oct 2026)', async () => {
   const q = `from=${CLIMB}&to=${QUIET}&window=all`;
   const whole = await get(`/api/signal-backtest?${q}`);

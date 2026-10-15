@@ -489,6 +489,25 @@ test('[critical] several backtests on one account: one line in the desk\'s order
  * Several trades may share a contract (one trade per contract, 14 Oct 2026 morning, was lifted that day: the churn it
  * answered was the desk reading a hundred of its open orders, and it cut the strategies to one trade in six).
  */
+test('[critical] no-entry windows in the settings (15 Oct 2026): a signal filling inside one is skipped as the runner skips it, and the live rules carry them', async () => {
+  const { strategyOfParams } = await import('../../src/report/signal-backtest.js');
+  const one = byTime(contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]));
+  const flat = perp([[0, 84_000], [1_439, 84_000]]);
+  // minute 31 is 6:01 PM IST, minute 91 is 7:01 PM (the day starts at 5:30 PM)
+  const signals = [sig(31), sig(91)];
+  const free = simulateDay({ from, to, params: P, signals, bars: flat, board: one });
+  assert.equal(free.trades.length, 2);
+  const blocked = simulateDay({ from, to, params: { ...P, noEntry: { on: true, windows: [{ from: '18:00', to: '18:30' }] } }, signals, bars: flat, board: one });
+  assert.deepEqual(blocked.trades.map((t) => t.signal.filledAt), [sig(91).filledAt], 'the 6:01 PM signal is inside 6:00 - 6:30 PM');
+  assert.equal(blocked.skipped['no-entry-window'], 1);
+  // switched off, the times kept: no window
+  const off = simulateDay({ from, to, params: { ...P, noEntry: { on: false, windows: [{ from: '18:00', to: '18:30' }] } }, signals, bars: flat, board: one });
+  assert.equal(off.trades.length, 2);
+  // the live rules made of these settings carry the same windows (the live check compares like with like)
+  assert.deepEqual(strategyOfParams({ ...P, noEntry: { on: true, windows: [{ from: '18:00', to: '18:30' }] } }, null, null).config.noEntry, { on: true, windows: [{ from: '18:00', to: '18:30' }] });
+  assert.deepEqual(strategyOfParams(P, null, null).config.noEntry, { on: false, windows: [] });
+});
+
 test('[critical] signals while the first is open share its strike: each its own trade', async () => {
   const { simulateTogether, deskCapsOf } = await import('../../src/report/signal-backtest.js');
   // Two puts inside delta 0.10: 83,200 nearer the money, 83,000 further out. Both decay all day; the perp never reaches a level.

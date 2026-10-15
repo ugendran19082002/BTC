@@ -1,3 +1,4 @@
+import type { NoEntry } from '@/types/strategy';
 /** The signal history traded as options, as `/api/signal-backtest` gives it (server: `report/signal-backtest.ts`). */
 
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'window-end';
@@ -16,6 +17,8 @@ export type BacktestParams = {
   vol?: 'off' | 'low' | 'medium' | 'high';
   /** An option is not sold for less than this many dollars; 0 is no floor. Absent: the desk's own 10. */
   minPremium?: number;
+  /** No-entry windows, the strategy form's own shape (15 Oct 2026): off, or absent, is none. */
+  noEntry?: NoEntry;
 };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */

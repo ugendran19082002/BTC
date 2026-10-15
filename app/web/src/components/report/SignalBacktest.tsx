@@ -14,6 +14,9 @@ import { WIN_AT_LEAST_PCT } from '@/lib/win-line';
 import { BacktestCurve } from '@/components/report/BacktestCurve';
 import { DayTradesSheet } from '@/components/report/DayTrades';
 import { SessionTable } from '@/components/report/SessionTable';
+import { NoEntryFields, type SetField } from '@/components/strategy/form-parts';
+import { backtestHours, backtestNoEntryProblems, noEntryQuery } from '@/lib/backtest-no-entry';
+import type { NoEntry, StrategyConfig } from '@/types/strategy';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
@@ -775,6 +778,18 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       <Section title="Which signals are taken">
         {!byStrategy && <>
       <SlTgtRange value={{ slMin: params.slMin ?? 0, slMax: params.slMax ?? 0, tgtMin: params.tgtMin ?? 0, tgtMax: params.tgtMax ?? 0 }} onApply={(r) => set(r)} />
+      {/*
+        No-entry windows (owner, 15 Oct 2026: "the strategy form's, in the backtest's settings"): the form's own editor
+        and rules, held to these hours. A signal inside one is skipped as the desk skips it; a strategy chosen above
+        keeps its own windows.
+      */}
+      <div className="-mt-1 border-0 border-b border-solid border-[var(--line-soft)] pb-3">
+        <NoEntryFields
+          c={{ ...backtestHours(params), noEntry: params.noEntry ?? { on: false, windows: [] } } as unknown as StrategyConfig}
+          set={((k: string, v: unknown) => { if (k === 'noEntry') set({ noEntry: v as NoEntry }); }) as SetField}
+          err={(f) => (f === 'noEntry' ? backtestNoEntryProblems(params)[0] ?? null : null)}
+        />
+      </div>
         </>}
         {/* Off to begin with (owner, 13 Oct 2026). Shown with a strategy too: it is asked of the market, not of the strategy. */}
         <div className="grid gap-1 border-0 border-b border-solid border-[var(--line-soft)] pb-3">
@@ -1049,7 +1064,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             const b = (min = 0, max = 0) => [min > 0 ? `≥ ${min}` : null, max > 0 ? `≤ ${max}` : null].filter(Boolean).join(' ');
             const sl = b(params.slMin, params.slMax), tg = b(params.tgtMin, params.tgtMax);
             return !byStrategy && (sl || tg) ? ` · ${[sl ? `SL ${sl}` : null, tg ? `TGT ${tg}` : null].filter(Boolean).join(', ')} pts` : '';
-          })()}
+          })()}{!byStrategy && noEntryQuery(params) ? ` · no entry ${params.noEntry!.windows.map((w) => `${time12(w.from)} – ${time12(w.to)}`).join(', ')}` : ''}
         </p>
         {t.n === 0 ? <div className="mt-2"><Empty>No signal could be traded with these settings in this range.</Empty></div> : (
           <>

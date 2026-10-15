@@ -38,6 +38,7 @@ export function settingsWords(q: SavedQuery, strategies: readonly { id: string; 
     !byStrategy && (range(p.slMin, p.slMax) || range(p.tgtMin, p.tgtMax))
       ? [range(p.slMin, p.slMax) && `SL ${range(p.slMin, p.slMax)}`, range(p.tgtMin, p.tgtMax) && `TGT ${range(p.tgtMin, p.tgtMax)}`].filter(Boolean).join(', ') + ' pts'
       : null,
+    !byStrategy && p.noEntry?.on && p.noEntry.windows.length ? `no entry ${p.noEntry.windows.map((w) => `${time12(w.from)} – ${time12(w.to)}`).join(', ')}` : null,
     p.vol && p.vol !== 'off' ? `${p.vol} volatility` : null,
     p.deskMax > 0 ? `at most ${p.deskMax} open · CE ${p.cePct}% · PE ${p.pePct}%` : 'no open limit',
     withFilters && q.tfs.length ? `on ${q.tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ')}` : null,

@@ -86,6 +86,12 @@ export type BacktestParams = {
    * anything with a bid is sold.
    */
   minPremium?: number;
+  /**
+   * Stretches of the hours in which no new entry is taken (owner, 15 Oct 2026: "a no-entry window in the backtest's
+   * settings, as the strategy form has"): the strategy's own shape and rule (`noEntryWindowAt`) -- a signal filling
+   * inside one is skipped as `no-entry-window`; what is open keeps its exits. Off or absent: none.
+   */
+  noEntry?: { on: boolean; windows: { from: string; to: string }[] };
 };
 
 /**
@@ -293,6 +299,8 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
     refuses: (sig) => {
       if (sig.filledAt < span.from || sig.filledAt >= span.to - 5 * MIN) return 'outside-window';
       if (custom ? !(minutesForward(custom.from, istMinutes(sig.filledAt)) < minutesForward(custom.from, custom.to)) : sig.filledAt < opens || sig.filledAt >= closes) return 'outside-window';
+      // In the runner's order: its hours, then its no-entry windows, then the SL / TGT distances.
+      if (p.noEntry?.on && noEntryWindowAt({ noEntry: p.noEntry }, istMinutes(sig.filledAt))) return 'no-entry-window';
       return outOfRange(sig, sig.target, p) ? 'distance' : null;
     },
     /*
@@ -348,7 +356,7 @@ export function strategyOfParams(p: BacktestParams, tfs: readonly string[] | nul
     strikeRule: p.rule, strikeStep: 0, strikeBlocks: [], delta: { max: p.value }, premium: { mode: 'atMost', usd: p.value, fallbackUsd: null }, distance: null,
     lots: p.lots, legs: 'both', targetMode: 'pct', stopMode: 'pct', takeProfitPct: p.targetPct, stopLossPct: p.stopPct,
     // Read forward from the day's start, as the settings' own steps are; the strategy's from its entry time -- the same order on the clock.
-    targetSteps: (p.targetSteps ?? []).map((x) => ({ at: x.at, value: x.pct })), minPremiumUsd: p.minPremium ?? MIN_PREMIUM, noEntry: { on: false, windows: [] },
+    targetSteps: (p.targetSteps ?? []).map((x) => ({ at: x.at, value: x.pct })), minPremiumUsd: p.minPremium ?? MIN_PREMIUM, noEntry: p.noEntry?.on ? { on: true, windows: p.noEntry.windows.map((w) => ({ ...w })) } : { on: false, windows: [] },
     signal: {
       mode: chain ? 'mtf' : 'single', tf: single[0] ?? '5m', ...(chain ? {} : { tfs: single }), methods: methods ? [...methods] : [], target: 'tp1', maxOpen: 0, enterOn: 'zone', action: 'sell',
       minSlPts: pts(p.slMin), maxSlPts: pts(p.slMax), minTgtPts: pts(p.tgtMin), maxTgtPts: pts(p.tgtMax),
@@ -731,7 +739,7 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|floor:${p.minPremium ?? MIN_PREMIUM}`;
+const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   const text = JSON.stringify(s.config);
