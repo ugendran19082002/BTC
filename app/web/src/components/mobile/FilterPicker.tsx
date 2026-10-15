@@ -61,10 +61,13 @@ export function sortOptions<T extends Pick<FilterOption, 'value' | 'trades' | 'w
   }).map((x) => x.o);
 }
 
-/** The sort row, as chips that scroll sideways where they do not fit: the picker's own, and the strategy form's. */
+/**
+ * The sort row: the picker's own, the day sheet's and the strategy form's. Its chips wrap to a second line rather than
+ * scroll -- a sort past the edge of a phone is a sort nobody finds.
+ */
 export function SortRow({ value, onChange, className }: { value: FilterSort; onChange: (v: FilterSort) => void; className?: string }) {
   return (
-    <div role="group" aria-label="Sort" className={cn('flex items-center gap-1 overflow-x-auto', className)}>
+    <div role="group" aria-label="Sort" className={cn('flex flex-wrap items-center gap-1', className)}>
       <span className="shrink-0 pr-0.5 text-[12px] text-muted-foreground">Sort</span>
       {FILTER_SORTS.map((x) => (
         <button key={x.key} type="button" aria-pressed={value === x.key} onClick={() => onChange(x.key)}
