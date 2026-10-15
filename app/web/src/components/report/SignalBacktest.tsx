@@ -373,7 +373,7 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
     delete next[key];
     onChange(next);
   };
-  const { strike, target, stop, lots, minPremium, range } = over;
+  const { strike, target, stop, lots, minPremium, range, noEntry } = over;
   const values = strike?.rule === 'premium' ? PREMIUMS : DELTAS;
   const dynamic = (target?.targetSteps?.length ?? 0) > 0 || dynamicDraft;
   const switchedOn = Object.keys(over).length;
@@ -452,6 +452,17 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
       <RunFilter name="SL and TGT range" on={!!range} said={range ? said(range) : ''}
         onToggle={() => flip('range', { slMin: seed.slMin ?? 0, slMax: seed.slMax ?? 0, tgtMin: seed.tgtMin ?? 0, tgtMax: seed.tgtMax ?? 0 })}>
         {range && <SlTgtRange value={range} onApply={(r) => put({ range: r })} />}
+      </RunFilter>
+      {/* No-entry windows over every one of them, for the run (15 Oct 2026): the form's editor, held to the whole day. */}
+      <RunFilter name="No-entry window" on={!!noEntry} said={noEntry ? said({ noEntry: { ...noEntry, on: true } }) : ''}
+        onToggle={() => flip('noEntry', seed.noEntry?.on && seed.noEntry.windows.length ? seed.noEntry : { on: true, windows: [{ from: '00:30', to: '01:30' }] })}>
+        {noEntry && (
+          <NoEntryFields bare
+            c={{ entryTime: '17:30', exitTime: '17:25', noEntry: { ...noEntry, on: true } } as unknown as StrategyConfig}
+            set={((k: string, v: unknown) => { if (k === 'noEntry') put({ noEntry: { ...(v as NoEntry), on: true } }); }) as SetField}
+            err={(f) => (f === 'noEntry' ? backtestNoEntryProblems({ window: 'all', noEntry: { ...noEntry, on: true } } as BacktestParams)[0] ?? null : null)}
+          />
+        )}
       </RunFilter>
     </section>
   );

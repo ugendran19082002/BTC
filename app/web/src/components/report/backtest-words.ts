@@ -66,5 +66,6 @@ export function overWords(p: Partial<BacktestParams>): string[] {
     const sl = range(p.slMin, p.slMax), tgt = range(p.tgtMin, p.tgtMax);
     out.push(sl || tgt ? `${[sl && `SL ${sl}`, tgt && `TGT ${tgt}`].filter(Boolean).join(', ')} pts` : 'no SL / TGT range');
   }
+  if (p.noEntry?.on && p.noEntry.windows.length) out.push(`no entry ${p.noEntry.windows.map((w) => `${time12(w.from)} – ${time12(w.to)}`).join(', ')}`);
   return out;
 }

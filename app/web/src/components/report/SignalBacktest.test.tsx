@@ -414,6 +414,31 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery().params).toMatchObject({ slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0 }));
   });
 
+  it('[critical] the no-entry window: the strategy form\'s own, in the settings -- sent, said in the result, kept with a saved backtest (15 Oct 2026)', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const taken = within(screen.getByRole('region', { name: 'Which signals are taken' }));
+    const sw = taken.getByRole('switch', { name: /No-entry window/ });
+    expect(sw).not.toBeChecked();
+    expect(lastQuery().params.noEntry?.on ?? false).toBe(false);
+    fireEvent.click(sw);
+    // on: one window to begin with, inside the desk's hours, and asked for
+    await waitFor(() => expect(lastQuery().params.noEntry?.on).toBe(true));
+    const w = lastQuery().params.noEntry!.windows;
+    expect(w).toHaveLength(1);
+    expect(taken.getByText(/^No new entry .* IST\. From the until time, signals are taken again\.$/)).toBeInTheDocument();
+    expect(screen.getAllByText(/· no entry \d{1,2}:\d{2} [AP]M – \d{1,2}:\d{2} [AP]M/).length).toBeGreaterThan(0);
+    // another window, then the first taken away: what is asked follows
+    fireEvent.click(taken.getByRole('button', { name: '+ Add another window' }));
+    await waitFor(() => expect(lastQuery().params.noEntry!.windows).toHaveLength(2));
+    fireEvent.click(taken.getByRole('button', { name: 'Remove no-entry window 1' }));
+    await waitFor(() => expect(lastQuery().params.noEntry!.windows).toHaveLength(1));
+    // switched off: the times kept for switching back on, none applied
+    fireEvent.click(taken.getByRole('switch', { name: /No-entry window/ }));
+    await waitFor(() => expect(lastQuery().params.noEntry?.on).toBe(false));
+    expect(lastQuery().params.noEntry!.windows).toHaveLength(1);
+  });
+
   it('[critical] the margin: the most at once, the result on it, an average day\'s most -- and when, with how many open', async () => {
     show();
     const panel = within((await screen.findByText('Backtest result')).closest('section, div')!.parentElement!);
@@ -967,10 +992,10 @@ describe('SignalBacktest', () => {
     const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     const set = () => within(folio().getByRole('region', { name: 'Settings for the run' }));
     const sw = (name: string) => set().getByRole('switch', { name: `${name}, for the run` });
-    const NAMES = ['Strike', 'Option target', 'Option stop', 'Lots a signal', 'Minimum premium', 'SL and TGT range'];
+    const NAMES = ['Strike', 'Option target', 'Option stop', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'No-entry window'];
     // every one off to begin with, each saying whose settings run
     expect(set().getAllByRole('switch').map((x) => [x.getAttribute('aria-label'), x.getAttribute('aria-checked')])).toEqual(NAMES.map((n) => [`${n}, for the run`, 'false']));
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(6);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(7);
     expect(set().getByText('· all off')).toBeInTheDocument();
     expect(set().queryByRole('button', { name: 'Switch all off' })).toBeNull();
     // folded on a phone to begin with: one line of what the run is held to, and Change

@@ -196,22 +196,26 @@ export function TimeWindowFields({ c, set, err, name, labels }: {
  * the first filled in as the half hour before the exit so it is never "outside"; up to six. Switched off, the
  * times stay, so switching back on finds them. What it does and does not do is said under the switch.
  */
-export function NoEntryFields({ c, set, err }: { c: StrategyConfig; set: SetField; err: ErrOf }) {
+export function NoEntryFields({ c, set, err, bare = false }: {
+  c: StrategyConfig; set: SetField; err: ErrOf;
+  /** The windows alone, switched on, without the panel or its switch: for a place with its own (a run's settings, 15 Oct 2026). */
+  bare?: boolean;
+}) {
   const n: NoEntry = c.noEntry ?? { on: false, windows: [] };
   const put = (windows: NoEntryWindow[], on = n.on) => set('noEntry', { on, windows });
   const edit = (i: number, k: keyof NoEntryWindow, v: string) => put(n.windows.map((w, j) => (j === i ? { ...w, [k]: v } : w)));
   const problem = err('noEntry');
   return (
-    <div className={cn('mt-3 rounded-lg border border-solid px-2.5 py-2', n.on ? 'border-[var(--warn)]/50 bg-[var(--warn)]/5' : 'border-border')}>
-      <Switch
+    <div className={cn(bare ? '' : 'mt-3 rounded-lg border border-solid px-2.5 py-2', !bare && (n.on ? 'border-[var(--warn)]/50 bg-[var(--warn)]/5' : 'border-border'))}>
+      {!bare && <Switch
         label="No-entry window"
         description={n.on
           ? 'No new entry between these times: a signal inside is written down as skipped. Trades already open are not closed — they keep their SL, TGT and exit time.'
           : 'Off — signals are taken all through the window above.'}
         checked={n.on}
         onCheckedChange={(on) => put(on && n.windows.length === 0 ? [suggestedWindow(c.entryTime, c.exitTime)] : n.windows, on)}
-      />
-      {n.on && (
+      />}
+      {(n.on || bare) && (
         <div className="mt-2 grid gap-2">
           {n.windows.map((w, i) => {
             const which = n.windows.length > 1 ? ` ${i + 1}` : '';

@@ -1,5 +1,8 @@
 import { json, post } from '@/api/client';
 import { pickQuery } from '@/api/signal-backtest';
+import { noEntryQuery } from '@/lib/backtest-no-entry';
+import type { NoEntry } from '@/types/strategy';
+import type { BacktestParams } from '@/types/signal-backtest';
 import type { TradePick } from '@/types/signal-backtest';
 import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
 
@@ -61,6 +64,8 @@ export type PortfolioOver = {
   minPremium?: { minPremium: number };
   /** The SL and TGT range, BTC points, the four together; 0 is off. */
   range?: { slMin: number; slMax: number; tgtMin: number; tgtMax: number };
+  /** No-entry windows for every one of them (15 Oct 2026), held to the whole expiry day: each keeps its own hours. */
+  noEntry?: NoEntry;
 };
 
 /** The run's settings as the route reads them: the single backtest's own names, each under `o_`. */
@@ -76,6 +81,9 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
   if (o.minPremium) q.o_minprem = String(o.minPremium.minPremium);
   // All four, zeros too: "no range, for all of them" is a setting, not the absence of one.
   if (o.range) { q.o_slmin = String(o.range.slMin); q.o_slmax = String(o.range.slMax); q.o_tgtmin = String(o.range.tgtMin); q.o_tgtmax = String(o.range.tgtMax); }
+  // Only windows right for the whole day; the editor says what is wrong with any other.
+  const ne = o.noEntry ? noEntryQuery({ window: 'all', noEntry: { ...o.noEntry, on: true } } as BacktestParams) : null;
+  if (ne) q.o_noentry = ne;
   return q;
 }
 
