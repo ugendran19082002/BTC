@@ -1062,7 +1062,7 @@ describe('SignalBacktest', () => {
     fireEvent.click(set().getByRole('button', { name: 'Switch all off' }));
     await waitFor(() => expect(last()).toEqual({}));
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(6);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(7);
   });
 
   it('a run\'s settings as the route reads them: the single backtest\'s own names under o_, and nothing for a switch that is off', async () => {

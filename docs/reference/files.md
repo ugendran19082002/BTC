@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-508 files listed, 253 test files counted below, images and lockfiles left out.
+509 files listed, 254 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 133 |
-| `app/web` | 120 |
+| `app/web` | 121 |
 
 ## `(root)`
 
@@ -565,6 +565,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [account-scope.ts](../../app/web/src/lib/account-scope.ts) | Which broker account the account-based screens are showing (owner, 5 Oct 2026): strategies, orders and P&L are read for one account at a time, chosen on the tabs above them. |
+| [backtest-no-entry.ts](../../app/web/src/lib/backtest-no-entry.ts) | The backtest's no-entry windows (owner, 15 Oct 2026: "no-entry window in the backtest's settings, as the strategy form has"): the form's own rules, held to the backtest's hours rather than a strate... |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [custom-range.ts](../../app/web/src/lib/custom-range.ts) | A custom range of IST days for the phone's P&L (owner, 6 Oct 2026): quick picks, and the rules a range must keep -- the same the server holds it to (`report.routes.ts` `rangeOf`: from not after to,... |
 | [entry-wait.ts](../../app/web/src/lib/entry-wait.ts) | That limit in a line for the card of an order still waiting (owner, 14 Oct 2026: "is a waiting order's expiry shown -- desk and phone?"). |
