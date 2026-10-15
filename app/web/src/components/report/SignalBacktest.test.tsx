@@ -19,9 +19,10 @@ const NO_CHECK = {
   fate: { live: { taken: 0, waiting: 0, notTaken: 0, skipped: 0, refused: 0, rejected: 0, expired: 0, cancelled: 0 }, backtest: { taken: 0, waiting: 0, notTaken: 0, skipped: 0, refused: 0, rejected: 0, expired: 0, cancelled: 0 } },
 };
 const getLiveCheck = vi.fn();
-vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a), getLiveCheck: (...a: unknown[]) => getLiveCheck(...a) }));
+const getBacktestDay = vi.fn();
+vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a), getLiveCheck: (...a: unknown[]) => getLiveCheck(...a), getBacktestDay: (...a: unknown[]) => getBacktestDay(...a) }));
 
-const saves = { getBacktestSaves: vi.fn(), saveBacktest: vi.fn(), deleteBacktestSave: vi.fn(), savePortfolio: vi.fn(), deletePortfolio: vi.fn(), getBacktestPortfolio: vi.fn(), getPortfolioLiveCheck: vi.fn() };
+const saves = { getBacktestSaves: vi.fn(), saveBacktest: vi.fn(), deleteBacktestSave: vi.fn(), savePortfolio: vi.fn(), deletePortfolio: vi.fn(), getBacktestPortfolio: vi.fn(), getPortfolioLiveCheck: vi.fn(), getPortfolioDay: vi.fn() };
 vi.mock('@/api/backtest-saves', async () => ({
   ...Object.fromEntries(Object.keys(saves).map((k) => [k, (...a: unknown[]) => (saves as Record<string, (...x: unknown[]) => unknown>)[k]!(...a)])),
   AS_SAVED: { window: 'saved' },
@@ -135,7 +136,13 @@ describe('SignalBacktest', () => {
     await screen.findByText('Backtest result');
     expect(rowsOf('Backtest: which exit closed the trades')).toEqual(['Perp TGT35071%₹₹', 'Perp SL50012%₹₹', 'Option TGT130100%₹₹', 'Option SL50%₹₹', 'Window end1580%₹₹']);
     expect(rowsOf('Backtest by time frame')).toEqual(['5mperp +2,300 pts70034%₹₹charges ₹', '4hperp −171 pts10079%₹₹charges ₹', 'TF chainperp +900 pts20035%₹₹charges ₹']);
-    expect(rowsOf('Backtest by expiry day')).toEqual(['Tue 13 Oct · so far40035%₹₹charges ₹', 'Mon 12 Oct60050%₹₹charges ₹']);
+    // each day's count a button (14 Oct 2026): it opens that day's trades, asked as the backtest on the screen is
+    expect(rowsOf('Backtest by expiry day')).toEqual(['Tue 13 Oct · so far400 ›35%₹₹charges ₹', 'Mon 12 Oct600 ›50%₹₹charges ₹']);
+    getBacktestDay.mockResolvedValue({ day: '2026-10-12', total: 0, trades: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'See the 600 trades of Mon 12 Oct' }));
+    await waitFor(() => expect(getBacktestDay).toHaveBeenCalledWith(expect.objectContaining({ from: '2026-10-01' }), '2026-10-12'));
+    expect(await screen.findByRole('dialog', { name: /Mon 12 Oct · trade by trade/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'close' }));
     // by family to begin with, by market type on a tap
     expect(rowsOf('Backtest by kind of day')).toEqual(['Range1 day60050%₹₹charges ₹', 'Turn / event1 day40035%₹₹charges ₹']);
     fireEvent.click(screen.getByRole('radio', { name: 'By each market type' }));
@@ -688,7 +695,12 @@ describe('SignalBacktest', () => {
     expect(folio().getByRole('radiogroup', { name: 'Expiry days' })).toBeInTheDocument();
     expect(run.getByText(/a trade$/).parentElement!.textContent).toMatch(/^−₹7,650 −₹[\d.]+ a trade$/);                 // -$90 together
     expect(rowsOf('Run together: each saved backtest')).toEqual(['16 lots on 4h10050%₹₹charges ₹', 'Desk rules1,00050%₹₹charges ₹']);
-    expect(rowsOf('Run together: by expiry day').map((x) => x.split('%')[0])).toEqual(['Tue 13 Oct · so far40050', 'Mon 12 Oct70050']);
+    expect(rowsOf('Run together: by expiry day').map((x) => x.split('%')[0])).toEqual(['Tue 13 Oct · so far400 ›50', 'Mon 12 Oct700 ›50']);
+    // a day's count opens its trades, asked exactly as the run is
+    saves.getPortfolioDay.mockResolvedValue({ day: '2026-10-12', total: 0, trades: [] });
+    fireEvent.click(run.getByRole('button', { name: 'See the 700 trades of Mon 12 Oct' }));
+    await waitFor(() => expect(saves.getPortfolioDay).toHaveBeenLastCalledWith('2026-10-12', ['b2', 'a1'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 58, ce: 80, pe: 80 }, { window: 'saved' }, {}));
+    fireEvent.click(await screen.findByRole('button', { name: 'close' }));
     const tile = (label: string) => run.getByText(label).parentElement!.textContent!.replace(label, '');
     expect([tile('Margin at most, together'), tile("Each one's most, added")]).toEqual(['₹12,750', '₹17,000']);
     expect(run.getByText(/the most held at once was 61 trades at 4:29 AM on the Tue 13 Oct expiry/)).toBeInTheDocument();

@@ -35,7 +35,47 @@ export type FilterOption = {
   value?: number;
   /** The share of its trades won, 0 to 1; absent with no trade. The Win tab keeps those at or over its line (`split`). */
   winRate?: number;
+  /** How many trades its record is of: what "Most trades" sorts by. */
+  trades?: number;
 };
+
+/**
+ * How the list is ordered (15 Oct 2026, owner: "a sort row -- P&L low, P&L high, most trades, fewest trades, high
+ * win"). `default` is the list's own order -- the methods by number -- and the profit and loss tabs' own.
+ */
+export type FilterSort = 'default' | 'pnl-high' | 'pnl-low' | 'trades-high' | 'trades-low' | 'win-high';
+export const FILTER_SORTS: { key: FilterSort; label: string }[] = [
+  { key: 'default', label: 'Default' }, { key: 'pnl-high', label: 'P&L high' }, { key: 'pnl-low', label: 'P&L low' },
+  { key: 'trades-high', label: 'Most trades' }, { key: 'trades-low', label: 'Fewest trades' }, { key: 'win-high', label: 'Win % high' },
+];
+/** Options in a sort's order; those with nothing to sort by (no trade) last, in their own order. */
+export function sortOptions<T extends Pick<FilterOption, 'value' | 'trades' | 'winRate'>>(xs: readonly T[], sort: FilterSort): T[] {
+  if (sort === 'default') return [...xs];
+  const by = (o: T): number | undefined => (sort === 'pnl-high' || sort === 'pnl-low' ? o.value : sort === 'win-high' ? o.winRate : o.trades);
+  const dir = sort === 'pnl-low' || sort === 'trades-low' ? 1 : -1;
+  return xs.map((o, i) => ({ o, i })).sort((a, b) => {
+    const x = by(a.o), y = by(b.o);
+    if (x === undefined || y === undefined) return (x === undefined ? 1 : 0) - (y === undefined ? 1 : 0) || a.i - b.i;
+    // between equals the one with more behind it: more trades, then more money
+    return dir * (x - y) || (b.o.trades ?? 0) - (a.o.trades ?? 0) || (b.o.value ?? 0) - (a.o.value ?? 0) || a.i - b.i;
+  }).map((x) => x.o);
+}
+
+/** The sort row, as chips that scroll sideways where they do not fit: the picker's own, and the strategy form's. */
+export function SortRow({ value, onChange, className }: { value: FilterSort; onChange: (v: FilterSort) => void; className?: string }) {
+  return (
+    <div role="group" aria-label="Sort" className={cn('flex items-center gap-1 overflow-x-auto', className)}>
+      <span className="shrink-0 pr-0.5 text-[12px] text-muted-foreground">Sort</span>
+      {FILTER_SORTS.map((x) => (
+        <button key={x.key} type="button" aria-pressed={value === x.key} onClick={() => onChange(x.key)}
+          className={cn('m-0 h-8 shrink-0 appearance-none whitespace-nowrap rounded-full border border-solid px-2.5 font-[inherit] text-[12.5px] font-medium',
+            value === x.key ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-border bg-transparent text-muted-foreground')}>
+          {x.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type Side = 'all' | 'up' | 'down' | 'win';
 
@@ -80,7 +120,7 @@ export function FilterBar({ children, onClear }: {
   );
 }
 
-export function FilterPicker({ noun, options, picked, onChange, split = false, winAtLeast, onWinAtLeast }: {
+export function FilterPicker({ noun, options, picked, onChange, split = false, winAtLeast, onWinAtLeast, sort, onSort }: {
   noun: FilterNoun;
   options: readonly FilterOption[];
   /** The keys chosen; empty is every one. */
@@ -98,11 +138,17 @@ export function FilterPicker({ noun, options, picked, onChange, split = false, w
    */
   winAtLeast?: number;
   onWinAtLeast?: (pct: number) => void;
+  /** The list's order (`FilterSort`), kept by the caller so it lasts; without it, the picker keeps its own. Shown where the options carry a record. */
+  sort?: FilterSort;
+  onSort?: (s: FilterSort) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [find, setFind] = useState('');
   const [side, setSide] = useState<Side>('all');
   const [ownLine, setOwnLine] = useState(WIN_AT_LEAST_PCT);
+  const [ownSort, setOwnSort] = useState<FilterSort>('default');
+  const order = sort ?? ownSort;
+  const setOrder = (v: FilterSort) => { setOwnSort(v); onSort?.(v); };
   const line = asPct(winAtLeast ?? ownLine);
   const setLine = (pct: number) => { setOwnLine(asPct(pct)); onWinAtLeast?.(asPct(pct)); };
   if (options.length === 0) return null;
@@ -123,7 +169,8 @@ export function FilterPicker({ noun, options, picked, onChange, split = false, w
   };
   const sides: Side[] = winTab ? ['all', 'up', 'down', 'win'] : ['all', 'up', 'down'];
   const sideWords = (x: Side) => (x === 'all' ? 'All' : x === 'up' ? 'In profit' : x === 'down' ? 'In loss' : `Win ≥${line}%`);
-  const onSide = tabs ? ofSide(side) : options;
+  const sortable = options.some((o) => o.value !== undefined || o.trades !== undefined || o.winRate !== undefined);
+  const onSide = sortOptions(tabs ? ofSide(side) : [...options], sortable ? order : 'default');
   const shown = searchable && wanted ? onSide.filter((o) => `${o.name} ${o.also ?? ''}`.toLowerCase().includes(wanted)) : onSide;
   const listName = noun.many[0]!.toUpperCase() + noun.many.slice(1);
 
@@ -177,6 +224,7 @@ export function FilterPicker({ noun, options, picked, onChange, split = false, w
           </div>
         )}
         {winTab && side === 'win' && <WinLine pct={line} onChange={setLine} />}
+        {sortable && <SortRow value={order} onChange={setOrder} className="shrink-0 border-0 border-b border-solid border-[var(--line-soft)] px-2 py-1.5" />}
         <ul role="listbox" aria-multiselectable="true" aria-label={listName} className="m-0 min-h-0 flex-1 list-none overflow-y-auto p-1">
           {!wanted && side === 'all' && <Row on={chosen.length === 0} name={`All ${noun.many}`} note={`${options.length} in this list`} onClick={() => onChange([])} />}
           {!wanted && side !== 'all' && onSide.length > 0 && (

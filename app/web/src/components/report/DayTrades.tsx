@@ -5,6 +5,9 @@ import { count, netClass } from '@/components/report/backtest-parts';
 import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
 import { pct } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { FilterBar, FilterPicker, METHODS, SortRow, STRATEGIES, sortOptions, type FilterOption, type FilterSort } from '@/components/mobile/FilterPicker';
+import { usePersisted } from '@/hooks/usePersisted';
+import { WIN_AT_LEAST_PCT } from '@/lib/win-line';
 import type { BtDayTrades, BtExit, BtTradeRow } from '@/types/signal-backtest';
 
 /**
@@ -13,7 +16,18 @@ import type { BtDayTrades, BtExit, BtTradeRow } from '@/types/signal-backtest';
  * that day out. Each trade a card: what was sold on which signal, in and out with the times, why it closed, the
  * perp's levels and the option's own, the points and the money. Narrowed by result or by exit, sorted by time or
  * by money, fifty at a time.
+ *
+ * And by method (15 Oct 2026, owner: "tab-based P&L, a methods filter, each method's P&L and win %"): every tab says
+ * what its trades made; the methods are a pick of several with each one's trades, win % and money -- the same
+ * dropdown as the Backtest's own Method list, its Win tab with it -- and a table of them, the best first, a row a
+ * tap away from its trades. In a run together, whose trades they are is a pick of its own.
  */
+
+/** Trades added up: how many, how many made money, and what they came to. */
+type Sum = { n: number; won: number; net: number };
+const sumOf = (xs: readonly BtTradeRow[]): Sum => xs.reduce((a, t) => ({ n: a.n + 1, won: a.won + (t.netUsd > 0 ? 1 : 0), net: a.net + t.netUsd }), { n: 0, won: 0, net: 0 });
+/** "22 trades · 64% won · +₹40.12" */
+const sumWords = (x: Sum) => `${count(x.n)} trade${x.n === 1 ? '' : 's'} · ${pct(x.n ? x.won / x.n : null, 0)} won · ${moneyText(x.net)}`;
 
 const EXIT_WORDS: Record<BtExit, string> = {
   'perp-tgt': 'Perp TGT', 'perp-sl': 'Perp SL', 'option-tgt': 'Option TGT', 'option-sl': 'Option SL', 'window-end': 'Window end',
@@ -36,10 +50,15 @@ export function DayTradesSheet({ day, read, onClose }: {
   const [only, setOnly] = useState<Only>('all');
   const [order, setOrder] = useState<Order>('time');
   const [shown, setShown] = useState(PAGE);
+  const [methods, setMethods] = useState<string[]>([]);
+  const [members, setMembers] = useState<string[]>([]);
+  // The Win tab's line in the method pick, the same one the Backtest's Method list keeps.
+  const [winAtLeast, setWinAtLeast] = usePersisted<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
+  const [methodSort, setMethodSort] = usePersisted<FilterSort>('methods.sort', 'default');
   useEffect(() => {
     if (!day) return;
     let live = true;
-    setGot({ day, data: null, error: null }); setOnly('all'); setOrder('time'); setShown(PAGE);
+    setGot({ day, data: null, error: null }); setOnly('all'); setOrder('time'); setShown(PAGE); setMethods([]); setMembers([]);
     read(day).then((data) => { if (live) setGot({ day, data, error: null }); }, (error: Error) => { if (live) setGot({ day, data: null, error }); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -47,31 +66,75 @@ export function DayTradesSheet({ day, read, onClose }: {
 
   const data = got?.day === day ? got.data : null;
   const trades = data?.trades ?? [];
-  const exits = useMemo(() => (Object.keys(EXIT_WORDS) as BtExit[]).map((k) => ({ k, n: trades.filter((t) => t.by === k).length })).filter((x) => x.n > 0), [trades]);
+  // The method and member picks first; the tabs, their counts and their money are of what those leave.
+  const base = useMemo(() => trades.filter((t) => (!methods.length || methods.includes(t.method)) && (!members.length || members.includes(t.member ?? ''))), [trades, methods, members]);
+  const tabOf = (k: Only) => (t: BtTradeRow) => k === 'all' || (k === 'won' ? t.netUsd > 0 : k === 'lost' ? t.netUsd <= 0 : t.by === k);
+  const tabs = useMemo(() => {
+    const exits = (Object.keys(EXIT_WORDS) as BtExit[]).filter((k) => trades.some((t) => t.by === k));
+    return ([['all', 'All'], ['won', 'Won'], ['lost', 'Lost'], ...exits.map((k) => [k, EXIT_WORDS[k]])] as [Only, string][])
+      .map(([k, label]) => ({ k, label, sum: sumOf(base.filter(tabOf(k))) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trades, base]);
   const list = useMemo(() => {
-    const xs = trades.filter((t) => only === 'all' || (only === 'won' ? t.netUsd > 0 : only === 'lost' ? t.netUsd <= 0 : t.by === only));
+    const xs = base.filter(tabOf(only));
     return order === 'time' ? xs : [...xs].sort((a, b) => (order === 'best' ? b.netUsd - a.netUsd : a.netUsd - b.netUsd));
-  }, [trades, only, order]);
-  const net = trades.reduce((a, t) => a + t.netUsd, 0);
-  const won = trades.filter((t) => t.netUsd > 0).length;
-  const chip = (on: boolean) => cn('m-0 h-9 shrink-0 appearance-none whitespace-nowrap rounded-full border border-solid px-3 font-[inherit] text-[13px] font-medium',
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base, only, order]);
+  const day$ = sumOf(trades), shown$ = sumOf(list);
+  // Each method on the day, by what it made: for the pick (with its record) and for the table.
+  const byMethod = useMemo(() => {
+    const m = new Map<string, { key: string; name: string; xs: BtTradeRow[] }>();
+    for (const t of trades.filter((x) => !members.length || members.includes(x.member ?? ''))) {
+      const g = m.get(t.method) ?? { key: t.method, name: t.name, xs: [] };
+      g.xs.push(t); m.set(t.method, g);
+    }
+    return [...m.values()].map((g) => ({ key: g.key, name: g.name, ...sumOf(g.xs) })).sort((a, b) => b.net - a.net || b.n - a.n);
+  }, [trades, members]);
+  const memberList = useMemo(() => [...new Set(trades.map((t) => t.member).filter((x): x is string => !!x))].map((name) => ({ name, ...sumOf(trades.filter((t) => t.member === name)) })), [trades]);
+  const optionOf = (x: Sum & { key: string; name: string }): FilterOption => ({
+    key: x.key, name: x.name, tone: x.net > 0 ? 'up' : x.net < 0 ? 'down' : undefined, value: x.net, winRate: x.n ? x.won / x.n : undefined, trades: x.n, note: sumWords(x),
+  });
+  const pick = (k: Only) => { setOnly(k); setShown(PAGE); };
+  const chip = (on: boolean) => cn('m-0 flex min-h-[44px] shrink-0 appearance-none flex-col items-center justify-center whitespace-nowrap rounded-xl border border-solid px-3 py-1 font-[inherit] leading-tight',
     on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-border bg-transparent text-foreground');
 
   return (
     <Sheet open={day !== null} onOpenChange={(v) => { if (!v) onClose(); }}>
       {day && (
         <SheetContent className="sm:w-[min(960px,94vw)] sm:max-h-[88vh]" title={`${dayLabel(day)} · trade by trade`}
-          description={data ? `${count(data.total)} trades · ${pct(data.total ? won / data.total : null, 0)} won · ${moneyText(net)} after charges` : undefined}>
+          description={data ? `${count(data.total)} trades · ${pct(day$.n ? day$.won / day$.n : null, 0)} won · ${moneyText(day$.net)} after charges` : undefined}>
           {!data ? <Loading error={got?.error ?? null} what="the day's trades (the day is played again: a moment)" /> : (
             <div className="grid min-w-0 gap-2">
+              {/* Which trades: by method (and, in a run together, by whose), each with its record. */}
+              {(byMethod.length > 1 || memberList.length > 1) && (
+                <FilterBar onClear={methods.length || members.length ? () => { setMethods([]); setMembers([]); setShown(PAGE); } : null}>
+                  {memberList.length > 1 && (
+                    <FilterPicker noun={STRATEGIES} picked={members} onChange={(x) => { setMembers(x); setShown(PAGE); }}
+                      options={memberList.map((x) => optionOf({ ...x, key: x.name }))} split />
+                  )}
+                  {byMethod.length > 1 && (
+                    <FilterPicker noun={METHODS} picked={methods} onChange={(x) => { setMethods(x); setShown(PAGE); }} split
+                      winAtLeast={typeof winAtLeast === 'number' ? winAtLeast : WIN_AT_LEAST_PCT} onWinAtLeast={setWinAtLeast}
+                      sort={methodSort} onSort={setMethodSort}
+                      options={byMethod.map(optionOf)} />
+                  )}
+                </FilterBar>
+              )}
+              {/* Each tab with what its trades made: the count, and the money under it. */}
               <div role="group" aria-label="Show" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
-                <button type="button" aria-pressed={only === 'all'} className={chip(only === 'all')} onClick={() => { setOnly('all'); setShown(PAGE); }}>All {count(trades.length)}</button>
-                <button type="button" aria-pressed={only === 'won'} className={chip(only === 'won')} onClick={() => { setOnly('won'); setShown(PAGE); }}>Won {count(won)}</button>
-                <button type="button" aria-pressed={only === 'lost'} className={chip(only === 'lost')} onClick={() => { setOnly('lost'); setShown(PAGE); }}>Lost {count(trades.length - won)}</button>
-                {exits.map((x) => (
-                  <button key={x.k} type="button" aria-pressed={only === x.k} className={chip(only === x.k)} onClick={() => { setOnly(x.k); setShown(PAGE); }}>{EXIT_WORDS[x.k]} {count(x.n)}</button>
+                {tabs.map((x) => (
+                  <button key={x.k} type="button" aria-pressed={only === x.k} aria-label={`${x.label} ${count(x.sum.n)}: ${moneyText(x.sum.net)}`}
+                    className={chip(only === x.k)} onClick={() => pick(x.k)}>
+                    <span className="text-[13px] font-medium">{x.label} {count(x.sum.n)}</span>
+                    <span className={cn('text-[11.5px] font-semibold tabular-nums', x.sum.n ? netClass(x.sum.net) : 'text-muted-foreground')}>{x.sum.n ? moneyText(x.sum.net) : '—'}</span>
+                  </button>
                 ))}
               </div>
+              <p aria-label="What is shown" className="m-0 text-[13px]">
+                <span className="text-muted-foreground">Showing </span>
+                <span className="tabular-nums">{count(shown$.n)} trade{shown$.n === 1 ? '' : 's'} · {pct(shown$.n ? shown$.won / shown$.n : null, 0)} won · </span>
+                <b className={cn('font-semibold tabular-nums', netClass(shown$.net))}>{moneyText(shown$.net)}</b>
+              </p>
               <label className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
                 Order
                 <select aria-label="Order the trades" value={order} onChange={(e) => setOrder(e.target.value as Order)}
@@ -95,11 +158,56 @@ export function DayTradesSheet({ day, read, onClose }: {
                   Show {count(Math.min(PAGE, list.length - shown))} more of {count(list.length - shown)}
                 </button>
               )}
+              {byMethod.length > 1 && (
+                <MethodTable rows={sortOptions(byMethod.map((x) => ({ ...x, value: x.net, trades: x.n, winRate: x.n ? x.won / x.n : undefined })), methodSort === 'default' ? 'pnl-high' : methodSort)}
+                  sort={methodSort} onSort={setMethodSort} picked={methods} onPick={(key) => { setMethods([key]); setOnly('all'); setShown(PAGE); }} />
+              )}
             </div>
           )}
         </SheetContent>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * The day's methods -- the best first, or as the sort row orders them -- with trades, win %, and the money: a row a
+ * tap away from its own trades, which the method pick above then holds.
+ */
+function MethodTable({ rows, sort, onSort, picked, onPick }: {
+  rows: readonly (Sum & { key: string; name: string })[]; sort: FilterSort; onSort: (s: FilterSort) => void; picked: readonly string[]; onPick: (key: string) => void;
+}) {
+  return (
+    <section aria-label="By method" className="mt-1 grid gap-1">
+      <h3 className="m-0 text-[12.5px] font-semibold text-muted-foreground">By method · {count(rows.length)}</h3>
+      {/* The same order as the method pick keeps; its default here is the best first. */}
+      <SortRow value={sort} onChange={onSort} className="-mx-4 px-4 pb-0.5" />
+      <table className="w-full table-fixed border-collapse text-[13px]">
+        <caption className="sr-only">The day's trades by method</caption>
+        <colgroup><col /><col className="w-[4.5rem]" /><col className="w-[3.5rem]" /><col className="w-[6.5rem]" /></colgroup>
+        <thead>
+          <tr className="text-[11px] uppercase tracking-[0.4px] text-muted-foreground">
+            <th scope="col" className="py-1 text-left font-medium">Method</th>
+            <th scope="col" className="py-1 text-right font-medium">Trades</th>
+            <th scope="col" className="py-1 text-right font-medium">Won</th>
+            <th scope="col" className="py-1 text-right font-medium">Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key} className={cn('border-0 border-t border-solid border-[var(--line-soft)]', picked.length === 1 && picked[0] === r.key && 'bg-[var(--chosen-soft)]')}>
+              <th scope="row" className="py-1.5 pr-2 text-left font-normal">
+                <button type="button" onClick={() => onPick(r.key)} aria-label={`Only ${r.name}`}
+                  className="m-0 min-h-[32px] w-full appearance-none border-0 bg-transparent p-0 text-left font-[inherit] text-[13px] text-foreground [overflow-wrap:anywhere]">{r.name}</button>
+              </th>
+              <td className="py-1.5 text-right tabular-nums">{count(r.n)}</td>
+              <td className="py-1.5 text-right tabular-nums">{pct(r.n ? r.won / r.n : null, 0)}</td>
+              <td className={cn('py-1.5 text-right font-semibold tabular-nums', netClass(r.net))}>{moneyText(r.net)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 

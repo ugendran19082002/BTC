@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-505 files listed, 250 test files counted below, images and lockfiles left out.
+507 files listed, 252 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 133 |
-| `app/web` | 117 |
+| `app/web` | 119 |
 
 ## `(root)`
 
@@ -449,8 +449,10 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [BacktestCurve.tsx](../../app/web/src/components/report/BacktestCurve.tsx) | The backtest's running total, expiry day by expiry day (owner, 14 Oct 2026: "the backtest screen, user friendly"): whether the settings make money steadily or on one lucky day, and the worst stretc... |
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
 | [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | The days and the running total they add up to, as one chart (owner, 6 Oct 2026). |
+| [DayTrades.tsx](../../app/web/src/components/report/DayTrades.tsx) | One expiry day of a backtest, trade by trade (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL, TGT, points and money, user friendly"). |
 | [ExpiryRange.tsx](../../app/web/src/components/report/ExpiryRange.tsx) | Which expiry days a report covers (13 Oct 2026): since 1 Oct, the last 7 or 30, or a range of the owner's own ("I want a custom date"). |
 | [LiveCheck.tsx](../../app/web/src/components/report/LiveCheck.tsx) | The live check, inside a backtest's result and a portfolio's (owner, 14 Oct 2026: "the real trades since 9:30 last night and the backtest's do not match in number -- check the calculation"; then "b... |
 | [MarketReport.tsx](../../app/web/src/components/report/MarketReport.tsx) | The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole expiry went": each expiry day, newest first, with its high and low in points, its zigzag,... |

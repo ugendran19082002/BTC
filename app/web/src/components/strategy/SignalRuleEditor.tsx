@@ -12,7 +12,7 @@ import type { OptionRecordState } from '@/components/strategy/useOptionRecord';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import { WIN_AT_LEAST_PCT, asPct, wonAtLeast } from '@/lib/win-line';
-import { WinLine } from '@/components/mobile/FilterPicker';
+import { SortRow, WinLine, sortOptions, type FilterSort } from '@/components/mobile/FilterPicker';
 
 /**
  * Which signals a signal strategy takes: the way (with the timeframe chain, or
@@ -250,9 +250,14 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
     const rec = recordOf.get(m.id);
     return onSide(m, o.side ?? side) && (o.result ?? resultTab).test(rec);
   };
-  const shown = useMemo(() => searched.filter((m) => passes(m)),
+  // The list's order, the same as the Backtest's method lists keep (owner, 15 Oct 2026: "a sort row in the form too").
+  const [sort, setSort] = usePersisted<FilterSort>('methods.sort', 'default');
+  const shown = useMemo(() => {
+    const kept = searched.filter((m) => passes(m));
+    const rec = (m: EntryMethodInfo) => { const r = recordOf.get(m.id); return r && r.trades > 0 ? { value: r.net, trades: r.trades, winRate: r.wins / r.trades } : {}; };
+    return sortOptions(kept.map((m) => ({ m, ...rec(m) })), sort).map((x) => x.m);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-    [searched, resultTab, recordOf, side, line]);
+  }, [searched, resultTab, recordOf, side, line, sort]);
   const picked = new Set(rule.methods);
   // Only the methods the desk still has: a strategy saved before one was retired would carry an id the save refuses.
   const known = new Set(methods.map((m) => m.id));
@@ -593,6 +598,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">Could not load the methods: {catalogueError.message}</p>
         )}
 
+        {recordOf.size > 0 && <SortRow value={sort} onChange={setSort} className="mt-1.5 pb-0.5" />}
         <ul aria-label="methods" className="m-0 mt-1.5 max-h-[26rem] list-none overflow-y-auto rounded-lg border border-solid border-border p-0">
           {shown.map((m) => {
             const rec = recordOf.get(m.id);

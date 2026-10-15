@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-104 routes.
+106 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -29,6 +29,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | Method | Path | Session | What |
 |---|---|---|---|
 | GET | `/api/backtest-portfolio` | signed in | Saved backtests run together over one range of expiry days, and their total: `?ids=a,b,c&from=&to=`. |
+| GET | `/api/backtest-portfolio/day` | signed in | One expiry day of the run, trade by trade (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL, TGT, points and money"): the same query as the run, and `?day=YYYY-MM-DD`, one of its... |
 | GET | `/api/backtest-portfolio/live-check` | signed in | The same run laid beside the live desk, signal for signal (owner, 14 Oct 2026: "bring the live check inside the backtest and the portfolio -- no tab of its own"): every trade of the saved backtests... |
 | POST | `/api/backtest-portfolios` | signed in | Keep a portfolio: a name, and two or more saved backtests in order. |
 | DELETE | `/api/backtest-portfolios/:id` | signed in | -- |
@@ -87,6 +88,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/market-report` | signed in | Each expiry day with its figures, its kind and both records' totals. |
 | GET | `/api/market-report/breakdown` | signed in | One expiry day opened (`?day=`): both records by pair, timeframe, method and strategy. |
 | GET | `/api/signal-backtest` | signed in | The signal history traded as options on the contracts' own recorded prices (13 Oct 2026): every signal in the trade, an option sold at its fill and bought back at the perp's stop or target, the opt... |
+| GET | `/api/signal-backtest/day` | signed in | One expiry day of the backtest, trade by trade (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL, TGT, points and money"): asked as the backtest itself is, and `?day=YYYY-MM-DD`,... |
 | GET | `/api/signal-backtest/live-check` | signed in | The backtest against the live desk, signal for signal (owner, 14 Oct 2026: "the real trades since 9:30 last night and the backtest's do not match in number"): every signal strategy that sells, back... |
 | POST | `/api/signal-backtest/methods` | signed in | Every method's record as options under a strategy's rules as they stand on the form (owner, 13 Oct 2026: "in the strategy form the signal filter's profit and loss must be by the option's TGT and SL... |
 
