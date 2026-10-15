@@ -23,20 +23,21 @@ const stamp = (ms: number) => `${dayLabel(new Date(ms + 19_800_000).toISOString(
 const total = (xs: { n: number }[]) => xs.reduce((a, x) => a + x.n, 0);
 
 /** The seven columns of a side's fate: what it took, and each way a signal was not taken. */
-const FATE_COLS: { key: keyof LiveCheckFate; label: string; hint: string; desk?: boolean }[] = [
-  { key: 'taken', label: 'Taken', hint: 'Entered: the order filled (the desk), or the trade made (the backtest)' },
-  { key: 'notTaken', label: 'Not taken', hint: 'Every signal of its methods not entered: the columns to the right, added' },
-  { key: 'skipped', label: 'Skipped', hint: 'Left by the rules: its hours, SL / TGT distance, at its most open, no strike' },
-  { key: 'refused', label: 'Refused', hint: 'Turned down at the desk\'s own gate: the daily loss limit, margin, a limit on open trades', desk: true },
-  { key: 'rejected', label: 'Rejected', hint: 'Sent, and rejected by Delta', desk: true },
-  { key: 'expired', label: 'Expired', hint: 'Sent, and its wait ran out with nothing filled', desk: true },
+/** Each column, with a short label for a phone's 40-pixel column (15 Oct 2026: "Rejected" ran into "Expired" at 360px). */
+const FATE_COLS: { key: keyof LiveCheckFate; label: string; short: string; hint: string; desk?: boolean }[] = [
+  { key: 'taken', label: 'Taken', short: 'Taken', hint: 'Entered: the order filled (the desk), or the trade made (the backtest)' },
+  { key: 'notTaken', label: 'Not taken', short: 'Not', hint: 'Every signal of its methods not entered: the columns to the right, added' },
+  { key: 'skipped', label: 'Skipped', short: 'Skip', hint: 'Left by the rules: its hours, SL / TGT distance, at its most open, no strike' },
+  { key: 'refused', label: 'Refused', short: 'Ref.', hint: 'Turned down at the desk\'s own gate: the daily loss limit, margin, a limit on open trades', desk: true },
+  { key: 'rejected', label: 'Rejected', short: 'Rej.', hint: 'Sent, and rejected by Delta', desk: true },
+  { key: 'expired', label: 'Expired', short: 'Exp.', hint: 'Sent, and its wait ran out with nothing filled', desk: true },
 ];
 
 /** One side's row: its counts, with a dash where the column is not a thing that side can do. */
 function FateRow({ side, fate, desk }: { side: string; fate: LiveCheckFate; desk: boolean }) {
   return (
     <tr>
-      <th scope="row" className="py-0.5 text-left text-[12px] font-medium normal-case tracking-normal text-muted-foreground">{side}</th>
+      <th scope="row" className="whitespace-normal py-0.5 text-left text-[12px] font-medium normal-case leading-tight tracking-normal text-muted-foreground">{side}</th>
       {FATE_COLS.map((c) => (
         <td key={c.key} className={cn('py-0.5 pl-1 text-right tabular-nums', c.key === 'taken' ? 'font-semibold text-foreground' : c.desk && desk && fate[c.key] > 0 ? 'text-[var(--warn)]' : '')}>
           {c.desk && !desk ? <span className="text-muted-foreground">—</span> : count(fate[c.key])}
@@ -208,7 +209,13 @@ export function LiveCheckResult({ r }: { r: Check }) {
             <thead>
               <tr className="text-[10.5px] uppercase tracking-[0.4px] text-muted-foreground">
                 <th scope="col" className="py-1 text-left font-medium"><span className="sr-only">Side</span></th>
-                {FATE_COLS.map((c) => <th key={c.key} scope="col" className="whitespace-normal py-1 pl-1 text-right align-bottom font-medium leading-tight" title={c.hint}>{c.label}</th>)}
+                {FATE_COLS.map((c) => (
+                  <th key={c.key} scope="col" aria-label={c.label} className="whitespace-normal py-1 pl-1 text-right align-bottom font-medium leading-tight" title={c.hint}>
+                    {/* The whole word from a tablet up, a short one in a phone's narrow column; read out as the whole word. */}
+                    <span aria-hidden className="max-sm:hidden">{c.label}</span>
+                    <span aria-hidden className="sm:hidden">{c.short}</span>
+                  </th>
+                ))}
               </tr>
             </thead>
             {[{ day: 'all', label: `All ${days.length} day${days.length === 1 ? '' : 's'}`, fate: r.fate, same: t.same, extraBt: t.backtestOnly, extraLive: t.liveOnly, bt: r.money.backtest, real: r.money.real }, ...days.map((d) => ({

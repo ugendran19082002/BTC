@@ -41,7 +41,7 @@ describe('the live check, inside a result (owner, 14 Oct 2026: decisions, not fi
     expect(screen.getByRole('status', { name: 'Whether they match' })).toHaveTextContent(
       'The desk placed 162 orders, the backtest makes 177 trades: 162 are the same signal. 15 are in the backtest only. Why is under the table.');
     const table = within(screen.getByRole('table', { name: 'Live check by expiry day' }));
-    expect(table.getAllByRole('columnheader').map((x) => x.textContent)).toEqual(['Side', 'Taken', 'Not taken', 'Skipped', 'Refused', 'Rejected', 'Expired']);
+    expect(table.getAllByRole('columnheader').map((x) => x.getAttribute('aria-label') ?? x.textContent)).toEqual(['Side', 'Taken', 'Not taken', 'Skipped', 'Refused', 'Rejected', 'Expired']);
     // one day with anything on it: no "all days" block over a table of one
     const day = within(table.getByRole('rowgroup', { name: 'Wed 14 Oct · so far' }));
     expect(table.queryByRole('rowgroup', { name: /^All / })).toBeNull();
