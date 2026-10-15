@@ -470,6 +470,27 @@ describe('the method list: profitable by a rule you can see, and filtered by res
     expect(screen.getByText(/one or two trades is luck, not a record/)).toBeInTheDocument();
   });
 
+  it('[critical] the method list sorts as the Backtest\'s does: P&L high and low, most and fewest trades, win % high (15 Oct 2026)', async () => {
+    show(signalStrategy({ methods: [] }));
+    tab('Signals');
+    await screen.findByRole('checkbox', { name: '#1 Breakout' });
+    fireEvent.click(within(screen.getByRole('group', { name: 'methods by result' })).getByRole('button', { name: /^All/ }));
+    const listed = () => screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'));
+    const sort = within(await screen.findByRole('group', { name: 'Sort' }));
+    // With the chain: breakout 8 of 12, +900; the sweep 3 of 3, +400; BOS 2 of 9, a loss; order flow none -- always last
+    fireEvent.click(sort.getByRole('button', { name: 'P&L high' }));
+    expect(listed()).toEqual(['#1 Breakout', '#3 Liquidity sweep', '#6 BOS', '#11 Order flow']);
+    fireEvent.click(sort.getByRole('button', { name: 'P&L low' }));
+    expect(listed()).toEqual(['#6 BOS', '#3 Liquidity sweep', '#1 Breakout', '#11 Order flow']);
+    fireEvent.click(sort.getByRole('button', { name: 'Most trades' }));
+    expect(listed()).toEqual(['#1 Breakout', '#6 BOS', '#3 Liquidity sweep', '#11 Order flow']);
+    fireEvent.click(sort.getByRole('button', { name: 'Win % high' }));
+    expect(listed()).toEqual(['#3 Liquidity sweep', '#1 Breakout', '#6 BOS', '#11 Order flow']);
+    // put back as the tests after this one expect it
+    fireEvent.click(sort.getByRole('button', { name: 'Default' }));
+    expect(listed()).toEqual(['#1 Breakout', '#3 Liquidity sweep', '#6 BOS', '#11 Order flow']);
+  });
+
   it('[critical] Profit / Loss / No trades, with counts that follow the search and family', async () => {
     show(signalStrategy({ methods: [] }));
     tab('Signals');

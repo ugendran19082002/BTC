@@ -280,3 +280,50 @@ describe('the Win tab: won at least a line, 30% to begin with', () => {
     expect(screen.getByText('No method won 90% or more here. Lower the line above.')).toBeInTheDocument();
   });
 });
+
+describe('the sort row (15 Oct 2026)', () => {
+  it('[critical] P&L high and low, most and fewest trades, win % high -- one with no trade always last', async () => {
+    const { sortOptions } = await import('@/components/mobile/FilterPicker');
+    const xs = [
+      { key: 'a', value: 265, trades: 12, winRate: 0.5 }, { key: 'b', value: -40, trades: 8, winRate: 0.25 },
+      { key: 'c', value: 900, trades: 30, winRate: 0.4 }, { key: 'd', value: -310, trades: 5, winRate: 0.8 }, { key: 'e' },
+    ];
+    const keys = (s: Parameters<typeof sortOptions>[1]) => sortOptions(xs, s).map((x) => x.key).join('');
+    expect(keys('default')).toBe('abcde');
+    expect(keys('pnl-high')).toBe('cabde');
+    expect(keys('pnl-low')).toBe('dbace');
+    expect(keys('trades-high')).toBe('cabde');
+    expect(keys('trades-low')).toBe('dbace');
+    expect(keys('win-high')).toBe('dacbe');
+  });
+
+  it('[critical] in the picker: a row of sorts under the tabs, the list in that order, handed back to be kept', () => {
+    const options: FilterOption[] = [
+      { key: 'a', name: '#1 Breakout', tone: 'up', value: 265, trades: 12, winRate: 0.5 },
+      { key: 'b', name: '#2 Retest', tone: 'down', value: -40, trades: 40, winRate: 0.25 },
+      { key: 'c', name: '#3 Sweep', tone: 'up', value: 900, trades: 3, winRate: 0.9 },
+    ];
+    const kept: string[] = [];
+    function Host() {
+      const [picked, setPicked] = useState<string[]>([]);
+      return <FilterPicker noun={METHODS} options={options} picked={picked} onChange={setPicked} split onSort={(s) => kept.push(s)} />;
+    }
+    render(<Host />);
+    fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
+    const row = within(screen.getByRole('group', { name: 'Sort' }));
+    expect(row.getAllByRole('button').map((b) => b.textContent)).toEqual(['Default', 'P&L high', 'P&L low', 'Most trades', 'Fewest trades', 'Win % high']);
+    const names = () => within(screen.getByRole('listbox')).getAllByRole('option').slice(1).map((o) => o.textContent!.slice(0, 3));
+    fireEvent.click(row.getByRole('button', { name: 'Most trades' }));
+    expect(names()).toEqual(['#2 ', '#1 ', '#3 ']);
+    fireEvent.click(row.getByRole('button', { name: 'Win % high' }));
+    expect(names()).toEqual(['#3 ', '#1 ', '#2 ']);
+    expect(row.getByRole('button', { name: 'Win % high' })).toHaveAttribute('aria-pressed', 'true');
+    expect(kept).toEqual(['trades-high', 'win-high']);
+  });
+
+  it('no sort row where the options carry no record', () => {
+    render(<FilterPicker noun={METHODS} options={[{ key: 'x', name: 'X' }, { key: 'y', name: 'Y' }]} picked={[]} onChange={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Method filter: All methods' }));
+    expect(screen.queryByRole('group', { name: 'Sort' })).toBeNull();
+  });
+});
