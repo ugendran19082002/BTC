@@ -6,6 +6,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
+import { MethodTimeframes } from '@/components/strategy/MethodTimeframes';
 import type { MethodRecordLine, MethodUpdate, MethodUpdateSource } from '@/types/strategy';
 
 /**
@@ -24,7 +25,8 @@ export type RangeKey = 'today' | 'yesterday' | '7d' | 'month' | 'custom';
 const RANGES: { v: RangeKey; label: string }[] = [
   { v: 'today', label: 'Today' }, { v: 'yesterday', label: 'Yesterday' }, { v: '7d', label: 'Last 7 days' }, { v: 'month', label: 'This month' }, { v: 'custom', label: 'Custom' },
 ];
-type View = 'summary' | 'timeline';
+type View = 'tf' | 'summary' | 'timeline';
+const VIEWS: { v: View; label: string }[] = [{ v: 'tf', label: 'By time frame' }, { v: 'summary', label: 'Summary' }, { v: 'timeline', label: 'Timeline' }];
 const PAGE = 30;
 const DAY_MS = 86_400_000;
 const IST_MS = 5.5 * 3_600_000;
@@ -123,7 +125,8 @@ export function sortMethods(rows: readonly MethodRow[], by: MethodSort): MethodR
 }
 
 export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compact?: boolean; now?: number }) {
-  const [view, setView] = usePersisted<View>('method-log:view', 'summary');
+  const [savedView, setView] = usePersisted<View>('method-log:view', 'tf');
+  const view: View = VIEWS.some((x) => x.v === savedView) ? savedView : 'tf';
   const [rangeKey, setRangeKey] = usePersisted<RangeKey>('method-log:range', '7d');
   const [custom, setCustom] = usePersisted<{ from: string; to: string }>('method-log:custom', { from: shift(istDay(now), -6), to: istDay(now) });
   const [show, setShow] = usePersisted<Show>('method-log:show', 'all');
@@ -190,10 +193,10 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
       {/* What: the view, the kind of change, the strategy. */}
       <div className="flex flex-wrap items-center gap-1.5">
         <div role="tablist" aria-label="View" className="inline-flex rounded-md border border-solid border-border p-0.5">
-          {(['summary', 'timeline'] as const).map((v) => (
+          {VIEWS.map(({ v, label }) => (
             <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
-                    className={cn('m-0 h-7 appearance-none rounded border-0 px-3 font-[inherit] text-[12px]', view === v ? 'bg-primary font-semibold text-primary-foreground' : 'bg-transparent text-muted-foreground')}>
-              {v === 'summary' ? 'Summary' : 'Timeline'}
+                    className={cn('m-0 h-7 appearance-none rounded border-0 px-2.5 font-[inherit] text-[12px]', view === v ? 'bg-primary font-semibold text-primary-foreground' : 'bg-transparent text-muted-foreground')}>
+              {label}
             </button>
           ))}
         </div>
@@ -215,6 +218,10 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
           No method changes {rangeWords === dayLabel(istDay(now)) ? 'today' : `from ${rangeWords}`}{show !== 'all' ? ' of this kind' : ''}. Switch on <b className="text-foreground">Auto-update methods</b> in a signal
           strategy&apos;s Signals tab, or change its methods and save: each change is kept here.
         </p>
+      )}
+
+      {data && mine.length > 0 && view === 'tf' && (
+        <MethodTimeframes updates={mine} range={range} today={istDay(now)} nameOf={nameOf} accountOf={accountOf} onMethod={openMethod} />
       )}
 
       {data && mine.length > 0 && view === 'summary' && (

@@ -17,7 +17,7 @@ import { methodsSchema } from '../entry/catalogue.js';
 import { DEFAULT_PARAMS, type SignalBacktest } from '../report/signal-backtest.js';
 import { signalBacktest } from '../report/backtest-run.js';
 import { sessionDayOf } from '../report/market-day.js';
-import { validateConfig, type AutoMethods, type AutoMethodsRun, type MethodUpdate, type Strategy, type StrategyConfig } from './types.js';
+import { tfLabel, validateConfig, type AutoMethods, type AutoMethodsRun, type MethodUpdate, type Strategy, type StrategyConfig } from './types.js';
 
 const IST_MS = 5.5 * 3_600_000;
 const DAY_MS = 86_400_000;
@@ -143,7 +143,7 @@ export async function runAutoMethods(now: number, d: AutoDeps): Promise<string[]
     await d.save({ ...fresh, config });
     done.push(s.id);
     await d.log({
-      at: now, strategyId: fresh.id, strategyName: fresh.name, accountId: fresh.accountId ?? null, source: 'daily',
+      at: now, strategyId: fresh.id, strategyName: fresh.name, accountId: fresh.accountId ?? null, source: 'daily', tf: tfLabel(rule),
       rule: { winPct: a.winPct, minTrades: a.minTrades, days: a.days }, from: run.from, to: run.to, before, after,
       // the records of every method that traded: the ones picked, dropped, and the ones that missed the line
       records,

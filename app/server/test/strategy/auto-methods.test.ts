@@ -84,7 +84,7 @@ test('[critical] the run: each due strategy picked, read again, only its list an
   // kept: the day's change, with the rule, the days, the lists and every record behind it
   assert.equal(logged.length, 1);
   assert.deepEqual(logged[0], {
-    at: now, strategyId: 'due', strategyName: 'due', accountId: 1, source: 'daily', rule: { winPct: 75, minTrades: 3, days: 7 },
+    at: now, strategyId: 'due', strategyName: 'due', accountId: 1, source: 'daily', tf: '15m', rule: { winPct: 75, minTrades: 3, days: 7 },
     from: '2026-10-10', to: '2026-10-16', before: ['breakout', 'bos'], after: ['momentum', 'breakout'],
     records: [{ method: 'momentum', trades: 5, wins: 5, net: 0.4 }, { method: 'breakout', trades: 4, wins: 3, net: 0.1 }, { method: 'bos', trades: 6, wins: 2, net: -0.3 }], note: null,
   });
@@ -123,4 +123,12 @@ test('[critical] its settings are checked before a save', () => {
   buys.signal!.action = 'buy';
   assert.ok(validateConfig(buys).some((p) => /strategy that buys cannot use it/.test(p)));
   assert.deepEqual(validateConfig(signal(['a'])).filter((p) => /daily update/.test(p)), []);
+});
+
+test('a rule\'s time frame in a word: the chain, one, or several joined in the desk\'s order', async () => {
+  const { tfLabel } = await import('../../src/strategy/types.js');
+  assert.equal(tfLabel({ mode: 'mtf', tf: '5m' }), 'chain');
+  assert.equal(tfLabel({ mode: 'single', tf: '15m' }), '15m');
+  assert.equal(tfLabel({ mode: 'single', tf: '15m', tfs: ['15m', '1h'] }), '15m+1h');
+  assert.equal(tfLabel(null), null);
 });

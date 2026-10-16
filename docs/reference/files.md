@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-514 files listed, 257 test files counted below, images and lockfiles left out.
+515 files listed, 258 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 134 |
-| `app/web` | 123 |
+| `app/web` | 124 |
 
 ## `(root)`
 
@@ -489,6 +489,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
 | [GroupTag.tsx](../../app/web/src/components/strategy/GroupTag.tsx) | The group a strategy is in, as a small tag beside its name (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- user friendly, desk and phone"). |
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
+| [MethodTimeframes.tsx](../../app/web/src/components/strategy/MethodTimeframes.tsx) | The method updates by time frame, day by day (owner, 16 Oct 2026: "the methods update report, more user friendly: by time frame with its methods, in and out, date wise"). |
 | [MethodUpdatesLog.tsx](../../app/web/src/components/strategy/MethodUpdatesLog.tsx) | Every change to the signal strategies' methods (owner, 16 Oct 2026: "the daily methods changes, logged, saved in the db, shown in a logs menu and on the phone's More"; then "today, yesterday, last... |
 | [ReorderList.tsx](../../app/web/src/components/strategy/ReorderList.tsx) | A list put in order by dragging (owner, 10 Oct 2026: "drag to change the order, user friendly"). |
 | [SideMax.tsx](../../app/web/src/components/strategy/SideMax.tsx) | Each side's own limit under "at most open" (owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own; the total still held to the max open; user friendly"). |

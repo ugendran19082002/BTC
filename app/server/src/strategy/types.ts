@@ -554,6 +554,8 @@ export type MethodUpdateSource = 'daily' | 'manual';
  */
 export type MethodUpdate = {
   id: number; at: number; strategyId: string; strategyName: string; accountId: number | null; source: MethodUpdateSource;
+  /** The time frame the strategy read signals on when it changed (`tfLabel`): '15m', '15m+1h', 'chain'. Null: not known. */
+  tf: string | null;
   rule: { winPct: number; minTrades: number; days: number } | null;
   from: string | null; to: string | null;
   before: string[]; after: string[]; added: string[]; dropped: string[];
@@ -561,6 +563,9 @@ export type MethodUpdate = {
   records: MethodRecordLine[];
   note: string | null;
 };
+/** A rule's time frame in a word: 'chain' with the chain, else its time frames joined ('15m', '15m+1h'). */
+export const tfLabel = (rule: Pick<SignalRule, 'mode' | 'tf' | 'tfs'> | null | undefined): string | null =>
+  (!rule ? null : rule.mode === 'mtf' ? 'chain' : ruleTfs(rule).join('+'));
 export const DEFAULT_AUTO_METHODS: AutoMethods ={ on: false, at: '21:00', winPct: 75, minTrades: 3, days: 7 };
 export const MAX_AUTO_DAYS = 30;
 export function autoMethodsProblems(a: unknown): string[] {

@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type AutoMethods, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type AutoMethods, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -473,7 +473,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       const took = last && last.at !== existing?.config.signal?.autoMethods?.last?.at && !last.note && last.picked.join() === now.join() ? last : null;
       const a = config.signal!.autoMethods;
       await s.logMethodUpdate({
-        at: Date.now(), strategyId: strategy.id, strategyName: strategy.name, accountId: strategy.accountId ?? null, source: 'manual',
+        at: Date.now(), strategyId: strategy.id, strategyName: strategy.name, accountId: strategy.accountId ?? null, source: 'manual', tf: tfLabel(config.signal),
         rule: took && a ? { winPct: a.winPct, minTrades: a.minTrades, days: a.days } : null,
         from: took?.from ?? null, to: took?.to ?? null, before: was, after: now, records: [],
         note: took ? 'Picked now on the form and saved.' : null,

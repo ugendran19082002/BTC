@@ -330,6 +330,25 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS strategy_method_updates_by_strategy ON strategy_method_updates (strategy_id, at DESC);
     `,
   },
+  {
+    /*
+     * Each method change with the time frame its strategy read signals on (owner, 16 Oct 2026: "the report by time
+     * frame, its methods in and out, day by day"). Copied in, not looked up: a strategy moved to another time frame
+     * later still reads where it was. The rows already written are given their strategy's time frame as it stands.
+     */
+    id: 'strategy-013-method-updates-tf',
+    up: `
+      ALTER TABLE strategy_method_updates ADD COLUMN IF NOT EXISTS tf TEXT;
+      UPDATE strategy_method_updates u SET tf = CASE
+          WHEN s.config->'signal'->>'mode' = 'mtf' THEN 'chain'
+          WHEN jsonb_typeof(s.config->'signal'->'tfs') = 'array' AND jsonb_array_length(s.config->'signal'->'tfs') > 0
+            THEN (SELECT string_agg(x.v, '+' ORDER BY x.i) FROM jsonb_array_elements_text(s.config->'signal'->'tfs') WITH ORDINALITY AS x(v, i))
+          ELSE s.config->'signal'->>'tf'
+        END
+        FROM strategies s
+       WHERE s.id = u.strategy_id AND u.tf IS NULL;
+    `,
+  },
 ];
 
 /** A config without the settings the desk no longer has. */
@@ -812,10 +831,10 @@ export class StrategyStore {
   async logMethodUpdate(u: Omit<MethodUpdate, 'id' | 'added' | 'dropped'>): Promise<MethodUpdate> {
     const added = u.after.filter((m) => !u.before.includes(m)), dropped = u.before.filter((m) => !u.after.includes(m));
     const r = await one<{ id: string }>(
-      `INSERT INTO strategy_method_updates (at, strategy_id, strategy_name, account_id, source, win_pct, min_trades, days, from_day, to_day, before, after, added, dropped, records, note)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
+      `INSERT INTO strategy_method_updates (at, strategy_id, strategy_name, account_id, source, win_pct, min_trades, days, from_day, to_day, before, after, added, dropped, records, note, tf)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
       [u.at, u.strategyId, u.strategyName, u.accountId, u.source, u.rule?.winPct ?? null, u.rule?.minTrades ?? null, u.rule?.days ?? null,
-        u.from, u.to, JSON.stringify(u.before), JSON.stringify(u.after), JSON.stringify(added), JSON.stringify(dropped), JSON.stringify(u.records), u.note],
+        u.from, u.to, JSON.stringify(u.before), JSON.stringify(u.after), JSON.stringify(added), JSON.stringify(dropped), JSON.stringify(u.records), u.note, u.tf],
     );
     return { ...u, id: Number(r!.id), added, dropped };
   }
@@ -834,7 +853,7 @@ export class StrategyStore {
       `SELECT * FROM strategy_method_updates ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY at DESC, id DESC LIMIT $${args.length}`, args);
     return xs.map((x) => ({
       id: Number(x.id), at: Number(x.at), strategyId: x.strategy_id, strategyName: x.strategy_name,
-      accountId: x.account_id === null ? null : Number(x.account_id), source: x.source,
+      accountId: x.account_id === null ? null : Number(x.account_id), source: x.source, tf: x.tf,
       rule: x.win_pct === null ? null : { winPct: Number(x.win_pct), minTrades: Number(x.min_trades), days: Number(x.days) },
       from: x.from_day, to: x.to_day, before: x.before, after: x.after, added: x.added, dropped: x.dropped, records: x.records, note: x.note,
     }));
@@ -844,5 +863,5 @@ export class StrategyStore {
 type MethodUpdateRow = {
   id: string; at: string; strategy_id: string; strategy_name: string; account_id: string | null; source: MethodUpdateSource;
   win_pct: number | null; min_trades: number | null; days: number | null; from_day: string | null; to_day: string | null;
-  before: string[]; after: string[]; added: string[]; dropped: string[]; records: MethodUpdate['records']; note: string | null;
+  before: string[]; after: string[]; added: string[]; dropped: string[]; records: MethodUpdate['records']; note: string | null; tf: string | null;
 };

@@ -681,6 +681,7 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   await post('/api/strategies', { id, name: 'auto pick', config: draft({}, { methods: ['breakout', 'pullback'], autoMethods: { ...auto, last } }) });
   const [manual] = await log();
   assert.deepEqual([manual.source, manual.before, manual.after, manual.added, manual.dropped, manual.rule, manual.note], ['manual', ['breakout'], ['breakout', 'pullback'], ['pullback'], [], null, null]);
+  assert.equal(manual.tf, '15m+1h', 'the time frames it read signals on, kept with the change');
   // "Pick now", "Use this list", saved: said so, with the rule it picked by
   const taken = { at: 2, from: QUIET, to: QUIET, picked: ['pullback'], before: ['breakout', 'pullback'] };
   await post('/api/strategies', { id, name: 'auto pick', config: draft({}, { methods: ['pullback'], autoMethods: { ...auto, last: taken } }) });
@@ -689,7 +690,7 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   // the desk's own daily row, beside them; one way at a time; the newest first
   const { strategyStore } = await import('../../src/http/routes/strategy.routes.js');
   await strategyStore().logMethodUpdate({
-    at: Date.now() + 1_000, strategyId: id, strategyName: 'auto pick', accountId: null, source: 'daily', rule: { winPct: 75, minTrades: 3, days: 7 },
+    at: Date.now() + 1_000, strategyId: id, strategyName: 'auto pick', accountId: null, source: 'daily', tf: 'chain', rule: { winPct: 75, minTrades: 3, days: 7 },
     from: CLIMB, to: QUIET, before: ['pullback'], after: ['pullback', 'breakout'], records: [{ method: 'breakout', trades: 4, wins: 3, net: 0.2 }], note: null,
   });
   assert.deepEqual((await log()).map((u: any) => u.source), ['daily', 'manual', 'manual']);

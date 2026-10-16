@@ -14,15 +14,15 @@ const { MethodUpdatesLog, rangeOf, ruleWords, sortMethods, summarize } = await i
 const NOW = Date.parse('2026-10-16T22:00:00+05:30');
 const AT = Date.parse('2026-10-16T21:00:00+05:30');
 const u = (o: Partial<MethodUpdate>): MethodUpdate => ({
-  id: 1, at: AT, strategyId: '15m', strategyName: '15m time', accountId: 1, source: 'daily', rule: { winPct: 75, minTrades: 3, days: 7 },
+  id: 1, at: AT, strategyId: '15m', strategyName: '15m time', accountId: 1, source: 'daily', tf: '15m', rule: { winPct: 75, minTrades: 3, days: 7 },
   from: '2026-10-10', to: '2026-10-16', before: ['breakout', 'bos'], after: ['breakout', 'trap'], added: ['trap'], dropped: ['bos'],
   records: [{ method: 'trap', trades: 5, wins: 4, net: 0.3 }, { method: 'bos', trades: 6, wins: 2, net: -0.2 }, { method: 'breakout', trades: 4, wins: 3, net: 0.1 }],
   note: null, ...o,
 });
 const THREE = [
   u({}),
-  u({ id: 2, at: AT - 3_600_000, strategyId: '1h', strategyName: '1h time', accountId: 2, source: 'manual', rule: null, from: null, to: null, before: ['bos'], after: ['bos', 'breakout'], added: ['breakout'], dropped: [], records: [] }),
-  u({ id: 3, at: AT - 86_400_000, strategyId: '3m', strategyName: '3m time', before: ['trap'], after: ['trap'], added: [], dropped: [], records: [], note: 'No method won 75% of 3 trades or more: the list was kept.' }),
+  u({ id: 2, at: AT - 3_600_000, strategyId: '1h', strategyName: '1h time', accountId: 2, source: 'manual', tf: '1h', rule: null, from: null, to: null, before: ['bos'], after: ['bos', 'breakout'], added: ['breakout'], dropped: [], records: [] }),
+  u({ id: 3, at: AT - 86_400_000, strategyId: '3m', strategyName: '3m time', tf: '3m', before: ['trap'], after: ['trap'], added: [], dropped: [], records: [], note: 'No method won 75% of 3 trades or more: the list was kept.' }),
 ];
 
 beforeEach(() => { window.localStorage.clear(); getMethodUpdates.mockReset(); });
@@ -57,6 +57,7 @@ describe('the method updates log (16 Oct 2026)', () => {
     getMethodUpdates.mockResolvedValue({ updates: THREE });
     render(<MethodUpdatesLog now={NOW} />);
     await waitFor(() => expect(getMethodUpdates).toHaveBeenCalledWith({ source: null, from: '2026-10-10', to: '2026-10-16', limit: 1_000 }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Summary' }));
     const totals = await screen.findByLabelText('Totals');
     expect(totals).toHaveTextContent('Changes2');
     expect(totals).toHaveTextContent('2 daily · 1 by hand · 1 kept');

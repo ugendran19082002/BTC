@@ -282,6 +282,8 @@ export type MethodUpdateSource = 'daily' | 'manual';
 /** One change to a strategy's methods, as kept: the desk's daily update, or a save from the form that changed the list. */
 export type MethodUpdate = {
   id: number; at: number; strategyId: string; strategyName: string; accountId: number | null; source: MethodUpdateSource;
+  /** The time frame the strategy read signals on when it changed: '15m', '15m+1h', 'chain'; null when not known. */
+  tf: string | null;
   rule: { winPct: number; minTrades: number; days: number } | null;
   from: string | null; to: string | null;
   before: string[]; after: string[]; added: string[]; dropped: string[];
