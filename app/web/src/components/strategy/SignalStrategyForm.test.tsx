@@ -396,6 +396,15 @@ describe('saving', () => {
     expect(saved().config.signal).toMatchObject({ methods: ['breakout', 'liquidity-sweep'], autoMethods: { on: true, at: '21:00', winPct: 75, last: run } });
   });
 
+  it('the group it is in is a tag beside its name at the top; none, no tag (16 Oct 2026)', () => {
+    const { unmount } = render(<SignalStrategyForm editing={signalStrategy()} groupName="80% Win" open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
+    expect(screen.getByRole('dialog', { name: /^Edit / })).toBeInTheDocument();
+    expect(screen.getByLabelText('Group: 80% Win')).toHaveTextContent('80% Win');
+    unmount();
+    show(signalStrategy());
+    expect(screen.queryByLabelText(/^Group:/)).toBeNull();
+  });
+
   it('the rule read back as a sentence says what it does', () => {
     show(signalStrategy({ methods: ['breakout', 'bos'] }));
     expect(screen.getByText(/takes the TRADE signals of 2 methods with the timeframe chain: a BUY sells a put, a SELL a call/)).toBeInTheDocument();

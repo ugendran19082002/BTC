@@ -15,12 +15,14 @@ import { cn } from '@/lib/utils';
 export const Sheet = Dialog.Root;
 
 export function SheetContent({
-  children, className, title, description,
+  children, className, title, description, tag,
 }: {
   children: React.ReactNode;
   className?: string;
   title: string;
   description?: string;
+  /** A short label beside the title -- the group a strategy is in (16 Oct 2026). Not part of the title's text. */
+  tag?: string | null;
 }) {
   return (
     <Dialog.Portal>
@@ -48,9 +50,17 @@ export function SheetContent({
         <div className="mx-auto mt-2 h-1 w-9 flex-none rounded-full bg-[var(--line)] sm:hidden" />
         <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-3">
           <div className="min-w-0">
-            <Dialog.Title className="m-0 truncate text-[15px] font-semibold text-foreground">
-              {title}
-            </Dialog.Title>
+            <div className="flex min-w-0 items-center gap-2">
+              <Dialog.Title className="m-0 min-w-0 truncate text-[15px] font-semibold text-foreground">
+                {title}
+              </Dialog.Title>
+              {tag && (
+                <span aria-label={`Group: ${tag}`} title={`Group: ${tag}`}
+                      className="max-w-[45%] flex-none truncate rounded-md border border-solid border-border bg-muted px-2 py-0.5 text-[11.5px] font-medium text-muted-foreground">
+                  {tag}
+                </span>
+              )}
+            </div>
             {description && (
               <Dialog.Description className="m-0 mt-0.5 text-[12px] text-muted-foreground">
                 {description}

@@ -48,10 +48,12 @@ const TABS: TabDef[] = [
 /** The server's SIGNAL_ENTRY_MS: how long a signal's entry rests before it is cancelled. */
 const SIGNAL_ENTRY_MIN = 5;
 
-export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd, spot, copyFrom = [], group = null }: {
+export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balanceUsd, spot, copyFrom = [], group = null, groupName = null }: {
   editing: Strategy | null;
   /** The group a new one is made in, named in the sheet's line; null: none. */
   group?: { id: string; name: string } | null;
+  /** The group a saved one is in, shown beside its name at the top (16 Oct 2026); null: none. */
+  groupName?: string | null;
   /** The account's other signal strategies, whose methods can be copied in (`SignalRuleEditor`). */
   copyFrom?: readonly Strategy[];
   open: boolean;
@@ -97,6 +99,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         title={editing ? `Edit ${editing.name}` : 'New signal strategy'}
+        tag={editing ? groupName : group?.name ?? null}
         description={`Each TRADE signal of the methods you pick, ${buying ? 'bought' : 'sold'} as one option. Times are IST.${!editing && group ? ` Made in the group "${group.name}".` : ''}`}
         className="sm:w-[min(760px,94vw)]"
       >

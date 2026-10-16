@@ -851,6 +851,7 @@ export function SignalStrategiesCard() {
           key={editing?.id ?? `new-signal-${formGroup?.id ?? ''}`}
           editing={editing}
           group={editing ? null : formGroup}
+          groupName={editing ? groups.find((g) => g.id === editing.groupId)?.name ?? null : null}
           open={formOpen}
           onOpenChange={setFormOpen}
           onSaved={refresh}
