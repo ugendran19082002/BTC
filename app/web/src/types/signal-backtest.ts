@@ -71,7 +71,8 @@ export type MethodOptionRecord = {
 
 /** What a saved backtest asks: the screen's own settings and filters. `strategy` is a saved strategy's id, or null. */
 export type SavedQuery = { params: BacktestParams; tfs: string[]; methods: string[]; strategy: string | null };
-export type BacktestSave = { id: string; name: string; query: SavedQuery; createdAt: number; updatedAt: number };
+/** `group`: the folder it is filed in on the screen (16 Oct 2026); null or absent, none. */
+export type BacktestSave = { id: string; name: string; group?: string | null; query: SavedQuery; createdAt: number; updatedAt: number };
 /** A name, and the saved backtests run together under it, in order. */
 export type BacktestPortfolio = { id: string; name: string; saveIds: string[]; createdAt: number; updatedAt: number };
 export type BacktestSaves = { saves: BacktestSave[]; portfolios: BacktestPortfolio[] };

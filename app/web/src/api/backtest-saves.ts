@@ -10,8 +10,17 @@ import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestS
 export const getBacktestSaves = () => json<BacktestSaves>('/api/backtest-saves');
 
 /** Keep settings under a name; with `id`, the same saved one again. The server checks the settings as it checks the screen's. */
-export const saveBacktest = (s: { id?: string; name: string; query: SavedQuery }) =>
+export const saveBacktest = (s: { id?: string; name: string; query: SavedQuery; group?: string | null }) =>
   post<{ ok: true; save: BacktestSave }>('/api/backtest-saves', s);
+/** A copy of a saved backtest, its settings and its group, as "<name> copy" (a free name). */
+export const cloneBacktestSave = (id: string) =>
+  post<{ ok: true; save: BacktestSave }>(`/api/backtest-saves/${encodeURIComponent(id)}/clone`, {});
+/** A group renamed, every saved backtest in it with it; `to` null takes them out of any group. */
+export const renameBacktestGroup = (from: string, to: string | null) =>
+  post<{ ok: true; moved: number }>('/api/backtest-saves/group', { from, to });
+/** A copy of a portfolio, the same saved backtests in order, as "<name> copy". */
+export const clonePortfolio = (id: string) =>
+  post<{ ok: true; portfolio: BacktestPortfolio }>(`/api/backtest-portfolios/${encodeURIComponent(id)}/clone`, {});
 
 /** Delete a saved backtest: it leaves its portfolios, and one left with fewer than two is deleted with it and named. */
 export const deleteBacktestSave = (id: string) =>

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import {
-  PORTFOLIO_MEMBERS_MAX, dropPortfolio, dropSave, keepPortfolio, keepSave, listSaves, nameProblem, savesByIds, type SavedQuery,
+  PORTFOLIO_MEMBERS_MAX, clonePortfolio, cloneSave, dropPortfolio, dropSave, groupProblem, keepPortfolio, keepSave, listSaves, nameProblem, renameGroup, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
 import { backtestable, type BacktestParams } from '../../report/signal-backtest.js';
 import { liveCheck, portfolioBacktest, portfolioTrades } from '../../report/backtest-run.js';
@@ -121,16 +121,38 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
   /** Every saved backtest and every portfolio, by name. */
   app.get('/api/backtest-saves', async () => listSaves());
 
-  /** Keep a backtest's settings under a name; with `id`, the same one again -- other settings, or another name. */
+  /**
+   * Keep a backtest's settings under a name; with `id`, the same one again -- other settings, or another name.
+   * `group` files it in a group (blank or null: none); left out, a saved one keeps its own.
+   */
   app.post('/api/backtest-saves', async (req, reply) => {
-    const b = (req.body ?? {}) as { id?: unknown; name?: unknown; query?: unknown };
+    const b = (req.body ?? {}) as { id?: unknown; name?: unknown; query?: unknown; group?: unknown };
     const named = nameProblem(b.name);
     if ('problem' in named) return refuse(reply, 422, { error: named.problem, problems: [named.problem] });
     const query = savedQueryOf(b.query);
     if (typeof query === 'string') return refuse(reply, 422, { error: query, problems: [query] });
-    const kept = await keepSave({ id: typeof b.id === 'string' && b.id ? b.id : null, name: named.name, query, now: Date.now() });
+    const grouped = b.group === undefined ? undefined : groupProblem(b.group);
+    if (grouped && 'problem' in grouped) return refuse(reply, 422, { error: grouped.problem, problems: [grouped.problem] });
+    const kept = await keepSave({ id: typeof b.id === 'string' && b.id ? b.id : null, name: named.name, query, now: Date.now(), ...(grouped ? { group: grouped.group } : {}) });
     if ('problem' in kept) return refuse(reply, kept.status, { error: kept.problem, problems: [kept.problem] });
     return { ok: true, save: kept };
+  });
+
+  /** A copy of a saved backtest -- its settings and its group -- as "<name> copy" (16 Oct 2026). */
+  app.post('/api/backtest-saves/:id/clone', async (req, reply) => {
+    const kept = await cloneSave((req.params as { id: string }).id, Date.now());
+    if ('problem' in kept) return refuse(reply, kept.status, { error: kept.problem, problems: [kept.problem] });
+    return { ok: true, save: kept };
+  });
+
+  /** A group renamed, every saved backtest in it moved with it; `to` blank or null takes them out of any group. */
+  app.post('/api/backtest-saves/group', async (req, reply) => {
+    const b = (req.body ?? {}) as { from?: unknown; to?: unknown };
+    const from = groupProblem(b.from);
+    if ('problem' in from || from.group === null) return refuse(reply, 422, { error: 'Which group: its name is needed.' });
+    const to = groupProblem(b.to);
+    if ('problem' in to) return refuse(reply, 422, { error: to.problem, problems: [to.problem] });
+    return { ok: true, moved: await renameGroup(from.group, to.group, Date.now()) };
   });
 
   /** Delete a saved backtest. It leaves its portfolios; one left with fewer than two goes with it, and is named in the answer. */
@@ -146,6 +168,13 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
     const named = nameProblem(b.name);
     if ('problem' in named) return refuse(reply, 422, { error: named.problem, problems: [named.problem] });
     const kept = await keepPortfolio({ id: typeof b.id === 'string' && b.id ? b.id : null, name: named.name, saveIds: keys(b.saveIds, PORTFOLIO_MEMBERS_MAX + 1), now: Date.now() });
+    if ('problem' in kept) return refuse(reply, kept.status, { error: kept.problem, problems: [kept.problem] });
+    return { ok: true, portfolio: kept };
+  });
+
+  /** A copy of a portfolio, the same saved backtests in the same order, as "<name> copy" (16 Oct 2026). */
+  app.post('/api/backtest-portfolios/:id/clone', async (req, reply) => {
+    const kept = await clonePortfolio((req.params as { id: string }).id, Date.now());
     if ('problem' in kept) return refuse(reply, kept.status, { error: kept.problem, problems: [kept.problem] });
     return { ok: true, portfolio: kept };
   });

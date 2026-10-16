@@ -16,7 +16,8 @@ import type { BacktestParams } from './signal-backtest.js';
 
 /** What a saved backtest asks: the screen's own settings and filters. `strategy` is a saved strategy's id, or null. */
 export type SavedQuery = { params: BacktestParams; tfs: string[]; methods: string[]; strategy: string | null };
-export type BacktestSave = { id: string; name: string; query: SavedQuery; createdAt: number; updatedAt: number };
+/** `group`: the folder it is kept in on the screen (16 Oct 2026), or null for none. */
+export type BacktestSave = { id: string; name: string; group: string | null; query: SavedQuery; createdAt: number; updatedAt: number };
 export type BacktestPortfolio = { id: string; name: string; saveIds: string[]; createdAt: number; updatedAt: number };
 
 export const SAVE_NAME_MAX = 60;
@@ -25,6 +26,7 @@ export const SAVES_MAX = 100;
 export const PORTFOLIOS_MAX = 30;
 /** A portfolio is at least two run together, and at most this many: each is a whole backtest. */
 export const PORTFOLIO_MEMBERS_MAX = 12;
+export const GROUP_NAME_MAX = 40;
 
 const MIGRATIONS: Migration[] = [
   {
@@ -49,6 +51,15 @@ const MIGRATIONS: Migration[] = [
       CREATE UNIQUE INDEX IF NOT EXISTS backtest_portfolios_name ON backtest_portfolios (lower(name));
     `,
   },
+  {
+    /*
+     * Saved backtests kept in groups (owner, 16 Oct 2026: "backtest save and group, user friendly"): a name a saved
+     * backtest is filed under, shown as a folder on the screen. A label and nothing more -- it changes no run. Null,
+     * as every one saved before it, is no group.
+     */
+    id: 'report-003-backtest-save-groups',
+    up: 'ALTER TABLE backtest_saves ADD COLUMN IF NOT EXISTS group_name TEXT;',
+  },
 ];
 
 let ready: Promise<void> | null = null;
@@ -58,11 +69,33 @@ export function backtestSavesSchema(): Promise<void> {
   return ready;
 }
 
-type SaveRow = { id: string; name: string; query: SavedQuery; created_at: number; updated_at: number };
+type SaveRow = { id: string; name: string; group_name: string | null; query: SavedQuery; created_at: number; updated_at: number };
 type PortfolioRow = { id: string; name: string; save_ids: string[]; created_at: number; updated_at: number };
-const saveOf = (r: SaveRow): BacktestSave => ({ id: r.id, name: r.name, query: r.query, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) });
+const saveOf = (r: SaveRow): BacktestSave => ({ id: r.id, name: r.name, group: r.group_name ?? null, query: r.query, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) });
+const SAVE_COLS = 'id, name, group_name, query, created_at, updated_at';
 const portfolioOf = (r: PortfolioRow): BacktestPortfolio => ({ id: r.id, name: r.name, saveIds: r.save_ids, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) });
 const newId = () => randomBytes(6).toString('hex');
+
+/** A group as it is kept: blank is none; or why it cannot be one. */
+export function groupProblem(raw: unknown): { group: string | null } | { problem: string } {
+  if (raw === null || raw === undefined) return { group: null };
+  const group = String(raw).replace(/\s+/g, ' ').trim();
+  if (!group) return { group: null };
+  if (group.length > GROUP_NAME_MAX) return { problem: `A group's name is at most ${GROUP_NAME_MAX} characters.` };
+  return { group };
+}
+
+/**
+ * A name nobody has yet, from one that is taken (16 Oct 2026, "clone"): "15m time copy", then "15m time copy 2"…,
+ * cut short to fit. `taken` is every name in use, any capitals.
+ */
+export function freeName(base: string, taken: ReadonlySet<string>): string {
+  for (let i = 1; ; i++) {
+    const tail = i === 1 ? ' copy' : ` copy ${i}`;
+    const name = `${base.slice(0, SAVE_NAME_MAX - tail.length).trimEnd()}${tail}`;
+    if (!taken.has(name.toLowerCase())) return name;
+  }
+}
 
 /** A name as it is kept, or why it cannot be one. */
 export function nameProblem(raw: unknown): { name: string } | { problem: string } {
@@ -75,7 +108,7 @@ export function nameProblem(raw: unknown): { name: string } | { problem: string 
 export async function listSaves(): Promise<{ saves: BacktestSave[]; portfolios: BacktestPortfolio[] }> {
   await backtestSavesSchema();
   const [s, p] = await Promise.all([
-    rows<SaveRow>('SELECT id, name, query, created_at, updated_at FROM backtest_saves ORDER BY lower(name)'),
+    rows<SaveRow>(`SELECT ${SAVE_COLS} FROM backtest_saves ORDER BY lower(name)`),
     rows<PortfolioRow>('SELECT id, name, save_ids, created_at, updated_at FROM backtest_portfolios ORDER BY lower(name)'),
   ]);
   return { saves: s.map(saveOf), portfolios: p.map(portfolioOf) };
@@ -84,24 +117,43 @@ export async function listSaves(): Promise<{ saves: BacktestSave[]; portfolios: 
 export async function savesByIds(ids: readonly string[]): Promise<BacktestSave[]> {
   await backtestSavesSchema();
   if (!ids.length) return [];
-  const found = (await rows<SaveRow>('SELECT id, name, query, created_at, updated_at FROM backtest_saves WHERE id = ANY($1::text[])', [ids as string[]] as never)).map(saveOf);
+  const found = (await rows<SaveRow>(`SELECT ${SAVE_COLS} FROM backtest_saves WHERE id = ANY($1::text[])`, [ids as string[]] as never)).map(saveOf);
   // In the order asked for.
   return ids.flatMap((id) => found.filter((s) => s.id === id));
 }
 
 /** Keep a backtest: a new one, or -- with its `id` -- the same one with other settings or another name. */
-export async function keepSave(o: { id?: string | null; name: string; query: SavedQuery; now: number }): Promise<BacktestSave | { problem: string; status: 404 | 409 | 422 }> {
+export async function keepSave(o: { id?: string | null; name: string; query: SavedQuery; now: number; group?: string | null }): Promise<BacktestSave | { problem: string; status: 404 | 409 | 422 }> {
   await backtestSavesSchema();
   const taken = await one<{ id: string }>('SELECT id FROM backtest_saves WHERE lower(name) = lower($1)', [o.name]);
   if (taken && taken.id !== o.id) return { problem: `There is a saved backtest called "${o.name}" already: give this one another name, or update that one.`, status: 409 };
   if (o.id) {
-    const r = await one<SaveRow>('UPDATE backtest_saves SET name = $2, query = $3, updated_at = $4 WHERE id = $1 RETURNING id, name, query, created_at, updated_at', [o.id, o.name, JSON.stringify(o.query), o.now]);
+    // A group not said is the one it has: an older screen that sends none does not empty it.
+    const r = o.group === undefined
+      ? await one<SaveRow>(`UPDATE backtest_saves SET name = $2, query = $3, updated_at = $4 WHERE id = $1 RETURNING ${SAVE_COLS}`, [o.id, o.name, JSON.stringify(o.query), o.now])
+      : await one<SaveRow>(`UPDATE backtest_saves SET name = $2, query = $3, updated_at = $4, group_name = $5 WHERE id = $1 RETURNING ${SAVE_COLS}`, [o.id, o.name, JSON.stringify(o.query), o.now, o.group]);
     return r ? saveOf(r) : { problem: 'That saved backtest is gone: it may have been deleted.', status: 404 };
   }
   const n = await one<{ n: number }>('SELECT COUNT(*)::int AS n FROM backtest_saves');
   if ((n?.n ?? 0) >= SAVES_MAX) return { problem: `At most ${SAVES_MAX} saved backtests: delete one you no longer use.`, status: 422 };
-  const r = await one<SaveRow>('INSERT INTO backtest_saves (id, name, query, created_at, updated_at) VALUES ($1, $2, $3, $4, $4) RETURNING id, name, query, created_at, updated_at', [newId(), o.name, JSON.stringify(o.query), o.now]);
+  const r = await one<SaveRow>(`INSERT INTO backtest_saves (id, name, query, created_at, updated_at, group_name) VALUES ($1, $2, $3, $4, $4, $5) RETURNING ${SAVE_COLS}`, [newId(), o.name, JSON.stringify(o.query), o.now, o.group ?? null]);
   return saveOf(r!);
+}
+
+/** A copy of a saved backtest, settings and group, under a name nobody has: "<name> copy", "<name> copy 2"… */
+export async function cloneSave(id: string, now: number): Promise<BacktestSave | { problem: string; status: 404 | 422 }> {
+  await backtestSavesSchema();
+  const was = await one<SaveRow>(`SELECT ${SAVE_COLS} FROM backtest_saves WHERE id = $1`, [id]);
+  if (!was) return { problem: 'That saved backtest is gone: it may have been deleted.', status: 404 };
+  const taken = new Set((await rows<{ n: string }>('SELECT lower(name) AS n FROM backtest_saves')).map((x) => x.n));
+  const kept = await keepSave({ name: freeName(was.name, taken), query: was.query, now, group: was.group_name });
+  return 'problem' in kept ? { problem: kept.problem, status: kept.status === 409 ? 422 : kept.status } : kept;
+}
+
+/** Every saved backtest of a group moved to another name, or (null) out of any group. Returns how many. */
+export async function renameGroup(from: string, to: string | null, now: number): Promise<number> {
+  await backtestSavesSchema();
+  return (await query('UPDATE backtest_saves SET group_name = $2, updated_at = $3 WHERE lower(group_name) = lower($1)', [from, to, now])).rowCount ?? 0;
 }
 
 /** Delete a saved backtest. It leaves every portfolio it was in; a portfolio left with fewer than two is deleted with it. */
@@ -137,6 +189,16 @@ export async function keepPortfolio(o: { id?: string | null; name: string; saveI
   if ((n?.n ?? 0) >= PORTFOLIOS_MAX) return { problem: `At most ${PORTFOLIOS_MAX} portfolios: delete one you no longer use.`, status: 422 };
   const r = await one<PortfolioRow>('INSERT INTO backtest_portfolios (id, name, save_ids, created_at, updated_at) VALUES ($1, $2, $3, $4, $4) RETURNING id, name, save_ids, created_at, updated_at', [newId(), o.name, JSON.stringify(ids), o.now]);
   return portfolioOf(r!);
+}
+
+/** A copy of a portfolio, the same saved backtests in the same order, under a name nobody has. */
+export async function clonePortfolio(id: string, now: number): Promise<BacktestPortfolio | { problem: string; status: 404 | 422 }> {
+  await backtestSavesSchema();
+  const was = await one<PortfolioRow>('SELECT id, name, save_ids, created_at, updated_at FROM backtest_portfolios WHERE id = $1', [id]);
+  if (!was) return { problem: 'That portfolio is gone: it may have been deleted.', status: 404 };
+  const taken = new Set((await rows<{ n: string }>('SELECT lower(name) AS n FROM backtest_portfolios')).map((x) => x.n));
+  const kept = await keepPortfolio({ name: freeName(was.name, taken), saveIds: was.save_ids, now });
+  return 'problem' in kept ? { problem: kept.problem, status: kept.status === 409 ? 422 : kept.status } : kept;
 }
 
 export async function dropPortfolio(id: string): Promise<boolean> {

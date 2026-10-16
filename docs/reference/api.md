@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-108 routes.
+111 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -33,9 +33,12 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/backtest-portfolio/trades` | signed in | The run's trades, one by one (owner, 14 Oct 2026: "tap the count"; 15 Oct: "by session too"): the same query as the run, narrowed by `?day=`, `?sfrom=&sto=` and `?smethod=` as the single backtest's... |
 | POST | `/api/backtest-portfolios` | signed in | Keep a portfolio: a name, and two or more saved backtests in order. |
 | DELETE | `/api/backtest-portfolios/:id` | signed in | -- |
+| POST | `/api/backtest-portfolios/:id/clone` | signed in | A copy of a portfolio, the same saved backtests in the same order, as "<name> copy" (16 Oct 2026). |
 | GET | `/api/backtest-saves` | signed in | Every saved backtest and every portfolio, by name. |
 | POST | `/api/backtest-saves` | signed in | Keep a backtest's settings under a name; with `id`, the same one again -- other settings, or another name. |
 | DELETE | `/api/backtest-saves/:id` | signed in | Delete a saved backtest. |
+| POST | `/api/backtest-saves/:id/clone` | signed in | A copy of a saved backtest -- its settings and its group -- as "<name> copy" (16 Oct 2026). |
+| POST | `/api/backtest-saves/group` | signed in | A group renamed, every saved backtest in it moved with it; `to` blank or null takes them out of any group. |
 
 ## [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts)
 

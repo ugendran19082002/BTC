@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
-import { AS_SAVED, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, overQuery, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
+import { ChevronDown, Copy, FolderOpen, Pencil, Search, Trash2 } from 'lucide-react';
+import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { time12 } from '@/lib/time';
 import { overWords } from '@/components/report/backtest-words';
@@ -226,12 +227,39 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
   );
 }
 
+/** When something was last changed, as people say it: "just now", "5 min ago", "3 h ago", "2 days ago", else the date. */
+export function agoWords(ms: number, now: number): string {
+  const s = Math.max(0, now - ms) / 1_000;
+  if (s < 60) return 'just now';
+  if (s < 3_600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86_400) return `${Math.floor(s / 3_600)} h ago`;
+  if (s < 7 * 86_400) { const d = Math.floor(s / 86_400); return `${d} day${d === 1 ? '' : 's'} ago`; }
+  return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+}
+
+/** A name as the desk keeps it: spaces tidied. Compared without capitals, as the desk compares them. */
+const tidy = (n: string) => n.replace(/\s+/g, ' ').trim();
+const takenWords = (kind: 'save' | 'portfolio', n: string) =>
+  kind === 'save'
+    ? `There is a saved backtest called "${tidy(n)}" already: give this one another name, or update that one.`
+    : `There is a portfolio called "${tidy(n)}" already.`;
+
+type Sort = 'name' | 'recent';
+/** Which group the lists show: '*' every one, '' those in no group, else that group. */
+type GroupPick = string;
+const ALL = '*';
+
+const iconBtn = 'm-0 grid h-9 w-9 shrink-0 appearance-none place-items-center rounded-md border-0 bg-transparent p-0 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40';
+const small = 'h-9 min-w-0 rounded-md border border-solid border-border bg-[var(--bg)] px-2.5 text-[14px] text-foreground';
+const chipCls = (on: boolean) => cn('m-0 h-8 shrink-0 appearance-none rounded-full border border-solid px-3 font-[inherit] text-[12.5px]',
+  on ? 'border-[var(--chosen)] bg-[var(--chosen-soft)] text-foreground' : 'border-border bg-transparent text-muted-foreground');
+
 export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run, onRun, onSaves, wide = false }: {
   /**
    * Which of the screen's two sections this is in (owner, 13 Oct 2026: "the portfolio section or the backtest
    * section -- only one open at a time"). `single`: the saved backtests as a list to keep, put back on the screen,
-   * edit and delete. `portfolio`: the portfolios to run, edit and delete, and the saved backtests as ticks to run
-   * together or keep as a new one.
+   * edit, clone and delete. `portfolio`: the portfolios to run, edit, clone and delete, and the saved backtests as
+   * ticks to run together or keep as a new one.
    */
   mode?: 'single' | 'portfolio';
   /** The settings on the screen now. */
@@ -253,19 +281,33 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
   const [said, setSaid] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
+  // The group a new one is filed in (16 Oct 2026): blank is none.
+  const [group, setGroup] = useState('');
   const [portfolioName, setPortfolioName] = useState('');
   // The saved one whose settings were last put on the screen: changed since, it can be updated in place.
   const [fromId, setFromId] = useState<string | null>(null);
   const [ticked, setTicked] = useState<string[]>([]);
-  const [asking, setAsking] = useState<string | null>(null);
+  // A delete asked about, before it is done: a saved backtest or a portfolio.
+  const [asking, setAsking] = useState<{ kind: 'save' | 'portfolio'; id: string } | null>(null);
   /*
    * What is being edited, and its name as typed (owner, 13 Oct 2026: "edit a saved backtest, and edit a
-   * portfolio"). A saved backtest: its settings are put on the screen to be changed there, and its name here. A
-   * portfolio: its members are ticked in the list to be changed there, and its name here. Nothing is kept until
-   * Save changes; Cancel leaves it as it was.
+   * portfolio"). A saved backtest: its settings are put on the screen to be changed there, its name and group
+   * here. A portfolio: its members are ticked in the list to be changed there, and its name here. Nothing is kept
+   * until Save changes; Cancel leaves it as it was.
    */
   const [editing, setEditing] = useState<{ kind: 'save' | 'portfolio'; id: string } | null>(null);
   const [editName, setEditName] = useState('');
+  const [editGroup, setEditGroup] = useState('');
+  /*
+   * Finding one among many (16 Oct 2026, "user friendly"): a search over the names, groups and settings, the
+   * order (by name or the last changed first), and which group is shown -- the last two kept in this browser.
+   * Groups fold, and a group can be renamed (or emptied out) in one go.
+   */
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = usePersisted<Sort>('savedBacktests.sort', 'name');
+  const [groupPick, setGroupPick] = usePersisted<GroupPick>('savedBacktests.group', ALL);
+  const [closedGroups, setClosedGroups] = usePersisted<string[]>('savedBacktests.closedGroups', []);
+  const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
   /*
    * On a phone the saved list folds to one line (owner, 14 Oct 2026: "the backtest screen, user friendly"): eight
    * saved backtests were 1,200px between the settings and the result. Kept as last left, in this browser.
@@ -273,6 +315,7 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
   const [listOpen, setListOpen] = usePersisted<boolean>('savedBacktests.listOpen.phone', false);
   const listShown = wide || listOpen;
   const setRun = onRun;
+  const now = Date.now();
 
   const refresh = useCallback(() => getBacktestSaves().then((x) => { setList(x); setFailed(null); return x; }, (e: Error) => { setFailed(e.message); return null; }), []);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -286,6 +329,11 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
   const from = saves.find((s) => s.id === fromId) ?? null;
   const nameOf = (id: string) => saves.find((s) => s.id === id)?.name ?? 'a deleted one';
   const picked = ticked.filter((id) => saves.some((s) => s.id === id));
+  // A name another one already has, any capitals -- said as it is typed, not after Save (16 Oct 2026: "no duplicate names").
+  const savedNamed = (n: string, except?: string) => { const k = tidy(n).toLowerCase(); return k ? saves.find((s) => s.name.toLowerCase() === k && s.id !== except) ?? null : null; };
+  const portfolioNamed = (n: string, except?: string) => { const k = tidy(n).toLowerCase(); return k ? portfolios.find((p) => p.name.toLowerCase() === k && p.id !== except) ?? null : null; };
+  const groups = [...new Set(saves.map((s) => s.group ?? '').filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const pick = groupPick === ALL || groupPick === '' || groups.includes(groupPick) ? groupPick : ALL;
 
   const act = async (what: () => Promise<string>) => {
     setBusy(true); setSaid(null);
@@ -294,9 +342,10 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
     finally { setBusy(false); }
   };
   const keep = (id?: string) => act(async () => {
-    const r = await saveBacktest({ ...(id ? { id } : {}), name: id ? from!.name : name, query: current });
+    const target = id ? saves.find((s) => s.id === id)! : null;
+    const r = await saveBacktest({ ...(target ? { id: target.id, name: target.name } : { name, group: tidy(group) || null }), query: current });
     setFromId(r.save.id); setName('');
-    return id ? `Updated "${r.save.name}" to the settings on the screen.` : `Saved as "${r.save.name}".`;
+    return target ? `Updated "${r.save.name}" to the settings on the screen.` : `Saved as "${r.save.name}"${r.save.group ? ` in ${r.save.group}` : ''}.`;
   });
   const remove = (s: BacktestSave) => act(async () => {
     const r = await deleteBacktestSave(s.id);
@@ -307,11 +356,22 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
   });
   const editedSave = editing?.kind === 'save' ? saves.find((s) => s.id === editing.id) ?? null : null;
   const editedPortfolio = editing?.kind === 'portfolio' ? portfolios.find((p) => p.id === editing.id) ?? null : null;
-  const editSave = (s: BacktestSave) => { onLoad(s.query); setFromId(s.id); setEditing({ kind: 'save', id: s.id }); setEditName(s.name); setSaid(null); setAsking(null); };
-  const editPortfolio = (p: { id: string; name: string; saveIds: string[] }) => { setTicked(p.saveIds); setEditing({ kind: 'portfolio', id: p.id }); setEditName(p.name); setSaid(null); };
+  const editSave = (s: BacktestSave) => { onLoad(s.query); setFromId(s.id); setEditing({ kind: 'save', id: s.id }); setEditName(s.name); setEditGroup(s.group ?? ''); setSaid(null); setAsking(null); };
+  const editPortfolio = (p: { id: string; name: string; saveIds: string[] }) => { setTicked(p.saveIds); setEditing({ kind: 'portfolio', id: p.id }); setEditName(p.name); setSaid(null); setAsking(null); };
+  // A copy, then straight to changing it (16 Oct 2026, "clone"): its settings on the screen and its name in the edit.
+  const clone = (s: BacktestSave) => act(async () => {
+    const r = await cloneBacktestSave(s.id);
+    editSave(r.save);
+    return `Cloned "${s.name}" as "${r.save.name}". Its settings are on the screen: change them and its name, then Save changes.`;
+  });
+  const clonePf = (p: { id: string; name: string }) => act(async () => {
+    const r = await clonePortfolio(p.id);
+    editPortfolio(r.portfolio);
+    return `Cloned the portfolio "${p.name}" as "${r.portfolio.name}". Tick or untick to change what is in it, then Save changes.`;
+  });
   const saveEdit = () => act(async () => {
     if (editedSave) {
-      const r = await saveBacktest({ id: editedSave.id, name: editName, query: current });
+      const r = await saveBacktest({ id: editedSave.id, name: editName, group: tidy(editGroup) || null, query: current });
       setEditing(null);
       return `Saved the changes to "${r.save.name}"${r.save.name !== editedSave.name ? ` (it was "${editedSave.name}")` : ''}.`;
     }
@@ -327,27 +387,55 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
     setPortfolioName('');
     return `Kept as the portfolio "${r.portfolio.name}".`;
   });
+  const renameGroup = () => renaming && act(async () => {
+    const to = tidy(renaming.to) || null;
+    const r = await renameBacktestGroup(renaming.from, to);
+    setRenaming(null);
+    if (pick === renaming.from) setGroupPick(to ?? ALL);
+    return to ? `Renamed the group "${renaming.from}" to "${to}" (${r.moved} saved backtest${r.moved === 1 ? '' : 's'}).` : `Took the ${r.moved} saved backtest${r.moved === 1 ? '' : 's'} of "${renaming.from}" out of any group.`;
+  });
+
+  // The list as asked for: searched, the group picked, in the order picked -- in folders while every group is shown.
+  const q = search.trim().toLowerCase();
+  const matches = (s: BacktestSave) => !q || s.name.toLowerCase().includes(q) || (s.group ?? '').toLowerCase().includes(q) || wordsOf(s.query).toLowerCase().includes(q);
+  const inPick = (s: BacktestSave) => pick === ALL || (pick === '' ? !s.group : s.group === pick);
+  const ordered = [...saves].sort(sort === 'recent' ? (a, b) => b.updatedAt - a.updatedAt : (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const visible = ordered.filter((s) => matches(s) && inPick(s));
+  const foldered = groups.length > 0 && pick === ALL && !q;
+  const sections: { group: string | null; items: BacktestSave[] }[] = foldered
+    ? [...groups.map((g) => ({ group: g as string | null, items: visible.filter((s) => s.group === g) })), { group: null, items: visible.filter((s) => !s.group) }].filter((x) => x.items.length > 0)
+    : [{ group: null, items: visible }];
+  const closed = new Set(Array.isArray(closedGroups) ? closedGroups : []);
+  const toggleGroup = (g: string) => setClosedGroups(closed.has(g) ? [...closed].filter((x) => x !== g) : [...closed, g]);
+  const tools = saves.length >= 4 || groups.length > 0;
 
   const single = mode === 'single';
+  const deleteAsk = (kind: 'save' | 'portfolio', label: string, onYes: () => void) => (
+    <span role="group" aria-label={`Delete ${label}?`} className="flex flex-wrap items-center justify-end gap-x-2 pt-1">
+      <span className="text-[12.5px] text-muted-foreground">Delete?</span>
+      <button type="button" disabled={busy} onClick={onYes} className="m-0 min-h-[36px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold text-[var(--down)]">Delete</button>
+      <button type="button" onClick={() => setAsking(null)} className={link}>{kind === 'save' ? 'Keep' : 'Cancel'}</button>
+    </span>
+  );
   const savedRow = (s: BacktestSave) => (
-    <li key={s.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-0 border-t border-solid border-[var(--line-soft)] py-2 first:border-t-0">
-      <button type="button" aria-label={`Run ${s.name}`} aria-current={shown?.id === s.id ? 'true' : undefined}
-        onClick={() => { onLoad(s.query); setFromId(s.id); setSaid(null); }}
-        className="m-0 min-h-[44px] min-w-0 appearance-none border-0 bg-transparent p-0 text-left font-[inherit]">
-        <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', shown?.id === s.id ? 'text-[var(--chosen)]' : 'text-foreground')}>{s.name}{shown?.id === s.id ? ' · on the screen' : ''}</span>
-        <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{wordsOf(s.query)}</span>
-      </button>
-      {asking === s.id ? (
-        <span className="flex items-center gap-2 pt-1">
-          <button type="button" disabled={busy} onClick={() => void remove(s)} className="m-0 min-h-[36px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold text-[var(--down)]">Delete</button>
-          <button type="button" onClick={() => setAsking(null)} className={link}>Keep</button>
-        </span>
-      ) : (
+    <li key={s.id} className={cn('grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-0 border-t border-solid border-[var(--line-soft)] py-2 first:border-t-0', editedSave?.id === s.id && 'rounded-md bg-[var(--chosen-soft)] px-1.5')}>
+      <div className="min-w-0">
+        <button type="button" aria-label={`Run ${s.name}`} aria-current={shown?.id === s.id ? 'true' : undefined}
+          onClick={() => { onLoad(s.query); setFromId(s.id); setSaid(null); }}
+          className="m-0 min-h-[44px] w-full min-w-0 appearance-none border-0 bg-transparent p-0 text-left font-[inherit]">
+          <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', shown?.id === s.id ? 'text-[var(--chosen)]' : 'text-foreground')}>{s.name}{shown?.id === s.id ? ' · on the screen' : ''}</span>
+          <span title={wordsOf(s.query)} className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere] overflow-hidden [-webkit-box-orient:vertical] [-webkit-line-clamp:2] [display:-webkit-box]">{wordsOf(s.query)}</span>
+        </button>
+        <p className="m-0 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-[var(--dim)]">
+          {!foldered && s.group && <span className="rounded-full border border-solid border-border px-2 py-px text-muted-foreground">{s.group}</span>}
+          <span title={new Date(s.updatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}>Changed {agoWords(s.updatedAt, now)}</span>
+        </p>
+      </div>
+      {asking?.kind === 'save' && asking.id === s.id ? deleteAsk('save', s.name, () => void remove(s)) : (
         <span className="flex items-center">
-          <button type="button" aria-label={`Edit ${s.name}`} aria-pressed={editedSave?.id === s.id} onClick={() => editSave(s)}
-            className={cn(link, 'h-11 px-1.5', editedSave?.id === s.id && 'font-semibold underline')}>Edit</button>
-          <button type="button" aria-label={`Delete ${s.name}`} onClick={() => setAsking(s.id)}
-            className="m-0 grid h-11 w-8 appearance-none place-items-center border-0 bg-transparent p-0 text-[18px] text-muted-foreground">×</button>
+          <button type="button" aria-label={`Edit ${s.name}`} title="Edit: its settings on the screen, its name and group here" aria-pressed={editedSave?.id === s.id} onClick={() => editSave(s)} className={cn(iconBtn, editedSave?.id === s.id && 'bg-muted text-foreground')}><Pencil size={16} aria-hidden /></button>
+          <button type="button" aria-label={`Clone ${s.name}`} title="Clone: a copy to change" disabled={busy} onClick={() => void clone(s)} className={iconBtn}><Copy size={16} aria-hidden /></button>
+          <button type="button" aria-label={`Delete ${s.name}`} title="Delete" onClick={() => setAsking({ kind: 'save', id: s.id })} className={cn(iconBtn, 'hover:text-[var(--down)]')}><Trash2 size={16} aria-hidden /></button>
         </span>
       )}
     </li>
@@ -362,7 +450,7 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
             onChange={() => setTicked((t) => (t.includes(s.id) ? t.filter((x) => x !== s.id) : [...t, s.id]))}
             className="mt-0.5 h-5 w-5 accent-[var(--chosen)]" />
           <span className="min-w-0">
-            <span className="block text-[14px] font-semibold [overflow-wrap:anywhere]">{s.name}</span>
+            <span className="block text-[14px] font-semibold [overflow-wrap:anywhere]">{s.name}{!foldered && s.group ? <span className="ml-1.5 text-[11.5px] font-normal text-[var(--dim)]">· {s.group}</span> : null}</span>
             {/* Two lines on a phone: eight of these at five lines each were a screen and a half between Run and its result. All of it on a wider screen, and in the title. */}
             <span title={wordsOf(s.query)} className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere] max-sm:overflow-hidden max-sm:[-webkit-box-orient:vertical] max-sm:[-webkit-line-clamp:2] max-sm:[display:-webkit-box]">{wordsOf(s.query)}</span>
           </span>
@@ -370,42 +458,147 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
       </li>
     );
   };
+  /** The list in its folders: a group a heading that folds, renamed in place, ticked whole in the portfolio section. */
+  const listOf = (row: (s: BacktestSave) => React.ReactNode) => (
+    <div className="grid min-w-0 gap-1">
+      {sections.map((sec) => {
+        if (!foldered) return <ul key="flat" aria-label="Saved backtests" className="m-0 grid list-none gap-0 p-0">{sec.items.map(row)}</ul>;
+        const g = sec.group ?? '';
+        const label = sec.group ?? 'No group';
+        const isClosed = closed.has(g);
+        const ids = sec.items.map((x) => x.id);
+        const allTicked = ids.every((id) => picked.includes(id));
+        return (
+          <section key={label} aria-label={`Group ${label}`} className="min-w-0 rounded-md border border-solid border-[var(--line-soft)]">
+            <div className="flex min-w-0 items-center gap-1 pr-1">
+              <button type="button" aria-expanded={!isClosed} onClick={() => toggleGroup(g)}
+                className="m-0 flex min-h-[40px] min-w-0 flex-1 appearance-none items-center gap-1.5 border-0 bg-transparent px-2 text-left font-[inherit] text-[13px] font-semibold text-foreground">
+                <ChevronDown size={15} aria-hidden className={cn('shrink-0 text-muted-foreground transition-transform', isClosed && '-rotate-90')} />
+                <FolderOpen size={15} aria-hidden className="shrink-0 text-muted-foreground" />
+                <span className="truncate">{label}</span>
+                <span className="shrink-0 text-[12px] font-normal text-muted-foreground">{sec.items.length}</span>
+              </button>
+              {!single && (
+                <button type="button" className={cn(link, 'px-1 text-[12.5px]')} aria-label={`${allTicked ? 'Untick' : 'Tick'} every one in ${label}`}
+                  onClick={() => setTicked((t) => (allTicked ? t.filter((x) => !ids.includes(x)) : [...new Set([...t, ...ids])].slice(0, 12)))}>
+                  {allTicked ? 'Untick all' : 'Tick all'}
+                </button>
+              )}
+              {single && sec.group && (
+                <button type="button" aria-label={`Rename the group ${label}`} title="Rename the group" onClick={() => setRenaming({ from: sec.group!, to: sec.group! })} className={iconBtn}><Pencil size={14} aria-hidden /></button>
+              )}
+            </div>
+            {renaming?.from === sec.group && (
+              <form aria-label={`Rename the group ${label}`} className="flex min-w-0 flex-wrap items-center gap-1.5 px-2 pb-2" onSubmit={(e) => { e.preventDefault(); if (!busy) void renameGroup(); }}>
+                <input value={renaming.to} onChange={(e) => setRenaming({ ...renaming, to: e.target.value })} maxLength={40} aria-label="New name of the group" className={cn(small, 'flex-1 basis-40')} placeholder="Blank: take them out of any group" />
+                <button type="submit" disabled={busy || tidy(renaming.to) === renaming.from} className={cn(solid, 'h-9')}>Rename</button>
+                <button type="button" className={cn(quiet, 'h-9')} onClick={() => setRenaming(null)}>Cancel</button>
+              </form>
+            )}
+            {!isClosed && <ul aria-label={`Saved backtests in ${label}`} className="m-0 grid list-none gap-0 px-1.5 p-0">{sec.items.map(row)}</ul>}
+          </section>
+        );
+      })}
+      {visible.length === 0 && saves.length > 0 && (
+        <p className="m-0 rounded-md bg-muted px-3 py-2 text-[12.5px] text-muted-foreground">
+          Nothing matches{q ? ` "${search.trim()}"` : ''}{pick !== ALL ? ` in ${pick || 'no group'}` : ''}.{' '}
+          <button type="button" className={cn(link, 'min-h-0')} onClick={() => { setSearch(''); setGroupPick(ALL); }}>Show every one</button>
+        </p>
+      )}
+    </div>
+  );
+  /** The search, the order and the group: once there are enough to look for one. */
+  const toolbar = tools && (
+    <div className="grid min-w-0 gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <label className="relative min-w-0 flex-1 basis-44">
+          <Search size={15} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search the saved backtests"
+            placeholder="Search" className={cn(small, 'w-full pl-8')} />
+        </label>
+        <select aria-label="Order the saved backtests" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={cn(small, 'shrink-0 [color-scheme:dark]')}>
+          <option value="name">A–Z</option>
+          <option value="recent">Last changed first</option>
+        </select>
+      </div>
+      {groups.length > 0 && (
+        <div role="group" aria-label="Which group" className="flex min-w-0 flex-wrap gap-1">
+          <button type="button" aria-pressed={pick === ALL} onClick={() => setGroupPick(ALL)} className={chipCls(pick === ALL)}>All {saves.length}</button>
+          {groups.map((g) => (
+            <button key={g} type="button" aria-pressed={pick === g} onClick={() => setGroupPick(g)} className={chipCls(pick === g)}>{g} {saves.filter((s) => s.group === g).length}</button>
+          ))}
+          {saves.some((s) => !s.group) && <button type="button" aria-pressed={pick === ''} onClick={() => setGroupPick('')} className={chipCls(pick === '')}>No group {saves.filter((s) => !s.group).length}</button>}
+        </div>
+      )}
+    </div>
+  );
+  const groupField = (value: string, onChange: (v: string) => void, label: string) => (
+    <label className="grid min-w-0 gap-1">
+      <span className="text-[12px] text-muted-foreground">Group <span className="text-[var(--dim)]">· optional</span></span>
+      <input value={value} onChange={(e) => onChange(e.target.value)} maxLength={40} aria-label={label} list="saved-backtest-groups"
+        placeholder={groups.length ? `e.g. ${groups[0]}` : 'e.g. 80% Win'} className={field} />
+    </label>
+  );
   const saidLine = said && <p role={said.tone === 'bad' ? 'alert' : 'status'} className={cn('m-0 text-[13px]', said.tone === 'bad' ? 'text-[var(--down)]' : 'text-[var(--up)]')}>{said.text}</p>;
   const howMany = single
-    ? `${saves.length} saved`
+    ? `${saves.length} saved${groups.length ? ` · ${groups.length} group${groups.length === 1 ? '' : 's'}` : ''}`
     : `${portfolios.length} portfolio${portfolios.length === 1 ? '' : 's'} · ${saves.length} saved backtest${saves.length === 1 ? '' : 's'}`;
+  const newTaken = savedNamed(name);
+  const editTaken = editedSave ? savedNamed(editName, editedSave.id) : editedPortfolio ? portfolioNamed(editName, editedPortfolio.id) : null;
+  const pfTaken = portfolioNamed(portfolioName);
 
   return (
       <Panel title={single ? 'Saved backtests' : 'Portfolios'} right={<span className="text-[11.5px] text-muted-foreground">{howMany}</span>}>
+        <datalist id="saved-backtest-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
         {failed && !list ? <p role="alert" className="m-0 text-[13px] text-[var(--down)]">The saved backtests could not be read: {failed}</p> : !list ? <Loading error={null} what="the saved backtests" /> : single ? (
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
             {/* Keep what is on the screen -- or, while a saved one is edited, the changes to it. */}
             {editedSave ? (
               <form aria-label={`Edit ${editedSave.name}`} className="grid gap-1.5 rounded-md border border-solid border-[var(--accent)] px-2.5 py-2"
-                onSubmit={(e) => { e.preventDefault(); if (editName.trim() && !busy) void saveEdit(); }}>
+                onSubmit={(e) => { e.preventDefault(); if (editName.trim() && !busy && !editTaken) void saveEdit(); }}>
                 <p className="m-0 text-[13px] leading-snug">
-                  Editing <b className="font-semibold">{editedSave.name}</b>. Its settings are on the screen: change them above, and its name here.
+                  Editing <b className="font-semibold">{editedSave.name}</b>. Its settings are on the screen: change them there, and its name and group here.
                 </p>
-                <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={60} aria-label="Name of the saved backtest" className={field} />
+                <div className="grid min-w-0 gap-1.5">
+                  <label className="grid min-w-0 gap-1">
+                    <span className="text-[12px] text-muted-foreground">Name</span>
+                    <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={60} aria-label="Name of the saved backtest" aria-invalid={editTaken ? true : undefined} className={cn(field, editTaken && 'border-[var(--down)]')} />
+                  </label>
+                  {groupField(editGroup, setEditGroup, 'Group of the saved backtest')}
+                </div>
+                {editTaken && <p role="alert" className="m-0 text-[12.5px] text-[var(--down)]">{takenWords('save', editName)}</p>}
                 <p className="m-0 text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
-                  {shapeOf(editedSave.query) === shape ? 'Settings unchanged so far.' : `It will be: ${wordsOf(current)}`}
+                  {shapeOf(editedSave.query) === shape
+                    ? 'Settings unchanged so far.'
+                    : <>
+                      <span className="block"><b className="font-medium text-[var(--warn)]">Settings changed.</b> {`Saved: ${wordsOf(editedSave.query)}`}</span>
+                      <span className="block text-foreground">{`It will be: ${wordsOf(current)}`}</span>
+                    </>}
                 </p>
                 <span className="flex gap-2">
-                  <button type="submit" disabled={!editName.trim() || busy || (shapeOf(editedSave.query) === shape && editName.trim() === editedSave.name)} className={cn(solid, 'flex-1')}>Save changes</button>
+                  <button type="submit" disabled={!editName.trim() || busy || Boolean(editTaken) || (shapeOf(editedSave.query) === shape && tidy(editName) === editedSave.name && (tidy(editGroup) || null) === (editedSave.group ?? null))} className={cn(solid, 'flex-1')}>Save changes</button>
                   <button type="button" className={quiet} onClick={() => { setEditing(null); setSaid(null); }}>Cancel</button>
                 </span>
               </form>
             ) : shown ? (
               <p className="m-0 text-[13px] text-muted-foreground">The settings on the screen are saved as <b className="font-semibold text-foreground">{shown.name}</b>.</p>
             ) : (
-              <form className="grid gap-1.5" onSubmit={(e) => { e.preventDefault(); if (name.trim() && !busy) void keep(); }}>
-                <label className="grid gap-1">
+              <form aria-label="Save the settings on the screen" className="grid gap-1.5" onSubmit={(e) => { e.preventDefault(); if (name.trim() && !busy && !newTaken) void keep(); }}>
+                <label className="grid min-w-0 gap-1">
                   <span className="text-[12px] text-muted-foreground">Save the settings on the screen as</span>
-                  <span className="flex min-w-0 gap-2">
-                    <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} aria-label="Name for the saved backtest" placeholder="A name, e.g. 1h delta 0.10, dynamic target" className={field} />
-                    <button type="submit" disabled={!name.trim() || busy} className={solid}>Save</button>
-                  </span>
+                  <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} aria-label="Name for the saved backtest" aria-invalid={newTaken ? true : undefined}
+                    placeholder="A name, e.g. 1h delta 0.10, dynamic target" className={cn(field, newTaken && 'border-[var(--down)]')} />
                 </label>
+                {newTaken && (
+                  <p role="alert" className="m-0 text-[12.5px] leading-snug text-[var(--down)]">
+                    {takenWords('save', name)}{' '}
+                    <button type="button" disabled={busy} onClick={() => void keep(newTaken.id)} className={cn(link, 'min-h-0 text-[12.5px]')}>Update “{newTaken.name}” to these settings instead</button>
+                  </p>
+                )}
+                <div className="flex min-w-0 items-end gap-2">
+                  <div className="min-w-0 flex-1">{groupField(group, setGroup, 'Group for the saved backtest')}</div>
+                  <button type="submit" disabled={!name.trim() || busy || Boolean(newTaken)} className={cn(solid, 'px-6')}>Save</button>
+                </div>
                 {from && (
                   <button type="button" disabled={busy} onClick={() => void keep(from.id)} className={cn(link, 'justify-self-start text-left')}>
                     Or update “{from.name}” to these settings
@@ -415,8 +608,8 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
             )}
             {saidLine}
             {saves.length === 0
-              ? <Empty>Nothing saved yet. Set the backtest up as you want it, give it a name and Save: it can be run again in one tap, and several run together under Portfolio.</Empty>
-              : listShown ? <ul aria-label="Saved backtests" className="m-0 grid list-none gap-0 p-0">{saves.map(savedRow)}</ul> : null}
+              ? <Empty>Nothing saved yet. Set the backtest up as you want it, give it a name and Save: it can be run again in one tap, cloned to try a change, and several run together under Portfolio.</Empty>
+              : listShown ? <>{toolbar}{listOf(savedRow)}</> : null}
             {!wide && saves.length > 0 && (
               <button type="button" aria-expanded={listOpen} onClick={() => setListOpen((v) => !v)}
                 className="m-0 min-h-[44px] w-full appearance-none rounded-md border border-solid border-border bg-transparent px-3 font-[inherit] text-[13.5px] font-medium text-foreground">
@@ -429,21 +622,31 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
             {saidLine}
             {/* The portfolios kept, first: one tap runs one. */}
             {portfolios.length > 0 && (
-              <ul aria-label="Portfolios" className="m-0 grid list-none gap-0 p-0">
+              <ul aria-label="Portfolios" className="m-0 grid list-none gap-1.5 p-0">
                 {portfolios.map((p) => {
                   const on = run !== null && run.title === p.name;
                   return (
-                    <li key={p.id} className={cn('grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-x-1.5 border-0 border-t border-solid border-[var(--line-soft)] py-1.5 first:border-t-0', on && 'rounded-md bg-[var(--chosen-soft)] px-1.5')}>
-                      <span className="min-w-0">
-                        <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', on && 'text-[var(--chosen)]')}>{p.name}{on ? ' · running' : ''}</span>
-                        <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{p.saveIds.map(nameOf).join(' + ')}</span>
-                      </span>
-                      <button type="button" aria-label={`Run the portfolio ${p.name}`} className={cn(on ? quiet : solid, 'h-10')} onClick={() => setRun({ ids: p.saveIds, title: p.name })}>Run</button>
-                      <button type="button" aria-label={`Edit the portfolio ${p.name}`} aria-pressed={editedPortfolio?.id === p.id} onClick={() => editPortfolio(p)}
-                        className={cn(link, 'h-10 px-1', editedPortfolio?.id === p.id && 'font-semibold underline')}>Edit</button>
-                      <button type="button" aria-label={`Delete the portfolio ${p.name}`} disabled={busy}
-                        onClick={() => void act(async () => { await deletePortfolio(p.id); if (run?.title === p.name) setRun(null); if (editedPortfolio?.id === p.id) setEditing(null); return `Deleted the portfolio "${p.name}". Its saved backtests are kept.`; })}
-                        className="m-0 grid h-10 w-9 appearance-none place-items-center border-0 bg-transparent p-0 text-[18px] text-muted-foreground">×</button>
+                    <li key={p.id} className={cn('grid min-w-0 gap-1.5 rounded-md border border-solid px-2.5 py-2', on ? 'border-[var(--chosen)] bg-[var(--chosen-soft)]' : 'border-[var(--line-soft)]', editedPortfolio?.id === p.id && 'border-[var(--accent)]')}>
+                      <div className="flex min-w-0 items-start gap-2">
+                        <span className="min-w-0 flex-1">
+                          <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', on && 'text-[var(--chosen)]')}>{p.name}{on ? ' · running' : ''}</span>
+                          <span className="block text-[11.5px] text-[var(--dim)]">{p.saveIds.length} saved backtests · changed {agoWords(p.updatedAt, now)}</span>
+                        </span>
+                        <button type="button" aria-label={`Run the portfolio ${p.name}`} className={cn(on ? quiet : solid, 'h-9')} onClick={() => setRun({ ids: p.saveIds, title: p.name })}>{on ? 'Run again' : 'Run'}</button>
+                      </div>
+                      {/* Its members, each a chip: what is in it at a glance. */}
+                      <ul aria-label={`In ${p.name}`} className="m-0 flex min-w-0 list-none flex-wrap gap-1 p-0">
+                        {p.saveIds.map((id) => <li key={id} className="max-w-full truncate rounded-full border border-solid border-border px-2 py-0.5 text-[11.5px] text-muted-foreground">{nameOf(id)}</li>)}
+                      </ul>
+                      {asking?.kind === 'portfolio' && asking.id === p.id
+                        ? deleteAsk('portfolio', `the portfolio ${p.name}`, () => void act(async () => { await deletePortfolio(p.id); setAsking(null); if (run?.title === p.name) setRun(null); if (editedPortfolio?.id === p.id) setEditing(null); return `Deleted the portfolio "${p.name}". Its saved backtests are kept.`; }))
+                        : (
+                          <span className="flex items-center justify-end gap-0.5">
+                            <button type="button" aria-label={`Edit the portfolio ${p.name}`} title="Edit: tick what is in it, change its name" aria-pressed={editedPortfolio?.id === p.id} onClick={() => editPortfolio(p)} className={cn(iconBtn, editedPortfolio?.id === p.id && 'bg-muted text-foreground')}><Pencil size={16} aria-hidden /></button>
+                            <button type="button" aria-label={`Clone the portfolio ${p.name}`} title="Clone: a copy to change" disabled={busy} onClick={() => void clonePf(p)} className={iconBtn}><Copy size={16} aria-hidden /></button>
+                            <button type="button" aria-label={`Delete the portfolio ${p.name}`} title="Delete" disabled={busy} onClick={() => setAsking({ kind: 'portfolio', id: p.id })} className={cn(iconBtn, 'hover:text-[var(--down)]')}><Trash2 size={16} aria-hidden /></button>
+                          </span>
+                        )}
                     </li>
                   );
                 })}
@@ -452,24 +655,26 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
             {saves.length < 2 ? (
               <Empty>A portfolio is two saved backtests or more, run together. Save them under Single backtest first{saves.length === 1 ? ' -- there is one so far' : ''}.</Empty>
             ) : (
-              <section aria-label="Saved backtests to run together" className="grid gap-1">
+              <section aria-label="Saved backtests to run together" className="grid gap-1.5">
                 <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">{editedPortfolio ? `In “${editedPortfolio.name}”` : portfolios.length ? 'Or tick saved backtests' : 'Tick saved backtests'}</h3>
-                <ul aria-label="Saved backtests" className="m-0 grid list-none gap-0 p-0">{saves.map(tickRow)}</ul>
+                {toolbar}
+                {listOf(tickRow)}
               </section>
             )}
             {/* A portfolio being edited: its members are the ticks above, its name here. */}
             {editedPortfolio && (
               <form aria-label={`Edit the portfolio ${editedPortfolio.name}`} className="grid gap-1.5 rounded-md border border-solid border-[var(--accent)] px-2.5 py-2"
-                onSubmit={(e) => { e.preventDefault(); if (editName.trim() && picked.length >= 2 && !busy) void saveEdit(); }}>
+                onSubmit={(e) => { e.preventDefault(); if (editName.trim() && picked.length >= 2 && !busy && !editTaken) void saveEdit(); }}>
                 <p className="m-0 text-[13px] leading-snug">
                   Editing the portfolio <b className="font-semibold">{editedPortfolio.name}</b>. Tick or untick the saved backtests above to change what is in it, and its name here.
                 </p>
-                <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={60} aria-label="Name of the portfolio" className={field} />
+                <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={60} aria-label="Name of the portfolio" aria-invalid={editTaken ? true : undefined} className={cn(field, editTaken && 'border-[var(--down)]')} />
+                {editTaken && <p role="alert" className="m-0 text-[12.5px] text-[var(--down)]">{takenWords('portfolio', editName)}</p>}
                 <p role={picked.length < 2 ? 'alert' : undefined} className={cn('m-0 text-[12px] leading-snug [overflow-wrap:anywhere]', picked.length < 2 ? 'text-[var(--down)]' : 'text-muted-foreground')}>
                   {picked.length < 2 ? 'A portfolio is two saved backtests or more: tick another.' : `In it: ${picked.map(nameOf).join(' + ')}.`}
                 </p>
                 <span className="flex gap-2">
-                  <button type="submit" disabled={!editName.trim() || picked.length < 2 || busy} className={cn(solid, 'flex-1')}>Save changes</button>
+                  <button type="submit" disabled={!editName.trim() || picked.length < 2 || busy || Boolean(editTaken) || (tidy(editName) === editedPortfolio.name && picked.join(',') === editedPortfolio.saveIds.join(','))} className={cn(solid, 'flex-1')}>Save changes</button>
                   <button type="button" className={quiet} onClick={() => { setEditing(null); setTicked([]); setSaid(null); }}>Cancel</button>
                 </span>
               </form>
@@ -479,15 +684,17 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
               <div className="grid gap-2 rounded-md bg-muted px-2.5 py-2">
                 <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
                   {picked.length < 2 ? 'Tick two or more to run them together and see what they come to as one.' : `${picked.length} ticked: ${picked.map(nameOf).join(', ')}.`}
+                  {picked.length > 0 && <> <button type="button" className={cn(link, 'min-h-0 text-[12.5px]')} onClick={() => setTicked([])}>Untick all</button></>}
                 </p>
                 {picked.length >= 2 && (
                   <>
                     <button type="button" className={cn(solid, 'w-full')} onClick={() => setRun({ ids: picked, title: picked.map(nameOf).join(' + ') })}>Run these {picked.length} together</button>
                     <span className="text-[12px] text-muted-foreground">Or keep these {picked.length} as a portfolio, to run again in one tap:</span>
-                    <form className="flex min-w-0 gap-2" onSubmit={(e) => { e.preventDefault(); if (portfolioName.trim() && !busy) void keepPortfolio(); }}>
-                      <input value={portfolioName} onChange={(e) => setPortfolioName(e.target.value)} maxLength={60} aria-label="Name for the portfolio" placeholder="Portfolio name" className={field} />
-                      <button type="submit" disabled={!portfolioName.trim() || busy} className={quiet}>Keep</button>
+                    <form className="flex min-w-0 gap-2" onSubmit={(e) => { e.preventDefault(); if (portfolioName.trim() && !busy && !pfTaken) void keepPortfolio(); }}>
+                      <input value={portfolioName} onChange={(e) => setPortfolioName(e.target.value)} maxLength={60} aria-label="Name for the portfolio" aria-invalid={pfTaken ? true : undefined} placeholder="Portfolio name" className={cn(field, pfTaken && 'border-[var(--down)]')} />
+                      <button type="submit" disabled={!portfolioName.trim() || busy || Boolean(pfTaken)} className={quiet}>Keep</button>
                     </form>
+                    {pfTaken && <p role="alert" className="m-0 text-[12.5px] text-[var(--down)]">{takenWords('portfolio', portfolioName)}</p>}
                   </>
                 )}
               </div>

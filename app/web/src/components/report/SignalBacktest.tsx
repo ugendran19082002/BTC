@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { getBacktestTrades, getLiveCheck, getSignalBacktest } from '@/api/signal-backtest';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
@@ -265,13 +266,32 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
   );
 }
 
-/** One group of settings under its own heading. */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * One group of settings under its own heading, that folds to a line of what it is set to (owner, 16 Oct 2026: "the
+ * backtest's settings, expand and collapse, user friendly"). Folded or not is the screen's to keep (`shut`).
+ */
+function Section({ title, summary, open = true, onToggle, children }: {
+  title: string;
+  /** What it is set to, in a line: shown while it is folded. */
+  summary?: string;
+  open?: boolean;
+  onToggle?: () => void;
+  children: React.ReactNode;
+}) {
   return (
     // One column that may be narrower than what is in it: a bare `grid` column is as wide as its widest child, and pushed the phone's page sideways.
     <section aria-label={title} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5 rounded-md border border-[var(--line-soft)] p-3 max-sm:rounded-none max-sm:border-0 max-sm:border-t max-sm:px-0 max-sm:pb-1 max-sm:pt-3 max-sm:first:border-t-0 max-sm:first:pt-0">
-      <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">{title}</h3>
-      {children}
+      <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">
+        {onToggle ? (
+          <button type="button" aria-expanded={open} onClick={onToggle}
+            className="m-0 -my-1 flex min-h-[32px] w-full appearance-none items-center gap-1.5 border-0 bg-transparent p-0 text-left font-[inherit] text-[12px] font-semibold uppercase tracking-[0.6px] text-muted-foreground hover:text-foreground">
+            <ChevronDown size={14} aria-hidden className={cn('shrink-0 transition-transform', !open && '-rotate-90')} />
+            {title}
+          </button>
+        ) : title}
+      </h3>
+      {!open && summary && <p aria-label={`${title}: as set`} className="m-0 -mt-1 pl-5 text-[12.5px] normal-case leading-snug tracking-normal text-foreground [overflow-wrap:anywhere]">{summary}</p>}
+      {open && children}
     </section>
   );
 }
@@ -642,6 +662,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [dynamicDraft, setDynamicDraft] = useState(false);
   // Open on a desk, folded on a phone to begin with; the choice is remembered on each.
   const [settingsOpen, setSettingsOpen] = usePersisted<boolean>(`signalBacktest.settingsOpen.${wide ? 'desk' : 'phone'}`, wide);
+  // The settings' sections folded to their one line (16 Oct 2026), kept in this browser: none to begin with.
+  const [shut, setShut] = usePersisted<string[]>('signalBacktest.sectionsShut', []);
+  const folded = new Set(Array.isArray(shut) ? shut : []);
+  const fold = (title: string) => ({ open: !folded.has(title), onToggle: () => setShut(folded.has(title) ? [...folded].filter((x) => x !== title) : [...folded, title]) });
   const pickMethods = (m: string[]) => { setMethods(m); setFromStrategies([]); };
   const pickTfs = (t: string[]) => { setTfs(t); setFromStrategies([]); };
   // Anything remembered from an older build falls back to the defaults rather than asking for what the server refuses.
@@ -671,6 +695,30 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const saved: SavedQuery = { params, tfs, methods, strategy: strategyId };
   const summary = settingsWords(saved, strategies);
   const floor = params.minPremium ?? FLOOR;
+  // Each section's line while it is folded: what it is set to, in the settings' own words.
+  const chosenStrategy = strategies.find((x) => x.id === strategyId) ?? null;
+  const hoursWords = params.window === 'desk' ? '9:30 PM → 3:59 PM' : params.window === 'all' ? 'whole day' : `${time12(params.hoursFrom ?? '')} → ${time12(params.hoursTo ?? '')}`;
+  const pts = (lo?: number, hi?: number) => (lo && hi ? `${lo}–${hi}` : lo ? `≥ ${lo}` : hi ? `≤ ${hi}` : null);
+  const lines = {
+    what: [`${dayLabel(range.from)} → ${dayLabel(range.to)}`, byStrategy ? `by ${chosenStrategy?.name ?? 'a strategy'}` : 'these settings', ...(byStrategy ? [] : [hoursWords])].join(' · '),
+    strike: [
+      params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`,
+      `TGT ${targetWords}`, params.stopPct > 0 ? `SL +${Math.round(params.stopPct * 100)}%` : 'no option SL',
+      `${params.lots} lot${params.lots === 1 ? '' : 's'}`, floor > 0 ? `min $${floor}` : 'no premium floor',
+    ].join(' · '),
+    which: [
+      ...(byStrategy ? [] : [pts(params.slMin, params.slMax) ? `SL ${pts(params.slMin, params.slMax)}` : null, pts(params.tgtMin, params.tgtMax) ? `TGT ${pts(params.tgtMin, params.tgtMax)}` : null]),
+      ...(!byStrategy && params.noEntry?.on && params.noEntry.windows.length ? [`no entry ${params.noEntry.windows.map((w) => `${time12(w.from)}–${time12(w.to)}`).join(', ')}`] : []),
+      (params.vol ?? 'off') === 'off' ? 'every volatility' : `${params.vol} volatility only`,
+      params.deskMax > 0 ? `at most ${params.deskMax} open · CE ${params.cePct}% · PE ${params.pePct}%` : 'no open limit',
+    ].filter(Boolean).join(' · '),
+    filters: [
+      tfs.length ? tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ') : 'every time frame',
+      methods.length ? `${methods.length} method${methods.length === 1 ? '' : 's'}` : 'every method',
+      ...(fromStrategies.length ? [`as ${strategies.filter((x) => fromStrategies.includes(x.id)).map((x) => x.name).join(', ')}`] : []),
+    ].join(' · '),
+  };
+  const sectionTitles = ['What to backtest', 'Strike and exits', 'Which signals are taken', 'Filters'];
   /*
    * One section at a time (owner, 13 Oct 2026: "a single backtest, or a portfolio run -- the portfolio section or
    * the backtest section, only one open at a time"): the settings, filters and result of one backtest; or the
@@ -718,7 +766,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
    */
   const setup = (
     <>
-      <Section title="What to backtest">
+      <Section title="What to backtest" summary={lines.what} {...fold('What to backtest')}>
         {expiry.control}
       <label className="grid gap-1 px-1">
         <span className="text-[12px] text-muted-foreground">Backtest by</span>
@@ -752,7 +800,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         </>}
       </Section>
       {!byStrategy && (
-        <Section title="Strike and exits">
+        <Section title="Strike and exits" summary={lines.strike} {...fold('Strike and exits')}>
       <Segmented dense label="How the strike is picked" value={params.rule} options={RULES} onChange={(rule) => set({ rule, value: rule === 'delta' ? 0.1 : 50 })} />
       <ChipRow wide={wide} label={params.rule === 'delta' ? 'Sell the nearest strike with a delta of at most' : 'Sell the dearest strike priced at most'}>
         {values.map((v) => <Chip key={v} on={params.value === v} onClick={() => set({ value: v })}>{params.rule === 'delta' ? v.toFixed(2) : `$${v}`}</Chip>)}
@@ -794,7 +842,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       </p>
         </Section>
       )}
-      <Section title="Which signals are taken">
+      <Section title="Which signals are taken" summary={lines.which} {...fold('Which signals are taken')}>
         {!byStrategy && <>
       <SlTgtRange value={{ slMin: params.slMin ?? 0, slMax: params.slMax ?? 0, tgtMin: params.tgtMin ?? 0, tgtMax: params.tgtMax ?? 0 }} onApply={(r) => set(r)} />
       {/*
@@ -860,7 +908,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     </>
   );
   const filterBlock = (
-    <Section title="Filters">
+    <Section title="Filters" summary={lines.filters} {...fold('Filters')}>
       {r && r.choices.timeframes.length > 0 && (
         <ChipRow wide={wide} label="Time frame">
           <Chip on={tfs.length === 0} onClick={() => pickTfs([])}>All time frames</Chip>
@@ -914,14 +962,22 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     <Panel
       title="Settings"
       right={(
-        <button type="button" onClick={() => setSettingsOpen((v) => !v)} aria-expanded={settingsOpen}
-          className={cn('min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] font-medium text-[var(--accent)]', wide && 'xl:hidden')}>
-          {settingsOpen ? 'Hide' : 'Change'}
-        </button>
+        <span className="flex items-center gap-3">
+          {settingsOpen && (
+            <button type="button" onClick={() => setShut(folded.size >= sectionTitles.length - 1 ? [] : sectionTitles)}
+              className="min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-muted-foreground hover:text-foreground">
+              {folded.size >= sectionTitles.length - 1 ? 'Open all' : 'Fold all'}
+            </button>
+          )}
+          <button type="button" onClick={() => setSettingsOpen((v) => !v)} aria-expanded={settingsOpen}
+            className="min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] font-medium text-[var(--accent)]">
+            {settingsOpen ? 'Hide' : 'Change'}
+          </button>
+        </span>
       )}
     >
-      <p className={cn('m-0 text-[13px] leading-snug', settingsOpen && 'hidden', wide && 'xl:hidden')}>{summary}</p>
-      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', !settingsOpen && 'hidden', wide && 'xl:grid')}>{setup}</div>
+      <p className={cn('m-0 text-[13px] leading-snug', settingsOpen && 'hidden')}>{summary}</p>
+      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', !settingsOpen && 'hidden')}>{setup}</div>
     </Panel>
   );
   /*
@@ -975,15 +1031,23 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         {mode === 'single' ? (
           <>
             <aside aria-label="Backtest settings" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
+              {/* The saved backtests first (16 Oct 2026): a backtest is most often started from one, then changed below. */}
+              <SavedBacktests key="single" mode="single" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
               {settingsPanel}
               {filterBlock}
-              <SavedBacktests key="single" mode="single" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
             </aside>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{result}</div>
           </>
         ) : (
           <>
             <aside aria-label="Portfolio" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
+              {/*
+                The portfolios first (16 Oct 2026): a run is most often started from one; what it is held to follows.
+                Its own instance, by key. The two sections each hold a SavedBacktests, and when both came to sit at the
+                same place in their columns React kept one for both: the list was not read again on the way in, so the
+                saved backtests were never handed up here (14 Oct 2026 -- the "Saved backtests" limit went missing).
+              */}
+              <SavedBacktests key="portfolio" mode="portfolio" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={startRun} onSaves={setSavedList} />
               {/*
                 What the run is held to, in one panel that folds (14 Oct 2026): the days, the hours, the limit and the
                 six settings had grown to a screen and a half on a phone, above the portfolios and their Run buttons.
@@ -993,13 +1057,13 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 title="For this run"
                 right={(
                   <button type="button" onClick={() => setRunOpen((v) => !v)} aria-expanded={runOpen}
-                    className={cn('min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] font-medium text-[var(--accent)]', wide && 'xl:hidden')}>
+                    className="min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] font-medium text-[var(--accent)]">
                     {runOpen ? 'Hide' : 'Change'}
                   </button>
                 )}
               >
-                <p aria-label="What the run is held to" className={cn('m-0 text-[13px] leading-snug', runOpen && 'hidden', wide && 'xl:hidden')}>{runSummary}</p>
-                <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', !runOpen && 'hidden', wide && 'xl:grid')}>
+                <p aria-label="What the run is held to" className={cn('m-0 text-[13px] leading-snug', runOpen && 'hidden')}>{runSummary}</p>
+                <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', !runOpen && 'hidden')}>
                 <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5">
                   {expiry.control}
                   <span aria-hidden className="-mb-1.5 px-1 text-[12px] text-muted-foreground">Hours of the signals (IST), for the run</span>
@@ -1034,12 +1098,6 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 <RunFilters over={runOver} onChange={setRunOver} seed={params} stepSources={stepSources} wide={wide} />
                 </div>
               </Panel>
-              {/*
-                Its own instance, by key. The two sections each hold a SavedBacktests, and when both came to sit at the
-                same place in their columns React kept one for both: the list was not read again on the way in, so the
-                saved backtests were never handed up here (14 Oct 2026 -- the "Saved backtests" limit went missing).
-              */}
-              <SavedBacktests key="portfolio" mode="portfolio" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={startRun} onSaves={setSavedList} />
             </aside>
             <div ref={resultRef} className="grid min-w-0 scroll-mt-2 grid-cols-[minmax(0,1fr)] gap-3">
               {together

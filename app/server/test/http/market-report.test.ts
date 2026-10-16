@@ -968,3 +968,45 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.deepEqual([left.body.saves.map((s: any) => s.name), left.body.portfolios], [['By a strategy', 'Whole day, 10 lots'], []]);
   assert.equal((await del(`/api/backtest-saves/${b.body.save.id}`)).status, 404);
 });
+
+test('[critical] saved backtests in groups, cloned under a free name, a group renamed; portfolios cloned (16 Oct 2026)', async () => {
+  const del = async (url: string) => (await app.inject({ method: 'DELETE', url, headers: cookie })).statusCode;
+  const P = { rule: 'delta', value: 0.1, lots: 1, targetPct: 0.9, stopPct: 3, window: 'all', deskMax: 0, cePct: 100, pePct: 100 };
+  const q = { params: P, tfs: [], methods: [], strategy: null };
+  // filed in a group, spaces tidied; none is null; too long is refused
+  const a = await post('/api/backtest-saves', { name: 'grp a', group: '  80%   Win ', query: q });
+  assert.deepEqual([a.status, a.body.save.group], [200, '80% Win']);
+  const b = await post('/api/backtest-saves', { name: 'grp b', group: '', query: { ...q, params: { ...P, lots: 2 } } });
+  assert.equal(b.body.save.group, null);
+  assert.equal((await post('/api/backtest-saves', { name: 'grp c', group: 'x'.repeat(41), query: q })).status, 422);
+  // an update that says nothing of the group keeps it; one that names another moves it
+  const kept = await post('/api/backtest-saves', { id: a.body.save.id, name: 'grp a', query: { ...q, params: { ...P, lots: 3 } } });
+  assert.equal(kept.body.save.group, '80% Win');
+  const moved = await post('/api/backtest-saves', { id: b.body.save.id, name: 'grp b', group: '75% Win', query: { ...q, params: { ...P, lots: 2 } } });
+  assert.equal(moved.body.save.group, '75% Win');
+
+  // a clone: the same settings and group, under "<name> copy", then "<name> copy 2"
+  const c1 = await post(`/api/backtest-saves/${a.body.save.id}/clone`, {});
+  assert.deepEqual([c1.status, c1.body.save.name, c1.body.save.group, c1.body.save.query.params.lots], [200, 'grp a copy', '80% Win', 3]);
+  assert.notEqual(c1.body.save.id, a.body.save.id);
+  const c2 = await post(`/api/backtest-saves/${a.body.save.id}/clone`, {});
+  assert.equal(c2.body.save.name, 'grp a copy 2');
+  assert.equal((await post('/api/backtest-saves/nope/clone', {})).status, 404);
+
+  // a group renamed: every one in it moves; renamed to nothing, they are in no group
+  const ren = await post('/api/backtest-saves/group', { from: '80% win', to: 'High win' });
+  assert.deepEqual([ren.status, ren.body.moved], [200, 3]);
+  const groups = (await get('/api/backtest-saves')).body.saves.filter((s: any) => s.name.startsWith('grp')).map((s: any) => [s.name, s.group]);
+  assert.deepEqual(groups, [['grp a', 'High win'], ['grp a copy', 'High win'], ['grp a copy 2', 'High win'], ['grp b', '75% Win']]);
+  assert.equal((await post('/api/backtest-saves/group', { from: '75% Win', to: null })).body.moved, 1);
+  assert.equal((await post('/api/backtest-saves/group', { from: '', to: 'x' })).status, 422);
+
+  // a portfolio cloned: the same saved backtests in order, a free name
+  const p = await post('/api/backtest-portfolios', { name: 'grp folio', saveIds: [a.body.save.id, b.body.save.id] });
+  const pc = await post(`/api/backtest-portfolios/${p.body.portfolio.id}/clone`, {});
+  assert.deepEqual([pc.status, pc.body.portfolio.name, pc.body.portfolio.saveIds], [200, 'grp folio copy', [a.body.save.id, b.body.save.id]]);
+  assert.equal((await post('/api/backtest-portfolios/nope/clone', {})).status, 404);
+
+  for (const id of [p.body.portfolio.id, pc.body.portfolio.id]) await del(`/api/backtest-portfolios/${id}`);
+  for (const s of [a, b, c1, c2]) await del(`/api/backtest-saves/${s.body.save.id}`);
+});

@@ -495,6 +495,22 @@ describe('SignalBacktest', () => {
     expect(screen.getByRole('complementary', { name: 'Backtest settings' })).toHaveClass('xl:sticky');
   });
 
+  it('[critical] each section of the settings folds to a line of what it is set to; all fold and open in one tap, and are remembered (16 Oct 2026)', async () => {
+    show(true);
+    await screen.findByText('Backtest result');
+    const settings = within(screen.getByRole('complementary', { name: 'Backtest settings' }));
+    const strike = () => within(settings.getByRole('region', { name: 'Strike and exits' }));
+    fireEvent.click(strike().getByRole('button', { name: 'Strike and exits', expanded: true }));
+    expect(strike().queryByRole('group', { name: 'Lots a signal' })).toBeNull();
+    expect(strike().getByLabelText('Strike and exits: as set')).toHaveTextContent(/^delta ≤ 0\.10 · TGT 90% · SL \+300% · 10 lots · min \$10$/);
+    fireEvent.click(settings.getByRole('button', { name: 'Fold all' }));
+    expect(settings.getByLabelText('Filters: as set')).toHaveTextContent('every time frame · every method');
+    expect(settings.getByLabelText('Which signals are taken: as set')).toBeInTheDocument();
+    expect(Object.entries(window.localStorage).some(([k, v]) => k.endsWith('signalBacktest.sectionsShut') && v.includes('Filters'))).toBe(true);
+    fireEvent.click(settings.getByRole('button', { name: 'Open all' }));
+    expect(strike().getByRole('group', { name: 'Lots a signal' })).toBeInTheDocument();
+  });
+
   it('[critical] the target: fixed or dynamic first -- dynamic takes a strategy\'s own steps at once, another\'s on a tap, or yours typed', async () => {
     getSignalBacktest.mockResolvedValue({ ...RESULT, strategies: [
       ...RESULT.strategies,
