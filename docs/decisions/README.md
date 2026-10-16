@@ -24,6 +24,7 @@ Read these before changing anything in `app/server/src/trading/`.
 | [0014](0014-one-signal-trade-per-contract.md) | One signal trade per contract on an account (lifted by 0016); missed exits recovered from Delta's fills | 14 Oct 2026 |
 | [0015](0015-read-the-whole-book.md) | Delta's open book is read whole, by `product_ids` and cursor; exits no trade wants are swept | 14 Oct 2026 |
 | [0016](0016-shared-contracts-again.md) | Several trades may share a contract, and several strategies one signal (replaces 0014's rule 1) | 14 Oct 2026 |
+| [0017](0017-methods-picked-daily.md) | A signal strategy's methods may be picked again every day by their record, every change kept | 16 Oct 2026 |
 
 A new decision gets the next number, the same headings, and a line here. A
 decision that is replaced is not deleted: its status says what replaced it.

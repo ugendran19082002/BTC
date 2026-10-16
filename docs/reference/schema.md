@@ -6,7 +6,7 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-39 tables, 69 migrations.
+40 tables, 70 migrations.
 
 ## Migrations applied
 
@@ -19,12 +19,12 @@ the way it is, is in [database.md](database.md).
 | errors | `errors-001-log`, `errors-002-to-public` |
 | market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-016-book-heat`, `market-017-drop-large-prints`, `market-018-option-marks-1m` |
 | report | `report-002-backtest-saves` |
-| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables`, `strategy-006-signal-runs`, `strategy-007-drop-trend-paper`, `strategy-008-broker-account`, `strategy-009-signal-action`, `strategy-010-groups`, `strategy-011-display-order` |
+| strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables`, `strategy-006-signal-runs`, `strategy-007-drop-trend-paper`, `strategy-008-broker-account`, `strategy-009-signal-action`, `strategy-010-groups`, `strategy-011-display-order`, `strategy-012-method-updates` |
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public`, `trading-007-broker-account`, `trading-007-retire-best-pick-settings`, `trading-008-mtm-by-account`, `trading-008-retire-contract-lots` |
 
 ## Tables
 
-[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`backtest_portfolios`](#backtest_portfolios) · [`backtest_saves`](#backtest_saves) · [`book_heat_1m`](#book_heat_1m) · [`broker_accounts`](#broker_accounts) · [`chain_features`](#chain_features) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alert_log`](#entry_alert_log) · [`entry_alerts`](#entry_alerts) · [`entry_cleared`](#entry_cleared) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_history_clears`](#entry_history_clears) · [`entry_methods`](#entry_methods) · [`entry_setups`](#entry_setups) · [`entry_signals`](#entry_signals) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_marks_1m`](#option_marks_1m) · [`option_marks_fetched`](#option_marks_fetched) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_groups`](#strategy_groups) · [`strategy_runs`](#strategy_runs) · [`strategy_signal_runs`](#strategy_signal_runs) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades)
+[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`backtest_portfolios`](#backtest_portfolios) · [`backtest_saves`](#backtest_saves) · [`book_heat_1m`](#book_heat_1m) · [`broker_accounts`](#broker_accounts) · [`chain_features`](#chain_features) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alert_log`](#entry_alert_log) · [`entry_alerts`](#entry_alerts) · [`entry_cleared`](#entry_cleared) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_history_clears`](#entry_history_clears) · [`entry_methods`](#entry_methods) · [`entry_setups`](#entry_setups) · [`entry_signals`](#entry_signals) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_marks_1m`](#option_marks_1m) · [`option_marks_fetched`](#option_marks_fetched) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_groups`](#strategy_groups) · [`strategy_method_updates`](#strategy_method_updates) · [`strategy_runs`](#strategy_runs) · [`strategy_signal_runs`](#strategy_signal_runs) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades)
 
 ### auth_events
 
@@ -631,6 +631,33 @@ the way it is, is in [database.md](database.md).
 
 - `strategy_groups_name_per_account` unique (COALESCE(broker_account_id, (0)::bigint), lower(name))
 - `strategy_groups_pkey` unique (id)
+
+### strategy_method_updates
+
+| Column | Type | Null | Default |
+|---|---|---|---|
+| `id` | bigint |  | identity |
+| `at` | bigint |  |  |
+| `strategy_id` | text |  |  |
+| `strategy_name` | text |  |  |
+| `account_id` | bigint | yes |  |
+| `source` | text |  |  |
+| `win_pct` | real | yes |  |
+| `min_trades` | integer | yes |  |
+| `days` | integer | yes |  |
+| `from_day` | text | yes |  |
+| `to_day` | text | yes |  |
+| `before` | jsonb |  | `'[]'::jsonb` |
+| `after` | jsonb |  | `'[]'::jsonb` |
+| `added` | jsonb |  | `'[]'::jsonb` |
+| `dropped` | jsonb |  | `'[]'::jsonb` |
+| `records` | jsonb |  | `'[]'::jsonb` |
+| `note` | text | yes |  |
+
+- `strategy_method_updates_by_strategy` (strategy_id, at DESC)
+- `strategy_method_updates_by_time` (at DESC)
+- `strategy_method_updates_pkey` unique (id)
+- `strategy_method_updates_source_check` CHECK ((source = ANY (ARRAY['daily'::text, 'manual'::text])))
 
 ### strategy_runs
 

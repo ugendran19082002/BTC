@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-509 files listed, 254 test files counted below, images and lockfiles left out.
+514 files listed, 257 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 133 |
-| `app/web` | 121 |
+| `app/server` | 134 |
+| `app/web` | 123 |
 
 ## `(root)`
 
@@ -211,6 +211,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [auto-methods.ts](../../app/server/src/strategy/auto-methods.ts) | A signal strategy's methods, picked again every day by their own record (owner, 16 Oct 2026: "daily, a time chosen, the methods picked by a win %, auto update on and off in the signal strategy form"). |
 | [exit-steps.ts](../../app/server/src/strategy/exit-steps.ts) | Time-based exits: move a strategy's target and stop as the day goes on. |
 | [runner.ts](../../app/server/src/strategy/runner.ts) | The loop that turns a due strategy into orders. |
 | [schedule.ts](../../app/server/src/strategy/schedule.ts) | The IST calendar day a moment falls in, as `YYYY-MM-DD`. |
@@ -424,6 +425,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [HomeScreen.tsx](../../app/web/src/components/mobile/screens/HomeScreen.tsx) | Home (6 Oct 2026): everything in one screen a person needs to know the desk is fine -- today's money, the desk's health, the open positions, the margin, the last order -- each tapping through to it... |
 | [MarketReportScreen.tsx](../../app/web/src/components/mobile/screens/MarketReportScreen.tsx) | More → Market report (owner, 13 Oct 2026): every expiry day's kind of market and what the signal history and the real orders made on it. |
 | [MarketScreen.tsx](../../app/web/src/components/mobile/screens/MarketScreen.tsx) | Market (6 Oct 2026): BTC as the desk sees it -- the perp's last trade, mark and index, the day's change and range, funding and open interest -- and the next daily settlement. |
+| [MethodLogScreen.tsx](../../app/web/src/components/mobile/screens/MethodLogScreen.tsx) | More → Method updates (owner, 16 Oct 2026): every change to the signal strategies' methods, the daily update's and the form's, for the account shown. |
 | [MoreScreen.tsx](../../app/web/src/components/mobile/screens/MoreScreen.tsx) | More (6 Oct 2026): the screens that do not need a tab of their own, one tap each. |
 | [OrdersScreen.tsx](../../app/web/src/components/mobile/screens/OrdersScreen.tsx) | Orders (6 Oct 2026): the day's orders as the desk placed them -- what was asked, what it filled at, and where each stands -- filtered by status, a day at a time. |
 | [PnlScreen.tsx](../../app/web/src/components/mobile/screens/PnlScreen.tsx) | P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line, then the closed trades' numbers in one grid (win rate, profit factor, average win and... |
@@ -482,10 +484,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [AutoMethods.tsx](../../app/web/src/components/strategy/AutoMethods.tsx) | The methods' daily update in the signal strategy form (owner, 16 Oct 2026: "daily, a time chosen, the methods picked by a win %, auto update on and off in the signal strategy form -- best practice,... |
 | [CopyStrategiesSheet.tsx](../../app/web/src/components/strategy/CopyStrategiesSheet.tsx) | Copy strategies into a group (owner, 10 Oct 2026: "from another account's, another group's, into a new group or an existing one -- user friendly, mobile friendly"). |
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
 | [GroupTag.tsx](../../app/web/src/components/strategy/GroupTag.tsx) | The group a strategy is in, as a small tag beside its name (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- user friendly, desk and phone"). |
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
+| [MethodUpdatesLog.tsx](../../app/web/src/components/strategy/MethodUpdatesLog.tsx) | Every change to the signal strategies' methods (owner, 16 Oct 2026: "the daily methods changes, logged, saved in the db, shown in a logs menu and on the phone's More"; then "today, yesterday, last... |
 | [ReorderList.tsx](../../app/web/src/components/strategy/ReorderList.tsx) | A list put in order by dragging (owner, 10 Oct 2026: "drag to change the order, user friendly"). |
 | [SideMax.tsx](../../app/web/src/components/strategy/SideMax.tsx) | Each side's own limit under "at most open" (owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own; the total still held to the max open; user friendly"). |
 | [SignalRuleEditor.tsx](../../app/web/src/components/strategy/SignalRuleEditor.tsx) | Which signals a signal strategy takes: the way (with the timeframe chain, or without it on one timeframe), and the methods -- picked from the 81, each with its record so far in that way, so the cho... |
@@ -689,6 +693,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0014-one-signal-trade-per-contract.md](../decisions/0014-one-signal-trade-per-contract.md) | 0014 — One signal trade per contract on an account; exits recovered from Delta's fills |
 | [0015-read-the-whole-book.md](../decisions/0015-read-the-whole-book.md) | 0015 — Read Delta's whole book; sweep the exits no trade wants |
 | [0016-shared-contracts-again.md](../decisions/0016-shared-contracts-again.md) | 0016 — Several trades may share a contract, and several strategies one signal |
+| [0017-methods-picked-daily.md](../decisions/0017-methods-picked-daily.md) | 0017 — A signal strategy's methods may be picked again every day by their record |
 | [README.md](../decisions/README.md) | Decisions |
 
 ## `docs/features/`

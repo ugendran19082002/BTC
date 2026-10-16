@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-106 routes.
+108 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -91,6 +91,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/signal-backtest/live-check` | signed in | The backtest against the live desk, signal for signal (owner, 14 Oct 2026: "the real trades since 9:30 last night and the backtest's do not match in number"): every signal strategy that sells, back... |
 | POST | `/api/signal-backtest/methods` | signed in | Every method's record as options under a strategy's rules as they stand on the form (owner, 13 Oct 2026: "in the strategy form the signal filter's profit and loss must be by the option's TGT and SL... |
 | GET | `/api/signal-backtest/trades` | signed in | The backtest's trades, one by one (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL, TGT, points and money"; 15 Oct: "by session too"): asked as the backtest itself is, and narrow... |
+| POST | `/api/strategies/auto-methods/pick` | signed in | The methods' daily update, now, on the form's draft (owner, 16 Oct 2026): the list it would set by the draft's own win rate, least trades and days, and the run as it would be kept. |
 
 ## [report.routes.ts](../../app/server/src/http/routes/report.routes.ts)
 
@@ -128,6 +129,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/strategies/:id/group` | signed in | Move a strategy into a group of its own account, or out of any (`groupId` null). |
 | POST | `/api/strategies/delete-many` | signed in | Remove several strategies together -- those in no group, say. |
 | POST | `/api/strategies/max-open` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
+| GET | `/api/strategies/method-updates` | signed in | Every change to the signal strategies' methods, newest first (16 Oct 2026): the daily updates and the form's saves. |
 | GET | `/api/strategies/runs` | signed in | The run journal on its own, for the history panel. |
 | POST | `/api/strategies/scheduler` | signed in | The master switch for the whole scheduler. |
 | POST | `/api/strategies/side-max` | signed in | One side's own limit under the cap: per cent of "at most open" for calls, or for puts; null is back to the default. |
