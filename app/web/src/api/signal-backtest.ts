@@ -1,6 +1,6 @@
 import { json, post } from '@/api/client';
 import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
-import type { StrategyConfig } from '@/types/strategy';
+import type { AutoMethodsRun, StrategyConfig } from '@/types/strategy';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 
 /** A backtest's question as the server reads it: the days, the settings, the filters, the strategy. Shared with its live check, so both are of the same thing. */
@@ -50,3 +50,5 @@ export const getLiveCheck = (q: BacktestQuery) => json<LiveCheck>(`/api/signal-b
 
 /** Every method's record as options under a strategy's rules as they stand on its form -- saved or not; nothing is saved by asking. */
 export const getMethodOptionRecord = (config: StrategyConfig) => post<MethodOptionRecord>('/api/signal-backtest/methods', { config });
+/** The methods' daily update, now, on the form's draft: the list it would set by the draft's own win rate, trades and days. Nothing is saved. */
+export const pickMethodsNow = (config: StrategyConfig) => post<AutoMethodsRun>('/api/strategies/auto-methods/pick', { config });

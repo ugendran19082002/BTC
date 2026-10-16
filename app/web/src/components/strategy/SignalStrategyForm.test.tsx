@@ -22,9 +22,11 @@ vi.mock('@/api/entry', () => ({
 
 const getMethodOptionRecord = vi.fn();
 const getSignalBacktest = vi.fn();
+const pickMethodsNow = vi.fn();
 vi.mock('@/api/signal-backtest', () => ({
   getMethodOptionRecord: (...a: unknown[]) => getMethodOptionRecord(...a),
   getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a),
+  pickMethodsNow: (...a: unknown[]) => pickMethodsNow(...a),
 }));
 
 const getBacktestSaves = vi.fn();
@@ -373,6 +375,25 @@ describe('saving', () => {
     fireEvent.click(saveButton());
     await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
     expect(saved().config.liveOrders).toBe(true);
+  });
+
+  it('[critical] the methods\' daily update: switched on, picked now on the whole form, taken, and saved with the strategy (16 Oct 2026)', async () => {
+    const run = { at: 1_760_000_000_000, from: '2026-10-10', to: '2026-10-16', picked: ['breakout', 'liquidity-sweep'], before: ['bos'] };
+    pickMethodsNow.mockResolvedValue(run);
+    show(signalStrategy({ methods: ['bos'] }));
+    tab('Signals');
+    fireEvent.click(screen.getByRole('switch', { name: 'Update the methods every day' }));
+    expect(screen.getByText('· replaced daily at 9:00 PM')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
+    // the whole form goes, with the daily update's settings as they stand
+    await waitFor(() => expect(pickMethodsNow).toHaveBeenCalledTimes(1));
+    expect(pickMethodsNow.mock.calls[0]![0]).toMatchObject({ trigger: 'signal', lots: 1, signal: { methods: ['bos'], autoMethods: { on: true, winPct: 75, minTrades: 3, days: 7, at: '21:00' } } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Use this list' }));
+    expect(screen.getByRole('checkbox', { name: '#1 Breakout' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '#6 BOS' })).not.toBeChecked();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal).toMatchObject({ methods: ['breakout', 'liquidity-sweep'], autoMethods: { on: true, at: '21:00', winPct: 75, last: run } });
   });
 
   it('the rule read back as a sentence says what it does', () => {

@@ -269,7 +269,38 @@ export type SignalRule = {
    * `buy` strategy buys at the offer and sells to close, its own target and stop judged by the desk on the bid.
    */
   action?: SignalAction;
+  /** The methods picked again every day by their own record (16 Oct 2026). Absent or off: the list is the owner's own. */
+  autoMethods?: AutoMethods | null;
 };
+/** Once a day at `at` (IST): the methods that won `winPct`% or more of `minTrades`+ trades over the last `days` finished expiry days. */
+export type AutoMethods = { on: boolean; at: string; winPct: number; minTrades: number; days: number; last?: AutoMethodsRun | null };
+/** One pick: the days looked at, the list set (best net first) and the one before; `note` when the list was kept. */
+export type AutoMethodsRun = { at: number; from: string; to: string; picked: string[]; before: string[]; note?: string | null; records?: MethodRecordLine[] };
+/** A method's record as the daily update read it: trades, wins, and the net as options after charges ($). */
+export type MethodRecordLine = { method: string; trades: number; wins: number; net: number };
+export type MethodUpdateSource = 'daily' | 'manual';
+/** One change to a strategy's methods, as kept: the desk's daily update, or a save from the form that changed the list. */
+export type MethodUpdate = {
+  id: number; at: number; strategyId: string; strategyName: string; accountId: number | null; source: MethodUpdateSource;
+  rule: { winPct: number; minTrades: number; days: number } | null;
+  from: string | null; to: string | null;
+  before: string[]; after: string[]; added: string[]; dropped: string[];
+  records: MethodRecordLine[];
+  note: string | null;
+};
+/** Win 75%, re-picked daily: what did best when it was measured (8-15 Oct 2026, each day from the days before it). */
+export const DEFAULT_AUTO_METHODS: AutoMethods = { on: false, at: '21:00', winPct: 75, minTrades: 3, days: 7 };
+export const MAX_AUTO_DAYS = 30;
+/** The server's `autoMethodsProblems`, in its words. */
+export function autoMethodsProblems(a: AutoMethods | null | undefined): string[] {
+  if (!a) return [];
+  const bad: string[] = [];
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(a.at)) bad.push('The methods\' daily update needs a time, HH:MM.');
+  if (!Number.isFinite(a.winPct) || a.winPct < 1 || a.winPct > 100) bad.push('The daily update\'s win rate must be from 1% to 100%.');
+  if (!Number.isInteger(a.minTrades) || a.minTrades < 1 || a.minTrades > 100) bad.push('The daily update\'s least trades must be a whole number from 1 to 100.');
+  if (!Number.isInteger(a.days) || a.days < 1 || a.days > MAX_AUTO_DAYS) bad.push(`The daily update looks back 1 to ${MAX_AUTO_DAYS} days.`);
+  return bad;
+}
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
 /** A bought option's exits hold one level each (the server's words). */

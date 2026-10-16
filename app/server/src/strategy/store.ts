@@ -13,8 +13,8 @@
  */
 import { migrate, moveToPublic, type Migration } from '../db/migrate.js';
 import { perpAtMinutes } from '../market/perp-minute.js';
-import { one, query, rows, tx } from '../db/pool.js';
-import { DEFAULT_CONFIG, type Strategy, type StrategyConfig, type StrategyGroup, type StrategyRun } from './types.js';
+import { one, query, rows, tx, type Param } from '../db/pool.js';
+import { DEFAULT_CONFIG, type MethodUpdate, type MethodUpdateSource, type Strategy, type StrategyConfig, type StrategyGroup, type StrategyRun } from './types.js';
 
 /**
  * Settings a strategy no longer has (retired 22 Sep 2026): the safety gate,
@@ -294,6 +294,40 @@ const MIGRATIONS: Migration[] = [
     up: `
       ALTER TABLE strategies ADD COLUMN IF NOT EXISTS position INTEGER;
       ALTER TABLE strategy_groups ADD COLUMN IF NOT EXISTS position INTEGER;
+    `,
+  },
+  {
+    /*
+     * Every change to a signal strategy's methods, kept (owner, 16 Oct 2026: "the daily methods changes, logged,
+     * saved in the db, shown in a logs menu and on the phone's More"). A row per change: the desk's daily update
+     * (`daily`, with the rule it picked by, the days it looked at and each method's record) or a save from the
+     * form that changed the list (`manual`). The lists before and after, and what came and went. A daily update
+     * that kept the list (nothing passed, or no record) is a row too, with its note: the day it did nothing is
+     * part of the story. The name and account are copied in, so a strategy deleted later still reads.
+     */
+    id: 'strategy-012-method-updates',
+    up: `
+      CREATE TABLE IF NOT EXISTS strategy_method_updates (
+        id            BIGINT  GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        at            BIGINT  NOT NULL,
+        strategy_id   TEXT    NOT NULL,
+        strategy_name TEXT    NOT NULL,
+        account_id    BIGINT,
+        source        TEXT    NOT NULL CHECK (source IN ('daily', 'manual')),
+        win_pct       REAL,
+        min_trades    INTEGER,
+        days          INTEGER,
+        from_day      TEXT,
+        to_day        TEXT,
+        before        JSONB   NOT NULL DEFAULT '[]',
+        after         JSONB   NOT NULL DEFAULT '[]',
+        added         JSONB   NOT NULL DEFAULT '[]',
+        dropped       JSONB   NOT NULL DEFAULT '[]',
+        records       JSONB   NOT NULL DEFAULT '[]',
+        note          TEXT
+      );
+      CREATE INDEX IF NOT EXISTS strategy_method_updates_by_time ON strategy_method_updates (at DESC);
+      CREATE INDEX IF NOT EXISTS strategy_method_updates_by_strategy ON strategy_method_updates (strategy_id, at DESC);
     `,
   },
 ];
@@ -771,4 +805,44 @@ export class StrategyStore {
       : await rows<SignalRunRow>('SELECT * FROM strategy_signal_runs ORDER BY at DESC LIMIT $1', [limit]);
     return xs.map(signalRunFrom);
   }
+
+  // ------------------------------------------------------------ method updates (16 Oct 2026)
+
+  /** One change to a strategy's methods, written down. `added` and `dropped` are worked out here, from the two lists. */
+  async logMethodUpdate(u: Omit<MethodUpdate, 'id' | 'added' | 'dropped'>): Promise<MethodUpdate> {
+    const added = u.after.filter((m) => !u.before.includes(m)), dropped = u.before.filter((m) => !u.after.includes(m));
+    const r = await one<{ id: string }>(
+      `INSERT INTO strategy_method_updates (at, strategy_id, strategy_name, account_id, source, win_pct, min_trades, days, from_day, to_day, before, after, added, dropped, records, note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
+      [u.at, u.strategyId, u.strategyName, u.accountId, u.source, u.rule?.winPct ?? null, u.rule?.minTrades ?? null, u.rule?.days ?? null,
+        u.from, u.to, JSON.stringify(u.before), JSON.stringify(u.after), JSON.stringify(added), JSON.stringify(dropped), JSON.stringify(u.records), u.note],
+    );
+    return { ...u, id: Number(r!.id), added, dropped };
+  }
+
+  /** The changes, newest first: one account's (null: every account), one strategy's, or one way only. */
+  async methodUpdates(o: { limit?: number; accountId?: number | null; strategyId?: string | null; source?: MethodUpdateSource | null; since?: number | null; until?: number | null } = {}): Promise<MethodUpdate[]> {
+    const where: string[] = [];
+    const args: Param[] = [];
+    if (o.accountId != null) { args.push(o.accountId); where.push(`account_id = $${args.length}`); }
+    if (o.strategyId) { args.push(o.strategyId); where.push(`strategy_id = $${args.length}`); }
+    if (o.source) { args.push(o.source); where.push(`source = $${args.length}`); }
+    if (o.since != null) { args.push(o.since); where.push(`at >= $${args.length}`); }
+    if (o.until != null) { args.push(o.until); where.push(`at < $${args.length}`); }
+    args.push(Math.min(Math.max(1, o.limit ?? 200), 1_000));
+    const xs = await rows<MethodUpdateRow>(
+      `SELECT * FROM strategy_method_updates ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY at DESC, id DESC LIMIT $${args.length}`, args);
+    return xs.map((x) => ({
+      id: Number(x.id), at: Number(x.at), strategyId: x.strategy_id, strategyName: x.strategy_name,
+      accountId: x.account_id === null ? null : Number(x.account_id), source: x.source,
+      rule: x.win_pct === null ? null : { winPct: Number(x.win_pct), minTrades: Number(x.min_trades), days: Number(x.days) },
+      from: x.from_day, to: x.to_day, before: x.before, after: x.after, added: x.added, dropped: x.dropped, records: x.records, note: x.note,
+    }));
+  }
 }
+
+type MethodUpdateRow = {
+  id: string; at: string; strategy_id: string; strategy_name: string; account_id: string | null; source: MethodUpdateSource;
+  win_pct: number | null; min_trades: number | null; days: number | null; from_day: string | null; to_day: string | null;
+  before: string[]; after: string[]; added: string[]; dropped: string[]; records: MethodUpdate['records']; note: string | null;
+};

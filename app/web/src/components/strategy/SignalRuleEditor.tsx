@@ -5,9 +5,11 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Input } from '@/components/ui/input';
 import { NumberField } from '@/components/ui/number-field';
-import { CHAIN_PTS, legOfSignal, ptsKeysOf, ruleTfs, SIGNAL_TFS, type PtsKey, type SignalRule, type SignalTf } from '@/types/strategy';
+import { CHAIN_PTS, DEFAULT_AUTO_METHODS, actionOf, legOfSignal, ptsKeysOf, ruleTfs, SIGNAL_TFS, type PtsKey, type SignalRule, type SignalTf } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
-import type { Strategy } from '@/types/strategy';
+import type { AutoMethodsRun, Strategy } from '@/types/strategy';
+import { AutoMethodsFields } from '@/components/strategy/AutoMethods';
+import { time12 } from '@/lib/time';
 import type { OptionRecordState } from '@/components/strategy/useOptionRecord';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
@@ -134,10 +136,12 @@ const sourceWords = (s: Strategy) => {
   return `${n} method${n === 1 ? '' : 's'} · ${r.mode === 'mtf' ? 'with the chain' : ruleTfs(r).join(' + ')}${s.enabled ? '' : ' · off'}`;
 };
 
-export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], optionRecord, savedBacktests = [] }: {
+export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], optionRecord, savedBacktests = [], pickNow }: {
   rule: SignalRule;
   onChange: (r: SignalRule) => void;
-  errors: { mode?: string | null; tf?: string | null; methods?: string | null; slPts?: string | null };
+  errors: { mode?: string | null; tf?: string | null; methods?: string | null; slPts?: string | null; auto?: string | null };
+  /** The methods' daily update, now, on the form's draft with this rule (`pickMethodsNow`). Absent: no "Pick now". */
+  pickNow?: (rule: SignalRule) => Promise<AutoMethodsRun>;
   /**
    * The same broker account's other signal strategies (`copySources`), whose picked methods can be taken in one
    * step (owner, 9 Oct 2026): a new strategy on another timeframe or exit usually wants the same methods, and
@@ -405,6 +409,16 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
       )}
 
       <div>
+        {/* The methods' daily update (16 Oct 2026): on, the desk picks the list below again every day. */}
+        <AutoMethodsFields
+          value={rule.autoMethods}
+          onChange={(a) => onChange({ ...rule, autoMethods: a })}
+          onTake={(run) => onChange({ ...rule, methods: run.picked, autoMethods: { ...(rule.autoMethods ?? DEFAULT_AUTO_METHODS), last: run } })}
+          pickNow={pickNow ? (a) => pickNow({ ...rule, autoMethods: a }) : undefined}
+          nameOf={(id) => { const m = nameOf(id); return m ? `#${m.n} ${m.name}` : id; }}
+          blocked={actionOf(rule) === 'buy' && !rule.autoMethods?.on ? 'Picks by the record as options sold: a strategy that buys cannot use it.' : null}
+          error={errors.auto}
+        />
         <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <span className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="text-[12px] text-muted-foreground">Methods</span>
@@ -429,6 +443,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           </span>
           <span className="text-[11.5px] tabular-nums text-foreground" aria-live="polite">
             {rule.methods.length} of {methods.length || 81} picked
+            {rule.autoMethods?.on && <span className="ml-1 text-[var(--dim)]">· replaced daily at {time12(rule.autoMethods.at)}</span>}
           </span>
         </div>
         {copied && (

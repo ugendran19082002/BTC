@@ -36,6 +36,7 @@ const HistoryScreen = lazy(() => import('@/components/mobile/screens/HistoryScre
 const SignalPairsScreen = lazy(() => import('@/components/mobile/screens/SignalPairsScreen').then((m) => ({ default: m.SignalPairsScreen })));
 const MarketReportScreen = lazy(() => import('@/components/mobile/screens/MarketReportScreen').then((m) => ({ default: m.MarketReportScreen })));
 const BacktestScreen = lazy(() => import('@/components/mobile/screens/BacktestScreen').then((m) => ({ default: m.BacktestScreen })));
+const MethodLogScreen = lazy(() => import('@/components/mobile/screens/MethodLogScreen').then((m) => ({ default: m.MethodLogScreen })));
 const PriceChangeScreen = lazy(() => import('@/components/mobile/screens/PriceChangeScreen').then((m) => ({ default: m.PriceChangeScreen })));
 const PressureScreen = lazy(() => import('@/components/mobile/screens/PressureScreen').then((m) => ({ default: m.PressureScreen })));
 const AccountScreen = lazy(() => import('@/components/mobile/screens/AccountScreen').then((m) => ({ default: m.AccountScreen })));
@@ -277,6 +278,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
                   : route.sub === 'account' ? <AccountScreen />
                     : route.sub === 'market' ? <MarketScreen />
                       : route.sub === 'strategies' ? <StrategiesScreen />
+                      : route.sub === 'method-log' ? <MethodLogScreen />
                         : route.sub === 'alerts' ? <AlertsScreen />
                           : route.sub === 'settings' ? <SettingsScreen />
                             : <MoreScreen />}

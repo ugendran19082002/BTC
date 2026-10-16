@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
+import type { MethodUpdate, MethodUpdateSource, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
 import { accountScope, withAccount } from '@/lib/account-scope';
 
 /** The strategies of the broker account being shown (lib/account-scope.ts); with none chosen, every account's. */
@@ -120,3 +120,15 @@ export const deleteStrategy = (id: string) =>
 export const getSignalTrades = (range: { from: string; to: string } | null) =>
   json<{ from: string | null; to: string | null; trades: SignalTrade[] }>(
     withAccount(`/api/strategies/signal-trades${range ? `?from=${range.from}&to=${range.to}` : ''}`));
+
+/** Every change to the signal strategies' methods, newest first: the daily updates and the form's saves, for the account shown. */
+export const getMethodUpdates = (o: { source?: MethodUpdateSource | null; strategy?: string | null; from?: string; to?: string; limit?: number } = {}) => {
+  const q = new URLSearchParams();
+  if (o.from) q.set('from', o.from);
+  if (o.to) q.set('to', o.to);
+  if (o.source) q.set('source', o.source);
+  if (o.strategy) q.set('strategy', o.strategy);
+  if (o.limit) q.set('limit', String(o.limit));
+  const qs = q.toString();
+  return json<{ updates: MethodUpdate[] }>(withAccount(`/api/strategies/method-updates${qs ? `?${qs}` : ''}`));
+};

@@ -7,11 +7,13 @@ import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades } from '../../report/backtest-run.js';
 import { cleanConfig, strategyStore } from './strategy.routes.js';
-import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
+import { GLOBAL_MAX_OPEN_KEY, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
+import { autoPick, methodRecord } from '../../strategy/auto-methods.js';
+import { METHODS } from '../../entry/methods.js';
 
 /**
  * The market report (13 Oct 2026): every expiry day -- 5:30 PM IST to 5:30 PM IST -- with the kind of day the
@@ -301,22 +303,31 @@ export function registerMarketRoutes(app: FastifyInstance) {
       from = earliest > REPORT_FIRST_DAY ? earliest : REPORT_FIRST_DAY;
     }
     const draft: Strategy = { id: 'draft', name: 'draft', enabled: false, config, accountId: null, createdAt: now, updatedAt: now };
-    const r = await signalBacktest({ from, to, now, params: { ...DEFAULT_PARAMS }, tfs: null, methods: null, strategy: draft, draft: true, spot: tradingService().spot });
-    type Rec = { trades: number; wins: number; net: number };
-    const by = new Map<string, Rec & { method: string; byTf: (Rec & { tf: string })[] }>();
-    for (const p of r.pairs) {
-      // A pair's key is its method, its way and its timeframe; with the chain the timeframe is the chain itself.
-      const [method, mode, tf] = p.key.split('|') as [string, string, string];
-      let m = by.get(method);
-      if (!m) { m = { method, trades: 0, wins: 0, net: 0, byTf: [] }; by.set(method, m); }
-      m.trades += p.n; m.wins += p.wins; m.net += p.net;
-      m.byTf.push({ tf: mode === 'mtf' ? 'chain' : tf, trades: p.n, wins: p.wins, net: p.net });
+    const r = await methodRecord(config, { from, to, now, spot: tradingService().spot });
+    return { ...r, caveats: strategyCaveats(draft) };
+  });
+
+  /**
+   * The methods' daily update, now, on the form's draft (owner, 16 Oct 2026): the list it would set by the draft's
+   * own win rate, least trades and days, and the run as it would be kept. Nothing is saved -- the form takes the
+   * list and saving it is the owner's act; the desk's own run at the day's time saves.
+   */
+  app.post('/api/strategies/auto-methods/pick', async (req, reply) => {
+    const raw = ((req.body ?? {}) as { config?: unknown }).config;
+    if (!raw || typeof raw !== 'object') return refuse(reply, 400, { error: 'A strategy\'s settings are needed: { config }.' });
+    const asked = cleanConfig(raw);
+    if (asked.trigger !== 'signal' || !asked.signal) return refuse(reply, 422, { error: 'Only a signal strategy has methods to pick.', problems: ['Only a signal strategy has methods to pick.'] });
+    if (actionOf(asked.signal) !== 'sell') {
+      const why = 'The methods are picked by their record as options sold: a strategy that buys has none.';
+      return refuse(reply, 422, { error: why, problems: [why] });
     }
-    return {
-      from, to, priced: r.priced, caveats: strategyCaveats(draft),
-      signals: r.signals, trades: r.total.n,
-      methods: [...by.values()].sort((a, b) => b.net - a.net),
-    };
+    const auto = asked.signal.autoMethods ?? null;
+    const autoBad = auto ? autoMethodsProblems(auto) : ['The daily update\'s settings are needed: win rate, least trades and days.'];
+    if (autoBad.length) return refuse(reply, 422, { error: autoBad.join(' '), problems: autoBad });
+    // An empty list is what this is for: checked with every method, as the record is worked out.
+    const problems = validateConfig({ ...asked, signal: { ...asked.signal, methods: METHODS.map((m) => m.id) } });
+    if (problems.length) return refuse(reply, 422, { error: problems.join(' '), problems });
+    return autoPick(asked, auto!, Date.now(), tradingService().spot);
   });
 
   /** Each expiry day with its figures, its kind and both records' totals. `?account=` is one broker account's orders. */

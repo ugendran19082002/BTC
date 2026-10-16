@@ -10,6 +10,7 @@ import { useStrategyDraft } from '@/components/strategy/useStrategyDraft';
 import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
 import { useOptionRecord } from '@/components/strategy/useOptionRecord';
 import { getBacktestSaves } from '@/api/backtest-saves';
+import { pickMethodsNow } from '@/api/signal-backtest';
 import { usePoll } from '@/hooks/usePoll';
 import { StrikeBlocksEditor } from '@/components/strategy/StrikeBlocksEditor';
 import {
@@ -109,10 +110,11 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
             <SignalRuleEditor
               rule={rule}
               onChange={(r) => set('signal', r)}
-              errors={{ mode: err('signalMode'), tf: err('signalTf'), methods: err('signalMethods'), slPts: err('signalSlPts') }}
+              errors={{ mode: err('signalMode'), tf: err('signalTf'), methods: err('signalMethods'), slPts: err('signalSlPts'), auto: err('autoMethods') }}
               copyFrom={copyFrom}
               optionRecord={optionRecord}
               savedBacktests={savedBacktests}
+              pickNow={(r) => pickMethodsNow({ ...c, signal: r })}
             />
           )}
 

@@ -511,7 +511,70 @@ export type SignalRule = {
    * stop, judged by the desk on the bid; off, each signal is written down as the order it would be.
    */
   action?: SignalAction;
+  /**
+   * The methods picked again every day by their own record (owner, 16 Oct 2026: "daily, a time chosen, the
+   * methods picked by a win %, auto update on and off in the signal strategy form"). Absent or off: the list is
+   * the owner's own, as before. See strategy/auto-methods.ts.
+   */
+  autoMethods?: AutoMethods | null;
 };
+/**
+ * Once a day at `at` (IST), each method's record as options under this strategy's rules over the last `days`
+ * finished expiry days; the ones that won `winPct`% or more of at least `minTrades` trades become the list.
+ * Measured on 16 Oct 2026 (8-15 Oct, picked each day from the days before): win 75% re-picked daily made the
+ * most, every day re-picked beat once a week, and "every method" lost the most.
+ */
+export type AutoMethods = {
+  on: boolean;
+  /** IST 'HH:MM'. After the 5:30 PM settle, so the day just ended counts. */
+  at: string;
+  winPct: number;
+  minTrades: number;
+  days: number;
+  /** What the last pick did; written by the desk (or by "Pick now" on the form), kept by a save. */
+  last?: AutoMethodsRun | null;
+};
+export type AutoMethodsRun = {
+  at: number;
+  /** The expiry days looked at. */
+  from: string; to: string;
+  /** The list it set, best net first; and the list before it. */
+  picked: string[]; before: string[];
+  /** Nothing passed, or the record could not be had: the list was left as it was, and why. */
+  note?: string | null;
+  /** Every method that traded, in brief: on a pick's answer and in the log, never kept in the config. */
+  records?: MethodRecordLine[];
+};
+/** A method's record as the daily update read it: trades, wins, and the net as options after charges. */
+export type MethodRecordLine = { method: string; trades: number; wins: number; net: number };
+export type MethodUpdateSource = 'daily' | 'manual';
+/**
+ * One change to a strategy's methods, as kept (`strategy_method_updates`): the desk's daily update, with the rule
+ * it picked by, the days it read and the records behind it; or a save from the form that changed the list.
+ */
+export type MethodUpdate = {
+  id: number; at: number; strategyId: string; strategyName: string; accountId: number | null; source: MethodUpdateSource;
+  rule: { winPct: number; minTrades: number; days: number } | null;
+  from: string | null; to: string | null;
+  before: string[]; after: string[]; added: string[]; dropped: string[];
+  /** The records of the methods in either list: why each came or went. */
+  records: MethodRecordLine[];
+  note: string | null;
+};
+export const DEFAULT_AUTO_METHODS: AutoMethods ={ on: false, at: '21:00', winPct: 75, minTrades: 3, days: 7 };
+export const MAX_AUTO_DAYS = 30;
+export function autoMethodsProblems(a: unknown): string[] {
+  if (a === undefined || a === null) return [];
+  if (typeof a !== 'object' || Array.isArray(a)) return ['The methods\' daily update must be a setting.'];
+  const x = a as Partial<AutoMethods>;
+  const bad: string[] = [];
+  if (typeof x.on !== 'boolean') bad.push('Say whether the methods are updated every day.');
+  if (!isHhmm(x.at)) bad.push('The methods\' daily update needs a time, HH:MM.');
+  if (typeof x.winPct !== 'number' || !Number.isFinite(x.winPct) || x.winPct < 1 || x.winPct > 100) bad.push('The daily update\'s win rate must be from 1% to 100%.');
+  if (!Number.isInteger(x.minTrades) || x.minTrades! < 1 || x.minTrades! > 100) bad.push('The daily update\'s least trades must be a whole number from 1 to 100.');
+  if (!Number.isInteger(x.days) || x.days! < 1 || x.days! > MAX_AUTO_DAYS) bad.push(`The daily update looks back 1 to ${MAX_AUTO_DAYS} days.`);
+  return bad;
+}
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
 /** A bought option's exits hold one level each: a timetable of them is not built for buying. */
@@ -1170,6 +1233,9 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') bad.push('The target must be TGT1, TGT2 or TGT3.');
   if (r.enterOn !== undefined && r.enterOn !== 'zone' && r.enterOn !== 'signal') bad.push('Enter at the entry zone or at the signal.');
   if (r.action !== undefined && r.action !== 'sell' && r.action !== 'buy') bad.push('Pick whether the option is bought or sold.');
+  bad.push(...autoMethodsProblems(r.autoMethods));
+  // The record it picks by is the option sold: one that buys has none to pick from.
+  if (r.autoMethods?.on && r.action === 'buy') bad.push('The methods\' daily update picks by the record as options sold: a strategy that buys cannot use it.');
   if (!Number.isInteger(r.maxOpen) || (r.maxOpen ?? 0) < 1 || (r.maxOpen ?? 0) > MAX_SIGNAL_OPEN) {
     bad.push(`At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
   }

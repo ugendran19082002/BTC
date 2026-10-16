@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type AutoMethods, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -215,6 +215,26 @@ function cleanSignal(raw: unknown): SignalRule {
     ...cleanPts('minTgtPts', r.minTgtPts),
     ...cleanPts('maxSlPts', r.maxSlPts),
     ...cleanPts('maxTgtPts', r.maxTgtPts),
+    ...cleanAuto(r.autoMethods),
+  };
+}
+
+/** The methods' daily update: numbers as numbers, the last run as the desk wrote it; absent stays absent. */
+function cleanAuto(raw: unknown): Pick<SignalRule, 'autoMethods'> | Record<string, never> {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { autoMethods: raw as AutoMethods };
+  const a = raw as Partial<AutoMethods>;
+  const num = (v: unknown) => (v === '' || v === null || v === undefined ? NaN : Number(v));
+  const last = a.last && typeof a.last === 'object' ? a.last : null;
+  return {
+    autoMethods: {
+      on: a.on === true, at: String(a.at ?? ''), winPct: num(a.winPct), minTrades: num(a.minTrades), days: num(a.days),
+      ...(last ? { last: {
+        at: Number(last.at), from: String(last.from ?? ''), to: String(last.to ?? ''),
+        picked: Array.isArray(last.picked) ? last.picked.map(String) : [], before: Array.isArray(last.before) ? last.before.map(String) : [],
+        ...(last.note ? { note: String(last.note) } : {}),
+      } } : {}),
+    },
   };
 }
 
@@ -443,7 +463,41 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       groupId = g.id;
     }
     // A saved strategy keeps the account it was made for (the store never rewrites it).
-    return { ok: true, strategy: await s.save({ id, name, enabled, config, accountId, groupId }) };
+    const strategy = await s.save({ id, name, enabled, config, accountId, groupId });
+    // A change to a signal strategy's methods made on the form, kept beside the daily updates (16 Oct 2026).
+    const was = existing?.config.trigger === 'signal' ? existing.config.signal?.methods ?? [] : null;
+    const now = config.trigger === 'signal' ? config.signal?.methods ?? [] : null;
+    if (was && now && (was.length !== now.length || was.some((m) => !now.includes(m)))) {
+      const last = config.signal?.autoMethods?.last ?? null;
+      // "Pick now", then "Use this list": said, with the rule it picked by, though it was the owner who saved it.
+      const took = last && last.at !== existing?.config.signal?.autoMethods?.last?.at && !last.note && last.picked.join() === now.join() ? last : null;
+      const a = config.signal!.autoMethods;
+      await s.logMethodUpdate({
+        at: Date.now(), strategyId: strategy.id, strategyName: strategy.name, accountId: strategy.accountId ?? null, source: 'manual',
+        rule: took && a ? { winPct: a.winPct, minTrades: a.minTrades, days: a.days } : null,
+        from: took?.from ?? null, to: took?.to ?? null, before: was, after: now, records: [],
+        note: took ? 'Picked now on the form and saved.' : null,
+      }).catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'method-updates', message: `a methods change not logged: ${e.message}` }));
+    }
+    return { ok: true, strategy };
+  });
+
+  /**
+   * Every change to the signal strategies' methods, newest first (16 Oct 2026): the daily updates and the form's
+   * saves. `?account=` one account's, `?strategy=` one strategy's, `?source=daily|manual` one way; `?from=` and `?to=`
+   * IST dates (YYYY-MM-DD, both included) the changes were made on; `?limit=` up to 1,000.
+   */
+  app.get('/api/strategies/method-updates', async (req, reply) => {
+    const q = (req.query ?? {}) as { strategy?: string; source?: string; limit?: string; from?: string; to?: string };
+    const source = q.source === 'daily' || q.source === 'manual' ? q.source : null;
+    const limit = Number.isInteger(Number(q.limit)) && Number(q.limit) > 0 ? Number(q.limit) : 200;
+    // An IST date's first moment; a date that is not one is refused, not read as "every day".
+    const dayStart = (d: string | undefined) => (d === undefined || d === '' ? null : /^\d{4}-\d{2}-\d{2}$/.test(d) ? Date.parse(`${d}T00:00:00+05:30`) : NaN);
+    const since = dayStart(q.from), upTo = dayStart(q.to);
+    if (Number.isNaN(since) || Number.isNaN(upTo)) return refuse(reply, 400, { error: 'from and to are dates, YYYY-MM-DD.' });
+    if (since !== null && upTo !== null && upTo < since) return refuse(reply, 400, { error: 'to is before from.' });
+    const until = upTo === null ? null : upTo + 86_400_000;
+    return { updates: await strategyStore().methodUpdates({ accountId: accountOf(req.query), strategyId: q.strategy || null, source, limit, since, until }) };
   });
 
   /**

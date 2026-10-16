@@ -647,6 +647,64 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   // a draft with no method ticked yet is still answered: the record is what the ticking is done against
   const none = await post('/api/signal-backtest/methods', { config: draft({}, { methods: [] }) });
   assert.deepEqual([none.status, none.body.trades], [200, 5]);
+
+  // The methods' daily update, now (16 Oct 2026): the same record, the draft's own win rate -- picked, not saved.
+  const auto = { on: true, at: '21:00', winPct: 50, minTrades: 1, days: 7 };
+  const pick = await post('/api/strategies/auto-methods/pick', { config: draft({}, { methods: [], autoMethods: auto }) });
+  assert.equal(pick.status, 200, JSON.stringify(pick.body).slice(0, 300));
+  const won = r.body.methods.filter((m: any) => m.trades >= 1 && m.wins / m.trades >= 0.5).map((m: any) => m.method);
+  assert.ok(won.length > 0);
+  assert.deepEqual(pick.body.picked, won, 'the Win rule on the form\'s own record, best net first');
+  assert.deepEqual(pick.body.before, []);
+  assert.equal(pick.body.note, undefined);
+  // nothing passes: the list is kept, and why
+  const strict = await post('/api/strategies/auto-methods/pick', { config: draft({}, { methods: ['trap'], autoMethods: { ...auto, winPct: 100, minTrades: 50 } }) });
+  assert.deepEqual([strict.status, strict.body.picked], [200, ['trap']]);
+  assert.match(strict.body.note, /the list was kept/);
+  // its settings are needed and checked; one that buys has no record as options
+  assert.equal((await post('/api/strategies/auto-methods/pick', { config: draft() })).status, 422);
+  assert.equal((await post('/api/strategies/auto-methods/pick', { config: draft({}, { autoMethods: { ...auto, days: 0 } }) })).status, 422);
+  assert.equal((await post('/api/strategies/auto-methods/pick', { config: draft({ takeProfitPct: 0, stopLossPct: 0 }, { action: 'buy', autoMethods: auto }) })).status, 422);
+  // saved with a strategy, with its last run, and read back as saved
+  const last = { at: 1, from: QUIET, to: QUIET, picked: ['breakout'], before: ['bos'] };
+  const saved = await post('/api/strategies', { name: 'auto pick', config: draft({}, { autoMethods: { ...auto, last } }) });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body).slice(0, 300));
+  assert.deepEqual(saved.body.strategy.config.signal.autoMethods, { ...auto, last });
+  assert.equal((await post('/api/strategies', { name: 'auto pick', config: draft({}, { autoMethods: { ...auto, at: 'late' } }) })).status, 422);
+
+  // Every methods change kept (16 Oct 2026): a save that changes the list is a 'manual' row; one that does not, none.
+  const id = saved.body.strategy.id;
+  const log = async (q = '') => (await get(`/api/strategies/method-updates?strategy=${id}${q}`)).body.updates;
+  assert.deepEqual(await log(), [], 'made, not changed');
+  await post('/api/strategies', { id, name: 'auto pick', config: draft({}, { methods: ['breakout'], autoMethods: { ...auto, last } }) });
+  assert.deepEqual(await log(), [], 'saved again, the same list');
+  await post('/api/strategies', { id, name: 'auto pick', config: draft({}, { methods: ['breakout', 'pullback'], autoMethods: { ...auto, last } }) });
+  const [manual] = await log();
+  assert.deepEqual([manual.source, manual.before, manual.after, manual.added, manual.dropped, manual.rule, manual.note], ['manual', ['breakout'], ['breakout', 'pullback'], ['pullback'], [], null, null]);
+  // "Pick now", "Use this list", saved: said so, with the rule it picked by
+  const taken = { at: 2, from: QUIET, to: QUIET, picked: ['pullback'], before: ['breakout', 'pullback'] };
+  await post('/api/strategies', { id, name: 'auto pick', config: draft({}, { methods: ['pullback'], autoMethods: { ...auto, last: taken } }) });
+  const [picked] = await log();
+  assert.deepEqual([picked.dropped, picked.rule, picked.from, picked.note], [['breakout'], { winPct: 50, minTrades: 1, days: 7 }, QUIET, 'Picked now on the form and saved.']);
+  // the desk's own daily row, beside them; one way at a time; the newest first
+  const { strategyStore } = await import('../../src/http/routes/strategy.routes.js');
+  await strategyStore().logMethodUpdate({
+    at: Date.now() + 1_000, strategyId: id, strategyName: 'auto pick', accountId: null, source: 'daily', rule: { winPct: 75, minTrades: 3, days: 7 },
+    from: CLIMB, to: QUIET, before: ['pullback'], after: ['pullback', 'breakout'], records: [{ method: 'breakout', trades: 4, wins: 3, net: 0.2 }], note: null,
+  });
+  assert.deepEqual((await log()).map((u: any) => u.source), ['daily', 'manual', 'manual']);
+  assert.deepEqual((await log('&source=daily')).map((u: any) => [u.added, u.records[0].wins]), [[['breakout'], 3]]);
+  assert.equal((await log('&limit=1')).length, 1);
+  // by the IST dates the changes were made on, both included
+  const istToday = new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 10);
+  const istTomorrow = new Date(Date.now() + 5.5 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
+  assert.equal((await log(`&from=${istToday}&to=${istTomorrow}`)).length, 3);
+  assert.equal((await log('&from=2026-01-01&to=2026-01-02')).length, 0);
+  assert.equal((await get(`/api/strategies/method-updates?from=today`)).status, 400);
+  assert.equal((await get(`/api/strategies/method-updates?from=2026-10-16&to=2026-10-15`)).status, 400);
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/strategies/${saved.body.strategy.id}`, headers: cookie })).statusCode, 200);
+  // the log outlives the strategy: it still reads by the name it had
+  assert.equal((await log()).length, 3);
 });
 
 test('[critical] the backtest says what each day\'s options were priced on, and works a day again when Delta\'s minutes for it arrive', async () => {

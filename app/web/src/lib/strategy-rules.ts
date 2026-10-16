@@ -1,4 +1,4 @@
-import { BUY_NO_STEPS, CHAIN_PTS, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, deltaProblem, distanceProblem, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
+import { BUY_NO_STEPS, CHAIN_PTS, autoMethodsProblems, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, deltaProblem, distanceProblem, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -23,7 +23,7 @@ export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin' | 'noEntry'
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'premiumMinOtm' | 'delta' | 'distance' | 'strikeBlocks' | 'minPremium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
-  | 'signalMode' | 'signalTf' | 'signalSlPts' | 'signalMethods' | 'signalTarget' | 'maxOpen';
+  | 'signalMode' | 'signalTf' | 'signalSlPts' | 'signalMethods' | 'signalTarget' | 'maxOpen' | 'autoMethods';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -31,7 +31,7 @@ const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when', noEntry: 'when',
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', premiumMinOtm: 'sell', delta: 'sell', distance: 'sell', strikeBlocks: 'sell', minPremium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
-  signalMode: 'signal', signalTf: 'signal', signalSlPts: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade',
+  signalMode: 'signal', signalTf: 'signal', signalSlPts: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade', autoMethods: 'signal',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -140,6 +140,9 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
         }
       }
       if (!Array.isArray(r.methods) || r.methods.length === 0) say('signalMethods', 'Pick at least one method whose signals to take.');
+      // The methods' daily update -- the server's words.
+      for (const m of autoMethodsProblems(r.autoMethods)) say('autoMethods', m);
+      if (r.autoMethods?.on && r.action === 'buy') say('autoMethods', 'The methods\' daily update picks by the record as options sold: a strategy that buys cannot use it.');
       if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') say('signalTarget', 'The target must be TGT1, TGT2 or TGT3.');
       if (!Number.isInteger(r.maxOpen) || r.maxOpen < 1 || r.maxOpen > MAX_SIGNAL_OPEN) {
         say('maxOpen', `At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
