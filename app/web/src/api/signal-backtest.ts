@@ -64,6 +64,14 @@ export const getVolStudy = (q: BacktestQuery, a: VolAsk) => {
   for (const [k, v] of volQuery(a)) p.set(k, v);
   return json<VolStudyResult>(`/api/signal-backtest/vol-study?${p}`);
 };
+/** One expiry day of the study, trade by trade: one side (as set, or by volatility), one way of reading the level. */
+export type VolTradesPick = { day: string; side: 'fixed' | 'by-vol'; by: 'atr' | 'iv' };
+export const getVolStudyTrades = (q: BacktestQuery, a: VolAsk, pick: VolTradesPick) => {
+  const p = searchOf(q);
+  for (const [k, v] of volQuery(a)) p.set(k, v);
+  p.set('day', pick.day); p.set('side', pick.side); p.set('by', pick.by);
+  return json<BtDayTrades>(`/api/signal-backtest/vol-study/trades?${p}`);
+};
 export const getLiveCheck = (q: BacktestQuery) => json<LiveCheck>(`/api/signal-backtest/live-check?${searchOf(q)}`);
 
 /** Every method's record as options under a strategy's rules as they stand on its form -- saved or not; nothing is saved by asking. */

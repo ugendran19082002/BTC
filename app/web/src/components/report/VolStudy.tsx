@@ -4,7 +4,9 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import type { VolAsk, VolBy, VolLevel, VolStudyLevel, VolStudyLine, VolStudyResult } from '@/types/signal-backtest';
+import type { BtDayTrades, VolAsk, VolBy, VolLevel, VolStudyLevel, VolStudyLine, VolStudyResult } from '@/types/signal-backtest';
+import type { VolTradesPick } from '@/api/signal-backtest';
+import { DayTradesSheet } from '@/components/report/DayTrades';
 import { Empty, Panel } from '@/components/mobile/parts';
 import { Switch } from '@/components/ui/switch';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
@@ -91,20 +93,30 @@ const asSetWords = (r: VolStudyResult) => (r.fixed.each.length > 1 ? `each one's
  * day's trades, won, net, net a trade and charges, as set and by volatility, and what changed; newest first, as the
  * backtest's own day table. The side tapped is marked.
  */
-function DaysSheet({ by, fixed, moved, r, side, onClose }: { by: VolBy; fixed: VolStudyLine; moved: VolStudyLine; r: VolStudyResult; side: 'a' | 'b' | null; onClose: () => void }) {
+function DaysSheet({ by, fixed, moved, r, side, onClose, readDay }: {
+  by: VolBy; fixed: VolStudyLine; moved: VolStudyLine; r: VolStudyResult; side: 'a' | 'b' | null; onClose: () => void;
+  /** A day's trades on one side, one by one (17 Oct 2026: "tap the count -- trade by trade"); absent, the counts are figures. */
+  readDay?: (day: string, side: 'fixed' | 'by-vol') => Promise<BtDayTrades>;
+}) {
+  const [open, setOpen] = useState<{ day: string; side: 'fixed' | 'by-vol' } | null>(null);
   const a = new Map((fixed.byDay ?? []).map((d) => [d.day, d])), b = new Map((moved.byDay ?? []).map((d) => [d.day, d]));
   const days = [...new Set([...a.keys(), ...b.keys()])].sort().reverse();
   type Day = NonNullable<VolStudyLine['byDay']>[number];
   const none: Omit<Day, 'day' | 'live'> = { n: 0, wins: 0, net: 0, charges: 0, lots: 0 };
   const better = days.filter((d) => (b.get(d)?.net ?? 0) > (a.get(d)?.net ?? 0) + 0.005).length;
   const worse = days.filter((d) => (b.get(d)?.net ?? 0) < (a.get(d)?.net ?? 0) - 0.005).length;
-  const cell = (x: Omit<Day, 'day' | 'live'>, mark: boolean, label: string) => (
+  const cell = (x: Omit<Day, 'day' | 'live'>, mark: boolean, label: string, opens?: { day: string; side: 'fixed' | 'by-vol' }) => (
     <td className={cn('py-1.5 pr-2 text-right align-top max-sm:pr-0 max-sm:text-left', mark && 'bg-[var(--chosen-soft)]')}>
       <span className="hidden text-[11px] text-muted-foreground max-sm:block">{label}</span>
       {x.n === 0 ? <span className="text-muted-foreground">—</span> : <>
         <span className={cn('block whitespace-nowrap font-semibold', netClass(x.net))}>{moneyText(x.net)}</span>
         <span className={cn('block whitespace-nowrap text-[11.5px]', netClass(x.net))}>{moneyText(x.net / x.n)}</span>
-        <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">{count(x.n)} · {pct(x.wins / x.n, 0)} won</span>
+        {opens && readDay ? (
+          <button type="button" onClick={() => setOpen(opens)} aria-label={`See the ${count(x.n)} trades of ${dayLabel(opens.day)}, ${label.toLowerCase()}`}
+            className="m-0 min-h-[32px] appearance-none whitespace-nowrap border-0 bg-transparent p-0 font-[inherit] text-[11.5px] text-[var(--accent)] underline decoration-dotted underline-offset-4">
+            {count(x.n)} · {pct(x.wins / x.n, 0)} won ›
+          </button>
+        ) : <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">{count(x.n)} · {pct(x.wins / x.n, 0)} won</span>}
         <span className="block whitespace-nowrap text-[11px] text-muted-foreground">charges {moneyText(-x.charges)}</span>
       </>}
     </td>
@@ -135,8 +147,8 @@ function DaysSheet({ by, fixed, moved, r, side, onClose }: { by: VolBy; fixed: V
                   <th scope="row" className="static whitespace-normal bg-transparent py-1.5 pr-2 text-left text-[13px] font-medium normal-case tracking-normal text-foreground max-sm:col-span-3 max-sm:pb-1">
                     {dayLabel(d)}{(x ?? y)?.live ? ' · so far' : ''}
                   </th>
-                  {cell(x ?? none, side === 'a', 'As set')}
-                  {cell(y ?? none, side === 'b', 'By volatility')}
+                  {cell(x ?? none, side === 'a', 'As set', { day: d, side: 'fixed' })}
+                  {cell(y ?? none, side === 'b', 'By volatility', { day: d, side: 'by-vol' })}
                   <td className="py-1.5 text-right align-top max-sm:text-left">
                     <span className="hidden text-[11px] text-muted-foreground max-sm:block">Difference</span>
                     <span className={cn('whitespace-nowrap font-semibold', netClass(diff))}>{Math.abs(diff) < 0.005 ? '—' : moneyText(diff)}</span>
@@ -157,13 +169,18 @@ function DaysSheet({ by, fixed, moved, r, side, onClose }: { by: VolBy; fixed: V
             </tr>
           </tfoot>
         </table>
+        {readDay && <p className="m-0 mt-2 text-[12px] text-muted-foreground">Tap a day&apos;s trade count for its trades, one by one, each with its level.</p>}
       </SheetContent>
+      {/* Over the days: one day, one side, trade by trade -- the backtest's own trade list, with each trade's level. */}
+      <DayTradesSheet day={open ? `${open.day}|${open.side}|${by}` : null}
+        title={open ? `${dayLabel(open.day)} · ${open.side === 'fixed' ? 'as set' : 'by volatility'} · ${SOURCE[by].name}` : undefined}
+        read={() => readDay!(open!.day, open!.side)} onClose={() => setOpen(null)} />
     </Sheet>
   );
 }
 
 /** One way of reading volatility: the settings as set beside the rule by volatility, figure by figure, the better of each marked. */
-function Compare({ by, fixed, moved, r }: { by: VolBy; fixed: VolStudyLine; moved: VolStudyLine; r: VolStudyResult }) {
+function Compare({ by, fixed, moved, r, readDay }: { by: VolBy; fixed: VolStudyLine; moved: VolStudyLine; r: VolStudyResult; readDay?: (day: string, side: 'fixed' | 'by-vol', by: VolBy) => Promise<BtDayTrades> }) {
   // The by-day sheet, opened from either side's Net (null: shut).
   const [days, setDays] = useState<'a' | 'b' | null>(null);
   const hasDays = (fixed.byDay?.length ?? 0) > 0;
@@ -266,7 +283,7 @@ function Compare({ by, fixed, moved, r }: { by: VolBy; fixed: VolStudyLine; move
         </>
       )}
       {hasDays && known > 0 && <p className="m-0 -mt-1 text-[12px] text-muted-foreground">Tap a Net for every expiry day, both sides beside each other.</p>}
-      {days && <DaysSheet by={by} fixed={fixed} moved={moved} r={r} side={days} onClose={() => setDays(null)} />}
+      {days && <DaysSheet by={by} fixed={fixed} moved={moved} r={r} side={days} onClose={() => setDays(null)} readDay={readDay ? (day, side) => readDay(day, side, by) : undefined} />}
       <p className="m-0 text-[12px] leading-snug text-muted-foreground">Level: {SOURCE[by].how}. A signal with no level{by === 'iv' ? ' (no IV reading in the 6 minutes before its fill)' : ''} keeps the settings as set.</p>
     </section>
   );
@@ -298,16 +315,18 @@ function RuleFields({ k, d, onChange, onEnter }: { k: RuleKey; d: Draft; onChang
   );
 }
 
-export function VolStudy({ askKey, read, wide = false, title = 'By volatility · SL, delta, lots · research' }: {
+export function VolStudy({ askKey, read, readTrades, wide = false, title = 'By volatility · SL, delta, lots · research' }: {
   /** What the result is of -- the backtest's or the run's own question -- so a comparison of other settings is said to be. */
   askKey: string;
   read: (a: VolAsk) => Promise<VolStudyResult>;
+  /** One day of the comparison on one side, trade by trade, asked with the values the comparison was worked with. */
+  readTrades?: (a: VolAsk, pick: VolTradesPick) => Promise<BtDayTrades>;
   wide?: boolean; title?: string;
 }) {
   const [stored, setStored] = usePersisted<VolDrafts>('signalBacktest.volStudy.rules', VOL_DRAFTS);
   // Anything kept by an older build is filled in from the defaults rather than read as empty fields.
   const drafts: VolDrafts = { sl: { ...VOL_DRAFTS.sl, ...stored?.sl }, delta: { ...VOL_DRAFTS.delta, ...stored?.delta }, lots: { ...VOL_DRAFTS.lots, ...stored?.lots } };
-  const [run, setRun] = useState<{ key: string; data: VolStudyResult | null; error: Error | null; busy: boolean } | null>(null);
+  const [run, setRun] = useState<{ key: string; ask: VolAsk; data: VolStudyResult | null; error: Error | null; busy: boolean } | null>(null);
   const problem = volDraftProblem(drafts);
   const ask = volAskOf(drafts);
   const keyOf = (a: VolAsk) => JSON.stringify({ askKey, a });
@@ -315,10 +334,10 @@ export function VolStudy({ askKey, read, wide = false, title = 'By volatility ·
   const go = () => {
     if (problem) return;
     const key = keyOf(ask);
-    setRun((x) => ({ key, data: x?.data ?? null, error: null, busy: true }));
+    setRun((x) => ({ key, ask, data: x?.data ?? null, error: null, busy: true }));
     read(ask).then(
-      (data) => setRun((x) => (x?.key === key ? { key, data, error: null, busy: false } : x)),
-      (error: Error) => setRun((x) => (x?.key === key ? { key, data: x.data, error, busy: false } : x)),
+      (data) => setRun((x) => (x?.key === key ? { key, ask, data, error: null, busy: false } : x)),
+      (error: Error) => setRun((x) => (x?.key === key ? { key, ask, data: x.data, error, busy: false } : x)),
     );
   };
   const isDefault = JSON.stringify(drafts) === JSON.stringify(VOL_DRAFTS);
@@ -369,7 +388,9 @@ export function VolStudy({ askKey, read, wide = false, title = 'By volatility ·
             <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 transition-opacity', (stale || run?.busy) && 'opacity-50', wide && 'xl:grid-cols-2')} aria-busy={run?.busy}>
               {r.signals === 0 || (r.sources[0]?.lines[0]?.n ?? 0) === 0 ? <Empty>No trade in these days to compare.</Empty> : r.sources.map((s) => {
                 const fixed = s.lines.find((l) => l.rule === 'fixed')!, moved = s.lines.find((l) => l.rule === 'by-vol')!;
-                return <Compare key={s.by} by={s.by} fixed={fixed} moved={moved} r={r} />;
+                // Trades are asked with the values this result was worked with, not those typed since.
+                const asked = run!.ask;
+                return <Compare key={s.by} by={s.by} fixed={fixed} moved={moved} r={r} readDay={readTrades ? (day, side, by) => readTrades(asked, { day, side, by }) : undefined} />;
               })}
             </div>
             <p className="m-0 text-[12px] leading-snug text-muted-foreground">

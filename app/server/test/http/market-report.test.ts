@@ -1073,6 +1073,17 @@ test('[critical] volatility by ATM IV, and the option stop by volatility against
       assert.deepEqual(l.byDay.map((d: any) => [d.day, d.live, d.n, d.lots]), [[CLIMB, false, 6, 60]]);
       assert.ok(Math.abs(l.byDay[0].net - l.net) < 1e-9 && l.byDay[0].charges > 0);
     }
+    // One day of the study, trade by trade: each side, each way of reading, with each trade's level; adds up to the day's row.
+    const ivRow = line('iv', 'by-vol').byDay[0];
+    const list = await get(`/api/signal-backtest/vol-study/trades?${base}&day=${CLIMB}&side=by-vol&by=iv`);
+    assert.equal(list.status, 200, JSON.stringify(list.body).slice(0, 300));
+    assert.equal(list.body.total, ivRow.n);
+    assert.deepEqual([...new Set(list.body.trades.map((t: any) => t.level))], ['high']);
+    assert.ok(Math.abs(list.body.trades.reduce((a: number, t: any) => a + t.netUsd, 0) - ivRow.net) < 1e-6, 'the list is the day\'s row, trade by trade');
+    assert.deepEqual([...new Set((await get(`/api/signal-backtest/vol-study/trades?${base}&day=${CLIMB}&side=fixed&by=atr`)).body.trades.map((t: any) => t.level))], ['unknown']);
+    for (const [q, why] of [[`day=${dayBack(20)}&side=fixed&by=iv`, /one of the expiry days/], [`day=${CLIMB}&side=both&by=iv`, /"fixed" \(as set\) or "by-vol"/], [`day=${CLIMB}&side=fixed&by=vix`, /"atr" or "iv"/]] as const) {
+      assert.match((await get(`/api/signal-backtest/vol-study/trades?${base}&${q}`)).body.error, why, q);
+    }
     // The per cent of each level is the owner's to set; out of range, refused in words.
     const own = await get(`/api/signal-backtest/vol-study?${base}&vh=120&vm=180&vl=300`);
     assert.deepEqual(own.body.sl, { low: 3, medium: 1.8, high: 1.2 });
@@ -1109,6 +1120,8 @@ test('[critical] volatility by ATM IV, and the option stop by volatility against
       const f = folio.body.sources.find((x: any) => x.by === 'iv').lines;
       assert.deepEqual(f.map((l: any) => l.n), [5, 5], 'the 15m three and the 1h two: the run\'s "at most 1 open" is not laid over the study');
       assert.match((await get(`/api/backtest-portfolio/vol-study?ids=${one.body.save.id}&from=${CLIMB}&to=${CLIMB}&vh=9`)).body.error, /high volatility stop/);
+      const ft = await get(`/api/backtest-portfolio/vol-study/trades?ids=${one.body.save.id},${two.body.save.id}&from=${CLIMB}&to=${CLIMB}&vlots=1&day=${CLIMB}&side=by-vol&by=iv`);
+      assert.deepEqual([ft.body.total, [...new Set(ft.body.trades.map((t: any) => t.member))].sort(), [...new Set(ft.body.trades.map((t: any) => t.lots))]], [5, ['vol one', 'vol two'], [1]], 'whose each trade is, at its level\'s lots');
     } finally {
       for (const x of [one, two]) await app.inject({ method: 'DELETE', url: `/api/backtest-saves/${x.body.save.id}`, headers: cookie });
     }

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { FilterBar, FilterPicker, METHODS, SortRow, STRATEGIES, sortOptions, type FilterOption, type FilterSort } from '@/components/mobile/FilterPicker';
 import { usePersisted } from '@/hooks/usePersisted';
 import { WIN_AT_LEAST_PCT } from '@/lib/win-line';
-import type { BtDayTrades, BtExit, BtTradeRow } from '@/types/signal-backtest';
+import type { BtDayTrades, BtExit, BtTradeRow, VolStudyLevel } from '@/types/signal-backtest';
 
 /**
  * One expiry day of a backtest, trade by trade (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL,
@@ -33,6 +33,9 @@ const EXIT_WORDS: Record<BtExit, string> = {
   'perp-tgt': 'Perp TGT', 'perp-sl': 'Perp SL', 'option-tgt': 'Option TGT', 'option-sl': 'Option SL', 'window-end': 'Window end',
 };
 const PAGE = 50;
+/** A trade's volatility level, as the study's list says it (17 Oct 2026). */
+const LEVEL_WORDS: Record<VolStudyLevel, string> = { low: 'Low', medium: 'Normal', high: 'High', unknown: 'Unknown' };
+const LEVEL_ORDER: VolStudyLevel[] = ['low', 'medium', 'high', 'unknown'];
 /** An option price to the cent, with at least one decimal: 43.0, 73.13, 9.91. */
 const opt = (v: number) => { const r = Math.round(v * 100) / 100; return Number.isInteger(r) ? r.toFixed(1) : String(r); };
 const perp = (v: number) => Math.round(v).toLocaleString('en-US');
@@ -54,13 +57,15 @@ export function DayTradesSheet({ day, title, read, onClose }: {
   const [shown, setShown] = useState(PAGE);
   const [methods, setMethods] = useState<string[]>([]);
   const [members, setMembers] = useState<string[]>([]);
+  // The volatility study's list: one level, or all (null).
+  const [level, setLevel] = useState<VolStudyLevel | null>(null);
   // The Win tab's line in the method pick, the same one the Backtest's Method list keeps.
   const [winAtLeast, setWinAtLeast] = usePersisted<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
   const [methodSort, setMethodSort] = usePersisted<FilterSort>('methods.sort', 'default');
   useEffect(() => {
     if (!day) return;
     let live = true;
-    setGot({ day, data: null, error: null }); setOnly('all'); setOrder('time'); setShown(PAGE); setMethods([]); setMembers([]);
+    setGot({ day, data: null, error: null }); setOnly('all'); setOrder('time'); setShown(PAGE); setMethods([]); setMembers([]); setLevel(null);
     read(day).then((data) => { if (live) setGot({ day, data, error: null }); }, (error: Error) => { if (live) setGot({ day, data: null, error }); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,7 +74,9 @@ export function DayTradesSheet({ day, title, read, onClose }: {
   const data = got?.day === day ? got.data : null;
   const trades = data?.trades ?? [];
   // The method and member picks first; the tabs, their counts and their money are of what those leave.
-  const base = useMemo(() => trades.filter((t) => (!methods.length || methods.includes(t.method)) && (!members.length || members.includes(t.member ?? ''))), [trades, methods, members]);
+  const base = useMemo(() => trades.filter((t) => (!methods.length || methods.includes(t.method)) && (!members.length || members.includes(t.member ?? '')) && (level === null || t.level === level)), [trades, methods, members, level]);
+  // Each level there is, with what its trades made: the study's list only.
+  const levels = useMemo(() => LEVEL_ORDER.filter((l) => trades.some((t) => t.level === l)).map((l) => ({ l, sum: sumOf(trades.filter((t) => t.level === l)) })), [trades]);
   const tabOf = (k: Only) => (t: BtTradeRow) => k === 'all' || (k === 'won' ? t.netUsd > 0 : k === 'lost' ? t.netUsd <= 0 : t.by === k);
   const tabs = useMemo(() => {
     const exits = (Object.keys(EXIT_WORDS) as BtExit[]).filter((k) => trades.some((t) => t.by === k));
@@ -121,6 +128,18 @@ export function DayTradesSheet({ day, title, read, onClose }: {
                       options={byMethod.map(optionOf)} />
                   )}
                 </FilterBar>
+              )}
+              {/* The volatility study's list: by the level at each fill (17 Oct 2026). */}
+              {levels.length > 0 && (
+                <div role="group" aria-label="Volatility level" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
+                  {[{ l: null as VolStudyLevel | null, sum: sumOf(trades) }, ...levels].map((x) => (
+                    <button key={x.l ?? 'all'} type="button" aria-pressed={level === x.l} aria-label={`${x.l ? LEVEL_WORDS[x.l] : 'Every level'} ${count(x.sum.n)}: ${moneyText(x.sum.net)}`}
+                      className={chip(level === x.l)} onClick={() => { setLevel(x.l); setShown(PAGE); }}>
+                      <span className="text-[13px] font-medium">{x.l ? LEVEL_WORDS[x.l] : 'Every level'} {count(x.sum.n)}</span>
+                      <span className={cn('text-[11.5px] font-semibold tabular-nums', x.sum.n ? netClass(x.sum.net) : 'text-muted-foreground')}>{x.sum.n ? moneyText(x.sum.net) : '—'}</span>
+                    </button>
+                  ))}
+                </div>
               )}
               {/* Each tab with what its trades made: the count, and the money under it. */}
               <div role="group" aria-label="Show" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
@@ -227,6 +246,7 @@ export function TradeCard({ t }: { t: BtTradeRow }) {
         <span className={cn('text-[16px] font-semibold tabular-nums', netClass(t.netUsd))}>{moneyText(t.netUsd)}</span>
       </div>
       <p className="m-0 text-[12.5px] text-muted-foreground">
+        {t.level ? <><span className={cn('font-medium', t.level === 'high' ? 'text-[var(--down)]' : t.level === 'low' ? 'text-[var(--up)]' : 'text-foreground')}>{LEVEL_WORDS[t.level]} volatility</span> · </> : null}
         {t.member ? <>{t.member} · </> : null}{t.tf === 'chain' ? 'TF chain' : t.tf} · <span className={t.dir === 1 ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{side}</span> · sold {leg} × {count(t.lots)}
       </p>
       <dl className="m-0 grid grid-cols-2 gap-x-3 gap-y-1 text-[12.5px] sm:grid-cols-4">

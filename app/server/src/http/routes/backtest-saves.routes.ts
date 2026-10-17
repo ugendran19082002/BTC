@@ -4,8 +4,8 @@ import {
   PORTFOLIO_MEMBERS_MAX, clonePortfolio, cloneSave, dropPortfolio, dropSave, groupProblem, keepPortfolio, keepSave, listSaves, nameProblem, renameGroup, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
 import { backtestable, type BacktestParams } from '../../report/signal-backtest.js';
-import { liveCheck, portfolioBacktest, portfolioTrades, portfolioVolStudy } from '../../report/backtest-run.js';
-import { backtestParamsFrom, backtestParamsOf, liveAccounts, rangeOf, volRuleOf } from './market.routes.js';
+import { liveCheck, portfolioBacktest, portfolioTrades, portfolioVolStudy, portfolioVolStudyTrades } from '../../report/backtest-run.js';
+import { backtestParamsFrom, backtestParamsOf, liveAccounts, rangeOf, volRuleOf, volTradesPickOf } from './market.routes.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 
@@ -235,6 +235,18 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
     const rule = volRuleOf(q);
     if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
     return portfolioVolStudy({ ...asked.r, now: Date.now(), spot: tradingService().spot, members: asked.members, ...rule });
+  });
+
+  /** One expiry day of the run's volatility study, trade by trade, each with its saved backtest and its level: `?day=&side=&by=`. */
+  app.get('/api/backtest-portfolio/vol-study/trades', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const asked = await portfolioQuery(q);
+    if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
+    const rule = volRuleOf(q);
+    if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
+    const pick = volTradesPickOf(q, asked.r);
+    if (typeof pick === 'string') return refuse(reply, 400, { error: pick });
+    return portfolioVolStudyTrades({ ...asked.r, now: Date.now(), spot: tradingService().spot, members: asked.members, ...rule }, pick);
   });
 
   /**

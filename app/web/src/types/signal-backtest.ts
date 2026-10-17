@@ -202,6 +202,8 @@ export type BtTradeRow = {
   perpPts: number; netUsd: number; chargesUsd: number;
   /** In a portfolio: whose trade it is. */
   member?: string;
+  /** In the volatility study's list: the level at its fill, which set its SL, delta or lots. */
+  level?: VolStudyLevel;
 };
 /** One expiry day's trades: `total` of them, the first `trades.length` listed. */
 export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };

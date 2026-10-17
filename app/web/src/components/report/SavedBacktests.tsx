@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
 import { ChevronDown, Copy, FolderOpen, Pencil, Search, Trash2 } from 'lucide-react';
-import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, getPortfolioVolStudy, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
+import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, getPortfolioVolStudy, getPortfolioVolStudyTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { time12 } from '@/lib/time';
 import { overWords } from '@/components/report/backtest-words';
@@ -223,7 +223,7 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
       <PortfolioResult title={run.title} r={result.data} wide={wide} readTrades={(pick) => getPortfolioTrades(pick, run.ids, range, limit, asked, hours, over)} />
       {/* The same run beside the live desk (14 Oct 2026): its own question, so the hours and settings over the run are over the check. */}
       {/* The SL, delta and lots by volatility over the run's saved backtests (17 Oct 2026): each on its own signals, added up. */}
-      <VolStudy askKey={askKey} wide={wide} read={(a) => getPortfolioVolStudy(a, run.ids, range, limit, asked, hours, over)} title="By volatility · SL, delta, lots · over the run" />
+      <VolStudy askKey={askKey} wide={wide} read={(a) => getPortfolioVolStudy(a, run.ids, range, limit, asked, hours, over)} readTrades={(a, pick) => getPortfolioVolStudyTrades(a, pick, run.ids, range, limit, asked, hours, over)} title="By volatility · SL, delta, lots · over the run" />
       <LiveCheck askKey={askKey} read={() => getPortfolioLiveCheck(run.title, run.ids, range, limit, asked, hours, over)} />
       <button type="button" className={cn(link, 'justify-self-start')} onClick={onClose}>Close the run together</button>
     </Updating>

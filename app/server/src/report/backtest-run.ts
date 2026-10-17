@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import {
-  clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, portfolioTradesHere, signalBacktestHere, signalBacktestTradesHere, volStudyHere, portfolioVolStudyHere,
-  type Ask, type BacktestPortfolioResult, type BtDayTrades, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest, type TradePick, type VolStudy, type VolStudyAsk, type PortfolioVolStudyAsk,
+  clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, portfolioTradesHere, signalBacktestHere, signalBacktestTradesHere, volStudyHere, portfolioVolStudyHere, volStudyTradesHere, portfolioVolStudyTradesHere,
+  type Ask, type BacktestPortfolioResult, type BtDayTrades, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest, type TradePick, type VolStudy, type VolStudyAsk, type PortfolioVolStudyAsk, type VolTradesPick,
 } from './signal-backtest.js';
 import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
@@ -18,7 +18,7 @@ import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 /** A backtest that has not answered in this long is given up on, and its thread with it. */
 export const BACKTEST_TIMEOUT_MS = 120_000;
 /** What the thread is asked to work: a backtest, a portfolio, a live check, the volatility study, or one day of a backtest or a portfolio. */
-type Work = { kind: 'run'; ask: Ask } | { kind: 'vol-study'; ask: VolStudyAsk } | { kind: 'portfolio-vol-study'; ask: PortfolioVolStudyAsk } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'trades'; ask: Ask; pick: TradePick } | { kind: 'portfolio-trades'; ask: PortfolioAsk; pick: TradePick };
+type Work = { kind: 'run'; ask: Ask } | { kind: 'vol-study'; ask: VolStudyAsk } | { kind: 'portfolio-vol-study'; ask: PortfolioVolStudyAsk } | { kind: 'vol-trades'; ask: VolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio-vol-trades'; ask: PortfolioVolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'trades'; ask: Ask; pick: TradePick } | { kind: 'portfolio-trades'; ask: PortfolioAsk; pick: TradePick };
 /** After a thread fails to start, none is tried again for this long. */
 const GIVE_UP_MS = 10 * 60_000;
 
@@ -121,6 +121,10 @@ export const volStudy = (o: VolStudyAsk): Promise<VolStudy> => worked({ kind: 'v
 /** The same over saved backtests run together: three backtests' time for each of them. */
 export const portfolioVolStudy = (o: PortfolioVolStudyAsk): Promise<VolStudy> =>
   worked({ kind: 'portfolio-vol-study', ask: o }, () => portfolioVolStudyHere(o), BACKTEST_TIMEOUT_MS * 3 * Math.max(1, o.members.length));
+/** One expiry day of the study, trade by trade: one side, one way of reading the level. */
+export const volStudyTrades = (o: VolStudyAsk, pick: VolTradesPick): Promise<BtDayTrades> => worked({ kind: 'vol-trades', ask: o, pick }, () => volStudyTradesHere(o, pick));
+export const portfolioVolStudyTrades = (o: PortfolioVolStudyAsk, pick: VolTradesPick): Promise<BtDayTrades> =>
+  worked({ kind: 'portfolio-vol-trades', ask: o, pick }, () => portfolioVolStudyTradesHere(o, pick), BACKTEST_TIMEOUT_MS * Math.max(1, o.members.length));
 
 /** The backtest of each strategy's own rules against what the desk did with the same signals (`liveCheckHere`). */
 export const liveCheck = (o: LiveCheckAsk): Promise<LiveCheck> => worked({ kind: 'live', ask: o }, () => liveCheckHere(o), BACKTEST_TIMEOUT_MS * 2);

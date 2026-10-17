@@ -1442,6 +1442,30 @@ function studyLine(rule: VolStudyLine['rule'], xs: readonly Labelled[], days: re
 }
 
 type StudyBook = Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>;
+/** A book of the study as it trades: which signals are its own, and its plan -- as set, or with what is set by level. Shared by the study and its trade list. */
+function studyBookOf(b: StudyBook): { takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }, byVol: VolRule | null) => DayPlan } {
+  const st = b.strategy ?? null, rule = st?.config.signal ?? null;
+  return {
+    takes: (sig: BtSignal) => (!rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method)))
+      && (!b.tfs || b.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!b.methods || b.methods.includes(sig.method)),
+    // No limit of any kind, so the rules trade the same signals; the volatility filter is the study's own subject, so it is off too.
+    planFor: (span: { from: number; to: number }, byVol: VolRule | null): DayPlan => {
+      const base = st ? { ...planOfStrategy(st, span, null), maxOpen: null } : planOfParams({ ...b.params, deskMax: 0 }, span);
+      if (!byVol) return base;
+      // A level's strike: the live rules' own pick with that delta -- the settings' rule turned to delta, or the
+      // strategy's with its strike blocks set aside (one delta for the level, not the clock's).
+      const deltaPick = (d: number): DayPlan['pick'] => (st
+        ? planOfStrategy({ ...st, config: { ...st.config, strikeRule: 'delta', delta: { ...st.config.delta, max: d }, strikeBlocks: [] } } as Strategy, span, null).pick
+        : planOfStrategy(strategyOfParams({ ...b.params, rule: 'delta', value: d }, null, null), span).pick);
+      return {
+        ...base,
+        ...(byVol.sl ? { stopPctByVol: byVol.sl } : {}),
+        ...(byVol.lots ? { lotsByVol: byVol.lots } : {}),
+        ...(byVol.delta ? { pickByVol: { low: deltaPick(byVol.delta.low), medium: deltaPick(byVol.delta.medium), high: deltaPick(byVol.delta.high) } } : {}),
+      };
+    },
+  };
+}
 async function volStudyOf(o: { from: string; to: string; now: number; books: readonly StudyBook[] } & VolRule): Promise<Omit<VolStudy, 'members'>> {
   await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
   const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
@@ -1454,29 +1478,7 @@ async function volStudyOf(o: { from: string; to: string; now: number; books: rea
   };
   await preloadIv(days, o.now);
   const fetched = await marksFetchedBy(days.map(expiryCodeOf));
-  const books = o.books.map((b) => {
-    const st = b.strategy ?? null, rule = st?.config.signal ?? null;
-    return {
-      takes: (sig: BtSignal) => (!rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method)))
-        && (!b.tfs || b.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!b.methods || b.methods.includes(sig.method)),
-      // No limit of any kind, so the rules trade the same signals; the volatility filter is the study's own subject, so it is off too.
-      planFor: (span: { from: number; to: number }, byVol: VolRule | null): DayPlan => {
-        const base = st ? { ...planOfStrategy(st, span, null), maxOpen: null } : planOfParams({ ...b.params, deskMax: 0 }, span);
-        if (!byVol) return base;
-        // A level's strike: the live rules' own pick with that delta -- the settings' rule turned to delta, or the
-        // strategy's with its strike blocks set aside (one delta for the level, not the clock's).
-        const deltaPick = (d: number): DayPlan['pick'] => (st
-          ? planOfStrategy({ ...st, config: { ...st.config, strikeRule: 'delta', delta: { ...st.config.delta, max: d }, strikeBlocks: [] } } as Strategy, span, null).pick
-          : planOfStrategy(strategyOfParams({ ...b.params, rule: 'delta', value: d }, null, null), span).pick);
-        return {
-          ...base,
-          ...(byVol.sl ? { stopPctByVol: byVol.sl } : {}),
-          ...(byVol.lots ? { lotsByVol: byVol.lots } : {}),
-          ...(byVol.delta ? { pickByVol: { low: deltaPick(byVol.delta.low), medium: deltaPick(byVol.delta.medium), high: deltaPick(byVol.delta.high) } } : {}),
-        };
-      },
-    };
-  });
+  const books = o.books.map(studyBookOf);
   const fixedTrades: Labelled[][] = [[], []], volTrades: Labelled[][] = [[], []];
   let signals = 0, sameTrades = true;
   const fixedOf = books.map(() => ({ pct: 0, stepped: false }));
@@ -1998,6 +2000,8 @@ export type BtTradeRow = {
   perpPts: number; netUsd: number; chargesUsd: number;
   /** In a portfolio: whose trade it is. */
   member?: string;
+  /** In the volatility study's trade list: the level at its fill, which set its SL, delta or lots. */
+  level?: VolStudyLevel;
 };
 export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };
 /**
@@ -2098,6 +2102,37 @@ export function signalBacktestTradesHere(o: Ask, pick: TradePick): Promise<BtDay
 }
 export function portfolioTradesHere(o: PortfolioAsk, pick: TradePick): Promise<BtDayTrades> {
   const run = working.then(() => portfolioTradesNow(o, pick));
+  working = run.catch(() => { });
+  return run;
+}
+
+/**
+ * The volatility study's trades of one expiry day, one by one (owner, 17 Oct 2026: "tap the count -- trade by trade"):
+ * one side -- as set, or by volatility -- and one way of reading the level, each trade with its level. Played again as
+ * the study plays it (`studyBookOf`), so the list adds up to the day's row.
+ */
+export type VolTradesPick = { day: string; side: 'fixed' | 'by-vol'; by: VolBy };
+async function volStudyDayRows(books: readonly { b: StudyBook; name?: string }[], rule: VolRule, pick: VolTradesPick, now: number): Promise<BtDayTrades> {
+  const c = await dayContext(pick.day, now);
+  const read = pick.by === 'iv' ? await ivReaderOf(pick.day, now) : volReader(c.raw.minutes, c.baseline);
+  const bars = c.raw.minutes.filter((x) => x.at >= c.from);
+  const rows: BtTradeRow[] = [];
+  for (const { b, name } of books) {
+    const book = studyBookOf(b);
+    const plan = book.planFor({ from: c.from, to: c.to }, pick.side === 'by-vol' ? rule : null);
+    const trades = simulateDay({ from: c.from, to: c.to, signals: c.raw.signals.filter(book.takes), plan, volAt: read, bars, board: c.raw.board }).trades;
+    rows.push(...trades.map((t) => ({ ...rowOf(t, c.nameOf, name), level: t.vol ?? 'unknown' as const })));
+  }
+  return listed(pick.day, rows);
+}
+const ruleOf = (o: VolRule): VolRule => ({ sl: o.sl, delta: o.delta, lots: o.lots ?? null });
+export function volStudyTradesHere(o: VolStudyAsk, pick: VolTradesPick): Promise<BtDayTrades> {
+  const run = working.then(() => volStudyDayRows([{ b: o }], ruleOf(o), pick, o.now));
+  working = run.catch(() => { });
+  return run;
+}
+export function portfolioVolStudyTradesHere(o: PortfolioVolStudyAsk, pick: VolTradesPick): Promise<BtDayTrades> {
+  const run = working.then(() => volStudyDayRows(o.members.flatMap((m) => (m.ask && !m.problem ? [{ b: m.ask, name: m.name }] : [])), ruleOf(o), pick, o.now));
   working = run.catch(() => { });
   return run;
 }

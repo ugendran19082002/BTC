@@ -2,10 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
-import { liveCheck, signalBacktest, signalBacktestTrades, volStudy } from '../../report/backtest-run.js';
+import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades } from '../../report/backtest-run.js';
 import { cleanConfig, strategyStore } from './strategy.routes.js';
 import { GLOBAL_MAX_OPEN_KEY, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
@@ -178,6 +178,15 @@ export function volRuleOf(q: Record<string, unknown>): VolRule | string {
   return { sl, delta, lots };
 }
 
+/** Which of the study's trades to list: `?day=` (an expiry day of the range), `?side=fixed|by-vol`, `?by=atr|iv`. */
+export function volTradesPickOf(q: Record<string, unknown>, r: { from: string; to: string }): VolTradesPick | string {
+  const day = typeof q.day === 'string' ? q.day : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < r.from || day > r.to) return 'The day is one of the expiry days asked for, as YYYY-MM-DD.';
+  if (q.side !== 'fixed' && q.side !== 'by-vol') return 'The side is "fixed" (as set) or "by-vol".';
+  if (q.by !== 'atr' && q.by !== 'iv') return 'Volatility is read by "atr" or "iv".';
+  return { day, side: q.side, by: q.by };
+}
+
 /** A set of settings as an object -- a saved one -- held to the same rules as one in a query string. */
 export function backtestParamsFrom(p: unknown): BacktestParams | string {
   if (!p || typeof p !== 'object') return 'A backtest\'s settings are needed.';
@@ -288,6 +297,26 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const strategy = askedId === null ? null : (await strategyStore().all().catch(() => [])).filter(backtestable).find((s) => s.id === askedId) ?? null;
     if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
     return volStudy({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot, ...rule });
+  });
+
+  /**
+   * One expiry day of the volatility study, trade by trade (owner, 17 Oct 2026: "tap the count -- trade by trade"):
+   * asked as the study is, with `?day=&side=fixed|by-vol&by=atr|iv`. Each trade carries its level. Read-only.
+   */
+  app.get('/api/signal-backtest/vol-study/trades', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const r = rangeOf(q);
+    if (typeof r === 'string') return refuse(reply, 400, { error: r });
+    const params = backtestParamsOf(q);
+    if (typeof params === 'string') return refuse(reply, 400, { error: params });
+    const rule = volRuleOf(q);
+    if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
+    const pick = volTradesPickOf(q, r);
+    if (typeof pick === 'string') return refuse(reply, 400, { error: pick });
+    const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
+    const strategy = askedId === null ? null : (await strategyStore().all().catch(() => [])).filter(backtestable).find((s) => s.id === askedId) ?? null;
+    if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
+    return volStudyTrades({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot, ...rule }, pick);
   });
 
   /**

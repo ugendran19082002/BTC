@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { getBacktestTrades, getLiveCheck, getSignalBacktest, getVolStudy } from '@/api/signal-backtest';
+import { getBacktestTrades, getLiveCheck, getSignalBacktest, getVolStudy, getVolStudyTrades } from '@/api/signal-backtest';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
@@ -1381,7 +1381,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       </p>
       </Updating>
       {/* The SL, delta and lots by volatility against the settings as set, on these settings' signals (17 Oct 2026): asked for with a tap. */}
-      <div id="bt-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><VolStudy askKey={JSON.stringify(query)} read={(a) => getVolStudy(query, a)} wide={wide} /></div>
+      <div id="bt-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><VolStudy askKey={JSON.stringify(query)} read={(a) => getVolStudy(query, a)} readTrades={(a, pick) => getVolStudyTrades(query, a, pick)} wide={wide} /></div>
       {/* The same backtest beside the live desk (14 Oct 2026): asked with the question on the screen, so it is the check of this result. */}
       <div id="bt-live" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><LiveCheck askKey={JSON.stringify(query)} read={() => getLiveCheck(query)} /></div>
       <DayTradesSheet day={openTrades?.key ?? null} title={openTrades?.title} read={() => getBacktestTrades(query, openTrades!.pick)} onClose={() => setOpenTrades(null)} />
