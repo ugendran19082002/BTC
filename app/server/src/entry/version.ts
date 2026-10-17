@@ -31,3 +31,30 @@ export function versionCache<T>(size = 100, maxAgeMs = 60_000) {
     return value;
   };
 }
+
+/**
+ * The last good answer without a long wait, and a fresh one worked out behind it (17 Oct 2026: the entry record kept the
+ * screen waiting while it was reckoned). The first ask waits for its answer. After that, if the data has moved on
+ * (`dataVersion`) or the answer is older than `maxAgeMs`, one refresh is started -- never two at a time -- and the ask
+ * waits for it up to `waitMs`: fresh when it is quick, the last answer when it is not. A refresh that fails keeps the
+ * last good answer.
+ */
+export function freshInBackground<T>(read: () => Promise<T>, maxAgeMs = 60_000, waitMs = 250) {
+  let last: { at: number; version: number; value: T } | null = null;
+  let working: Promise<T> | null = null;
+  const refresh = (now: number): Promise<T> => {
+    if (working) return working;
+    const version = dataVersion();
+    working = read().then((value) => { last = { at: now, version, value }; return value; }).finally(() => { working = null; });
+    return working;
+  };
+  return async (now = Date.now()): Promise<T> => {
+    if (!last) return refresh(now);
+    if (last.version === dataVersion() && now - last.at < maxAgeMs) return last.value;
+    const kept = last.value;
+    const fresh = refresh(now).catch(() => kept);
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<T>((done) => { timer = setTimeout(() => done(kept), waitMs); timer.unref?.(); });
+    try { return await Promise.race([fresh, late]); } finally { clearTimeout(timer); }
+  };
+}

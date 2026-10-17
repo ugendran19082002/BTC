@@ -2,7 +2,7 @@ import type { Candle } from '../market/delta.js';
 import { query, rows } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import { TF_SEC, type MethodRead, type Tf } from './types.js';
-import { bumpDataVersion, dataVersion, versionCache } from './version.js';
+import { bumpDataVersion, dataVersion, freshInBackground } from './version.js';
 
 /**
  * The entry setups' paper log: the forward test the 24 reads need before any
@@ -563,16 +563,18 @@ type ClosedRow = {
  * and labelled as such: the one figure never quietly stands in for the other.
  */
 export function entryRecord(): Promise<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }> {
-  // One reckoning per data version, shared by every screen asking: the record only changes when a setup is written or graded.
-  return recordHeld('record', entryRecordNow);
+  // The last reckoning at once, a fresh one behind it when a setup has been written or graded since (`freshInBackground`):
+  // the screen never waits on the sum of every setup.
+  return recordHeld();
 }
-const recordHeld = versionCache<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }>(4);
+const recordHeld = freshInBackground(() => entryRecordNow());
 
-async function entryRecordNow(): Promise<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }> {
-  await entrySchema();
-  const all = await rows<ClosedRow>(
-    `SELECT method, mode, tf, status, r_net, first_seen, gates_off, dir, fill_price, exit_price FROM entry_setups ORDER BY coalesce(exit_at, graded_to), id`,
-  );
+/**
+ * The record worked out in this thread from every setup, oldest close first (`ORDER BY coalesce(exit_at, graded_to),
+ * id`). How it was done until 17 Oct 2026 -- 73k rows to this thread a minute, 2.3 s -- and kept as the reference the
+ * database's own reckoning (`RECORD_SQL`) is tested against.
+ */
+export function recordFromRows(all: readonly ClosedRow[]): { records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] } {
   const group = (key: (r: ClosedRow) => string) => {
     const m = new Map<string, ClosedRow[]>();
     // Appended in place: copying a group's rows for every row added made a way's thousand setups a million copies.
@@ -604,6 +606,98 @@ async function entryRecordNow(): Promise<{ records: MethodRecord[]; totals: Meth
   const totals = byWay.map((xs) => recordOf(xs, 'all'));
   const totalsAll = byWay.map((xs) => recordOf(xs, 'all', true));
   return { records, totals, totalsAll };
+}
+
+/**
+ * The same record, worked out by the database (17 Oct 2026: the screen's 2.3 s was carrying 73k setups -- some 5k more
+ * every day -- to this thread to add them up). One row back per method and way, and per way twice for the totals:
+ * `m` each method with every gate on, `t` each way's total with every gate on, `a` each way's total with every setup.
+ * The drawdown is the running sum's deepest fall from its high in close order -- the order the rows were read in
+ * before. Equal to `recordFromRows` to the last digit (test/entry/record-sql.test.ts).
+ */
+export const RECORD_SQL = `
+WITH x AS (
+  -- Grouped and sorted by bytes ("C"): the same groups, without the locale's slow comparisons over seventy thousand rows.
+  SELECT id, method COLLATE "C" AS method, mode COLLATE "C" AS mode, tf COLLATE "C" AS tf, status, coalesce(r_net, 0) AS r, first_seen, cardinality(gates_off) > 0 AS goff,
+         status IN ('tp1', 'stop', 'timeout') AS closed, coalesce(exit_at, graded_to) AS ord,
+         CASE WHEN fill_price IS NULL OR exit_price IS NULL THEN 0 ELSE (exit_price - fill_price) * dir END AS pts
+    FROM entry_setups
+), c AS (
+  SELECT method, mode, tf, goff, ord, id, r FROM x WHERE closed
+), dm AS (
+  SELECT method, mode, tf, least(0, min(run - greatest(0, peak))) AS dd FROM (
+    SELECT method, mode, tf, run, max(run) OVER (PARTITION BY method, mode, tf ORDER BY ord, id ROWS UNBOUNDED PRECEDING) AS peak FROM (
+      SELECT method, mode, tf, ord, id, sum(r) OVER (PARTITION BY method, mode, tf ORDER BY ord, id ROWS UNBOUNDED PRECEDING) AS run FROM c WHERE NOT goff
+    ) a
+  ) b GROUP BY 1, 2, 3
+), dw AS (
+  -- Each way's two totals in one pass: the running sum of the rules as designed (gates on) and of every setup. A gated
+  -- row repeats the rules' sum before it, so it moves neither its high nor its deepest fall.
+  SELECT mode, tf, least(0, min(run_t - greatest(0, peak_t))) AS dd_t, least(0, min(run_a - greatest(0, peak_a))) AS dd_a FROM (
+    SELECT mode, tf, run_t, run_a,
+           max(run_t) OVER w AS peak_t, max(run_a) OVER w AS peak_a FROM (
+      SELECT mode, tf, ord, id,
+             coalesce(sum(r) FILTER (WHERE NOT goff) OVER w, 0) AS run_t, sum(r) OVER w AS run_a
+        FROM c WINDOW w AS (PARTITION BY mode, tf ORDER BY ord, id ROWS UNBOUNDED PRECEDING)
+    ) a WINDOW w AS (PARTITION BY mode, tf ORDER BY ord, id ROWS UNBOUNDED PRECEDING)
+  ) b GROUP BY 1, 2
+), g AS (
+  -- Each method and way, and each way over every method, in one pass: the rules as designed (gates on) and every setup.
+  SELECT method, mode, tf, GROUPING(method) AS whole,
+         count(*) FILTER (WHERE NOT goff) AS setups, count(*) AS setups_all,
+         count(*) FILTER (WHERE NOT goff AND status = 'expired') AS expired, count(*) FILTER (WHERE status = 'expired') AS expired_all,
+         count(*) FILTER (WHERE NOT goff AND status IN ('open', 'filled')) AS working, count(*) FILTER (WHERE status IN ('open', 'filled')) AS working_all,
+         min(first_seen) AS since, count(*) FILTER (WHERE goff) AS gates_off,
+         count(*) FILTER (WHERE closed AND NOT goff) AS trades, count(*) FILTER (WHERE closed) AS trades_all,
+         count(*) FILTER (WHERE closed AND NOT goff AND r > 0) AS wins, count(*) FILTER (WHERE closed AND r > 0) AS wins_all,
+         sum(r) FILTER (WHERE closed AND NOT goff) AS sum_r, sum(r) FILTER (WHERE closed) AS sum_r_all,
+         sum(r) FILTER (WHERE closed AND NOT goff AND r > 0) AS won, sum(r) FILTER (WHERE closed AND r > 0) AS won_all,
+         -sum(r) FILTER (WHERE closed AND NOT goff AND r <= 0) AS lost, -sum(r) FILTER (WHERE closed AND r <= 0) AS lost_all,
+         sum(pts) FILTER (WHERE closed AND NOT goff AND status = 'tp1') AS tgt_pts, sum(pts) FILTER (WHERE closed AND status = 'tp1') AS tgt_pts_all,
+         -sum(pts) FILTER (WHERE closed AND NOT goff AND status = 'stop') AS sl_pts, -sum(pts) FILTER (WHERE closed AND status = 'stop') AS sl_pts_all,
+         sum(pts) FILTER (WHERE closed AND NOT goff) AS net_pts, sum(pts) FILTER (WHERE closed) AS net_pts_all,
+         min(ord) AS first_ord
+    FROM x GROUP BY GROUPING SETS ((method, mode, tf), (mode, tf))
+), first AS (
+  SELECT DISTINCT ON (mode, tf) mode, tf, id AS first_id FROM x ORDER BY mode, tf, ord, id
+)
+SELECT g.*, dm.dd AS dd_m, dw.dd_t, dw.dd_a, f.first_id
+  FROM g
+  LEFT JOIN dm ON g.whole = 0 AND dm.method = g.method AND dm.mode = g.mode AND dm.tf = g.tf
+  LEFT JOIN dw ON g.whole = 1 AND dw.mode = g.mode AND dw.tf = g.tf
+  LEFT JOIN first f ON g.whole = 1 AND f.mode = g.mode AND f.tf = g.tf
+`;
+type RecordSqlRow = Record<string, string | number | null> & { method: string | null; mode: 'mtf' | 'single'; tf: Tf; whole: number };
+/** The database's rows as the screen's records: the figures `statsOf` and `pointsOf` would give, from their sums. */
+export function recordFromSql(xs: readonly RecordSqlRow[]): { records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] } {
+  const n = (v: unknown) => Number(v ?? 0);
+  // One row's figures, the rules as designed (`''`) or every setup (`'_all'`), and the drawdown worked for them.
+  const rec = (x: RecordSqlRow, method: string, all: '' | '_all', dd: unknown): MethodRecord => {
+    const trades = n(x[`trades${all}`]), wins = n(x[`wins${all}`]), sum = n(x[`sum_r${all}`]), won = n(x[`won${all}`]), lost = n(x[`lost${all}`]);
+    const losses = trades - wins;
+    return {
+      method, mode: x.mode, tf: x.tf,
+      setups: n(x[`setups${all}`]), expired: n(x[`expired${all}`]), working: n(x[`working${all}`]), since: n(x.since),
+      trades, wins, avgR: trades ? sum / trades : null, sumR: trades ? sum : null,
+      profitFactor: trades && lost > 0 ? won / lost : null, maxDrawdownR: trades ? n(dd) : null,
+      avgWinR: wins ? won / wins : null, avgLossR: losses ? -lost / losses : null,
+      gatesOff: n(x.gates_off),
+      tgtPts: n(x[`tgt_pts${all}`]), slPts: n(x[`sl_pts${all}`]) || 0, netPts: n(x[`net_pts${all}`]),
+    };
+  };
+  // A way's totals in the order the way first appears, oldest close first -- as they were listed before.
+  const ways = xs.filter((x) => Number(x.whole) === 1).sort((a, b) => n(a.first_ord) - n(b.first_ord) || n(a.first_id) - n(b.first_id));
+  return {
+    records: xs.filter((x) => Number(x.whole) === 0).map((x) => rec(x, x.method!, '', x.dd_m))
+      .sort((a, b) => a.method.localeCompare(b.method) || a.mode.localeCompare(b.mode) || a.tf.localeCompare(b.tf)),
+    totals: ways.map((x) => rec(x, 'all', '', x.dd_t)),
+    totalsAll: ways.map((x) => rec(x, 'all', '_all', x.dd_a)),
+  };
+}
+
+async function entryRecordNow(): Promise<{ records: MethodRecord[]; totals: MethodRecord[]; totalsAll: MethodRecord[] }> {
+  await entrySchema();
+  return recordFromSql(await rows<RecordSqlRow>(RECORD_SQL));
 }
 
 /** The latest setups written, newest first, for the log under the board. */
