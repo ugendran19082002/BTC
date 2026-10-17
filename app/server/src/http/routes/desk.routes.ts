@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { liveChain, historicalChain, liveExpiries, hoursSinceDeskOpen, simulationBacklog, WHOLE_BOARD, type Snapshot } from '../../market/chain.js';
 import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
-import { ttlCache } from '../ttl-cache.js';
+import { ttlCache, ttlCacheStale } from '../ttl-cache.js';
 import { deskMetrics } from '../../observability/desk-metrics.js';
 import { priceChangeNow } from '../../market/price-change.js';
 import { scoreLegs, pickSells, bias, verdict, USDINR } from '../../domain/score.js';
@@ -474,9 +474,11 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * chart is there to put the open-interest walls against recent price, and a
    * caller free to ask for a year of 1m bars is a caller who can hang the page.
    */
-  const candlesFast = ttlCache<Awaited<ReturnType<typeof candles>>>(5_000);
-  const candlesMid = ttlCache<Awaited<ReturnType<typeof candles>>>(10_000);
-  const candlesSlow = ttlCache<Awaited<ReturnType<typeof candles>>>(30_000);
+  // Past its seconds a timeframe's bars keep answering while Delta is asked again (17 Oct 2026, `ttlCacheStale`): the
+  // chart that polled into an expired key waited the whole round trip, 0.7-2 s. Never older than a few minutes.
+  const candlesFast = ttlCacheStale<Awaited<ReturnType<typeof candles>>>(5_000, 3 * 60_000);
+  const candlesMid = ttlCacheStale<Awaited<ReturnType<typeof candles>>>(10_000, 10 * 60_000);
+  const candlesSlow = ttlCacheStale<Awaited<ReturnType<typeof candles>>>(30_000, 30 * 60_000);
   app.get('/api/candles', async (req, reply) => {
     const q = req.query as { tf?: string };
     // Roughly 100-160 bars each, which is what fits the width legibly. A

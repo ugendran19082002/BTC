@@ -22,12 +22,12 @@ import { gradeLive, LIVE_GRADE_MS } from './entry/live-grade.js';
 import { deskMetrics, noteSignalRun } from './observability/desk-metrics.js';
 import { fetchOptionMarks } from './market/option-marks.js';
 import { signalBacktest, useBacktestThread } from './report/backtest-run.js';
-import { DEFAULT_PARAMS } from './report/signal-backtest.js';
+import { DEFAULT_PARAMS, volNowHeld } from './report/signal-backtest.js';
 import { sessionDayOf, sessionDays, sessionOf } from './report/market-day.js';
 import { REPORT_FIRST_DAY } from './report/market-report.js';
 import { bookHeatSchema, flushBookHeat, startBookHeat } from './market/book-heat.js';
 import { noteError } from './observability/errors.js';
-import { entrySchema, gradeSetups, onSetupFilled, recordSetups } from './entry/paper.js';
+import { entryRecord, entrySchema, gradeSetups, onSetupFilled, recordSetups } from './entry/paper.js';
 import { gatesSchema } from './entry/gates.js';
 import { alertSettings, alertsSchema, sendEntryAlert, wanted } from './entry/alerts.js';
 import { allReads } from './entry/engine.js';
@@ -208,6 +208,18 @@ setTimeout(() => {
   signalBacktest({ from: earliest > REPORT_FIRST_DAY ? earliest : REPORT_FIRST_DAY, to, now, params: DEFAULT_PARAMS, tfs: null, methods: null })
     .catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'signal-backtest', message: `the backtest's first answer was not got ready: ${e.message}` }));
 }, 3 * 60_000).unref();
+/*
+ * The reads a first page after a deploy waited on, made before anyone asks (17 Oct 2026): the entry record (a
+ * scan of every graded setup) and how volatile it is now (five expiry days of ATM IV), each seconds cold. Then the
+ * level once a minute, so the strategies screen's poll never waits on a reading. Off the request path; a failure is a
+ * warning, and the first request reads it itself.
+ */
+const unread = (where: string) => (e: Error) => noteError({ source: 'server', level: 'warn', where, message: `${where} not read ahead: ${e.message}` });
+setTimeout(() => {
+  entryRecord().catch(unread('entry-record'));
+  volNowHeld().catch(unread('vol-now'));
+}, 5_000).unref();
+setInterval(() => { volNowHeld().catch(unread('vol-now')); }, 60_000).unref();
 const DELTA_BUSY_PCT = 50;
 const fetchMarks = () => {
   const now = Date.now();
