@@ -171,7 +171,9 @@ lots by level), net, **net per lot**, worst day, max drawdown, option SL hits, w
 the days apart, the better of each marked; a verdict that calls a difference a rule only where it is better in both
 halves -- per lot where the lots move, since more money from more lots is not a better rule; and each level's trades
 and money under both. **Tap a Net** for every expiry day, newest first: as set beside by volatility (trades, won,
-net, net a trade, charges) and the difference, how many days each side was better on, and the total (`byDay`). A trade whose level cannot be said keeps the settings as set.
+net, net a trade, charges) and the difference, how many days each side was better on, and the total (`byDay`). **Tap
+a day's trade count** there for that day on that side, trade by trade -- the backtest's own trade list, each trade
+with its level and a pick by level (`/vol-study/trades`). A trade whose level cannot be said keeps the settings as set.
 
 The same signals: no limit on what is open -- the strategy's "at most open" and a run's shared limit included -- since
 an earlier exit must not free a place for a trade the other side did not take; the volatility filter off; the same
@@ -310,7 +312,9 @@ At least one. The answer: `fixed` (the SL as set, and `each` one's own over a ru
 `days`, `secondHalfFrom`, `sameTrades`, and `sources` -- `atr` and `iv`, each with a `fixed` and a `by-vol` line (`n`,
 `wins`, `net`, `charges`, `lots`, `stopHits`, `worstDay`, `maxDrawdown`, `halves`, `byLevel`, `byDay`).
 `GET /api/backtest-portfolio/vol-study` -- the run's own query (`?ids=` and the rest) with the same rule; the answer
-also carries `members`. Worked in the backtest's thread, three backtests' time allowed for each one in it.
+also carries `members`. `GET /api/signal-backtest/vol-study/trades` and `/api/backtest-portfolio/vol-study/trades` --
+the same question with `?day=&side=fixed|by-vol&by=atr|iv`: that day's trades on that side, each with its `level` (and,
+over a run, its `member`). Worked in the backtest's thread, three backtests' time allowed for each one in it.
 
 **Worked in a thread of its own** ([report/backtest-run.ts](../../app/server/src/report/backtest-run.ts),
 `backtest-worker.ts`; 13 Oct 2026). A fortnight a minute at a time is seconds of reading and arithmetic, and in
