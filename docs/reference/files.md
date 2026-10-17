@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-516 files listed, 260 test files counted below, images and lockfiles left out.
+518 files listed, 261 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 134 |
+| `app/server` | 135 |
 | `app/web` | 126 |
 
 ## `(root)`
@@ -487,6 +487,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [AutoMethods.tsx](../../app/web/src/components/strategy/AutoMethods.tsx) | The methods' daily update in the signal strategy form (owner, 16 Oct 2026: "daily, a time chosen, the methods picked by a win %, auto update on and off in the signal strategy form -- best practice,... |
 | [CopyStrategiesSheet.tsx](../../app/web/src/components/strategy/CopyStrategiesSheet.tsx) | Copy strategies into a group (owner, 10 Oct 2026: "from another account's, another group's, into a new group or an existing one -- user friendly, mobile friendly"). |
+| [DeltaByVol.tsx](../../app/web/src/components/strategy/DeltaByVol.tsx) | Delta by volatility in the signal strategy form (owner, 17 Oct 2026: "the backtest's logic in the signal strategy form -- by ATR 2h or by ATM IV, one at a time, ATM IV to begin with -- best practic... |
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
 | [GroupTag.tsx](../../app/web/src/components/strategy/GroupTag.tsx) | The group a strategy is in, as a small tag beside its name (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- user friendly, desk and phone"). |
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
@@ -696,6 +697,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0015-read-the-whole-book.md](../decisions/0015-read-the-whole-book.md) | 0015 — Read Delta's whole book; sweep the exits no trade wants |
 | [0016-shared-contracts-again.md](../decisions/0016-shared-contracts-again.md) | 0016 — Several trades may share a contract, and several strategies one signal |
 | [0017-methods-picked-daily.md](../decisions/0017-methods-picked-daily.md) | 0017 — A signal strategy's methods may be picked again every day by their record |
+| [0018-delta-by-volatility.md](../decisions/0018-delta-by-volatility.md) | 0018 — A signal strategy's delta may be set by how volatile it is at each signal |
 | [README.md](../decisions/README.md) | Decisions |
 
 ## `docs/features/`
