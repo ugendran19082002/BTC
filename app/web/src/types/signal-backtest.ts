@@ -125,6 +125,8 @@ export type VolStudyLine = {
   /** The first half of the days and the second, apart. */
   halves: [number, number];
   byLevel: { level: VolStudyLevel; n: number; wins: number; net: number; stopHits: number }[];
+  /** Each expiry day of the range, oldest first, under this rule. An older server sends none. */
+  byDay?: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; lots: number }[];
 };
 export type VolStudyResult = {
   from: string; to: string; days: number; secondHalfFrom: string | null;

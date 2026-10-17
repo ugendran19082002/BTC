@@ -1388,6 +1388,8 @@ export type VolStudyLine = {
   /** The first half of the days and the second, apart: a rule that only works on one of them is not a rule. */
   halves: [number, number];
   byLevel: { level: VolStudyLevel; n: number; wins: number; net: number; stopHits: number }[];
+  /** Each expiry day of the range, oldest first, with what it made under this rule (17 Oct 2026: "tap Net -- by expiry day"). */
+  byDay: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; lots: number }[];
 };
 export type VolStudy = {
   from: string; to: string; days: number;
@@ -1414,14 +1416,17 @@ export type VolStudy = {
 };
 
 type Labelled = { day: string; t: BtTrade; level: VolStudyLevel };
-function studyLine(rule: VolStudyLine['rule'], xs: readonly Labelled[], days: readonly string[], mid: number): VolStudyLine {
+function studyLine(rule: VolStudyLine['rule'], xs: readonly Labelled[], days: readonly string[], mid: number, live: ReadonlySet<string> = new Set()): VolStudyLine {
   const byDay = new Map(days.map((d) => [d, 0]));
+  const dayRows = new Map(days.map((d) => [d, { day: d, live: live.has(d), n: 0, wins: 0, net: 0, charges: 0, lots: 0 }]));
   const lv = new Map(VOL_STUDY_LEVELS.map((l) => [l, { level: l, n: 0, wins: 0, net: 0, stopHits: 0 }]));
   let n = 0, wins = 0, net = 0, charges = 0, stopHits = 0, lots = 0;
   for (const { day, t, level } of xs) {
     const win = t.netUsd > 0, stop = t.by === 'option-sl';
     n++; net += t.netUsd; charges += t.chargesUsd; lots += t.lots; if (win) wins++; if (stop) stopHits++;
     byDay.set(day, (byDay.get(day) ?? 0) + t.netUsd);
+    const r = dayRows.get(day);
+    if (r) { r.n++; r.net += t.netUsd; r.charges += t.chargesUsd; r.lots += t.lots; if (win) r.wins++; }
     const l = lv.get(level)!;
     l.n++; l.net += t.netUsd; if (win) l.wins++; if (stop) l.stopHits++;
   }
@@ -1433,7 +1438,7 @@ function studyLine(rule: VolStudyLine['rule'], xs: readonly Labelled[], days: re
     halves[i < mid ? 0 : 1] += v;
     if (xs.some((x) => x.day === d) && (worstDay === null || v < worstDay.net)) worstDay = { day: d, net: v };
   });
-  return { rule, n, wins, net, charges, lots, stopHits, worstDay, maxDrawdown, halves, byLevel: [...lv.values()] };
+  return { rule, n, wins, net, charges, lots, stopHits, worstDay, maxDrawdown, halves, byLevel: [...lv.values()], byDay: [...dayRows.values()] };
 }
 
 type StudyBook = Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>;
@@ -1442,6 +1447,7 @@ async function volStudyOf(o: { from: string; to: string; now: number; books: rea
   const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
   const known = await marketDays(before, o.to, o.now);
   const days = known.filter((d) => d.day >= o.from).map((d) => d.day);
+  const live = new Set(known.filter((d) => d.day >= o.from && d.live).map((d) => d.day));
   const baselineOf = (day: string): number | null => {
     const prior = known.filter((d) => d.day < day && d.stats && !d.live).slice(-5).map((d) => d.stats!.atr);
     return prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
@@ -1502,7 +1508,7 @@ async function volStudyOf(o: { from: string; to: string; now: number; books: rea
   return {
     from: o.from, to: o.to, days: days.length, secondHalfFrom: days[mid] ?? null, sl: o.sl ? { ...o.sl } : null, delta: o.delta ? { ...o.delta } : null, lots: o.lots ? { ...o.lots } : null, signals, sameTrades,
     fixed: { pct: fixedOf[0]?.pct ?? 0, stepped: fixedOf.some((f) => f.stepped), each },
-    sources: VOL_BYS.map((by, k) => ({ by, lines: [studyLine('fixed', fixedTrades[k]!, days, mid), studyLine('by-vol', volTrades[k]!, days, mid)] })),
+    sources: VOL_BYS.map((by, k) => ({ by, lines: [studyLine('fixed', fixedTrades[k]!, days, mid, live), studyLine('by-vol', volTrades[k]!, days, mid, live)] })),
   };
 }
 

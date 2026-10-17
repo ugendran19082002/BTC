@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import type { VolAsk, VolBy, VolLevel, VolStudyLevel, VolStudyLine, VolStudyResult } from '@/types/signal-backtest';
 import { Empty, Panel } from '@/components/mobile/parts';
 import { Switch } from '@/components/ui/switch';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { count, netClass } from '@/components/report/backtest-parts';
 
 /**
@@ -85,15 +86,94 @@ function levelWords(r: VolStudyResult, l: VolLevel): string {
 /** The settings as set, in words: one SL, or each saved backtest's own. */
 const asSetWords = (r: VolStudyResult) => (r.fixed.each.length > 1 ? `each one's own SL (${r.fixed.each.map(stopWords).join(', ')})` : `SL ${stopWords(r.fixed.pct)}`);
 
+/**
+ * Every expiry day under both rules, side by side (owner, 17 Oct 2026: "tap Net -- the by-expiry-day table"): each
+ * day's trades, won, net, net a trade and charges, as set and by volatility, and what changed; newest first, as the
+ * backtest's own day table. The side tapped is marked.
+ */
+function DaysSheet({ by, fixed, moved, r, side, onClose }: { by: VolBy; fixed: VolStudyLine; moved: VolStudyLine; r: VolStudyResult; side: 'a' | 'b' | null; onClose: () => void }) {
+  const a = new Map((fixed.byDay ?? []).map((d) => [d.day, d])), b = new Map((moved.byDay ?? []).map((d) => [d.day, d]));
+  const days = [...new Set([...a.keys(), ...b.keys()])].sort().reverse();
+  type Day = NonNullable<VolStudyLine['byDay']>[number];
+  const none: Omit<Day, 'day' | 'live'> = { n: 0, wins: 0, net: 0, charges: 0, lots: 0 };
+  const better = days.filter((d) => (b.get(d)?.net ?? 0) > (a.get(d)?.net ?? 0) + 0.005).length;
+  const worse = days.filter((d) => (b.get(d)?.net ?? 0) < (a.get(d)?.net ?? 0) - 0.005).length;
+  const cell = (x: Omit<Day, 'day' | 'live'>, mark: boolean, label: string) => (
+    <td className={cn('py-1.5 pr-2 text-right align-top max-sm:pr-0 max-sm:text-left', mark && 'bg-[var(--chosen-soft)]')}>
+      <span className="hidden text-[11px] text-muted-foreground max-sm:block">{label}</span>
+      {x.n === 0 ? <span className="text-muted-foreground">—</span> : <>
+        <span className={cn('block whitespace-nowrap font-semibold', netClass(x.net))}>{moneyText(x.net)}</span>
+        <span className={cn('block whitespace-nowrap text-[11.5px]', netClass(x.net))}>{moneyText(x.net / x.n)}</span>
+        <span className="block whitespace-nowrap text-[11.5px] text-muted-foreground">{count(x.n)} · {pct(x.wins / x.n, 0)} won</span>
+        <span className="block whitespace-nowrap text-[11px] text-muted-foreground">charges {moneyText(-x.charges)}</span>
+      </>}
+    </td>
+  );
+  return (
+    <Sheet open onOpenChange={(v) => { if (!v) onClose(); }}>
+      <SheetContent className="sm:w-[min(820px,94vw)] sm:max-h-[88vh]" title={`By expiry day · ${SOURCE[by].name}`}
+        description={`As set: ${asSetWords(r)}. By volatility: ${LEVELS.map((l) => `${l.label} ${levelWords(r, l.key)}`).join(' · ')}.`}>
+        <p role="status" className="m-0 mb-2 text-[13px] leading-snug">
+          By volatility was better on <b className="text-[var(--up)]">{count(better)}</b> day{better === 1 ? '' : 's'}, worse on <b className="text-[var(--down)]">{count(worse)}</b>
+          {days.length - better - worse > 0 ? `, the same on ${count(days.length - better - worse)}` : ''}. Together: <b className={netClass(moved.net - fixed.net)}>{moneyText(moved.net - fixed.net)}</b>.
+        </p>
+        <table className="w-full border-collapse text-[13px] tabular-nums max-sm:block">
+          <caption className="sr-only">By expiry day: as set, by volatility and the difference</caption>
+          <thead className="max-sm:sr-only">
+            <tr className="text-left text-[11.5px] text-muted-foreground">
+              <th scope="col" className="py-1 pr-2 font-medium">Expiry day</th>
+              <th scope="col" className={cn('py-1 pr-2 text-right font-medium', side === 'a' && 'text-foreground')}>As set</th>
+              <th scope="col" className={cn('py-1 pr-2 text-right font-medium', side === 'b' && 'text-foreground')}>By volatility</th>
+              <th scope="col" className="py-1 text-right font-medium">Difference</th>
+            </tr>
+          </thead>
+          <tbody className="max-sm:block">
+            {days.map((d) => {
+              const x = a.get(d), y = b.get(d), diff = (y?.net ?? 0) - (x?.net ?? 0);
+              return (
+                <tr key={d} className="border-t border-[var(--line-soft)] align-top max-sm:grid max-sm:grid-cols-3 max-sm:gap-x-2 max-sm:py-2">
+                  <th scope="row" className="static whitespace-normal bg-transparent py-1.5 pr-2 text-left text-[13px] font-medium normal-case tracking-normal text-foreground max-sm:col-span-3 max-sm:pb-1">
+                    {dayLabel(d)}{(x ?? y)?.live ? ' · so far' : ''}
+                  </th>
+                  {cell(x ?? none, side === 'a', 'As set')}
+                  {cell(y ?? none, side === 'b', 'By volatility')}
+                  <td className="py-1.5 text-right align-top max-sm:text-left">
+                    <span className="hidden text-[11px] text-muted-foreground max-sm:block">Difference</span>
+                    <span className={cn('whitespace-nowrap font-semibold', netClass(diff))}>{Math.abs(diff) < 0.005 ? '—' : moneyText(diff)}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot className="max-sm:block">
+            <tr className="border-t-2 border-[var(--line)] align-top max-sm:grid max-sm:grid-cols-3 max-sm:gap-x-2 max-sm:py-2">
+              <th scope="row" className="static bg-transparent py-1.5 pr-2 text-left text-[13px] font-semibold normal-case tracking-normal text-foreground max-sm:col-span-3">All {count(days.length)} days</th>
+              {cell(fixed, side === 'a', 'As set')}
+              {cell(moved, side === 'b', 'By volatility')}
+              <td className="py-1.5 text-right align-top max-sm:text-left">
+                <span className="hidden text-[11px] text-muted-foreground max-sm:block">Difference</span>
+                <span className={cn('whitespace-nowrap font-semibold', netClass(moved.net - fixed.net))}>{moneyText(moved.net - fixed.net)}</span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 /** One way of reading volatility: the settings as set beside the rule by volatility, figure by figure, the better of each marked. */
 function Compare({ by, fixed, moved, r }: { by: VolBy; fixed: VolStudyLine; moved: VolStudyLine; r: VolStudyResult }) {
+  // The by-day sheet, opened from either side's Net (null: shut).
+  const [days, setDays] = useState<'a' | 'b' | null>(null);
+  const hasDays = (fixed.byDay?.length ?? 0) > 0;
   const sized = r.lots !== null;
   const perLot = (l: VolStudyLine, v: number) => (l.lots > 0 ? v / l.lots : 0);
-  type Metric = { label: string; a: number; b: number; show: (v: number) => string; better: 'more' | 'less' | null; money?: boolean };
+  type Metric = { label: string; a: number; b: number; show: (v: number) => string; better: 'more' | 'less' | null; money?: boolean; opens?: boolean };
   const metrics: Metric[] = [
     { label: 'Trades', a: fixed.n, b: moved.n, show: count, better: null },
     ...(sized ? [{ label: 'Lots traded', a: fixed.lots, b: moved.lots, show: count, better: null } as Metric] : []),
-    { label: 'Net', a: fixed.net, b: moved.net, show: moneyText, better: sized ? null : 'more', money: true },
+    { label: 'Net', a: fixed.net, b: moved.net, show: moneyText, better: sized ? null : 'more', money: true, opens: true },
     { label: 'Net per lot', a: perLot(fixed, fixed.net), b: perLot(moved, moved.net), show: moneyText, better: 'more', money: true },
     { label: 'Worst day', a: fixed.worstDay?.net ?? 0, b: moved.worstDay?.net ?? 0, show: moneyText, better: 'more', money: true },
     { label: 'Max drawdown', a: -fixed.maxDrawdown, b: -moved.maxDrawdown, show: moneyText, better: 'more', money: true },
@@ -132,10 +212,16 @@ function Compare({ by, fixed, moved, r }: { by: VolBy; fixed: VolStudyLine; move
             <tbody>
               {metrics.map((m) => {
                 const w = wins(m);
+                const shown = (v: number, me: 'a' | 'b') => <>{m.show(v)}{w === me && <span className="sr-only"> (better)</span>}{w === me && <span aria-hidden className="ml-1 text-[11px] text-[var(--up)]">▲</span>}</>;
                 const cell = (v: number, me: 'a' | 'b') => (
                   <td className={cn('py-1.5 text-right', me === 'a' && 'pr-2', m.money && netClass(v), w === me && 'font-semibold')}>
-                    {m.show(v)}{w === me && <span className="sr-only"> (better)</span>}
-                    {w === me && <span aria-hidden className="ml-1 text-[11px] text-[var(--up)]">▲</span>}
+                    {m.opens && hasDays ? (
+                      // Net opens every expiry day, both sides beside each other.
+                      <button type="button" onClick={() => setDays(me)} aria-label={`${me === 'a' ? 'As set' : 'By volatility'} net ${m.show(v)}: by expiry day`}
+                        className={cn('m-0 min-h-[32px] appearance-none border-0 bg-transparent p-0 font-[inherit] underline decoration-dotted underline-offset-4', m.money ? netClass(v) : 'text-foreground', w === me && 'font-semibold')}>
+                        {shown(v, me)} ›
+                      </button>
+                    ) : shown(v, me)}
                   </td>
                 );
                 return (
@@ -179,6 +265,8 @@ function Compare({ by, fixed, moved, r }: { by: VolBy; fixed: VolStudyLine; move
           </details>
         </>
       )}
+      {hasDays && known > 0 && <p className="m-0 -mt-1 text-[12px] text-muted-foreground">Tap a Net for every expiry day, both sides beside each other.</p>}
+      {days && <DaysSheet by={by} fixed={fixed} moved={moved} r={r} side={days} onClose={() => setDays(null)} />}
       <p className="m-0 text-[12px] leading-snug text-muted-foreground">Level: {SOURCE[by].how}. A signal with no level{by === 'iv' ? ' (no IV reading in the 6 minutes before its fill)' : ''} keeps the settings as set.</p>
     </section>
   );

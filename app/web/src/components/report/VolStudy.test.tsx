@@ -146,4 +146,25 @@ describe('VolStudy', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not compare: The backtest took too long and was stopped.');
     expect(screen.getByRole('button', { name: 'Compare' })).toBeEnabled();
   });
+  it('[critical] a Net opens every expiry day, as set beside by volatility and the difference, newest first; closed, it is gone', async () => {
+    const day = (d: string, n: number, net: number, live = false) => ({ day: d, live, n, wins: Math.round(n * 0.7), net, charges: n * 0.01, lots: n });
+    const withDays: VolStudyResult = { ...RESULT, sources: [{ by: 'atr', lines: [
+      { ...RESULT.sources[0]!.lines[0]!, byDay: [day('2026-10-15', 100, -40), day('2026-10-16', 120, 30), day('2026-10-17', 80, 5, true)] },
+      { ...RESULT.sources[0]!.lines[1]!, byDay: [day('2026-10-15', 100, -25), day('2026-10-16', 120, 28), day('2026-10-17', 80, 5, true)] },
+    ] }, RESULT.sources[1]!] };
+    read.mockResolvedValue(withDays);
+    show();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+    const atr = await screen.findByRole('region', { name: 'By ATR 2h' });
+    fireEvent.click(within(atr).getByRole('button', { name: /^By volatility net .*: by expiry day$/ }));
+    const sheet = await screen.findByRole('dialog', { name: 'By expiry day · By ATR 2h' });
+    expect(within(sheet).getByRole('status')).toHaveTextContent(/By volatility was better on 1 day, worse on 1, the same on 1\./);
+    const rows = within(within(sheet).getByRole('table')).getAllByRole('row').slice(1).map((r) => within(r).getByRole('rowheader').textContent);
+    expect(rows).toEqual(['Sat 17 Oct · so far', 'Fri 16 Oct', 'Thu 15 Oct', 'All 3 days']);
+    expect(within(sheet).getByText(/As set: SL \+160%\. By volatility: Low SL \+250% · Normal SL \+200% · High SL \+150%\./)).toBeInTheDocument();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // An older server sends no days: Net is a figure, not a button.
+    expect(within(screen.getByRole('region', { name: 'By ATM IV' })).queryByRole('button', { name: /by expiry day/ })).toBeNull();
+  });
 });

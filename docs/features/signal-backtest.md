@@ -170,7 +170,8 @@ each signal's fill, once read by ATR 2h and once by ATM IV. Each way says, besid
 lots by level), net, **net per lot**, worst day, max drawdown, option SL hits, won, and the first and second half of
 the days apart, the better of each marked; a verdict that calls a difference a rule only where it is better in both
 halves -- per lot where the lots move, since more money from more lots is not a better rule; and each level's trades
-and money under both. A trade whose level cannot be said keeps the settings as set.
+and money under both. **Tap a Net** for every expiry day, newest first: as set beside by volatility (trades, won,
+net, net a trade, charges) and the difference, how many days each side was better on, and the total (`byDay`). A trade whose level cannot be said keeps the settings as set.
 
 The same signals: no limit on what is open -- the strategy's "at most open" and a run's shared limit included -- since
 an earlier exit must not free a place for a trade the other side did not take; the volatility filter off; the same
@@ -307,7 +308,7 @@ a trade made −₹3.79 on 3m, −₹3.21 on 5m, −₹0.09 on 15m, +₹2.49 on 
 and `?dh=&dm=&dl=` (0.02 to 0.50; 0.08 / 0.10 / 0.12); `?vlots=1` and `?lh=&lm=&ll=` (whole, 1 to 1,000; 1 / 2 / 2).
 At least one. The answer: `fixed` (the SL as set, and `each` one's own over a run), `sl`, `delta`, `lots`, `signals`,
 `days`, `secondHalfFrom`, `sameTrades`, and `sources` -- `atr` and `iv`, each with a `fixed` and a `by-vol` line (`n`,
-`wins`, `net`, `charges`, `lots`, `stopHits`, `worstDay`, `maxDrawdown`, `halves`, `byLevel`).
+`wins`, `net`, `charges`, `lots`, `stopHits`, `worstDay`, `maxDrawdown`, `halves`, `byLevel`, `byDay`).
 `GET /api/backtest-portfolio/vol-study` -- the run's own query (`?ids=` and the rest) with the same rule; the answer
 also carries `members`. Worked in the backtest's thread, three backtests' time allowed for each one in it.
 

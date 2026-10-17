@@ -1069,6 +1069,9 @@ test('[critical] volatility by ATM IV, and the option stop by volatility against
       assert.equal(l.stopHits, 0, 'the board decays all day: no stop is reached, tight or wide');
       assert.ok(Math.abs(l.net - line('iv', 'fixed').net) < 1e-9, 'the same trades, the same money');
       assert.equal(l.worstDay.day, CLIMB);
+      // Each expiry day of the range, with its own figures: what the screen's by-day sheet lists.
+      assert.deepEqual(l.byDay.map((d: any) => [d.day, d.live, d.n, d.lots]), [[CLIMB, false, 6, 60]]);
+      assert.ok(Math.abs(l.byDay[0].net - l.net) < 1e-9 && l.byDay[0].charges > 0);
     }
     // The per cent of each level is the owner's to set; out of range, refused in words.
     const own = await get(`/api/signal-backtest/vol-study?${base}&vh=120&vm=180&vl=300`);
