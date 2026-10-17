@@ -526,3 +526,90 @@ test('[critical] signals while the first is open share its strike: each its own 
   assert.deepEqual(both.map((o) => o.trades.length), [1, 1]);
 });
 
+
+test('[critical] ATM IV at a reading: the call\'s and the put\'s nearest the money averaged, the one there is alone, nothing from a missing or zero IV', async () => {
+  const { atmIvOf } = await import('../../src/report/signal-backtest.js');
+  assert.deepEqual(atmIvOf([
+    { at: 2, cp: 'C', iv: 50 }, { at: 2, cp: 'P', iv: 54 },
+    { at: 1, cp: 'C', iv: 40 }, { at: 1, cp: 'P', iv: null },
+    { at: 3, cp: 'C', iv: 0 }, { at: 3, cp: 'P', iv: null },
+  ]), [{ at: 1, iv: 40 }, { at: 2, iv: 52 }], 'oldest first; a reading with no IV at all is not a reading');
+});
+
+test('[critical] volatility by ATM IV: thirds of the five days before, in the same hour of the day -- low, medium, high', async () => {
+  const { ivReader } = await import('../../src/report/signal-backtest.js');
+  const H = 3_600_000;
+  // Five days before, a reading every five minutes; IV 40-60 in the evening's first hour, 80-100 eight hours on.
+  const prior = Array.from({ length: 5 }, (_, d) => from - (d + 1) * 86_400_000).flatMap((day0) => Array.from({ length: 12 }, (_, i) => [
+    { at: day0 + i * 5 * MIN, iv: 40 + (i * 20) / 11 },
+    { at: day0 + 8 * H + i * 5 * MIN, iv: 80 + (i * 20) / 11 },
+  ]).flat());
+  const at = (h: number, m: number) => from + h * H + m * MIN;
+  const read = (iv: number, h: number) => ivReader([{ at: at(h, 10), iv }], prior)(at(h, 12));
+  assert.equal(read(42, 0), 'low');
+  assert.equal(read(50, 0), 'medium');
+  assert.equal(read(59, 0), 'high');
+  // The same 59 eight hours into the day is LOW: that hour's own past, not the day's, is what it is held to.
+  assert.equal(read(59, 8), 'low', 'an IV is compared with the same hour of the days before');
+  assert.equal(read(99, 8), 'high');
+  // An hour the days before have too few readings of: cut from all of them together.
+  assert.equal(read(75, 4), 'medium', 'pooled: between the thirds of every reading');
+});
+
+test('[critical] volatility by ATM IV never guesses: no reading, a stale one, or too few days before is Unknown -- never Low', async () => {
+  const { ivReader, IV_STALE_MS, IV_MIN_READINGS } = await import('../../src/report/signal-backtest.js');
+  const prior = Array.from({ length: 60 }, (_, i) => ({ at: from - 86_400_000 + i * 5 * MIN, iv: 40 + i }));
+  const today = [{ at: from + 60 * MIN, iv: 10 }];
+  assert.equal(ivReader(today, prior)(from + 61 * MIN), 'low', 'a fresh reading under the low third');
+  assert.equal(ivReader(today, prior)(from + 59 * MIN), null, 'before the first reading of the day: nothing to read');
+  assert.equal(ivReader(today, prior)(from + 60 * MIN + IV_STALE_MS + 1), null, 'a reading too old for the fill');
+  assert.equal(ivReader(today, prior)(from + 60 * MIN + IV_STALE_MS), 'low', 'at the limit it still counts');
+  assert.equal(ivReader([], prior)(from + 61 * MIN), null, 'a day with no IV at all');
+  assert.equal(ivReader(today, prior.slice(0, IV_MIN_READINGS - 1))(from + 61 * MIN), null, 'too few days before to cut levels from');
+  assert.equal(ivReader(today, [])(from + 61 * MIN), null);
+});
+
+test('[critical] volatility by ATM IV knows nothing it could not have known: later readings, and the day itself, change no earlier level', async () => {
+  const { ivReader } = await import('../../src/report/signal-backtest.js');
+  const prior = Array.from({ length: 60 }, (_, i) => ({ at: from - 86_400_000 + i * 5 * MIN, iv: 40 + i / 3 }));
+  const calm = [{ at: from + 30 * MIN, iv: 50 }];
+  const thenWild = [...calm, { at: from + 35 * MIN, iv: 400 }, { at: from + 40 * MIN, iv: 500 }];
+  const t = from + 33 * MIN;
+  assert.equal(ivReader(calm, prior)(t), 'medium');
+  assert.equal(ivReader(thenWild, prior)(t), 'medium', 'a storm after the fill is not seen at the fill');
+  assert.equal(ivReader(thenWild, prior)(from + 36 * MIN), 'high', 'and is seen once it has been read');
+  // The cut-offs are the days before alone: the day's own readings, however wild, do not move them.
+  assert.equal(ivReader([...thenWild, { at: from + 600 * MIN, iv: 1 }], prior)(t), 'medium');
+});
+
+test('[critical] the stop by volatility: each trade the stop of its level at the fill; a level not known keeps the plan\'s own', async () => {
+  const flat = perp([[0, 84_000], [1_439, 84_100]]);
+  // Sold at 40; offered at 102 at minute 300 (+155%), then down to 3, under the 4 the target rests at: a +150% stop is
+  // hit, +200% and the plan's +300% are not, and those trades end at their target.
+  const board = ladder('P', 83_200, -0.09, [[0, 40], [295, 40], [300, 100], [310, 30], [1_435, 1]]);
+  const plan = { ...planOf(), stopPctByVol: { low: 2.5, medium: 2, high: 1.5 } };
+  const levelAt = (min: number) => (min < 100 ? 'high' as const : min < 200 ? 'low' as const : null);
+  const r = simulateDay({ from, to, signals: [sig(30), sig(130), sig(230)], bars: flat, board, plan, volAt: (at) => levelAt((at - from) / MIN) });
+  assert.deepEqual(r.trades.map((t) => [t.vol, t.by]), [['high', 'option-sl'], ['low', 'option-tgt'], [null, 'option-tgt']]);
+  assert.ok(Math.abs(r.trades[0]!.optStop! - r.trades[0]!.entry * 2.5) < 1e-9, 'high: +150%, two and a half times the premium');
+  assert.ok(Math.abs(r.trades[1]!.optStop! - r.trades[1]!.entry * 3.5) < 1e-9, 'low: +250%');
+  assert.ok(Math.abs(r.trades[2]!.optStop! - r.trades[2]!.entry * 4) < 1e-9, 'unknown: the plan\'s own +300%');
+  // Without it, the plan's own stop for every trade -- and the same signals traded.
+  const fixed = simulateDay({ from, to, signals: [sig(30), sig(130), sig(230)], bars: flat, board, plan: planOf(), volAt: (at) => levelAt((at - from) / MIN) });
+  assert.deepEqual(fixed.trades.map((t) => t.by), ['option-tgt', 'option-tgt', 'option-tgt']);
+  assert.deepEqual(fixed.trades.map((t) => t.signal.filledAt), r.trades.map((t) => t.signal.filledAt));
+});
+
+test('[critical] the strike and the lots by volatility: each trade its level\'s delta and lots; a level not known keeps the plan\'s own', async () => {
+  const { planOfStrategy, strategyOfParams } = await import('../../src/report/signal-backtest.js');
+  const flat = perp([[0, 84_000], [1_439, 84_100]]);
+  // Two puts: 0.09 out at 83,200 and 0.06 out at 82,600, both bid 40 all day.
+  const board = byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]), ...contract('P', 82_600, -0.06, [[0, 40], [1_435, 30]])]);
+  const span = { from, to };
+  const deltaPick = (d: number) => planOfStrategy(strategyOfParams({ ...P, rule: 'delta', value: d }, null, null), span).pick;
+  const plan = { ...planOf(), pickByVol: { low: deltaPick(0.12), medium: deltaPick(0.1), high: deltaPick(0.07) }, lotsByVol: { low: 2, medium: 2, high: 1 } };
+  const levelAt = (min: number) => (min < 100 ? 'high' as const : min < 200 ? 'low' as const : null);
+  const r = simulateDay({ from, to, signals: [sig(30), sig(130), sig(230)], bars: flat, board, plan, volAt: (at) => levelAt((at - from) / MIN) });
+  assert.deepEqual(r.trades.map((t) => [t.vol, t.strike, t.lots]), [['high', 82_600, 1], ['low', 83_200, 2], [null, 83_200, 10]],
+    'high: the further strike inside 0.07, one lot; low: the nearer inside 0.12, two; unknown: the settings\' own strike and 10 lots');
+});

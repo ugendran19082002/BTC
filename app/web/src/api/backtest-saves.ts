@@ -1,9 +1,9 @@
 import { json, post } from '@/api/client';
-import { pickQuery } from '@/api/signal-backtest';
+import { pickQuery, volQuery } from '@/api/signal-backtest';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import type { NoEntry } from '@/types/strategy';
 import type { BacktestParams } from '@/types/signal-backtest';
-import type { TradePick } from '@/types/signal-backtest';
+import type { TradePick, VolAsk, VolStudyResult } from '@/types/signal-backtest';
 import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
 
 /** Every saved backtest and portfolio, by name. */
@@ -48,6 +48,13 @@ export const getPortfolioTrades = (pick: TradePick, ids: readonly string[], rang
   const p = runSearch(ids, range, limit, cap, hours, over);
   for (const [k, v] of pickQuery(pick)) p.set(k, v);
   return json<BtDayTrades>(`/api/backtest-portfolio/trades?${p}`);
+};
+
+/** The SL, delta and lots as saved against the same by volatility, over a run together's saved backtests: asked exactly as the run is. */
+export const getPortfolioVolStudy = (a: VolAsk, ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED, over: PortfolioOver = {}) => {
+  const p = runSearch(ids, range, limit, cap, hours, over);
+  for (const [k, v] of volQuery(a)) p.set(k, v);
+  return json<VolStudyResult>(`/api/backtest-portfolio/vol-study?${p}`);
 };
 
 /** A run together as the server reads it: the days, the saved backtests, whose limit, the hours and the settings over the run. */

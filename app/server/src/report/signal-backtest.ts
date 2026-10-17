@@ -80,6 +80,8 @@ export type BacktestParams = {
   targetSteps?: { at: string; pct: number }[];
   /** Only the signals that filled while the market was this volatile (`volReader`); `off` or absent, all of them. */
   vol?: 'off' | VolLevel;
+  /** What that level is read from (`VolBy`): the candles' ATR, the default, or the board's ATM implied volatility. */
+  volBy?: VolBy;
   /**
    * An option is not sold for less than this many dollars (owner, 13 Oct 2026: "a minimum premium filter, 10
    * dollars to begin with; 0 switches it off"). Absent: `MIN_PREMIUM`, the strategies' own floor. 0: no floor --
@@ -127,6 +129,71 @@ export function volReader(bars: readonly MinuteBar[], baseline: number | null): 
     if (recent.length < VOL_MIN_CANDLES) return null;
     const ratio = recent.reduce((a, x) => a + x, 0) / recent.length / baseline;
     return ratio < VOL_LOW ? 'low' : ratio > VOL_HIGH ? 'high' : 'medium';
+  };
+}
+
+/**
+ * What the level is read from (owner, 17 Oct 2026: "Volatility by: ATR 2h / ATM straddle"). `atr`, the default, is
+ * `volReader`'s candles. `iv` is what the market PRICES the move at: the at-the-money implied volatility of the
+ * contract the signal would sell. The straddle itself was not used: on a daily contract it shrinks with the clock
+ * alone (theta), so a 3 PM signal would always read low and a 9:30 PM one high; the IV is the straddle with the time
+ * to expiry taken out.
+ */
+export type VolBy = 'atr' | 'iv';
+export const VOL_BYS: readonly VolBy[] = ['atr', 'iv'];
+/** The ATM implied volatility at one reading of the board: the call's and the put's nearest the money, averaged. */
+export type AtmIv = { at: number; iv: number };
+/** A reading older than this at a signal's fill says nothing about it (the five-minute record, and a minute's grace). */
+export const IV_STALE_MS = 6 * 60_000;
+/** The expiry days before that a day's levels are cut from. */
+export const IV_DAYS = 5;
+/** The fewest readings an hour (or, failing that, the whole of the days before) must have to cut levels from. */
+export const IV_MIN_READINGS = 30;
+const hourOfDay = (at: number) => Math.floor(slotOf(at) / 4);
+
+/** Each reading's ATM IV from the board's at-the-money rows (one a side, nearest the money): the two sides averaged, or the one there is. */
+export function atmIvOf(xs: readonly { at: number; cp: 'C' | 'P'; iv: number | null }[]): AtmIv[] {
+  const by = new Map<number, number[]>();
+  for (const x of xs) {
+    if (x.iv === null || !(x.iv > 0)) continue;
+    const ys = by.get(x.at);
+    if (ys) ys.push(x.iv); else by.set(x.at, [x.iv]);
+  }
+  return [...by].map(([at, ys]) => ({ at, iv: ys.reduce((a, v) => a + v, 0) / ys.length })).sort((a, b) => a.at - b.at);
+}
+
+/**
+ * A day's IV reader: the level at any moment of it, from the newest reading at or before that moment -- none in the
+ * last `IV_STALE_MS`, no level. The levels are thirds of the IV in the `IV_DAYS` expiry days before, in the same
+ * hour of the expiry day (the IV of a contract hours from settling is not the IV of one a day away); an hour with
+ * too few readings is cut from all of them; too few in all, no level. Nothing of the day itself goes into its own
+ * cut-offs, so a level is something the desk could have known at the fill.
+ */
+export function ivReader(today: readonly AtmIv[], prior: readonly AtmIv[]): (at: number) => VolLevel | null {
+  const all: number[] = [];
+  const byHour = new Map<number, number[]>();
+  for (const r of prior) {
+    if (!(r.iv > 0)) continue;
+    all.push(r.iv);
+    const h = hourOfDay(r.at), xs = byHour.get(h);
+    if (xs) xs.push(r.iv); else byHour.set(h, [r.iv]);
+  }
+  const thirds = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return { lo: s[Math.floor(s.length / 3)]!, hi: s[Math.floor((2 * s.length) / 3)]! }; };
+  const pooled = all.length >= IV_MIN_READINGS ? thirds(all) : null;
+  const cuts = new Map<number, { lo: number; hi: number } | null>();
+  const cutAt = (h: number) => {
+    if (!cuts.has(h)) { const xs = byHour.get(h); cuts.set(h, xs && xs.length >= IV_MIN_READINGS ? thirds(xs) : pooled); }
+    return cuts.get(h)!;
+  };
+  const xs = [...today].sort((a, b) => a.at - b.at);
+  return (at) => {
+    let lo = 0, hi = xs.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (xs[mid]!.at <= at) lo = mid + 1; else hi = mid; }
+    const r = xs[lo - 1];
+    if (!r || at - r.at > IV_STALE_MS) return null;
+    const c = cutAt(hourOfDay(at));
+    if (!c) return null;
+    return r.iv < c.lo ? 'low' : r.iv > c.hi ? 'high' : 'medium';
   };
 }
 /** The start of an expiry day on the IST clock: what a backtest's own time steps are read forward from. */
@@ -277,6 +344,18 @@ export type DayPlan = {
   /** The target and the stop in force at a moment, where they move with the clock; absent, the ones above all day. */
   targetPctAt?: (at: number) => number;
   stopPctAt?: (at: number) => number;
+  /**
+   * The option's stop by how volatile the market was at the signal's fill (the volatility study, 17 Oct 2026): it
+   * replaces `stopPct` and `stopPctAt` for that trade. A level that cannot be said keeps the plan's own stop.
+   */
+  stopPctByVol?: Record<VolLevel, number> | null;
+  /**
+   * The strike by the same level (the volatility study, 17 Oct 2026: "delta by volatility -- high 0.08, low 0.12"):
+   * each level's own pick, in place of `pick` for that trade. A level that cannot be said keeps `pick`.
+   */
+  pickByVol?: Record<VolLevel, DayPlan['pick']> | null;
+  /** The lots by the same level ("fewer lots when it is volatile"), in place of the pick's own. A level not known keeps them. */
+  lotsByVol?: Record<VolLevel, number> | null;
   /** At most this many open at once; null, any number. */
   maxOpen: number | null;
   /** The desk's own limits on top: at most this many across all, and each side at most so many. Null: none. */
@@ -571,14 +650,16 @@ export function simulateTogether(o: {
     if (near === -1 || Math.abs(times[near]! - t0) > BOARD_NEAR_MS) { skip('no-board'); continue; }
     const cp = sig.dir === 1 ? 'P' as const : 'C' as const;
     // Several trades may share a contract, and several books one signal, as on the desk (the one-per-contract rule of 14 Oct morning was lifted).
-    const pickKey = near * 2 + (cp === 'P' ? 1 : 0);
+    // The strike rule of this signal's level where the plan picks by volatility; the reading, the side and the rule decide the pick.
+    const levelPick = plan.pickByVol && vol ? plan.pickByVol[vol] : null;
+    const pickKey = (near * 2 + (cp === 'P' ? 1 : 0)) * 4 + (levelPick && vol ? 1 + VOL_LEVELS.indexOf(vol) : 0);
     let picked = picks.get(pickKey);
     if (picked === undefined) {
-      picked = plan.pick(readingAt(board, times[near]!), cp, times[near]!);
+      picked = (levelPick ?? plan.pick)(readingAt(board, times[near]!), cp, times[near]!);
       picks.set(pickKey, picked);
     }
     if (!picked) { skip('no-strike'); continue; }
-    const pick = picked.row, lots = picked.lots;
+    const pick = picked.row, lots = plan.lotsByVol && vol ? plan.lotsByVol[vol] : picked.lots;
     const entry = pick.bid!, entryAt = times[near]!;
     const target = plan.targetOf(sig);
 
@@ -594,10 +675,12 @@ export function simulateTogether(o: {
 
     // The option's own readings between: its target (a resting buy, filled at its price) and its stop (bought at the offer).
     const series = board.series.get(`${cp}${pick.strike}`);
-    // The option's own levels at a moment: fixed all day, or by the clock where the plan has steps.
-    const tgtAtFn = plan.targetPctAt, stopAtFn = plan.stopPctAt;
+    // The option's own levels at a moment: fixed all day, or by the clock where the plan has steps -- or, where the
+    // plan sets the stop by volatility and this signal's level is known, that level's stop for the whole trade.
+    const volStop = plan.stopPctByVol && vol ? plan.stopPctByVol[vol] : null;
+    const tgtAtFn = plan.targetPctAt, stopAtFn = volStop === null ? plan.stopPctAt : undefined;
     const level = (pc: number, sign: 1 | -1) => (pc > 0 ? entry * (1 + sign * pc) : null);
-    const fixedTgt = level(plan.targetPct, -1), fixedStop = level(plan.stopPct, 1);
+    const fixedTgt = level(plan.targetPct, -1), fixedStop = level(volStop ?? plan.stopPct, 1);
     let restingAt = tgtAtFn ? level(pctAt(tgtPcts, tgtAtFn, entryAt), -1) : fixedTgt;
     const tgtAtEntry = restingAt, stopAtEntry = stopAtFn ? level(pctAt(stopPcts, stopAtFn, entryAt), 1) : fixedStop;
     let exit: number | null = null, exitAt = perpAt, by: BtExit = perpBy;
@@ -732,14 +815,14 @@ type HeldDay = { at: number; cells: BtCell[]; tally: Tally[]; spans: Span[]; gra
 const held = new Map<string, HeldDay>();
 /** At most this many worked days are kept -- some sixty sets of settings over a fortnight; the longest unasked-for goes first. */
 const HELD_MAX = 800;
-export function clearSignalBacktestCache(): void { held.clear(); raw.clear(); }
+export function clearSignalBacktestCache(): void { held.clear(); raw.clear(); ivHeld.clear(); }
 /** The SL or the TGT outside the range asked for: nearer than a minimum, or further than a maximum. 0 is no bound. */
 function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMin' | 'slMax' | 'tgtMin' | 'tgtMax'>): boolean {
   const sl = Math.abs(sig.fillPrice - sig.stop), tgt = Math.abs(sig.fillPrice - target);
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}`;
+const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   const text = JSON.stringify(s.config);
@@ -812,8 +895,55 @@ async function rawDay(day: string, now: number, marksSeen: number): Promise<RawD
   return out;
 }
 
+/** Each expiry day's ATM IV, a reading every five minutes (`option_snapshots`); a settled day is kept, as `raw` keeps its board. */
+const ivHeld = new Map<string, { at: number; xs: AtmIv[] }>();
+const IV_HELD_MAX = 120;
+/** The days before one that its IV levels may be cut from: enough calendar days to find `IV_DAYS` with readings. */
+const ivBack = (day: string) => Array.from({ length: IV_DAYS + 4 }, (_, i) => new Date(Date.parse(`${day}T00:00:00Z`) - (i + 1) * 86_400_000).toISOString().slice(0, 10));
+
+async function atmIvDays(days: readonly string[], now: number): Promise<Map<string, AtmIv[]>> {
+  const out = new Map<string, AtmIv[]>();
+  const want: string[] = [];
+  for (const d of new Set(days)) {
+    const h = ivHeld.get(d), { to } = sessionOf(d);
+    if (h && (h.at >= to + SETTLED_MS || now - h.at < FRESH_MS)) out.set(d, h.xs); else want.push(d);
+  }
+  if (!want.length) return out;
+  const spans = want.map((d) => ({ d, code: expiryCodeOf(d), ...sessionOf(d) }));
+  // The call and the put nearest the money at each reading of each day's own contract; nothing else of the board is read.
+  const got = await rows<{ expiry: string; at: string; cp: 'C' | 'P'; iv: number | null }>(
+    `SELECT DISTINCT ON (expiry, at, cp) expiry, at, cp, mark_iv AS iv FROM option_snapshots
+      WHERE expiry = ANY($1) AND at >= $2 AND at < $3 AND spot IS NOT NULL AND mark_iv > 0
+      ORDER BY expiry, at, cp, abs(strike - spot)`,
+    [spans.map((s) => s.code), Math.min(...spans.map((s) => s.from)), Math.max(...spans.map((s) => s.to))]);
+  for (const s of spans) {
+    const xs = atmIvOf(got.filter((g) => g.expiry === s.code && Number(g.at) >= s.from && Number(g.at) < s.to)
+      .map((g) => ({ at: Number(g.at), cp: g.cp, iv: g.iv === null ? null : Number(g.iv) })));
+    ivHeld.delete(s.d);
+    ivHeld.set(s.d, { at: now, xs });
+    out.set(s.d, xs);
+  }
+  while (ivHeld.size > IV_HELD_MAX) ivHeld.delete(ivHeld.keys().next().value!);
+  return out;
+}
+/** Every day of a range read in one go, with the days before each that its levels are cut from: then `ivReaderOf` finds them kept. */
+async function preloadIv(days: readonly string[], now: number): Promise<void> {
+  await atmIvDays(days.flatMap((d) => [d, ...ivBack(d)]), now);
+}
+/** A day's IV reader (`ivReader`), its levels cut from the `IV_DAYS` latest expiry days before it that have readings. */
+async function ivReaderOf(day: string, now: number): Promise<(at: number) => VolLevel | null> {
+  const back = ivBack(day);
+  const m = await atmIvDays([day, ...back], now);
+  const prior = back.map((d) => m.get(d) ?? []).filter((xs) => xs.length).slice(0, IV_DAYS).flat();
+  return ivReader(m.get(day) ?? [], prior);
+}
+/** A day's volatility reader for one backtest's settings: the candles' (`volReader`) or the board's IV (`ivReader`). */
+async function volAtFor(by: VolBy | undefined, day: string, minutes: readonly MinuteBar[], baseline: number | null, now: number): Promise<(at: number) => VolLevel | null> {
+  return by === 'iv' ? ivReaderOf(day, now) : volReader(minutes, baseline);
+}
+
 /** One day under one set of rules. `takes` narrows the signals to those the rules are about at all (a strategy's methods and timeframes). */
-async function dayOf(day: string, key: string, now: number, planFor: (span: { from: number; to: number }) => DayPlan, takes: (sig: BtSignal) => boolean, vol: { only: VolLevel | null; baseline: number | null }, marksSeen = 0): Promise<HeldDay> {
+async function dayOf(day: string, key: string, now: number, planFor: (span: { from: number; to: number }) => DayPlan, takes: (sig: BtSignal) => boolean, vol: { only: VolLevel | null; baseline: number | null; by?: VolBy }, marksSeen = 0): Promise<HeldDay> {
   const id = `${day}|${key}|marks:${marksSeen}`;
   const h = held.get(id);
   const { from, to } = sessionOf(day);
@@ -822,7 +952,7 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
   const signals = d.signals.filter(takes);
   const r = simulateDay({
     from, to, signals, plan: planFor({ from, to }),
-    volAt: volReader(d.minutes, vol.baseline), volOnly: vol.only,
+    volAt: await volAtFor(vol.by, day, d.minutes, vol.baseline, now), volOnly: vol.only,
     bars: d.minutes.filter((b) => b.at >= from),
     board: d.board,
   });
@@ -961,7 +1091,7 @@ export function portfolioBacktestHere(o: PortfolioAsk): Promise<BacktestPortfoli
 }
 
 /** What one backtest asks of a day's signals, with no limit of the desk's on it: which it is about, how it trades them, its volatility filter. */
-function bookOf(o: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>): { takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }) => DayPlan; volOnly: VolLevel | null } {
+function bookOf(o: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>): { takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }) => DayPlan; volOnly: VolLevel | null; volBy: VolBy } {
   const st = o.strategy ?? null, rule = st?.config.signal ?? null;
   const free = { ...o.params, deskMax: 0 };
   return {
@@ -969,7 +1099,13 @@ function bookOf(o: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>): { take
       && (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method)),
     planFor: (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)),
     volOnly: o.params.vol && o.params.vol !== 'off' ? o.params.vol : null,
+    volBy: o.params.volBy ?? 'atr',
   };
+}
+/** A day's readers for the books that need them: the candles' always (it costs nothing), the IV's only where a book reads it. */
+async function dayReaders(books: readonly { volBy: VolBy }[], day: string, minutes: readonly MinuteBar[], baseline: number | null, now: number): Promise<Record<VolBy, (at: number) => VolLevel | null>> {
+  const atr = volReader(minutes, baseline);
+  return { atr, iv: books.some((b) => b.volBy === 'iv') ? await ivReaderOf(day, now) : () => null };
 }
 
 /** The members traded as one account: one clock, one line, one limit on what is open (`simulateTogether`). */
@@ -993,11 +1129,11 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
   for (const d of days) {
     const { from, to } = sessionOf(d.day);
     const raw = await rawDay(d.day, o.now, fetched.get(expiryCodeOf(d.day))?.contracts ?? 0);
-    const volAt = volReader(raw.minutes, baselineOf(d.day));
     const live = books.flatMap((b, i) => (b ? [{ i, b }] : []));
+    const readers = await dayReaders(live.map(({ b }) => b), d.day, raw.minutes, baselineOf(d.day), o.now);
     const outs = simulateTogether({
       from, to, bars: raw.minutes.filter((x) => x.at >= from), board: raw.board, shared: caps,
-      books: live.map(({ b }) => ({ signals: raw.signals.filter(b.takes), plan: b.planFor({ from, to }), volAt, volOnly: b.volOnly })),
+      books: live.map(({ b }) => ({ signals: raw.signals.filter(b.takes), plan: b.planFor({ from, to }), volAt: readers[b.volBy], volOnly: b.volOnly })),
     });
     const row = { day: d.day, live: d.live, n: 0, wins: 0, net: 0, charges: 0, byMember: o.members.map(() => 0) };
     const all: { at: number; until: number; margin: number; lots: number }[] = [];
@@ -1095,6 +1231,8 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
     return prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
   };
   const volOnly: VolLevel | null = o.params.vol && o.params.vol !== 'off' ? o.params.vol : null;
+  const volBy: VolBy = o.params.volBy ?? 'atr';
+  if (volBy === 'iv') await preloadIv(days.map((d) => d.day), o.now);
   const names = new Map((await rows<{ id: string; n: number | null; name: string }>('SELECT id, n, name FROM entry_methods')).map((m) => [m.id, m.n === null ? m.name : `#${m.n} ${m.name}`]));
   const nameOf = (id: string) => names.get(id) ?? id;
   const skipped = noSkips();
@@ -1118,9 +1256,9 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
   const chosen = (sig: BtSignal) => (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method));
   const takes = (sig: BtSignal) => ownOnly(sig) && (caps === null || chosen(sig));
   const filterKey = caps === null ? '' : `|tf:${(o.tfs ?? []).join(',')}|m:${(o.methods ?? []).join(',')}`;
-  const key = (st ? `${strategyKey(st)}${o.draft ? '|draft' : ''}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|vol:${volOnly}` : paramsKey(o.params)) + filterKey;
+  const key = (st ? `${strategyKey(st)}${o.draft ? '|draft' : ''}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|vol:${volOnly}|vb:${volBy}` : paramsKey(o.params)) + filterKey;
   for (const d of days) {
-    const h = await dayOf(d.day, key, o.now, (span) => (st ? strategyPlan(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day) }, marksSeen(d.day));
+    const h = await dayOf(d.day, key, o.now, (span) => (st ? strategyPlan(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day), by: volBy }, marksSeen(d.day));
     grainOf.set(d.day, h.grain);
     // The counts follow the time frame and method filters as the rows do: "N signals, M traded" is of what is shown.
     for (const x of h.tally) {
@@ -1136,7 +1274,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
   if (caps !== null) {
     const free = { ...o.params, deskMax: 0 };
     for (const d of days) {
-      const h = await dayOf(d.day, st ? `${strategyKey(st)}|vol:${volOnly}` : paramsKey(free), o.now, (span) => (st ? strategyPlan(st, span, null) : planOfParams(free, span)), ownOnly, { only: volOnly, baseline: baselineOf(d.day) }, marksSeen(d.day));
+      const h = await dayOf(d.day, st ? `${strategyKey(st)}|vol:${volOnly}|vb:${volBy}` : paramsKey(free), o.now, (span) => (st ? strategyPlan(st, span, null) : planOfParams(free, span)), ownOnly, { only: volOnly, baseline: baselineOf(d.day), by: volBy }, marksSeen(d.day));
       listCells.push(...h.cells);
     }
   } else listCells.push(...every);
@@ -1146,6 +1284,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
       rule: st.config.strikeRule === 'delta' ? 'delta' : 'premium', value: st.config.strikeRule === 'delta' ? (st.config.delta?.max ?? 0) : (st.config.premium?.usd ?? 0), lots: st.config.lots,
       targetPct: exits.target.mode === 'pct' ? exits.target.value : 0, stopPct: exits.stop.mode === 'pct' ? exits.stop.value : 0, window: 'desk',
       deskMax: o.params.deskMax ?? 0, cePct: o.params.cePct ?? 100, pePct: o.params.pePct ?? 100, vol: o.params.vol ?? 'off',
+      ...(volBy === 'iv' ? { volBy } : {}),
     }
     : o.params;
   const real = st && o.draft ? zeroTot() : st
@@ -1202,6 +1341,187 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
         .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })),
     },
   };
+}
+
+// ------------------------------------------------------------------------------------------------ the volatility study
+
+/**
+ * Does the option's stop want to move with volatility? (owner, 17 Oct 2026: the research on two years of settled
+ * chains found a stop set tighter when it is volatile and wider when it is calm did better than one stop -- "show
+ * it on the desk's own trades before anything changes".) Report only: nothing here is read by a strategy or an order.
+ *
+ * Every signal the settings (or the strategy) take is traded three times on the same board, the same fills and the
+ * same charges: with the plan's own stop, and with a stop by the level at the signal's fill -- once by the candles'
+ * ATR, once by the board's ATM IV (`VolBy`). No limit on what is open, the strategy's "at most open" included: an
+ * earlier exit must not free a place for a trade the other rule did not take, so the three are the same trades and
+ * differ only in where the stop sat. A signal whose level cannot be said keeps the plan's own stop.
+ */
+export const VOL_STUDY_SL: Record<VolLevel, number> = { low: 2.5, medium: 2, high: 1.5 };
+/**
+ * What is set by the level: the option's stop (per level, shares of the premium: 1.5 is +150%), the strike's delta
+ * (per level, the most a strike may have: 0.08), the lots (per level, whole), or any of them together. At least one.
+ */
+export type VolRule = { sl: Record<VolLevel, number> | null; delta: Record<VolLevel, number> | null; lots?: Record<VolLevel, number> | null };
+export const VOL_STUDY_DELTA: Record<VolLevel, number> = { low: 0.12, medium: 0.1, high: 0.08 };
+/** Fewer when it is volatile (owner, 17 Oct 2026: "Low / Medium 2 lots, High 1 lot"). */
+export const VOL_STUDY_LOTS: Record<VolLevel, number> = { low: 2, medium: 2, high: 1 };
+export type VolStudyAsk = Ask & VolRule;
+/**
+ * The same study over saved backtests run together (owner, 17 Oct 2026: "portfolio-la illa"): each traded on its own
+ * signals by its own settings, with no limit -- the shared one included, for the same reason as above -- and the
+ * trades of all of them added up day by day. One that cannot be worked is listed with why and counted as nothing.
+ */
+export type PortfolioVolStudyAsk = Pick<PortfolioAsk, 'from' | 'to' | 'now' | 'spot' | 'members'> & VolRule;
+export type VolStudyLevel = VolLevel | 'unknown';
+export const VOL_STUDY_LEVELS: readonly VolStudyLevel[] = ['low', 'medium', 'high', 'unknown'];
+export type VolStudyLine = {
+  rule: 'fixed' | 'by-vol';
+  n: number; wins: number; net: number; charges: number;
+  /** The lots of all its trades together: with lots by level, the money is of another size, and net per lot is what compares. */
+  lots: number;
+  /** Trades the option's own stop closed. */
+  stopHits: number;
+  /** The expiry day that lost the most, and what it lost; null with no trades. */
+  worstDay: { day: string; net: number } | null;
+  /** The deepest fall of the running total from its high, day by day, dollars. */
+  maxDrawdown: number;
+  /** The first half of the days and the second, apart: a rule that only works on one of them is not a rule. */
+  halves: [number, number];
+  byLevel: { level: VolStudyLevel; n: number; wins: number; net: number; stopHits: number }[];
+};
+export type VolStudy = {
+  from: string; to: string; days: number;
+  /** The first day of the second half. */
+  secondHalfFrom: string | null;
+  /**
+   * The plan's own stop: a share of the premium (0 none), and whether it moves with the clock. Over several saved
+   * backtests, `each` is every one's own (distinct, in order); `pct` is the first's.
+   */
+  fixed: { pct: number; stepped: boolean; each: number[] };
+  /** Each level's stop, and each level's delta: what the "by volatility" rule set. Null: that one was left as set. */
+  sl: Record<VolLevel, number> | null;
+  delta: Record<VolLevel, number> | null;
+  lots: Record<VolLevel, number> | null;
+  signals: number;
+  sources: { by: VolBy; lines: VolStudyLine[] }[];
+  /**
+   * Both rules traded the same signals on every day. With the stop alone they must; with the delta by level a signal
+   * may find no strike worth selling inside its level's delta, and is then traded by one rule only.
+   */
+  sameTrades: boolean;
+  /** Over saved backtests run together: each, and why one could not be worked (null: it was). Absent for one backtest. */
+  members?: { id: string; name: string; problem: string | null }[];
+};
+
+type Labelled = { day: string; t: BtTrade; level: VolStudyLevel };
+function studyLine(rule: VolStudyLine['rule'], xs: readonly Labelled[], days: readonly string[], mid: number): VolStudyLine {
+  const byDay = new Map(days.map((d) => [d, 0]));
+  const lv = new Map(VOL_STUDY_LEVELS.map((l) => [l, { level: l, n: 0, wins: 0, net: 0, stopHits: 0 }]));
+  let n = 0, wins = 0, net = 0, charges = 0, stopHits = 0, lots = 0;
+  for (const { day, t, level } of xs) {
+    const win = t.netUsd > 0, stop = t.by === 'option-sl';
+    n++; net += t.netUsd; charges += t.chargesUsd; lots += t.lots; if (win) wins++; if (stop) stopHits++;
+    byDay.set(day, (byDay.get(day) ?? 0) + t.netUsd);
+    const l = lv.get(level)!;
+    l.n++; l.net += t.netUsd; if (win) l.wins++; if (stop) l.stopHits++;
+  }
+  let run = 0, peak = 0, maxDrawdown = 0, worstDay: VolStudyLine['worstDay'] = null;
+  const halves: [number, number] = [0, 0];
+  days.forEach((d, i) => {
+    const v = byDay.get(d) ?? 0;
+    run += v; peak = Math.max(peak, run); maxDrawdown = Math.max(maxDrawdown, peak - run);
+    halves[i < mid ? 0 : 1] += v;
+    if (xs.some((x) => x.day === d) && (worstDay === null || v < worstDay.net)) worstDay = { day: d, net: v };
+  });
+  return { rule, n, wins, net, charges, lots, stopHits, worstDay, maxDrawdown, halves, byLevel: [...lv.values()] };
+}
+
+type StudyBook = Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>;
+async function volStudyOf(o: { from: string; to: string; now: number; books: readonly StudyBook[] } & VolRule): Promise<Omit<VolStudy, 'members'>> {
+  await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
+  const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
+  const known = await marketDays(before, o.to, o.now);
+  const days = known.filter((d) => d.day >= o.from).map((d) => d.day);
+  const baselineOf = (day: string): number | null => {
+    const prior = known.filter((d) => d.day < day && d.stats && !d.live).slice(-5).map((d) => d.stats!.atr);
+    return prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
+  };
+  await preloadIv(days, o.now);
+  const fetched = await marksFetchedBy(days.map(expiryCodeOf));
+  const books = o.books.map((b) => {
+    const st = b.strategy ?? null, rule = st?.config.signal ?? null;
+    return {
+      takes: (sig: BtSignal) => (!rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method)))
+        && (!b.tfs || b.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!b.methods || b.methods.includes(sig.method)),
+      // No limit of any kind, so the rules trade the same signals; the volatility filter is the study's own subject, so it is off too.
+      planFor: (span: { from: number; to: number }, byVol: VolRule | null): DayPlan => {
+        const base = st ? { ...planOfStrategy(st, span, null), maxOpen: null } : planOfParams({ ...b.params, deskMax: 0 }, span);
+        if (!byVol) return base;
+        // A level's strike: the live rules' own pick with that delta -- the settings' rule turned to delta, or the
+        // strategy's with its strike blocks set aside (one delta for the level, not the clock's).
+        const deltaPick = (d: number): DayPlan['pick'] => (st
+          ? planOfStrategy({ ...st, config: { ...st.config, strikeRule: 'delta', delta: { ...st.config.delta, max: d }, strikeBlocks: [] } } as Strategy, span, null).pick
+          : planOfStrategy(strategyOfParams({ ...b.params, rule: 'delta', value: d }, null, null), span).pick);
+        return {
+          ...base,
+          ...(byVol.sl ? { stopPctByVol: byVol.sl } : {}),
+          ...(byVol.lots ? { lotsByVol: byVol.lots } : {}),
+          ...(byVol.delta ? { pickByVol: { low: deltaPick(byVol.delta.low), medium: deltaPick(byVol.delta.medium), high: deltaPick(byVol.delta.high) } } : {}),
+        };
+      },
+    };
+  });
+  const fixedTrades: Labelled[][] = [[], []], volTrades: Labelled[][] = [[], []];
+  let signals = 0, sameTrades = true;
+  const fixedOf = books.map(() => ({ pct: 0, stepped: false }));
+  // The signal a trade is of: by the delta of its level the same signal may sell another strike, and is still the same trade.
+  const keyOf = (t: BtTrade) => `${t.signal.method}|${t.signal.mode}|${t.signal.tf}|${t.signal.dir}|${t.signal.filledAt}|${t.signal.fillPrice}`;
+  for (const day of days) {
+    const { from, to } = sessionOf(day);
+    const raw = await rawDay(day, o.now, fetched.get(expiryCodeOf(day))?.contracts ?? 0);
+    const readers: Record<VolBy, (at: number) => VolLevel | null> = { atr: volReader(raw.minutes, baselineOf(day)), iv: await ivReaderOf(day, o.now) };
+    const bars = raw.minutes.filter((b) => b.at >= from);
+    books.forEach((b, i) => {
+      const sigs = raw.signals.filter(b.takes);
+      signals += sigs.length;
+      const base = b.planFor({ from, to }, null);
+      fixedOf[i] = { pct: base.stopPct, stepped: !!base.stopPctAt };
+      const play = (plan: DayPlan, volAt: (at: number) => VolLevel | null) => simulateDay({ from, to, signals: sigs, plan, volAt, bars, board: raw.board }).trades;
+      const flat = play(base, readers.atr);
+      VOL_BYS.forEach((by, k) => {
+        const read = readers[by];
+        fixedTrades[k]!.push(...flat.map((t) => ({ day, t, level: read(t.signal.filledAt) ?? 'unknown' as const })));
+        const moved = play(b.planFor({ from, to }, { sl: o.sl, delta: o.delta, lots: o.lots ?? null }), read);
+        volTrades[k]!.push(...moved.map((t) => ({ day, t, level: t.vol ?? 'unknown' as const })));
+        if (moved.length !== flat.length || moved.some((t, j) => keyOf(t) !== keyOf(flat[j]!))) sameTrades = false;
+      });
+    });
+  }
+  const mid = Math.ceil(days.length / 2);
+  const each = [...new Set(fixedOf.map((f) => f.pct))];
+  return {
+    from: o.from, to: o.to, days: days.length, secondHalfFrom: days[mid] ?? null, sl: o.sl ? { ...o.sl } : null, delta: o.delta ? { ...o.delta } : null, lots: o.lots ? { ...o.lots } : null, signals, sameTrades,
+    fixed: { pct: fixedOf[0]?.pct ?? 0, stepped: fixedOf.some((f) => f.stepped), each },
+    sources: VOL_BYS.map((by, k) => ({ by, lines: [studyLine('fixed', fixedTrades[k]!, days, mid), studyLine('by-vol', volTrades[k]!, days, mid)] })),
+  };
+}
+
+const volStudyNow = (o: VolStudyAsk): Promise<VolStudy> => volStudyOf({ from: o.from, to: o.to, now: o.now, sl: o.sl, delta: o.delta, lots: o.lots ?? null, books: [o] });
+async function portfolioVolStudyNow(o: PortfolioVolStudyAsk): Promise<VolStudy> {
+  const r = await volStudyOf({ from: o.from, to: o.to, now: o.now, sl: o.sl, delta: o.delta, lots: o.lots ?? null, books: o.members.flatMap((m) => (m.ask && !m.problem ? [m.ask] : [])) });
+  return { ...r, members: o.members.map((m) => ({ id: m.id, name: m.name, problem: m.ask && !m.problem ? null : (m.problem ?? 'It cannot be worked out.') })) };
+}
+
+/** The volatility study in the thread that asks for it, one at a time with the backtests (`signalBacktestHere`). */
+export function volStudyHere(o: VolStudyAsk): Promise<VolStudy> {
+  const run = working.then(() => volStudyNow(o));
+  working = run.catch(() => { });
+  return run;
+}
+export function portfolioVolStudyHere(o: PortfolioVolStudyAsk): Promise<VolStudy> {
+  const run = working.then(() => portfolioVolStudyNow(o));
+  working = run.catch(() => { });
+  return run;
 }
 
 // ------------------------------------------------------------------------------------------------ the live check
@@ -1725,7 +2045,7 @@ async function signalBacktestDayRows(o: Ask, day: string, member?: string): Prom
   const volOnly: VolLevel | null = o.params.vol && o.params.vol !== 'off' ? o.params.vol : null;
   const r = simulateDay({
     from: c.from, to: c.to, signals: c.raw.signals.filter(takes), plan,
-    volAt: volReader(c.raw.minutes, c.baseline), volOnly, bars: c.raw.minutes.filter((b) => b.at >= c.from), board: c.raw.board,
+    volAt: await volAtFor(o.params.volBy, day, c.raw.minutes, c.baseline, o.now), volOnly, bars: c.raw.minutes.filter((b) => b.at >= c.from), board: c.raw.board,
   });
   return r.trades.filter((t) => chosen(t.signal)).map((t) => rowOf(t, c.nameOf, member));
 }
@@ -1741,10 +2061,10 @@ async function portfolioDayRows(o: PortfolioAsk, day: string): Promise<BtTradeRo
   }
   const c = await dayContext(day, o.now);
   const books = members.map((m) => ({ m, b: bookOf(m.ask!) }));
-  const volAt = volReader(c.raw.minutes, c.baseline);
+  const readers = await dayReaders(books.map(({ b }) => b), day, c.raw.minutes, c.baseline, o.now);
   const outs = simulateTogether({
     from: c.from, to: c.to, bars: c.raw.minutes.filter((x) => x.at >= c.from), board: c.raw.board, shared: caps,
-    books: books.map(({ b }) => ({ signals: c.raw.signals.filter(b.takes), plan: b.planFor({ from: c.from, to: c.to }), volAt, volOnly: b.volOnly })),
+    books: books.map(({ b }) => ({ signals: c.raw.signals.filter(b.takes), plan: b.planFor({ from: c.from, to: c.to }), volAt: readers[b.volBy], volOnly: b.volOnly })),
   });
   return books.flatMap(({ m }, k) => outs[k]!.trades.map((t) => rowOf(t, c.nameOf, m.name)));
 }

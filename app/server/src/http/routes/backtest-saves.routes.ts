@@ -4,8 +4,8 @@ import {
   PORTFOLIO_MEMBERS_MAX, clonePortfolio, cloneSave, dropPortfolio, dropSave, groupProblem, keepPortfolio, keepSave, listSaves, nameProblem, renameGroup, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
 import { backtestable, type BacktestParams } from '../../report/signal-backtest.js';
-import { liveCheck, portfolioBacktest, portfolioTrades } from '../../report/backtest-run.js';
-import { backtestParamsFrom, backtestParamsOf, liveAccounts, rangeOf } from './market.routes.js';
+import { liveCheck, portfolioBacktest, portfolioTrades, portfolioVolStudy } from '../../report/backtest-run.js';
+import { backtestParamsFrom, backtestParamsOf, liveAccounts, rangeOf, volRuleOf } from './market.routes.js';
 import { strategyStore } from './strategy.routes.js';
 import { refuse } from '../refuse.js';
 
@@ -219,6 +219,22 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
     if ([slotFrom, slotTo].some((x) => x !== null && !(Number.isInteger(x) && x >= 0 && x <= 95))) return refuse(reply, 400, { error: 'A session is fifteen-minute slots from 0 (5:30 PM) to 95.' });
     const pick = { day, slotFrom, slotTo, method: typeof q.smethod === 'string' && q.smethod !== '' ? q.smethod : null };
     return portfolioTrades({ ...asked.r, now: Date.now(), spot: tradingService().spot, shared: asked.shared, members: asked.members }, pick);
+  });
+
+  /**
+   * The option's stop and strike as saved, against a stop and a delta by volatility, over the saved backtests of a run
+   * (17 Oct 2026): the run's own query -- its hours and the settings put over it -- with what is set by level as the
+   * single backtest's study (`volRuleOf`).
+   * Each is traded on its own signals with no limit, the run's shared one included, so both rules trade the same
+   * signals; their trades are added up day by day. Read-only.
+   */
+  app.get('/api/backtest-portfolio/vol-study', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const asked = await portfolioQuery(q);
+    if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
+    const rule = volRuleOf(q);
+    if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
+    return portfolioVolStudy({ ...asked.r, now: Date.now(), spot: tradingService().spot, members: asked.members, ...rule });
   });
 
   /**

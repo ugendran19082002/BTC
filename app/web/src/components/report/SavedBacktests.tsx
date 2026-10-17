@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePersisted } from '@/hooks/usePersisted';
 import { ChevronDown, Copy, FolderOpen, Pencil, Search, Trash2 } from 'lucide-react';
-import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
+import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, getPortfolioVolStudy, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { time12 } from '@/lib/time';
 import { overWords } from '@/components/report/backtest-words';
 import { LiveCheck } from '@/components/report/LiveCheck';
+import { VolStudy } from '@/components/report/VolStudy';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BtDayTrades, BtRow, SavedQuery, TradePick } from '@/types/signal-backtest';
@@ -36,7 +37,7 @@ function shapeOf(q: SavedQuery): string {
     hours: p.window === 'custom' ? [p.hoursFrom ?? '', p.hoursTo ?? ''] : null,
     deskMax: p.deskMax ?? 0, cePct: p.cePct ?? 100, pePct: p.pePct ?? 100,
     range: [p.slMin ?? 0, p.slMax ?? 0, p.tgtMin ?? 0, p.tgtMax ?? 0],
-    steps: (p.targetSteps ?? []).map((s) => [s.at, Math.round(s.pct * 10_000)]), vol: p.vol ?? 'off', minPremium: p.minPremium ?? 10,
+    steps: (p.targetSteps ?? []).map((s) => [s.at, Math.round(s.pct * 10_000)]), vol: p.vol ?? 'off', volBy: p.volBy ?? 'atr', minPremium: p.minPremium ?? 10,
     noEntry: p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`) : null,
     tfs: [...q.tfs].sort(), methods: [...q.methods].sort(), strategy: q.strategy,
   });
@@ -61,7 +62,7 @@ function PortfolioResult({ title, r, wide, readTrades }: {
   }));
   const failed = r.members.filter((m) => m.problem);
   return (
-    <Panel title={`Run together · ${title}`}>
+    <Panel title={`Run together · ${title}`} foldKey="Run together">
       <p className="m-0 text-[13px] text-muted-foreground">
         {dayLabel(r.from)} → {dayLabel(r.to)} · {r.members.length} saved backtests,{' '}
         {r.shared
@@ -221,6 +222,8 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
       <RunNote r={result.data} />
       <PortfolioResult title={run.title} r={result.data} wide={wide} readTrades={(pick) => getPortfolioTrades(pick, run.ids, range, limit, asked, hours, over)} />
       {/* The same run beside the live desk (14 Oct 2026): its own question, so the hours and settings over the run are over the check. */}
+      {/* The SL, delta and lots by volatility over the run's saved backtests (17 Oct 2026): each on its own signals, added up. */}
+      <VolStudy askKey={askKey} wide={wide} read={(a) => getPortfolioVolStudy(a, run.ids, range, limit, asked, hours, over)} title="By volatility · SL, delta, lots · over the run" />
       <LiveCheck askKey={askKey} read={() => getPortfolioLiveCheck(run.title, run.ids, range, limit, asked, hours, over)} />
       <button type="button" className={cn(link, 'justify-self-start')} onClick={onClose}>Close the run together</button>
     </Updating>

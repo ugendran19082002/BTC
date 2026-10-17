@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
+import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse, VolAsk, VolStudyResult } from '@/types/signal-backtest';
 import type { AutoMethodsRun, StrategyConfig } from '@/types/strategy';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 
@@ -13,6 +13,7 @@ function searchOf(q: BacktestQuery): URLSearchParams {
   for (const [k, v] of [['slmin', q.params.slMin], ['slmax', q.params.slMax], ['tgtmin', q.params.tgtMin], ['tgtmax', q.params.tgtMax]] as const) if (v) p.set(k, String(v));
   if (q.params.targetSteps?.length) p.set('tsteps', q.params.targetSteps.map((x) => `${x.at}:${Math.round(x.pct * 10_000) / 100}`).join(','));
   if (q.params.vol && q.params.vol !== 'off') p.set('vol', q.params.vol);
+  if (q.params.volBy === 'iv') p.set('volby', 'iv');
   if (q.params.minPremium !== undefined && q.params.minPremium !== 10) p.set('minprem', String(q.params.minPremium));
   if (q.params.window === 'custom' && q.params.hoursFrom && q.params.hoursTo) { p.set('hfrom', q.params.hoursFrom); p.set('hto', q.params.hoursTo); }
   // Only windows that are right for the hours: the editor says what is wrong with any other.
@@ -46,6 +47,23 @@ export function pickQuery(pick: TradePick): [string, string][] {
     ...(pick.method ? [['smethod', pick.method]] as [string, string][] : []),
   ];
 }
+/** What is set by volatility, as the routes read it (`volRuleOf`): each rule switched, and its three levels. */
+export function volQuery(a: VolAsk): [string, string][] {
+  const out: [string, string][] = [['vsl', a.sl ? '1' : '0'], ['vdelta', a.delta ? '1' : '0'], ['vlots', a.lots ? '1' : '0']];
+  if (a.sl) out.push(['vh', String(a.sl.high)], ['vm', String(a.sl.medium)], ['vl', String(a.sl.low)]);
+  if (a.delta) out.push(['dh', String(a.delta.high)], ['dm', String(a.delta.medium)], ['dl', String(a.delta.low)]);
+  if (a.lots) out.push(['lh', String(a.lots.high)], ['lm', String(a.lots.medium)], ['ll', String(a.lots.low)]);
+  return out;
+}
+/**
+ * The option's SL, strike delta and lots as set, against the same by volatility, on the same signals (17 Oct 2026).
+ * Report only: nothing is saved or changed.
+ */
+export const getVolStudy = (q: BacktestQuery, a: VolAsk) => {
+  const p = searchOf(q);
+  for (const [k, v] of volQuery(a)) p.set(k, v);
+  return json<VolStudyResult>(`/api/signal-backtest/vol-study?${p}`);
+};
 export const getLiveCheck = (q: BacktestQuery) => json<LiveCheck>(`/api/signal-backtest/live-check?${searchOf(q)}`);
 
 /** Every method's record as options under a strategy's rules as they stand on its form -- saved or not; nothing is saved by asking. */

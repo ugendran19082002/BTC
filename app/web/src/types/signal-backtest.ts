@@ -1,6 +1,8 @@
 import type { NoEntry } from '@/types/strategy';
 /** The signal history traded as options, as `/api/signal-backtest` gives it (server: `report/signal-backtest.ts`). */
 
+export type VolLevel = 'low' | 'medium' | 'high';
+export type VolBy = 'atr' | 'iv';
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'window-end';
 export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
 export type BacktestParams = {
@@ -15,6 +17,8 @@ export type BacktestParams = {
   targetSteps?: { at: string; pct: number }[];
   /** Only signals that filled while the market was this volatile; `off` or absent, all. */
   vol?: 'off' | 'low' | 'medium' | 'high';
+  /** What that level is read from: the candles' ATR over two hours (the default, absent), or the board's ATM implied volatility. */
+  volBy?: VolBy;
   /** An option is not sold for less than this many dollars; 0 is no floor. Absent: the desk's own 10. */
   minPremium?: number;
   /** No-entry windows, the strategy form's own shape (15 Oct 2026): off, or absent, is none. */
@@ -102,6 +106,43 @@ export type BacktestPortfolioResult = {
   /** Each method in each fifteen-minute slot, all of them together; absent from an older server. */
   bySession?: BtSlotRow[];
 };
+
+/**
+ * The option's stop as set, against a stop by how volatile it was at each signal's fill, on the same trades
+ * (`/api/signal-backtest/vol-study`, server `VolStudy`): read by the candles' ATR and by the board's ATM IV.
+ */
+export type VolStudyLevel = VolLevel | 'unknown';
+export type VolStudyLine = {
+  rule: 'fixed' | 'by-vol';
+  n: number; wins: number; net: number; charges: number;
+  /** The lots of all its trades together: with lots by level the money is of another size, and net per lot compares. */
+  lots: number;
+  /** Trades the option's own stop closed. */
+  stopHits: number;
+  worstDay: { day: string; net: number } | null;
+  /** The deepest fall of the running total from its high, day by day, dollars. */
+  maxDrawdown: number;
+  /** The first half of the days and the second, apart. */
+  halves: [number, number];
+  byLevel: { level: VolStudyLevel; n: number; wins: number; net: number; stopHits: number }[];
+};
+export type VolStudyResult = {
+  from: string; to: string; days: number; secondHalfFrom: string | null;
+  /** The stop as set: a share of the premium (0 none), whether it moves by the clock, and -- over saved backtests -- each one's own. */
+  fixed: { pct: number; stepped: boolean; each: number[] };
+  /** What the rule by volatility set for each level; null, that one was left as set. Stops as shares (1.5 is +150%). */
+  sl: Record<VolLevel, number> | null;
+  delta: Record<VolLevel, number> | null;
+  lots: Record<VolLevel, number> | null;
+  signals: number;
+  sources: { by: VolBy; lines: VolStudyLine[] }[];
+  /** Both rules traded the same signals on every day (a level's delta may find no strike for some). */
+  sameTrades: boolean;
+  /** Over saved backtests run together: each, and why one could not be worked. */
+  members?: { id: string; name: string; problem: string | null }[];
+};
+/** What is set by the level, as asked: stops in per cent over the premium (150), deltas (0.08), whole lots; null is off. */
+export type VolAsk = { sl: Record<VolLevel, number> | null; delta: Record<VolLevel, number> | null; lots: Record<VolLevel, number> | null };
 
 /** Signals on one side only -- an order on the desk with no trade in the backtest, or the other way -- by why, with the first few. */
 export type LiveCheckWhy = { why: string; n: number; first: { at: number; method: string; tf: string; dir: 1 | -1 }[] };

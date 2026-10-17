@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { getBacktestTrades, getLiveCheck, getSignalBacktest } from '@/api/signal-backtest';
+import { getBacktestTrades, getLiveCheck, getSignalBacktest, getVolStudy } from '@/api/signal-backtest';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
@@ -8,7 +8,7 @@ import type { PairStat } from '@/lib/method-pairs';
 import { cn } from '@/lib/utils';
 import { time12 } from '@/lib/time';
 import type { BacktestParams, BacktestQuery, BacktestSave, BoardGrain, BtExit, BtRow, SavedQuery, TradePick } from '@/types/signal-backtest';
-import { Chip, Empty, Loading, Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
+import { ALL_OPEN, Chip, Empty, FoldAll, Loading, Panel, PanelFolds, Segmented, Stat, Stats, type FoldState } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES, type FilterSort } from '@/components/mobile/FilterPicker';
 import { WIN_AT_LEAST_PCT } from '@/lib/win-line';
@@ -23,6 +23,7 @@ import { Updating, useAnswer } from '@/components/report/Updating';
 import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
 import { LiveCheck } from '@/components/report/LiveCheck';
+import { VolStudy } from '@/components/report/VolStudy';
 import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, settingsWords } from '@/components/report/backtest-words';
 
@@ -586,6 +587,7 @@ const RESULT_PARTS = [
   { id: 'bt-methods', label: 'Methods' },
   { id: 'bt-sessions', label: 'Sessions' },
   { id: 'bt-days', label: 'Days' },
+  { id: 'bt-volsl', label: 'By volatility' },
   { id: 'bt-live', label: 'Live check' },
 ] as const;
 
@@ -710,6 +712,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       ...(byStrategy ? [] : [pts(params.slMin, params.slMax) ? `SL ${pts(params.slMin, params.slMax)}` : null, pts(params.tgtMin, params.tgtMax) ? `TGT ${pts(params.tgtMin, params.tgtMax)}` : null]),
       ...(!byStrategy && params.noEntry?.on && params.noEntry.windows.length ? [`no entry ${params.noEntry.windows.map((w) => `${time12(w.from)}–${time12(w.to)}`).join(', ')}`] : []),
       (params.vol ?? 'off') === 'off' ? 'every volatility' : `${params.vol} volatility only`,
+      params.volBy === 'iv' ? 'volatility by ATM IV' : null,
       params.deskMax > 0 ? `at most ${params.deskMax} open · CE ${params.cePct}% · PE ${params.pePct}%` : 'no open limit',
     ].filter(Boolean).join(' · '),
     filters: [
@@ -726,6 +729,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
    * together, are kept in this browser.
    */
   const [storedMode, setMode] = usePersisted<'single' | 'portfolio'>('signalBacktest.mode', 'single');
+  /*
+   * Every part of the result folds (owner, 17 Oct 2026: "the backtest and the portfolio run's output -- every part
+   * expand and collapse"), by its title, kept in this browser: the backtest's and the run's apart, all open to begin with.
+   */
+  const [resultFolds, setResultFolds] = usePersisted<FoldState>('signalBacktest.resultFolds', ALL_OPEN);
+  const [runFolds, setRunFolds] = usePersisted<FoldState>('signalBacktest.runFolds', ALL_OPEN);
   // A section kept by an older build that is no longer one (the live check had a tab for a morning) is the single backtest.
   const mode = storedMode === 'portfolio' ? 'portfolio' : 'single';
   const [together, setTogether] = usePersisted<TogetherRun | null>('signalBacktest.together', null);
@@ -867,9 +876,18 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               { key: 'medium', label: 'Medium', spoken: 'Only signals in medium volatility' },
               { key: 'high', label: 'High', spoken: 'Only signals in high volatility' },
             ]} />
+          {/* What the level is read from (17 Oct 2026): the candles, as ever, or the market's own price of the move. Read by the filter, the "By volatility" table and the SL study. */}
+          <span aria-hidden className="mt-1 text-[12px] text-muted-foreground">Volatility by</span>
+          <Segmented dense label="Volatility is read by" value={params.volBy ?? 'atr'} onChange={(volBy) => set({ volBy: volBy === 'iv' ? 'iv' : undefined })}
+            options={[
+              { key: 'atr', label: 'ATR 2h', spoken: 'Volatility by the candles: two hours of 15-minute ATR' },
+              { key: 'iv', label: 'ATM IV', spoken: 'Volatility by the at-the-money implied volatility' },
+            ]} />
           <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
-            <b className="font-medium text-foreground">Volatility filter{(params.vol ?? 'off') === 'off' ? ' · off' : ''}.</b> The last two hours of 15-minute candles when the signal fills, against the average of the five expiry days before:
-            low is under 0.8×, high over 1.3×, medium between.
+            <b className="font-medium text-foreground">Volatility filter{(params.vol ?? 'off') === 'off' ? ' · off' : ''}.</b>{' '}
+            {params.volBy === 'iv'
+              ? <>The at-the-money implied volatility when the signal fills, against the same hour of the five expiry days before: their lowest third is low, the highest high. No IV reading in the 6 minutes before the fill: unknown, never low.</>
+              : <>The last two hours of 15-minute candles when the signal fills, against the average of the five expiry days before: low is under 0.8×, high over 1.3×, medium between.</>}
           </p>
         </div>
         <section aria-label="The desk's limits" className="grid gap-2">
@@ -1036,7 +1054,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               {settingsPanel}
               {filterBlock}
             </aside>
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{result}</div>
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+              {r && <FoldAll what="the backtest result" state={resultFolds} onChange={setResultFolds} />}
+              <PanelFolds state={resultFolds} onChange={setResultFolds}>{result}</PanelFolds>
+            </div>
           </>
         ) : (
           <>
@@ -1100,8 +1121,9 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               </Panel>
             </aside>
             <div ref={resultRef} className="grid min-w-0 scroll-mt-2 grid-cols-[minmax(0,1fr)] gap-3">
+              {together && <FoldAll what="the run together" state={runFolds} onChange={setRunFolds} />}
               {together
-                ? <PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} onClose={() => setTogether(null)} />
+                ? <PanelFolds state={runFolds} onChange={setRunFolds}><PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} onClose={() => setTogether(null)} /></PanelFolds>
                 : <Panel title="Run together"><Empty>Run a portfolio, or tick two or more saved backtests and run them together: each is worked as it is alone, and they are added up -- the total, each one, each expiry day, and the margin held across all of them.</Empty></Panel>}
             </div>
           </>
@@ -1126,7 +1148,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   return page(
     <>
 
-      <ResultNav has={(id) => id === 'bt-summary' || id === 'bt-live' || t.n > 0} />
+      <ResultNav has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || t.n > 0} />
       <Updating busy={read.stale} what="the backtest">
       <div id="bt-summary" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
       <Panel title="Backtest result">
@@ -1358,6 +1380,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         {' '}— so the total is not what an account would have made: read what a trade of each kind made.
       </p>
       </Updating>
+      {/* The SL, delta and lots by volatility against the settings as set, on these settings' signals (17 Oct 2026): asked for with a tap. */}
+      <div id="bt-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><VolStudy askKey={JSON.stringify(query)} read={(a) => getVolStudy(query, a)} wide={wide} /></div>
       {/* The same backtest beside the live desk (14 Oct 2026): asked with the question on the screen, so it is the check of this result. */}
       <div id="bt-live" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><LiveCheck askKey={JSON.stringify(query)} read={() => getLiveCheck(query)} /></div>
       <DayTradesSheet day={openTrades?.key ?? null} title={openTrades?.title} read={() => getBacktestTrades(query, openTrades!.pick)} onClose={() => setOpenTrades(null)} />

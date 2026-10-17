@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { createContext, useContext, useId, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardTitle } from '@/components/ui/card';
 import { pnlTone, signedInr, signedUsd, inr, usd, usdToInr } from '@/lib/format';
@@ -194,12 +194,67 @@ export function ListButton({ onClick, label, children }: { onClick: () => void; 
   );
 }
 
+/**
+ * Panels that fold (owner, 17 Oct 2026: "the backtest and portfolio run output -- every part expand and collapse"):
+ * inside a `PanelFolds`, every Panel with a title is a heading that opens and shuts, its state kept by its title (or
+ * `foldKey`); outside one, a Panel is as it always was.
+ */
+type Folds = { isOpen: (key: string) => boolean; toggle: (key: string) => void };
+const FoldContext = createContext<Folds | null>(null);
+/** What is open: all but the exceptions, or none but them -- so "collapse all" also shuts a panel not yet on the screen. */
+export type FoldState = { mode: 'open' | 'shut'; except: string[] };
+export const ALL_OPEN: FoldState = { mode: 'open', except: [] };
+export function PanelFolds({ state, onChange, children }: { state: FoldState; onChange: (s: FoldState) => void; children: ReactNode }) {
+  const st: FoldState = state && (state.mode === 'open' || state.mode === 'shut') && Array.isArray(state.except) ? state : ALL_OPEN;
+  const folds: Folds = {
+    isOpen: (k) => (st.mode === 'open') !== st.except.includes(k),
+    toggle: (k) => onChange({ mode: st.mode, except: st.except.includes(k) ? st.except.filter((x) => x !== k) : [...st.except, k] }),
+  };
+  return <FoldContext.Provider value={folds}>{children}</FoldContext.Provider>;
+}
+/** Expand all / Collapse all, for a `PanelFolds`. */
+export function FoldAll({ state, onChange, what }: { state: FoldState; onChange: (s: FoldState) => void; what: string }) {
+  const btn = 'm-0 h-9 shrink-0 appearance-none rounded-full border border-solid border-border bg-transparent px-3 font-[inherit] text-[13px] font-medium text-foreground disabled:opacity-40';
+  const allOpen = state?.mode === 'open' && state.except.length === 0, allShut = state?.mode === 'shut' && state.except.length === 0;
+  return (
+    <div role="group" aria-label={`Open or fold every part of ${what}`} className="flex flex-wrap gap-1.5">
+      <button type="button" className={btn} disabled={allOpen} onClick={() => onChange(ALL_OPEN)}>Expand all</button>
+      <button type="button" className={btn} disabled={allShut} onClick={() => onChange({ mode: 'shut', except: [] })}>Collapse all</button>
+    </div>
+  );
+}
+
 /** A card with a title, the usual block of a screen. */
-export function Panel({ title, right, children, className }: { title?: ReactNode; right?: ReactNode; children: ReactNode; className?: string }) {
+export function Panel({ title, right, children, className, foldKey }: {
+  title?: ReactNode; right?: ReactNode; children: ReactNode; className?: string;
+  /** What its fold is kept by inside a `PanelFolds`, where its title is not plain words. */
+  foldKey?: string;
+}) {
+  const folds = useContext(FoldContext);
+  const key = foldKey ?? (typeof title === 'string' ? title : null);
+  const bodyId = useId();
+  if (!folds || title === undefined || key === null) {
+    return (
+      <Card className={className}>
+        {title !== undefined && <CardTitle right={right}>{title}</CardTitle>}
+        {children}
+      </Card>
+    );
+  }
+  const open = folds.isOpen(key);
   return (
     <Card className={className}>
-      {title !== undefined && <CardTitle right={right}>{title}</CardTitle>}
-      {children}
+      <div className={cn('flex items-center justify-between gap-2', open ? 'mb-2.5' : 'mb-0')}>
+        <h2 className="m-0 min-w-0 flex-1 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">
+          <button type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => folds.toggle(key)}
+            className="m-0 -my-1 flex min-h-[36px] w-full appearance-none items-center gap-1.5 border-0 bg-transparent p-0 text-left font-[inherit] text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground hover:text-foreground">
+            <ChevronDown size={14} aria-hidden className={cn('shrink-0 transition-transform', !open && '-rotate-90')} />
+            <span className="min-w-0 [overflow-wrap:anywhere]">{title}</span>
+          </button>
+        </h2>
+        {right}
+      </div>
+      <div id={bodyId} hidden={!open}>{open && children}</div>
     </Card>
   );
 }

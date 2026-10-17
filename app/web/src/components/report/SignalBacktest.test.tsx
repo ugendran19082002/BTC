@@ -20,7 +20,8 @@ const NO_CHECK = {
 };
 const getLiveCheck = vi.fn();
 const getBacktestTrades = vi.fn();
-vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a), getLiveCheck: (...a: unknown[]) => getLiveCheck(...a), getBacktestTrades: (...a: unknown[]) => getBacktestTrades(...a) }));
+const getVolStudy = vi.fn();
+vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a), getLiveCheck: (...a: unknown[]) => getLiveCheck(...a), getBacktestTrades: (...a: unknown[]) => getBacktestTrades(...a), getVolStudy: (...a: unknown[]) => getVolStudy(...a) }));
 
 const saves = { getBacktestSaves: vi.fn(), saveBacktest: vi.fn(), deleteBacktestSave: vi.fn(), savePortfolio: vi.fn(), deletePortfolio: vi.fn(), getBacktestPortfolio: vi.fn(), getPortfolioLiveCheck: vi.fn(), getPortfolioTrades: vi.fn() };
 vi.mock('@/api/backtest-saves', async () => ({
@@ -588,6 +589,54 @@ describe('SignalBacktest', () => {
 
     fireEvent.click(within(group).getByRole('radio', { name: 'Volatility filter off: every signal' }));
     await waitFor(() => expect(lastQuery().params.vol).toBe('off'));
+  });
+
+  it('[critical] volatility by ATR 2h to begin with; ATM IV is one tap, sent with the backtest and said in its words -- and the SL study is asked for, never run on its own', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const by = screen.getByRole('radiogroup', { name: 'Volatility is read by' });
+    expect(within(by).getByRole('radio', { name: /two hours of 15-minute ATR/ })).toBeChecked();
+    expect(lastQuery().params.volBy).toBeUndefined();
+    expect(screen.getByText(/low is under 0\.8×, high over 1\.3×/)).toBeInTheDocument();
+    fireEvent.click(within(by).getByRole('radio', { name: /at-the-money implied volatility/ }));
+    await waitFor(() => expect(lastQuery().params.volBy).toBe('iv'));
+    expect(screen.getByText(/same hour of the five expiry days before.*unknown, never low/)).toBeInTheDocument();
+    fireEvent.click(within(by).getByRole('radio', { name: /two hours of 15-minute ATR/ }));
+    await waitFor(() => expect(lastQuery().params.volBy).toBeUndefined());
+    // The study's panel is there, with a chip to it, and nothing is asked of the server until Compare.
+    expect(screen.getByRole('button', { name: 'By volatility' })).toBeInTheDocument();
+    expect(screen.getByText('By volatility · SL, delta, lots · research')).toBeInTheDocument();
+    expect(getVolStudy).not.toHaveBeenCalled();
+  });
+
+  it('[critical] every part of the result folds by its heading; Collapse all and Expand all; kept in this browser', async () => {
+    const first = show();
+    await screen.findByText('Backtest result');
+    const heading = (name: RegExp) => screen.getByRole('button', { name });
+    expect(heading(/^Backtest result$/)).toHaveAttribute('aria-expanded', 'true');
+    expect(heading(/^Closed by which exit$/)).toHaveAttribute('aria-expanded', 'true');
+    // One part shut: its body goes, its heading stays to open it again.
+    fireEvent.click(heading(/^Closed by which exit$/));
+    expect(heading(/^Closed by which exit$/)).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('table', { name: 'Backtest: which exit closed the trades' })).toBeNull();
+    expect(heading(/^Backtest result$/)).toHaveAttribute('aria-expanded', 'true');
+    // Every part at once, the research panel and the live check too.
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+    for (const n of [/^Backtest result$/, /^By time frame$/, /^By volatility · SL, delta, lots · research$/, /^Live check · /]) expect(heading(n)).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Collapse all' })).toBeDisabled();
+    fireEvent.click(heading(/^By time frame$/));
+    expect(heading(/^By time frame$/)).toHaveAttribute('aria-expanded', 'true');
+    // Kept: the screen opens again as it was left.
+    first.unmount();
+    show();
+    await screen.findByText('Backtest result');
+    expect(heading(/^Backtest result$/)).toHaveAttribute('aria-expanded', 'false');
+    expect(heading(/^By time frame$/)).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    expect(heading(/^Backtest result$/)).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('table', { name: 'Backtest: which exit closed the trades' })).toBeInTheDocument();
+    // The settings column is not part of the result: its own folds, untouched.
+    expect(screen.queryByRole('button', { name: /^Settings$/, expanded: false })).toBeNull();
   });
 
   it('[critical] says what the options were priced on -- the desk\'s 1-minute record, Delta\'s 1-minute mark, or 5-minute prices -- and each expiry day with it', async () => {

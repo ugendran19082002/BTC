@@ -2,10 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, backtestable, strategyCaveats, type BacktestParams } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
-import { liveCheck, signalBacktest, signalBacktestTrades } from '../../report/backtest-run.js';
+import { liveCheck, signalBacktest, signalBacktestTrades, volStudy } from '../../report/backtest-run.js';
 import { cleanConfig, strategyStore } from './strategy.routes.js';
 import { GLOBAL_MAX_OPEN_KEY, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
@@ -117,6 +117,9 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
   // The volatility when a signal fills: `?vol=off|low|medium|high`.
   const vol = q.vol === undefined || q.vol === '' ? 'off' : q.vol;
   if (vol !== 'off' && vol !== 'low' && vol !== 'medium' && vol !== 'high') return 'The volatility filter is "off", "low", "medium" or "high".';
+  // What that level is read from: `?volby=atr|iv` -- the candles' ATR (the default) or the board's ATM implied volatility.
+  const volBy = q.volby === undefined || q.volby === '' ? 'atr' : q.volby;
+  if (volBy !== 'atr' && volBy !== 'iv') return 'Volatility is read by "atr" or "iv".';
   // The least premium an option is sold for: `?minprem=`, dollars, 0 for no floor. Absent: 10.
   const minPremium = num('minprem', MIN_PREMIUM);
   if (!(minPremium >= 0 && minPremium <= 500)) return 'The minimum premium is from 0 (no floor) to 500 dollars.';
@@ -134,8 +137,45 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
   }
   return {
     rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol, minPremium,
+    // Only where it is not the default, so settings saved before it are the same settings as ever.
+    ...(volBy === 'iv' ? { volBy } : {}),
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}), ...(noEntry ? { noEntry } : {}),
   };
+}
+
+/**
+ * What the volatility study sets by level: `?vsl=1` (the default) the option stop, each level's per cent over the
+ * premium in `?vh=&vm=&vl=` (150 / 200 / 250 absent); `?vdelta=1` the strike's delta, each level's in `?dh=&dm=&dl=`
+ * (0.08 / 0.10 / 0.12 absent); `?vlots=1` the lots, each level's in `?lh=&lm=&ll=` (1 / 2 / 2 absent, whole, 1 to
+ * 1,000). At least one of the three.
+ */
+export function volRuleOf(q: Record<string, unknown>): VolRule | string {
+  const on = (k: string, dflt: boolean) => (q[k] === undefined || q[k] === '' ? dflt : q[k] === '1');
+  for (const k of ['vsl', 'vdelta', 'vlots']) if (q[k] !== undefined && q[k] !== '' && q[k] !== '0' && q[k] !== '1') return `${k} is 0 or 1.`;
+  const read = (keys: [string, string, string], dflt: Record<VolLevel, number>, scale: number, lo: number, hi: number, what: (l: VolLevel) => string) => {
+    const out = {} as Record<VolLevel, number>;
+    for (const [i, level] of (['high', 'medium', 'low'] as const).entries()) {
+      const k = keys[i]!, v = q[k] === undefined || q[k] === '' ? dflt[level] * scale : Number(q[k]);
+      if (!(Number.isFinite(v) && v >= lo && v <= hi)) return what(level);
+      out[level] = Math.round(v * (scale === 1 ? 100 : 1)) / (scale === 1 ? 100 : scale);
+    }
+    return out;
+  };
+  const sl = on('vsl', true) ? read(['vh', 'vm', 'vl'], VOL_STUDY_SL, 100, 10, 1_000, (l) => `The ${l} volatility stop is from 10% to 1,000% of the premium.`) : null;
+  if (typeof sl === 'string') return sl;
+  const delta = on('vdelta', false) ? read(['dh', 'dm', 'dl'], VOL_STUDY_DELTA, 1, 0.02, 0.5, (l) => `The ${l} volatility delta is from 0.02 to 0.50.`) : null;
+  if (typeof delta === 'string') return delta;
+  let lots: Record<VolLevel, number> | null = null;
+  if (on('vlots', false)) {
+    lots = {} as Record<VolLevel, number>;
+    for (const [level, k] of [['high', 'lh'], ['medium', 'lm'], ['low', 'll']] as const) {
+      const v = q[k] === undefined || q[k] === '' ? VOL_STUDY_LOTS[level] : Number(q[k]);
+      if (!(Number.isInteger(v) && v >= 1 && v <= 1_000)) return `The ${level} volatility lots are a whole number from 1 to 1,000.`;
+      lots[level] = v;
+    }
+  }
+  if (!sl && !delta && !lots) return 'Set the SL, the delta or the lots by volatility: vsl=1, vdelta=1 or vlots=1.';
+  return { sl, delta, lots };
 }
 
 /** A set of settings as an object -- a saved one -- held to the same rules as one in a query string. */
@@ -144,7 +184,7 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
   const x = p as Partial<BacktestParams>;
   return backtestParamsOf({
     rule: x.rule, value: x.value, lots: x.lots, tp: x.targetPct, sl: x.stopPct, window: x.window, hfrom: x.hoursFrom, hto: x.hoursTo,
-    max: x.deskMax, ce: x.cePct, pe: x.pePct, slmin: x.slMin, slmax: x.slMax, tgtmin: x.tgtMin, tgtmax: x.tgtMax, vol: x.vol, minprem: x.minPremium,
+    max: x.deskMax, ce: x.cePct, pe: x.pePct, slmin: x.slMin, slmax: x.slMax, tgtmin: x.tgtMin, tgtmax: x.tgtMax, vol: x.vol, volby: x.volBy, minprem: x.minPremium,
     tsteps: Array.isArray(x.targetSteps) && x.targetSteps.length ? x.targetSteps.map((s) => `${s.at}:${Math.round(s.pct * 10_000) / 100}`).join(',') : undefined,
     // Kept off with its times, as the form keeps them; only an on switch is a rule.
     noentry: x.noEntry?.on && Array.isArray(x.noEntry.windows) ? x.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : undefined,
@@ -229,6 +269,25 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const strategy = askedId === null ? null : (await strategyStore().all().catch(() => [])).filter(backtestable).find((s) => s.id === askedId) ?? null;
     if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
     return signalBacktestTrades({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot }, pick);
+  });
+
+  /**
+   * The option's stop and strike as set, against a stop and a strike's delta by how volatile it was at each signal's
+   * fill (owner, 17 Oct 2026): asked as the backtest itself is, with what is set by level (`volRuleOf`). Both ways of
+   * reading the level (ATR, ATM IV), on the same signals. Report only: no strategy, setting or order is touched.
+   */
+  app.get('/api/signal-backtest/vol-study', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const r = rangeOf(q);
+    if (typeof r === 'string') return refuse(reply, 400, { error: r });
+    const params = backtestParamsOf(q);
+    if (typeof params === 'string') return refuse(reply, 400, { error: params });
+    const rule = volRuleOf(q);
+    if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
+    const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
+    const strategy = askedId === null ? null : (await strategyStore().all().catch(() => [])).filter(backtestable).find((s) => s.id === askedId) ?? null;
+    if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
+    return volStudy({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot, ...rule });
   });
 
   /**

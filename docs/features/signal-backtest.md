@@ -31,6 +31,7 @@ For every signal that went "in the trade" (`entry_setups` with a fill), in the e
 | Option stop | +100%, +150%, +300% over the premium sold, or none | +300% |
 | Option target | **Fixed**: 70%, 80%, 90% of the premium kept, or none. **Dynamic · by time**: a share to start with and time steps (IST) from which another share is in force, for every trade open then and every one sold after -- taken from a strategy that has such steps ("Target steps of"), or typed. Steps are read in clock order from 5:30 PM however they are typed. `?tp=&tsteps=23:30:73,01:30:76` | fixed 90% |
 | Volatility when the signal fills | Off, Low, Medium, High: the last two hours of 15-minute candles at the fill against the mean 15-minute ATR of the five expiry days before -- under 0.8× is low, over 1.3× high (`volReader`). A signal whose level cannot be said (no five days before) is none of the three. `?vol=` | off |
+| Volatility by | ATR 2h (the line above) or ATM IV: the at-the-money implied volatility of the day's contract at the fill (the call's and the put's nearest the money, averaged, newest reading in the 6 minutes before), against thirds of the same hour of the expiry day over the five expiry days before -- lowest third low, highest high (`ivReader`). No reading, a stale one, or too few days before: unknown, never low. IV, not the straddle: a daily contract's straddle shrinks with the clock alone. Read by the filter, *By volatility* and the SL study. `?volby=atr|iv` | ATR 2h |
 | Lots a signal | 1, 10, 16 | 10 |
 | Minimum premium | Off, $10, $15, $20 or Custom (0 to 500; typing 0 is off): a strike bid under it when the signal fills is not sold, and the signal is counted as "no strike". `?minprem=` | $10 |
 
@@ -145,6 +146,43 @@ are a list with the whole figure, not tiles that cut it to "−₹79,2…" (`Led
 in the panel and their controls keep to one line (`Segmented dense`), and a time step's field shows its whole
 time. Nothing is wider than the screen from 320px up; from 1280px the settings are a column of their own beside
 the result.
+
+## SL, delta and lots by volatility -- research (17 Oct 2026)
+
+**"Volatility by: ATR 2h / ATM straddle; SL, delta and lots -- Low, Normal and High for all three, editable; backtest
+and portfolio."** The research on two years of settled chains (`chain.db`, CE + PE at the 15-point floor 12 h before
+settlement) found an option SL set *tighter* when it is volatile and *wider* when calm did better than one SL (a leg
+that has doubled goes on to four times 53-55% of the time on volatile days, 39-42% on calm ones), and the reverse --
+wider when volatile -- did worse in every one of twelve variants. This panel asks the same of the desk's own trades.
+
+At the foot of the result -- and of a run together's -- **By volatility · SL, delta, lots · research**: three
+switches, each with its own Low, Normal and High, kept in the browser:
+
+| Rule | Low · Normal · High to begin with | What it sets for a trade |
+|---|---|---|
+| SL by volatility (on) | +250% · +200% · +150% | the option SL over the premium (`DayPlan.stopPctByVol`) |
+| Delta by volatility | 0.12 · 0.10 · 0.08 | the most delta a strike sold may have, by the live rules' own pick (`DayPlan.pickByVol`); a strategy's strike blocks are set aside for it |
+| Lots by volatility | 2 · 2 · 1 | the lots a signal (`DayPlan.lotsByVol`) |
+
+**Compare** trades the settings on the screen -- or the strategy chosen, or each saved backtest of the run -- twice on
+the same signals (`volStudyHere`, `portfolioVolStudyHere`): as set, and with what is switched on set by the level at
+each signal's fill, once read by ATR 2h and once by ATM IV. Each way says, beside "as set": trades, lots traded (with
+lots by level), net, **net per lot**, worst day, max drawdown, option SL hits, won, and the first and second half of
+the days apart, the better of each marked; a verdict that calls a difference a rule only where it is better in both
+halves -- per lot where the lots move, since more money from more lots is not a better rule; and each level's trades
+and money under both. A trade whose level cannot be said keeps the settings as set.
+
+The same signals: no limit on what is open -- the strategy's "at most open" and a run's shared limit included -- since
+an earlier exit must not free a place for a trade the other side did not take; the volatility filter off; the same
+fills and charges. With the delta by level a signal may find no strike worth selling inside its level's delta: it is
+then traded on one side only, and the panel says so (`sameTrades`). An SL as set that moves by the clock is compared
+with a level's SL held all day. Over a run, the saved backtests are added up day by day, and one that cannot be worked
+is named. **Report only:** nothing a strategy, a setting or an order reads is changed. A rule that looks better goes to
+paper first.
+
+**Every part of the result folds** (17 Oct 2026, "every part expand and collapse"): inside the backtest's result and a
+run together's, each panel's heading opens and shuts it, with **Expand all** / **Collapse all** above; kept in the
+browser, the backtest's and the run's apart (`PanelFolds`). Outside them a panel is as before.
 
 ## Saved backtests, and portfolios
 
@@ -261,8 +299,17 @@ a trade made −₹3.79 on 3m, −₹3.21 on 5m, −₹0.09 on 15m, +₹2.49 on 
 `choices`. Each count carries `exits`, and each exit how many of its trades made money (`wins`).
 
 `?window=custom&hfrom=&hto=`, `?max=&ce=&pe=`, `?slmin=&slmax=&tgtmin=&tgtmax=`, `?tsteps=`, `?vol=`,
-`?strategy=` as above; the answer also carries `priced`, `byVol`, `margin`, `strategy`, `strategies`,
+`?volby=`, `?strategy=` as above; the answer also carries `priced`, `byVol`, `margin`, `strategy`, `strategies`,
 `deskLimits`.
+
+`GET /api/signal-backtest/vol-study` -- asked as the backtest is, with what is set by level (`volRuleOf`): `?vsl=1`
+(the default) and `?vh=&vm=&vl=` (SL, per cent over the premium, 10 to 1,000; 150 / 200 / 250 absent); `?vdelta=1`
+and `?dh=&dm=&dl=` (0.02 to 0.50; 0.08 / 0.10 / 0.12); `?vlots=1` and `?lh=&lm=&ll=` (whole, 1 to 1,000; 1 / 2 / 2).
+At least one. The answer: `fixed` (the SL as set, and `each` one's own over a run), `sl`, `delta`, `lots`, `signals`,
+`days`, `secondHalfFrom`, `sameTrades`, and `sources` -- `atr` and `iv`, each with a `fixed` and a `by-vol` line (`n`,
+`wins`, `net`, `charges`, `lots`, `stopHits`, `worstDay`, `maxDrawdown`, `halves`, `byLevel`).
+`GET /api/backtest-portfolio/vol-study` -- the run's own query (`?ids=` and the rest) with the same rule; the answer
+also carries `members`. Worked in the backtest's thread, three backtests' time allowed for each one in it.
 
 **Worked in a thread of its own** ([report/backtest-run.ts](../../app/server/src/report/backtest-run.ts),
 `backtest-worker.ts`; 13 Oct 2026). A fortnight a minute at a time is seconds of reading and arithmetic, and in

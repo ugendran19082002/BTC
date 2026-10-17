@@ -1010,3 +1010,108 @@ test('[critical] saved backtests in groups, cloned under a free name, a group re
   for (const id of [p.body.portfolio.id, pc.body.portfolio.id]) await del(`/api/backtest-portfolios/${id}`);
   for (const s of [a, b, c1, c2]) await del(`/api/backtest-saves/${s.body.save.id}`);
 });
+
+test('[critical] volatility by ATM IV, and the option stop by volatility against the fixed one, on the same trades (17 Oct 2026)', async () => {
+  const climbCode = `${CLIMB.slice(8, 10)}${CLIMB.slice(5, 7)}${CLIMB.slice(2, 4)}`;
+  const base = `from=${CLIMB}&to=${CLIMB}&window=all`;
+  // No IV on the board yet: no signal has a level by it -- Unknown, never Low.
+  const none = await get(`/api/signal-backtest?${base}&volby=iv`);
+  assert.equal(none.status, 200);
+  assert.equal(none.body.params.volBy, 'iv');
+  assert.deepEqual([none.body.total.n, none.body.byVol], [6, []]);
+  const noneLow = await get(`/api/signal-backtest?${base}&volby=iv&vol=low`);
+  assert.deepEqual([noneLow.body.total.n, noneLow.body.skipped.volatility], [0, 6]);
+  assert.equal((await get(`/api/signal-backtest?${base}`)).body.params.volBy, undefined, 'the default is not written into the settings');
+  assert.match((await get(`/api/signal-backtest?${base}&volby=vix`)).body.error, /"atr" or "iv"/);
+
+  // Five expiry days before, the ATM pair every five minutes with IV 40 to 60; the climb's own board at 70: above the high third.
+  const priorDays = [3, 4, 5, 6, 7].map(dayBack);
+  for (const day of priorDays) {
+    const code = `${day.slice(8, 10)}${day.slice(5, 7)}${day.slice(2, 4)}`;
+    const at: number[] = [], iv: number[] = [];
+    for (let m = 0; m < 1_440; m += 5) { at.push(sessionOf(day).from + m * 60_000); iv.push(40 + (20 * ((m / 5) % 12)) / 11); }
+    for (const cp of ['C', 'P']) {
+      await query(
+        `INSERT INTO option_snapshots (at, symbol, expiry, cp, strike, spot, mark, bid, ask, delta, mark_iv)
+         SELECT a, $3, $4, $5, 84000, 84000, 500, 499, 501, 0.5, v FROM unnest($1::bigint[], $2::float8[]) AS t(a, v)`,
+        [at, iv, `${cp}-BTC-84000-${code}`, code, cp]);
+    }
+  }
+  await query('UPDATE option_snapshots SET mark_iv = 70 WHERE expiry = $1', [climbCode]);
+  clearSignalBacktestCache();
+  try {
+    const high = await get(`/api/signal-backtest?${base}&volby=iv`);
+    assert.deepEqual(high.body.byVol.map((r: any) => [r.key, r.n]), [['high', 6]], 'every signal in high volatility by the IV');
+    assert.equal((await get(`/api/signal-backtest?${base}&volby=iv&vol=high`)).body.total.n, 6);
+    assert.equal((await get(`/api/signal-backtest?${base}&volby=iv&vol=low`)).body.total.n, 0);
+    // The trade list reads the same levels as the run it opens from.
+    const listed = await get(`/api/signal-backtest/trades?${base}&volby=iv&vol=high&day=${CLIMB}`);
+    assert.equal(listed.body.total, 6);
+    // A saved backtest keeps how it reads volatility.
+    const saved = await post('/api/backtest-saves', { name: 'iv study', query: { params: { ...high.body.params }, tfs: [], methods: [], strategy: null } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.save.query.params.volBy, 'iv');
+    assert.equal((await app.inject({ method: 'DELETE', url: `/api/backtest-saves/${saved.body.save.id}`, headers: cookie })).statusCode, 200);
+
+    // The study: the plan's own stop (+300%) against 150 / 200 / 250 by level, read both ways, on the same six trades.
+    const study = await get(`/api/signal-backtest/vol-study?${base}`);
+    assert.equal(study.status, 200, JSON.stringify(study.body).slice(0, 300));
+    assert.deepEqual([study.body.sl, study.body.delta, study.body.lots], [{ low: 2.5, medium: 2, high: 1.5 }, null, null], 'the SL alone, to begin with');
+    assert.deepEqual([study.body.fixed, study.body.signals, study.body.days, study.body.sameTrades], [{ pct: 3, stepped: false, each: [3] }, 6, 1, true]);
+    assert.deepEqual(study.body.sources.map((s: any) => s.by), ['atr', 'iv']);
+    const line = (by: string, rule: string) => study.body.sources.find((s: any) => s.by === by).lines.find((l: any) => l.rule === rule);
+    const level = (l: any, k: string) => l.byLevel.find((x: any) => x.level === k).n;
+    // By the IV every trade is high; by the candles none can be said (no days before the climb): unknown keeps +300%.
+    assert.deepEqual([level(line('iv', 'by-vol'), 'high'), level(line('iv', 'fixed'), 'high')], [6, 6]);
+    assert.deepEqual([level(line('atr', 'by-vol'), 'unknown'), level(line('atr', 'fixed'), 'unknown')], [6, 6]);
+    for (const l of [line('iv', 'fixed'), line('iv', 'by-vol'), line('atr', 'fixed'), line('atr', 'by-vol')]) {
+      assert.equal(l.n, 6);
+      assert.equal(l.stopHits, 0, 'the board decays all day: no stop is reached, tight or wide');
+      assert.ok(Math.abs(l.net - line('iv', 'fixed').net) < 1e-9, 'the same trades, the same money');
+      assert.equal(l.worstDay.day, CLIMB);
+    }
+    // The per cent of each level is the owner's to set; out of range, refused in words.
+    const own = await get(`/api/signal-backtest/vol-study?${base}&vh=120&vm=180&vl=300`);
+    assert.deepEqual(own.body.sl, { low: 3, medium: 1.8, high: 1.2 });
+    assert.match((await get(`/api/signal-backtest/vol-study?${base}&vh=5`)).body.error, /high volatility stop is from 10% to 1,000%/);
+    assert.match((await get(`/api/signal-backtest/vol-study?${base}&vl=abc`)).body.error, /low volatility stop/);
+
+    // The lots by level: every trade high by the IV, so every trade 1 lot -- a tenth of the 10 the settings sell.
+    const lots = await get(`/api/signal-backtest/vol-study?${base}&vsl=0&vlots=1`);
+    assert.deepEqual([lots.body.sl, lots.body.lots], [null, { high: 1, medium: 2, low: 2 }]);
+    const ivLots = lots.body.sources.find((x: any) => x.by === 'iv').lines;
+    assert.deepEqual(ivLots.map((l: any) => [l.rule, l.n, l.lots]), [['fixed', 6, 60], ['by-vol', 6, 6]]);
+    assert.ok(Math.abs(ivLots[1].net - ivLots[0].net / 10) < 0.02, 'the same trades at a tenth of the size, near enough (charges are per fill)');
+    // The delta by level: high reads 0.08, and the board's only strikes are 0.09 out -- none inside it, so none is sold.
+    const delta = await get(`/api/signal-backtest/vol-study?${base}&vsl=0&vdelta=1`);
+    assert.deepEqual(delta.body.delta, { high: 0.08, medium: 0.1, low: 0.12 });
+    const ivDelta = delta.body.sources.find((x: any) => x.by === 'iv').lines;
+    assert.deepEqual(ivDelta.map((l: any) => l.n), [6, 0], 'no strike inside 0.08: the rule by volatility trades none of them');
+    assert.equal(delta.body.sameTrades, false, 'and says the two rules did not trade the same signals');
+    const atrDelta = delta.body.sources.find((x: any) => x.by === 'atr').lines;
+    assert.deepEqual(atrDelta.map((l: any) => l.n), [6, 6], 'no level by the candles: the strike rule as set');
+    assert.equal((await get(`/api/signal-backtest/vol-study?${base}&vsl=0&vdelta=1&dh=0.09`)).body.sources.find((x: any) => x.by === 'iv').lines[1].n, 6, 'its own delta, typed');
+    for (const [q, why] of [['vsl=0', /SL, the delta or the lots/], ['vdelta=1&dm=0.9', /medium volatility delta is from 0\.02 to 0\.50/], ['vlots=1&lh=1.5', /high volatility lots are a whole number/], ['vlots=yes', /vlots is 0 or 1/]] as const) {
+      assert.match((await get(`/api/signal-backtest/vol-study?${base}&${q}`)).body.error, why, q);
+    }
+
+    // Saved backtests run together: each on its own signals, no limit -- the shared one too -- and added up.
+    const one = await post('/api/backtest-saves', { name: 'vol one', query: { params: { ...high.body.params, volBy: undefined }, tfs: ['15m'], methods: [], strategy: null } });
+    const two = await post('/api/backtest-saves', { name: 'vol two', query: { params: { ...high.body.params, volBy: undefined, stopPct: 2 }, tfs: ['1h'], methods: [], strategy: null } });
+    try {
+      const folio = await get(`/api/backtest-portfolio/vol-study?ids=${one.body.save.id},${two.body.save.id}&from=${CLIMB}&to=${CLIMB}&max=1&vlots=1`);
+      assert.equal(folio.status, 200, JSON.stringify(folio.body).slice(0, 300));
+      assert.deepEqual(folio.body.members.map((m: any) => [m.name, m.problem]), [['vol one', null], ['vol two', null]]);
+      assert.deepEqual(folio.body.fixed.each, [3, 2], 'each one\'s own stop');
+      const f = folio.body.sources.find((x: any) => x.by === 'iv').lines;
+      assert.deepEqual(f.map((l: any) => l.n), [5, 5], 'the 15m three and the 1h two: the run\'s "at most 1 open" is not laid over the study');
+      assert.match((await get(`/api/backtest-portfolio/vol-study?ids=${one.body.save.id}&from=${CLIMB}&to=${CLIMB}&vh=9`)).body.error, /high volatility stop/);
+    } finally {
+      for (const x of [one, two]) await app.inject({ method: 'DELETE', url: `/api/backtest-saves/${x.body.save.id}`, headers: cookie });
+    }
+  } finally {
+    await query('UPDATE option_snapshots SET mark_iv = NULL WHERE expiry = $1', [climbCode]);
+    for (const day of priorDays) await query('DELETE FROM option_snapshots WHERE expiry = $1', [`${day.slice(8, 10)}${day.slice(5, 7)}${day.slice(2, 4)}`]);
+    clearSignalBacktestCache();
+  }
+});
