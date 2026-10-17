@@ -533,9 +533,9 @@ export type StrategyStatus = {
   /** The groups of the account(s) shown, oldest first; absent on an older server. */
   groups?: StrategyGroup[];
   runs: StrategyRun[];
-  /** The latest signals the signal strategies took, or wrote down; absent on an older server. */
+  /** The latest signals the signal strategies took, or wrote down: only on `?journal=1`, else empty; absent on an older server. */
   signalRuns?: SignalRun[];
-  /** The signal strategies' trades, newest first, with their levels and outcomes; absent on an older server. */
+  /** The signal strategies' trades, newest first, with their levels and outcomes: only on `?journal=1`, else empty. */
   signalTrades?: SignalTrade[];
 };
 

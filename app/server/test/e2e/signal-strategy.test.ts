@@ -1224,7 +1224,7 @@ test('[critical] at most open at once, across all strategies: one number over ev
   assert.equal(b.status, 'skipped', b.detail);
   assert.equal(b.detail.split(' | ')[1], `the desk already has ${cap} open (positions and working orders, all strategies) -- at most ${cap} at once across all`);
   assert.equal(b.trade_id, null, 'nothing sent');
-  status = (await api('GET', '/api/strategies')).body;
+  status = (await api('GET', '/api/strategies?journal=1')).body;
   assert.equal(status.openNow, cap);
   // Each strategy's card is told what it holds now: one trade of one lot for the first, nothing for the second.
   const openOf = (id: string) => status.strategies.find((x: any) => x.id === id).open;
