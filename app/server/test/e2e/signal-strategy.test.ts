@@ -1711,3 +1711,24 @@ test('[critical] SL by volatility (17 Oct 2026): checked on save; each trade pla
   await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
   await freshAccount();
 });
+
+test('[critical] the card\'s day (17 Oct 2026): each signal strategy\'s placed, written down, skipped, refused and its last -- from 5:30 PM IST; and the volatility now when one reads it', async () => {
+  const id = 'sig-day';
+  await api('POST', '/api/strategies', { id, name: 'Sig day', config });
+  const now = Date.now();
+  const write = (n: number, status: string, at: number) => query(
+    `INSERT INTO strategy_signal_runs (strategy_id, signal_key, method, mode, tf, dir, status, detail, trade_id, at)
+     VALUES ($1, $2, 'breakout', 'single', '5m', 1, $3, 'test', NULL, $4)`, [id, `day-${n}`, status, at]);
+  await write(1, 'placed', now - 60_000); await write(2, 'placed', now - 50_000); await write(3, 'skipped', now - 40_000);
+  await write(4, 'refused', now - 30_000); await write(5, 'would-place', now - 20_000); await write(6, 'claimed', now - 10_000);
+  await write(7, 'placed', now - 3 * 86_400_000);                       // days ago: not today's
+  const r = await api('GET', '/api/strategies');
+  const day = r.body.strategies.find((x: any) => x.id === id).today;
+  assert.deepEqual(day, { placed: 2, wouldPlace: 1, skipped: 1, refused: 1, failed: 0, lastAt: now - 20_000, lastStatus: 'would-place' }, 'a claim is not yet a decision');
+  // One that reads volatility: the answer carries the level now by each source (null on a desk with no readings).
+  await api('POST', '/api/strategies', { id, name: 'Sig day', config: { ...config, strikeRule: 'delta', delta: { max: 0.1 }, signal: { ...config.signal, deltaByVol: { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 } } } });
+  const v = await api('GET', '/api/strategies');
+  assert.deepEqual(v.body.volNow, { iv: null, atr: null });
+  await query('DELETE FROM strategy_signal_runs WHERE strategy_id = $1', [id]);
+  await api('POST', '/api/strategies', { id, name: 'Sig day', config });
+});

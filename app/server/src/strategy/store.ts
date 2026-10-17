@@ -349,6 +349,14 @@ const MIGRATIONS: Migration[] = [
        WHERE s.id = u.strategy_id AND u.tf IS NULL;
     `,
   },
+  {
+    /*
+     * Each signal strategy's day so far, on its card (17 Oct 2026: "the strategy card -- useful, user-friendly details"):
+     * read every five seconds by the screen, so by time, not by a scan of every signal ever written.
+     */
+    id: 'strategy-014-signal-runs-at',
+    up: 'CREATE INDEX IF NOT EXISTS strategy_signal_runs_at ON strategy_signal_runs (at)',
+  },
 ];
 
 /** A config without the settings the desk no longer has. */
@@ -368,6 +376,8 @@ type RunRow = { id: number; strategy_id: string; run_date: string; status: Strat
 
 /** What became of one signal for one signal strategy. */
 export type SignalRunStatus = 'claimed' | 'placed' | 'would-place' | 'refused' | 'skipped' | 'failed';
+/** A signal strategy's day so far, as its card says it. */
+export type SignalDay = { placed: number; wouldPlace: number; skipped: number; refused: number; failed: number; lastAt: number; lastStatus: string | null };
 export type SignalRun = {
   id: number; strategyId: string; signalKey: string; method: string; mode: string; tf: string; dir: 1 | -1;
   status: SignalRunStatus; detail: string; tradeId: string | null; at: number;
@@ -818,6 +828,26 @@ export class StrategyStore {
   }
 
   /** The signal journal, newest first; one strategy's when `strategyId` is given. */
+  /**
+   * Each signal strategy's day so far (17 Oct 2026): how many signals it placed, wrote down (live orders off), skipped,
+   * refused or failed since `from`, and its last decision. Strategies with none are absent.
+   */
+  async signalDay(from: number): Promise<Map<string, SignalDay>> {
+    const xs = await rows<{ strategy_id: string; status: string; n: string; last_at: string }>(
+      `SELECT strategy_id, status, count(*) AS n, max(at) AS last_at FROM strategy_signal_runs
+        WHERE at >= $1 AND status <> 'claimed' GROUP BY strategy_id, status`, [from]);
+    const out = new Map<string, SignalDay>();
+    for (const x of xs) {
+      const d = out.get(x.strategy_id) ?? { placed: 0, wouldPlace: 0, skipped: 0, refused: 0, failed: 0, lastAt: 0, lastStatus: null };
+      const n = Number(x.n), at = Number(x.last_at);
+      if (x.status === 'placed') d.placed += n; else if (x.status === 'would-place') d.wouldPlace += n;
+      else if (x.status === 'skipped') d.skipped += n; else if (x.status === 'refused') d.refused += n; else d.failed += n;
+      if (at > d.lastAt) { d.lastAt = at; d.lastStatus = x.status; }
+      out.set(x.strategy_id, d);
+    }
+    return out;
+  }
+
   async signalRuns(limit = 60, strategyId?: string): Promise<SignalRun[]> {
     const xs = strategyId
       ? await rows<SignalRunRow>('SELECT * FROM strategy_signal_runs WHERE strategy_id = $1 ORDER BY at DESC LIMIT $2', [strategyId, limit])

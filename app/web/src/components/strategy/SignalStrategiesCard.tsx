@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
 import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setScheduler, setSideMax, setSignalMaxOpen, setStrategyEnabled, takeIntoGroup } from '@/api/strategy';
-import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus } from '@/types/strategy';
+import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus, type VolLevelNow } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
 import { SignalStrategyForm } from '@/components/strategy/SignalStrategyForm';
@@ -59,6 +59,87 @@ function ByVolTags({ s }: { s: Strategy }) {
         </span>
       )}
     </>
+  );
+}
+
+/** The option's own exits in a few words: "TGT 70% → 97% by time (9 steps) · SL +160%". */
+export function exitsShort(s: Strategy): string {
+  const c = s.config;
+  const tgt = (c.targetMode ?? 'pct') === 'pct'
+    ? (c.takeProfitPct > 0 ? `TGT ${Math.round(c.takeProfitPct * 100)}%` : 'no option TGT')
+    : c.targetMode === 'points' ? `TGT ${c.takeProfitPoints} pts` : `TGT at ${c.takeProfitAt}`;
+  const steps = c.targetSteps ?? [];
+  const tgtSteps = steps.length ? ` → ${Math.round(steps[steps.length - 1]!.value * 100)}% by time (${steps.length} step${steps.length === 1 ? '' : 's'})` : '';
+  const sv = c.signal?.slByVol;
+  const sl = (c.stopMode ?? 'pct') === 'pct'
+    ? (sv?.on ? 'SL by volatility' : c.stopLossPct > 0 ? `SL +${Math.round(c.stopLossPct * 100)}%` : 'no option SL')
+    : c.stopMode === 'points' ? `SL ${c.stopLossPoints} pts` : `SL at ${c.stopLossAt}`;
+  const slSteps = (c.stopSteps ?? []).length ? ` (${c.stopSteps!.length} time step${c.stopSteps!.length === 1 ? '' : 's'})` : '';
+  return `${tgt}${tgtSteps} · ${sl}${slSteps}`;
+}
+
+const LEVEL_WORD: Record<'low' | 'medium' | 'high', string> = { low: 'Low', medium: 'Normal', high: 'High' };
+/** "Fri 9:00 PM" (IST), in the desk's own way of writing a time. */
+const dayOrClock = (ms: number) => {
+  const d = new Date(ms);
+  const day = d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short' });
+  const hhmm = d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${day} ${time12(hhmm)}`;
+};
+const STATUS_WORD: Record<string, string> = { placed: 'placed', 'would-place': 'written down', skipped: 'skipped', refused: 'refused', failed: 'failed' };
+
+/**
+ * What a trader reads a strategy by, at a glance (owner, 17 Oct 2026: "the card -- missing useful, user-friendly
+ * details"): its option exits, how its methods are kept, how volatile it is now and what the next signal would use,
+ * and its day so far. Each a line with its own label, so a phone reads them as a list.
+ */
+function StrategyFacts({ s, volNow }: { s: Strategy; volNow?: { iv: VolLevelNow; atr: VolLevelNow } }) {
+  const c = s.config, r = c.signal;
+  const auto = r?.autoMethods;
+  const dv = r?.deltaByVol?.on && c.strikeRule === 'delta' ? r.deltaByVol : null;
+  const sv = r?.slByVol?.on && (c.stopMode ?? 'pct') === 'pct' ? r.slByVol : null;
+  const by = dv?.by ?? sv?.by ?? null;
+  const level = by && volNow ? volNow[by] : null;
+  const next = by ? [
+    dv ? `Δ ≤ ${(level ? dv[level] : c.delta?.max ?? 0).toFixed(2)}` : null,
+    sv ? `SL +${Math.round((level ? sv[level] : c.stopLossPct) * 100)}%` : null,
+  ].filter(Boolean).join(', ') : null;
+  const d = s.today;
+  const row = 'grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-2 max-sm:grid-cols-[5.25rem_minmax(0,1fr)]';
+  const label = 'text-[var(--dim)]';
+  return (
+    <dl aria-label={`details of ${s.name}`} className="m-0 mt-1.5 grid gap-0.5 text-[11.5px] leading-snug text-muted-foreground">
+      <div className={row}><dt className={label}>Option exits</dt><dd className="m-0 text-foreground">{exitsShort(s)}</dd></div>
+      <div className={row}>
+        <dt className={label}>Methods</dt>
+        <dd className="m-0">
+          {auto?.on
+            ? <>picked daily at {time12(auto.at)} · win ≥ {auto.winPct}% of {auto.minTrades}+ trades in {auto.days} days{auto.last ? ` · last ${dayOrClock(auto.last.at)}: ${auto.last.note ? 'kept as it was' : `${auto.last.picked.length} picked`}` : ' · not run yet'}</>
+            : <>{r?.methods.length ?? 0} chosen by hand</>}
+        </dd>
+      </div>
+      {by && (
+        <div className={row}>
+          <dt className={label}>Volatility now</dt>
+          <dd className="m-0">
+            {volNow === undefined ? 'not read on this server'
+              : level ? <><b className={cn('font-semibold', level === 'high' ? 'text-[var(--down)]' : level === 'low' ? 'text-[var(--up)]' : 'text-foreground')}>{LEVEL_WORD[level]}</b> by {by === 'iv' ? 'ATM IV' : 'ATR 2h'} → a signal now: <span className="text-foreground">{next}</span></>
+                : <>not readable by {by === 'iv' ? 'ATM IV' : 'ATR 2h'} → its own: <span className="text-foreground">{next}</span></>}
+          </dd>
+        </div>
+      )}
+      <div className={row}>
+        <dt className={label}>Today</dt>
+        <dd className="m-0">
+          {!d ? 'no signal yet since 5:30 PM'
+            : <>
+              {[d.placed ? `${d.placed} placed` : null, d.wouldPlace ? `${d.wouldPlace} written down` : null, d.skipped ? `${d.skipped} skipped` : null,
+                d.refused ? `${d.refused} refused` : null, d.failed ? `${d.failed} failed` : null].filter(Boolean).join(' · ') || 'no decision yet'}
+              {d.lastAt > 0 && <span className={label}> · last {dayOrClock(d.lastAt)}{d.lastStatus ? `, ${STATUS_WORD[d.lastStatus] ?? d.lastStatus}` : ''}</span>}
+            </>}
+        </dd>
+      </div>
+    </dl>
   );
 }
 
@@ -482,6 +563,7 @@ export function SignalStrategiesCard() {
         </div>
         <p className="m-0 mt-1 text-[11.5px] leading-snug text-muted-foreground">{signalLine(s)}</p>
         <RuleNow s={s} />
+        <StrategyFacts s={s} volNow={data?.volNow} />
         {/*
           The two numbers changed most often, on the card itself: the same settings as in the form (Edit),
           saved the same way, so neither needs the form opened. They apply to the next signal; what is

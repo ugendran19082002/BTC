@@ -434,6 +434,8 @@ export type Strategy = {
   status: string;
   /** A signal strategy's open trades now -- positions and working orders -- and their lots. Absent on an older server. */
   open?: { trades: number; lots: number };
+  /** A signal strategy's expiry day so far, from 5:30 PM IST: what became of its signals, and its last. Absent on an older server. */
+  today?: SignalDay | null;
 };
 
 /**
@@ -497,7 +499,12 @@ export type SignalTrade = {
   } | null;
 };
 
+/** A signal strategy's day so far (server: strategy/store.ts `SignalDay`). */
+export type SignalDay = { placed: number; wouldPlace: number; skipped: number; refused: number; failed: number; lastAt: number; lastStatus: string | null };
+export type VolLevelNow = 'low' | 'medium' | 'high' | null;
 export type StrategyStatus = {
+  /** How volatile it is now by each source, where a strategy shown sets its delta or SL by it; absent otherwise. */
+  volNow?: { iv: VolLevelNow; atr: VolLevelNow };
   today: string;
   schedulerOn: boolean;
   /** The desk-wide "at most open at once" over every strategy; 0 is no cap. Absent on an older server. */

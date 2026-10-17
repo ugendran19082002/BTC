@@ -641,6 +641,37 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
     expect(screen.getByLabelText('SL by volatility of SLV')).toHaveTextContent('SL by ATR 2h: low +250% · normal +200% · high +150%');
   });
 
+  it('[critical] each card\'s details (17 Oct 2026): option exits, methods, volatility now and what a signal now would use, and the day so far', async () => {
+    const steps = [{ at: '23:30', value: 0.73 }, { at: '01:30', value: 0.76 }, { at: '15:30', value: 0.97 }];
+    const a = { ...strat('vol', { ...SIG, ...allDay, strikeRule: 'delta', delta: { max: 0.1 }, takeProfitPct: 0.7, targetSteps: steps, stopMode: 'pct', stopLossPct: 1.6,
+      signal: { ...SIG.signal, deltaByVol: { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 }, slByVol: { on: true, by: 'iv', low: 2.5, medium: 2, high: 1.5 },
+        autoMethods: { on: true, at: '21:00', winPct: 70, minTrades: 3, days: 7, last: { at: Date.parse('2026-10-16T21:00:00+05:30'), from: '2026-10-09', to: '2026-10-16', picked: ['breakout', 'bos'], before: [] } } } }),
+      today: { placed: 2, wouldPlace: 0, skipped: 5, refused: 1, failed: 0, lastAt: Date.parse('2026-10-17T21:47:00+05:30'), lastStatus: 'placed' } };
+    const b = { ...strat('plain', { ...SIG, ...allDay, takeProfitPct: 0.9, stopMode: 'pct', stopLossPct: 0 }), today: null };
+    getStrategies.mockResolvedValue(status([a, b], { volNow: { iv: 'high', atr: 'low' } }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('VOL');
+    const facts = (name: string) => screen.getByLabelText(`details of ${name}`);
+    expect(facts('VOL')).toHaveTextContent('Option exitsTGT 70% → 97% by time (3 steps) · SL by volatility');
+    expect(facts('VOL')).toHaveTextContent(/Methodspicked daily at 9:00 PM · win ≥ 70% of 3\+ trades in 7 days · last Fri 9:00 PM: 2 picked/);
+    // Read by its own source -- ATM IV says high -- and so a signal now: the high level's delta and SL.
+    expect(facts('VOL')).toHaveTextContent('Volatility nowHigh by ATM IV → a signal now: Δ ≤ 0.08, SL +150%');
+    expect(facts('VOL')).toHaveTextContent(/Today2 placed · 5 skipped · 1 refused · last Sat 9:47 PM, placed/);
+    expect(facts('PLAIN')).toHaveTextContent('Option exitsTGT 90% · no option SL');
+    expect(facts('PLAIN')).toHaveTextContent('Methods2 chosen by hand');
+    expect(facts('PLAIN')).not.toHaveTextContent('Volatility now');
+    expect(facts('PLAIN')).toHaveTextContent('Todayno signal yet since 5:30 PM');
+  });
+
+  it('[critical] volatility not readable now: its own delta and SL, said as such', async () => {
+    const a = strat('vol', { ...SIG, ...allDay, strikeRule: 'delta', delta: { max: 0.1 }, stopMode: 'pct', stopLossPct: 1.6,
+      signal: { ...SIG.signal, deltaByVol: { on: true, by: 'atr', low: 0.18, medium: 0.1, high: 0.08 } } });
+    getStrategies.mockResolvedValue(status([a], { volNow: { iv: 'low', atr: null } }));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('VOL');
+    expect(screen.getByLabelText('details of VOL')).toHaveTextContent('Volatility nownot readable by ATR 2h → its own: Δ ≤ 0.10');
+  });
+
   it('[critical] outside its window the tags are said all the same: a setting is the strategy\'s whatever the clock (17 Oct 2026)', async () => {
     const now = istMinuteOf(Date.now());
     // A window of one minute that is not this one: the strategy is outside it now.

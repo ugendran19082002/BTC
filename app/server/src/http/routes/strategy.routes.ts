@@ -5,12 +5,14 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { config, STARTED_AT } from '../../config.js';
+import { sessionDayOf, sessionOf } from '../../report/market-day.js';
+import { volLevelNow } from '../../report/signal-backtest.js';
 
 /**
  * The strategy desk: what is saved, what is armed, and when it next runs.
@@ -324,6 +326,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
      */
     const lite = (req.query as { lite?: string } | undefined)?.lite === '1';
     const shown = (await s.all()).filter((x) => belongs(x, account));
+    // Every signal strategy's expiry day so far, in one read (`signalDay`): from 5:30 PM IST, when the daily contract's day begins.
+    const signalDay = shown.some((x) => x.config.trigger === 'signal') ? await s.signalDay(sessionOf(sessionDayOf(Date.now())).from) : new Map();
     const mine = account === null ? null : new Set(shown.map((x) => x.id));
     const kept = <T extends { strategyId: string }>(xs: T[]): T[] => (mine ? xs.filter((x) => mine.has(x.strategyId)) : xs);
     // An account other than the one the desk is trading on is being looked at: the desk's wallet and holdings are not its.
@@ -400,6 +404,12 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        */
       balanceUsd: svc.lastBalanceUsd,
       spot: svc.spot,
+      /*
+       * How volatile it is now, by both sources (17 Oct 2026): what a strategy that sets its delta or SL by it would use
+       * for a signal this minute. The backtest's own reading, kept a minute; null where it cannot be said. Only asked
+       * for when a strategy shown reads it.
+       */
+      ...(shown.some((x) => volSourceOf(x.config)) ? { volNow: { iv: await volLevelNow('iv', now), atr: await volLevelNow('atr', now) } } : {}),
       strategies: await Promise.all(shown.map(async (x) => {
         // Another account's strategy: shown, and said plainly that it is not entering while the desk is elsewhere.
         const here = tradingServiceFor(x.accountId) !== null;
@@ -411,6 +421,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
           return {
             ...x, lastRunDate: null, ranToday: false, nextEntryAt: null,
             open: openOf(x.id),
+            // Its expiry day so far (5:30 PM IST on): placed, written down, skipped, refused, and its last decision.
+            today: signalDay.get(x.id) ?? null,
             status: !here ? OFF_ACCOUNT : blocked
               ? `no new entry until ${time12(blocked.to)} (no-entry window ${noEntryWords(blocked)}) -- what is open keeps its exits`
               : on
