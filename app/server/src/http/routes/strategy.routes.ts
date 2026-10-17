@@ -12,7 +12,7 @@ import { accountKey, accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { config, STARTED_AT } from '../../config.js';
 import { sessionDayOf, sessionOf } from '../../report/market-day.js';
-import { volLevelNow } from '../../report/signal-backtest.js';
+import { volNowHeld } from '../../report/signal-backtest.js';
 
 /**
  * The strategy desk: what is saved, what is armed, and when it next runs.
@@ -325,6 +325,12 @@ export function registerStrategyRoutes(app: FastifyInstance) {
      * behind them. The keys stay, empty, so one shape answers both.
      */
     const lite = (req.query as { lite?: string } | undefined)?.lite === '1';
+    /*
+     * `?journal=1` (17 Oct 2026): the signal journal and the trade history are asked for, not sent on every read. No
+     * screen reads them off this answer (the trades have their own routes), and the strategies screen polls every five
+     * seconds: two queries and most of the bytes, for nothing. Without it the keys stay, empty, as on `lite`.
+     */
+    const journal = !lite && (req.query as { journal?: string } | undefined)?.journal === '1';
     const shown = (await s.all()).filter((x) => belongs(x, account));
     // Every signal strategy's expiry day so far, in one read (`signalDay`): from 5:30 PM IST, when the daily contract's day begins.
     const signalDay = shown.some((x) => x.config.trigger === 'signal') ? await s.signalDay(sessionOf(sessionDayOf(Date.now())).from) : new Map();
@@ -406,10 +412,10 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       spot: svc.spot,
       /*
        * How volatile it is now, by both sources (17 Oct 2026): what a strategy that sets its delta or SL by it would use
-       * for a signal this minute. The backtest's own reading, kept a minute; null where it cannot be said. Only asked
-       * for when a strategy shown reads it.
+       * for a signal this minute. The backtest's own reading, read in the background (`volNowHeld`); null where it
+       * cannot be said. Only asked for when a strategy shown reads it.
        */
-      ...(shown.some((x) => volSourceOf(x.config)) ? { volNow: { iv: await volLevelNow('iv', now), atr: await volLevelNow('atr', now) } } : {}),
+      ...(shown.some((x) => volSourceOf(x.config)) ? { volNow: await volNowHeld() } : {}),
       strategies: await Promise.all(shown.map(async (x) => {
         // Another account's strategy: shown, and said plainly that it is not entering while the desk is elsewhere.
         const here = tradingServiceFor(x.accountId) !== null;
@@ -448,10 +454,10 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       groups: (await s.groups()).filter((g) => belongs(g, account)).map(named),
       runs: kept(await s.runs(mine ? 200 : 40)).slice(0, 40),
       // Each signal a signal strategy saw, and what became of it.
-      signalRuns: lite ? [] : kept(await s.signalRuns(mine ? 300 : 60)).slice(0, 60),
+      signalRuns: !journal ? [] : kept(await s.signalRuns(mine ? 300 : 60)).slice(0, 60),
       // The signal strategies' trades, with the signal's perp levels, the paper log's verdict and the option's money.
       // Never the reason the list fails: an unreadable history is an empty one, and an entry in the error log.
-      signalTrades: lite ? [] : kept(await s.signalTrades(300).catch((e: Error) => {
+      signalTrades: !journal ? [] : kept(await s.signalTrades(300).catch((e: Error) => {
         noteError({ source: 'server', level: 'warn', where: 'signal-trades', message: `signal trade history not read: ${e.message}` });
         return [];
       })),

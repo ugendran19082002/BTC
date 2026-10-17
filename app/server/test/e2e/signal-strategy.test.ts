@@ -278,7 +278,7 @@ test('[critical] the put fills -- at the bid after 5 s -- and at the end of its 
 });
 
 test('the list carries each signal run in the shape the screen reads', async () => {
-  const r = await api('GET', '/api/strategies');
+  const r = await api('GET', '/api/strategies?journal=1');
   const run = r.body.signalRuns.find((x: any) => x.strategyId === 'sig-bo' && x.status === 'placed');
   assert.ok(run, JSON.stringify(r.body.signalRuns).slice(0, 300));
   for (const k of ['id', 'signalKey', 'method', 'mode', 'tf', 'dir', 'status', 'detail', 'tradeId', 'at']) assert.ok(k in run, k);
@@ -420,7 +420,7 @@ test('a deleted strategy\'s trades keep the name they were placed under', async 
 // ------------------------------------------------------------ the trade history
 
 test('[critical] the trade history: the signal\'s perp levels, the paper log\'s verdict, and a real order\'s option, exit and money', async () => {
-  const r = await api('GET', '/api/strategies');
+  const r = await api('GET', '/api/strategies?journal=1');
   const trades: any[] = r.body.signalTrades;
   const sold = trades.find((t) => t.strategyId === 'sig-bo-sell' && t.status === 'placed');
   assert.ok(sold, JSON.stringify(trades).slice(0, 400));
@@ -765,7 +765,7 @@ test('[critical] "at least OTM n" on a premium rule and on a block: saved only w
   const gatedElse = await last();
   assert.equal(gatedElse.status, 'refused', gatedElse.detail);
   assert.match(gatedElse.detail, /\| refused: PE 83200 @ 4 \(rule failed: the premium's strike 84000 @ 18 is nearer than OTM 2 — went to the else strike OTM 3\) — .+ · block 2, from 1:00 PM$/);
-  const listed = (await api('GET', '/api/strategies')).body.signalTrades.find((t: any) => t.strategyId === 'sig-floor' && t.status === 'refused' && /not listed/.test(t.detail));
+  const listed = (await api('GET', '/api/strategies?journal=1')).body.signalTrades.find((t: any) => t.strategyId === 'sig-floor' && t.status === 'refused' && /not listed/.test(t.detail));
   assert.match(listed.detail, /rule failed — .* · block 2, from 1:00 PM$/, 'and the history gets the same words');
 
   clock = TEN;
@@ -921,7 +921,7 @@ test('[critical] SL distance per timeframe: a signal whose SL is nearer than its
   assert.match((await last()).detail, /SELL \| SL too near: the perp entry 85025 to the SL 85200 is 175 pts — this strategy takes 5m signals only at 500 pts or more$/);
 
   // the trade history's Skipped tab gets the row, reason and all
-  const listed = (await api('GET', '/api/strategies')).body.signalTrades.filter((t: any) => t.strategyId === 'sig-sl' && t.status === 'skipped');
+  const listed = (await api('GET', '/api/strategies?journal=1')).body.signalTrades.filter((t: any) => t.strategyId === 'sig-sl' && t.status === 'skipped');
   assert.equal(listed.length, 2);
   assert.match(listed[0].detail, /SL too near: .* is 175 pts/);
   await api('POST', '/api/strategies/sig-sl/enabled', { enabled: false });
@@ -1556,7 +1556,7 @@ test('[critical] a no-entry window: saved with the strategy, a signal inside it 
 // ------------------------------------------------------------ the phone's light read (10 Oct 2026)
 
 test('[critical] ?lite=1: the strategies, runs and figures as always, without the signal journal and the trade history', async () => {
-  const full = (await api('GET', '/api/strategies')).body;
+  const full = (await api('GET', '/api/strategies?journal=1')).body;
   const lite = (await api('GET', '/api/strategies?lite=1')).body;
   assert.ok(full.signalRuns.length > 0 && full.signalTrades.length > 0, 'the full read carries both');
   assert.deepEqual(lite.signalRuns, []);
@@ -1565,6 +1565,17 @@ test('[critical] ?lite=1: the strategies, runs and figures as always, without th
   const rest = (b: Record<string, unknown>) => Object.fromEntries(Object.entries(b).filter(([k]) => !['signalRuns', 'signalTrades', 'balanceUsd', 'spot', 'walletUsd', 'marginUsedUsd'].includes(k)));
   assert.deepEqual(Object.keys(lite).sort(), Object.keys(full).sort());
   assert.deepEqual(rest(lite), rest(full));
+});
+
+test('[critical] ?journal=1 (17 Oct 2026): the journal and the trade history are asked for; the screen\'s poll gets the keys, empty', async () => {
+  const plain = (await api('GET', '/api/strategies')).body;
+  const asked = (await api('GET', '/api/strategies?journal=1')).body;
+  assert.ok(asked.signalRuns.length > 0 && asked.signalTrades.length > 0);
+  assert.deepEqual(plain.signalRuns, []);
+  assert.deepEqual(plain.signalTrades, []);
+  // lite wins: the phone's read never carries them.
+  const both = (await api('GET', '/api/strategies?lite=1&journal=1')).body;
+  assert.deepEqual([both.signalRuns, both.signalTrades], [[], []]);
 });
 
 test('[critical] delta by volatility (17 Oct 2026): checked on save; each signal sold at its level\'s delta, read by the source chosen; unknown keeps its own -- and the row says which', async () => {

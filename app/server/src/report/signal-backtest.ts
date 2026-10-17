@@ -3,6 +3,7 @@ import { flowSchema } from '../market/flow.js';
 import { optionSnapshotsSchema } from '../market/option-snapshots.js';
 import { marksFetchedBy, marksWanted, optionMarksSchema } from '../market/option-marks.js';
 import { entrySchema } from '../entry/paper.js';
+import { freshInBackground } from '../entry/version.js';
 import { methodsSchema } from '../entry/catalogue.js';
 import { fillChargesUsd } from '../trading/charges.js';
 import { fundsRequiredPerContract } from '../trading/margin.js';
@@ -989,6 +990,17 @@ export async function volLevelNow(by: VolBy, at: number): Promise<VolLevel | nul
   while (levelHeld.size > 16) levelHeld.delete(levelHeld.keys().next().value!);
   return level;
 }
+
+/**
+ * The level now by both sources, for the strategies screen (17 Oct 2026): its five-second poll is served what was
+ * read, never made to wait on a reading -- the server reads it once a minute (index.ts), and a read older than half a
+ * minute is read again behind the answer, waited on at most a quarter of a second.
+ */
+export const volNowHeld = freshInBackground(async () => {
+  const now = Date.now();
+  const [iv, atr] = await Promise.all([volLevelNow('iv', now), volLevelNow('atr', now)]);
+  return { iv, atr };
+}, 30_000);
 /** What a strategy's own volatility is read by, where it sets its delta or its SL by it; else the backtest's own setting. */
 export const ownVolBy = (st: Strategy | null | undefined, fallback: VolBy | undefined): VolBy | undefined =>
   (st ? volSourceOf(st.config) : null) ?? fallback;
