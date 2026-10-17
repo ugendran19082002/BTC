@@ -374,6 +374,18 @@ delta. The signal's line in the history ends with what decided it: "· low volat
 0.10 · high 0.08"). Refused on save for a strategy that buys, is not by delta, or has strike blocks. Stored in the
 strategy's config (`signal.deltaByVol`); no table of its own.
 
+## SL by volatility (17 Oct 2026)
+
+The option SL by the same level ([0019](../decisions/0019-sl-by-volatility.md)): **Entry & exit → SL by volatility**,
+off to begin with; **Low +250% · Normal +200% · High +150%** of the premium to begin with. With delta by volatility on
+too, the two read **one source** -- one reading a signal sets both, and changing it in either changes it in both. The
+level is decided at the signal and the trade is placed with that SL (`exitsNow`), so the desk's stop watch and the
+backstop at Delta follow it to the exit; an unreadable level keeps the strategy's own SL. The signal's line ends
+"· high volatility (ATM IV): Δ ≤ 0.08, SL +150%"; the card carries "SL by ATM IV: low +250% · normal +200% · high
++150%" beside the delta's, in the window and out of it. Refused on save for an SL in points or as a price, an SL with
+time steps, a strategy that buys, or a source other than the delta's. Stored in the strategy's config
+(`signal.slByVol`).
+
 ## Known limits
 
 - Whether Delta holds four reduce-only orders on one contract (two strategies'

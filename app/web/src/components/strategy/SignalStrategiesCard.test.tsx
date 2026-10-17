@@ -633,6 +633,29 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
     expect(screen.queryByLabelText('delta by volatility of PLAIN')).toBeNull();
   });
 
+  it('[critical] and its SL by volatility, with its source and three SLs', async () => {
+    const on = strat('slv', { ...SIG, ...allDay, stopMode: 'pct', stopLossPct: 1.6, signal: { ...SIG.signal, slByVol: { on: true, by: 'atr', low: 2.5, medium: 2, high: 1.5 } } });
+    getStrategies.mockResolvedValue(status([on]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('SLV');
+    expect(screen.getByLabelText('SL by volatility of SLV')).toHaveTextContent('SL by ATR 2h: low +250% · normal +200% · high +150%');
+  });
+
+  it('[critical] outside its window the tags are said all the same: a setting is the strategy\'s whatever the clock (17 Oct 2026)', async () => {
+    const now = istMinuteOf(Date.now());
+    // A window of one minute that is not this one: the strategy is outside it now.
+    const away = `${String(Math.floor(((now + 120) % 1_440) / 60)).padStart(2, '0')}:${String((now + 120) % 60).padStart(2, '0')}`;
+    const until = `${String(Math.floor(((now + 121) % 1_440) / 60)).padStart(2, '0')}:${String((now + 121) % 60).padStart(2, '0')}`;
+    const out = strat('out', { ...SIG, entryTime: away, exitTime: until, strikeRule: 'delta', delta: { max: 0.1 }, stopMode: 'pct', stopLossPct: 1.6,
+      signal: { ...SIG.signal, deltaByVol: { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 }, slByVol: { on: true, by: 'iv', low: 2.5, medium: 2, high: 1.5 } } });
+    getStrategies.mockResolvedValue(status([out]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('OUT');
+    expect(screen.getByLabelText('strike rule now of OUT')).toHaveTextContent(/Outside its window now/);
+    expect(screen.getByLabelText('delta by volatility of OUT')).toHaveTextContent('Δ by ATM IV: low 0.18 · normal 0.10 · high 0.08');
+    expect(screen.getByLabelText('SL by volatility of OUT')).toHaveTextContent('SL by ATM IV: low +250% · normal +200% · high +150%');
+  });
+
   it('[critical] a strategy split by time of day says the block the clock is in, until when, and the rule a signal is sold under now', async () => {
     const s = strat('day', { ...SIG, ...allDay, strikeRule: 'premium', premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 }, strikeBlocks: blocks });
     getStrategies.mockResolvedValue(status([s]));

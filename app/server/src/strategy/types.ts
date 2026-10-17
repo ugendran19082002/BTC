@@ -523,6 +523,11 @@ export type SignalRule = {
    * off: the strategy's own delta, as before. See `DeltaByVol`.
    */
   deltaByVol?: DeltaByVol | null;
+  /**
+   * The option's own SL by the same level (owner, 17 Oct 2026: "SL by volatility in the strategy form, as delta").
+   * Absent or off: the strategy's own SL, as before. See `SlByVol`.
+   */
+  slByVol?: SlByVol | null;
 };
 /**
  * The delta a strike sold may have, by the level at the signal (report/signal-backtest.ts `volLevelNow`, the same
@@ -535,6 +540,36 @@ export type DeltaByVol = { on: boolean; by: 'atr' | 'iv'; low: number; medium: n
 export const DEFAULT_DELTA_BY_VOL: DeltaByVol = { on: false, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 };
 export const DELTA_BY_VOL_LEVELS = ['low', 'medium', 'high'] as const;
 const LEVEL_WORD = { low: 'low', medium: 'normal', high: 'high' } as const;
+/**
+ * The option's SL at each level, shares of the premium over the entry (1.5 is +150%), read by one source as the delta's
+ * is. Wider when it is calm, tighter when it is volatile: on two years of settled chains a sold leg that had doubled
+ * went on to four times 53-55% of the time on volatile days and 39-42% on calm ones (0019). Decided once, at the
+ * signal; the trade keeps its level's SL to its exit. A level that cannot be read keeps the strategy's own SL.
+ */
+export type SlByVol = { on: boolean; by: 'atr' | 'iv'; low: number; medium: number; high: number };
+export const DEFAULT_SL_BY_VOL: SlByVol = { on: false, by: 'iv', low: 2.5, medium: 2, high: 1.5 };
+/** An SL by level from +10% to +1,000% of the premium: past that it is a typo, not a stop. */
+export const SL_BY_VOL_MIN = 0.1, SL_BY_VOL_MAX = 10;
+export function slByVolProblems(a: unknown): string[] {
+  if (a === undefined || a === null) return [];
+  if (typeof a !== 'object' || Array.isArray(a)) return ['SL by volatility must be a setting.'];
+  const x = a as Partial<SlByVol>;
+  const bad: string[] = [];
+  if (typeof x.on !== 'boolean') bad.push('Say whether the SL is set by volatility.');
+  if (x.by !== 'atr' && x.by !== 'iv') bad.push('SL by volatility is read by ATR 2h or by ATM IV.');
+  for (const l of DELTA_BY_VOL_LEVELS) {
+    const v = x[l];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < SL_BY_VOL_MIN || v > SL_BY_VOL_MAX) bad.push(`The ${LEVEL_WORD[l]} volatility SL must be from +10% to +1,000% of the premium.`);
+  }
+  return bad;
+}
+/** The one source a strategy reads its level by, where it sets anything by it (the SL and the delta read the same); null with neither on. */
+export function volSourceOf(c: Pick<StrategyConfig, 'signal' | 'strikeRule' | 'stopMode'>): 'atr' | 'iv' | null {
+  const d = c.signal?.deltaByVol, s = c.signal?.slByVol;
+  if (d?.on && c.strikeRule === 'delta') return d.by;
+  if (s?.on && (c.stopMode ?? 'pct') === 'pct') return s.by;
+  return null;
+}
 export function deltaByVolProblems(a: unknown): string[] {
   if (a === undefined || a === null) return [];
   if (typeof a !== 'object' || Array.isArray(a)) return ['Delta by volatility must be a setting.'];
@@ -1252,6 +1287,14 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     if (Array.isArray(c.strikeBlocks) && c.strikeBlocks.length > 0) bad.push('Delta by volatility sets the delta for the whole window: remove the strike blocks, or switch it off.');
     if (c.signal.action === 'buy') bad.push('Delta by volatility is for a strategy that sells.');
   }
+  // By volatility it replaces one number -- the option SL's per cent -- for the whole trade, so: a per cent, no timetable, sold.
+  if (c.trigger === 'signal' && c.signal?.slByVol?.on) {
+    if ((c.stopMode ?? 'pct') !== 'pct') bad.push('SL by volatility sets the option SL as a per cent of the premium: set the SL by %.');
+    if (Array.isArray(c.stopSteps) && c.stopSteps.length > 0) bad.push('SL by volatility holds one SL a trade, set at its signal: remove the SL time steps, or switch it off.');
+    if (c.signal.action === 'buy') bad.push('SL by volatility is for a strategy that sells.');
+    // One reading a signal: a trade is never "low" for its delta and "high" for its SL.
+    if (c.signal.deltaByVol?.on && c.signal.deltaByVol.by !== c.signal.slByVol.by) bad.push('The SL and the delta by volatility read one source: pick the same for both.');
+  }
   if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
   bad.push(...noEntryProblems(c.noEntry, c.entryTime, c.exitTime, c.trigger === 'signal'));
   // A bought option's target and stop are judged by the desk at one level each (engine.ts `longExitIfReached`): no timetable yet.
@@ -1276,6 +1319,7 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   if (r.action !== undefined && r.action !== 'sell' && r.action !== 'buy') bad.push('Pick whether the option is bought or sold.');
   bad.push(...autoMethodsProblems(r.autoMethods));
   bad.push(...deltaByVolProblems(r.deltaByVol));
+  bad.push(...slByVolProblems(r.slByVol));
   // The record it picks by is the option sold: one that buys has none to pick from.
   if (r.autoMethods?.on && r.action === 'buy') bad.push('The methods\' daily update picks by the record as options sold: a strategy that buys cannot use it.');
   if (!Number.isInteger(r.maxOpen) || (r.maxOpen ?? 0) < 1 || (r.maxOpen ?? 0) > MAX_SIGNAL_OPEN) {

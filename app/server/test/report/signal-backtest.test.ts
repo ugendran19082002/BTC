@@ -635,3 +635,21 @@ test('[critical] a strategy that sets its delta by volatility is backtested as t
   const off = simulateDay({ from, to, signals: [sig(30), sig(230)], bars: flat, board, plan: planOfStrategy({ ...st, config: { ...st.config, signal: { ...st.config.signal!, deltaByVol: { ...dv, on: false } } } }, { from, to }), volAt: (at) => levelAt((at - from) / MIN) });
   assert.deepEqual(off.trades.map((t) => t.strike), [83_500, 83_500]);
 });
+
+test('[critical] a strategy that sets its SL by volatility is backtested as the desk trades it: each trade its level\'s SL to its exit; unknown its own', async () => {
+  const { planOfStrategy, strategyOfParams, ownVolBy } = await import('../../src/report/signal-backtest.js');
+  const flat = perp([[0, 84_000], [1_439, 84_100]]);
+  // Sold at 40; offered at 102 at minute 300 (+155%), then down to 3: a +150% SL is hit, +200%, +250% and +300% are not.
+  const board = ladder('P', 83_200, -0.09, [[0, 40], [295, 40], [300, 100], [310, 30], [1_435, 1]]);
+  const base = strategyOfParams({ ...P, stopPct: 3 }, null, null);
+  const sv = { on: true, by: 'atr' as const, low: 2.5, medium: 2, high: 1.5 };
+  const st = { ...base, config: { ...base.config, signal: { ...base.config.signal!, slByVol: sv } } };
+  const levelAt = (min: number) => (min < 100 ? 'high' as const : min < 200 ? 'low' as const : null);
+  const r = simulateDay({ from, to, signals: [sig(30), sig(130), sig(230)], bars: flat, board, plan: planOfStrategy(st, { from, to }), volAt: (at) => levelAt((at - from) / MIN) });
+  assert.deepEqual(r.trades.map((t) => [t.vol, t.by, Math.round((t.optStop! / t.entry - 1) * 100)]), [['high', 'option-sl', 150], ['low', 'option-tgt', 250], [null, 'option-tgt', 300]]);
+  assert.equal(ownVolBy(st, 'iv'), 'atr', 'read by its own source');
+  // A stop not by %: nothing by level, and no source of its own.
+  const points = { ...st, config: { ...st.config, stopMode: 'points' as const, stopLossPoints: 50 } };
+  assert.equal(planOfStrategy(points, { from, to }).stopPctByVol, undefined);
+  assert.equal(ownVolBy(points, undefined), undefined);
+});

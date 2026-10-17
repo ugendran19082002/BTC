@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type AutoMethods, type DeltaByVol, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -217,7 +217,17 @@ function cleanSignal(raw: unknown): SignalRule {
     ...cleanPts('maxTgtPts', r.maxTgtPts),
     ...cleanAuto(r.autoMethods),
     ...cleanDeltaByVol(r.deltaByVol),
+    ...cleanSlByVol(r.slByVol),
   };
+}
+
+/** SL by volatility: shares as numbers to the per cent (2.5 is +250%), the source as sent; absent stays absent. */
+function cleanSlByVol(raw: unknown): Pick<SignalRule, 'slByVol'> | Record<string, never> {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { slByVol: raw as SlByVol };
+  const a = raw as Partial<SlByVol>;
+  const num = (v: unknown) => (v === '' || v === null || v === undefined ? NaN : Math.round(Number(v) * 100) / 100);
+  return { slByVol: { on: a.on === true, by: a.by as SlByVol['by'], low: num(a.low), medium: num(a.medium), high: num(a.high) } };
 }
 
 /** Delta by volatility: numbers as numbers, the source as sent; absent stays absent, so a strategy that never used it is stored as before. */

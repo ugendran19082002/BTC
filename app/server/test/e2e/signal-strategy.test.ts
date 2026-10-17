@@ -1649,3 +1649,65 @@ test('[critical] delta by volatility (17 Oct 2026): checked on save; each signal
   assert.deepEqual(asked, []);
   await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
 });
+
+test('[critical] SL by volatility (17 Oct 2026): checked on save; each trade placed with its level\'s option SL, read once with the delta from one source; unknown keeps its own', async () => {
+  await freshDesk();
+  const sv = { on: true, by: 'iv', low: 2.5, medium: 2, high: 1.5 };
+  const slConfig = { ...config, liveOrders: true, signal: { ...config.signal, maxOpen: 20, slByVol: sv }, stopMode: 'pct', stopLossPct: 3 };
+  const refusals: [Record<string, unknown>, RegExp][] = [
+    [{ ...slConfig, stopMode: 'points', stopLossPoints: 40 }, /set the SL by %/],
+    [{ ...slConfig, stopSteps: [{ at: '13:00', value: 2 }] }, /remove the SL time steps, or switch it off/],
+    [{ ...slConfig, signal: { ...slConfig.signal, action: 'buy' }, takeProfitPct: 0, stopLossPct: 0 }, /SL by volatility is for a strategy that sells\./],
+    [{ ...slConfig, signal: { ...slConfig.signal, slByVol: { ...sv, low: 12 } } }, /The low volatility SL must be from \+10% to \+1,000% of the premium\./],
+    [{ ...slConfig, strikeRule: 'delta', delta: { max: 0.12 }, signal: { ...slConfig.signal, deltaByVol: { on: true, by: 'atr', low: 0.18, medium: 0.1, high: 0.08 } } }, /read one source: pick the same for both/],
+  ];
+  for (const [c, why] of refusals) {
+    const r = await api('POST', '/api/strategies', { name: 'Sig SL vol', config: c });
+    assert.equal(r.status, 422, JSON.stringify(r.body));
+    assert.ok(r.body.problems.some((p: string) => why.test(p)), r.body.problems.join(' | '));
+  }
+  const saved = await api('POST', '/api/strategies', { name: 'Sig SL vol', config: { ...slConfig, signal: { ...slConfig.signal, slByVol: { ...sv, low: '2.5' } } } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const id = saved.body.strategy.id as string;
+  assert.deepEqual((await strategyStore().get(id))!.config.signal!.slByVol, sv);
+  await api('POST', `/api/strategies/${id}/enabled`, { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+
+  let level: 'low' | 'medium' | 'high' | null = 'low';
+  const asked: string[] = [];
+  const byVol = new StrategyRunner(strategyStore(), () => clock, async () => board, undefined, async (by) => { asked.push(by); return level; });
+  clock = TEN;
+  for (const [lvl, share, words] of [
+    ['low', 2.5, 'low volatility \\(ATM IV\\): SL \\+250%'],
+    ['medium', 2, 'normal volatility \\(ATM IV\\): SL \\+200%'],
+    ['high', 1.5, 'high volatility \\(ATM IV\\): SL \\+150%'],
+    [null, 3, 'volatility \\(ATM IV\\) unknown: its own SL \\+300%'],
+  ] as const) {
+    level = lvl;
+    await byVol.onSignal(signal());
+    const row = (await runsOf(id)).at(-1)!;
+    assert.equal(row.status, 'placed', row.detail);
+    assert.match(row.detail, new RegExp(`${words}$`), row.detail);
+    // The trade itself carries the level's SL: what its stop watch and its backstop at Delta are set from.
+    const t = await one<{ plan: any }>('SELECT plan FROM trades WHERE trade_id = $1', [row.trade_id]);
+    assert.equal(t!.plan.exitAsk?.stopLossPct ?? t!.plan.stopLossPct, share, `${lvl}: ${JSON.stringify(t!.plan.exitAsk)}`);
+  }
+  assert.deepEqual([...new Set(asked)], ['iv']);
+
+  // With the delta by volatility too: one reading a signal, both from it, both said.
+  await freshAccount();
+  const s = (await strategyStore().get(id))!;
+  const both = { ...s.config, liveOrders: false, strikeRule: 'delta', delta: { max: 0.12 }, signal: { ...s.config.signal!, deltaByVol: { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 } } };
+  assert.equal((await api('POST', '/api/strategies', { id, name: s.name, config: both })).status, 200);
+  const deltaBoard: SignalBoard = { ...board, candidates: board.candidates.map((c) => ({ ...c, delta: c.cp === 'P' ? -0.07 : 0.07 })) };
+  const both$ = new StrategyRunner(strategyStore(), () => clock, async () => deltaBoard, undefined, async (by) => { asked.push(by); return level; });
+  asked.length = 0; level = 'high';
+  await both$.onSignal(signal());
+  assert.match((await runsOf(id)).at(-1)!.detail, /would sell PE 84000 .* · high volatility \(ATM IV\): Δ ≤ 0\.08, SL \+150%$/);
+  assert.equal(asked.length, 1, 'read once for the two');
+  level = null;
+  await both$.onSignal(signal());
+  assert.match((await runsOf(id)).at(-1)!.detail, / · volatility \(ATM IV\) unknown: its own Δ ≤ 0\.12, SL \+300%$/);
+  await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+  await freshAccount();
+});

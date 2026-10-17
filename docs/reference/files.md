@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-518 files listed, 261 test files counted below, images and lockfiles left out.
+520 files listed, 261 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -499,6 +499,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [SignalStrategiesCard.tsx](../../app/web/src/components/strategy/SignalStrategiesCard.tsx) | The signal strategies, on the Live screen beside the methods that make the signals: each one's switch, its live-orders switch, what it is set to, and what the last signals did. |
 | [SignalStrategyForm.tsx](../../app/web/src/components/strategy/SignalStrategyForm.tsx) | A signal strategy: the desk's entry signals sold as options. |
 | [SignalTradeHistory.tsx](../../app/web/src/components/strategy/SignalTradeHistory.tsx) | Every trade the signal strategies took, or with live orders off would have taken: the signal, the option, the signal's SL and TGT on the BTC perp, how it ended and what it made. |
+| [SlByVol.tsx](../../app/web/src/components/strategy/SlByVol.tsx) | SL by volatility in the signal strategy form (owner, 17 Oct 2026: "SL by volatility in the strategy form, as delta -- Entry & exit"). |
 | [StrategyGroupSection.tsx](../../app/web/src/components/strategy/StrategyGroupSection.tsx) | One group of strategies on the Signal Strategies card (owner, 10 Oct 2026): its name, whose account, how many are on, and what is done to the group as one -- every strategy on or off, renamed, clon... |
 | [StrikeBlocksEditor.tsx](../../app/web/src/components/strategy/StrikeBlocksEditor.tsx) | A signal strategy's strike rule, over its window (4 Oct 2026). |
 | [form-parts.tsx](../../app/web/src/components/strategy/form-parts.tsx) | The strategy forms' parts: every field group a strategy has, written once. |
@@ -698,6 +699,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0016-shared-contracts-again.md](../decisions/0016-shared-contracts-again.md) | 0016 — Several trades may share a contract, and several strategies one signal |
 | [0017-methods-picked-daily.md](../decisions/0017-methods-picked-daily.md) | 0017 — A signal strategy's methods may be picked again every day by their record |
 | [0018-delta-by-volatility.md](../decisions/0018-delta-by-volatility.md) | 0018 — A signal strategy's delta may be set by how volatile it is at each signal |
+| [0019-sl-by-volatility.md](../decisions/0019-sl-by-volatility.md) | 0019 — A signal strategy's option SL may be set by how volatile it is at each signal |
 | [README.md](../decisions/README.md) | Decisions |
 
 ## `docs/features/`

@@ -13,7 +13,7 @@ import { selectLegs, type Candidate } from '../strategy/select.js';
 import { istMinutes, istWeekday } from '../strategy/schedule.js';
 import {
   DEFAULT_CONFIG, SIGNAL_TFS, actionOf, exitRules, exitValueAt, sideCaps, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
-  type SignalTf, type Strategy, type StrategyConfig,
+  type SignalTf, type Strategy, type StrategyConfig, volSourceOf,
 } from '../strategy/types.js';
 
 /**
@@ -483,8 +483,9 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }, 
     // Its timed steps, read as the runner's stepper reads them: forward from its entry time.
     ...(x.target.mode === 'pct' && x.target.steps.length ? { targetPctAt: (at: number) => exitValueAt(x.target, c.entryTime, istMinutes(at)).value } : {}),
     ...(x.stop.mode === 'pct' && x.stop.steps.length ? { stopPctAt: (at: number) => exitValueAt(x.stop, c.entryTime, istMinutes(at)).value } : {}),
-    // Its delta by volatility, as the runner trades it: each level its own delta, read by the strategy's own `by` (`ownVolBy`).
+    // Its delta and its SL by volatility, as the runner trades them: each level its own, read by the strategy's own source (`ownVolBy`).
     ...(byVolPicks(s, span, desk)),
+    ...(x.stop.mode === 'pct' && c.signal?.slByVol?.on ? { stopPctByVol: { low: c.signal.slByVol.low, medium: c.signal.slByVol.medium, high: c.signal.slByVol.high } } : {}),
     maxOpen: rule.maxOpen > 0 ? rule.maxOpen : null,
     desk,
   };
@@ -493,7 +494,7 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }, 
 function byVolPicks(s: Strategy, span: { from: number; to: number }, desk: DayPlan['desk']): Pick<DayPlan, 'pickByVol'> {
   const c = s.config, dv = c.signal?.deltaByVol;
   if (!dv?.on || c.strikeRule !== 'delta') return {};
-  const plain = { ...c, signal: { ...c.signal!, deltaByVol: null } };
+  const plain = { ...c, signal: { ...c.signal!, deltaByVol: null, slByVol: null } };
   const at = (d: number) => planOfStrategy({ ...s, config: { ...plain, delta: { ...(c.delta ?? { max: d }), max: d } } } as Strategy, span, desk).pick;
   return { pickByVol: { low: at(dv.low), medium: at(dv.medium), high: at(dv.high) } };
 }
@@ -988,11 +989,9 @@ export async function volLevelNow(by: VolBy, at: number): Promise<VolLevel | nul
   while (levelHeld.size > 16) levelHeld.delete(levelHeld.keys().next().value!);
   return level;
 }
-/** What a strategy's own volatility is read by, where it sets its delta by it; else the backtest's own setting. */
-export const ownVolBy = (st: Strategy | null | undefined, fallback: VolBy | undefined): VolBy | undefined => {
-  const dv = st?.config.signal?.deltaByVol;
-  return dv?.on && st?.config.strikeRule === 'delta' ? dv.by : fallback;
-};
+/** What a strategy's own volatility is read by, where it sets its delta or its SL by it; else the backtest's own setting. */
+export const ownVolBy = (st: Strategy | null | undefined, fallback: VolBy | undefined): VolBy | undefined =>
+  (st ? volSourceOf(st.config) : null) ?? fallback;
 
 /** One day under one set of rules. `takes` narrows the signals to those the rules are about at all (a strategy's methods and timeframes). */
 async function dayOf(day: string, key: string, now: number, planFor: (span: { from: number; to: number }) => DayPlan, takes: (sig: BtSignal) => boolean, vol: { only: VolLevel | null; baseline: number | null; by?: VolBy }, marksSeen = 0): Promise<HeldDay> {
@@ -1508,7 +1507,7 @@ function studyBookOf(b: StudyBook): { takes: (sig: BtSignal) => boolean; planFor
       // A level's strike: the live rules' own pick with that delta -- the settings' rule turned to delta, or the
       // strategy's with its strike blocks set aside (one delta for the level, not the clock's).
       const deltaPick = (d: number): DayPlan['pick'] => (st
-        ? planOfStrategy({ ...st, config: { ...st.config, strikeRule: 'delta', delta: { ...st.config.delta, max: d }, strikeBlocks: [], signal: { ...st.config.signal!, deltaByVol: null } } } as Strategy, span, null).pick
+        ? planOfStrategy({ ...st, config: { ...st.config, strikeRule: 'delta', delta: { ...st.config.delta, max: d }, strikeBlocks: [], signal: { ...st.config.signal!, deltaByVol: null, slByVol: null } } } as Strategy, span, null).pick
         : planOfStrategy(strategyOfParams({ ...b.params, rule: 'delta', value: d }, null, null), span).pick);
       return {
         ...base,

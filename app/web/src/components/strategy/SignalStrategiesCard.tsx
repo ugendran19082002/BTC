@@ -36,12 +36,39 @@ import { cn } from '@/lib/utils';
  * signal arriving now is sold under, and what follows it. The card is read
  * again every few seconds, so it moves with the clock.
  */
+/**
+ * What a strategy sets by volatility (17 Oct 2026): its delta and its SL by level, as tags. Said whatever the clock --
+ * a setting is the strategy's in its window and out of it (17 Oct: outside its window the tags were not shown).
+ */
+function ByVolTags({ s }: { s: Strategy }) {
+  const dv = s.config.signal?.deltaByVol, sv = s.config.signal?.slByVol;
+  const tag = 'rounded border border-solid border-[var(--accent)]/50 px-1.5 py-px text-[10.5px] text-foreground';
+  const by = (b: 'atr' | 'iv') => (b === 'iv' ? 'ATM IV' : 'ATR 2h');
+  return (
+    <>
+      {/* The delta above is the one it keeps when the level cannot be read. */}
+      {dv?.on && s.config.strikeRule === 'delta' && (
+        <span aria-label={`delta by volatility of ${s.name}`} className={tag}>
+          Δ by {by(dv.by)}: low {dv.low.toFixed(2)} · normal {dv.medium.toFixed(2)} · high {dv.high.toFixed(2)}
+        </span>
+      )}
+      {/* And its own SL is the one kept when the level cannot be read. */}
+      {sv?.on && (s.config.stopMode ?? 'pct') === 'pct' && (
+        <span aria-label={`SL by volatility of ${s.name}`} className={tag}>
+          SL by {by(sv.by)}: low +{Math.round(sv.low * 100)}% · normal +{Math.round(sv.medium * 100)}% · high +{Math.round(sv.high * 100)}%
+        </span>
+      )}
+    </>
+  );
+}
+
 function RuleNow({ s }: { s: Strategy }) {
   const b = blockNow(s.config, istMinuteOf(Date.now()));
   if (!b) {
     return (
-      <p aria-label={`strike rule now of ${s.name}`} className="m-0 mt-1 text-[11.5px] text-[var(--dim)]">
-        Outside its window now — the next signal is taken from {time12(s.config.entryTime)}.
+      <p aria-label={`strike rule now of ${s.name}`} className="m-0 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-[var(--dim)]">
+        <span>Outside its window now — the next signal is taken from {time12(s.config.entryTime)}.</span>
+        <ByVolTags s={s} />
       </p>
     );
   }
@@ -52,12 +79,7 @@ function RuleNow({ s }: { s: Strategy }) {
         ? <span><b className="text-foreground">Block {b.n} of {b.of}</b> · {time12(b.from)} → {time12(b.until)} · {hoursLabel(b.minutesLeft)} left</span>
         : <span><b className="text-foreground">Same rule all the time</b></span>}
       <span>{s.config.signal?.action === 'buy' ? 'buys' : 'sells'} <b className="text-foreground">{pickWords(b.pick)}</b></span>
-      {/* Its delta by volatility (17 Oct 2026): the number above is the one it keeps when the level cannot be read. */}
-      {s.config.signal?.deltaByVol?.on && s.config.strikeRule === 'delta' && (
-        <span aria-label={`delta by volatility of ${s.name}`} className="rounded border border-solid border-[var(--accent)]/50 px-1.5 py-px text-[10.5px] text-foreground">
-          Δ by {s.config.signal.deltaByVol.by === 'iv' ? 'ATM IV' : 'ATR 2h'}: low {s.config.signal.deltaByVol.low.toFixed(2)} · normal {s.config.signal.deltaByVol.medium.toFixed(2)} · high {s.config.signal.deltaByVol.high.toFixed(2)}
-        </span>
-      )}
+      <ByVolTags s={s} />
       {b.next && <span className="text-[var(--dim)]">· then block {b.next.n} at {time12(b.next.at)}: {pickWords(b.next.pick)}</span>}
     </p>
   );

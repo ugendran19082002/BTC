@@ -1587,3 +1587,60 @@ describe('delta by volatility (17 Oct 2026): the backtest\'s logic on the form',
     expect(box()).toHaveTextContent(/Live orders are on: saved, this changes real orders from the next signal\..*run it with live orders off first/);
   });
 });
+
+describe('SL by volatility (17 Oct 2026): in Entry & exit, as the delta is', () => {
+  const sl = (rule: Partial<SignalRule> = {}, over: Partial<Strategy['config']> = {}) => signalStrategy(rule, { stopMode: 'pct', stopLossPct: 1.6, ...over });
+  const box = () => screen.getByRole('region', { name: 'SL by volatility' });
+  const SV = { on: true, by: 'iv' as const, low: 2.5, medium: 2, high: 1.5 };
+
+  it('[critical] off to begin with; on, ATM IV and +250% / +200% / +150%; said in the rule, and saved as shares', async () => {
+    show(sl());
+    tab('Entry & exit');
+    const sw = within(box()).getByRole('switch', { name: /SL by volatility/ });
+    expect(sw).not.toBeChecked();
+    expect(box()).toHaveTextContent(/Off — every trade at the strategy's own SL \(\+160%\)/);
+    fireEvent.click(sw);
+    expect(within(box()).getByRole('radio', { name: 'ATM IV' })).toBeChecked();
+    expect(within(box()).getByLabelText('SL in low volatility, per cent')).toHaveValue('250');
+    expect(within(box()).getByLabelText('SL in normal volatility, per cent')).toHaveValue('200');
+    expect(within(box()).getByLabelText('SL in high volatility, per cent')).toHaveValue('150');
+    expect(box()).toHaveTextContent(/low buys back at \+250% over the entry, normal \+200%, high \+150% — decided by ATM IV when its signal fills.*its own SL, \+160%/);
+    expect(screen.getByText(/stop at \+250% in low volatility, \+200% normal, \+150% high \(by ATM IV; \+160% when it cannot be read\)/)).toBeInTheDocument();
+    fireEvent.change(within(box()).getByLabelText('SL in high volatility, per cent'), { target: { value: '120' } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.slByVol).toEqual({ on: true, by: 'iv', low: 2.5, medium: 2, high: 1.2 });
+  });
+
+  it('[critical] one source with the delta by volatility: changed in one, changed in both', async () => {
+    show(sl({ slByVol: SV, deltaByVol: { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 } }, { strikeRule: 'delta', delta: { max: 0.1 } }));
+    tab('Entry & exit');
+    expect(box()).toHaveTextContent('Volatility by — the same as the delta by volatility');
+    radio('SL volatility by', 'ATR 2h');
+    tab('Strike & lots');
+    expect(within(screen.getByRole('region', { name: 'Delta by volatility' })).getByRole('radio', { name: 'ATR 2h' })).toBeChecked();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect([saved().config.signal!.slByVol!.by, saved().config.signal!.deltaByVol!.by]).toEqual(['atr', 'atr']);
+  });
+
+  it('[critical] only where it can work: an SL by %, no SL time steps, sold -- said in place, with the way to fix it', async () => {
+    show(sl({ slByVol: SV }, { stopMode: 'points', stopLossPoints: 40 }));
+    tab('Entry & exit');
+    expect(within(box()).getByRole('alert')).toHaveTextContent('It sets the option SL as a per cent of the premium');
+    expect(saveButton()).toHaveTextContent(/Fix \d+ to save/);
+    fireEvent.click(within(box()).getByRole('button', { name: 'Set the SL by %' }));
+    await waitFor(() => expect(within(box()).queryByRole('alert')).toBeNull());
+    expect(saveButton()).toHaveTextContent(/^Save$/);
+  });
+
+  it('[critical] SL time steps are named and can be taken off in one tap; a wider SL when volatile is warned of; live orders on, said', async () => {
+    show(sl({ slByVol: { ...SV, high: 3 } }, { stopSteps: [{ at: '13:00', value: 2 }], liveOrders: true }));
+    tab('Entry & exit');
+    expect(within(box()).getByRole('alert')).toHaveTextContent('the SL\'s time steps would move it');
+    fireEvent.click(within(box()).getByRole('button', { name: 'Remove the SL time steps' }));
+    await waitFor(() => expect(within(box()).queryByRole('alert')).toBeNull());
+    expect(box()).toHaveTextContent(/The high SL is wider than the low/);
+    expect(box()).toHaveTextContent(/Live orders are on: saved, this changes the SL of real orders from the next signal \(trades open now keep theirs\)/);
+  });
+});

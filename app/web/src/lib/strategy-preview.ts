@@ -104,11 +104,15 @@ export function describeExit(c: StrategyConfig): string {
         ? `buys back at ${target.value}`
         : `buys back at ${Math.round(target.value * 100)}% decay`
     : 'holds to settlement';
-  const sl = stop.value > 0
-    ? stop.mode === 'points' ? `stop at entry + ${stop.value} pts`
-      : stop.mode === 'price' ? `stop at ${stop.value}`
-        : `stop at +${Math.round(stop.value * 100)}%`
-    : 'no stop';
+  const sv = c.signal?.slByVol;
+  const sl = sv?.on && stop.mode === 'pct'
+    // By volatility (17 Oct 2026): each level's SL, and its own where the level cannot be read.
+    ? `stop at +${Math.round(sv.low * 100)}% in low volatility, +${Math.round(sv.medium * 100)}% normal, +${Math.round(sv.high * 100)}% high (by ${sv.by === 'iv' ? 'ATM IV' : 'ATR 2h'}; ${stop.value > 0 ? `+${Math.round(stop.value * 100)}%` : 'none'} when it cannot be read)`
+    : stop.value > 0
+      ? stop.mode === 'points' ? `stop at entry + ${stop.value} pts`
+        : stop.mode === 'price' ? `stop at ${stop.value}`
+          : `stop at +${Math.round(stop.value * 100)}%`
+      : 'no stop';
   return `${tp}${ladderWords(target)}, ${sl}${ladderWords(stop)}`;
 }
 

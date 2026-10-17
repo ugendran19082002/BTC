@@ -7,7 +7,7 @@ import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -503,22 +503,30 @@ export class StrategyRunner {
    * wasted lookup and nothing more. Only for a strategy with live orders on, and in its window.
    */
   /**
-   * The rules a signal is traded by now: the strategy's own, with its delta set by how volatile it is where it says so
-   * (owner, 17 Oct 2026: "delta by volatility in the signal strategy form, by ATR 2h or ATM IV"). Read as the backtest
-   * reads a fill (`volLevelNow`); a level that cannot be read keeps the strategy's own delta. `words` say which, for
-   * the signal's line in the history -- what was chosen, and why, kept with the decision.
+   * The rules a signal is traded by now: the strategy's own, with its delta and its option SL set by how volatile it
+   * is where it says so (owner, 17 Oct 2026: "delta by volatility, and SL by volatility, in the signal strategy form").
+   * One reading a signal, from the one source both read (`volSourceOf`), as the backtest reads a fill (`volLevelNow`);
+   * a level that cannot be read keeps the strategy's own. `words` say which, for the signal's line in the history --
+   * what was chosen, and why, kept with the decision. The SL so chosen is the trade's to its exit.
    */
   private async byVolatility(s: Strategy, at: number): Promise<{ s: Strategy; words: string }> {
-    const dv = s.config.signal?.deltaByVol;
-    if (!dv?.on || s.config.strikeRule !== 'delta') return { s, words: '' };
-    const own = s.config.delta?.max ?? 0;
-    const level = await this.volLevel(dv.by, at).catch(() => null);
-    if (!level) return { s, words: ` · volatility (${BY_WORDS[dv.by]}) unknown: its own Δ ≤ ${own.toFixed(2)}` };
-    const d = dv[level];
-    return {
-      s: { ...s, config: { ...s.config, delta: { ...(s.config.delta ?? { max: d }), max: d } } },
-      words: ` · ${LEVEL_WORDS[level]} volatility (${BY_WORDS[dv.by]}): Δ ≤ ${d.toFixed(2)}`,
+    const by = volSourceOf(s.config);
+    if (!by) return { s, words: '' };
+    const dv = s.config.signal?.deltaByVol?.on && s.config.strikeRule === 'delta' ? s.config.signal.deltaByVol : null;
+    const sv = s.config.signal?.slByVol?.on && (s.config.stopMode ?? 'pct') === 'pct' ? s.config.signal.slByVol : null;
+    const pct = (share: number) => `+${Math.round(share * 100)}%`;
+    const level = await this.volLevel(by, at).catch(() => null);
+    if (!level) {
+      const own = [dv ? `Δ ≤ ${(s.config.delta?.max ?? 0).toFixed(2)}` : null, sv ? `SL ${s.config.stopLossPct > 0 ? pct(s.config.stopLossPct) : 'off'}` : null].filter(Boolean).join(', ');
+      return { s, words: ` · volatility (${BY_WORDS[by]}) unknown: its own ${own}` };
+    }
+    const config = {
+      ...s.config,
+      ...(dv ? { delta: { ...(s.config.delta ?? { max: dv[level] }), max: dv[level] } } : {}),
+      ...(sv ? { stopLossPct: sv[level] } : {}),
     };
+    const set = [dv ? `Δ ≤ ${dv[level].toFixed(2)}` : null, sv ? `SL ${pct(sv[level])}` : null].filter(Boolean).join(', ');
+    return { s: { ...s, config }, words: ` · ${LEVEL_WORDS[level]} volatility (${BY_WORDS[by]}): ${set}` };
   }
 
   private async warmFor(given: Strategy, r: MethodRead): Promise<void> {
@@ -696,7 +704,8 @@ export class StrategyRunner {
 
     const target = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
     const args = {
-      ...placeArgs(s, {
+      // Its SL by volatility rides in here: the exits it enters with are the level's (`exitsNow`).
+      ...placeArgs(vol.s, {
         symbol: `${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`,
         optionSide: leg, strike: chosen.strike, expiryTs: snap.expiryTs,
         lots: chosen.lots, ask: chosen.ask, spot: snap.spot, cancelAfterMs: SIGNAL_ENTRY_MS,

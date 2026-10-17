@@ -273,7 +273,23 @@ export type SignalRule = {
   autoMethods?: AutoMethods | null;
   /** The strike's delta by how volatile it is at each signal (17 Oct 2026). Absent or off: the strategy's own delta. */
   deltaByVol?: DeltaByVol | null;
+  /** The option's own SL by the same level (17 Oct 2026). Absent or off: the strategy's own SL. */
+  slByVol?: SlByVol | null;
 };
+/** The option's SL at each level, shares of the premium over the entry (1.5 is +150%): wider when calm, tighter when volatile. */
+export type SlByVol = { on: boolean; by: 'atr' | 'iv'; low: number; medium: number; high: number };
+export const DEFAULT_SL_BY_VOL: SlByVol = { on: false, by: 'iv', low: 2.5, medium: 2, high: 1.5 };
+/** The server's `slByVolProblems`, in its words. */
+export function slByVolProblems(a: SlByVol | null | undefined): string[] {
+  if (!a) return [];
+  const bad: string[] = [];
+  if (a.by !== 'atr' && a.by !== 'iv') bad.push('SL by volatility is read by ATR 2h or by ATM IV.');
+  for (const l of ['low', 'medium', 'high'] as const) {
+    const v = a[l];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0.1 || v > 10) bad.push(`The ${({ low: 'low', medium: 'normal', high: 'high' } as const)[l]} volatility SL must be from +10% to +1,000% of the premium.`);
+  }
+  return bad;
+}
 /**
  * The most delta a strike sold may have at each level, read by one source -- the candles' ATR over two hours, or the
  * board's ATM IV -- as the backtest reads a fill. A level that cannot be read keeps the strategy's own delta.

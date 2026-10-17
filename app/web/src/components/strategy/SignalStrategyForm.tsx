@@ -14,6 +14,7 @@ import { pickMethodsNow } from '@/api/signal-backtest';
 import { usePoll } from '@/hooks/usePoll';
 import { StrikeBlocksEditor } from '@/components/strategy/StrikeBlocksEditor';
 import { DeltaByVolFields } from '@/components/strategy/DeltaByVol';
+import { SlByVolFields } from '@/components/strategy/SlByVol';
 import {
   DaysField, EntryPriceFields, num, FormFooter, FormTabBar, MinPremiumField, NameField, OptionExitFields, RuleSentence,
   NoEntryFields, Segmented, SizeFields, Stack, TimeWindowFields, type TabDef,
@@ -82,6 +83,16 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
   const savedBacktests = (backtests?.saves ?? []).filter((b) => b.query.methods.length > 0).map((b) => ({ id: b.id, name: b.name, methods: b.query.methods, tfs: b.query.tfs }));
   const setRule = <K extends keyof SignalRule>(k: K, v: SignalRule[K]) =>
     d.setC((p) => ({ ...p, signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), [k]: v } }));
+  /*
+   * The delta and the SL by volatility read one source (17 Oct 2026): one reading a signal sets both. A change of
+   * source in either, with the other on, is the source of both.
+   */
+  const setByVol = (k: 'deltaByVol' | 'slByVol', v: NonNullable<SignalRule['deltaByVol'] | SignalRule['slByVol']>) => d.setC((p) => {
+    const r = p.signal ?? DEFAULT_SIGNAL_RULE;
+    const other = k === 'deltaByVol' ? 'slByVol' : 'deltaByVol';
+    const o = r[other];
+    return { ...p, signal: { ...r, [k]: v, ...(o?.on && v.on && o.by !== v.by ? { [other]: { ...o, by: v.by } } : {}) } };
+  });
   // Bought or sold: the leg, the entry and the option's exits all follow it.
   const buying = actionOf(rule) === 'buy';
   const live = Boolean(c.liveOrders);
@@ -162,7 +173,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               <StrikeBlocksEditor c={c} set={set} err={err} spot={spot} />
               {/* The delta by how volatile it is at each signal (17 Oct 2026): one number of the rule above, by level. */}
               <DeltaByVolFields
-                value={rule.deltaByVol} onChange={(v) => setRule('deltaByVol', v)} error={err('deltaByVol')}
+                value={rule.deltaByVol} onChange={(v) => setByVol('deltaByVol', v)} error={err('deltaByVol')}
                 ownDelta={c.strikeRule === 'delta' ? c.delta?.max ?? null : null} byDelta={c.strikeRule === 'delta'}
                 hasBlocks={(c.strikeBlocks ?? []).length > 0} buying={buying} live={live}
                 onPickByDelta={() => d.setC((p) => ({ ...p, strikeRule: 'delta', delta: p.delta ?? { ...DEFAULT_DELTA } }))}
@@ -271,6 +282,15 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               {/* Both, bought or sold; bought, each is on the other side of the entry (ExitRuleEditor). */}
               <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} bought={buying} spot={spot}
                                 warnings={d.warnings.filter((w) => !/target and no stop/.test(w))} className="mt-1" />
+              {/* The option SL by how volatile it is at each signal (17 Oct 2026): one number of the stop above, by level. */}
+              <SlByVolFields
+                value={rule.slByVol} onChange={(v) => setByVol('slByVol', v)} error={err('slByVol')}
+                ownStopPct={(c.stopMode ?? 'pct') === 'pct' ? c.stopLossPct : 0} byPct={(c.stopMode ?? 'pct') === 'pct'}
+                hasSteps={(c.stopSteps ?? []).length > 0} buying={buying} live={live}
+                sharedWithDelta={Boolean(rule.deltaByVol?.on)}
+                onStopByPct={() => d.setC((p) => ({ ...p, stopMode: 'pct', stopLossPct: p.stopLossPct > 0 ? p.stopLossPct : 1.6, stopLossPoints: 0, stopLossAt: 0 }))}
+                onDropSteps={() => d.setC((p) => ({ ...p, stopSteps: [] }))}
+              />
               {!buying && d.exits.stop.value <= 0 && !d.exits.stop.steps.some((st) => st.value > 0) && (
                 <p role="note" className="m-0 mt-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[11.5px] leading-snug text-[var(--warn)]">
                   Option stop off — nothing is placed on the option. Only the perp SL protects the trade, and only while the desk can see the perp.{' '}
