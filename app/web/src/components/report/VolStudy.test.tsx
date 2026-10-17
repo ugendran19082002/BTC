@@ -167,4 +167,32 @@ describe('VolStudy', () => {
     // An older server sends no days: Net is a figure, not a button.
     expect(within(screen.getByRole('region', { name: 'By ATM IV' })).queryByRole('button', { name: /by expiry day/ })).toBeNull();
   });
+  it('[critical] a day\'s trade count in the by-day sheet opens that day, that side, trade by trade -- each trade with its level, and a pick by level', async () => {
+    const day = (d: string, n: number, net: number) => ({ day: d, live: false, n, wins: n - 1, net, charges: 0.02 * n, lots: n });
+    read.mockResolvedValue({ ...RESULT, sources: [{ by: 'iv', lines: [
+      { ...RESULT.sources[1]!.lines[0]!, byDay: [day('2026-10-15', 3, -2)] },
+      { ...RESULT.sources[1]!.lines[1]!, byDay: [day('2026-10-15', 3, -1)] },
+    ] }] });
+    const trade = (at: string, level: 'low' | 'high' | 'unknown', netUsd: number) => ({
+      at: Date.parse(`2026-10-14T${at}:00+05:30`), method: 'gamma', name: '#50 Gamma wall reaction', tf: '15m', dir: 1 as const, perpEntry: 67_000, perpSl: 66_800, perpTgt: 67_300,
+      cp: 'P' as const, strike: 66_000, lots: 1, entryAt: Date.parse(`2026-10-14T${at}:00+05:30`), entry: 40, exitAt: Date.parse(`2026-10-14T${at}:00+05:30`) + 3_600_000, exit: 20, by: 'option-tgt' as const,
+      optTgt: 4, optStop: level === 'high' ? 100 : 140, perpPts: 100, netUsd, chargesUsd: 0.02, level,
+    });
+    const readTrades = vi.fn().mockResolvedValue({ day: '2026-10-15', total: 3, trades: [trade('22:00', 'high', -1.5), trade('23:00', 'low', 0.3), trade('01:00', 'unknown', 0.2)] });
+    render(<VolStudy askKey="q" read={read} readTrades={readTrades} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+    const iv = await screen.findByRole('region', { name: 'By ATM IV' });
+    fireEvent.click(within(iv).getByRole('button', { name: /^As set net .*: by expiry day$/ }));
+    const days = await screen.findByRole('dialog', { name: 'By expiry day · By ATM IV' });
+    fireEvent.click(within(days).getByRole('button', { name: 'See the 3 trades of Thu 15 Oct, by volatility' }));
+    // Asked with the values the comparison was worked with, that day, that side, that way of reading.
+    await waitFor(() => expect(readTrades).toHaveBeenCalledWith({ sl: { low: 250, medium: 200, high: 150 }, delta: null, lots: null }, { day: '2026-10-15', side: 'by-vol', by: 'iv' }));
+    const list = await screen.findByRole('dialog', { name: 'Thu 15 Oct · by volatility · By ATM IV' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(list).getAllByText(/High volatility/)).toHaveLength(1);
+    const levels = within(list).getByRole('group', { name: 'Volatility level' });
+    fireEvent.click(within(levels).getByRole('button', { name: /^High 1:/ }));
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(levels).getByRole('button', { name: /^Unknown 1:/ })).toBeInTheDocument();
+  });
 });
