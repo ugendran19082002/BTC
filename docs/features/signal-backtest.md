@@ -32,6 +32,8 @@ For every signal that went "in the trade" (`entry_setups` with a fill), in the e
 | Option target | **Fixed**: 70%, 80%, 90% of the premium kept, or none. **Dynamic · by time**: a share to start with and time steps (IST) from which another share is in force, for every trade open then and every one sold after -- taken from a strategy that has such steps ("Target steps of"), or typed. Steps are read in clock order from 5:30 PM however they are typed. `?tp=&tsteps=23:30:73,01:30:76` | fixed 90% |
 | Volatility when the signal fills | Off, Low, Medium, High: the last two hours of 15-minute candles at the fill against the mean 15-minute ATR of the five expiry days before -- under 0.8× is low, over 1.3× high (`volReader`). A signal whose level cannot be said (no five days before) is none of the three. `?vol=` | off |
 | Volatility by | ATR 2h (the line above) or ATM IV: the at-the-money implied volatility of the day's contract at the fill (the call's and the put's nearest the money, averaged, newest reading in the 6 minutes before), against thirds of the same hour of the expiry day over the five expiry days before -- lowest third low, highest high (`ivReader`). No reading, a stale one, or too few days before: unknown, never low. IV, not the straddle: a daily contract's straddle shrinks with the clock alone. Read by the filter, *By volatility* and the SL study. `?volby=atr|iv` | ATR 2h |
+| Trend (1H + 4H) at the fill | Off; **Skip against** (not a signal a trend is against with none with it); **With trend only** (only one a trend is with and none against). The entry engine's own `trendOf` -- over the 20 and 50 averages with higher highs and lows -- on the index's closed hours at the fill (`index_1m` made into hours, `htfReader`), never the hour forming. A BUY sells a PE, so an uptrend is with it. A trend not known (under 60 closed bars: the index is kept from 26 Sep 2026, so the 4H from about 6 Oct) never skips a signal; with one known, that one alone. Over a strategy's own rules too. Skipped as `trend`. `?trend=off\|skip-against\|with-only` | Off |
+| Sudden move | Skip at a **volume spike** of so many deviations (the setup's last bar against the last 50, `regime.volumeZ`) and/or a **range breakout** (the last 14 bars' range against the last 200's, `regime.volZ`), as the entry engine read the setup when it saw it (`entry_setups.regime`). At or over a line: skipped as `sudden-move`; blank or 0 off; 0.5 to 10; a setup with no reading is never skipped. Over a strategy's own rules too. `?spikev=&spiker=` | Off |
 | Lots a signal | 1, 10, 16 | 10 |
 | Minimum premium | Off, $10, $15, $20 or Custom (0 to 500; typing 0 is off): a strike bid under it when the signal fills is not sold, and the signal is counted as "no strike". `?minprem=` | $10 |
 
@@ -130,8 +132,11 @@ under every filter.
 2. **When the perp's SL was hit**: how many trades the perp's stop closed, on how many the option was a profit
    all the same, and what they made together -- beside the same for the perp's target.
 3. **Closed by which exit** and **By time frame**: trades, share in profit, net and one trade's.
-4. **By volatility when the signal filled** (low, medium, high), **By method** (in profit / in loss), and the
-   best and worst pairs, each with its perp points.
+4. **By volatility when the signal filled** (low, medium, high), **By trend (1H / 4H) at the fill** (with, mixed,
+   no trend, against, not known), **By market move at the signal** -- volume spike, range expansion, momentum (the
+   last 20 bars' efficiency) and the front expiry's OI shift, in buckets, as the entry engine read each setup
+   (`byTrend`, `byMove`, 17 Oct 2026: what the gates above would leave out, before switching one on) -- **By
+   method** (in profit / in loss), and the best and worst pairs, each with its perp points.
 5. **By kind of day** (trend family or market type) and **By expiry day**, each day with what it was priced on.
 
 **One colour for what is chosen.** The Backtest and the Market report are built from the phone's parts, which
@@ -212,6 +217,17 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
 - **Tick two or more** (twelve at most) and **Run these together**: the total, a day on average, each one, each
   expiry day, and the margin -- the most held at once across all of them on one clock, with the sum of each one's
   own most beside it.
+- **Laid out as one backtest's result** (17 Oct 2026: "the portfolio is missing the backtest's upgrades -- fully the
+  same, user friendly"): the same jump bar (Summary, Exits & time frames, Pairs, Methods, Sessions, Days, By
+  volatility, Live check); the same summary lines -- the charges' working, the day averages, the running total
+  (`BacktestCurve`), winners and losers, the perp's points, how many signals went in the trade over all of them and
+  why those not traded were not, what the options were priced on -- and the same breakdowns, each a panel that folds:
+  when the perp's SL was hit, closed by which exit, volatility, trend and market move, time frames, the best and
+  worst pairs, every method, sessions, the kind of day, and the expiry days (each with its pricing). One component
+  draws them for both ([BacktestBreakdowns.tsx](../../app/web/src/components/report/BacktestBreakdowns.tsx)); the
+  server adds them up for both from the same cells (`breakdownOf`), so one saved backtest run alone gives the
+  backtest's own breakdowns, either way of running it. The answer's `breakdown`, `signals`, `skipped`, and each
+  day's `grain`.
 - **Which signals, for the run: As saved** (what it opens on) · **9:30 PM–3:59 PM** · **Whole day** · **Custom** --
   the single backtest's hours choice, over a run together (13 Oct 2026). Anything but As saved is put over every
   saved backtest in the run that is worked by settings, for the run only: nothing saved is changed, and the result
@@ -230,8 +246,11 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
   strategy. `GET /api/signal-backtest/live-check` (the single backtest's query; `?all=1` every strategy),
   `GET /api/backtest-portfolio/live-check` (the run's query, `&name=`). It replays the rules, not the account: a
   refusal by the loss limit or margin, and a desk that was not running, are where a difference is expected.
-- **Settings for the run** (14 Oct 2026): six switches -- **Strike**, **Option target** (fixed, or dynamic by
-  time), **Option stop**, **Lots a signal**, **Minimum premium**, **SL and TGT range**. Off, which is how each
+- **Settings for the run** (14 Oct 2026): switches -- **Strike**, **Option target** (fixed, or dynamic by
+  time), **Option stop**, **Lots a signal**, **Minimum premium**, **SL and TGT range**, **Volatility filter** (its
+  level and what it is read by, 17 Oct 2026), **Trend and sudden-move gates**, **No-entry window**; the last three
+  asked of the market, so put over a saved backtest worked by a strategy too (`o_vol=&o_volby=`, `o_trend=`,
+  `o_spikev=&o_spiker=`). Off, which is how each
   starts, every saved backtest runs with its own. Switched on, the single backtest's own control for it appears,
   starting from what the Single backtest section has, and that one setting is put over every saved backtest in the
   run -- for the run only; nothing saved is changed. The result says what was put over it ("For this run, every
@@ -302,8 +321,9 @@ a trade made −₹3.79 on 3m, −₹3.21 on 5m, −₹0.09 on 15m, +₹2.49 on 
 `choices`. Each count carries `exits`, and each exit how many of its trades made money (`wins`).
 
 `?window=custom&hfrom=&hto=`, `?max=&ce=&pe=`, `?slmin=&slmax=&tgtmin=&tgtmax=`, `?tsteps=`, `?vol=`,
-`?volby=`, `?strategy=` as above; the answer also carries `priced`, `byVol`, `margin`, `strategy`, `strategies`,
-`deskLimits`.
+`?volby=`, `?trend=`, `?spikev=&spiker=`, `?strategy=` as above; the answer also carries `priced`, `byVol`,
+`byTrend`, `byMove`, `margin`, `strategy`, `strategies`, `deskLimits`. A run together may put the gates over every
+saved backtest in it, one by a strategy too: `o_trend`, `o_spikev`, `o_spiker` (the three together).
 
 `GET /api/signal-backtest/vol-study` -- asked as the backtest is, with what is set by level (`volRuleOf`): `?vsl=1`
 (the default) and `?vh=&vm=&vl=` (SL, per cent over the premium, 10 to 1,000; 150 / 200 / 250 absent); `?vdelta=1`

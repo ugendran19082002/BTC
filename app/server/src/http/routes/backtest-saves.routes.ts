@@ -76,10 +76,12 @@ async function portfolioQuery(q: Record<string, unknown>) {
      * backtest runs with its own; switched on, that filter is taken for now and applied to every backtest").
      * Each is its own switch: `o_rule` + `o_value` (the strike), `o_tp` with `o_tsteps` (the option's target,
      * fixed or by the clock), `o_sl` (its stop), `o_lots`, `o_minprem`, and `o_slmin` / `o_slmax` / `o_tgtmin` /
-     * `o_tgtmax` (the SL and TGT range, the four together), `o_noentry` (no-entry windows, 15 Oct 2026). One that is absent is off: each member's own. They are
+     * `o_tgtmax` (the SL and TGT range, the four together), `o_noentry` (no-entry windows, 15 Oct 2026), `o_vol` /
+     * `o_volby` (the volatility filter, as the single backtest's, 17 Oct 2026 -- asked of the market, so over a member
+     * by a strategy too). One that is absent is off: each member's own. They are
      * read and held to their limits by the single backtest's own parser, so a value means here what it means there.
      */
-    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax', 'noentry'] as const;
+    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax', 'noentry', 'vol', 'volby'] as const;
     const asked: Record<string, unknown> = {};
     for (const k of O_KEYS) if (q[`o_${k}`] !== undefined && q[`o_${k}`] !== '') asked[k] = q[`o_${k}`];
     const has = (k: (typeof O_KEYS)[number]) => k in asked;
@@ -100,6 +102,12 @@ async function portfolioQuery(q: Record<string, unknown>) {
       ...(range ? { slMin: read.slMin, slMax: read.slMax, tgtMin: read.tgtMin, tgtMax: read.tgtMax } : {}),
       ...(has('noentry') ? { noEntry: read.noEntry } : {}),
     };
+    const market: Partial<BacktestParams> = {
+      ...(has('vol') ? { vol: read.vol ?? 'off' } : {}),
+      // Read by the candles unless the run says the IV; a strategy that sets its delta by volatility keeps its own source.
+      ...(has('volby') ? { volBy: read.volBy ?? 'atr' } : {}),
+    };
+    Object.assign(settings, market);
     const changed = Object.keys(settings).length > 0;
     const own = saves.filter((s) => s.query.strategy !== null).map((s) => s.id);
     return {
@@ -107,7 +115,7 @@ async function portfolioQuery(q: Record<string, unknown>) {
       members: saves.map((s) => {
         const strategy = s.query.strategy === null ? null : strategies.find((x) => x.id === s.query.strategy) ?? null;
         if (s.query.strategy !== null && !strategy) return { id: s.id, name: s.name, ask: null, problem: 'The strategy it is worked by has been deleted, or buys now rather than sells.' };
-        const params = (over || changed) && !strategy ? { ...s.query.params, ...settings, ...(over ?? {}) } : s.query.params;
+        const params = (over || changed) && !strategy ? { ...s.query.params, ...settings, ...(over ?? {}) } : { ...s.query.params, ...market };
         return { id: s.id, name: s.name, ask: { params, tfs: s.query.tfs.length ? s.query.tfs : null, methods: s.query.methods.length ? s.query.methods : null, strategy } };
       }),
       /** The hours the run was held to; null, each member's own as saved. `own`: the members a strategy works, whose hours are its own. */

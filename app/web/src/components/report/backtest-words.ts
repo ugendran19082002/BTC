@@ -67,5 +67,6 @@ export function overWords(p: Partial<BacktestParams>): string[] {
     out.push(sl || tgt ? `${[sl && `SL ${sl}`, tgt && `TGT ${tgt}`].filter(Boolean).join(', ')} pts` : 'no SL / TGT range');
   }
   if (p.noEntry?.on && p.noEntry.windows.length) out.push(`no entry ${p.noEntry.windows.map((w) => `${time12(w.from)} – ${time12(w.to)}`).join(', ')}`);
+  if (p.vol !== undefined) out.push(p.vol === 'off' ? 'every volatility' : `${p.vol} volatility only${p.volBy === 'iv' ? ' (ATM IV)' : ''}`);
   return out;
 }

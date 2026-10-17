@@ -86,6 +86,8 @@ export type PortfolioOver = {
   stop?: { stopPct: number };
   lots?: { lots: number };
   minPremium?: { minPremium: number };
+  /** The volatility filter and what it reads, as the single backtest's: over a saved backtest by a strategy too. */
+  vol?: { vol: 'off' | 'low' | 'medium' | 'high'; volBy: 'atr' | 'iv' };
   /** The SL and TGT range, BTC points, the four together; 0 is off. */
   range?: { slMin: number; slMax: number; tgtMin: number; tgtMax: number };
   /** No-entry windows for every one of them (15 Oct 2026), held to the whole expiry day: each keeps its own hours. */
@@ -108,6 +110,7 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
   // Only windows right for the whole day; the editor says what is wrong with any other.
   const ne = o.noEntry ? noEntryQuery({ window: 'all', noEntry: { ...o.noEntry, on: true } } as BacktestParams) : null;
   if (ne) q.o_noentry = ne;
+  if (o.vol) { q.o_vol = o.vol.vol; q.o_volby = o.vol.volBy; }
   return q;
 }
 

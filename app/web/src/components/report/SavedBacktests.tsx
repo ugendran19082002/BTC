@@ -9,7 +9,9 @@ import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BtDayTrades, BtRow, SavedQuery, TradePick } from '@/types/signal-backtest';
+import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BoardGrain, BtDayTrades, BtRow, SavedQuery, TradePick } from '@/types/signal-backtest';
+import { BacktestBreakdowns, ChargesNote, DayAverages, GRAIN, ResultNav, WinnersLosers, pricedWords, skippedParts } from '@/components/report/BacktestBreakdowns';
+import { BacktestCurve } from '@/components/report/BacktestCurve';
 import { SessionTable } from '@/components/report/SessionTable';
 import { DayTradesSheet } from '@/components/report/DayTrades';
 import { Empty, Loading, Panel, Stat, Stats } from '@/components/mobile/parts';
@@ -48,7 +50,43 @@ const solid = 'h-11 shrink-0 rounded-lg border-0 bg-[var(--chosen)] px-3 font-[i
 const quiet = 'h-11 shrink-0 rounded-lg border border-solid border-border bg-transparent px-3 font-[inherit] text-[14px] text-foreground disabled:opacity-40';
 const link = 'm-0 min-h-[36px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[13px] font-medium text-[var(--accent)] disabled:opacity-40';
 
-/** The saved backtests run together: the total, each one, each expiry day, and the margin held across all of them. */
+/** The run's parts to jump to: the backtest's own, beside each one's line in the summary. */
+export const RUN_PARTS = [
+  { id: 'pf-summary', label: 'Summary' },
+  { id: 'pf-exits', label: 'Exits & time frames' },
+  { id: 'pf-pairs', label: 'Pairs' },
+  { id: 'pf-methods', label: 'Methods' },
+  { id: 'pf-sessions', label: 'Sessions' },
+  { id: 'pf-days', label: 'Days' },
+  { id: 'pf-volsl', label: 'By volatility' },
+  { id: 'pf-live', label: 'Live check' },
+] as const;
+
+/** Whether a part of the run is on the screen, for the jump bar: the summary and the two studies always; the rest once it traded. */
+function runHas(r: BacktestPortfolioResult, id: string): boolean {
+  if (id === 'pf-summary' || id === 'pf-volsl' || id === 'pf-live') return true;
+  if (r.total.n === 0) return false;
+  if (id === 'pf-days') return true;
+  if (id === 'pf-sessions') return (r.bySession?.length ?? 0) > 0;
+  return r.breakdown !== undefined;
+}
+
+/** Each day's options priced, over the members: one board, so each day counted once (the first member's). */
+const pricedOf = (r: BacktestPortfolioResult): Record<BoardGrain, number> | undefined => {
+  if (r.days.some((d) => d.grain)) {
+    const out: Record<BoardGrain, number> = { 'own-1m': 0, 'mark-1m': 0, '5m': 0 };
+    for (const d of r.days) if (d.grain) out[d.grain]++;
+    return out;
+  }
+  return r.members.find((m) => m.priced)?.priced ?? undefined;
+};
+
+/**
+ * The saved backtests run together, laid out as one backtest's result is (owner, 17 Oct 2026: "the portfolio is
+ * missing the backtest's upgrades -- fully the same, user friendly"): the total and its working, each one, then the
+ * same breakdowns -- exits, volatility, trend and market move, time frames, pairs, methods, sessions, kinds of day,
+ * expiry days -- each a panel of its own that folds, with the jump bar over them.
+ */
 function PortfolioResult({ title, r, wide, readTrades }: {
   title: string; r: BacktestPortfolioResult; wide: boolean;
   /** Its trades, one by one, as the run worked them -- of a day, a session, a method in one (`DayTradesSheet`). */
@@ -58,103 +96,110 @@ function PortfolioResult({ title, r, wide, readTrades }: {
   const t = r.total;
   const members: BtRow[] = r.members.map((m) => ({ ...m.total, key: m.id, name: m.name }));
   const days: BtRow[] = [...r.days].reverse().map((d) => ({
-    key: d.day, name: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}`, n: d.n, wins: d.wins, losses: d.n - d.wins, net: d.net, won: 0, lost: 0, perpPts: 0, charges: d.charges, exits: {},
+    key: d.day, name: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}${d.grain ? ` · ${GRAIN[d.grain]}` : ''}`, n: d.n, wins: d.wins, losses: d.n - d.wins, net: d.net, won: 0, lost: 0, perpPts: 0, charges: d.charges, exits: {},
   }));
   const failed = r.members.filter((m) => m.problem);
+  const notTraded = r.skipped ? Object.values(r.skipped).reduce((n, x) => n + (x ?? 0), 0) : 0;
+  const priced = pricedWords(pricedOf(r));
+  const sessions = (r.bySession?.length ?? 0) > 0 ? (
+    // By session of the day, all of them together (owner, 15 Oct 2026): 1h by default, 15m to 6h.
+    <Panel title="By session of the day, together">
+      <SessionTable rows={r.bySession!} onOpen={(pick, title) => setOpenTrades({ key: `session:${pick.slotFrom}-${pick.slotTo}:${pick.method ?? ''}`, title, pick })} />
+    </Panel>
+  ) : null;
+  const expiryDays = (
+    <Panel title="By expiry day, together">
+      <Table caption="Run together: by expiry day" first="Expiry day" rows={days} onCount={readTrades ? (day) => setOpenTrades({ key: day, pick: { day } }) : undefined} />
+      {readTrades && <p className="m-0 mt-1 text-[12px] text-muted-foreground">Tap a day&apos;s trade count for its trades, one by one, each with whose it is.</p>}
+    </Panel>
+  );
   return (
-    <Panel title={`Run together · ${title}`} foldKey="Run together">
-      <p className="m-0 text-[13px] text-muted-foreground">
-        {dayLabel(r.from)} → {dayLabel(r.to)} · {r.members.length} saved backtests,{' '}
-        {r.shared
-          ? <>traded as <b className="font-medium text-foreground">one account</b>: at most {r.shared.max} open together (CE {r.shared.ce} · PE {r.shared.pe}), the longer time frame first, as the desk takes them.</>
-          : 'each worked as it is alone and added up.'}
-      </p>
-      {r.shared && r.shared.turnedAway > 0 && (
-        <p className="m-0 mt-0.5 text-[12.5px] text-muted-foreground">{count(r.shared.turnedAway)} signals found the account, or their side of it, full and were not traded.</p>
-      )}
-      {failed.map((m) => <p key={m.id} role="alert" className="m-0 mt-1 text-[12.5px] text-[var(--warn)]"><b className="font-semibold">{m.name}</b> is left out: {m.problem}</p>)}
-      {t.n === 0 ? <div className="mt-2"><Empty>None of them traded in this range.</Empty></div> : (
-        <>
-          <div className={cn('mt-1 text-[26px] font-semibold tabular-nums', netClass(t.net))}>
-            {moneyText(t.net)} <span className="text-[14px] font-medium text-muted-foreground">{each(t)} a trade</span>
-          </div>
-          <div className="mt-2">
-            <Ledger>
-              <Entry label="Before charges" tone={t.net + t.charges > 0 ? 'up' : t.net + t.charges < 0 ? 'down' : undefined}>{moneyText(t.net + t.charges)}</Entry>
-              <Entry label="Charges" tone="down">{moneyText(-t.charges)}</Entry>
-              <Entry label="After charges" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net)}</Entry>
-            </Ledger>
-          </div>
-          <div className="mt-2">
-            <Stats cols={3}>
-              <Stat label="Trades">{count(t.n)}</Stat>
-              <Stat label="Won">{pct(rate(t), 0)}</Stat>
-              <Stat label="Profit factor">{t.lost > 0 ? (t.won / t.lost).toFixed(2) : '—'}</Stat>
-            </Stats>
-          </div>
-          {(() => {
-            // A day on average, as the single backtest says it: over the days that traded, and the days in profit and in loss each on their own.
-            const traded = r.days.filter((d) => d.n > 0);
-            if (traded.length === 0) return null;
-            const up = traded.filter((d) => d.net > 0), down = traded.filter((d) => d.net < 0);
-            const mean = (xs: typeof traded) => xs.reduce((a, d) => a + d.net, 0) / xs.length;
-            const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
-            return (
-              <div className="mt-2">
-                <Ledger>
-                  <Entry label={`A day, on average · ${days(traded.length)}`} tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net / traded.length)}</Entry>
-                  <Entry label={`A day in profit · ${days(up.length)}`} tone="up">{up.length ? moneyText(mean(up)) : '—'}</Entry>
-                  <Entry label={`A day in loss · ${days(down.length)}`} tone="down">{down.length ? moneyText(mean(down)) : '—'}</Entry>
-                </Ledger>
-              </div>
-            );
-          })()}
-          {r.margin.peakUsd > 0 && (
+    <>
+      <div id="pf-summary" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
+        <Panel title={`Run together · ${title}`} foldKey="Run together">
+          <p className="m-0 text-[13px] text-muted-foreground">
+            {dayLabel(r.from)} → {dayLabel(r.to)} · {r.members.length} saved backtests,{' '}
+            {r.shared
+              ? <>traded as <b className="font-medium text-foreground">one account</b>: at most {r.shared.max} open together (CE {r.shared.ce} · PE {r.shared.pe}), the longer time frame first, as the desk takes them.</>
+              : 'each worked as it is alone and added up.'}
+          </p>
+          {r.shared && r.shared.turnedAway > 0 && (
+            <p className="m-0 mt-0.5 text-[12.5px] text-muted-foreground">{count(r.shared.turnedAway)} signals found the account, or their side of it, full and were not traded.</p>
+          )}
+          {failed.map((m) => <p key={m.id} role="alert" className="m-0 mt-1 text-[12.5px] text-[var(--warn)]"><b className="font-semibold">{m.name}</b> is left out: {m.problem}</p>)}
+          {t.n === 0 ? <div className="mt-2"><Empty>None of them traded in this range.</Empty></div> : (
             <>
+              <div className={cn('mt-1 text-[26px] font-semibold tabular-nums', netClass(t.net))}>
+                {moneyText(t.net)} <span className="text-[14px] font-medium text-muted-foreground">{each(t)} a trade</span>
+              </div>
               <div className="mt-2">
                 <Ledger>
-                  <Entry label="Margin at most, together">{moneyText(r.margin.peakUsd).replace('+', '')}</Entry>
-                  <Entry label="On that margin" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{`${t.net >= 0 ? '+' : '−'}${Math.abs((100 * t.net) / r.margin.peakUsd).toFixed(1)}%`}</Entry>
-                  <Entry label="Each one's most, added">{moneyText(r.margin.sumOfPeaksUsd).replace('+', '')}</Entry>
+                  <Entry label="Before charges" tone={t.net + t.charges > 0 ? 'up' : t.net + t.charges < 0 ? 'down' : undefined}>{moneyText(t.net + t.charges)}</Entry>
+                  <Entry label="Charges" tone="down">{moneyText(-t.charges)}</Entry>
+                  <Entry label="After charges" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net)}</Entry>
                 </Ledger>
               </div>
-              <p className="m-0 mt-1 px-1 text-[12px] leading-snug text-muted-foreground">
-                Their trades laid on one clock: the most held at once was {r.margin.peakOpen} trade{r.margin.peakOpen === 1 ? '' : 's'}
-                {r.margin.peakAt !== null ? ` at ${timeIst(r.margin.peakAt)}` : ''}{r.margin.peakDay ? ` on the ${dayLabel(r.margin.peakDay)} expiry` : ''}
-                {r.shared ? <> -- never more than the account&apos;s {r.shared.max}</> : ''} -- what running them side by side on one account would have needed, by the desk&apos;s 200x estimate.
-                It is under the sum of each one&apos;s own most where their busiest moments differ.
-                {marginWorking(r.margin) && <> <b className="font-medium text-foreground">The working:</b> {marginWorking(r.margin)}</>}
-                {!r.shared && r.margin.peakOpen > 0 && ' Each kept its own limit here, so more may be open together than one account would hold: choose One account to hold them to one limit.'}
-              </p>
+              <ChargesNote t={t} />
+              {r.margin.peakUsd > 0 && (
+                <>
+                  <div className="mt-2">
+                    <Ledger>
+                      <Entry label="Margin at most, together">{moneyText(r.margin.peakUsd).replace('+', '')}</Entry>
+                      <Entry label="On that margin" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{`${t.net >= 0 ? '+' : '−'}${Math.abs((100 * t.net) / r.margin.peakUsd).toFixed(1)}%`}</Entry>
+                      <Entry label="Each one's most, added">{moneyText(r.margin.sumOfPeaksUsd).replace('+', '')}</Entry>
+                    </Ledger>
+                  </div>
+                  <p className="m-0 mt-1 px-1 text-[12px] leading-snug text-muted-foreground">
+                    Their trades laid on one clock: the most held at once was {r.margin.peakOpen} trade{r.margin.peakOpen === 1 ? '' : 's'}
+                    {r.margin.peakAt !== null ? ` at ${timeIst(r.margin.peakAt)}` : ''}{r.margin.peakDay ? ` on the ${dayLabel(r.margin.peakDay)} expiry` : ''}
+                    {r.shared ? <> -- never more than the account&apos;s {r.shared.max}</> : ''} -- what running them side by side on one account would have needed, by the desk&apos;s 200x estimate.
+                    It is under the sum of each one&apos;s own most where their busiest moments differ.
+                    {marginWorking(r.margin) && <> <b className="font-medium text-foreground">The working:</b> {marginWorking(r.margin)}</>}
+                    {!r.shared && r.margin.peakOpen > 0 && ' Each kept its own limit here, so more may be open together than one account would hold: choose One account to hold them to one limit.'}
+                  </p>
+                </>
+              )}
+              <div className="mt-2">
+                <Stats cols={3}>
+                  <Stat label="Trades">{count(t.n)}</Stat>
+                  <Stat label="Won">{pct(rate(t), 0)}</Stat>
+                  <Stat label="Profit factor">{t.lost > 0 ? (t.won / t.lost).toFixed(2) : '—'}</Stat>
+                </Stats>
+              </div>
+              <DayAverages days={r.days} net={t.net} />
+              <BacktestCurve days={r.days} />
+              <WinnersLosers t={t} />
+              <section aria-label="Each saved backtest" className="mt-3">
+                <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">Each one</h3>
+                <Table caption="Run together: each saved backtest" first="Saved backtest" rows={members} />
+              </section>
             </>
           )}
-          <div className={cn('mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
-            <section aria-label="Each saved backtest">
-              <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">Each one</h3>
-              <Table caption="Run together: each saved backtest" first="Saved backtest" rows={members} />
-            </section>
-            <section aria-label="Each expiry day, together">
-              <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">By expiry day, together</h3>
-              <Table caption="Run together: by expiry day" first="Expiry day" rows={days} onCount={readTrades ? (day) => setOpenTrades({ key: day, pick: { day } }) : undefined} />
-              {readTrades && <p className="m-0 mt-1 text-[12px] text-muted-foreground">Tap a day&apos;s trade count for its trades, one by one, each with whose it is.</p>}
-              {readTrades && <DayTradesSheet day={openTrades?.key ?? null} title={openTrades?.title} read={() => readTrades(openTrades!.pick)} onClose={() => setOpenTrades(null)} />}
-            </section>
-            {/* By session of the day, all of them together (owner, 15 Oct 2026): 1h by default, 15m to 6h. */}
-            {(r.bySession?.length ?? 0) > 0 && (
-              <section aria-label="Each session, together" className={cn(wide && 'lg:col-span-2')}>
-                <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">By session of the day, together</h3>
-                <SessionTable rows={r.bySession!} onOpen={(pick, title) => setOpenTrades({ key: `session:${pick.slotFrom}-${pick.slotTo}:${pick.method ?? ''}`, title, pick })} />
-              </section>
-            )}
-          </div>
-          <p className="m-0 mt-2 text-[12px] leading-snug text-muted-foreground">
-            {r.shared
-              ? 'They share the account’s places: a signal is taken while there is room, the longer time frame first. A signal two of them both take is traded twice, once by each, where there is room for both.'
-              : 'One does not take a place from another: each has its own limits, as set in it. A signal two of them both take is traded twice, once by each.'}
-          </p>
+          {r.signals !== undefined && r.skipped && (
+            <p className="m-0 mt-2 text-[12.5px] leading-snug text-muted-foreground">
+              {count(r.signals)} signals went in the trade over all of them; {count(r.signals - notTraded)} were traded here.
+              {notTraded > 0 && <> Not traded: {skippedParts(r.skipped, { byStrategy: false, run: true }).join(', ')}.</>}
+            </p>
+          )}
+          {priced && <p className="m-0 mt-1.5 text-[12.5px] leading-snug text-muted-foreground">{priced}</p>}
+        </Panel>
+      </div>
+      {t.n > 0 && (r.breakdown ? (
+        <BacktestBreakdowns total={t} b={r.breakdown} wide={wide} idPrefix="pf" sessions={sessions} expiryDays={expiryDays} />
+      ) : (
+        // An older server sends no breakdowns: the sessions and the days, as before.
+        <>
+          {sessions && <div id="pf-sessions" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">{sessions}</div>}
+          <div id="pf-days" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">{expiryDays}</div>
         </>
-      )}
-    </Panel>
+      ))}
+      <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
+        {r.shared
+          ? 'They share the account’s places: a signal is taken while there is room, the longer time frame first. A signal two of them both take is traded twice, once by each, where there is room for both.'
+          : 'One does not take a place from another: each has its own limits, as set in it. A signal two of them both take is traded twice, once by each.'}
+      </p>
+      {readTrades && <DayTradesSheet day={openTrades?.key ?? null} title={openTrades?.title} read={() => readTrades(openTrades!.pick)} onClose={() => setOpenTrades(null)} />}
+    </>
   );
 }
 
@@ -220,11 +265,17 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
   return (
     <Updating busy={result.stale} what="the run together">
       <RunNote r={result.data} />
+      {/* The jump bar, as over one backtest's result: only the parts there are. */}
+      <ResultNav parts={RUN_PARTS} has={(id) => runHas(result.data!, id)} />
       <PortfolioResult title={run.title} r={result.data} wide={wide} readTrades={(pick) => getPortfolioTrades(pick, run.ids, range, limit, asked, hours, over)} />
       {/* The same run beside the live desk (14 Oct 2026): its own question, so the hours and settings over the run are over the check. */}
       {/* The SL, delta and lots by volatility over the run's saved backtests (17 Oct 2026): each on its own signals, added up. */}
-      <VolStudy askKey={askKey} wide={wide} read={(a) => getPortfolioVolStudy(a, run.ids, range, limit, asked, hours, over)} readTrades={(a, pick) => getPortfolioVolStudyTrades(a, pick, run.ids, range, limit, asked, hours, over)} title="By volatility · SL, delta, lots · over the run" />
-      <LiveCheck askKey={askKey} read={() => getPortfolioLiveCheck(run.title, run.ids, range, limit, asked, hours, over)} />
+      <div id="pf-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
+        <VolStudy askKey={askKey} wide={wide} read={(a) => getPortfolioVolStudy(a, run.ids, range, limit, asked, hours, over)} readTrades={(a, pick) => getPortfolioVolStudyTrades(a, pick, run.ids, range, limit, asked, hours, over)} title="By volatility · SL, delta, lots · over the run" />
+      </div>
+      <div id="pf-live" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
+        <LiveCheck askKey={askKey} read={() => getPortfolioLiveCheck(run.title, run.ids, range, limit, asked, hours, over)} />
+      </div>
       <button type="button" className={cn(link, 'justify-self-start')} onClick={onClose}>Close the run together</button>
     </Updating>
   );

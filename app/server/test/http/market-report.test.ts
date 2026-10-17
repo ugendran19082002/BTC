@@ -1011,6 +1011,29 @@ test('[critical] saved backtests in groups, cloned under a free name, a group re
   for (const s of [a, b, c1, c2]) await del(`/api/backtest-saves/${s.body.save.id}`);
 });
 
+test('[critical] a run together is broken down as one backtest is (17 Oct 2026): one saved backtest run alone gives the backtest\'s own breakdowns and counts -- each way of running it', async () => {
+  const base = `from=${CLIMB}&to=${CLIMB}&window=all`;
+  const single = (await get(`/api/signal-backtest?${base}`)).body;
+  const one = await post('/api/backtest-saves', { name: 'alone', query: { params: { ...single.params }, tfs: [], methods: [], strategy: null } });
+  assert.equal(one.status, 200, JSON.stringify(one.body));
+  try {
+    const keys = ['pairs', 'byTf', 'byMethod', 'byPattern', 'byFamily', 'byVol'] as const;
+    for (const limit of ['limit=own', 'max=500&ce=100&pe=100']) {
+      const run = await get(`/api/backtest-portfolio?ids=${one.body.save.id}&from=${CLIMB}&to=${CLIMB}&${limit}`);
+      assert.equal(run.status, 200, JSON.stringify(run.body).slice(0, 300));
+      for (const k of keys) assert.deepEqual(run.body.breakdown[k], single[k], `${limit}: ${k}`);
+      assert.deepEqual(run.body.total.exits, single.total.exits, `${limit}: by exit`);
+      assert.deepEqual([run.body.signals, run.body.skipped], [single.signals, single.skipped], `${limit}: the signals and why some were not traded`);
+    }
+    // The volatility filter over the run, as the single backtest's: no level by the candles here, so none is "high".
+    const vol = await get(`/api/backtest-portfolio?ids=${one.body.save.id}&from=${CLIMB}&to=${CLIMB}&limit=own&o_vol=high`);
+    assert.deepEqual([vol.body.total.n, vol.body.skipped.volatility, vol.body.over.settings.vol], [0, single.total.n, 'high']);
+    assert.match((await get(`/api/backtest-portfolio?ids=${one.body.save.id}&from=${CLIMB}&to=${CLIMB}&o_vol=extreme`)).body.error, /For the run: The volatility filter/);
+  } finally {
+    await app.inject({ method: 'DELETE', url: `/api/backtest-saves/${one.body.save.id}`, headers: cookie });
+  }
+});
+
 test('[critical] volatility by ATM IV, and the option stop by volatility against the fixed one, on the same trades (17 Oct 2026)', async () => {
   const climbCode = `${CLIMB.slice(8, 10)}${CLIMB.slice(5, 7)}${CLIMB.slice(2, 4)}`;
   const base = `from=${CLIMB}&to=${CLIMB}&window=all`;

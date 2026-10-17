@@ -3,13 +3,11 @@ import { ChevronDown } from 'lucide-react';
 import { getBacktestTrades, getLiveCheck, getSignalBacktest, getVolStudy, getVolStudyTrades } from '@/api/signal-backtest';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
-import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
-import type { PairStat } from '@/lib/method-pairs';
+import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import { time12 } from '@/lib/time';
-import type { BacktestParams, BacktestQuery, BacktestSave, BoardGrain, BtExit, BtRow, SavedQuery, TradePick } from '@/types/signal-backtest';
+import type { BacktestParams, BacktestQuery, BacktestSave, SavedQuery, TradePick } from '@/types/signal-backtest';
 import { ALL_OPEN, Chip, Empty, FoldAll, Loading, Panel, PanelFolds, Segmented, Stat, Stats, type FoldState } from '@/components/mobile/parts';
-import { PairList } from '@/components/mobile/PairList';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES, type FilterSort } from '@/components/mobile/FilterPicker';
 import { WIN_AT_LEAST_PCT } from '@/lib/win-line';
 import { BacktestCurve } from '@/components/report/BacktestCurve';
@@ -20,10 +18,11 @@ import { backtestHours, backtestNoEntryProblems, noEntryQuery } from '@/lib/back
 import type { NoEntry, StrategyConfig } from '@/types/strategy';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
-import { Entry, FOLD, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
+import { Entry, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
+import { BacktestBreakdowns, ChargesNote, DayAverages, GRAIN, ResultNav, WinnersLosers, pricedWords, skippedParts } from '@/components/report/BacktestBreakdowns';
 import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, settingsWords } from '@/components/report/backtest-words';
 
@@ -330,10 +329,6 @@ function CustomValue({ value, presets, spec, name, onChange }: { value: number; 
     </>
   );
 }
-const EXITS: { key: BtExit; label: string }[] = [
-  { key: 'perp-tgt', label: 'Perp TGT' }, { key: 'perp-sl', label: 'Perp SL' }, { key: 'option-tgt', label: 'Option TGT' },
-  { key: 'option-sl', label: 'Option SL' }, { key: 'window-end', label: 'Window end' },
-];
 const DESK_MAX = [0, 20, 35, 58];
 const SIDE_PCTS = [50, 60, 70, 80, 90, 100];
 /** Each side's most open, as the desk rounds it (strategy/types.ts `sideCaps`): at least one, never more than the whole. */
@@ -402,7 +397,7 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
     delete next[key];
     onChange(next);
   };
-  const { strike, target, stop, lots, minPremium, range, noEntry } = over;
+  const { strike, target, stop, lots, minPremium, range, noEntry, vol } = over;
   const values = strike?.rule === 'premium' ? PREMIUMS : DELTAS;
   const dynamic = (target?.targetSteps?.length ?? 0) > 0 || dynamicDraft;
   const switchedOn = Object.keys(over).length;
@@ -482,6 +477,23 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
         onToggle={() => flip('range', { slMin: seed.slMin ?? 0, slMax: seed.slMax ?? 0, tgtMin: seed.tgtMin ?? 0, tgtMax: seed.tgtMax ?? 0 })}>
         {range && <SlTgtRange value={range} onApply={(r) => put({ range: r })} />}
       </RunFilter>
+      {/* The volatility filter over every one of them, a strategy's too (17 Oct 2026): as the single backtest's "Which signals are taken". */}
+      <RunFilter name="Volatility filter" on={!!vol} said={vol ? said({ vol: vol.vol, volBy: vol.volBy }) : ''} onToggle={() => flip('vol', { vol: seed.vol ?? 'off', volBy: seed.volBy ?? 'atr' })}>
+        {vol && <>
+          <Segmented dense label="Volatility when the signal fills, for the run" value={vol.vol} onChange={(v) => put({ vol: { ...vol, vol: v } })}
+            options={[
+              { key: 'off', label: 'Off', spoken: 'Volatility filter off for the run: every signal' },
+              { key: 'low', label: 'Low', spoken: 'For the run, only signals in low volatility' },
+              { key: 'medium', label: 'Medium', spoken: 'For the run, only signals in medium volatility' },
+              { key: 'high', label: 'High', spoken: 'For the run, only signals in high volatility' },
+            ]} />
+          <Segmented dense label="Volatility is read by, for the run" value={vol.volBy} onChange={(volBy) => put({ vol: { ...vol, volBy } })}
+            options={[
+              { key: 'atr', label: 'ATR 2h', spoken: 'For the run, volatility by the candles: two hours of 15-minute ATR' },
+              { key: 'iv', label: 'ATM IV', spoken: 'For the run, volatility by the at-the-money implied volatility' },
+            ]} />
+        </>}
+      </RunFilter>
       {/* No-entry windows over every one of them, for the run (15 Oct 2026): the form's editor, held to the whole day. */}
       <RunFilter name="No-entry window" on={!!noEntry} said={noEntry ? said({ noEntry: { ...noEntry, on: true } }) : ''}
         onToggle={() => flip('noEntry', seed.noEntry?.on && seed.noEntry.windows.length ? seed.noEntry : { on: true, windows: [{ from: '00:30', to: '01:30' }] })}>
@@ -560,21 +572,6 @@ function SharedCap({ value, fallback, picks = [], edited, onApply, onReset }: {
   );
 }
 
-/** A day's pricing in a word, beside its name. */
-const GRAIN: Record<BoardGrain, string> = { 'own-1m': '1m prices', 'mark-1m': '1m est.', '5m': '5m prices' };
-
-/** What the options were priced on, in a sentence: said only when the server says it. */
-function pricedWords(p: Record<BoardGrain, number> | undefined): string | null {
-  if (!p) return null;
-  const own = p['own-1m'] ?? 0, mark = p['mark-1m'] ?? 0, five = p['5m'] ?? 0, all = own + mark + five;
-  if (all === 0) return null;
-  const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
-  const fine = [own ? `${days(own)} on the desk's own 1-minute record` : null, mark ? `${days(mark)} on Delta's 1-minute mark with the desk's recorded spread (an estimate)` : null].filter(Boolean).join(', ');
-  if (five === 0) return `Option prices a minute at a time: ${fine}.`;
-  const rest = `${days(five)} on 5-minute prices -- a day still running, or one whose 1-minute prices are still being fetched from Delta`;
-  return fine ? `Option prices a minute at a time on ${own + mark} of ${days(all)}: ${fine}. The other ${rest}.` : `Option prices: ${rest}.`;
-}
-
 /**
  * The result's sections as a row of chips that jump to each (owner, 14 Oct 2026: "the backtest screen, user
  * friendly"): on a phone the result runs to a dozen screens, the live check at the bottom of them. Kept at the top of
@@ -591,53 +588,7 @@ const RESULT_PARTS = [
   { id: 'bt-live', label: 'Live check' },
 ] as const;
 
-function ResultNav({ has }: { has: (id: string) => boolean }) {
-  const parts = RESULT_PARTS.filter((x) => has(x.id));
-  return (
-    <nav aria-label="Jump to a part of the result" className="sticky top-0 z-10 -mx-1 flex gap-1.5 overflow-x-auto bg-[var(--bg)] px-1 py-1.5">
-      {parts.map((x) => (
-        <button key={x.id} type="button" onClick={() => document.getElementById(x.id)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
-          className="m-0 h-9 shrink-0 appearance-none whitespace-nowrap rounded-full border border-solid border-border bg-transparent px-3 font-[inherit] text-[13px] font-medium text-foreground">
-          {x.label}
-        </button>
-      ))}
-    </nav>
-  );
-}
 
-/** Every method as options, across its timeframes: those in profit and those in loss, ten of each to begin with. */
-function MethodsAsOptions({ rows, wide }: { rows: readonly BtRow[]; wide: boolean }) {
-  const [all, setAll] = useState(false);
-  const traded = rows.filter((m) => m.n > 0);
-  const best = traded.filter((m) => m.net > 0).sort((a, b) => b.net - a.net);
-  const worst = traded.filter((m) => m.net < 0).sort((a, b) => a.net - b.net);
-  const FIRST = 10;
-  return (
-    <Panel title="By method" right={<span className="text-[11.5px] text-muted-foreground">{traded.length} traded</span>}>
-      <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4', wide && 'lg:grid-cols-2')}>
-        <section aria-label="Methods in profit as options">
-          <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">In profit · {best.length}</h3>
-          <Table caption="Backtest: methods in profit" first="Method" rows={all ? best : best.slice(0, FIRST)} perp />
-        </section>
-        <section aria-label="Methods in loss as options">
-          <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">In loss · {worst.length}</h3>
-          <Table caption="Backtest: methods in loss" first="Method" rows={all ? worst : worst.slice(0, FIRST)} perp />
-        </section>
-      </div>
-      {(best.length > FIRST || worst.length > FIRST) && (
-        <button type="button" onClick={() => setAll((v) => !v)} aria-expanded={all}
-          className="mt-2 min-h-[40px] w-full rounded-md border-0 bg-muted font-[inherit] text-[13px] font-medium text-foreground">
-          {all ? `Show the first ${FIRST} of each` : `Show all ${traded.length} methods`}
-        </button>
-      )}
-    </Panel>
-  );
-}
-
-const pairOf = (r: BtRow): PairStat => ({
-  key: r.key, name: r.name, tf: r.tf ?? '', trades: r.n, wins: r.wins, losses: r.losses,
-  winRate: rate(r), profitFactor: r.lost > 0 ? r.won / r.lost : null, net: r.net,
-});
 
 export function SignalBacktest({ now = Date.now(), wide = false }: { now?: number; wide?: boolean }) {
   const expiry = useExpiryRange('signalBacktest', now);
@@ -650,7 +601,6 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [methodSort, setMethodSort] = usePersisted<FilterSort>('methods.sort', 'default');
   // The trades open one by one (`DayTradesSheet`): of an expiry day, a session, a method in one; null: none.
   const [openTrades, setOpenTrades] = useState<{ key: string; title?: string; pick: TradePick } | null>(null);
-  const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('signalBacktest.grouping', 'family');
   // A saved strategy to backtest by (owner, 13 Oct 2026); null is the settings below.
   const [strategyId, setStrategyId] = usePersisted<string | null>('signalBacktest.strategy', null);
   /*
@@ -1135,20 +1085,14 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   if (!r) return page(<Panel><Loading error={read.error} what="the backtest (a first read of a range takes a few seconds)" /></Panel>);
 
   const t = r.total;
-  const sl = t.exits['perp-sl'], tg = t.exits['perp-tgt'];
   // Every reason a signal was not traded, the limits on open trades among them (13 Oct 2026: they were left out, and the line said 4,690 traded of 2,846).
   const notTraded = Object.values(r.skipped).reduce((n, x) => n + (x ?? 0), 0);
-  const best = r.pairs.filter((p) => p.n > 0 && p.net > 0).map(pairOf);
-  const worst = r.pairs.filter((p) => p.n > 0 && p.net < 0).map(pairOf).sort((a, b) => a.net - b.net || b.trades - a.trades);
-  const perpOf = new Map(r.pairs.map((p) => [p.key, p.perpPts]));
-  const note = (p: PairStat) => `perp ${ptsText(perpOf.get(p.key) ?? 0)}`;
-  const amount = (p: { net: number }) => moneyText(p.net);
   const rule = params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`;
 
   return page(
     <>
 
-      <ResultNav has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || t.n > 0} />
+      <ResultNav parts={RESULT_PARTS} has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || t.n > 0} />
       <Updating busy={read.stale} what="the backtest">
       <div id="bt-summary" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
       <Panel title="Backtest result">
@@ -1178,9 +1122,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 <Entry label="After charges" tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net)}</Entry>
               </Ledger>
             </div>
-            <p className="m-0 mt-1 px-1 text-[12px] text-muted-foreground">
-              Charges: Delta&apos;s fee on each fill (the lower of 0.01% of the BTC value and 3.5% of the premium) and 18% GST on it, on the sale and on the buy-back -- {t.n > 0 ? moneyText(-t.charges / t.n) : '—'} a trade, {t.net + t.charges !== 0 ? `${Math.round((100 * t.charges) / Math.abs(t.net + t.charges))}% of the result before them` : ''}.
-            </p>
+            <ChargesNote t={t} />
             {/* Margin (owner, 13 Oct 2026): what the trades would have tied up, and what the result is on it. An older server sends none. */}
             {r.margin && r.margin.peakUsd > 0 && (
               <>
@@ -1206,54 +1148,14 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 <Stat label="Profit factor">{t.lost > 0 ? (t.won / t.lost).toFixed(2) : '—'}</Stat>
               </Stats>
             </div>
-            {/*
-              A day, on average (owner, 13 Oct 2026: "the average profit and loss per day"): over the expiry days
-              that traded, and the days in profit and the days in loss each on their own.
-            */}
-            {(() => {
-              const traded = r.days.filter((d) => d.n > 0);
-              if (traded.length === 0) return null;
-              const up = traded.filter((d) => d.net > 0), down = traded.filter((d) => d.net < 0);
-              const mean = (xs: typeof traded) => xs.reduce((a, d) => a + d.net, 0) / xs.length;
-              const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
-              return (
-                <div className="mt-2">
-                  <Ledger>
-                    <Entry label={`A day, on average · ${days(traded.length)}`} tone={t.net > 0 ? 'up' : t.net < 0 ? 'down' : undefined}>{moneyText(t.net / traded.length)}</Entry>
-                    <Entry label={`A day in profit · ${days(up.length)}`} tone="up">{up.length ? moneyText(mean(up)) : '—'}</Entry>
-                    <Entry label={`A day in loss · ${days(down.length)}`} tone="down">{down.length ? moneyText(mean(down)) : '—'}</Entry>
-                  </Ledger>
-                </div>
-              );
-            })()}
+            <DayAverages days={r.days} net={t.net} />
             <BacktestCurve days={r.days} />
-            {/* Two to a row: six-figure rupees do not fit a third of a phone. */}
-            <div className="mt-2">
-              <Stats cols={2}>
-                <Stat label="Winners made" tone="up">{moneyText(t.won)}</Stat>
-                <Stat label="Losers lost" tone="down">{moneyText(-t.lost)}</Stat>
-              </Stats>
-            </div>
-            <p className="m-0 mt-2 text-[13px]">
-              <span className="text-muted-foreground">The same trades on the perp: </span>
-              <b className={cn('font-semibold tabular-nums', netClass(t.perpPts))}>{ptsText(t.perpPts)}</b>
-            </p>
+            <WinnersLosers t={t} />
           </>
         )}
         <p className="m-0 mt-2 text-[12.5px] leading-snug text-muted-foreground">
           {count(r.signals)} signals went in the trade; {count(r.signals - notTraded)} were traded here.
-          {notTraded > 0 && <> Not traded: {[
-            r.skipped['outside-window'] ? `${count(r.skipped['outside-window'])} outside ${byStrategy ? 'its days and hours' : 'the hours chosen'}` : null,
-            r.skipped['no-entry-window'] ? `${count(r.skipped['no-entry-window'])} inside its no-entry window` : null,
-            r.skipped.distance ? `${count(r.skipped.distance)} with the SL or TGT outside ${byStrategy ? 'its distances' : 'the range set'}` : null,
-            r.skipped.volatility ? `${count(r.skipped.volatility)} not in ${params.vol ?? 'that'} volatility` : null,
-            r.skipped['at-limit'] ? `${count(r.skipped['at-limit'])} while it already had its most open` : null,
-            r.skipped['desk-limit'] ? `${count(r.skipped['desk-limit'])} while ${params.deskMax} were open (at most open)` : null,
-            r.skipped['side-limit'] ? `${count(r.skipped['side-limit'])} while that side was at its CE / PE max` : null,
-            r.skipped['no-strike'] ? `${count(r.skipped['no-strike'])} with no strike inside the rule${byStrategy ? ' worth its floor' : floor > 0 ? ` worth $${floor}` : ''}` : null,
-            r.skipped['no-board'] ? `${count(r.skipped['no-board'])} with no option prices recorded then` : null,
-            r.skipped['no-exit-price'] ? `${count(r.skipped['no-exit-price'])} with no price to exit at` : null,
-          ].filter(Boolean).join(', ')}.</>}
+          {notTraded > 0 && <> Not traded: {skippedParts(r.skipped, { byStrategy, params, floor }).join(', ')}.</>}
           {/* The counts are of the time frames and methods chosen, as the tiles above are (13 Oct 2026: they were of every signal). */}
         </p>
         {pricedWords(r.priced) && <p className="m-0 mt-1.5 text-[12.5px] leading-snug text-muted-foreground">{pricedWords(r.priced)}</p>}
@@ -1282,91 +1184,19 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         </Panel>
       )}
 
-      {sl && sl.n > 0 && (
-        <Panel title="When the perp's SL was hit">
-          <p className="m-0 text-[14px] leading-snug">
-            The perp reached the signal&apos;s stop on <b>{count(sl.n)}</b> trades. The option was <b className="text-[var(--up)]">still a profit on {count(sl.wins)}</b> of them
-            ({pct(sl.wins / sl.n, 0)}) and a loss on {count(sl.n - sl.wins)}. Together: <b className={netClass(sl.net)}>{moneyText(sl.net)}</b>, {moneyText(sl.net / sl.n)} a trade.
-          </p>
-          {tg && tg.n > 0 && (
-            <p className="m-0 mt-2 text-[13px] leading-snug text-muted-foreground">
-              For comparison, the perp reached the target on {count(tg.n)} trades: the option was a profit on {pct(tg.wins / tg.n, 0)} of them,{' '}
-              <span className={netClass(tg.net)}>{moneyText(tg.net)}</span> together, {moneyText(tg.net / tg.n)} a trade.
-            </p>
-          )}
-        </Panel>
-      )}
-
       {t.n > 0 && (
-        <>
-          <div id="bt-exits" className={cn('grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
-            <Panel title="Closed by which exit">
-              <table className={FOLD.table}>
-                <caption className="sr-only">Backtest: which exit closed the trades</caption>
-                <thead className={FOLD.head}>
-                  <tr className="text-left text-[11.5px] text-muted-foreground">
-                    <th scope="col" className="py-1 pr-2 font-medium">Closed by</th>
-                    <th scope="col" className="py-1 pr-2 text-right font-medium">Trades</th>
-                    <th scope="col" className="py-1 pr-2 text-right font-medium">In profit</th>
-                    <th scope="col" className="py-1 text-right font-medium">Net</th>
-                  </tr>
-                </thead>
-                <tbody className={FOLD.body}>
-                  {EXITS.flatMap((e) => {
-                    const x = t.exits[e.key];
-                    return x && x.n > 0 ? [(
-                      <tr key={e.key} className={FOLD.row}>
-                        <th scope="row" className={FOLD.name}>{e.label}</th>
-                        <td className={FOLD.trades}>{count(x.n)}</td>
-                        <td className={FOLD.inProfit}>{pct(x.wins / x.n, 0)}</td>
-                        <td className={FOLD.net}>
-                          <span className={cn('block whitespace-nowrap font-semibold', netClass(x.net))}>{moneyText(x.net)}</span>
-                          <span className={cn('block whitespace-nowrap text-[11.5px]', netClass(x.net))}>{moneyText(x.net / x.n)}</span>
-                        </td>
-                      </tr>
-                    )] : [];
-                  })}
-                </tbody>
-              </table>
+        <BacktestBreakdowns total={t} b={r} wide={wide} idPrefix="bt"
+          sessions={(r.bySession?.length ?? 0) > 0 ? (
+            <Panel title="By session of the day">
+              <SessionTable rows={r.bySession!} onOpen={(pick, title) => setOpenTrades({ key: `session:${pick.slotFrom}-${pick.slotTo}:${pick.method ?? ''}`, title, pick })} />
             </Panel>
-            {(r.byVol?.length ?? 0) > 0 && (
-              <Panel title="By volatility when the signal filled">
-                <Table caption="Backtest by volatility" first="Volatility" rows={r.byVol!} />
-              </Panel>
-            )}
-            <Panel title="By time frame">
-              <Table caption="Backtest by time frame" first="Time frame" rows={r.byTf.map((x) => (x.key === 'chain' ? { ...x, name: 'TF chain' } : x))} perp />
-            </Panel>
-          </div>
-
-          <div id="bt-pairs" className={cn('grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
-            <PairList title="Best pairs as options" tone="up" pairs={best} amount={amount} note={note} empty="No method and time frame in profit as an option here." />
-            <PairList title="Worst pairs as options" tone="down" pairs={worst} amount={amount} note={note} empty="No method and time frame in loss as an option here." />
-          </div>
-
-          <div id="bt-methods" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><MethodsAsOptions rows={r.byMethod} wide={wide} /></div>
-
-          {/* By session of the day (owner, 15 Oct 2026): 1h by default, 15m to 6h, each with its methods. */}
-          {(r.bySession?.length ?? 0) > 0 && (
-            <div id="bt-sessions" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
-              <Panel title="By session of the day">
-                <SessionTable rows={r.bySession!} onOpen={(pick, title) => setOpenTrades({ key: `session:${pick.slotFrom}-${pick.slotTo}:${pick.method ?? ''}`, title, pick })} />
-              </Panel>
-            </div>
-          )}
-
-          <div id="bt-days" className={cn('grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2')}>
-            <Panel title="By kind of day">
-              <Segmented label="Group the days by" value={grouping} onChange={setGrouping}
-                options={[{ key: 'family', label: 'Trend family', spoken: 'By family: up trend, down trend, range, turn' }, { key: 'kind', label: 'Market type', spoken: 'By each market type' }]} />
-              <div className="mt-2"><Table caption="Backtest by kind of day" first={grouping === 'family' ? 'Family' : 'Market type'} rows={grouping === 'family' ? r.byFamily : r.byPattern} days /></div>
-            </Panel>
+          ) : null}
+          expiryDays={(
             <Panel title="By expiry day">
               <Table caption="Backtest by expiry day" first="Expiry day" onCount={(day) => setOpenTrades({ key: day, pick: { day } })} rows={[...r.days].reverse().map((d) => ({ ...d, key: d.day, name: `${dayLabel(d.day)}${d.live ? ' · so far' : ''}${d.grain ? ` · ${GRAIN[d.grain]}` : ''}` }))} />
               <p className="m-0 mt-1 text-[12px] text-muted-foreground">Tap a day&apos;s trade count for its trades, one by one.</p>
             </Panel>
-          </div>
-        </>
+          )} />
       )}
 
       <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">

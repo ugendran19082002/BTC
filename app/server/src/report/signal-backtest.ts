@@ -1143,8 +1143,16 @@ export type BacktestPortfolioResult = {
   members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
   total: BtTot;
   /** Each expiry day: all of them together, and each one's own net in the members' order. */
-  days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];
+  days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[]; /** What its options were priced on: one board for all of them. */ grain: BoardGrain }[];
   margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, across all of them. */ peakLots: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
+  /**
+   * The same breakdowns as one backtest's, of all of them together (owner, 17 Oct 2026: "the backtest's output screen
+   * and the portfolio's do not match"): by exit (in `total`), time frame, method, pair, kind of day and volatility.
+   * And the signals in the trade, with why those not traded were not, added over the members.
+   */
+  breakdown: BtBreakdown;
+  signals: number;
+  skipped: Record<BtSkip, number>;
 };
 
 export function portfolioBacktestHere(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
@@ -1188,6 +1196,8 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
   const totals = o.members.map(() => zeroBt()), signals = o.members.map(() => 0), peaks = o.members.map(() => 0);
   const priced = o.members.map((): Record<BoardGrain, number> => ({ 'own-1m': 0, 'mark-1m': 0, '5m': 0 }));
   const rows: BacktestPortfolioResult['days'] = [];
+  const cells: BtCell[] = [];
+  const skipped = noSkips();
   let peak = { usd: 0, at: null as number | null, open: 0, lots: 0, day: null as string | null }, daily = 0, dailyN = 0, turnedAway = 0;
   for (const d of days) {
     const { from, to } = sessionOf(d.day);
@@ -1198,12 +1208,14 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
       from, to, bars: raw.minutes.filter((x) => x.at >= from), board: raw.board, shared: caps,
       books: live.map(({ b }) => ({ signals: raw.signals.filter(b.takes), plan: b.planFor({ from, to }), volAt: readers[b.volBy], volOnly: b.volOnly })),
     });
-    const row = { day: d.day, live: d.live, n: 0, wins: 0, net: 0, charges: 0, byMember: o.members.map(() => 0) };
+    const row = { day: d.day, live: d.live, n: 0, wins: 0, net: 0, charges: 0, byMember: o.members.map(() => 0), grain: raw.grain };
     const all: { at: number; until: number; margin: number; lots: number }[] = [];
     live.forEach(({ i }, k) => {
       const out = outs[k]!;
       const dayCells = cellsOf(d.day, out.trades);
       slotRows(dayCells, (id) => names.get(id) ?? id, sessions);
+      cells.push(...dayCells);
+      for (const k of BT_SKIPS) skipped[k] += out.skipped[k];
       const t = dayCells.reduce((a, c) => addBt(a, c.tot), zeroBt());
       addBt(totals[i]!, t);
       signals[i]! += out.trades.length + out.refused.length;
@@ -1224,8 +1236,11 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
   const members = o.members.map((m, i) => (books[i]
     ? { id: m.id, name: m.name, problem: null, signals: signals[i]!, total: totals[i]!, marginPeakUsd: peaks[i]!, priced: priced[i]! }
     : { id: m.id, name: m.name, problem: m.problem ?? 'It cannot be worked out.', signals: 0, total: zeroBt(), marginPeakUsd: 0, priced: null }));
+  const nameOf = (id: string) => names.get(id) ?? id;
   return {
     from: o.from, to: o.to, members, bySession: slotList(sessions),
+    breakdown: breakdownOf(cells, new Map(days.map((d) => [d.day, d.pattern])), nameOf),
+    signals: signals.reduce((a, x) => a + x, 0), skipped,
     shared: { max: caps.max, ce: caps.side?.CE ?? caps.max, pe: caps.side?.PE ?? caps.max, cePct: o.shared!.cePct, pePct: o.shared!.pePct, turnedAway },
     total: totals.reduce((t, x) => addBt(t, x), zeroBt()),
     days: rows,
@@ -1239,6 +1254,8 @@ async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
   const members: BacktestPortfolioResult['members'] = [];
   const results: (SignalBacktest | null)[] = [];
   const spans = new Map<string, Span[]>();
+  const shown: BtCell[] = [];
+  const skipped = noSkips();
   for (const m of o.members) {
     if (!m.ask || m.problem) {
       members.push({ id: m.id, name: m.name, problem: m.problem ?? 'It cannot be worked out.', signals: 0, total: zeroBt(), marginPeakUsd: 0, priced: null });
@@ -1246,13 +1263,14 @@ async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
       continue;
     }
     const own = new Map<string, Span[]>();
-    const r = await signalBacktestNow({ ...m.ask, from: o.from, to: o.to, now: o.now, spot: o.spot ?? null }, own);
+    const r = await signalBacktestNow({ ...m.ask, from: o.from, to: o.to, now: o.now, spot: o.spot ?? null }, own, shown);
+    for (const k of BT_SKIPS) skipped[k] += r.skipped[k];
     for (const [day, xs] of own) { const all = spans.get(day); if (all) all.push(...xs); else spans.set(day, [...xs]); }
     members.push({ id: m.id, name: m.name, problem: null, signals: r.signals, total: r.total, marginPeakUsd: r.margin.peakUsd, priced: r.priced });
     results.push(r);
   }
   const worked = results.filter((r): r is SignalBacktest => r !== null);
-  const dayList = worked[0]?.days.map((d) => ({ day: d.day, live: d.live })) ?? [];
+  const dayList = worked[0]?.days.map((d) => ({ day: d.day, live: d.live, grain: d.grain })) ?? [];
   const days = dayList.map((d, i) => {
     const each = results.map((r) => r?.days[i] ?? null);
     return {
@@ -1274,16 +1292,49 @@ async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
     const k = `${x.slot}|${x.method}`, h = sessions.get(k);
     if (h) { h.n += x.n; h.wins += x.wins; h.net += x.net; h.charges += x.charges; } else sessions.set(k, { ...x });
   }
+  const known = await marketDays(o.from, o.to, o.now);
+  const names = await methodNames();
   return {
     from: o.from, to: o.to, members, shared: null, bySession: slotList(sessions),
+    breakdown: breakdownOf(shown, new Map(known.map((d) => [d.day, d.pattern])), (id) => names.get(id) ?? id),
+    signals: worked.reduce((a, r) => a + r.signals, 0), skipped,
     total: worked.reduce((t, r) => addBt(t, r.total), zeroBt()),
     days,
     margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, peakLots: peak.lots, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: members.reduce((a, m) => a + m.marginPeakUsd, 0) },
   };
 }
 
-/** `shownOut`, where given, is filled with the trades shown -- their times and margin -- by expiry day: what a portfolio lays on one clock. */
-async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promise<SignalBacktest> {
+/** What a result is broken down by: the same for one backtest and for saved backtests run together (`breakdownOf`). */
+export type BtBreakdown = Pick<SignalBacktest, 'pairs' | 'byTf' | 'byMethod' | 'byPattern' | 'byFamily' | 'byVol'>;
+/** The cells of a result, added up every way the screen breaks it down -- each row with the days it had. */
+function breakdownOf(cells: readonly BtCell[], patternOf: ReadonlyMap<string, PatternKey | null>, nameOf: (id: string) => string): BtBreakdown {
+  const group = (keyOf: (c: BtCell) => string | null, nameFor: (c: BtCell) => { name: string; tf?: string }): BtRow[] => {
+    const by = new Map<string, BtRow & { seen: Set<string> }>();
+    for (const c of cells) {
+      const key = keyOf(c);
+      if (key === null) continue;
+      const row = by.get(key) ?? { key, ...nameFor(c), ...zeroBt(), seen: new Set<string>() };
+      by.set(key, row);
+      addBt(row, c.tot); row.seen.add(c.day);
+    }
+    return [...by.values()].map(({ seen, ...row }) => ({ ...row, days: seen.size }));
+  };
+  const byNet = (a: BtRow, b: BtRow) => b.net - a.net || b.n - a.n;
+  return {
+    pairs: group((c) => `${c.method}|${c.mode}|${c.tf}`, (c) => ({ name: nameOf(c.method), tf: c.mode === 'mtf' ? `${c.tf} + TF chain` : c.tf })).sort(byNet),
+    byTf: group(tfKeyOf, (c) => ({ name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf })).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
+    byMethod: group((c) => c.method, (c) => ({ name: nameOf(c.method) })).sort(byNet),
+    byPattern: group((c) => patternOf.get(c.day) ?? null, (c) => { const p = PATTERNS.find((x) => x.key === patternOf.get(c.day))!; return { name: `#${p.id} ${p.name}` }; }).sort(byNet),
+    byFamily: group((c) => { const p = patternOf.get(c.day); return p ? familyOf(p) : null; }, (c) => ({ name: FAMILIES.find((f) => f.key === familyOf(patternOf.get(c.day)!))!.name })).sort(byNet),
+    byVol: group((c) => c.vol, (c) => ({ name: c.vol === 'low' ? 'Low' : c.vol === 'high' ? 'High' : 'Medium' })).sort((a, b) => VOL_LEVELS.indexOf(a.key as VolLevel) - VOL_LEVELS.indexOf(b.key as VolLevel)),
+  };
+}
+
+/**
+ * `shownOut`, where given, is filled with the trades shown -- their times and margin -- by expiry day: what a portfolio
+ * lays on one clock; `cellsOut` with the cells shown: what its breakdowns are added up from.
+ */
+async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOut?: BtCell[]): Promise<SignalBacktest> {
   await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
   // With the eight expiry days before the range: each day's volatility is read against the five before it.
   const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
@@ -1355,6 +1406,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
     ? (await marketReport({ from: o.from, to: o.to, now: o.now, spot: o.spot ?? null, account: st.accountId ?? null, tfs: null, methods: null, strategies: [st.name] })).total.real
     : null;
   const cells = every.filter((c) => (!o.tfs || o.tfs.includes(tfKeyOf(c))) && (!o.methods || o.methods.includes(c.method)));
+  const patternOf = new Map(days.map((d) => [d.day, d.pattern]));
   // The margin of the trades shown: the same filters as the rows.
   let peak = { usd: 0, at: null as number | null, open: 0, lots: 0, day: null as string | null };
   let daily = 0, dailyN = 0, tradeMargin = 0, tradeN = 0;
@@ -1367,19 +1419,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
     daily += p.usd; dailyN++;
     for (const x of shown) { tradeMargin += x.margin; tradeN++; }
   }
-  const group = (keyOf: (c: BtCell) => string | null, nameFor: (c: BtCell) => { name: string; tf?: string }): BtRow[] => {
-    const by = new Map<string, BtRow & { seen: Set<string> }>();
-    for (const c of cells) {
-      const key = keyOf(c);
-      if (key === null) continue;
-      const row = by.get(key) ?? { key, ...nameFor(c), ...zeroBt(), seen: new Set<string>() };
-      by.set(key, row);
-      addBt(row, c.tot); row.seen.add(c.day);
-    }
-    return [...by.values()].map(({ seen, ...row }) => ({ ...row, days: seen.size }));
-  };
-  const patternOf = new Map(days.map((d) => [d.day, d.pattern]));
-  const byNet = (a: BtRow, b: BtRow) => b.net - a.net || b.n - a.n;
+  cellsOut?.push(...cells);
   const distinct = (xs: { key: string; name: string }[]) => [...new Map(xs.map((x) => [x.key, x])).values()];
   return {
     from: o.from, to: o.to, params, signals, skipped,
@@ -1388,12 +1428,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
     total: cells.reduce((t, c) => addBt(t, c.tot), zeroBt()),
     days: days.map((d) => ({ ...cells.filter((c) => c.day === d.day).reduce((t, c) => addBt(t, c.tot), zeroBt()), day: d.day, pattern: d.pattern, live: d.live, grain: grainOf.get(d.day) ?? '5m' })),
     priced: { 'own-1m': 0, 'mark-1m': 0, '5m': 0, ...Object.fromEntries(BOARD_GRAINS.map((g) => [g, days.filter((d) => grainOf.get(d.day) === g).length])) } as Record<BoardGrain, number>,
-    pairs: group((c) => `${c.method}|${c.mode}|${c.tf}`, (c) => ({ name: nameOf(c.method), tf: c.mode === 'mtf' ? `${c.tf} + TF chain` : c.tf })).sort(byNet),
-    byTf: group(tfKeyOf, (c) => ({ name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf })).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),
-    byMethod: group((c) => c.method, (c) => ({ name: nameOf(c.method) })).sort(byNet),
-    byPattern: group((c) => patternOf.get(c.day) ?? null, (c) => { const p = PATTERNS.find((x) => x.key === patternOf.get(c.day))!; return { name: `#${p.id} ${p.name}` }; }).sort(byNet),
-    byFamily: group((c) => { const p = patternOf.get(c.day); return p ? familyOf(p) : null; }, (c) => ({ name: FAMILIES.find((f) => f.key === familyOf(patternOf.get(c.day)!))!.name })).sort(byNet),
-    byVol: group((c) => c.vol, (c) => ({ name: c.vol === 'low' ? 'Low' : c.vol === 'high' ? 'High' : 'Medium' })).sort((a, b) => VOL_LEVELS.indexOf(a.key as VolLevel) - VOL_LEVELS.indexOf(b.key as VolLevel)),
+    ...breakdownOf(cells, patternOf, nameOf),
     bySession: slotList(slotRows(cells, nameOf)),
     choices: {
       timeframes: distinct(listCells.map((c) => ({ key: tfKeyOf(c), name: c.mode === 'mtf' ? 'With timeframe chain' : c.tf }))).sort((a, b) => tfPlace(a.key) - tfPlace(b.key)),

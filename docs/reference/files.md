@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-520 files listed, 262 test files counted below, images and lockfiles left out.
+522 files listed, 263 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 136 |
+| `app/server` | 137 |
 | `app/web` | 126 |
 
 ## `(root)`
@@ -451,11 +451,13 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [BacktestBreakdowns.tsx](../../app/web/src/components/report/BacktestBreakdowns.tsx) | A result broken down, the same for one backtest and for saved backtests run together (owner, 17 Oct 2026: "the backtest's output screen and the portfolio's do not match -- best practice, user frien... |
 | [BacktestCurve.tsx](../../app/web/src/components/report/BacktestCurve.tsx) | The backtest's running total, expiry day by expiry day (owner, 14 Oct 2026: "the backtest screen, user friendly"): whether the settings make money steadily or on one lucky day, and the worst stretc... |
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
 | [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | The days and the running total they add up to, as one chart (owner, 6 Oct 2026). |
 | [DayTrades.tsx](../../app/web/src/components/report/DayTrades.tsx) | One expiry day of a backtest, trade by trade (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL, TGT, points and money, user friendly"). |
 | [ExpiryRange.tsx](../../app/web/src/components/report/ExpiryRange.tsx) | Which expiry days a report covers (13 Oct 2026): since 1 Oct, the last 7 or 30, or a range of the owner's own ("I want a custom date"). |
+| [GateFields.tsx](../../app/web/src/components/report/GateFields.tsx) | The trend and sudden-move gates, as the backtest and a run together set them (owner, 17 Oct 2026: "a sudden-move / trend gate -- skip on a strong breakout, volume spike, momentum; asymmetric CE/PE,... |
 | [LiveCheck.tsx](../../app/web/src/components/report/LiveCheck.tsx) | The live check, inside a backtest's result and a portfolio's (owner, 14 Oct 2026: "the real trades since 9:30 last night and the backtest's do not match in number -- check the calculation"; then "b... |
 | [MarketReport.tsx](../../app/web/src/components/report/MarketReport.tsx) | The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole expiry went": each expiry day, newest first, with its high and low in points, its zigzag,... |
 | [MethodReport.tsx](../../app/web/src/components/report/MethodReport.tsx) | The Methods report (owner, 1 Oct 2026: "a tab of its own; two sections, 81 + 81: win rate, trades, win, loss, profit, loss, net"). |

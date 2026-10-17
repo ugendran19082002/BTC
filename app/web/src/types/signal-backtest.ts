@@ -100,11 +100,16 @@ export type BacktestPortfolioResult = {
   over?: { settings: Partial<BacktestParams>; own: string[] } | null;
   members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
   total: BtTot;
-  days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[] }[];
+  days: { day: string; live: boolean; n: number; wins: number; net: number; charges: number; byMember: number[]; /** What its options were priced on; absent from an older server. */ grain?: BoardGrain }[];
   /** The most held at once across all of them, laid on one clock; and the sum of each one's own most, which it never exceeds. */
   margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, together. An older server sends none. */ peakLots?: number; avgDailyPeakUsd: number; sumOfPeaksUsd: number };
   /** Each method in each fifteen-minute slot, all of them together; absent from an older server. */
   bySession?: BtSlotRow[];
+  /** The single backtest's breakdowns, of all of them together (17 Oct 2026); absent from an older server. */
+  breakdown?: Pick<SignalBacktestResponse, 'pairs' | 'byTf' | 'byMethod' | 'byPattern' | 'byFamily' | 'byVol'>;
+  /** The signals in the trade over all of them, and why those not traded were not; absent from an older server. */
+  signals?: number;
+  skipped?: Record<BtSkip, number>;
 };
 
 /**

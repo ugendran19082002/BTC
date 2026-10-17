@@ -768,6 +768,9 @@ describe('SignalBacktest', () => {
       total: tot({ n: 1_100, wins: 550, losses: 550, net: -90, won: 40, lost: 130, charges: 8 }),
       days: [{ day: '2026-10-12', live: false, n: 700, wins: 350, net: 60, charges: 5, byMember: [20, 40] }, { day: '2026-10-13', live: true, n: 400, wins: 200, net: -150, charges: 3, byMember: [10, -160] }],
       margin: { peakUsd: 150, peakDay: '2026-10-13', peakAt: Date.parse('2026-10-13T04:29:00+05:30'), peakOpen: 61, avgDailyPeakUsd: 120, sumOfPeaksUsd: 200 },
+      // The single backtest's breakdowns, of both together (17 Oct 2026).
+      breakdown: { pairs: RESULT.pairs, byTf: RESULT.byTf, byMethod: RESULT.byMethod, byPattern: RESULT.byPattern, byFamily: RESULT.byFamily, byVol: [] },
+      signals: 1_300, skipped: { ...RESULT.skipped, 'outside-window': 150, 'desk-limit': 50, 'no-strike': 0, 'no-exit-price': 0 },
     });
     show();
     await screen.findByText('Backtest result');
@@ -806,12 +809,21 @@ describe('SignalBacktest', () => {
     expect(rowsOf('Run together: by expiry day').map((x) => x.split('%')[0])).toEqual(['Tue 13 Oct · so far400 ›50', 'Mon 12 Oct700 ›50']);
     // a day's count opens its trades, asked exactly as the run is
     saves.getPortfolioTrades.mockResolvedValue({ day: '2026-10-12', total: 0, trades: [] });
-    fireEvent.click(run.getByRole('button', { name: 'See the 700 trades of Mon 12 Oct' }));
+    // the expiry days are a panel of their own now, as in one backtest's result
+    fireEvent.click(within(screen.getByRole('table', { name: 'Run together: by expiry day' })).getByRole('button', { name: 'See the 700 trades of Mon 12 Oct' }));
     await waitFor(() => expect(saves.getPortfolioTrades).toHaveBeenLastCalledWith({ day: '2026-10-12' }, ['b2', 'a1'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 58, ce: 80, pe: 80 }, { window: 'saved' }, {}));
     fireEvent.click(await screen.findByRole('button', { name: 'close' }));
     const tile = (label: string) => run.getByText(label).parentElement!.textContent!.replace(label, '');
     expect([tile('Margin at most, together'), tile("Each one's most, added")]).toEqual(['₹12,750', '₹17,000']);
     expect(run.getByText(/the most held at once was 61 trades at 4:29 AM on the Tue 13 Oct expiry/)).toBeInTheDocument();
+    // laid out as one backtest's result: the same summary lines, the jump bar, and the same breakdowns, each its own panel
+    expect(run.getByText('Winners made')).toBeInTheDocument();
+    expect(run.getByText(/1,300 signals went in the trade over all of them; 1,100 were traded here\. Not traded: 150 outside their hours, 50 while the account was full \(at most open\)\./)).toBeInTheDocument();
+    const jump = screen.getAllByRole('navigation', { name: 'Jump to a part of the result' }).at(-1)!;
+    expect(within(jump).getAllByRole('button').map((x) => x.textContent)).toEqual(['Summary', 'Exits & time frames', 'Pairs', 'Methods', 'Days', 'By volatility', 'Live check']);
+    for (const name of ['Backtest: which exit closed the trades', 'Backtest by time frame', 'Backtest: methods in profit', 'Backtest by kind of day']) {
+      expect(screen.getAllByRole('table', { name }).length, name).toBeGreaterThan(0);
+    }
 
     // kept as a portfolio, and run again from its own row
     saves.savePortfolio.mockImplementation(async () => { saves.getBacktestSaves.mockResolvedValue({ saves: [B, A], portfolios: [{ id: 'p1', name: 'Both', saveIds: ['b2', 'a1'], createdAt: 1, updatedAt: 1 }] }); return { ok: true, portfolio: { id: 'p1', name: 'Both', saveIds: ['b2', 'a1'] } }; });
@@ -1075,10 +1087,10 @@ describe('SignalBacktest', () => {
     const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     const set = () => within(folio().getByRole('region', { name: 'Settings for the run' }));
     const sw = (name: string) => set().getByRole('switch', { name: `${name}, for the run` });
-    const NAMES = ['Strike', 'Option target', 'Option stop', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'No-entry window'];
+    const NAMES = ['Strike', 'Option target', 'Option stop', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
     // every one off to begin with, each saying whose settings run
     expect(set().getAllByRole('switch').map((x) => [x.getAttribute('aria-label'), x.getAttribute('aria-checked')])).toEqual(NAMES.map((n) => [`${n}, for the run`, 'false']));
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(7);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(8);
     expect(set().getByText('· all off')).toBeInTheDocument();
     expect(set().queryByRole('button', { name: 'Switch all off' })).toBeNull();
     // folded on a phone to begin with: one line of what the run is held to, and Change
@@ -1144,8 +1156,18 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(Object.keys(last()).sort()).toEqual(['minPremium', 'range', 'stop', 'strike', 'target']));
     fireEvent.click(set().getByRole('button', { name: 'Switch all off' }));
     await waitFor(() => expect(last()).toEqual({}));
+
+    // the volatility filter over every one of them: the level and what it is read by, together
+    fireEvent.click(sw('Volatility filter'));
+    await waitFor(() => expect(last()).toEqual({ vol: { vol: 'off', volBy: 'atr' } }));
+    fireEvent.click(set().getByRole('radio', { name: 'For the run, only signals in high volatility' }));
+    fireEvent.click(set().getByRole('radio', { name: /For the run, volatility by the at-the-money/ }));
+    await waitFor(() => expect(last().vol).toEqual({ vol: 'high', volBy: 'iv' }));
+    expect(set().getByText('For the run: high volatility only (ATM IV)')).toBeInTheDocument();
+    fireEvent.click(sw('Volatility filter'));
+    await waitFor(() => expect(last()).toEqual({}));
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(7);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(8);
   });
 
   it('a run\'s settings as the route reads them: the single backtest\'s own names under o_, and nothing for a switch that is off', async () => {
@@ -1157,6 +1179,7 @@ describe('SignalBacktest', () => {
     expect(overQuery({ target: { targetPct: 0.7, targetSteps: [{ at: '23:30', pct: 0.73 }, { at: '01:30', pct: 0.76 }] } })).toEqual({ o_tp: '0.7', o_tsteps: '23:30:73,01:30:76' });
     // the range goes whole, zeros too: "no range for any of them" is asked for, not left out
     expect(overQuery({ range: { slMin: 250, slMax: 0, tgtMin: 250, tgtMax: 0 } })).toEqual({ o_slmin: '250', o_slmax: '0', o_tgtmin: '250', o_tgtmax: '0' });
+    expect(overQuery({ vol: { vol: 'low', volBy: 'atr' } })).toEqual({ o_vol: 'low', o_volby: 'atr' });
   });
 });
 
