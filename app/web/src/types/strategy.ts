@@ -271,7 +271,28 @@ export type SignalRule = {
   action?: SignalAction;
   /** The methods picked again every day by their own record (16 Oct 2026). Absent or off: the list is the owner's own. */
   autoMethods?: AutoMethods | null;
+  /** The strike's delta by how volatile it is at each signal (17 Oct 2026). Absent or off: the strategy's own delta. */
+  deltaByVol?: DeltaByVol | null;
 };
+/**
+ * The most delta a strike sold may have at each level, read by one source -- the candles' ATR over two hours, or the
+ * board's ATM IV -- as the backtest reads a fill. A level that cannot be read keeps the strategy's own delta.
+ */
+export type DeltaByVol = { on: boolean; by: 'atr' | 'iv'; low: number; medium: number; high: number };
+/** Measured 1-17 Oct 2026 on the live strategies: Low up to 0.19 added a little and kept every loss as it was; 0.20 began the losses. */
+export const DEFAULT_DELTA_BY_VOL: DeltaByVol = { on: false, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 };
+const VOL_LEVEL_WORD = { low: 'low', medium: 'normal', high: 'high' } as const;
+/** The server's `deltaByVolProblems`, in its words. */
+export function deltaByVolProblems(a: DeltaByVol | null | undefined): string[] {
+  if (!a) return [];
+  const bad: string[] = [];
+  if (a.by !== 'atr' && a.by !== 'iv') bad.push('Delta by volatility is read by ATR 2h or by ATM IV.');
+  for (const l of ['low', 'medium', 'high'] as const) {
+    const v = a[l];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0.02 || v > 0.5) bad.push(`The ${VOL_LEVEL_WORD[l]} volatility delta must be from 0.02 to 0.50.`);
+  }
+  return bad;
+}
 /** Once a day at `at` (IST): the methods that won `winPct`% or more of `minTrades`+ trades over the last `days` finished expiry days. */
 export type AutoMethods = { on: boolean; at: string; winPct: number; minTrades: number; days: number; last?: AutoMethodsRun | null };
 /** One pick: the days looked at, the list set (best net first) and the one before; `note` when the list was kept. */

@@ -52,6 +52,12 @@ function RuleNow({ s }: { s: Strategy }) {
         ? <span><b className="text-foreground">Block {b.n} of {b.of}</b> · {time12(b.from)} → {time12(b.until)} · {hoursLabel(b.minutesLeft)} left</span>
         : <span><b className="text-foreground">Same rule all the time</b></span>}
       <span>{s.config.signal?.action === 'buy' ? 'buys' : 'sells'} <b className="text-foreground">{pickWords(b.pick)}</b></span>
+      {/* Its delta by volatility (17 Oct 2026): the number above is the one it keeps when the level cannot be read. */}
+      {s.config.signal?.deltaByVol?.on && s.config.strikeRule === 'delta' && (
+        <span aria-label={`delta by volatility of ${s.name}`} className="rounded border border-solid border-[var(--accent)]/50 px-1.5 py-px text-[10.5px] text-foreground">
+          Δ by {s.config.signal.deltaByVol.by === 'iv' ? 'ATM IV' : 'ATR 2h'}: low {s.config.signal.deltaByVol.low.toFixed(2)} · normal {s.config.signal.deltaByVol.medium.toFixed(2)} · high {s.config.signal.deltaByVol.high.toFixed(2)}
+        </span>
+      )}
       {b.next && <span className="text-[var(--dim)]">· then block {b.next.n} at {time12(b.next.at)}: {pickWords(b.next.pick)}</span>}
     </p>
   );

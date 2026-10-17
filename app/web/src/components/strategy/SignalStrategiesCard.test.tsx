@@ -623,6 +623,16 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
   }));
   const now = (name: string) => screen.getByLabelText(`strike rule now of ${name}`);
 
+  it('[critical] a strategy whose delta is set by volatility says so beside the rule, with its source and three deltas (17 Oct 2026)', async () => {
+    const on = strat('vol', { ...SIG, ...allDay, strikeRule: 'delta', delta: { max: 0.1 }, signal: { ...SIG.signal, deltaByVol: { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 } } });
+    const off = strat('plain', { ...SIG, ...allDay, strikeRule: 'delta', delta: { max: 0.1 }, signal: { ...SIG.signal, deltaByVol: { on: false, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 } } });
+    getStrategies.mockResolvedValue(status([on, off]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('VOL');
+    expect(screen.getByLabelText('delta by volatility of VOL')).toHaveTextContent('Δ by ATM IV: low 0.18 · normal 0.10 · high 0.08');
+    expect(screen.queryByLabelText('delta by volatility of PLAIN')).toBeNull();
+  });
+
   it('[critical] a strategy split by time of day says the block the clock is in, until when, and the rule a signal is sold under now', async () => {
     const s = strat('day', { ...SIG, ...allDay, strikeRule: 'premium', premium: { mode: 'atMost', usd: 50, fallbackUsd: 75 }, strikeBlocks: blocks });
     getStrategies.mockResolvedValue(status([s]));

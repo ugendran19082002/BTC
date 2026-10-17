@@ -1566,3 +1566,86 @@ test('[critical] ?lite=1: the strategies, runs and figures as always, without th
   assert.deepEqual(Object.keys(lite).sort(), Object.keys(full).sort());
   assert.deepEqual(rest(lite), rest(full));
 });
+
+test('[critical] delta by volatility (17 Oct 2026): checked on save; each signal sold at its level\'s delta, read by the source chosen; unknown keeps its own -- and the row says which', async () => {
+  await freshDesk();
+  // Three puts by delta: 84,000 at 0.16, 83,700 at 0.09, 83,300 at 0.05.
+  for (const [strike, pid, bid] of [[83_700, 7101, 9], [83_300, 7102, 4]] as const) {
+    const symbol = `P-BTC-${strike}-${EXPIRY}`;
+    paper().addProduct({ symbol, productId: pid, underlying: 'BTC', optionSide: 'PE', strike, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+    paper().setQuote({ symbol, bid, ask: bid + 0.5, bidSize: 5_000, askSize: 5_000, mark: bid + 0.2, ts: Date.now() });
+  }
+  paper().setQuote({ symbol: `P-BTC-${PUT}-${EXPIRY}`, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  const byDelta: SignalBoard = {
+    ...board,
+    candidates: [
+      { cp: 'P', strike: PUT, sellPrice: 18, pOtm: 0.84, moneyness: 'OTM', ask: 18.5, delta: -0.16 },
+      { cp: 'P', strike: 83_700, sellPrice: 9, pOtm: 0.91, moneyness: 'OTM', ask: 9.5, delta: -0.09 },
+      { cp: 'P', strike: 83_300, sellPrice: 4, pOtm: 0.95, moneyness: 'OTM', ask: 4.5, delta: -0.05 },
+      { cp: 'C', strike: CALL, sellPrice: 18, pOtm: 0.84, moneyness: 'OTM', ask: 18.5, delta: 0.16 },
+    ],
+  };
+  const dv = { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 };
+  const byDeltaConfig = { ...config, signal: { ...config.signal, maxOpen: 20, deltaByVol: dv }, strikeRule: 'delta', delta: { max: 0.12 } };
+
+  // Checked as it is saved: by delta, one rule all window, sold; each level 0.02 to 0.50; ATR 2h or ATM IV.
+  const refusals: [Record<string, unknown>, RegExp][] = [
+    [{ ...byDeltaConfig, strikeRule: 'premium' }, /Delta by volatility needs the strike picked by delta\./],
+    [{ ...byDeltaConfig, strikeBlocks: [{ at: '13:00', strikeRule: 'delta', strikeStep: 0, delta: { max: 0.1 } }] }, /remove the strike blocks, or switch it off/],
+    [{ ...byDeltaConfig, signal: { ...byDeltaConfig.signal, action: 'buy' }, takeProfitPct: 0, stopLossPct: 0 }, /Delta by volatility is for a strategy that sells\./],
+    [{ ...byDeltaConfig, signal: { ...byDeltaConfig.signal, deltaByVol: { ...dv, high: 0.6 } } }, /The high volatility delta must be from 0\.02 to 0\.50\./],
+    [{ ...byDeltaConfig, signal: { ...byDeltaConfig.signal, deltaByVol: { ...dv, by: 'vix' } } }, /read by ATR 2h or by ATM IV/],
+  ];
+  for (const [c, why] of refusals) {
+    const r = await api('POST', '/api/strategies', { name: 'Sig by vol', config: c });
+    assert.equal(r.status, 422, JSON.stringify(r.body));
+    assert.ok(r.body.problems.some((p: string) => why.test(p)), r.body.problems.join(' | '));
+  }
+  // Off, any of that is as before: nothing is checked that is not in use.
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig by vol off', config: { ...byDeltaConfig, strikeRule: 'premium', signal: { ...byDeltaConfig.signal, deltaByVol: { ...dv, on: false } } } })).status, 200);
+  // Kept as sent, numbers as numbers.
+  const saved = await api('POST', '/api/strategies', { name: 'Sig by vol', config: { ...byDeltaConfig, signal: { ...byDeltaConfig.signal, deltaByVol: { on: true, by: 'iv', low: '0.18', medium: 0.1, high: 0.08 } } } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const id = saved.body.strategy.id as string;
+  assert.deepEqual((await strategyStore().get(id))!.config.signal!.deltaByVol, dv);
+  await api('POST', `/api/strategies/${id}/enabled`, { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+
+  let level: 'low' | 'medium' | 'high' | null = 'low';
+  const asked: string[] = [];
+  const byVol = new StrategyRunner(strategyStore(), () => clock, async () => byDelta, undefined, async (by) => { asked.push(by); return level; });
+  const last = async () => (await runsOf(id)).at(-1)!;
+  clock = TEN;
+  for (const [lvl, strike, words] of [
+    ['low', PUT, 'low volatility \\(ATM IV\\): Δ ≤ 0\\.18'],
+    ['medium', 83_700, 'normal volatility \\(ATM IV\\): Δ ≤ 0\\.10'],
+    ['high', 83_300, 'high volatility \\(ATM IV\\): Δ ≤ 0\\.08'],
+    [null, 83_700, 'volatility \\(ATM IV\\) unknown: its own Δ ≤ 0\\.12'],
+  ] as const) {
+    level = lvl;
+    await byVol.onSignal(signal());
+    const row = await last();
+    assert.equal(row.status, 'would-place', row.detail);
+    assert.match(row.detail, new RegExp(`would sell PE ${strike} x1 @ .* · TGT 85500 · ${words}$`), `${lvl}: ${row.detail}`);
+  }
+  assert.ok(asked.length >= 4 && asked.every((x) => x === 'iv'), asked.join());
+
+  // Read by ATR 2h instead: the source asked is the one chosen, one at a time.
+  const s = (await strategyStore().get(id))!;
+  assert.equal((await api('POST', '/api/strategies', { id, name: s.name, config: { ...s.config, signal: { ...s.config.signal!, deltaByVol: { ...dv, by: 'atr' } } } })).status, 200);
+  asked.length = 0; level = 'high';
+  await byVol.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83300 .* · high volatility \(ATR 2h\): Δ ≤ 0\.08$/);
+  assert.deepEqual([...new Set(asked)], ['atr']);
+  // A reading that fails is an unknown level, never a stopped signal.
+  const failing = new StrategyRunner(strategyStore(), () => clock, async () => byDelta, undefined, async () => { throw new Error('board down'); });
+  await failing.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83700 .* · volatility \(ATR 2h\) unknown: its own Δ ≤ 0\.12$/);
+  // Switched off: its own delta, nothing read, nothing said.
+  assert.equal((await api('POST', '/api/strategies', { id, name: s.name, config: { ...s.config, signal: { ...s.config.signal!, deltaByVol: { ...dv, on: false } } } })).status, 200);
+  asked.length = 0;
+  await byVol.onSignal(signal());
+  assert.match((await last()).detail, /would sell PE 83700 x1 @ .* · TGT 85500$/);
+  assert.deepEqual(asked, []);
+  await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+});

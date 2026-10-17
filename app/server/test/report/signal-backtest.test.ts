@@ -613,3 +613,25 @@ test('[critical] the strike and the lots by volatility: each trade its level\'s 
   assert.deepEqual(r.trades.map((t) => [t.vol, t.strike, t.lots]), [['high', 82_600, 1], ['low', 83_200, 2], [null, 83_200, 10]],
     'high: the further strike inside 0.07, one lot; low: the nearer inside 0.12, two; unknown: the settings\' own strike and 10 lots');
 });
+
+test('[critical] a strategy that sets its delta by volatility is backtested as the desk trades it: each level its delta, read by its own source; unknown its own delta', async () => {
+  const { planOfStrategy, strategyOfParams, ownVolBy } = await import('../../src/report/signal-backtest.js');
+  const flat = perp([[0, 84_000], [1_439, 84_100]]);
+  const board = byTime([
+    ...contract('P', 83_800, -0.16, [[0, 40], [1_435, 30]]), ...contract('P', 83_500, -0.09, [[0, 25], [1_435, 15]]), ...contract('P', 83_200, -0.05, [[0, 12], [1_435, 8]]),
+  ]);
+  const base = strategyOfParams({ ...P, rule: 'delta', value: 0.12, minPremium: 1 }, null, null);
+  const dv = { on: true, by: 'iv' as const, low: 0.18, medium: 0.1, high: 0.08 };
+  const st = { ...base, config: { ...base.config, signal: { ...base.config.signal!, deltaByVol: dv } } };
+  const levelAt = (min: number) => (min < 100 ? 'low' as const : min < 200 ? 'medium' as const : min < 300 ? 'high' as const : null);
+  const r = simulateDay({ from, to, signals: [sig(30), sig(130), sig(230), sig(330)], bars: flat, board, plan: planOfStrategy(st, { from, to }), volAt: (at) => levelAt((at - from) / MIN) });
+  assert.deepEqual(r.trades.map((t) => [t.vol, t.strike]), [['low', 83_800], ['medium', 83_500], ['high', 83_200], [null, 83_500]],
+    'low ≤ 0.18 sells the 0.16, normal ≤ 0.10 the 0.09, high ≤ 0.08 the 0.05; unknown its own 0.12: the 0.09');
+  // Read by its own source, whatever the screen's setting; off, or not by delta, the screen's.
+  assert.equal(ownVolBy(st, 'atr'), 'iv');
+  assert.equal(ownVolBy({ ...st, config: { ...st.config, signal: { ...st.config.signal!, deltaByVol: { ...dv, on: false } } } }, 'atr'), 'atr');
+  assert.equal(ownVolBy({ ...st, config: { ...st.config, strikeRule: 'premium' } }, undefined), undefined);
+  // Off: the plan has no picks by level, and every trade is its own delta's.
+  const off = simulateDay({ from, to, signals: [sig(30), sig(230)], bars: flat, board, plan: planOfStrategy({ ...st, config: { ...st.config, signal: { ...st.config.signal!, deltaByVol: { ...dv, on: false } } } }, { from, to }), volAt: (at) => levelAt((at - from) / MIN) });
+  assert.deepEqual(off.trades.map((t) => t.strike), [83_500, 83_500]);
+});

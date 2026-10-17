@@ -16,6 +16,11 @@ import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '..
 import { StrategyExitStepper } from './exit-steps.js';
 import { DEFAULT_LEVERAGE, stopHeldWords, stopRoomInside } from '../trading/order-plan.js';
 import { liquidationRoom } from '../trading/margin.js';
+import { volLevelNow, type VolBy, type VolLevel } from '../report/signal-backtest.js';
+
+/** A level in the words the desk's history says it in. */
+const LEVEL_WORDS: Record<VolLevel, string> = { low: 'low', medium: 'normal', high: 'high' };
+const BY_WORDS: Record<VolBy, string> = { atr: 'ATR 2h', iv: 'ATM IV' };
 
 /**
  * The loop that turns a due strategy into orders.
@@ -143,6 +148,8 @@ export class StrategyRunner {
     private readonly signalBoard: () => Promise<SignalBoard | null> = liveSignalBoard,
     /** The perp's last trade, when fresh: the tape's, or a test's. */
     private readonly perp: () => number | null = perpNow,
+    /** How volatile it is now, for a strategy that sets its delta by it: the backtest's own reading, or a test's. */
+    private readonly volLevel: (by: VolBy, at: number) => Promise<VolLevel | null> = volLevelNow,
   ) {
     /*
      * Time-based exits: at each step's time, the target or stop of every open
@@ -495,10 +502,30 @@ export class StrategyRunner {
    * again, on the board as it then stands, when the zone fills; if that is another contract, this was a
    * wasted lookup and nothing more. Only for a strategy with live orders on, and in its window.
    */
-  private async warmFor(s: Strategy, r: MethodRead): Promise<void> {
-    if (!s.config.liveOrders || !inSignalWindow(s, this.now()) || noEntryWindowAt(s.config, istMinutes(this.now()))) return;
+  /**
+   * The rules a signal is traded by now: the strategy's own, with its delta set by how volatile it is where it says so
+   * (owner, 17 Oct 2026: "delta by volatility in the signal strategy form, by ATR 2h or ATM IV"). Read as the backtest
+   * reads a fill (`volLevelNow`); a level that cannot be read keeps the strategy's own delta. `words` say which, for
+   * the signal's line in the history -- what was chosen, and why, kept with the decision.
+   */
+  private async byVolatility(s: Strategy, at: number): Promise<{ s: Strategy; words: string }> {
+    const dv = s.config.signal?.deltaByVol;
+    if (!dv?.on || s.config.strikeRule !== 'delta') return { s, words: '' };
+    const own = s.config.delta?.max ?? 0;
+    const level = await this.volLevel(dv.by, at).catch(() => null);
+    if (!level) return { s, words: ` · volatility (${BY_WORDS[dv.by]}) unknown: its own Δ ≤ ${own.toFixed(2)}` };
+    const d = dv[level];
+    return {
+      s: { ...s, config: { ...s.config, delta: { ...(s.config.delta ?? { max: d }), max: d } } },
+      words: ` · ${LEVEL_WORDS[level]} volatility (${BY_WORDS[dv.by]}): Δ ≤ ${d.toFixed(2)}`,
+    };
+  }
+
+  private async warmFor(given: Strategy, r: MethodRead): Promise<void> {
+    if (!given.config.liveOrders || !inSignalWindow(given, this.now()) || noEntryWindowAt(given.config, istMinutes(this.now()))) return;
     const snap = await this.signalBoard().catch(() => null);
     if (!snap || !snap.live || !snap.isDaily) return;
+    const { s } = await this.byVolatility(given, this.now());
     const leg = legOfSignal(r.dir === 'long' ? 1 : -1, actionOf(s.config.signal));
     const at = strikePickAt(s.config, istMinutes(this.now()));
     const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, this.now()) });
@@ -652,16 +679,18 @@ export class StrategyRunner {
     // The signal's leg: one, whatever `legs` says. Sold, it is the put on a BUY; bought, the call.
     const action = actionOf(rule);
     const leg = legOfSignal(dir, action);
+    // Its delta by volatility, where it sets it so: the rest of the rules are its own.
+    const vol = await this.byVolatility(s, now);
     // The strike rule in force at this minute: the strategy's own, or the block the clock has reached.
-    const at = strikePickAt(s.config, istMinutes(now));
-    const block = at.block > 0 ? ` · block ${at.block + 1}, from ${time12(at.from)}` : '';
+    const at = strikePickAt(vol.s.config, istMinutes(now));
+    const block = (at.block > 0 ? ` · block ${at.block + 1}, from ${time12(at.from)}` : '') + vol.words;
     /*
      * Several trades may share a contract (0011), and several strategies may trade one signal (owner, 14 Oct 2026:
      * "allow many trades on one strike; allow two strategies to take the same signal"). One trade per contract, from
      * that morning, was lifted the same day: the reduce-only churn it answered was the desk reading only a hundred of
      * the account's open orders (0015), and the rule cut the strategies to one trade in six.
      */
-    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
+    const sel = selectLegs({ ...vol.s, config: { ...vol.s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
     const chosen = sel.legs[0];
     if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}`); return; }
 

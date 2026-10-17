@@ -25,6 +25,7 @@ Read these before changing anything in `app/server/src/trading/`.
 | [0015](0015-read-the-whole-book.md) | Delta's open book is read whole, by `product_ids` and cursor; exits no trade wants are swept | 14 Oct 2026 |
 | [0016](0016-shared-contracts-again.md) | Several trades may share a contract, and several strategies one signal (replaces 0014's rule 1) | 14 Oct 2026 |
 | [0017](0017-methods-picked-daily.md) | A signal strategy's methods may be picked again every day by their record, every change kept | 16 Oct 2026 |
+| [0018](0018-delta-by-volatility.md) | A signal strategy's delta may be set by how volatile it is at each signal, read as the backtest reads it | 17 Oct 2026 |
 
 A new decision gets the next number, the same headings, and a line here. A
 decision that is replaced is not deleted: its status says what replaced it.

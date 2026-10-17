@@ -1519,3 +1519,71 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     expect(screen.getAllByRole('checkbox').filter((c) => (c as HTMLInputElement).checked).map((c) => c.getAttribute('aria-label'))).toEqual(['#1 Breakout']);
   });
 });
+
+describe('delta by volatility (17 Oct 2026): the backtest\'s logic on the form', () => {
+  const byDelta = (rule: Partial<SignalRule> = {}, over: Partial<Strategy['config']> = {}) => signalStrategy(rule, { strikeRule: 'delta', delta: { max: 0.12 }, ...over });
+  const box = () => screen.getByRole('region', { name: 'Delta by volatility' });
+
+  it('[critical] off to begin with; on, ATM IV and 0.18 / 0.10 / 0.08, one source at a time -- and saved as set', async () => {
+    show(byDelta());
+    tab('Strike & lots');
+    const sw = within(box()).getByRole('switch', { name: /Delta by volatility/ });
+    expect(sw).not.toBeChecked();
+    expect(within(box()).queryByRole('radiogroup', { name: 'volatility by' })).toBeNull();
+    fireEvent.click(sw);
+    const by = within(box()).getByRole('radiogroup', { name: 'volatility by' });
+    expect(within(by).getByRole('radio', { name: 'ATM IV' })).toBeChecked();
+    expect(within(by).getByRole('radio', { name: 'ATR 2h' })).not.toBeChecked();
+    expect(within(box()).getByLabelText('delta in low volatility')).toHaveValue('0.18');
+    expect(within(box()).getByLabelText('delta in normal volatility')).toHaveValue('0.1');
+    expect(within(box()).getByLabelText('delta in high volatility')).toHaveValue('0.08');
+    expect(box()).toHaveTextContent(/low sells the nearest strike with Δ ≤ 0\.18, normal ≤ 0\.10, high ≤ 0\.08 — read by ATM IV when it fills.*its own Δ ≤ 0\.12/);
+    // One at a time: choosing ATR 2h un-chooses ATM IV.
+    radio('volatility by', 'ATR 2h');
+    expect(within(by).getByRole('radio', { name: 'ATR 2h' })).toBeChecked();
+    expect(within(by).getByRole('radio', { name: 'ATM IV' })).not.toBeChecked();
+    radio('volatility by', 'ATM IV');
+    // The rule's sentence says it, at the top of the form.
+    expect(screen.getByText(/delta at most 0\.18 in low volatility, 0\.10 normal, 0\.08 high \(by ATM IV; 0\.12 when it cannot be read\)/)).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.deltaByVol).toEqual({ on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 });
+  });
+
+  it('[critical] its own numbers: typed, checked as the server checks them, the measured ones a tap away; over 0.19 low, a warning', async () => {
+    show(byDelta({ deltaByVol: { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 } }));
+    tab('Strike & lots');
+    expect(within(box()).queryByRole('button', { name: /Use the measured/ })).toBeNull();
+    fireEvent.change(within(box()).getByLabelText('delta in low volatility'), { target: { value: '0.25' } });
+    expect(within(box()).getByRole('note')).toHaveTextContent(/losing days began at 0\.20/);
+    fireEvent.change(within(box()).getByLabelText('delta in high volatility'), { target: { value: '0.6' } });
+    expect(await within(box()).findByText('The high volatility delta must be from 0.02 to 0.50.')).toBeInTheDocument();
+    expect(saveButton()).toHaveTextContent(/Fix 1 to save/);
+    fireEvent.click(within(box()).getByRole('button', { name: 'Use the measured 0.18 / 0.10 / 0.08' }));
+    expect(within(box()).getByLabelText('delta in low volatility')).toHaveValue('0.18');
+    expect(within(box()).getByLabelText('delta in high volatility')).toHaveValue('0.08');
+    await waitFor(() => expect(within(box()).queryByText(/must be from/)).toBeNull());
+    expect(within(box()).queryByText(/losing days began/)).toBeNull();
+  });
+
+  it('[critical] only where it can work: by delta, one rule all window, sold -- said in place, with the way to fix it', async () => {
+    show(signalStrategy({ deltaByVol: { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 } }, { strikeRule: 'premium' }));
+    tab('Strike & lots');
+    expect(within(box()).getByRole('alert')).toHaveTextContent('It sets the delta, so the strike must be picked by delta.');
+    expect(saveButton()).toHaveTextContent(/Fix \d+ to save/);
+    fireEvent.click(within(box()).getByRole('button', { name: 'Pick the strike by delta' }));
+    expect(screen.getByRole('radio', { name: 'By delta' })).toBeChecked();
+    await waitFor(() => expect(within(box()).queryByRole('alert')).toBeNull());
+    expect(saveButton()).toHaveTextContent(/^Save$/);
+    // Bought: not for it.
+    radio('option buy or sell', 'BUY');
+    expect(within(box()).getByRole('alert')).toHaveTextContent('For a strategy that sells');
+  });
+
+  it('[critical] with live orders on, saying that a save reaches real orders -- and to run it off first', () => {
+    show(byDelta({ deltaByVol: { on: true, by: 'atr', low: 0.18, medium: 0.1, high: 0.08 } }, { liveOrders: true }));
+    tab('Strike & lots');
+    expect(within(box()).getByRole('radio', { name: 'ATR 2h' })).toBeChecked();
+    expect(box()).toHaveTextContent(/Live orders are on: saved, this changes real orders from the next signal\..*run it with live orders off first/);
+  });
+});

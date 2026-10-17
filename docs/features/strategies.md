@@ -361,6 +361,19 @@ SELECT strategy_id, method, mode, tf, dir, status, detail, at
   FROM strategy_signal_runs ORDER BY at DESC LIMIT 20;
 ```
 
+## Delta by volatility (17 Oct 2026)
+
+A signal strategy that sells by delta may set its delta by how volatile it is when each signal fills
+([0018](../decisions/0018-delta-by-volatility.md)): **Strike & lots → Delta by volatility**, off to begin with. On, one
+source — **ATM IV** (the at-the-money implied volatility against the same hour of the five expiry days before) or
+**ATR 2h** (two hours of 15-minute candles against the five days before) — and the most delta at each level, **Low 0.18 ·
+Normal 0.10 · High 0.08** to begin with. The runner reads the level at the signal (`volLevelNow`, the backtest's own
+reading) and sells the nearest strike inside that level's delta; a level it cannot read keeps the strategy's own
+delta. The signal's line in the history ends with what decided it: "· low volatility (ATM IV): Δ ≤ 0.18", or
+"· volatility (ATM IV) unknown: its own Δ ≤ 0.10". The card says it beside the rule ("Δ by ATM IV: low 0.18 · normal
+0.10 · high 0.08"). Refused on save for a strategy that buys, is not by delta, or has strike blocks. Stored in the
+strategy's config (`signal.deltaByVol`); no table of its own.
+
 ## Known limits
 
 - Whether Delta holds four reduce-only orders on one contract (two strategies'

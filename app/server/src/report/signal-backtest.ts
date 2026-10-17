@@ -7,7 +7,7 @@ import { methodsSchema } from '../entry/catalogue.js';
 import { fillChargesUsd } from '../trading/charges.js';
 import { fundsRequiredPerContract } from '../trading/margin.js';
 import { CHAIN_KEY } from '../trading/pnl-history.js';
-import { FAMILIES, PATTERNS, candles, familyOf, sessionOf, type MinuteBar, type PatternKey } from './market-day.js';
+import { FAMILIES, PATTERNS, candles, familyOf, sessionDayOf, sessionOf, type MinuteBar, type PatternKey } from './market-day.js';
 import { marketDays, marketReport, zeroTot, type Tot } from './market-report.js';
 import { selectLegs, type Candidate } from '../strategy/select.js';
 import { istMinutes, istWeekday } from '../strategy/schedule.js';
@@ -483,9 +483,19 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }, 
     // Its timed steps, read as the runner's stepper reads them: forward from its entry time.
     ...(x.target.mode === 'pct' && x.target.steps.length ? { targetPctAt: (at: number) => exitValueAt(x.target, c.entryTime, istMinutes(at)).value } : {}),
     ...(x.stop.mode === 'pct' && x.stop.steps.length ? { stopPctAt: (at: number) => exitValueAt(x.stop, c.entryTime, istMinutes(at)).value } : {}),
+    // Its delta by volatility, as the runner trades it: each level its own delta, read by the strategy's own `by` (`ownVolBy`).
+    ...(byVolPicks(s, span, desk)),
     maxOpen: rule.maxOpen > 0 ? rule.maxOpen : null,
     desk,
   };
+}
+/** A strategy's strike picks by level, where it sets its delta by volatility: the same pick with each level's delta. */
+function byVolPicks(s: Strategy, span: { from: number; to: number }, desk: DayPlan['desk']): Pick<DayPlan, 'pickByVol'> {
+  const c = s.config, dv = c.signal?.deltaByVol;
+  if (!dv?.on || c.strikeRule !== 'delta') return {};
+  const plain = { ...c, signal: { ...c.signal!, deltaByVol: null } };
+  const at = (d: number) => planOfStrategy({ ...s, config: { ...plain, delta: { ...(c.delta ?? { max: d }), max: d } } } as Strategy, span, desk).pick;
+  return { pickByVol: { low: at(dv.low), medium: at(dv.medium), high: at(dv.high) } };
 }
 
 /** The index of the first item later than `t`, in a list sorted by time. */
@@ -815,7 +825,7 @@ type HeldDay = { at: number; cells: BtCell[]; tally: Tally[]; spans: Span[]; gra
 const held = new Map<string, HeldDay>();
 /** At most this many worked days are kept -- some sixty sets of settings over a fortnight; the longest unasked-for goes first. */
 const HELD_MAX = 800;
-export function clearSignalBacktestCache(): void { held.clear(); raw.clear(); ivHeld.clear(); }
+export function clearSignalBacktestCache(): void { held.clear(); raw.clear(); ivHeld.clear(); levelHeld.clear(); baselineHeld.clear(); }
 /** The SL or the TGT outside the range asked for: nearer than a minimum, or further than a maximum. 0 is no bound. */
 function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMin' | 'slMax' | 'tgtMin' | 'tgtMax'>): boolean {
   const sl = Math.abs(sig.fillPrice - sig.stop), tgt = Math.abs(sig.fillPrice - target);
@@ -901,12 +911,12 @@ const IV_HELD_MAX = 120;
 /** The days before one that its IV levels may be cut from: enough calendar days to find `IV_DAYS` with readings. */
 const ivBack = (day: string) => Array.from({ length: IV_DAYS + 4 }, (_, i) => new Date(Date.parse(`${day}T00:00:00Z`) - (i + 1) * 86_400_000).toISOString().slice(0, 10));
 
-async function atmIvDays(days: readonly string[], now: number): Promise<Map<string, AtmIv[]>> {
+async function atmIvDays(days: readonly string[], now: number, freshMs = FRESH_MS): Promise<Map<string, AtmIv[]>> {
   const out = new Map<string, AtmIv[]>();
   const want: string[] = [];
   for (const d of new Set(days)) {
     const h = ivHeld.get(d), { to } = sessionOf(d);
-    if (h && (h.at >= to + SETTLED_MS || now - h.at < FRESH_MS)) out.set(d, h.xs); else want.push(d);
+    if (h && (h.at >= to + SETTLED_MS || now - h.at < freshMs)) out.set(d, h.xs); else want.push(d);
   }
   if (!want.length) return out;
   const spans = want.map((d) => ({ d, code: expiryCodeOf(d), ...sessionOf(d) }));
@@ -931,9 +941,9 @@ async function preloadIv(days: readonly string[], now: number): Promise<void> {
   await atmIvDays(days.flatMap((d) => [d, ...ivBack(d)]), now);
 }
 /** A day's IV reader (`ivReader`), its levels cut from the `IV_DAYS` latest expiry days before it that have readings. */
-async function ivReaderOf(day: string, now: number): Promise<(at: number) => VolLevel | null> {
+async function ivReaderOf(day: string, now: number, freshMs = FRESH_MS): Promise<(at: number) => VolLevel | null> {
   const back = ivBack(day);
-  const m = await atmIvDays([day, ...back], now);
+  const m = await atmIvDays([day, ...back], now, freshMs);
   const prior = back.map((d) => m.get(d) ?? []).filter((xs) => xs.length).slice(0, IV_DAYS).flat();
   return ivReader(m.get(day) ?? [], prior);
 }
@@ -941,6 +951,48 @@ async function ivReaderOf(day: string, now: number): Promise<(at: number) => Vol
 async function volAtFor(by: VolBy | undefined, day: string, minutes: readonly MinuteBar[], baseline: number | null, now: number): Promise<(at: number) => VolLevel | null> {
   return by === 'iv' ? ivReaderOf(day, now) : volReader(minutes, baseline);
 }
+
+/**
+ * How volatile it is NOW, for a live signal (owner, 17 Oct 2026: delta by volatility in the signal strategy form):
+ * the very reading the backtest makes at a fill -- `volReader` on the perp's minutes against the five expiry days
+ * before, or `ivReader` on the board's recorded ATM IV against the same hour of them -- so a strategy trades on the
+ * level its backtest says it would have. Null where it cannot be said, and on any failure: the strategy then keeps
+ * its own delta. Kept a minute; the board's IV read again a minute at most after it was last read.
+ */
+const levelHeld = new Map<string, VolLevel | null>();
+const baselineHeld = new Map<string, number | null>();
+const LIVE_IV_FRESH_MS = 60_000;
+export async function volLevelNow(by: VolBy, at: number): Promise<VolLevel | null> {
+  const key = `${by}|${Math.floor(at / 60_000)}`;
+  if (levelHeld.has(key)) return levelHeld.get(key)!;
+  let level: VolLevel | null = null;
+  try {
+    const day = sessionDayOf(at);
+    if (by === 'iv') level = (await ivReaderOf(day, at, LIVE_IV_FRESH_MS))(at);
+    else {
+      let baseline = baselineHeld.get(day);
+      if (baseline === undefined) {
+        const before = new Date(Date.parse(`${day}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
+        const prior = (await marketDays(before, day, at)).filter((d) => d.day < day && d.stats && !d.live).slice(-5).map((d) => d.stats!.atr);
+        baseline = prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
+        baselineHeld.set(day, baseline);
+        while (baselineHeld.size > 8) baselineHeld.delete(baselineHeld.keys().next().value!);
+      }
+      const bars = await rows<{ at: string; high: number; low: number; vwap: number }>(
+        'SELECT at, high, low, vwap FROM trade_flow_1m WHERE at >= $1 AND at < $2 AND high IS NOT NULL AND low IS NOT NULL AND vwap IS NOT NULL ORDER BY at',
+        [at - (VOL_CANDLES + 1) * 900_000, at]);
+      level = volReader(bars.map((b) => ({ at: Number(b.at), high: Number(b.high), low: Number(b.low), close: Number(b.vwap) })), baseline)(at);
+    }
+  } catch { level = null; }
+  levelHeld.set(key, level);
+  while (levelHeld.size > 16) levelHeld.delete(levelHeld.keys().next().value!);
+  return level;
+}
+/** What a strategy's own volatility is read by, where it sets its delta by it; else the backtest's own setting. */
+export const ownVolBy = (st: Strategy | null | undefined, fallback: VolBy | undefined): VolBy | undefined => {
+  const dv = st?.config.signal?.deltaByVol;
+  return dv?.on && st?.config.strikeRule === 'delta' ? dv.by : fallback;
+};
 
 /** One day under one set of rules. `takes` narrows the signals to those the rules are about at all (a strategy's methods and timeframes). */
 async function dayOf(day: string, key: string, now: number, planFor: (span: { from: number; to: number }) => DayPlan, takes: (sig: BtSignal) => boolean, vol: { only: VolLevel | null; baseline: number | null; by?: VolBy }, marksSeen = 0): Promise<HeldDay> {
@@ -1099,7 +1151,7 @@ function bookOf(o: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>): { take
       && (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method)),
     planFor: (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)),
     volOnly: o.params.vol && o.params.vol !== 'off' ? o.params.vol : null,
-    volBy: o.params.volBy ?? 'atr',
+    volBy: ownVolBy(st, o.params.volBy) ?? 'atr',
   };
 }
 /** A day's readers for the books that need them: the candles' always (it costs nothing), the IV's only where a book reads it. */
@@ -1231,7 +1283,8 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>): Promis
     return prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
   };
   const volOnly: VolLevel | null = o.params.vol && o.params.vol !== 'off' ? o.params.vol : null;
-  const volBy: VolBy = o.params.volBy ?? 'atr';
+  // A strategy that sets its delta by volatility is read by its own source, so the backtest trades as the desk does.
+  const volBy: VolBy = ownVolBy(o.strategy, o.params.volBy) ?? 'atr';
   if (volBy === 'iv') await preloadIv(days.map((d) => d.day), o.now);
   const names = new Map((await rows<{ id: string; n: number | null; name: string }>('SELECT id, n, name FROM entry_methods')).map((m) => [m.id, m.n === null ? m.name : `#${m.n} ${m.name}`]));
   const nameOf = (id: string) => names.get(id) ?? id;
@@ -1455,7 +1508,7 @@ function studyBookOf(b: StudyBook): { takes: (sig: BtSignal) => boolean; planFor
       // A level's strike: the live rules' own pick with that delta -- the settings' rule turned to delta, or the
       // strategy's with its strike blocks set aside (one delta for the level, not the clock's).
       const deltaPick = (d: number): DayPlan['pick'] => (st
-        ? planOfStrategy({ ...st, config: { ...st.config, strikeRule: 'delta', delta: { ...st.config.delta, max: d }, strikeBlocks: [] } } as Strategy, span, null).pick
+        ? planOfStrategy({ ...st, config: { ...st.config, strikeRule: 'delta', delta: { ...st.config.delta, max: d }, strikeBlocks: [], signal: { ...st.config.signal!, deltaByVol: null } } } as Strategy, span, null).pick
         : planOfStrategy(strategyOfParams({ ...b.params, rule: 'delta', value: d }, null, null), span).pick);
       return {
         ...base,
@@ -1495,7 +1548,8 @@ async function volStudyOf(o: { from: string; to: string; now: number; books: rea
       const base = b.planFor({ from, to }, null);
       fixedOf[i] = { pct: base.stopPct, stepped: !!base.stopPctAt };
       const play = (plan: DayPlan, volAt: (at: number) => VolLevel | null) => simulateDay({ from, to, signals: sigs, plan, volAt, bars, board: raw.board }).trades;
-      const flat = play(base, readers.atr);
+      // As set: read by the strategy's own source where it sets its delta by volatility (the desk's own trades).
+      const flat = play(base, readers[ownVolBy(o.books[i]!.strategy, 'atr')!]);
       VOL_BYS.forEach((by, k) => {
         const read = readers[by];
         fixedTrades[k]!.push(...flat.map((t) => ({ day, t, level: read(t.signal.filledAt) ?? 'unknown' as const })));
@@ -1742,12 +1796,12 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
    * together under that account's limit as the desk holds them -- or, asked for a portfolio, its saved backtests
    * as a portfolio run works them.
    */
-  type Unit = { id: string; name: string; account: string | null; group: number; takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }) => DayPlan; mine: Map<string, Live> | null; now?: { lots: number; stopPct: number } };
+  type Unit = { id: string; name: string; account: string | null; group: number; takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }) => DayPlan; mine: Map<string, Live> | null; now?: { lots: number; stopPct: number }; volBy?: VolBy };
   const groups: { caps: DayPlan['desk'] }[] = [];
   const units: Unit[] = [];
   if (folio) {
     groups.push({ caps: folio.shared ? deskCapsOf(folio.shared) : null });
-    for (const m of folio.members) { const b = bookOf(m.ask); units.push({ id: m.id, name: m.name, account: null, group: 0, takes: b.takes, planFor: folio.shared ? b.planFor : (sp) => (m.ask.strategy ? planOfStrategy(m.ask.strategy, sp, null) : planOfParams(m.ask.params, sp)), mine: null }); }
+    for (const m of folio.members) { const b = bookOf(m.ask); units.push({ id: m.id, name: m.name, account: null, group: 0, takes: b.takes, planFor: folio.shared ? b.planFor : (sp) => (m.ask.strategy ? planOfStrategy(m.ask.strategy, sp, null) : planOfParams(m.ask.params, sp)), mine: null, volBy: ownVolBy(m.ask.strategy, undefined) }); }
   } else {
     o.accounts.forEach((a) => {
       const mine = a.strategies.filter(backtestable);
@@ -1760,6 +1814,8 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
           takes: (sig) => sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method),
           planFor: (sp) => planOfStrategy(st, sp, null), mine: liveBy.get(st.id) ?? new Map(),
           now: { lots: st.config.lots, stopPct: st.config.stopLossPct ?? 0 },
+          // Its delta by volatility, read as the desk read it.
+          volBy: ownVolBy(st, undefined),
         });
       }
     });
@@ -1778,18 +1834,24 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
   const dayOfKey = new Map<string, string>();
   const fetched = await marksFetchedBy(days.map((d) => expiryCodeOf(d.day)));
   const zero = (): LiveCheckMoney => ({ n: 0, wins: 0, net: 0 });
+  // A strategy that sets its delta by volatility needs the level at each fill, as the desk read it; the others none.
+  const reading = units.some((u) => u.volBy);
+  const knownAtr = reading ? await marketDays(new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10), o.to, o.now) : [];
+  const baselineAt = (day: string) => { const p = knownAtr.filter((x) => x.day < day && x.stats && !x.live).slice(-5).map((x) => x.stats!.atr); return p.length ? p.reduce((a, x) => a + x, 0) / p.length : null; };
   for (const d of days) {
     const { from, to } = sessionOf(d.day);
     const raw = await rawDay(d.day, o.now, fetched.get(expiryCodeOf(d.day))?.contracts ?? 0);
+    const readers = reading ? await dayReaders(units.map((u) => ({ volBy: u.volBy ?? 'atr' })), d.day, raw.minutes, baselineAt(d.day), o.now) : null;
+    const volAtOf = (u: Unit) => (readers && u.volBy ? readers[u.volBy] : undefined);
     const upTo = raw.signals.filter((s) => s.filledAt <= until);
     for (const s of upTo) dayOfKey.set(keyOf(s), d.day);
     const bars = raw.minutes.filter((b) => b.at >= from);
     groups.forEach((g, gi) => {
       const at = units.flatMap((u, i) => (u.group === gi ? [i] : []));
-      const books = at.map((i) => ({ signals: upTo.filter(units[i]!.takes), plan: units[i]!.planFor({ from, to }) }));
+      const books = at.map((i) => ({ signals: upTo.filter(units[i]!.takes), plan: units[i]!.planFor({ from, to }), volAt: volAtOf(units[i]!) }));
       // Each its own limit: worked alone, as a portfolio run of that kind works them. Else for the same places.
       const outs = !folio || folio.shared ? simulateTogether({ from, to, bars, board: raw.board, books, shared: g.caps })
-        : books.map((b) => simulateDay({ from, to, bars, board: raw.board, signals: b.signals, plan: b.plan }));
+        : books.map((b) => simulateDay({ from, to, bars, board: raw.board, signals: b.signals, plan: b.plan, volAt: b.volAt }));
       at.forEach((i, k) => {
         for (const t of outs[k]!.trades) {
           bt[i]!.traded.set(keyOf(t.signal), t);
@@ -1797,9 +1859,9 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
         for (const r of outs[k]!.refused) bt[i]!.refused.set(keyOf(r.signal), r.why);
       });
       if (folio) {
-        const liveBooks = at.map((i, k) => ({ signals: books[k]!.signals, plan: planOfStrategy(liveRulesOf[i]!, { from, to }, null) }));
+        const liveBooks = at.map((i, k) => ({ signals: books[k]!.signals, plan: planOfStrategy(liveRulesOf[i]!, { from, to }, null), volAt: volAtOf(units[i]!) }));
         const louts = folio.shared ? simulateTogether({ from, to, bars, board: raw.board, books: liveBooks, shared: g.caps })
-          : liveBooks.map((b) => simulateDay({ from, to, bars, board: raw.board, signals: b.signals, plan: b.plan }));
+          : liveBooks.map((b) => simulateDay({ from, to, bars, board: raw.board, signals: b.signals, plan: b.plan, volAt: b.volAt }));
         at.forEach((i, k) => {
           for (const t of louts[k]!.trades) lv[i]!.traded.set(keyOf(t.signal), t);
           for (const r of louts[k]!.refused) lv[i]!.refused.set(keyOf(r.signal), r.why);
@@ -2055,7 +2117,7 @@ async function signalBacktestDayRows(o: Ask, day: string, member?: string): Prom
   const volOnly: VolLevel | null = o.params.vol && o.params.vol !== 'off' ? o.params.vol : null;
   const r = simulateDay({
     from: c.from, to: c.to, signals: c.raw.signals.filter(takes), plan,
-    volAt: await volAtFor(o.params.volBy, day, c.raw.minutes, c.baseline, o.now), volOnly, bars: c.raw.minutes.filter((b) => b.at >= c.from), board: c.raw.board,
+    volAt: await volAtFor(ownVolBy(o.strategy, o.params.volBy), day, c.raw.minutes, c.baseline, o.now), volOnly, bars: c.raw.minutes.filter((b) => b.at >= c.from), board: c.raw.board,
   });
   return r.trades.filter((t) => chosen(t.signal)).map((t) => rowOf(t, c.nameOf, member));
 }

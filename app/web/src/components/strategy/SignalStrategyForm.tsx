@@ -1,5 +1,5 @@
 import {
-  actionOf, asSignalConfig, DEFAULT_CONFIG, DEFAULT_SIGNAL_RULE, legOfSignal, MAX_OPEN_PRESETS, MAX_SIGNAL_OPEN, type SignalAction, type SignalRule, type Strategy,
+  actionOf, asSignalConfig, DEFAULT_CONFIG, DEFAULT_DELTA, DEFAULT_SIGNAL_RULE, legOfSignal, MAX_OPEN_PRESETS, MAX_SIGNAL_OPEN, type SignalAction, type SignalRule, type Strategy,
 } from '@/types/strategy';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
@@ -13,6 +13,7 @@ import { getBacktestSaves } from '@/api/backtest-saves';
 import { pickMethodsNow } from '@/api/signal-backtest';
 import { usePoll } from '@/hooks/usePoll';
 import { StrikeBlocksEditor } from '@/components/strategy/StrikeBlocksEditor';
+import { DeltaByVolFields } from '@/components/strategy/DeltaByVol';
 import {
   DaysField, EntryPriceFields, num, FormFooter, FormTabBar, MinPremiumField, NameField, OptionExitFields, RuleSentence,
   NoEntryFields, Segmented, SizeFields, Stack, TimeWindowFields, type TabDef,
@@ -159,6 +160,13 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               </Stack>
               {/* One rule all window, or a rule per block of hours: two tick boxes, each with its own section. */}
               <StrikeBlocksEditor c={c} set={set} err={err} spot={spot} />
+              {/* The delta by how volatile it is at each signal (17 Oct 2026): one number of the rule above, by level. */}
+              <DeltaByVolFields
+                value={rule.deltaByVol} onChange={(v) => setRule('deltaByVol', v)} error={err('deltaByVol')}
+                ownDelta={c.strikeRule === 'delta' ? c.delta?.max ?? null : null} byDelta={c.strikeRule === 'delta'}
+                hasBlocks={(c.strikeBlocks ?? []).length > 0} buying={buying} live={live}
+                onPickByDelta={() => d.setC((p) => ({ ...p, strikeRule: 'delta', delta: p.delta ?? { ...DEFAULT_DELTA } }))}
+              />
               <SizeFields c={c} set={set} err={err} sizing={d.sizing} spot={spot} label="Lots per signal" warnings={d.warnings} />
               {/* Last: a gate on whatever the rules above picked, in whichever block, not one of the rules. */}
               <MinPremiumField c={c} set={set} err={err} />

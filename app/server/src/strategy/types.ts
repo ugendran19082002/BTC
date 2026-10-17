@@ -517,7 +517,37 @@ export type SignalRule = {
    * the owner's own, as before. See strategy/auto-methods.ts.
    */
   autoMethods?: AutoMethods | null;
+  /**
+   * The strike's delta by how volatile it is at each signal (owner, 17 Oct 2026: "delta by volatility in the signal
+   * strategy form, as the backtest has it -- by ATR 2h or by ATM IV, one at a time, ATM IV to begin with"). Absent or
+   * off: the strategy's own delta, as before. See `DeltaByVol`.
+   */
+  deltaByVol?: DeltaByVol | null;
 };
+/**
+ * The delta a strike sold may have, by the level at the signal (report/signal-backtest.ts `volLevelNow`, the same
+ * reading the backtest's study makes): `by` what it is read from -- the candles' ATR over two hours, or the board's
+ * ATM implied volatility -- and the most delta at each level. A level that cannot be read (no fresh reading, too
+ * few days before) keeps the strategy's own delta. Measured 1-17 Oct 2026 on the live strategies: Low up to 0.19
+ * added a little and kept every loss as it was; at 0.20 the losses began (decided: 0.18 / 0.10 / 0.08).
+ */
+export type DeltaByVol = { on: boolean; by: 'atr' | 'iv'; low: number; medium: number; high: number };
+export const DEFAULT_DELTA_BY_VOL: DeltaByVol = { on: false, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 };
+export const DELTA_BY_VOL_LEVELS = ['low', 'medium', 'high'] as const;
+const LEVEL_WORD = { low: 'low', medium: 'normal', high: 'high' } as const;
+export function deltaByVolProblems(a: unknown): string[] {
+  if (a === undefined || a === null) return [];
+  if (typeof a !== 'object' || Array.isArray(a)) return ['Delta by volatility must be a setting.'];
+  const x = a as Partial<DeltaByVol>;
+  const bad: string[] = [];
+  if (typeof x.on !== 'boolean') bad.push('Say whether the delta is set by volatility.');
+  if (x.by !== 'atr' && x.by !== 'iv') bad.push('Delta by volatility is read by ATR 2h or by ATM IV.');
+  for (const l of DELTA_BY_VOL_LEVELS) {
+    const v = x[l];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0.02 || v > 0.5) bad.push(`The ${LEVEL_WORD[l]} volatility delta must be from 0.02 to 0.50.`);
+  }
+  return bad;
+}
 /**
  * Once a day at `at` (IST), each method's record as options under this strategy's rules over the last `days`
  * finished expiry days; the ones that won `winPct`% or more of at least `minTrades` trades become the list.
@@ -1216,6 +1246,12 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   else if (Array.isArray(c.strikeBlocks) && c.strikeBlocks.length > 0) {
     bad.push('Strike blocks are for a signal strategy: a clock strategy enters once, under one rule.');
   }
+  // By volatility it replaces one number -- the delta's -- so the rule must be by delta, one rule all window, and sold.
+  if (c.trigger === 'signal' && c.signal?.deltaByVol?.on) {
+    if (c.strikeRule !== 'delta') bad.push('Delta by volatility needs the strike picked by delta.');
+    if (Array.isArray(c.strikeBlocks) && c.strikeBlocks.length > 0) bad.push('Delta by volatility sets the delta for the whole window: remove the strike blocks, or switch it off.');
+    if (c.signal.action === 'buy') bad.push('Delta by volatility is for a strategy that sells.');
+  }
   if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
   bad.push(...noEntryProblems(c.noEntry, c.entryTime, c.exitTime, c.trigger === 'signal'));
   // A bought option's target and stop are judged by the desk at one level each (engine.ts `longExitIfReached`): no timetable yet.
@@ -1239,6 +1275,7 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   if (r.enterOn !== undefined && r.enterOn !== 'zone' && r.enterOn !== 'signal') bad.push('Enter at the entry zone or at the signal.');
   if (r.action !== undefined && r.action !== 'sell' && r.action !== 'buy') bad.push('Pick whether the option is bought or sold.');
   bad.push(...autoMethodsProblems(r.autoMethods));
+  bad.push(...deltaByVolProblems(r.deltaByVol));
   // The record it picks by is the option sold: one that buys has none to pick from.
   if (r.autoMethods?.on && r.action === 'buy') bad.push('The methods\' daily update picks by the record as options sold: a strategy that buys cannot use it.');
   if (!Number.isInteger(r.maxOpen) || (r.maxOpen ?? 0) < 1 || (r.maxOpen ?? 0) > MAX_SIGNAL_OPEN) {

@@ -57,7 +57,13 @@ export function describePremium(c: StrategyConfig): string {
 export function describeStrike(c: StrategyConfig): string {
   if (c.strikeRule === 'strict') return `at ${strikeLabel(c.strikeStep)}, whatever it pays`;
   if (c.strikeRule === 'oiWall') return 'at the open-interest wall, whatever it pays';
-  if (c.strikeRule === 'delta') return c.delta ? `at the nearest strike with a delta of ${c.delta.max.toFixed(2)} or less` : 'by delta, with no number set';
+  if (c.strikeRule === 'delta') {
+    if (!c.delta) return 'by delta, with no number set';
+    // By volatility (17 Oct 2026): each level's delta, and its own where the level cannot be read.
+    const dv = c.signal?.deltaByVol;
+    if (dv?.on) return `at the nearest strike with a delta at most ${dv.low.toFixed(2)} in low volatility, ${dv.medium.toFixed(2)} normal, ${dv.high.toFixed(2)} high (by ${dv.by === 'iv' ? 'ATM IV' : 'ATR 2h'}; ${c.delta.max.toFixed(2)} when it cannot be read)`;
+    return `at the nearest strike with a delta of ${c.delta.max.toFixed(2)} or less`;
+  }
   if (c.strikeRule === 'distance') {
     if (!c.distance) return 'by distance, with no number set';
     return c.distance.scale === 'time'

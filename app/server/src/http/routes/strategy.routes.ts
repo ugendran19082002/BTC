@@ -5,7 +5,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type AutoMethods, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, type AutoMethods, type DeltaByVol, type DeltaRule, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -216,7 +216,17 @@ function cleanSignal(raw: unknown): SignalRule {
     ...cleanPts('maxSlPts', r.maxSlPts),
     ...cleanPts('maxTgtPts', r.maxTgtPts),
     ...cleanAuto(r.autoMethods),
+    ...cleanDeltaByVol(r.deltaByVol),
   };
+}
+
+/** Delta by volatility: numbers as numbers, the source as sent; absent stays absent, so a strategy that never used it is stored as before. */
+function cleanDeltaByVol(raw: unknown): Pick<SignalRule, 'deltaByVol'> | Record<string, never> {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { deltaByVol: raw as DeltaByVol };
+  const a = raw as Partial<DeltaByVol>;
+  const num = (v: unknown) => (v === '' || v === null || v === undefined ? NaN : Math.round(Number(v) * 100) / 100);
+  return { deltaByVol: { on: a.on === true, by: a.by as DeltaByVol['by'], low: num(a.low), medium: num(a.medium), high: num(a.high) } };
 }
 
 /** The methods' daily update: numbers as numbers, the last run as the desk wrote it; absent stays absent. */
