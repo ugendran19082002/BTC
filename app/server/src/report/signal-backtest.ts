@@ -11,7 +11,7 @@ import { CHAIN_KEY } from '../trading/pnl-history.js';
 import { FAMILIES, PATTERNS, candles, familyOf, sessionDayOf, sessionOf, type MinuteBar, type PatternKey } from './market-day.js';
 import { marketDays, marketReport, zeroTot, type Tot } from './market-report.js';
 import { selectLegs, type Candidate } from '../strategy/select.js';
-import { istMinutes, istWeekday } from '../strategy/schedule.js';
+import { exitMomentFor, istMinutes, istWeekday } from '../strategy/schedule.js';
 import {
   DEFAULT_CONFIG, SIGNAL_TFS, actionOf, exitRules, exitValueAt, sideCaps, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
   type SignalTf, type Strategy, type StrategyConfig, type StrikeBlock, volSourceOf,
@@ -364,6 +364,11 @@ export type DayPlan = {
   pickByVol?: Record<VolLevel, DayPlan['pick']> | null;
   /** The lots by the same level ("fewer lots when it is volatile"), in place of the pick's own. A level not known keeps them. */
   lotsByVol?: Record<VolLevel, number> | null;
+  /**
+   * When a trade still open is closed by the rules (18 Oct 2026): a strategy closes what it opened at its exit time
+   * (strategy/runner.ts `considerExit`, `exitMomentFor`), not at the settlement. Absent: held to the end of the day.
+   */
+  closeAt?: (sig: BtSignal) => number;
   /** At most this many open at once; null, any number. */
   maxOpen: number | null;
   /** The desk's own limits on top: at most this many across all, and each side at most so many. Null: none. */
@@ -432,6 +437,31 @@ export function strategyCaveats(s: Strategy): string[] {
  * Checked on 1-14 Oct 2026, every saved backtest: 26,040 signals, the same decision on every one, and on all
  * 4,340 traded the same strike and the same money.
  */
+/**
+ * A strategy as a backtest is asked about it: with its methods' history (18 Oct 2026, `strategy_method_updates`) where
+ * the route had it to give. A strategy whose methods are picked again every day traded each day on that day's list;
+ * backtested on today's list for every day, it was another strategy than the one that traded.
+ */
+export type BacktestStrategy = Strategy & { methodHistory?: readonly { at: number; before: readonly string[]; after: readonly string[] }[] };
+/**
+ * The methods a strategy took signals of at a moment, as the desk had them then: the list after the last change at or
+ * before it; before the first change, the list that change replaced; with no history, its list as it stands.
+ */
+export function methodsAt(st: Strategy, at: number): readonly string[] {
+  const history = (st as BacktestStrategy).methodHistory ?? [];
+  if (!history.length) return st.config.signal?.methods ?? [];
+  let list: readonly string[] | null = null;
+  for (const h of history) { if (h.at <= at) list = h.after; else break; }
+  return list ?? history[0]!.before;
+}
+/** Whether a signal is a strategy's own: its way of reading, its time frames, and a method it took then (`methodsAt`). None: every signal. */
+export function ownSignal(st: Strategy | null | undefined): (sig: BtSignal) => boolean {
+  const rule = st?.config.signal ?? null;
+  if (!st || !rule) return () => true;
+  const tfs = ruleTfs(rule) as string[];
+  return (sig) => sig.mode === rule.mode && (rule.mode !== 'single' || tfs.includes(sig.tf)) && methodsAt(st, sig.filledAt).includes(sig.method);
+}
+
 /**
  * Strike blocks laid on the hours they are traded in (18 Oct 2026). A block's time is a time of the expiry day, read
  * from 5:30 PM -- a run together's blocks are set over the whole day, and each saved backtest in it keeps hours of its
@@ -515,6 +545,8 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }, 
     // Its delta and its SL by volatility, as the runner trades them: each level its own, read by the strategy's own source (`ownVolBy`).
     ...(byVolPicks(s, span, desk)),
     ...(x.stop.mode === 'pct' && c.signal?.slByVol?.on ? { stopPctByVol: { low: c.signal.slByVol.low, medium: c.signal.slByVol.medium, high: c.signal.slByVol.high } } : {}),
+    // What it opened, closed at its exit time -- the first after the fill -- as the runner's `considerExit` does.
+    closeAt: (sig) => exitMomentFor(c.exitTime, sig.filledAt),
     maxOpen: rule.maxOpen > 0 ? rule.maxOpen : null,
     desk,
   };
@@ -704,10 +736,14 @@ export function simulateTogether(o: {
     const target = plan.targetOf(sig);
 
     // The perp: the first minute after the fill's own that holds the stop or the target; both in one bar is the stop.
-    let perpAt = to - MIN, perpBy: 'perp-tgt' | 'perp-sl' | 'window-end' = 'window-end', perpPx = lastBar?.close ?? sig.fillPrice;
+    // Closed by the rules at the strategy's exit time, if that comes before the day's end -- as the desk closes it.
+    const closesAt = Math.min(to - MIN, plan.closeAt?.(sig) ?? Number.POSITIVE_INFINITY);
+    const closeBar = closesAt < to - MIN ? o.bars[firstAfter(o.bars, closesAt - 1, atOf) - 1] : lastBar;
+    let perpAt = closesAt, perpBy: 'perp-tgt' | 'perp-sl' | 'window-end' = 'window-end', perpPx = closeBar?.close ?? lastBar?.close ?? sig.fillPrice;
     const fillMinute = Math.floor(t0 / MIN) * MIN;
     for (let i = firstAfter(o.bars, fillMinute, atOf); i < o.bars.length; i++) {
       const b = o.bars[i]!;
+      if (b.at >= closesAt) break;
       const stop = sig.dir === 1 ? b.low <= sig.stop : b.high >= sig.stop;
       const tgt = sig.dir === 1 ? b.high >= target : b.low <= target;
       if (stop || tgt) { perpAt = b.at + MIN; perpBy = stop ? 'perp-sl' : 'perp-tgt'; perpPx = stop ? sig.stop : target; break; }
@@ -862,10 +898,11 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}`;
+export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
-  const text = JSON.stringify(s.config);
+  // Its methods' history too: a new day's pick is another backtest of the same rules (`methodsAt`).
+  const text = JSON.stringify({ c: s.config, h: (s as BacktestStrategy).methodHistory ?? [] });
   let h = 0;
   for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) | 0;
   return `strategy:${s.id}:${h}`;
@@ -1191,10 +1228,10 @@ export function portfolioBacktestHere(o: PortfolioAsk): Promise<BacktestPortfoli
 
 /** What one backtest asks of a day's signals, with no limit of the desk's on it: which it is about, how it trades them, its volatility filter. */
 function bookOf(o: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>): { takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }) => DayPlan; volOnly: VolLevel | null; volBy: VolBy } {
-  const st = o.strategy ?? null, rule = st?.config.signal ?? null;
+  const st = o.strategy ?? null, own = ownSignal(st);
   const free = { ...o.params, deskMax: 0 };
   return {
-    takes: (sig) => (!rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method)))
+    takes: (sig) => own(sig)
       && (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method)),
     planFor: (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)),
     volOnly: o.params.vol && o.params.vol !== 'off' ? o.params.vol : null,
@@ -1382,9 +1419,9 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
   let signals = 0;
   const every: BtCell[] = [];
   const st = o.strategy ?? null;
-  const rule = st?.config.signal ?? null;
+  // A strategy's own signals, each on the methods it had then (`ownSignal`).
   // A strategy is only ever asked about its own signals: its way of reading, its timeframes, its methods.
-  const ownOnly = (sig: BtSignal) => !rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method));
+  const ownOnly = ownSignal(st);
   const caps = deskCapsOf(o.params);
   const strategyPlan = (s: Strategy, span: { from: number; to: number }, desk: DayPlan['desk']): DayPlan => (o.draft ? { ...planOfStrategy(s, span, desk), maxOpen: null } : planOfStrategy(s, span, desk));
   const spansByDay = new Map<string, Span[]>();
@@ -1571,9 +1608,9 @@ function studyLine(rule: VolStudyLine['rule'], xs: readonly Labelled[], days: re
 type StudyBook = Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>;
 /** A book of the study as it trades: which signals are its own, and its plan -- as set, or with what is set by level. Shared by the study and its trade list. */
 function studyBookOf(b: StudyBook): { takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }, byVol: VolRule | null) => DayPlan } {
-  const st = b.strategy ?? null, rule = st?.config.signal ?? null;
+  const st = b.strategy ?? null, own = ownSignal(st);
   return {
-    takes: (sig: BtSignal) => (!rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method)))
+    takes: (sig: BtSignal) => own(sig)
       && (!b.tfs || b.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!b.methods || b.methods.includes(sig.method)),
     // No limit of any kind, so the rules trade the same signals; the volatility filter is the study's own subject, so it is off too.
     planFor: (span: { from: number; to: number }, byVol: VolRule | null): DayPlan => {
@@ -1882,10 +1919,9 @@ async function liveCheckNow(o: LiveCheckAsk): Promise<LiveCheck> {
       if (!mine.length) return;
       groups.push({ caps: a.caps ? deskCapsOf(a.caps) : null });
       for (const st of mine) {
-        const rule = st.config.signal!;
         units.push({
           id: st.id, name: st.name, account: a.name, group: groups.length - 1,
-          takes: (sig) => sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method),
+          takes: ownSignal(st),
           planFor: (sp) => planOfStrategy(st, sp, null), mine: liveBy.get(st.id) ?? new Map(),
           now: { lots: st.config.lots, stopPct: st.config.stopLossPct ?? 0 },
           // Its delta by volatility, read as the desk read it.
@@ -2180,8 +2216,8 @@ const listed = (day: string, xs: BtTradeRow[]): BtDayTrades => {
 /** One expiry day of a backtest, played again with the same settings, trade by trade: what its day row adds up. */
 async function signalBacktestDayRows(o: Ask, day: string, member?: string): Promise<BtTradeRow[]> {
   const c = await dayContext(day, o.now);
-  const st = o.strategy ?? null, rule = st?.config.signal ?? null;
-  const ownOnly = (sig: BtSignal) => !rule || (sig.mode === rule.mode && (rule.mode !== 'single' || (ruleTfs(rule) as string[]).includes(sig.tf)) && rule.methods.includes(sig.method));
+  const st = o.strategy ?? null;
+  const ownOnly = ownSignal(st);
   const caps = deskCapsOf(o.params);
   const chosen = (sig: BtSignal) => (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method));
   // As the whole run takes them (`signalBacktestNow`): with a limit, the filters choose who competes for the places.

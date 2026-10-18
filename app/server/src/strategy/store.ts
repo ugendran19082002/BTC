@@ -869,6 +869,23 @@ export class StrategyStore {
     return { ...u, id: Number(r!.id), added, dropped };
   }
 
+  /**
+   * Each strategy's method lists over time, oldest first (18 Oct 2026): the list before and after every change, for a
+   * backtest to trade each signal on the list the desk had then (`methodsAt` in report/signal-backtest.ts).
+   */
+  async methodLists(strategyIds: readonly string[]): Promise<Map<string, { at: number; before: string[]; after: string[] }[]>> {
+    const out = new Map<string, { at: number; before: string[]; after: string[] }[]>();
+    if (!strategyIds.length) return out;
+    const xs = await rows<{ strategy_id: string; at: string; before: string[]; after: string[] }>(
+      'SELECT strategy_id, at, before, after FROM strategy_method_updates WHERE strategy_id = ANY($1) ORDER BY at ASC, id ASC', [strategyIds as string[]]);
+    for (const x of xs) {
+      const list = out.get(x.strategy_id) ?? [];
+      list.push({ at: Number(x.at), before: x.before, after: x.after });
+      out.set(x.strategy_id, list);
+    }
+    return out;
+  }
+
   /** The changes, newest first: one account's (null: every account), one strategy's, or one way only. */
   async methodUpdates(o: { limit?: number; accountId?: number | null; strategyId?: string | null; source?: MethodUpdateSource | null; since?: number | null; until?: number | null } = {}): Promise<MethodUpdate[]> {
     const where: string[] = [];

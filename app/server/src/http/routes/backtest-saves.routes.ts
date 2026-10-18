@@ -3,10 +3,9 @@ import { tradingService } from '../../trading/service.js';
 import {
   PORTFOLIO_MEMBERS_MAX, clonePortfolio, cloneSave, dropPortfolio, dropSave, groupProblem, keepPortfolio, keepSave, listSaves, nameProblem, renameGroup, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
-import { backtestable, type BacktestParams } from '../../report/signal-backtest.js';
+import type { BacktestParams } from '../../report/signal-backtest.js';
 import { liveCheck, portfolioBacktest, portfolioTrades, portfolioVolStudy, portfolioVolStudyTrades } from '../../report/backtest-run.js';
-import { backtestParamsFrom, backtestParamsOf, liveAccounts, rangeOf, volRuleOf, volTradesPickOf } from './market.routes.js';
-import { strategyStore } from './strategy.routes.js';
+import { backtestParamsFrom, backtestParamsOf, backtestStrategies, liveAccounts, rangeOf, volRuleOf, volTradesPickOf } from './market.routes.js';
 import { refuse } from '../refuse.js';
 
 /**
@@ -40,7 +39,7 @@ async function portfolioQuery(q: Record<string, unknown>) {
     if (ids.length > PORTFOLIO_MEMBERS_MAX) return { code: 400, error: `At most ${PORTFOLIO_MEMBERS_MAX} saved backtests at once.` };
     const saves = await savesByIds(ids);
     if (saves.length !== ids.length) return { code: 404, error: 'One of those saved backtests is gone: it may have been deleted.' };
-    const strategies = (await strategyStore().all().catch(() => [])).filter(backtestable);
+    const strategies = await backtestStrategies();
     if (q.limit !== undefined && q.limit !== '' && q.limit !== 'shared' && q.limit !== 'own') return { code: 400, error: 'The limit is "shared" (one account) or "own" (each its own).' };
     let shared: { deskMax: number; cePct: number; pePct: number } | null = null;
     if (q.limit !== 'own') {

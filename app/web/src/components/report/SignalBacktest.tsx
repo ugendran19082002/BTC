@@ -46,7 +46,7 @@ const RULES: { key: BacktestParams['rule']; label: string; spoken: string }[] = 
   { key: 'premium', label: 'Strike by premium', spoken: 'Pick the strike by premium' },
 ];
 const WINDOWS: { key: BacktestParams['window']; label: string; spoken: string }[] = [
-  { key: 'desk', label: '9:30 PM–3:59 PM', spoken: 'Only signals from 9:30 PM to 3:59 PM, as the strategies trade' },
+  { key: 'desk', label: '9:30 PM–3:59 PM', spoken: 'Only signals from 9:30 PM to 3:59 PM' },
   { key: 'all', label: 'Whole day', spoken: 'Signals of the whole expiry day' },
   { key: 'custom', label: 'Custom', spoken: 'Signals in hours of your own' },
 ];

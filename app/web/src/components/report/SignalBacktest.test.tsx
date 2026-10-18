@@ -634,7 +634,7 @@ describe('SignalBacktest', () => {
     fireEvent.click(screen.getByRole('button', { name: /^(Use|Use these hours|Apply)$/ }));
     expect(await screen.findByText(/The strike blocks are not in this backtest until they fit the hours/)).toBeInTheDocument();
     await waitFor(() => expect(lastQuery().params.window).toBe('custom'));
-    fireEvent.click(screen.getByRole('radio', { name: 'Only signals from 9:30 PM to 3:59 PM, as the strategies trade' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Only signals from 9:30 PM to 3:59 PM' }));
     await waitFor(() => expect(screen.queryByText(/The strike blocks are not in this backtest/)).toBeNull());
     // One rule all day again: no blocks sent.
     fireEvent.click(within(blocks()).getByRole('checkbox', { name: 'Same strike rule all the time' }));

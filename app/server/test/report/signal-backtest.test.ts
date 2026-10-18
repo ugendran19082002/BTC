@@ -653,3 +653,67 @@ test('[critical] a strategy that sets its SL by volatility is backtested as the 
   assert.equal(planOfStrategy(points, { from, to }).stopPctByVol, undefined);
   assert.equal(ownVolBy(points, undefined), undefined);
 });
+
+// ------------------------------------------------------------ live parity (18 Oct 2026)
+
+test('[critical] a strategy\'s methods at a moment: the list after the last change before it; before the first change, what that change replaced; no history, its list as it stands', async () => {
+  const { methodsAt, ownSignal, strategyOfParams } = await import('../../src/report/signal-backtest.js');
+  const base = strategyOfParams({ ...P }, ['15m'], ['breakout', 'pullback']);
+  assert.deepEqual(methodsAt(base, from), ['breakout', 'pullback'], 'no history: as it stands');
+  const st = { ...base, methodHistory: [
+    { at: from + 100 * MIN, before: ['pullback'], after: ['breakout'] },
+    { at: from + 300 * MIN, before: ['breakout'], after: ['breakout', 'gamma-wall'] },
+  ] };
+  assert.deepEqual(methodsAt(st, from + 50 * MIN), ['pullback'], 'before the first change: what it replaced');
+  assert.deepEqual(methodsAt(st, from + 100 * MIN), ['breakout'], 'at a change: the new list');
+  assert.deepEqual(methodsAt(st, from + 299 * MIN), ['breakout']);
+  assert.deepEqual(methodsAt(st, from + 400 * MIN), ['breakout', 'gamma-wall']);
+  // The signal check reads it at the signal's own fill, with its way of reading and its time frames as ever.
+  const own = ownSignal(st);
+  assert.equal(own(sig(50, { method: 'pullback' })), true);
+  assert.equal(own(sig(150, { method: 'pullback' })), false, 'dropped at the change');
+  assert.equal(own(sig(150, { method: 'breakout' })), true);
+  assert.equal(own(sig(150, { method: 'breakout', tf: '1h' })), false, 'not its time frame');
+  assert.equal(ownSignal(null)(sig(1)), true, 'no strategy: every signal');
+});
+
+test('[critical] a strategy closes what it opened at its exit time, as the desk does -- not at the settlement; one whose exit is the day\'s end is as before', async () => {
+  const { planOfStrategy, strategyOfParams } = await import('../../src/report/signal-backtest.js');
+  // 17:30 IST start: 22:00 is minute 270, 01:30 is minute 480.
+  const board = byTime(contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]));
+  const bars = perp([[0, 84_000], [1_439, 84_100]]);
+  const st = strategyOfParams({ ...P, targetPct: 0, stopPct: 0, window: 'custom', hoursFrom: '21:30', hoursTo: '01:30' }, ['15m'], ['breakout']);
+  const [t] = simulateDay({ from, to, signals: [sig(271)], plan: planOfStrategy(st, { from, to }), bars, board }).trades;
+  assert.deepEqual([t!.by, t!.exitAt], ['window-end', from + 480 * MIN], 'bought back at 1:30 AM, its exit time');
+  const allDay = strategyOfParams({ ...P, targetPct: 0, stopPct: 0, window: 'all' }, ['15m'], ['breakout']);
+  const [d] = simulateDay({ from, to, signals: [sig(271)], plan: planOfStrategy(allDay, { from, to }), bars, board }).trades;
+  assert.equal(d!.exitAt, from + 1_435 * MIN, 'exit at the day\'s end: the last reading, as before');
+});
+
+test('[critical] every setting is part of what a worked day is kept under: change any one, and it is another backtest -- never the last one\'s answer', async () => {
+  const { paramsKey } = await import('../../src/report/signal-backtest.js');
+  const base: BacktestParams = {
+    ...DEFAULT_PARAMS, window: 'custom', hoursFrom: '21:30', hoursTo: '03:00', deskMax: 20, cePct: 80, pePct: 80,
+    slMin: 100, slMax: 900, tgtMin: 100, tgtMax: 900, targetSteps: [{ at: '23:30', pct: 0.75 }], vol: 'low', volBy: 'atr', minPremium: 10,
+    noEntry: { on: true, windows: [{ from: '00:30', to: '01:00' }] },
+    strikeBlocks: [{ at: '01:30', strikeRule: 'delta', strikeStep: 0, premium: { mode: 'atMost', usd: 50 }, delta: { max: 0.08 } }],
+  };
+  const changes: [string, Partial<BacktestParams>][] = [
+    ['rule', { rule: 'premium' }], ['value', { value: 0.12 }], ['lots', { lots: 3 }], ['targetPct', { targetPct: 0.8 }], ['stopPct', { stopPct: 1.5 }],
+    ['window', { window: 'desk' }], ['hoursFrom', { hoursFrom: '22:00' }], ['hoursTo', { hoursTo: '04:00' }],
+    ['deskMax', { deskMax: 30 }], ['cePct', { cePct: 70 }], ['pePct', { pePct: 70 }],
+    ['slMin', { slMin: 150 }], ['slMax', { slMax: 800 }], ['tgtMin', { tgtMin: 150 }], ['tgtMax', { tgtMax: 800 }],
+    ['targetSteps', { targetSteps: [{ at: '23:30', pct: 0.8 }] }], ['vol', { vol: 'high' }], ['volBy', { volBy: 'iv' }], ['minPremium', { minPremium: 15 }],
+    ['noEntry', { noEntry: { on: true, windows: [{ from: '00:30', to: '01:30' }] } }], ['noEntry off', { noEntry: { on: false, windows: [] } }],
+    ['strikeBlocks', { strikeBlocks: [{ ...base.strikeBlocks![0]!, delta: { max: 0.06 } }] }], ['strikeBlocks at', { strikeBlocks: [{ ...base.strikeBlocks![0]!, at: '02:00' }] }],
+  ];
+  const seen = new Set([paramsKey(base)]);
+  for (const [what, over] of changes) {
+    const k = paramsKey({ ...base, ...over });
+    assert.ok(!seen.has(k), `${what}: the same key as another setting`);
+    seen.add(k);
+  }
+  // And every field a backtest's settings have is one of those changed above: a new setting must be added here, and to the key.
+  const named = new Set(changes.map(([w]) => w.split(' ')[0]!));
+  for (const k of Object.keys(base)) assert.ok(named.has(k), `${k} is not checked`);
+});

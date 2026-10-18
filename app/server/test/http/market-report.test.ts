@@ -1079,6 +1079,43 @@ test('[critical] a strike rule by time of day (18 Oct 2026): the settings\' rule
   }
 });
 
+test('[critical] a strategy is backtested on the methods it had at each signal, as it traded -- its daily changes read back from the record (18 Oct 2026)', async () => {
+  const config = {
+    trigger: 'signal', signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 100, enterOn: 'zone', action: 'sell' },
+    liveOrders: false, entryTime: '17:35', exitTime: '17:29', lots: 3, legs: 'both',
+    strikeRule: 'delta', delta: { max: 0.1 }, premium: { mode: 'atMost', usd: 50, fallbackUsd: null },
+    entryPrice: 'offer', crossAfterSec: 5, maxCrossSpreadPct: 0.5, takeProfitPct: 0.9, stopLossPct: 3, minPremiumUsd: 1,
+    weekdays: [0, 1, 2, 3, 4, 5, 6], graceMin: 60,
+  };
+  const made = await post('/api/strategies', { name: 'BT history', config });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  const id = made.body.strategy.id;
+  const asked = () => get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&strategy=${id}`);
+  try {
+    const now = (await asked()).body;
+    assert.equal(now.signals, 3, 'no history: today\'s list, all three 15m breakouts');
+    // An hour into the day it was switched from pullback to breakout: the first breakout (minute 30) was not its then.
+    const climbFrom = sessionOf(CLIMB).from;
+    await query(`INSERT INTO strategy_method_updates (at, strategy_id, strategy_name, source, before, after) VALUES ($1, $2, 'BT history', 'daily', '["pullback"]', '["breakout"]')`, [climbFrom + 60 * 60_000, id]);
+    clearSignalBacktestCache();
+    const then = (await asked()).body;
+    assert.equal(then.signals, 2, 'the breakout before the change was not on its list then');
+    // The same in a run of saved backtests worked by the strategy.
+    const save = await post('/api/backtest-saves', { name: 'by history', query: { params: { ...then.params }, tfs: [], methods: [], strategy: id } });
+    assert.equal(save.status, 200, JSON.stringify(save.body));
+    try {
+      const run = await get(`/api/backtest-portfolio?ids=${save.body.save.id}&from=${CLIMB}&to=${CLIMB}&limit=own`);
+      assert.equal(run.body.members[0].signals, 2);
+    } finally {
+      await app.inject({ method: 'DELETE', url: `/api/backtest-saves/${save.body.save.id}`, headers: cookie });
+    }
+  } finally {
+    await query('DELETE FROM strategy_method_updates WHERE strategy_id = $1', [id]);
+    await app.inject({ method: 'DELETE', url: `/api/strategies/${id}`, headers: cookie });
+    clearSignalBacktestCache();
+  }
+});
+
 test('[critical] strike blocks are times of the expiry day: a run\'s block before a member\'s hours open is in force from their start, one after they close is not traded in (18 Oct 2026)', async () => {
   const plain = (await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all`)).body;
   const one = await post('/api/backtest-saves', { name: 'whole day', query: { params: { ...plain.params }, tfs: [], methods: [], strategy: null } });

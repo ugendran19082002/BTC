@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades } from '../../report/backtest-run.js';
@@ -51,11 +51,23 @@ const NO_FILTERS: ReportFilters = { account: null, tfs: null, methods: null, str
  * premium; 0 is none), `?window=desk|all`. Absent ones are the defaults.
  */
 /**
+ * The signal strategies a backtest may be asked about -- those that sell -- each with its methods' history (18 Oct
+ * 2026): a strategy whose methods are picked again every day is backtested on the list it had at each signal
+ * (`methodsAt`), as it traded, not on today's list for every day. A history that cannot be read is no history: today's
+ * list, as before.
+ */
+export async function backtestStrategies(): Promise<BacktestStrategy[]> {
+  const every = (await strategyStore().all().catch(() => [])).filter(backtestable);
+  const lists = await strategyStore().methodLists(every.map((s) => s.id)).catch(() => new Map<string, never[]>());
+  return every.map((s) => (lists.get(s.id)?.length ? { ...s, methodHistory: lists.get(s.id)! } : s));
+}
+
+/**
  * Each trading account's signal strategies that sell, with its limit on open trades as it stands: the desk's side
  * of a live check (`liveCheckHere`), which works an account's strategies together under that limit.
  */
 export async function liveAccounts(): Promise<{ id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number } | null; strategies: Strategy[] }[]> {
-  const every = (await strategyStore().all().catch(() => [])).filter(backtestable);
+  const every = await backtestStrategies();
   const svc = tradingService();
   const nameOf = (id: number | null) => { try { return id == null ? null : brokerAccounts().get(id)?.name ?? null; } catch { return null; } };
   return [...new Set(every.map((s) => s.accountId ?? null))].map((id) => {
@@ -243,7 +255,7 @@ export function registerMarketRoutes(app: FastifyInstance) {
      * 2026: "a strategy list in the backtest -- choose one and backtest by it, else don't"). The list to choose from
      * comes back with every answer: the signal strategies that sell, each with its account.
      */
-    const every = (await strategyStore().all().catch(() => [])).filter(backtestable);
+    const every = await backtestStrategies();
     const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
     const strategy = askedId === null ? null : every.find((s) => s.id === askedId) ?? null;
     if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
@@ -294,7 +306,7 @@ export function registerMarketRoutes(app: FastifyInstance) {
     if ([slotFrom, slotTo].some((x) => x !== null && !(Number.isInteger(x) && x >= 0 && x <= 95))) return refuse(reply, 400, { error: 'A session is fifteen-minute slots from 0 (5:30 PM) to 95.' });
     const pick = { day, slotFrom, slotTo, method: typeof q.smethod === 'string' && q.smethod !== '' ? q.smethod : null };
     const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
-    const strategy = askedId === null ? null : (await strategyStore().all().catch(() => [])).filter(backtestable).find((s) => s.id === askedId) ?? null;
+    const strategy = askedId === null ? null : (await backtestStrategies()).find((s) => s.id === askedId) ?? null;
     if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
     return signalBacktestTrades({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot }, pick);
   });
@@ -313,7 +325,7 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const rule = volRuleOf(q);
     if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
     const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
-    const strategy = askedId === null ? null : (await strategyStore().all().catch(() => [])).filter(backtestable).find((s) => s.id === askedId) ?? null;
+    const strategy = askedId === null ? null : (await backtestStrategies()).find((s) => s.id === askedId) ?? null;
     if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
     return volStudy({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot, ...rule });
   });
@@ -333,7 +345,7 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const pick = volTradesPickOf(q, r);
     if (typeof pick === 'string') return refuse(reply, 400, { error: pick });
     const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
-    const strategy = askedId === null ? null : (await strategyStore().all().catch(() => [])).filter(backtestable).find((s) => s.id === askedId) ?? null;
+    const strategy = askedId === null ? null : (await backtestStrategies()).find((s) => s.id === askedId) ?? null;
     if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
     return volStudyTrades({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot, ...rule }, pick);
   });
