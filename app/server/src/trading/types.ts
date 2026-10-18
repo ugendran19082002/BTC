@@ -398,4 +398,8 @@ export type TradeEvent =
    * null for the rest of the trade -- written down rather than remembered, so a restart keeps the hold; or an exit the
    * trade no longer wanted, swept off the book (`kind: 'swept'`). None of them changes the trade's state.
    */
-  | { t: 'exit_step'; kind: 'schedule' | 'moved' | 'held' | 'swept'; title: string; detail?: string; until?: number | null; at: number };
+  /**
+   * `held`'s `sharedWith`: the contract's other open trades when the target was held (18 Oct 2026) -- fewer of them
+   * later is room on the position again, and `released` ends the hold (`releaseHeldTarget`).
+   */
+  | { t: 'exit_step'; kind: 'schedule' | 'moved' | 'held' | 'released' | 'swept'; title: string; detail?: string; until?: number | null; sharedWith?: number; at: number };

@@ -139,3 +139,49 @@ test('[critical] Delta\'s "no reduce-only room left": held at once; back again a
   assert.equal(said().length, 2, 'no quarter-hourly alarm');
   assert.equal(r.store.peek(id)!.state.protection.stopLoss, stopBefore);
 });
+
+test('[critical] a target held for good comes back once the contract\'s other trades have closed -- the room is its own again (18 Oct 2026, C-BTC-82400)', async () => {
+  // Two trades on one contract (0011): the short cap raised so both go on.
+  const r = rig({ quotes: [quote(CE, 100.5, 101)], limits: { maxShortContracts: 1_000 } });
+  const a = planFor(ceProduct(), { tradeId: 'A', strategyId: 'sa', origin: 'strategy', lots: 10, stopPrice: 300, takeProfitPrice: 20 });
+  const b = planFor(ceProduct(), { tradeId: 'B', strategyId: 'sb', origin: 'strategy', lots: 10, stopPrice: 300, takeProfitPrice: 20 });
+  for (const p of [a, b]) { assert.equal((await r.engine.open(p)).ok, true); await r.engine.poll(p.tradeId); }
+  const orders = (r.ex as unknown as { orders: Map<string, { status: string; reason?: string; clientOrderId: string | null }> }).orders;
+  const target = (id: string) => r.store.peek(id)!.state.protection.takeProfit;
+  const cancelA = async () => {
+    const o = [...orders.values()].find((x) => x.clientOrderId === target('A'))!;
+    await r.ex.cancelOrder(o as never);
+    o.reason = NO_REDUCE_ONLY_ROOM;
+    r.advance(30_000);
+    await r.engine.poll('A');
+  };
+  // Held, back after the hold, held again -- for the rest of the trade, with B still on the contract.
+  await cancelA();
+  r.advance(TARGET_HOLD_MS);
+  await r.engine.poll('A');
+  await cancelA();
+  const held = r.store.peek('A')!.events.filter((e) => e.t === 'exit_step' && e.kind === 'held');
+  assert.equal(held.length, 2);
+  assert.equal((held.at(-1) as { until?: number | null }).until, null, 'for the rest of the trade');
+  assert.equal((held.at(-1) as { sharedWith?: number }).sharedWith, 1, 'B shared the contract');
+  r.advance(60_000);
+  await r.engine.poll('A');
+  assert.equal(target('A'), null, 'B still open: still held');
+  // B's target fills: B is flat, and A is alone on the contract.
+  r.ex.tick(quote(CE, 18, 19.5));
+  await r.engine.poll('B');
+  assert.equal(r.store.peek('B')!.state.position, 0);
+  r.ex.tick(quote(CE, 30, 31));
+  r.advance(31_000);
+  await r.engine.poll('A');
+  const back = r.store.peek('A')!.events.filter((e) => e.t === 'exit_step' && e.kind === 'released');
+  assert.equal(back.length, 1);
+  assert.match((back[0] as { detail?: string }).detail ?? '', /other trades have closed/);
+  assert.ok(target('A'), 'the target is back on the book');
+  assert.ok((await r.ex.getOpenOrders(CE)).some((o) => o.clientOrderId === target('A') && o.status === 'open'));
+  // Taken off again now, alone: held afresh for fifteen minutes -- counted from the release -- not for good at once.
+  await cancelA();
+  const after = r.store.peek('A')!.events.filter((e) => e.t === 'exit_step' && e.kind === 'held').at(-1) as { until?: number | null; sharedWith?: number };
+  assert.notEqual(after.until, null, 'a fresh hold, not the rest of the trade');
+  assert.equal(after.sharedWith, 0);
+});

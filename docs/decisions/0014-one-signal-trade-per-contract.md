@@ -34,7 +34,7 @@ reached the buy-backs, and each was written off as "closed on Delta itself" with
 **Then, the same morning (owner: "best practice update").** Journaling Delta's reason named it at once:
 `no_position_left_for_reduce_only` -- the position's reduce-only room is already taken by the contract's other
 trades' orders. That reason is definitive, so a target cancelled with it is held at once, not after four; and a
-target that comes straight back after its fifteen-minute hold stays off the book for the rest of the trade. Two
+target that comes straight back after its fifteen-minute hold stays off the book for the rest of the trade. **Unless the room comes back** (18 Oct 2026): the hold notes how many other trades shared the contract (`sharedWith`); once fewer remain -- their orders have left the book -- the hold ends (`exit_step` kind `released`, "Target back on Delta"), and the target goes back on. A trade alone on its contract when held stays held, so it cannot loop; a hold written before `sharedWith` ends when the trade is alone. Two
 alarms a trade at most, where the shared positions left from the night had raised one every quarter of an hour.
 
 ## Consequences

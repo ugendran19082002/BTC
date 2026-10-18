@@ -615,6 +615,8 @@ export const LEFTOVER_ALARM_MS = 60_000;
 export const TARGET_CHURN_LIMIT = 4;
 export const TARGET_CHURN_WINDOW_MS = 10 * 60_000;
 export const TARGET_HOLD_MS = 15 * 60_000;
+/** How often a held target's contract is looked at for the room its hold was waiting on (`releaseHeldTarget`). */
+export const HOLD_RECHECK_MS = 30_000;
 /**
  * Delta's own word for "the position's reduce-only room is taken" (14 Oct 2026, read off its `cancellation_reason`
  * once the desk began journaling it): the contract's other trades' orders already cover what is left of the
@@ -765,6 +767,8 @@ export class TradeEngine {
    * asks `protect()` again for these, after its back-off. Held in memory; a restart protects every position anyway.
    */
   private readonly protectionOwed = new Set<string>();
+  /** When each held target's contract was last looked at for room (`releaseHeldTarget`). */
+  private readonly holdCheckedAt = new Map<string, number>();
   /** One operation at a time per trade. See `withTrade`. */
   private queue = new Map<string, Promise<unknown>>();
 
@@ -1540,6 +1544,8 @@ export class TradeEngine {
     const anchored = anchorExits(rec);
     const moved = anchored !== rec;
     rec = anchored;
+    // A target held off the book comes back once the contract has room for it again.
+    if (rec.state.position !== 0) rec = await this.releaseHeldTarget(rec);
     if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending'
       && (moved || missingProtection(rec, this.now()) || this.protectionOwed.has(rec.state.tradeId))) {
       rec = await this.protect(rec);
@@ -2121,6 +2127,8 @@ export class TradeEngine {
     const definitive = reason === NO_REDUCE_ONLY_ROOM;
     if (!definitive && recent < TARGET_CHURN_LIMIT) return rec;
     const forGood = hold.holds + 1 >= 2;
+    // Who else was on the contract: their orders are what took the room, and fewer of them later gives it back.
+    const sharedWith = (await this.siblingsOn(rec)).length;
     const why = definitive
       ? `Delta cancelled this trade's target: the position has no reduce-only room left for it (${reason})`
       : `Delta cancelled this trade's target ${recent} times in ${Math.round(TARGET_CHURN_WINDOW_MS / 60_000)} minutes${reason ? ` (${reason})` : ''}`;
@@ -2130,7 +2138,7 @@ export class TradeEngine {
       t: 'exit_step', kind: 'held', at: now,
       title: forGood ? 'Target kept off Delta for the rest of the trade' : `Target kept off Delta for ${minutes} minutes`,
       detail: `${why}. The stop and the perp's exits stay.`,
-      until: forGood ? null : now + TARGET_HOLD_MS,
+      until: forGood ? null : now + TARGET_HOLD_MS, sharedWith,
     });
     this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: ${why}. `
       + (forGood
@@ -2138,6 +2146,36 @@ export class TradeEngine {
         : `It is held off the book for ${minutes} minutes rather than re-placed again; `)
       + 'the stop and the perp\'s exits stay.', rec.plan);
     return rec;
+  }
+
+  /**
+   * A held target put back once the room it waited on is there (18 Oct 2026: C-BTC-82400, four trades on one contract;
+   * a target held "for the rest of the trade" at 2:01 PM stayed off the book after the other three had closed by 2:13 --
+   * the room was its own again, and it went to the settlement with no target). The room on a position is taken by the
+   * contract's other trades' orders, so fewer of them than when it was held (`sharedWith`) is room given back: the hold
+   * ends, said once, and the next pass puts the target on. A trade alone on its contract when held stays held -- the
+   * room was not its siblings' to give -- so this cannot go round in a loop. A hold written before `sharedWith` was
+   * kept is ended when the trade is alone on the contract. Looked at every `HOLD_RECHECK_MS`, not every pass.
+   */
+  private async releaseHeldTarget(rec: TradeRecord): Promise<TradeRecord> {
+    const now = this.now();
+    if (!(targetHoldOf(rec).until > now)) { this.holdCheckedAt.delete(rec.state.tradeId); return rec; }
+    const checked = this.holdCheckedAt.get(rec.state.tradeId);
+    if (checked !== undefined && now - checked < HOLD_RECHECK_MS) return rec;
+    this.holdCheckedAt.set(rec.state.tradeId, now);
+    const held = [...rec.events].reverse().find((e): e is Extract<TradeEvent, { t: 'exit_step' }> => e.t === 'exit_step' && e.kind === 'held');
+    if (!held) return rec;
+    const siblings = (await this.siblingsOn(rec)).length;
+    const room = held.sharedWith !== undefined ? siblings < held.sharedWith : siblings === 0;
+    if (!room) return rec;
+    this.holdCheckedAt.delete(rec.state.tradeId);
+    this.protectAfter.delete(rec.state.tradeId);
+    return this.commit(rec, {
+      t: 'exit_step', kind: 'released', at: now, title: 'Target back on Delta',
+      detail: siblings === 0
+        ? 'The contract\'s other trades have closed: the position\'s reduce-only room is this trade\'s own again.'
+        : `Fewer trades share the contract now (${siblings}, from ${held.sharedWith}): there is room on the position for it again.`,
+    });
   }
 
   /** Keep count of a trade whose exits could not be confirmed off the book, and say so once it has gone on a minute. */
@@ -3080,7 +3118,10 @@ const seedOf = (tradeId: string) => tradeId.replace(/[^A-Za-z0-9]/g, '').slice(-
  * forever once held for the rest of the trade, 0 when never held.
  */
 export function targetHoldOf(rec: TradeRecord): { holds: number; until: number } {
-  const held = (rec.events ?? []).filter((e): e is Extract<TradeEvent, { t: 'exit_step' }> => e.t === 'exit_step' && e.kind === 'held');
+  const steps = (rec.events ?? []).filter((e): e is Extract<TradeEvent, { t: 'exit_step' }> => e.t === 'exit_step' && (e.kind === 'held' || e.kind === 'released'));
+  // Counted from the last release (`releaseHeldTarget`): a hold that ended because the room came back starts afresh.
+  const since = steps.map((e) => e.kind).lastIndexOf('released');
+  const held = steps.slice(since + 1);
   const last = held[held.length - 1];
   return { holds: held.length, until: !last ? 0 : last.until == null ? Number.POSITIVE_INFINITY : last.until };
 }
