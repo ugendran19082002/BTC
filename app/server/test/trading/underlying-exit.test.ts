@@ -268,3 +268,21 @@ test('[critical] ... and the target the same way; a stale perp price withdraws n
   stale.perp.price = 83_000; stale.perp.at = 1; // a price from long ago
   assert.equal((await stale.r.engine.poll(stale.id))?.phase, 'entry_pending', 'nothing is acted on without a fresh last trade');
 });
+
+/* A strategy that skips a perp level (18 Oct 2026) sends it as none: only the other is judged; the option's stop stays at Delta. */
+test('[critical] the perp SL skipped: the perp through the signal\'s SL closes nothing; its TGT still does', async () => {
+  const { r, perp, id } = await shortPut({ dir: 1, stop: null, target: 86_000, source: 'BTC perp' });
+  perp.price = 83_000;                                          // far through where the SL would have been
+  assert.equal((await r.engine.poll(id))?.position, -10, 'still open: no perp stop to reach');
+  assert.ok(r.store.peek(id)!.state.protection.stopLoss, 'the option\'s own stop rests at Delta all the while');
+  perp.price = 86_000;
+  assert.equal((await r.engine.poll(id))?.position, 0, 'the perp at the TGT closes it');
+});
+
+test('[critical] the perp TGT skipped: the perp at the signal\'s TGT closes nothing; its SL still does', async () => {
+  const { r, perp, id } = await shortPut({ dir: 1, stop: 84_000, target: null, source: 'BTC perp' });
+  perp.price = 87_000;
+  assert.equal((await r.engine.poll(id))?.position, -10);
+  perp.price = 84_000;
+  assert.equal((await r.engine.poll(id))?.position, 0);
+});

@@ -1,4 +1,4 @@
-import { BUY_NO_STEPS, CHAIN_PTS, autoMethodsProblems, deltaByVolProblems, slByVolProblems, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, deltaProblem, distanceProblem, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
+import { BUY_NO_STEPS, CHAIN_PTS, SKIP_PERP_BUY, SKIP_SL_NEEDS_STOP, autoMethodsProblems, deltaByVolProblems, slByVolProblems, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, deltaProblem, distanceProblem, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -23,7 +23,7 @@ export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin' | 'noEntry'
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'premiumMinOtm' | 'delta' | 'distance' | 'strikeBlocks' | 'minPremium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
-  | 'signalMode' | 'signalTf' | 'signalSlPts' | 'signalMethods' | 'signalTarget' | 'maxOpen' | 'autoMethods' | 'deltaByVol' | 'slByVol';
+  | 'signalMode' | 'signalTf' | 'signalSlPts' | 'signalMethods' | 'signalTarget' | 'maxOpen' | 'autoMethods' | 'deltaByVol' | 'slByVol' | 'skipPerp';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -31,7 +31,7 @@ const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when', noEntry: 'when',
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', premiumMinOtm: 'sell', delta: 'sell', distance: 'sell', strikeBlocks: 'sell', minPremium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
-  signalMode: 'signal', signalTf: 'signal', signalSlPts: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade', autoMethods: 'signal', deltaByVol: 'sell', slByVol: 'trade',
+  signalMode: 'signal', signalTf: 'signal', signalSlPts: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade', autoMethods: 'signal', deltaByVol: 'sell', slByVol: 'trade', skipPerp: 'trade',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -159,6 +159,12 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
         if (r.deltaByVol?.on && r.deltaByVol.by !== r.slByVol.by) say('slByVol', 'The SL and the delta by volatility read one source: pick the same for both.');
       }
       if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') say('signalTarget', 'The target must be TGT1, TGT2 or TGT3.');
+      // The perp's levels skipped -- the server's words: one that buys keeps both; the SL skipped needs an option stop.
+      if ((r.skipPerpSl || r.skipPerpTgt) && r.action === 'buy') say('skipPerp', SKIP_PERP_BUY);
+      if (r.skipPerpSl && r.action !== 'buy') {
+        const stopOn = (c.stopMode ?? 'pct') === 'pct' ? c.stopLossPct > 0 : c.stopMode === 'points' ? (c.stopLossPoints ?? 0) > 0 : (c.stopLossAt ?? 0) > 0;
+        if (!stopOn && !(c.stopSteps ?? []).some((x) => x.value > 0) && !r.slByVol?.on) say('skipPerp', SKIP_SL_NEEDS_STOP);
+      }
       if (!Number.isInteger(r.maxOpen) || r.maxOpen < 1 || r.maxOpen > MAX_SIGNAL_OPEN) {
         say('maxOpen', `At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
       }

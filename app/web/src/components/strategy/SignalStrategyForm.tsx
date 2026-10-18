@@ -8,6 +8,7 @@ import { describeStrategy } from '@/lib/strategy-preview';
 import { cn } from '@/lib/utils';
 import { useStrategyDraft } from '@/components/strategy/useStrategyDraft';
 import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
+import { BacktestSkipPerp } from '@/components/report/BacktestSkipPerp';
 import { useOptionRecord } from '@/components/strategy/useOptionRecord';
 import { getBacktestSaves } from '@/api/backtest-saves';
 import { pickMethodsNow, walkMethodsForward } from '@/api/signal-backtest';
@@ -237,6 +238,14 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                     ? 'A bought option would be sold the moment the perp reaches either; its record on the perp is kept the same way.'
                     : 'The desk watches the perp’s last trade and buys the option back the moment either is reached.'}
                 </p>
+                {/* The perp's own levels skipped (18 Oct 2026): a strategy that sells only -- its option's stop then closes a loser. */}
+                {!buying && (
+                  <div className="mt-2">
+                    <BacktestSkipPerp live name="Perp SL and TGT, skipped" sl={rule.skipPerpSl === true} tgt={rule.skipPerpTgt === true}
+                      optionStop={c.stopLossPct > 0} optionTarget={c.takeProfitPct > 0} error={err('skipPerp')}
+                      onChange={(v) => d.setC((p) => ({ ...p, signal: { ...p.signal!, skipPerpSl: v.skipPerpSl || undefined, skipPerpTgt: v.skipPerpTgt || undefined } }))} />
+                  </div>
+                )}
                 <Stack label="Target" error={err('signalTarget')} className="mt-2">
                   <Segmented
                     label="signal target"

@@ -213,6 +213,9 @@ function cleanSignal(raw: unknown): SignalRule {
     enterOn: (r.enterOn ?? 'zone') as SignalRule['enterOn'],
     // Sold unless it says bought: what every strategy saved before the choice existed did.
     action: (r.action ?? 'sell') as SignalRule['action'],
+    // Only "on" is kept: off is the absence of it, so a strategy that never used them is stored as before.
+    ...(r.skipPerpSl === true ? { skipPerpSl: true } : r.skipPerpSl !== undefined && r.skipPerpSl !== false ? { skipPerpSl: r.skipPerpSl as boolean } : {}),
+    ...(r.skipPerpTgt === true ? { skipPerpTgt: true } : r.skipPerpTgt !== undefined && r.skipPerpTgt !== false ? { skipPerpTgt: r.skipPerpTgt as boolean } : {}),
     ...cleanPts('minSlPts', r.minSlPts),
     ...cleanPts('minTgtPts', r.minTgtPts),
     ...cleanPts('maxSlPts', r.maxSlPts),

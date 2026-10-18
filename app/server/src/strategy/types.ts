@@ -449,6 +449,13 @@ export function noEntryProblems(n: unknown, entryTime: string | undefined, exitT
 
 /** A signal strategy's rule: which way of reading, which methods, which target, how many at once. */
 export type SignalRule = {
+  /**
+   * The perp's own SL and TGT left out (owner, 18 Oct 2026: "skip perp SL, skip perp TGT -- in the signal strategy
+   * form"): the trade is not closed when the BTC perp reaches the signal's SL (`skipPerpSl`) or TGT (`skipPerpTgt`);
+   * the option's own stop and target, resting at Delta, and the exit time close it. The SL left out needs an option
+   * stop -- a sold option is never left with nothing under it; a strategy that buys keeps both. Absent: both used.
+   */
+  skipPerpSl?: boolean; skipPerpTgt?: boolean;
   /** With the timeframe chain (entry on 5m), or without it on `tf`. */
   mode: 'mtf' | 'single';
   /** The timeframe of a read without the chain, as first saved; `tfs` is read when present. With the chain, the entry is always 5m. */
@@ -1327,8 +1334,17 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   bad.push(...noEntryProblems(c.noEntry, c.entryTime, c.exitTime, c.trigger === 'signal'));
   // A bought option's target and stop are judged by the desk at one level each (engine.ts `longExitIfReached`): no timetable yet.
   if (c.trigger === 'signal' && c.signal?.action === 'buy' && ((c.targetSteps ?? []).length || (c.stopSteps ?? []).length)) bad.push(BUY_NO_STEPS);
+  // The perp's SL left out: the option's own stop is then the trade's only stop, so it must be there.
+  if (c.trigger === 'signal' && c.signal?.skipPerpSl === true && actionOf(c.signal) === 'sell') {
+    // A stop by the clock or by volatility is a stop as well: some level of it is always in force.
+    const stop = exitRules(c as StrategyConfig).stop;
+    if (!(stop.value > 0) && !stop.steps.some((x) => x.value > 0) && !c.signal.slByVol?.on) bad.push(SKIP_SL_NEEDS_STOP);
+  }
   return bad;
 }
+/** The words a save is refused in when the perp's SL is left out with no option stop (the form says the same). */
+export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is the only stop: set one, or keep the perp SL.';
+export const SKIP_PERP_BUY = 'A strategy that buys keeps the perp SL and TGT: its option has no stop resting at Delta.';
 
 /** What is wrong with a signal rule, in words: an empty list when nothing is. */
 export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[] {
@@ -1345,6 +1361,8 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') bad.push('The target must be TGT1, TGT2 or TGT3.');
   if (r.enterOn !== undefined && r.enterOn !== 'zone' && r.enterOn !== 'signal') bad.push('Enter at the entry zone or at the signal.');
   if (r.action !== undefined && r.action !== 'sell' && r.action !== 'buy') bad.push('Pick whether the option is bought or sold.');
+  for (const k of ['skipPerpSl', 'skipPerpTgt'] as const) if (r[k] !== undefined && typeof r[k] !== 'boolean') bad.push('Skip perp SL and Skip perp TGT are on or off.');
+  if ((r.skipPerpSl === true || r.skipPerpTgt === true) && r.action === 'buy') bad.push(SKIP_PERP_BUY);
   bad.push(...autoMethodsProblems(r.autoMethods));
   bad.push(...deltaByVolProblems(r.deltaByVol));
   bad.push(...slByVolProblems(r.slByVol));

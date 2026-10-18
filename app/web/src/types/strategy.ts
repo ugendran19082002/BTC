@@ -247,6 +247,8 @@ export const MAX_GLOBAL_OPEN = 500;
 export const MAX_OPEN_PRESETS = [1, 5, 10, 25, 50, 75, 100] as const;
 export type SignalTarget = 'tp1' | 'tp2' | 'tp3';
 export type SignalRule = {
+  /** The perp's own SL and TGT left out (18 Oct 2026): not closed when the perp reaches them; the option's own stop and target close it. Absent: both used. */
+  skipPerpSl?: boolean; skipPerpTgt?: boolean;
   /** With the timeframe chain (entry on 5m), or without it on `tf`. */
   mode: 'mtf' | 'single';
   /** The one timeframe a rule was saved with before there could be several; `tfs` is read when present. */
@@ -598,3 +600,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
 };
 
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** The server's words for the perp SL skipped with no option stop, and for a strategy that buys. */
+export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is the only stop: set one, or keep the perp SL.';
+export const SKIP_PERP_BUY = 'A strategy that buys keeps the perp SL and TGT: its option has no stop resting at Delta.';

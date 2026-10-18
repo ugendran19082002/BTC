@@ -43,7 +43,7 @@ export function SignalTag({ plan, perpExit = null, className }: {
               {u.entryApprox ? '≈' : ''}{btc(u.entry)}</span>
               {perpExit != null && <> → exit <span className="text-foreground">{btc(perpExit)}</span></>} · </>
           )}
-          {u.entry != null ? 'SL' : 'perp SL'} <span className="text-[var(--down)]">{btc(u.stop)}</span> · TGT <span className="text-[var(--up)]">{btc(u.target)}</span>
+          {u.entry != null ? 'SL' : 'perp SL'} <span className="text-[var(--down)]">{u.stop === null ? 'skipped' : btc(u.stop)}</span> · TGT <span className="text-[var(--up)]">{u.target === null ? 'skipped' : btc(u.target)}</span>
         </span>
       )}
     </span>

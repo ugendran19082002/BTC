@@ -75,7 +75,9 @@ export function exitsShort(s: Strategy): string {
     ? (sv?.on ? 'SL by volatility' : c.stopLossPct > 0 ? `SL +${Math.round(c.stopLossPct * 100)}%` : 'no option SL')
     : c.stopMode === 'points' ? `SL ${c.stopLossPoints} pts` : `SL at ${c.stopLossAt}`;
   const slSteps = (c.stopSteps ?? []).length ? ` (${c.stopSteps!.length} time step${c.stopSteps!.length === 1 ? '' : 's'})` : '';
-  return `${tgt}${tgtSteps} · ${sl}${slSteps}`;
+  // The perp's levels it skips: said, since its option's own then close it (18 Oct 2026).
+  const skip = [c.signal?.skipPerpSl ? 'perp SL skipped' : null, c.signal?.skipPerpTgt ? 'perp TGT skipped' : null].filter(Boolean).join(' · ');
+  return `${tgt}${tgtSteps} · ${sl}${slSteps}${skip ? ` · ${skip}` : ''}`;
 }
 
 const LEVEL_WORD: Record<'low' | 'medium' | 'high', string> = { low: 'Low', medium: 'Normal', high: 'High' };

@@ -23,6 +23,11 @@ describe('the signal on a trade row', () => {
     expect(screen.getByLabelText('perp exits')).toHaveTextContent('perp entry 85,870 · SL 86,398 · TGT 85,353');
   });
 
+  it('[critical] a level the strategy skips is said so, not shown as watched (18 Oct 2026)', () => {
+    render(<SignalTag plan={plan({ underlying: { dir: 1, stop: null, target: 85_500, source: 'BTC perp', entry: 85_000 } })} />);
+    expect(screen.getByLabelText('perp exits')).toHaveTextContent('perp entry 85,000 · SL skipped · TGT 85,500');
+  });
+
   it('[critical] closed: the perp entry and exit points; an approximate entry is marked', () => {
     render(<SignalTag plan={plan({ underlying: { dir: 1, stop: 86_398, target: 85_353, source: 'BTC perp', entry: 85_870, entryApprox: true } })} perpExit={85_360} />);
     expect(screen.getByLabelText('perp exits')).toHaveTextContent('perp entry ≈85,870 → exit 85,360 · SL 86,398 · TGT 85,353');

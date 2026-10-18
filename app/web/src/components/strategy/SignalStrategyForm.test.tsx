@@ -418,6 +418,35 @@ describe('saving', () => {
     expect(saved().config.signal!.autoMethods).toMatchObject({ on: true, exclude: { on: true, methods: ['breakout'] } });
   });
 
+  it('[critical] skip perp SL / TGT (18 Oct 2026): switched on in Entry & exit, saved; the SL skipped with no option stop is refused', async () => {
+    show(signalStrategy({}, { stopLossPct: 2 }));
+    tab('Entry & exit');
+    const box = screen.getByRole('region', { name: 'Perp SL and TGT, skipped' });
+    expect(within(box).getByRole('switch', { name: 'Skip perp SL' })).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(within(box).getByRole('switch', { name: 'Skip perp TGT' }));
+    expect(box).toHaveTextContent("the option's own target, or the exit time, does");
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal).toMatchObject({ skipPerpTgt: true });
+    expect(saved().config.signal!.skipPerpSl).toBeUndefined();
+  });
+
+  it('[critical] the perp SL skipped needs an option stop: said beside the switch, and the save waits', async () => {
+    show(signalStrategy({}, { stopLossPct: 0 }));
+    tab('Entry & exit');
+    fireEvent.click(screen.getByRole('switch', { name: 'Skip perp SL' }));
+    expect(await within(screen.getByRole('region', { name: 'Perp SL and TGT, skipped' })).findByRole('alert'))
+      .toHaveTextContent('With the perp SL skipped, the option stop is the only stop: set one, or keep the perp SL.');
+    fireEvent.click(saveButton());
+    expect(saveStrategy).not.toHaveBeenCalled();
+  });
+
+  it('a strategy that buys keeps both: no switches', () => {
+    show(signalStrategy({ action: 'buy' }, { takeProfitPct: 0, stopLossPct: 0 }));
+    tab('Entry & exit');
+    expect(screen.queryByRole('switch', { name: 'Skip perp SL' })).toBeNull();
+  });
+
   it('the group it is in is a tag beside its name at the top; none, no tag (16 Oct 2026)', () => {
     const { unmount } = render(<SignalStrategyForm editing={signalStrategy()} groupName="80% Win" open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
     expect(screen.getByRole('dialog', { name: /^Edit / })).toBeInTheDocument();

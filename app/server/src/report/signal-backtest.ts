@@ -673,6 +673,8 @@ export function planOfStrategy(s: Strategy, span: { from: number; to: number }, 
     ...(x.stop.mode === 'pct' && c.signal?.slByVol?.on ? { stopPctByVol: { low: c.signal.slByVol.low, medium: c.signal.slByVol.medium, high: c.signal.slByVol.high } } : {}),
     // What it opened, closed at its exit time -- the first after the fill -- as the runner's `considerExit` does.
     closeAt: (sig) => exitMomentFor(c.exitTime, sig.filledAt),
+    // The perp's levels it skips (18 Oct 2026), as the runner sends them: a level skipped closes nothing.
+    ...(rule.skipPerpSl || rule.skipPerpTgt ? { skipPerp: { sl: rule.skipPerpSl === true, tgt: rule.skipPerpTgt === true } } : {}),
     maxOpen: rule.maxOpen > 0 ? rule.maxOpen : null,
     desk,
   };

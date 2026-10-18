@@ -585,8 +585,9 @@ export class StrategyRunner {
     const perpNow = this.perp();
     if (perpNow !== null) {
       const goal = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
-      const past = (dir === 1 ? perpNow <= plan.stop : perpNow >= plan.stop) ? `SL ${Math.round(plan.stop)}`
-        : (dir === 1 ? perpNow >= goal : perpNow <= goal) ? `TGT ${Math.round(goal)}` : null;
+      // Only a level the strategy closes on: one it skips does not end the trade, so it does not end the entry either.
+      const past = !rule.skipPerpSl && (dir === 1 ? perpNow <= plan.stop : perpNow >= plan.stop) ? `SL ${Math.round(plan.stop)}`
+        : !rule.skipPerpTgt && (dir === 1 ? perpNow >= goal : perpNow <= goal) ? `TGT ${Math.round(goal)}` : null;
       if (past) {
         await finish('skipped', fill
           ? `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round((now - fill.filledAt * 1_000) / 1_000)}s ago and is at ${Math.round(perpNow)} now, already at the signal's ${past} -- over before it could be entered`
@@ -715,16 +716,19 @@ export class StrategyRunner {
         lots: chosen.lots, ask: chosen.ask, spot: snap.spot, cancelAfterMs: SIGNAL_ENTRY_MS,
       }),
       // The signal's own levels, on the perp: the trade's real exits. The premium stop stays at Delta as the backstop.
-      underlying: { dir, stop: plan.stop, target, source: 'BTC perp', entry: fill?.fillPrice ?? this.perp() },
+      // A level the strategy skips (18 Oct 2026) goes as none: the engine and the fast watch then judge only the other.
+      underlying: { dir, stop: rule.skipPerpSl ? null : plan.stop, target: rule.skipPerpTgt ? null : target, source: 'BTC perp', entry: fill?.fillPrice ?? this.perp() },
       signal: { method: r.id, n: r.n, name: r.name, mode: r.mode, tf: r.tf, dir, triggerTime: r.triggerTime! },
     };
     const perpIn = args.underlying.entry;
+    // The perp's levels as the order carries them: one skipped is said so, not shown as if it were watched.
+    const perpLevels = `perp SL ${rule.skipPerpSl ? 'skipped' : Math.round(plan.stop)} · TGT ${rule.skipPerpTgt ? 'skipped' : Math.round(target)}`;
     const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
       + elseWords(chosen)
       + ruleWords(chosen)
       // A stop held inside the close-out is said beside the strike it was held for.
       + (args.limitPrice !== undefined ? stopHeldWords(args.limitPrice, args) : '')
-      + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
+      + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · ${perpLevels}${block}`;
 
     /*
      * A BUY-side strategy (5 Oct 2026). A buyer pays the offer: the order is a limit at the offer -- it crosses,
@@ -742,7 +746,7 @@ export class StrategyRunner {
       const ownTgt = levelOf(own.target, true), ownStop = levelOf(own.stop, false);
       const bought = `buy ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.ask ?? '—'}`
         + `${ownTgt !== null ? ` · option TGT ${ownTgt}` : ''}${ownStop !== null ? ` · option SL ${ownStop}` : ''}`
-        + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · perp SL ${Math.round(plan.stop)} · TGT ${Math.round(target)}${block}`;
+        + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · ${perpLevels}${block}`;
       if (!(Number(chosen.ask) > 0)) { await finish('refused', `refused: ${leg} ${chosen.strike} has no offer to buy at${block}`); return; }
       if (!s.config.liveOrders) { await finish('would-place', `live orders off: would ${bought}`); return; }
       const { target: tgtRule, stop: stopRule } = exitRules(s.config);

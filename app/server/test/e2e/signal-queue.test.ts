@@ -120,8 +120,9 @@ const logged = async (s: MethodRead): Promise<MethodRead> => {
 };
 
 const TFS: Tf[] = ['5m', '15m', '30m', '1h', '2h', '4h'];
-const config = (o: { maxOpen?: number; enterOn?: 'signal' | 'zone' } = {}) => ({
-  trigger: 'signal', signal: { mode: 'single', tf: '5m', tfs: TFS, methods: ['breakout'], target: 'tp1', maxOpen: o.maxOpen ?? 50, enterOn: o.enterOn ?? 'signal' },
+const config = (o: { maxOpen?: number; enterOn?: 'signal' | 'zone'; skipPerpSl?: boolean; skipPerpTgt?: boolean } = {}) => ({
+  trigger: 'signal', signal: { mode: 'single', tf: '5m', tfs: TFS, methods: ['breakout'], target: 'tp1', maxOpen: o.maxOpen ?? 50, enterOn: o.enterOn ?? 'signal',
+    ...(o.skipPerpSl ? { skipPerpSl: true } : {}), ...(o.skipPerpTgt ? { skipPerpTgt: true } : {}) },
   liveOrders: false,
   entryTime: '09:00', exitTime: '17:00', lots: 1, legs: 'both',
   strikeRule: 'premium', premium: { mode: 'atMost', usd: 20, fallbackUsd: null },
@@ -399,6 +400,32 @@ test('[critical] a signal entered at once is held to the same: the perp already 
       await runner.onSignal(await logged(signal('1h')));
       assert.equal((await last()).status, 'would-place', (await last()).detail);
     }
+  } finally {
+    perp = null;
+    await off(id);
+  }
+});
+
+test('[critical] a strategy that skips the perp SL (18 Oct 2026): the perp at the signal\'s SL does not stop the entry, and the order says it is skipped', async () => {
+  const id = await make('Skip SL', main, { enterOn: 'zone', skipPerpSl: true });
+  const last = async () => (await runsOf(id)).at(-1)!;
+  try {
+    perp = 84_590;                                             // a BUY signal, stop 84,600: through it
+    await runner.onSetupFilled(await logged(signal('4h')).then((s) => fill('4h', 30, { triggerAt: s.triggerTime! })));
+    assert.equal((await last()).status, 'would-place', (await last()).detail);
+    assert.match((await last()).detail, /perp SL skipped · TGT 85500/);
+    // its TGT is still used: the perp already at it is over before it could be entered
+    perp = 85_500;
+    await runner.onSetupFilled(fill('4h', 30));
+    assert.match((await last()).detail, /already at the signal's TGT 85500 -- over/);
+    // a save without an option stop is refused in words: the perp SL skipped needs one
+    const refused = await api('POST', '/api/strategies', { id, name: 'Skip SL', config: { ...config({ enterOn: 'zone', skipPerpSl: true }), stopLossPct: 0 }, accountId: main });
+    assert.equal(refused.status, 422, refused.text);
+    assert.match(refused.text, /option stop is the only stop/);
+    // saved with one, read back as saved
+    const read = (await api('GET', '/api/strategies')).body.strategies.find((x: any) => x.id === id);
+    assert.equal(read.config.signal.skipPerpSl, true);
+    assert.equal(read.config.signal.skipPerpTgt, undefined, 'off is the absence of it');
   } finally {
     perp = null;
     await off(id);
