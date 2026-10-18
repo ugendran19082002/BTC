@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-521 files listed, 262 test files counted below, images and lockfiles left out.
+522 files listed, 263 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 136 |
+| `app/server` | 137 |
 | `app/web` | 126 |
 
 ## `(root)`
@@ -244,7 +244,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [delta.ts](../../app/server/src/trading/exchange/delta.ts) | The real account. |
+| [delta.ts](../../app/server/src/trading/exchange/delta.ts) | Delta taking no new orders, market-wide (18 Oct 2026, 1:30-1:37 AM IST): "market_disrupted_cancel_only_mode" -- cancels go through, nothing new does. |
 | [paper.ts](../../app/server/src/trading/exchange/paper.ts) | An exchange you can lie to. |
 | [port.ts](../../app/server/src/trading/exchange/port.ts) | Everything the engine is allowed to do to an exchange. |
 
@@ -701,6 +701,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0017-methods-picked-daily.md](../decisions/0017-methods-picked-daily.md) | 0017 — A signal strategy's methods may be picked again every day by their record |
 | [0018-delta-by-volatility.md](../decisions/0018-delta-by-volatility.md) | 0018 — A signal strategy's delta may be set by how volatile it is at each signal |
 | [0019-sl-by-volatility.md](../decisions/0019-sl-by-volatility.md) | 0019 — A signal strategy's option SL may be set by how volatile it is at each signal |
+| [0020-venue-restricted-and-outage.md](../decisions/0020-venue-restricted-and-outage.md) | 0020 — When Delta takes no new orders, or does not answer, the desk holds still and says so once |
 | [README.md](../decisions/README.md) | Decisions |
 
 ## `docs/features/`

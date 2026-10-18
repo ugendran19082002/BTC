@@ -1,7 +1,8 @@
 import { json, post } from '@/api/client';
 import { pickQuery, volQuery, type VolTradesPick } from '@/api/signal-backtest';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
-import type { NoEntry } from '@/types/strategy';
+import type { NoEntry, StrikeBlock } from '@/types/strategy';
+import { backtestBlockProblems } from '@/lib/backtest-strike-blocks';
 import type { BacktestParams } from '@/types/signal-backtest';
 import type { TradePick, VolAsk, VolStudyResult } from '@/types/signal-backtest';
 import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
@@ -88,6 +89,8 @@ export type PortfolioOver = {
   minPremium?: { minPremium: number };
   /** The volatility filter and what it reads, as the single backtest's: over a saved backtest by a strategy too. */
   vol?: { vol: 'off' | 'low' | 'medium' | 'high'; volBy: 'atr' | 'iv' };
+  /** A strike rule by time of day over the run: the blocks after each member's own rule, held to the whole day; [] is one rule all day. */
+  strikeBlocks?: { blocks: StrikeBlock[] };
   /** The SL and TGT range, BTC points, the four together; 0 is off. */
   range?: { slMin: number; slMax: number; tgtMin: number; tgtMax: number };
   /** No-entry windows for every one of them (15 Oct 2026), held to the whole expiry day: each keeps its own hours. */
@@ -111,6 +114,8 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
   const ne = o.noEntry ? noEntryQuery({ window: 'all', noEntry: { ...o.noEntry, on: true } } as BacktestParams) : null;
   if (ne) q.o_noentry = ne;
   if (o.vol) { q.o_vol = o.vol.vol; q.o_volby = o.vol.volBy; }
+  // Only blocks right for the whole day; the editor says what is wrong with any other.
+  if (o.strikeBlocks && !backtestBlockProblems({ window: 'all', strikeBlocks: o.strikeBlocks.blocks }).length) q.o_sblocks = JSON.stringify(o.strikeBlocks.blocks);
   return q;
 }
 

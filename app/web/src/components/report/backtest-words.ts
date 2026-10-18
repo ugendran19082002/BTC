@@ -1,5 +1,6 @@
 import { time12 } from '@/lib/time';
 import type { BacktestParams, SavedQuery } from '@/types/signal-backtest';
+import { strikeBlocksWords } from '@/lib/backtest-strike-blocks';
 
 /**
  * A backtest's settings as the screen starts with them, and in words. Apart from the screen itself
@@ -38,6 +39,7 @@ export function settingsWords(q: SavedQuery, strategies: readonly { id: string; 
     !byStrategy && (range(p.slMin, p.slMax) || range(p.tgtMin, p.tgtMax))
       ? [range(p.slMin, p.slMax) && `SL ${range(p.slMin, p.slMax)}`, range(p.tgtMin, p.tgtMax) && `TGT ${range(p.tgtMin, p.tgtMax)}`].filter(Boolean).join(', ') + ' pts'
       : null,
+    !byStrategy ? strikeBlocksWords(p.strikeBlocks) : null,
     !byStrategy && p.noEntry?.on && p.noEntry.windows.length ? `no entry ${p.noEntry.windows.map((w) => `${time12(w.from)} – ${time12(w.to)}`).join(', ')}` : null,
     p.vol && p.vol !== 'off' ? `${p.vol} volatility${p.volBy === 'iv' ? ' by ATM IV' : ''}` : null,
     p.deskMax > 0 ? `at most ${p.deskMax} open · CE ${p.cePct}% · PE ${p.pePct}%` : 'no open limit',
@@ -67,6 +69,7 @@ export function overWords(p: Partial<BacktestParams>): string[] {
     out.push(sl || tgt ? `${[sl && `SL ${sl}`, tgt && `TGT ${tgt}`].filter(Boolean).join(', ')} pts` : 'no SL / TGT range');
   }
   if (p.noEntry?.on && p.noEntry.windows.length) out.push(`no entry ${p.noEntry.windows.map((w) => `${time12(w.from)} – ${time12(w.to)}`).join(', ')}`);
+  if (p.strikeBlocks !== undefined) out.push(strikeBlocksWords(p.strikeBlocks) ?? 'one strike rule all day');
   if (p.vol !== undefined) out.push(p.vol === 'off' ? 'every volatility' : `${p.vol} volatility only${p.volBy === 'iv' ? ' (ATM IV)' : ''}`);
   return out;
 }

@@ -591,6 +591,28 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery().params.vol).toBe('off'));
   });
 
+  it('[critical] a strike rule by time of day, as the strategy form\'s: the rule above is block 1, blocks after it sent with the backtest -- only while right for the hours', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const blocks = () => screen.getByRole('region', { name: 'strike rule over the window' });
+    expect(blocks().textContent).toMatch(/The strike rule above: delta ≤ 0\.10, from the start of the hours/);
+    expect(lastQuery().params.strikeBlocks).toBeUndefined();
+    fireEvent.click(within(blocks()).getByRole('checkbox', { name: 'Different strike rule by time of day' }));
+    // The desk's hours, 9:30 PM to 3:59 PM, cut every 4 hours: 5 blocks, the first the rule above.
+    await waitFor(() => expect(lastQuery().params.strikeBlocks?.length).toBe(4));
+    expect(lastQuery().params.strikeBlocks!.map((b: { at: string }) => b.at)).toEqual(['01:30', '05:30', '09:30', '13:30']);
+    expect(within(blocks()).getByText(/5 blocks from 9:30 PM to 3:59 PM/)).toBeInTheDocument();
+    // Block 2 by premium: sent as the block's own rule.
+    fireEvent.click(within(within(blocks()).getByRole('listitem', { name: 'block 2' })).getByRole('radio', { name: /By premium/ }));
+    await waitFor(() => expect(lastQuery().params.strikeBlocks![0]!.strikeRule).toBe('premium'));
+    // "Apply to all" from block 1 copies the rule above to every block.
+    fireEvent.click(within(blocks()).getByRole('button', { name: 'apply block 1 to all 5 blocks' }));
+    await waitFor(() => expect(lastQuery().params.strikeBlocks!.every((b: { strikeRule: string; delta?: { max: number } | null }) => b.strikeRule === 'delta' && b.delta?.max === 0.1)).toBe(true));
+    // One rule all day again: no blocks sent.
+    fireEvent.click(within(blocks()).getByRole('checkbox', { name: 'Same strike rule all the time' }));
+    await waitFor(() => expect(lastQuery().params.strikeBlocks).toBeUndefined());
+  });
+
   it('[critical] volatility by ATR 2h to begin with; ATM IV is one tap, sent with the backtest and said in its words -- and the SL study is asked for, never run on its own', async () => {
     show();
     await screen.findByText('Backtest result');
@@ -1087,10 +1109,10 @@ describe('SignalBacktest', () => {
     const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     const set = () => within(folio().getByRole('region', { name: 'Settings for the run' }));
     const sw = (name: string) => set().getByRole('switch', { name: `${name}, for the run` });
-    const NAMES = ['Strike', 'Option target', 'Option stop', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
+    const NAMES = ['Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
     // every one off to begin with, each saying whose settings run
     expect(set().getAllByRole('switch').map((x) => [x.getAttribute('aria-label'), x.getAttribute('aria-checked')])).toEqual(NAMES.map((n) => [`${n}, for the run`, 'false']));
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(8);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(9);
     expect(set().getByText('· all off')).toBeInTheDocument();
     expect(set().queryByRole('button', { name: 'Switch all off' })).toBeNull();
     // folded on a phone to begin with: one line of what the run is held to, and Change
@@ -1157,6 +1179,17 @@ describe('SignalBacktest', () => {
     fireEvent.click(set().getByRole('button', { name: 'Switch all off' }));
     await waitFor(() => expect(last()).toEqual({}));
 
+    // a strike rule by time of day over every one of them: the form's blocks, held to the whole day
+    fireEvent.click(sw('Strike by time of day'));
+    await waitFor(() => expect(last()).toEqual({ strikeBlocks: { blocks: [] } }));
+    expect(set().getByText('For the run: one strike rule all day')).toBeInTheDocument();
+    fireEvent.click(within(set().getByRole('region', { name: 'strike rule over the window' })).getByRole('checkbox', { name: 'Different strike rule by time of day' }));
+    await waitFor(() => expect(last().strikeBlocks?.blocks.length).toBeGreaterThan(0));
+    expect(set().getByText(/Each saved backtest's own strike rule/)).toBeInTheDocument();
+    expect(set().getByRole('button', { name: /apply block 1 to all/ })).toBeDisabled();
+    fireEvent.click(sw('Strike by time of day'));
+    await waitFor(() => expect(last()).toEqual({}));
+
     // the volatility filter over every one of them: the level and what it is read by, together
     fireEvent.click(sw('Volatility filter'));
     await waitFor(() => expect(last()).toEqual({ vol: { vol: 'off', volBy: 'atr' } }));
@@ -1167,7 +1200,7 @@ describe('SignalBacktest', () => {
     fireEvent.click(sw('Volatility filter'));
     await waitFor(() => expect(last()).toEqual({}));
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(8);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(9);
   });
 
   it('a run\'s settings as the route reads them: the single backtest\'s own names under o_, and nothing for a switch that is off', async () => {

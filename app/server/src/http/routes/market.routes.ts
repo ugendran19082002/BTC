@@ -6,8 +6,8 @@ import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades } from '../../report/backtest-run.js';
-import { cleanConfig, strategyStore } from './strategy.routes.js';
-import { GLOBAL_MAX_OPEN_KEY, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, validateConfig, type Strategy } from '../../strategy/types.js';
+import { cleanBlocks, cleanConfig, strategyStore } from './strategy.routes.js';
+import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
@@ -135,11 +135,29 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
     if (bad.length) return bad[0]!.replace("this strategy's", 'the hours\'').replace('Switch the strategy off instead.', 'Take the window off instead.');
     noEntry = { on: true, windows };
   }
+  /*
+   * A different strike rule by time of day: `?sblocks=` -- the blocks after the first, as JSON, each `{ at, strikeRule,
+   * strikeStep, premium, delta?, distance? }` as a strategy saves them (`cleanBlocks`), held to the strategy form's own
+   * rules (`strikeBlockProblems`) against these settings' hours. The rule above is block 1.
+   */
+  let strikeBlocks: StrikeBlock[] | undefined;
+  if (typeof q.sblocks === 'string' && q.sblocks.trim() !== '' && q.sblocks.trim() !== '[]') {
+    let raw: unknown;
+    try { raw = JSON.parse(q.sblocks); } catch { return 'The strike blocks are a list, as JSON.'; }
+    if (!Array.isArray(raw)) return 'The strike blocks are a list, as JSON.';
+    if (raw.length > MAX_STRIKE_BLOCKS) return `The strike rule can change at most ${MAX_STRIKE_BLOCKS} times in a window.`;
+    const blocks = cleanBlocks(raw);
+    const [entry, exit] = window === 'desk' ? ['21:30', '15:59'] : window === 'custom' ? [hoursFrom, hoursTo] : ['17:30', '17:25'];
+    const bad = strikeBlockProblems(blocks, entry, exit);
+    if (bad.length) return bad[0]!;
+    strikeBlocks = blocks;
+  }
   return {
     rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol, minPremium,
     // Only where it is not the default, so settings saved before it are the same settings as ever.
     ...(volBy === 'iv' ? { volBy } : {}),
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}), ...(noEntry ? { noEntry } : {}),
+    ...(strikeBlocks ? { strikeBlocks } : {}),
   };
 }
 
@@ -197,6 +215,7 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
     tsteps: Array.isArray(x.targetSteps) && x.targetSteps.length ? x.targetSteps.map((s) => `${s.at}:${Math.round(s.pct * 10_000) / 100}`).join(',') : undefined,
     // Kept off with its times, as the form keeps them; only an on switch is a rule.
     noentry: x.noEntry?.on && Array.isArray(x.noEntry.windows) ? x.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : undefined,
+    sblocks: Array.isArray(x.strikeBlocks) && x.strikeBlocks.length ? JSON.stringify(x.strikeBlocks) : undefined,
   });
 }
 

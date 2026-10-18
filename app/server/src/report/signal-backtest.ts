@@ -14,7 +14,7 @@ import { selectLegs, type Candidate } from '../strategy/select.js';
 import { istMinutes, istWeekday } from '../strategy/schedule.js';
 import {
   DEFAULT_CONFIG, SIGNAL_TFS, actionOf, exitRules, exitValueAt, sideCaps, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
-  type SignalTf, type Strategy, type StrategyConfig, volSourceOf,
+  type SignalTf, type Strategy, type StrategyConfig, type StrikeBlock, volSourceOf,
 } from '../strategy/types.js';
 
 /**
@@ -95,6 +95,13 @@ export type BacktestParams = {
    * inside one is skipped as `no-entry-window`; what is open keeps its exits. Off or absent: none.
    */
   noEntry?: { on: boolean; windows: { from: string; to: string }[] };
+  /**
+   * A different strike rule by time of day (owner, 18 Oct 2026: "the strategy form's strike blocks, in the backtest and
+   * the portfolio"): the rule above is block 1, from the start of the hours; from each block's IST time its own rule --
+   * by premium, by strike, by delta or by distance -- as a strategy's `strikeBlocks` are read (`strikePickAt`), held to
+   * the form's own rules against these hours. Absent or empty: one rule all day.
+   */
+  strikeBlocks?: StrikeBlock[];
 };
 
 /**
@@ -433,7 +440,7 @@ export function strategyOfParams(p: BacktestParams, tfs: readonly string[] | nul
     : p.window === 'custom' && p.hoursFrom && p.hoursTo ? { entryTime: p.hoursFrom, exitTime: p.hoursTo } : { entryTime: '17:30', exitTime: '17:25' };
   const config: StrategyConfig = {
     ...DEFAULT_CONFIG, trigger: 'signal', liveOrders: false, ...hours, weekdays: [0, 1, 2, 3, 4, 5, 6],
-    strikeRule: p.rule, strikeStep: 0, strikeBlocks: [], delta: { max: p.value }, premium: { mode: 'atMost', usd: p.value, fallbackUsd: null }, distance: null,
+    strikeRule: p.rule, strikeStep: 0, strikeBlocks: (p.strikeBlocks ?? []).map((b) => ({ ...b, premium: { ...b.premium } })), delta: { max: p.value }, premium: { mode: 'atMost', usd: p.value, fallbackUsd: null }, distance: null,
     lots: p.lots, legs: 'both', targetMode: 'pct', stopMode: 'pct', takeProfitPct: p.targetPct, stopLossPct: p.stopPct,
     // Read forward from the day's start, as the settings' own steps are; the strategy's from its entry time -- the same order on the clock.
     targetSteps: (p.targetSteps ?? []).map((x) => ({ at: x.at, value: x.pct })), minPremiumUsd: p.minPremium ?? MIN_PREMIUM, noEntry: p.noEntry?.on ? { on: true, windows: p.noEntry.windows.map((w) => ({ ...w })) } : { on: false, windows: [] },
@@ -834,7 +841,7 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}`;
+const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   const text = JSON.stringify(s.config);
@@ -1555,7 +1562,7 @@ function studyBookOf(b: StudyBook): { takes: (sig: BtSignal) => boolean; planFor
       // strategy's with its strike blocks set aside (one delta for the level, not the clock's).
       const deltaPick = (d: number): DayPlan['pick'] => (st
         ? planOfStrategy({ ...st, config: { ...st.config, strikeRule: 'delta', delta: { ...st.config.delta, max: d }, strikeBlocks: [], signal: { ...st.config.signal!, deltaByVol: null, slByVol: null } } } as Strategy, span, null).pick
-        : planOfStrategy(strategyOfParams({ ...b.params, rule: 'delta', value: d }, null, null), span).pick);
+        : planOfStrategy(strategyOfParams({ ...b.params, rule: 'delta', value: d, strikeBlocks: [] }, null, null), span).pick);
       return {
         ...base,
         ...(byVol.sl ? { stopPctByVol: byVol.sl } : {}),

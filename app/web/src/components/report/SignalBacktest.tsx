@@ -22,6 +22,8 @@ import { Entry, Ledger, Table, count, each, marginWorking, netClass, rate } from
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
+import { BacktestStrikeBlocks } from '@/components/report/BacktestStrikeBlocks';
+import { strikeBlocksWords } from '@/lib/backtest-strike-blocks';
 import { BacktestBreakdowns, ChargesNote, DayAverages, GRAIN, ResultNav, WinnersLosers, pricedWords, skippedParts } from '@/components/report/BacktestBreakdowns';
 import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, settingsWords } from '@/components/report/backtest-words';
@@ -397,7 +399,7 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
     delete next[key];
     onChange(next);
   };
-  const { strike, target, stop, lots, minPremium, range, noEntry, vol } = over;
+  const { strike, target, stop, lots, minPremium, range, noEntry, vol, strikeBlocks } = over;
   const values = strike?.rule === 'premium' ? PREMIUMS : DELTAS;
   const dynamic = (target?.targetSteps?.length ?? 0) > 0 || dynamicDraft;
   const switchedOn = Object.keys(over).length;
@@ -423,6 +425,15 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
         </>}
       </RunFilter>
 
+      {/* A strike rule by time of day over every one worked by settings (18 Oct 2026): the form's blocks, held to the whole day. */}
+      <RunFilter name="Strike by time of day" on={!!strikeBlocks} said={strikeBlocks ? said({ strikeBlocks: strikeBlocks.blocks }) : ''}
+        onToggle={() => flip('strikeBlocks', { blocks: seed.strikeBlocks ?? [] })}>
+        {strikeBlocks && (
+          <BacktestStrikeBlocks hours={{ entryTime: '17:30', exitTime: '17:25' }} rule={null} blocks={strikeBlocks.blocks}
+            firstWords={<>Each saved backtest&apos;s own strike rule -- or the run&apos;s <b className="font-semibold">Strike</b>, where it is switched on -- from the start of its hours.</>}
+            onChange={(n) => put({ strikeBlocks: { blocks: n.strikeBlocks } })} />
+        )}
+      </RunFilter>
       <RunFilter name="Option target" on={!!target} said={target ? said(target.targetSteps?.length ? target : { targetPct: target.targetPct })  : ''}
         onToggle={() => { setDynamicDraft(false); flip('target', { targetPct: seed.targetPct, ...(seed.targetSteps?.length ? { targetSteps: seed.targetSteps } : {}) }); }}>
         {target && <>
@@ -657,6 +668,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`,
       `TGT ${targetWords}`, params.stopPct > 0 ? `SL +${Math.round(params.stopPct * 100)}%` : 'no option SL',
       `${params.lots} lot${params.lots === 1 ? '' : 's'}`, floor > 0 ? `min $${floor}` : 'no premium floor',
+      ...(strikeBlocksWords(params.strikeBlocks) ? [strikeBlocksWords(params.strikeBlocks)!] : []),
     ].join(' · '),
     which: [
       ...(byStrategy ? [] : [pts(params.slMin, params.slMax) ? `SL ${pts(params.slMin, params.slMax)}` : null, pts(params.tgtMin, params.tgtMax) ? `TGT ${pts(params.tgtMin, params.tgtMax)}` : null]),
@@ -766,6 +778,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         <CustomValue key={params.rule} value={params.value} presets={values} spec={params.rule === 'delta' ? CUSTOM.delta : CUSTOM.premium}
           name={params.rule === 'delta' ? 'Delta limit' : 'Premium limit'} onChange={(value) => set({ value })} />
       </ChipRow>
+      {/* A different strike rule by time of day (18 Oct 2026): the strategy form's own blocks, held to these hours; the rule above is block 1. */}
+      <BacktestStrikeBlocks hours={backtestHours(params)} rule={{ rule: params.rule, value: params.value }} blocks={params.strikeBlocks}
+        firstWords={<>The strike rule above: <b className="font-semibold">{params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`}</b>, from the start of the hours.</>}
+        onChange={(n) => set({ strikeBlocks: n.strikeBlocks.length ? n.strikeBlocks : undefined, ...(n.rule ? { rule: n.rule.rule, value: n.rule.value } : {}) })} />
       {/* First which kind of target, then its own settings (owner, 13 Oct 2026). */}
       <Segmented dense label="The option's own target" value={dynamic ? 'dynamic' : 'fixed'}
         options={[{ key: 'fixed', label: 'Fixed target', spoken: 'One target all day' }, { key: 'dynamic', label: 'Dynamic · by time', spoken: 'A target that moves by the clock' }]}

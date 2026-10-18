@@ -2,6 +2,7 @@ import { json, post } from '@/api/client';
 import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse, VolAsk, VolStudyResult } from '@/types/signal-backtest';
 import type { AutoMethodsRun, StrategyConfig } from '@/types/strategy';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
+import { strikeBlocksQuery } from '@/lib/backtest-strike-blocks';
 
 /** A backtest's question as the server reads it: the days, the settings, the filters, the strategy. Shared with its live check, so both are of the same thing. */
 function searchOf(q: BacktestQuery): URLSearchParams {
@@ -19,6 +20,9 @@ function searchOf(q: BacktestQuery): URLSearchParams {
   // Only windows that are right for the hours: the editor says what is wrong with any other.
   const noEntry = noEntryQuery(q.params);
   if (noEntry) p.set('noentry', noEntry);
+  // Only blocks right for the hours, as the windows: the editor says what is wrong with any other.
+  const blocks = strikeBlocksQuery(q.params);
+  if (blocks) p.set('sblocks', blocks);
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));
   if (q.strategy) p.set('strategy', q.strategy);

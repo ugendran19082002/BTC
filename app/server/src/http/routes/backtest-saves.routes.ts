@@ -78,18 +78,19 @@ async function portfolioQuery(q: Record<string, unknown>) {
      * fixed or by the clock), `o_sl` (its stop), `o_lots`, `o_minprem`, and `o_slmin` / `o_slmax` / `o_tgtmin` /
      * `o_tgtmax` (the SL and TGT range, the four together), `o_noentry` (no-entry windows, 15 Oct 2026), `o_vol` /
      * `o_volby` (the volatility filter, as the single backtest's, 17 Oct 2026 -- asked of the market, so over a member
-     * by a strategy too). One that is absent is off: each member's own. They are
+     * by a strategy too), `o_sblocks` (a strike rule by time of day, 18 Oct 2026: the blocks after each member's own
+     * rule -- or the run's strike -- held to the whole day; a member by a strategy keeps its own). One that is absent is off: each member's own. They are
      * read and held to their limits by the single backtest's own parser, so a value means here what it means there.
      */
-    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax', 'noentry', 'vol', 'volby'] as const;
+    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax', 'noentry', 'vol', 'volby', 'sblocks'] as const;
     const asked: Record<string, unknown> = {};
     for (const k of O_KEYS) if (q[`o_${k}`] !== undefined && q[`o_${k}`] !== '') asked[k] = q[`o_${k}`];
     const has = (k: (typeof O_KEYS)[number]) => k in asked;
     if (has('value') && !has('rule')) return { code: 400, error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' };
     if (has('rule') && !has('value')) return { code: 400, error: 'A strike for the run is its rule and its limit: o_rule=delta|premium with o_value.' };
     if (has('tsteps') && !has('tp')) return { code: 400, error: 'A target by the clock for the run needs the target it starts from: o_tp.' };
-    // The no-entry windows for the run are held to the whole day: each member keeps its own hours, or the run's.
-    const read = backtestParamsOf(has('noentry') ? { ...asked, window: 'all' } : asked);
+    // The no-entry windows and strike blocks for the run are held to the whole day: each member keeps its own hours, or the run's.
+    const read = backtestParamsOf(has('noentry') || has('sblocks') ? { ...asked, window: 'all' } : asked);
     if (typeof read === 'string') return { code: 400, error: `For the run: ${read}` };
     const range = has('slmin') || has('slmax') || has('tgtmin') || has('tgtmax');
     const settings: Partial<BacktestParams> = {
@@ -101,6 +102,7 @@ async function portfolioQuery(q: Record<string, unknown>) {
       ...(has('minprem') ? { minPremium: read.minPremium } : {}),
       ...(range ? { slMin: read.slMin, slMax: read.slMax, tgtMin: read.tgtMin, tgtMax: read.tgtMax } : {}),
       ...(has('noentry') ? { noEntry: read.noEntry } : {}),
+      ...(has('sblocks') ? { strikeBlocks: read.strikeBlocks ?? [] } : {}),
     };
     const market: Partial<BacktestParams> = {
       ...(has('vol') ? { vol: read.vol ?? 'off' } : {}),

@@ -143,7 +143,7 @@ function cleanNoEntry(raw: unknown): { noEntry?: NoEntry } {
  * `cleanSteps` gives: a block out of order is said, not quietly repaired. A
  * rule it cannot read is left as sent so validation can name it.
  */
-function cleanBlocks(raw: unknown): StrikeBlock[] {
+export function cleanBlocks(raw: unknown): StrikeBlock[] {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) return raw as StrikeBlock[];
   return raw.map((b) => {

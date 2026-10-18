@@ -1034,6 +1034,51 @@ test('[critical] a run together is broken down as one backtest is (17 Oct 2026):
   }
 });
 
+test('[critical] a strike rule by time of day (18 Oct 2026): the settings\' rule is block 1, each block its own rule from its time -- held to the form\'s rules, saved with a backtest, put over a run', async () => {
+  const base = `from=${CLIMB}&to=${CLIMB}&window=all`;
+  const plain = (await get(`/api/signal-backtest?${base}`)).body;
+  // From 8:00 PM IST, by delta at most 0.05: the board's strikes are 0.09 out, so none is sold from then.
+  const blocks = [{ at: '20:00', strikeRule: 'delta', strikeStep: 0, premium: { mode: 'atMost', usd: 50 }, delta: { max: 0.05 } }];
+  const q = `${base}&sblocks=${encodeURIComponent(JSON.stringify(blocks))}`;
+  const run = await get(`/api/signal-backtest?${q}`);
+  assert.equal(run.status, 200, JSON.stringify(run.body).slice(0, 300));
+  const climbFrom = sessionOf(CLIMB).from, eight = climbFrom + 150 * 60_000;
+  const list = (await get(`/api/signal-backtest/trades?${base}&day=${CLIMB}`)).body.trades;
+  const after = list.filter((t: any) => t.at >= eight).length;
+  assert.ok(after > 0 && after < plain.total.n, 'some signals before 8 PM, some after');
+  assert.deepEqual([run.body.total.n, run.body.skipped['no-strike'] - plain.skipped['no-strike']], [plain.total.n - after, after]);
+  assert.equal(run.body.params.strikeBlocks[0].delta.max, 0.05);
+  // The trade list is the run's own.
+  assert.equal((await get(`/api/signal-backtest/trades?${q}&day=${CLIMB}`)).body.total, plain.total.n - after);
+  // A block by premium from 8 PM sells again: every signal traded.
+  const premium = [{ ...blocks[0], strikeRule: 'premium', delta: null, premium: { mode: 'atMost', usd: 500 } }];
+  assert.equal((await get(`/api/signal-backtest?${base}&sblocks=${encodeURIComponent(JSON.stringify(premium))}`)).body.total.n, plain.total.n);
+  // The form's own rules, against these hours.
+  const desk = `from=${CLIMB}&to=${CLIMB}&window=desk`;
+  for (const [qq, why] of [
+    [`${desk}&sblocks=${encodeURIComponent(JSON.stringify(blocks))}`, /must start after entry \(9:30 PM\) and before exit/],
+    [`${base}&sblocks=nope`, /a list, as JSON/],
+    [`${base}&sblocks=${encodeURIComponent(JSON.stringify([{ ...blocks[0], delta: { max: 0.9 } }]))}`, /Block 2: /],
+  ] as const) assert.match((await get(`/api/signal-backtest?${qq}`)).body.error, why, qq);
+  // Saved with a backtest, and put over a run.
+  const saved = await post('/api/backtest-saves', { name: 'blocks', query: { params: { ...run.body.params }, tfs: [], methods: [], strategy: null } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.deepEqual(saved.body.save.query.params.strikeBlocks.map((b: any) => [b.at, b.strikeRule]), [['20:00', 'delta']]);
+  const free = await post('/api/backtest-saves', { name: 'no blocks', query: { params: { ...plain.params }, tfs: [], methods: [], strategy: null } });
+  try {
+    const own = await get(`/api/backtest-portfolio?ids=${saved.body.save.id}&from=${CLIMB}&to=${CLIMB}&limit=own`);
+    assert.equal(own.body.total.n, plain.total.n - after, 'its saved blocks');
+    const over = await get(`/api/backtest-portfolio?ids=${free.body.save.id}&from=${CLIMB}&to=${CLIMB}&limit=own&o_sblocks=${encodeURIComponent(JSON.stringify(blocks))}`);
+    assert.equal(over.status, 200, JSON.stringify(over.body).slice(0, 300));
+    assert.equal(over.body.total.n, plain.total.n - after, 'the run\'s blocks over a member by settings');
+    assert.equal(over.body.over.settings.strikeBlocks.length, 1);
+    const none = await get(`/api/backtest-portfolio?ids=${saved.body.save.id}&from=${CLIMB}&to=${CLIMB}&limit=own&o_sblocks=%5B%5D`);
+    assert.equal(none.body.total.n, plain.total.n, '"one rule all day" over the run takes a member\'s own blocks away');
+  } finally {
+    for (const x of [saved, free]) await app.inject({ method: 'DELETE', url: `/api/backtest-saves/${x.body.save.id}`, headers: cookie });
+  }
+});
+
 test('[critical] volatility by ATM IV, and the option stop by volatility against the fixed one, on the same trades (17 Oct 2026)', async () => {
   const climbCode = `${CLIMB.slice(8, 10)}${CLIMB.slice(5, 7)}${CLIMB.slice(2, 4)}`;
   const base = `from=${CLIMB}&to=${CLIMB}&window=all`;

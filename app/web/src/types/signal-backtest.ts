@@ -1,4 +1,4 @@
-import type { NoEntry } from '@/types/strategy';
+import type { NoEntry, StrikeBlock } from '@/types/strategy';
 /** The signal history traded as options, as `/api/signal-backtest` gives it (server: `report/signal-backtest.ts`). */
 
 export type VolLevel = 'low' | 'medium' | 'high';
@@ -23,6 +23,8 @@ export type BacktestParams = {
   minPremium?: number;
   /** No-entry windows, the strategy form's own shape (15 Oct 2026): off, or absent, is none. */
   noEntry?: NoEntry;
+  /** A different strike rule by time of day: the rule above is block 1, these the blocks after it, as a strategy's. Absent: one rule all day. */
+  strikeBlocks?: StrikeBlock[];
 };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */

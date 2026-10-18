@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { CopyCheck, Plus, Undo2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -44,7 +44,15 @@ import { cn } from '@/lib/utils';
  * A block may also pick by delta or by distance from BTC (8 Oct 2026): one number each, with what a distance comes
  * to over that block's own hours said under it. `spot`, where the form has it, says the distance in points too.
  */
-export function StrikeBlocksEditor({ c, set, err, spot }: { c: StrategyConfig; set: SetField; err: ErrOf; spot?: number | null }) {
+export function StrikeBlocksEditor({ c, set, err, spot, first }: {
+  c: StrategyConfig; set: SetField; err: ErrOf; spot?: number | null;
+  /**
+   * Block 1 kept by its owner, not edited here (18 Oct 2026, the backtest and a run together): what it is, in words,
+   * where its rule is set; and which rules it can hold -- "Apply to all blocks" from another block is offered only
+   * for those, and block 1's own only where `copyable`. Absent: block 1 is the strategy's own rule, edited here.
+   */
+  first?: { words: ReactNode; holds: (rule: Omit<StrikeBlock, 'at'>) => boolean; copyable: boolean };
+}) {
   const blocks = c.strikeBlocks ?? [];
   const on = blocks.length > 0;
   // Starts at the length the saved blocks were cut at, so a strategy split every 3 hours reopens saying 3.
@@ -114,7 +122,8 @@ export function StrikeBlocksEditor({ c, set, err, spot }: { c: StrategyConfig; s
     putRules(next);
   };
   const undoApply = () => { if (applied) { putRules(applied.before); setApplied(null); } };
-  const canApply = (from: number) => applyToAllBlocks(c, from) !== null;
+  const canApply = (from: number) => applyToAllBlocks(c, from) !== null
+    && (!first || (from === 0 ? first.copyable : first.holds(blocks[from - 1]!)));
 
   // What the button did, said once in the block it was clicked on -- where the eye already is -- with the way back.
   const appliedNote = applied && (
@@ -147,7 +156,7 @@ export function StrikeBlocksEditor({ c, set, err, spot }: { c: StrategyConfig; s
         {!on ? (
           <div role="group" aria-label="same strike rule all the time" className="pb-1">
             <p className="m-0 text-[11.5px] leading-snug text-muted-foreground">One rule for every signal, from the start of the window to its end.</p>
-            <StrikeFields c={c} set={set} err={err} allowOiWall={false} minPremium={false} spot={spot} />
+            {first ? <p className="m-0 mt-1 text-[12.5px] text-foreground">{first.words}</p> : <StrikeFields c={c} set={set} err={err} allowOiWall={false} minPremium={false} spot={spot} />}
           </div>
         ) : (
           <p className="m-0 pb-1 text-[11.5px] leading-snug text-[var(--dim)]">Off — the rule changes through the window, below.</p>
@@ -199,7 +208,9 @@ export function StrikeBlocksEditor({ c, set, err, spot }: { c: StrategyConfig; s
                   <RangeWords range={ranges[0] ?? null} />
                   <ApplyAll n={1} of={blocks.length + 1} enabled={canApply(0)} onClick={() => applyAll(0)} />
                 </div>
-                <RuleFields n={1} rule={ownPick(c)} onChange={patchFirst} start={undefined} range={ranges[0] ?? null} spot={spot} />
+                {first
+                  ? <p className="m-0 mt-1.5 text-[12.5px] text-foreground">{first.words}</p>
+                  : <RuleFields n={1} rule={ownPick(c)} onChange={patchFirst} start={undefined} range={ranges[0] ?? null} spot={spot} />}
                 <FieldError text={firstBad} />
                 {applied?.from === 0 && appliedNote}
               </li>
