@@ -41,3 +41,21 @@ describe('Test this rule', () => {
     expect(screen.getByRole('button', { name: 'Test this rule' })).toBeDisabled();
   });
 });
+
+describe('Test this rule, when the record is short', () => {
+  it('[critical] a holdout that does not fit is explained, the ones over it are not offered, and the one that fits is a tap', async () => {
+    const run = vi.fn(async ({ holdout }: { holdout: number }) => {
+      if (holdout > 2) throw Object.assign(new Error("Only 3 finished days have the rule's whole 14-day look-back inside the record (it starts 2026-10-01), so at most 2 can be held out."), { body: { testDays: 3, holdoutMax: 2 } });
+      return RESULT;
+    });
+    render(<WalkForwardTest run={run} nameOf={(id) => id} />);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Days held out' })).getByRole('button', { name: '7d' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test this rule' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only 3 finished days have the rule\'s whole 14-day look-back');
+    // 2 fits: the ones over it are not offered
+    expect(within(screen.getByRole('group', { name: 'Days held out' })).getAllByRole('button').map((b) => b.textContent)).toEqual(['none', '1d', '2d']);
+    fireEvent.click(screen.getByRole('button', { name: 'Test with 2d held out' }));
+    expect(await screen.findByRole('status', { name: 'Walk-forward result' })).toBeInTheDocument();
+    expect(run).toHaveBeenLastCalledWith({ holdout: 2 });
+  });
+});

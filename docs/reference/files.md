@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-529 files listed, 269 test files counted below, images and lockfiles left out.
+530 files listed, 270 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 138 |
-| `app/web` | 131 |
+| `app/web` | 132 |
 
 ## `(root)`
 
@@ -453,6 +453,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [BacktestBreakdowns.tsx](../../app/web/src/components/report/BacktestBreakdowns.tsx) | A result broken down, the same for one backtest and for saved backtests run together (owner, 17 Oct 2026: "the backtest's output screen and the portfolio's do not match -- best practice, user frien... |
 | [BacktestCurve.tsx](../../app/web/src/components/report/BacktestCurve.tsx) | The backtest's running total, expiry day by expiry day (owner, 14 Oct 2026: "the backtest screen, user friendly"): whether the settings make money steadily or on one lucky day, and the worst stretc... |
+| [BacktestPerpTrail.tsx](../../app/web/src/components/report/BacktestPerpTrail.tsx) | The perp's own SL and target trailed by volatility, in the backtest and a run together (owner, 18 Oct 2026: "trailing perp SL ATR multiplier and trailing perp TGT ATR multiplier -- on the 1m candle... |
 | [BacktestStrikeBlocks.tsx](../../app/web/src/components/report/BacktestStrikeBlocks.tsx) | The strategy form's "Different strike rule by time of day", for the backtest and a run together (18 Oct 2026): the form's own editor, over the hours given, with block 1 the rule set elsewhere -- th... |
 | [BacktestTsl.tsx](../../app/web/src/components/report/BacktestTsl.tsx) | A trailing SL on the option's own stop, in the backtest and a run together (owner, 18 Oct 2026: "TSL settings in the backtest -- points and per cent; as the price moves from the entry, the SL moves... |
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |

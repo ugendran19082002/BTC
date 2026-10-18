@@ -22,7 +22,7 @@ import { PerpVsOptions } from '@/components/report/PerpVsOptions';
 export type Breakdown = Pick<SignalBacktestResponse, 'pairs' | 'byTf' | 'byMethod' | 'byPattern' | 'byFamily' | 'byVol'>;
 
 export const EXITS: { key: BtExit; label: string }[] = [
-  { key: 'perp-tgt', label: 'Perp TGT' }, { key: 'perp-sl', label: 'Perp SL' }, { key: 'option-tgt', label: 'Option TGT' },
+  { key: 'perp-tgt', label: 'Perp TGT' }, { key: 'perp-sl', label: 'Perp SL' }, { key: 'perp-tsl', label: 'Perp TSL' }, { key: 'option-tgt', label: 'Option TGT' },
   { key: 'option-sl', label: 'Option SL' }, { key: 'option-tsl', label: 'Option TSL' }, { key: 'window-end', label: 'Window end' },
 ];
 

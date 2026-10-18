@@ -4,7 +4,7 @@ import type { NoEntry, StrikeBlock } from '@/types/strategy';
 export type VolLevel = 'low' | 'medium' | 'high';
 export type VolBy = 'atr' | 'iv';
 /** `option-tsl`: the option's stop, after a trailing SL had moved it. */
-export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'window-end';
+export type BtExit = 'perp-tgt' | 'perp-sl' | 'perp-tsl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'window-end';
 /** A trailing SL's step: premium points, or a per cent of the price sold. */
 export type TslUnit = 'pts' | 'pct';
 /** Every `move` the premium falls from the price sold, the option's stop comes down `by`; never back up (18 Oct 2026). */
@@ -32,6 +32,11 @@ export type BacktestParams = {
   strikeBlocks?: StrikeBlock[];
   /** A trailing SL on the option's stop; absent, the stop stays where it was set. */
   tsl?: Tsl;
+  /**
+   * The perp's SL and target trailed by the 1m ATR(14) after each closed minute (18 Oct 2026): the SL this many ATRs
+   * behind the close, only ever tightened; the target this many beyond it, only ever further. 0 or absent: off.
+   */
+  trailSlAtr?: number; trailTgtAtr?: number;
 };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */
@@ -220,6 +225,8 @@ export type BtTradeRow = {
   optTgt: number | null; optStop: number | null;
   /** Where a trailing SL had brought the stop by the exit; null (or absent from an older server) where it never moved. */
   optStopEnd?: number | null;
+  /** Where the perp's ATR trail had brought its SL and target by the exit; null (or absent) where they never moved. */
+  perpStopEnd?: number | null; perpTgtEnd?: number | null;
   perpPts: number; netUsd: number; chargesUsd: number;
   /** In a portfolio: whose trade it is. */
   member?: string;

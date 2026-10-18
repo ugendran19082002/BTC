@@ -98,6 +98,8 @@ export type PortfolioOver = {
   noEntry?: NoEntry;
   /** A trailing SL on every member's option stop (18 Oct 2026); null takes each member's own away for the run. */
   tsl?: { tsl: Tsl | null };
+  /** The perp's SL and target trailed by the 1m ATR over every member, the two together; 0 is off for the run. */
+  perpTrail?: { slAtr: number; tgtAtr: number };
 };
 
 /** The run's settings as the route reads them: the single backtest's own names, each under `o_`. */
@@ -124,6 +126,7 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
     if (t === null) q.o_tsl = 'off';
     else { const s = tslQuery({ tsl: t, stopPct: o.stop?.stopPct ?? 3 }); if (s) q.o_tsl = s; }
   }
+  if (o.perpTrail) { q.o_ptsl = String(o.perpTrail.slAtr); q.o_pttgt = String(o.perpTrail.tgtAtr); }
   if (o.strikeBlocks && !backtestBlockProblems({ window: 'all', strikeBlocks: o.strikeBlocks.blocks }).length) q.o_sblocks = JSON.stringify(o.strikeBlocks.blocks);
   return q;
 }

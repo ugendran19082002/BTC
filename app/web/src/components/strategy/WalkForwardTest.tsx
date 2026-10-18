@@ -11,7 +11,7 @@ import type { WalkForward, WalkLine } from '@/types/strategy';
  * chosen while looking at the rest is judged on days that took no part in choosing it. Beside it, every method and
  * the list as it stands, on the same days -- what the rule has to beat. Read-only: nothing is saved.
  */
-const HOLDOUTS = [0, 3, 5, 7] as const;
+const HOLDOUTS = [0, 1, 2, 3, 5, 7] as const;
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 const winPct = (l: WalkLine) => (l.trades ? `${Math.round((100 * l.wins) / l.trades)}%` : '—');
 const tone = (n: number) => (n > 0 ? 'text-[var(--up)]' : n < 0 ? 'text-[var(--down)]' : 'text-muted-foreground');
@@ -57,27 +57,43 @@ export function WalkForwardTest({ run, disabled, nameOf }: {
   const [holdout, setHoldout] = useState<number>(3);
   const [state, setState] = useState<{ busy: boolean; result: WalkForward | null; error: string | null }>({ busy: false, result: null, error: null });
   const [open, setOpen] = useState(false);
-  const go = async () => {
+  // The most that can be held out, once the server has said (the record's days less the rule's look-back): the
+  // holdouts over it are not offered, and the one that fits is a tap.
+  const [fits, setFits] = useState<number | null>(null);
+  const go = async (h = holdout) => {
     setState({ busy: true, result: null, error: null });
-    try { setState({ busy: false, result: await run({ holdout }), error: null }); } catch (e) { setState({ busy: false, result: null, error: e instanceof Error ? e.message : String(e) }); }
+    try {
+      setState({ busy: false, result: await run({ holdout: h }), error: null });
+    } catch (e) {
+      const max = (e as { body?: { holdoutMax?: unknown } }).body?.holdoutMax;
+      if (typeof max === 'number') setFits(max);
+      setState({ busy: false, result: null, error: e instanceof Error ? e.message : String(e) });
+    }
   };
+  const best = fits === null ? null : (HOLDOUTS.filter((n) => n <= fits).at(-1) ?? 0);
   const r = state.result;
   return (
     <section aria-label="Test this rule" className="mt-2 grid min-w-0 gap-1.5 rounded-md border border-dashed border-border p-2">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={go} disabled={state.busy || disabled}
+        <button type="button" onClick={() => go()} disabled={state.busy || disabled}
           className="m-0 h-9 appearance-none rounded-md border border-solid border-border bg-background px-3 font-[inherit] text-[12.5px] text-foreground disabled:opacity-50">
           {state.busy ? 'Testing…' : 'Test this rule'}
         </button>
         <span className="text-[11.5px] text-muted-foreground">Hold out the last</span>
         <div role="group" aria-label="Days held out" className="flex flex-wrap gap-1">
-          {HOLDOUTS.map((n) => <Chip key={n} on={holdout === n} onClick={() => setHoldout(n)}>{n === 0 ? 'none' : `${n}d`}</Chip>)}
+          {HOLDOUTS.filter((n) => fits === null || n <= fits).map((n) => <Chip key={n} on={holdout === n} onClick={() => setHoldout(n)}>{n === 0 ? 'none' : `${n}d`}</Chip>)}
         </div>
       </div>
       <p className="m-0 text-[11px] leading-snug text-[var(--dim)]">
         Each finished day traded with what this rule picked from the days before it -- never the day itself. The held-out days are scored apart: judge the rule on them. Each method on all its signals; &quot;at most open&quot; is not counted.
       </p>
       {state.error && <p role="alert" className="m-0 text-[11.5px] text-[var(--down)]">{state.error}</p>}
+      {state.error && best !== null && best !== holdout && (
+        <button type="button" onClick={() => { setHoldout(best); void go(best); }}
+          className="m-0 justify-self-start appearance-none rounded-md border-0 bg-[var(--chosen)] px-3 py-1.5 font-[inherit] text-[12px] text-[var(--chosen-ink)]">
+          {best === 0 ? 'Test with none held out' : `Test with ${best}d held out`}
+        </button>
+      )}
       {r && (
         <div role="status" aria-label="Walk-forward result" className="grid min-w-0 gap-2 rounded-md bg-muted p-2">
           <p className="m-0 text-[11.5px] text-muted-foreground">

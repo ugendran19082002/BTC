@@ -43,6 +43,7 @@ function shapeOf(q: SavedQuery): string {
     noEntry: p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`) : null,
     blocks: p.strikeBlocks?.length ? p.strikeBlocks : null,
     tsl: p.tsl ?? null,
+    trail: [p.trailSlAtr ?? 0, p.trailTgtAtr ?? 0],
     tfs: [...q.tfs].sort(), methods: [...q.methods].sort(), strategy: q.strategy,
   });
 }

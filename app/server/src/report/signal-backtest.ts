@@ -109,7 +109,45 @@ export type BacktestParams = {
    * option stop to move. Absent: the stop stays where it was set.
    */
   tsl?: Tsl;
+  /**
+   * The perp's own levels trailed by volatility (owner, 18 Oct 2026: "trailing perp SL ATR multiplier and trailing perp
+   * TGT ATR multiplier -- on the 1m candle close and ATR(14); the SL never loosened, a hit not waiting for the close"):
+   * after each closed 1m candle, the SL is brought to `trailSlAtr` ATRs behind its close if that is tighter, and the
+   * target to `trailTgtAtr` ATRs beyond it if that is further. A level touched inside a minute is hit then, at the
+   * level in force. 0 or absent: that level stays the signal's own.
+   */
+  trailSlAtr?: number; trailTgtAtr?: number;
 };
+/** The most a perp trail may be, in ATRs of the 1m candles. */
+export const TRAIL_ATR_MAX = 20;
+/** The ATR the perp trails read: Wilder's, 14 one-minute candles. */
+export const TRAIL_ATR_BARS = 14;
+/**
+ * Wilder's ATR of minute bars, each bar's from that bar and the ones before it (NaN until there are enough). The
+ * minutes are the day's own, as the desk would have had them at each close.
+ */
+export function minuteAtr(bars: readonly MinuteBar[], n = TRAIL_ATR_BARS): Float64Array {
+  const out = new Float64Array(bars.length).fill(Number.NaN);
+  let a = 0;
+  for (let i = 1; i < bars.length; i++) {
+    const b = bars[i]!, p = bars[i - 1]!;
+    const tr = Math.max(b.high - b.low, Math.abs(b.high - p.close), Math.abs(b.low - p.close));
+    if (i <= n) { a += tr; if (i === n) { a /= n; out[i] = a; } } else { a = (a * (n - 1) + tr) / n; out[i] = a; }
+  }
+  return out;
+}
+/**
+ * One closed minute of the perp trails: the levels after it, each moved only its own way -- the SL toward the price,
+ * never back; the target away from it, never nearer. Pure: the simulation and its tests ask the same question.
+ */
+export function trailAfter(lv: { stop: number; target: number }, o: { dir: 1 | -1; close: number; atr: number; slAtr: number; tgtAtr: number }): { stop: number; target: number } {
+  if (!(o.atr > 0)) return lv;
+  const stop = o.slAtr > 0 ? o.close - o.dir * o.slAtr * o.atr : null, target = o.tgtAtr > 0 ? o.close + o.dir * o.tgtAtr * o.atr : null;
+  return {
+    stop: stop !== null && (stop - lv.stop) * o.dir > 0 ? stop : lv.stop,
+    target: target !== null && (target - lv.target) * o.dir > 0 ? target : lv.target,
+  };
+}
 export type TslUnit = 'pts' | 'pct';
 export const TSL_UNITS: readonly TslUnit[] = ['pts', 'pct'];
 export type Tsl = { move: number; moveUnit: TslUnit; by: number; byUnit: TslUnit };
@@ -257,9 +295,9 @@ const MIN = 60_000;
 /** The board reading a fill is priced on is at most this far from it. */
 const BOARD_NEAR_MS = 5 * MIN;
 
-/** `option-tsl`: the option's stop, after a trailing stop had moved it. */
-export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'window-end';
-export const BT_EXITS: readonly BtExit[] = ['perp-tgt', 'perp-sl', 'option-tgt', 'option-sl', 'option-tsl', 'window-end'];
+/** `option-tsl`: the option's stop, after a trailing stop had moved it; `perp-tsl` the perp's, after its ATR trail had. */
+export type BtExit = 'perp-tgt' | 'perp-sl' | 'perp-tsl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'window-end';
+export const BT_EXITS: readonly BtExit[] = ['perp-tgt', 'perp-sl', 'perp-tsl', 'option-tgt', 'option-sl', 'option-tsl', 'window-end'];
 export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
 export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'volatility', 'at-limit', 'desk-limit', 'side-limit', 'no-board', 'no-strike', 'no-exit-price'];
 const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
@@ -352,6 +390,8 @@ export type BtTrade = {
   optTgt?: number | null; optStop?: number | null;
   /** Where a trailing stop had brought the option's stop by the exit; absent where it never moved. */
   optStopEnd?: number;
+  /** Where the perp's ATR trail had brought its SL and target by the exit; absent where they never moved. */
+  perpStopEnd?: number; perpTgtEnd?: number;
   /** The perp level that ends it at its target, as the rules read the signal (TGT1, 2 or 3). */
   perpTgt?: number;
 };
@@ -399,6 +439,8 @@ export type DayPlan = {
   stopPctByVol?: Record<VolLevel, number> | null;
   /** The option's stop trailed as the premium falls (`tslTrail`); absent, it stays where it was set. */
   tsl?: Tsl | null;
+  /** The perp's SL and target trailed by the 1m ATR (`trailAfter`); absent, the signal's own all trade. */
+  perpTrail?: { slAtr: number; tgtAtr: number } | null;
   /**
    * The strike by the same level (the volatility study, 17 Oct 2026: "delta by volatility -- high 0.08, low 0.12"):
    * each level's own pick, in place of `pick` for that trade. A level that cannot be said keeps `pick`.
@@ -447,6 +489,7 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
     targetOf: (sig) => sig.target,
     targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null, desk: deskCapsOf(p),
     ...(p.tsl ? { tsl: p.tsl } : {}),
+    ...((p.trailSlAtr ?? 0) > 0 || (p.trailTgtAtr ?? 0) > 0 ? { perpTrail: { slAtr: p.trailSlAtr ?? 0, tgtAtr: p.trailTgtAtr ?? 0 } } : {}),
     // By the clock, where steps are set: read by the function a strategy's own steps are (`exitValueAt`).
     ...(steps.length ? { targetPctAt: (at: number) => exitValueAt({ mode: 'pct', value: p.targetPct, steps }, DAY_START_IST, istMinutes(at)).value } : {}),
   };
@@ -734,6 +777,8 @@ export function simulateTogether(o: {
   const tgtPctsOf = o.books.map(() => new Map<number, number>()), stopPctsOf = o.books.map(() => new Map<number, number>());
   const pctAt = (memo: Map<number, number>, f: (at: number) => number, at: number) => { let v = memo.get(at); if (v === undefined) { v = f(at); memo.set(at, v); } return v; };
   const lastBar = o.bars[o.bars.length - 1];
+  // The 1m ATR at each minute's close, worked out once for every book that trails the perp.
+  const minuteAtrs = o.books.some((b) => b.plan.perpTrail) ? minuteAtr(o.bars) : null;
   /** When each trade still open ends, its side and whose it is: what "at most N open" and each side's limit count. */
   let open: { until: number; side: 'CE' | 'PE'; book: number }[] = [];
   const shared = o.shared ?? null;
@@ -782,14 +827,19 @@ export function simulateTogether(o: {
     // Closed by the rules at the strategy's exit time, if that comes before the day's end -- as the desk closes it.
     const closesAt = Math.min(to - MIN, plan.closeAt?.(sig) ?? Number.POSITIVE_INFINITY);
     const closeBar = closesAt < to - MIN ? o.bars[firstAfter(o.bars, closesAt - 1, atOf) - 1] : lastBar;
-    let perpAt = closesAt, perpBy: 'perp-tgt' | 'perp-sl' | 'window-end' = 'window-end', perpPx = closeBar?.close ?? lastBar?.close ?? sig.fillPrice;
+    let perpAt = closesAt, perpBy: 'perp-tgt' | 'perp-sl' | 'perp-tsl' | 'window-end' = 'window-end', perpPx = closeBar?.close ?? lastBar?.close ?? sig.fillPrice;
     const fillMinute = Math.floor(t0 / MIN) * MIN;
+    // The levels in force: the signal's own, trailed after each closed minute where the plan says so.
+    const trail = plan.perpTrail ?? null;
+    let lv = { stop: sig.stop, target };
     for (let i = firstAfter(o.bars, fillMinute, atOf); i < o.bars.length; i++) {
       const b = o.bars[i]!;
       if (b.at >= closesAt) break;
-      const stop = sig.dir === 1 ? b.low <= sig.stop : b.high >= sig.stop;
-      const tgt = sig.dir === 1 ? b.high >= target : b.low <= target;
-      if (stop || tgt) { perpAt = b.at + MIN; perpBy = stop ? 'perp-sl' : 'perp-tgt'; perpPx = stop ? sig.stop : target; break; }
+      // Inside the minute, at the levels the last close left: a touch is a hit then, not at this minute's close.
+      const stop = sig.dir === 1 ? b.low <= lv.stop : b.high >= lv.stop;
+      const tgt = sig.dir === 1 ? b.high >= lv.target : b.low <= lv.target;
+      if (stop || tgt) { perpAt = b.at + MIN; perpBy = stop ? (lv.stop !== sig.stop ? 'perp-tsl' : 'perp-sl') : 'perp-tgt'; perpPx = stop ? lv.stop : lv.target; break; }
+      if (trail && minuteAtrs) lv = trailAfter(lv, { dir: sig.dir, close: b.close, atr: minuteAtrs[i]!, slAtr: trail.slAtr, tgtAtr: trail.tgtAtr });
     }
 
     // The option's own readings between: its target (a resting buy, filled at its price) and its stop (bought at the offer).
@@ -805,7 +855,7 @@ export function simulateTogether(o: {
     let exit: number | null = null, exitAt = perpAt, by: BtExit = perpBy;
     // A trailing stop: the best offer since the sale, and how far the stop has come down for it.
     const tsl = plan.tsl ?? null;
-    let best = entry, trail = 0;
+    let best = entry, trailBy = 0;
     // BTC at the reading the exit is priced on: what the exit's own fee is worked from.
     let exitSpot = pick.spot;
     if (series) {
@@ -833,8 +883,8 @@ export function simulateTogether(o: {
         // Prices are on a tick and the levels are products of shares: a level reached exactly must not be missed by a rounding.
         const tgtAt = tgtAtFn ? level(pctAt(tgtPcts, tgtAtFn, t), -1) : fixedTgt;
         const setStop = stopAtFn ? level(pctAt(stopPcts, stopAtFn, t), 1) : fixedStop;
-        if (tsl && offer < best) { best = offer; trail = tslTrail(tsl, entry, best); }
-        const stopAt = setStop !== null && trail > 0 ? setStop - trail : setStop;
+        if (tsl && offer < best) { best = offer; trailBy = tslTrail(tsl, entry, best); }
+        const stopAt = setStop !== null && trailBy > 0 ? setStop - trailBy : setStop;
         if (tgtAt !== null && offer <= tgtAt + 1e-9) {
           // A resting buy fills at its own price as the offer comes down to it. One just moved UP over the offer by a
           // time step (a lower share kept) is a buy placed through the market: it fills at the offer.
@@ -842,7 +892,7 @@ export function simulateTogether(o: {
           exitAt = t; by = 'option-tgt'; exitSpot = orNull(spot[i]!) ?? exitSpot; break;
         }
         restingAt = tgtAt;
-        if (stopAt !== null && offer >= stopAt - 1e-9) { exit = offer; exitAt = t; by = trail > 0 ? 'option-tsl' : 'option-sl'; exitSpot = orNull(spot[i]!) ?? exitSpot; break; }
+        if (stopAt !== null && offer >= stopAt - 1e-9) { exit = offer; exitAt = t; by = trailBy > 0 ? 'option-tsl' : 'option-sl'; exitSpot = orNull(spot[i]!) ?? exitSpot; break; }
       }
       if (exit === null && n > 0 && at[n - 1]! > entryAt) {
         // No reading at or after the exit -- held to the end, or out in the day's last minutes: the last reading the contract has.
@@ -862,7 +912,9 @@ export function simulateTogether(o: {
       perpPts: (perpPx - sig.fillPrice) * sig.dir,
       optTgt: tgtAtEntry, optStop: stopAtEntry, perpTgt: target,
       // Where a trailing stop had brought the stop by the exit: said beside the stop it started from.
-      ...(trail > 0 && stopAtEntry !== null ? { optStopEnd: stopAtEntry - trail } : {}),
+      ...(trailBy > 0 && stopAtEntry !== null ? { optStopEnd: stopAtEntry - trailBy } : {}),
+      // And where the perp's trail had brought its levels.
+      ...(lv.stop !== sig.stop ? { perpStopEnd: lv.stop } : {}), ...(lv.target !== target ? { perpTgtEnd: lv.target } : {}),
     });
   }
   return outs;
@@ -966,7 +1018,7 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}`;
+export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|ptr:${p.trailSlAtr ?? 0}-${p.trailTgtAtr ?? 0}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   // Its methods' history too: a new day's pick is another backtest of the same rules (`methodsAt`).
@@ -2239,6 +2291,8 @@ export type BtTradeRow = {
   optTgt: number | null; optStop: number | null;
   /** Where a trailing stop had brought the stop by the exit; null where it never moved. */
   optStopEnd: number | null;
+  /** Where the perp's ATR trail had brought its SL and target by the exit; null where they never moved. */
+  perpStopEnd: number | null; perpTgtEnd: number | null;
   perpPts: number; netUsd: number; chargesUsd: number;
   /** In a portfolio: whose trade it is. */
   member?: string;
@@ -2275,7 +2329,7 @@ const rowOf = (t: BtTrade, nameOf: (id: string) => string, member?: string): BtT
   at: t.signal.filledAt, method: t.signal.method, name: nameOf(t.signal.method), tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, dir: t.signal.dir,
   perpEntry: t.signal.fillPrice, perpSl: t.signal.stop, perpTgt: t.perpTgt ?? t.signal.target,
   cp: t.cp, strike: t.strike, lots: t.lots, entryAt: t.entryAt, entry: t.entry, exitAt: t.exitAt, exit: t.exit, by: t.by,
-  optTgt: t.optTgt ?? null, optStop: t.optStop ?? null, optStopEnd: t.optStopEnd ?? null, perpPts: t.perpPts, netUsd: t.netUsd, chargesUsd: t.chargesUsd,
+  optTgt: t.optTgt ?? null, optStop: t.optStop ?? null, optStopEnd: t.optStopEnd ?? null, perpStopEnd: t.perpStopEnd ?? null, perpTgtEnd: t.perpTgtEnd ?? null, perpPts: t.perpPts, netUsd: t.netUsd, chargesUsd: t.chargesUsd,
   ...(member ? { member } : {}),
 });
 const listed = (day: string, xs: BtTradeRow[]): BtDayTrades => {

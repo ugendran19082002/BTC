@@ -27,6 +27,10 @@ function searchOf(q: BacktestQuery): URLSearchParams {
   // A trailing SL only where it is right: the editor says what is wrong with any other.
   const tsl = tslQuery(q.params);
   if (tsl) p.set('tsl', tsl);
+  // The perp's trails, where they are right: the editor says what is wrong with any other.
+  const trail = (v: number | undefined) => (v !== undefined && v > 0 && v <= 20 ? String(v) : null);
+  if (trail(q.params.trailSlAtr)) p.set('ptsl', trail(q.params.trailSlAtr)!);
+  if (trail(q.params.trailTgtAtr)) p.set('pttgt', trail(q.params.trailTgtAtr)!);
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));
   if (q.strategy) p.set('strategy', q.strategy);

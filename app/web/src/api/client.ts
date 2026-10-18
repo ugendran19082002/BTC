@@ -136,7 +136,8 @@ export async function json<T>(url: string, init?: RequestInit): Promise<T> {
         level: res.ok ? 'warn' : 'error', context: { url },
       });
     }
-    throw new Error(message);
+    // The reply rides along, for a caller that can do more with a refusal than say it (the walk-forward's "what fits").
+    throw Object.assign(new Error(message), { status: res.status, body });
   }
   return body as T;
 }

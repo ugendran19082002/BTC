@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, TRAIL_ATR_MAX, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades } from '../../report/backtest-run.js';
@@ -178,12 +178,17 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
     if (bad.length) return bad[0]!;
     tsl = t;
   }
+  // The perp's own levels trailed by the 1m ATR: `?ptsl=` (the SL, ATRs behind the close) and `?pttgt=` (the target,
+  // ATRs beyond it); 0 or absent, off.
+  const trailSlAtr = num('ptsl', 0), trailTgtAtr = num('pttgt', 0);
+  for (const v of [trailSlAtr, trailTgtAtr]) if (!(v >= 0 && v <= TRAIL_ATR_MAX)) return `A perp trail is from 0 (off) to ${TRAIL_ATR_MAX} ATRs.`;
   return {
     rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol, minPremium,
     // Only where it is not the default, so settings saved before it are the same settings as ever.
     ...(volBy === 'iv' ? { volBy } : {}),
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}), ...(noEntry ? { noEntry } : {}),
     ...(strikeBlocks ? { strikeBlocks } : {}), ...(tsl ? { tsl } : {}),
+    ...(trailSlAtr > 0 ? { trailSlAtr } : {}), ...(trailTgtAtr > 0 ? { trailTgtAtr } : {}),
   };
 }
 
@@ -243,6 +248,7 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
     noentry: x.noEntry?.on && Array.isArray(x.noEntry.windows) ? x.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : undefined,
     sblocks: Array.isArray(x.strikeBlocks) && x.strikeBlocks.length ? JSON.stringify(x.strikeBlocks) : undefined,
     tsl: x.tsl && typeof x.tsl === 'object' ? tslQueryOf(x.tsl) : undefined,
+    ptsl: x.trailSlAtr, pttgt: x.trailTgtAtr,
   });
 }
 
@@ -502,8 +508,12 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const tests = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
     if (tests > WALK_MAX_DAYS) return refuse(reply, 400, { error: `At most ${WALK_MAX_DAYS} test days at a time.` });
     const holdout = body.holdout === undefined || body.holdout === '' ? Math.min(3, tests - 1) : Number(body.holdout);
-    if (!Number.isInteger(holdout) || holdout < 0 || holdout > WALK_MAX_HOLDOUT) return refuse(reply, 400, { error: `The holdout is a whole number of days from 0 to ${WALK_MAX_HOLDOUT}.` });
-    if (holdout >= tests) return refuse(reply, 400, { error: 'The holdout must leave at least one day to walk.' });
+    if (!Number.isInteger(holdout) || holdout < 0 || holdout > WALK_MAX_HOLDOUT) return refuse(reply, 400, { error: `The holdout is a whole number of days from 0 to ${WALK_MAX_HOLDOUT}.`, testDays: tests });
+    // How many days can be tested is the record's length less the rule's look-back: said in numbers, with what fits.
+    if (holdout >= tests) {
+      const why = `Only ${tests} finished day${tests === 1 ? ' has' : 's have'} the rule's whole ${auto!.days}-day look-back inside the record (it starts ${REPORT_FIRST_DAY}), so at most ${tests - 1} can be held out${tests - 1 === 0 ? ' -- none' : ''}. A shorter look-back leaves more days to test.`;
+      return refuse(reply, 400, { error: why, testDays: tests, holdoutMax: tests - 1 });
+    }
     return walkForwardOf(asked, auto!, { from, to, holdout, now, spot: tradingService().spot, first: REPORT_FIRST_DAY });
   });
 

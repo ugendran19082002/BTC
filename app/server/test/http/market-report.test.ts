@@ -679,12 +679,14 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   const climbWon = climbRec.body.methods.filter((m: any) => m.trades >= 1 && m.wins / m.trades >= 0.5).map((m: any) => m.method);
   assert.deepEqual(walk.body.days[0].picked, climbWon.length ? climbWon : [], 'picked from the day before it, by the rule');
   // refused in words: a day not finished, a holdout with nothing left to walk, a strategy that buys
-  for (const [body, said] of [[{ to: '2099-01-01' }, /not finished/], [{ from: QUIET, to: QUIET, holdout: 1 }, /at least one day to walk/], [{ holdout: 11 }, /0 to 10/]] as const) {
+  for (const [body, said] of [[{ to: '2099-01-01' }, /not finished/], [{ from: QUIET, to: QUIET, holdout: 1 }, /Only 1 finished day has the rule's whole 1-day look-back .* so at most 0 can be held out -- none/], [{ holdout: 11 }, /0 to 10/]] as const) {
     const r = await post('/api/strategies/auto-methods/walk-forward', { config: draft({}, { autoMethods: walkAuto }), ...body });
     assert.equal(r.status, 400, JSON.stringify(body));
     assert.match(r.body.error, said);
   }
   assert.equal((await post('/api/strategies/auto-methods/walk-forward', { config: draft({ takeProfitPct: 0, stopLossPct: 0 }, { action: 'buy', autoMethods: walkAuto }) })).status, 422);
+  const tooMany = await post('/api/strategies/auto-methods/walk-forward', { config: draft({}, { autoMethods: walkAuto }), from: QUIET, to: QUIET, holdout: 1 });
+  assert.deepEqual([tooMany.body.testDays, tooMany.body.holdoutMax], [1, 0], 'what fits, for the screen to offer');
   // its settings are needed and checked; one that buys has no record as options
   assert.equal((await post('/api/strategies/auto-methods/pick', { config: draft() })).status, 422);
   assert.equal((await post('/api/strategies/auto-methods/pick', { config: draft({}, { autoMethods: { ...auto, days: 0 } }) })).status, 422);
@@ -950,6 +952,8 @@ test('[critical] a backtest saved by name, run again, and several run together a
     // A trailing SL for the run (18 Oct 2026), over each member's own stop
     ['o_tsl=5pts:5pts', '&tsl=5pts:5pts', '&tsl=5pts:5pts&lots=3&tf=15m', { tsl: { move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' } }],
     ['o_sl=1&o_tsl=10pct:5pts', '&sl=1&tsl=10pct:5pts', '&sl=1&tsl=10pct:5pts&lots=3&tf=15m', { stopPct: 1, tsl: { move: 10, moveUnit: 'pct', by: 5, byUnit: 'pts' } }],
+    // The perp's levels trailed by the 1m ATR for the run (18 Oct 2026), the two together
+    ['o_ptsl=2&o_pttgt=3', '&ptsl=2&pttgt=3', '&ptsl=2&pttgt=3&lots=3&tf=15m', { trailSlAtr: 2, trailTgtAtr: 3 }],
   ] as const) {
     const run = await get(`${pair}&${ask}`);
     assert.equal(run.status, 200, `${ask}: ${JSON.stringify(run.body).slice(0, 300)}`);
@@ -976,7 +980,7 @@ test('[critical] a backtest saved by name, run again, and several run together a
   for (const [bad, said] of [['o_lots=0', /For the run: Lots are a whole number/], ['o_value=0.1', /A strike for the run is its rule and its limit/], ['o_rule=delta', /A strike for the run is its rule and its limit/],
     ['o_rule=delta&o_value=0.9', /For the run: A delta limit is from 0\.02 to 0\.5/], ['o_tsteps=23:30:75', /needs the target it starts from/], ['o_slmin=500&o_slmax=100', /SL maximum must not be under its minimum/],
     ['o_tsl=5pts', /For the run: A trailing SL is a price move and an SL move/], ['o_sl=0&o_tsl=5pts:5pts', /needs an option stop to move/],
-    ['o_tsl=5pts:9pts', /SL cannot move further than the price did/]] as const) {
+    ['o_tsl=5pts:9pts', /SL cannot move further than the price did/], ['o_ptsl=21', /For the run: A perp trail is from 0 \(off\) to 20 ATRs/]] as const) {
     const r = await get(`${pair}&${bad}`);
     assert.equal(r.status, 400, bad);
     assert.match(r.body.error, said);

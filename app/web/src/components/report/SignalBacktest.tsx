@@ -24,11 +24,12 @@ import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
 import { BacktestStrikeBlocks } from '@/components/report/BacktestStrikeBlocks';
 import { BacktestTsl } from '@/components/report/BacktestTsl';
+import { BacktestPerpTrail } from '@/components/report/BacktestPerpTrail';
 import { tslProblems, tslWords } from '@/lib/backtest-tsl';
 import { backtestBlockProblems, strikeBlocksWords } from '@/lib/backtest-strike-blocks';
 import { BacktestBreakdowns, ChargesNote, DayAverages, GRAIN, ResultNav, WinnersLosers, pricedWords, skippedParts } from '@/components/report/BacktestBreakdowns';
 import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
-import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, settingsWords } from '@/components/report/backtest-words';
+import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, perpTrailWords, settingsWords } from '@/components/report/backtest-words';
 
 /**
  * The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price?
@@ -401,7 +402,7 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
     delete next[key];
     onChange(next);
   };
-  const { strike, target, stop, lots, minPremium, range, noEntry, vol, strikeBlocks, tsl } = over;
+  const { strike, target, stop, lots, minPremium, range, noEntry, vol, strikeBlocks, tsl, perpTrail } = over;
   const values = strike?.rule === 'premium' ? PREMIUMS : DELTAS;
   const dynamic = (target?.targetSteps?.length ?? 0) > 0 || dynamicDraft;
   const switchedOn = Object.keys(over).length;
@@ -471,6 +472,12 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
       {/* A trailing SL over every one worked by settings (18 Oct 2026); switched off inside, it takes their own away for the run. */}
       <RunFilter name="Trailing SL" on={!!tsl} said={tsl ? said({ tsl: tsl.tsl ?? undefined }) || 'no trailing SL' : ''} onToggle={() => flip('tsl', { tsl: seed.tsl ?? null })}>
         {tsl && <BacktestTsl name="Trailing SL, for the run" value={tsl.tsl} stopPct={stop?.stopPct ?? 3} onChange={(t) => put({ tsl: { tsl: t } })} />}
+      </RunFilter>
+
+      {/* The perp's ATR trails over every one worked by settings (18 Oct 2026), the two together; both off takes theirs away. */}
+      <RunFilter name="Perp trail" on={!!perpTrail} said={perpTrail ? perpTrailWords({ trailSlAtr: perpTrail.slAtr, trailTgtAtr: perpTrail.tgtAtr }) ?? 'no perp trail' : ''}
+        onToggle={() => flip('perpTrail', { slAtr: seed.trailSlAtr ?? 0, tgtAtr: seed.trailTgtAtr ?? 0 })}>
+        {perpTrail && <BacktestPerpTrail name="Perp trail, for the run" sl={perpTrail.slAtr} tgt={perpTrail.tgtAtr} onChange={(v) => put({ perpTrail: { slAtr: v.trailSlAtr, tgtAtr: v.trailTgtAtr } })} />}
       </RunFilter>
 
       <RunFilter name="Lots a signal" on={!!lots} said={lots ? said(lots) : ''} onToggle={() => flip('lots', { lots: seed.lots })}>
@@ -677,6 +684,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`,
       `TGT ${targetWords}`, params.stopPct > 0 ? `SL +${Math.round(params.stopPct * 100)}%` : 'no option SL',
       ...(params.tsl ? [tslProblems(params.tsl, params.stopPct).length ? 'trailing SL not used (see its settings)' : tslWords(params.tsl)!] : []),
+      ...(perpTrailWords(params) ? [perpTrailWords(params)!] : []),
       `${params.lots} lot${params.lots === 1 ? '' : 's'}`, floor > 0 ? `min $${floor}` : 'no premium floor',
       ...(strikeBlocksWords(params.strikeBlocks) ? [backtestBlockProblems(params).length ? 'strike blocks not used (outside the hours)' : strikeBlocksWords(params.strikeBlocks)!] : []),
     ].join(' · '),
@@ -822,6 +830,9 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       </ChipRow>
       {/* A trailing SL on that stop (18 Oct 2026): the backtest's own -- a strategy's live stop does not trail. */}
       <BacktestTsl value={params.tsl ?? null} stopPct={params.stopPct} onChange={(tsl) => set({ tsl: tsl ?? undefined })} />
+      {/* The perp's own SL and TGT trailed by the 1m ATR (18 Oct 2026): the backtest's own -- the desk's levels do not trail. */}
+      <BacktestPerpTrail sl={params.trailSlAtr ?? 0} tgt={params.trailTgtAtr ?? 0}
+        onChange={(v) => set({ trailSlAtr: v.trailSlAtr > 0 ? v.trailSlAtr : undefined, trailTgtAtr: v.trailTgtAtr > 0 ? v.trailTgtAtr : undefined })} />
       <ChipRow wide={wide} label="Lots a signal">
         {LOTS.map((n) => <Chip key={n} on={params.lots === n} onClick={() => set({ lots: n })}>{n}</Chip>)}
         <CustomValue value={params.lots} presets={LOTS} spec={CUSTOM.lots} name="Lots" onChange={(lots) => set({ lots })} />

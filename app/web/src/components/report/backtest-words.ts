@@ -17,6 +17,13 @@ export const PREMIUM_FLOOR = 10;
 export const targetLabel = (v: number) => (v > 0 ? `${Math.round(v * 100)}%` : 'No target');
 export const stopLabel = (v: number) => (v > 0 ? `+${Math.round(v * 100)}%` : 'No stop');
 
+/** "perp SL trails 2× ATR · TGT 3× ATR": the perp's ATR trail in a few words; null with none. */
+export function perpTrailWords(p: Pick<BacktestParams, 'trailSlAtr' | 'trailTgtAtr'>): string | null {
+  const sl = p.trailSlAtr ?? 0, tg = p.trailTgtAtr ?? 0;
+  if (!(sl > 0) && !(tg > 0)) return null;
+  return `perp ${[sl > 0 ? `SL trails ${sl}× ATR` : null, tg > 0 ? `TGT trails ${tg}× ATR` : null].filter(Boolean).join(' · ')}`;
+}
+
 /**
  * A set of settings in one line: what a result is of. Said on the folded settings panel and on the result -- and,
  * with its filters, under each saved backtest's name.
@@ -36,6 +43,7 @@ export function settingsWords(q: SavedQuery, strategies: readonly { id: string; 
     !byStrategy ? `TGT ${target}` : null,
     !byStrategy ? `SL ${stopLabel(p.stopPct)}` : null,
     !byStrategy && p.stopPct > 0 ? tslWords(p.tsl) : null,
+    !byStrategy ? perpTrailWords(p) : null,
     !byStrategy && floor !== PREMIUM_FLOOR ? (floor > 0 ? `premium ≥ $${floor}` : 'no premium floor') : null,
     !byStrategy ? (p.window === 'desk' ? '9:30 PM → 3:59 PM' : p.window === 'all' ? 'whole day' : p.hoursFrom && p.hoursTo ? `${time12(p.hoursFrom)} → ${time12(p.hoursTo)}` : null) : null,
     !byStrategy && (range(p.slMin, p.slMax) || range(p.tgtMin, p.tgtMax))
@@ -65,6 +73,7 @@ export function overWords(p: Partial<BacktestParams>): string[] {
   }
   if (p.stopPct !== undefined) out.push(p.stopPct > 0 ? `stop ${stopLabel(p.stopPct)}` : 'no stop');
   if (p.tsl !== undefined) out.push(tslWords(p.tsl) ?? 'no trailing SL');
+  if (p.trailSlAtr !== undefined || p.trailTgtAtr !== undefined) out.push(perpTrailWords(p) ?? 'no perp trail');
   if (p.lots !== undefined) out.push(`${p.lots} lot${p.lots === 1 ? '' : 's'} a signal`);
   if (p.minPremium !== undefined) out.push(p.minPremium > 0 ? `premium ≥ $${p.minPremium}` : 'no premium floor');
   if (p.slMin !== undefined) {
