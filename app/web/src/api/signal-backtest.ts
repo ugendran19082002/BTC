@@ -33,6 +33,9 @@ function searchOf(q: BacktestQuery): URLSearchParams {
   const widen = (v: number | undefined) => (v !== undefined && v > 0 && v <= WIDEN_ATR_MAX ? String(v) : null);
   if (widen(q.params.widenSlAtr)) p.set('wsl', widen(q.params.widenSlAtr)!);
   if (widen(q.params.widenTgtAtr)) p.set('wtgt', widen(q.params.widenTgtAtr)!);
+  if ((widen(q.params.widenSlAtr) || widen(q.params.widenTgtAtr)) && q.params.widenMode === 'calm') p.set('wmode', 'calm');
+  if (q.params.skipPerpSl) p.set('noperpsl', '1');
+  if (q.params.skipPerpTgt) p.set('noperptgt', '1');
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));
   if (q.strategy) p.set('strategy', q.strategy);

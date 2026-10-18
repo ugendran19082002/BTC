@@ -1,4 +1,5 @@
-import { Chip } from '@/components/mobile/parts';
+import { Chip, Segmented } from '@/components/mobile/parts';
+import type { WidenMode } from '@/types/signal-backtest';
 import { NumberField } from '@/components/ui/number-field';
 import { WIDEN_ATR_MAX } from '@/lib/backtest-tsl';
 import { cn } from '@/lib/utils';
@@ -9,6 +10,9 @@ import { cn } from '@/lib/utils';
  * 1m candle close"; asked, "stay at the widest so far"). After each closed 1m candle, each level is at least k ATR(14)s
  * of the 1m candles from the perp entry: never nearer than the signal's own, never brought back in. A touch inside a
  * minute is a hit then, at the level in force.
+ *
+ * When volatility falls again, kept at the widest (the default), or back to the signal's own once the 1m ATR is at or
+ * under its level at the fill (owner, 18 Oct 2026: the two side by side in the report, `WidenCompare`).
  */
 const PRESETS = [5, 10, 20, 30] as const;
 /** The example: a BUY at 84,000 with the signal's SL 300 and TGT 500 away, the 1m ATR in a quiet hour and a busy one. */
@@ -30,12 +34,13 @@ function Row({ label, value, onChange, name }: { label: string; value: number; o
   );
 }
 
-export function BacktestPerpWiden({ sl, tgt, onChange, name = 'Perp SL & TGT by volatility' }: {
-  sl: number; tgt: number;
-  onChange: (v: { widenSlAtr: number; widenTgtAtr: number }) => void;
+export function BacktestPerpWiden({ sl, tgt, mode = 'widest', onChange, name = 'Perp SL & TGT by volatility' }: {
+  sl: number; tgt: number; mode?: WidenMode;
+  onChange: (v: { widenSlAtr: number; widenTgtAtr: number; widenMode: WidenMode }) => void;
   name?: string;
 }) {
   const on = sl > 0 || tgt > 0;
+  const put = (o: Partial<{ widenSlAtr: number; widenTgtAtr: number; widenMode: WidenMode }>) => onChange({ widenSlAtr: sl, widenTgtAtr: tgt, widenMode: mode, ...o });
   // The rule worked through: the level at each ATR -- the larger of the signal's distance and k ATRs.
   const at = (k: number, own: number, atr: number) => Math.max(own, k * atr);
   return (
@@ -48,13 +53,23 @@ export function BacktestPerpWiden({ sl, tgt, onChange, name = 'Perp SL & TGT by 
             : "Off · the perp SL and TGT stay the signal's own."}
         </span>
       </span>
-      <Row label="Perp SL at least, from the entry" name={`${name}: SL`} value={sl} onChange={(v) => onChange({ widenSlAtr: v, widenTgtAtr: tgt })} />
-      <Row label="Perp TGT at least, from the entry" name={`${name}: TGT`} value={tgt} onChange={(v) => onChange({ widenSlAtr: sl, widenTgtAtr: v })} />
+      <Row label="Perp SL at least, from the entry" name={`${name}: SL`} value={sl} onChange={(v) => put({ widenSlAtr: v })} />
+      <Row label="Perp TGT at least, from the entry" name={`${name}: TGT`} value={tgt} onChange={(v) => put({ widenTgtAtr: v })} />
+      {on && (
+        <Segmented dense label={`${name}: when volatility falls again`} value={mode} onChange={(m) => put({ widenMode: m })}
+          options={[
+            { key: 'widest', label: 'Keep widest', spoken: 'Kept at the widest so far' },
+            { key: 'calm', label: "Back to signal's own", spoken: "Back to the signal's own once the 1m ATR is at or under its level at the fill" },
+          ]} />
+      )}
       {on && (
         <p aria-label={`${name} example`} className="m-0 text-[11.5px] leading-snug text-muted-foreground">
           A BUY at {px(EX.entry)}, the signal&apos;s SL {px(EX.entry - EX.sl)} and TGT {px(EX.entry + EX.tgt)}.
           {' '}Quiet, 1m ATR {EX.quiet}: SL {px(EX.entry - (sl > 0 ? at(sl, EX.sl, EX.quiet) : EX.sl))}, TGT {px(EX.entry + (tgt > 0 ? at(tgt, EX.tgt, EX.quiet) : EX.tgt))}.
-          {' '}Busy, ATR {EX.busy}: SL {px(EX.entry - (sl > 0 ? at(sl, EX.sl, EX.busy) : EX.sl))}, TGT {px(EX.entry + (tgt > 0 ? at(tgt, EX.tgt, EX.busy) : EX.tgt))} -- and there they stay when it calms.
+          {' '}Busy, ATR {EX.busy}: SL {px(EX.entry - (sl > 0 ? at(sl, EX.sl, EX.busy) : EX.sl))}, TGT {px(EX.entry + (tgt > 0 ? at(tgt, EX.tgt, EX.busy) : EX.tgt))}
+          {mode === 'calm'
+            ? <> -- and once the ATR is back to {EX.quiet}, its level at the fill, SL {px(EX.entry - EX.sl)} and TGT {px(EX.entry + EX.tgt)} again.</>
+            : ' -- and there they stay when it calms.'}
         </p>
       )}
     </section>

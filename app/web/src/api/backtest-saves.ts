@@ -99,7 +99,9 @@ export type PortfolioOver = {
   /** A trailing SL on every member's option stop (18 Oct 2026); null takes each member's own away for the run. */
   tsl?: { tsl: Tsl | null };
   /** The perp's SL and TGT widened with volatility over every member, the two together; 0 is off for the run. */
-  perpWiden?: { slAtr: number; tgtAtr: number };
+  perpWiden?: { slAtr: number; tgtAtr: number; mode?: 'widest' | 'calm' };
+  /** The perp's SL and TGT left out over every member, the two together; false is used. */
+  skipPerp?: { sl: boolean; tgt: boolean };
   /** The option's stop to the price sold over every member; null takes each one's own away for the run. */
   breakEven?: { be: BreakEven | null };
 };
@@ -129,7 +131,8 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
     else { const s = tslQuery({ tsl: t, stopPct: o.stop?.stopPct ?? 3 }); if (s) q.o_tsl = s; }
   }
   if (o.breakEven) { const s = o.breakEven.be === null ? 'off' : breakEvenQuery(o.breakEven.be); if (s) q.o_be = s; }
-  if (o.perpWiden) { q.o_wsl = String(o.perpWiden.slAtr); q.o_wtgt = String(o.perpWiden.tgtAtr); }
+  if (o.skipPerp) { q.o_noperpsl = o.skipPerp.sl ? '1' : '0'; q.o_noperptgt = o.skipPerp.tgt ? '1' : '0'; }
+  if (o.perpWiden) { q.o_wsl = String(o.perpWiden.slAtr); q.o_wtgt = String(o.perpWiden.tgtAtr); q.o_wmode = o.perpWiden.mode ?? 'widest'; }
   if (o.strikeBlocks && !backtestBlockProblems({ window: 'all', strikeBlocks: o.strikeBlocks.blocks }).length) q.o_sblocks = JSON.stringify(o.strikeBlocks.blocks);
   return q;
 }

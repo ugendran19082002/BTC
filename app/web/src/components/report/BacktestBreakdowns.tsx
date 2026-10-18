@@ -159,12 +159,14 @@ export function WinnersLosers({ t }: { t: BtTot }) {
   );
 }
 
-export function BacktestBreakdowns({ total: t, b, wide, idPrefix, sessions, expiryDays }: {
+export function BacktestBreakdowns({ total: t, b, wide, idPrefix, sessions, expiryDays, widen }: {
   total: BtTot; b: Breakdown; wide: boolean;
   /** What the parts' ids begin with, for the jump bar: `bt` for one backtest, `pf` for a run together. */
   idPrefix: string;
   /** The caller's own: the sessions panel, and the expiry days panel beside the kind of day. */
   sessions?: ReactNode; expiryDays?: ReactNode;
+  /** The perp levels three ways (`WidenCompare`), where widening is on: the caller's, as it knows how to ask again. */
+  widen?: ReactNode;
 }) {
   const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('signalBacktest.grouping', 'family');
   const sl = t.exits['perp-sl'], tg = t.exits['perp-tgt'];
@@ -241,6 +243,7 @@ export function BacktestBreakdowns({ total: t, b, wide, idPrefix, sessions, expi
 
           {/* The perp and the options apart, on the same trades (18 Oct 2026): a good perp line is not a good options one. */}
           <div id={`${idPrefix}-perp`} className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><PerpVsOptions total={t} rows={b.byMethod} pairs={b.pairs} byTf={b.byTf} /></div>
+          {widen && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)]">{widen}</div>}
 
           {sessions && <div id={`${idPrefix}-sessions`} className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">{sessions}</div>}
 

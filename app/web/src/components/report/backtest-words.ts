@@ -17,11 +17,17 @@ export const PREMIUM_FLOOR = 10;
 export const targetLabel = (v: number) => (v > 0 ? `${Math.round(v * 100)}%` : 'No target');
 export const stopLabel = (v: number) => (v > 0 ? `+${Math.round(v * 100)}%` : 'No stop');
 
+/** "perp SL skipped · perp TGT skipped": the perp levels left out, in a few words; null with both used. */
+export function skipPerpWords(p: Pick<BacktestParams, 'skipPerpSl' | 'skipPerpTgt'>): string | null {
+  const out = [p.skipPerpSl ? 'perp SL skipped' : null, p.skipPerpTgt ? 'perp TGT skipped' : null].filter(Boolean);
+  return out.length ? out.join(' · ') : null;
+}
+
 /** "perp SL ≥ 10× ATR · TGT ≥ 20× ATR": the widening with volatility in a few words; null with none. */
-export function perpWidenWords(p: Pick<BacktestParams, 'widenSlAtr' | 'widenTgtAtr'>): string | null {
+export function perpWidenWords(p: Pick<BacktestParams, 'widenSlAtr' | 'widenTgtAtr' | 'widenMode'>): string | null {
   const sl = p.widenSlAtr ?? 0, tg = p.widenTgtAtr ?? 0;
   if (!(sl > 0) && !(tg > 0)) return null;
-  return `perp ${[sl > 0 ? `SL ≥ ${sl}× ATR` : null, tg > 0 ? `TGT ≥ ${tg}× ATR` : null].filter(Boolean).join(' · ')} (widens with volatility)`;
+  return `perp ${[sl > 0 ? `SL ≥ ${sl}× ATR` : null, tg > 0 ? `TGT ≥ ${tg}× ATR` : null].filter(Boolean).join(' · ')} (${p.widenMode === 'calm' ? 'widens with volatility, back when calm' : 'widens with volatility, kept widest'})`;
 }
 
 /**
@@ -45,6 +51,7 @@ export function settingsWords(q: SavedQuery, strategies: readonly { id: string; 
     !byStrategy && p.stopPct > 0 ? tslWords(p.tsl) : null,
     !byStrategy ? breakEvenWords(p.breakEven) : null,
     !byStrategy ? perpWidenWords(p) : null,
+    !byStrategy ? skipPerpWords(p) : null,
     !byStrategy && floor !== PREMIUM_FLOOR ? (floor > 0 ? `premium ≥ $${floor}` : 'no premium floor') : null,
     !byStrategy ? (p.window === 'desk' ? '9:30 PM → 3:59 PM' : p.window === 'all' ? 'whole day' : p.hoursFrom && p.hoursTo ? `${time12(p.hoursFrom)} → ${time12(p.hoursTo)}` : null) : null,
     !byStrategy && (range(p.slMin, p.slMax) || range(p.tgtMin, p.tgtMax))
@@ -75,6 +82,7 @@ export function overWords(p: Partial<BacktestParams>): string[] {
   if (p.stopPct !== undefined) out.push(p.stopPct > 0 ? `stop ${stopLabel(p.stopPct)}` : 'no stop');
   if (p.tsl !== undefined) out.push(tslWords(p.tsl) ?? 'no trailing SL');
   if (p.breakEven !== undefined) out.push(breakEvenWords(p.breakEven) ?? 'no SL to entry');
+  if (p.skipPerpSl !== undefined || p.skipPerpTgt !== undefined) out.push(skipPerpWords(p) ?? 'the perp SL and TGT used');
   if (p.widenSlAtr !== undefined || p.widenTgtAtr !== undefined) out.push(perpWidenWords(p) ?? 'perp SL and TGT the signal\'s own');
   if (p.lots !== undefined) out.push(`${p.lots} lot${p.lots === 1 ? '' : 's'} a signal`);
   if (p.minPremium !== undefined) out.push(p.minPremium > 0 ? `premium ≥ $${p.minPremium}` : 'no premium floor');

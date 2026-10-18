@@ -5,6 +5,7 @@ export type VolLevel = 'low' | 'medium' | 'high';
 export type VolBy = 'atr' | 'iv';
 /** `option-tsl`: the option's stop, after a trailing SL had moved it. */
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'option-be' | 'window-end';
+export type WidenMode = 'widest' | 'calm';
 /** A trailing SL's step: premium points, or a per cent of the price sold. */
 export type TslUnit = 'pts' | 'pct';
 /** Every `move` the premium falls from the price sold, the option's stop comes down `by`; never back up (18 Oct 2026). */
@@ -37,6 +38,10 @@ export type BacktestParams = {
    * ATR(14)s of the 1m candles from the entry -- never nearer than the signal's own, kept at the widest. 0 or absent: off.
    */
   widenSlAtr?: number; widenTgtAtr?: number;
+  /** When volatility falls again: kept at the widest (`widest`, the default), or back to the signal's own once the 1m ATR is at or under its level at the fill (`calm`). */
+  widenMode?: WidenMode;
+  /** The perp's own SL and TGT left out: not closed when the perp reaches them (18 Oct 2026). Absent: both used. */
+  skipPerpSl?: boolean; skipPerpTgt?: boolean;
   /** The option's stop to the price sold once the premium has fallen `move` (18 Oct 2026); absent, off. */
   breakEven?: BreakEven;
 };

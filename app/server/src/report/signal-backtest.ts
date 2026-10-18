@@ -118,12 +118,26 @@ export type BacktestParams = {
    */
   widenSlAtr?: number; widenTgtAtr?: number;
   /**
+   * When volatility falls again (owner, 18 Oct 2026, the two set side by side): `widest`, the default -- kept at the
+   * widest so far; `calm` -- widened only while the 1m ATR is over its level at the fill, and back to the signal's own
+   * SL and TGT once it is at or under it again.
+   */
+  widenMode?: WidenMode;
+  /**
+   * The perp's own levels left out (owner, 18 Oct 2026: "skip perp SL, skip perp TGT -- enable, disable"): a trade
+   * not closed when the perp reaches the signal's SL (`skipPerpSl`) or TGT (`skipPerpTgt`) -- only by the option's own
+   * target and stop, the exit time or the day's end. Absent: both are used, as on the desk.
+   */
+  skipPerpSl?: boolean; skipPerpTgt?: boolean;
+  /**
    * The option's stop to the price sold once the premium has fallen `move` from it (owner, 18 Oct 2026: "SL to the
    * entry price -- pts and %"): a break-even stop, never loosened, with or without a stop set before it (none set, it
    * is the stop from then on). Beside a trailing SL, the tighter of the two. Absent: off.
    */
   breakEven?: { move: number; unit: TslUnit };
 };
+export type WidenMode = 'widest' | 'calm';
+export const WIDEN_MODES: readonly WidenMode[] = ['widest', 'calm'];
 /** The most the perp's widening may ask for, in ATRs of the 1m candles: a 1m ATR is a few tens of points. */
 export const WIDEN_ATR_MAX = 100;
 /** The ATR the widening reads: Wilder's, 14 one-minute candles. */
@@ -147,8 +161,13 @@ export function minuteAtr(bars: readonly MinuteBar[], n = WIDEN_ATR_BARS): Float
  * neither is ever nearer than the signal's own nor than the widest it has been. Pure: the simulation and its tests
  * ask the same question.
  */
-export function widenAfter(lv: { stop: number; target: number }, o: { dir: 1 | -1; entry: number; atr: number; slAtr: number; tgtAtr: number }): { stop: number; target: number } {
+export function widenAfter(lv: { stop: number; target: number }, o: {
+  dir: 1 | -1; entry: number; atr: number; slAtr: number; tgtAtr: number;
+  /** `calm`: at or under `baseAtr` (the ATR at the fill), back to the signal's own `own` levels. */
+  mode?: WidenMode; baseAtr?: number; own?: { stop: number; target: number };
+}): { stop: number; target: number } {
   if (!(o.atr > 0)) return lv;
+  if (o.mode === 'calm' && o.own && o.baseAtr !== undefined && o.baseAtr > 0 && o.atr <= o.baseAtr) return o.own;
   const slWant = o.slAtr * o.atr, tgWant = o.tgtAtr * o.atr;
   return {
     stop: o.slAtr > 0 && slWant > Math.abs(o.entry - lv.stop) ? o.entry - o.dir * slWant : lv.stop,
@@ -456,8 +475,10 @@ export type DayPlan = {
   tsl?: Tsl | null;
   /** The option's stop to the price sold once the premium has fallen so far (`breakEvenReached`); absent, off. */
   breakEven?: { move: number; unit: TslUnit } | null;
+  /** The perp's SL and target left out: a trade is not closed when the perp reaches it. Absent: both used. */
+  skipPerp?: { sl: boolean; tgt: boolean } | null;
   /** The perp's SL and target widened with the 1m ATR (`widenAfter`); absent, the signal's own all trade. */
-  perpWiden?: { slAtr: number; tgtAtr: number } | null;
+  perpWiden?: { slAtr: number; tgtAtr: number; mode: WidenMode } | null;
   /**
    * The strike by the same level (the volatility study, 17 Oct 2026: "delta by volatility -- high 0.08, low 0.12"):
    * each level's own pick, in place of `pick` for that trade. A level that cannot be said keeps `pick`.
@@ -507,7 +528,8 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
     targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null, desk: deskCapsOf(p),
     ...(p.tsl ? { tsl: p.tsl } : {}),
     ...(p.breakEven ? { breakEven: p.breakEven } : {}),
-    ...((p.widenSlAtr ?? 0) > 0 || (p.widenTgtAtr ?? 0) > 0 ? { perpWiden: { slAtr: p.widenSlAtr ?? 0, tgtAtr: p.widenTgtAtr ?? 0 } } : {}),
+    ...(p.skipPerpSl || p.skipPerpTgt ? { skipPerp: { sl: p.skipPerpSl === true, tgt: p.skipPerpTgt === true } } : {}),
+    ...((p.widenSlAtr ?? 0) > 0 || (p.widenTgtAtr ?? 0) > 0 ? { perpWiden: { slAtr: p.widenSlAtr ?? 0, tgtAtr: p.widenTgtAtr ?? 0, mode: p.widenMode ?? 'widest' } } : {}),
     // By the clock, where steps are set: read by the function a strategy's own steps are (`exitValueAt`).
     ...(steps.length ? { targetPctAt: (at: number) => exitValueAt({ mode: 'pct', value: p.targetPct, steps }, DAY_START_IST, istMinutes(at)).value } : {}),
   };
@@ -849,15 +871,19 @@ export function simulateTogether(o: {
     const fillMinute = Math.floor(t0 / MIN) * MIN;
     // The levels in force: the signal's own, widened after each closed minute where the plan says so.
     const widen = plan.perpWiden ?? null;
-    let lv = { stop: sig.stop, target };
-    for (let i = firstAfter(o.bars, fillMinute, atOf); i < o.bars.length; i++) {
+    const own = { stop: sig.stop, target };
+    let lv = own;
+    // The 1m ATR at the fill: what "calm again" is measured against.
+    const first = firstAfter(o.bars, fillMinute, atOf);
+    const baseAtr = widen?.mode === 'calm' && minuteAtrs && first > 0 ? minuteAtrs[first - 1]! : undefined;
+    for (let i = first; i < o.bars.length; i++) {
       const b = o.bars[i]!;
       if (b.at >= closesAt) break;
       // Inside the minute, at the levels the last close left: a touch is a hit then, not at this minute's close.
-      const stop = sig.dir === 1 ? b.low <= lv.stop : b.high >= lv.stop;
-      const tgt = sig.dir === 1 ? b.high >= lv.target : b.low <= lv.target;
+      const stop = !plan.skipPerp?.sl && (sig.dir === 1 ? b.low <= lv.stop : b.high >= lv.stop);
+      const tgt = !plan.skipPerp?.tgt && (sig.dir === 1 ? b.high >= lv.target : b.low <= lv.target);
       if (stop || tgt) { perpAt = b.at + MIN; perpBy = stop ? 'perp-sl' : 'perp-tgt'; perpPx = stop ? lv.stop : lv.target; break; }
-      if (widen && minuteAtrs) lv = widenAfter(lv, { dir: sig.dir, entry: sig.fillPrice, atr: minuteAtrs[i]!, slAtr: widen.slAtr, tgtAtr: widen.tgtAtr });
+      if (widen && minuteAtrs) lv = widenAfter(lv, { dir: sig.dir, entry: sig.fillPrice, atr: minuteAtrs[i]!, slAtr: widen.slAtr, tgtAtr: widen.tgtAtr, mode: widen.mode, baseAtr, own });
     }
 
     // The option's own readings between: its target (a resting buy, filled at its price) and its stop (bought at the offer).
@@ -1044,7 +1070,7 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|wid:${p.widenSlAtr ?? 0}-${p.widenTgtAtr ?? 0}|be:${p.breakEven ? `${p.breakEven.move}${p.breakEven.unit}` : ''}`;
+export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|wid:${p.widenSlAtr ?? 0}-${p.widenTgtAtr ?? 0}-${p.widenMode ?? 'widest'}|skip:${p.skipPerpSl ? 'sl' : ''}${p.skipPerpTgt ? 'tgt' : ''}|be:${p.breakEven ? `${p.breakEven.move}${p.breakEven.unit}` : ''}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   // Its methods' history too: a new day's pick is another backtest of the same rules (`methodsAt`).

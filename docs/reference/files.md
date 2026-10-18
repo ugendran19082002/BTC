@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-531 files listed, 271 test files counted below, images and lockfiles left out.
+533 files listed, 272 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 138 |
-| `app/web` | 133 |
+| `app/web` | 134 |
 
 ## `(root)`
 
@@ -454,7 +454,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [BacktestBreakEven.tsx](../../app/web/src/components/report/BacktestBreakEven.tsx) | The option's stop to the price sold, in the backtest and a run together (owner, 18 Oct 2026: "SL move to the entry price -- a new option, pts and %"): once the premium has fallen X from the price s... |
 | [BacktestBreakdowns.tsx](../../app/web/src/components/report/BacktestBreakdowns.tsx) | A result broken down, the same for one backtest and for saved backtests run together (owner, 17 Oct 2026: "the backtest's output screen and the portfolio's do not match -- best practice, user frien... |
 | [BacktestCurve.tsx](../../app/web/src/components/report/BacktestCurve.tsx) | The backtest's running total, expiry day by expiry day (owner, 14 Oct 2026: "the backtest screen, user friendly"): whether the settings make money steadily or on one lucky day, and the worst stretc... |
-| [BacktestPerpTrail.tsx](../../app/web/src/components/report/BacktestPerpTrail.tsx) | The perp's own SL and target trailed by volatility, in the backtest and a run together (owner, 18 Oct 2026: "trailing perp SL ATR multiplier and trailing perp TGT ATR multiplier -- on the 1m candle... |
+| [BacktestPerpWiden.tsx](../../app/web/src/components/report/BacktestPerpWiden.tsx) | The perp's SL and TGT widened with volatility, in the backtest and a run together (owner, 18 Oct 2026: "when the signal comes, its PERP SL and PERP TGT are the least; as volatility rises the SL and... |
+| [BacktestSkipPerp.tsx](../../app/web/src/components/report/BacktestSkipPerp.tsx) | -- |
 | [BacktestStrikeBlocks.tsx](../../app/web/src/components/report/BacktestStrikeBlocks.tsx) | The strategy form's "Different strike rule by time of day", for the backtest and a run together (18 Oct 2026): the form's own editor, over the hours given, with block 1 the rule set elsewhere -- th... |
 | [BacktestTsl.tsx](../../app/web/src/components/report/BacktestTsl.tsx) | A trailing SL on the option's own stop, in the backtest and a run together (owner, 18 Oct 2026: "TSL settings in the backtest -- points and per cent; as the price moves from the entry, the SL moves... |
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
@@ -476,6 +477,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [SignalBacktest.tsx](../../app/web/src/components/report/SignalBacktest.tsx) | The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price? |
 | [Updating.tsx](../../app/web/src/components/report/Updating.tsx) | A read that knows which question its answer is to (owner, 13 Oct 2026: "after choosing a filter it should say it is loading; the old values stay on the screen"). |
 | [VolStudy.tsx](../../app/web/src/components/report/VolStudy.tsx) | The option's SL, the strike's delta and the lots by volatility, as research on the desk's own trades (owner, 17 Oct 2026: "Volatility by ATR 2h / ATM IV; SL, delta and lots -- Low, Normal and High... |
+| [WidenCompare.tsx](../../app/web/src/components/report/WidenCompare.tsx) | The perp's SL and TGT three ways on the same trades (owner, 18 Oct 2026: "keep the widest vs back to the signal's own when calm -- in the backtest report"): the signal's own levels all trade; widen... |
 | [WinLossAnalysis.tsx](../../app/web/src/components/report/WinLossAnalysis.tsx) | -- |
 | [backtest-parts.tsx](../../app/web/src/components/report/backtest-parts.tsx) | The pieces the backtest's panels are made of -- the screen itself (`SignalBacktest.tsx`) and the saved backtests run together (`SavedBacktests.tsx`): a table whose rows fold on a phone, three money... |
 | [backtest-words.ts](../../app/web/src/components/report/backtest-words.ts) | A backtest's settings as the screen starts with them, and in words. |

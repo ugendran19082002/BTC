@@ -819,6 +819,28 @@ test('[critical] widening: a stop the signal\'s own would have hit in a volatile
   assert.notEqual(paramsKey({ ...P, widenSlAtr: 4 }), paramsKey(P));
 });
 
+test('[critical] widening, back when calm: widened only while the 1m ATR is over its level at the fill, then the signal\'s own again', () => {
+  const own = { stop: 83_700, target: 84_500 }, wide = { stop: 83_550, target: 84_500 };
+  const at = (atr: number) => widenAfter(wide, { dir: 1, entry: 84_000, atr, slAtr: 10, tgtAtr: 0, mode: 'calm', baseAtr: 20, own });
+  assert.deepEqual(at(45), { stop: 83_550, target: 84_500 }, 'still volatile: the widest kept');
+  assert.deepEqual(at(20), own, 'back to the ATR at the fill: the signal\'s own');
+  assert.deepEqual(widenAfter(wide, { dir: 1, entry: 84_000, atr: 20, slAtr: 10, tgtAtr: 0, mode: 'widest', baseAtr: 20, own }), wide, 'kept at the widest, as asked by default');
+});
+
+test('[critical] widening, the two side by side: a dip after the volatile hour passes over the widest, and is a stop once calm', () => {
+  // The fill at minute 30 with the minutes 20 wide (ATR about 20); 120 wide from 60 to 180; 4 wide after. A dip to 83,690 at 300.
+  const range = (m: number) => (m < 60 ? 20 : m < 180 ? 120 : 4);
+  const bars = wild([[0, 84_000], [250, 84_000], [300, 83_690], [350, 84_000], [1_439, 84_000]], range);
+  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  const run = (o: Partial<BacktestParams>) => simulateDay({ from, to, params: { ...P, ...o }, signals: [sig(30)], bars, board }).trades[0]!;
+  const widest = run({ widenSlAtr: 4 }), calm = run({ widenSlAtr: 4, widenMode: 'calm' }), signalOwn = run({});
+  assert.equal(signalOwn.by, 'perp-sl', 'the signal\'s own 83,700 is touched by the dip');
+  assert.notEqual(widest.by, 'perp-sl', 'kept at the widest (about 83,520): the dip passes over it');
+  assert.equal(calm.by, 'perp-sl', 'calm again by then: back at 83,700, and the dip takes it');
+  assert.ok(Math.abs(calm.perpPts + 300) < 1e-9, 'out at the signal\'s own stop');
+  assert.notEqual(paramsKey({ ...P, widenSlAtr: 4, widenMode: 'calm' }), paramsKey({ ...P, widenSlAtr: 4 }));
+});
+
 /* The option's stop to the price sold once the premium has fallen so far (owner, 18 Oct 2026: "SL to the entry price"). */
 test('[critical] break-even: the stop goes to the price sold once the best offer is that far under it -- points or per cent', () => {
   assert.deepEqual([36, 35.01, 35, 30].map((b) => breakEvenReached({ move: 5, unit: 'pts' }, 40, b)), [false, false, true, true]);
@@ -844,4 +866,23 @@ test('[critical] break-even: the trade that came back is bought at the price sol
   const far = simulateDay({ from, to, params: { ...P, stopPct: 1.5, breakEven: { move: 90, unit: 'pct' } }, signals: [sig(0)], bars: flat, board }).trades[0]!;
   assert.equal(far.optStopEnd, undefined);
   assert.notEqual(paramsKey({ ...P, breakEven: { move: 25, unit: 'pct' } }), paramsKey(P));
+});
+
+/* The perp's own levels left out (owner, 18 Oct 2026: "skip perp SL, skip perp TGT -- enable, disable"). */
+test('[critical] skip perp SL / TGT: the perp reaching a level left out closes nothing -- the option\'s own levels or the day\'s end do', () => {
+  // A BUY at 84,000 (SL 83,700, TGT 84,500): the perp falls through the SL at minute 200 and later rises through the TGT
+  const bars = perp([[0, 84_000], [200, 83_600], [400, 84_000], [600, 84_600], [1_439, 84_600]]);
+  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
+  const run = (o: Partial<BacktestParams>) => simulateDay({ from, to, params: { ...P, stopPct: 0, targetPct: 0, ...o }, signals: [sig(0)], bars, board }).trades[0]!;
+  assert.equal(run({}).by, 'perp-sl', 'as the desk: the perp SL at minute 200');
+  const noSl = run({ skipPerpSl: true });
+  assert.equal(noSl.by, 'perp-tgt', 'the SL left out: on to the TGT');
+  assert.ok((noSl.exitAt - from) / MIN > 500);
+  assert.equal(run({ skipPerpSl: true, skipPerpTgt: true }).by, 'window-end', 'both left out, no option levels: to the end of the day');
+  // the option's own stop still stands with the perp's left out
+  const optStop = simulateDay({ from, to, params: { ...P, stopPct: 1, skipPerpSl: true, skipPerpTgt: true }, signals: [sig(0)], bars,
+    board: contract('P', 83_200, -0.09, [[0, 40], [200, 85], [1_435, 30]]) }).trades[0]!;
+  assert.equal(optStop.by, 'option-sl');
+  assert.notEqual(paramsKey({ ...P, skipPerpSl: true }), paramsKey(P));
+  assert.notEqual(paramsKey({ ...P, skipPerpSl: true }), paramsKey({ ...P, skipPerpTgt: true }));
 });

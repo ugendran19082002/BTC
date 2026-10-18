@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, WIDEN_ATR_MAX, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades } from '../../report/backtest-run.js';
@@ -192,13 +192,21 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
   // entry; 0 or absent, the signal's own.
   const widenSlAtr = num('wsl', 0), widenTgtAtr = num('wtgt', 0);
   for (const v of [widenSlAtr, widenTgtAtr]) if (!(v >= 0 && v <= WIDEN_ATR_MAX)) return `Widening with volatility is from 0 (off) to ${WIDEN_ATR_MAX} ATRs.`;
+  // The perp's own levels left out: `?noperpsl=1`, `?noperptgt=1` (0 or absent: used).
+  for (const k of ['noperpsl', 'noperptgt']) if (q[k] !== undefined && q[k] !== '' && q[k] !== '0' && q[k] !== '1') return `${k} is 0 or 1.`;
+  const skipPerpSl = q.noperpsl === '1', skipPerpTgt = q.noperptgt === '1';
+  // And when volatility falls again: `?wmode=widest` (kept at the widest, the default) or `calm` (back to the signal's own).
+  const widenMode = q.wmode === undefined || q.wmode === '' ? 'widest' : q.wmode;
+  if (!WIDEN_MODES.includes(widenMode as WidenMode)) return 'When volatility falls again: "widest" or "calm".';
   return {
     rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol, minPremium,
     // Only where it is not the default, so settings saved before it are the same settings as ever.
     ...(volBy === 'iv' ? { volBy } : {}),
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}), ...(noEntry ? { noEntry } : {}),
     ...(strikeBlocks ? { strikeBlocks } : {}), ...(tsl ? { tsl } : {}),
-    ...(widenSlAtr > 0 ? { widenSlAtr } : {}), ...(widenTgtAtr > 0 ? { widenTgtAtr } : {}), ...(breakEven ? { breakEven } : {}),
+    ...(widenSlAtr > 0 ? { widenSlAtr } : {}), ...(widenTgtAtr > 0 ? { widenTgtAtr } : {}),
+    ...((widenSlAtr > 0 || widenTgtAtr > 0) && widenMode === 'calm' ? { widenMode: 'calm' as const } : {}),
+    ...(skipPerpSl ? { skipPerpSl } : {}), ...(skipPerpTgt ? { skipPerpTgt } : {}), ...(breakEven ? { breakEven } : {}),
   };
 }
 
@@ -258,7 +266,8 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
     noentry: x.noEntry?.on && Array.isArray(x.noEntry.windows) ? x.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : undefined,
     sblocks: Array.isArray(x.strikeBlocks) && x.strikeBlocks.length ? JSON.stringify(x.strikeBlocks) : undefined,
     tsl: x.tsl && typeof x.tsl === 'object' ? tslQueryOf(x.tsl) : undefined,
-    wsl: x.widenSlAtr, wtgt: x.widenTgtAtr,
+    wsl: x.widenSlAtr, wtgt: x.widenTgtAtr, wmode: x.widenMode,
+    noperpsl: x.skipPerpSl === true ? '1' : undefined, noperptgt: x.skipPerpTgt === true ? '1' : undefined,
     be: x.breakEven && typeof x.breakEven === 'object' ? `${x.breakEven.move}${x.breakEven.unit}` : undefined,
   });
 }

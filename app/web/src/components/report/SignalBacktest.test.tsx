@@ -197,6 +197,20 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery().params.tsl).toBeUndefined());
   });
 
+  it('[critical] skip perp SL / TGT (18 Oct 2026): each a switch, asked for, said; with no option stop, warned of', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('switch', { name: 'Skip perp SL' }));
+    await waitFor(() => expect(lastQuery().params.skipPerpSl).toBe(true));
+    expect(screen.getAllByText(/perp SL skipped/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('switch', { name: 'Skip perp TGT' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ skipPerpSl: true, skipPerpTgt: true }));
+    fireEvent.click(within(screen.getByRole('group', { name: "The option's own stop, over the premium sold" })).getByRole('button', { name: 'No stop' }));
+    expect(await screen.findByText(/nothing closes a losing trade before the exit time/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Skip perp SL' }));
+    await waitFor(() => expect(lastQuery().params.skipPerpSl).toBeUndefined());
+  });
+
   it('[critical] SL to entry (18 Oct 2026): switched on, asked for with its fall; off, gone', async () => {
     show();
     await screen.findByText('Backtest result');
@@ -214,7 +228,14 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery().params).toMatchObject({ widenSlAtr: 10 }));
     fireEvent.click(within(screen.getByRole('group', { name: 'Perp SL & TGT by volatility: TGT' })).getByRole('button', { name: '20× ATR' }));
     await waitFor(() => expect(lastQuery().params).toMatchObject({ widenSlAtr: 10, widenTgtAtr: 20 }));
-    expect(screen.getAllByText(/perp SL ≥ 10× ATR · TGT ≥ 20× ATR \(widens with volatility\)/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/perp SL ≥ 10× ATR · TGT ≥ 20× ATR \(widens with volatility, kept widest\)/).length).toBeGreaterThan(0);
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Perp SL & TGT by volatility: when volatility falls again' })).getByRole('radio', { name: /Back to the signal's own/ }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ widenSlAtr: 10, widenTgtAtr: 20, widenMode: 'calm' }));
+    // the three ways on the same trades: asked again with each, on a tap
+    const before = getSignalBacktest.mock.calls.length;
+    fireEvent.click(await screen.findByRole('button', { name: 'Compare the three' }));
+    await screen.findByRole('table', { name: 'Perp SL and TGT, the three ways' });
+    expect(getSignalBacktest.mock.calls.slice(before).map((c) => [c[0].params.widenSlAtr, c[0].params.widenMode])).toEqual([[undefined, undefined], [10, 'widest'], [10, 'calm']]);
     fireEvent.click(within(screen.getByRole('group', { name: 'Perp SL & TGT by volatility: SL' })).getByRole('button', { name: "Signal's own" }));
     await waitFor(() => expect(lastQuery().params.widenSlAtr).toBeUndefined());
   });
@@ -1172,10 +1193,10 @@ describe('SignalBacktest', () => {
     const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     const set = () => within(folio().getByRole('region', { name: 'Settings for the run' }));
     const sw = (name: string) => set().getByRole('switch', { name: `${name}, for the run` });
-    const NAMES = ['Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Trailing SL', 'SL to entry', 'Perp SL & TGT by volatility', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
+    const NAMES = ['Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Trailing SL', 'SL to entry', 'Skip perp SL / TGT', 'Perp SL & TGT by volatility', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
     // every one off to begin with, each saying whose settings run
     expect(set().getAllByRole('switch').map((x) => [x.getAttribute('aria-label'), x.getAttribute('aria-checked')])).toEqual(NAMES.map((n) => [`${n}, for the run`, 'false']));
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(12);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(13);
     expect(set().getByText('· all off')).toBeInTheDocument();
     expect(set().queryByRole('button', { name: 'Switch all off' })).toBeNull();
     // folded on a phone to begin with: one line of what the run is held to, and Change
@@ -1263,7 +1284,7 @@ describe('SignalBacktest', () => {
     fireEvent.click(sw('Volatility filter'));
     await waitFor(() => expect(last()).toEqual({}));
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(12);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(13);
   });
 
   it('a run\'s settings as the route reads them: the single backtest\'s own names under o_, and nothing for a switch that is off', async () => {

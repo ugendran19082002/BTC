@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { WidenCompare } from '@/components/report/WidenCompare';
 import { usePersisted } from '@/hooks/usePersisted';
 import { ChevronDown, Copy, FolderOpen, Pencil, Search, Trash2 } from 'lucide-react';
 import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, getPortfolioVolStudy, getPortfolioVolStudyTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
@@ -43,7 +44,8 @@ function shapeOf(q: SavedQuery): string {
     noEntry: p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`) : null,
     blocks: p.strikeBlocks?.length ? p.strikeBlocks : null,
     tsl: p.tsl ?? null,
-    widen: [p.widenSlAtr ?? 0, p.widenTgtAtr ?? 0],
+    widen: [p.widenSlAtr ?? 0, p.widenTgtAtr ?? 0, p.widenMode ?? 'widest'],
+    skip: [p.skipPerpSl === true, p.skipPerpTgt === true],
     be: p.breakEven ?? null,
     tfs: [...q.tfs].sort(), methods: [...q.methods].sort(), strategy: q.strategy,
   });
@@ -93,8 +95,10 @@ const pricedOf = (r: BacktestPortfolioResult): Record<BoardGrain, number> | unde
  * same breakdowns -- exits, volatility, trend and market move, time frames, pairs, methods, sessions, kinds of day,
  * expiry days -- each a panel of its own that folds, with the jump bar over them.
  */
-function PortfolioResult({ title, r, wide, readTrades }: {
+function PortfolioResult({ title, r, wide, readTrades, widen }: {
   title: string; r: BacktestPortfolioResult; wide: boolean;
+  /** The perp levels three ways over the run (`WidenCompare`), where the run widens them. */
+  widen?: ReactNode;
   /** Its trades, one by one, as the run worked them -- of a day, a session, a method in one (`DayTradesSheet`). */
   readTrades?: (pick: TradePick) => Promise<BtDayTrades>;
 }) {
@@ -191,7 +195,8 @@ function PortfolioResult({ title, r, wide, readTrades }: {
         </Panel>
       </div>
       {t.n > 0 && (r.breakdown ? (
-        <BacktestBreakdowns total={t} b={r.breakdown} wide={wide} idPrefix="pf" sessions={sessions} expiryDays={expiryDays} />
+        <BacktestBreakdowns total={t} b={r.breakdown} wide={wide} idPrefix="pf" sessions={sessions} expiryDays={expiryDays}
+          widen={widen} />
       ) : (
         // An older server sends no breakdowns: the sessions and the days, as before.
         <>
@@ -274,7 +279,14 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
       <RunNote r={result.data} />
       {/* The jump bar, as over one backtest's result: only the parts there are. */}
       <ResultNav parts={RUN_PARTS} has={(id) => runHas(result.data!, id)} />
-      <PortfolioResult title={run.title} r={result.data} wide={wide} readTrades={(pick) => getPortfolioTrades(pick, run.ids, range, limit, asked, hours, over)} />
+      <PortfolioResult title={run.title} r={result.data} wide={wide} readTrades={(pick) => getPortfolioTrades(pick, run.ids, range, limit, asked, hours, over)}
+        widen={over.perpWiden && (over.perpWiden.slAtr > 0 || over.perpWiden.tgtAtr > 0) ? (
+          <WidenCompare sl={over.perpWiden.slAtr} tgt={over.perpWiden.tgtAtr} askKey={askKey}
+            ask={async (v) => {
+              const a = await getBacktestPortfolio(run.ids, range, limit, asked, hours, { ...over, perpWiden: v ? { slAtr: v.slAtr, tgtAtr: v.tgtAtr, mode: v.mode } : { slAtr: 0, tgtAtr: 0 } });
+              return { total: a.total, days: a.days };
+            }} />
+        ) : undefined} />
       {/* The same run beside the live desk (14 Oct 2026): its own question, so the hours and settings over the run are over the check. */}
       {/* The SL, delta and lots by volatility over the run's saved backtests (17 Oct 2026): each on its own signals, added up. */}
       <div id="pf-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
