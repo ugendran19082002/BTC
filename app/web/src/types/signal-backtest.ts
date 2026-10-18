@@ -3,7 +3,12 @@ import type { NoEntry, StrikeBlock } from '@/types/strategy';
 
 export type VolLevel = 'low' | 'medium' | 'high';
 export type VolBy = 'atr' | 'iv';
-export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'window-end';
+/** `option-tsl`: the option's stop, after a trailing SL had moved it. */
+export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'window-end';
+/** A trailing SL's step: premium points, or a per cent of the price sold. */
+export type TslUnit = 'pts' | 'pct';
+/** Every `move` the premium falls from the price sold, the option's stop comes down `by`; never back up (18 Oct 2026). */
+export type Tsl = { move: number; moveUnit: TslUnit; by: number; byUnit: TslUnit };
 export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
 export type BacktestParams = {
   rule: 'delta' | 'premium'; value: number; lots: number; targetPct: number; stopPct: number; window: 'desk' | 'all' | 'custom';
@@ -25,6 +30,8 @@ export type BacktestParams = {
   noEntry?: NoEntry;
   /** A different strike rule by time of day: the rule above is block 1, these the blocks after it, as a strategy's. Absent: one rule all day. */
   strikeBlocks?: StrikeBlock[];
+  /** A trailing SL on the option's stop; absent, the stop stays where it was set. */
+  tsl?: Tsl;
 };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */
@@ -206,6 +213,8 @@ export type BtTradeRow = {
   cp: 'C' | 'P'; strike: number; lots: number;
   entryAt: number; entry: number; exitAt: number; exit: number; by: BtExit;
   optTgt: number | null; optStop: number | null;
+  /** Where a trailing SL had brought the stop by the exit; null (or absent from an older server) where it never moved. */
+  optStopEnd?: number | null;
   perpPts: number; netUsd: number; chargesUsd: number;
   /** In a portfolio: whose trade it is. */
   member?: string;

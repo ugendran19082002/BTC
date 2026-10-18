@@ -184,6 +184,19 @@ describe('SignalBacktest', () => {
     expect(JSON.parse(window.localStorage.getItem(kept)!)).toMatchObject({ lots: 16, stopPct: 1.5 });
   });
 
+  it('[critical] a trailing SL on the option stop (18 Oct 2026): switched on, asked for; in pts or %; off, gone', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('switch', { name: 'Trailing SL, on or off' }));
+    await waitFor(() => expect(lastQuery().params.tsl).toEqual({ move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Trailing SL presets' })).getByRole('button', { name: '10% → 10%' }));
+    await waitFor(() => expect(lastQuery().params.tsl).toEqual({ move: 10, moveUnit: 'pct', by: 10, byUnit: 'pct' }));
+    // said on the section's folded line
+    expect(screen.getAllByText(/TSL every 10% → SL −10%/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('switch', { name: 'Trailing SL, on or off' }));
+    await waitFor(() => expect(lastQuery().params.tsl).toBeUndefined());
+  });
+
   it('[critical] a custom range of expiry days, picked in the same sheet as the market report\'s', async () => {
     show();
     await screen.findByText('Backtest result');
@@ -1137,10 +1150,10 @@ describe('SignalBacktest', () => {
     const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     const set = () => within(folio().getByRole('region', { name: 'Settings for the run' }));
     const sw = (name: string) => set().getByRole('switch', { name: `${name}, for the run` });
-    const NAMES = ['Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
+    const NAMES = ['Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Trailing SL', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
     // every one off to begin with, each saying whose settings run
     expect(set().getAllByRole('switch').map((x) => [x.getAttribute('aria-label'), x.getAttribute('aria-checked')])).toEqual(NAMES.map((n) => [`${n}, for the run`, 'false']));
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(9);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(10);
     expect(set().getByText('· all off')).toBeInTheDocument();
     expect(set().queryByRole('button', { name: 'Switch all off' })).toBeNull();
     // folded on a phone to begin with: one line of what the run is held to, and Change
@@ -1228,13 +1241,14 @@ describe('SignalBacktest', () => {
     fireEvent.click(sw('Volatility filter'));
     await waitFor(() => expect(last()).toEqual({}));
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(9);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(10);
   });
 
   it('a run\'s settings as the route reads them: the single backtest\'s own names under o_, and nothing for a switch that is off', async () => {
     const { overQuery } = await vi.importActual<typeof import('@/api/backtest-saves')>('@/api/backtest-saves');
     expect(overQuery({})).toEqual({});
     expect(overQuery({ lots: { lots: 2 }, stop: { stopPct: 1.6 } })).toEqual({ o_lots: '2', o_sl: '1.6' });
+    expect(overQuery({ stop: { stopPct: 1.6 }, tsl: { tsl: { move: 10, moveUnit: 'pct', by: 5, byUnit: 'pts' } } })).toEqual({ o_sl: '1.6', o_tsl: '10pct:5pts' });
     expect(overQuery({ strike: { rule: 'delta', value: 0.1 }, minPremium: { minPremium: 0 } })).toEqual({ o_rule: 'delta', o_value: '0.1', o_minprem: '0' });
     expect(overQuery({ target: { targetPct: 0.7 } })).toEqual({ o_tp: '0.7' });
     expect(overQuery({ target: { targetPct: 0.7, targetSteps: [{ at: '23:30', pct: 0.73 }, { at: '01:30', pct: 0.76 }] } })).toEqual({ o_tp: '0.7', o_tsteps: '23:30:73,01:30:76' });

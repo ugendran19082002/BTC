@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PARAMS, MIN_PREMIUM, pickStrike, planOfParams, simulateDay, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, paramsKey, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
 import { sessionOf, type MinuteBar } from '../../src/report/market-day.js';
 import { fillChargesUsd } from '../../src/trading/charges.js';
 
@@ -130,6 +130,49 @@ test('[critical] the option\'s own target and stop come first when a reading rea
   // a tighter stop: 1.5 is two and a half times the premium
   const tight = simulateDay({ from, to, params: { ...P, stopPct: 1.5 }, signals: [sig(0)], bars: flat, board: contract('P', 83_200, -0.09, [[0, 40], [200, 99], [1_435, 5]]) });
   assert.equal(tight.trades[0]!.by, 'option-sl');
+});
+
+/*
+ * A trailing SL on the option's stop (owner, 18 Oct 2026: "TSL in the backtest -- points and per cent; as the price moves
+ * from the entry, the SL moves"): every X the premium falls from the price sold, the stop comes down Y; never back up.
+ */
+test('[critical] TSL: one SL step for every whole price step the best offer is under the sale -- in points, per cent, or both', () => {
+  const pts = { move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' } as const;
+  assert.deepEqual([38, 35, 30.01, 30, 41].map((best) => tslTrail(pts, 40, best)), [0, 5, 5, 10, 0]);
+  // 10% of 40 is 4: down 8 is two steps; each step 10% of 40, or 5 points
+  assert.equal(tslTrail({ move: 10, moveUnit: 'pct', by: 10, byUnit: 'pct' }, 40, 32), 8);
+  assert.equal(tslTrail({ move: 10, moveUnit: 'pct', by: 5, byUnit: 'pts' }, 40, 32), 10);
+  assert.equal(tslTrail({ move: 5, moveUnit: 'pts', by: 2, byUnit: 'pts' }, 40, 39.99), 0, 'not a whole step yet');
+});
+
+test('[critical] TSL: the stop follows the premium down, holds when it turns, and the trade is out on the trailed stop', () => {
+  const flat = perp([[0, 84_000], [1_439, 84_000]]);
+  // sold at 40 (stop +150%: 100); the offer falls to 12 by minute 100, then climbs to 82 by minute 200, then eases
+  const board = contract('P', 83_200, -0.09, [[0, 40], [100, 10], [200, 80], [1_435, 60]]);
+  const tsl = { move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' } as const;
+  const trailed = simulateDay({ from, to, params: { ...P, stopPct: 1.5, tsl }, signals: [sig(0)], bars: flat, board }).trades[0]!;
+  // best offer 12: 28 under 40 is five steps of 5 -- the stop 100 comes down 25, to 75, and stays there as it climbs
+  assert.deepEqual([trailed.by, (trailed.exitAt - from) / MIN, trailed.exit, trailed.optStop, trailed.optStopEnd], ['option-tsl', 190, 75, 100, 75]);
+  // the same day without it: the stop at 100 is never reached
+  const fixed = simulateDay({ from, to, params: { ...P, stopPct: 1.5 }, signals: [sig(0)], bars: flat, board }).trades[0]!;
+  assert.equal(fixed.by, 'window-end');
+  assert.equal(fixed.optStopEnd, undefined);
+  // a premium that never falls a whole step: the stop is where it was set, and a stop hit is the option's own
+  const up = simulateDay({ from, to, params: { ...P, stopPct: 1.5, tsl: { ...tsl, move: 50 } }, signals: [sig(0)], bars: flat, board: contract('P', 83_200, -0.09, [[0, 40], [100, 120], [1_435, 60]]) }).trades[0]!;
+  assert.equal(up.by, 'option-sl');
+  // a different setting is a different backtest, not a cached one
+  assert.notEqual(paramsKey({ ...P, tsl }), paramsKey(P));
+  assert.notEqual(paramsKey({ ...P, tsl }), paramsKey({ ...P, tsl: { ...tsl, byUnit: 'pct' } }));
+});
+
+test('TSL: checked as the screen says it -- above 0, the SL not moving further than the price in one unit, and a stop to move', () => {
+  const t = { move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' } as const;
+  assert.deepEqual(tslProblems(t, 3), []);
+  assert.deepEqual(tslProblems({ ...t, by: 6 }, 3), ['The SL cannot move further than the price did: the SL move must be at most the price move.']);
+  assert.deepEqual(tslProblems({ ...t, by: 6, byUnit: 'pct' }, 3), [], 'in two units it cannot be compared before a price');
+  assert.deepEqual(tslProblems(t, 0), ['A trailing SL needs an option stop to move: set the option stop.']);
+  assert.match(tslProblems({ ...t, move: 0 }, 3)[0]!, /price move is more than 0/);
+  assert.match(tslProblems({ ...t, moveUnit: 'pct', move: 101 }, 3)[0]!, /at most 100%/);
 });
 
 test('[critical] the desk\'s hours, and what cannot be traded, are counted and not guessed', () => {

@@ -3,6 +3,7 @@ import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionReco
 import type { AutoMethodsRun, StrategyConfig } from '@/types/strategy';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import { strikeBlocksQuery } from '@/lib/backtest-strike-blocks';
+import { tslQuery } from '@/lib/backtest-tsl';
 
 /** A backtest's question as the server reads it: the days, the settings, the filters, the strategy. Shared with its live check, so both are of the same thing. */
 function searchOf(q: BacktestQuery): URLSearchParams {
@@ -23,6 +24,9 @@ function searchOf(q: BacktestQuery): URLSearchParams {
   // Only blocks right for the hours, as the windows: the editor says what is wrong with any other.
   const blocks = strikeBlocksQuery(q.params);
   if (blocks) p.set('sblocks', blocks);
+  // A trailing SL only where it is right: the editor says what is wrong with any other.
+  const tsl = tslQuery(q.params);
+  if (tsl) p.set('tsl', tsl);
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));
   if (q.strategy) p.set('strategy', q.strategy);

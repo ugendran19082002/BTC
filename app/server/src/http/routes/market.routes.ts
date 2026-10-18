@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades } from '../../report/backtest-run.js';
@@ -164,12 +164,26 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
     if (bad.length) return bad[0]!;
     strikeBlocks = blocks;
   }
+  /*
+   * A trailing stop on the option's stop: `?tsl=5pts:5pts` -- every 5 points the premium falls from the price sold,
+   * the stop comes down 5 -- or in per cent of the price sold, `10pct:5pct`, either side in either. `off` or absent:
+   * none. It needs an option stop to move.
+   */
+  let tsl: Tsl | undefined;
+  if (typeof q.tsl === 'string' && q.tsl.trim() !== '' && q.tsl.trim() !== 'off') {
+    const m = /^(\d+(?:\.\d+)?)(pts|pct):(\d+(?:\.\d+)?)(pts|pct)$/.exec(q.tsl.trim());
+    if (!m) return 'A trailing SL is a price move and an SL move, each in pts or pct -- for example 5pts:5pts.';
+    const t: Tsl = { move: Number(m[1]), moveUnit: m[2] as TslUnit, by: Number(m[3]), byUnit: m[4] as TslUnit };
+    const bad = tslProblems(t, stopPct);
+    if (bad.length) return bad[0]!;
+    tsl = t;
+  }
   return {
     rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol, minPremium,
     // Only where it is not the default, so settings saved before it are the same settings as ever.
     ...(volBy === 'iv' ? { volBy } : {}),
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}), ...(noEntry ? { noEntry } : {}),
-    ...(strikeBlocks ? { strikeBlocks } : {}),
+    ...(strikeBlocks ? { strikeBlocks } : {}), ...(tsl ? { tsl } : {}),
   };
 }
 
@@ -228,6 +242,7 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
     // Kept off with its times, as the form keeps them; only an on switch is a rule.
     noentry: x.noEntry?.on && Array.isArray(x.noEntry.windows) ? x.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : undefined,
     sblocks: Array.isArray(x.strikeBlocks) && x.strikeBlocks.length ? JSON.stringify(x.strikeBlocks) : undefined,
+    tsl: x.tsl && typeof x.tsl === 'object' ? tslQueryOf(x.tsl) : undefined,
   });
 }
 

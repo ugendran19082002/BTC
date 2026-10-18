@@ -3,7 +3,8 @@ import { pickQuery, volQuery, type VolTradesPick } from '@/api/signal-backtest';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import type { NoEntry, StrikeBlock } from '@/types/strategy';
 import { backtestBlockProblems } from '@/lib/backtest-strike-blocks';
-import type { BacktestParams } from '@/types/signal-backtest';
+import type { BacktestParams, Tsl } from '@/types/signal-backtest';
+import { tslQuery } from '@/lib/backtest-tsl';
 import type { TradePick, VolAsk, VolStudyResult } from '@/types/signal-backtest';
 import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
 
@@ -95,6 +96,8 @@ export type PortfolioOver = {
   range?: { slMin: number; slMax: number; tgtMin: number; tgtMax: number };
   /** No-entry windows for every one of them (15 Oct 2026), held to the whole expiry day: each keeps its own hours. */
   noEntry?: NoEntry;
+  /** A trailing SL on every member's option stop (18 Oct 2026); null takes each member's own away for the run. */
+  tsl?: { tsl: Tsl | null };
 };
 
 /** The run's settings as the route reads them: the single backtest's own names, each under `o_`. */
@@ -115,6 +118,12 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
   if (ne) q.o_noentry = ne;
   if (o.vol) { q.o_vol = o.vol.vol; q.o_volby = o.vol.volBy; }
   // Only blocks right for the whole day; the editor says what is wrong with any other.
+  // A trailing SL for the run, checked as if a stop were set: each member keeps its own stop unless the run sets one.
+  if (o.tsl) {
+    const t = o.tsl.tsl;
+    if (t === null) q.o_tsl = 'off';
+    else { const s = tslQuery({ tsl: t, stopPct: o.stop?.stopPct ?? 3 }); if (s) q.o_tsl = s; }
+  }
   if (o.strikeBlocks && !backtestBlockProblems({ window: 'all', strikeBlocks: o.strikeBlocks.blocks }).length) q.o_sblocks = JSON.stringify(o.strikeBlocks.blocks);
   return q;
 }

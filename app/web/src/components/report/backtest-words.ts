@@ -1,6 +1,7 @@
 import { time12 } from '@/lib/time';
 import type { BacktestParams, SavedQuery } from '@/types/signal-backtest';
 import { strikeBlocksWords } from '@/lib/backtest-strike-blocks';
+import { tslWords } from '@/lib/backtest-tsl';
 
 /**
  * A backtest's settings as the screen starts with them, and in words. Apart from the screen itself
@@ -34,6 +35,7 @@ export function settingsWords(q: SavedQuery, strategies: readonly { id: string; 
     !byStrategy ? `${p.lots} lot${p.lots === 1 ? '' : 's'}` : null,
     !byStrategy ? `TGT ${target}` : null,
     !byStrategy ? `SL ${stopLabel(p.stopPct)}` : null,
+    !byStrategy && p.stopPct > 0 ? tslWords(p.tsl) : null,
     !byStrategy && floor !== PREMIUM_FLOOR ? (floor > 0 ? `premium ≥ $${floor}` : 'no premium floor') : null,
     !byStrategy ? (p.window === 'desk' ? '9:30 PM → 3:59 PM' : p.window === 'all' ? 'whole day' : p.hoursFrom && p.hoursTo ? `${time12(p.hoursFrom)} → ${time12(p.hoursTo)}` : null) : null,
     !byStrategy && (range(p.slMin, p.slMax) || range(p.tgtMin, p.tgtMax))
@@ -62,6 +64,7 @@ export function overWords(p: Partial<BacktestParams>): string[] {
       : p.targetPct > 0 ? `target ${targetLabel(p.targetPct)}` : 'no target');
   }
   if (p.stopPct !== undefined) out.push(p.stopPct > 0 ? `stop ${stopLabel(p.stopPct)}` : 'no stop');
+  if (p.tsl !== undefined) out.push(tslWords(p.tsl) ?? 'no trailing SL');
   if (p.lots !== undefined) out.push(`${p.lots} lot${p.lots === 1 ? '' : 's'} a signal`);
   if (p.minPremium !== undefined) out.push(p.minPremium > 0 ? `premium ≥ $${p.minPremium}` : 'no premium floor');
   if (p.slMin !== undefined) {

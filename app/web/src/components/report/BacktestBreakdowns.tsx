@@ -22,7 +22,7 @@ export type Breakdown = Pick<SignalBacktestResponse, 'pairs' | 'byTf' | 'byMetho
 
 export const EXITS: { key: BtExit; label: string }[] = [
   { key: 'perp-tgt', label: 'Perp TGT' }, { key: 'perp-sl', label: 'Perp SL' }, { key: 'option-tgt', label: 'Option TGT' },
-  { key: 'option-sl', label: 'Option SL' }, { key: 'window-end', label: 'Window end' },
+  { key: 'option-sl', label: 'Option SL' }, { key: 'option-tsl', label: 'Option TSL' }, { key: 'window-end', label: 'Window end' },
 ];
 
 /**

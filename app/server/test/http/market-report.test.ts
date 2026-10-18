@@ -930,6 +930,9 @@ test('[critical] a backtest saved by name, run again, and several run together a
     ['o_tp=0.8', '&tp=0.8', '&tp=0.8&lots=3&tf=15m', { targetPct: 0.8, targetSteps: [] }],
     ['o_slmin=100&o_tgtmax=900', '&slmin=100&tgtmax=900', '&slmin=100&tgtmax=900&lots=3&tf=15m', { slMin: 100, slMax: 0, tgtMin: 0, tgtMax: 900 }],
     ['o_lots=5&o_sl=1&hours=desk', '&lots=5&sl=1&window=desk', '&lots=5&sl=1&window=desk&tf=15m', { stopPct: 1, lots: 5 }],
+    // A trailing SL for the run (18 Oct 2026), over each member's own stop
+    ['o_tsl=5pts:5pts', '&tsl=5pts:5pts', '&tsl=5pts:5pts&lots=3&tf=15m', { tsl: { move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' } }],
+    ['o_sl=1&o_tsl=10pct:5pts', '&sl=1&tsl=10pct:5pts', '&sl=1&tsl=10pct:5pts&lots=3&tf=15m', { stopPct: 1, tsl: { move: 10, moveUnit: 'pct', by: 5, byUnit: 'pts' } }],
   ] as const) {
     const run = await get(`${pair}&${ask}`);
     assert.equal(run.status, 200, `${ask}: ${JSON.stringify(run.body).slice(0, 300)}`);
@@ -946,11 +949,25 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.deepEqual((await get(`/api/backtest-portfolio?ids=${a.body.save.id},${c.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&o_lots=5`)).body.over, { settings: { lots: 5 }, own: [c.body.save.id] });
   // refused in the single backtest's own words, and in the run's where a pair is half given
   for (const [bad, said] of [['o_lots=0', /For the run: Lots are a whole number/], ['o_value=0.1', /A strike for the run is its rule and its limit/], ['o_rule=delta', /A strike for the run is its rule and its limit/],
-    ['o_rule=delta&o_value=0.9', /For the run: A delta limit is from 0\.02 to 0\.5/], ['o_tsteps=23:30:75', /needs the target it starts from/], ['o_slmin=500&o_slmax=100', /SL maximum must not be under its minimum/]] as const) {
+    ['o_rule=delta&o_value=0.9', /For the run: A delta limit is from 0\.02 to 0\.5/], ['o_tsteps=23:30:75', /needs the target it starts from/], ['o_slmin=500&o_slmax=100', /SL maximum must not be under its minimum/],
+    ['o_tsl=5pts', /For the run: A trailing SL is a price move and an SL move/], ['o_sl=0&o_tsl=5pts:5pts', /needs an option stop to move/],
+    ['o_tsl=5pts:9pts', /SL cannot move further than the price did/]] as const) {
     const r = await get(`${pair}&${bad}`);
     assert.equal(r.status, 400, bad);
     assert.match(r.body.error, said);
   }
+
+  // `o_tsl=off` takes a member's own trailing SL away for the run, said back as none
+  const withTsl = await post('/api/backtest-saves', { name: 'Trailed', query: { params: { ...WHOLE, tsl: { move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' } }, tfs: [], methods: [], strategy: null } });
+  assert.equal(withTsl.status, 200, JSON.stringify(withTsl.body));
+  assert.deepEqual(withTsl.body.save.query.params.tsl, { move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' }, 'saved, and read back as saved');
+  const trailedRun = await get(`/api/backtest-portfolio?ids=${withTsl.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own`);
+  const trailedOne = await single('&tsl=5pts:5pts');
+  assert.ok(close(trailedRun.body.members[0].total.net, trailedOne.body.total.net), 'a saved trailing SL is run as the single backtest runs it');
+  const offRun = await get(`/api/backtest-portfolio?ids=${withTsl.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&o_tsl=off`);
+  assert.ok(close(offRun.body.members[0].total.net, (await single('')).body.total.net), 'off for the run: as with none');
+  assert.equal((await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&tsl=5pts:5pts&sl=0`)).status, 400);
+  await del(`/api/backtest-saves/${withTsl.body.save.id}`);
 
   /*
    * The same run beside the live desk (14 Oct 2026: "the live check inside the portfolio"): asked with the run's own
