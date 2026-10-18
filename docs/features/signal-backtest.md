@@ -359,6 +359,9 @@ $84,000), how many that won, and R a trade before and after the fees -- the poin
 stop (`perpOf`). Then each method with both, and **Only where they differ**: the methods up on one and down on the
 other. Every count carries them (`perpWins`, `perpNetPts`, `perpR`, `perpRNet`, sums). A good perp line is not a good
 options one: an options strategy is judged by the options record.
+**By time frame** (18 Oct 2026): every time frame side by side -- 3m to 4h and the chain -- and one chosen to see
+its own total and its methods; on each line the options' won and lost and their charges, and the perp's won and lost
+after its fees and R. The choice is kept in the browser.
 
 ## Against the live desk: what is replayed, and what is not (audit, 18 Oct 2026)
 

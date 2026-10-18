@@ -111,3 +111,30 @@ describe('the method updates log (16 Oct 2026)', () => {
     expect(ruleWords({ rule: null, from: null, to: null })).toBeNull();
   });
 });
+
+describe('the method updates log, account by account (18 Oct 2026)', () => {
+  it('[critical] all accounts to begin with; one chosen, every view and the strategy list are its own -- and it is remembered', async () => {
+    getMethodUpdates.mockResolvedValue({ updates: THREE });
+    const { unmount } = render(<MethodUpdatesLog now={NOW} />);
+    const accounts = await screen.findByRole('group', { name: 'Account' });
+    expect(within(accounts).getAllByRole('button').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['All accounts', 'true'], ['Savings 2', 'false'], ['Expenses 1', 'false'],
+    ]);
+    fireEvent.click(within(accounts).getByRole('button', { name: /^Expenses/ }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Timeline' }));
+    expect(screen.queryByText('15m time')).toBeNull();
+    expect(screen.getAllByText('1h time').length).toBeGreaterThan(0);
+    // one strategy left in it: no strategy list to choose from
+    expect(screen.queryByRole('combobox', { name: 'Strategy' })).toBeNull();
+    unmount();
+    render(<MethodUpdatesLog now={NOW} />);
+    expect(within(await screen.findByRole('group', { name: 'Account' })).getByRole('button', { name: /^Expenses/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('one account only: no account row', async () => {
+    getMethodUpdates.mockResolvedValue({ updates: [THREE[0]!, THREE[2]!] });
+    render(<MethodUpdatesLog now={NOW} />);
+    await screen.findByRole('tab', { name: 'Summary' });
+    expect(screen.queryByRole('group', { name: 'Account' })).toBeNull();
+  });
+});

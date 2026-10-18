@@ -240,7 +240,7 @@ export function BacktestBreakdowns({ total: t, b, wide, idPrefix, sessions, expi
           <div id={`${idPrefix}-methods`} className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><MethodsAsOptions rows={b.byMethod} wide={wide} /></div>
 
           {/* The perp and the options apart, on the same trades (18 Oct 2026): a good perp line is not a good options one. */}
-          <div id={`${idPrefix}-perp`} className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><PerpVsOptions total={t} rows={b.byMethod} /></div>
+          <div id={`${idPrefix}-perp`} className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><PerpVsOptions total={t} rows={b.byMethod} pairs={b.pairs} byTf={b.byTf} /></div>
 
           {sessions && <div id={`${idPrefix}-sessions`} className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">{sessions}</div>}
 

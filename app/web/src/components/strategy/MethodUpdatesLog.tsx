@@ -131,6 +131,8 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
   const [custom, setCustom] = usePersisted<{ from: string; to: string }>('method-log:custom', { from: shift(istDay(now), -6), to: istDay(now) });
   const [show, setShow] = usePersisted<Show>('method-log:show', 'all');
   const [strategy, setStrategy] = useState('');
+  // By broker account (owner, 18 Oct 2026: "show it account by account"): all of them, or one -- kept in this browser.
+  const [account, setAccount] = usePersisted<string>('method-log:account', 'all');
   const [method, setMethod] = useState('');
   const [methodSort, setMethodSort] = usePersisted<MethodSort>('method-log:sort', 'moves');
   const [shown, setShown] = useState(PAGE);
@@ -145,7 +147,19 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
   }, [catalogue]);
   const accountOf = (id: number | null) => (id === null ? null : accounts?.accounts.find((a) => a.id === id)?.name ?? `Account ${id}`);
 
-  const all = data?.updates ?? [];
+  const every = data?.updates ?? [];
+  // The accounts the changes are of, each with how many strategies; one chosen that is not here is all of them.
+  const accountKey = (id: number | null) => (id === null ? 'none' : String(id));
+  const accountsHere = useMemo(() => {
+    const by = new Map<string, { key: string; id: number | null; strategies: Set<string> }>();
+    for (const x of every) {
+      const k = accountKey(x.accountId);
+      (by.get(k) ?? by.set(k, { key: k, id: x.accountId, strategies: new Set() }).get(k)!).strategies.add(x.strategyId);
+    }
+    return [...by.values()];
+  }, [every]);
+  const pickedAccount = accountsHere.some((a) => a.key === account) ? account : 'all';
+  const all = useMemo(() => (pickedAccount === 'all' ? every : every.filter((x) => accountKey(x.accountId) === pickedAccount)), [every, pickedAccount]);
   const strategies = useMemo(() => [...new Map(all.map((u) => [u.strategyId, u.strategyName])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [all]);
   const picked = strategies.some(([id]) => id === strategy) ? strategy : '';
   const mine = picked ? all.filter((u) => u.strategyId === picked) : all;
@@ -189,6 +203,18 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
           </div>
         )}
       </div>
+
+      {/* Whose: every account, or one (18 Oct 2026). */}
+      {accountsHere.length > 1 && (
+        <div role="group" aria-label="Account" className="flex flex-wrap gap-1">
+          <button type="button" aria-pressed={pickedAccount === 'all'} onClick={() => { setAccount('all'); setShown(PAGE); }} className={chip(pickedAccount === 'all')}>All accounts</button>
+          {accountsHere.map((a) => (
+            <button key={a.key} type="button" aria-pressed={pickedAccount === a.key} onClick={() => { setAccount(a.key); setStrategy(''); setShown(PAGE); }} className={chip(pickedAccount === a.key)}>
+              {accountOf(a.id) ?? 'No account'} <span className="tabular-nums text-[var(--dim)]">{a.strategies.size}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* What: the view, the kind of change, the strategy. */}
       <div className="flex flex-wrap items-center gap-1.5">
