@@ -75,6 +75,19 @@ test('[critical] a backtest worked in its own thread gives what working it here 
   assert.deepEqual(trouble, []);
 });
 
+test('[critical] the same question asked again while it is worked shares its answer, not a second run behind it (18 Oct 2026)', async () => {
+  const first = signalBacktest(ASK);
+  const again = signalBacktest({ ...ASK, now: ASK.now + 1_000 });
+  assert.equal(again, first, 'one answer for both: `now` apart, the same question');
+  const other = signalBacktest({ ...ASK, params: { ...ASK.params, lots: 3 } });
+  assert.notEqual(other, first, 'other settings are their own question');
+  const [a, b] = await Promise.all([first, again]);
+  assert.equal(a, b);
+  await other;
+  // Answered, it is let go: asked afresh after, it is worked afresh.
+  assert.notEqual(signalBacktest(ASK), first);
+});
+
 test('[critical] a backtest that cannot be meant is refused in the thread\'s own words, and the thread goes on', async () => {
   useBacktestThread();
   await assert.rejects(() => signalBacktest({ ...ASK, params: null as never }), /Cannot read|null|undefined/);

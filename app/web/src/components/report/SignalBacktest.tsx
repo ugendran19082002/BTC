@@ -23,7 +23,7 @@ import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/rep
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
 import { BacktestStrikeBlocks } from '@/components/report/BacktestStrikeBlocks';
-import { strikeBlocksWords } from '@/lib/backtest-strike-blocks';
+import { backtestBlockProblems, strikeBlocksWords } from '@/lib/backtest-strike-blocks';
 import { BacktestBreakdowns, ChargesNote, DayAverages, GRAIN, ResultNav, WinnersLosers, pricedWords, skippedParts } from '@/components/report/BacktestBreakdowns';
 import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, settingsWords } from '@/components/report/backtest-words';
@@ -669,7 +669,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`,
       `TGT ${targetWords}`, params.stopPct > 0 ? `SL +${Math.round(params.stopPct * 100)}%` : 'no option SL',
       `${params.lots} lot${params.lots === 1 ? '' : 's'}`, floor > 0 ? `min $${floor}` : 'no premium floor',
-      ...(strikeBlocksWords(params.strikeBlocks) ? [strikeBlocksWords(params.strikeBlocks)!] : []),
+      ...(strikeBlocksWords(params.strikeBlocks) ? [backtestBlockProblems(params).length ? 'strike blocks not used (outside the hours)' : strikeBlocksWords(params.strikeBlocks)!] : []),
     ].join(' · '),
     which: [
       ...(byStrategy ? [] : [pts(params.slMin, params.slMax) ? `SL ${pts(params.slMin, params.slMax)}` : null, pts(params.tgtMin, params.tgtMax) ? `TGT ${pts(params.tgtMin, params.tgtMax)}` : null]),
@@ -783,6 +783,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       <BacktestStrikeBlocks hours={backtestHours(params)} rule={{ rule: params.rule, value: params.value }} blocks={params.strikeBlocks}
         firstWords={<>The strike rule above: <b className="font-semibold">{params.rule === 'delta' ? `delta ≤ ${params.value.toFixed(2)}` : `premium ≤ $${params.value}`}</b>, from the start of the hours.</>}
         onChange={(n) => set({ strikeBlocks: n.strikeBlocks.length ? n.strikeBlocks : undefined, ...(n.rule ? { rule: n.rule.rule, value: n.rule.value } : {}) })} />
+      {/* Blocks that no longer fit the hours are not sent (18 Oct 2026): said here, not left to be found in the result. */}
+      {(params.strikeBlocks?.length ?? 0) > 0 && backtestBlockProblems(params).length > 0 && (
+        <p role="alert" className="m-0 rounded-md border border-solid border-[var(--warn)]/50 px-3 py-2 text-[12.5px] leading-snug text-[var(--warn)]">
+          The strike blocks are not in this backtest until they fit the hours: {backtestBlockProblems(params)[0]} The rule above is used all day meanwhile.
+        </p>
+      )}
       {/* First which kind of target, then its own settings (owner, 13 Oct 2026). */}
       <Segmented dense label="The option's own target" value={dynamic ? 'dynamic' : 'fixed'}
         options={[{ key: 'fixed', label: 'Fixed target', spoken: 'One target all day' }, { key: 'dynamic', label: 'Dynamic · by time', spoken: 'A target that moves by the clock' }]}
@@ -1120,7 +1126,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           </div>
         )}
         <p className="m-0 text-[13px] text-muted-foreground">
-          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target {targetWords}, stop {CUSTOM.stop.label(params.stopPct)}{params.deskMax > 0 ? ` · at most ${params.deskMax} open, CE ${params.cePct}% · PE ${params.pePct}%` : ''}{(() => {
+          {dayLabel(r.from)} → {dayLabel(r.to)} · {rule}{!byStrategy && r.params.strikeBlocks?.length ? ` · ${strikeBlocksWords(r.params.strikeBlocks)} by time of day` : ''} · {params.lots} lot{params.lots === 1 ? '' : 's'} a signal · option target {targetWords}, stop {CUSTOM.stop.label(params.stopPct)}{params.deskMax > 0 ? ` · at most ${params.deskMax} open, CE ${params.cePct}% · PE ${params.pePct}%` : ''}{(() => {
             const b = (min = 0, max = 0) => [min > 0 ? `≥ ${min}` : null, max > 0 ? `≤ ${max}` : null].filter(Boolean).join(' ');
             const sl = b(params.slMin, params.slMax), tg = b(params.tgtMin, params.tgtMax);
             return !byStrategy && (sl || tg) ? ` · ${[sl ? `SL ${sl}` : null, tg ? `TGT ${tg}` : null].filter(Boolean).join(', ')} pts` : '';

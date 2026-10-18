@@ -28,7 +28,7 @@ For every signal that went "in the trade" (`entry_setups` with a fill), in the e
 | Expiry days | since 1 Oct, the last 7, the last 30 | since 1 Oct |
 | Which signals | 9:30 PM → 3:59 PM IST, as the strategies trade (`desk`); the whole expiry day (`all`); or **Custom** hours, a From and a To time IST that may run past midnight (`custom`, `?hfrom=&hto=`; the To minute not included; a trade still exits by its own SL, TGT or the expiry) | desk |
 | Strike rule | **by delta**: the nearest to the money with a delta of at most 0.05 / 0.10 / 0.15 / 0.20; **by premium**: the dearest priced at most $25 / $50 / $75 / $100 | delta 0.10 |
-| Strike rule by time of day | The strategy form's own **Different strike rule by time of day** (`StrikeBlocksEditor`, 18 Oct 2026): the strike rule above is block 1, from the start of the hours; split every N hours or add blocks, each with its own rule -- by premium (at least / at most, its "if none", its distance rule), by strike, by delta or by distance -- and **Apply to all blocks**. Held to the form's rules against the backtest's hours (`strikeBlockProblems`); read at each fill as a strategy's blocks are (`strikePickAt`). Saved with a backtest. `?sblocks=` (JSON, the blocks after the first) | One rule all day |
+| Strike rule by time of day | The strategy form's own **Different strike rule by time of day** (`StrikeBlocksEditor`, 18 Oct 2026): the strike rule above is block 1, from the start of the hours; split every N hours or add blocks, each with its own rule -- by premium (at least / at most, its "if none", its distance rule), by strike, by delta or by distance -- and **Apply to all blocks**. Held to the form's rules against the backtest's hours (`strikeBlockProblems`); read at each fill as a strategy's blocks are (`strikePickAt`). Saved with a backtest. A block's time is a time of the expiry day: under hours of a run's own, the last block before they open is in force from their start and one after they close is not traded in (`blocksForHours`, 18 Oct 2026). Blocks that no longer fit the backtest's hours are not sent, and the screen says so under the editor and in the settings line. `?sblocks=` (JSON, the blocks after the first) | One rule all day |
 | Option stop | +100%, +150%, +300% over the premium sold, or none | +300% |
 | Option target | **Fixed**: 70%, 80%, 90% of the premium kept, or none. **Dynamic · by time**: a share to start with and time steps (IST) from which another share is in force, for every trade open then and every one sold after -- taken from a strategy that has such steps ("Target steps of"), or typed. Steps are read in clock order from 5:30 PM however they are typed. `?tp=&tsteps=23:30:73,01:30:76` | fixed 90% |
 | Volatility when the signal fills | Off, Low, Medium, High: the last two hours of 15-minute candles at the fill against the mean 15-minute ATR of the five expiry days before -- under 0.8× is low, over 1.3× high (`volReader`). A signal whose level cannot be said (no five days before) is none of the three. `?vol=` | off |
@@ -353,6 +353,12 @@ five minutes.
 Changing any setting or filter shows a **Working out…** bar at once, and the result on the screen is greyed and
 marked as the previous settings' until the new one arrives (`Updating.tsx`, `useAnswer`: the answer is kept with
 the question it answers). The market report and its breakdowns do the same.
+
+**Asked once the settings stand still** (18 Oct 2026, owner: "a change takes a long time"): the backtest and a run
+together are asked about 0.45 s after the last change (`useAnswer`'s `settleMs`, `SETTLE_MS`), not at every click or
+digit -- each was a whole backtest, worked one after another in the thread, so a run of edits waited for every one of
+them. "Working out…" shows at the first change. On the server the same question asked again while it is being worked
+(another tab, the screen's own poll) shares the answer under way (`worked` in `backtest-run.ts`).
 
 ## Charges, and how the counts are kept honest
 

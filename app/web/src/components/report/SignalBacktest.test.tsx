@@ -627,6 +627,15 @@ describe('SignalBacktest', () => {
     // "Apply to all" from block 1 copies the rule above to every block.
     fireEvent.click(within(blocks()).getByRole('button', { name: 'apply block 1 to all 5 blocks' }));
     await waitFor(() => expect(lastQuery().params.strikeBlocks!.every((b: { strikeRule: string; delta?: { max: number } | null }) => b.strikeRule === 'delta' && b.delta?.max === 0.1)).toBe(true));
+    // Hours they do not fit: said, and not sent -- the rule above all day meanwhile.
+    fireEvent.click(screen.getByRole('radio', { name: 'Signals in hours of your own' }));
+    fireEvent.change(screen.getByLabelText('From (IST)'), { target: { value: '22:00' } });
+    fireEvent.change(screen.getByLabelText('To (IST)'), { target: { value: '02:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /^(Use|Use these hours|Apply)$/ }));
+    expect(await screen.findByText(/The strike blocks are not in this backtest until they fit the hours/)).toBeInTheDocument();
+    await waitFor(() => expect(lastQuery().params.window).toBe('custom'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Only signals from 9:30 PM to 3:59 PM, as the strategies trade' }));
+    await waitFor(() => expect(screen.queryByText(/The strike blocks are not in this backtest/)).toBeNull());
     // One rule all day again: no blocks sent.
     fireEvent.click(within(blocks()).getByRole('checkbox', { name: 'Same strike rule all the time' }));
     await waitFor(() => expect(lastQuery().params.strikeBlocks).toBeUndefined());
