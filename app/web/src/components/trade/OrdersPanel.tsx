@@ -112,6 +112,23 @@ const REASON_TONE: Record<string, string> = {
   'closed manually': 'text-muted-foreground',
 };
 
+/**
+ * The losses by what closed them (owner, 18 Oct 2026: "perp SL, option SL, other -- loss categories, user friendly"):
+ * the perp reaching the signal's stop, the option's own stop, and the rest -- the exit time, a close by hand, a target
+ * that still lost after charges. Read from the same reason the row says, so a chip and its rows cannot disagree.
+ */
+type LossKind = 'all' | 'perp-sl' | 'option-sl' | 'other';
+const LOSS_KINDS: { key: LossKind; label: string; hint: string }[] = [
+  { key: 'all', label: 'All losses', hint: 'Every losing closed trade' },
+  { key: 'perp-sl', label: 'Perp SL', hint: 'The perp reached the signal\'s stop, and the option was bought back at a loss' },
+  { key: 'option-sl', label: 'Option SL', hint: 'The option\'s own stop was hit' },
+  { key: 'other', label: 'Other', hint: 'Closed at the exit time, by hand, or another way -- still a loss after charges' },
+];
+const lossKindOf = (r: OrderRecord): Exclude<LossKind, 'all'> => {
+  const why = exitReason(r);
+  return why === 'perp SL hit' ? 'perp-sl' : why === 'stop hit' ? 'option-sl' : 'other';
+};
+
 const netOf = (r: OrderRecord) => r.netRealisedUsd ?? r.realisedPnl;
 const chargesOf = (r: OrderRecord) => r.charges?.paidUsd ?? 0;
 const toneClass = (n: number) =>
@@ -139,6 +156,8 @@ export function OrdersPanel() {
   const [range, setRange] = usePersisted('orders:range', { from: istToday(), to: istToday() });
   const [savedStatus, setSavedStatus] = usePersisted<string>('orders:status', 'all');
   const [pageSize, setPageSize] = usePersisted<number>('orders:pageSize', 10);
+  const [savedLossKind, setLossKind] = usePersisted<string>('orders:lossKind', 'all');
+  const lossKind: LossKind = LOSS_KINDS.some((k) => k.key === savedLossKind) ? (savedLossKind as LossKind) : 'all';
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const { from, to } = range;
@@ -209,7 +228,7 @@ export function OrdersPanel() {
       case 'win':
         return rows.filter((r) => r.status === 'completed' && netOf(r) > 0);
       case 'loss':
-        return rows.filter((r) => r.status === 'completed' && netOf(r) < 0);
+        return rows.filter((r) => r.status === 'completed' && netOf(r) < 0 && (lossKind === 'all' || lossKindOf(r) === lossKind));
       case 'wait':
       case 'new':
         return rows.filter((r) => r.status === 'pending' && r.position === 0);
@@ -223,7 +242,20 @@ export function OrdersPanel() {
       default:
         return rows;
     }
-  }, [rows, activeTab, counts.wait]);
+  }, [rows, activeTab, counts.wait, lossKind]);
+
+  // Each kind of loss with its count and money, for the chips under Loss.
+  const losses = useMemo(() => {
+    const out = new Map<LossKind, { n: number; net: number; other: Map<string, number> }>(LOSS_KINDS.map((k) => [k.key, { n: 0, net: 0, other: new Map() }]));
+    for (const r of rows) {
+      if (r.status !== 'completed' || !(netOf(r) < 0)) continue;
+      const kind = lossKindOf(r);
+      for (const k of ['all', kind] as const) { const x = out.get(k)!; x.n++; x.net += netOf(r); }
+      // What "Other" is made of, in the row's own words.
+      if (kind === 'other') { const why = exitReason(r) ?? 'not said'; const o = out.get('other')!.other; o.set(why, (o.get(why) ?? 0) + 1); }
+    }
+    return out;
+  }, [rows]);
 
   // Apply search query across symbol, strategy, rules, outcome, and notes
   const displayedRows = useMemo(() => {
@@ -333,6 +365,34 @@ export function OrdersPanel() {
           );
         })}
       </ToggleGroup>
+
+      {/* Under Loss: what closed them -- the perp's SL, the option's SL, or another way -- each with its count and money. */}
+      {activeTab === 'loss' && counts.loss > 0 && (
+        <div role="group" aria-label="Losses by what closed them" className="chip-scroller -mx-1 -mt-1 mb-2.5 flex flex-nowrap gap-1 overflow-x-auto px-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+          {LOSS_KINDS.map((k) => {
+            const x = losses.get(k.key)!;
+            const on = lossKind === k.key;
+            const made = k.key === 'other' && x.other.size ? ` (${[...x.other].map(([why, n]) => `${why} ${n}`).join(', ')})` : '';
+            return (
+              <button key={k.key} type="button" aria-pressed={on} title={`${k.hint}${made}`}
+                aria-label={`${k.label} · ${x.n} · ${signedInr(usdToInr(x.net))}`}
+                onClick={() => { setLossKind(k.key); setPage(1); }}
+                disabled={x.n === 0 && k.key !== 'all'}
+                className={cn('flex flex-none items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors disabled:opacity-40',
+                  on ? 'border-[var(--down)]/40 bg-[var(--down)]/15 text-[var(--down)]' : 'border-border bg-transparent text-foreground hover:text-[var(--down)]')}>
+                <span>{k.label}</span>
+                <span className="rounded-full bg-[var(--down)]/20 px-1.5 text-[10.5px] font-semibold tabular-nums text-[var(--down)]">{x.n}</span>
+                {x.n > 0 && <span className="text-[11px] tabular-nums text-muted-foreground">{signedInr(usdToInr(x.net))}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {activeTab === 'loss' && lossKind === 'other' && (losses.get('other')?.other.size ?? 0) > 0 && (
+        <p className="-mt-1.5 mb-2.5 px-1 text-[12px] text-muted-foreground">
+          Other: {[...losses.get('other')!.other].map(([why, n]) => `${why} ${n}`).join(' · ')}
+        </p>
+      )}
 
       {/* Search and Table Page Limit Toolbar */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

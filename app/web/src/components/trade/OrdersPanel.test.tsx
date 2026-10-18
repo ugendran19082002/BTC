@@ -347,6 +347,45 @@ describe('best practice tabs: win, loss, wait, open', () => {
     expect(await screen.findByText(/85,200/)).toBeInTheDocument();
     expect(screen.queryByText(/84,000/)).toBeNull();
   });
+
+  it('[critical] under Loss, the losses by what closed them: perp SL, option SL and other, each with its count and money, and a tap shows only those', async () => {
+    const exit = (price: number) => [
+      { orderId: '1', role: 'entry' as const, side: 'sell' as const, size: 1, price: 16, ts: OPENED },
+      { orderId: '2', role: 'exit' as const, side: 'buy' as const, size: 1, price, ts: OPENED + 1 },
+    ];
+    show([
+      order({ tradeId: 'p1', symbol: 'C-BTC-85000-031026', realisedPnl: -1, exitBy: 'perp-sl', fills: exit(30) }),
+      order({ tradeId: 'p2', symbol: 'C-BTC-85200-031026', realisedPnl: -2, exitBy: 'perp-sl', fills: exit(32) }),
+      order({ tradeId: 's1', symbol: 'C-BTC-85400-031026', realisedPnl: -3, exitBy: 'option-sl', fills: exit(40) }),
+      order({ tradeId: 'x1', symbol: 'C-BTC-85600-031026', realisedPnl: -0.5, exitBy: 'window-end', fills: exit(18) }),
+      order({ tradeId: 'w1', symbol: 'P-BTC-84000-031026', realisedPnl: 2 }),
+    ]);
+    fireEvent.click(await screen.findByRole('radio', { name: /Loss · 4/ }));
+    const kinds = screen.getByRole('group', { name: 'Losses by what closed them' });
+    const chip = (name: RegExp) => within(kinds).getByRole('button', { name });
+    expect(chip(/^All losses · 4/)).toHaveAttribute('aria-pressed', 'true');
+    expect(chip(/^Perp SL · 2/)).toBeInTheDocument();
+    expect(chip(/^Option SL · 1/)).toBeInTheDocument();
+    expect(chip(/^Other · 1/)).toHaveAttribute('title', expect.stringContaining('closed at exit time 1'));
+    // Perp SL: only those two
+    fireEvent.click(chip(/^Perp SL/));
+    expect(await screen.findByText(/85,000/)).toBeInTheDocument();
+    expect(screen.getByText(/85,200/)).toBeInTheDocument();
+    expect(screen.queryByText(/85,400/)).toBeNull();
+    expect(screen.queryByText(/85,600/)).toBeNull();
+    // Option SL: the one
+    fireEvent.click(chip(/^Option SL/));
+    expect(await screen.findByText(/85,400/)).toBeInTheDocument();
+    expect(screen.queryByText(/85,000/)).toBeNull();
+    // Other: the exit-time loss, and what it is made of
+    fireEvent.click(chip(/^Other/));
+    expect(await screen.findByText(/85,600/)).toBeInTheDocument();
+    expect(screen.getByText('Other: closed at exit time 1')).toBeInTheDocument();
+    // kept in this browser; and away from Loss the chips are not there
+    expect(localStorage.getItem(Object.keys(localStorage).find((k) => k.endsWith('orders:lossKind'))!)).toContain('other');
+    fireEvent.click(screen.getByRole('radio', { name: /Win · 1/ }));
+    expect(screen.queryByRole('group', { name: 'Losses by what closed them' })).toBeNull();
+  });
 });
 
 describe('search filtering', () => {
