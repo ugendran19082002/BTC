@@ -408,6 +408,12 @@ differ.
 | 80 | BTC–ETH correlation break | BTC's returns decoupled from ETH's, and a 20-bar break (5m) | close | break bar's far end | nearest / next |
 | 81 | BTC vs ETH divergence | a new 24-bar BTC high (low) ETH did not make, then BTC turns | close | new extreme | nearest / next |
 
+#64-#69 read the previous week or month from a longer history of their own (18 Oct 2026): 360 1h and 372 4h
+candles (`PERIOD_BARS`, fetched at most every ten minutes), under the frames' own so the period running is up to the
+minute. The frames' 220 bars held the whole previous week only from Monday to about Wednesday 03:00 UTC, and the
+previous month only in a month's first six days -- none of the six formed even a WAIT from 1 to 18 Oct. Nothing else
+reads the longer history: every other method's levels, targets and trends are as before (`periods.test.ts`).
+
 37 methods need data beyond the perp's candles -- the tape (#10's delta step,
 #11, #23-#25, #56-#60), funding, open interest, the mark or the index (#28-#30,
 #41-#46), the option board (#12, #31, #47-#51, #70-#74), the book (#52-#55), or

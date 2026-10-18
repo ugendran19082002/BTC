@@ -9,7 +9,7 @@ import { optionStructure } from '../domain/structure.js';
 import { expectedMoveOver } from '../domain/shock.js';
 import { shockFrom } from '../market/shock-now.js';
 import { wallWithinEm } from '../http/routes/desk.routes.js';
-import { TF_SEC, type EntryContext, type Frames, type Tf } from './types.js';
+import { PERIOD_BARS, TF_SEC, type EntryContext, type Frames, type Tf } from './types.js';
 import { gatesOff } from './gates.js';
 
 /**
@@ -123,6 +123,7 @@ export async function readEntryContext(now = Date.now(), early?: { minAskedAt: n
     derivHistory(now).catch(() => null),
     ethSeries(now).catch(() => []),
   ]);
+  const periods = await periodSeries(now).catch(() => null);
 
   let options: EntryContext['options'] = null;
   let bigMove: EntryContext['bigMove'] = null;
@@ -166,9 +167,30 @@ export async function readEntryContext(now = Date.now(), early?: { minAskedAt: n
     heat,
     prints: (() => { try { return recentPerpPrints(now - 30 * 60_000).map((p) => ({ at: p.at, price: p.price, size: p.size, side: p.side })); } catch { return []; } })(),
     eth: closedOnly(eth, 300, asOf),
+    ...(periods ? { periods: { '1h': closedOnly(periods['1h'], TF_SEC['1h'], asOf), '4h': closedOnly(periods['4h'], TF_SEC['4h'], asOf) } } : {}),
     options,
     bigMove,
   };
+}
+
+/**
+ * The longer 1h and 4h history the week and month methods read (`PERIOD_BARS`), fetched at most every ten minutes:
+ * a period before is fixed once it is over, and the period running is read from the fresh frames. A fetch that fails
+ * is no history, and the methods are as they were without it.
+ */
+const PERIOD_FRESH_MS = 10 * 60_000;
+let periodHeld: { at: number; value: Promise<Record<'1h' | '4h', Candle[]> | null> } | null = null;
+function periodSeries(now: number): Promise<Record<'1h' | '4h', Candle[]> | null> {
+  if (periodHeld && now - periodHeld.at < PERIOD_FRESH_MS) return periodHeld.value;
+  const end = Math.floor(now / 1000);
+  const value = Promise.all([
+    candles('BTCUSD', end - PERIOD_BARS['1h'] * TF_SEC['1h'], end, '1h'),
+    candles('BTCUSD', end - PERIOD_BARS['4h'] * TF_SEC['4h'], end, '4h'),
+  ]).then(([h1, h4]) => ({ '1h': h1, '4h': h4 })).catch(() => null);
+  periodHeld = { at: now, value };
+  // A failed fetch is asked again next minute, not held for ten.
+  void value.then((v) => { if (v === null && periodHeld?.value === value) periodHeld = null; });
+  return value;
 }
 
 /** ETHUSD 5m candles, about 17 hours of them, fetched at most once a minute: the other market for the research methods. */

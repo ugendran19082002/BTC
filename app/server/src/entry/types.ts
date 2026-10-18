@@ -176,4 +176,12 @@ export type EntryContext = {
   prints?: readonly { at: number; price: number; size: number; side: 'buy' | 'sell' }[];
   /** ETHUSD 5m candles, closed: the other market. */
   eth?: readonly Candle[];
+  /**
+   * A longer 1h and 4h history, closed (`PERIOD_BARS`), for the week and month methods alone (#64-#69, 18 Oct 2026):
+   * the frames' 220 bars hold the whole previous week only from Monday to Wednesday and the previous month only in a
+   * month's first days. Nothing else reads it, so every other method's levels, targets and trends are as they were.
+   */
+  periods?: Partial<Record<'1h' | '4h', readonly Candle[]>>;
 };
+/** How much of the 1h and 4h history the week and month methods are given: two weeks and a day; two months and two days. */
+export const PERIOD_BARS: Record<'1h' | '4h', number> = { '1h': 360, '4h': 372 };

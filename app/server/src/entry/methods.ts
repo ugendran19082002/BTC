@@ -929,6 +929,16 @@ const zReversion = ({ bars, a }: DetectInput): Setup | null => {
 // ------------------------------------------------------------------ round 2 (the owner's #38-#130, deduplicated)
 
 /** The high and low of a calendar period before `t`'s (`len` s long, starting at `startOf(t)`), from hourly or 4h bars. */
+/**
+ * The 1h or 4h candles a week or month method reads: the longer history (`ctx.periods`) under the frame's own, which
+ * is fresher -- so the period before is whole and the one running is up to the minute. Without it, the frame alone.
+ */
+function periodFrame(ctx: EntryContext, tf: '1h' | '4h'): readonly Candle[] | undefined {
+  const long = ctx.periods?.[tf], fresh = ctx.frames[tf];
+  if (!long?.length) return fresh;
+  const from = fresh?.[0]?.time ?? Number.POSITIVE_INFINITY;
+  return [...long.filter((b) => b.time < from), ...(fresh ?? [])];
+}
 function prevPeriod(xs: readonly Candle[] | undefined, t: number, startOf: (t: number) => number): { hi: number; lo: number } | null {
   const s = startOf(t), p = startOf(s - 1);
   const ys = (xs ?? []).filter((b) => b.time >= p && b.time < s);
@@ -954,11 +964,11 @@ function sweepReject(bars: readonly Candle[], a: number, hi: number, lo: number,
 
 /** 87 / 88. The previous week's (month's) high or low swept and rejected. */
 const weekSweep = ({ bars, a, ctx }: DetectInput): Setup | null => {
-  const p = prevPeriod(ctx.frames['1h'], last(bars).time, weekStart);
+  const p = prevPeriod(periodFrame(ctx, '1h'), last(bars).time, weekStart);
   return p ? sweepReject(bars, a, p.hi, p.lo, "previous week's") : null;
 };
 const monthSweep = ({ bars, a, ctx }: DetectInput): Setup | null => {
-  const p = prevPeriod(ctx.frames['4h'], last(bars).time, monthStart);
+  const p = prevPeriod(periodFrame(ctx, '4h'), last(bars).time, monthStart);
   return p ? sweepReject(bars, a, p.hi, p.lo, "previous month's") : null;
 };
 
@@ -974,11 +984,11 @@ function breakReclaim(bars: readonly Candle[], a: number, hi: number, lo: number
   };
 }
 const weekReclaim = ({ bars, a, ctx }: DetectInput): Setup | null => {
-  const p = prevPeriod(ctx.frames['1h'], last(bars).time, weekStart);
+  const p = prevPeriod(periodFrame(ctx, '1h'), last(bars).time, weekStart);
   return p ? breakReclaim(bars, a, p.hi, p.lo, "previous week's") : null;
 };
 const monthReclaim = ({ bars, a, ctx }: DetectInput): Setup | null => {
-  const p = prevPeriod(ctx.frames['4h'], last(bars).time, monthStart);
+  const p = prevPeriod(periodFrame(ctx, '4h'), last(bars).time, monthStart);
   return p ? breakReclaim(bars, a, p.hi, p.lo, "previous month's") : null;
 };
 
@@ -1965,8 +1975,8 @@ export function regimeOf(bars: readonly Candle[], ctx: EntryContext): Regime {
   })() : null;
   return {
     dayRange: r3(pd && today.length ? (hiOf(today) - loOf(today)) / Math.max(pd.hi - pd.lo, 1e-9) : null),
-    weekRange: r3(periodRange(ctx.frames['1h'], t, weekStart)),
-    monthRange: r3(periodRange(ctx.frames['4h'], t, monthStart)),
+    weekRange: r3(periodRange(periodFrame(ctx, '1h'), t, weekStart)),
+    monthRange: r3(periodRange(periodFrame(ctx, '4h'), t, monthStart)),
     volZ: r3(vz), volumeZ: r3(volumeZ), autocorr: r3(autocorr),
     efficiency: r3(eff), efficiencyChange: r3(eff !== null && effBefore !== null ? eff - effBefore : null),
     frontOiShift: r3(shNow !== null && shBefore !== null ? shNow - shBefore : null),
