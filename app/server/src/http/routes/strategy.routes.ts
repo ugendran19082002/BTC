@@ -248,13 +248,21 @@ function cleanAuto(raw: unknown): Pick<SignalRule, 'autoMethods'> | Record<strin
   const a = raw as Partial<AutoMethods>;
   const num = (v: unknown) => (v === '' || v === null || v === undefined ? NaN : Number(v));
   const last = a.last && typeof a.last === 'object' ? a.last : null;
+  // The excluded methods as ids, each once; a malformed setting left for validation to say.
+  const ex = a.exclude;
+  const exclude = ex === undefined || ex === null ? null
+    : typeof ex === 'object' && !Array.isArray(ex) && Array.isArray(ex.methods)
+      ? { on: ex.on === true, methods: [...new Set(ex.methods.map(String))] }
+      : ex;
   return {
     autoMethods: {
       on: a.on === true, at: String(a.at ?? ''), winPct: num(a.winPct), minTrades: num(a.minTrades), days: num(a.days),
+      ...(exclude ? { exclude: exclude as AutoMethods['exclude'] } : {}),
       ...(last ? { last: {
         at: Number(last.at), from: String(last.from ?? ''), to: String(last.to ?? ''),
         picked: Array.isArray(last.picked) ? last.picked.map(String) : [], before: Array.isArray(last.before) ? last.before.map(String) : [],
         ...(last.note ? { note: String(last.note) } : {}),
+        ...(Array.isArray(last.excluded) && last.excluded.length ? { excluded: last.excluded.map(String) } : {}),
       } } : {}),
     },
   };

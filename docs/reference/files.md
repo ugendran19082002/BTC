@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-524 files listed, 263 test files counted below, images and lockfiles left out.
+527 files listed, 264 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 137 |
-| `app/web` | 126 |
+| `app/web` | 127 |
 
 ## `(root)`
 
@@ -20,6 +20,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [.dockerignore](../../.dockerignore) | never let a credential into a build context |
 | [.gitignore](../../.gitignore) | harvested option-chain cache - regenerate with research/harvest.py / harvester/harvest_chain.py |
+| [BTC_81_Methods_8_Modes_RnD_Matrix.xlsx](../../BTC_81_Methods_8_Modes_RnD_Matrix.xlsx) | -- |
+| [BTC_81_Methods_All_Timeframes_Full_RnD.docx](../../BTC_81_Methods_All_Timeframes_Full_RnD.docx) | -- |
 | [Dockerfile](../../Dockerfile) | ---------- build the API ---------- |
 | [Dockerfile.harvester](../../Dockerfile.harvester) | Keeps the chain cache current. |
 | [Dockerfile.web](../../Dockerfile.web) | The screen: build the Vite bundle, then serve it from nginx, which also proxies /api to the API container (deploy/nginx.docker.conf). |
@@ -493,6 +495,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ExitRuleEditor.tsx](../../app/web/src/components/strategy/ExitRuleEditor.tsx) | One exit of a strategy -- the target or the stop -- typed, not dragged. |
 | [GroupTag.tsx](../../app/web/src/components/strategy/GroupTag.tsx) | The group a strategy is in, as a small tag beside its name (owner, 10 Oct 2026: "wherever a strategy's name is, its group's name as a tag -- user friendly, desk and phone"). |
 | [LogTable.tsx](../../app/web/src/components/strategy/LogTable.tsx) | A log of what the desk did, as a table. |
+| [MethodList.tsx](../../app/web/src/components/strategy/MethodList.tsx) | The 81 methods as a list to tick, each with its record: searched, by family, by result, by order side and sorted. |
 | [MethodTimeframes.tsx](../../app/web/src/components/strategy/MethodTimeframes.tsx) | The method updates by time frame, day by day (owner, 16 Oct 2026: "the methods update report, more user friendly: by time frame with its methods, in and out, date wise"). |
 | [MethodUpdatesLog.tsx](../../app/web/src/components/strategy/MethodUpdatesLog.tsx) | Every change to the signal strategies' methods (owner, 16 Oct 2026: "the daily methods changes, logged, saved in the db, shown in a logs menu and on the phone's More"; then "today, yesterday, last... |
 | [ReorderList.tsx](../../app/web/src/components/strategy/ReorderList.tsx) | A list put in order by dragging (owner, 10 Oct 2026: "drag to change the order, user friendly"). |

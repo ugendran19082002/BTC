@@ -319,9 +319,14 @@ export function deltaByVolProblems(a: DeltaByVol | null | undefined): string[] {
   return bad;
 }
 /** Once a day at `at` (IST): the methods that won `winPct`% or more of `minTrades`+ trades over the last `days` finished expiry days. */
-export type AutoMethods = { on: boolean; at: string; winPct: number; minTrades: number; days: number; last?: AutoMethodsRun | null };
-/** One pick: the days looked at, the list set (best net first) and the one before; `note` when the list was kept. */
-export type AutoMethodsRun = { at: number; from: string; to: string; picked: string[]; before: string[]; note?: string | null; records?: MethodRecordLine[] };
+export type AutoMethods = { on: boolean; at: string; winPct: number; minTrades: number; days: number; exclude?: AutoExclude | null; last?: AutoMethodsRun | null };
+/** Methods the daily update never picks, however they did (18 Oct 2026); off keeps the ticks for next time. */
+export type AutoExclude = { on: boolean; methods: string[] };
+/**
+ * One pick: the days looked at, the list set (best net first) and the one before; `note` when the list was kept;
+ * `excluded`, the excluded methods that passed and were left out.
+ */
+export type AutoMethodsRun = { at: number; from: string; to: string; picked: string[]; before: string[]; note?: string | null; excluded?: string[]; records?: MethodRecordLine[] };
 /** A method's record as the daily update read it: trades, wins, and the net as options after charges ($). */
 export type MethodRecordLine = { method: string; trades: number; wins: number; net: number };
 export type MethodUpdateSource = 'daily' | 'manual';
@@ -347,8 +352,10 @@ export function autoMethodsProblems(a: AutoMethods | null | undefined): string[]
   if (!Number.isFinite(a.winPct) || a.winPct < 1 || a.winPct > 100) bad.push('The daily update\'s win rate must be from 1% to 100%.');
   if (!Number.isInteger(a.minTrades) || a.minTrades < 1 || a.minTrades > 100) bad.push('The daily update\'s least trades must be a whole number from 1 to 100.');
   if (!Number.isInteger(a.days) || a.days < 1 || a.days > MAX_AUTO_DAYS) bad.push(`The daily update looks back 1 to ${MAX_AUTO_DAYS} days.`);
+  if (a.exclude?.on && !a.exclude.methods.length) bad.push(EXCLUDE_NONE);
   return bad;
 }
+export const EXCLUDE_NONE = 'Pick at least one method to exclude, or switch Exclude off.';
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
 /** A bought option's exits hold one level each (the server's words). */

@@ -114,7 +114,7 @@ function StrategyFacts({ s, volNow }: { s: Strategy; volNow?: { iv: VolLevelNow;
         <dt className={label}>Methods</dt>
         <dd className="m-0">
           {auto?.on
-            ? <>picked daily at {time12(auto.at)} · win ≥ {auto.winPct}% of {auto.minTrades}+ trades in {auto.days} days{auto.last ? ` · last ${dayOrClock(auto.last.at)}: ${auto.last.note ? 'kept as it was' : `${auto.last.picked.length} picked`}` : ' · not run yet'}</>
+            ? <>picked daily at {time12(auto.at)} · win ≥ {auto.winPct}% of {auto.minTrades}+ trades in {auto.days} days{auto.exclude?.on && auto.exclude.methods.length ? ` · ${auto.exclude.methods.length} excluded` : ''}{auto.last ? ` · last ${dayOrClock(auto.last.at)}: ${auto.last.note ? 'kept as it was' : `${auto.last.picked.length} picked`}` : ' · not run yet'}</>
             : <>{r?.methods.length ?? 0} chosen by hand</>}
         </dd>
       </div>

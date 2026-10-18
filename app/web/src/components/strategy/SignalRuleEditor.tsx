@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
 import { getEntryBoard, getEntryMethods, getMethodReport, type EntryMethodInfo } from '@/api/entry';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -13,8 +12,7 @@ import { time12 } from '@/lib/time';
 import type { OptionRecordState } from '@/components/strategy/useOptionRecord';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import { WIN_AT_LEAST_PCT, asPct, wonAtLeast } from '@/lib/win-line';
-import { SortRow, WinLine, sortOptions, type FilterSort } from '@/components/mobile/FilterPicker';
+import { MethodList, type MethodRecord } from '@/components/strategy/MethodList';
 
 /**
  * Which signals a signal strategy takes: the way (with the timeframe chain, or
@@ -39,47 +37,12 @@ import { SortRow, WinLine, sortOptions, type FilterSort } from '@/components/mob
  * seconds; nothing here is typed.
  */
 
-const GROUPS = [
-  { id: 'all', label: 'All' },
-  { id: 'breakout', label: 'Breakout' },
-  { id: 'pullback', label: 'Pullback' },
-  { id: 'reversal', label: 'Reversal' },
-  { id: 'flow', label: 'Flow' },
-] as const;
-type GroupFilter = (typeof GROUPS)[number]['id'];
-
 /**
  * What a method's record is of: the option this strategy would have sold (`options`), the option the Backtest
  * screen's own settings sell (`screen`), or the signal's own trade on the perp.
  */
 export type RecordBasis = 'options' | 'screen' | 'perp';
-/** A method's record in its basis's own unit: dollars after charges as options, BTC points on the perp. */
-export type MethodRecord = { trades: number; wins: number; winPct: number | null; net: number };
-
-type ResultFilter = 'all' | 'profit' | 'loss' | 'none' | 'win';
-const RESULTS: { id: ResultFilter; label: string; tone: string; test: (r: MethodRecord | undefined) => boolean }[] = [
-  { id: 'all', label: 'All', tone: '', test: () => true },
-  { id: 'profit', label: 'Profit', tone: 'text-[var(--up)]', test: (r) => Boolean(r && r.trades > 0 && r.net > 0) },
-  { id: 'loss', label: 'Loss', tone: 'text-[var(--down)]', test: (r) => Boolean(r && r.trades > 0 && r.net < 0) },
-  { id: 'none', label: 'No trades', tone: 'text-[var(--dim)]', test: (r) => !r || r.trades === 0 },
-];
-
-/**
- * Won at least a line (owner, 14 Oct 2026: "the Backtest methods' win filter, copied here -- the one here is wrong"):
- * the same rule and the same box as the Backtest's methods dropdown (`lib/win-line`), 30% to begin with, at or over.
- * It replaced 50 / 75 / 90 / Custom over the "profitable" minimum of trades, which counted differently from the
- * Backtest and started at Any.
- */
-const winShare = (r: Pick<MethodRecord, 'trades' | 'wins'> | undefined): number | null => (r && r.trades > 0 ? r.wins / r.trades : null);
-
-/** By the method's order side in the owner's list (5 Oct 2026): both, the BUY ones, the SELL ones. */
-type SideFilter = 'both' | 'BUY' | 'SELL';
-const SIDES: { id: SideFilter; label: string; tone: string }[] = [
-  { id: 'both', label: 'Both', tone: '' },
-  { id: 'BUY', label: 'Buy', tone: 'text-[var(--up)]' },
-  { id: 'SELL', label: 'Sell', tone: 'text-[var(--down)]' },
-];
-const onSide = (m: EntryMethodInfo, side: SideFilter) => side === 'both' || m.orderSide === side;
+export type { MethodRecord };
 
 /** Enough trades that a record means something; fewer and "profitable" is a coin's opinion. */
 export const MIN_TRADES_FOR_RECORD = 5;
@@ -158,14 +121,8 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
    */
   savedBacktests?: readonly { id: string; name: string; methods: readonly string[]; tfs: readonly string[] }[];
 }) {
-  const [query, setQuery] = useState('');
   // What the last copy replaced, so it can be undone; cleared by any other change to the pick.
   const [copy, setCopy] = useState<{ name: string; took: string[]; before: string[] } | null>(null);
-  const [group, setGroup] = useState<GroupFilter>('all');
-  // By record: everything, the ones up, the ones down, the ones with no trade -- over the timeframes picked.
-  const [result, setResult] = usePersisted<ResultFilter>('signal-rule:result', 'all');
-  // By order side. Not remembered: a list quietly missing half its methods next time is a list misread.
-  const [side, setSide] = useState<SideFilter>('both');
   const set = <K extends keyof SignalRule>(k: K, v: SignalRule[K]) => onChange({ ...rule, [k]: v });
 
   // The list changes with a deploy, not a minute: asked for once an hour.
@@ -233,35 +190,12 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
     [boards]);
 
   const methods: EntryMethodInfo[] = catalogue?.methods ?? [];
-  // Search and family first; the result and order-side filters on top, so each one's counts follow the rest.
-  const searched = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return methods.filter((m) => (group === 'all' || m.group === group)
-      && (!q || String(m.n) === q || m.name.toLowerCase().includes(q) || m.summary.toLowerCase().includes(q)));
-  }, [methods, query, group]);
-  // The Win tab's line, kept in this browser like the rest (`lib/win-line`).
-  const [winAtLeast, setWinAtLeast] = usePersisted<number>('signal-rule:win-at-least', WIN_AT_LEAST_PCT);
-  const line = asPct(typeof winAtLeast === 'number' ? winAtLeast : WIN_AT_LEAST_PCT);
-  const tabs = [...RESULTS, {
-    id: 'win' as const, label: `Win ≥${line}%`, tone: 'text-[var(--up)]',
-    test: (r: MethodRecord | undefined) => wonAtLeast(winShare(r), line),
-  }];
-  const resultTab = tabs.find((x) => x.id === result) ?? tabs[0]!;
+  // The methods the daily update leaves out, while both are on: marked in the list, which the update replaces.
+  const auto = rule.autoMethods;
+  const excluded = new Set(auto?.on && auto.exclude?.on ? auto.exclude.methods : []);
   // How many trades a record needs before "profitable" -- or a win rate -- means anything; kept in this browser.
   const [minTrades, setMinTrades] = usePersisted<number>('signal-rule:min-trades', MIN_TRADES_FOR_RECORD);
   const minT = Math.max(1, Math.trunc(minTrades) || 1);
-  const passes = (m: EntryMethodInfo, o: { side?: SideFilter; result?: (typeof tabs)[number] } = {}) => {
-    const rec = recordOf.get(m.id);
-    return onSide(m, o.side ?? side) && (o.result ?? resultTab).test(rec);
-  };
-  // The list's order, the same as the Backtest's method lists keep (owner, 15 Oct 2026: "a sort row in the form too").
-  const [sort, setSort] = usePersisted<FilterSort>('methods.sort', 'default');
-  const shown = useMemo(() => {
-    const kept = searched.filter((m) => passes(m));
-    const rec = (m: EntryMethodInfo) => { const r = recordOf.get(m.id); return r && r.trades > 0 ? { value: r.net, trades: r.trades, winRate: r.wins / r.trades } : {}; };
-    return sortOptions(kept.map((m) => ({ m, ...rec(m) })), sort).map((x) => x.m);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searched, resultTab, recordOf, side, line, sort]);
   const picked = new Set(rule.methods);
   // Only the methods the desk still has: a strategy saved before one was retired would carry an id the save refuses.
   const known = new Set(methods.map((m) => m.id));
@@ -283,7 +217,6 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
   const pickOnly = (ids: string[], what: string) => { setCopy({ name: what, took: ids, before: rule.methods }); set('methods', ids); };
   // Said, with its Undo, only while the pick is still the copied one: a change made after it is the owner's own.
   const copied = copy && copy.took.join(',') === rule.methods.join(',') ? copy : null;
-  const toggle = (id: string) => set('methods', picked.has(id) ? rule.methods.filter((x) => x !== id) : [...rule.methods, id]);
   const addAll = (ids: string[]) => set('methods', [...new Set([...rule.methods, ...ids])]);
   const winners = asOptions
     ? [...recordOf].filter(([, r]) => r.trades >= minT && r.net > 0).map(([id]) => id)
@@ -418,6 +351,15 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           nameOf={(id) => { const m = nameOf(id); return m ? `#${m.n} ${m.name}` : id; }}
           blocked={actionOf(rule) === 'buy' && !rule.autoMethods?.on ? 'Picks by the record as options sold: a strategy that buys cannot use it.' : null}
           error={errors.auto}
+          excludeList={(ids, put) => (
+            <MethodList
+              name="exclude" methods={methods} value={ids} onChange={put}
+              recordOf={recordOf} byTf={byTf} netWords={netWords} minTrades={minT}
+              overTfs={rule.mode === 'single' && tfs.length > 1 ? tfs.join(' + ') : null}
+              keys={{ result: 'auto-exclude:result', win: 'auto-exclude:win-at-least', sort: 'auto-exclude:sort' }}
+              tagOf={(id) => (picked.has(id) ? 'in the list now' : null)}
+            />
+          )}
         />
         <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <span className="flex min-w-0 flex-wrap items-center gap-2">
@@ -452,238 +394,131 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
             <button type="button" className={link} onClick={() => { set('methods', copied.before); setCopy(null); }}>Undo</button>
           </p>
         )}
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="search methods"
-                 placeholder="Search by number or name" className="pl-7" />
-        </div>
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {GROUPS.map((g) => (
-            <button key={g.id} type="button" aria-pressed={group === g.id} onClick={() => setGroup(g.id)} className={chip(group === g.id)}>
-              {g.label}
-            </button>
-          ))}
-        </div>
-        {/*
-          Whose profit and loss the filters below read (owner, 13 Oct 2026): the option this strategy would have
-          sold -- its own target and stop -- or the signal's trade on the perp. Offered only where there is a form
-          behind it to work the option record out from.
-        */}
-        {optionRecord && (
-          <div className="mt-1.5">
-            <div role="radiogroup" aria-label="profit and loss by" className="flex flex-wrap items-center gap-1">
-              <span className="mr-1 text-[11.5px] text-muted-foreground">Profit and loss by</span>
-              {optionRecord.screen && (
-                <button type="button" role="radio" aria-checked={basis === 'screen'} disabled={!screen} onClick={() => setBasisPick('screen')}
-                        title="Each method as an option under the Backtest screen's own settings: the list its Method filter shows"
-                        className={cn(chip(basis === 'screen'), 'disabled:opacity-50')}>
-                  As options · Backtest
-                </button>
-              )}
-              <button type="button" role="radio" aria-checked={basis === 'options'} disabled={!own} onClick={() => setBasisPick('options')}
-                      title="Each method as an option under this strategy's own strike rule, lots, hours and exits"
-                      className={cn(chip(basis === 'options'), 'disabled:opacity-50')}>
-                As options · this strategy&apos;s rules
-              </button>
-              <button type="button" role="radio" aria-checked={basis === 'perp'} onClick={() => setBasisPick('perp')} className={chip(basis === 'perp')}>
-                Perp points
-              </button>
-              {(optionRecord.busy || optionRecord.screen?.busy) && <span aria-live="polite" className="text-[11.5px] text-muted-foreground">working out…</span>}
-            </div>
-            <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
-              {basis === 'options'
-                ? `Each method sold as this strategy would sell it and bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT -- money after charges, ${dayLabel(own!.from)} to ${dayLabel(own!.to)}. Every method on all its signals: "at most open" is not counted.`
-                : basis === 'screen'
-                  ? `The same list as the Backtest screen's Method filter: each method by the Backtest's settings as you last left them (${optionRecord.screen!.words}), on this strategy's timeframes, ${dayLabel(screen!.from)} to ${dayLabel(screen!.to)}.`
-                  : !own && optionRecord.error
-                    ? `As options cannot be shown: ${optionRecord.error} Showing the perp's points.`
-                    : !own
-                      ? (optionRecord.busy ? "Working out each method's record as options; the perp's points until it arrives." : "The perp's points: the signal's own trade to its SL or TGT, as the Methods tab counts it.")
-                      : "The perp's points: the signal's own trade to its SL or TGT -- not what the option made."}
-            </p>
-            {/* Both records as options beside each other, where both are had: the two lists differ wherever the rules do, and that is said in numbers. */}
-            {own && screen && (
-              <p className="m-0 mt-0.5 text-[11px] leading-snug text-muted-foreground" aria-label="the two records as options">
-                By the Backtest: <b className="font-medium text-[var(--up)]">{tally(screen)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(screen)!.down} in loss</b>.
-                {' '}By this strategy&apos;s rules as saved: <b className="font-medium text-[var(--up)]">{tally(own)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(own)!.down} in loss</b>.
-                {optionRecord.screen!.apart.length === 0
-                  ? ' The strategy is set as the Backtest is: one list.'
-                  : ` Not the same settings -- ${optionRecord.screen!.apart.length} differ${optionRecord.screen!.apart.length === 1 ? 's' : ''}:`}
-              </p>
-            )}
-            {/* Each setting that is not the Backtest's, by name: what to change for the two lists to be one. */}
-            {own && screen && optionRecord.screen!.apart.length > 0 && (
-              <ul aria-label="settings that differ from the Backtest" className="m-0 mt-0.5 list-disc pl-4 text-[11px] leading-snug text-[var(--warn)]">
-                {optionRecord.screen!.apart.map((d) => <li key={d}>{d}</li>)}
-              </ul>
-            )}
-            {basis === 'options' && own!.caveats.map((c) => <p key={c} className="m-0 mt-0.5 text-[11px] leading-snug text-[var(--warn)]">{c}</p>)}
-          </div>
-        )}
-        {/* By record, with counts: the profitable ones, the losing ones, the ones with nothing yet. */}
-        <div role="group" aria-label="methods by result" className="mt-1.5 flex flex-wrap gap-1">
-          {tabs.map((x) => (
-            <button key={x.id} type="button" aria-pressed={resultTab.id === x.id} onClick={() => setResult(x.id)} className={chip(resultTab.id === x.id)}>
-              <span className={x.tone}>{x.label}</span>{' '}
-              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => passes(m, { result: x })).length}</span>
-            </button>
-          ))}
-        </div>
-        {/* The Win tab's line, under the tabs while it is the one chosen: typed, or five at a time. */}
-        {resultTab.id === 'win' && (
-          <>
-            <WinLine pct={line} onChange={setWinAtLeast} className="mt-1.5 flex max-w-[22rem] items-center gap-2" />
-            <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
-              Won {line}% or more of their trades, as on the Backtest&apos;s Method list. A method with no trade is not shown.
-            </p>
-          </>
-        )}
-        {/* By order side, under the record: the methods marked BUY, the ones marked SELL, or both. */}
-        <div role="group" aria-label="methods by order side" className="mt-1.5 flex flex-wrap items-center gap-1">
-          <span className="mr-1 text-[11.5px] text-muted-foreground">Order side</span>
-          {SIDES.map((x) => (
-            <button key={x.id} type="button" aria-pressed={side === x.id} onClick={() => setSide(x.id)} className={chip(side === x.id)}>
-              <span className={x.tone}>{x.label}</span>{' '}
-              <span className="tabular-nums text-[var(--dim)]">{searched.filter((m) => passes(m, { side: x.id })).length}</span>
-            </button>
-          ))}
-        </div>
-        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-          <button type="button" className={link} disabled={!shown.length} onClick={() => addAll(shown.map((m) => m.id))}>
-            Pick all shown ({shown.length})
-          </button>
-          {/* Exactly the list shown: the ones not on it are unticked too. */}
-          <button type="button" className={link} disabled={!shown.length || (shown.length === rule.methods.length && shown.every((m) => picked.has(m.id)))}
-                  title="Tick exactly the methods shown and untick every other: the pick becomes this list"
-                  onClick={() => pickOnly(shown.map((m) => m.id), 'the list shown')}>
-            Pick only these ({shown.length})
-          </button>
-          <button type="button" className={link} disabled={!winners.length}
-                  title={`Net ${asOptions ? 'as options, after charges,' : 'points'} above zero over at least ${minT} trade${minT === 1 ? '' : 's'}, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
-                  onClick={() => addAll(winners)}>
-            Pick profitable {rule.mode === 'mtf' ? 'with the chain' : `on ${tfs.join(' + ') || '—'}`} ({winners.length})
-          </button>
-          <button type="button" className={link} disabled={!rule.methods.length} onClick={() => set('methods', [])}>
-            Clear
-          </button>
-        </div>
-        {/*
-          The rule "profitable" is read by, out loud. It was a hidden five: a method at +578 on one trade
-          showed green and was not picked, and nothing on the screen said why.
-        */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground">
-          <span>Profitable = net above 0 over at least</span>
-          <Input value={String(minTrades)} aria-label="minimum trades" inputMode="numeric" className="h-7 w-12 px-1.5 text-center text-[12px]"
-                 onChange={(e) => setMinTrades(Math.max(1, Math.trunc(Number(e.target.value)) || 1))} />
-          <span>trades</span>
-          {MIN_TRADE_PRESETS.map((n) => (
-            <button key={n} type="button" aria-pressed={minT === n} onClick={() => setMinTrades(n)}
-                    className={cn('m-0 h-7 min-w-7 appearance-none rounded-md border border-solid px-1.5 font-[inherit] text-[11.5px] tabular-nums',
-                      minT === n ? 'border-foreground bg-muted text-foreground' : 'border-border bg-transparent text-muted-foreground')}>
-              {n}
-            </button>
-          ))}
-          {minT < 3 && <span className="text-[var(--warn)]">— one or two trades is luck, not a record</span>}
-        </div>
-        {/*
-          How the pick stands against the record shown (owner, 13 Oct 2026: "check the signal strategy's methods"):
-          how many of the ticked are in profit, in loss and without a trade, and the ones in profit that are not
-          ticked -- so a pick that has drifted from the list is seen, and named, before it is saved.
-        */}
-        {recordOf.size > 0 && rule.methods.length > 0 && (() => {
-          const up = (id: string) => { const r = recordOf.get(id); return Boolean(r && r.trades > 0 && r.net > 0); };
-          const down = (id: string) => { const r = recordOf.get(id); return Boolean(r && r.trades > 0 && r.net < 0); };
-          const tickedUp = rule.methods.filter(up).length, tickedDown = rule.methods.filter(down);
-          const missed = [...recordOf.keys()].filter((id) => up(id) && !picked.has(id));
-          const tag = (id: string) => { const m = nameOf(id); return m ? `#${m.n} ${m.name}` : id; };
-          return (
-            <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground" aria-label="the pick against the record">
-              Of the {rule.methods.length} picked: <b className="font-medium text-[var(--up)]">{tickedUp} in profit</b>,{' '}
-              <b className={cn('font-medium', tickedDown.length ? 'text-[var(--down)]' : '')}>{tickedDown.length} in loss</b>, {rule.methods.length - tickedUp - tickedDown.length} with no trade
-              {asOptions ? ' as options' : ' on the perp'}.
-              {tickedDown.length > 0 && <> In loss: {tickedDown.slice(0, 4).map(tag).join(', ')}{tickedDown.length > 4 ? ` and ${tickedDown.length - 4} more` : ''}.</>}
-              {missed.length > 0
-                ? <> In profit and not picked: <b className="font-medium text-foreground">{missed.length}</b> ({missed.slice(0, 4).map(tag).join(', ')}{missed.length > 4 ? ` and ${missed.length - 4} more` : ''}).</>
-                : ' Every method in profit is picked.'}
-            </p>
-          );
-        })()}
-        {errors.methods && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.methods}</p>}
-        {catalogueError && !methods.length && (
-          <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">Could not load the methods: {catalogueError.message}</p>
-        )}
-
-        {recordOf.size > 0 && <SortRow value={sort} onChange={setSort} className="mt-1.5 pb-0.5" />}
-        <ul aria-label="methods" className="m-0 mt-1.5 max-h-[26rem] list-none overflow-y-auto rounded-lg border border-solid border-border p-0">
-          {shown.map((m) => {
-            const rec = recordOf.get(m.id);
-            const on = picked.has(m.id);
-            return (
-              <li key={m.id} className="border-0 border-b border-solid border-border last:border-b-0">
-                <label className={cn('flex cursor-pointer items-start gap-2 px-2.5 py-2', on && 'bg-muted/60')}>
-                  <input type="checkbox" checked={on} onChange={() => toggle(m.id)} aria-label={`#${m.n} ${m.name}`}
-                         className="mt-0.5 h-4 w-4 flex-none accent-[var(--warn)]" />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[12.5px] font-medium text-foreground">
-                        <span className="tabular-nums text-muted-foreground">#{m.n}</span> {m.name}
-                        {m.orderSide && (
-                          <span aria-label={`#${m.n} order side`} className={cn('ml-1.5 text-[10px] font-semibold', m.orderSide === 'BUY' ? 'text-[var(--up)]' : 'text-[var(--down)]')}>
-                            {m.orderSide}
-                          </span>
-                        )}
-                      </span>
-                      <span className="flex-none text-[11px] tabular-nums text-muted-foreground">
-                        {rec && rec.trades > 0
-                          ? (
-                            <>
-                              <span title={rule.mode === 'single' && tfs.length > 1 ? `Over ${tfs.join(' + ')} together` : undefined}>
-                                {Math.round(rec.winPct ?? 0)}% win
-                              </span> · {rec.trades}t ·{' '}
-                              <span className={rec.net > 0 ? 'text-[var(--up)]' : rec.net < 0 ? 'text-[var(--down)]' : ''}>
-                                {netWords(rec.net)}
-                              </span>
-                              {rec.net > 0 && rec.trades < minT && (
-                                <span className="ml-1 text-[var(--warn)]" title={`Profitable, but on ${rec.trades} of the ${minT} trades "Pick profitable" asks for`}>
-                                  · {rec.trades} of {minT} trades
-                                </span>
-                              )}
-                            </>
-                          )
-                          : 'no trades yet'}
-                      </span>
-                    </span>
-                    {byTf.has(m.id) && (
-                      <span className="mt-0.5 block text-[10.5px] tabular-nums text-muted-foreground" aria-label={`#${m.n} by timeframe`}>
-                        {byTf.get(m.id)!.map(({ tf, row }, i) => (
-                          <span key={tf}>
-                            {i > 0 && ' · '}
-                            {tf}{' '}
-                            {row && row.trades > 0
-                              ? (
-                                <>
-                                  <span className="text-foreground">{Math.round((row.wins / row.trades) * 100)}%</span>{' '}
-                                  <span className={row.net > 0 ? 'text-[var(--up)]' : row.net < 0 ? 'text-[var(--down)]' : ''}>{netWords(row.net, false)}</span>
-                                  {' '}({row.trades}t)
-                                </>
-                              )
-                              : <span className="text-[var(--dim)]">—</span>}
-                          </span>
-                        ))}
-                      </span>
+        <MethodList
+          methods={methods} value={rule.methods} onChange={(ids) => set('methods', ids)}
+          recordOf={recordOf} byTf={byTf} netWords={netWords} minTrades={minT}
+          overTfs={rule.mode === 'single' && tfs.length > 1 ? tfs.join(' + ') : null}
+          keys={{ result: 'signal-rule:result', win: 'signal-rule:win-at-least', sort: 'methods.sort' }}
+          tagOf={(id) => (excluded.has(id) ? 'excluded daily' : null)}
+          onPickOnly={(ids) => pickOnly(ids, 'the list shown')}
+          afterGroups={(
+            <>
+              {/*
+                Whose profit and loss the filters below read (owner, 13 Oct 2026): the option this strategy would have
+                sold -- its own target and stop -- or the signal's trade on the perp. Offered only where there is a form
+                behind it to work the option record out from.
+              */}
+              {optionRecord && (
+                <div className="mt-1.5">
+                  <div role="radiogroup" aria-label="profit and loss by" className="flex flex-wrap items-center gap-1">
+                    <span className="mr-1 text-[11.5px] text-muted-foreground">Profit and loss by</span>
+                    {optionRecord.screen && (
+                      <button type="button" role="radio" aria-checked={basis === 'screen'} disabled={!screen} onClick={() => setBasisPick('screen')}
+                              title="Each method as an option under the Backtest screen's own settings: the list its Method filter shows"
+                              className={cn(chip(basis === 'screen'), 'disabled:opacity-50')}>
+                        As options · Backtest
+                      </button>
                     )}
-                    <span className="mt-0.5 block text-[10.5px] leading-snug text-[var(--dim)]">{m.summary} · SL: {m.sl}</span>
-                  </span>
-                </label>
-              </li>
-            );
-          })}
-          {methods.length > 0 && !shown.length && (
-            <li className="px-2.5 py-3 text-center text-[12px] text-muted-foreground">
-              {query.trim() ? `No method matches “${query}”.` : 'No method under these filters.'}
-            </li>
+                    <button type="button" role="radio" aria-checked={basis === 'options'} disabled={!own} onClick={() => setBasisPick('options')}
+                            title="Each method as an option under this strategy's own strike rule, lots, hours and exits"
+                            className={cn(chip(basis === 'options'), 'disabled:opacity-50')}>
+                      As options · this strategy&apos;s rules
+                    </button>
+                    <button type="button" role="radio" aria-checked={basis === 'perp'} onClick={() => setBasisPick('perp')} className={chip(basis === 'perp')}>
+                      Perp points
+                    </button>
+                    {(optionRecord.busy || optionRecord.screen?.busy) && <span aria-live="polite" className="text-[11.5px] text-muted-foreground">working out…</span>}
+                  </div>
+                  <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">
+                    {basis === 'options'
+                      ? `Each method sold as this strategy would sell it and bought back at its option TGT or SL, or when the perp reaches the signal's SL or TGT -- money after charges, ${dayLabel(own!.from)} to ${dayLabel(own!.to)}. Every method on all its signals: "at most open" is not counted.`
+                      : basis === 'screen'
+                        ? `The same list as the Backtest screen's Method filter: each method by the Backtest's settings as you last left them (${optionRecord.screen!.words}), on this strategy's timeframes, ${dayLabel(screen!.from)} to ${dayLabel(screen!.to)}.`
+                        : !own && optionRecord.error
+                          ? `As options cannot be shown: ${optionRecord.error} Showing the perp's points.`
+                          : !own
+                            ? (optionRecord.busy ? "Working out each method's record as options; the perp's points until it arrives." : "The perp's points: the signal's own trade to its SL or TGT, as the Methods tab counts it.")
+                            : "The perp's points: the signal's own trade to its SL or TGT -- not what the option made."}
+                  </p>
+                  {/* Both records as options beside each other, where both are had: the two lists differ wherever the rules do, and that is said in numbers. */}
+                  {own && screen && (
+                    <p className="m-0 mt-0.5 text-[11px] leading-snug text-muted-foreground" aria-label="the two records as options">
+                      By the Backtest: <b className="font-medium text-[var(--up)]">{tally(screen)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(screen)!.down} in loss</b>.
+                      {' '}By this strategy&apos;s rules as saved: <b className="font-medium text-[var(--up)]">{tally(own)!.up} in profit</b>, <b className="font-medium text-[var(--down)]">{tally(own)!.down} in loss</b>.
+                      {optionRecord.screen!.apart.length === 0
+                        ? ' The strategy is set as the Backtest is: one list.'
+                        : ` Not the same settings -- ${optionRecord.screen!.apart.length} differ${optionRecord.screen!.apart.length === 1 ? 's' : ''}:`}
+                    </p>
+                  )}
+                  {/* Each setting that is not the Backtest's, by name: what to change for the two lists to be one. */}
+                  {own && screen && optionRecord.screen!.apart.length > 0 && (
+                    <ul aria-label="settings that differ from the Backtest" className="m-0 mt-0.5 list-disc pl-4 text-[11px] leading-snug text-[var(--warn)]">
+                      {optionRecord.screen!.apart.map((d) => <li key={d}>{d}</li>)}
+                    </ul>
+                  )}
+                  {basis === 'options' && own!.caveats.map((c) => <p key={c} className="m-0 mt-0.5 text-[11px] leading-snug text-[var(--warn)]">{c}</p>)}
+                </div>
+              )}
+            </>
           )}
-        </ul>
+          links={(
+              <button type="button" className={link} disabled={!winners.length}
+                      title={`Net ${asOptions ? 'as options, after charges,' : 'points'} above zero over at least ${minT} trade${minT === 1 ? '' : 's'}, added up ${way} -- every timeframe picked, together: what this strategy would have taken`}
+                      onClick={() => addAll(winners)}>
+                Pick profitable {rule.mode === 'mtf' ? 'with the chain' : `on ${tfs.join(' + ') || '—'}`} ({winners.length})
+              </button>
+          )}
+          beforeList={(
+            <>
+              {/*
+                The rule "profitable" is read by, out loud. It was a hidden five: a method at +578 on one trade
+                showed green and was not picked, and nothing on the screen said why.
+              */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                <span>Profitable = net above 0 over at least</span>
+                <Input value={String(minTrades)} aria-label="minimum trades" inputMode="numeric" className="h-7 w-12 px-1.5 text-center text-[12px]"
+                       onChange={(e) => setMinTrades(Math.max(1, Math.trunc(Number(e.target.value)) || 1))} />
+                <span>trades</span>
+                {MIN_TRADE_PRESETS.map((n) => (
+                  <button key={n} type="button" aria-pressed={minT === n} onClick={() => setMinTrades(n)}
+                          className={cn('m-0 h-7 min-w-7 appearance-none rounded-md border border-solid px-1.5 font-[inherit] text-[11.5px] tabular-nums',
+                            minT === n ? 'border-foreground bg-muted text-foreground' : 'border-border bg-transparent text-muted-foreground')}>
+                    {n}
+                  </button>
+                ))}
+                {minT < 3 && <span className="text-[var(--warn)]">— one or two trades is luck, not a record</span>}
+              </div>
+              {/*
+                How the pick stands against the record shown (owner, 13 Oct 2026: "check the signal strategy's methods"):
+                how many of the ticked are in profit, in loss and without a trade, and the ones in profit that are not
+                ticked -- so a pick that has drifted from the list is seen, and named, before it is saved.
+              */}
+              {recordOf.size > 0 && rule.methods.length > 0 && (() => {
+                const up = (id: string) => { const r = recordOf.get(id); return Boolean(r && r.trades > 0 && r.net > 0); };
+                const down = (id: string) => { const r = recordOf.get(id); return Boolean(r && r.trades > 0 && r.net < 0); };
+                const tickedUp = rule.methods.filter(up).length, tickedDown = rule.methods.filter(down);
+                const missed = [...recordOf.keys()].filter((id) => up(id) && !picked.has(id));
+                const tag = (id: string) => { const m = nameOf(id); return m ? `#${m.n} ${m.name}` : id; };
+                return (
+                  <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground" aria-label="the pick against the record">
+                    Of the {rule.methods.length} picked: <b className="font-medium text-[var(--up)]">{tickedUp} in profit</b>,{' '}
+                    <b className={cn('font-medium', tickedDown.length ? 'text-[var(--down)]' : '')}>{tickedDown.length} in loss</b>, {rule.methods.length - tickedUp - tickedDown.length} with no trade
+                    {asOptions ? ' as options' : ' on the perp'}.
+                    {tickedDown.length > 0 && <> In loss: {tickedDown.slice(0, 4).map(tag).join(', ')}{tickedDown.length > 4 ? ` and ${tickedDown.length - 4} more` : ''}.</>}
+                    {missed.length > 0
+                      ? <> In profit and not picked: <b className="font-medium text-foreground">{missed.length}</b> ({missed.slice(0, 4).map(tag).join(', ')}{missed.length > 4 ? ` and ${missed.length - 4} more` : ''}).</>
+                      : ' Every method in profit is picked.'}
+                  </p>
+                );
+              })()}
+              {errors.methods && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.methods}</p>}
+              {catalogueError && !methods.length && (
+                <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">Could not load the methods: {catalogueError.message}</p>
+              )}
+
+            </>
+          )}
+        />
         <p className="m-0 mt-1 text-[10.5px] text-[var(--dim)]">
           {basis === 'options'
             ? `Record: win rate · trades · net as options after charges, ${way}, by this strategy's own strike, lots and exits (the Backtest).`

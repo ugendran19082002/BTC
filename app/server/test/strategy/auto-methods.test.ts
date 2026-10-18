@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoDue, autoPick, autoWindow, pickMethods, runAutoMethods, type AutoDeps } from '../../src/strategy/auto-methods.js';
+import { autoDue, autoPick, autoWindow, lessExcluded, pickMethods, runAutoMethods, type AutoDeps } from '../../src/strategy/auto-methods.js';
 import { DEFAULT_AUTO_METHODS, DEFAULT_CONFIG, autoMethodsProblems, validateConfig, type AutoMethods, type Strategy, type StrategyConfig } from '../../src/strategy/types.js';
 
 /**
@@ -123,6 +123,73 @@ test('[critical] its settings are checked before a save', () => {
   buys.signal!.action = 'buy';
   assert.ok(validateConfig(buys).some((p) => /strategy that buys cannot use it/.test(p)));
   assert.deepEqual(validateConfig(signal(['a'])).filter((p) => /daily update/.test(p)), []);
+});
+
+/*
+ * Exclude (owner, 18 Oct 2026: "an exclude option -- what I select there must not be chosen; on and off; on, at
+ * least one picked"): the methods ticked there are never picked, however they did.
+ */
+const recordOf = (methods: { method: string; trades: number; wins: number; net: number }[]) =>
+  async () => ({ from: '', to: '', priced: null as never, signals: 0, trades: 0, methods: methods.map((m) => ({ ...m, byTf: [] })) });
+
+test('[critical] excluded: never picked, however it did -- and said, so its absence is no mystery', async () => {
+  const recs = recordOf([
+    { method: 'best', trades: 10, wins: 10, net: 2 }, // 100%, the best -- and excluded
+    { method: 'good', trades: 4, wins: 3, net: 1 },
+    { method: 'poor', trades: 9, wins: 1, net: -1 },
+  ]);
+  const now = IST('2026-10-16T21:00:00');
+  const a = { ...DEFAULT_AUTO_METHODS, on: true, exclude: { on: true, methods: ['best'] } };
+  const run = await autoPick(signal(['poor']), a, now, null, recs);
+  assert.deepEqual([run.picked, run.excluded, run.note], [['good'], ['best'], undefined]);
+  // off: ticked, and picked as before -- the ticks wait for the next time it is on
+  const off = await autoPick(signal(['poor']), { ...a, exclude: { on: false, methods: ['best'] } }, now, null, recs);
+  assert.deepEqual([off.picked, off.excluded], [['best', 'good'], undefined]);
+});
+
+test('[critical] excluded: nothing else passes -- the list is kept, less the excluded, never emptied', async () => {
+  const now = IST('2026-10-16T21:00:00');
+  const recs = recordOf([{ method: 'best', trades: 10, wins: 10, net: 2 }]);
+  const a = { ...DEFAULT_AUTO_METHODS, on: true, exclude: { on: true, methods: ['best', 'old'] } };
+  const run = await autoPick(signal(['old', 'keep']), a, now, null, recs);
+  assert.deepEqual([run.picked, run.excluded], [['keep'], ['best']]);
+  assert.match(run.note ?? '', /No method but an excluded one won 75% of 3 trades or more: the list was kept, less the 1 excluded method/);
+  // every method kept is excluded: kept whole, a strategy is never emptied
+  const all = await autoPick(signal(['old']), a, now, null, recs);
+  assert.deepEqual(all.picked, ['old']);
+  assert.deepEqual(lessExcluded(['old', 'x'], a), ['x']);
+  assert.deepEqual(lessExcluded(['old'], { exclude: { on: false, methods: ['old'] } }), ['old']);
+});
+
+test('[critical] the run reads Exclude as saved now: a method excluded on the form while the record was worked out is not written', async () => {
+  const now = IST('2026-10-16T21:00:10');
+  const db = new Map([['s', strategy('s', signal(['breakout']))]]);
+  const told: string[] = [];
+  const d: AutoDeps = {
+    log: async () => {}, all: async () => [...db.values()], save: async (s) => { db.set(s.id, s); },
+    get: async (id) => {
+      const s = db.get(id)!;
+      return { ...s, config: { ...s.config, signal: { ...s.config.signal!, autoMethods: { ...s.config.signal!.autoMethods!, exclude: { on: true, methods: ['momentum'] } } } } };
+    },
+    pick: async (_c, _a, at) => ({ at, from: '2026-10-10', to: '2026-10-16', picked: ['momentum', 'bos'], before: ['breakout'] }),
+    tell: (t) => told.push(t), warn: (m) => assert.fail(m),
+  };
+  await runAutoMethods(now, d);
+  assert.deepEqual(db.get('s')!.config.signal!.methods, ['bos']);
+  assert.match(told[0]!, /, 1 excluded\)/);
+});
+
+test('[critical] Exclude on needs at least one method; off may keep none', () => {
+  const with_ = (exclude: unknown) => autoMethodsProblems({ ...DEFAULT_AUTO_METHODS, exclude });
+  assert.deepEqual(with_({ on: true, methods: [] }), ['Pick at least one method to exclude, or switch Exclude off.']);
+  assert.deepEqual(with_({ on: false, methods: [] }), []);
+  assert.deepEqual(with_({ on: true, methods: ['a'] }), []);
+  assert.deepEqual(with_(null), []);
+  assert.equal(with_({ on: true, methods: ['a', 'a'] }).length, 1);
+  assert.equal(with_({ on: 'yes', methods: ['a'] }).length, 1);
+  assert.equal(with_(['a']).length, 1);
+  // and a save refuses it
+  assert.ok(validateConfig(signal(['a'], { exclude: { on: true, methods: [] } })).includes('Pick at least one method to exclude, or switch Exclude off.'));
 });
 
 test('a rule\'s time frame in a word: the chain, one, or several joined in the desk\'s order', async () => {

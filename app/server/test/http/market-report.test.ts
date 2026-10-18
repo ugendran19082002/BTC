@@ -661,6 +661,13 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   const strict = await post('/api/strategies/auto-methods/pick', { config: draft({}, { methods: ['trap'], autoMethods: { ...auto, winPct: 100, minTrades: 50 } }) });
   assert.deepEqual([strict.status, strict.body.picked], [200, ['trap']]);
   assert.match(strict.body.note, /the list was kept/);
+  // Exclude (18 Oct 2026): the excluded are not picked, and are said; on with none ticked is refused
+  const [top] = won;
+  const ex = await post('/api/strategies/auto-methods/pick', { config: draft({}, { methods: [], autoMethods: { ...auto, exclude: { on: true, methods: [top] } } }) });
+  assert.equal(ex.status, 200, JSON.stringify(ex.body).slice(0, 300));
+  assert.deepEqual([ex.body.picked, ex.body.excluded], [won.slice(1).length ? won.slice(1) : [], [top]]);
+  const exNone = await post('/api/strategies/auto-methods/pick', { config: draft({}, { autoMethods: { ...auto, exclude: { on: true, methods: [] } } }) });
+  assert.deepEqual([exNone.status, exNone.body.problems], [422, ['Pick at least one method to exclude, or switch Exclude off.']]);
   // its settings are needed and checked; one that buys has no record as options
   assert.equal((await post('/api/strategies/auto-methods/pick', { config: draft() })).status, 422);
   assert.equal((await post('/api/strategies/auto-methods/pick', { config: draft({}, { autoMethods: { ...auto, days: 0 } }) })).status, 422);
@@ -671,6 +678,13 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   assert.equal(saved.status, 200, JSON.stringify(saved.body).slice(0, 300));
   assert.deepEqual(saved.body.strategy.config.signal.autoMethods, { ...auto, last });
   assert.equal((await post('/api/strategies', { name: 'auto pick', config: draft({}, { autoMethods: { ...auto, at: 'late' } }) })).status, 422);
+  // Exclude saved, and read back: each method once; off keeps its ticks; on with none is refused
+  const withEx = await post('/api/strategies', { name: 'auto exclude', config: draft({}, { autoMethods: { ...auto, exclude: { on: false, methods: ['bos', 'bos', 'trap'] } } }) });
+  assert.equal(withEx.status, 200, JSON.stringify(withEx.body).slice(0, 300));
+  assert.deepEqual(withEx.body.strategy.config.signal.autoMethods.exclude, { on: false, methods: ['bos', 'trap'] });
+  const exRefused = await post('/api/strategies', { name: 'auto exclude', config: draft({}, { autoMethods: { ...auto, exclude: { on: true, methods: [] } } }) });
+  assert.equal(exRefused.status, 422);
+  assert.match(JSON.stringify(exRefused.body), /Pick at least one method to exclude/);
 
   // Every methods change kept (16 Oct 2026): a save that changes the list is a 'manual' row; one that does not, none.
   const id = saved.body.strategy.id;

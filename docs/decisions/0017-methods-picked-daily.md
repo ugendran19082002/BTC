@@ -36,6 +36,11 @@ being picked from the past alone.
 6. **Only new signals read the list.** A trade open on a dropped method keeps its exits.
 7. **Every change is kept** (`strategy_method_updates`): the daily update, with the rule, the days, the lists before
    and after and every method's record, and a save from the form that changed the list. One Telegram message a run.
+8. **Exclude** (added 18 Oct 2026): methods ticked under Auto-update → Exclude methods are never picked, however
+   they did -- on the day's run and by Pick now. When nothing else passes, the kept list loses them too, unless that
+   would empty it. On with none ticked is refused, by the form and the server in the same words; off keeps the ticks.
+   The run names the excluded ones that passed (`excluded`); the Telegram line says how many are excluded. The run
+   reads Exclude as saved when it writes, so a method excluded while the record was worked out is not written.
 
 ## Consequences
 

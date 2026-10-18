@@ -396,6 +396,28 @@ describe('saving', () => {
     expect(saved().config.signal).toMatchObject({ methods: ['breakout', 'liquidity-sweep'], autoMethods: { on: true, at: '21:00', winPct: 75, last: run } });
   });
 
+  it('[critical] Exclude (18 Oct 2026): the methods list again, to tick the ones never picked; on with none ticked, not saved', async () => {
+    show(signalStrategy({ methods: ['bos'] }));
+    tab('Signals');
+    fireEvent.click(screen.getByRole('switch', { name: 'Update the methods every day' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Exclude methods from the daily pick' }));
+    // the same list, its own filters and sort, under its own labels; the strategy's own list as it was
+    const list = screen.getByRole('list', { name: 'methods (exclude)' });
+    expect(screen.getByRole('group', { name: 'methods by result (exclude)' })).toBeInTheDocument();
+    expect(screen.getByLabelText('search methods (exclude)')).toBeInTheDocument();
+    expect(await screen.findByRole('checkbox', { name: '#6 BOS' })).toBeChecked();
+    expect(await within(list).findByRole('checkbox', { name: 'exclude: #6 BOS' })).not.toBeChecked();
+    fireEvent.click(saveButton());
+    expect(await screen.findAllByText('Pick at least one method to exclude, or switch Exclude off.')).not.toHaveLength(0);
+    expect(saveStrategy).not.toHaveBeenCalled();
+    fireEvent.click(within(list).getByRole('checkbox', { name: 'exclude: #1 Breakout' }));
+    // marked in the strategy's own list, which the update replaces
+    expect(within(screen.getByRole('list', { name: 'methods' })).getByText('excluded daily')).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.autoMethods).toMatchObject({ on: true, exclude: { on: true, methods: ['breakout'] } });
+  });
+
   it('the group it is in is a tag beside its name at the top; none, no tag (16 Oct 2026)', () => {
     const { unmount } = render(<SignalStrategyForm editing={signalStrategy()} groupName="80% Win" open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
     expect(screen.getByRole('dialog', { name: /^Edit / })).toBeInTheDocument();

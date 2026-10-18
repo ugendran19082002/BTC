@@ -6,7 +6,8 @@
  * reads): every method on all its signals, sold as the strategy sells and bought back as it buys back, money after
  * charges. Once a day at the strategy's time, over the last finished expiry days, the methods that won the share
  * asked for, on enough trades, become its list -- best net first. None passing leaves the list as it was: a
- * strategy is never emptied by a bad week. Only new signals read the list (`signalMatches`); a trade already
+ * strategy is never emptied by a bad week. The methods excluded (`exclude`, while it is on) are never picked, and
+ * are taken out of a list that is kept -- unless that would empty it. Only new signals read the list (`signalMatches`); a trade already
  * open keeps its exits whatever is picked.
  *
  * Measured on 16 Oct 2026 over 8-15 Oct, each day picked only from the days before it: win 75% re-picked daily
@@ -17,7 +18,7 @@ import { methodsSchema } from '../entry/catalogue.js';
 import { DEFAULT_PARAMS, type SignalBacktest } from '../report/signal-backtest.js';
 import { signalBacktest } from '../report/backtest-run.js';
 import { sessionDayOf } from '../report/market-day.js';
-import { tfLabel, validateConfig, type AutoMethods, type AutoMethodsRun, type MethodUpdate, type Strategy, type StrategyConfig } from './types.js';
+import { excludedBy, tfLabel, validateConfig, type AutoMethods, type AutoMethodsRun, type MethodUpdate, type Strategy, type StrategyConfig } from './types.js';
 
 const IST_MS = 5.5 * 3_600_000;
 const DAY_MS = 86_400_000;
@@ -77,6 +78,13 @@ export function autoDue(s: Pick<Strategy, 'config'>, now: number): boolean {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
+/** A list less the excluded methods; the list as it is when nothing would be left -- a strategy is never emptied. */
+export function lessExcluded(list: readonly string[], a: Pick<AutoMethods, 'exclude'>): string[] {
+  const out = excludedBy(a);
+  const kept = list.filter((m) => !out.has(m));
+  return kept.length ? kept : [...list];
+}
+
 /**
  * One pick for a strategy's rules as given (saved or on the form): the list it would set, and the record behind it.
  * Nothing passing keeps the list it has, said in `note`.
@@ -85,13 +93,20 @@ export async function autoPick(config: StrategyConfig, a: AutoMethods, now: numb
   const { from, to } = autoWindow(now, a.days);
   const before = config.signal?.methods ?? [];
   const r = await record(config, { from, to, now, spot });
-  const picked = pickMethods(r.methods, a);
+  const out = excludedBy(a);
+  const passed = pickMethods(r.methods, a);
+  const picked = passed.filter((m) => !out.has(m));
+  // The excluded ones that would have come in: said, so a 90% method missing from the list is not a mystery.
+  const excluded = out.size ? { excluded: passed.filter((m) => out.has(m)) } : {};
   // Every method that traded, in brief: why each came, stayed or went -- for the preview and the log.
   const records = r.methods.filter((m) => m.trades > 0).map(({ method, trades, wins, net }) => ({ method, trades, wins, net }));
   if (!picked.length) {
-    return { at: now, from, to, picked: before, before, records, note: `No method won ${a.winPct}% of ${plural(a.minTrades, 'trade')} or more: the list was kept.` };
+    const kept = lessExcluded(before, a);
+    const less = before.length - kept.length;
+    const why = `No method ${out.size ? 'but an excluded one ' : ''}won ${a.winPct}% of ${plural(a.minTrades, 'trade')} or more`;
+    return { at: now, from, to, picked: kept, before, records, ...excluded, note: `${why}: the list was kept${less ? `, less the ${plural(less, 'excluded method')}` : ''}.` };
   }
-  return { at: now, from, to, picked, before, records };
+  return { at: now, from, to, picked, before, records, ...excluded };
 }
 
 export type AutoDeps = {
@@ -126,15 +141,17 @@ export async function runAutoMethods(now: number, d: AutoDeps): Promise<string[]
       const why = e instanceof Error ? e.message : String(e);
       const { from, to } = autoWindow(now, a.days);
       const before = s.config.signal!.methods;
-      run = { at: now, from, to, picked: before, before, note: `The record could not be had: ${why}. The list was kept.` };
+      run = { at: now, from, to, picked: lessExcluded(before, a), before, note: `The record could not be had: ${why}. The list was kept.` };
       d.warn(`methods' daily update for ${s.name}: ${why}`);
     }
     const fresh = await d.get(s.id);
     const rule = fresh?.config.signal;
     if (!fresh || !rule?.autoMethods?.on) continue;
-    // The list as it stands now is the one replaced (a save from the form may have come in the meantime); kept, it stays.
+    // The list as it stands now is the one replaced (a save from the form may have come in the meantime); kept, it
+    // stays -- less what is excluded now, unless that would empty it.
     const before = rule.methods;
-    const after = run.note ? before : run.picked;
+    const took = run.picked.filter((m) => !excludedBy(rule.autoMethods).has(m));
+    const after = run.note || !took.length ? lessExcluded(before, rule.autoMethods) : took;
     const { records = [], ...brief } = run;
     run = { ...brief, before, picked: after };
     const config: StrategyConfig = { ...fresh.config, signal: { ...rule, methods: after, autoMethods: { ...rule.autoMethods, last: run } } };
@@ -150,9 +167,10 @@ export async function runAutoMethods(now: number, d: AutoDeps): Promise<string[]
       note: run.note ?? null,
     }).catch((e: Error) => d.warn(`methods' daily update for ${s.name}: not logged: ${e.message}`));
     const added = run.picked.filter((m) => !run.before.includes(m)).length, dropped = run.before.filter((m) => !run.picked.includes(m)).length;
-    const said = `win ≥${a.winPct}% on ${a.minTrades}+, ${dayWords(run.from)} – ${dayWords(run.to)}`;
+    const out = excludedBy(rule.autoMethods).size;
+    const said = `win ≥${a.winPct}% on ${a.minTrades}+, ${dayWords(run.from)} – ${dayWords(run.to)}${out ? `, ${out} excluded` : ''}`;
     lines.push(run.note
-      ? `<b>${esc(s.name)}</b>: kept ${run.before.length} (${said}). ${esc(run.note)}`
+      ? `<b>${esc(s.name)}</b>: kept ${run.picked.length} (${said}). ${esc(run.note)}`
       : added + dropped === 0
         ? `<b>${esc(s.name)}</b>: no change, ${plural(run.picked.length, 'method')} (${said})`
         : `<b>${esc(s.name)}</b>: ${run.before.length} → ${run.picked.length} methods, +${added} −${dropped} (${said})`);

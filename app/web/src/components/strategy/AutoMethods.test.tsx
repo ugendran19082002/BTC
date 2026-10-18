@@ -86,3 +86,64 @@ describe('the methods\' daily update in the signal strategy form (16 Oct 2026)',
     expect(autoMethodsProblems({ ...DEFAULT_AUTO_METHODS, at: '', winPct: 0, minTrades: 0, days: 31 })).toHaveLength(4);
   });
 });
+
+/*
+ * Exclude (owner, 18 Oct 2026: "an exclude option -- what I select there must not be chosen; on and off; on, at
+ * least one picked; the methods list below, reused; the same filter and sort").
+ */
+function ExcludeHarness({ start }: { start: AutoMethods }) {
+  const [a, setA] = useState<AutoMethods | null>(start);
+  return (
+    <>
+      <AutoMethodsFields value={a} onChange={setA} onTake={() => {}} nameOf={(id) => names[id] ?? id} error={autoMethodsProblems(a)[0] ?? null}
+                         excludeList={(ids, put) => (
+                           <ul aria-label="stand-in list">
+                             {Object.keys(names).map((id) => (
+                               <li key={id}><input type="checkbox" aria-label={`tick ${id}`} checked={ids.includes(id)} onChange={() => put(ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])} /></li>
+                             ))}
+                           </ul>
+                         )} />
+      <output aria-label="saved">{JSON.stringify(a)}</output>
+    </>
+  );
+}
+
+describe('Exclude, in the methods\' daily update (18 Oct 2026)', () => {
+  it('[critical] off to begin with, its list hidden; on, the methods list to tick -- and at least one is asked for', () => {
+    render(<ExcludeHarness start={{ ...DEFAULT_AUTO_METHODS, on: true }} />);
+    const sw = screen.getByRole('switch', { name: 'Exclude methods from the daily pick' });
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByRole('list', { name: 'stand-in list' })).toBeNull();
+    fireEvent.click(sw);
+    expect(saved().exclude).toEqual({ on: true, methods: [] });
+    const box = screen.getByRole('region', { name: 'Exclude methods' });
+    expect(within(box).getByRole('alert')).toHaveTextContent('Pick at least one method to exclude, or switch Exclude off.');
+    // said once, in the box, not again under the settings
+    expect(screen.getAllByText('Pick at least one method to exclude, or switch Exclude off.')).toHaveLength(1);
+    fireEvent.click(screen.getByLabelText('tick bos'));
+    fireEvent.click(screen.getByLabelText('tick trap'));
+    expect(saved().exclude).toEqual({ on: true, methods: ['bos', 'trap'] });
+    expect(within(box).queryByRole('alert')).toBeNull();
+    expect(box).toHaveTextContent('2 methods excluded · never picked, however they did.');
+    expect(autoWords(saved())).toMatch(/over the last 7 days, never the 2 excluded methods\. If none do/);
+    // each one ticked, by name, taken out in one tap
+    fireEvent.click(within(screen.getByRole('list', { name: 'Excluded' })).getByRole('button', { name: 'Stop excluding #6 BOS' }));
+    expect(saved().exclude!.methods).toEqual(['trap']);
+  });
+
+  it('switched off, the ticks are kept for next time and nothing is excluded', () => {
+    render(<ExcludeHarness start={{ ...DEFAULT_AUTO_METHODS, on: true, exclude: { on: true, methods: ['bos'] } }} />);
+    fireEvent.click(screen.getByRole('switch', { name: 'Exclude methods from the daily pick' }));
+    expect(saved().exclude).toEqual({ on: false, methods: ['bos'] });
+    expect(screen.getByRole('region', { name: 'Exclude methods' })).toHaveTextContent('Off · every method can be picked. The 1 ticked are kept for when it is on.');
+    expect(autoWords(saved())).not.toMatch(/excluded/);
+    expect(autoMethodsProblems({ ...DEFAULT_AUTO_METHODS, exclude: { on: false, methods: [] } })).toEqual([]);
+  });
+
+  it('"Pick now" names the excluded ones that passed and were left out', async () => {
+    const run: AutoMethodsRun = { at: 1, from: '2026-10-10', to: '2026-10-16', picked: ['breakout'], before: ['breakout'], excluded: ['trap'] };
+    render(<Harness start={{ ...DEFAULT_AUTO_METHODS, on: true, exclude: { on: true, methods: ['trap'] } }} pickNow={async () => run} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
+    expect(await screen.findByLabelText('Left out, excluded')).toHaveTextContent('Passed but excluded: #9 Trap.');
+  });
+});

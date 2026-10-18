@@ -65,9 +65,9 @@ export function sortOptions<T extends Pick<FilterOption, 'value' | 'trades' | 'w
  * The sort row: the picker's own, the day sheet's and the strategy form's. Its chips wrap to a second line rather than
  * scroll -- a sort past the edge of a phone is a sort nobody finds.
  */
-export function SortRow({ value, onChange, className }: { value: FilterSort; onChange: (v: FilterSort) => void; className?: string }) {
+export function SortRow({ value, onChange, className, label = 'Sort' }: { value: FilterSort; onChange: (v: FilterSort) => void; className?: string; label?: string }) {
   return (
-    <div role="group" aria-label="Sort" className={cn('flex flex-wrap items-center gap-1', className)}>
+    <div role="group" aria-label={label} className={cn('flex flex-wrap items-center gap-1', className)}>
       <span className="shrink-0 pr-0.5 text-[12px] text-muted-foreground">Sort</span>
       {FILTER_SORTS.map((x) => (
         <button key={x.key} type="button" aria-pressed={value === x.key} onClick={() => onChange(x.key)}
@@ -271,7 +271,7 @@ export function FilterPicker({ noun, options, picked, onChange, split = false, w
  * The Win tab's line: a whole percent typed in, or stepped five at a time. What is typed is kept as typed while it is
  * being typed -- an empty box is not 0 -- and the list follows each whole number as it lands.
  */
-export function WinLine({ pct, onChange, className }: { pct: number; onChange: (pct: number) => void; className?: string }) {
+export function WinLine({ pct, onChange, className, name = 'Win rate at least, percent' }: { pct: number; onChange: (pct: number) => void; className?: string; name?: string }) {
   const [text, setText] = useState(String(pct));
   const id = useId();
   const step = (by: number) => { const next = asPct(pct + by); setText(String(next)); onChange(next); };
@@ -282,7 +282,7 @@ export function WinLine({ pct, onChange, className }: { pct: number; onChange: (
       <button type="button" aria-label="Five less" disabled={pct <= 0} onClick={() => step(-5)} className={stepper}>−</button>
       <span className="relative">
         <input
-          id={id} aria-label="Win rate at least, percent" value={text}
+          id={id} aria-label={name} value={text}
           inputMode="numeric" autoComplete="off" maxLength={3}
           onChange={(e) => {
             const raw = e.target.value.replace(/[^0-9]/g, '');

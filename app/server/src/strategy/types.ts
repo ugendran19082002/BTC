@@ -602,9 +602,18 @@ export type AutoMethods = {
   winPct: number;
   minTrades: number;
   days: number;
+  /**
+   * Methods the pick never chooses, however they did (owner, 18 Oct 2026: "an exclude option -- what I select there
+   * must not be chosen; on and off; on, at least one picked"). Off keeps the methods ticked for the next time it is on.
+   */
+  exclude?: AutoExclude | null;
   /** What the last pick did; written by the desk (or by "Pick now" on the form), kept by a save. */
   last?: AutoMethodsRun | null;
 };
+export type AutoExclude = { on: boolean; methods: string[] };
+/** The methods a daily update leaves out: the excluded ones while Exclude is on, else none. */
+export const excludedBy = (a: Pick<AutoMethods, 'exclude'> | null | undefined): ReadonlySet<string> =>
+  new Set(a?.exclude?.on ? a.exclude.methods : []);
 export type AutoMethodsRun = {
   at: number;
   /** The expiry days looked at. */
@@ -613,6 +622,8 @@ export type AutoMethodsRun = {
   picked: string[]; before: string[];
   /** Nothing passed, or the record could not be had: the list was left as it was, and why. */
   note?: string | null;
+  /** The excluded methods that passed the line and were left out, best net first. */
+  excluded?: string[];
   /** Every method that traded, in brief: on a pick's answer and in the log, never kept in the config. */
   records?: MethodRecordLine[];
 };
@@ -649,7 +660,18 @@ export function autoMethodsProblems(a: unknown): string[] {
   if (typeof x.winPct !== 'number' || !Number.isFinite(x.winPct) || x.winPct < 1 || x.winPct > 100) bad.push('The daily update\'s win rate must be from 1% to 100%.');
   if (!Number.isInteger(x.minTrades) || x.minTrades! < 1 || x.minTrades! > 100) bad.push('The daily update\'s least trades must be a whole number from 1 to 100.');
   if (!Number.isInteger(x.days) || x.days! < 1 || x.days! > MAX_AUTO_DAYS) bad.push(`The daily update looks back 1 to ${MAX_AUTO_DAYS} days.`);
+  bad.push(...autoExcludeProblems(x.exclude));
   return bad;
+}
+export const EXCLUDE_NONE = 'Pick at least one method to exclude, or switch Exclude off.';
+function autoExcludeProblems(e: unknown): string[] {
+  if (e === undefined || e === null) return [];
+  if (typeof e !== 'object' || Array.isArray(e)) return ['The daily update\'s excluded methods must be a setting.'];
+  const x = e as Partial<AutoExclude>;
+  if (typeof x.on !== 'boolean') return ['Say whether the daily update excludes methods.'];
+  if (!Array.isArray(x.methods) || x.methods.some((m) => typeof m !== 'string' || !m)) return ['The excluded methods must be a list of method ids.'];
+  if (new Set(x.methods).size !== x.methods.length) return ['A method is excluded twice.'];
+  return x.on && x.methods.length === 0 ? [EXCLUDE_NONE] : [];
 }
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
