@@ -17,11 +17,11 @@ export const PREMIUM_FLOOR = 10;
 export const targetLabel = (v: number) => (v > 0 ? `${Math.round(v * 100)}%` : 'No target');
 export const stopLabel = (v: number) => (v > 0 ? `+${Math.round(v * 100)}%` : 'No stop');
 
-/** "perp SL trails 2× ATR · TGT 3× ATR": the perp's ATR trail in a few words; null with none. */
-export function perpTrailWords(p: Pick<BacktestParams, 'trailSlAtr' | 'trailTgtAtr'>): string | null {
-  const sl = p.trailSlAtr ?? 0, tg = p.trailTgtAtr ?? 0;
+/** "perp SL ≥ 10× ATR · TGT ≥ 20× ATR": the widening with volatility in a few words; null with none. */
+export function perpWidenWords(p: Pick<BacktestParams, 'widenSlAtr' | 'widenTgtAtr'>): string | null {
+  const sl = p.widenSlAtr ?? 0, tg = p.widenTgtAtr ?? 0;
   if (!(sl > 0) && !(tg > 0)) return null;
-  return `perp ${[sl > 0 ? `SL trails ${sl}× ATR` : null, tg > 0 ? `TGT trails ${tg}× ATR` : null].filter(Boolean).join(' · ')}`;
+  return `perp ${[sl > 0 ? `SL ≥ ${sl}× ATR` : null, tg > 0 ? `TGT ≥ ${tg}× ATR` : null].filter(Boolean).join(' · ')} (widens with volatility)`;
 }
 
 /**
@@ -44,7 +44,7 @@ export function settingsWords(q: SavedQuery, strategies: readonly { id: string; 
     !byStrategy ? `SL ${stopLabel(p.stopPct)}` : null,
     !byStrategy && p.stopPct > 0 ? tslWords(p.tsl) : null,
     !byStrategy ? breakEvenWords(p.breakEven) : null,
-    !byStrategy ? perpTrailWords(p) : null,
+    !byStrategy ? perpWidenWords(p) : null,
     !byStrategy && floor !== PREMIUM_FLOOR ? (floor > 0 ? `premium ≥ $${floor}` : 'no premium floor') : null,
     !byStrategy ? (p.window === 'desk' ? '9:30 PM → 3:59 PM' : p.window === 'all' ? 'whole day' : p.hoursFrom && p.hoursTo ? `${time12(p.hoursFrom)} → ${time12(p.hoursTo)}` : null) : null,
     !byStrategy && (range(p.slMin, p.slMax) || range(p.tgtMin, p.tgtMax))
@@ -75,7 +75,7 @@ export function overWords(p: Partial<BacktestParams>): string[] {
   if (p.stopPct !== undefined) out.push(p.stopPct > 0 ? `stop ${stopLabel(p.stopPct)}` : 'no stop');
   if (p.tsl !== undefined) out.push(tslWords(p.tsl) ?? 'no trailing SL');
   if (p.breakEven !== undefined) out.push(breakEvenWords(p.breakEven) ?? 'no SL to entry');
-  if (p.trailSlAtr !== undefined || p.trailTgtAtr !== undefined) out.push(perpTrailWords(p) ?? 'no perp trail');
+  if (p.widenSlAtr !== undefined || p.widenTgtAtr !== undefined) out.push(perpWidenWords(p) ?? 'perp SL and TGT the signal\'s own');
   if (p.lots !== undefined) out.push(`${p.lots} lot${p.lots === 1 ? '' : 's'} a signal`);
   if (p.minPremium !== undefined) out.push(p.minPremium > 0 ? `premium ≥ $${p.minPremium}` : 'no premium floor');
   if (p.slMin !== undefined) {

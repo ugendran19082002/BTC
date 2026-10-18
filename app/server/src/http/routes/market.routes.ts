@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, TRAIL_ATR_MAX, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, WIDEN_ATR_MAX, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades } from '../../report/backtest-run.js';
@@ -178,8 +178,6 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
     if (bad.length) return bad[0]!;
     tsl = t;
   }
-  // The perp's own levels trailed by the 1m ATR: `?ptsl=` (the SL, ATRs behind the close) and `?pttgt=` (the target,
-  // ATRs beyond it); 0 or absent, off.
   // The option's stop to the price sold once the premium has fallen so far: `?be=10pct` or `?be=5pts`; `off` or absent, none.
   let breakEven: { move: number; unit: TslUnit } | undefined;
   if (typeof q.be === 'string' && q.be.trim() !== '' && q.be.trim() !== 'off') {
@@ -190,15 +188,17 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
     if (bad.length) return bad[0]!;
     breakEven = b;
   }
-  const trailSlAtr = num('ptsl', 0), trailTgtAtr = num('pttgt', 0);
-  for (const v of [trailSlAtr, trailTgtAtr]) if (!(v >= 0 && v <= TRAIL_ATR_MAX)) return `A perp trail is from 0 (off) to ${TRAIL_ATR_MAX} ATRs.`;
+  // The perp's SL and TGT widened with volatility: `?wsl=` and `?wtgt=`, each the least ATRs of the 1m candles from the
+  // entry; 0 or absent, the signal's own.
+  const widenSlAtr = num('wsl', 0), widenTgtAtr = num('wtgt', 0);
+  for (const v of [widenSlAtr, widenTgtAtr]) if (!(v >= 0 && v <= WIDEN_ATR_MAX)) return `Widening with volatility is from 0 (off) to ${WIDEN_ATR_MAX} ATRs.`;
   return {
     rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol, minPremium,
     // Only where it is not the default, so settings saved before it are the same settings as ever.
     ...(volBy === 'iv' ? { volBy } : {}),
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}), ...(noEntry ? { noEntry } : {}),
     ...(strikeBlocks ? { strikeBlocks } : {}), ...(tsl ? { tsl } : {}),
-    ...(trailSlAtr > 0 ? { trailSlAtr } : {}), ...(trailTgtAtr > 0 ? { trailTgtAtr } : {}), ...(breakEven ? { breakEven } : {}),
+    ...(widenSlAtr > 0 ? { widenSlAtr } : {}), ...(widenTgtAtr > 0 ? { widenTgtAtr } : {}), ...(breakEven ? { breakEven } : {}),
   };
 }
 
@@ -258,7 +258,7 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
     noentry: x.noEntry?.on && Array.isArray(x.noEntry.windows) ? x.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : undefined,
     sblocks: Array.isArray(x.strikeBlocks) && x.strikeBlocks.length ? JSON.stringify(x.strikeBlocks) : undefined,
     tsl: x.tsl && typeof x.tsl === 'object' ? tslQueryOf(x.tsl) : undefined,
-    ptsl: x.trailSlAtr, pttgt: x.trailTgtAtr,
+    wsl: x.widenSlAtr, wtgt: x.widenTgtAtr,
     be: x.breakEven && typeof x.breakEven === 'object' ? `${x.breakEven.move}${x.breakEven.unit}` : undefined,
   });
 }

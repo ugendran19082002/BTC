@@ -24,13 +24,13 @@ import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
 import { BacktestStrikeBlocks } from '@/components/report/BacktestStrikeBlocks';
 import { BacktestTsl } from '@/components/report/BacktestTsl';
-import { BacktestPerpTrail } from '@/components/report/BacktestPerpTrail';
+import { BacktestPerpWiden } from '@/components/report/BacktestPerpWiden';
 import { BacktestBreakEven } from '@/components/report/BacktestBreakEven';
 import { breakEvenWords, tslProblems, tslWords } from '@/lib/backtest-tsl';
 import { backtestBlockProblems, strikeBlocksWords } from '@/lib/backtest-strike-blocks';
 import { BacktestBreakdowns, ChargesNote, DayAverages, GRAIN, ResultNav, WinnersLosers, pricedWords, skippedParts } from '@/components/report/BacktestBreakdowns';
 import { AS_SAVED, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
-import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, perpTrailWords, settingsWords } from '@/components/report/backtest-words';
+import { BACKTEST_DEFAULTS as DEFAULTS, PREMIUM_FLOOR as FLOOR, overWords, perpWidenWords, settingsWords } from '@/components/report/backtest-words';
 
 /**
  * The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price?
@@ -403,7 +403,7 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
     delete next[key];
     onChange(next);
   };
-  const { strike, target, stop, lots, minPremium, range, noEntry, vol, strikeBlocks, tsl, perpTrail, breakEven } = over;
+  const { strike, target, stop, lots, minPremium, range, noEntry, vol, strikeBlocks, tsl, perpWiden, breakEven } = over;
   const values = strike?.rule === 'premium' ? PREMIUMS : DELTAS;
   const dynamic = (target?.targetSteps?.length ?? 0) > 0 || dynamicDraft;
   const switchedOn = Object.keys(over).length;
@@ -480,10 +480,10 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
         {breakEven && <BacktestBreakEven name="SL to entry, for the run" value={breakEven.be} onChange={(b) => put({ breakEven: { be: b } })} />}
       </RunFilter>
 
-      {/* The perp's ATR trails over every one worked by settings (18 Oct 2026), the two together; both off takes theirs away. */}
-      <RunFilter name="Perp trail" on={!!perpTrail} said={perpTrail ? perpTrailWords({ trailSlAtr: perpTrail.slAtr, trailTgtAtr: perpTrail.tgtAtr }) ?? 'no perp trail' : ''}
-        onToggle={() => flip('perpTrail', { slAtr: seed.trailSlAtr ?? 0, tgtAtr: seed.trailTgtAtr ?? 0 })}>
-        {perpTrail && <BacktestPerpTrail name="Perp trail, for the run" sl={perpTrail.slAtr} tgt={perpTrail.tgtAtr} onChange={(v) => put({ perpTrail: { slAtr: v.trailSlAtr, tgtAtr: v.trailTgtAtr } })} />}
+      {/* The perp's SL and TGT widened with volatility over every one worked by settings (18 Oct 2026), the two together. */}
+      <RunFilter name="Perp SL & TGT by volatility" on={!!perpWiden} said={perpWiden ? perpWidenWords({ widenSlAtr: perpWiden.slAtr, widenTgtAtr: perpWiden.tgtAtr }) ?? "the signal's own" : ''}
+        onToggle={() => flip('perpWiden', { slAtr: seed.widenSlAtr ?? 0, tgtAtr: seed.widenTgtAtr ?? 0 })}>
+        {perpWiden && <BacktestPerpWiden name="Perp SL & TGT by volatility, for the run" sl={perpWiden.slAtr} tgt={perpWiden.tgtAtr} onChange={(v) => put({ perpWiden: { slAtr: v.widenSlAtr, tgtAtr: v.widenTgtAtr } })} />}
       </RunFilter>
 
       <RunFilter name="Lots a signal" on={!!lots} said={lots ? said(lots) : ''} onToggle={() => flip('lots', { lots: seed.lots })}>
@@ -691,7 +691,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       `TGT ${targetWords}`, params.stopPct > 0 ? `SL +${Math.round(params.stopPct * 100)}%` : 'no option SL',
       ...(params.tsl ? [tslProblems(params.tsl, params.stopPct).length ? 'trailing SL not used (see its settings)' : tslWords(params.tsl)!] : []),
       ...(params.breakEven ? [breakEvenWords(params.breakEven)!] : []),
-      ...(perpTrailWords(params) ? [perpTrailWords(params)!] : []),
+      ...(perpWidenWords(params) ? [perpWidenWords(params)!] : []),
       `${params.lots} lot${params.lots === 1 ? '' : 's'}`, floor > 0 ? `min $${floor}` : 'no premium floor',
       ...(strikeBlocksWords(params.strikeBlocks) ? [backtestBlockProblems(params).length ? 'strike blocks not used (outside the hours)' : strikeBlocksWords(params.strikeBlocks)!] : []),
     ].join(' · '),
@@ -839,9 +839,9 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       <BacktestTsl value={params.tsl ?? null} stopPct={params.stopPct} onChange={(tsl) => set({ tsl: tsl ?? undefined })} />
       {/* The option's stop to the price sold once the premium has fallen so far (18 Oct 2026). */}
       <BacktestBreakEven value={params.breakEven ?? null} onChange={(breakEven) => set({ breakEven: breakEven ?? undefined })} />
-      {/* The perp's own SL and TGT trailed by the 1m ATR (18 Oct 2026): the backtest's own -- the desk's levels do not trail. */}
-      <BacktestPerpTrail sl={params.trailSlAtr ?? 0} tgt={params.trailTgtAtr ?? 0}
-        onChange={(v) => set({ trailSlAtr: v.trailSlAtr > 0 ? v.trailSlAtr : undefined, trailTgtAtr: v.trailTgtAtr > 0 ? v.trailTgtAtr : undefined })} />
+      {/* The perp's SL and TGT widened with volatility (18 Oct 2026): the signal's own the least -- the desk's levels do not widen. */}
+      <BacktestPerpWiden sl={params.widenSlAtr ?? 0} tgt={params.widenTgtAtr ?? 0}
+        onChange={(v) => set({ widenSlAtr: v.widenSlAtr > 0 ? v.widenSlAtr : undefined, widenTgtAtr: v.widenTgtAtr > 0 ? v.widenTgtAtr : undefined })} />
       <ChipRow wide={wide} label="Lots a signal">
         {LOTS.map((n) => <Chip key={n} on={params.lots === n} onClick={() => set({ lots: n })}>{n}</Chip>)}
         <CustomValue value={params.lots} presets={LOTS} spec={CUSTOM.lots} name="Lots" onChange={(lots) => set({ lots })} />

@@ -30,7 +30,7 @@ const sumOf = (xs: readonly BtTradeRow[]): Sum => xs.reduce((a, t) => ({ n: a.n 
 const sumWords = (x: Sum) => `${count(x.n)} trade${x.n === 1 ? '' : 's'} · ${pct(x.n ? x.won / x.n : null, 0)} won · ${moneyText(x.net)}`;
 
 const EXIT_WORDS: Record<BtExit, string> = {
-  'perp-tgt': 'Perp TGT', 'perp-sl': 'Perp SL', 'perp-tsl': 'Perp TSL', 'option-tgt': 'Option TGT', 'option-sl': 'Option SL', 'option-tsl': 'Option TSL', 'option-be': 'Option SL at entry', 'window-end': 'Window end',
+  'perp-tgt': 'Perp TGT', 'perp-sl': 'Perp SL', 'option-tgt': 'Option TGT', 'option-sl': 'Option SL', 'option-tsl': 'Option TSL', 'option-be': 'Option SL at entry', 'window-end': 'Window end',
 };
 const PAGE = 50;
 /** A trade's volatility level, as the study's list says it (17 Oct 2026). */
@@ -255,7 +255,7 @@ export function TradeCard({ t }: { t: BtTradeRow }) {
         <div><dt className="text-muted-foreground">Closed by</dt><dd className="m-0">{EXIT_WORDS[t.by]}</dd></div>
         <div><dt className="text-muted-foreground">Perp pts</dt><dd className={cn('m-0 tabular-nums', netClass(t.perpPts))}>{ptsText(t.perpPts)}</dd></div>
         <div><dt className="text-muted-foreground">Perp entry</dt><dd className="m-0 tabular-nums">{perp(t.perpEntry)}</dd></div>
-        <div><dt className="text-muted-foreground">Perp SL · TGT</dt><dd className="m-0 tabular-nums"><span className="text-[var(--down)]">{perp(t.perpSl)}{t.perpStopEnd != null && <> → {perp(t.perpStopEnd)}</>}</span> · <span className="text-[var(--up)]">{perp(t.perpTgt)}{t.perpTgtEnd != null && <> → {perp(t.perpTgtEnd)}</>}</span>{(t.perpStopEnd != null || t.perpTgtEnd != null) && <span className="text-muted-foreground"> (trailed)</span>}</dd></div>
+        <div><dt className="text-muted-foreground">Perp SL · TGT</dt><dd className="m-0 tabular-nums"><span className="text-[var(--down)]">{perp(t.perpSl)}{t.perpStopEnd != null && <> → {perp(t.perpStopEnd)}</>}</span> · <span className="text-[var(--up)]">{perp(t.perpTgt)}{t.perpTgtEnd != null && <> → {perp(t.perpTgtEnd)}</>}</span>{(t.perpStopEnd != null || t.perpTgtEnd != null) && <span className="text-muted-foreground"> (widened)</span>}</dd></div>
         <div><dt className="text-muted-foreground">Option SL · TGT</dt><dd className="m-0 tabular-nums">{t.optStop !== null || t.optStopEnd != null ? <span className="text-[var(--down)]">{t.optStop !== null ? opt(t.optStop) : 'none'}{t.optStopEnd != null && <> → {opt(t.optStopEnd)} <span className="text-muted-foreground">({t.by === 'option-be' || t.optStopEnd === t.entry ? 'at entry' : 'trailed'})</span></>}</span> : 'none'} · {t.optTgt !== null ? <span className="text-[var(--up)]">{opt(t.optTgt)}</span> : 'none'}</dd></div>
         <div><dt className="text-muted-foreground">Charges</dt><dd className="m-0 tabular-nums">{moneyText(-t.chargesUsd)}</dd></div>
       </dl>

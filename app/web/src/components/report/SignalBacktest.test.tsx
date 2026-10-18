@@ -207,16 +207,16 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery().params.breakEven).toBeUndefined());
   });
 
-  it('[critical] the perp\'s SL and TGT trailed by the 1m ATR (18 Oct 2026): a multiplier each, asked for; off, gone', async () => {
+  it('[critical] the perp\'s SL and TGT widened with volatility (18 Oct 2026): a multiplier each, asked for; the signal\'s own, gone', async () => {
     show();
     await screen.findByText('Backtest result');
-    fireEvent.click(within(screen.getByRole('group', { name: 'Perp trail: SL' })).getByRole('button', { name: '2× ATR' }));
-    await waitFor(() => expect(lastQuery().params).toMatchObject({ trailSlAtr: 2 }));
-    fireEvent.click(within(screen.getByRole('group', { name: 'Perp trail: TGT' })).getByRole('button', { name: '3× ATR' }));
-    await waitFor(() => expect(lastQuery().params).toMatchObject({ trailSlAtr: 2, trailTgtAtr: 3 }));
-    expect(screen.getAllByText(/perp SL trails 2× ATR · TGT trails 3× ATR/).length).toBeGreaterThan(0);
-    fireEvent.click(within(screen.getByRole('group', { name: 'Perp trail: SL' })).getByRole('button', { name: 'Off' }));
-    await waitFor(() => expect(lastQuery().params.trailSlAtr).toBeUndefined());
+    fireEvent.click(within(screen.getByRole('group', { name: 'Perp SL & TGT by volatility: SL' })).getByRole('button', { name: '10× ATR' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ widenSlAtr: 10 }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Perp SL & TGT by volatility: TGT' })).getByRole('button', { name: '20× ATR' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ widenSlAtr: 10, widenTgtAtr: 20 }));
+    expect(screen.getAllByText(/perp SL ≥ 10× ATR · TGT ≥ 20× ATR \(widens with volatility\)/).length).toBeGreaterThan(0);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Perp SL & TGT by volatility: SL' })).getByRole('button', { name: "Signal's own" }));
+    await waitFor(() => expect(lastQuery().params.widenSlAtr).toBeUndefined());
   });
 
   it('[critical] a custom range of expiry days, picked in the same sheet as the market report\'s', async () => {
@@ -1172,7 +1172,7 @@ describe('SignalBacktest', () => {
     const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     const set = () => within(folio().getByRole('region', { name: 'Settings for the run' }));
     const sw = (name: string) => set().getByRole('switch', { name: `${name}, for the run` });
-    const NAMES = ['Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Trailing SL', 'SL to entry', 'Perp trail', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
+    const NAMES = ['Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Trailing SL', 'SL to entry', 'Perp SL & TGT by volatility', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
     // every one off to begin with, each saying whose settings run
     expect(set().getAllByRole('switch').map((x) => [x.getAttribute('aria-label'), x.getAttribute('aria-checked')])).toEqual(NAMES.map((n) => [`${n}, for the run`, 'false']));
     expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(12);

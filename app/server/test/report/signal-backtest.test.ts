@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PARAMS, MIN_PREMIUM, breakEvenProblems, breakEvenReached, minuteAtr, paramsKey, perpFeePts, perpOf, trailAfter, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, breakEvenProblems, breakEvenReached, minuteAtr, paramsKey, perpFeePts, perpOf, widenAfter, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
 import { sessionOf, type MinuteBar } from '../../src/report/market-day.js';
 import { fillChargesUsd } from '../../src/trading/charges.js';
 
@@ -776,49 +776,47 @@ test('[critical] the perp apart from the options: points after the round trip\'s
 });
 
 /*
- * The perp's own levels trailed by the 1m ATR (owner, 18 Oct 2026: "trailing perp SL and TGT ATR multipliers -- on
- * the 1m close and ATR(14); never loosen the SL; a hit does not wait for the close").
+ * The perp's SL and TGT widened with volatility (owner, 18 Oct 2026: "when the signal comes its PERP SL and TGT are the
+ * least; as volatility rises they widen -- checked at every 1m close"; asked: "stay at the widest so far").
  */
-test('[critical] perp trail: after a close, the SL only ever toward the price and the target only ever away from it', () => {
-  const lv = { stop: 83_700, target: 84_500 };
-  // a BUY at 84,000, ATR 10: 2 ATRs behind a close of 84,100 is 84,080 -- tighter, taken; 3 ATRs beyond is 84,130 -- nearer than 84,500, not
-  assert.deepEqual(trailAfter(lv, { dir: 1, close: 84_100, atr: 10, slAtr: 2, tgtAtr: 3 }), { stop: 84_080, target: 84_500 });
-  // the close falls back: the SL stays, never loosened
-  assert.deepEqual(trailAfter({ stop: 84_080, target: 84_500 }, { dir: 1, close: 84_050, atr: 10, slAtr: 2, tgtAtr: 3 }), { stop: 84_080, target: 84_500 });
-  // the run goes on: the target is carried 3 ATRs beyond the close
-  assert.deepEqual(trailAfter(lv, { dir: 1, close: 84_490, atr: 10, slAtr: 0, tgtAtr: 3 }), { stop: 83_700, target: 84_520 });
-  // a SELL mirrors it
-  assert.deepEqual(trailAfter({ stop: 84_300, target: 83_500 }, { dir: -1, close: 83_900, atr: 10, slAtr: 2, tgtAtr: 0 }), { stop: 83_920, target: 83_500 });
+test('[critical] widening: each level at least k ATRs from the entry -- never nearer than the signal\'s own, nor than the widest so far', () => {
+  const lv = { stop: 83_700, target: 84_500 };                       // a BUY at 84,000: SL 300 away, TGT 500
+  // ATR 20: 10× is 200 -- under the signal's 300 and 500: the signal's own stand
+  assert.deepEqual(widenAfter(lv, { dir: 1, entry: 84_000, atr: 20, slAtr: 10, tgtAtr: 20 }), lv);
+  // ATR 40: 400 and 800 -- wider than the signal's: both widened, from the entry
+  const wide = widenAfter(lv, { dir: 1, entry: 84_000, atr: 40, slAtr: 10, tgtAtr: 20 });
+  assert.deepEqual(wide, { stop: 83_600, target: 84_800 });
+  // calm again, ATR 20: kept at the widest
+  assert.deepEqual(widenAfter(wide, { dir: 1, entry: 84_000, atr: 20, slAtr: 10, tgtAtr: 20 }), wide);
+  // a SELL mirrors it; one level only where only one is asked
+  assert.deepEqual(widenAfter({ stop: 84_300, target: 83_500 }, { dir: -1, entry: 84_000, atr: 40, slAtr: 10, tgtAtr: 0 }), { stop: 84_400, target: 83_500 });
   // no ATR yet: nothing moves
-  assert.deepEqual(trailAfter(lv, { dir: 1, close: 84_400, atr: Number.NaN, slAtr: 2, tgtAtr: 3 }), lv);
+  assert.deepEqual(widenAfter(lv, { dir: 1, entry: 84_000, atr: Number.NaN, slAtr: 10, tgtAtr: 20 }), lv);
   // Wilder's ATR of the minutes: none until 14, then each minute's true range smoothed
   const flatAtr = minuteAtr(perp([[0, 84_000], [1_439, 84_000]]));
   assert.ok(Number.isNaN(flatAtr[13]!) && Math.abs(flatAtr[14]! - 4) < 1e-9 && Math.abs(flatAtr[500]! - 4) < 1e-9);
 });
 
-test('[critical] perp trail: a trailed SL locks the run in, hit inside the minute at its level -- as its own exit', () => {
-  // A BUY at minute 30: the perp runs to 84,400 by minute 230, then falls to 83,900. The signal's own 83,700 / 84,500: neither reached.
-  const bars = perp([[0, 84_000], [230, 84_400], [500, 83_900], [1_439, 83_900]]);
-  const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
-  const fixed = simulateDay({ from, to, params: P, signals: [sig(30)], bars, board }).trades[0]!;
-  assert.equal(fixed.by, 'window-end');
-  const trailed = simulateDay({ from, to, params: { ...P, trailSlAtr: 10 }, signals: [sig(30)], bars, board }).trades[0]!;
-  // the 1m ATR is 4 here: the SL 40 behind each close, up to 84,360 at the top -- and hit on the way down, there
-  assert.equal(trailed.by, 'perp-tsl');
-  assert.ok(Math.abs(trailed.perpPts - 360) < 2, `out about 360 up, not at the day's end (${trailed.perpPts})`);
-  assert.ok(Math.abs((trailed.perpStopEnd ?? 0) - 84_360) < 2);
-  assert.ok((trailed.exitAt - from) / MIN < 260, 'out within half an hour of the top');
-});
+/** A minute bar of a given range around its close: the volatility of the test's day, a minute at a time. */
+function wild(path: [number, number][], range: (minute: number) => number): ReturnType<typeof perp> {
+  return perp(path).map((b, i) => ({ ...b, high: b.close + range(i) / 2, low: b.close - range(i) / 2 }));
+}
 
-test('[critical] perp trail: a trailed target lets a run go on past the signal\'s own -- never brought nearer', () => {
-  const bars = perp([[0, 84_000], [400, 84_700], [1_439, 84_700]]);
+test('[critical] widening: a stop the signal\'s own would have hit in a volatile hour is held wider -- and a hit inside a minute is taken then', () => {
+  // A BUY at minute 30 (fill 84,000, SL 83,700): from minute 60 the minutes swing 120 points; the price dips to 83,660 at 200
+  const range = (m: number) => (m >= 60 ? 120 : 4);
+  const bars = wild([[0, 84_000], [150, 84_000], [200, 83_720], [260, 84_000], [1_439, 84_000]], range);
   const board = contract('P', 83_200, -0.09, [[0, 40], [1_435, 30]]);
   const own = simulateDay({ from, to, params: P, signals: [sig(30)], bars, board }).trades[0]!;
-  assert.equal(own.by, 'perp-tgt', 'the signal\'s own 84,500 reached on the way up');
-  const ran = simulateDay({ from, to, params: { ...P, trailTgtAtr: 5 }, signals: [sig(30)], bars, board }).trades[0]!;
-  assert.equal(ran.by, 'window-end', 'the target 20 ahead of every close: the run held to the end');
-  assert.ok((ran.perpTgtEnd ?? 0) > 84_700 && ran.perpPts > 600);
-  assert.notEqual(paramsKey({ ...P, trailTgtAtr: 5 }), paramsKey(P));
+  assert.equal(own.by, 'perp-sl', 'the signal\'s own 83,700 is touched in the volatile dip');
+  // 1m ATR about 120 from the swings: 4× is about 480 -- the SL widened to about 83,520, the dip passes over it
+  const widened = simulateDay({ from, to, params: { ...P, widenSlAtr: 4 }, signals: [sig(30)], bars, board }).trades[0]!;
+  assert.notEqual(widened.by, 'perp-sl');
+  assert.ok((widened.perpStopEnd ?? 0) < 83_600, `widened to ${widened.perpStopEnd}`);
+  // never nearer than the signal's own: the quiet start leaves it where it was
+  const quiet = simulateDay({ from, to, params: { ...P, widenSlAtr: 4 }, signals: [sig(30)], bars: perp([[0, 84_000], [1_439, 84_000]]), board }).trades[0]!;
+  assert.equal(quiet.perpStopEnd, undefined, '4× an ATR of 4 is 16: the signal\'s 300 stands');
+  assert.notEqual(paramsKey({ ...P, widenSlAtr: 4 }), paramsKey(P));
 });
 
 /* The option's stop to the price sold once the premium has fallen so far (owner, 18 Oct 2026: "SL to the entry price"). */

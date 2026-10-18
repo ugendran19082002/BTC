@@ -952,8 +952,8 @@ test('[critical] a backtest saved by name, run again, and several run together a
     // A trailing SL for the run (18 Oct 2026), over each member's own stop
     ['o_tsl=5pts:5pts', '&tsl=5pts:5pts', '&tsl=5pts:5pts&lots=3&tf=15m', { tsl: { move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' } }],
     ['o_sl=1&o_tsl=10pct:5pts', '&sl=1&tsl=10pct:5pts', '&sl=1&tsl=10pct:5pts&lots=3&tf=15m', { stopPct: 1, tsl: { move: 10, moveUnit: 'pct', by: 5, byUnit: 'pts' } }],
-    // The perp's levels trailed by the 1m ATR for the run (18 Oct 2026), the two together
-    ['o_ptsl=2&o_pttgt=3', '&ptsl=2&pttgt=3', '&ptsl=2&pttgt=3&lots=3&tf=15m', { trailSlAtr: 2, trailTgtAtr: 3 }],
+    // The perp's levels widened with volatility for the run (18 Oct 2026), the two together
+    ['o_wsl=10&o_wtgt=20', '&wsl=10&wtgt=20', '&wsl=10&wtgt=20&lots=3&tf=15m', { widenSlAtr: 10, widenTgtAtr: 20 }],
     // The option's stop to the price sold for the run (18 Oct 2026)
     ['o_be=10pct', '&be=10pct', '&be=10pct&lots=3&tf=15m', { breakEven: { move: 10, unit: 'pct' } }],
   ] as const) {
@@ -982,7 +982,7 @@ test('[critical] a backtest saved by name, run again, and several run together a
   for (const [bad, said] of [['o_lots=0', /For the run: Lots are a whole number/], ['o_value=0.1', /A strike for the run is its rule and its limit/], ['o_rule=delta', /A strike for the run is its rule and its limit/],
     ['o_rule=delta&o_value=0.9', /For the run: A delta limit is from 0\.02 to 0\.5/], ['o_tsteps=23:30:75', /needs the target it starts from/], ['o_slmin=500&o_slmax=100', /SL maximum must not be under its minimum/],
     ['o_tsl=5pts', /For the run: A trailing SL is a price move and an SL move/], ['o_sl=0&o_tsl=5pts:5pts', /needs an option stop to move/],
-    ['o_tsl=5pts:9pts', /SL cannot move further than the price did/], ['o_ptsl=21', /For the run: A perp trail is from 0 \(off\) to 20 ATRs/],
+    ['o_tsl=5pts:9pts', /SL cannot move further than the price did/], ['o_wsl=101', /For the run: Widening with volatility is from 0 \(off\) to 100 ATRs/],
     ['o_be=5', /A move to break-even is a premium fall in pts or pct/], ['o_be=0pts', /break-even is more than 0/]] as const) {
     const r = await get(`${pair}&${bad}`);
     assert.equal(r.status, 400, bad);

@@ -98,8 +98,8 @@ export type PortfolioOver = {
   noEntry?: NoEntry;
   /** A trailing SL on every member's option stop (18 Oct 2026); null takes each member's own away for the run. */
   tsl?: { tsl: Tsl | null };
-  /** The perp's SL and target trailed by the 1m ATR over every member, the two together; 0 is off for the run. */
-  perpTrail?: { slAtr: number; tgtAtr: number };
+  /** The perp's SL and TGT widened with volatility over every member, the two together; 0 is off for the run. */
+  perpWiden?: { slAtr: number; tgtAtr: number };
   /** The option's stop to the price sold over every member; null takes each one's own away for the run. */
   breakEven?: { be: BreakEven | null };
 };
@@ -129,7 +129,7 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
     else { const s = tslQuery({ tsl: t, stopPct: o.stop?.stopPct ?? 3 }); if (s) q.o_tsl = s; }
   }
   if (o.breakEven) { const s = o.breakEven.be === null ? 'off' : breakEvenQuery(o.breakEven.be); if (s) q.o_be = s; }
-  if (o.perpTrail) { q.o_ptsl = String(o.perpTrail.slAtr); q.o_pttgt = String(o.perpTrail.tgtAtr); }
+  if (o.perpWiden) { q.o_wsl = String(o.perpWiden.slAtr); q.o_wtgt = String(o.perpWiden.tgtAtr); }
   if (o.strikeBlocks && !backtestBlockProblems({ window: 'all', strikeBlocks: o.strikeBlocks.blocks }).length) q.o_sblocks = JSON.stringify(o.strikeBlocks.blocks);
   return q;
 }

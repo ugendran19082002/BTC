@@ -3,7 +3,7 @@ import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionReco
 import type { AutoMethodsRun, StrategyConfig, WalkForward } from '@/types/strategy';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import { strikeBlocksQuery } from '@/lib/backtest-strike-blocks';
-import { breakEvenQuery, tslQuery } from '@/lib/backtest-tsl';
+import { WIDEN_ATR_MAX, breakEvenQuery, tslQuery } from '@/lib/backtest-tsl';
 
 /** A backtest's question as the server reads it: the days, the settings, the filters, the strategy. Shared with its live check, so both are of the same thing. */
 function searchOf(q: BacktestQuery): URLSearchParams {
@@ -29,10 +29,10 @@ function searchOf(q: BacktestQuery): URLSearchParams {
   if (tsl) p.set('tsl', tsl);
   const be = breakEvenQuery(q.params.breakEven);
   if (be) p.set('be', be);
-  // The perp's trails, where they are right: the editor says what is wrong with any other.
-  const trail = (v: number | undefined) => (v !== undefined && v > 0 && v <= 20 ? String(v) : null);
-  if (trail(q.params.trailSlAtr)) p.set('ptsl', trail(q.params.trailSlAtr)!);
-  if (trail(q.params.trailTgtAtr)) p.set('pttgt', trail(q.params.trailTgtAtr)!);
+  // The perp's widening with volatility, where it is right: the editor says what is wrong with any other.
+  const widen = (v: number | undefined) => (v !== undefined && v > 0 && v <= WIDEN_ATR_MAX ? String(v) : null);
+  if (widen(q.params.widenSlAtr)) p.set('wsl', widen(q.params.widenSlAtr)!);
+  if (widen(q.params.widenTgtAtr)) p.set('wtgt', widen(q.params.widenTgtAtr)!);
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));
   if (q.strategy) p.set('strategy', q.strategy);

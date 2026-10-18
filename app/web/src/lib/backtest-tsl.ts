@@ -51,3 +51,6 @@ export const breakEvenQuery = (b: BreakEven | null | undefined): string | null =
 /** "SL to entry after 10%": a few words; null with none. */
 export const breakEvenWords = (b: BreakEven | null | undefined): string | null => (b ? `SL to entry after ${amount(b.move, b.unit)}` : null);
 export const BREAK_EVEN_DEFAULT: BreakEven = { move: 25, unit: 'pct' };
+
+/** The most the perp's widening may ask for, in ATRs of the 1m candles (the server's `WIDEN_ATR_MAX`). */
+export const WIDEN_ATR_MAX = 100;

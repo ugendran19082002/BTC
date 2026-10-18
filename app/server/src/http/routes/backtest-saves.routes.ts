@@ -80,12 +80,12 @@ async function portfolioQuery(q: Record<string, unknown>) {
      * by a strategy too), `o_sblocks` (a strike rule by time of day, 18 Oct 2026: the blocks after each member's own
      * rule -- or the run's strike -- held to the whole day; a member by a strategy keeps its own), `o_tsl` (a trailing SL on the
      * option's stop, 18 Oct 2026: `5pts:5pts`, or `off` to take every member's away; a member by a strategy keeps its own
-     * stop, as on the desk), `o_ptsl` / `o_pttgt` (the perp's SL and target trailed by the 1m ATR, the two together, 0 off;
+     * stop, as on the desk), `o_wsl` / `o_wtgt` (the perp's SL and target widened with the 1m ATR, the two together, 0 off;
      * a member by a strategy keeps its own levels), `o_be` (the option's stop to the price sold once the premium has fallen
      * so far, `10pct` / `5pts`, or `off`). One that is absent is off: each member's own. They are
      * read and held to their limits by the single backtest's own parser, so a value means here what it means there.
      */
-    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax', 'noentry', 'vol', 'volby', 'sblocks', 'tsl', 'ptsl', 'pttgt', 'be'] as const;
+    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax', 'noentry', 'vol', 'volby', 'sblocks', 'tsl', 'wsl', 'wtgt', 'be'] as const;
     const asked: Record<string, unknown> = {};
     for (const k of O_KEYS) if (q[`o_${k}`] !== undefined && q[`o_${k}`] !== '') asked[k] = q[`o_${k}`];
     const has = (k: (typeof O_KEYS)[number]) => k in asked;
@@ -109,8 +109,8 @@ async function portfolioQuery(q: Record<string, unknown>) {
       ...(has('sblocks') ? { strikeBlocks: read.strikeBlocks ?? [] } : {}),
       // `off` takes a member's own away: named, and undefined.
       ...(has('tsl') ? { tsl: read.tsl } : {}),
-      // The perp's trails, the two together: 0 is off for the run.
-      ...(has('ptsl') || has('pttgt') ? { trailSlAtr: read.trailSlAtr ?? 0, trailTgtAtr: read.trailTgtAtr ?? 0 } : {}),
+      // The perp's widening with volatility, the two together: 0 is off for the run.
+      ...(has('wsl') || has('wtgt') ? { widenSlAtr: read.widenSlAtr ?? 0, widenTgtAtr: read.widenTgtAtr ?? 0 } : {}),
       // The stop to the price sold, for the run; `off` takes each member's own away.
       ...(has('be') ? { breakEven: read.breakEven } : {}),
     };
