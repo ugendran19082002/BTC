@@ -607,7 +607,7 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(getSignalBacktest.mock.calls.length).toBe(before + 1));
     expect(lastQuery().params.lots).toBe(16);
     await new Promise((r) => setTimeout(r, 600));
-    expect(getSignalBacktest.mock.calls.length).toBe(before + 1, 'and no more after');
+    expect(getSignalBacktest.mock.calls.length, 'and no more after').toBe(before + 1);
   });
 
   it('[critical] a strike rule by time of day, as the strategy form\'s: the rule above is block 1, blocks after it sent with the backtest -- only while right for the hours', async () => {

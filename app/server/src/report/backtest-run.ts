@@ -82,8 +82,23 @@ function ask(m: Work | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTE
   });
 }
 
+/**
+ * The same question asked again while it is being worked -- a second tab, the screen's own poll landing on a long
+ * run -- shares the answer being worked rather than waiting in line behind it for a second, identical one (18 Oct 2026:
+ * a portfolio is several backtests' work, and the thread works one at a time). Asked as the same, `now` apart.
+ */
+const asking = new Map<string, Promise<unknown>>();
+function worked<T>(m: Work, here: () => Promise<T>, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<T> {
+  const key = JSON.stringify(m, (k, v) => (k === 'now' ? undefined : v));
+  const held = asking.get(key);
+  if (held) return held as Promise<T>;
+  const run = workedNow(m, here, timeoutMs).finally(() => { if (asking.get(key) === run) asking.delete(key); });
+  asking.set(key, run);
+  return run;
+}
+
 /** In its thread where there is one, here where there is not. */
-async function worked<T>(m: Work, here: () => Promise<T>, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<T> {
+async function workedNow<T>(m: Work, here: () => Promise<T>, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<T> {
   if (!wanted || Date.now() - gaveUpAt < GIVE_UP_MS) return here();
   let a: BacktestAnswer;
   try {
