@@ -63,10 +63,16 @@ export const PLAN_MAX_AWAY_ATR = 2;
  * passed because risk is measured as a distance; TGT1 already reached by the
  * price -- 980 TRADEs, each written down at once as "expired, ran to TGT1
  * without it"; and the zone more than PLAN_MAX_AWAY_ATR from the price.
+ *
+ * And a fourth (18 Oct 2026 audit): the price already through the stop. Measured on the stop against the fill,
+ * a plan whose price had run past its stop still read valid -- 932 standalone TRADEs of 1-18 Oct were written that
+ * way, and 7 were sold live (2-9 Oct) and bought straight back by the perp watch. The chain's own 1m step already
+ * refused them; now every mode does, here.
  */
 export function planProblem(plan: Pick<Plan, 'entryLo' | 'entryHi' | 'stop' | 'tp1'>, dir: 1 | -1, px: number, a: number): string | null {
   const edge = fillOf(plan, dir);
   if (!((edge - plan.stop) * dir > 0)) return `the stop ${fmt(plan.stop)} is on the wrong side of the ${fmt(edge)} entry`;
+  if (!((px - plan.stop) * dir > 0)) return `the price ${fmt(px)} is already through the stop ${fmt(plan.stop)} -- the trade is over before it starts`;
   if (!((plan.tp1 - px) * dir > 0)) return `the price ${fmt(px)} has already reached TGT1 ${fmt(plan.tp1)} -- the move happened without the trade`;
   const away = dir === 1 ? px - plan.entryHi : plan.entryLo - px;
   if (away > PLAN_MAX_AWAY_ATR * a) return `the entry is ${(away / a).toFixed(1)} ATR from the price -- the setup is behind it`;
@@ -308,7 +314,7 @@ function gatesOf(i: {
   // The plan against the price now: the live trade where it is fresh, else the entry timeframe's last close.
   const px = ctx.ltp && ctx.now - ctx.ltp.at <= LTP_FRESH_MS ? ctx.ltp.price : i.bars[i.bars.length - 1]!.close;
   const problem = planProblem(plan, dir, px, a);
-  g('plan', 'Plan valid', `stop on the losing side, TGT1 not yet reached, entry within ${PLAN_MAX_AWAY_ATR} ATR of the price`,
+  g('plan', 'Plan valid', `stop on the losing side and the price not through it, TGT1 not yet reached, entry within ${PLAN_MAX_AWAY_ATR} ATR of the price`,
     problem === null ? 'valid' : 'not valid', problem === null, problem);
 
   g('spread', 'Spread', `perp spread ≤ ${SPREAD_MAX_PCT}%`,

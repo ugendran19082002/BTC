@@ -381,3 +381,26 @@ test('[critical] a late fill the perp has already finished -- at the signal\'s s
     await off(id);
   }
 });
+
+test('[critical] a signal entered at once is held to the same: the perp already at its stop or target when its turn comes is not entered (18 Oct 2026)', async () => {
+  const id = await make('At once, over', main, { enterOn: 'signal' });
+  const last = async () => (await runsOf(id)).at(-1)!;
+  try {
+    perp = 84_600;                                             // a BUY signal, stop 84,600: at it
+    await runner.onSignal(await logged(signal('1h')));
+    assert.equal((await last()).status, 'skipped');
+    assert.match((await last()).detail, /the perp is at 84600 now, already at the signal's SL 84600 -- over before it could be entered$/);
+    perp = 85_600;                                             // past its target
+    await runner.onSignal(await logged(signal('1h')));
+    assert.match((await last()).detail, /the perp is at 85600 now, already at the signal's TGT 85500 -- over/);
+    // between the two, or no fresh print: entered as before
+    for (const at of [85_000, null]) {
+      perp = at;
+      await runner.onSignal(await logged(signal('1h')));
+      assert.equal((await last()).status, 'would-place', (await last()).detail);
+    }
+  } finally {
+    perp = null;
+    await off(id);
+  }
+});

@@ -400,6 +400,18 @@ test('[critical] nothing real between 1R and 2R: TGT1 is 1.5R, says why, and the
   assert.equal(pickTargets({ tp1: 'own', tp2: 'own' }, [L(84_900, 'own', 'VWAP 84,900')], atDefault).tp1, 84_900);
 });
 
+test('[critical] the live price through the signal\'s stop: Plan valid fails, NO TRADE, and no box (18 Oct 2026 audit)', () => {
+  const ok = readMethod(BREAKOUT, 'single', '5m', single());
+  assert.equal(ok.state, 'TRADE', ok.reason);
+  const stop = ok.plan!.stop;
+  const through = readMethod(BREAKOUT, 'single', '5m', single({ ltp: { price: stop - 5, at: nowAfter(breakoutBars()) - 1_000 } }));
+  assert.equal(through.state, 'NO_TRADE');
+  assert.equal(through.plan, null, 'no order plan to take');
+  const plan = through.gates.find((g) => g.key === 'plan')!;
+  assert.deepEqual([plan.ok, plan.enabled], [false, true]);
+  assert.match(plan.why ?? '', /is already through the stop/);
+});
+
 test('[critical] the perpetual is the price; the mark checks it: a last trade far from the mark refuses -- a wick, not a level', () => {
   const at = (ltp: number, mark: number) => readMethod(BREAKOUT, 'single', '5m', single({
     ltp: { price: ltp, at: nowAfter(breakoutBars()) - 1_000 }, quote: { mark, index: mark + 40, at: nowAfter(breakoutBars()) - 1_000 },

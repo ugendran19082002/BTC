@@ -348,6 +348,8 @@ export type TradeEvent =
       perp?: number | null;
     }
   | { t: 'entry_timeout'; at: number }
+  /** A signal's entry taken off the book unfilled because the perp reached the signal's stop or target first (18 Oct 2026). */
+  | { t: 'entry_withdrawn'; reason: string; at: number }
   | { t: 'entry_cancelled'; remaining: number; at: number }
   | {
       t: 'protection_placed';

@@ -46,6 +46,24 @@ test(`[critical] an entry more than ${PLAN_MAX_AWAY_ATR} ATR behind the price is
   assert.equal(planProblem(long, 1, 83_990, A), null);
 });
 
+test('[critical] both ways: a wrong-side stop, a reached TGT1 and an entry over 2 ATR away are refused for a short as for a long', () => {
+  assert.match(planProblem({ ...short, stop: 83_950 }, -1, 83_980, A) ?? '', /wrong side/);
+  assert.match(planProblem({ ...long, stop: 84_100 }, 1, 84_050, A) ?? '', /wrong side/);
+  assert.match(planProblem(short, -1, 83_700, A) ?? '', /already reached TGT1/);
+  assert.match(planProblem({ ...short, tp1: 83_400 }, -1, 84_000 - 2.1 * A, A) ?? '', /ATR from the price/);
+  assert.equal(planProblem({ ...short, tp1: 83_400 }, -1, 84_000 - 1.9 * A, A), null);
+});
+
+test('[critical] a price already through the stop is refused, both ways (18 Oct 2026 audit: 932 TRADEs read valid so)', () => {
+  // A long: stop 83,900, the price at 83,850. A short: stop 84,150, the price at 84,200. At the stop exactly is through.
+  assert.match(planProblem(long, 1, 83_850, A) ?? '', /the price 83,850 is already through the stop 83,900/);
+  assert.match(planProblem(short, -1, 84_200, A) ?? '', /the price 84,200 is already through the stop 84,150/);
+  assert.match(planProblem(long, 1, 83_900, A) ?? '', /already through the stop/);
+  // one point inside it: in play
+  assert.equal(planProblem(long, 1, 83_901, A), null);
+  assert.equal(planProblem(short, -1, 84_149, A), null);
+});
+
 test('[critical] Plan valid is a locked gate: listed, on, and cannot be switched off', async () => {
   const plan = (await gateSettings()).find((g) => g.key === 'plan');
   assert.ok(plan && plan.enabled && plan.locked, 'listed, on, locked');

@@ -117,7 +117,7 @@ taken with a gate off is marked so in the log.
 | Gate | Rule | Switch |
 |---|---|---|
 | Data fresh | with the chain: the newest 1m candle ≤ 3 min old; without it: the timeframe's newest ≤ one candle + 3 min | locked on |
-| Plan valid | the SL on the losing side of the fill; **TGT1 not yet reached** by the price; the entry within **2 ATR** of the price | locked on |
+| Plan valid | the SL on the losing side of the fill; **the price not already through the SL** (18 Oct 2026); **TGT1 not yet reached** by the price; the entry within **2 ATR** of the price | locked on |
 | Spread | the perp's spread ≤ 0.05% | on / off |
 | Perp at mark | the perp's last trade within 0.15% of its mark (else a wick, not a level) | on / off |
 | Stop band | SL 0.3-2.5 ATR from the fill | on / off |
@@ -129,7 +129,19 @@ taken with a gate off is marked so in the log.
 | Method gate | the method's own "not now" -- momentum extended over 3 ATR from the 20 EMA (#8), mean reversion on a trend day (#10) | on / off |
 
 "Plan valid" judges the plan against the price **now**: the perp's last trade
-while it is under 15 s old, else the last closed candle.
+while it is under 15 s old, else the last closed candle; the 2 ATR is the entry
+timeframe's Wilder ATR(14) (5m with the chain). Direction is the signal's own on
+the perp, for a short put (BUY) and a short call (SELL) alike: the levels are the
+perp's.
+
+It is read when the signal is. After it, on the way to an order (18 Oct 2026
+audit): the runner skips a signal whose perp is already at its SL or the
+strategy's target when its turn comes -- a zone fill (since 13 Oct) and one
+entered at once alike; and an option entry still resting is taken off the book
+(`entry_withdrawn`, no market fallback) once the perp trades at the signal's SL
+or target -- what part filled is the perp watch's to close. Before the audit a
+price through the SL read valid: 932 standalone TRADEs of 1-18 Oct, 7 sold live
+on 2-9 Oct and bought straight back.
 
 ---
 

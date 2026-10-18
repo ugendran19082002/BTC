@@ -24,7 +24,7 @@ export type GateKey = 'data' | 'plan' | 'spread' | 'mark' | 'stop' | 'rr' | 'htf
 /** The gates in the checklist's order, what each is called, and which cannot be switched off. */
 export const GATES: readonly { key: GateKey; label: string; locked?: string }[] = [
   { key: 'data', label: 'Data fresh', locked: 'On stale candles every other reading describes a market that has moved on.' },
-  { key: 'plan', label: 'Plan valid', locked: 'A stop on the wrong side, a TGT1 the price has already reached, or an entry the price has left far behind is not a trade.' },
+  { key: 'plan', label: 'Plan valid', locked: 'A stop on the wrong side, a price already through the stop, a TGT1 the price has already reached, or an entry the price has left far behind is not a trade.' },
   { key: 'spread', label: 'Spread' },
   { key: 'mark', label: 'Perp at mark' },
   { key: 'stop', label: 'Stop band' },

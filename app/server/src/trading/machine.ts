@@ -194,6 +194,10 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       // what moves us on. Recorded so the reason survives a restart.
       return { ...s, note: 'entry not filled in time — cancelling the rest' };
 
+    case 'entry_withdrawn':
+      // As the timeout: the cancel's result moves us on; the reason is kept.
+      return { ...s, note: `entry withdrawn — ${e.reason}` };
+
     case 'entry_cancelled':
       if (s.entrySize === 0) return { ...s, phase: 'aborted', note: 'entry cancelled unfilled — no position taken' };
       return {

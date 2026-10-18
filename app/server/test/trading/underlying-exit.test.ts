@@ -226,3 +226,45 @@ test('[critical] the fast watch hands the print it saw with the trade; a stale f
   await early.r.engine.exitOnUnderlying(early.id, { price: 86_100, at: 0 });
   assert.equal(early.r.store.peek(early.id)!.state.position, -5);
 });
+
+/*
+ * A signal's entry still resting when the perp reaches the signal's stop or target (18 Oct 2026 audit): the trade it
+ * was for is over -- taken off the book unfilled, with why, and never sent at the market instead.
+ */
+async function restingPut(perpAt: number) {
+  const perp = { price: perpAt, at: 0 };
+  const r = rig({
+    products: [peProduct(), ceProduct()],
+    quotes: [quote(PE, 100.5, 101), quote(CE, 100.5, 101)],
+    underlying: () => ({ price: perp.price, at: perp.at || r.now() }),
+  });
+  // Offered over the bid: it rests until the bid comes up to it.
+  const plan = { ...planFor(peProduct(), { lots: 10, stopPrice: 300, takeProfitPrice: 1, entry: { type: 'limit' as const, limitPrice: 105, timeoutMs: 5 * 60_000, marketFallback: true } }),
+    underlying: { dir: 1 as const, stop: 84_000, target: 86_000, source: 'BTC perp' } };
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  return { r, perp, id: plan.tradeId };
+}
+
+test('[critical] a resting entry is withdrawn, unfilled, once the perp reaches the signal\'s stop -- not sent at the market', async () => {
+  const { r, perp, id } = await restingPut(85_000);
+  assert.equal(r.store.peek(id)!.state.phase, 'entry_pending', 'between the levels it rests');
+  perp.price = 83_990;
+  const s = await r.engine.poll(id);
+  assert.deepEqual([s?.phase, s?.position], ['aborted', 0]);
+  const events = r.store.peek(id)!.events;
+  const w = events.find((e) => e.t === 'entry_withdrawn') as { reason: string } | undefined;
+  assert.match(w?.reason ?? '', /BTC perp at 83,990\.00 reached the signal's stop 84,000\.00 before the entry filled/);
+  assert.ok(!events.some((e) => e.t === 'entry_timeout'), 'not a timeout');
+  assert.equal(events.filter((e) => e.t === 'entry_submitted').length, 1, 'no market order after it, though the plan has a market fallback');
+});
+
+test('[critical] ... and the target the same way; a stale perp price withdraws nothing', async () => {
+  const at = await restingPut(85_000);
+  at.perp.price = 86_000;
+  assert.equal((await at.r.engine.poll(at.id))?.phase, 'aborted');
+  assert.match((at.r.store.peek(at.id)!.events.find((e) => e.t === 'entry_withdrawn') as { reason: string }).reason, /reached the signal's target 86,000\.00/);
+  const stale = await restingPut(85_000);
+  stale.perp.price = 83_000; stale.perp.at = 1; // a price from long ago
+  assert.equal((await stale.r.engine.poll(stale.id))?.phase, 'entry_pending', 'nothing is acted on without a fresh last trade');
+});

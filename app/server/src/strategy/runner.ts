@@ -573,21 +573,25 @@ export class StrategyRunner {
         await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round(ago / 1_000)}s ago -- too late to enter (a ${r.tf} signal within ${Math.round(fresh / 1_000)}s)`);
         return;
       }
-      /*
-       * And not one the perp has already finished (13 Oct 2026). A fill may now be entered minutes after it
-       * printed, on the long timeframes; if the perp has since reached the signal's stop or its target, the
-       * trade the signal described is over, and an option sold now would be bought straight back by the
-       * watch on those same levels -- two fees and a spread for nothing.
-       */
-      const at = this.perp();
-      if (at !== null) {
-        const goal = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
-        const past = (dir === 1 ? at <= plan.stop : at >= plan.stop) ? `SL ${Math.round(plan.stop)}`
-          : (dir === 1 ? at >= goal : at <= goal) ? `TGT ${Math.round(goal)}` : null;
-        if (past) {
-          await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round(ago / 1_000)}s ago and is at ${Math.round(at)} now, already at the signal's ${past} -- over before it could be entered`);
-          return;
-        }
+    }
+
+    /*
+     * And not one the perp has already finished (13 Oct 2026). A fill may now be entered minutes after it
+     * printed, on the long timeframes; if the perp has since reached the signal's stop or its target, the
+     * trade the signal described is over, and an option sold now would be bought straight back by the
+     * watch on those same levels -- two fees and a spread for nothing. A signal entered at once is held to it
+     * too (18 Oct 2026 audit): it waits its turn in the account's queue, and the perp moves meanwhile.
+     */
+    const perpNow = this.perp();
+    if (perpNow !== null) {
+      const goal = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
+      const past = (dir === 1 ? perpNow <= plan.stop : perpNow >= plan.stop) ? `SL ${Math.round(plan.stop)}`
+        : (dir === 1 ? perpNow >= goal : perpNow <= goal) ? `TGT ${Math.round(goal)}` : null;
+      if (past) {
+        await finish('skipped', fill
+          ? `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round((now - fill.filledAt * 1_000) / 1_000)}s ago and is at ${Math.round(perpNow)} now, already at the signal's ${past} -- over before it could be entered`
+          : `the perp is at ${Math.round(perpNow)} now, already at the signal's ${past} -- over before it could be entered`);
+        return;
       }
     }
 

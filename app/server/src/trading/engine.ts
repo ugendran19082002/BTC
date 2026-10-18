@@ -1516,6 +1516,23 @@ export class TradeEngine {
       }
     }
 
+    /*
+     * A signal's entry still resting, and the perp has already reached the signal's stop or target (18 Oct 2026
+     * audit): the trade it was for is over. What is left is taken off the book, not sold into -- a fill now would only
+     * be bought straight back by the perp watch. Nothing filled: nothing to close. Part filled: the rest is cancelled
+     * and the filled part is the perp's levels' to judge (`underlyingExit`), as any open trade's. No market fallback.
+     */
+    const passed = entry && (entry.status === 'open' || entry.status === 'partial') ? this.underlyingPassed(rec) : null;
+    if (entry && passed) {
+      rec = await this.commit(rec, { t: 'entry_withdrawn', reason: passed, at: this.now() });
+      await this.exchange.cancelOrder(entry).catch((e) => this.note('cancel entry', entry, e));
+      this.entryDeadline.delete(tradeId);
+      const after = await this.exchange.getOrderByClientId(entryId, rec.plan.symbol).catch(() => null);
+      if (after) rec = await this.absorb(rec, after, 'entry');
+      rec = await this.commit(rec, { t: 'entry_cancelled', remaining: entry.size - (after?.filledSize ?? entry.filledSize), at: this.now() });
+      if (rec.state.position === 0) return rec.state;
+    }
+
     // Entry timed out and is still resting: cancel what is left.
     const deadline = this.entryDeadline.get(tradeId);
     if (entry && (entry.status === 'open' || entry.status === 'partial') && deadline !== undefined && this.now() >= deadline) {
@@ -2474,6 +2491,28 @@ export class TradeEngine {
   private perpNow(): number | null {
     const px = this.d.underlying?.() ?? null;
     return px !== null && px.price > 0 && this.now() - px.at <= MARK_STALE_MS ? px.price : null;
+  }
+
+  /**
+   * Which of a signal trade's perp levels the perp has traded at since its entry was sent, in words; null when
+   * neither, or the price is stale (nothing is acted on without a fresh last trade). The same reading as the exit's
+   * (`underlyingTouched`), for an entry that has not filled yet.
+   */
+  private underlyingPassed(rec: TradeRecord): string | null {
+    const u = rec.plan.underlying;
+    if (!u || (u.stop === null && u.target === null)) return null;
+    const now = this.now();
+    const px = this.d.underlying?.() ?? null;
+    const fresh = px !== null && px.price > 0 && now - px.at <= MARK_STALE_MS ? px : null;
+    if (!fresh) return null;
+    const sent = rec.events.find((e) => e.t === 'entry_submitted')?.at ?? now;
+    const range = this.d.underlyingRange?.(Math.max(now - UNDERLYING_LOOKBACK_MS, sent)) ?? null;
+    const touched = underlyingTouched(u, fresh, range);
+    if (!touched) return null;
+    const p2 = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return touched.hit === 'stop'
+      ? `${u.source} at ${p2(touched.price)} reached the signal's stop ${p2(u.stop!)} before the entry filled`
+      : `${u.source} at ${p2(touched.price)} reached the signal's target ${p2(u.target!)} before the entry filled`;
   }
 
   private async underlyingExit(rec: TradeRecord, seen?: { price: number; at: number }): Promise<TradeRecord> {
