@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { NumberField } from '@/components/ui/number-field';
 import { CHAIN_PTS, DEFAULT_AUTO_METHODS, actionOf, legOfSignal, ptsKeysOf, ruleTfs, SIGNAL_TFS, type PtsKey, type SignalRule, type SignalTf } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
-import type { AutoMethodsRun, Strategy } from '@/types/strategy';
+import type { AutoMethodsRun, Strategy, WalkForward } from '@/types/strategy';
 import { AutoMethodsFields } from '@/components/strategy/AutoMethods';
 import { time12 } from '@/lib/time';
 import type { OptionRecordState } from '@/components/strategy/useOptionRecord';
@@ -99,12 +99,14 @@ const sourceWords = (s: Strategy) => {
   return `${n} method${n === 1 ? '' : 's'} · ${r.mode === 'mtf' ? 'with the chain' : ruleTfs(r).join(' + ')}${s.enabled ? '' : ' · off'}`;
 };
 
-export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], optionRecord, savedBacktests = [], pickNow }: {
+export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], optionRecord, savedBacktests = [], pickNow, walkNow }: {
   rule: SignalRule;
   onChange: (r: SignalRule) => void;
   errors: { mode?: string | null; tf?: string | null; methods?: string | null; slPts?: string | null; auto?: string | null };
   /** The methods' daily update, now, on the form's draft with this rule (`pickMethodsNow`). Absent: no "Pick now". */
   pickNow?: (rule: SignalRule) => Promise<AutoMethodsRun>;
+  /** The draft's rule walked forward with a holdout (`walkMethodsForward`). Absent: no "Test this rule". */
+  walkNow?: (rule: SignalRule, o: { holdout: number }) => Promise<WalkForward>;
   /**
    * The same broker account's other signal strategies (`copySources`), whose picked methods can be taken in one
    * step (owner, 9 Oct 2026): a new strategy on another timeframe or exit usually wants the same methods, and
@@ -348,6 +350,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           onChange={(a) => onChange({ ...rule, autoMethods: a })}
           onTake={(run) => onChange({ ...rule, methods: run.picked, autoMethods: { ...(rule.autoMethods ?? DEFAULT_AUTO_METHODS), last: run } })}
           pickNow={pickNow ? (a) => pickNow({ ...rule, autoMethods: a }) : undefined}
+          walkNow={walkNow ? (a, o) => walkNow({ ...rule, autoMethods: a }, o) : undefined}
           nameOf={(id) => { const m = nameOf(id); return m ? `#${m.n} ${m.name}` : id; }}
           blocked={actionOf(rule) === 'buy' && !rule.autoMethods?.on ? 'Picks by the record as options sold: a strategy that buys cannot use it.' : null}
           error={errors.auto}

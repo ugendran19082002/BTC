@@ -3,7 +3,8 @@ import { NumberField } from '@/components/ui/number-field';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
-import { DEFAULT_AUTO_METHODS, EXCLUDE_NONE, MAX_AUTO_DAYS, type AutoMethods, type AutoMethodsRun } from '@/types/strategy';
+import { DEFAULT_AUTO_METHODS, EXCLUDE_NONE, MAX_AUTO_DAYS, type AutoMethods, type AutoMethodsRun, type WalkForward } from '@/types/strategy';
+import { WalkForwardTest } from '@/components/strategy/WalkForwardTest';
 
 /**
  * The methods' daily update in the signal strategy form (owner, 16 Oct 2026: "daily, a time chosen, the methods
@@ -45,7 +46,7 @@ function Toggle({ on, label, disabled, onClick }: { on: boolean; label: string; 
 }
 
 export function AutoMethodsFields({
-  value, onChange, onTake, pickNow, nameOf, blocked, error, excludeList,
+  value, onChange, onTake, pickNow, walkNow, nameOf, blocked, error, excludeList,
 }: {
   value: AutoMethods | null | undefined;
   onChange: (a: AutoMethods) => void;
@@ -53,6 +54,8 @@ export function AutoMethodsFields({
   onTake: (run: AutoMethodsRun) => void;
   /** The form's draft picked now (`pickMethodsNow`). Absent: no button. */
   pickNow?: (a: AutoMethods) => Promise<AutoMethodsRun>;
+  /** The rule walked forward with a holdout (`walkMethodsForward`). Absent: no "Test this rule". */
+  walkNow?: (a: AutoMethods, o: { holdout: number }) => Promise<WalkForward>;
   nameOf: (id: string) => string;
   /** Why it cannot be used here, in words: a strategy that buys. */
   blocked?: string | null;
@@ -189,6 +192,7 @@ export function AutoMethodsFields({
         </div>
       )}
       {pick.error && <p role="alert" className="m-0 mt-1.5 text-[11.5px] text-[var(--down)]">{pick.error}</p>}
+      {!blocked && a.on && walkNow && <WalkForwardTest run={(o) => walkNow(a, o)} disabled={Boolean(error)} nameOf={nameOf} />}
       {run && (
         <div role="status" aria-label="What it would pick" className="mt-2 rounded-md bg-muted p-2 text-[12px] leading-snug">
           {run.excluded && run.excluded.length > 0 && (

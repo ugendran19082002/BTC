@@ -668,6 +668,23 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   assert.deepEqual([ex.body.picked, ex.body.excluded], [won.slice(1).length ? won.slice(1) : [], [top]]);
   const exNone = await post('/api/strategies/auto-methods/pick', { config: draft({}, { autoMethods: { ...auto, exclude: { on: true, methods: [] } } }) });
   assert.deepEqual([exNone.status, exNone.body.problems], [422, ['Pick at least one method to exclude, or switch Exclude off.']]);
+  // Walked forward (18 Oct 2026): the day after picked from the day before alone; the same record, day by day
+  const walkAuto = { ...auto, days: 1 };
+  const walk = await post('/api/strategies/auto-methods/walk-forward', { config: draft({}, { methods: [], autoMethods: walkAuto }), from: QUIET, to: QUIET, holdout: 0 });
+  assert.equal(walk.status, 200, JSON.stringify(walk.body).slice(0, 300));
+  assert.deepEqual([walk.body.from, walk.body.to, walk.body.holdoutFrom, walk.body.days.length], [QUIET, QUIET, null, 1]);
+  const quietRec = await post('/api/signal-backtest/methods', { config: draft(), from: QUIET, to: QUIET });
+  assert.equal(walk.body.walk.all.trades, quietRec.body.trades, 'every method on the test day: that day\'s own record');
+  const climbRec = await post('/api/signal-backtest/methods', { config: draft(), from: CLIMB, to: CLIMB });
+  const climbWon = climbRec.body.methods.filter((m: any) => m.trades >= 1 && m.wins / m.trades >= 0.5).map((m: any) => m.method);
+  assert.deepEqual(walk.body.days[0].picked, climbWon.length ? climbWon : [], 'picked from the day before it, by the rule');
+  // refused in words: a day not finished, a holdout with nothing left to walk, a strategy that buys
+  for (const [body, said] of [[{ to: '2099-01-01' }, /not finished/], [{ from: QUIET, to: QUIET, holdout: 1 }, /at least one day to walk/], [{ holdout: 11 }, /0 to 10/]] as const) {
+    const r = await post('/api/strategies/auto-methods/walk-forward', { config: draft({}, { autoMethods: walkAuto }), ...body });
+    assert.equal(r.status, 400, JSON.stringify(body));
+    assert.match(r.body.error, said);
+  }
+  assert.equal((await post('/api/strategies/auto-methods/walk-forward', { config: draft({ takeProfitPct: 0, stopLossPct: 0 }, { action: 'buy', autoMethods: walkAuto }) })).status, 422);
   // its settings are needed and checked; one that buys has no record as options
   assert.equal((await post('/api/strategies/auto-methods/pick', { config: draft() })).status, 422);
   assert.equal((await post('/api/strategies/auto-methods/pick', { config: draft({}, { autoMethods: { ...auto, days: 0 } }) })).status, 422);

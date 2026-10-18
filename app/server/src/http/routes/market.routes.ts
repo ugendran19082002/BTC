@@ -12,7 +12,7 @@ import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
-import { autoPick, methodRecord } from '../../strategy/auto-methods.js';
+import { WALK_MAX_DAYS, WALK_MAX_HOLDOUT, autoPick, autoWindow, methodRecord, walkForwardOf } from '../../strategy/auto-methods.js';
 import { METHODS } from '../../entry/methods.js';
 
 /**
@@ -462,6 +462,49 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const problems = validateConfig({ ...asked, signal: { ...asked.signal, methods: METHODS.map((m) => m.id) } });
     if (problems.length) return refuse(reply, 422, { error: problems.join(' '), problems });
     return autoPick(asked, auto!, Date.now(), tradingService().spot);
+  });
+
+  /**
+   * The draft's daily-update rule walked forward, with an untouched holdout (18 Oct 2026, the R&D audit): each test day
+   * traded with what the rule picked from the days before it alone; the last `holdout` days reported apart; every
+   * method and the list as it stands beside it (`walkForward`). `{ config, from?, to?, holdout? }`: finished expiry
+   * days, at most 30, `to` the last finished one and `from` 13 before it (no earlier than the record allows) where not
+   * given; `holdout` 0 to 10, 3 where not given, leaving at least one day to walk. Read-only.
+   */
+  app.post('/api/strategies/auto-methods/walk-forward', async (req, reply) => {
+    const body = (req.body ?? {}) as { config?: unknown; from?: unknown; to?: unknown; holdout?: unknown };
+    if (!body.config || typeof body.config !== 'object') return refuse(reply, 400, { error: 'A strategy\'s settings are needed: { config }.' });
+    const asked = cleanConfig(body.config);
+    if (asked.trigger !== 'signal' || !asked.signal) return refuse(reply, 422, { error: 'Only a signal strategy has methods to pick.', problems: ['Only a signal strategy has methods to pick.'] });
+    if (actionOf(asked.signal) !== 'sell') {
+      const why = 'The methods are picked by their record as options sold: a strategy that buys has none.';
+      return refuse(reply, 422, { error: why, problems: [why] });
+    }
+    const auto = asked.signal.autoMethods ?? null;
+    const autoBad = auto ? autoMethodsProblems(auto) : ['The daily update\'s settings are needed: win rate, least trades and days.'];
+    if (autoBad.length) return refuse(reply, 422, { error: autoBad.join(' '), problems: autoBad });
+    const problems = validateConfig({ ...asked, signal: { ...asked.signal, methods: METHODS.map((m) => m.id) } });
+    if (problems.length) return refuse(reply, 422, { error: problems.join(' '), problems });
+    const now = Date.now();
+    const last = autoWindow(now, 1).to;
+    const day = (v: unknown) => (typeof v === 'string' && DAY.test(v) && !Number.isNaN(Date.parse(v)) ? v : null);
+    const plusDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const to = body.to === undefined || body.to === '' ? last : day(body.to);
+    if (!to) return refuse(reply, 400, { error: 'Dates must be YYYY-MM-DD.' });
+    if (to > last) return refuse(reply, 400, { error: `The last day is ${last}: the day being traded is not finished.` });
+    // The first test day has the rule's whole look-back before it, inside the record.
+    const firstTest = plusDays(REPORT_FIRST_DAY, auto!.days);
+    const fromAsked = body.from === undefined || body.from === '' ? null : day(body.from);
+    if (body.from !== undefined && body.from !== '' && !fromAsked) return refuse(reply, 400, { error: 'Dates must be YYYY-MM-DD.' });
+    const from = fromAsked ?? (plusDays(to, -13) > firstTest ? plusDays(to, -13) : firstTest);
+    if (from > to) return refuse(reply, 400, { error: `The first test day must not be after the last; with ${auto!.days} days to look back, the first is ${firstTest}.` });
+    if (from < firstTest) return refuse(reply, 400, { error: `With ${auto!.days} days to look back, the first test day is ${firstTest}: the record starts ${REPORT_FIRST_DAY}.` });
+    const tests = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
+    if (tests > WALK_MAX_DAYS) return refuse(reply, 400, { error: `At most ${WALK_MAX_DAYS} test days at a time.` });
+    const holdout = body.holdout === undefined || body.holdout === '' ? Math.min(3, tests - 1) : Number(body.holdout);
+    if (!Number.isInteger(holdout) || holdout < 0 || holdout > WALK_MAX_HOLDOUT) return refuse(reply, 400, { error: `The holdout is a whole number of days from 0 to ${WALK_MAX_HOLDOUT}.` });
+    if (holdout >= tests) return refuse(reply, 400, { error: 'The holdout must leave at least one day to walk.' });
+    return walkForwardOf(asked, auto!, { from, to, holdout, now, spot: tradingService().spot, first: REPORT_FIRST_DAY });
   });
 
   /** Each expiry day with its figures, its kind and both records' totals. `?account=` is one broker account's orders. */

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoDue, autoPick, autoWindow, lessExcluded, pickMethods, runAutoMethods, type AutoDeps } from '../../src/strategy/auto-methods.js';
+import { autoDue, autoPick, autoWindow, lessExcluded, pickMethods, runAutoMethods, walkForward, type AutoDeps, type DayRecord } from '../../src/strategy/auto-methods.js';
 import { DEFAULT_AUTO_METHODS, DEFAULT_CONFIG, autoMethodsProblems, validateConfig, type AutoMethods, type Strategy, type StrategyConfig } from '../../src/strategy/types.js';
 
 /**
@@ -198,4 +198,46 @@ test('a rule\'s time frame in a word: the chain, one, or several joined in the d
   assert.equal(tfLabel({ mode: 'single', tf: '15m' }), '15m');
   assert.equal(tfLabel({ mode: 'single', tf: '15m', tfs: ['15m', '1h'] }), '15m+1h');
   assert.equal(tfLabel(null), null);
+});
+
+/*
+ * Walk-forward with an untouched holdout (18 Oct 2026, the R&D audit): each test day traded with what the rule picked
+ * from the days before it alone; the last days reported apart; every method and the list as it stands beside it.
+ */
+const rec = (method: string, trades: number, wins: number, net: number) => ({ method, trades, wins, net });
+const DAYS: DayRecord[] = [
+  { day: '2026-10-01', methods: [rec('a', 4, 4, 2), rec('b', 4, 1, -2)] },
+  { day: '2026-10-02', methods: [rec('a', 4, 1, -3), rec('b', 4, 4, 5)] },   // test: picked from 10-01 alone -- a
+  { day: '2026-10-03', methods: [rec('a', 1, 0, -1), rec('b', 1, 0, -1)] },  // test: picked from 10-02 -- b
+  { day: '2026-10-04', methods: [rec('a', 2, 2, 4), rec('b', 2, 0, -4)] },   // test: 10-03 passes nothing -- b kept
+  { day: '2026-10-05', methods: [rec('a', 3, 3, 3), rec('b', 3, 0, -3)] },   // holdout: picked from 10-04 -- a
+];
+const RULE = { winPct: 75, minTrades: 2, days: 1, exclude: null };
+
+test('[critical] walk-forward: each day traded with the pick of the days before it alone -- never its own', () => {
+  const w = walkForward(DAYS, RULE, ['a', 'b'], { testFrom: '2026-10-02', holdout: 1 });
+  assert.deepEqual(w.days.map((d) => [d.day, d.picked.join(), d.kept, d.rule.net]), [
+    ['2026-10-02', 'a', false, -3],      // a won 10-01 and lost on its own day: the day after is what counts
+    ['2026-10-03', 'b', false, -1],
+    ['2026-10-04', 'b', true, -4],       // nothing passed on 10-03: the list before it kept, as the desk keeps it
+    ['2026-10-05', 'a', false, 3],
+  ]);
+  // what it would have been with its own day known: a +5 on 10-02 -- the look-ahead the walk does not have
+  assert.equal(w.days[0]!.all.net, 2);
+});
+
+test('[critical] the holdout: the last days apart, with every method and the list as it stands on the same days', () => {
+  const w = walkForward(DAYS, RULE, ['a'], { testFrom: '2026-10-02', holdout: 1 });
+  assert.equal(w.holdoutFrom, '2026-10-05');
+  assert.deepEqual([w.walk.rule.days, w.walk.rule.net, w.walk.rule.upDays, w.walk.rule.downDays, w.walk.rule.worstDay], [3, -8, 0, 3, { day: '2026-10-04', net: -4 }]);
+  assert.deepEqual([w.walk.all.net, w.walk.current.net], [2 - 2 + 0, -3 - 1 + 4]);
+  assert.deepEqual([w.holdout!.rule.days, w.holdout!.rule.net, w.holdout!.all.net, w.holdout!.current.net], [1, 3, 0, 3]);
+  // none held out: one line
+  assert.equal(walkForward(DAYS, RULE, ['a'], { testFrom: '2026-10-02', holdout: 0 }).holdout, null);
+});
+
+test('[critical] the walk honours Exclude, as the daily update does', () => {
+  const w = walkForward(DAYS, { ...RULE, exclude: { on: true, methods: ['a'] } }, ['a', 'b'], { testFrom: '2026-10-02', holdout: 0 });
+  assert.ok(w.days.every((d) => !d.picked.includes('a')), 'never picked, and out of the list it starts from');
+  assert.equal(w.rule.excluded, 1);
 });

@@ -1,6 +1,6 @@
 import { json, post } from '@/api/client';
 import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse, VolAsk, VolStudyResult } from '@/types/signal-backtest';
-import type { AutoMethodsRun, StrategyConfig } from '@/types/strategy';
+import type { AutoMethodsRun, StrategyConfig, WalkForward } from '@/types/strategy';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import { strikeBlocksQuery } from '@/lib/backtest-strike-blocks';
 import { tslQuery } from '@/lib/backtest-tsl';
@@ -86,3 +86,5 @@ export const getLiveCheck = (q: BacktestQuery) => json<LiveCheck>(`/api/signal-b
 export const getMethodOptionRecord = (config: StrategyConfig) => post<MethodOptionRecord>('/api/signal-backtest/methods', { config });
 /** The methods' daily update, now, on the form's draft: the list it would set by the draft's own win rate, trades and days. Nothing is saved. */
 export const pickMethodsNow = (config: StrategyConfig) => post<AutoMethodsRun>('/api/strategies/auto-methods/pick', { config });
+/** The draft's daily-update rule walked forward over finished days, the last `holdout` held out (`walkForward`). Read-only. */
+export const walkMethodsForward = (config: StrategyConfig, o: { holdout: number }) => post<WalkForward>('/api/strategies/auto-methods/walk-forward', { config, holdout: o.holdout });

@@ -10,7 +10,7 @@ import { useStrategyDraft } from '@/components/strategy/useStrategyDraft';
 import { SignalRuleEditor } from '@/components/strategy/SignalRuleEditor';
 import { useOptionRecord } from '@/components/strategy/useOptionRecord';
 import { getBacktestSaves } from '@/api/backtest-saves';
-import { pickMethodsNow } from '@/api/signal-backtest';
+import { pickMethodsNow, walkMethodsForward } from '@/api/signal-backtest';
 import { usePoll } from '@/hooks/usePoll';
 import { StrikeBlocksEditor } from '@/components/strategy/StrikeBlocksEditor';
 import { DeltaByVolFields } from '@/components/strategy/DeltaByVol';
@@ -130,6 +130,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               optionRecord={optionRecord}
               savedBacktests={savedBacktests}
               pickNow={(r) => pickMethodsNow({ ...c, signal: r })}
+              walkNow={(r, o) => walkMethodsForward({ ...c, signal: r }, o)}
             />
           )}
 

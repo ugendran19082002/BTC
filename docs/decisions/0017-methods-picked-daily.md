@@ -42,6 +42,11 @@ being picked from the past alone.
    The run names the excluded ones that passed (`excluded`); the Telegram line says how many are excluded. The run
    reads Exclude as saved when it writes, so a method excluded while the record was worked out is not written.
 
+9. **Test this rule** (added 18 Oct 2026, the R&D audit): the rule walked forward over finished days -- each day
+   traded with what it picked from the days before it alone, the last 0 / 3 / 5 / 7 days held out and scored apart,
+   every method and the list as it stands beside it (`walkForward`, `POST /api/strategies/auto-methods/walk-forward`).
+   Read-only. The held-out days are the ones to judge a rule on: the others may have shaped it.
+
 ## Consequences
 
 - The lists shrink: on 16 Oct, Win ≥ 75% over 7 days took "15m time" from 15 methods to 4 and "All Chain 5m" from 15

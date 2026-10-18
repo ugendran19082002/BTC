@@ -178,3 +178,110 @@ export async function runAutoMethods(now: number, d: AutoDeps): Promise<string[]
   if (lines.length) d.tell(['Methods updated by their record:', ...lines].join('\n'));
   return done;
 }
+
+/*
+ * WALK-FORWARD, WITH AN UNTOUCHED HOLDOUT (18 Oct 2026, the R&D audit: "the auto-pick never reads the future, but
+ * nothing is held back -- pick on the days before, test on the next, and validate on the last days without them
+ * having had a say"). A study, read-only: nothing is saved and nothing is sent.
+ *
+ * Each test day is traded with the list the rule would have picked that evening from the `days` before it -- and
+ * only those -- as the desk's own daily update does; a day with nothing passing keeps the list before it, as the
+ * desk does. The last `holdout` days are the holdout: reported apart, so a rule chosen while looking at the other
+ * days is judged on days that took no part in choosing it. Beside it, every method and the strategy's list as it
+ * stands, on the same days: what the rule has to beat.
+ *
+ * Each method's day is its own record (every method on all its signals, `methodRecord`): "at most open" and the
+ * desk's limits are not counted, and the methods' records are added up -- a list's day is the sum of its methods'.
+ */
+export type DayRecord = { day: string; methods: readonly Pick<MethodRec, 'method' | 'trades' | 'wins' | 'net'>[] };
+export type WalkScore = { trades: number; wins: number; net: number };
+export type WalkDay = { day: string; holdout: boolean; picked: string[]; kept: boolean; rule: WalkScore; all: WalkScore; current: WalkScore };
+export type WalkLine = WalkScore & { days: number; upDays: number; downDays: number; worstDay: { day: string; net: number } | null };
+export type WalkForward = {
+  from: string; to: string; holdoutFrom: string | null;
+  rule: { winPct: number; minTrades: number; days: number; excluded: number };
+  days: WalkDay[];
+  /** The days before the holdout, and the holdout: the rule, every method, and the list as it stands. */
+  walk: { rule: WalkLine; all: WalkLine; current: WalkLine };
+  holdout: { rule: WalkLine; all: WalkLine; current: WalkLine } | null;
+};
+
+const scoreOf = (recs: DayRecord['methods'], keep: ((m: string) => boolean) | null): WalkScore => {
+  const s = { trades: 0, wins: 0, net: 0 };
+  for (const r of recs) if (!keep || keep(r.method)) { s.trades += r.trades; s.wins += r.wins; s.net += r.net; }
+  return s;
+};
+function lineOf(days: readonly WalkDay[], k: 'rule' | 'all' | 'current'): WalkLine {
+  const out: WalkLine = { trades: 0, wins: 0, net: 0, days: days.length, upDays: 0, downDays: 0, worstDay: null };
+  for (const d of days) {
+    const s = d[k];
+    out.trades += s.trades; out.wins += s.wins; out.net += s.net;
+    if (s.net > 0) out.upDays++; else if (s.net < 0) out.downDays++;
+    if (s.trades > 0 && (out.worstDay === null || s.net < out.worstDay.net)) out.worstDay = { day: d.day, net: s.net };
+  }
+  return out;
+}
+
+/**
+ * The walk itself, on records already had (pure, so it is tested by hand): `records` oldest first, one an expiry
+ * day, from `days` before the first test day; the test days are `testFrom` on, the last `holdout` of them held out.
+ */
+export function walkForward(records: readonly DayRecord[], a: Pick<AutoMethods, 'winPct' | 'minTrades' | 'days' | 'exclude'>, current: readonly string[], o: { testFrom: string; holdout: number }): WalkForward {
+  const out = excludedBy(a);
+  const sorted = [...records].sort((x, y) => (x.day < y.day ? -1 : 1));
+  const tests = sorted.filter((r) => r.day >= o.testFrom);
+  const holdN = Math.min(Math.max(0, Math.trunc(o.holdout)), tests.length);
+  const holdoutFrom = holdN > 0 ? tests[tests.length - holdN]!.day : null;
+  let list = current.filter((m) => !out.has(m));
+  const days: WalkDay[] = [];
+  for (const t of tests) {
+    // The evening before: the `days` expiry days before this one, and nothing of this one or after it.
+    const before = sorted.filter((r) => r.day < t.day).slice(-a.days);
+    const by = new Map<string, { method: string; trades: number; wins: number; net: number }>();
+    for (const r of before) for (const m of r.methods) {
+      const x = by.get(m.method) ?? { method: m.method, trades: 0, wins: 0, net: 0 };
+      x.trades += m.trades; x.wins += m.wins; x.net += m.net;
+      by.set(m.method, x);
+    }
+    const picked = pickMethods([...by.values()], a).filter((m) => !out.has(m));
+    const kept = picked.length === 0;
+    if (!kept) list = picked;
+    const chosen = new Set(list), now = new Set(current);
+    days.push({
+      day: t.day, holdout: holdoutFrom !== null && t.day >= holdoutFrom, picked: [...list], kept,
+      rule: scoreOf(t.methods, (m) => chosen.has(m)), all: scoreOf(t.methods, null), current: scoreOf(t.methods, (m) => now.has(m)),
+    });
+  }
+  const walkDays = days.filter((d) => !d.holdout), holdDays = days.filter((d) => d.holdout);
+  const lines = (ds: readonly WalkDay[]) => ({ rule: lineOf(ds, 'rule'), all: lineOf(ds, 'all'), current: lineOf(ds, 'current') });
+  return {
+    from: tests[0]?.day ?? o.testFrom, to: tests[tests.length - 1]?.day ?? o.testFrom, holdoutFrom,
+    rule: { winPct: a.winPct, minTrades: a.minTrades, days: a.days, excluded: out.size },
+    days, walk: lines(walkDays), holdout: holdDays.length ? lines(holdDays) : null,
+  };
+}
+
+/** The most test days a walk takes, and the most it holds out. */
+export const WALK_MAX_DAYS = 30;
+export const WALK_MAX_HOLDOUT = 10;
+
+/** Every expiry day from `from` to `to`, both in. */
+const daysFrom = (from: string, to: string): string[] => {
+  const out: string[] = [];
+  for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${to}T00:00:00Z`); t += DAY_MS) out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
+};
+
+/**
+ * A strategy's rule walked forward over finished expiry days: each day's record as options under the strategy's
+ * rules (`methodRecord`, one day at a time, the backtest's cache keeping them), from `days` before `from`.
+ */
+export async function walkForwardOf(config: StrategyConfig, a: AutoMethods, o: { from: string; to: string; holdout: number; now: number; spot: number | null; first: string }, record = methodRecord): Promise<WalkForward> {
+  const start = new Date(Date.parse(`${o.from}T00:00:00Z`) - a.days * DAY_MS).toISOString().slice(0, 10);
+  const records: DayRecord[] = [];
+  for (const day of daysFrom(start < o.first ? o.first : start, o.to)) {
+    const r = await record(config, { from: day, to: day, now: o.now, spot: o.spot });
+    records.push({ day, methods: r.methods.map(({ method, trades, wins, net }) => ({ method, trades, wins, net })) });
+  }
+  return walkForward(records, a, config.signal?.methods ?? [], { testFrom: o.from, holdout: o.holdout });
+}

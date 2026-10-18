@@ -327,6 +327,21 @@ export type AutoExclude = { on: boolean; methods: string[] };
  * `excluded`, the excluded methods that passed and were left out.
  */
 export type AutoMethodsRun = { at: number; from: string; to: string; picked: string[]; before: string[]; note?: string | null; excluded?: string[]; records?: MethodRecordLine[] };
+/**
+ * The daily-update rule walked forward (server `walkForward`, 18 Oct 2026): each test day traded with what the rule
+ * picked from the days before it alone; the last days held out and reported apart; every method and the list as it
+ * stands beside it.
+ */
+export type WalkScore = { trades: number; wins: number; net: number };
+export type WalkLine = WalkScore & { days: number; upDays: number; downDays: number; worstDay: { day: string; net: number } | null };
+export type WalkDay = { day: string; holdout: boolean; picked: string[]; kept: boolean; rule: WalkScore; all: WalkScore; current: WalkScore };
+export type WalkForward = {
+  from: string; to: string; holdoutFrom: string | null;
+  rule: { winPct: number; minTrades: number; days: number; excluded: number };
+  days: WalkDay[];
+  walk: { rule: WalkLine; all: WalkLine; current: WalkLine };
+  holdout: { rule: WalkLine; all: WalkLine; current: WalkLine } | null;
+};
 /** A method's record as the daily update read it: trades, wins, and the net as options after charges ($). */
 export type MethodRecordLine = { method: string; trades: number; wins: number; net: number };
 export type MethodUpdateSource = 'daily' | 'manual';
