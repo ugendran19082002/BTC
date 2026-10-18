@@ -362,6 +362,8 @@ describe('SignalBacktest', () => {
     expect(bar.closest('[aria-busy]')).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByText(/Below: the previous settings' result/)).toBeInTheDocument();
     expect(screen.getByText('Backtest result').closest('.opacity-40')).not.toBeNull();
+    // Asked once the settings stand still a moment (SETTLE_MS), not at the click itself.
+    await waitFor(() => expect(answer).toBeTypeOf('function'));
     answer({ ...RESULT, params: { ...RESULT.params, lots: 16 } });
     await waitFor(() => expect(screen.queryByText(/Working out the backtest/)).not.toBeInTheDocument());
     expect(screen.getByText('Backtest result').closest('.opacity-40')).toBeNull();
@@ -430,7 +432,7 @@ describe('SignalBacktest', () => {
     expect(range().getByLabelText('TGT at least, points')).toHaveValue(200);
     // and leaving a field puts back nothing stale
     fireEvent.blur(range().getByLabelText('SL at least, points'));
-    expect(lastQuery().params).toMatchObject({ slMin: 200, tgtMin: 200 });
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ slMin: 200, tgtMin: 200 }));
   });
 
   it('[critical] the no-entry window: the strategy form\'s own, in the settings -- sent, said in the result, kept with a saved backtest (15 Oct 2026)', async () => {
@@ -589,6 +591,23 @@ describe('SignalBacktest', () => {
 
     fireEvent.click(within(group).getByRole('radio', { name: 'Volatility filter off: every signal' }));
     await waitFor(() => expect(lastQuery().params.vol).toBe('off'));
+  });
+
+  it('[critical] a run of edits is one backtest, asked once the settings stand still -- not one for each click (18 Oct 2026)', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    const before = getSignalBacktest.mock.calls.length;
+    const lots = within(screen.getByRole('group', { name: 'Lots a signal' }));
+    // Three quick changes: "working" at once, and one question -- the last settings -- once they settle.
+    fireEvent.click(lots.getByRole('button', { name: '16' }));
+    fireEvent.click(lots.getByRole('button', { name: '1' }));
+    fireEvent.click(lots.getByRole('button', { name: '10' }));
+    fireEvent.click(lots.getByRole('button', { name: '16' }));
+    expect(await screen.findByText(/Working out the backtest for the settings you chose/)).toBeInTheDocument();
+    await waitFor(() => expect(getSignalBacktest.mock.calls.length).toBe(before + 1));
+    expect(lastQuery().params.lots).toBe(16);
+    await new Promise((r) => setTimeout(r, 600));
+    expect(getSignalBacktest.mock.calls.length).toBe(before + 1, 'and no more after');
   });
 
   it('[critical] a strike rule by time of day, as the strategy form\'s: the rule above is block 1, blocks after it sent with the backtest -- only while right for the hours', async () => {

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { usePoll } from '@/hooks/usePoll';
 import { cn } from '@/lib/utils';
@@ -8,12 +8,27 @@ import { cn } from '@/lib/utils';
  * it is loading; the old values stay on the screen"). The answer is kept with the key of what was asked, so the
  * screen can tell the result of the settings now chosen from the one left over from the settings before.
  */
-export function useAnswer<T>(key: string, fetch: () => Promise<T>, everyMs: number): {
+/**
+ * `settleMs` (18 Oct 2026, owner: "a change takes a long time"): a question is asked once the settings have stood
+ * still that long, not at every change -- each step of a stepper, each digit typed was a whole backtest, and the
+ * backtest's thread works them one after another, so five quick edits waited for five. The first question is asked at
+ * once; while one is being settled the screen already says a new answer is on its way (`stale`).
+ */
+export function useAnswer<T>(key: string, fetch: () => Promise<T>, everyMs: number, settleMs = 0): {
   data: T | null; error: Error | null;
   /** The answer on the screen is to other settings than those now chosen: a new one is on its way. */
   stale: boolean;
 } {
-  const read = usePoll(() => fetch().then((data) => ({ key, data })), everyMs, { deps: [key] });
+  const [asked, setAsked] = useState(key);
+  useEffect(() => {
+    if (key === asked) return undefined;
+    if (settleMs <= 0) { setAsked(key); return undefined; }
+    const t = setTimeout(() => setAsked(key), settleMs);
+    return () => clearTimeout(t);
+  }, [key, asked, settleMs]);
+  // Asked with the settings as they are when it settles: the question and its key are the same one.
+  const settled = settleMs <= 0 ? key : asked;
+  const read = usePoll(() => fetch().then((data) => ({ key: settled, data })), everyMs, { deps: [settled] });
   return {
     data: read.data?.data ?? null,
     // An error is about the question now asked; it is said rather than waited on.

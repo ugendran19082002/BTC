@@ -112,3 +112,6 @@ export function marginWorking(m: { peakUsd: number; peakOpen: number; peakLots?:
   const lot = m.peakUsd / m.peakLots;
   return `${count(m.peakOpen)} trade${m.peakOpen === 1 ? '' : 's'} of ${count(m.peakLots)} lot${m.peakLots === 1 ? '' : 's'} together × ${moneyText(lot).replace('+', '')} a lot (BTC ÷ 200 × 0.001, at 200x) = ${moneyText(m.peakUsd).replace('+', '')}.`;
 }
+
+/** How long the backtest's settings must stand still before they are asked (`useAnswer`): long enough to join a run of clicks, short enough not to feel like waiting. */
+export const SETTLE_MS = 450;

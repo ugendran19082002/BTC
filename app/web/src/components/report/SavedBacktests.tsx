@@ -16,7 +16,7 @@ import { SessionTable } from '@/components/report/SessionTable';
 import { DayTradesSheet } from '@/components/report/DayTrades';
 import { Empty, Loading, Panel, Stat, Stats } from '@/components/mobile/parts';
 import { Updating, useAnswer } from '@/components/report/Updating';
-import { Entry, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
+import { Entry, Ledger, SETTLE_MS, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
 
 /**
  * Backtests kept by name, and run together (owner, 13 Oct 2026: "save a backtest's settings and run a saved one;
@@ -251,7 +251,8 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
   const asked = limit === 'shared' ? cap : null;
   const hoursKey = hours.window === 'custom' ? `custom:${hours.hoursFrom}-${hours.hoursTo}` : hours.window;
   const askKey = `${run.ids.join(',')}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`;
-  const result = useAnswer(askKey, () => getBacktestPortfolio(run.ids, range, limit, asked, hours, over), 300_000);
+  // As the single backtest: asked once the run's settings stand still a moment -- each saved backtest in it is a whole backtest.
+  const result = useAnswer(askKey, () => getBacktestPortfolio(run.ids, range, limit, asked, hours, over), 300_000, SETTLE_MS);
   if (result.error && !result.data) {
     return (
       <Panel title={`Run together · ${run.title}`}>

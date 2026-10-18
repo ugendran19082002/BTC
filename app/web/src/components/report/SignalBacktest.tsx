@@ -18,7 +18,7 @@ import { backtestHours, backtestNoEntryProblems, noEntryQuery } from '@/lib/back
 import type { NoEntry, StrategyConfig } from '@/types/strategy';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
 import { Updating, useAnswer } from '@/components/report/Updating';
-import { Entry, Ledger, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
+import { Entry, Ledger, SETTLE_MS, Table, count, each, marginWorking, netClass, rate } from '@/components/report/backtest-parts';
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
@@ -643,7 +643,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const range = expiry.range;
   const query: BacktestQuery = { ...range, params, tfs, methods, strategy: strategyId };
   // The answer is kept with what was asked: a result for the settings before is greyed while the new one is worked out.
-  const read = useAnswer(JSON.stringify(query), () => getSignalBacktest(query), 300_000);
+  // Asked once the settings stand still a moment: a run of edits is one backtest, not one each.
+  const read = useAnswer(JSON.stringify(query), () => getSignalBacktest(query), 300_000, SETTLE_MS);
   const r = read.data;
   // A strategy remembered from before that is gone now (deleted): back to the settings, rather than an error every time.
   const gone = strategyId !== null && read.error !== null && /No such signal strategy/.test(read.error.message);

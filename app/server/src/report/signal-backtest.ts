@@ -432,6 +432,27 @@ export function strategyCaveats(s: Strategy): string[] {
  * Checked on 1-14 Oct 2026, every saved backtest: 26,040 signals, the same decision on every one, and on all
  * 4,340 traded the same strike and the same money.
  */
+/**
+ * Strike blocks laid on the hours they are traded in (18 Oct 2026). A block's time is a time of the expiry day, read
+ * from 5:30 PM -- a run together's blocks are set over the whole day, and each saved backtest in it keeps hours of its
+ * own. A strategy reads its blocks forward from its entry (`strikePickAt`), so one before the hours open read as one
+ * after they close, and was never in force: a 7:00 PM block under the desk's 9:30 PM-3:59 PM did nothing. Here, the
+ * last block at or before the hours open is in force from their start; one at or after they close is not traded in;
+ * the rest stand as they are -- blocks inside the hours, which is every single backtest's, are unchanged. Hours that
+ * run over 5:30 PM span two expiry days and have no one order of the day: their blocks are left as they are.
+ */
+export function blocksForHours(blocks: readonly StrikeBlock[], entryTime: string, exitTime: string): StrikeBlock[] {
+  const copy = (b: StrikeBlock, at = b.at): StrikeBlock => ({ ...b, at, premium: { ...b.premium } });
+  const start = minutesOf(DAY_START_IST);
+  const day = (hhmm: string) => minutesForward(start, minutesOf(hhmm));
+  const open = day(entryTime), close = day(exitTime);
+  if (close <= open) return blocks.map((b) => copy(b));
+  const sorted = [...blocks].sort((a, b) => day(a.at) - day(b.at));
+  const before = sorted.filter((b) => day(b.at) <= open).at(-1);
+  const inside = sorted.filter((b) => day(b.at) > open && day(b.at) < close).map((b) => copy(b));
+  return before ? [copy(before, entryTime), ...inside] : inside;
+}
+
 export function strategyOfParams(p: BacktestParams, tfs: readonly string[] | null, methods: readonly string[] | null): Strategy {
   const chain = !tfs || tfs.length === 0 ? false : tfs.includes(CHAIN_KEY) && tfs.every((t) => t === CHAIN_KEY);
   const single = (tfs && tfs.length ? tfs.filter((t) => t !== CHAIN_KEY) : [...SIGNAL_TFS]) as SignalTf[];
@@ -440,7 +461,7 @@ export function strategyOfParams(p: BacktestParams, tfs: readonly string[] | nul
     : p.window === 'custom' && p.hoursFrom && p.hoursTo ? { entryTime: p.hoursFrom, exitTime: p.hoursTo } : { entryTime: '17:30', exitTime: '17:25' };
   const config: StrategyConfig = {
     ...DEFAULT_CONFIG, trigger: 'signal', liveOrders: false, ...hours, weekdays: [0, 1, 2, 3, 4, 5, 6],
-    strikeRule: p.rule, strikeStep: 0, strikeBlocks: (p.strikeBlocks ?? []).map((b) => ({ ...b, premium: { ...b.premium } })), delta: { max: p.value }, premium: { mode: 'atMost', usd: p.value, fallbackUsd: null }, distance: null,
+    strikeRule: p.rule, strikeStep: 0, strikeBlocks: blocksForHours(p.strikeBlocks ?? [], hours.entryTime, hours.exitTime), delta: { max: p.value }, premium: { mode: 'atMost', usd: p.value, fallbackUsd: null }, distance: null,
     lots: p.lots, legs: 'both', targetMode: 'pct', stopMode: 'pct', takeProfitPct: p.targetPct, stopLossPct: p.stopPct,
     // Read forward from the day's start, as the settings' own steps are; the strategy's from its entry time -- the same order on the clock.
     targetSteps: (p.targetSteps ?? []).map((x) => ({ at: x.at, value: x.pct })), minPremiumUsd: p.minPremium ?? MIN_PREMIUM, noEntry: p.noEntry?.on ? { on: true, windows: p.noEntry.windows.map((w) => ({ ...w })) } : { on: false, windows: [] },

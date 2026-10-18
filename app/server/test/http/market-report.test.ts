@@ -1079,6 +1079,25 @@ test('[critical] a strike rule by time of day (18 Oct 2026): the settings\' rule
   }
 });
 
+test('[critical] strike blocks are times of the expiry day: a run\'s block before a member\'s hours open is in force from their start, one after they close is not traded in (18 Oct 2026)', async () => {
+  const plain = (await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all`)).body;
+  const one = await post('/api/backtest-saves', { name: 'whole day', query: { params: { ...plain.params }, tfs: [], methods: [], strategy: null } });
+  try {
+    const block = (at: string) => encodeURIComponent(JSON.stringify([{ at, strikeRule: 'delta', strikeStep: 0, premium: { mode: 'atMost', usd: 50 }, delta: { max: 0.05 } }]));
+    const run = (q: string) => get(`/api/backtest-portfolio?ids=${one.body.save.id}&from=${CLIMB}&to=${CLIMB}&limit=own&hours=desk${q}`);
+    const desk = (await run('')).body.total.n;
+    assert.ok(desk > 0, 'some signals inside 9:30 PM-3:59 PM');
+    // 7 PM, before the desk's hours open: in force from 9:30 PM -- no strike under 0.05 on this board, so nothing sold.
+    const early = await run(`&o_sblocks=${block('19:00')}`);
+    assert.equal(early.status, 200, JSON.stringify(early.body).slice(0, 300));
+    assert.equal(early.body.total.n, 0, 'the 7 PM block rules the whole of the hours');
+    // 4:30 PM, after they close: never traded in -- the member's own rule all through.
+    assert.equal((await run(`&o_sblocks=${block('16:30')}`)).body.total.n, desk);
+  } finally {
+    await app.inject({ method: 'DELETE', url: `/api/backtest-saves/${one.body.save.id}`, headers: cookie });
+  }
+});
+
 test('[critical] volatility by ATM IV, and the option stop by volatility against the fixed one, on the same trades (17 Oct 2026)', async () => {
   const climbCode = `${CLIMB.slice(8, 10)}${CLIMB.slice(5, 7)}${CLIMB.slice(2, 4)}`;
   const base = `from=${CLIMB}&to=${CLIMB}&window=all`;
