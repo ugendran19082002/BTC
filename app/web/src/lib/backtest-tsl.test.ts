@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { overQuery } from '@/api/backtest-saves';
-import { tslExample, tslProblems, tslQuery, tslWords } from '@/lib/backtest-tsl';
+import { breakEvenQuery, breakEvenWords, tslExample, tslProblems, tslQuery, tslWords } from '@/lib/backtest-tsl';
 import type { Tsl } from '@/types/signal-backtest';
 
 /** A trailing SL on the backtest's option stop (18 Oct 2026): checked, asked for and said as the server does. */
@@ -34,5 +34,15 @@ describe('the backtest\'s trailing SL', () => {
     expect(tslExample(T, 40, 100)).toEqual([{ premium: 35, stop: 95 }, { premium: 30, stop: 90 }, { premium: 25, stop: 85 }]);
     // 10% of 40 is 4; the stop by 10% of 40 too
     expect(tslExample({ move: 10, moveUnit: 'pct', by: 10, byUnit: 'pct' }, 40, 100)).toEqual([{ premium: 36, stop: 96 }, { premium: 32, stop: 92 }, { premium: 28, stop: 88 }]);
+  });
+});
+
+describe('the backtest\'s SL to entry', () => {
+  it('asked for only when right; over a run, `off` to take each one\'s away; said in a few words', () => {
+    expect(breakEvenQuery({ move: 25, unit: 'pct' })).toBe('25pct');
+    expect(breakEvenQuery({ move: 0, unit: 'pts' })).toBeNull();
+    expect(overQuery({ breakEven: { be: { move: 10, unit: 'pts' } } }).o_be).toBe('10pts');
+    expect(overQuery({ breakEven: { be: null } }).o_be).toBe('off');
+    expect(breakEvenWords({ move: 10, unit: 'pts' })).toBe('SL to entry after 10 pts');
   });
 });

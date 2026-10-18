@@ -3,8 +3,8 @@ import { pickQuery, volQuery, type VolTradesPick } from '@/api/signal-backtest';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import type { NoEntry, StrikeBlock } from '@/types/strategy';
 import { backtestBlockProblems } from '@/lib/backtest-strike-blocks';
-import type { BacktestParams, Tsl } from '@/types/signal-backtest';
-import { tslQuery } from '@/lib/backtest-tsl';
+import type { BacktestParams, BreakEven, Tsl } from '@/types/signal-backtest';
+import { breakEvenQuery, tslQuery } from '@/lib/backtest-tsl';
 import type { TradePick, VolAsk, VolStudyResult } from '@/types/signal-backtest';
 import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
 
@@ -100,6 +100,8 @@ export type PortfolioOver = {
   tsl?: { tsl: Tsl | null };
   /** The perp's SL and target trailed by the 1m ATR over every member, the two together; 0 is off for the run. */
   perpTrail?: { slAtr: number; tgtAtr: number };
+  /** The option's stop to the price sold over every member; null takes each one's own away for the run. */
+  breakEven?: { be: BreakEven | null };
 };
 
 /** The run's settings as the route reads them: the single backtest's own names, each under `o_`. */
@@ -126,6 +128,7 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
     if (t === null) q.o_tsl = 'off';
     else { const s = tslQuery({ tsl: t, stopPct: o.stop?.stopPct ?? 3 }); if (s) q.o_tsl = s; }
   }
+  if (o.breakEven) { const s = o.breakEven.be === null ? 'off' : breakEvenQuery(o.breakEven.be); if (s) q.o_be = s; }
   if (o.perpTrail) { q.o_ptsl = String(o.perpTrail.slAtr); q.o_pttgt = String(o.perpTrail.tgtAtr); }
   if (o.strikeBlocks && !backtestBlockProblems({ window: 'all', strikeBlocks: o.strikeBlocks.blocks }).length) q.o_sblocks = JSON.stringify(o.strikeBlocks.blocks);
   return q;

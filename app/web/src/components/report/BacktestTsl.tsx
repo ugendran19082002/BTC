@@ -1,4 +1,4 @@
-import { Chip, Segmented } from '@/components/mobile/parts';
+import { Chip } from '@/components/mobile/parts';
 import { NumberField } from '@/components/ui/number-field';
 import { TSL_DEFAULT, tslExample, tslProblems } from '@/lib/backtest-tsl';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,24 @@ const UNITS: readonly { key: TslUnit; label: string; spoken: string }[] = [
   { key: 'pts', label: 'pts', spoken: 'premium points' },
   { key: 'pct', label: '%', spoken: 'per cent of the price sold' },
 ];
+/**
+ * Points or per cent, beside the number: two small buttons on one line (18 Oct 2026, the owner's screenshot -- the
+ * segmented control stacked "pts" over "%" in a phone's width and pushed the field apart).
+ */
+export function UnitToggle({ label, value, onChange }: { label: string; value: TslUnit; onChange: (u: TslUnit) => void }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="inline-flex flex-none flex-nowrap rounded-md border border-solid border-border p-0.5">
+      {UNITS.map((u) => (
+        <button key={u.key} type="button" role="radio" aria-checked={value === u.key} aria-label={u.spoken} onClick={() => onChange(u.key)}
+          className={cn('m-0 h-9 min-w-[2.75rem] appearance-none rounded border-0 px-2 font-[inherit] text-[13px] font-medium',
+            value === u.key ? 'bg-[var(--chosen)] text-[var(--chosen-ink)]' : 'bg-transparent text-muted-foreground')}>
+          {u.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** The premium the example is worked on. */
 const EXAMPLE_ENTRY = 40;
 const same = (a: Tsl, b: Tsl) => a.move === b.move && a.moveUnit === b.moveUnit && a.by === b.by && a.byUnit === b.byUnit;
@@ -63,16 +81,16 @@ export function BacktestTsl({ value, onChange, stopPct, name = 'Trailing SL' }: 
         <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
           <div className="grid min-w-0 gap-1">
             <span className="text-[12px] text-muted-foreground">Every time the premium falls</span>
-            <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex min-w-0 flex-nowrap items-center gap-1.5">
               <NumberField label={`${name}: price move`} value={t.move} decimals={2} className="w-24" invalid={problems.some((x) => x.startsWith('The price move'))} onChange={(move) => set({ move })} />
-              <Segmented dense label={`${name}: price move in`} value={t.moveUnit} options={UNITS} onChange={(moveUnit) => set({ moveUnit })} />
+              <UnitToggle label={`${name}: price move in`} value={t.moveUnit} onChange={(moveUnit) => set({ moveUnit })} />
             </span>
           </div>
           <div className="grid min-w-0 gap-1">
             <span className="text-[12px] text-muted-foreground">move the SL down by</span>
-            <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex min-w-0 flex-nowrap items-center gap-1.5">
               <NumberField label={`${name}: SL move`} value={t.by} decimals={2} className="w-24" invalid={problems.some((x) => x.startsWith('The SL'))} onChange={(by) => set({ by })} />
-              <Segmented dense label={`${name}: SL move in`} value={t.byUnit} options={UNITS} onChange={(byUnit) => set({ byUnit })} />
+              <UnitToggle label={`${name}: SL move in`} value={t.byUnit} onChange={(byUnit) => set({ byUnit })} />
             </span>
           </div>
         </div>

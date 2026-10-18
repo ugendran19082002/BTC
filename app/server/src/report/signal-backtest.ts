@@ -117,6 +117,12 @@ export type BacktestParams = {
    * level in force. 0 or absent: that level stays the signal's own.
    */
   trailSlAtr?: number; trailTgtAtr?: number;
+  /**
+   * The option's stop to the price sold once the premium has fallen `move` from it (owner, 18 Oct 2026: "SL to the
+   * entry price -- pts and %"): a break-even stop, never loosened, with or without a stop set before it (none set, it
+   * is the stop from then on). Beside a trailing SL, the tighter of the two. Absent: off.
+   */
+  breakEven?: { move: number; unit: TslUnit };
 };
 /** The most a perp trail may be, in ATRs of the 1m candles. */
 export const TRAIL_ATR_MAX = 20;
@@ -175,6 +181,14 @@ export function tslProblems(t: Tsl, stopPct: number): string[] {
   if (!bad.length && t.moveUnit === t.byUnit && t.by > t.move) bad.push('The SL cannot move further than the price did: the SL move must be at most the price move.');
   if (!(stopPct > 0)) bad.push('A trailing SL needs an option stop to move: set the option stop.');
   return bad;
+}
+/** Whether the best offer since the sale has fallen far enough from it for the stop to go to the price sold. */
+export const breakEvenReached = (be: { move: number; unit: TslUnit }, entry: number, best: number): boolean =>
+  be.move > 0 && entry - best >= tslAmount(be.move, be.unit, entry) - 1e-9;
+/** A break-even's setting checked, in the screen's words; [] when right. */
+export function breakEvenProblems(be: { move: number; unit: TslUnit }): string[] {
+  if (!TSL_UNITS.includes(be.unit)) return ['The move to break-even is in points or per cent.'];
+  return Number.isFinite(be.move) && be.move > 0 && be.move <= TSL_MAX[be.unit] ? [] : [`The move to break-even is more than 0 and at most ${be.unit === 'pts' ? `${TSL_MAX.pts} points` : '100%'}.`];
 }
 /** "every 5 pts, SL 5 pts" -- the setting as a query (`?tsl=5pts:5pts`) and back. */
 export const tslQueryOf = (t: Tsl) => `${t.move}${t.moveUnit}:${t.by}${t.byUnit}`;
@@ -295,9 +309,9 @@ const MIN = 60_000;
 /** The board reading a fill is priced on is at most this far from it. */
 const BOARD_NEAR_MS = 5 * MIN;
 
-/** `option-tsl`: the option's stop, after a trailing stop had moved it; `perp-tsl` the perp's, after its ATR trail had. */
-export type BtExit = 'perp-tgt' | 'perp-sl' | 'perp-tsl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'window-end';
-export const BT_EXITS: readonly BtExit[] = ['perp-tgt', 'perp-sl', 'perp-tsl', 'option-tgt', 'option-sl', 'option-tsl', 'window-end'];
+/** `option-tsl`: the option's stop, after a trailing stop had moved it; `option-be` at the price sold (break-even); `perp-tsl` the perp's, after its ATR trail had. */
+export type BtExit = 'perp-tgt' | 'perp-sl' | 'perp-tsl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'option-be' | 'window-end';
+export const BT_EXITS: readonly BtExit[] = ['perp-tgt', 'perp-sl', 'perp-tsl', 'option-tgt', 'option-sl', 'option-tsl', 'option-be', 'window-end'];
 export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
 export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'volatility', 'at-limit', 'desk-limit', 'side-limit', 'no-board', 'no-strike', 'no-exit-price'];
 const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
@@ -439,6 +453,8 @@ export type DayPlan = {
   stopPctByVol?: Record<VolLevel, number> | null;
   /** The option's stop trailed as the premium falls (`tslTrail`); absent, it stays where it was set. */
   tsl?: Tsl | null;
+  /** The option's stop to the price sold once the premium has fallen so far (`breakEvenReached`); absent, off. */
+  breakEven?: { move: number; unit: TslUnit } | null;
   /** The perp's SL and target trailed by the 1m ATR (`trailAfter`); absent, the signal's own all trade. */
   perpTrail?: { slAtr: number; tgtAtr: number } | null;
   /**
@@ -489,6 +505,7 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
     targetOf: (sig) => sig.target,
     targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null, desk: deskCapsOf(p),
     ...(p.tsl ? { tsl: p.tsl } : {}),
+    ...(p.breakEven ? { breakEven: p.breakEven } : {}),
     ...((p.trailSlAtr ?? 0) > 0 || (p.trailTgtAtr ?? 0) > 0 ? { perpTrail: { slAtr: p.trailSlAtr ?? 0, tgtAtr: p.trailTgtAtr ?? 0 } } : {}),
     // By the clock, where steps are set: read by the function a strategy's own steps are (`exitValueAt`).
     ...(steps.length ? { targetPctAt: (at: number) => exitValueAt({ mode: 'pct', value: p.targetPct, steps }, DAY_START_IST, istMinutes(at)).value } : {}),
@@ -854,8 +871,8 @@ export function simulateTogether(o: {
     const tgtAtEntry = restingAt, stopAtEntry = stopAtFn ? level(pctAt(stopPcts, stopAtFn, entryAt), 1) : fixedStop;
     let exit: number | null = null, exitAt = perpAt, by: BtExit = perpBy;
     // A trailing stop: the best offer since the sale, and how far the stop has come down for it.
-    const tsl = plan.tsl ?? null;
-    let best = entry, trailBy = 0;
+    const tsl = plan.tsl ?? null, be = plan.breakEven ?? null;
+    let best = entry, trailBy = 0, atEntry = false, lastStop: number | null = null;
     // BTC at the reading the exit is priced on: what the exit's own fee is worked from.
     let exitSpot = pick.spot;
     if (series) {
@@ -883,8 +900,15 @@ export function simulateTogether(o: {
         // Prices are on a tick and the levels are products of shares: a level reached exactly must not be missed by a rounding.
         const tgtAt = tgtAtFn ? level(pctAt(tgtPcts, tgtAtFn, t), -1) : fixedTgt;
         const setStop = stopAtFn ? level(pctAt(stopPcts, stopAtFn, t), 1) : fixedStop;
-        if (tsl && offer < best) { best = offer; trailBy = tslTrail(tsl, entry, best); }
-        const stopAt = setStop !== null && trailBy > 0 ? setStop - trailBy : setStop;
+        if ((tsl || be) && offer < best) {
+          best = offer;
+          if (tsl) trailBy = tslTrail(tsl, entry, best);
+          if (be && !atEntry) atEntry = breakEvenReached(be, entry, best);
+        }
+        const trailed = setStop !== null && trailBy > 0 ? setStop - trailBy : setStop;
+        // At break-even the stop is the price sold, or the trailed one where that is tighter: never loosened.
+        const stopAt = atEntry ? (trailed === null ? entry : Math.min(trailed, entry)) : trailed;
+        lastStop = stopAt;
         if (tgtAt !== null && offer <= tgtAt + 1e-9) {
           // A resting buy fills at its own price as the offer comes down to it. One just moved UP over the offer by a
           // time step (a lower share kept) is a buy placed through the market: it fills at the offer.
@@ -892,7 +916,7 @@ export function simulateTogether(o: {
           exitAt = t; by = 'option-tgt'; exitSpot = orNull(spot[i]!) ?? exitSpot; break;
         }
         restingAt = tgtAt;
-        if (stopAt !== null && offer >= stopAt - 1e-9) { exit = offer; exitAt = t; by = trailBy > 0 ? 'option-tsl' : 'option-sl'; exitSpot = orNull(spot[i]!) ?? exitSpot; break; }
+        if (stopAt !== null && offer >= stopAt - 1e-9) { exit = offer; exitAt = t; by = atEntry && stopAt === entry ? 'option-be' : trailBy > 0 ? 'option-tsl' : 'option-sl'; exitSpot = orNull(spot[i]!) ?? exitSpot; break; }
       }
       if (exit === null && n > 0 && at[n - 1]! > entryAt) {
         // No reading at or after the exit -- held to the end, or out in the day's last minutes: the last reading the contract has.
@@ -912,7 +936,8 @@ export function simulateTogether(o: {
       perpPts: (perpPx - sig.fillPrice) * sig.dir,
       optTgt: tgtAtEntry, optStop: stopAtEntry, perpTgt: target,
       // Where a trailing stop had brought the stop by the exit: said beside the stop it started from.
-      ...(trailBy > 0 && stopAtEntry !== null ? { optStopEnd: stopAtEntry - trailBy } : {}),
+      // Only a stop the trail or the break-even moved: one by the clock is the rule's own.
+      ...((trailBy > 0 || atEntry) && lastStop !== null && lastStop !== stopAtEntry ? { optStopEnd: lastStop } : {}),
       // And where the perp's trail had brought its levels.
       ...(lv.stop !== sig.stop ? { perpStopEnd: lv.stop } : {}), ...(lv.target !== target ? { perpTgtEnd: lv.target } : {}),
     });
@@ -1018,7 +1043,7 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|ptr:${p.trailSlAtr ?? 0}-${p.trailTgtAtr ?? 0}`;
+export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|ptr:${p.trailSlAtr ?? 0}-${p.trailTgtAtr ?? 0}|be:${p.breakEven ? `${p.breakEven.move}${p.breakEven.unit}` : ''}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   // Its methods' history too: a new day's pick is another backtest of the same rules (`methodsAt`).
@@ -1706,7 +1731,7 @@ function studyLine(rule: VolStudyLine['rule'], xs: readonly Labelled[], days: re
   const lv = new Map(VOL_STUDY_LEVELS.map((l) => [l, { level: l, n: 0, wins: 0, net: 0, stopHits: 0 }]));
   let n = 0, wins = 0, net = 0, charges = 0, stopHits = 0, lots = 0;
   for (const { day, t, level } of xs) {
-    const win = t.netUsd > 0, stop = t.by === 'option-sl' || t.by === 'option-tsl';
+    const win = t.netUsd > 0, stop = t.by === 'option-sl' || t.by === 'option-tsl' || t.by === 'option-be';
     n++; net += t.netUsd; charges += t.chargesUsd; lots += t.lots; if (win) wins++; if (stop) stopHits++;
     byDay.set(day, (byDay.get(day) ?? 0) + t.netUsd);
     const r = dayRows.get(day);

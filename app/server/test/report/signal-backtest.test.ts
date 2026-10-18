@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PARAMS, MIN_PREMIUM, minuteAtr, paramsKey, perpFeePts, perpOf, trailAfter, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, breakEvenProblems, breakEvenReached, minuteAtr, paramsKey, perpFeePts, perpOf, trailAfter, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
 import { sessionOf, type MinuteBar } from '../../src/report/market-day.js';
 import { fillChargesUsd } from '../../src/trading/charges.js';
 
@@ -819,4 +819,31 @@ test('[critical] perp trail: a trailed target lets a run go on past the signal\'
   assert.equal(ran.by, 'window-end', 'the target 20 ahead of every close: the run held to the end');
   assert.ok((ran.perpTgtEnd ?? 0) > 84_700 && ran.perpPts > 600);
   assert.notEqual(paramsKey({ ...P, trailTgtAtr: 5 }), paramsKey(P));
+});
+
+/* The option's stop to the price sold once the premium has fallen so far (owner, 18 Oct 2026: "SL to the entry price"). */
+test('[critical] break-even: the stop goes to the price sold once the best offer is that far under it -- points or per cent', () => {
+  assert.deepEqual([36, 35.01, 35, 30].map((b) => breakEvenReached({ move: 5, unit: 'pts' }, 40, b)), [false, false, true, true]);
+  assert.equal(breakEvenReached({ move: 25, unit: 'pct' }, 40, 30), true, '25% of 40 is 10');
+  assert.deepEqual(breakEvenProblems({ move: 0, unit: 'pts' }).length, 1);
+  assert.deepEqual(breakEvenProblems({ move: 10, unit: 'pct' }), []);
+});
+
+test('[critical] break-even: the trade that came back is bought at the price sold, as its own exit -- with or without a stop set', () => {
+  const flat = perp([[0, 84_000], [1_439, 84_000]]);
+  // sold at 40; the offer falls to 22 by minute 60, then climbs to 90
+  const board = contract('P', 83_200, -0.09, [[0, 40], [60, 20], [300, 88], [1_435, 60]]);
+  const be = simulateDay({ from, to, params: { ...P, stopPct: 1.5, breakEven: { move: 25, unit: 'pct' } }, signals: [sig(0)], bars: flat, board }).trades[0]!;
+  assert.deepEqual([be.by, be.optStop, be.optStopEnd], ['option-be', 100, 40]);
+  assert.ok(be.exit >= 40 && be.exit < 43, `bought back at the first offer at or over 40 (${be.exit})`);
+  // no stop set before it: the stop from then on is the price sold
+  const none = simulateDay({ from, to, params: { ...P, stopPct: 0, breakEven: { move: 25, unit: 'pct' } }, signals: [sig(0)], bars: flat, board }).trades[0]!;
+  assert.deepEqual([none.by, none.optStop, none.optStopEnd], ['option-be', null, 40]);
+  // beside a trailing SL: the tighter of the two
+  const both = simulateDay({ from, to, params: { ...P, stopPct: 1.5, tsl: { move: 5, moveUnit: 'pts', by: 5, byUnit: 'pts' }, breakEven: { move: 25, unit: 'pct' } }, signals: [sig(0)], bars: flat, board }).trades[0]!;
+  assert.equal(both.by, 'option-be', 'the trail took 100 to 85; break-even at 40 is tighter');
+  // never reached: the stop where it was set
+  const far = simulateDay({ from, to, params: { ...P, stopPct: 1.5, breakEven: { move: 90, unit: 'pct' } }, signals: [sig(0)], bars: flat, board }).trades[0]!;
+  assert.equal(far.optStopEnd, undefined);
+  assert.notEqual(paramsKey({ ...P, breakEven: { move: 25, unit: 'pct' } }), paramsKey(P));
 });

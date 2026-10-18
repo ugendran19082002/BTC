@@ -44,6 +44,7 @@ function shapeOf(q: SavedQuery): string {
     blocks: p.strikeBlocks?.length ? p.strikeBlocks : null,
     tsl: p.tsl ?? null,
     trail: [p.trailSlAtr ?? 0, p.trailTgtAtr ?? 0],
+    be: p.breakEven ?? null,
     tfs: [...q.tfs].sort(), methods: [...q.methods].sort(), strategy: q.strategy,
   });
 }

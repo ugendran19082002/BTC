@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-530 files listed, 270 test files counted below, images and lockfiles left out.
+531 files listed, 271 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 138 |
-| `app/web` | 132 |
+| `app/web` | 133 |
 
 ## `(root)`
 
@@ -451,6 +451,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [BacktestBreakEven.tsx](../../app/web/src/components/report/BacktestBreakEven.tsx) | The option's stop to the price sold, in the backtest and a run together (owner, 18 Oct 2026: "SL move to the entry price -- a new option, pts and %"): once the premium has fallen X from the price s... |
 | [BacktestBreakdowns.tsx](../../app/web/src/components/report/BacktestBreakdowns.tsx) | A result broken down, the same for one backtest and for saved backtests run together (owner, 17 Oct 2026: "the backtest's output screen and the portfolio's do not match -- best practice, user frien... |
 | [BacktestCurve.tsx](../../app/web/src/components/report/BacktestCurve.tsx) | The backtest's running total, expiry day by expiry day (owner, 14 Oct 2026: "the backtest screen, user friendly"): whether the settings make money steadily or on one lucky day, and the worst stretc... |
 | [BacktestPerpTrail.tsx](../../app/web/src/components/report/BacktestPerpTrail.tsx) | The perp's own SL and target trailed by volatility, in the backtest and a run together (owner, 18 Oct 2026: "trailing perp SL ATR multiplier and trailing perp TGT ATR multiplier -- on the 1m candle... |

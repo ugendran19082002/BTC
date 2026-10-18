@@ -4,7 +4,7 @@ import type { NoEntry, StrikeBlock } from '@/types/strategy';
 export type VolLevel = 'low' | 'medium' | 'high';
 export type VolBy = 'atr' | 'iv';
 /** `option-tsl`: the option's stop, after a trailing SL had moved it. */
-export type BtExit = 'perp-tgt' | 'perp-sl' | 'perp-tsl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'window-end';
+export type BtExit = 'perp-tgt' | 'perp-sl' | 'perp-tsl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'option-be' | 'window-end';
 /** A trailing SL's step: premium points, or a per cent of the price sold. */
 export type TslUnit = 'pts' | 'pct';
 /** Every `move` the premium falls from the price sold, the option's stop comes down `by`; never back up (18 Oct 2026). */
@@ -37,7 +37,11 @@ export type BacktestParams = {
    * behind the close, only ever tightened; the target this many beyond it, only ever further. 0 or absent: off.
    */
   trailSlAtr?: number; trailTgtAtr?: number;
+  /** The option's stop to the price sold once the premium has fallen `move` (18 Oct 2026); absent, off. */
+  breakEven?: BreakEven;
 };
+/** A break-even: the premium's fall from the price sold, in points or a per cent of it, after which the stop is the price sold. */
+export type BreakEven = { move: number; unit: TslUnit };
 
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */
 export type BtTot = {

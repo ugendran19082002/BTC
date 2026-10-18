@@ -1,4 +1,4 @@
-import type { BacktestParams, Tsl, TslUnit } from '@/types/signal-backtest';
+import type { BacktestParams, BreakEven, Tsl, TslUnit } from '@/types/signal-backtest';
 
 /**
  * A trailing SL on the backtest's option stop (owner, 18 Oct 2026: "TSL in the backtest -- points and per cent; as
@@ -41,3 +41,13 @@ export function tslExample(t: Tsl, entry: number, stop: number): { premium: numb
   for (let k = 1; k <= 3 && entry - k * move > 0; k++) out.push({ premium: entry - k * move, stop: stop - k * by });
   return out;
 }
+
+/** The break-even's rule, the server's words (`breakEvenProblems`): [] when right. */
+export function breakEvenProblems(b: BreakEven): string[] {
+  return Number.isFinite(b.move) && b.move > 0 && b.move <= TSL_MAX[b.unit] ? [] : [`The move to break-even is more than 0 and at most ${b.unit === 'pts' ? `${TSL_MAX.pts} points` : '100%'}.`];
+}
+/** The break-even as the server reads it, `10pct`; null where it is off or wrong. */
+export const breakEvenQuery = (b: BreakEven | null | undefined): string | null => (b && !breakEvenProblems(b).length ? `${b.move}${b.unit}` : null);
+/** "SL to entry after 10%": a few words; null with none. */
+export const breakEvenWords = (b: BreakEven | null | undefined): string | null => (b ? `SL to entry after ${amount(b.move, b.unit)}` : null);
+export const BREAK_EVEN_DEFAULT: BreakEven = { move: 25, unit: 'pct' };
