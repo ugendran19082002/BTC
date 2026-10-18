@@ -224,6 +224,9 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       // leaves nothing extra at risk -- the note records it either way.
       if (s.position === 0) return { ...s, phase: 'flat', alarm: null };
       if (!s.wantsProtection) return { ...s, note: `could not place the target: ${e.reason}` };
+      // The target alone, with the stop resting at the exchange: the position is covered, its target is not on (18 Oct 2026:
+      // 49 "POSITION UNPROTECTED" alarms over positions whose stops never moved, in Delta's cancel-only half hour).
+      if (e.leg === 'take_profit' && s.protection.stopLoss) return { ...s, note: `could not place the target: ${e.reason}` };
       return { ...s, phase: 'unprotected', alarm: `POSITION UNPROTECTED: ${e.reason}` };
 
     case 'exit_submitted':

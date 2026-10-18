@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ErrorLog, redact } from '../src/observability/errors.js';
+import { ErrorLog, groupWhere, redact } from '../src/observability/errors.js';
 import { refuse, wasRefusal, worthLogging } from '../src/http/refuse.js';
 import { closePool, one } from '../src/db/pool.js';
 
@@ -38,6 +38,24 @@ test('the same failure repeated is one row with a count, not a hundred rows', as
   const rows = await log.list();
   assert.equal(rows.length, 1, 'a poll failing every second must not bury everything else');
   assert.equal(rows[0]?.count, 50);
+});
+
+test('[critical] one trouble across many orders is one row (18 Oct 2026: 98 rows for one Delta outage): the ids come out of a request\'s path, and stay in its context', async () => {
+  const log = await fresh();
+  for (const id of ['810261792256408342T0', '810261792252806948S0', '810261792252810930T0']) {
+    log.record({ source: 'exchange', level: 'warn', message: 'Delta refused the request (http_502).', code: 'http_502', where: `GET /v2/orders/client_order_id/${id}` });
+  }
+  log.record({ source: 'exchange', message: 'Delta refused the request (market_disrupted_cancel_only_mode).', where: 'POST /v2/products/158471/orders/leverage' });
+  log.record({ source: 'exchange', message: 'Delta refused the request (market_disrupted_cancel_only_mode).', where: 'POST /v2/products/158482/orders/leverage' });
+  await log.flush();
+  const rows = await log.list();
+  assert.deepEqual(rows.map((r) => [r.where, r.count]).sort(), [['GET /v2/orders/client_order_id/:id', 3], ['POST /v2/products/:id/orders/leverage', 2]]);
+  assert.match(String((rows.find((r) => r.where?.startsWith('GET'))!.context as { where?: string }).where), /^GET \/v2\/orders\/client_order_id\/8102617922/);
+  // Only a request's path: a route, a component, a symbol are left as they are.
+  assert.equal(groupWhere('trade-alarm'), 'trade-alarm');
+  assert.equal(groupWhere('C-BTC-82000-181026'), 'C-BTC-82000-181026');
+  assert.equal(groupWhere('GET /v2/orders'), 'GET /v2/orders');
+  assert.equal(groupWhere('GET /api/backtest-saves/abc12'), 'GET /api/backtest-saves/abc12', 'four digits or fewer is not an id');
 });
 
 test('the same message from two places stays two rows', async () => {

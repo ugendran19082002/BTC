@@ -359,7 +359,11 @@ export type TradeEvent =
       stopAt?: number | null;
       at: number;
     }
-  | { t: 'protection_failed'; reason: string; at: number }
+  /**
+   * `leg`: the one leg that failed where only one did (18 Oct 2026). A target that did not go on while the stop rests
+   * is a note, not an unprotected position (`machine.ts`). Absent: the stop, both, or not said (an older record).
+   */
+  | { t: 'protection_failed'; reason: string; at: number; leg?: 'take_profit' | 'stop_loss' }
   | {
       t: 'exit_submitted';
       role: OrderRole | 'manual';

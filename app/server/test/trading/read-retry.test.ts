@@ -28,7 +28,9 @@ type DeltaExchange = InstanceType<typeof DeltaExchange>;
  */
 
 const realFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = realFetch; });
+const { resetVenueState } = await import('../../src/trading/exchange/delta.js');
+// The venue's states (a read outage, a restriction) are the process's: each test starts with none.
+afterEach(() => { globalThis.fetch = realFetch; resetVenueState(); });
 
 const creds = { key: 'k', secret: 's' };
 

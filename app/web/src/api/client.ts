@@ -117,7 +117,9 @@ export async function json<T>(url: string, init?: RequestInit): Promise<T> {
     const message = res.ok
       ? `reply cut short — ${res.status} with no readable body`
       : `HTTP ${res.status}`;
-    if (res.ok) networkFailure(path, url, message);
+    // A 502, 503 or 504 with no body of ours is the proxy saying the server is not there -- this server restarting
+    // under a deploy (18 Oct 2026, 8:05 AM: one "HTTP 502" in the log for a restart). Counted as a dropped connection is.
+    if (res.ok || res.status === 502 || res.status === 503 || res.status === 504) networkFailure(path, url, message);
     else reportError({ message, where: path, code: String(res.status), context: { url } });
     throw new Error(message);
   }

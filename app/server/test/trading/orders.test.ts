@@ -1200,7 +1200,8 @@ test('32 [critical] a filled entry whose protection fails raises an alarm, not a
   const r = rig();
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
-  r.ex.configure({ nextFault: { kind: 'unavailable' } });
+  // The stop that does not go on: a target alone failing, with the stop resting, is not an unprotected position (18 Oct 2026).
+  r.ex.configure({ nextFault: { kind: 'unavailable' }, nextFaultOn: 'stop_loss' });
   const s = await r.engine.poll(plan.tradeId);
   assert.equal(s?.position, -100, 'the contracts are real');
   assert.equal(s?.phase, 'unprotected');
@@ -1212,7 +1213,7 @@ test('32b protection is retried after a wait, and the alarm clears', async () =>
   const r = rig();
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
-  r.ex.configure({ nextFault: { kind: 'unavailable' } });
+  r.ex.configure({ nextFault: { kind: 'unavailable' }, nextFaultOn: 'stop_loss' });
   await r.engine.poll(plan.tradeId);
 
   // not immediately: a venue that just said no is not asked again this second

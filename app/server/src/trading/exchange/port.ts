@@ -79,6 +79,11 @@ export interface ExchangePort {
    */
   setLeverage(productId: number, leverage: number): Promise<void>;
   getQuote(symbol: string): Promise<Quote | null>;
+  /**
+   * The venue taking no new orders for now, market-wide -- Delta's "cancel-only mode" when its market is disrupted --
+   * with why, and until when the desk holds off. Null: open as usual. Optional: a venue without such a state has none.
+   */
+  restriction?(): { reason: string; until: number } | null;
 }
 
 /** Thrown when a request left but no answer came back. Never means "failed". */
@@ -113,6 +118,18 @@ export class OrderGone extends Error {
   constructor(readonly orderId: string) {
     super(`Order ${orderId} is no longer on the book.`);
     this.name = 'OrderGone';
+  }
+}
+
+/**
+ * The venue took no new order because it is taking none from anyone just now (18 Oct 2026, 1:30-1:37 AM IST: Delta's
+ * "market_disrupted_cancel_only_mode"). A refusal like any other -- nothing was created -- but of the market, not of
+ * the order: the same order asked again in a minute may well go.
+ */
+export class VenueRestricted extends OrderRejected {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'VenueRestricted';
   }
 }
 

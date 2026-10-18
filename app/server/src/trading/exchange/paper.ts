@@ -1,7 +1,7 @@
 import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
-import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, type ExchangePort } from './port.js';
+import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, VenueRestricted, type ExchangePort } from './port.js';
 
 /**
  * An exchange you can lie to.
@@ -26,6 +26,13 @@ export type PaperConfig = {
   slippageLadder?: { price: number; size: number }[];
   /** Applied to the next placeOrder only, then cleared. */
   nextFault?: PaperFault;
+  /** With `nextFault`: only the next order of this role takes it (a stop, a target), the others go through. */
+  nextFaultOn?: PlaceOrderRequest['role'];
+  /**
+   * Delta's cancel-only mode, as it was on 18 Oct 2026: cancels are taken, nothing new is -- no order, no edit -- and
+   * the venue says so (`restriction`). `until` is the moment the desk is told it holds to.
+   */
+  cancelOnly?: { until: number; /** False: the venue refuses, and the desk has not been told yet (`restriction` is null). */ told?: boolean };
   /**
    * Delta's sweep: when a fill shrinks a position, resting reduce-only orders that now add up to more than it are
    * cancelled, newest first -- the "Reduce only orders cancelled" notice. Limits and stops are counted apart (a
@@ -74,12 +81,19 @@ export class PaperExchange implements ExchangePort {
 
   private guard() { if (!this.reachable) throw new ExchangeUnavailable(); }
 
+  restriction(): { reason: string; until: number } | null {
+    const c = this.cfg.cancelOnly;
+    return c && c.told !== false ? { reason: 'Delta is in cancel-only mode (market disrupted)', until: c.until } : null;
+  }
+
   // ---------------------------------------------------------------- port
   async placeOrder(req: PlaceOrderRequest): Promise<ExchangeOrder> {
     this.guard();
-    const fault = this.cfg.nextFault;
+    if (this.cfg.cancelOnly) throw new VenueRestricted('Delta refused the request (market_disrupted_cancel_only_mode).');
+    const fault = this.cfg.nextFaultOn === undefined || this.cfg.nextFaultOn === req.role ? this.cfg.nextFault : undefined;
     if (fault) {
       this.cfg.nextFault = undefined;
+      this.cfg.nextFaultOn = undefined;
       if (fault.kind === 'unavailable') throw new ExchangeUnavailable();
       if (fault.kind === 'reject') throw new OrderRejected(fault.reason);
       if (fault.kind === 'submit_timeout') {
@@ -311,6 +325,7 @@ export class PaperExchange implements ExchangePort {
     changes: { limitPrice?: number; stopPrice?: number; size?: number },
   ): Promise<ExchangeOrder> {
     this.guard();
+    if (this.cfg.cancelOnly) throw new VenueRestricted('Delta refused the request (market_disrupted_cancel_only_mode).');
     const o = this.orders.get(order.orderId);
     if (!o) throw new OrderRejected('no such order');
     // The same answer the real venue gives for an order that has already gone.

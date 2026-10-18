@@ -11,7 +11,7 @@ import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskL
 import { clampLeverage, fundsRequiredPerContract, liquidationRoom, premiumUsd } from './margin.js';
 import { fillChargesUsd } from './charges.js';
 import { closeEligibility, closePreview, type ClosePreview } from './close-preview.js';
-import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, type ExchangePort } from './exchange/port.js';
+import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, VenueRestricted, type ExchangePort } from './exchange/port.js';
 
 /**
  * The thing that actually trades.
@@ -758,6 +758,13 @@ export class TradeEngine {
   private entryDeadline = new Map<string, number>();
   /** Earliest time protection may be attempted again, per trade. */
   private protectAfter = new Map<string, number>();
+  /**
+   * Trades whose book still owes the plan a change: protection held back for the venue (`restriction`), or one that
+   * failed with its orders still resting -- a target left at its old level is not missing, so `missingProtection`
+   * never sends it again (18 Oct 2026: the 1:30 step, recorded as done, its targets still at the old price). The poll
+   * asks `protect()` again for these, after its back-off. Held in memory; a restart protects every position anyway.
+   */
+  private readonly protectionOwed = new Set<string>();
   /** One operation at a time per trade. See `withTrade`. */
   private queue = new Map<string, Promise<unknown>>();
 
@@ -1533,7 +1540,8 @@ export class TradeEngine {
     const anchored = anchorExits(rec);
     const moved = anchored !== rec;
     rec = anchored;
-    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending' && (moved || missingProtection(rec, this.now()))) {
+    if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending'
+      && (moved || missingProtection(rec, this.now()) || this.protectionOwed.has(rec.state.tradeId))) {
       rec = await this.protect(rec);
       if (moved) await this.d.store.save(rec);
     }
@@ -1668,6 +1676,18 @@ export class TradeEngine {
     // and hammering it does not make it register faster.
     const notBefore = this.protectAfter.get(rec.state.tradeId);
     if (notBefore !== undefined && this.now() < notBefore) return rec;
+    /*
+     * The venue taking nothing new (18 Oct 2026, Delta's cancel-only mode): what rests is left as it is -- an edit is
+     * refused, and the cancel-and-replace behind it would take a good order off with nothing to put back -- and asked
+     * again when the venue's hold ends. A position with no stop on at all still goes on below: that one is unprotected,
+     * and says so.
+     */
+    const restriction = this.exchange.restriction?.() ?? null;
+    if (restriction && (rec.state.protection.stopLoss || !rec.state.wantsProtection)) {
+      this.protectAfter.set(rec.state.tradeId, restriction.until);
+      this.protectionOwed.add(rec.state.tradeId);
+      return rec;
+    }
 
     /*
      * Three reads, none of which depends on the other two, so they go together.
@@ -1711,6 +1731,10 @@ export class TradeEngine {
       && !TradeEngine.ownedByAnother(o, siblings));
 
     let failure: string | null = null;
+    // Which legs failed, so a target alone that did not go on is not called an unprotected position.
+    const failedLegs = new Set<'take_profit' | 'stop_loss'>();
+    // A leg left resting at its old level because the venue took no change: where it rests, for the record.
+    const restsOld = new Map<'take_profit' | 'stop_loss', number | null>();
     const settle = async (
       role: 'take_profit' | 'stop_loss',
       wanted: number | null,
@@ -1766,6 +1790,14 @@ export class TradeEngine {
           });
           return only.clientOrderId ?? clientId(rec.state.tradeId, role, attempt);
         } catch (e) {
+          // The venue takes no change just now (Delta's cancel-only mode): the order rests where it is, and is kept.
+          // The long way below would cancel it -- cancels are taken -- and have nothing to put back.
+          if (e instanceof VenueRestricted) {
+            failure ??= (e as Error).message;
+            failedLegs.add(role);
+            restsOld.set(role, priceOf(only));
+            return only.clientOrderId ?? clientId(rec.state.tradeId, role, attempt);
+          }
           // Some venues refuse an edit that a cancel-and-replace would allow.
           // Fall through and do it the long way, verifying as we go. (Nothing is noted for a refused edit -- and
           // nothing forgotten: this cleared `failure` once, the other leg's with it, so its retry was never set.)
@@ -1786,7 +1818,7 @@ export class TradeEngine {
         const gone = await this.cancelAndVerify(o);
         // A cancel that did not take means the book still holds it. Sending a
         // replacement now is what over-commits the position.
-        if (!gone) { uncancelled = true; failure ??= `could not cancel the ${role.replace('_', ' ')} already on the book`; }
+        if (!gone) { uncancelled = true; failedLegs.add(role); failure ??= `could not cancel the ${role.replace('_', ' ')} already on the book`; }
       }
       if (uncancelled) return keep?.clientOrderId ?? null;
       if (keep) return keep.clientOrderId;
@@ -1798,6 +1830,7 @@ export class TradeEngine {
         return cid;
       } catch (e) {
         failure ??= (e as Error).message;
+        failedLegs.add(role);
         return null;
       }
     };
@@ -1865,7 +1898,7 @@ export class TradeEngine {
     // Size is part of the identity of a protective order, not a detail of it:
     // the same ids covering a different number of contracts is a change.
     // The stop's level is part of its identity too: a backstop moved to a new level is written down as moved.
-    const restsAt = sl === null ? null : slAt;
+    const restsAt = sl === null ? null : restsOld.has('stop_loss') ? restsOld.get('stop_loss')! : slAt;
     if (tp !== rec.state.protection.takeProfit
         || sl !== rec.state.protection.stopLoss
         || rec.state.protection.size !== size
@@ -1877,15 +1910,19 @@ export class TradeEngine {
 
     if (failure === null) {
       this.protectAfter.delete(rec.state.tradeId);
+      this.protectionOwed.delete(rec.state.tradeId);
       return rec;
     }
+    this.protectionOwed.add(rec.state.tradeId);
 
     const tries = rec.events.filter((x) => x.t === 'protection_failed').length;
     this.protectAfter.set(
       rec.state.tradeId,
       this.now() + Math.min(PROTECT_RETRY_MAX_MS, PROTECT_RETRY_MS * 2 ** tries),
     );
-    return await this.commit(rec, { t: 'protection_failed', reason: failure, at: this.now() });
+    // The target alone, with a stop on the book: said as the target's trouble, not the position's.
+    const only = failedLegs.size === 1 ? [...failedLegs][0]! : null;
+    return await this.commit(rec, { t: 'protection_failed', reason: failure, at: this.now(), ...(only === 'take_profit' && sl !== null ? { leg: 'take_profit' as const } : {}) });
   }
 
   /**
@@ -1932,6 +1969,13 @@ export class TradeEngine {
 
     const notBefore = this.protectAfter.get(rec.state.tradeId);
     if (notBefore !== undefined && this.now() < notBefore) return rec;
+    // The venue taking nothing new: the resting sale is left where it is, and asked again after the hold (as `protect`).
+    const restriction = this.exchange.restriction?.() ?? null;
+    if (restriction) {
+      this.protectAfter.set(rec.state.tradeId, restriction.until);
+      this.protectionOwed.add(rec.state.tradeId);
+      return rec;
+    }
 
     const [held, product, book] = await Promise.all([
       this.exchange.getPositions()
@@ -1965,7 +2009,11 @@ export class TradeEngine {
       try {
         await this.exchange.editOrder(live[0]!, { limitPrice: target, size });
         tp = live[0]!.clientOrderId ?? clientId(rec.state.tradeId, 'take_profit', attempt);
-      } catch { /* the long way, below */ }
+      } catch (e) {
+        // Refused for the venue's state: it rests where it is -- the long way would cancel it with nothing to put back.
+        if (e instanceof VenueRestricted) { failure = (e as Error).message; tp = live[0]!.clientOrderId ?? clientId(rec.state.tradeId, 'take_profit', attempt); }
+        /* otherwise the long way, below */
+      }
     }
     if (tp === null) {
       for (const o of live) {
@@ -1993,8 +2041,10 @@ export class TradeEngine {
     }
     if (failure === null) {
       this.protectAfter.delete(rec.state.tradeId);
+      this.protectionOwed.delete(rec.state.tradeId);
       return rec;
     }
+    this.protectionOwed.add(rec.state.tradeId);
     const tries = rec.events.filter((x) => x.t === 'protection_failed').length;
     this.protectAfter.set(rec.state.tradeId, this.now() + Math.min(PROTECT_RETRY_MAX_MS, PROTECT_RETRY_MS * 2 ** tries));
     return await this.commit(rec, { t: 'protection_failed', reason: failure, at: this.now() });

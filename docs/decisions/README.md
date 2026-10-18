@@ -27,6 +27,7 @@ Read these before changing anything in `app/server/src/trading/`.
 | [0017](0017-methods-picked-daily.md) | A signal strategy's methods may be picked again every day by their record, every change kept | 16 Oct 2026 |
 | [0018](0018-delta-by-volatility.md) | A signal strategy's delta may be set by how volatile it is at each signal, read as the backtest reads it | 17 Oct 2026 |
 | [0019](0019-sl-by-volatility.md) | A signal strategy's option SL may be set by the same level, one source with the delta's, kept to the exit | 17 Oct 2026 |
+| [0020](0020-venue-restricted-and-outage.md) | When Delta takes no new orders or does not answer, the desk holds still, leaves resting orders alone, and says so once | 18 Oct 2026 |
 
 A new decision gets the next number, the same headings, and a line here. A
 decision that is replaced is not deleted: its status says what replaced it.

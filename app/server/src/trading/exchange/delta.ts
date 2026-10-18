@@ -3,7 +3,7 @@ import { stopFillLimit } from '../money.js';
 import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
-import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, type ExchangePort } from './port.js';
+import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, VenueRestricted, type ExchangePort } from './port.js';
 import type { ExchangeFill } from './port.js';
 import { noteError } from '../../observability/errors.js';
 
@@ -23,6 +23,70 @@ const deltaTrouble = (e: unknown): boolean =>
 
 /** Delta's trouble on a read is worth one more try. */
 const retryableRead = deltaTrouble;
+
+/*
+ * Delta taking no new orders, market-wide (18 Oct 2026, 1:30-1:37 AM IST): "market_disrupted_cancel_only_mode" --
+ * cancels go through, nothing new does. The desk re-placed 49 trades' targets at the 1:30 step into it: each edit
+ * was refused, so each fell back to cancel-and-replace, the cancel was taken, the new order was not -- the desk took
+ * its own resting targets off the book -- and 388 refusals and 49 "POSITION UNPROTECTED" followed, one a second.
+ *
+ * So the state is the venue's, held for all the desk's accounts: noted at the first refusal that says so, said once
+ * in the log, and held RESTRICTED_HOLD_MS past the last such refusal. While it holds, nothing that opens risk is sent
+ * (an entry, a leverage change) and the engine leaves resting protection where it is (`restriction`). A close is
+ * still sent every time it is due: the moment Delta takes orders again, it is the one that must go.
+ */
+const RESTRICTED_HOLD_MS = 30_000;
+let restricted: { code: string; since: number; until: number } | null = null;
+const isRestriction = (e: unknown): e is DeltaRefused => e instanceof DeltaRefused && e.code.startsWith('market_disrupted');
+const modeWords = (code: string) => (code === 'market_disrupted_cancel_only_mode' ? 'cancel-only mode (market disrupted)' : code.replace(/_/g, ' '));
+function noteRestricted(code: string, now = Date.now()): void {
+  const fresh = restricted === null || now >= restricted.until;
+  restricted = { code, since: fresh ? now : restricted!.since, until: now + RESTRICTED_HOLD_MS };
+  if (fresh) {
+    noteError({
+      source: 'exchange', level: 'error', where: 'venue', code,
+      message: `Delta is in ${modeWords(code)}: no new entry or order change is sent until it clears; resting orders are left as they are, and closes still go.`,
+    });
+  }
+}
+function clearRestricted(now = Date.now()): void {
+  if (restricted === null) return;
+  const was = restricted;
+  restricted = null;
+  noteError({ source: 'exchange', level: 'warn', where: 'venue', code: was.code, message: `Delta is taking orders again after ${modeWords(was.code)}.`, context: { seconds: Math.round((now - was.since) / 1_000) } });
+}
+/** Delta's restriction now, if any: the reason in words, and until when the desk holds off. */
+export function venueRestriction(now = Date.now()): { reason: string; until: number } | null {
+  return restricted !== null && now < restricted.until ? { reason: `Delta is in ${modeWords(restricted.code)}`, until: restricted.until } : null;
+}
+
+/*
+ * Delta not answering at all (18 Oct 2026, 1:02-1:21 AM IST: HTTP 502 to everything). A read is asked again once,
+ * and the next poll asks again within a second -- right for a blip, and 3,400 failed reads in nineteen minutes for an
+ * outage, every one a line in the log. After READ_OUTAGE_AFTER reads in a row have failed on Delta's side, reads are
+ * held back -- answered at once as the outage they are -- for a while that doubles to READ_HOLD_MAX_MS, said once in
+ * the log; the first read after the hold asks Delta again. Writes are never held: a close must still be tried.
+ */
+const READ_OUTAGE_AFTER = 3;
+const READ_HOLD_MS = 2_000;
+const READ_HOLD_MAX_MS = 30_000;
+let readOutage = { failed: 0, until: 0, since: 0 };
+function readFailed(now = Date.now()): void {
+  readOutage.failed++;
+  if (readOutage.failed === READ_OUTAGE_AFTER) {
+    readOutage.since = now;
+    noteError({ source: 'exchange', level: 'warn', where: 'venue', code: 'reads_held', message: 'Delta is not answering: its reads are held back a few seconds at a time until it does.' });
+  }
+  if (readOutage.failed >= READ_OUTAGE_AFTER) readOutage.until = now + Math.min(READ_HOLD_MAX_MS, READ_HOLD_MS * 2 ** (readOutage.failed - READ_OUTAGE_AFTER));
+}
+function readAnswered(now = Date.now()): void {
+  if (readOutage.failed >= READ_OUTAGE_AFTER) {
+    noteError({ source: 'exchange', level: 'warn', where: 'venue', code: 'reads_held', message: 'Delta is answering again.', context: { seconds: Math.round((now - readOutage.since) / 1_000) } });
+  }
+  readOutage = { failed: 0, until: 0, since: 0 };
+}
+/** For a test: the venue's states forgotten. */
+export function resetVenueState(): void { restricted = null; readOutage = { failed: 0, until: 0, since: 0 }; }
 
 /**
  * The real account.
@@ -294,20 +358,29 @@ export class DeltaExchange implements ExchangePort {
      */
     const isRead = reqIn.method === 'GET';
     const req = isRead && reqIn.timeoutMs === undefined ? { ...reqIn, timeoutMs: READ_TIMEOUT_MS } : reqIn;
+    // Delta not answering: a read is answered as the outage it is, without asking (see `readFailed`).
+    if (isRead && Date.now() < readOutage.until) throw new ExchangeUnavailable('Delta is not answering; reads are held back for a few seconds.');
+    // Delta taking nothing new: a leverage change, which comes before an entry, is not sent.
+    const restriction = req.method === 'POST' && req.path.endsWith('/orders/leverage') ? venueRestriction() : null;
+    if (restriction) throw new VenueRestricted(`${restriction.reason}: not sent.`);
     for (let attempt = 1; ; attempt++) {
       try {
-        return await send(req);
+        const out = await send(req);
+        if (isRead) readAnswered();
+        return out;
       } catch (e) {
         if (isRead && attempt < READ_ATTEMPTS && retryableRead(e)) {
           await pause(300);
           continue;
         }
+        if (isRead && retryableRead(e)) readFailed();
         if (!(e instanceof DeltaRefused && isExpectedRefusal(req, e, reqIn.quietRefusal))) {
           noteError({
             source: 'exchange',
             // A read that failed on Delta's side twice is still Delta's trouble,
             // and the poll asks again within a second: worth seeing, not an alarm.
-            level: isRead && retryableRead(e) ? 'warn' : 'error',
+            // A restriction is the venue's state, said once on its own line (`noteRestricted`).
+            level: (isRead && retryableRead(e)) || isRestriction(e) ? 'warn' : 'error',
             message: (e as Error).message,
             code: e instanceof DeltaRefused ? e.code : (e as Error).name,
             stack: (e as Error).stack ?? null,
@@ -320,6 +393,7 @@ export class DeltaExchange implements ExchangePort {
         // Being asked to wait is not an outage, but for anything that takes risk
         // it has to behave like one: hold off rather than push through.
         if (e instanceof RateLimited) throw new ExchangeUnavailable(e.message);
+        if (isRestriction(e)) { noteRestricted(e.code); throw new VenueRestricted(e.message); }
         // Delta's trouble is an outage, never an answer. A 5xx left as a refusal
         // read as "no such order" to a lookup and "already gone" to a cancel --
         // both of them wrong, and both of them the dangerous way.
@@ -367,13 +441,19 @@ export class DeltaExchange implements ExchangePort {
 
   private async send(req: PlaceOrderRequest): Promise<ExchangeOrder> {
     const body = orderBody(req);
+    // Delta taking nothing new: an order that would open risk is not sent. A reduce-only one -- a close, or protection
+    // the engine asked for -- still is: it is the order that must go the moment Delta takes orders again.
+    const restriction = req.reduceOnly ? null : venueRestriction();
+    if (restriction) throw new VenueRestricted(`${restriction.reason}: the order was not sent.`);
 
     try {
       const o = await signed<DeltaOrder>(this.creds, { method: 'POST', path: '/v2/orders', body, timeoutMs: 10_000 });
+      clearRestricted();
       return toOrder(o);
     } catch (e) {
       noteError({
         source: 'exchange',
+        ...(isRestriction(e) ? { level: 'warn' as const } : {}),
         message: `order refused: ${(e as Error).message}`,
         code: e instanceof DeltaRefused ? e.code : (e as Error).name,
         stack: (e as Error).stack ?? null,
@@ -384,6 +464,8 @@ export class DeltaExchange implements ExchangePort {
       });
       // The distinction the rest of the engine is built on.
       if (e instanceof RateLimited) throw new ExchangeUnavailable(e.message);
+      // A refusal of the market's, not the order's: nothing was created, and the venue's state is noted.
+      if (isRestriction(e)) { noteRestricted(e.code); throw new VenueRestricted(e.message); }
       // No answer, an unreadable one, or Delta's server failing mid-request: the
       // order may exist. Only a deliberate refusal means it certainly does not.
       if (deltaTrouble(e)) throw new SubmitTimeout(req.clientOrderId);
@@ -432,11 +514,15 @@ export class DeltaExchange implements ExchangePort {
     if (changes.limitPrice !== undefined) body.limit_price = String(changes.limitPrice);
     if (changes.stopPrice !== undefined) body.stop_price = String(changes.stopPrice);
     try {
-      return toOrder(await signed<DeltaOrder>(this.creds, {
+      const edited = toOrder(await signed<DeltaOrder>(this.creds, {
         method: 'PUT', path: '/v2/orders', body, timeoutMs: 10_000,
       }));
+      clearRestricted();
+      return edited;
     } catch (e) {
       if (deltaTrouble(e)) throw new ExchangeUnavailable((e as Error).message);
+      // Refused because Delta takes no changes just now: the order rests as it was. Said, and the state noted.
+      if (isRestriction(e)) { noteRestricted(e.code); throw new VenueRestricted(e.message); }
       // Filled or cancelled since it was last read: the caller reads it again.
       // Delta's edit-order error table names both -- "couldn't be found among
       // open orders; it may already be filled or cancelled", and "has already
@@ -638,6 +724,8 @@ export class DeltaExchange implements ExchangePort {
    * carrying on would place the order at whatever leverage was left over from
    * last time.
    */
+  restriction(): { reason: string; until: number } | null { return venueRestriction(); }
+
   async setLeverage(productId: number, leverage: number): Promise<void> {
     await this.call({
       method: 'POST',

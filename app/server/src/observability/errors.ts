@@ -105,7 +105,19 @@ const trim = (s: string | null | undefined, n = MAX_FIELD) =>
  */
 const FP_SEP = '\u001f';
 export const fingerprintOf = (r: ErrorReport) =>
-  [r.source, r.code ?? '', r.where ?? '', r.message].join(FP_SEP).slice(0, 512);
+  [r.source, r.code ?? '', groupWhere(r.where) ?? '', r.message].join(FP_SEP).slice(0, 512);
+
+/**
+ * A request's path with its ids taken out, so one trouble is one row (18 Oct 2026: Delta's 502s on the night came in
+ * as 98 rows, one for each order looked up -- `GET /v2/orders/client_order_id/810261792256408342T0` -- and Logs read
+ * 108 for what was one outage). Any segment of a path with five digits or more in it is an id: an order's, a product's.
+ * Only a request's "METHOD /path" is touched; a route or a component name is left as it is.
+ */
+export function groupWhere(where: string | null | undefined): string | null {
+  if (!where) return where ?? null;
+  if (!/^[A-Z]+ \//.test(where)) return where;
+  return where.replace(/(?<=\/)[A-Za-z0-9_.-]*\d{5,}[A-Za-z0-9_.-]*/g, ':id');
+}
 
 /**
  * Anything that looks like a credential never reaches the table.
@@ -148,7 +160,11 @@ export class ErrorLog {
     let context: string | null;
     try {
       fp = fingerprintOf(report);
-      context = report.context ? JSON.stringify(redact(report.context)) : null;
+      // The row says the path as it groups; the one asked about, ids and all, is kept in its context.
+      const grouped = groupWhere(report.where);
+      const ctx = grouped !== (report.where ?? null) ? { ...(report.context ?? {}), where: report.where } : report.context;
+      context = ctx ? JSON.stringify(redact(ctx)) : null;
+      report = { ...report, where: grouped };
     } catch {
       // A circular context, or a report with nothing usable in it. Nowhere left
       // to report a reporting failure; drop it.

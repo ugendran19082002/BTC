@@ -160,6 +160,22 @@ describe('what is a failure at all', () => {
     expect(reported).toHaveBeenCalledTimes(1);
   });
 
+  it('[critical] the proxy\'s 502 while this server restarts under a deploy is counted like a dropped connection -- reported only if it lasts (18 Oct 2026)', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 502, json: async () => { throw new SyntaxError('<html>'); } } as never);
+    await expect(json('/api/spot')).rejects.toThrow('HTTP 502');
+    expect(reported).not.toHaveBeenCalled();
+    later(30_000);
+    await expect(json('/api/spot')).rejects.toThrow('HTTP 502');
+    later(31_000);
+    await expect(json('/api/spot')).rejects.toThrow('HTTP 502');
+    expect(reported).toHaveBeenCalledTimes(1);
+    // A 500 without a body is still the server's fault, said at once.
+    reported.mockReset();
+    fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => { throw new SyntaxError('x'); } } as never);
+    await expect(json('/api/trade/status')).rejects.toThrow('HTTP 500');
+    expect(reported).toHaveBeenCalledTimes(1);
+  });
+
   it('a reply cut off half way is named for what it is, and counted like a dropped connection', async () => {
     fetchMock.mockResolvedValue(
       { ok: true, status: 200, json: async () => { throw new SyntaxError('bad json'); } } as never,
