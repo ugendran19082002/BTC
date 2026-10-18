@@ -58,6 +58,7 @@ export const RUN_PARTS = [
   { id: 'pf-exits', label: 'Exits & time frames' },
   { id: 'pf-pairs', label: 'Pairs' },
   { id: 'pf-methods', label: 'Methods' },
+  { id: 'pf-perp', label: 'Perp vs options' },
   { id: 'pf-sessions', label: 'Sessions' },
   { id: 'pf-days', label: 'Days' },
   { id: 'pf-volsl', label: 'By volatility' },
@@ -70,6 +71,7 @@ function runHas(r: BacktestPortfolioResult, id: string): boolean {
   if (r.total.n === 0) return false;
   if (id === 'pf-days') return true;
   if (id === 'pf-sessions') return (r.bySession?.length ?? 0) > 0;
+  if (id === 'pf-perp') return r.total.perpNetPts !== undefined;
   return r.breakdown !== undefined;
 }
 

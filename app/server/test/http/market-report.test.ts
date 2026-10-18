@@ -959,6 +959,14 @@ test('[critical] a backtest saved by name, run again, and several run together a
     assert.ok(close(run.body.total.charges, one.body.total.charges + two.body.total.charges), ask);
     assert.deepEqual(run.body.over, { settings, own: [] }, `${ask}: said back as it was read`);
   }
+  // The perp apart from the options, on the same trades (18 Oct 2026): every grouping adds up to the total, fees take away
+  const perpRun = await single('');
+  const tot = perpRun.body.total;
+  assert.ok(tot.n > 0, 'trades to compare');
+  for (const k of ['perpWins', 'perpNetPts', 'perpR', 'perpRNet'] as const) {
+    assert.ok(close(perpRun.body.byMethod.reduce((x: number, r: any) => x + r[k], 0), tot[k]), `${k}: by method adds up to the total`);
+  }
+  assert.ok(tot.perpNetPts < tot.perpPts && tot.perpRNet < tot.perpR && tot.perpWins <= tot.n, 'the perp\'s fees only ever take away');
   // a setting put over the run is not a setting saved
   const kept = (await get('/api/backtest-saves')).body.saves.find((s: any) => s.id === a.body.save.id).query.params;
   assert.deepEqual([kept.lots, kept.rule, kept.stopPct], [10, 'delta', 3]);

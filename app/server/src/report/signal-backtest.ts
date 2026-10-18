@@ -5,7 +5,7 @@ import { marksFetchedBy, marksWanted, optionMarksSchema } from '../market/option
 import { entrySchema } from '../entry/paper.js';
 import { freshInBackground } from '../entry/version.js';
 import { methodsSchema } from '../entry/catalogue.js';
-import { fillChargesUsd } from '../trading/charges.js';
+import { GST_RATE, fillChargesUsd } from '../trading/charges.js';
 import { fundsRequiredPerContract } from '../trading/margin.js';
 import { CHAIN_KEY } from '../trading/pnl-history.js';
 import { FAMILIES, PATTERNS, candles, familyOf, sessionDayOf, sessionOf, type MinuteBar, type PatternKey } from './market-day.js';
@@ -873,13 +873,28 @@ export function simulateTogether(o: {
 /** A count of backtested trades: money after charges, the same trades' perp points, and each exit with how many of its trades made money. */
 export type BtTot = {
   n: number; wins: number; losses: number; net: number; won: number; lost: number; perpPts: number;
+  /**
+   * The same trades on the perp, apart from the options (18 Oct 2026, the R&D audit: "perp R and options P&L after
+   * fees, separately -- a good perp result is not a good options one"): how many the perp won after its fees, its
+   * points after them (`PERP_FEE_RATE` a side and GST, on the fill), and its R before and after them -- the points
+   * over the signal's own risk, fill to stop. Sums; `perpPts` is the points before fees.
+   */
+  perpWins: number; perpNetPts: number; perpR: number; perpRNet: number;
   /** The charges on every fill, dollars: `net` is after them, `net + charges` before. */
   charges: number;
   exits: Partial<Record<BtExit, { n: number; wins: number; net: number }>>;
 };
-export const zeroBt = (): BtTot => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0, perpPts: 0, charges: 0, exits: {} });
+export const zeroBt = (): BtTot => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0, perpPts: 0, perpWins: 0, perpNetPts: 0, perpR: 0, perpRNet: 0, charges: 0, exits: {} });
+/** The perp's taker fee a side, as the research counts it (0.05%), and the GST on it: what a perp round trip costs in points. */
+export const PERP_FEE_RATE = 0.0005;
+export const perpFeePts = (price: number) => 2 * PERP_FEE_RATE * (1 + GST_RATE) * price;
+/** One trade on the perp: its points after the round trip's fees, and its R before and after them (0 with no risk). */
+export function perpOf(t: { perpPts: number; signal: Pick<BtSignal, 'fillPrice' | 'stop'> }): { netPts: number; r: number; rNet: number } {
+  const risk = Math.abs(t.signal.fillPrice - t.signal.stop), netPts = t.perpPts - perpFeePts(t.signal.fillPrice);
+  return { netPts, r: risk > 0 ? t.perpPts / risk : 0, rNet: risk > 0 ? netPts / risk : 0 };
+}
 function addBt(a: BtTot, b: BtTot): BtTot {
-  a.n += b.n; a.wins += b.wins; a.losses += b.losses; a.net += b.net; a.won += b.won; a.lost += b.lost; a.perpPts += b.perpPts; a.charges += b.charges;
+  a.n += b.n; a.wins += b.wins; a.losses += b.losses; a.net += b.net; a.won += b.won; a.lost += b.lost; a.perpPts += b.perpPts; a.perpWins += b.perpWins; a.perpNetPts += b.perpNetPts; a.perpR += b.perpR; a.perpRNet += b.perpRNet; a.charges += b.charges;
   for (const k of BT_EXITS) {
     const x = b.exits[k];
     if (!x) continue;
@@ -926,6 +941,9 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
     by.set(key, cell);
     const x = cell.tot, win = t.netUsd > 0;
     x.n++; x.net += t.netUsd; x.perpPts += t.perpPts; x.charges += t.chargesUsd;
+    // The perp's own: after its fees, and over the signal's risk.
+    const p = perpOf(t);
+    x.perpNetPts += p.netPts; x.perpR += p.r; x.perpRNet += p.rNet; if (p.netPts > 0) x.perpWins++;
     if (win) { x.wins++; x.won += t.netUsd; } else { x.losses++; x.lost -= t.netUsd; }
     const e = x.exits[t.by] ?? (x.exits[t.by] = { n: 0, wins: 0, net: 0 });
     e.n++; e.net += t.netUsd; if (win) e.wins++;

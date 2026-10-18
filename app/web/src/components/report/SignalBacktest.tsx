@@ -600,6 +600,7 @@ const RESULT_PARTS = [
   { id: 'bt-exits', label: 'Exits & time frames' },
   { id: 'bt-pairs', label: 'Pairs' },
   { id: 'bt-methods', label: 'Methods' },
+  { id: 'bt-perp', label: 'Perp vs options' },
   { id: 'bt-sessions', label: 'Sessions' },
   { id: 'bt-days', label: 'Days' },
   { id: 'bt-volsl', label: 'By volatility' },
@@ -1125,7 +1126,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   return page(
     <>
 
-      <ResultNav parts={RESULT_PARTS} has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || t.n > 0} />
+      <ResultNav parts={RESULT_PARTS} has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || (t.n > 0 && (id !== 'bt-perp' || t.perpNetPts !== undefined))} />
       <Updating busy={read.stale} what="the backtest">
       <div id="bt-summary" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
       <Panel title="Backtest result">

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PARAMS, MIN_PREMIUM, paramsKey, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, paramsKey, perpFeePts, perpOf, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
 import { sessionOf, type MinuteBar } from '../../src/report/market-day.js';
 import { fillChargesUsd } from '../../src/trading/charges.js';
 
@@ -759,4 +759,18 @@ test('[critical] every setting is part of what a worked day is kept under: chang
   // And every field a backtest's settings have is one of those changed above: a new setting must be added here, and to the key.
   const named = new Set(changes.map(([w]) => w.split(' ')[0]!));
   for (const k of Object.keys(base)) assert.ok(named.has(k), `${k} is not checked`);
+});
+
+test('[critical] the perp apart from the options: points after the round trip\'s fees, and R over the signal\'s own risk', () => {
+  // 0.05% a side and 18% GST on it: 0.118% of the fill a round trip -- 99.12 points at 84,000
+  assert.ok(Math.abs(perpFeePts(84_000) - 99.12) < 1e-9);
+  // a BUY filled at 84,000, stop 83,700 (300 of risk), out at its target +500: 1.67R before fees, 1.34R after
+  const win = perpOf({ perpPts: 500, signal: { fillPrice: 84_000, stop: 83_700 } });
+  assert.ok(Math.abs(win.netPts - 400.88) < 1e-9 && Math.abs(win.r - 500 / 300) < 1e-9 && Math.abs(win.rNet - 400.88 / 300) < 1e-9);
+  // stopped out: -1R before fees, worse after
+  const loss = perpOf({ perpPts: -300, signal: { fillPrice: 84_000, stop: 83_700 } });
+  assert.deepEqual([loss.r, Math.round(loss.rNet * 1000) / 1000], [-1, -1.33]);
+  // a small win the fees turn into a loss: a good perp line is not a good options one, nor even a good perp one
+  assert.ok(perpOf({ perpPts: 60, signal: { fillPrice: 84_000, stop: 83_700 } }).netPts < 0);
+  assert.equal(perpOf({ perpPts: 60, signal: { fillPrice: 84_000, stop: 84_000 } }).r, 0, 'no risk, no R');
 });

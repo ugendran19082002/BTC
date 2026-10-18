@@ -349,6 +349,16 @@ a fifth of one for the same again. The server asks the screen's own opening ques
 starts, so the first tap after a restart does not wait for the reading. A day still running is read again after
 five minutes.
 
+## Perp vs options, on the same trades (18 Oct 2026)
+
+A panel of the result, the backtest's and a run together's: **as options sold, after charges** -- the result's own
+money -- beside **on the perp, after its fees**, the same trades on the perp: points to the level it reached (or to
+the close), less a round trip's taker fee of 0.05% a side and 18% GST on the fill (`perpFeePts`, about 99 points at
+$84,000), how many that won, and R a trade before and after the fees -- the points over the signal's own risk, fill to
+stop (`perpOf`). Then each method with both, and **Only where they differ**: the methods up on one and down on the
+other. Every count carries them (`perpWins`, `perpNetPts`, `perpR`, `perpRNet`, sums). A good perp line is not a good
+options one: an options strategy is judged by the options record.
+
 ## Against the live desk: what is replayed, and what is not (audit, 18 Oct 2026)
 
 Replayed as the runner does it: a strategy's days and hours, no-entry windows, SL / TGT distances, strike rule (the

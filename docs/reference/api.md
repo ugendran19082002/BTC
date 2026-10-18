@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-115 routes.
+116 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -99,6 +99,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/signal-backtest/vol-study` | signed in | The option's stop and strike as set, against a stop and a strike's delta by how volatile it was at each signal's fill (owner, 17 Oct 2026): asked as the backtest itself is, with what is set by leve... |
 | GET | `/api/signal-backtest/vol-study/trades` | signed in | One expiry day of the volatility study, trade by trade (owner, 17 Oct 2026: "tap the count -- trade by trade"): asked as the study is, with `?day=&side=fixed\|by-vol&by=atr\|iv`. |
 | POST | `/api/strategies/auto-methods/pick` | signed in | The methods' daily update, now, on the form's draft (owner, 16 Oct 2026): the list it would set by the draft's own win rate, least trades and days, and the run as it would be kept. |
+| POST | `/api/strategies/auto-methods/walk-forward` | signed in | The draft's daily-update rule walked forward, with an untouched holdout (18 Oct 2026, the R&D audit): each test day traded with what the rule picked from the days before it alone; the last `holdout... |
 
 ## [report.routes.ts](../../app/server/src/http/routes/report.routes.ts)
 

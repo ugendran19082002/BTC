@@ -8,6 +8,7 @@ import type { BacktestParams, BoardGrain, BtExit, BtRow, BtSkip, BtTot, SignalBa
 import { Panel, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { Entry, FOLD, Ledger, Table, count, netClass, rate } from '@/components/report/backtest-parts';
+import { PerpVsOptions } from '@/components/report/PerpVsOptions';
 
 /**
  * A result broken down, the same for one backtest and for saved backtests run together (owner, 17 Oct 2026: "the
@@ -237,6 +238,9 @@ export function BacktestBreakdowns({ total: t, b, wide, idPrefix, sessions, expi
           </div>
 
           <div id={`${idPrefix}-methods`} className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><MethodsAsOptions rows={b.byMethod} wide={wide} /></div>
+
+          {/* The perp and the options apart, on the same trades (18 Oct 2026): a good perp line is not a good options one. */}
+          <div id={`${idPrefix}-perp`} className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><PerpVsOptions total={t} rows={b.byMethod} /></div>
 
           {sessions && <div id={`${idPrefix}-sessions`} className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">{sessions}</div>}
 

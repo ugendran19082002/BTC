@@ -37,6 +37,11 @@ export type BacktestParams = {
 /** Backtested trades: dollars after charges, the same trades' perp points, and each exit with how many of its trades made money. */
 export type BtTot = {
   n: number; wins: number; losses: number; net: number; won: number; lost: number; perpPts: number;
+  /**
+   * The same trades on the perp, apart (18 Oct 2026): won after its fees, points after them (0.05% a side and GST),
+   * and R before and after them over the signal's own risk. Sums. Absent from an older server.
+   */
+  perpWins?: number; perpNetPts?: number; perpR?: number; perpRNet?: number;
   /** The exchange's fees and GST on every fill, dollars: `net` is after them. */
   charges: number;
   exits: Partial<Record<BtExit, { n: number; wins: number; net: number }>>;
