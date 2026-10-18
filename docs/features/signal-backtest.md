@@ -28,6 +28,7 @@ For every signal that went "in the trade" (`entry_setups` with a fill), in the e
 | Expiry days | since 1 Oct, the last 7, the last 30 | since 1 Oct |
 | Which signals | 9:30 PM → 3:59 PM IST, as the strategies trade (`desk`); the whole expiry day (`all`); or **Custom** hours, a From and a To time IST that may run past midnight (`custom`, `?hfrom=&hto=`; the To minute not included; a trade still exits by its own SL, TGT or the expiry) | desk |
 | Strike rule | **by delta**: the nearest to the money with a delta of at most 0.05 / 0.10 / 0.15 / 0.20; **by premium**: the dearest priced at most $25 / $50 / $75 / $100 | delta 0.10 |
+| Strike rule by time of day | The strategy form's own **Different strike rule by time of day** (`StrikeBlocksEditor`, 18 Oct 2026): the strike rule above is block 1, from the start of the hours; split every N hours or add blocks, each with its own rule -- by premium (at least / at most, its "if none", its distance rule), by strike, by delta or by distance -- and **Apply to all blocks**. Held to the form's rules against the backtest's hours (`strikeBlockProblems`); read at each fill as a strategy's blocks are (`strikePickAt`). Saved with a backtest. `?sblocks=` (JSON, the blocks after the first) | One rule all day |
 | Option stop | +100%, +150%, +300% over the premium sold, or none | +300% |
 | Option target | **Fixed**: 70%, 80%, 90% of the premium kept, or none. **Dynamic · by time**: a share to start with and time steps (IST) from which another share is in force, for every trade open then and every one sold after -- taken from a strategy that has such steps ("Target steps of"), or typed. Steps are read in clock order from 5:30 PM however they are typed. `?tp=&tsteps=23:30:73,01:30:76` | fixed 90% |
 | Volatility when the signal fills | Off, Low, Medium, High: the last two hours of 15-minute candles at the fill against the mean 15-minute ATR of the five expiry days before -- under 0.8× is low, over 1.3× high (`volReader`). A signal whose level cannot be said (no five days before) is none of the three. `?vol=` | off |
@@ -244,7 +245,9 @@ and its limit are kept in the browser. ([SavedBacktests.tsx](../../app/web/src/c
 - **Settings for the run** (14 Oct 2026): switches -- **Strike**, **Option target** (fixed, or dynamic by
   time), **Option stop**, **Lots a signal**, **Minimum premium**, **SL and TGT range**, **Volatility filter** (its
   level and what it is read by, 17 Oct 2026 -- asked of the market, so put over a saved backtest worked by a
-  strategy too: `o_vol=&o_volby=`), **No-entry window**. Off, which is how each
+  strategy too: `o_vol=&o_volby=`), **No-entry window**, **Strike by time of day** (18 Oct 2026: the form's blocks over every saved backtest worked by
+  settings, after each one's own strike rule -- or the run's Strike -- held to the whole day; `o_sblocks=`, `[]` is one
+  rule all day). Off, which is how each
   starts, every saved backtest runs with its own. Switched on, the single backtest's own control for it appears,
   starting from what the Single backtest section has, and that one setting is put over every saved backtest in the
   run -- for the run only; nothing saved is changed. The result says what was put over it ("For this run, every

@@ -364,7 +364,7 @@ function RuleFields({ n, rule, onChange, start, range, spot }: {
           // One piece, so on a phone the number wraps to the next line with its words, not away from them.
           <span className="inline-flex flex-none items-center gap-1.5">
             <span className="text-[11.5px] text-muted-foreground">delta ≤</span>
-            <NumberField label={`block ${n} delta`} value={delta.max} onChange={(v) => onChange({ delta: { max: v } })} className="w-[4.5rem] flex-none" />
+            <NumberField label={`block ${n} delta`} value={delta.max} onChange={(v) => onChange({ delta: { ...delta, max: v } })} className="w-[4.5rem] flex-none" />
           </span>
         )}
         {rule.strikeRule === 'distance' && (
@@ -397,7 +397,10 @@ function RuleFields({ n, rule, onChange, start, range, spot }: {
               : <>The strike nearest BTC at least {farSaid(far.pct, spot)} away, all block.</>}
         </p>
       )}
-      {/* The distance rule and its else strike, per block: the same part the one-rule section has. */}
+      {/* The distance rule and its else strike, per block: the same part the one-rule section has -- by delta too. */}
+      {rule.strikeRule === 'delta' && (
+        <MinOtmFields premium={delta} whose="delta" onChange={(next) => onChange({ delta: next })} scope={`block ${n}`} start={start} />
+      )}
       {rule.strikeRule === 'premium' && (
         <MinOtmFields premium={p} onChange={(next) => onChange({ premium: next })} scope={`block ${n}`} start={start} />
       )}

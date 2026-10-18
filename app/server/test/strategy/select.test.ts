@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { describeSelection, pickStrike, selectLegs, type Candidate } from '../../src/strategy/select.js';
-import { DEFAULT_CONFIG, type Strategy, type StrategyConfig } from '../../src/strategy/types.js';
+import { describeSelection, elseWords, pickStrike, selectLegs, type Candidate } from '../../src/strategy/select.js';
+import { DEFAULT_CONFIG, deltaProblem, type Strategy, type StrategyConfig } from '../../src/strategy/types.js';
+import { cleanConfig } from '../../src/http/routes/strategy.routes.js';
 
 /**
  * What gets sold, decided from the board alone.
@@ -612,4 +613,51 @@ test('[critical] a strategy saved before either rule existed picks exactly as it
   // No delta and no distance on the config, and deltas on the board: the premium rule does not read them.
   assert.equal(pickStrike(GREEKS, 'C', cfg({ strikeRule: 'premium', premium: { mode: 'atMost', usd: 50, fallbackUsd: 75, minOtm: 2, elseOtm: 2 } }), AT)?.strike, 86_400);
   assert.equal(pickStrike(BOARD, 'C', cfg({ premium: { mode: 'atLeast', usd: 15 } }))?.strike, 79_800);
+});
+
+// ------------------------------------------------------------ the nearest strike a delta rule may sell (18 Oct 2026)
+
+/*
+ * "Keep it at least this far out of the money", by delta too: the premium rule's own condition and else. On DELTAS the
+ * calls run OTM 1 79,000 Δ0.20 · OTM 2 79,400 Δ0.10 · OTM 3 79,800 Δ0.06 · OTM 4 80,200 Δ0.04 · OTM 5 80,600 Δ0.02 ·
+ * OTM 6 81,000 Δ0.01. The delta picks as it always did; its pick stands at the condition or further out, and the else
+ * strike is sold when the pick sits nearer the money, or there is none.
+ */
+const DELTA_OF: Record<number, number> = { 78_600: 0.5, 79_000: 0.2, 79_400: 0.1, 79_800: 0.06, 80_200: 0.04, 80_600: 0.02, 81_000: 0.01 };
+const DELTAS: Candidate[] = BOARD.filter((l) => l.cp === 'C').map((l) => ({ ...l, delta: DELTA_OF[l.strike]! }));
+const deltaFloor = (max: number, minOtm?: number | null, elseOtm?: number | null) =>
+  cfg({ strikeRule: 'delta', delta: { max, ...(minOtm !== undefined ? { minOtm } : {}), ...(elseOtm !== undefined ? { elseOtm } : {}) } });
+
+test('[critical] by delta, at least OTM n: a pick at or past it stands; nearer the money, the else strike -- the condition\'s own, or another', () => {
+  assert.equal(pickStrike(DELTAS, 'C', deltaFloor(0.1))?.strike, 79_400, 'no condition: Δ ≤ 0.10 is OTM 2');
+  assert.equal(pickStrike(DELTAS, 'C', deltaFloor(0.1, null))?.strike, 79_400, 'off is no condition');
+  assert.equal(pickStrike(DELTAS, 'C', deltaFloor(0.1, 2))?.strike, 79_400, 'at the condition: stands');
+  assert.equal(pickStrike(DELTAS, 'C', deltaFloor(0.1, 1))?.strike, 79_400, 'further out than it: stands');
+  assert.equal(pickStrike(DELTAS, 'C', deltaFloor(0.1, 4))?.strike, 80_200, 'nearer the money: the else, OTM 4 -- the condition\'s own');
+  assert.equal(pickStrike(DELTAS, 'C', deltaFloor(0.1, 4, 6))?.strike, 81_000, 'an else of its own: OTM 6');
+  assert.equal(pickStrike(DELTAS, 'C', deltaFloor(0.005)), null, 'nothing under the delta, no condition: nothing');
+  assert.equal(pickStrike(DELTAS, 'C', deltaFloor(0.005, 3))?.strike, 79_800, 'nothing under the delta: the else rather than nothing');
+});
+
+test('[critical] by delta, the else is said where the trade is read -- the delta\'s own words -- and an else not listed is refused in words', () => {
+  const sel = selectLegs(strat({ legs: 'CE', strikeRule: 'delta', delta: { max: 0.1, minOtm: 4, elseOtm: 5 } }), DELTAS);
+  assert.equal(sel.legs[0]!.strike, 80_600);
+  assert.deepEqual([sel.legs[0]!.minOtm, sel.legs[0]!.elseOtm, sel.legs[0]!.elseBy, sel.legs[0]!.premiumPick], [4, 5, 'delta', { strike: 79_400, price: 30 }]);
+  assert.match(elseWords(sel.legs[0]!), /rule failed: the delta's strike 79400 @ 30 is nearer than OTM 4 — went to the else strike OTM 5/);
+  const none = selectLegs(strat({ legs: 'CE', strikeRule: 'delta', delta: { max: 0.1, minOtm: 4, elseOtm: 9 } }), DELTAS);
+  assert.equal(none.legs.length, 0);
+  assert.match(none.refusals[0]!, /CE: rule failed — the delta's strike 79400 @ 30 is nearer than OTM 4 — and the else strike OTM 9 is not listed with a price/);
+  // A premium rule's words are its own, as before.
+  assert.match(elseWords(selectLegs(strat({ legs: 'CE', premium: { mode: 'atLeast', usd: 15, minOtm: 5 } }), BOARD).legs[0]!), /the premium's strike/);
+});
+
+test('[critical] by delta, the condition is held to the premium rule\'s own limits, in a delta rule\'s words -- and kept when saved', () => {
+  assert.equal(deltaProblem({ max: 0.1, minOtm: 6, elseOtm: 6 }), null);
+  assert.equal(deltaProblem({ max: 0.1 }), null);
+  assert.match(deltaProblem({ max: 0.1, minOtm: 0 }) ?? '', /The nearest strike a delta rule may sell must be OTM 1 to OTM \d+, or switched off/);
+  assert.match(deltaProblem({ max: 0.1, minOtm: 3, elseOtm: 99 }) ?? '', /The else strike must be OTM 1/);
+  assert.match(deltaProblem({ max: 0.9, minOtm: 3 }) ?? '', /Delta must be between/);
+  const saved = cleanConfig({ ...DEFAULT_CONFIG, strikeRule: 'delta', delta: { max: 0.1, minOtm: 6 } });
+  assert.deepEqual(saved.delta, { max: 0.1, minOtm: 6, elseOtm: 6 }, 'the else written beside its condition, as a premium rule\'s');
+  assert.deepEqual(cleanConfig({ ...DEFAULT_CONFIG, strikeRule: 'delta', delta: { max: 0.1, minOtm: null, elseOtm: 4 } }).delta, { max: 0.1 }, 'off: no keys at all');
 });

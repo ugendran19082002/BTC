@@ -4,7 +4,7 @@ import { SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import {
   DAY_NAMES, DEFAULT_DELTA, DEFAULT_DISTANCE, DEFAULT_FIXED_DISTANCE_PCT, DEFAULT_MIN_OTM, DELTA_PRESETS, MAX_NO_ENTRY_WINDOWS, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL,
-  distanceNeeded, strikeLabel, type DeltaRule, type DistanceRule, type NoEntry, type NoEntryWindow, type PremiumRule, type StrategyConfig,
+  distanceNeeded, strikeLabel, type DeltaRule, type DistanceRule, type NoEntry, type NoEntryWindow, type StrategyConfig,
 } from '@/types/strategy';
 import { nextWindow, noEntryWords, pickerBounds, suggestedWindow } from '@/lib/strategy-no-entry';
 import { Input } from '@/components/ui/input';
@@ -456,7 +456,11 @@ export function StrikeFields({ c, set, err, allowOiWall = true, minPremium = tru
       )}
 
       {c.strikeRule === 'delta' && (
-        <DeltaFields rule={c.delta ?? DEFAULT_DELTA} onChange={(d) => set('delta', d)} error={err('delta')} />
+        <>
+          <DeltaFields rule={c.delta ?? DEFAULT_DELTA} onChange={(d) => set('delta', d)} error={err('delta')} />
+          {/* The premium rule's own "at least this far out", by delta too (18 Oct 2026). */}
+          <MinOtmFields premium={c.delta ?? DEFAULT_DELTA} whose="delta" onChange={(d) => set('delta', d)} />
+        </>
       )}
       {c.strikeRule === 'distance' && (
         <DistanceFields rule={c.distance ?? DEFAULT_DISTANCE} onChange={(d) => set('distance', d)} error={err('distance')} spot={spot} />
@@ -486,11 +490,11 @@ export function DeltaFields({ rule, onChange, error }: { rule: DeltaRule; onChan
   return (
     <Stack label="Delta — at or under" error={error} className="mt-3" hint="lower is further from BTC: less premium, less risk">
       <div className="flex flex-wrap items-center gap-2">
-        <NumberField label="delta" value={rule.max} onChange={(n) => onChange({ max: n })} invalid={Boolean(error)} className="w-24" />
+        <NumberField label="delta" value={rule.max} onChange={(n) => onChange({ ...rule, max: n })} invalid={Boolean(error)} className="w-24" />
         <div role="group" aria-label="delta quick picks" className="flex gap-1">
           {DELTA_PRESETS.map((d) => (
             <button
-              key={d} type="button" aria-pressed={rule.max === d} onClick={() => onChange({ max: d })}
+              key={d} type="button" aria-pressed={rule.max === d} onClick={() => onChange({ ...rule, max: d })}
               className={cn('m-0 h-9 min-w-[2.75rem] appearance-none rounded-md border border-solid px-2 font-[inherit] text-[12px] font-medium tabular-nums',
                 rule.max === d ? 'border-[var(--accent)] bg-[var(--accent)] text-white' : 'border-[var(--line)] bg-transparent text-muted-foreground')}
             >
@@ -592,9 +596,12 @@ export function MinPremiumField({ c, set, err }: { c: StrategyConfig; set: SetFi
  * premium finds none. They may be the same strike or different ones -- "at
  * least OTM 6, else OTM 8" steps further out on a rich board.
  */
-export function MinOtmFields({ premium, onChange, error, scope = '', start }: {
-  premium: PremiumRule;
-  onChange: (p: PremiumRule) => void;
+export function MinOtmFields<R extends { minOtm?: number | null; elseOtm?: number | null }>({ premium, onChange, error, scope = '', start, whose = 'premium' }: {
+  /** The rule it is a part of: a premium rule's, or (18 Oct 2026) a delta rule's -- the same condition and else. */
+  premium: R;
+  onChange: (p: R) => void;
+  /** Whose pick it is put to, for the words. */
+  whose?: 'premium' | 'delta';
   error?: string | null;
   /** "block 2": told apart from the rule's own by a screen reader, and by a test. */
   scope?: string;
@@ -611,14 +618,14 @@ export function MinOtmFields({ premium, onChange, error, scope = '', start }: {
       <Switch
         label="Keep it at least this far out of the money"
         description={on
-          ? `The premium's strike is sold only at ${strikeLabel(min)} or further out — ${strikeLabel(min + 1)} stays ${strikeLabel(min + 1)}. Else — nearer than that, or none found — sells ${strikeLabel(other)}.`
-          : 'Off — whichever strike the premium picks, however near the money.'}
+          ? `The ${whose}'s strike is sold only at ${strikeLabel(min)} or further out — ${strikeLabel(min + 1)} stays ${strikeLabel(min + 1)}. Else — nearer than that, or none found — sells ${strikeLabel(other)}.`
+          : `Off — whichever strike the ${whose} picks, however near the money.`}
         checked={on}
         onCheckedChange={(v) => onChange({ ...premium, minOtm: v ? first.minOtm : null, elseOtm: v ? first.elseOtm : null })}
       />
       {on && (
         <div className="mt-1 grid gap-2 sm:grid-cols-2">
-          <Stack label="Rule — the premium's strike at least" hint="counted over the strikes Delta has listed, out from the money">
+          <Stack label={`Rule — the ${whose}'s strike at least`} hint="counted over the strikes Delta has listed, out from the money">
             <StrikeStepper value={min} min={1} label={named('rule strike')}
                            onChange={(v) => onChange({ ...premium, minOtm: v, elseOtm: other })} />
           </Stack>

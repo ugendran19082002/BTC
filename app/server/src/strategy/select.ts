@@ -56,6 +56,8 @@ export type Chosen = {
    */
   minOtm?: number;
   elseOtm?: number;
+  /** Whose pick the condition was put to: a delta rule's (18 Oct 2026); absent, a premium rule's. */
+  elseBy?: 'delta';
   /** With them: the strike the premium did pick, nearer the money than the rule allows -- or null when it picked none. */
   premiumPick?: { strike: number; price: number } | null;
   /** Set when a delta rule chose it: the strike's delta, as a size. */
@@ -152,8 +154,18 @@ function pickStrikeHow(
   const otm = priced.filter((l) => outOfTheMoney(l, opts.spot));
   if (otm.length === 0) return own(null);
 
-  // By delta and by distance: each a single question asked of the board, out of the money only, with no else.
-  if (cfg.strikeRule === 'delta') return own(pickByDelta(otm, cp, cfg.delta));
+  /*
+   * By delta: the board asked once, out of the money only -- and, where the rule keeps a distance (18 Oct 2026), the
+   * premium rule's own condition and else: a pick at `minOtm` or further out stands, one nearer the money or none at
+   * all sells the else strike. By distance: one question, with no else.
+   */
+  if (cfg.strikeRule === 'delta') {
+    const byDelta = pickByDelta(otm, cp, cfg.delta);
+    const min = cfg.delta?.minOtm;
+    if (min === null || min === undefined) return own(byDelta);
+    if (byDelta && otmStepOf(priced, cp, byDelta) >= min) return own(byDelta);
+    return { pick: pickByPosition(priced, cp, elseOtmOf(cfg.delta!)!), viaElse: true, premiumPick: byDelta };
+  }
   if (cfg.strikeRule === 'distance') return own(pickByDistance(otm, cp, cfg.distance, opts));
 
   /*
@@ -336,13 +348,17 @@ export function selectLegs(
     if (!chosen && how.viaElse) {
       // The rule failed and its else could not be sold either: both halves said, so the row explains itself.
       const near = how.premiumPick;
+      const byDelta = cfg.strikeRule === 'delta' && cfg.delta;
+      const cond = byDelta ? cfg.delta! : cfg.premium;
       refusals.push(
         `${leg}: rule failed — `
         + (near
-          ? `the premium's strike ${near.strike} @ ${near.sellPrice} is nearer than ${strikeLabel(cfg.premium.minOtm!)}`
-          : `nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`
-            + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : ''))
-        + ` — and the else strike ${strikeLabel(elseOtmOf(cfg.premium)!)} is not listed with a price`,
+          ? `the ${byDelta ? 'delta' : 'premium'}'s strike ${near.strike} @ ${near.sellPrice} is nearer than ${strikeLabel(cond.minOtm!)}`
+          : byDelta
+            ? `no strike out of the money with a delta at or under ${cfg.delta!.max}`
+            : `nothing out of the money ${cfg.premium.mode === 'atLeast' ? 'paying' : 'at or below'} $${cfg.premium.usd}`
+              + (cfg.premium.fallbackUsd != null ? `, nor $${cfg.premium.fallbackUsd}` : ''))
+        + ` — and the else strike ${strikeLabel(elseOtmOf(cond)!)} is not listed with a price`,
       );
       continue;
     }
@@ -367,7 +383,9 @@ export function selectLegs(
         // The else strike was not found by a premium number at all, so it is not "the fallback" either.
         ...(!floored && viaFallback(cfg, c) ? { fallbackUsd: cfg.premium.fallbackUsd! } : {}),
         ...(floored ? {
-          minOtm: cfg.premium.minOtm!, elseOtm: elseOtmOf(cfg.premium)!,
+          ...(cfg.strikeRule === 'delta' && cfg.delta
+            ? { minOtm: cfg.delta.minOtm!, elseOtm: elseOtmOf(cfg.delta)!, elseBy: 'delta' as const }
+            : { minOtm: cfg.premium.minOtm!, elseOtm: elseOtmOf(cfg.premium)! }),
           premiumPick: near ? { strike: near.strike, price: near.sellPrice! } : null,
         } : {}),
         // What the rule read at the strike it chose, for the run's line.
@@ -391,11 +409,12 @@ export function selectLegs(
  * strike other than the one the premium would have sold must say so where the
  * trade is read, not only where the rule is set.
  */
-export function elseWords(l: Pick<Chosen, 'minOtm' | 'elseOtm' | 'premiumPick'>): string {
+export function elseWords(l: Pick<Chosen, 'minOtm' | 'elseOtm' | 'premiumPick' | 'elseBy'>): string {
   if (l.minOtm === undefined || l.elseOtm === undefined) return '';
+  const whose = l.elseBy === 'delta' ? 'delta' : 'premium';
   const why = l.premiumPick
-    ? `the premium's strike ${l.premiumPick.strike} @ ${l.premiumPick.price} is nearer than ${strikeLabel(l.minOtm)}`
-    : 'no strike met the premium';
+    ? `the ${whose}'s strike ${l.premiumPick.strike} @ ${l.premiumPick.price} is nearer than ${strikeLabel(l.minOtm)}`
+    : `no strike met the ${whose}`;
   return ` (rule failed: ${why} — went to the else strike ${strikeLabel(l.elseOtm)})`;
 }
 

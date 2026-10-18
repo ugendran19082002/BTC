@@ -62,7 +62,8 @@ export function describeStrike(c: StrategyConfig): string {
     // By volatility (17 Oct 2026): each level's delta, and its own where the level cannot be read.
     const dv = c.signal?.deltaByVol;
     if (dv?.on) return `at the nearest strike with a delta at most ${dv.low.toFixed(2)} in low volatility, ${dv.medium.toFixed(2)} normal, ${dv.high.toFixed(2)} high (by ${dv.by === 'iv' ? 'ATM IV' : 'ATR 2h'}; ${c.delta.max.toFixed(2)} when it cannot be read)`;
-    return `at the nearest strike with a delta of ${c.delta.max.toFixed(2)} or less`;
+    const m = c.delta.minOtm;
+    return `at the nearest strike with a delta of ${c.delta.max.toFixed(2)} or less${m != null ? `, only at ${strikeLabel(m)} or further — else sells ${strikeLabel(elseOtmOf(c.delta)!)}` : ''}`;
   }
   if (c.strikeRule === 'distance') {
     if (!c.distance) return 'by distance, with no number set';

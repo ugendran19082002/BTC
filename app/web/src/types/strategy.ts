@@ -47,7 +47,11 @@ export type StrikeRule =
   | 'distance';
 
 /** A delta rule: the delta, as a size, a strike must be at or under (server: DeltaRule). */
-export type DeltaRule = { max: number };
+/**
+ * A delta rule, and -- as a premium rule's (18 Oct 2026) -- the nearest strike it may sell: `minOtm`, with the strike
+ * sold instead when its pick sits nearer the money or there is none, `elseOtm` (absent: `minOtm`). Off: no condition.
+ */
+export type DeltaRule = { max: number; minOtm?: number | null; elseOtm?: number | null };
 export const MIN_DELTA = 0.01;
 export const MAX_DELTA = 0.5;
 export const DEFAULT_DELTA: DeltaRule = { max: 0.1 };
@@ -75,9 +79,14 @@ export function distanceNeeded(d: DistanceRule, hoursToExpiry: number | null | u
 /** What is wrong with a delta rule -- the server's `deltaProblem`, in its words. */
 export function deltaProblem(d: DeltaRule | null | undefined): string | null {
   const max = d?.max;
-  return typeof max === 'number' && max >= MIN_DELTA && max <= MAX_DELTA
-    ? null
-    : `Delta must be between ${MIN_DELTA.toFixed(2)} and ${MAX_DELTA.toFixed(2)}.`;
+  if (!(typeof max === 'number' && max >= MIN_DELTA && max <= MAX_DELTA)) return `Delta must be between ${MIN_DELTA.toFixed(2)} and ${MAX_DELTA.toFixed(2)}.`;
+  // Its distance condition, held to a premium rule's own limits (the server's words, word for word).
+  const otm = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= MAX_STRIKE_STEP;
+  if (d?.minOtm !== null && d?.minOtm !== undefined) {
+    if (!otm(d.minOtm)) return `The nearest strike a delta rule may sell must be OTM 1 to OTM ${MAX_STRIKE_STEP}, or switched off.`;
+    if (d.elseOtm !== null && d.elseOtm !== undefined && !otm(d.elseOtm)) return `The else strike must be OTM 1 to OTM ${MAX_STRIKE_STEP}.`;
+  }
+  return null;
 }
 
 /** What is wrong with a distance rule -- the server's `distanceProblem`, in its words. */

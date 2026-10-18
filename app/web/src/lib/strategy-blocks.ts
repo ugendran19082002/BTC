@@ -112,7 +112,11 @@ export function hoursLabel(minutes: number): string {
  */
 export function pickWords(p: StrikePick): string {
   if (p.strikeRule === 'strict') return strikeLabel(p.strikeStep);
-  if (p.strikeRule === 'delta') return p.delta ? `delta ≤ ${p.delta.max.toFixed(2)}` : 'delta not set';
+  if (p.strikeRule === 'delta') {
+    if (!p.delta) return 'delta not set';
+    const m = p.delta.minOtm;
+    return `delta ≤ ${p.delta.max.toFixed(2)}${m != null ? `, only at ${strikeLabel(m)} or further — else ${strikeLabel(elseOtmOf(p.delta)!)}` : ''}`;
+  }
   if (p.strikeRule === 'distance') {
     if (!p.distance) return 'distance not set';
     return `≥ ${p.distance.pct}%${p.distance.scale === 'time' ? ' × √hours left' : ''} from BTC`;

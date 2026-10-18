@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-522 files listed, 263 test files counted below, images and lockfiles left out.
+524 files listed, 263 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -453,6 +453,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [BacktestBreakdowns.tsx](../../app/web/src/components/report/BacktestBreakdowns.tsx) | A result broken down, the same for one backtest and for saved backtests run together (owner, 17 Oct 2026: "the backtest's output screen and the portfolio's do not match -- best practice, user frien... |
 | [BacktestCurve.tsx](../../app/web/src/components/report/BacktestCurve.tsx) | The backtest's running total, expiry day by expiry day (owner, 14 Oct 2026: "the backtest screen, user friendly"): whether the settings make money steadily or on one lucky day, and the worst stretc... |
+| [BacktestStrikeBlocks.tsx](../../app/web/src/components/report/BacktestStrikeBlocks.tsx) | The strategy form's "Different strike rule by time of day", for the backtest and a run together (18 Oct 2026): the form's own editor, over the hours given, with block 1 the rule set elsewhere -- th... |
 | [CumulativeChart.tsx](../../app/web/src/components/report/CumulativeChart.tsx) | The running total, day by day: the line that says whether the month is working. |
 | [DailyPnlChart.tsx](../../app/web/src/components/report/DailyPnlChart.tsx) | The days and the running total they add up to, as one chart (owner, 6 Oct 2026). |
 | [DayTrades.tsx](../../app/web/src/components/report/DayTrades.tsx) | One expiry day of a backtest, trade by trade (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL, TGT, points and money, user friendly"). |
@@ -575,6 +576,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [account-scope.ts](../../app/web/src/lib/account-scope.ts) | Which broker account the account-based screens are showing (owner, 5 Oct 2026): strategies, orders and P&L are read for one account at a time, chosen on the tabs above them. |
 | [backtest-no-entry.ts](../../app/web/src/lib/backtest-no-entry.ts) | The backtest's no-entry windows (owner, 15 Oct 2026: "no-entry window in the backtest's settings, as the strategy form has"): the form's own rules, held to the backtest's hours rather than a strate... |
+| [backtest-strike-blocks.ts](../../app/web/src/lib/backtest-strike-blocks.ts) | The backtest's strike rule by time of day (owner, 18 Oct 2026: "the strategy form's strike blocks, in the backtest and the portfolio"): the form's own blocks and rules, held to the backtest's hours. |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [custom-range.ts](../../app/web/src/lib/custom-range.ts) | A custom range of IST days for the phone's P&L (owner, 6 Oct 2026): quick picks, and the rules a range must keep -- the same the server holds it to (`report.routes.ts` `rangeOf`: from not after to,... |
 | [entry-wait.ts](../../app/web/src/lib/entry-wait.ts) | That limit in a line for the card of an order still waiting (owner, 14 Oct 2026: "is a waiting order's expiry shown -- desk and phone?"). |

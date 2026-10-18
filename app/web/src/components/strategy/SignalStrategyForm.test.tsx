@@ -1093,6 +1093,45 @@ describe('the distance rule and its else strike, beside the premium', () => {
 
 });
 
+describe('by delta too (18 Oct 2026): "keep it at least this far out of the money", as the premium rule has it', () => {
+  const day = (over: Partial<Strategy['config']> = {}) => signalStrategy({}, {
+    entryTime: '17:35', exitTime: '17:29', lots: 3, strikeRule: 'delta', delta: { max: 0.1 }, ...over,
+  });
+  const open = (s: Strategy = day()) => { show(s); tab('Strike & lots'); };
+  const floorSwitch = () => screen.getAllByRole('switch', { name: /Keep it at least this far out of the money/ })[0]!;
+  const strike = (name: string) => screen.getByRole('status', { name });
+  const step = (name: string, way: 'further out' | 'nearer the money') => fireEvent.click(screen.getByRole('button', { name: `${name}: ${way}` }));
+  const block = (n: number) => within(screen.getByRole('list', { name: 'strike blocks' })).getByRole('listitem', { name: `block ${n}` });
+
+  it('[critical] under By delta: off to begin with, in the delta\'s own words; on, OTM 6 and else OTM 6 -- saved on the delta rule, the number kept', async () => {
+    open();
+    expect(floorSwitch()).not.toBeChecked();
+    expect(screen.getByText('Off — whichever strike the delta picks, however near the money.')).toBeInTheDocument();
+    fireEvent.click(floorSwitch());
+    expect(strike('rule strike')).toHaveTextContent('OTM 6');
+    expect(screen.getByText('The delta\'s strike is sold only at OTM 6 or further out — OTM 7 stays OTM 7. Else — nearer than that, or none found — sells OTM 6.')).toBeInTheDocument();
+    step('else strike', 'further out');
+    // A new delta number keeps the condition.
+    fireEvent.change(screen.getByLabelText('delta'), { target: { value: '0.15' } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.delta).toEqual({ max: 0.15, minOtm: 6, elseOtm: 7 });
+  });
+
+  it('[critical] a block by delta has its own, and changing its delta keeps it', async () => {
+    open(day({ strikeBlocks: [{ at: '21:35', strikeRule: 'delta', strikeStep: 0, premium: { mode: 'atMost', usd: 50 }, delta: { max: 0.08 } }] }));
+    const b2 = block(2);
+    const sw = within(b2).getByRole('switch', { name: /Keep it at least this far out of the money/ });
+    expect(sw).not.toBeChecked();
+    fireEvent.click(sw);
+    expect(within(b2).getByRole('status', { name: 'block 2 rule strike' })).toHaveTextContent('OTM 6');
+    fireEvent.change(within(b2).getByLabelText('block 2 delta'), { target: { value: '0.06' } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.strikeBlocks![0]!.delta).toEqual({ max: 0.06, minOtm: 6, elseOtm: 6 });
+  });
+});
+
 describe('the SL and TGT distance filters: two numbers of points for each timeframe picked', () => {
   const single = (over: Partial<SignalRule> = {}) => signalStrategy({ mode: 'single', tf: '5m', tfs: ['5m', '15m'], ...over });
   const group = () => screen.getByRole('group', { name: 'SL and TGT distance by timeframe' });

@@ -76,7 +76,12 @@ export type StrikeRule =
 export const MAX_STRIKE_STEP = 20;
 
 /** A delta rule: sell the strike nearest the money whose delta, as a size, is at or under `max`. */
-export type DeltaRule = { max: number };
+/**
+ * A delta rule: the strike nearest the money with a delta at most `max`. With `minOtm` (18 Oct 2026: "Keep it at least
+ * this far out of the money -- by delta too"), as a premium rule's: a pick at OTM `minOtm` or further out stands, one
+ * nearer the money -- or none -- sells the else strike, `elseOtm` (absent: `minOtm`). Absent: no condition.
+ */
+export type DeltaRule = { max: number; minOtm?: number | null; elseOtm?: number | null };
 /** A delta under one in a hundred is a strike that pays nothing; over a half is in the money. */
 export const MIN_DELTA = 0.01;
 export const MAX_DELTA = 0.5;
@@ -111,9 +116,10 @@ export function distanceNeeded(d: DistanceRule, hoursToExpiry: number | null | u
 /** What is wrong with a delta rule, in words. Shared with the form, word for word. */
 export function deltaProblem(d: unknown): string | null {
   const max = (d as Partial<DeltaRule> | null | undefined)?.max;
-  return typeof max === 'number' && max >= MIN_DELTA && max <= MAX_DELTA
-    ? null
-    : `Delta must be between ${MIN_DELTA.toFixed(2)} and ${MAX_DELTA.toFixed(2)}.`;
+  if (!(typeof max === 'number' && max >= MIN_DELTA && max <= MAX_DELTA)) return `Delta must be between ${MIN_DELTA.toFixed(2)} and ${MAX_DELTA.toFixed(2)}.`;
+  // Its distance condition, held to a premium rule's own limits, in a delta rule's words.
+  const far = minOtmProblems((d ?? {}) as { minOtm?: unknown; elseOtm?: unknown });
+  return far.length ? far.join(' ').replace('a premium rule', 'a delta rule') : null;
 }
 
 /** What is wrong with a distance rule, in words. Shared with the form, word for word. */

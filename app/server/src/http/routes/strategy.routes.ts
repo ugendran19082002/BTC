@@ -175,7 +175,7 @@ function cleanDeltaDistance(o: { delta?: unknown; distance?: unknown }): { delta
   const d = o.delta as Partial<DeltaRule> | null | undefined;
   const far = o.distance as Partial<DistanceRule> | null | undefined;
   return {
-    ...(d && typeof d === 'object' ? { delta: { max: Number(d.max) } } : {}),
+    ...(d && typeof d === 'object' ? { delta: { max: Number(d.max), ...cleanMinOtm(d) } } : {}),
     ...(far && typeof far === 'object'
       ? { distance: { pct: Number(far.pct), scale: far.scale as unknown as DistanceRule['scale'] } }
       : {}),
