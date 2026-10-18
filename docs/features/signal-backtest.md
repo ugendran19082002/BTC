@@ -26,7 +26,7 @@ For every signal that went "in the trade" (`entry_setups` with a fill), in the e
 | Setting | Choices | Default |
 |---|---|---|
 | Expiry days | since 1 Oct, the last 7, the last 30 | since 1 Oct |
-| Which signals | 9:30 PM → 3:59 PM IST, as the strategies trade (`desk`); the whole expiry day (`all`); or **Custom** hours, a From and a To time IST that may run past midnight (`custom`, `?hfrom=&hto=`; the To minute not included; a trade still exits by its own SL, TGT or the expiry) | desk |
+| Which signals | 9:30 PM → 3:59 PM IST (`desk`; the live strategies take signals 9:30 PM → 5:29 PM, as of 18 Oct 2026 -- use Custom for that); the whole expiry day (`all`); or **Custom** hours, a From and a To time IST that may run past midnight (`custom`, `?hfrom=&hto=`; the To minute not included; a trade still exits by its own SL, TGT or the expiry) | desk |
 | Strike rule | **by delta**: the nearest to the money with a delta of at most 0.05 / 0.10 / 0.15 / 0.20; **by premium**: the dearest priced at most $25 / $50 / $75 / $100 | delta 0.10 |
 | Strike rule by time of day | The strategy form's own **Different strike rule by time of day** (`StrikeBlocksEditor`, 18 Oct 2026): the strike rule above is block 1, from the start of the hours; split every N hours or add blocks, each with its own rule -- by premium (at least / at most, its "if none", its distance rule), by strike, by delta or by distance -- and **Apply to all blocks**. Held to the form's rules against the backtest's hours (`strikeBlockProblems`); read at each fill as a strategy's blocks are (`strikePickAt`). Saved with a backtest. A block's time is a time of the expiry day: under hours of a run's own, the last block before they open is in force from their start and one after they close is not traded in (`blocksForHours`, 18 Oct 2026). Blocks that no longer fit the backtest's hours are not sent, and the screen says so under the editor and in the settings line. `?sblocks=` (JSON, the blocks after the first) | One rule all day |
 | Option stop | +100%, +150%, +300% over the premium sold, or none | +300% |
@@ -347,6 +347,20 @@ about fifteen seconds the first time after a restart, about a second and a half 
 a fifth of one for the same again. The server asks the screen's own opening question three minutes after it
 starts, so the first tap after a restart does not wait for the reading. A day still running is read again after
 five minutes.
+
+## Against the live desk: what is replayed, and what is not (audit, 18 Oct 2026)
+
+Replayed as the runner does it: a strategy's days and hours, no-entry windows, SL / TGT distances, strike rule (the
+runner's own `selectLegs`, strike blocks, delta by volatility, its distance condition and else), lots and lots by
+volatility, the premium floor, the target and stop with their time steps and SL by volatility, the perp's SL and
+target, its "at most open" and the account's limit with the CE / PE shares (a run as one account), charges and margin.
+Two gaps closed that day: **the methods a strategy had at each signal** -- a strategy whose methods are picked again
+daily is backtested on each day's list, read back from `strategy_method_updates` (`methodsAt`); before, today's list
+for every day -- and **the strategy's exit time**: what it opened is closed then, as `considerExit` does, not held to
+the settlement (`closeAt`; the same for the live strategies, whose exit is 5:29 PM). Not replayed, so expected in the
+Live check: an entry the desk did not fill or refused (spread, loss limit, margin, the desk off); the stop's 15 seconds
+on the offer (the backtest takes the first reading through it); a target Delta kept cancelling and the desk held off.
+The settings' own hours choose signals only; their trades are held to the day's end.
 
 ## While a new result is worked out
 
