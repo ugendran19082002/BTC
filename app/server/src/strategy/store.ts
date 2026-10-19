@@ -378,6 +378,8 @@ type RunRow = { id: number; strategy_id: string; run_date: string; status: Strat
 export type SignalRunStatus = 'claimed' | 'placed' | 'would-place' | 'refused' | 'skipped' | 'failed';
 /** A signal strategy's day so far, as its card says it. */
 export type SignalDay = { placed: number; wouldPlace: number; skipped: number; refused: number; failed: number; lastAt: number; lastStatus: string | null };
+/** Why the last signal not taken was not, by kind (19 Oct 2026, the card): its time and the run's own words. */
+export type SignalWhyNot = Partial<Record<'skipped' | 'refused' | 'failed', { at: number; why: string }>>;
 export type SignalRun = {
   id: number; strategyId: string; signalKey: string; method: string; mode: string; tf: string; dir: 1 | -1;
   status: SignalRunStatus; detail: string; tradeId: string | null; at: number;
@@ -844,6 +846,20 @@ export class StrategyStore {
       else if (x.status === 'skipped') d.skipped += n; else if (x.status === 'refused') d.refused += n; else d.failed += n;
       if (at > d.lastAt) { d.lastAt = at; d.lastStatus = x.status; }
       out.set(x.strategy_id, d);
+    }
+    return out;
+  }
+
+  /** Each strategy's last skip, refusal and failure since `from`, in its own words (the run's detail past the signal). */
+  async signalWhyNot(from: number): Promise<Map<string, SignalWhyNot>> {
+    const xs = await rows<{ strategy_id: string; status: 'skipped' | 'refused' | 'failed'; detail: string; at: string }>(
+      `SELECT DISTINCT ON (strategy_id, status) strategy_id, status, detail, at FROM strategy_signal_runs
+        WHERE at >= $1 AND status IN ('skipped', 'refused', 'failed') ORDER BY strategy_id, status, at DESC`, [from]);
+    const out = new Map<string, SignalWhyNot>();
+    for (const x of xs) {
+      // "#55 Pulled wall BUY | the perp is at ..." -- the why is past the signal's own words.
+      const why = (x.detail.includes(' | ') ? x.detail.slice(x.detail.indexOf(' | ') + 3) : x.detail).slice(0, 220);
+      out.set(x.strategy_id, { ...(out.get(x.strategy_id) ?? {}), [x.status]: { at: Number(x.at), why } });
     }
     return out;
   }

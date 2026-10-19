@@ -1733,9 +1733,30 @@ test('[critical] the card\'s day (17 Oct 2026): each signal strategy\'s placed, 
   await write(1, 'placed', now - 60_000); await write(2, 'placed', now - 50_000); await write(3, 'skipped', now - 40_000);
   await write(4, 'refused', now - 30_000); await write(5, 'would-place', now - 20_000); await write(6, 'claimed', now - 10_000);
   await write(7, 'placed', now - 3 * 86_400_000);                       // days ago: not today's
+  // Why the last not taken was not, in the runs' own words past the signal (19 Oct 2026)
+  await query(`UPDATE strategy_signal_runs SET detail = '#1 Breakout BUY | SL too near: 120 pts' WHERE strategy_id = $1 AND status = 'skipped'`, [id]);
+  await query(`UPDATE strategy_signal_runs SET detail = '#1 Breakout BUY | refused: Delta refused the request' WHERE strategy_id = $1 AND status = 'refused'`, [id]);
+  // Its money after charges, from its closed trades: one sold at 50 and bought back at 10 an hour ago, one at a loss 3 days ago
+  const trade = (tid: string, sold: number, back: number, at: number) => query(
+    `INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at) VALUES ($1, 'P-BTC-84000-091026', 'flat', 0, $2, $3, $4)`,
+    [tid, JSON.stringify({ tradeId: tid, symbol: 'P-BTC-84000-091026', strategyId: id, lots: 1 }),
+      JSON.stringify({ tradeId: tid, phase: 'flat', position: 0, optionSide: 'PE', contractValue: 0.001, entryAvgPrice: sold,
+        fills: [{ role: 'entry', side: 'sell', size: 1, price: sold, ts: at - 600_000, orderId: 'e' }, { role: 'take_profit', side: 'buy', size: 1, price: back, ts: at, orderId: 'x' }] }), at]);
+  await trade('sig-day-1', 50, 10, now - 3_600_000);
+  await trade('sig-day-2', 20, 60, now - 3 * 86_400_000);
+  // the card's trades are read at most every 30 s: an earlier test's read is not this one's
+  (await import('../../src/http/routes/strategy.routes.js')).forgetRecentTrades();
   const r = await api('GET', '/api/strategies');
   const day = r.body.strategies.find((x: any) => x.id === id).today;
   assert.deepEqual(day, { placed: 2, wouldPlace: 1, skipped: 1, refused: 1, failed: 0, lastAt: now - 20_000, lastStatus: 'would-place' }, 'a claim is not yet a decision');
+  const card = r.body.strategies.find((x: any) => x.id === id);
+  assert.deepEqual(card.whyNot, { skipped: { at: now - 40_000, why: 'SL too near: 120 pts' }, refused: { at: now - 30_000, why: 'refused: Delta refused the request' } });
+  // today: the one closed an hour ago, +$0.04 less charges; the week: that and the loser 3 days ago
+  const today = new Date(now + 5.5 * 3_600_000).getUTCHours() * 60 + new Date(now + 5.5 * 3_600_000).getUTCMinutes() >= 17 * 60 + 30 + 60;
+  assert.deepEqual([card.money.week.n, card.money.week.wins, card.money.week.losses], [2, 1, 1]);
+  assert.ok(card.money.week.net < 0 && card.money.week.won > 0 && card.money.week.lost > 0, JSON.stringify(card.money.week));
+  if (today) assert.deepEqual([card.money.today.n, card.money.today.wins], [1, 1], 'closed after 5:30 PM: today\'s');
+  await query("DELETE FROM trades WHERE trade_id LIKE 'sig-day-%'");
   // One that reads volatility: the answer carries the level now by each source (null on a desk with no readings).
   await api('POST', '/api/strategies', { id, name: 'Sig day', config: { ...config, strikeRule: 'delta', delta: { max: 0.1 }, signal: { ...config.signal, deltaByVol: { on: true, by: 'iv', low: 0.18, medium: 0.1, high: 0.08 } } } });
   const v = await api('GET', '/api/strategies');

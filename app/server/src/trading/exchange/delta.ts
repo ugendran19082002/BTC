@@ -4,7 +4,7 @@ import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
 import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, VenueRestricted, type ExchangePort } from './port.js';
-import { REDUCE_ONLY_HOLD_MS, noteReduceOnly } from '../contract-restrictions.js';
+import { FULL_HOLD_MS, REDUCE_ONLY_HOLD_MS, noteContractFull, noteReduceOnly } from '../contract-restrictions.js';
 import type { ExchangeFill } from './port.js';
 import { noteError } from '../../observability/errors.js';
 
@@ -463,6 +463,21 @@ export class DeltaExchange implements ExchangePort {
           noteError({
             source: 'exchange', level: 'warn', where: 'POST /v2/orders', code: e.code,
             message: `Delta takes only reduce-only orders on ${req.symbol}: it is not sold for ${REDUCE_ONLY_HOLD_MS / 3_600_000} h -- the next strike out is picked instead. Closes of it still go.`,
+            context: { sent: body },
+          });
+        }
+        throw new OrderRejected(e.message);
+      }
+      /*
+       * The contract full of the account's orders (19 Oct 2026): an opening order refused for it. Passed over for a
+       * while, so the next signal sells the next strike out. Said once, as the warning it is. A close, or protection,
+       * refused so is still the error it is -- it is not sent around.
+       */
+      if (e instanceof DeltaRefused && e.code === 'max_orders_count_exceeded' && !req.reduceOnly) {
+        if (noteContractFull(req.symbol)) {
+          noteError({
+            source: 'exchange', level: 'warn', where: 'POST /v2/orders', code: e.code,
+            message: `Delta holds as many of the account's orders on ${req.symbol} as it allows: it is not sold for ${FULL_HOLD_MS / 60_000} min -- the next strike out is picked instead. Its trades' targets and stops are as they were.`,
             context: { sent: body },
           });
         }

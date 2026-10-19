@@ -184,3 +184,21 @@ test('[critical] the strike picker passes over a contract on reduce-only, and on
   assert.deepEqual(sellable('201026', [c('P', 78_800)], now).map((x) => x.strike), [78_800], 'the next day\'s contract is another contract');
   clearReduceOnly();
 });
+
+/* A contract full of the account's orders (19 Oct 2026, 13:32 IST: 61 trades open on C-BTC-83400-191026, "max_orders_count_exceeded"). */
+test('[critical] a contract full of the account\'s orders: the sale refused as the order\'s, the contract passed over for a while -- protection never so', async () => {
+  const { isContractFull, FULL_HOLD_MS } = await import('../../src/trading/contract-restrictions.js');
+  clearReduceOnly();
+  answers(() => ({ status: 400, body: { success: false, error: { code: 'max_orders_count_exceeded' } } }));
+  const ex = new DeltaExchange(creds);
+  const sym = 'C-BTC-83400-191026';
+  await assert.rejects(ex.placeOrder(order({ symbol: sym })), (e: unknown) => e instanceof OrderRejected && !(e instanceof VenueRestricted));
+  assert.equal(isContractFull(sym), true);
+  assert.equal(isContractFull(sym, Date.now() + FULL_HOLD_MS + 1), false, 'held a while: the cap frees as its trades close');
+  const c = (strike: number) => ({ cp: 'C' as const, strike, sellPrice: 12, pOtm: 0.9, moneyness: 1.02, ask: 13, oi: 10, emBuffer: 1, delta: 0.08 });
+  assert.deepEqual(sellable('191026', [c(83_400), c(83_600)]).map((x) => x.strike), [83_600], 'the next strike out');
+  // a stop or a target refused so is not noted: it is not a strike to pass over, and it is still an error
+  clearReduceOnly();
+  await assert.rejects(ex.placeOrder(order({ symbol: sym, reduceOnly: true, side: 'buy' })), OrderRejected);
+  assert.equal(isContractFull(sym), false);
+});

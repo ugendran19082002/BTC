@@ -16,6 +16,9 @@ import { refreshGroupIndex } from '@/hooks/useGroupOf';
 import { defaultGroupFor, groupNameProblem, groupSections, moved, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
+import { moneyText } from '@/lib/market-report';
+import { noEntryWords } from '@/lib/strategy-no-entry';
+import { slFilters, tgtFilters, type MoneyLine } from '@/types/strategy';
 import { blockNow, hoursLabel, istMinuteOf, pickWords } from '@/lib/strategy-blocks';
 import { buyCostPerLotUsd, buyTotals, globalMaxOpenProblem, marginPerLotUsd, roomLeft, signalTotals, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
 import { inr, usdToInr } from '@/lib/format';
@@ -88,6 +91,26 @@ const dayOrClock = (ms: number) => {
   const hhmm = d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
   return `${day} ${time12(hhmm)}`;
 };
+/** "+₹12.30 · 5 closed: 3 won · 2 lost": a money line in a few words; null with nothing closed. */
+export function moneyWords(m: MoneyLine | undefined): { net: number; words: string } | null {
+  if (!m || m.n === 0) return null;
+  return { net: m.net, words: `${m.n} closed: ${m.wins} won · ${m.losses} lost${m.lost > 0 ? ` · PF ${(m.won / m.lost).toFixed(2)}` : ''}` };
+}
+
+/** How a signal strategy enters, and the filters a signal must pass, in a line (19 Oct 2026, the card). */
+export function entryWords(s: Strategy): string {
+  const c = s.config, r = c.signal;
+  if (!r) return '';
+  const when = (r.enterOn ?? 'zone') === 'zone' ? 'in the trade (the perp at the zone)' : 'at the signal';
+  const price = c.entryPrice === 'now' ? 'at the market' : c.entryPrice === 'set' ? 'at a set price' : `at the offer${c.crossAfterSec > 0 ? `, to the bid over ${c.crossAfterSec}s` : ''}`;
+  const pts = (fs: ReturnType<typeof slFilters>, name: string) => fs.map((f) => `${name} ${f.pts > 0 && f.max > 0 ? `${f.pts}–${f.max}` : f.pts > 0 ? `≥ ${f.pts}` : `≤ ${f.max}`}${fs.length > 1 ? ` (${f.tf})` : ''}`);
+  const filters = [
+    ...pts(slFilters(r), 'SL'), ...pts(tgtFilters(r), 'TGT'),
+    ...(c.noEntry?.on && c.noEntry.windows.length ? [`no entry ${c.noEntry.windows.map(noEntryWords).join(', ')}`] : []),
+    ...((c.minPremiumUsd ?? 0) > 0 ? [`premium ≥ $${c.minPremiumUsd}`] : []),
+  ];
+  return `${when} · ${price}${filters.length ? ` · ${filters.join(' · ')}` : ''}`;
+}
 const STATUS_WORD: Record<string, string> = { placed: 'placed', 'would-place': 'written down', skipped: 'skipped', refused: 'refused', failed: 'failed' };
 
 /**
@@ -130,6 +153,23 @@ function StrategyFacts({ s, volNow }: { s: Strategy; volNow?: { iv: VolLevelNow;
           </dd>
         </div>
       )}
+      {r && <div className={row}><dt className={label}>Entry</dt><dd className="m-0">{entryWords(s)}</dd></div>}
+      {/* Its money after charges, from its closed trades: today, and the last 7 days (19 Oct 2026). */}
+      {s.money && (
+        <div className={row}>
+          <dt className={label}>Profit / loss</dt>
+          <dd className="m-0" aria-label={`profit and loss of ${s.name}`}>
+            {(() => {
+              const t = moneyWords(s.money.today), w = moneyWords(s.money.week);
+              return <>
+                <span>today {t ? <><b className={cn('font-semibold', t.net > 0 ? 'text-[var(--up)]' : t.net < 0 ? 'text-[var(--down)]' : 'text-foreground')}>{moneyText(t.net)}</b> · {t.words}</> : 'nothing closed yet'}</span>
+                <span className={label}> | </span>
+                <span>7 days {w ? <><b className={cn('font-semibold', w.net > 0 ? 'text-[var(--up)]' : w.net < 0 ? 'text-[var(--down)]' : 'text-foreground')}>{moneyText(w.net)}</b> · {w.words}</> : 'nothing closed'}</span>
+              </>;
+            })()}
+          </dd>
+        </div>
+      )}
       <div className={row}>
         <dt className={label}>Today</dt>
         <dd className="m-0">
@@ -141,6 +181,22 @@ function StrategyFacts({ s, volNow }: { s: Strategy; volNow?: { iv: VolLevelNow;
             </>}
         </dd>
       </div>
+      {/* Why the last not taken was not (19 Oct 2026): a skip is a rule doing its job; a refusal or failure is worth a look. */}
+      {s.whyNot && (s.whyNot.skipped || s.whyNot.refused || s.whyNot.failed) && (
+        <div className={row}>
+          <dt className={label}>Not taken</dt>
+          <dd className="m-0 grid gap-0.5" aria-label={`not taken by ${s.name}`}>
+            {(['refused', 'failed', 'skipped'] as const).map((k) => {
+              const x = s.whyNot![k];
+              return x ? (
+                <span key={k} className={cn('[overflow-wrap:anywhere]', k === 'skipped' ? '' : 'text-[var(--warn)]')}>
+                  last {k} {dayOrClock(x.at)}: {x.why}
+                </span>
+              ) : null;
+            })}
+          </dd>
+        </div>
+      )}
     </dl>
   );
 }

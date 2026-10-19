@@ -184,7 +184,7 @@ export type TradeStats = {
 export const pairKey = (s: { method: string; mode: 'mtf' | 'single'; tf: string }) => `${s.method}|${s.mode}|${s.tf}`;
 
 /** One closed trade's day and money, or null for a trade still open (or never filled). */
-export function closedNet(rec: TradeRecord, spot: number | null): { day: string; netUsd: number } | null {
+export function closedNet(rec: TradeRecord, spot: number | null): { day: string; netUsd: number; at: number } | null {
   const s = recompute(rec.state);
   const exits = s.fills.filter((f) => isExit(f.role));
   if (s.position !== 0 || exits.length === 0 || s.entryAvgPrice === null) return null;
@@ -197,7 +197,7 @@ export function closedNet(rec: TradeRecord, spot: number | null): { day: string;
     if (isExit(f.role)) net += (long ? f.price - entryAvg : entryAvg - f.price) * f.size * cv;
   }
   const closedAt = Math.max(...exits.map((f) => f.ts));
-  return { day: istDate(closedAt), netUsd: net };
+  return { day: istDate(closedAt), netUsd: net, at: closedAt };
 }
 
 function groupOf(key: string, nets: readonly number[]): TradeStatsGroup {

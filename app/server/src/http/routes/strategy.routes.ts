@@ -6,13 +6,15 @@ import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
 import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
-import { tradingService, tradingServiceFor } from '../../trading/service.js';
+import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { config, STARTED_AT } from '../../config.js';
 import { sessionDayOf, sessionOf } from '../../report/market-day.js';
 import { volNowHeld } from '../../report/signal-backtest.js';
+import { closedNet } from '../../trading/pnl-history.js';
+import type { TradeRecord } from '../../trading/engine.js';
 
 /**
  * The strategy desk: what is saved, what is armed, and when it next runs.
@@ -286,6 +288,40 @@ function cleanPts<K extends 'minSlPts' | 'minTgtPts' | 'maxSlPts' | 'maxTgtPts'>
   return (kept.length ? { [key]: Object.fromEntries(kept) } : {}) as Partial<Pick<SignalRule, K>>;
 }
 
+/**
+ * The last week of trades, for the strategies' cards (19 Oct 2026: "the card -- many useful details missing"): read
+ * at most every 30 seconds, as the strategies screen asks every five.
+ */
+const RECENT_DAYS = 7;
+let recentHeld: { at: number; value: Promise<TradeRecord[]> } | null = null;
+function recentTrades(now: number): Promise<TradeRecord[]> {
+  if (recentHeld && now - recentHeld.at < 30_000) return recentHeld.value;
+  const value = tradeJournal().between(now - (RECENT_DAYS + 1) * 86_400_000, now, 5_000, null, { events: false }).catch(() => [] as TradeRecord[]);
+  recentHeld = { at: now, value };
+  return value;
+}
+/** For the tests: the next read is fresh. */
+export function forgetRecentTrades(): void { recentHeld = null; }
+/** A strategy's closed trades in money after charges: how many, won and lost, and the net. */
+export type MoneyLine = { n: number; wins: number; losses: number; net: number; won: number; lost: number };
+const zeroMoney = (): MoneyLine => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0 });
+/** Each strategy's money today (from `dayFrom`) and over the last week, by the trade's closing time. */
+export function strategyMoney(records: readonly TradeRecord[], o: { now: number; dayFrom: number; spot: number | null }): Map<string, { today: MoneyLine; week: MoneyLine }> {
+  const out = new Map<string, { today: MoneyLine; week: MoneyLine }>();
+  const add = (m: MoneyLine, net: number) => { m.n++; m.net += net; if (net > 0) { m.wins++; m.won += net; } else if (net < 0) { m.losses++; m.lost -= net; } };
+  for (const r of records) {
+    const id = r.plan.strategyId;
+    if (!id) continue;
+    const c = closedNet(r, o.spot);
+    if (!c || c.at < o.now - RECENT_DAYS * 86_400_000) continue;
+    const line = out.get(id) ?? { today: zeroMoney(), week: zeroMoney() };
+    add(line.week, c.netUsd);
+    if (c.at >= o.dayFrom) add(line.today, c.netUsd);
+    out.set(id, line);
+  }
+  return out;
+}
+
 /** An id from a name: stable, readable in the journal, and URL-safe. */
 const idFrom = (name: string) =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
@@ -344,7 +380,12 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const journal = !lite && (req.query as { journal?: string } | undefined)?.journal === '1';
     const shown = (await s.all()).filter((x) => belongs(x, account));
     // Every signal strategy's expiry day so far, in one read (`signalDay`): from 5:30 PM IST, when the daily contract's day begins.
-    const signalDay = shown.some((x) => x.config.trigger === 'signal') ? await s.signalDay(sessionOf(sessionDayOf(Date.now())).from) : new Map();
+    const anySignal = shown.some((x) => x.config.trigger === 'signal');
+    const dayFrom = sessionOf(sessionDayOf(Date.now())).from;
+    const signalDay = anySignal ? await s.signalDay(dayFrom) : new Map();
+    // And for each card: why the last signal not taken was not, and its money today and this week (19 Oct 2026).
+    const whyNot = anySignal ? await s.signalWhyNot(dayFrom).catch(() => new Map()) : new Map();
+    const money = anySignal ? strategyMoney(await recentTrades(Date.now()), { now: Date.now(), dayFrom, spot: svc.spot }) : new Map();
     const mine = account === null ? null : new Set(shown.map((x) => x.id));
     const kept = <T extends { strategyId: string }>(xs: T[]): T[] => (mine ? xs.filter((x) => mine.has(x.strategyId)) : xs);
     // An account other than the one the desk is trading on is being looked at: the desk's wallet and holdings are not its.
@@ -440,6 +481,9 @@ export function registerStrategyRoutes(app: FastifyInstance) {
             open: openOf(x.id),
             // Its expiry day so far (5:30 PM IST on): placed, written down, skipped, refused, and its last decision.
             today: signalDay.get(x.id) ?? null,
+            // Why the last one not taken was not, and its money after charges: today, and the last 7 days.
+            whyNot: whyNot.get(x.id) ?? null,
+            money: money.get(x.id) ?? { today: zeroMoney(), week: zeroMoney() },
             status: !here ? OFF_ACCOUNT : blocked
               ? `no new entry until ${time12(blocked.to)} (no-entry window ${noEntryWords(blocked)}) -- what is open keeps its exits`
               : on

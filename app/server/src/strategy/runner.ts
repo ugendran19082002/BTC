@@ -3,7 +3,7 @@ import { scoreLegs } from '../domain/score.js';
 import { wallWithinEm } from '../http/routes/desk.routes.js';
 import { runAsDesk, tradingService, tradingServiceFor, type TradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
-import { isReduceOnly } from '../trading/contract-restrictions.js';
+import { isPassedOver } from '../trading/contract-restrictions.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
@@ -110,11 +110,12 @@ async function liveSignalBoard(): Promise<SignalBoard | null> {
 }
 
 /**
- * The board's strikes less the contracts the exchange will only reduce just now (`contract-restrictions.ts`, 19 Oct
- * 2026): a strike Delta refused a sale of is passed over, and the pick goes to the next one out.
+ * The board's strikes less the contracts the exchange will not take a sale of just now (`contract-restrictions.ts`,
+ * 19 Oct 2026): reduce-only, or holding as many of the account's orders as it allows. A strike Delta refused a sale of
+ * is passed over, and the pick goes to the next one out.
  */
 export const sellable = (expiry: string, cs: readonly Candidate[], now = Date.now()): Candidate[] =>
-  cs.filter((c) => !isReduceOnly(`${c.cp}-BTC-${c.strike}-${expiry}`, now));
+  cs.filter((c) => !isPassedOver(`${c.cp}-BTC-${c.strike}-${expiry}`, now));
 
 /** Whether `now` is inside a signal strategy's window: one of its days, from its entry time to its exit time (IST). */
 export function inSignalWindow(s: Strategy, nowMs: number): boolean {

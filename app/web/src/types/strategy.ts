@@ -469,6 +469,10 @@ export type Strategy = {
   open?: { trades: number; lots: number };
   /** A signal strategy's expiry day so far, from 5:30 PM IST: what became of its signals, and its last. Absent on an older server. */
   today?: SignalDay | null;
+  /** Why the last signal not taken was not, by kind, since 5:30 PM (19 Oct 2026). Absent from an older server. */
+  whyNot?: Partial<Record<'skipped' | 'refused' | 'failed', { at: number; why: string }>> | null;
+  /** Its closed trades in money after charges: today (from 5:30 PM IST) and the last 7 days. Absent from an older server. */
+  money?: { today: MoneyLine; week: MoneyLine };
 };
 
 /**
@@ -532,6 +536,8 @@ export type SignalTrade = {
   } | null;
 };
 
+/** Closed trades in money after charges: how many, won and lost, the net, and the winners' and losers' totals ($). */
+export type MoneyLine = { n: number; wins: number; losses: number; net: number; won: number; lost: number };
 /** A signal strategy's day so far (server: strategy/store.ts `SignalDay`). */
 export type SignalDay = { placed: number; wouldPlace: number; skipped: number; refused: number; failed: number; lastAt: number; lastStatus: string | null };
 export type VolLevelNow = 'low' | 'medium' | 'high' | null;

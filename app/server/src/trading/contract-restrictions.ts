@@ -10,20 +10,42 @@ const until = new Map<string, number>();
 
 /** Note `symbol` as reduce-only from `now`. True the first time (or once a hold has run out): the time to say so. */
 export function noteReduceOnly(symbol: string, now = Date.now()): boolean {
+  sweep(until, now);
   const fresh = !((until.get(symbol) ?? 0) > now);
   until.set(symbol, now + REDUCE_ONLY_HOLD_MS);
   return fresh;
 }
 /** Whether `symbol` is held as reduce-only at `now`. */
 export function isReduceOnly(symbol: string, now = Date.now()): boolean {
-  const t = until.get(symbol);
-  if (t === undefined) return false;
-  if (t <= now) { until.delete(symbol); return false; }
-  return true;
+  return (until.get(symbol) ?? 0) > now;
+}
+/** A hold run out is forgotten when another is noted: a read changes nothing. */
+function sweep(m: Map<string, number>, now: number): void {
+  for (const [k, t] of m) if (t <= now) m.delete(k);
 }
 /** Every contract held as reduce-only now, with until when: for the screens and the log. */
 export function reduceOnlyContracts(now = Date.now()): { symbol: string; until: number }[] {
   return [...until].filter(([s]) => isReduceOnly(s, now)).map(([symbol, t]) => ({ symbol, until: t }));
 }
+/*
+ * A contract holding as many of the account's orders as Delta allows (19 Oct 2026, 13:32 IST: two sales of
+ * C-BTC-83400-191026 refused, "max_orders_count_exceeded", with 61 of the desk's trades open on it -- each with a
+ * target and a stop resting). Passed over as a reduce-only one is, for less long: the cap frees as its trades close.
+ */
+export const FULL_HOLD_MS = 30 * 60_000;
+const fullUntil = new Map<string, number>();
+/** Note `symbol` as full of orders from `now`. True the first time (or once a hold has run out): the time to say so. */
+export function noteContractFull(symbol: string, now = Date.now()): boolean {
+  sweep(fullUntil, now);
+  const fresh = !((fullUntil.get(symbol) ?? 0) > now);
+  fullUntil.set(symbol, now + FULL_HOLD_MS);
+  return fresh;
+}
+export function isContractFull(symbol: string, now = Date.now()): boolean {
+  return (fullUntil.get(symbol) ?? 0) > now;
+}
+/** Whether the strike picker passes `symbol` over now: reduce-only, or full of the account's orders. */
+export const isPassedOver = (symbol: string, now = Date.now()): boolean => isReduceOnly(symbol, now) || isContractFull(symbol, now);
+
 /** For the tests. */
-export function clearReduceOnly(): void { until.clear(); }
+export function clearReduceOnly(): void { until.clear(); fullUntil.clear(); }

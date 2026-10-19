@@ -663,6 +663,27 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
     expect(facts('PLAIN')).toHaveTextContent('Todayno signal yet since 5:30 PM');
   });
 
+  it('[critical] the card\'s money, entry and why not (19 Oct 2026): profit and loss today and 7 days, how it enters, the last skip and refusal', async () => {
+    const line = (o: Partial<{ n: number; wins: number; losses: number; net: number; won: number; lost: number }>) => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0, ...o });
+    const a = { ...strat('money', { ...SIG, ...allDay, minPremiumUsd: 10, entryPrice: 'offer', crossAfterSec: 5,
+      noEntry: { on: true, windows: [{ from: '00:30', to: '01:30' }] }, signal: { ...SIG.signal, enterOn: 'zone', minSlPts: { [SIG.signal!.mode === 'mtf' ? 'chain' : SIG.signal!.tf]: 250 } } }),
+      money: { today: line({ n: 5, wins: 3, losses: 2, net: 1.2, won: 2, lost: 0.8 }), week: line({ n: 40, wins: 25, losses: 15, net: -3.5, won: 10, lost: 13.5 }) },
+      whyNot: { skipped: { at: Date.parse('2026-10-18T21:12:00+05:30'), why: 'SL too near: 120 pts' }, refused: { at: Date.parse('2026-10-18T23:48:00+05:30'), why: 'Delta refused the request (only_reduce_only_orders_allowed).' } } };
+    const b = { ...strat('quiet', { ...SIG, ...allDay }), money: { today: line({}), week: line({}) }, whyNot: null };
+    getStrategies.mockResolvedValue(status([a, b]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('MONEY');
+    const money = screen.getByLabelText('profit and loss of MONEY');
+    expect(money).toHaveTextContent(/today \+₹[\d.,]+ · 5 closed: 3 won · 2 lost · PF 2\.50 \| 7 days −₹[\d.,]+ · 40 closed: 25 won · 15 lost · PF 0\.74/);
+    expect(screen.getByLabelText('details of MONEY')).toHaveTextContent(/Entryin the trade \(the perp at the zone\) · at the offer, to the bid over 5s · SL ≥ 250 · no entry 12:30 AM – 1:30 AM · premium ≥ \$10/);
+    const not = screen.getByLabelText('not taken by MONEY');
+    expect(not).toHaveTextContent(/last refused .*: Delta refused the request \(only_reduce_only_orders_allowed\)\./);
+    expect(not).toHaveTextContent(/last skipped .*: SL too near: 120 pts/);
+    // nothing closed, nothing not taken: said plainly, no empty row
+    expect(screen.getByLabelText('profit and loss of QUIET')).toHaveTextContent('today nothing closed yet | 7 days nothing closed');
+    expect(screen.queryByLabelText('not taken by QUIET')).toBeNull();
+  });
+
   it('[critical] volatility not readable now: its own delta and SL, said as such', async () => {
     const a = strat('vol', { ...SIG, ...allDay, strikeRule: 'delta', delta: { max: 0.1 }, stopMode: 'pct', stopLossPct: 1.6,
       signal: { ...SIG.signal, deltaByVol: { on: true, by: 'atr', low: 0.18, medium: 0.1, high: 0.08 } } });
