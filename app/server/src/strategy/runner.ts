@@ -3,6 +3,7 @@ import { scoreLegs } from '../domain/score.js';
 import { wallWithinEm } from '../http/routes/desk.routes.js';
 import { runAsDesk, tradingService, tradingServiceFor, type TradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
+import { isReduceOnly } from '../trading/contract-restrictions.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
@@ -107,6 +108,13 @@ async function liveSignalBoard(): Promise<SignalBoard | null> {
     })),
   };
 }
+
+/**
+ * The board's strikes less the contracts the exchange will only reduce just now (`contract-restrictions.ts`, 19 Oct
+ * 2026): a strike Delta refused a sale of is passed over, and the pick goes to the next one out.
+ */
+export const sellable = (expiry: string, cs: readonly Candidate[], now = Date.now()): Candidate[] =>
+  cs.filter((c) => !isReduceOnly(`${c.cp}-BTC-${c.strike}-${expiry}`, now));
 
 /** Whether `now` is inside a signal strategy's window: one of its days, from its entry time to its exit time (IST). */
 export function inSignalWindow(s: Strategy, nowMs: number): boolean {
@@ -325,7 +333,7 @@ export class StrategyRunner {
     }));
     // The open-interest rule looks for its wall inside the desk's level band;
     // spot lets the strike nearest the money count when it has no intrinsic value.
-    const sel = selectLegs(s, candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
+    const sel = selectLegs(s, sellable(snap.expiry, candidates, now), { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
     if (sel.legs.length === 0) {
       await this.claimAndFinish(s, day, 'refused', describeSelection(sel));
       return;
@@ -536,7 +544,7 @@ export class StrategyRunner {
     const { s } = await this.byVolatility(given, this.now());
     const leg = legOfSignal(r.dir === 'long' ? 1 : -1, actionOf(s.config.signal));
     const at = strikePickAt(s.config, istMinutes(this.now()));
-    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, this.now()) });
+    const sel = selectLegs({ ...s, config: { ...s.config, ...at.pick, legs: leg } }, sellable(snap.expiry, snap.candidates, this.now()), { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, this.now()) });
     const chosen = sel.legs[0];
     if (chosen) await tradingService().warmEntry(`${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`);
   }
@@ -703,7 +711,7 @@ export class StrategyRunner {
      * that morning, was lifted the same day: the reduce-only churn it answered was the desk reading only a hundred of
      * the account's open orders (0015), and the rule cut the strategies to one trade in six.
      */
-    const sel = selectLegs({ ...vol.s, config: { ...vol.s.config, ...at.pick, legs: leg } }, snap.candidates, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
+    const sel = selectLegs({ ...vol.s, config: { ...vol.s.config, ...at.pick, legs: leg } }, sellable(snap.expiry, snap.candidates, now), { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
     const chosen = sel.legs[0];
     if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}`); return; }
 

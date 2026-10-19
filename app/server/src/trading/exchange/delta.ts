@@ -4,6 +4,7 @@ import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
 } from '../types.js';
 import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, VenueRestricted, type ExchangePort } from './port.js';
+import { REDUCE_ONLY_HOLD_MS, noteReduceOnly } from '../contract-restrictions.js';
 import type { ExchangeFill } from './port.js';
 import { noteError } from '../../observability/errors.js';
 
@@ -451,6 +452,22 @@ export class DeltaExchange implements ExchangePort {
       clearRestricted();
       return toOrder(o);
     } catch (e) {
+      /*
+       * One contract Delta will only reduce (19 Oct 2026): an opening order refused for it alone. Noted, so the strike
+       * picker sells the next one out instead of this one again; its product read afresh, as its state has changed.
+       * Said once a contract, as the warning it is -- the desk handles it -- not an error every signal.
+       */
+      if (e instanceof DeltaRefused && e.code === 'only_reduce_only_orders_allowed' && !req.reduceOnly) {
+        this.products.delete(req.symbol);
+        if (noteReduceOnly(req.symbol)) {
+          noteError({
+            source: 'exchange', level: 'warn', where: 'POST /v2/orders', code: e.code,
+            message: `Delta takes only reduce-only orders on ${req.symbol}: it is not sold for ${REDUCE_ONLY_HOLD_MS / 3_600_000} h -- the next strike out is picked instead. Closes of it still go.`,
+            context: { sent: body },
+          });
+        }
+        throw new OrderRejected(e.message);
+      }
       noteError({
         source: 'exchange',
         ...(isRestriction(e) ? { level: 'warn' as const } : {}),

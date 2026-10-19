@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-536 files listed, 275 test files counted below, images and lockfiles left out.
+537 files listed, 275 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -225,6 +225,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [charges.ts](../../app/server/src/trading/charges.ts) | What Delta charges on an options fill, the way Delta charges it. |
 | [close-preview.ts](../../app/server/src/trading/close-preview.ts) | What buying back part or all of a position would book, before it is sent: which sizes may be closed, and the net after every charge at the price the close would pay -- the ask, or a resting target... |
+| [contract-restrictions.ts](../../app/server/src/trading/contract-restrictions.ts) | Contracts the exchange will only reduce (19 Oct 2026, the error log: Delta refused two sales of P-BTC-78800-191026 at 23:41 and 23:48 IST, "only_reduce_only_orders_allowed" -- one contract, not the... |
 | [engine.ts](../../app/server/src/trading/engine.ts) | The thing that actually trades. |
 | [entry-watch.ts](../../app/server/src/trading/entry-watch.ts) | The trades that cannot wait for the loop: an entry order still working, and a position that has no target resting yet. |
 | [machine.ts](../../app/server/src/trading/machine.ts) | The trade lifecycle as a pure reducer. |

@@ -138,3 +138,49 @@ test('[critical] Delta not answering: after three reads in a row fail, reads are
   assert.deepEqual(await ex.getOpenOrders(), [], 'and reads go as usual');
   assert.equal(seen.length, 8);
 });
+
+/*
+ * One contract Delta will only reduce (19 Oct 2026, the error log: two sales of P-BTC-78800-191026 refused 7 minutes
+ * apart, "only_reduce_only_orders_allowed"). The contract's, not the market's: noted, and the strike picker passes
+ * over it, so the next signal sells the next strike out.
+ */
+const { isReduceOnly, clearReduceOnly, REDUCE_ONLY_HOLD_MS } = await import('../../src/trading/contract-restrictions.js');
+const { sellable } = await import('../../src/strategy/runner.js');
+const { OrderRejected } = await import('../../src/trading/exchange/port.js');
+const reduceOnlyRefusal: Reply = { status: 400, body: { success: false, error: { code: 'only_reduce_only_orders_allowed' } } };
+
+test('[critical] a contract on reduce-only: the sale refused as the order\'s, the contract noted -- not the market held up', async () => {
+  clearReduceOnly();
+  answers(() => reduceOnlyRefusal);
+  const ex = new DeltaExchange(creds);
+  const sym = 'P-BTC-78800-191026';
+  await assert.rejects(ex.placeOrder(order({ symbol: sym })), (e: unknown) => e instanceof OrderRejected && !(e instanceof VenueRestricted));
+  assert.equal(isReduceOnly(sym), true);
+  assert.equal(ex.restriction(), null, 'every other contract still takes orders');
+  assert.equal(isReduceOnly('P-BTC-78600-191026'), false);
+  // held a while, not for ever
+  assert.equal(isReduceOnly(sym, Date.now() + REDUCE_ONLY_HOLD_MS + 1), false);
+  // a close refused so is not a reason to note it: nothing to pass over
+  clearReduceOnly();
+  await assert.rejects(ex.placeOrder(order({ symbol: sym, reduceOnly: true, side: 'buy' })), OrderRejected);
+  assert.equal(isReduceOnly(sym), false);
+});
+
+test('[critical] the strike picker, with no contract noted, offers every strike', () => {
+  clearReduceOnly();
+  const c = (cp: 'C' | 'P', strike: number) => ({ cp, strike, sellPrice: 50, pOtm: 0.9, moneyness: 0.97, ask: 52, oi: 10, emBuffer: 1, delta: -0.07 });
+  const board = [c('P', 78_800), c('P', 78_600), c('C', 83_400)];
+  const now = Date.now();
+  assert.deepEqual(sellable('191026', board, now).map((x) => x.strike), [78_800, 78_600, 83_400], 'none noted: every strike');
+});
+
+test('[critical] the strike picker passes over a contract on reduce-only, and only it: the next strike out is the pick', async () => {
+  const { noteReduceOnly } = await import('../../src/trading/contract-restrictions.js');
+  clearReduceOnly();
+  const c = (cp: 'C' | 'P', strike: number) => ({ cp, strike, sellPrice: 50, pOtm: 0.9, moneyness: 0.97, ask: 52, oi: 10, emBuffer: 1, delta: -0.07 });
+  const now = Date.now();
+  noteReduceOnly('P-BTC-78800-191026', now);
+  assert.deepEqual(sellable('191026', [c('P', 78_800), c('P', 78_600), c('C', 78_800)], now).map((x) => `${x.cp}${x.strike}`), ['P78600', 'C78800']);
+  assert.deepEqual(sellable('201026', [c('P', 78_800)], now).map((x) => x.strike), [78_800], 'the next day\'s contract is another contract');
+  clearReduceOnly();
+});
