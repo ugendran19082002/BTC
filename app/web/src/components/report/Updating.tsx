@@ -34,14 +34,28 @@ export function useAnswer<T>(key: string, fetch: () => Promise<T>, everyMs: numb
   }, [key, asked, settleMs]);
   // Asked with the settings as they are when it settles: the question and its key are the same one.
   const settled = settleMs <= 0 ? key : asked;
-  const read = usePoll(() => fetch().then((data) => ({ key: settled, data })), everyMs, { deps: [settled] });
+  // An error carries the question it answered: the poll keeps its last one until the next answer comes, and a refusal
+  // of the settings before is not one of the settings now chosen (19 Oct 2026: "Days before" refused, "First days"
+  // chosen, and the old refusal said over it for the seconds the new run took).
+  const read = usePoll(() => fetch().then((data) => ({ key: settled, data }), (e: unknown) => {
+    throw new AnswerError(settled, e);
+  }), everyMs, { deps: [settled] });
+  const error = read.error instanceof AnswerError ? (read.error.key === key ? read.error : null) : read.error;
   return {
     data: read.data?.data ?? null,
     // An error is about the question now asked; it is said rather than waited on.
-    error: read.error,
-    stale: read.data !== null && read.data.key !== key && read.error === null,
-    failed: read.error !== null && read.data !== null && read.data.key !== key ? read.error.message : null,
+    error,
+    stale: read.data !== null && read.data.key !== key && error === null,
+    failed: error !== null && read.data !== null && read.data.key !== key ? error.message : null,
   };
+}
+
+/** A failed answer, with the question it was to. */
+class AnswerError extends Error {
+  constructor(readonly key: string, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = cause instanceof Error ? cause.name : 'Error';
+  }
 }
 
 /**
