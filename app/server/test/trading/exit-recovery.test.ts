@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rig, ceProduct, planFor, quote } from './harness.js';
-import { NO_REDUCE_ONLY_ROOM, TARGET_CHURN_LIMIT, TARGET_HOLD_MS, clientId } from '../../src/trading/engine.js';
+import { crowdRoom, rig, ceProduct, planFor, quote } from './harness.js';
+import {
+  HOLD_RECHECK_MS, NO_REDUCE_ONLY_ROOM, TARGET_CHURN_LIMIT, TARGET_HOLD_MS, TARGET_RELEASE_LIMIT, clientId,
+} from '../../src/trading/engine.js';
 
 /**
  * 14 Oct 2026: on contracts shared by 17 to 55 trades the desk cancelled and re-placed targets 3,000 times in a
@@ -108,8 +110,9 @@ test('[critical] a target the exchange keeps cancelling is held off the book aft
   assert.equal(r.alarms.filter((a) => /Delta cancelled this trade's target/.test(a.message)).length, 1);
 });
 
-test('[critical] Delta\'s "no reduce-only room left": held at once; back again after the hold, it stays off for the rest of the trade -- two alarms, no more', async () => {
+test('[critical] Delta\'s "no reduce-only room left" with the room still taken: held at once, said at the first recheck; back after the hold and taken off again, off for the rest of the trade -- two alarms, no more', async () => {
   const { r, id } = await shortWithTarget();
+  const room = crowdRoom(r, ceProduct(), 10);
   const orders = (r.ex as unknown as { orders: Map<string, { status: string; reason?: string; clientOrderId: string | null }> }).orders;
   const target = () => r.store.peek(id)!.state.protection.takeProfit;
   const stopBefore = r.store.peek(id)!.state.protection.stopLoss;
@@ -121,67 +124,93 @@ test('[critical] Delta\'s "no reduce-only room left": held at once; back again a
     await r.engine.poll(id);
   };
   const said = () => r.alarms.filter((a) => /Delta cancelled this trade's target/.test(a.message)).map((a) => a.message);
-  // the first one with Delta's reason: held at once, for fifteen minutes
+  // the first one with Delta's reason, and the room taken: held at once, for fifteen minutes -- said half a minute on
   await cancelIt();
   assert.equal(target(), null, 'not put back');
-  assert.deepEqual(said().length, 1);
+  assert.equal(said().length, 0, 'not yet: the room may come back in seconds');
+  r.advance(HOLD_RECHECK_MS);
+  await r.engine.poll(id);
+  assert.equal(target(), null, 'the room still taken: still held');
+  assert.equal(said().length, 1);
   assert.match(said()[0]!, /the position has no reduce-only room left for it \(no_position_left_for_reduce_only\)\. It is held off the book for 15 minutes/);
-  // after the hold it goes back on, and Delta takes it straight off again: off for the rest of the trade
+  // after the hold it goes back on, and Delta takes it straight off again with the room taken: off for the rest of the trade
+  room.free();
   r.advance(TARGET_HOLD_MS);
   await r.engine.poll(id);
   assert.ok(target(), 'tried once more after the hold');
+  room.take();
   await cancelIt();
-  assert.equal(said().length, 2);
+  assert.equal(said().length, 2, 'for good: said at once');
   assert.match(said()[1]!, /It came straight back after the last hold, so it stays off the book for the rest of this trade; the stop and the perp's exits stay\.$/);
-  // hours later: still off, no more alarms, the stop where it was
+  // hours later: still off while the room is taken, no more alarms, the stop where it was
   for (let i = 0; i < 6; i++) { r.advance(TARGET_HOLD_MS); await r.engine.poll(id); }
   assert.equal(target(), null);
   assert.equal(said().length, 2, 'no quarter-hourly alarm');
   assert.equal(r.store.peek(id)!.state.protection.stopLoss, stopBefore);
 });
 
-test('[critical] a target held for good comes back once the contract\'s other trades have closed -- the room is its own again (18 Oct 2026, C-BTC-82400)', async () => {
-  // Two trades on one contract (0011): the short cap raised so both go on.
+test('[critical] 19 Oct 2026, C-BTC-83400: another trade\'s stop fills, Delta takes this target with it -- put straight back, no hold, no alarm', async () => {
   const r = rig({ quotes: [quote(CE, 100.5, 101)], limits: { maxShortContracts: 1_000 } });
   const a = planFor(ceProduct(), { tradeId: 'A', strategyId: 'sa', origin: 'strategy', lots: 10, stopPrice: 300, takeProfitPrice: 20 });
   const b = planFor(ceProduct(), { tradeId: 'B', strategyId: 'sb', origin: 'strategy', lots: 10, stopPrice: 300, takeProfitPrice: 20 });
   for (const p of [a, b]) { assert.equal((await r.engine.open(p)).ok, true); await r.engine.poll(p.tradeId); }
   const orders = (r.ex as unknown as { orders: Map<string, { status: string; reason?: string; clientOrderId: string | null }> }).orders;
   const target = (id: string) => r.store.peek(id)!.state.protection.takeProfit;
-  const cancelA = async () => {
-    const o = [...orders.values()].find((x) => x.clientOrderId === target('A'))!;
-    await r.ex.cancelOrder(o as never);
-    o.reason = NO_REDUCE_ONLY_ROOM;
-    r.advance(30_000);
-    await r.engine.poll('A');
-  };
-  // Held, back after the hold, held again -- for the rest of the trade, with B still on the contract.
-  await cancelA();
-  r.advance(TARGET_HOLD_MS);
+  // B is out (its stop, at Delta): the position is 10 smaller. Delta trims A's target, not B's; the desk takes B's off.
+  const bTarget = [...orders.values()].find((x) => x.clientOrderId === target('B'))!;
+  const aTarget = [...orders.values()].find((x) => x.clientOrderId === target('A'))!;
+  await r.engine.closeNow('B');
+  for (let i = 0; i < 5 && r.store.peek('B')!.state.position !== 0; i++) { r.advance(1_000); await r.engine.poll('B'); }
+  assert.equal(r.store.peek('B')!.state.position, 0, 'B is flat');
+  assert.notEqual(bTarget.status, 'open', 'B\'s own target is off the book');
+  if (aTarget.status === 'open') await r.ex.cancelOrder(aTarget as never);
+  aTarget.reason = NO_REDUCE_ONLY_ROOM;
+  r.advance(5_000);
   await r.engine.poll('A');
-  await cancelA();
-  const held = r.store.peek('A')!.events.filter((e) => e.t === 'exit_step' && e.kind === 'held');
-  assert.equal(held.length, 2);
-  assert.equal((held.at(-1) as { until?: number | null }).until, null, 'for the rest of the trade');
-  assert.equal((held.at(-1) as { sharedWith?: number }).sharedWith, 1, 'B shared the contract');
-  r.advance(60_000);
-  await r.engine.poll('A');
-  assert.equal(target('A'), null, 'B still open: still held');
-  // B's target fills: B is flat, and A is alone on the contract.
-  r.ex.tick(quote(CE, 18, 19.5));
-  await r.engine.poll('B');
-  assert.equal(r.store.peek('B')!.state.position, 0);
-  r.ex.tick(quote(CE, 30, 31));
-  r.advance(31_000);
-  await r.engine.poll('A');
-  const back = r.store.peek('A')!.events.filter((e) => e.t === 'exit_step' && e.kind === 'released');
+  const steps = r.store.peek('A')!.events.filter((e) => e.t === 'exit_step' && (e.kind === 'held' || e.kind === 'released'));
+  assert.deepEqual(steps.map((e) => (e as { kind: string }).kind), ['released'], 'no hold');
+  assert.match((steps[0] as { detail?: string }).detail ?? '', /another trade's exit made the position smaller; the room is back \(10 contracts\)/);
+  assert.ok(target('A'), 'A\'s target is back');
+  assert.ok((await r.ex.getOpenOrders(CE)).some((o) => o.clientOrderId === target('A') && o.status === 'open'), 'on the book');
+  assert.deepEqual(r.alarms.filter((x) => /Delta cancelled this trade's target/.test(x.message)), [], 'nothing said');
+});
+
+test('[critical] held with the room taken, it comes back once the position has room again -- read off Delta, not counted -- and said never if inside half a minute', async () => {
+  const { r, id } = await shortWithTarget();
+  const room = crowdRoom(r, ceProduct(), 10);
+  const orders = (r.ex as unknown as { orders: Map<string, { status: string; reason?: string; clientOrderId: string | null }> }).orders;
+  const target = () => r.store.peek(id)!.state.protection.takeProfit;
+  const o = [...orders.values()].find((x) => x.clientOrderId === target())!;
+  await r.ex.cancelOrder(o as never);
+  o.reason = NO_REDUCE_ONLY_ROOM;
+  r.advance(1_000);
+  await r.engine.poll(id);
+  assert.equal(target(), null, 'held');
+  // The other order goes before the first recheck: back on, and nothing said.
+  room.free();
+  r.advance(HOLD_RECHECK_MS);
+  await r.engine.poll(id);
+  const back = r.store.peek(id)!.events.filter((e) => e.t === 'exit_step' && e.kind === 'released');
   assert.equal(back.length, 1);
-  assert.match((back[0] as { detail?: string }).detail ?? '', /other trades have closed/);
-  assert.ok(target('A'), 'the target is back on the book');
-  assert.ok((await r.ex.getOpenOrders(CE)).some((o) => o.clientOrderId === target('A') && o.status === 'open'));
-  // Taken off again now, alone: held afresh for fifteen minutes -- counted from the release -- not for good at once.
-  await cancelA();
-  const after = r.store.peek('A')!.events.filter((e) => e.t === 'exit_step' && e.kind === 'held').at(-1) as { until?: number | null; sharedWith?: number };
-  assert.notEqual(after.until, null, 'a fresh hold, not the rest of the trade');
-  assert.equal(after.sharedWith, 0);
+  assert.match((back[0] as { detail?: string }).detail ?? '', /The position has room for it again \(10 contracts free of resting targets\)/);
+  assert.ok(target(), 'the target is back');
+  assert.deepEqual(r.alarms.filter((x) => /Delta cancelled this trade's target/.test(x.message)), []);
+});
+
+test('the room is read at most so often: past the release limit in an hour, a held target waits on its contract\'s other trades, as before', async () => {
+  const { r, id } = await shortWithTarget();
+  const orders = (r.ex as unknown as { orders: Map<string, { status: string; reason?: string; clientOrderId: string | null }> }).orders;
+  const target = () => r.store.peek(id)!.state.protection.takeProfit;
+  // Delta takes it off with its reason though the book shows room -- each time a minute apart.
+  for (let i = 0; i < TARGET_RELEASE_LIMIT + 2; i++) {
+    const o = [...orders.values()].find((x) => x.clientOrderId === target());
+    if (o) { await r.ex.cancelOrder(o as never); o.reason = NO_REDUCE_ONLY_ROOM; }
+    r.advance(HOLD_RECHECK_MS + 1);
+    await r.engine.poll(id);
+    r.advance(HOLD_RECHECK_MS + 1);
+    await r.engine.poll(id);
+  }
+  const released = r.store.peek(id)!.events.filter((e) => e.t === 'exit_step' && e.kind === 'released').length;
+  assert.equal(released, TARGET_RELEASE_LIMIT, 'put back no more than the limit');
+  assert.equal(target(), null, 'then held: alone on the contract when held, it is not counted back');
 });

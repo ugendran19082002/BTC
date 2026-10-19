@@ -623,6 +623,16 @@ export const HOLD_RECHECK_MS = 30_000;
  * position, and a target put back is cancelled again. Definitive -- held on the first, not after a count.
  */
 export const NO_REDUCE_ONLY_ROOM = 'no_position_left_for_reduce_only';
+/**
+ * How many times one trade's target is put back on the room read off Delta (`targetRoom`) inside
+ * `TARGET_RELEASE_WINDOW_MS`: past it, a held target waits on its contract's other trades closing, as before. A loop
+ * breaker -- should Delta's room ever be counted otherwise than the desk reads it, a target is not put back every
+ * half minute.
+ */
+export const TARGET_RELEASE_LIMIT = 3;
+export const TARGET_RELEASE_WINDOW_MS = 60 * 60_000;
+/** A contract's room read once serves the trades looked at in the same moment (`targetRoom`). */
+const ROOM_READ_MS = 2_000;
 /** How often the account's whole book is read for exits left behind (`sweepOrphans`): two or three reads of weight 3. */
 export const ORPHAN_SWEEP_MS = 60_000;
 /** An exit younger than this is never called left behind: its trade may be writing it down at this moment. */
@@ -769,6 +779,10 @@ export class TradeEngine {
   private readonly protectionOwed = new Set<string>();
   /** When each held target's contract was last looked at for room (`releaseHeldTarget`). */
   private readonly holdCheckedAt = new Map<string, number>();
+  /** A held target's alarm, kept for the first recheck: said then only if the room is still not there. */
+  private readonly holdUnsaid = new Map<string, string>();
+  /** Each contract's room for one more target, as last read (`targetRoom`). */
+  private readonly roomRead = new Map<string, { at: number; room: number }>();
   /** One operation at a time per trade. See `withTrade`. */
   private queue = new Map<string, Promise<unknown>>();
 
@@ -2143,6 +2157,24 @@ export class TradeEngine {
     const recent = rec.events.filter((e) => e.t === 'sibling_cancelled' && e.role === 'take_profit' && now - e.at <= TARGET_CHURN_WINDOW_MS).length;
     const definitive = reason === NO_REDUCE_ONLY_ROOM;
     if (!definitive && recent < TARGET_CHURN_LIMIT) return rec;
+    /*
+     * Delta's reason, and the room already back (19 Oct 2026, C-BTC-83400: 45 trades a lot each on one contract, nine
+     * targets held and nine alarms in two minutes). Delta keeps the resting reduce-only targets within the position:
+     * a stop of another trade's fills, the position is a lot smaller, and Delta cancels a target -- whichever it picks,
+     * not the stopped trade's, which the desk then takes off too. The room is there again: put back at once, said in
+     * the journal, no alarm. Once: taken off again inside the window, it is held as before.
+     */
+    if (definitive && recent <= 1 && this.releasesOf(rec, now) < TARGET_RELEASE_LIMIT) {
+      const room = await this.targetRoom(rec);
+      if (room !== null && room >= Math.abs(rec.state.position)) {
+        this.takeRoom(rec);
+        return this.commit(rec, {
+          t: 'exit_step', kind: 'released', at: now, title: 'Target put back on Delta',
+          detail: `Delta took it off (${reason}) as another trade's exit made the position smaller; the room is back `
+            + `(${room} contracts), so it goes straight back.`,
+        });
+      }
+    }
     const forGood = hold.holds + 1 >= 2;
     // Who else was on the contract: their orders are what took the room, and fewer of them later gives it back.
     const sharedWith = (await this.siblingsOn(rec)).length;
@@ -2155,13 +2187,19 @@ export class TradeEngine {
       t: 'exit_step', kind: 'held', at: now,
       title: forGood ? 'Target kept off Delta for the rest of the trade' : `Target kept off Delta for ${minutes} minutes`,
       detail: `${why}. The stop and the perp's exits stay.`,
-      until: forGood ? null : now + TARGET_HOLD_MS, sharedWith,
+      until: forGood ? null : now + TARGET_HOLD_MS, sharedWith, cause: definitive ? 'no-room' : 'churn',
     });
-    this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: ${why}. `
+    const alarm = `${rec.plan.symbol}: ${why}. `
       + (forGood
         ? 'It came straight back after the last hold, so it stays off the book for the rest of this trade; '
         : `It is held off the book for ${minutes} minutes rather than re-placed again; `)
-      + 'the stop and the perp\'s exits stay.', rec.plan);
+      + 'the stop and the perp\'s exits stay.';
+    // Delta's reason on a first hold: the room may come back in seconds (another trade's target cancelled behind the
+    // fill that took it). Said at the first recheck only if it has not -- not nine times over a burst of stops.
+    if (definitive && !forGood) {
+      this.holdUnsaid.set(rec.state.tradeId, alarm);
+      this.holdCheckedAt.set(rec.state.tradeId, now);
+    } else this.d.onAlarm?.(rec.state, alarm, rec.plan);
     return rec;
   }
 
@@ -2176,23 +2214,75 @@ export class TradeEngine {
    */
   private async releaseHeldTarget(rec: TradeRecord): Promise<TradeRecord> {
     const now = this.now();
-    if (!(targetHoldOf(rec).until > now)) { this.holdCheckedAt.delete(rec.state.tradeId); return rec; }
+    if (!(targetHoldOf(rec).until > now)) { this.holdCheckedAt.delete(rec.state.tradeId); this.holdUnsaid.delete(rec.state.tradeId); return rec; }
     const checked = this.holdCheckedAt.get(rec.state.tradeId);
     if (checked !== undefined && now - checked < HOLD_RECHECK_MS) return rec;
     this.holdCheckedAt.set(rec.state.tradeId, now);
     const held = [...rec.events].reverse().find((e): e is Extract<TradeEvent, { t: 'exit_step' }> => e.t === 'exit_step' && e.kind === 'held');
     if (!held) return rec;
     const siblings = (await this.siblingsOn(rec)).length;
-    const room = held.sharedWith !== undefined ? siblings < held.sharedWith : siblings === 0;
-    if (!room) return rec;
+    // The room as Delta has it (19 Oct 2026): the position less the targets resting on it -- read, not guessed from a
+    // count of trades. Past `TARGET_RELEASE_LIMIT` releases in the window, or unread, the count as before.
+    const size = Math.abs(rec.state.position);
+    // Only a hold Delta gave its room for: one it took off again and again with room to spare is not ended by room.
+    const real = held.cause === 'no-room' && this.releasesOf(rec, now) < TARGET_RELEASE_LIMIT ? await this.targetRoom(rec) : null;
+    const room = real !== null ? real >= size : held.sharedWith !== undefined ? siblings < held.sharedWith : siblings === 0;
+    if (!room) {
+      const unsaid = this.holdUnsaid.get(rec.state.tradeId);
+      if (unsaid !== undefined) { this.holdUnsaid.delete(rec.state.tradeId); this.d.onAlarm?.(rec.state, unsaid, rec.plan); }
+      return rec;
+    }
     this.holdCheckedAt.delete(rec.state.tradeId);
+    this.holdUnsaid.delete(rec.state.tradeId);
     this.protectAfter.delete(rec.state.tradeId);
+    if (real !== null) this.takeRoom(rec);
     return this.commit(rec, {
       t: 'exit_step', kind: 'released', at: now, title: 'Target back on Delta',
-      detail: siblings === 0
-        ? 'The contract\'s other trades have closed: the position\'s reduce-only room is this trade\'s own again.'
-        : `Fewer trades share the contract now (${siblings}, from ${held.sharedWith}): there is room on the position for it again.`,
+      detail: real !== null
+        ? `The position has room for it again (${real} contracts free of resting targets).`
+        : siblings === 0
+          ? 'The contract\'s other trades have closed: the position\'s reduce-only room is this trade\'s own again.'
+          : `Fewer trades share the contract now (${siblings}, from ${held.sharedWith}): there is room on the position for it again.`,
     });
+  }
+
+  /** How many times this trade's target was put back inside `TARGET_RELEASE_WINDOW_MS`. */
+  private releasesOf(rec: TradeRecord, now: number): number {
+    return rec.events.filter((e) => e.t === 'exit_step' && e.kind === 'released' && now - e.at <= TARGET_RELEASE_WINDOW_MS).length;
+  }
+
+  /**
+   * The room on the contract's position for one more reduce-only target, in contracts: the position, less what the
+   * reduce-only limit orders resting on its closing side already cover (19 Oct 2026). Delta held 45 one-lot targets
+   * and 45 one-lot stops on a 45-lot short, so a stop not yet triggered takes none of it; and each stop that filled
+   * took one target with it. Null when either could not be read. Read once for the trades looked at in the same
+   * moment, and what one of them is put back with is taken off it (`takeRoom`).
+   */
+  private async targetRoom(rec: TradeRecord): Promise<number | null> {
+    const symbol = rec.plan.symbol;
+    const now = this.now();
+    const read = this.roomRead.get(symbol);
+    if (read && now - read.at < ROOM_READ_MS) return read.room;
+    try {
+      const [positions, book] = await Promise.all([this.exchange.getPositions(), this.exchange.getOpenOrders(symbol)]);
+      const pos = positions.find((p) => p.symbol === symbol)?.size ?? 0;
+      const closing = pos < 0 ? 'buy' : 'sell';
+      const resting = book
+        .filter((o) => o.symbol === symbol && o.reduceOnly && o.side === closing && o.type === 'limit' && o.stopPrice === null
+          && (o.status === 'open' || o.status === 'partial'))
+        .reduce((t, o) => t + (o.size - o.filledSize), 0);
+      const room = Math.abs(pos) - resting;
+      this.roomRead.set(symbol, { at: now, room });
+      return room;
+    } catch {
+      return null;
+    }
+  }
+
+  /** A target about to go back on: its size off the contract's room as read, for the next trade looked at. */
+  private takeRoom(rec: TradeRecord): void {
+    const read = this.roomRead.get(rec.plan.symbol);
+    if (read) read.room -= Math.abs(rec.state.position);
   }
 
   /** Keep count of a trade whose exits could not be confirmed off the book, and say so once it has gone on a minute. */

@@ -165,3 +165,23 @@ export async function holdOffer(
   const held = await r.engine.poll(tradeId);
   return { first, held };
 }
+
+/**
+ * A reduce-only buy resting on the contract that no trade of the journal placed, taking `size` of the position's room
+ * for targets (19 Oct 2026: Delta keeps the resting reduce-only targets within the position). Only in the book as
+ * read -- the paper venue's matching never sees it. `free()` takes it away, `take()` puts it back.
+ */
+export function crowdRoom(r: Rig, product: ProductSpec, size: number) {
+  const read = r.ex.getOpenOrders.bind(r.ex);
+  let on = true;
+  r.ex.getOpenOrders = async (symbol?: string) => {
+    const book = await read(symbol);
+    if (!on || (symbol !== undefined && symbol !== product.symbol)) return book;
+    return [...book, {
+      orderId: 'by-hand', clientOrderId: null, symbol: product.symbol, productId: product.productId, side: 'buy', type: 'limit',
+      size, filledSize: 0, averageFillPrice: null, limitPrice: 0.5, stopPrice: null, status: 'open', reduceOnly: true,
+      createdAt: r.now(), updatedAt: r.now(),
+    }];
+  };
+  return { free: () => { on = false; }, take: () => { on = true; } };
+}

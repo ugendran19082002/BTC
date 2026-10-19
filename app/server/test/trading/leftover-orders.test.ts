@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rig, ceProduct, planFor, quote, type Rig } from './harness.js';
+import { crowdRoom, rig, ceProduct, planFor, quote, type Rig } from './harness.js';
 import {
   NO_REDUCE_ONLY_ROOM, ORPHAN_MIN_AGE_MS, ORPHAN_SWEEP_MS, TARGET_HOLD_MS, TradeEngine, clientId, targetHoldOf, tradeIdOfClientId,
 } from '../../src/trading/engine.js';
@@ -104,6 +104,8 @@ test('a book that cannot be read is not swept on', async () => {
 
 test('[critical] a held target stays held across a restart: the hold is in the journal, not in memory', async () => {
   const { r, id } = await shortAt(1_700_000_000_004);
+  // The room on the position taken by another order: Delta's reason holds.
+  const room = crowdRoom(r, ceProduct(), 1_000);
   const tp = r.store.peek(id)!.state.protection.takeProfit;
   const o = [...ordersOf(r).values()].find((x) => x.clientOrderId === tp)!;
   await r.ex.cancelOrder(o);
@@ -123,8 +125,9 @@ test('[critical] a held target stays held across a restart: the hold is in the j
   r.advance(60_000);
   await fresh.poll(id);
   assert.equal(r.store.peek(id)!.state.protection.takeProfit, null, 'not put straight back');
-  assert.equal((await r.ex.getOpenOrders(CE)).filter((x) => x.type === 'limit').length, 0);
+  assert.equal((await r.ex.getOpenOrders(CE)).filter((x) => x.type === 'limit' && x.orderId !== 'by-hand').length, 0);
   // and once the hold is over, back it goes
+  room.free();
   r.advance(TARGET_HOLD_MS);
   await fresh.poll(id);
   assert.ok(r.store.peek(id)!.state.protection.takeProfit, 'back after the hold');

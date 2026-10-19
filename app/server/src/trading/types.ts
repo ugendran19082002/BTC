@@ -404,4 +404,9 @@ export type TradeEvent =
    * `held`'s `sharedWith`: the contract's other open trades when the target was held (18 Oct 2026) -- fewer of them
    * later is room on the position again, and `released` ends the hold (`releaseHeldTarget`).
    */
-  | { t: 'exit_step'; kind: 'schedule' | 'moved' | 'held' | 'released' | 'swept'; title: string; detail?: string; until?: number | null; sharedWith?: number; at: number };
+  | {
+    t: 'exit_step'; kind: 'schedule' | 'moved' | 'held' | 'released' | 'swept'; title: string; detail?: string; until?: number | null; sharedWith?: number;
+    /** `held`'s cause (19 Oct 2026): Delta's "no reduce-only room" -- ended once the room is read back -- or a run of cancels with none. */
+    cause?: 'no-room' | 'churn';
+    at: number;
+  };
