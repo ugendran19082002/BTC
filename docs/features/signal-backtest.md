@@ -194,6 +194,19 @@ browser, the backtest's and the run's apart (`PanelFolds`). Outside them a panel
 
 ## Saved backtests, and portfolios
 
+**Methods by win %, in the portfolio** (19 Oct 2026, the owner: "not Backtest, edit, Win, update, and back"):
+
+- **For the run**: *Settings for the run → Methods by win %* -- won at least X% (50-80% or typed) of N+ trades, picked
+  on **the days before** the run (3, 7 or 14 finished days: the default, so the run is a test on days that took no
+  part in the pick) or **the run's own days** (as the Win tab picks: in-sample, said so). Each saved backtest worked
+  by settings gets its own methods that won so, on its own settings and time frames; one by a strategy keeps the
+  strategy's; one where none passed is listed with why and counted as nothing. The result lists each one's pick,
+  with **Keep these N on it**. `o_win=&o_wintrades=&o_winon=before|same&o_windays=`; the answer's `winPick`. The
+  run's trades, live check and volatility study use the same pick.
+- **On a saved backtest**: under each one ticked, **Methods · N picked — pick by win %** opens the Backtest screen's
+  own method list over the last 7 or 14 finished days or since 1 Oct, by that saved backtest's own record -- In
+  profit, In loss, Win ≥ X% and "Only the N that won X% or more" -- and **Update its methods** keeps it there.
+
 "Save a backtest's settings and run a saved one; several saved ones as a portfolio, with the total of them all"
 (13 Oct 2026).
 

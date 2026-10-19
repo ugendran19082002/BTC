@@ -27,6 +27,7 @@ import { BacktestTsl } from '@/components/report/BacktestTsl';
 import { BacktestPerpWiden } from '@/components/report/BacktestPerpWiden';
 import { WidenCompare } from '@/components/report/WidenCompare';
 import { BacktestSkipPerp } from '@/components/report/BacktestSkipPerp';
+import { RunWinPick, WIN_PICK_DEFAULT, winPickWords } from '@/components/report/RunWinPick';
 import { BacktestBreakEven } from '@/components/report/BacktestBreakEven';
 import { breakEvenWords, tslProblems, tslWords } from '@/lib/backtest-tsl';
 import { backtestBlockProblems, strikeBlocksWords } from '@/lib/backtest-strike-blocks';
@@ -405,7 +406,7 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
     delete next[key];
     onChange(next);
   };
-  const { strike, target, stop, lots, minPremium, range, noEntry, vol, strikeBlocks, tsl, perpWiden, breakEven, skipPerp } = over;
+  const { strike, target, stop, lots, minPremium, range, noEntry, vol, strikeBlocks, tsl, perpWiden, breakEven, skipPerp, winPick } = over;
   const values = strike?.rule === 'premium' ? PREMIUMS : DELTAS;
   const dynamic = (target?.targetSteps?.length ?? 0) > 0 || dynamicDraft;
   const switchedOn = Object.keys(over).length;
@@ -419,6 +420,11 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
       <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
         Off, each saved backtest runs with its own. Switched on, that one setting is taken for this run and put over every saved backtest in it -- nothing saved is changed.
       </p>
+
+      {/* Methods by win % for the run (19 Oct 2026): each saved backtest's own methods that won so -- first, as it is the one most often wanted. */}
+      <RunFilter name="Methods by win %" on={!!winPick} said={winPick ? winPickWords(winPick) : ''} onToggle={() => flip('winPick', WIN_PICK_DEFAULT)}>
+        {winPick && <RunWinPick value={winPick} onChange={(w) => put({ winPick: w })} />}
+      </RunFilter>
 
       <RunFilter name="Strike" on={!!strike} said={strike ? said(strike) : ''} onToggle={() => flip('strike', { rule: seed.rule, value: seed.value })}>
         {strike && <>

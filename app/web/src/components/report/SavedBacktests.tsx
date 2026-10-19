@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { WidenCompare } from '@/components/report/WidenCompare';
+import { SavedMethodsPicker } from '@/components/report/SavedMethodsPicker';
+import { WinPickResult } from '@/components/report/WinPickResult';
 import { usePersisted } from '@/hooks/usePersisted';
 import { ChevronDown, Copy, FolderOpen, Pencil, Search, Trash2 } from 'lucide-react';
 import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, getPortfolioVolStudy, getPortfolioVolStudyTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
@@ -137,7 +139,7 @@ function PortfolioResult({ title, r, wide, readTrades, widen }: {
             <p className="m-0 mt-0.5 text-[12.5px] text-muted-foreground">{count(r.shared.turnedAway)} signals found the account, or their side of it, full and were not traded.</p>
           )}
           {failed.map((m) => <p key={m.id} role="alert" className="m-0 mt-1 text-[12.5px] text-[var(--warn)]"><b className="font-semibold">{m.name}</b> is left out: {m.problem}</p>)}
-          {t.n === 0 ? <div className="mt-2"><Empty>None of them traded in this range.</Empty></div> : (
+          {t.n === 0 ? <div className="mt-2 grid gap-3"><Empty>None of them traded in this range.</Empty>{r.winPick && <WinPickResult pick={r.winPick} members={r.members} nameOf={(id) => id} />}</div> : (
             <>
               <div className={cn('mt-1 text-[26px] font-semibold tabular-nums', netClass(t.net))}>
                 {moneyText(t.net)} <span className="text-[14px] font-medium text-muted-foreground">{each(t)} a trade</span>
@@ -179,6 +181,12 @@ function PortfolioResult({ title, r, wide, readTrades, widen }: {
               <DayAverages days={r.days} net={t.net} />
               <BacktestCurve days={r.days} />
               <WinnersLosers t={t} />
+              {r.winPick && (
+                <div className="mt-3">
+                  <WinPickResult pick={r.winPick} members={r.members}
+                    nameOf={(id) => r.breakdown?.byMethod.find((x) => x.key === id)?.name ?? id} />
+                </div>
+              )}
               <section aria-label="Each saved backtest" className="mt-3">
                 <h3 className="m-0 mb-1 text-[12.5px] font-semibold text-muted-foreground">Each one</h3>
                 <Table caption="Run together: each saved backtest" first="Saved backtest" rows={members} />
@@ -408,6 +416,8 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
   const groups = [...new Set(saves.map((s) => s.group ?? '').filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   const pick = groupPick === ALL || groupPick === '' || groups.includes(groupPick) ? groupPick : ALL;
 
+  // The saved backtest whose methods are being picked in place (19 Oct 2026), if any.
+  const [methodsOf, setMethodsOf] = useState<string | null>(null);
   const act = async (what: () => Promise<string>) => {
     setBusy(true); setSaid(null);
     try { const text = await what(); await refresh(); setSaid({ tone: 'ok', text }); }
@@ -528,6 +538,20 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
             <span title={wordsOf(s.query)} className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere] max-sm:overflow-hidden max-sm:[-webkit-box-orient:vertical] max-sm:[-webkit-line-clamp:2] max-sm:[display:-webkit-box]">{wordsOf(s.query)}</span>
           </span>
         </label>
+        {/* Its methods picked here, by their record -- the Win tab included -- and kept on it (19 Oct 2026). A strategy's are the strategy's. */}
+        {s.query.strategy === null && (methodsOf === s.id
+          ? <SavedMethodsPicker save={s} busy={busy} onClose={() => setMethodsOf(null)}
+              onUpdate={(methods) => void act(async () => {
+                await saveBacktest({ id: s.id, name: s.name, query: { ...s.query, methods } });
+                setMethodsOf(null);
+                return methods.length ? `Kept ${methods.length} method${methods.length === 1 ? '' : 's'} on "${s.name}".` : `"${s.name}" takes every method now.`;
+              })} />
+          : (
+            <button type="button" aria-label={`Methods of ${s.name}`} onClick={() => setMethodsOf(s.id)}
+              className="m-0 mb-1.5 ml-8 min-h-[32px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)] underline underline-offset-2">
+              Methods · {s.query.methods.length ? `${s.query.methods.length} picked` : 'every method'} — pick by win %
+            </button>
+          ))}
       </li>
     );
   };

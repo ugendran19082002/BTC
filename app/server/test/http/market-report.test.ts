@@ -976,6 +976,34 @@ test('[critical] a backtest saved by name, run again, and several run together a
     assert.ok(close(perpRun.body.byMethod.reduce((x: number, r: any) => x + r[k], 0), tot[k]), `${k}: by method adds up to the total`);
   }
   assert.ok(tot.perpNetPts < tot.perpPts && tot.perpRNet < tot.perpR && tot.perpWins <= tot.n, 'the perp\'s fees only ever take away');
+  /*
+   * Methods by win % for the run (19 Oct 2026): each one by settings given the methods that won so on its own record --
+   * on the run's own days (in-sample, as the Win tab), or on the days before it. Nothing saved is changed.
+   */
+  const winSame = await get(`${pair}&o_win=50&o_wintrades=1&o_winon=same`);
+  assert.equal(winSame.status, 200, JSON.stringify(winSame.body).slice(0, 300));
+  assert.deepEqual([winSame.body.winPick.on, winSame.body.winPick.from, winSame.body.winPick.to], ['same', CLIMB, QUIET]);
+  const allA = await single('');
+  const wonA = allA.body.choices.methods.filter((m: any) => m.n >= 1 && m.wins / m.n >= 0.5).sort((x: any, y: any) => y.net - x.net).map((m: any) => m.key);
+  assert.deepEqual(winSame.body.winPick.picked[a.body.save.id], wonA, 'what the Win tab would pick: won half or more, best net first');
+  const withThose = await single(`&method=${wonA.join(',')}`);
+  assert.ok(close(winSame.body.members[0].total.net, withThose.body.total.net), 'and traded with exactly those');
+  // on the day before the run: the record of that day alone picks
+  const winBefore = await get(`/api/backtest-portfolio?ids=${a.body.save.id}&from=${QUIET}&to=${QUIET}&limit=own&o_win=50&o_wintrades=1&o_windays=1`);
+  assert.equal(winBefore.status, 200, JSON.stringify(winBefore.body).slice(0, 300));
+  assert.deepEqual([winBefore.body.winPick.on, winBefore.body.winPick.from, winBefore.body.winPick.to], ['before', CLIMB, CLIMB]);
+  const climbRec = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all`);
+  const wonClimb = climbRec.body.choices.methods.filter((m: any) => m.n >= 1 && m.wins / m.n >= 0.5).sort((x: any, y: any) => y.net - x.net).map((m: any) => m.key);
+  assert.deepEqual(winBefore.body.winPick.picked[a.body.save.id], wonClimb, 'picked on the day before it, never its own');
+  // refused in words: nothing before the record, a rate out of range
+  for (const [bad, said] of [['o_win=0', /win rate is from 1% to 100%/], ['o_win=50&o_winon=later', /"before" the run or on the "same"/], ['o_win=50&o_windays=31', /1 to 30 days before/]] as const) {
+    const r = await get(`${pair}&${bad}`);
+    assert.equal(r.status, 400, bad);
+    assert.match(r.body.error, said);
+  }
+  const tooEarly = await get(`/api/backtest-portfolio?ids=${a.body.save.id}&from=2026-10-01&to=${QUIET}&limit=own&o_win=50`);
+  assert.equal(tooEarly.status, 400);
+  assert.match(tooEarly.body.error, /no finished days before 2026-10-01 to pick from/);
   // a setting put over the run is not a setting saved
   const kept = (await get('/api/backtest-saves')).body.saves.find((s: any) => s.id === a.body.save.id).query.params;
   assert.deepEqual([kept.lots, kept.rule, kept.stopPct], [10, 'delta', 3]);

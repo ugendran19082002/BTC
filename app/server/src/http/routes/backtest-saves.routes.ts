@@ -4,7 +4,9 @@ import {
   PORTFOLIO_MEMBERS_MAX, clonePortfolio, cloneSave, dropPortfolio, dropSave, groupProblem, keepPortfolio, keepSave, listSaves, nameProblem, renameGroup, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
 import { DEFAULT_PARAMS, type BacktestParams } from '../../report/signal-backtest.js';
-import { liveCheck, portfolioBacktest, portfolioTrades, portfolioVolStudy, portfolioVolStudyTrades } from '../../report/backtest-run.js';
+import { liveCheck, portfolioBacktest, portfolioTrades, portfolioVolStudy, portfolioVolStudyTrades, signalBacktest } from '../../report/backtest-run.js';
+import { REPORT_FIRST_DAY } from '../../report/market-report.js';
+import { pickMethods } from '../../strategy/auto-methods.js';
 import { backtestParamsFrom, backtestParamsOf, backtestStrategies, liveAccounts, rangeOf, volRuleOf, volTradesPickOf } from './market.routes.js';
 import { refuse } from '../refuse.js';
 
@@ -125,21 +127,65 @@ async function portfolioQuery(q: Record<string, unknown>) {
     };
     Object.assign(settings, market);
     const changed = Object.keys(settings).length > 0;
+    /*
+     * Methods by win % for the run (owner, 19 Oct 2026: "in the portfolio, pick the saved backtests' methods by win %
+     * with a tap -- not Backtest, edit, Win, update, and back"): `o_win=` the least share won (1 to 100), `o_wintrades=`
+     * the least trades (1 to 100, 3), and the days the record is read on -- `o_winon=before` (the default) the
+     * `o_windays=` (1 to 30, 7) finished days before the run, so the methods are picked and then tested on days that
+     * took no part in picking them; or `o_winon=same`, the run's own days, as the Backtest screen's Win tab picks,
+     * in-sample and said so. Each saved backtest worked by settings is given the methods that won so on its own record
+     * (every method, on its own time frames and settings, as the Win tab lists them); one by a strategy keeps the
+     * strategy's. Nothing saved is changed.
+     */
+    let win: { pct: number; minTrades: number; on: 'before' | 'same'; from: string; to: string } | null = null;
+    if (q.o_win !== undefined && q.o_win !== '') {
+      const pct = Number(q.o_win), minTrades = q.o_wintrades === undefined || q.o_wintrades === '' ? 3 : Number(q.o_wintrades);
+      const on = q.o_winon === undefined || q.o_winon === '' ? 'before' : q.o_winon;
+      const days = q.o_windays === undefined || q.o_windays === '' ? 7 : Number(q.o_windays);
+      if (!(pct >= 1 && pct <= 100)) return { code: 400, error: 'For the run: the win rate is from 1% to 100%.' };
+      if (!Number.isInteger(minTrades) || minTrades < 1 || minTrades > 100) return { code: 400, error: 'For the run: the least trades are a whole number from 1 to 100.' };
+      if (on !== 'before' && on !== 'same') return { code: 400, error: 'For the run: methods are picked on the days "before" the run or on the "same" days.' };
+      if (!Number.isInteger(days) || days < 1 || days > 30) return { code: 400, error: 'For the run: methods are picked on 1 to 30 days before it.' };
+      const shift = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+      if (on === 'same') win = { pct, minTrades, on, from: r.from, to: r.to };
+      else {
+        const to = shift(r.from, -1), from = shift(r.from, -days);
+        if (to < REPORT_FIRST_DAY) return { code: 400, error: `For the run: there are no finished days before ${r.from} to pick from (the record starts ${REPORT_FIRST_DAY}). Pick on the run's own days, or start the run later.` };
+        win = { pct, minTrades, on, from: from < REPORT_FIRST_DAY ? REPORT_FIRST_DAY : from, to };
+      }
+    }
     const own = saves.filter((s) => s.query.strategy !== null).map((s) => s.id);
-    return {
-      r, shared,
-      members: saves.map((s) => {
+    const members = saves.map((s) => {
         const strategy = s.query.strategy === null ? null : strategies.find((x) => x.id === s.query.strategy) ?? null;
         if (s.query.strategy !== null && !strategy) return { id: s.id, name: s.name, ask: null, problem: 'The strategy it is worked by has been deleted, or buys now rather than sells.' };
         const params = (over || changed) && !strategy ? { ...s.query.params, ...settings, ...(over ?? {}) } : { ...s.query.params, ...market };
-        return { id: s.id, name: s.name, ask: { params, tfs: s.query.tfs.length ? s.query.tfs : null, methods: s.query.methods.length ? s.query.methods : null, strategy } };
-      }),
+        return { id: s.id, name: s.name, ask: { params, tfs: s.query.tfs.length ? s.query.tfs : null, methods: s.query.methods.length ? s.query.methods : null, strategy } } as Member;
+      });
+    // Each one by settings given the methods that won so on its own record -- one at a time, as the backtest thread takes them.
+    const picked: Record<string, string[]> = {};
+    if (win) {
+      for (const m of members) {
+        if (!m.ask || m.ask.strategy) continue;
+        const rec = await signalBacktest({ from: win.from, to: win.to, now: Date.now(), params: m.ask.params, tfs: m.ask.tfs, methods: null, strategy: null, spot: tradingService().spot });
+        const ids = pickMethods(rec.choices.methods.map((x) => ({ method: x.key, trades: x.n, wins: x.wins, net: x.net })), { winPct: win.pct, minTrades: win.minTrades });
+        picked[m.id] = ids;
+        if (ids.length) m.ask = { ...m.ask, methods: ids };
+        else Object.assign(m, { ask: null, problem: `No method won ${win.pct}% of ${win.minTrades}+ trades ${win.from === win.to ? `on ${win.from}` : `from ${win.from} to ${win.to}`}: nothing to trade.` });
+      }
+    }
+    return {
+      r, shared,
+      members,
+      /** The methods by win % the run was given, and each one's pick; null, each its own. `own`: those by a strategy, which kept theirs. */
+      winPick: win ? { ...win, picked, own } : null,
       /** The hours the run was held to; null, each member's own as saved. `own`: the members a strategy works, whose hours are its own. */
       hours: over ? { window: over.window, ...(over.hoursFrom ? { hoursFrom: over.hoursFrom, hoursTo: over.hoursTo } : {}), own } : null,
       /** The settings put over the run, as they were read -- only those switched on; null, none. `own` as for the hours. */
       over: changed ? { settings: { ...settings, ...(has('tp') ? { targetSteps: read.targetSteps ?? [] } : {}), ...(has('tsl') ? { tsl: read.tsl ?? null } : {}), ...(has('be') ? { breakEven: read.breakEven ?? null } : {}) }, own } : null,
     };
 }
+
+type Member = { id: string; name: string; ask: { params: BacktestParams; tfs: string[] | null; methods: string[] | null; strategy: Awaited<ReturnType<typeof backtestStrategies>>[number] | null } | null; problem?: string };
 
 export function registerBacktestSavesRoutes(app: FastifyInstance) {
   /** Every saved backtest and every portfolio, by name. */
@@ -224,7 +270,7 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
     const asked = await portfolioQuery((req.query ?? {}) as Record<string, unknown>);
     if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
     const result = await portfolioBacktest({ ...asked.r, now: Date.now(), spot: tradingService().spot, shared: asked.shared, members: asked.members });
-    return { ...result, hours: asked.hours, over: asked.over };
+    return { ...result, hours: asked.hours, over: asked.over, winPick: asked.winPick };
   });
 
   /**

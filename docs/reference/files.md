@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-533 files listed, 273 test files counted below, images and lockfiles left out.
+536 files listed, 275 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 139 |
-| `app/web` | 134 |
+| `app/web` | 136 |
 
 ## `(root)`
 
@@ -472,13 +472,16 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [PnlCurveChart.tsx](../../app/web/src/components/report/PnlCurveChart.tsx) | -- |
 | [PnlKpiCards.tsx](../../app/web/src/components/report/PnlKpiCards.tsx) | -- |
 | [ReportPanel.tsx](../../app/web/src/components/report/ReportPanel.tsx) | How the trading has actually gone. |
+| [RunWinPick.tsx](../../app/web/src/components/report/RunWinPick.tsx) | Methods by win %, for a run together (owner, 19 Oct 2026: "in the portfolio, pick the saved backtests' methods by win % with a tap"): every saved backtest worked by settings given its own methods t... |
 | [SavedBacktests.tsx](../../app/web/src/components/report/SavedBacktests.tsx) | Backtests kept by name, and run together (owner, 13 Oct 2026: "save a backtest's settings and run a saved one; several saved ones as a portfolio, with the total of them all"). |
+| [SavedMethodsPicker.tsx](../../app/web/src/components/report/SavedMethodsPicker.tsx) | A saved backtest's methods picked in the portfolio, by their record (owner, 19 Oct 2026: "in the portfolio, against a saved backtest, pick by win % with a tap -- not Backtest, edit, Win, update, an... |
 | [SessionTable.tsx](../../app/web/src/components/report/SessionTable.tsx) | The backtest by session of the day (owner, 15 Oct 2026: "by session, 1h by default, 15m to 6h; the methods in each; the count opens its trades"). |
 | [SignalBacktest.tsx](../../app/web/src/components/report/SignalBacktest.tsx) | The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price? |
 | [Updating.tsx](../../app/web/src/components/report/Updating.tsx) | A read that knows which question its answer is to (owner, 13 Oct 2026: "after choosing a filter it should say it is loading; the old values stay on the screen"). |
 | [VolStudy.tsx](../../app/web/src/components/report/VolStudy.tsx) | The option's SL, the strike's delta and the lots by volatility, as research on the desk's own trades (owner, 17 Oct 2026: "Volatility by ATR 2h / ATM IV; SL, delta and lots -- Low, Normal and High... |
 | [WidenCompare.tsx](../../app/web/src/components/report/WidenCompare.tsx) | The perp's SL and TGT three ways on the same trades (owner, 18 Oct 2026: "keep the widest vs back to the signal's own when calm -- in the backtest report"): the signal's own levels all trade; widen... |
 | [WinLossAnalysis.tsx](../../app/web/src/components/report/WinLossAnalysis.tsx) | -- |
+| [WinPickResult.tsx](../../app/web/src/components/report/WinPickResult.tsx) | What "Methods by win %" gave each saved backtest of a run (19 Oct 2026): its pick, by name, and a tap to keep the pick on the saved backtest itself -- the step that took the Backtest screen, an edi... |
 | [backtest-parts.tsx](../../app/web/src/components/report/backtest-parts.tsx) | The pieces the backtest's panels are made of -- the screen itself (`SignalBacktest.tsx`) and the saved backtests run together (`SavedBacktests.tsx`): a table whose rows fold on a phone, three money... |
 | [backtest-words.ts](../../app/web/src/components/report/backtest-words.ts) | A backtest's settings as the screen starts with them, and in words. |
 | [pnl-dashboard.css](../../app/web/src/components/report/pnl-dashboard.css) | ───────────────────────────────────────────────────────────────────────────── P&L Dashboard Upgraded Styling (Institutional / Premium Dark Theme) ───────────────────────────────────────────────────... |

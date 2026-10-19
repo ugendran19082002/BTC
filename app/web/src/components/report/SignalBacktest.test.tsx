@@ -1175,6 +1175,26 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
   });
 
+  it('[critical] a saved backtest\'s methods picked by win % in the portfolio, and kept on it -- no trip to the Backtest screen (19 Oct 2026)', async () => {
+    const one = { id: 'a1', name: 'Alpha', query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10 }, tfs: [], methods: [], strategy: null }, createdAt: 1, updatedAt: 1 };
+    saves.getBacktestSaves.mockResolvedValue({ saves: [one, { ...one, id: 'b2', name: 'Beta' }], portfolios: [] });
+    saves.saveBacktest.mockResolvedValue({ ok: true, save: one });
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('radio', { name: 'Saved backtests run together, and their total' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Methods of Alpha' }));
+    const panel = await screen.findByRole('region', { name: 'Methods of Alpha' });
+    // its own record, then the picker -- one method ticked, and kept
+    fireEvent.click(await within(panel).findByRole('button', { name: /^Method filter/ }));
+    const boxes = screen.getAllByRole('listbox');
+    fireEvent.click(within(boxes[boxes.length - 1]!).getByText('#50 Gamma wall reaction'));
+    fireEvent.click(within(panel).getByRole('button', { name: /^Update its methods \(1\)/ }));
+    await waitFor(() => expect(saves.saveBacktest).toHaveBeenCalled());
+    expect(saves.saveBacktest.mock.calls.at(-1)![0]).toMatchObject({ id: 'a1', name: 'Alpha' });
+    expect(saves.saveBacktest.mock.calls.at(-1)![0].query.methods).toHaveLength(1);
+    expect(await screen.findByText(/Kept 1 method on "Alpha"/)).toBeInTheDocument();
+  });
+
   it('[critical] the settings of a run together: each a switch -- off, every saved backtest\'s own; on, that one put over them all for the run', async () => {
     const saved = (id: string, name: string) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10 }, tfs: [], methods: [], strategy: null }, createdAt: 1, updatedAt: 1 });
     saves.getBacktestSaves.mockResolvedValue({ saves: [saved('a1', 'Alpha'), saved('b22', 'Beta')], portfolios: [{ id: 'p1', name: 'Both', saveIds: ['a1', 'b22'], createdAt: 1, updatedAt: 1 }] });
@@ -1193,10 +1213,10 @@ describe('SignalBacktest', () => {
     const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     const set = () => within(folio().getByRole('region', { name: 'Settings for the run' }));
     const sw = (name: string) => set().getByRole('switch', { name: `${name}, for the run` });
-    const NAMES = ['Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Trailing SL', 'SL to entry', 'Skip perp SL / TGT', 'Perp SL & TGT by volatility', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
+    const NAMES = ['Methods by win %', 'Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Trailing SL', 'SL to entry', 'Skip perp SL / TGT', 'Perp SL & TGT by volatility', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
     // every one off to begin with, each saying whose settings run
     expect(set().getAllByRole('switch').map((x) => [x.getAttribute('aria-label'), x.getAttribute('aria-checked')])).toEqual(NAMES.map((n) => [`${n}, for the run`, 'false']));
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(13);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(14);
     expect(set().getByText('· all off')).toBeInTheDocument();
     expect(set().queryByRole('button', { name: 'Switch all off' })).toBeNull();
     // folded on a phone to begin with: one line of what the run is held to, and Change
@@ -1284,7 +1304,7 @@ describe('SignalBacktest', () => {
     fireEvent.click(sw('Volatility filter'));
     await waitFor(() => expect(last()).toEqual({}));
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(13);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(14);
   });
 
   it('a run\'s settings as the route reads them: the single backtest\'s own names under o_, and nothing for a switch that is off', async () => {
@@ -1292,6 +1312,8 @@ describe('SignalBacktest', () => {
     expect(overQuery({})).toEqual({});
     expect(overQuery({ lots: { lots: 2 }, stop: { stopPct: 1.6 } })).toEqual({ o_lots: '2', o_sl: '1.6' });
     expect(overQuery({ stop: { stopPct: 1.6 }, tsl: { tsl: { move: 10, moveUnit: 'pct', by: 5, byUnit: 'pts' } } })).toEqual({ o_sl: '1.6', o_tsl: '10pct:5pts' });
+    expect(overQuery({ winPick: { pct: 75, minTrades: 3, on: 'before', days: 7 } })).toEqual({ o_win: '75', o_wintrades: '3', o_winon: 'before', o_windays: '7' });
+    expect(overQuery({ winPick: { pct: 0, minTrades: 3, on: 'before', days: 7 } })).toEqual({}); // a pick that is wrong is not asked for
     expect(overQuery({ strike: { rule: 'delta', value: 0.1 }, minPremium: { minPremium: 0 } })).toEqual({ o_rule: 'delta', o_value: '0.1', o_minprem: '0' });
     expect(overQuery({ target: { targetPct: 0.7 } })).toEqual({ o_tp: '0.7' });
     expect(overQuery({ target: { targetPct: 0.7, targetSteps: [{ at: '23:30', pct: 0.73 }, { at: '01:30', pct: 0.76 }] } })).toEqual({ o_tp: '0.7', o_tsteps: '23:30:73,01:30:76' });
