@@ -1006,11 +1006,30 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.deepEqual([winFirst.body.from, winFirst.body.to], [QUIET, QUIET]);
   assert.deepEqual(winFirst.body.winPick.picked[a.body.save.id], wonClimb);
   assert.ok(close(winFirst.body.members[0].total.net, winBefore.body.members[0].total.net), 'the same pick on the same day: the same money');
+  // Custom days (19 Oct 2026): picked on the days named, run on the run's days after them -- the same as the first day.
+  const winCustom = await get(`/api/backtest-portfolio?ids=${a.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&o_win=50&o_wintrades=1&o_winon=custom&o_winfrom=${CLIMB}&o_winto=${CLIMB}`);
+  assert.equal(winCustom.status, 200, JSON.stringify(winCustom.body).slice(0, 300));
+  assert.deepEqual([winCustom.body.winPick.on, winCustom.body.winPick.from, winCustom.body.winPick.to, winCustom.body.winPick.run], ['custom', CLIMB, CLIMB, { from: QUIET, to: QUIET }]);
+  assert.deepEqual(winCustom.body.winPick.picked[a.body.save.id], wonClimb);
+  assert.ok(close(winCustom.body.members[0].total.net, winFirst.body.members[0].total.net));
+  // Picked before the run: the whole run is tested.
+  const customBefore = await get(`/api/backtest-portfolio?ids=${a.body.save.id}&from=${QUIET}&to=${QUIET}&limit=own&o_win=50&o_wintrades=1&o_winon=custom&o_winfrom=${CLIMB}&o_winto=${CLIMB}`);
+  assert.deepEqual(customBefore.body.winPick.run, { from: QUIET, to: QUIET });
+  for (const [bad, said] of [
+    [`o_winfrom=${QUIET}&o_winto=${CLIMB}`, /must not be after the last/],
+    [`o_winfrom=${CLIMB}&o_winto=${QUIET}`, /leaves none of .* to run on/],
+    ['o_winfrom=2026-09-20&o_winto=2026-09-25', /the record starts 2026-10-01/],
+    ['o_winfrom=x&o_winto=y', /a first and a last day, YYYY-MM-DD/],
+  ] as const) {
+    const r = await get(`${pair}&o_win=50&o_winon=custom&${bad}`);
+    assert.equal(r.status, 400, bad);
+    assert.match(r.body.error, said);
+  }
   const noneLeft = await get(`${pair}&o_win=50&o_winon=first&o_windays=2`);
   assert.equal(noneLeft.status, 400);
   assert.match(noneLeft.body.error, /picking on its first 2 days leaves none of .* to run on/);
   // refused in words: nothing before the record, a rate out of range
-  for (const [bad, said] of [['o_win=0', /win rate is from 1% to 100%/], ['o_win=50&o_winon=later', /"before" the run, on its "first" days, or on the "same"/], ['o_win=50&o_windays=31', /1 to 30 days before/]] as const) {
+  for (const [bad, said] of [['o_win=0', /win rate is from 1% to 100%/], ['o_win=50&o_winon=later', /"before" the run, on its "first" days, on the "same" days, or on "custom" days/], ['o_win=50&o_windays=31', /1 to 30 days before/]] as const) {
     const r = await get(`${pair}&${bad}`);
     assert.equal(r.status, 400, bad);
     assert.match(r.body.error, said);

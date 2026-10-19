@@ -137,21 +137,35 @@ async function portfolioQuery(q: Record<string, unknown>) {
      * took no part in picking them; or `o_winon=same`, the run's own days, as the Backtest screen's Win tab picks,
      * in-sample and said so; or `o_winon=first` (19 Oct 2026, owner: "portfolio not working" -- a run from 1 Oct has no
      * finished days before it, the record starting then): picked on the run's own first `o_windays` days and run on
-     * the days after them, so the test is still on days that took no part in the pick. Each saved backtest worked by settings is given the methods that won so on its own record
+     * the days after them, so the test is still on days that took no part in the pick; or `o_winon=custom` (19 Oct 2026,
+     * owner: "first day custom, last day"): picked on `o_winfrom` to `o_winto`, any days of the record, and run on the
+     * run's days after `o_winto` -- never on a day of the pick. Each saved backtest worked by settings is given the methods that won so on its own record
      * (every method, on its own time frames and settings, as the Win tab lists them); one by a strategy keeps the
      * strategy's. Nothing saved is changed.
      */
-    let win: { pct: number; minTrades: number; on: 'before' | 'same' | 'first'; from: string; to: string } | null = null;
+    let win: { pct: number; minTrades: number; on: 'before' | 'same' | 'first' | 'custom'; from: string; to: string } | null = null;
     if (q.o_win !== undefined && q.o_win !== '') {
       const pct = Number(q.o_win), minTrades = q.o_wintrades === undefined || q.o_wintrades === '' ? 3 : Number(q.o_wintrades);
       const on = q.o_winon === undefined || q.o_winon === '' ? 'before' : q.o_winon;
       const days = q.o_windays === undefined || q.o_windays === '' ? 7 : Number(q.o_windays);
       if (!(pct >= 1 && pct <= 100)) return { code: 400, error: 'For the run: the win rate is from 1% to 100%.' };
       if (!Number.isInteger(minTrades) || minTrades < 1 || minTrades > 100) return { code: 400, error: 'For the run: the least trades are a whole number from 1 to 100.' };
-      if (on !== 'before' && on !== 'same' && on !== 'first') return { code: 400, error: 'For the run: methods are picked on the days "before" the run, on its "first" days, or on the "same" days.' };
-      if (!Number.isInteger(days) || days < 1 || days > 30) return { code: 400, error: 'For the run: methods are picked on 1 to 30 days before it.' };
+      if (on !== 'before' && on !== 'same' && on !== 'first' && on !== 'custom') return { code: 400, error: 'For the run: methods are picked on the days "before" the run, on its "first" days, on the "same" days, or on "custom" days.' };
+      if (on !== 'custom' && (!Number.isInteger(days) || days < 1 || days > 30)) return { code: 400, error: 'For the run: methods are picked on 1 to 30 days before it.' };
       const shift = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
       if (on === 'same') win = { pct, minTrades, on, from: r.from, to: r.to };
+      else if (on === 'custom') {
+        const pickFrom = typeof q.o_winfrom === 'string' ? q.o_winfrom : '', pickTo = typeof q.o_winto === 'string' ? q.o_winto : '';
+        const day = /^\d{4}-\d{2}-\d{2}$/;
+        if (!day.test(pickFrom) || !day.test(pickTo) || Number.isNaN(Date.parse(pickFrom)) || Number.isNaN(Date.parse(pickTo))) return { code: 400, error: 'For the run: custom days to pick on are a first and a last day, YYYY-MM-DD.' };
+        if (pickFrom > pickTo) return { code: 400, error: 'For the run: the first day to pick on must not be after the last.' };
+        if (pickFrom < REPORT_FIRST_DAY) return { code: 400, error: `For the run: the record starts ${REPORT_FIRST_DAY}; pick on days from then.` };
+        if ((Date.parse(pickTo) - Date.parse(pickFrom)) / 86_400_000 + 1 > 31) return { code: 400, error: 'For the run: methods are picked on at most 31 days.' };
+        if (pickTo >= r.to) return { code: 400, error: `For the run: picking up to ${pickTo} leaves none of ${r.from} to ${r.to} to run on. End the pick before ${r.to}.` };
+        win = { pct, minTrades, on, from: pickFrom, to: pickTo };
+        // Run on the run's days after the pick, never on one of its own.
+        if (pickTo >= r.from) r = { from: shift(pickTo, 1), to: r.to };
+      }
       else if (on === 'first') {
         const pickTo = shift(r.from, days - 1);
         if (pickTo >= r.to) return { code: 400, error: `For the run: picking on its first ${days} day${days === 1 ? '' : 's'} leaves none of ${r.from} to ${r.to} to run on. Pick on fewer days, or run over more.` };

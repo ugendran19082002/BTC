@@ -33,6 +33,7 @@ export function WinPickResult({ pick, members, nameOf }: {
         Won {pick.pct}% or more of {pick.minTrades}+ trades, on {days}
         {pick.on === 'before' ? ': the days before the run, so it is run on days that took no part in picking.'
           : pick.on === 'first' ? `: the run's first days -- and run on ${ran ?? 'the days after them'}, days that took no part in picking.`
+            : pick.on === 'custom' ? `: the days chosen -- and run on ${ran ?? 'the run\'s days after them'}, days that took no part in picking.`
             : ': the run\'s own days -- picked knowing how they did, so the result looks better than it can be.'}
       </p>
       <ul aria-label="Each one's pick" className="m-0 mt-2 grid list-none gap-2 p-0">

@@ -104,7 +104,7 @@ export type PortfolioOver = {
    * Methods by win % for the run (19 Oct 2026): each member by settings given its methods that won `pct`% or more of
    * `minTrades`+ trades -- on the `days` finished days before the run (`before`), or on the run's own (`same`, in-sample).
    */
-  winPick?: { pct: number; minTrades: number; on: 'before' | 'first' | 'same'; days: number };
+  winPick?: { pct: number; minTrades: number; on: 'before' | 'first' | 'same' | 'custom'; days: number; pickFrom?: string; pickTo?: string };
   /** The perp's SL and TGT left out over every member, the two together; false is used. */
   skipPerp?: { sl: boolean; tgt: boolean };
   /** The option's stop to the price sold over every member; null takes each one's own away for the run. */
@@ -137,7 +137,7 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
   }
   if (o.breakEven) { const s = o.breakEven.be === null ? 'off' : breakEvenQuery(o.breakEven.be); if (s) q.o_be = s; }
   // Only a pick that is right: the run's settings say what is wrong with any other.
-  if (o.winPick && o.winPick.pct >= 1 && o.winPick.pct <= 100 && Number.isInteger(o.winPick.minTrades) && o.winPick.minTrades >= 1 && o.winPick.minTrades <= 100) { q.o_win = String(o.winPick.pct); q.o_wintrades = String(o.winPick.minTrades); q.o_winon = o.winPick.on; q.o_windays = String(o.winPick.days); }
+  if (o.winPick && o.winPick.pct >= 1 && o.winPick.pct <= 100 && Number.isInteger(o.winPick.minTrades) && o.winPick.minTrades >= 1 && o.winPick.minTrades <= 100) { q.o_win = String(o.winPick.pct); q.o_wintrades = String(o.winPick.minTrades); q.o_winon = o.winPick.on; if (o.winPick.on === 'custom') { q.o_winfrom = o.winPick.pickFrom ?? ''; q.o_winto = o.winPick.pickTo ?? ''; } else q.o_windays = String(o.winPick.days); }
   if (o.skipPerp) { q.o_noperpsl = o.skipPerp.sl ? '1' : '0'; q.o_noperptgt = o.skipPerp.tgt ? '1' : '0'; }
   if (o.perpWiden) { q.o_wsl = String(o.perpWiden.slAtr); q.o_wtgt = String(o.perpWiden.tgtAtr); q.o_wmode = o.perpWiden.mode ?? 'widest'; }
   if (o.strikeBlocks && !backtestBlockProblems({ window: 'all', strikeBlocks: o.strikeBlocks.blocks }).length) q.o_sblocks = JSON.stringify(o.strikeBlocks.blocks);
