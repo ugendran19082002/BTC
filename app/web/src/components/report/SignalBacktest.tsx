@@ -27,7 +27,7 @@ import { BacktestTsl } from '@/components/report/BacktestTsl';
 import { BacktestPerpWiden } from '@/components/report/BacktestPerpWiden';
 import { WidenCompare } from '@/components/report/WidenCompare';
 import { BacktestSkipPerp } from '@/components/report/BacktestSkipPerp';
-import { RunWinPick, WIN_PICK_DEFAULT, winPickWords } from '@/components/report/RunWinPick';
+import { RunWinPick, winPickFor, winPickWords } from '@/components/report/RunWinPick';
 import { BacktestBreakEven } from '@/components/report/BacktestBreakEven';
 import { breakEvenWords, tslProblems, tslWords } from '@/lib/backtest-tsl';
 import { backtestBlockProblems, strikeBlocksWords } from '@/lib/backtest-strike-blocks';
@@ -390,8 +390,10 @@ function RunFilter({ name, on, said, onToggle, children }: { name: string; on: b
  * starts from what the Single backtest section has for it, so "try all of them with what I have set up there" is
  * a tap. The hours and the limit on open trades have rows of their own above.
  */
-function RunFilters({ over, onChange, seed, stepSources, wide }: {
+function RunFilters({ over, onChange, seed, stepSources, wide, run }: {
   over: PortfolioOver; onChange: (o: PortfolioOver) => void;
+  /** The run's days: what methods by win % are checked against before it is asked for. */
+  run?: { from: string; to: string };
   /** The Single backtest section's settings: where a switch starts. */
   seed: BacktestParams;
   stepSources: { name: string; pct: number; steps: Step[]; enabled: boolean }[];
@@ -422,8 +424,8 @@ function RunFilters({ over, onChange, seed, stepSources, wide }: {
       </p>
 
       {/* Methods by win % for the run (19 Oct 2026): each saved backtest's own methods that won so -- first, as it is the one most often wanted. */}
-      <RunFilter name="Methods by win %" on={!!winPick} said={winPick ? winPickWords(winPick) : ''} onToggle={() => flip('winPick', WIN_PICK_DEFAULT)}>
-        {winPick && <RunWinPick value={winPick} onChange={(w) => put({ winPick: w })} />}
+      <RunFilter name="Methods by win %" on={!!winPick} said={winPick ? winPickWords(winPick) : ''} onToggle={() => flip('winPick', winPickFor(run))}>
+        {winPick && <RunWinPick value={winPick} run={run} onChange={(w) => put({ winPick: w })} />}
       </RunFilter>
 
       <RunFilter name="Strike" on={!!strike} said={strike ? said(strike) : ''} onToggle={() => flip('strike', { rule: seed.rule, value: seed.value })}>
@@ -1141,7 +1143,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                       : 'Each keeps the limit set in it and they are added up: more may be open together than one account would hold.'}
                   </p>
                 </div>
-                <RunFilters over={runOver} onChange={setRunOver} seed={params} stepSources={stepSources} wide={wide} />
+                <RunFilters over={runOver} onChange={setRunOver} seed={params} stepSources={stepSources} wide={wide} run={range} />
                 </div>
               </Panel>
             </aside>

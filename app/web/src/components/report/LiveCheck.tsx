@@ -290,5 +290,5 @@ export function LiveCheckResult({ r }: { r: Check }) {
 export function LiveCheck({ askKey, read }: { askKey: string; read: () => Promise<Check> }) {
   const answer = useAnswer(`live|${askKey}`, read, 60_000);
   if (!answer.data) return <Panel title="Live check · the desk beside this backtest"><Loading error={answer.error} what="the live check" /></Panel>;
-  return <Updating busy={answer.stale} what="the live check"><LiveCheckResult r={answer.data} /></Updating>;
+  return <Updating busy={answer.stale} failed={answer.failed} what="the live check"><LiveCheckResult r={answer.data} /></Updating>;
 }

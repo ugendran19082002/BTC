@@ -26,11 +26,14 @@ export function WinPickResult({ pick, members, nameOf }: {
     }
   };
   const days = pick.from === pick.to ? dayLabel(pick.from) : `${dayLabel(pick.from)} – ${dayLabel(pick.to)}`;
+  const ran = pick.run ? (pick.run.from === pick.run.to ? dayLabel(pick.run.from) : `${dayLabel(pick.run.from)} – ${dayLabel(pick.run.to)}`) : null;
   return (
     <Panel title="Methods by win %">
       <p className={pick.on === 'same' ? 'm-0 text-[12.5px] leading-snug text-[var(--warn)]' : 'm-0 text-[12.5px] leading-snug text-muted-foreground'}>
         Won {pick.pct}% or more of {pick.minTrades}+ trades, on {days}
-        {pick.on === 'before' ? ': the days before the run, so it is run on days that took no part in picking.' : ': the run\'s own days -- picked knowing how they did, so the result looks better than it can be.'}
+        {pick.on === 'before' ? ': the days before the run, so it is run on days that took no part in picking.'
+          : pick.on === 'first' ? `: the run's first days -- and run on ${ran ?? 'the days after them'}, days that took no part in picking.`
+            : ': the run\'s own days -- picked knowing how they did, so the result looks better than it can be.'}
       </p>
       <ul aria-label="Each one's pick" className="m-0 mt-2 grid list-none gap-2 p-0">
         {members.map((m) => {

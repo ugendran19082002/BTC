@@ -34,8 +34,10 @@ function savedQueryOf(raw: unknown): SavedQuery | string {
  * Or why it cannot be meant, with the status to refuse it by.
  */
 async function portfolioQuery(q: Record<string, unknown>) {
-    const r = rangeOf(q);
-    if (typeof r === 'string') return { code: 400, error: r };
+    const runDays = rangeOf(q);
+    if (typeof runDays === 'string') return { code: 400, error: runDays };
+    // The days the run is on: those asked, less the first ones where methods by win % are picked on them (`first`).
+    let r = runDays;
     const ids = keys(typeof q.ids === 'string' ? q.ids.split(',') : [], PORTFOLIO_MEMBERS_MAX + 1);
     if (ids.length === 0) return { code: 400, error: 'Which saved backtests: ?ids=a,b.' };
     if (ids.length > PORTFOLIO_MEMBERS_MAX) return { code: 400, error: `At most ${PORTFOLIO_MEMBERS_MAX} saved backtests at once.` };
@@ -133,24 +135,31 @@ async function portfolioQuery(q: Record<string, unknown>) {
      * the least trades (1 to 100, 3), and the days the record is read on -- `o_winon=before` (the default) the
      * `o_windays=` (1 to 30, 7) finished days before the run, so the methods are picked and then tested on days that
      * took no part in picking them; or `o_winon=same`, the run's own days, as the Backtest screen's Win tab picks,
-     * in-sample and said so. Each saved backtest worked by settings is given the methods that won so on its own record
+     * in-sample and said so; or `o_winon=first` (19 Oct 2026, owner: "portfolio not working" -- a run from 1 Oct has no
+     * finished days before it, the record starting then): picked on the run's own first `o_windays` days and run on
+     * the days after them, so the test is still on days that took no part in the pick. Each saved backtest worked by settings is given the methods that won so on its own record
      * (every method, on its own time frames and settings, as the Win tab lists them); one by a strategy keeps the
      * strategy's. Nothing saved is changed.
      */
-    let win: { pct: number; minTrades: number; on: 'before' | 'same'; from: string; to: string } | null = null;
+    let win: { pct: number; minTrades: number; on: 'before' | 'same' | 'first'; from: string; to: string } | null = null;
     if (q.o_win !== undefined && q.o_win !== '') {
       const pct = Number(q.o_win), minTrades = q.o_wintrades === undefined || q.o_wintrades === '' ? 3 : Number(q.o_wintrades);
       const on = q.o_winon === undefined || q.o_winon === '' ? 'before' : q.o_winon;
       const days = q.o_windays === undefined || q.o_windays === '' ? 7 : Number(q.o_windays);
       if (!(pct >= 1 && pct <= 100)) return { code: 400, error: 'For the run: the win rate is from 1% to 100%.' };
       if (!Number.isInteger(minTrades) || minTrades < 1 || minTrades > 100) return { code: 400, error: 'For the run: the least trades are a whole number from 1 to 100.' };
-      if (on !== 'before' && on !== 'same') return { code: 400, error: 'For the run: methods are picked on the days "before" the run or on the "same" days.' };
+      if (on !== 'before' && on !== 'same' && on !== 'first') return { code: 400, error: 'For the run: methods are picked on the days "before" the run, on its "first" days, or on the "same" days.' };
       if (!Number.isInteger(days) || days < 1 || days > 30) return { code: 400, error: 'For the run: methods are picked on 1 to 30 days before it.' };
       const shift = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
       if (on === 'same') win = { pct, minTrades, on, from: r.from, to: r.to };
-      else {
+      else if (on === 'first') {
+        const pickTo = shift(r.from, days - 1);
+        if (pickTo >= r.to) return { code: 400, error: `For the run: picking on its first ${days} day${days === 1 ? '' : 's'} leaves none of ${r.from} to ${r.to} to run on. Pick on fewer days, or run over more.` };
+        win = { pct, minTrades, on, from: r.from, to: pickTo };
+        r = { from: shift(pickTo, 1), to: r.to };
+      } else {
         const to = shift(r.from, -1), from = shift(r.from, -days);
-        if (to < REPORT_FIRST_DAY) return { code: 400, error: `For the run: there are no finished days before ${r.from} to pick from (the record starts ${REPORT_FIRST_DAY}). Pick on the run's own days, or start the run later.` };
+        if (to < REPORT_FIRST_DAY) return { code: 400, error: `For the run: there are no finished days before ${r.from} to pick from (the record starts ${REPORT_FIRST_DAY}). Pick on the run's first ${days} days instead, or start the run later.` };
         win = { pct, minTrades, on, from: from < REPORT_FIRST_DAY ? REPORT_FIRST_DAY : from, to };
       }
     }
@@ -177,7 +186,8 @@ async function portfolioQuery(q: Record<string, unknown>) {
       r, shared,
       members,
       /** The methods by win % the run was given, and each one's pick; null, each its own. `own`: those by a strategy, which kept theirs. */
-      winPick: win ? { ...win, picked, own } : null,
+      // `run`: the days the run was on -- after the pick's own with `first`.
+      winPick: win ? { ...win, picked, own, run: r } : null,
       /** The hours the run was held to; null, each member's own as saved. `own`: the members a strategy works, whose hours are its own. */
       hours: over ? { window: over.window, ...(over.hoursFrom ? { hoursFrom: over.hoursFrom, hoursTo: over.hoursTo } : {}), own } : null,
       /** The settings put over the run, as they were read -- only those switched on; null, none. `own` as for the hours. */

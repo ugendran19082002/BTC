@@ -293,7 +293,7 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
     return <Panel title={`Run together · ${run.title}`}><Loading error={null} what="the run together (each one is a whole backtest: a moment the first time)" /></Panel>;
   }
   return (
-    <Updating busy={result.stale} what="the run together">
+    <Updating busy={result.stale} failed={result.failed} what="the run together">
       <RunNote r={result.data} />
       {/* The jump bar, as over one backtest's result: only the parts there are. */}
       <ResultNav parts={RUN_PARTS} has={(id) => runHas(result.data!, id)} />

@@ -157,7 +157,7 @@ function Breakdown({ day, account, source, onSource, wide }: { day: string; acco
   return (
     <div className="mt-3 grid gap-3 border-t border-[var(--line-soft)] pt-3">
       <Segmented label="Which record the lists show" value={source} options={SOURCES} onChange={onSource} />
-      <Updating busy={read.stale} what="the breakdown">
+      <Updating busy={read.stale} failed={read.failed} what="the breakdown">
         <Exits source={source} signal={read.data.signal.total} real={read.data.real.total} wide={wide} />
         <div className={cn('grid gap-3', wide && 'lg:grid-cols-2')}>
           <PairList title={`Best pairs · ${what}`} tone="up" pairs={best} amount={amount} empty="No method and time frame in profit here." />
@@ -321,7 +321,7 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
     // One column exactly as wide as the screen: a bare grid sizes its column to the widest row inside it.
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       {head}
-      <Updating busy={read.stale} what="the market report">
+      <Updating busy={read.stale} failed={read.failed} what="the market report">
         <section aria-label="Each expiry day" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
           <h2 className="m-0 px-1 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">Each expiry day, newest first</h2>
           {newestFirst.length === 0 && <Panel><Empty>No expiry day in this range.</Empty></Panel>}

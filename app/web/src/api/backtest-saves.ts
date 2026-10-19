@@ -104,7 +104,7 @@ export type PortfolioOver = {
    * Methods by win % for the run (19 Oct 2026): each member by settings given its methods that won `pct`% or more of
    * `minTrades`+ trades -- on the `days` finished days before the run (`before`), or on the run's own (`same`, in-sample).
    */
-  winPick?: { pct: number; minTrades: number; on: 'before' | 'same'; days: number };
+  winPick?: { pct: number; minTrades: number; on: 'before' | 'first' | 'same'; days: number };
   /** The perp's SL and TGT left out over every member, the two together; false is used. */
   skipPerp?: { sl: boolean; tgt: boolean };
   /** The option's stop to the price sold over every member; null takes each one's own away for the run. */

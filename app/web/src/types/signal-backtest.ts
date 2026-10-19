@@ -112,7 +112,8 @@ export type BacktestSaves = { saves: BacktestSave[]; portfolios: BacktestPortfol
 export type BacktestPortfolioResult = {
   from: string; to: string;
   /** The methods by win % the run gave its members, and each one's pick (by id); null or absent, each its own. `own`: by a strategy, kept theirs. */
-  winPick?: { pct: number; minTrades: number; on: 'before' | 'same'; from: string; to: string; picked: Record<string, string[]>; own: string[] } | null;
+  /** `run`: the days the run was on -- after the pick's own with `first`. */
+  winPick?: { pct: number; minTrades: number; on: 'before' | 'first' | 'same'; from: string; to: string; picked: Record<string, string[]>; own: string[]; run?: { from: string; to: string } } | null;
   /**
    * The one limit they were traded under together, as one account -- at most `max` open across all of them, `ce`
    * calls and `pe` puts -- and how many signals found it full. Null: each kept its own limit and they were added up.

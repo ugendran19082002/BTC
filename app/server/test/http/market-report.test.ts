@@ -995,15 +995,29 @@ test('[critical] a backtest saved by name, run again, and several run together a
   const climbRec = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all`);
   const wonClimb = climbRec.body.choices.methods.filter((m: any) => m.n >= 1 && m.wins / m.n >= 0.5).sort((x: any, y: any) => y.net - x.net).map((m: any) => m.key);
   assert.deepEqual(winBefore.body.winPick.picked[a.body.save.id], wonClimb, 'picked on the day before it, never its own');
+  /*
+   * On the run's first days (19 Oct 2026, owner: "portfolio not working" -- a run from 1 Oct has no days before it):
+   * picked on the first day and run on the day after, the same as picking on the day before a run of that day.
+   */
+  const winFirst = await get(`/api/backtest-portfolio?ids=${a.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&o_win=50&o_wintrades=1&o_winon=first&o_windays=1`);
+  assert.equal(winFirst.status, 200, JSON.stringify(winFirst.body).slice(0, 300));
+  assert.deepEqual([winFirst.body.winPick.on, winFirst.body.winPick.from, winFirst.body.winPick.to], ['first', CLIMB, CLIMB]);
+  assert.deepEqual(winFirst.body.winPick.run, { from: QUIET, to: QUIET }, 'run on the days after the pick');
+  assert.deepEqual([winFirst.body.from, winFirst.body.to], [QUIET, QUIET]);
+  assert.deepEqual(winFirst.body.winPick.picked[a.body.save.id], wonClimb);
+  assert.ok(close(winFirst.body.members[0].total.net, winBefore.body.members[0].total.net), 'the same pick on the same day: the same money');
+  const noneLeft = await get(`${pair}&o_win=50&o_winon=first&o_windays=2`);
+  assert.equal(noneLeft.status, 400);
+  assert.match(noneLeft.body.error, /picking on its first 2 days leaves none of .* to run on/);
   // refused in words: nothing before the record, a rate out of range
-  for (const [bad, said] of [['o_win=0', /win rate is from 1% to 100%/], ['o_win=50&o_winon=later', /"before" the run or on the "same"/], ['o_win=50&o_windays=31', /1 to 30 days before/]] as const) {
+  for (const [bad, said] of [['o_win=0', /win rate is from 1% to 100%/], ['o_win=50&o_winon=later', /"before" the run, on its "first" days, or on the "same"/], ['o_win=50&o_windays=31', /1 to 30 days before/]] as const) {
     const r = await get(`${pair}&${bad}`);
     assert.equal(r.status, 400, bad);
     assert.match(r.body.error, said);
   }
   const tooEarly = await get(`/api/backtest-portfolio?ids=${a.body.save.id}&from=2026-10-01&to=${QUIET}&limit=own&o_win=50`);
   assert.equal(tooEarly.status, 400);
-  assert.match(tooEarly.body.error, /no finished days before 2026-10-01 to pick from/);
+  assert.match(tooEarly.body.error, /no finished days before 2026-10-01 to pick from .* Pick on the run's first 7 days instead/);
   // a setting put over the run is not a setting saved
   const kept = (await get('/api/backtest-saves')).body.saves.find((s: any) => s.id === a.body.save.id).query.params;
   assert.deepEqual([kept.lots, kept.rule, kept.stopPct], [10, 'delta', 3]);
