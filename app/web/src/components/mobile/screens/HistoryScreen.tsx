@@ -1,4 +1,7 @@
 import { memo, useEffect, useMemo, useState } from 'react';
+import { usePersisted } from '@/hooks/usePersisted';
+import { rangeMs, timeQuickPicks, timeRangeProblem, timeRangeWords, type DateTimeRange } from '@/lib/date-time-range';
+import { DateTimeRangeSheet, type RangeBy } from '@/components/mobile/DateTimeRangeSheet';
 import { getOrders } from '@/api/phone';
 import type { OrderRecord } from '@/types/trade';
 import { usePoll } from '@/hooks/usePoll';
@@ -6,7 +9,7 @@ import { clock, contractLabel, price, signedInr, usdToInr } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { isLongTrade } from '@/lib/long-exits';
 import { usePhoneData } from '@/components/mobile/phone-context';
-import { Chip, Chips, Empty, ListButton, Loading, Panel, Rupees, Select, When } from '@/components/mobile/parts';
+import { Chip, Chips, Empty, ListButton, Loading, Panel, Rupees, Segmented, Select, When } from '@/components/mobile/parts';
 import { PlacedLine, placedBy } from '@/components/mobile/StrategyTag';
 
 /**
@@ -14,10 +17,24 @@ import { PlacedLine, placedBy } from '@/components/mobile/StrategyTag';
  * result, CE or PE, sold or bought and strategy, with the total of what is shown. Separate from Orders, which is
  * the order's life; this is the trade's end. Each row carries its strategy as a tag (`StrategyTag`), and the
  * strategy filter names them the way the tags do.
+ *
+ * The range (19 Oct 2026, the owner: "a custom date and time range; a time frame filter -- user friendly, responsive"):
+ * Today, 7, 30 or 90 days, as the phone's other screens; or Custom, a From and a To each a date and a time, IST, a trade
+ * counted by its entry or its exit -- the desk's own windows (this expiry day, last night) a tap away. And the signal's
+ * time frame: one or several of those the trades shown were taken on.
  */
 
-type Days = '0' | '6' | '29';
-const RANGES: { key: Days; label: string }[] = [{ key: '0', label: 'Today' }, { key: '6', label: '7 days' }, { key: '29', label: '30 days' }];
+type RangeKey = 'today' | '7' | '30' | '90' | 'custom';
+const RANGES: { key: RangeKey; label: string; spoken?: string; days: number }[] = [
+  { key: 'today', label: 'Today', days: 0 }, { key: '7', label: '7D', spoken: '7 days', days: 6 }, { key: '30', label: '30D', spoken: '30 days', days: 29 },
+  { key: '90', label: '90D', spoken: '90 days', days: 89 }, { key: 'custom', label: 'Custom', days: -1 },
+];
+/** A trade's signal time frame: its own, `chain` with the timeframe chain; null with no signal. */
+const tfOf = (o: OrderRecord): string | null => (o.plan?.signal ? (o.plan.signal.mode === 'mtf' ? 'chain' : o.plan.signal.tf) : null);
+const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', 'chain'];
+const tfName = (k: string) => (k === 'chain' ? 'TF chain' : k);
+const entryAt = (o: OrderRecord) => { const ts = o.fills.filter((f) => f.role === 'entry').map((f) => f.ts); return ts.length ? Math.min(...ts) : o.updatedAt; };
+const dayShift = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 type Result = 'all' | 'win' | 'loss';
 type Opt = 'all' | 'CE' | 'PE';
 type Act = 'all' | 'sell' | 'buy';
@@ -27,34 +44,79 @@ const closedAt = (o: OrderRecord) => Math.max(o.updatedAt, ...o.fills.filter((f)
 
 export function HistoryScreen() {
   const p = usePhoneData();
-  const [days, setDays] = useState<Days>('0');
+  const [rangeKey, setRangeKey] = usePersisted<RangeKey>('m-history-range', 'today');
+  const [custom, setCustom] = usePersisted<DateTimeRange>('m-history-custom', timeQuickPicks(p.now)[0]!.range);
+  const [by, setBy] = usePersisted<RangeBy>('m-history-by', 'entry');
+  const [picking, setPicking] = useState(false);
+  const [tfs, setTfs] = usePersisted<string[]>('m-history-tfs', []);
   const [result, setResult] = useState<Result>('all');
   const [opt, setOpt] = useState<Opt>('all');
   const [act, setAct] = useState<Act>('all');
   const [strategy, setStrategy] = useState('all');
-  const to = todayIst(p.now);
-  const from = days === '0' ? to : daysAgoIst(Number(days), p.now);
+  const today = todayIst(p.now);
+  const range = RANGES.find((r) => r.key === rangeKey) ?? RANGES[0]!;
+  // A custom range that no longer holds (a bad value kept) is this expiry day's, said so by the sheet when opened.
+  const customOk = timeRangeProblem(custom, p.now) === null;
+  const isCustom = range.key === 'custom' && customOk;
+  const win = isCustom ? rangeMs(custom) : null;
+  // The days asked of the server: a custom range's, a day either side -- a trade entered in it may close after it.
+  const from = isCustom ? dayShift(custom.from, -1) : range.days === 0 ? today : daysAgoIst(range.days, p.now);
+  const to = isCustom ? (dayShift(custom.to, 1) > today ? today : dayShift(custom.to, 1)) : today;
   const orders = usePoll(() => getOrders(from, to, p.accountParam, 'completed'), 60_000, { deps: [from, to, p.accountParam] });
 
   const closed = useMemo(
     () => (orders.data?.trades ?? []).filter((o) => o.position === 0 && o.exitSize > 0).sort((a, b) => closedAt(b) - closedAt(a)),
     [orders.data],
   );
-  const strategies = useMemo(() => [...new Set(closed.map((o) => placedBy(o.plan).label))].sort(), [closed]);
-  const shown = closed.filter((o) =>
-    (result === 'all' || (result === 'win' ? netOf(o) > 0 : netOf(o) < 0))
+  // In the custom window, by the time asked: when it was entered, or when it closed.
+  const inRange = useMemo(() => (win ? closed.filter((o) => { const t = by === 'entry' ? entryAt(o) : closedAt(o); return t >= win.from && t <= win.to; }) : closed),
+    [closed, win?.from, win?.to, by]); // eslint-disable-line react-hooks/exhaustive-deps
+  const strategies = useMemo(() => [...new Set(inRange.map((o) => placedBy(o.plan).label))].sort(), [inRange]);
+  // The time frames the trades in range were taken on, each with how many, in the desk's order.
+  const tfCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const o of inRange) { const k = tfOf(o); if (k) m.set(k, (m.get(k) ?? 0) + 1); }
+    return [...m].sort((a, b) => TF_ORDER.indexOf(a[0]) - TF_ORDER.indexOf(b[0]));
+  }, [inRange]);
+  const tfPicked = tfs.filter((k) => tfCounts.some(([x]) => x === k));
+  const shown = inRange.filter((o) =>
+    (tfPicked.length === 0 || tfPicked.includes(tfOf(o) ?? ''))
+    && (result === 'all' || (result === 'win' ? netOf(o) > 0 : netOf(o) < 0))
     && (opt === 'all' || o.optionSide === opt)
     && (act === 'all' || (act === 'buy') === isLongTrade(o))
     && (strategy === 'all' || placedBy(o.plan).label === strategy));
   const total = shown.reduce((n, o) => n + netOf(o), 0);
   // Forty rows at a time (10 Oct 2026): thirty days is a thousand-odd trades, drawn at once on a phone. The count and the total above are of all.
   const [limit, setLimit] = useState(PAGE);
-  useEffect(() => { setLimit(PAGE); }, [from, to, result, opt, act, strategy, p.accountParam]);
+  useEffect(() => { setLimit(PAGE); }, [from, to, win?.from, win?.to, by, tfPicked.join(','), result, opt, act, strategy, p.accountParam]); // eslint-disable-line react-hooks/exhaustive-deps
   const wins = shown.filter((o) => netOf(o) > 0).length;
 
   return (
     <>
-      <Chips label="Range">{RANGES.map((r) => <Chip key={r.key} on={days === r.key} onClick={() => setDays(r.key)}>{r.label}</Chip>)}</Chips>
+      <Segmented label="Range" value={isCustom ? 'custom' : range.key === 'custom' ? 'today' : range.key} options={RANGES}
+        onChange={(k) => (k === 'custom' ? setPicking(true) : setRangeKey(k))} />
+      {isCustom && (
+        <p aria-label="Custom range" className="m-0 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-[13px] text-muted-foreground">
+          <span><span className="font-medium text-foreground">{timeRangeWords(custom)}</span> · by {by === 'entry' ? 'entry' : 'exit'} time</span>
+          <button type="button" onClick={() => setPicking(true)} className="m-0 min-h-[40px] appearance-none border-0 bg-transparent p-0 font-[inherit] text-[13.5px] font-semibold text-[var(--up)]">Change</button>
+        </p>
+      )}
+      {picking && (
+        <DateTimeRangeSheet value={customOk ? custom : timeQuickPicks(p.now)[0]!.range} by={by} now={p.now}
+          onApply={(v, b) => { setCustom(v); setBy(b); setRangeKey('custom'); setPicking(false); }}
+          onClose={() => setPicking(false)} />
+      )}
+      {/* The signal's time frame: one or several, each with its count; none chosen is every one. */}
+      {tfCounts.length > 1 && (
+        <Chips label="Time frame">
+          <Chip on={tfPicked.length === 0} onClick={() => setTfs([])}>All TF</Chip>
+          {tfCounts.map(([k, n]) => (
+            <Chip key={k} on={tfPicked.includes(k)} onClick={() => setTfs(tfPicked.includes(k) ? tfPicked.filter((x) => x !== k) : [...tfPicked, k])}>
+              {tfName(k)} <span className="tabular-nums opacity-70">{n}</span>
+            </Chip>
+          ))}
+        </Chips>
+      )}
       <Chips label="Filters">
         <Chip on={result === 'win'} onClick={() => setResult(result === 'win' ? 'all' : 'win')}>Won</Chip>
         <Chip on={result === 'loss'} onClick={() => setResult(result === 'loss' ? 'all' : 'loss')}>Lost</Chip>
@@ -75,7 +137,7 @@ export function HistoryScreen() {
         right={orders.data && shown.length > 0 ? <Rupees usd={total} signed size="sm" /> : undefined}
       >
         {!orders.data ? <Loading error={orders.error} what="the trades" /> : shown.length === 0 ? (
-          <Empty>{closed.length === 0 ? 'No trade closed in this range.' : 'None match these filters.'}</Empty>
+          <Empty>{inRange.length === 0 ? (isCustom ? `No trade ${by === 'entry' ? 'entered' : 'closed'} ${timeRangeWords(custom)}.` : 'No trade closed in this range.') : 'None match these filters.'}</Empty>
         ) : (
           <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Closed trades">
             {shown.slice(0, limit).map((o) => (

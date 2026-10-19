@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ofMethods, ofStrategies, ofTimeframes, daysCsv, daysReport, mtmStats, type MtmSample } from '../../src/trading/pnl-history.js';
+import { ofMethods, ofStrategies, ofTimeframes, combineMtm, daysCsv, daysReport, mtmStats, type MtmSample } from '../../src/trading/pnl-history.js';
 import { PgTradeStore } from '../../src/trading/store.js';
 import { SettingsCache } from '../../src/db/settings.js';
 import { closePool } from '../../src/db/pool.js';
@@ -300,4 +300,20 @@ test('[critical] the timeframe filter keeps only the signal trades read on the t
   const r = tradeStats(all, { from: '2026-09-11', to: '2026-09-11', spot: 80_000 });
   assert.deepEqual(r.byTimeframe.map((g) => [g.key, g.trades]).sort(), [['15m', 2], ['1h', 1], ['chain', 1]]);
   assert.equal(r.byTimeframe.reduce((n, g) => n + g.trades, 0), r.overall.trades - 1, 'every signal trade in exactly one');
+});
+
+test('[critical] all accounts\' lines as one: added up minute by minute, each at its latest, nothing before its first', () => {
+  const m = (min: number, ms: number) => Date.parse('2026-10-19T04:00:00Z') + min * 60_000 + ms;
+  const at = (t: number, net: number): MtmSample => ({ at: t, day: '2026-10-19', realisedUsd: net / 2, unrealisedUsd: net / 2, chargesUsd: 0.1, netUsd: net });
+  const a = [at(m(0, 100), 10), at(m(1, 100), 12), at(m(2, 100), 8), at(m(3, 100), 9)];
+  const b = [at(m(1, 300), -4), at(m(3, 50), 6)]; // its first a minute late; a minute missed
+  const one = combineMtm([a, b]);
+  assert.deepEqual(one.map((s) => s.netUsd), [10, 8, 4, 15]);
+  assert.deepEqual(one.map((s) => s.at), [m(0, 100), m(1, 300), m(2, 100), m(3, 100)], 'each minute at its last reading');
+  assert.equal(one[1]!.realisedUsd, 4);
+  assert.ok(Math.abs(one[1]!.chargesUsd - 0.2) < 1e-9);
+  assert.deepEqual(mtmStats(one).max, { at: m(3, 100), netUsd: 15 });
+  // One line, or none: as it was.
+  assert.deepEqual(combineMtm([a, []]), a);
+  assert.deepEqual(combineMtm([]), []);
 });

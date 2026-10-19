@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-537 files listed, 275 test files counted below, images and lockfiles left out.
+539 files listed, 277 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 139 |
-| `app/web` | 136 |
+| `app/web` | 138 |
 
 ## `(root)`
 
@@ -393,6 +393,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [DateRangeSheet.tsx](../../app/web/src/components/mobile/DateRangeSheet.tsx) | A From and a To date, from the bottom of the screen (the phone's P&L, owner, 6 Oct 2026). |
+| [DateTimeRangeSheet.tsx](../../app/web/src/components/mobile/DateTimeRangeSheet.tsx) | A From and a To -- each a date and a time, IST -- from the bottom of the screen (trade history, owner, 19 Oct 2026: "a custom date and time range, user friendly"). |
 | [DayCalendar.tsx](../../app/web/src/components/mobile/DayCalendar.tsx) | The days of the P&L range as a calendar, for a thumb (owner, 6 Oct 2026): under each month's name what the month made and how many days went up and down; a row of weekday letters; then a square a d... |
 | [DeskSwitch.tsx](../../app/web/src/components/mobile/DeskSwitch.tsx) | From the phone to the full desk (6 Oct 2026). |
 | [ExitRail.tsx](../../app/web/src/components/mobile/ExitRail.tsx) | The price between its target and its stop, drawn (owner's reference, 6 Oct 2026): TGT at the left, SL at the right, the entry between, and a marker for the price now that slides as it moves -- the... |
@@ -592,6 +593,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [backtest-tsl.ts](../../app/web/src/lib/backtest-tsl.ts) | A trailing SL on the backtest's option stop (owner, 18 Oct 2026: "TSL in the backtest -- points and per cent; as the price moves from the entry, the SL moves"): every `move` the premium falls from... |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [custom-range.ts](../../app/web/src/lib/custom-range.ts) | A custom range of IST days for the phone's P&L (owner, 6 Oct 2026): quick picks, and the rules a range must keep -- the same the server holds it to (`report.routes.ts` `rangeOf`: from not after to,... |
+| [date-time-range.ts](../../app/web/src/lib/date-time-range.ts) | A range of IST moments, From a date and a time To a date and a time (owner, 19 Oct 2026: "trade history -- a custom date and time range, user friendly"). |
 | [entry-wait.ts](../../app/web/src/lib/entry-wait.ts) | That limit in a line for the card of an order still waiting (owner, 14 Oct 2026: "is a waiting order's expiry shown -- desk and phone?"). |
 | [ev-view.ts](../../app/web/src/lib/ev-view.ts) | Reading the server's per-strike arithmetic onto the screen. |
 | [exit-checks.ts](../../app/web/src/lib/exit-checks.ts) | Whether a stop and a target make sense against the price right now. |

@@ -215,6 +215,16 @@ test('[critical] an order is stamped with the account it was placed as, and the 
   assert.equal((await line('')).samples.length, 1);
   assert.equal((await line(`&account=${main()}`)).samples.length, 1);
   assert.deepEqual([(await line(`&account=${second}`)).samples, (await line(`&account=${second}`)).days], [[], []]);
+  // All accounts (19 Oct 2026): the two lines added up minute by minute -- not the default account's alone.
+  const mine = (await line(`&account=${main()}`)).samples[0] as { at: number; netUsd: number; realisedUsd: number };
+  await tradingServiceFor(second)!.store.sampleMtm({ at: mine.at + 7, day: today, realisedUsd: 3, unrealisedUsd: 2, chargesUsd: 0.5, netUsd: 4.5 });
+  const both = await line('');
+  assert.equal(both.samples.length, 1, 'the same minute: one point');
+  assert.equal(both.samples[0].netUsd, mine.netUsd + 4.5);
+  assert.equal(both.samples[0].realisedUsd, mine.realisedUsd + 3);
+  assert.equal(both.stats.nowUsd, mine.netUsd + 4.5);
+  assert.equal((await line(`&account=${main()}`)).samples[0].netUsd, mine.netUsd, 'an account named: its own line still');
+  assert.equal((await line(`&account=${second}`)).samples[0].netUsd, 4.5);
   const days = await api('GET', `/api/report/days?account=${second}`);
   assert.equal(days.status, 200, days.text);
 });

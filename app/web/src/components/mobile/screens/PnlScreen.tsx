@@ -128,7 +128,7 @@ export function PnlScreen() {
         )}
         {isToday && samples.length < 2 && <p className="m-0 mt-2 text-[12.5px] text-muted-foreground">The day's line starts with the first minute the desk records.</p>}
         {isToday && p.shown === 'all' && p.trading.length > 1 && samples.length >= 2 && (
-          <p className="m-0 mt-1.5 text-[12px] text-muted-foreground">The line is the default account's: two accounts' lines do not add up to one.</p>
+          <p className="m-0 mt-1.5 text-[12px] text-muted-foreground">Every account's line added up, minute by minute.</p>
         )}
         {/* The day's high, low and deepest fall, minute by minute; over days, the best and the worst (owner, 6 Oct 2026). */}
         {/* One row of four (owner, 6 Oct 2026): how high, how low, how deep the fall, and what the day has lost. */}

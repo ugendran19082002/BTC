@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { journal, tradingService } from '../../trading/service.js';
-import { CHAIN_KEY, daysCsv, daysReport, mtmStats, ofMethods, ofStrategies, ofTimeframes, tradeStats, type TradeStatsGroup } from '../../trading/pnl-history.js';
+import { CHAIN_KEY, daysCsv, combineMtm, daysReport, mtmStats, ofMethods, ofStrategies, ofTimeframes, tradeStats, type TradeStatsGroup } from '../../trading/pnl-history.js';
 import { strategyStore } from './strategy.routes.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { istDate } from '../../strategy/schedule.js';
@@ -163,9 +163,9 @@ export function registerReportRoutes(app: FastifyInstance) {
     const q = (req.query ?? {}) as { day?: unknown };
     const day = q.day === undefined || q.day === '' ? istDate(Date.now()) : String(q.day);
     if (!DAY.test(day)) return refuse(reply, 400, { error: 'Day must be YYYY-MM-DD.' });
-    // The account named; with none ("All accounts"), the default account's line -- two accounts' lines do not add up to one.
-    const account = accountOf(req.query) ?? svc.accountId;
-    const samples = await journal().mtmSamples(day, account);
+    // The account named; with none ("All accounts"), every account's line added up minute by minute (19 Oct 2026).
+    const account = accountOf(req.query);
+    const samples = account !== null ? await journal().mtmSamples(day, account) : combineMtm(await journal().mtmSamplesEach(day));
     return {
       mode: svc.mode,
       day,

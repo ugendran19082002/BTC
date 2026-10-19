@@ -335,6 +335,30 @@ export function mtmStats(samples: readonly MtmSample[]): MtmStats {
   };
 }
 
+/**
+ * Several accounts' lines as one (owner, 19 Oct 2026: "All accounts -- it doesn't combine; check it"). Each account
+ * writes its own reading once a minute, a few milliseconds apart; added up minute by minute, each account at its
+ * latest reading so far -- nothing before its first, the day not begun there. A minute's point is at its last reading.
+ */
+export function combineMtm(lines: readonly (readonly MtmSample[])[]): MtmSample[] {
+  const kept = lines.filter((l) => l.length > 0);
+  if (kept.length <= 1) return [...(kept[0] ?? [])];
+  const minute = (at: number) => Math.floor(at / 60_000);
+  const minutes = [...new Set(kept.flatMap((l) => l.map((s) => minute(s.at))))].sort((a, b) => a - b);
+  const next = kept.map(() => 0);
+  const latest: (MtmSample | null)[] = kept.map(() => null);
+  return minutes.map((m) => {
+    let at = 0;
+    kept.forEach((l, i) => {
+      while (next[i]! < l.length && minute(l[next[i]!]!.at) <= m) { latest[i] = l[next[i]!]!; next[i] = next[i]! + 1; }
+      if (latest[i] && minute(latest[i]!.at) === m) at = Math.max(at, latest[i]!.at);
+    });
+    const now = latest.filter((s): s is MtmSample => s !== null);
+    const sum = (k: 'realisedUsd' | 'unrealisedUsd' | 'chargesUsd' | 'netUsd') => now.reduce((t, s) => t + s[k], 0);
+    return { at, day: now[0]!.day, realisedUsd: sum('realisedUsd'), unrealisedUsd: sum('unrealisedUsd'), chargesUsd: sum('chargesUsd'), netUsd: sum('netUsd') };
+  });
+}
+
 /** The days as a spreadsheet, USD to the cent, one row per trading day. */
 export function daysCsv(r: DaysReport): string {
   const money = (x: number) => x.toFixed(2);

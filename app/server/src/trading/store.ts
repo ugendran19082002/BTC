@@ -399,6 +399,22 @@ export class PgTradeStore implements TradeStore {
     }));
   }
 
+  /** The day's line of each account apart, oldest first -- for `combineMtm` to add up. */
+  async mtmSamplesEach(day: string): Promise<MtmSample[][]> {
+    const found = await rows<{ acct: number; at: number; day: string; realised: number; unrealised: number; charges: number; net: number }>(
+      `SELECT COALESCE(broker_account_id, 0) AS acct, at, day, realised, unrealised, charges, net FROM mtm_samples
+        WHERE day = $1 AND ($2::bigint IS NULL OR broker_account_id = $2) ORDER BY acct, at`,
+      [day, this.scope ?? null],
+    );
+    const each = new Map<number, MtmSample[]>();
+    for (const r of found) {
+      const line = each.get(Number(r.acct)) ?? [];
+      line.push({ at: r.at, day: r.day, realisedUsd: r.realised, unrealisedUsd: r.unrealised, chargesUsd: r.charges, netUsd: r.net });
+      each.set(Number(r.acct), line);
+    }
+    return [...each.values()];
+  }
+
   /** The days that have a line at all, newest first. */
   async mtmDays(limit = 120, accountId: number | null = null): Promise<string[]> {
     return (await rows<{ day: string }>(
