@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
  * backtest's thread works them one after another, so five quick edits waited for five. The first question is asked at
  * once; while one is being settled the screen already says a new answer is on its way (`stale`).
  */
-export function useAnswer<T>(key: string, fetch: () => Promise<T>, everyMs: number, settleMs = 0): {
+export function useAnswer<T>(key: string, fetch: () => Promise<T>, everyMs: number, settleMs = 0, enabled = true): {
   data: T | null; error: Error | null;
   /** The answer on the screen is to other settings than those now chosen: a new one is on its way. */
   stale: boolean;
@@ -39,7 +39,7 @@ export function useAnswer<T>(key: string, fetch: () => Promise<T>, everyMs: numb
   // chosen, and the old refusal said over it for the seconds the new run took).
   const read = usePoll(() => fetch().then((data) => ({ key: settled, data }), (e: unknown) => {
     throw new AnswerError(settled, e);
-  }), everyMs, { deps: [settled] });
+  }), everyMs, { deps: [settled], enabled });
   const error = read.error instanceof AnswerError ? (read.error.key === key ? read.error : null) : read.error;
   return {
     data: read.data?.data ?? null,

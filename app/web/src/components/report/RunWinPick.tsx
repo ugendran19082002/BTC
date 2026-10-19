@@ -40,8 +40,17 @@ export function winPickProblem(w: WinPick, run: { from: string; to: string }, fi
         note: null,
       };
     }
-    const from = shift(run.from, -w.days);
-    return { problem: null, fix: null, note: from < first ? `Only ${plural(span(first, shift(run.from, -1)))} before the run are in the record (from ${dayLabel(first)}): picked on those.` : null };
+    if (shift(run.from, -w.days) >= first) return { problem: null, fix: null, note: null };
+    // Fewer days before than asked: picked on those -- and under half of them is a handful of trades, not a record
+    // (19 Oct 2026: a run from 2 Oct, 14 days asked, 1 Oct alone -- six of seven saved backtests found nothing).
+    const had = span(first, shift(run.from, -1));
+    const few = had * 2 < w.days;
+    return {
+      problem: null,
+      fix: few ? (span(run.from, run.to) > w.days ? { on: 'first' } : { on: 'first', days: Math.max(1, Math.floor(span(run.from, run.to) / 2)) }) : null,
+      note: `Only ${plural(had)} of the ${w.days} before the run ${had === 1 ? 'is' : 'are'} in the record (from ${dayLabel(first)})${
+        few ? ': too few to pick on -- a day or two is a handful of trades, not a record.' : ': picked on those.'}`,
+    };
   }
   if (w.on === 'first' && span(run.from, run.to) <= w.days) {
     const n = span(run.from, run.to);
@@ -60,6 +69,9 @@ export function winPickFor(run?: { from: string; to: string }, first = FIRST_DAY
   return fix ? { ...WIN_PICK_DEFAULT, ...fix } : WIN_PICK_DEFAULT;
 }
 
+/** The fix to a pick, as its button says it. */
+export const winPickFixWords = (f: Partial<WinPick>, w: WinPick) => (f.on === 'same' ? "Pick on the run's own days" : `Pick on the run's first ${plural(f.days ?? w.days)} instead`);
+
 export function RunWinPick({ value, onChange, run }: {
   value: WinPick; onChange: (w: WinPick) => void;
   /** The run's days: what the pick is checked against before the run is asked for. */
@@ -67,7 +79,7 @@ export function RunWinPick({ value, onChange, run }: {
 }) {
   const put = (o: Partial<WinPick>) => onChange({ ...value, ...o });
   const check = run ? winPickProblem(value, run) : { problem: null, fix: null, note: null };
-  const fixWords = (f: Partial<WinPick>) => (f.on === 'same' ? "Pick on the run's own days" : `Pick on the run's first ${plural(f.days ?? value.days)} instead`);
+  const fixWords = (f: Partial<WinPick>) => winPickFixWords(f, value);
   const badPct = !(value.pct >= 1 && value.pct <= 100), badTrades = !(Number.isInteger(value.minTrades) && value.minTrades >= 1 && value.minTrades <= 100);
   return (
     <div className="grid min-w-0 gap-2">
@@ -107,7 +119,17 @@ export function RunWinPick({ value, onChange, run }: {
           )}
         </div>
       )}
-      {check.note && <p className="m-0 text-[12px] leading-snug text-[var(--warn)]">{check.note}</p>}
+      {check.note && (
+        <div className="grid gap-1.5">
+          <p className="m-0 text-[12px] leading-snug text-[var(--warn)]">{check.note}</p>
+          {check.fix && !check.problem && (
+            <button type="button" onClick={() => put(check.fix!)}
+              className="min-h-[40px] justify-self-start rounded-md border border-[var(--accent)] bg-transparent px-3 font-[inherit] text-[13px] font-semibold text-[var(--accent)]">
+              {fixWords(check.fix)}
+            </button>
+          )}
+        </div>
+      )}
       <p className={value.on === 'same' ? 'm-0 text-[12px] leading-snug text-[var(--warn)]' : 'm-0 text-[12px] leading-snug text-muted-foreground'}>
         {value.on === 'before'
           ? `Each saved backtest's methods picked on the ${value.days} finished days before the run, then run on days that took no part in picking them -- an honest test of the pick.`

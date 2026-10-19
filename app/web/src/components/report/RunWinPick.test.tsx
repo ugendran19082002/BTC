@@ -50,7 +50,14 @@ describe('Methods by win %, for the run', () => {
   });
 
   it('the days before, as far as the record goes: fewer than asked is said; a run later has them all', () => {
-    expect(winPickProblem({ ...WIN_PICK_DEFAULT, days: 14 }, { from: '2026-10-06', to: '2026-10-19' }).note).toBe('Only 5 days before the run are in the record (from Thu 1 Oct): picked on those.');
+    expect(winPickProblem({ ...WIN_PICK_DEFAULT, days: 7 }, { from: '2026-10-05', to: '2026-10-19' })).toEqual({
+      problem: null, fix: null, note: 'Only 4 days of the 7 before the run are in the record (from Thu 1 Oct): picked on those.',
+    });
+    // 19 Oct 2026, a run from 2 Oct with 14 days asked: 1 Oct alone -- six of seven found nothing. Said, with the fix.
+    expect(winPickProblem({ ...WIN_PICK_DEFAULT, days: 14 }, { from: '2026-10-02', to: '2026-10-20' })).toEqual({
+      problem: null, fix: { on: 'first' },
+      note: 'Only 1 day of the 14 before the run is in the record (from Thu 1 Oct): too few to pick on -- a day or two is a handful of trades, not a record.',
+    });
     expect(winPickProblem({ ...WIN_PICK_DEFAULT, days: 7 }, { from: '2026-10-12', to: '2026-10-19' })).toEqual({ problem: null, fix: null, note: null });
     // A one-day run on the first day: nothing before, nothing after -- the run's own days.
     expect(winPickProblem(WIN_PICK_DEFAULT, { from: '2026-10-01', to: '2026-10-01' }).fix).toEqual({ on: 'same' });

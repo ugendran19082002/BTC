@@ -261,8 +261,13 @@ function RunNote({ r }: { r: BacktestPortfolioResult }) {
  * The run together, where the results are shown: asked with the days on the screen, and again when they change.
  * Each one is a whole backtest, so the first run of a set takes a moment.
  */
-export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours = AS_SAVED, over = NO_OVER, wide = false, onClose, revision = '' }: {
+export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours = AS_SAVED, over = NO_OVER, wide = false, onClose, revision = '', blocked = null }: {
   run: TogetherRun; range: { from: string; to: string }; limit?: PortfolioLimit;
+  /**
+   * The settings cannot be run, as the screen already knows (19 Oct 2026: methods by win % on the days before a run
+   * from 1 Oct, refused by the server every time): not asked for, said here with the change that makes it work.
+   */
+  blocked?: { problem: string; fix: { label: string; apply: () => void } | null } | null;
   /** One account's limit as the screen shows it; null, the desk's own rule (the largest among the saved backtests). */
   cap?: PortfolioCap | null;
   /** The hours the run is held to: each saved backtest's own unless the screen chose others for the run. */
@@ -280,7 +285,23 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
   const hoursKey = hours.window === 'custom' ? `custom:${hours.hoursFrom}-${hours.hoursTo}` : hours.window;
   const askKey = `${run.ids.join(',')}|${run.at ?? 0}|${revision}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`;
   // As the single backtest: asked once the run's settings stand still a moment -- each saved backtest in it is a whole backtest.
-  const result = useAnswer(askKey, () => getBacktestPortfolio(run.ids, range, limit, asked, hours, over), 300_000, SETTLE_MS);
+  const result = useAnswer(askKey, () => getBacktestPortfolio(run.ids, range, limit, asked, hours, over), 300_000, SETTLE_MS, blocked === null);
+  if (blocked) {
+    return (
+      <Panel title={`Run together · ${run.title}`}>
+        <p role="alert" className="m-0 text-[13px] leading-snug"><b className="font-semibold text-[var(--warn)]">Not run with these settings.</b> {blocked.problem}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {blocked.fix && (
+            <button type="button" onClick={blocked.fix.apply}
+              className="min-h-[40px] rounded-md border border-[var(--accent)] bg-transparent px-3 font-[inherit] text-[13px] font-semibold text-[var(--accent)]">
+              {blocked.fix.label}
+            </button>
+          )}
+          <button type="button" className={link} onClick={onClose}>Close</button>
+        </div>
+      </Panel>
+    );
+  }
   if (result.error && !result.data) {
     return (
       <Panel title={`Run together · ${run.title}`}>

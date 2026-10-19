@@ -27,7 +27,7 @@ import { BacktestTsl } from '@/components/report/BacktestTsl';
 import { BacktestPerpWiden } from '@/components/report/BacktestPerpWiden';
 import { WidenCompare } from '@/components/report/WidenCompare';
 import { BacktestSkipPerp } from '@/components/report/BacktestSkipPerp';
-import { RunWinPick, winPickFor, winPickWords } from '@/components/report/RunWinPick';
+import { RunWinPick, winPickFixWords, winPickFor, winPickProblem, winPickWords } from '@/components/report/RunWinPick';
 import { BacktestBreakEven } from '@/components/report/BacktestBreakEven';
 import { breakEvenWords, tslProblems, tslWords } from '@/lib/backtest-tsl';
 import { backtestBlockProblems, strikeBlocksWords } from '@/lib/backtest-strike-blocks';
@@ -753,6 +753,13 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const [pickingRunHours, setPickingRunHours] = useState(false);
   // The other settings a run together can be given, each its own switch (`RunFilters`): all off to begin with.
   const [runOver, setRunOver] = usePersisted<PortfolioOver>('signalBacktest.together.over', {});
+  // Methods by win % the run's days cannot have (no days before it): not asked of the server, said with its fix.
+  const pick = runOver.winPick;
+  const pickCheck = pick ? winPickProblem(pick, range) : null;
+  const runBlocked = pick && pickCheck?.problem ? {
+    problem: pickCheck.problem,
+    fix: pickCheck.fix ? { label: winPickFixWords(pickCheck.fix, pick), apply: () => setRunOver({ ...runOver, winPick: { ...pick, ...pickCheck.fix } }) } : null,
+  } : null;
   // Open on a desk, folded on a phone to begin with, as the Settings panel is; the choice is remembered on each.
   const [runOpen, setRunOpen] = usePersisted<boolean>(`signalBacktest.runOpen.${wide ? 'desk' : 'phone'}`, wide);
   /*
@@ -1150,7 +1157,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             <div ref={resultRef} className="grid min-w-0 scroll-mt-2 grid-cols-[minmax(0,1fr)] gap-3">
               {together && <FoldAll what="the run together" state={runFolds} onChange={setRunFolds} />}
               {together
-                ? <PanelFolds state={runFolds} onChange={setRunFolds}><PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} onClose={() => setTogether(null)}
+                ? <PanelFolds state={runFolds} onChange={setRunFolds}><PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} blocked={runBlocked} onClose={() => setTogether(null)}
                     revision={savedList.filter((s) => together.ids.includes(s.id)).map((s) => `${s.id}:${s.updatedAt}`).join(',')} /></PanelFolds>
                 : <Panel title="Run together"><Empty>Run a portfolio, or tick two or more saved backtests and run them together: each is worked as it is alone, and they are added up -- the total, each one, each expiry day, and the margin held across all of them.</Empty></Panel>}
             </div>
