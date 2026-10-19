@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OptionStopWatch, STOP_WATCH_BOARD_STALE_MS, STOP_WATCH_QUOTA_PCT, STOP_WATCH_RECHECK_MS, stopWatchedOf, type StopWatched } from '../../src/trading/stop-watch.js';
-import { STOP_CONFIRM_FAST_MS, STOP_CONFIRM_MS, backstopFor, closeLimitFor, type TradeRecord } from '../../src/trading/engine.js';
+import {
+  OptionStopWatch, STOP_WATCH_BOARD_STALE_MS, STOP_WATCH_QUOTA_HARD_PCT, STOP_WATCH_QUOTA_PCT, STOP_WATCH_RECHECK_MS, stopWatchedOf, type StopWatchDeps, type StopWatched,
+} from '../../src/trading/stop-watch.js';
+import { STOP_CONFIRM_FAST_MS, STOP_CONFIRM_MS, STOP_RUN_SHARE, backstopFor, closeLimitFor, type TradeRecord } from '../../src/trading/engine.js';
 import { ceProduct, peProduct, planFor, quote, rig, T0 } from './harness.js';
 
 /**
@@ -16,17 +18,19 @@ import { ceProduct, peProduct, planFor, quote, rig, T0 } from './harness.js';
 
 const CE = 'C-BTC-80000-080926', PE = 'P-BTC-77000-080926';
 
+type StandDown = Parameters<NonNullable<StopWatchDeps['onStandDown']>>[0];
 function watch(o: { used?: () => number } = {}) {
+  const downs: StandDown[] = [];
   let now = T0;
   let board: { at: number; asks: Map<string, number> } | null = { at: T0, asks: new Map() };
   const calls: { symbol: string; ids: string[]; at: number }[] = [];
   let answer: (symbol: string, ids: readonly string[]) => Promise<readonly string[]> = async () => [];
   const w = new OptionStopWatch({
-    asks: () => board, quotaUsedPct: o.used ?? (() => 0), now: () => now,
+    asks: () => board, quotaUsedPct: o.used ?? (() => 0), now: () => now, onStandDown: (why) => downs.push(why),
     check: (symbol, ids) => { calls.push({ symbol, ids: [...ids], at: now }); return answer(symbol, ids); },
   });
   return {
-    w, calls,
+    w, calls, downs,
     /** The board as of now: each contract's offer. */
     offers(asks: Record<string, number>) { board = { at: now, asks: new Map(Object.entries(asks)) }; },
     noBoard() { board = null; },
@@ -34,18 +38,20 @@ function watch(o: { used?: () => number } = {}) {
     answerWith(fn: typeof answer) { answer = fn; },
   };
 }
-const t = (tradeId: string, symbol: string, stop: number): StopWatched => ({ tradeId, symbol, stop });
+const t = (tradeId: string, symbol: string, stop: number, run?: number): StopWatched => ({ tradeId, symbol, stop, ...(run === undefined ? {} : { run }) });
 
 test('[critical] which trades are watched: a short holding contracts, with a stop judged on the offer, not already closing', () => {
+  // A run is the offer half way from the stop to the backstop at Delta, as the engine reads it.
+  const run = 164 + (backstopFor(164, 100) - 164) * STOP_RUN_SHARE;
   const rec = (id: string, o: { position?: number; phase?: string; stop?: number | null; monitorOn?: 'ltp' | 'close' } = {}) => ({
     plan: { symbol: CE, stopPrice: o.stop === undefined ? 164 : o.stop, monitorOn: o.monitorOn },
-    state: { tradeId: id, position: o.position ?? -16, phase: o.phase ?? 'protected' },
+    state: { tradeId: id, position: o.position ?? -16, phase: o.phase ?? 'protected', entryAvgPrice: 100 },
   }) as unknown as TradeRecord;
   assert.deepEqual(stopWatchedOf([
     rec('a'), rec('ltp', { monitorOn: 'ltp' }),
     rec('no-stop', { stop: null }), rec('on-close', { monitorOn: 'close' }), rec('flat', { position: 0 }), rec('long', { position: 5 }),
     rec('closing', { phase: 'exit_pending' }), rec('unknown', { phase: 'entry_unknown' }),
-  ]), [{ tradeId: 'a', symbol: CE, stop: 164 }, { tradeId: 'ltp', symbol: CE, stop: 164 }]);
+  ]), [{ tradeId: 'a', symbol: CE, stop: 164, run }, { tradeId: 'ltp', symbol: CE, stop: 164, run }]);
 });
 
 test('[critical] a trade whose offer is at its stop is handed to the engine at once -- one call a contract, whoever holds it', () => {
@@ -136,6 +142,53 @@ test('[critical] it never stacks a check on a contract, never throws, and steps 
   m.offers({ [PE]: 500 });
   assert.deepEqual(m.w.tick(), []);
   assert.deepEqual(watch().w.tick(), [], 'nothing open: nothing looked at');
+});
+
+test('[critical] 19 Oct 2026: Delta\'s quota past the soft line -- a stop in a run is still looked at; one only at its level waits for the loop, and that is said once', async () => {
+  let used = STOP_WATCH_QUOTA_PCT;
+  const x = watch({ used: () => used });
+  // P-82400 at 3:52 PM: stops at 42 and 48, runs at 56 and 64; the offer at 75.9 -- and one stop at 70, not yet a run.
+  x.w.note([t('a', PE, 42, 56), t('b', PE, 48, 64), t('c', PE, 70, 85)]);
+  x.offers({ [PE]: 75.9 });
+  assert.deepEqual(x.w.tick(), ['a', 'b'], 'the runs are handed over, closed at once by the engine');
+  assert.deepEqual(x.calls.map((c) => c.ids), [['a', 'b']]);
+  assert.equal(x.downs.length, 1, 'the one at its level, passed over, is said');
+  assert.deepEqual([x.downs[0]!.kind, x.downs[0]!.atStop, x.downs[0]!.usedPct], ['quota', 1, STOP_WATCH_QUOTA_PCT]);
+  await x.w.settle();
+  x.advance(STOP_WATCH_RECHECK_MS);
+  x.offers({ [PE]: 75.9 });
+  x.w.tick();
+  assert.equal(x.downs.length, 1, 'once an episode, not every second');
+  // Under the line again: the episode is over, and the next stand-down is said afresh.
+  used = 10;
+  await x.w.settle();
+  x.advance(STOP_WATCH_RECHECK_MS);
+  x.offers({ [PE]: 75.9 });
+  assert.deepEqual(x.w.tick(), ['a', 'b', 'c'], 'every stop at its level, as before');
+  used = STOP_WATCH_QUOTA_HARD_PCT;
+  await x.w.settle();
+  x.advance(STOP_WATCH_RECHECK_MS);
+  x.offers({ [PE]: 75.9 });
+  assert.deepEqual(x.w.tick(), [], 'at the hard line: nothing read at all');
+  assert.equal(x.downs.length, 2);
+  assert.equal(x.downs[1]!.atStop, 3);
+});
+
+test('a board gone stale is said once while it lasts -- the loop alone is judging the stops', () => {
+  const x = watch();
+  x.w.note([t('a', CE, 164)]);
+  x.offers({ [CE]: 100 });
+  x.advance(STOP_WATCH_BOARD_STALE_MS + 1);
+  x.w.tick();
+  x.advance(1_000);
+  x.w.tick();
+  assert.equal(x.downs.length, 1);
+  assert.deepEqual([x.downs[0]!.kind, x.downs[0]!.boardAgeMs], ['board', STOP_WATCH_BOARD_STALE_MS + 1]);
+  x.offers({ [CE]: 100 });
+  x.w.tick();
+  x.advance(STOP_WATCH_BOARD_STALE_MS + 1);
+  x.w.tick();
+  assert.equal(x.downs.length, 2, 'fresh again in between: a new episode');
 });
 
 // ------------------------------------------------------------------ on the real engine

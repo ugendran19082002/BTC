@@ -386,6 +386,14 @@ export class TradingService {
     asks: cachedAsks,
     check: (symbol, tradeIds) => this.engine.checkStops(symbol, tradeIds),
     quotaUsedPct: () => deskMetrics().delta.usedPct,
+    // Said where the errors go, once an episode: a stop the watch could not look at is a stop left to the loop.
+    onStandDown: (why) => noteError({
+      source: 'trading', level: 'warn', where: 'stop-watch',
+      message: why.kind === 'board'
+        ? 'Stop watch stood down: the ticker board is not fresh, so stops are judged by the loop alone until it is.'
+        : 'Stop watch stood down: Delta\'s call quota is nearly used, so stops at their level (not yet a run) wait for the loop.',
+      context: { ...why },
+    }),
   });
 
   /**
