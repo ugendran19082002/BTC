@@ -761,7 +761,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const resultRef = useRef<HTMLDivElement>(null);
   const startRun = (next: TogetherRun | null) => {
     const again = next !== null && (together === null || next.ids.join(',') !== together.ids.join(',') || next.title === together.title);
-    setTogether(next);
+    // Every Run a new question: asked again even when nothing in sight changed (the server answers a repeat from its cache).
+    setTogether(next ? { ...next, at: Date.now() } : null);
     if (again && !wide) requestAnimationFrame(() => resultRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }));
   };
   const [savedList, setSavedList] = useState<BacktestSave[]>([]);
@@ -1147,7 +1148,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             <div ref={resultRef} className="grid min-w-0 scroll-mt-2 grid-cols-[minmax(0,1fr)] gap-3">
               {together && <FoldAll what="the run together" state={runFolds} onChange={setRunFolds} />}
               {together
-                ? <PanelFolds state={runFolds} onChange={setRunFolds}><PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} onClose={() => setTogether(null)} /></PanelFolds>
+                ? <PanelFolds state={runFolds} onChange={setRunFolds}><PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} onClose={() => setTogether(null)}
+                    revision={savedList.filter((s) => together.ids.includes(s.id)).map((s) => `${s.id}:${s.updatedAt}`).join(',')} /></PanelFolds>
                 : <Panel title="Run together"><Empty>Run a portfolio, or tick two or more saved backtests and run them together: each is worked as it is alone, and they are added up -- the total, each one, each expiry day, and the margin held across all of them.</Empty></Panel>}
             </div>
           </>

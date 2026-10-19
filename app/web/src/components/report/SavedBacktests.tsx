@@ -225,7 +225,12 @@ function PortfolioResult({ title, r, wide, readTrades, widen }: {
 const NO_OVER: PortfolioOver = {};
 
 /** Which saved backtests are run together, and what the run is called: a portfolio's name, or theirs. */
-export type TogetherRun = { ids: string[]; title: string };
+/**
+ * A run together: which saved backtests, under what title, and when it was asked for -- every tap on Run (or Run
+ * again) a new `at`, so it is asked again even when nothing in sight changed (19 Oct 2026: "after changing the methods,
+ * Run again did nothing").
+ */
+export type TogetherRun = { ids: string[]; title: string; at?: number };
 
 /**
  * What a run together was held to, when it is not each saved backtest's own (13 and 14 Oct 2026): the hours, and
@@ -256,7 +261,7 @@ function RunNote({ r }: { r: BacktestPortfolioResult }) {
  * The run together, where the results are shown: asked with the days on the screen, and again when they change.
  * Each one is a whole backtest, so the first run of a set takes a moment.
  */
-export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours = AS_SAVED, over = NO_OVER, wide = false, onClose }: {
+export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours = AS_SAVED, over = NO_OVER, wide = false, onClose, revision = '' }: {
   run: TogetherRun; range: { from: string; to: string }; limit?: PortfolioLimit;
   /** One account's limit as the screen shows it; null, the desk's own rule (the largest among the saved backtests). */
   cap?: PortfolioCap | null;
@@ -265,10 +270,15 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
   /** The settings switched on over the run; none, each saved backtest's own. */
   over?: PortfolioOver;
   wide?: boolean; onClose: () => void;
+  /**
+   * What its saved backtests are now -- each one's id and when it last changed. A saved backtest changed (its methods
+   * picked here, a pick kept on it) is a different run: asked again by itself, not left on the old answer.
+   */
+  revision?: string;
 }) {
   const asked = limit === 'shared' ? cap : null;
   const hoursKey = hours.window === 'custom' ? `custom:${hours.hoursFrom}-${hours.hoursTo}` : hours.window;
-  const askKey = `${run.ids.join(',')}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`;
+  const askKey = `${run.ids.join(',')}|${run.at ?? 0}|${revision}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`;
   // As the single backtest: asked once the run's settings stand still a moment -- each saved backtest in it is a whole backtest.
   const result = useAnswer(askKey, () => getBacktestPortfolio(run.ids, range, limit, asked, hours, over), 300_000, SETTLE_MS);
   if (result.error && !result.data) {

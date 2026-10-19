@@ -1175,6 +1175,35 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
   });
 
+  it('[critical] Run again asks again; a saved backtest changed re-runs the run by itself (19 Oct 2026: "after changing the methods, Run again did nothing")', async () => {
+    const saved = (id: string, name: string, updatedAt = 1) => ({ id, name, query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10 }, tfs: [], methods: [], strategy: null }, createdAt: 1, updatedAt });
+    saves.getBacktestSaves.mockResolvedValue({ saves: [saved('a1', 'Alpha'), saved('b22', 'Beta')], portfolios: [{ id: 'p1', name: 'Both', saveIds: ['a1', 'b22'], createdAt: 1, updatedAt: 1 }] });
+    const member = (id: string, name: string) => ({ id, name, problem: null, signals: 50, total: tot({ n: 10, wins: 5, losses: 5, net: 1, won: 3, lost: 2, charges: 1 }), marginPeakUsd: 8, priced: null });
+    saves.getBacktestPortfolio.mockResolvedValue({
+      from: '2026-10-01', to: '2026-10-13', shared: null, members: [member('a1', 'Alpha'), member('b22', 'Beta')], hours: null, over: null,
+      total: tot({ n: 20, wins: 10, losses: 10, net: 2, won: 6, lost: 4, charges: 2 }), days: [],
+      margin: { peakUsd: 0, peakDay: null, peakAt: null, peakOpen: 0, peakLots: 0, avgDailyPeakUsd: 0, sumOfPeaksUsd: 0 },
+    });
+    show();
+    await screen.findByText('Backtest result');
+    fireEvent.click(screen.getByRole('radio', { name: 'Saved backtests run together, and their total' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Run the portfolio Both' }));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenCalledTimes(1));
+    // Run again: asked again, though nothing in sight changed
+    fireEvent.click(await screen.findByRole('button', { name: 'Run the portfolio Both' }));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenCalledTimes(2));
+    // one of them changed (its methods kept on it, say): the run is asked again by itself
+    saves.getBacktestSaves.mockResolvedValue({ saves: [saved('a1', 'Alpha', 2), saved('b22', 'Beta')], portfolios: [{ id: 'p1', name: 'Both', saveIds: ['a1', 'b22'], createdAt: 1, updatedAt: 1 }] });
+    saves.saveBacktest.mockResolvedValue({ ok: true, save: saved('a1', 'Alpha', 2) });
+    fireEvent.click(await screen.findByRole('button', { name: 'Methods of Alpha' }));
+    const panel = await screen.findByRole('region', { name: 'Methods of Alpha' });
+    fireEvent.click(await within(panel).findByRole('button', { name: /^Method filter/ }));
+    const boxes = screen.getAllByRole('listbox');
+    fireEvent.click(within(boxes[boxes.length - 1]!).getByText('#50 Gamma wall reaction'));
+    fireEvent.click(within(panel).getByRole('button', { name: /^Update its methods/ }));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenCalledTimes(3), { timeout: 3_000 });
+  });
+
   it('[critical] a saved backtest\'s methods picked by win % in the portfolio, and kept on it -- no trip to the Backtest screen (19 Oct 2026)', async () => {
     const one = { id: 'a1', name: 'Alpha', query: { params: { ...RESULT.params, slMin: 0, slMax: 0, tgtMin: 0, tgtMax: 0, vol: 'off', minPremium: 10 }, tfs: [], methods: [], strategy: null }, createdAt: 1, updatedAt: 1 };
     saves.getBacktestSaves.mockResolvedValue({ saves: [one, { ...one, id: 'b2', name: 'Beta' }], portfolios: [] });
