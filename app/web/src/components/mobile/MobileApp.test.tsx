@@ -157,6 +157,14 @@ describe('signed in', () => {
     await waitFor(() => expect(screen.getByText('Daily loss limit').parentElement!).toHaveTextContent('Daily loss limitOff'), { timeout: 5_000 });
   });
 
+  it('[critical] trade history in the main menu, beside Orders -- not under More (19 Oct 2026)', async () => {
+    render(<MobileApp />);
+    const bar = await screen.findByRole('navigation', { name: 'Screens' });
+    expect(within(bar).getAllByRole('button').map((b) => b.textContent!.replace(/\d+$/, ''))).toEqual(['Home', 'P&L', 'Positions', 'Orders', 'History', 'More']);
+    tab('More');
+    expect(screen.queryByText('Trade history')).toBeNull();
+  });
+
   it('[critical] no screen has a button that could change the desk', async () => {
     render(<MobileApp />);
     await screen.findByText('Today\'s P&L');
@@ -387,5 +395,9 @@ describe('the route in the address', () => {
     expect(routeOf('?tab=nonsense&trade=C-BTC-1')).toEqual({ tab: 'home', sub: null, trade: 'C-BTC-1' });
     expect(searchOf({ tab: 'more', sub: 'account', trade: null })).toBe('?tab=more&sub=account');
     expect(searchOf({ tab: 'home', sub: null, trade: null })).toBe('');
+    // Trade history is a tab of its own (19 Oct 2026); a link from before, under More, still names it
+    expect(routeOf('?tab=history')).toEqual({ tab: 'history', sub: null, trade: null });
+    expect(routeOf('?tab=more&sub=history')).toEqual({ tab: 'more', sub: 'history', trade: null });
+    expect(searchOf({ tab: 'history', sub: null, trade: null })).toBe('?tab=history');
   });
 });
