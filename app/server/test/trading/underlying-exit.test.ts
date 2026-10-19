@@ -286,3 +286,53 @@ test('[critical] the perp TGT skipped: the perp at the signal\'s TGT closes noth
   perp.price = 84_000;
   assert.equal((await r.engine.poll(id))?.position, 0);
 });
+
+/*
+ * Both perp levels skipped (owner, 19 Oct 2026: "with skip perp SL and TGT, check the option SL and TGT work right"):
+ * the trade is then the option's own -- its target resting at Delta, its stop watched by the desk on the offer with
+ * Delta's resting stop under it. The perp crossing where the signal's levels were closes nothing.
+ */
+async function skippedBoth() {
+  const perp = { price: 85_000, at: 0 };
+  const r = rig({
+    products: [peProduct(), ceProduct()],
+    quotes: [quote(PE, 100.5, 101), quote(CE, 100.5, 101)],
+    underlying: () => ({ price: perp.price, at: perp.at || r.now() }),
+  });
+  // Sold at 100.5: the option's own target a buy at 50, its stop at 200.
+  const plan = { ...planFor(peProduct(), { lots: 10, stopPrice: 200, takeProfitPrice: 50 }), underlying: { dir: 1 as const, stop: null, target: null, source: 'BTC perp', entry: 85_000 } };
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  return { r, perp, id: plan.tradeId };
+}
+
+test('[critical] both perp levels skipped: the perp far through either closes nothing; the option\'s target, resting at Delta, does', async () => {
+  const { r, perp, id } = await skippedBoth();
+  const s0 = r.store.peek(id)!.state;
+  assert.equal(s0.position, -10);
+  assert.ok(s0.protection.takeProfit && s0.protection.stopLoss, 'the option\'s own target and stop both on the book');
+  for (const p of [80_000, 90_000]) {                           // under where the SL was, over where the TGT was
+    perp.price = p;
+    assert.equal((await r.engine.poll(id))?.position, -10, `perp at ${p}: still open`);
+  }
+  // the put's offer comes down to its target: the resting buy fills
+  r.ex.tick(quote(PE, 49, 49.5, { ts: r.now() }));
+  const s = await r.engine.poll(id);
+  assert.equal(s?.position, 0, 'bought back at the option target');
+  const ev = r.store.peek(id)!.events;
+  assert.ok(ev.some((e) => e.t === 'fill' && (e as { role?: string }).role === 'take_profit'), 'by the target order');
+  assert.ok(!ev.some((e) => e.t === 'exit_submitted' && /BTC perp/.test((e as { reason?: string }).reason ?? '')), 'never by the perp');
+});
+
+test('[critical] both perp levels skipped: the option\'s stop closes it when the offer reaches it -- the perp has no say', async () => {
+  const { r, perp, id } = await skippedBoth();
+  perp.price = 95_000;                                          // the perp running its way: nothing
+  assert.equal((await r.engine.poll(id))?.position, -10);
+  // the put's offer and mark through the stop at 200
+  r.ex.tick(quote(PE, 204, 205, { ts: r.now(), mark: 205 }));
+  let s = await r.engine.poll(id);
+  for (let i = 0; i < 20 && s?.position !== 0; i++) { r.advance(1_000); r.ex.tick(quote(PE, 204, 205, { ts: r.now(), mark: 205 })); s = await r.engine.poll(id); }
+  assert.equal(s?.position, 0, 'bought back on the option stop');
+  const ev = r.store.peek(id)!.events;
+  assert.ok(!ev.some((e) => e.t === 'exit_submitted' && /BTC perp/.test((e as { reason?: string }).reason ?? '')), 'never by the perp');
+});
