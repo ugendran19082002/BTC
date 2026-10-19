@@ -666,7 +666,7 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
   it('[critical] the card\'s money, entry and why not (19 Oct 2026): profit and loss today and 7 days, how it enters, the last skip and refusal', async () => {
     const line = (o: Partial<{ n: number; wins: number; losses: number; net: number; won: number; lost: number }>) => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0, ...o });
     const a = { ...strat('money', { ...SIG, ...allDay, minPremiumUsd: 10, entryPrice: 'offer', crossAfterSec: 5,
-      noEntry: { on: true, windows: [{ from: '00:30', to: '01:30' }] }, signal: { ...SIG.signal, enterOn: 'zone', minSlPts: { [SIG.signal!.mode === 'mtf' ? 'chain' : SIG.signal!.tf]: 250 } } }),
+      noEntry: { on: true, windows: [{ from: '00:30', to: '01:30' }] }, signal: { ...SIG.signal, enterOn: 'zone', minSlPts: { [SIG.signal!.tf]: 250 } } }),
       money: { today: line({ n: 5, wins: 3, losses: 2, net: 1.2, won: 2, lost: 0.8 }), week: line({ n: 40, wins: 25, losses: 15, net: -3.5, won: 10, lost: 13.5 }) },
       whyNot: { skipped: { at: Date.parse('2026-10-18T21:12:00+05:30'), why: 'SL too near: 120 pts' }, refused: { at: Date.parse('2026-10-18T23:48:00+05:30'), why: 'Delta refused the request (only_reduce_only_orders_allowed).' } } };
     const b = { ...strat('quiet', { ...SIG, ...allDay }), money: { today: line({}), week: line({}) }, whyNot: null };
