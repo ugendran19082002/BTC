@@ -10,11 +10,12 @@ import type { TradeStatus } from '@/types/trade';
  * times.
  */
 
-export type Tab = 'home' | 'pnl' | 'positions' | 'orders' | 'more';
+/** The bottom bar's screens; trade history beside Orders (owner, 19 Oct 2026: "out of More, next to Orders"). */
+export type Tab = 'home' | 'pnl' | 'positions' | 'orders' | 'history' | 'more';
 export type Sub = 'history' | 'pairs' | 'report' | 'backtest' | 'price' | 'pressure' | 'account' | 'market' | 'strategies' | 'method-log' | 'alerts' | 'settings';
 export type Route = { tab: Tab; sub: Sub | null; trade: string | null };
 
-export const TABS: readonly Tab[] = ['home', 'pnl', 'positions', 'orders', 'more'];
+export const TABS: readonly Tab[] = ['home', 'pnl', 'positions', 'orders', 'history', 'more'];
 export const SUBS: readonly Sub[] = ['history', 'pairs', 'report', 'backtest', 'price', 'pressure', 'account', 'market', 'strategies', 'method-log', 'alerts', 'settings'];
 
 /** The route in a URL's query: `?tab=orders`, `?tab=more&sub=account`, `?trade=<id>` (the Telegram link). */

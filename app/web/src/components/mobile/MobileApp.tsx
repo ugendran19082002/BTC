@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, Bell, Home, IndianRupee, Layers, ListOrdered, Menu, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Bell, History, Home, IndianRupee, Layers, ListOrdered, Menu, RefreshCw } from 'lucide-react';
 import { NotSignedIn } from '@/api/client';
 import { getMe, logout, type Me } from '@/api/session';
 import { getAccounts } from '@/api/accounts';
@@ -118,9 +118,11 @@ const TAB_ITEMS: { tab: Tab; label: string; icon: typeof Home }[] = [
   { tab: 'pnl', label: 'P&L', icon: IndianRupee },
   { tab: 'positions', label: 'Positions', icon: Layers },
   { tab: 'orders', label: 'Orders', icon: ListOrdered },
+  // Trade history beside Orders (owner, 19 Oct 2026: "out of More, in the main menu, next to Orders").
+  { tab: 'history', label: 'History', icon: History },
   { tab: 'more', label: 'More', icon: Menu },
 ];
-const TAB_TITLE: Record<Tab, string> = { home: 'BTC Desk', pnl: 'P&L', positions: 'Positions', orders: 'Orders', more: 'More' };
+const TAB_TITLE: Record<Tab, string> = { home: 'BTC Desk', pnl: 'P&L', positions: 'Positions', orders: 'Orders', history: 'Trade history', more: 'More' };
 
 function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   usePrefetchTabs();
@@ -226,7 +228,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
           </div>
         }
         nav={
-          <nav aria-label="Screens" className="grid grid-cols-5">
+          <nav aria-label="Screens" className="grid grid-cols-6">
             {TAB_ITEMS.map((t) => {
               const on = route.tab === t.tab;
               const badge = t.tab === 'positions' ? (s?.open.length ?? 0) : 0;
@@ -269,7 +271,8 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
           : route.tab === 'pnl' ? <PnlScreen />
             : route.tab === 'positions' ? <PositionsScreen />
               : route.tab === 'orders' ? <OrdersScreen />
-                : route.sub === 'history' ? <HistoryScreen />
+                // Its own tab now; a link from before (`?tab=more&sub=history`) still opens it.
+                : route.tab === 'history' || route.sub === 'history' ? <HistoryScreen />
                   : route.sub === 'pairs' ? <SignalPairsScreen />
                     : route.sub === 'report' ? <MarketReportScreen />
                     : route.sub === 'backtest' ? <BacktestScreen />
