@@ -1780,7 +1780,26 @@ export class TradeEngine {
       field: 'limitPrice' | 'stopPrice',
       place: (cid: string, price: number) => Promise<void>,
     ): Promise<string | null> => {
-      const live = resting.filter(match);
+      let live = resting.filter(match);
+      /*
+       * The order the record holds for this leg, not in the read: asked for by its own id before anything is placed
+       * (20 Oct 2026, 13:01 IST). The read of C-BTC-83000-201026's open orders came back without one trade's target T0
+       * as the 1:00 PM step moved it, so nothing was edited or cancelled and T1 went on beside it -- two reduce-only
+       * buy-backs for one contract until T0 filled at its old price, and Delta trimmed a sibling's target to fit them.
+       * A list can miss an order; a lookup by id is the answer. Resting, it is this leg's, edited or cancelled below
+       * as any other. Not to be asked: a target is not placed this time -- the stop protects, and the next poll asks
+       * again -- while a stop goes on as before: two stops are safer than none.
+       */
+      const recorded = role === 'take_profit' ? rec.state.protection.takeProfit : rec.state.protection.stopLoss;
+      if (recorded && ownsClientId(rec.state.tradeId, recorded) && !live.some((o) => o.clientOrderId === recorded)) {
+        const seen = await this.exchange.getOrderByClientId(recorded, rec.plan.symbol).then((o) => o, () => undefined);
+        if (seen === undefined && role === 'take_profit') {
+          failure ??= 'could not check the target already placed: none put beside it';
+          failedLegs.add(role);
+          return recorded;
+        }
+        if (seen && seen.reduceOnly && (seen.status === 'open' || seen.status === 'partial') && match(seen)) live = [...live, seen];
+      }
       // Both legs round towards firing rather than towards a better price: a
       // level that misses by a tick is a level that does not exist. One tick of
       // slippage is cheaper than an exit that never happens.
