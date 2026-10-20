@@ -296,7 +296,7 @@ test('[critical] a signal strategy\'s trade: the signal, its SL and TGT on the B
   assert.match(out.text, /📡 Signal <b>BUY<\/b>/);
 
   const chain = last([submitted(), fill('entry', 100, 100.5)], { ...plan, signal: { ...plan.signal!, mode: 'mtf', tf: '5m', dir: -1 } })!;
-  assert.match(chain.text, /SELL · with the timeframe chain/);
+  assert.match(chain.text, /Signal <b>SELL<\/b> · with the timeframe chain/);
 });
 
 test('a manual trade says none of it', () => {
