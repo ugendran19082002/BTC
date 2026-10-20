@@ -329,7 +329,7 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
       {/* The same run beside the live desk (14 Oct 2026): its own question, so the hours and settings over the run are over the check. */}
       {/* The SL, delta and lots by volatility over the run's saved backtests (17 Oct 2026): each on its own signals, added up. */}
       <div id="pf-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
-        <VolStudy askKey={askKey} wide={wide} read={(a) => getPortfolioVolStudy(a, run.ids, range, limit, asked, hours, over)} readTrades={(a, pick) => getPortfolioVolStudyTrades(a, pick, run.ids, range, limit, asked, hours, over)} title="By volatility · SL, delta, lots · over the run" />
+        <VolStudy askKey={askKey} wide={wide} read={(a) => getPortfolioVolStudy(a, run.ids, range, limit, asked, hours, over)} readTrades={(a, pick) => getPortfolioVolStudyTrades(a, pick, run.ids, range, limit, asked, hours, over)} title="By volatility · SL, delta, lots, win % · over the run" />
       </div>
       <div id="pf-live" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
         <LiveCheck askKey={askKey} read={() => getPortfolioLiveCheck(run.title, run.ids, range, limit, asked, hours, over)} />

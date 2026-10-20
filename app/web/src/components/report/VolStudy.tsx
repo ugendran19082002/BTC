@@ -4,7 +4,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import type { BtDayTrades, VolAsk, VolBy, VolLevel, VolStudyLevel, VolStudyLine, VolStudyResult } from '@/types/signal-backtest';
+import type { BtDayTrades, VolAsk, VolBy, VolLevel, VolStudyLevel, VolStudyLine, VolStudyResult, VolWin } from '@/types/signal-backtest';
 import type { VolTradesPick } from '@/api/signal-backtest';
 import { DayTradesSheet } from '@/components/report/DayTrades';
 import { Empty, Panel } from '@/components/mobile/parts';
@@ -20,11 +20,16 @@ import { count, netClass } from '@/components/report/backtest-parts';
  * IV. Report only: nothing a strategy or an order reads changes.
  *
  * Asked for with a tap, not with every change of a setting: it is three backtests' work for each one in it.
+ *
+ * And methods by win % with the bar moved by the level (owner, 20 Oct 2026: "the strategy's 50% as it is; low
+ * volatility 5% less, high 5% more -- not numbers typed for each"): a base, and each level's move in points.
  */
 
 type RuleKey = 'sl' | 'delta' | 'lots';
 type Draft = Record<VolLevel, string> & { on: boolean };
-export type VolDrafts = Record<RuleKey, Draft>;
+/** The win % rule as typed: the base, least trades and days, and each level's move in points. */
+type WinDraft = Record<VolLevel, string> & { on: boolean; base: string; minTrades: string; days: string };
+export type VolDrafts = Record<RuleKey, Draft> & { win?: WinDraft };
 /** Low, Normal, High -- in that order on the screen, as the owner reads them. */
 const LEVELS: { key: VolLevel; label: string }[] = [
   { key: 'low', label: 'Low' },
@@ -36,7 +41,12 @@ export const VOL_DRAFTS: VolDrafts = {
   sl: { on: true, low: '250', medium: '200', high: '150' },
   delta: { on: false, low: '0.12', medium: '0.10', high: '0.08' },
   lots: { on: false, low: '2', medium: '2', high: '1' },
+  win: { on: false, base: '50', minTrades: '3', days: '14', low: '-5', medium: '0', high: '5' },
 };
+const WIN_DEFAULT: WinDraft = VOL_DRAFTS.win!;
+/** The bar at a level: the base moved by the level's points, held to 0-100 -- as the server holds it. */
+export const winBar = (base: number, move: number) => Math.min(100, Math.max(0, Math.round((base + move) * 10) / 10));
+const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
 const RULES: Record<RuleKey, { title: string; what: string; unit: string; prefix?: string; min: number; max: number; step: number; whole?: boolean; aria: (l: string) => string; words: (v: number) => string }> = {
   sl: {
     title: 'SL by volatility', what: 'The option SL over the premium sold, by level. Research: tighter when volatile did better over two years.',
@@ -59,7 +69,19 @@ const SOURCE: Record<VolBy, { name: string; how: string }> = {
 /** What is wrong with the rules as typed, in words, or null: as the server holds them. */
 export function volDraftProblem(d: VolDrafts): string | null {
   const on = (Object.keys(RULES) as RuleKey[]).filter((k) => d[k].on);
-  if (on.length === 0) return 'Switch on the SL, the delta or the lots by volatility.';
+  const w = d.win;
+  if (on.length === 0 && !w?.on) return 'Switch on the SL, the delta, the lots or the win % by volatility.';
+  if (w?.on) {
+    const n = (s: string) => (s.trim() === '' ? Number.NaN : Number(s));
+    const base = n(w.base), trades = n(w.minTrades), days = n(w.days);
+    if (!(base >= 1 && base <= 100)) return 'The base win % is from 1% to 100%.';
+    if (!(Number.isInteger(trades) && trades >= 1 && trades <= 100)) return 'The least trades are a whole number from 1 to 100.';
+    if (!(Number.isInteger(days) && days >= 1 && days <= 30)) return 'The days read are a whole number from 1 to 30.';
+    for (const l of LEVELS) {
+      const v = n(w[l.key]);
+      if (!(Number.isFinite(v) && v >= -50 && v <= 50)) return `The ${l.label.toLowerCase()} volatility move is from -50 to +50 points.`;
+    }
+  }
   for (const k of on) {
     const r = RULES[k];
     for (const l of LEVELS) {
@@ -77,16 +99,22 @@ export function volDraftProblem(d: VolDrafts): string | null {
 /** The rules as the server is asked: each on with its three numbers, or null. */
 export function volAskOf(d: VolDrafts): VolAsk {
   const of = (k: RuleKey, f: (v: number) => number) => (d[k].on ? { low: f(Number(d[k].low)), medium: f(Number(d[k].medium)), high: f(Number(d[k].high)) } : null);
-  return { sl: of('sl', Math.round), delta: of('delta', (v) => Math.round(v * 100) / 100), lots: of('lots', Math.round) };
+  const w = d.win;
+  const win: VolWin | null = w?.on
+    ? { base: Number(w.base), minTrades: Number(w.minTrades), days: Number(w.days), adj: { low: Number(w.low), medium: Number(w.medium), high: Number(w.high) } }
+    : null;
+  return { sl: of('sl', Math.round), delta: of('delta', (v) => Math.round(v * 100) / 100), lots: of('lots', Math.round), win };
 }
 
 const stopWords = (share: number) => (share > 0 ? `+${Math.round(share * 100)}%` : 'no SL');
 /** What the rule by volatility sets at a level, in a few words: "+150% · Δ 0.08 · 1 lot". */
 function levelWords(r: VolStudyResult, l: VolLevel): string {
-  return [r.sl ? `SL +${Math.round(r.sl[l] * 100)}%` : null, r.delta ? `Δ ${r.delta[l].toFixed(2)}` : null, r.lots ? RULES.lots.words(r.lots[l]) : null].filter(Boolean).join(' · ');
+  return [r.sl ? `SL +${Math.round(r.sl[l] * 100)}%` : null, r.delta ? `Δ ${r.delta[l].toFixed(2)}` : null, r.lots ? RULES.lots.words(r.lots[l]) : null,
+    r.win ? `won ≥ ${r.win.bars[l]}%` : null].filter(Boolean).join(' · ');
 }
-/** The settings as set, in words: one SL, or each saved backtest's own. */
-const asSetWords = (r: VolStudyResult) => (r.fixed.each.length > 1 ? `each one's own SL (${r.fixed.each.map(stopWords).join(', ')})` : `SL ${stopWords(r.fixed.pct)}`);
+/** The settings as set, in words: one SL, or each saved backtest's own -- and with win % on, the base it is held to. */
+const asSetWords = (r: VolStudyResult) => `${r.fixed.each.length > 1 ? `each one's own SL (${r.fixed.each.map(stopWords).join(', ')})` : `SL ${stopWords(r.fixed.pct)}`}${
+  r.win ? ` · methods that won ≥ ${r.win.base}% of ${r.win.minTrades}+ trades over the ${r.win.days} days before each day` : ''}`;
 
 /**
  * Every expiry day under both rules, side by side (owner, 17 Oct 2026: "tap Net -- the by-expiry-day table"): each
@@ -315,7 +343,58 @@ function RuleFields({ k, d, onChange, onEnter }: { k: RuleKey; d: Draft; onChang
   );
 }
 
-export function VolStudy({ askKey, read, readTrades, wide = false, title = 'By volatility · SL, delta, lots · research' }: {
+/**
+ * Methods by win % with the bar moved by the level: a base, the least trades and the days read, then each level's
+ * move in points -- and the bar each gives, said under them as typed.
+ */
+function WinFields({ d, onChange, onEnter }: { d: WinDraft; onChange: (d: WinDraft) => void; onEnter: () => void }) {
+  const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] pl-3 text-[16px] tabular-nums text-foreground [color-scheme:dark]';
+  const one = (key: 'base' | 'minTrades' | 'days', label: string, unit: string, aria: string, min: number, max: number) => (
+    <label className="flex min-w-0 flex-col gap-1">
+      <span className="text-[12.5px] font-medium">{label}</span>
+      <span className="relative min-w-0">
+        <input type="number" inputMode="numeric" min={min} max={max} aria-label={aria} value={d[key]}
+          onChange={(e) => onChange({ ...d, [key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') onEnter(); }}
+          className={cn(field, unit.length > 1 ? 'pr-12' : 'pr-7')} />
+        <span aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">{unit}</span>
+      </span>
+    </label>
+  );
+  const base = Number(d.base);
+  return (
+    <div className="grid min-w-0 gap-1 border-0 border-t border-solid border-[var(--line-soft)] pt-1">
+      <Switch checked={d.on} onCheckedChange={(on) => onChange({ ...d, on })} label="Win % by volatility"
+        description="Only methods that won enough over the days before each day; the bar moves with the level -- higher when volatile, lower when calm. As set is held to the base." />
+      {d.on && (
+        <div className="grid min-w-0 gap-2 pb-1">
+          <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-1">
+            {one('base', 'Base win %', '%', 'Base win per cent', 1, 100)}
+            {one('minTrades', 'Least trades', 'trades', 'Least trades', 1, 100)}
+            {one('days', 'Days read', 'days', 'Days before each day read', 1, 30)}
+          </div>
+          <div className="grid grid-cols-3 gap-2 max-[340px]:grid-cols-1">
+            {LEVELS.map((l) => (
+              <label key={l.key} className="flex min-w-0 flex-col gap-1">
+                <span className="text-[12.5px] font-medium">{l.label}</span>
+                <span className="relative min-w-0">
+                  <input type="number" inputMode="decimal" min={-50} max={50} step={1} aria-label={`Win % move in ${l.label.toLowerCase()} volatility, points`}
+                    value={d[l.key]} onChange={(e) => onChange({ ...d, [l.key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') onEnter(); }}
+                    className={cn(field, 'pr-10')} />
+                  <span aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">pts</span>
+                </span>
+                <span className="text-[12px] tabular-nums text-muted-foreground">
+                  {Number.isFinite(base) && Number.isFinite(Number(d[l.key])) && d[l.key].trim() !== '' ? `→ ${winBar(base, Number(d[l.key]))}%` : '—'}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function VolStudy({ askKey, read, readTrades, wide = false, title = 'By volatility · SL, delta, lots, win % · research' }: {
   /** What the result is of -- the backtest's or the run's own question -- so a comparison of other settings is said to be. */
   askKey: string;
   read: (a: VolAsk) => Promise<VolStudyResult>;
@@ -325,7 +404,7 @@ export function VolStudy({ askKey, read, readTrades, wide = false, title = 'By v
 }) {
   const [stored, setStored] = usePersisted<VolDrafts>('signalBacktest.volStudy.rules', VOL_DRAFTS);
   // Anything kept by an older build is filled in from the defaults rather than read as empty fields.
-  const drafts: VolDrafts = { sl: { ...VOL_DRAFTS.sl, ...stored?.sl }, delta: { ...VOL_DRAFTS.delta, ...stored?.delta }, lots: { ...VOL_DRAFTS.lots, ...stored?.lots } };
+  const drafts: VolDrafts = { sl: { ...VOL_DRAFTS.sl, ...stored?.sl }, delta: { ...VOL_DRAFTS.delta, ...stored?.delta }, lots: { ...VOL_DRAFTS.lots, ...stored?.lots }, win: { ...WIN_DEFAULT, ...stored?.win } };
   const [run, setRun] = useState<{ key: string; ask: VolAsk; data: VolStudyResult | null; error: Error | null; busy: boolean } | null>(null);
   const problem = volDraftProblem(drafts);
   const ask = volAskOf(drafts);
@@ -342,8 +421,10 @@ export function VolStudy({ askKey, read, readTrades, wide = false, title = 'By v
   };
   const isDefault = JSON.stringify(drafts) === JSON.stringify(VOL_DRAFTS);
   const r = run?.data ?? null;
-  const summary = (['sl', 'delta', 'lots'] as RuleKey[]).filter((k) => drafts[k].on)
-    .map((k) => `${k === 'sl' ? 'SL' : k === 'delta' ? 'Delta' : 'Lots'} ${LEVELS.map((l) => `${l.label} ${RULES[k].words(Number(drafts[k][l.key]))}`).join(' · ')}`);
+  const w = drafts.win!;
+  const summary = [...(['sl', 'delta', 'lots'] as RuleKey[]).filter((k) => drafts[k].on)
+    .map((k) => `${k === 'sl' ? 'SL' : k === 'delta' ? 'Delta' : 'Lots'} ${LEVELS.map((l) => `${l.label} ${RULES[k].words(Number(drafts[k][l.key]))}`).join(' · ')}`),
+    ...(w.on ? [`Win % base ${w.base}%: ${LEVELS.map((l) => `${l.label} ${signed(Number(w[l.key]))} → ${winBar(Number(w.base), Number(w[l.key]))}%`).join(' · ')}, of ${w.minTrades}+ trades over the ${w.days} days before`] : [])];
   return (
     <Panel title={title}>
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
@@ -356,6 +437,7 @@ export function VolStudy({ askKey, read, readTrades, wide = false, title = 'By v
           {(['sl', 'delta', 'lots'] as RuleKey[]).map((k) => (
             <RuleFields key={k} k={k} d={drafts[k]} onChange={(d) => setStored({ ...drafts, [k]: d })} onEnter={go} />
           ))}
+          <WinFields d={w} onChange={(d) => setStored({ ...drafts, win: d })} onEnter={go} />
         </fieldset>
         <p role={problem ? 'alert' : 'status'} className={cn('m-0 text-[12.5px] leading-snug', problem ? 'text-[var(--down)]' : 'text-muted-foreground')}>
           {problem ?? `${summary.join('; ')}. What is off stays as set; a trade keeps its level's values to its exit.`}
@@ -397,7 +479,8 @@ export function VolStudy({ askKey, read, readTrades, wide = false, title = 'By v
               {dayLabel(r.from)} → {dayLabel(r.to)}, {count(r.days)} expiry day{r.days === 1 ? '' : 's'}, {count(r.signals)} signals. Every signal is traded, with no limit on what is open -- an earlier exit must
               not free a place for a trade the other rule did not take -- so both sides are the same signals, fills and charges.
               {r.fixed.stepped && ' An SL as set that moves by the clock is compared with a level\'s SL held all day.'}
-              {!r.sameTrades && (r.delta ? ' A level\'s delta found no strike worth selling for some signals: those are traded on one side only (Trades).' : ' Warning: the two sides did not trade the same signals on every day -- read the difference with care.')}
+              {r.win && ` With win % on, a day's methods are picked from the ${r.win.days} days before it -- never its own -- so the first days may trade nothing; the two sides differ by the bar's move alone.`}
+              {!r.sameTrades && (r.win ? '' : r.delta ? ' A level\'s delta found no strike worth selling for some signals: those are traded on one side only (Trades).' : ' Warning: the two sides did not trade the same signals on every day -- read the difference with care.')}
               {r.days < 20 ? ` ${count(r.days)} expiry day${r.days === 1 ? ' is' : 's are'} a short sample: a difference here can be luck.` : ' Trust a difference only where both halves agree.'}
               {' '}A rule goes to paper first, never straight to live.
             </p>

@@ -1699,7 +1699,41 @@ export const VOL_STUDY_SL: Record<VolLevel, number> = { low: 2.5, medium: 2, hig
  * What is set by the level: the option's stop (per level, shares of the premium: 1.5 is +150%), the strike's delta
  * (per level, the most a strike may have: 0.08), the lots (per level, whole), or any of them together. At least one.
  */
-export type VolRule = { sl: Record<VolLevel, number> | null; delta: Record<VolLevel, number> | null; lots?: Record<VolLevel, number> | null };
+export type VolRule = { sl: Record<VolLevel, number> | null; delta: Record<VolLevel, number> | null; lots?: Record<VolLevel, number> | null; win?: VolWin | null };
+/**
+ * Methods by win %, the bar moved by the level (owner, 20 Oct 2026: "win % by volatility -- the strategy's 50% as it
+ * is, low volatility 5% less, high 5% more"): a signal is traded only if its method won `base` + the level's `adj`
+ * per cent (points) of its trades, on `minTrades` or more, over the `days` calendar days before the signal's day --
+ * never its own, as the desk's daily update picks. As set is held to `base` at every level, so the two sides differ
+ * only in the move. A level that cannot be said keeps `base`. The record is every method on all its signals as set.
+ */
+export type VolWin = { base: number; minTrades: number; days: number; adj: Record<VolLevel, number> };
+export const VOL_STUDY_WIN: VolWin = { base: 50, minTrades: 3, days: 14, adj: { low: -5, medium: 0, high: 5 } };
+/** The bar at a level: the base, moved by the level's points, held to 0-100. */
+export const winBarAt = (w: VolWin, level: VolLevel | 'unknown' | null): number =>
+  Math.min(100, Math.max(0, w.base + (level && level !== 'unknown' ? w.adj[level] : 0)));
+export type WinTally = Map<string, { n: number; wins: number }>;
+/** A method's record against a bar: enough trades, and won at least that share of them. */
+export const passesBar = (tally: WinTally, method: string, bar: number, minTrades: number): boolean => {
+  const r = tally.get(method);
+  return !!r && r.n >= minTrades && (r.wins / r.n) * 100 >= bar - 1e-9;
+};
+/** One day's trades as a tally by method; a win is a trade that made money after charges. */
+export const tallyOf = (ts: readonly BtTrade[]): WinTally => {
+  const m: WinTally = new Map();
+  for (const t of ts) { const r = m.get(t.signal.method) ?? { n: 0, wins: 0 }; r.n++; if (t.netUsd > 0) r.wins++; m.set(t.signal.method, r); }
+  return m;
+};
+/** The record of the `days` calendar days before `day`, from each day's tally. */
+export const recordBefore = (byDay: ReadonlyMap<string, WinTally>, day: string, days: number): WinTally => {
+  const from = new Date(Date.parse(`${day}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
+  const out: WinTally = new Map();
+  for (const [d, t] of byDay) {
+    if (d < from || d >= day) continue;
+    for (const [k, r] of t) { const o = out.get(k) ?? { n: 0, wins: 0 }; o.n += r.n; o.wins += r.wins; out.set(k, o); }
+  }
+  return out;
+};
 export const VOL_STUDY_DELTA: Record<VolLevel, number> = { low: 0.12, medium: 0.1, high: 0.08 };
 /** Fewer when it is volatile (owner, 17 Oct 2026: "Low / Medium 2 lots, High 1 lot"). */
 export const VOL_STUDY_LOTS: Record<VolLevel, number> = { low: 2, medium: 2, high: 1 };
@@ -1742,6 +1776,8 @@ export type VolStudy = {
   sl: Record<VolLevel, number> | null;
   delta: Record<VolLevel, number> | null;
   lots: Record<VolLevel, number> | null;
+  /** Methods by win %, with each level's bar (`bars`); null, off. With it on, as set is held to the base. */
+  win: (VolWin & { bars: Record<VolLevel, number> }) | null;
   signals: number;
   sources: { by: VolBy; lines: VolStudyLine[] }[];
   /**
@@ -1806,9 +1842,16 @@ function studyBookOf(b: StudyBook): { takes: (sig: BtSignal) => boolean; planFor
 }
 async function volStudyOf(o: { from: string; to: string; now: number; books: readonly StudyBook[] } & VolRule): Promise<Omit<VolStudy, 'members'>> {
   await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
-  const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - 8 * 86_400_000).toISOString().slice(0, 10);
+  const win = o.win ?? null;
+  // Methods by win % read the days before the range too: its first days are picked from them.
+  const back = 8 + (win ? win.days : 0);
+  const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - back * 86_400_000).toISOString().slice(0, 10);
   const known = await marketDays(before, o.to, o.now);
   const days = known.filter((d) => d.day >= o.from).map((d) => d.day);
+  const warmFrom = win ? new Date(Date.parse(`${o.from}T00:00:00Z`) - win.days * 86_400_000).toISOString().slice(0, 10) : o.from;
+  const warm = known.filter((d) => d.day >= warmFrom && d.day < o.from && !d.live).map((d) => d.day);
+  // Each book's record day by day: every method on all its signals, as set.
+  const tallies = o.books.map(() => new Map<string, WinTally>());
   const live = new Set(known.filter((d) => d.day >= o.from && d.live).map((d) => d.day));
   const baselineOf = (day: string): number | null => {
     const prior = known.filter((d) => d.day < day && d.stats && !d.live).slice(-5).map((d) => d.stats!.atr);
@@ -1822,25 +1865,34 @@ async function volStudyOf(o: { from: string; to: string; now: number; books: rea
   const fixedOf = books.map(() => ({ pct: 0, stepped: false }));
   // The signal a trade is of: by the delta of its level the same signal may sell another strike, and is still the same trade.
   const keyOf = (t: BtTrade) => `${t.signal.method}|${t.signal.mode}|${t.signal.tf}|${t.signal.dir}|${t.signal.filledAt}|${t.signal.fillPrice}`;
-  for (const day of days) {
+  if (win) await preloadIv(warm, o.now);
+  const fetchedWarm = win && warm.length ? await marksFetchedBy(warm.map(expiryCodeOf)) : new Map();
+  for (const day of [...warm, ...days]) {
+    const inRange = day >= o.from;
     const { from, to } = sessionOf(day);
-    const raw = await rawDay(day, o.now, fetched.get(expiryCodeOf(day))?.contracts ?? 0);
+    const raw = await rawDay(day, o.now, (inRange ? fetched : fetchedWarm).get(expiryCodeOf(day))?.contracts ?? 0);
     const readers: Record<VolBy, (at: number) => VolLevel | null> = { atr: volReader(raw.minutes, baselineOf(day)), iv: await ivReaderOf(day, o.now) };
     const bars = raw.minutes.filter((b) => b.at >= from);
     books.forEach((b, i) => {
       const sigs = raw.signals.filter(b.takes);
-      signals += sigs.length;
+      if (inRange) signals += sigs.length;
       const base = b.planFor({ from, to }, null);
-      fixedOf[i] = { pct: base.stopPct, stepped: !!base.stopPctAt };
       const play = (plan: DayPlan, volAt: (at: number) => VolLevel | null) => simulateDay({ from, to, signals: sigs, plan, volAt, bars, board: raw.board }).trades;
       // As set: read by the strategy's own source where it sets its delta by volatility (the desk's own trades).
       const flat = play(base, readers[ownVolBy(o.books[i]!.strategy, 'atr')!]);
+      // The record a day is picked by is the days before it; this day's own goes in after.
+      const record = win ? recordBefore(tallies[i]!, day, win.days) : null;
+      if (win) tallies[i]!.set(day, tallyOf(flat));
+      if (!inRange) return;
+      fixedOf[i] = { pct: base.stopPct, stepped: !!base.stopPctAt };
+      const asSet = record ? flat.filter((t) => passesBar(record, t.signal.method, win!.base, win!.minTrades)) : flat;
       VOL_BYS.forEach((by, k) => {
         const read = readers[by];
-        fixedTrades[k]!.push(...flat.map((t) => ({ day, t, level: read(t.signal.filledAt) ?? 'unknown' as const })));
-        const moved = play(b.planFor({ from, to }, { sl: o.sl, delta: o.delta, lots: o.lots ?? null }), read);
+        fixedTrades[k]!.push(...asSet.map((t) => ({ day, t, level: read(t.signal.filledAt) ?? 'unknown' as const })));
+        const all = play(b.planFor({ from, to }, { sl: o.sl, delta: o.delta, lots: o.lots ?? null }), read);
+        const moved = record ? all.filter((t) => passesBar(record, t.signal.method, winBarAt(win!, t.vol), win!.minTrades)) : all;
         volTrades[k]!.push(...moved.map((t) => ({ day, t, level: t.vol ?? 'unknown' as const })));
-        if (moved.length !== flat.length || moved.some((t, j) => keyOf(t) !== keyOf(flat[j]!))) sameTrades = false;
+        if (moved.length !== asSet.length || moved.some((t, j) => keyOf(t) !== keyOf(asSet[j]!))) sameTrades = false;
       });
     });
   }
@@ -1848,14 +1900,15 @@ async function volStudyOf(o: { from: string; to: string; now: number; books: rea
   const each = [...new Set(fixedOf.map((f) => f.pct))];
   return {
     from: o.from, to: o.to, days: days.length, secondHalfFrom: days[mid] ?? null, sl: o.sl ? { ...o.sl } : null, delta: o.delta ? { ...o.delta } : null, lots: o.lots ? { ...o.lots } : null, signals, sameTrades,
+    win: win ? { ...win, adj: { ...win.adj }, bars: { low: winBarAt(win, 'low'), medium: winBarAt(win, 'medium'), high: winBarAt(win, 'high') } } : null,
     fixed: { pct: fixedOf[0]?.pct ?? 0, stepped: fixedOf.some((f) => f.stepped), each },
     sources: VOL_BYS.map((by, k) => ({ by, lines: [studyLine('fixed', fixedTrades[k]!, days, mid, live), studyLine('by-vol', volTrades[k]!, days, mid, live)] })),
   };
 }
 
-const volStudyNow = (o: VolStudyAsk): Promise<VolStudy> => volStudyOf({ from: o.from, to: o.to, now: o.now, sl: o.sl, delta: o.delta, lots: o.lots ?? null, books: [o] });
+const volStudyNow = (o: VolStudyAsk): Promise<VolStudy> => volStudyOf({ from: o.from, to: o.to, now: o.now, sl: o.sl, delta: o.delta, lots: o.lots ?? null, win: o.win ?? null, books: [o] });
 async function portfolioVolStudyNow(o: PortfolioVolStudyAsk): Promise<VolStudy> {
-  const r = await volStudyOf({ from: o.from, to: o.to, now: o.now, sl: o.sl, delta: o.delta, lots: o.lots ?? null, books: o.members.flatMap((m) => (m.ask && !m.problem ? [m.ask] : [])) });
+  const r = await volStudyOf({ from: o.from, to: o.to, now: o.now, sl: o.sl, delta: o.delta, lots: o.lots ?? null, win: o.win ?? null, books: o.members.flatMap((m) => (m.ask && !m.problem ? [m.ask] : [])) });
   return { ...r, members: o.members.map((m) => ({ id: m.id, name: m.name, problem: m.ask && !m.problem ? null : (m.problem ?? 'It cannot be worked out.') })) };
 }
 
@@ -2462,20 +2515,41 @@ export function portfolioTradesHere(o: PortfolioAsk, pick: TradePick): Promise<B
  * the study plays it (`studyBookOf`), so the list adds up to the day's row.
  */
 export type VolTradesPick = { day: string; side: 'fixed' | 'by-vol'; by: VolBy };
+/** One book's trades of a day as set -- every one of its signals, read by its own source -- for a record (`VolWin`). */
+async function flatDayOf(b: StudyBook, day: string, now: number): Promise<BtTrade[]> {
+  const c = await dayContext(day, now);
+  const by = ownVolBy(b.strategy, 'atr')!;
+  const read = by === 'iv' ? await ivReaderOf(day, now) : volReader(c.raw.minutes, c.baseline);
+  const book = studyBookOf(b);
+  return simulateDay({ from: c.from, to: c.to, signals: c.raw.signals.filter(book.takes), plan: book.planFor({ from: c.from, to: c.to }, null), volAt: read, bars: c.raw.minutes.filter((x) => x.at >= c.from), board: c.raw.board }).trades;
+}
 async function volStudyDayRows(books: readonly { b: StudyBook; name?: string }[], rule: VolRule, pick: VolTradesPick, now: number): Promise<BtDayTrades> {
   const c = await dayContext(pick.day, now);
   const read = pick.by === 'iv' ? await ivReaderOf(pick.day, now) : volReader(c.raw.minutes, c.baseline);
   const bars = c.raw.minutes.filter((x) => x.at >= c.from);
+  const win = rule.win ?? null;
+  // Methods by win %: the record of the days before this one, as the study reads it.
+  const prior = win ? (await marketDays(new Date(Date.parse(`${pick.day}T00:00:00Z`) - win.days * 86_400_000).toISOString().slice(0, 10), pick.day, now))
+    .filter((d) => d.day < pick.day && !d.live).map((d) => d.day) : [];
   const rows: BtTradeRow[] = [];
   for (const { b, name } of books) {
     const book = studyBookOf(b);
     const plan = book.planFor({ from: c.from, to: c.to }, pick.side === 'by-vol' ? rule : null);
-    const trades = simulateDay({ from: c.from, to: c.to, signals: c.raw.signals.filter(book.takes), plan, volAt: read, bars, board: c.raw.board }).trades;
-    rows.push(...trades.map((t) => ({ ...rowOf(t, c.nameOf, name), level: t.vol ?? 'unknown' as const })));
+    // As set, the trades are its own source's, as the study plays them; by volatility, the source asked.
+    const all = pick.side === 'fixed' && win ? await flatDayOf(b, pick.day, now)
+      : simulateDay({ from: c.from, to: c.to, signals: c.raw.signals.filter(book.takes), plan, volAt: read, bars, board: c.raw.board }).trades;
+    let trades = all;
+    if (win) {
+      const byDay = new Map<string, WinTally>();
+      for (const d of prior) byDay.set(d, tallyOf(await flatDayOf(b, d, now)));
+      const record = recordBefore(byDay, pick.day, win.days);
+      trades = all.filter((t) => passesBar(record, t.signal.method, pick.side === 'fixed' ? win.base : winBarAt(win, t.vol), win.minTrades));
+    }
+    rows.push(...trades.map((t) => ({ ...rowOf(t, c.nameOf, name), level: (pick.side === 'fixed' ? read(t.signal.filledAt) : t.vol) ?? 'unknown' as const })));
   }
   return listed(pick.day, rows);
 }
-const ruleOf = (o: VolRule): VolRule => ({ sl: o.sl, delta: o.delta, lots: o.lots ?? null });
+const ruleOf = (o: VolRule): VolRule => ({ sl: o.sl, delta: o.delta, lots: o.lots ?? null, win: o.win ?? null });
 export function volStudyTradesHere(o: VolStudyAsk, pick: VolTradesPick): Promise<BtDayTrades> {
   const run = working.then(() => volStudyDayRows([{ b: o }], ruleOf(o), pick, o.now));
   working = run.catch(() => { });

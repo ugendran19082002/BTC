@@ -711,7 +711,7 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(lastQuery().params.volBy).toBeUndefined());
     // The study's panel is there, with a chip to it, and nothing is asked of the server until Compare.
     expect(screen.getByRole('button', { name: 'By volatility' })).toBeInTheDocument();
-    expect(screen.getByText('By volatility · SL, delta, lots · research')).toBeInTheDocument();
+    expect(screen.getByText('By volatility · SL, delta, lots, win % · research')).toBeInTheDocument();
     expect(getVolStudy).not.toHaveBeenCalled();
   });
 
@@ -728,7 +728,7 @@ describe('SignalBacktest', () => {
     expect(heading(/^Backtest result$/)).toHaveAttribute('aria-expanded', 'true');
     // Every part at once, the research panel and the live check too.
     fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
-    for (const n of [/^Backtest result$/, /^By time frame$/, /^By volatility · SL, delta, lots · research$/, /^Live check · /]) expect(heading(n)).toHaveAttribute('aria-expanded', 'false');
+    for (const n of [/^Backtest result$/, /^By time frame$/, /^By volatility · SL, delta, lots, win % · research$/, /^Live check · /]) expect(heading(n)).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Collapse all' })).toBeDisabled();
     fireEvent.click(heading(/^By time frame$/));
     expect(heading(/^By time frame$/)).toHaveAttribute('aria-expanded', 'true');

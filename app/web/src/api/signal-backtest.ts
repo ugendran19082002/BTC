@@ -66,10 +66,11 @@ export function pickQuery(pick: TradePick): [string, string][] {
 }
 /** What is set by volatility, as the routes read it (`volRuleOf`): each rule switched, and its three levels. */
 export function volQuery(a: VolAsk): [string, string][] {
-  const out: [string, string][] = [['vsl', a.sl ? '1' : '0'], ['vdelta', a.delta ? '1' : '0'], ['vlots', a.lots ? '1' : '0']];
+  const out: [string, string][] = [['vsl', a.sl ? '1' : '0'], ['vdelta', a.delta ? '1' : '0'], ['vlots', a.lots ? '1' : '0'], ['vwin', a.win ? '1' : '0']];
   if (a.sl) out.push(['vh', String(a.sl.high)], ['vm', String(a.sl.medium)], ['vl', String(a.sl.low)]);
   if (a.delta) out.push(['dh', String(a.delta.high)], ['dm', String(a.delta.medium)], ['dl', String(a.delta.low)]);
   if (a.lots) out.push(['lh', String(a.lots.high)], ['lm', String(a.lots.medium)], ['ll', String(a.lots.low)]);
+  if (a.win) out.push(['wb', String(a.win.base)], ['wt', String(a.win.minTrades)], ['wd', String(a.win.days)], ['wh', String(a.win.adj.high)], ['wm', String(a.win.adj.medium)], ['wl', String(a.win.adj.low)]);
   return out;
 }
 /**

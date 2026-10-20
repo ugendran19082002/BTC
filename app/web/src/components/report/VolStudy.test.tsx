@@ -59,7 +59,7 @@ describe('VolStudy', () => {
     fireEvent.change(screen.getByLabelText('Option SL in high volatility, per cent over the premium'), { target: { value: '120' } });
     fireEvent.click(screen.getByRole('switch', { name: /Lots by volatility/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
-    await waitFor(() => expect(read).toHaveBeenCalledWith({ sl: { low: 250, medium: 200, high: 120 }, delta: null, lots: { low: 2, medium: 2, high: 1 } }));
+    await waitFor(() => expect(read).toHaveBeenCalledWith({ sl: { low: 250, medium: 200, high: 120 }, delta: null, lots: { low: 2, medium: 2, high: 1 }, win: null }));
     expect(JSON.parse(window.localStorage.getItem('btc-desk:signalBacktest.volStudy.rules')!).sl.high).toBe('120');
     fireEvent.click(screen.getByRole('button', { name: 'Back to the defaults' }));
     expect(screen.getByLabelText('Option SL in high volatility, per cent over the premium')).toHaveValue(150);
@@ -67,11 +67,11 @@ describe('VolStudy', () => {
 
   it('[critical] a value out of range, none switched on, or none typed is said in words and Compare waits', () => {
     expect(volDraftProblem(VOL_DRAFTS)).toBeNull();
-    expect(volDraftProblem({ ...VOL_DRAFTS, sl: { ...VOL_DRAFTS.sl, on: false } })).toMatch(/Switch on the SL, the delta or the lots/);
+    expect(volDraftProblem({ ...VOL_DRAFTS, sl: { ...VOL_DRAFTS.sl, on: false } })).toMatch(/Switch on the SL, the delta, the lots or the win %/);
     expect(volDraftProblem({ ...VOL_DRAFTS, delta: { ...VOL_DRAFTS.delta, on: true, high: '0.9' } })).toMatch(/high volatility delta is from 0\.02 to 0\.50/);
     expect(volDraftProblem({ ...VOL_DRAFTS, lots: { ...VOL_DRAFTS.lots, on: true, low: '1.5' } })).toMatch(/low volatility lots are a whole number/);
     expect(volDraftProblem({ ...VOL_DRAFTS, sl: { ...VOL_DRAFTS.sl, medium: '' } })).toMatch(/Type the normal volatility SL/);
-    expect(volAskOf({ ...VOL_DRAFTS, delta: { ...VOL_DRAFTS.delta, on: true } })).toEqual({ sl: { low: 250, medium: 200, high: 150 }, delta: { low: 0.12, medium: 0.1, high: 0.08 }, lots: null });
+    expect(volAskOf({ ...VOL_DRAFTS, delta: { ...VOL_DRAFTS.delta, on: true } })).toEqual({ sl: { low: 250, medium: 200, high: 150 }, delta: { low: 0.12, medium: 0.1, high: 0.08 }, lots: null, win: null });
     show();
     fireEvent.change(screen.getByLabelText('Option SL in low volatility, per cent over the premium'), { target: { value: '2000' } });
     expect(screen.getByRole('alert')).toHaveTextContent('The low volatility SL is from 10% to 1,000% of the premium.');
@@ -186,7 +186,7 @@ describe('VolStudy', () => {
     const days = await screen.findByRole('dialog', { name: 'By expiry day · By ATM IV' });
     fireEvent.click(within(days).getByRole('button', { name: 'See the 3 trades of Thu 15 Oct, by volatility' }));
     // Asked with the values the comparison was worked with, that day, that side, that way of reading.
-    await waitFor(() => expect(readTrades).toHaveBeenCalledWith({ sl: { low: 250, medium: 200, high: 150 }, delta: null, lots: null }, { day: '2026-10-15', side: 'by-vol', by: 'iv' }));
+    await waitFor(() => expect(readTrades).toHaveBeenCalledWith({ sl: { low: 250, medium: 200, high: 150 }, delta: null, lots: null, win: null }, { day: '2026-10-15', side: 'by-vol', by: 'iv' }));
     const list = await screen.findByRole('dialog', { name: 'Thu 15 Oct · by volatility · By ATM IV' });
     expect(within(list).getAllByRole('listitem')).toHaveLength(3);
     expect(within(list).getAllByText(/High volatility/)).toHaveLength(1);
@@ -194,5 +194,38 @@ describe('VolStudy', () => {
     fireEvent.click(within(levels).getByRole('button', { name: /^High 1:/ }));
     expect(within(list).getAllByRole('listitem')).toHaveLength(1);
     expect(within(levels).getByRole('button', { name: /^Unknown 1:/ })).toBeInTheDocument();
+  });
+
+  /* Win % by volatility (20 Oct 2026, owner: "the strategy's 50% as it is; low 5% less, high 5% more -- not numbers typed for each"). */
+  it('[critical] win % by volatility: a base and each level\'s move in points, the bar said under each -- and asked for as typed', async () => {
+    show();
+    const sw = screen.getByRole('switch', { name: /Win % by volatility/ });
+    expect(sw).not.toBeChecked();
+    fireEvent.click(sw);
+    expect(screen.getByLabelText('Base win per cent')).toHaveValue(50);
+    expect(screen.getByLabelText('Least trades')).toHaveValue(3);
+    expect(screen.getByLabelText('Days before each day read')).toHaveValue(14);
+    expect(screen.getByLabelText('Win % move in low volatility, points')).toHaveValue(-5);
+    expect(screen.getByLabelText('Win % move in normal volatility, points')).toHaveValue(0);
+    expect(screen.getByLabelText('Win % move in high volatility, points')).toHaveValue(5);
+    for (const bar of ['→ 45%', '→ 50%', '→ 55%']) expect(screen.getByText(bar)).toBeInTheDocument();
+    // The base moved: every level's bar moves with it.
+    fireEvent.change(screen.getByLabelText('Base win per cent'), { target: { value: '60' } });
+    for (const bar of ['→ 55%', '→ 60%', '→ 65%']) expect(screen.getByText(bar)).toBeInTheDocument();
+    expect(screen.getByText(/Win % base 60%: Low -5 → 55% · Normal 0 → 60% · High \+5 → 65%, of 3\+ trades over the 14 days before/)).toBeInTheDocument();
+    // Alone, without the SL: still a rule to compare.
+    fireEvent.click(screen.getByRole('switch', { name: /SL by volatility/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+    await waitFor(() => expect(read).toHaveBeenCalledWith({ sl: null, delta: null, lots: null, win: { base: 60, minTrades: 3, days: 14, adj: { low: -5, medium: 0, high: 5 } } }));
+  });
+
+  it('win % by volatility, checked as the server checks it', () => {
+    const on = (o: Partial<NonNullable<typeof VOL_DRAFTS.win>>) => volDraftProblem({ ...VOL_DRAFTS, win: { ...VOL_DRAFTS.win!, on: true, ...o } });
+    expect(on({})).toBeNull();
+    expect(on({ base: '0' })).toBe('The base win % is from 1% to 100%.');
+    expect(on({ minTrades: '0' })).toBe('The least trades are a whole number from 1 to 100.');
+    expect(on({ days: '31' })).toBe('The days read are a whole number from 1 to 30.');
+    expect(on({ high: '60' })).toBe('The high volatility move is from -50 to +50 points.');
+    expect(on({ low: '' })).toBe('The low volatility move is from -50 to +50 points.');
   });
 });

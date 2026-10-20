@@ -1356,8 +1356,54 @@ test('[critical] volatility by ATM IV, and the option stop by volatility against
     const atrDelta = delta.body.sources.find((x: any) => x.by === 'atr').lines;
     assert.deepEqual(atrDelta.map((l: any) => l.n), [6, 6], 'no level by the candles: the strike rule as set');
     assert.equal((await get(`/api/signal-backtest/vol-study?${base}&vsl=0&vdelta=1&dh=0.09`)).body.sources.find((x: any) => x.by === 'iv').lines[1].n, 6, 'its own delta, typed');
-    for (const [q, why] of [['vsl=0', /SL, the delta or the lots/], ['vdelta=1&dm=0.9', /medium volatility delta is from 0\.02 to 0\.50/], ['vlots=1&lh=1.5', /high volatility lots are a whole number/], ['vlots=yes', /vlots is 0 or 1/]] as const) {
+    for (const [q, why] of [['vsl=0', /SL, the delta, the lots or the win %/], ['vdelta=1&dm=0.9', /medium volatility delta is from 0\.02 to 0\.50/], ['vlots=1&lh=1.5', /high volatility lots are a whole number/], ['vlots=yes', /vlots is 0 or 1/]] as const) {
       assert.match((await get(`/api/signal-backtest/vol-study?${base}&${q}`)).body.error, why, q);
+    }
+
+    /*
+     * Win % by volatility (20 Oct 2026, owner: "the strategy's 50%; low 5% less, high 5% more"): a signal is traded only
+     * if its method won the bar over the days before its own. CLIMB has none before it, so nothing; QUIET is picked from
+     * CLIMB's record -- and with no level on QUIET, both sides are held to the base.
+     */
+    const pair2 = `from=${CLIMB}&to=${QUIET}&window=all`;
+    // QUIET's one signal given the climb's board a day on, so it trades: picked or not by CLIMB's record.
+    const quietCode = `${QUIET.slice(8, 10)}${QUIET.slice(5, 7)}${QUIET.slice(2, 4)}`;
+    await query(`INSERT INTO option_snapshots (at, symbol, expiry, cp, strike, spot, mark, bid, ask, delta, mark_iv)
+      SELECT at + 86400000, replace(symbol, $1, $2), $2, cp, strike, spot, mark, bid, ask, delta, mark_iv FROM option_snapshots WHERE expiry = $1`, [climbCode, quietCode]);
+    clearSignalBacktestCache();
+    try {
+    const w = await get(`/api/signal-backtest/vol-study?${pair2}&vsl=0&vwin=1&wb=50&wt=1&wd=1`);
+    assert.equal(w.status, 200, JSON.stringify(w.body).slice(0, 300));
+    assert.deepEqual(w.body.win, { base: 50, minTrades: 1, days: 1, adj: { high: 5, medium: 0, low: -5 }, bars: { low: 45, medium: 50, high: 55 } });
+    const climbRec = (await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all`)).body.choices.methods;
+    const passed = climbRec.filter((m: any) => m.n >= 1 && m.wins / m.n >= 0.5).map((m: any) => m.key);
+    const quietAll = (await get(`/api/signal-backtest?from=${QUIET}&to=${QUIET}&window=all`)).body.total.n;
+    const quietPicked = passed.length ? (await get(`/api/signal-backtest?from=${QUIET}&to=${QUIET}&window=all&method=${passed.join(',')}`)).body.total.n : 0;
+    for (const src of w.body.sources) {
+      const [fixed, moved] = [src.lines.find((l: any) => l.rule === 'fixed'), src.lines.find((l: any) => l.rule === 'by-vol')];
+      assert.deepEqual(fixed.byDay.map((d: any) => [d.day, d.n]), [[CLIMB, 0], [QUIET, quietPicked]], `${src.by}: nothing on CLIMB, QUIET by CLIMB's record`);
+      assert.equal(moved.n, fixed.n, `${src.by}: no level on QUIET -- the base on both sides`);
+    }
+    assert.ok(quietAll > 0 && quietPicked === quietAll, 'QUIET traded, and its method won on CLIMB: kept');
+    // A record too short for the bar: nothing traded -- and a record the method missed is no record.
+    const none = await get(`/api/signal-backtest/vol-study?${pair2}&vsl=0&vwin=1&wb=50&wt=50&wd=1`);
+    assert.ok(none.body.sources.every((x: any) => x.lines.every((l: any) => l.n === 0)), 'no method has 50 trades on CLIMB');
+    // Without the rule, QUIET trades all its signals: the rule is what held CLIMB's day back.
+    const off = await get(`/api/signal-backtest/vol-study?${pair2}&vsl=1`);
+    assert.ok(off.body.sources[0].lines[0].byDay.find((d: any) => d.day === CLIMB).n > 0);
+    // The day's list is the day's row, rebuilt from the same record.
+    const wl = await get(`/api/signal-backtest/vol-study/trades?${pair2}&vsl=0&vwin=1&wb=50&wt=1&wd=1&day=${QUIET}&side=fixed&by=atr`);
+    assert.equal(wl.status, 200, JSON.stringify(wl.body).slice(0, 300));
+    assert.equal(wl.body.total, quietPicked);
+    assert.ok(wl.body.trades.every((t: any) => passed.includes(t.method)));
+    assert.equal((await get(`/api/signal-backtest/vol-study/trades?${pair2}&vsl=0&vwin=1&wb=50&wt=1&wd=1&day=${CLIMB}&side=by-vol&by=iv`)).body.total, 0);
+    } finally {
+      await query('DELETE FROM option_snapshots WHERE expiry = $1', [quietCode]);
+      clearSignalBacktestCache();
+    }
+    for (const [q, why] of [['vwin=1&wb=0', /base win % is from 1% to 100%/], ['vwin=1&wt=0', /least trades are a whole number/], ['vwin=1&wd=31', /days read for the win % are a whole number from 1 to 30/],
+      ['vwin=1&wh=60', /high volatility move of the win % is from -50 to \+50 points/], ['vwin=2', /vwin is 0 or 1/]] as const) {
+      assert.match((await get(`/api/signal-backtest/vol-study?${pair2}&vsl=0&${q}`)).body.error, why, q);
     }
 
     // Saved backtests run together: each on its own signals, no limit -- the shared one too -- and added up.

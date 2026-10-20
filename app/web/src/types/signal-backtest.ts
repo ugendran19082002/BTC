@@ -172,6 +172,8 @@ export type VolStudyResult = {
   sl: Record<VolLevel, number> | null;
   delta: Record<VolLevel, number> | null;
   lots: Record<VolLevel, number> | null;
+  /** Methods by win %, with each level's bar; null, off. With it on, as set is held to the base. Absent from an older server. */
+  win?: (VolWin & { bars: Record<VolLevel, number> }) | null;
   signals: number;
   sources: { by: VolBy; lines: VolStudyLine[] }[];
   /** Both rules traded the same signals on every day (a level's delta may find no strike for some). */
@@ -180,7 +182,9 @@ export type VolStudyResult = {
   members?: { id: string; name: string; problem: string | null }[];
 };
 /** What is set by the level, as asked: stops in per cent over the premium (150), deltas (0.08), whole lots; null is off. */
-export type VolAsk = { sl: Record<VolLevel, number> | null; delta: Record<VolLevel, number> | null; lots: Record<VolLevel, number> | null };
+/** Methods by win %, the bar moved by the level in points (20 Oct 2026): the base, the least trades, the days before read, each level's move. */
+export type VolWin = { base: number; minTrades: number; days: number; adj: Record<VolLevel, number> };
+export type VolAsk = { sl: Record<VolLevel, number> | null; delta: Record<VolLevel, number> | null; lots: Record<VolLevel, number> | null; win?: VolWin | null };
 
 /** Signals on one side only -- an order on the desk with no trade in the backtest, or the other way -- by why, with the first few. */
 export type LiveCheckWhy = { why: string; n: number; first: { at: number; method: string; tf: string; dir: 1 | -1 }[] };

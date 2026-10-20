@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PARAMS, MIN_PREMIUM, breakEvenProblems, breakEvenReached, minuteAtr, paramsKey, perpFeePts, perpOf, widenAfter, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_WIN, passesBar, recordBefore, tallyOf, winBarAt, breakEvenProblems, breakEvenReached, minuteAtr, paramsKey, perpFeePts, perpOf, widenAfter, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
 import { sessionOf, type MinuteBar } from '../../src/report/market-day.js';
 import { fillChargesUsd } from '../../src/trading/charges.js';
 
@@ -885,4 +885,39 @@ test('[critical] skip perp SL / TGT: the perp reaching a level left out closes n
   assert.equal(optStop.by, 'option-sl');
   assert.notEqual(paramsKey({ ...P, skipPerpSl: true }), paramsKey(P));
   assert.notEqual(paramsKey({ ...P, skipPerpSl: true }), paramsKey({ ...P, skipPerpTgt: true }));
+});
+
+/*
+ * Win % by volatility (20 Oct 2026, owner: "the strategy's 50% as it is; low volatility 5% less, high 5% more"): the bar
+ * at each level, and the record it is held to -- the days before a signal's day, never its own.
+ */
+test('[critical] win % by volatility: the base moved by the level, in points, held to 0-100; no level keeps the base', () => {
+  const w = { ...VOL_STUDY_WIN, base: 50 };
+  assert.deepEqual([winBarAt(w, 'low'), winBarAt(w, 'medium'), winBarAt(w, 'high'), winBarAt(w, 'unknown'), winBarAt(w, null)], [45, 50, 55, 50, 50]);
+  assert.equal(winBarAt({ ...w, base: 98, adj: { low: -5, medium: 0, high: 5 } }, 'high'), 100, 'never over 100');
+  assert.equal(winBarAt({ ...w, base: 3, adj: { low: -5, medium: 0, high: 5 } }, 'low'), 0, 'never under 0');
+});
+
+test('[critical] win % by volatility: a method passes on enough trades won at the bar, over the days before only', () => {
+  const t = (method: string, net: number) => ({ signal: { method }, netUsd: net }) as never;
+  // Three days: 18 Oct two won of three, 19 Oct one won of one, 20 Oct (the day itself) a loss.
+  const byDay = new Map([
+    ['2026-10-18', tallyOf([t('a', 1), t('a', 2), t('a', -1)])],
+    ['2026-10-19', tallyOf([t('a', 1), t('b', -1)])],
+    ['2026-10-20', tallyOf([t('a', -5)])],
+  ]);
+  const two = recordBefore(byDay, '2026-10-20', 2);
+  assert.deepEqual(two.get('a'), { n: 4, wins: 3 }, 'the two days before, not the day itself');
+  const one = recordBefore(byDay, '2026-10-20', 1);
+  assert.deepEqual(one.get('a'), { n: 1, wins: 1 });
+  // 3 of 4 = 75%: through 70, not 80; and not on 5 trades.
+  assert.equal(passesBar(two, 'a', 70, 3), true);
+  assert.equal(passesBar(two, 'a', 80, 3), false);
+  assert.equal(passesBar(two, 'a', 70, 5), false);
+  assert.equal(passesBar(two, 'b', 0, 1), true, 'a loss of one passes a bar of 0');
+  assert.equal(passesBar(two, 'c', 0, 1), false, 'no record, no pass');
+  // The same record, the level's bar: low 45 / normal 50 / high 55 around a base of 50 -- 50% passes low and normal, not high.
+  const half = new Map([['x', { n: 4, wins: 2 }]]);
+  const w = { ...VOL_STUDY_WIN, base: 50, minTrades: 3 };
+  assert.deepEqual((['low', 'medium', 'high'] as const).map((l) => passesBar(half, 'x', winBarAt(w, l), w.minTrades)), [true, true, false]);
 });

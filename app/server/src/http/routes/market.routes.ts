@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, VOL_STUDY_WIN, type VolWin, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades } from '../../report/backtest-run.js';
@@ -214,11 +214,13 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
  * What the volatility study sets by level: `?vsl=1` (the default) the option stop, each level's per cent over the
  * premium in `?vh=&vm=&vl=` (150 / 200 / 250 absent); `?vdelta=1` the strike's delta, each level's in `?dh=&dm=&dl=`
  * (0.08 / 0.10 / 0.12 absent); `?vlots=1` the lots, each level's in `?lh=&lm=&ll=` (1 / 2 / 2 absent, whole, 1 to
- * 1,000). At least one of the three.
+ * 1,000); `?vwin=1` methods by win % with the bar moved by the level (20 Oct 2026): `?wb=` the base per cent (1 to
+ * 100, 50), `?wt=` the least trades (1 to 100, 3), `?wd=` the days before each day read (1 to 30, 14), and each level's
+ * move in points `?wl=&wm=&wh=` (-50 to 50; -5 / 0 / +5). At least one of the four.
  */
 export function volRuleOf(q: Record<string, unknown>): VolRule | string {
   const on = (k: string, dflt: boolean) => (q[k] === undefined || q[k] === '' ? dflt : q[k] === '1');
-  for (const k of ['vsl', 'vdelta', 'vlots']) if (q[k] !== undefined && q[k] !== '' && q[k] !== '0' && q[k] !== '1') return `${k} is 0 or 1.`;
+  for (const k of ['vsl', 'vdelta', 'vlots', 'vwin']) if (q[k] !== undefined && q[k] !== '' && q[k] !== '0' && q[k] !== '1') return `${k} is 0 or 1.`;
   const read = (keys: [string, string, string], dflt: Record<VolLevel, number>, scale: number, lo: number, hi: number, what: (l: VolLevel) => string) => {
     const out = {} as Record<VolLevel, number>;
     for (const [i, level] of (['high', 'medium', 'low'] as const).entries()) {
@@ -241,8 +243,23 @@ export function volRuleOf(q: Record<string, unknown>): VolRule | string {
       lots[level] = v;
     }
   }
-  if (!sl && !delta && !lots) return 'Set the SL, the delta or the lots by volatility: vsl=1, vdelta=1 or vlots=1.';
-  return { sl, delta, lots };
+  let win: VolWin | null = null;
+  if (on('vwin', false)) {
+    const num = (k: string, dflt: number) => (q[k] === undefined || q[k] === '' ? dflt : Number(q[k]));
+    const base = num('wb', VOL_STUDY_WIN.base), minTrades = num('wt', VOL_STUDY_WIN.minTrades), days = num('wd', VOL_STUDY_WIN.days);
+    if (!(Number.isFinite(base) && base >= 1 && base <= 100)) return 'The base win % is from 1% to 100%.';
+    if (!(Number.isInteger(minTrades) && minTrades >= 1 && minTrades <= 100)) return 'The least trades are a whole number from 1 to 100.';
+    if (!(Number.isInteger(days) && days >= 1 && days <= 30)) return 'The days read for the win % are a whole number from 1 to 30.';
+    const adj = {} as Record<VolLevel, number>;
+    for (const [level, k] of [['high', 'wh'], ['medium', 'wm'], ['low', 'wl']] as const) {
+      const v = num(k, VOL_STUDY_WIN.adj[level]);
+      if (!(Number.isFinite(v) && v >= -50 && v <= 50)) return `The ${level} volatility move of the win % is from -50 to +50 points.`;
+      adj[level] = Math.round(v * 10) / 10;
+    }
+    win = { base: Math.round(base * 10) / 10, minTrades, days, adj };
+  }
+  if (!sl && !delta && !lots && !win) return 'Set the SL, the delta, the lots or the win % by volatility: vsl=1, vdelta=1, vlots=1 or vwin=1.';
+  return { sl, delta, lots, win };
 }
 
 /** Which of the study's trades to list: `?day=` (an expiry day of the range), `?side=fixed|by-vol`, `?by=atr|iv`. */
