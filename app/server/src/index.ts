@@ -321,7 +321,6 @@ setInterval(() => {
   runAutoMethods(Date.now(), {
     all: () => strategies.all(), get: (id) => strategies.get(id), save: (s) => strategies.save(s),
     pick: (c, a, now) => autoPick(c, a, now, tradingService().spot),
-    tell: (text) => { const svc = tradingService(); if (svc.alertsOn) svc.notifier?.notify({ key: `auto-methods:${Date.now()}`, text }); },
     log: (u) => strategies.logMethodUpdate(u),
     warn: (message) => noteError({ source: 'server', level: 'warn', where: 'auto-methods', message }),
   }).catch(warn('auto-methods')).finally(() => { picking = false; });

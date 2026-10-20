@@ -109,24 +109,21 @@ export type AutoDeps = {
   get: (id: string) => Promise<Strategy | null>;
   save: (s: Strategy) => Promise<unknown>;
   pick: (config: StrategyConfig, a: AutoMethods, now: number) => Promise<AutoMethodsRun>;
-  /** The day's summary, one message for every strategy updated in the run. */
-  tell: (text: string) => void;
   /** Each strategy's run, kept (`strategy_method_updates`): changed or kept, with why. */
   log: (u: Omit<MethodUpdate, 'id' | 'added' | 'dropped'>) => Promise<unknown>;
   warn: (message: string) => void;
 };
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const dayWords = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-
 /**
  * Every strategy whose update is due, one after the other (the backtest thread takes one at a time). Each is
  * read again before it is written, and only its list and `last` change: a save from the form in the minute the
  * record took is kept. Returns the ids updated.
+ *
+ * Nothing is sent (owner, 20 Oct 2026: "my strategies are private -- no Telegram for the methods' update"): each run is
+ * kept in `strategy_method_updates`, on the strategy's card and the Methods log, and a failure is a warning in the log.
  */
 export async function runAutoMethods(now: number, d: AutoDeps): Promise<string[]> {
   const done: string[] = [];
-  const lines: string[] = [];
   for (const s of (await d.all()).filter((x) => autoDue(x, now))) {
     const a = s.config.signal!.autoMethods!;
     let run: AutoMethodsRun;
@@ -161,16 +158,7 @@ export async function runAutoMethods(now: number, d: AutoDeps): Promise<string[]
       records,
       note: run.note ?? null,
     }).catch((e: Error) => d.warn(`methods' daily update for ${s.name}: not logged: ${e.message}`));
-    const added = run.picked.filter((m) => !run.before.includes(m)).length, dropped = run.before.filter((m) => !run.picked.includes(m)).length;
-    const out = excludedBy(rule.autoMethods).size;
-    const said = `win ≥${a.winPct}% on ${a.minTrades}+, ${dayWords(run.from)} – ${dayWords(run.to)}${out ? `, ${out} excluded` : ''}`;
-    lines.push(run.note
-      ? `<b>${esc(s.name)}</b>: kept ${run.picked.length} (${said}). ${esc(run.note)}`
-      : added + dropped === 0
-        ? `<b>${esc(s.name)}</b>: no change, ${plural(run.picked.length, 'method')} (${said})`
-        : `<b>${esc(s.name)}</b>: ${run.before.length} → ${run.picked.length} methods, +${added} −${dropped} (${said})`);
   }
-  if (lines.length) d.tell(['Methods updated by their record:', ...lines].join('\n'));
   return done;
 }
 

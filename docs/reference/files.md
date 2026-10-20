@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-543 files listed, 284 test files counted below, images and lockfiles left out.
+546 files listed, 286 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 141 |
-| `app/web` | 143 |
+| `app/web` | 145 |
 
 ## `(root)`
 
@@ -269,6 +269,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [m-manifest.json](../../app/web/public/m-manifest.json) | JSON settings. |
 | [m-sw.js](../../app/web/public/m-sw.js) | The phone view's service worker (6 Oct 2026): what lets /m be installed as an app, and nothing more. |
+| [theme-boot.js](../../app/web/public/theme-boot.js) | The theme before the first paint (20 Oct 2026): read the choice kept by lib/theme.ts and set it on the root, so a light page never flashes dark while the app loads. |
 
 ## `app/web/scripts/`
 
@@ -282,7 +283,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [App.tsx](../../app/web/src/App.tsx) | The timeframes the market-state card offers, which the chart also draws. |
 | [main.tsx](../../app/web/src/main.tsx) | A deploy replaced the chunks this page was built with (10 Oct 2026: "Failed to fetch dynamically imported module .../AccountCard-CwGAwC3J.js", a tab left open over a deploy). |
-| [styles.css](../../app/web/src/styles.css) | Slim, quiet scrollbars. |
+| [styles.css](../../app/web/src/styles.css) | Roles, one each, so both themes say the same thing in their own colours (owner, 20 Oct 2026: "light and dark, every screen, desk and phone, one design"). |
 
 ## `app/web/src/api/`
 
@@ -573,6 +574,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [sheet.tsx](../../app/web/src/components/ui/sheet.tsx) | A panel that comes up from the bottom on a phone and sits in the middle on a desktop. |
 | [swipe-confirm.tsx](../../app/web/src/components/ui/swipe-confirm.tsx) | Drag the thumb to the end to confirm. |
 | [switch.tsx](../../app/web/src/components/ui/switch.tsx) | On or off, with what it does beside it. |
+| [theme-switch.tsx](../../app/web/src/components/ui/theme-switch.tsx) | Light, dark, or as the device is (owner, 20 Oct 2026): the same three on the desk's account menu and the phone's Settings. |
 | [time-picker.tsx](../../app/web/src/components/ui/time-picker.tsx) | A time of day, picked on a clock face. |
 | [toggle-group.tsx](../../app/web/src/components/ui/toggle-group.tsx) | Scrolls rather than squeezes: five chips crushed into a phone width wrap "server · 1" onto two lines, which reads as two chips. |
 
@@ -630,6 +632,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [strategy-rules.ts](../../app/web/src/lib/strategy-rules.ts) | What is wrong with a strategy before it is saved, and where on the form. |
 | [strategy-totals.ts](../../app/web/src/lib/strategy-totals.ts) | What the signal strategies switched on add up to (4 Oct 2026): how many entries they allow between them, how many lots that is, and the margin it would take with every one of them open at once. |
 | [tab-title.ts](../../app/web/src/lib/tab-title.ts) | What the browser tab says: the price, how far it has come today, and the day's P&L -- the three numbers somebody glances at from another tab. |
+| [theme.ts](../../app/web/src/lib/theme.ts) | Light and dark (owner, 20 Oct 2026: "light and dark theme, every screen, desk and phone, one design"). |
 | [time.ts](../../app/web/src/lib/time.ts) | Times of day, as the desk stores them and as a person reads them. |
 | [trade-events.ts](../../app/web/src/lib/trade-events.ts) | What changed between one reading of the desk's open trades and the next (the phone's live toasts, owner, 6 Oct 2026): an order began waiting, an order filled, a position closed, a waiting order wen... |
 | [utils.ts](../../app/web/src/lib/utils.ts) | Class-name helpers shared by every component. |

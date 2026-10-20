@@ -494,12 +494,16 @@ function exits(plan: TradePlan): string {
 const hasPerpExits = (plan: TradePlan) => Boolean(plan.underlying && (plan.underlying.stop !== null || plan.underlying.target !== null));
 const btc = (n: number | null) => (n === null ? '—' : price(n));
 
-/** The signal a signal strategy traded: "#1 Breakout BUY · 15m, without the chain". */
+/**
+ * The signal a signal strategy traded, by its side and its time frame: "BUY · 15m, without the chain". Never by its
+ * method (owner, 20 Oct 2026: "my strategies are private -- no signal name or method name on Telegram"); the trade's
+ * own page on the desk says which.
+ */
 function signalLine(plan: TradePlan): string | null {
   const g = plan.signal;
   if (!g) return null;
   const way = g.mode === 'mtf' ? 'with the timeframe chain' : `${escape(g.tf)}, without the chain`;
-  return `📡 Signal <b>#${g.n} ${escape(g.name)}</b> ${g.dir === 1 ? 'BUY' : 'SELL'} · ${way}`;
+  return `📡 Signal <b>${g.dir === 1 ? 'BUY' : 'SELL'}</b> · ${way}`;
 }
 
 /** The trade's real exits, on the BTC perpetual: the signal's SL and TGT. */

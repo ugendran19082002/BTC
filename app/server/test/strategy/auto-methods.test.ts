@@ -58,7 +58,6 @@ test('[critical] the run: each due strategy picked, read again, only its list an
     ['later', strategy('later', signal(['basis'], { at: '22:00' }))],
     ['off', strategy('off', signal(['basis'], { on: false }))],
   ]);
-  const told: string[] = [];
   const logged: Parameters<AutoDeps['log']>[0][] = [];
   const d: AutoDeps = {
     log: async (u) => { logged.push(u); },
@@ -71,7 +70,6 @@ test('[critical] the run: each due strategy picked, read again, only its list an
     save: async (s) => { db.set(s.id, s); },
     pick: async (_c, _a, at) => ({ at, from: '2026-10-10', to: '2026-10-16', picked: ['momentum', 'breakout'], before: ['breakout', 'bos'],
       records: [{ method: 'momentum', trades: 5, wins: 5, net: 0.4 }, { method: 'breakout', trades: 4, wins: 3, net: 0.1 }, { method: 'bos', trades: 6, wins: 2, net: -0.3 }] }),
-    tell: (t) => told.push(t),
     warn: () => assert.fail('no warning expected'),
   };
   assert.deepEqual(await runAutoMethods(now, d), ['due']);
@@ -88,8 +86,8 @@ test('[critical] the run: each due strategy picked, read again, only its list an
     from: '2026-10-10', to: '2026-10-16', before: ['breakout', 'bos'], after: ['momentum', 'breakout'],
     records: [{ method: 'momentum', trades: 5, wins: 5, net: 0.4 }, { method: 'breakout', trades: 4, wins: 3, net: 0.1 }, { method: 'bos', trades: 6, wins: 2, net: -0.3 }], note: null,
   });
-  assert.equal(told.length, 1);
-  assert.match(told[0]!, /<b>due<\/b>: 2 → 2 methods, \+1 −1 \(win ≥75% on 3\+, 10 Oct – 16 Oct\)/);
+  // Nothing sent (20 Oct 2026, owner: "my strategies are private -- no Telegram for the methods' update"): there is no way to.
+  assert.ok(!('tell' in d), 'the update has no channel to send by');
   // ran: not again today
   assert.deepEqual(await runAutoMethods(now + 60_000, d), []);
 });
@@ -102,7 +100,7 @@ test('a failed record keeps the list, says why, and is not tried again every min
   const d: AutoDeps = {
     log: async (u) => { logged.push(u); },
     all: async () => [...db.values()], get: async (id) => db.get(id) ?? null, save: async (s) => { db.set(s.id, s); },
-    pick: async () => { throw new Error('the backtest took too long'); }, tell: () => {}, warn: (m) => warned.push(m),
+    pick: async () => { throw new Error('the backtest took too long'); }, warn: (m) => warned.push(m),
   };
   await runAutoMethods(now, d);
   assert.deepEqual(db.get('s')!.config.signal!.methods, ['trap']);
@@ -164,7 +162,6 @@ test('[critical] excluded: nothing else passes -- the list is kept, less the exc
 test('[critical] the run reads Exclude as saved now: a method excluded on the form while the record was worked out is not written', async () => {
   const now = IST('2026-10-16T21:00:10');
   const db = new Map([['s', strategy('s', signal(['breakout']))]]);
-  const told: string[] = [];
   const d: AutoDeps = {
     log: async () => {}, all: async () => [...db.values()], save: async (s) => { db.set(s.id, s); },
     get: async (id) => {
@@ -172,11 +169,10 @@ test('[critical] the run reads Exclude as saved now: a method excluded on the fo
       return { ...s, config: { ...s.config, signal: { ...s.config.signal!, autoMethods: { ...s.config.signal!.autoMethods!, exclude: { on: true, methods: ['momentum'] } } } } };
     },
     pick: async (_c, _a, at) => ({ at, from: '2026-10-10', to: '2026-10-16', picked: ['momentum', 'bos'], before: ['breakout'] }),
-    tell: (t) => told.push(t), warn: (m) => assert.fail(m),
+    warn: (m) => assert.fail(m),
   };
   await runAutoMethods(now, d);
   assert.deepEqual(db.get('s')!.config.signal!.methods, ['bos']);
-  assert.match(told[0]!, /, 1 excluded\)/);
 });
 
 test('[critical] Exclude on needs at least one method; off may keep none', () => {

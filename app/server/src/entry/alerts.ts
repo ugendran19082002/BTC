@@ -154,12 +154,12 @@ export function entryAlertFor(r: MethodRead, live: { ltp?: number | null; at?: n
     return `${label}   <code>${fmt(price)}</code>  +${fmt(pts)} pts · ${risk > 0 ? (pts / risk).toFixed(1) : '–'}R${note}`;
   };
   const way = r.mode === 'mtf' ? 'with timeframe · 5m entry' : `without timeframe · ${r.tf}`;
-  const why = r.steps.filter((s) => s.ok === true && (r.mode === 'single' || s.tf === '5m')).map((s) => s.label).slice(0, 3);
   const off = r.gates.filter((g) => !g.enabled && g.ok === false).map((g) => `${g.label} ${g.value ?? ''}`.trim());
   const at = live.at ?? Date.now();
   const lines = [
     `${long ? '🟢 <b>BUY SIGNAL</b>' : '🔴 <b>SELL SIGNAL</b>'} · BTCUSD`,
-    `<b>#${r.code ?? r.n} ${esc(r.name)}</b> · ${esc(way)}`,
+    // Never the method: its name, number or steps (owner, 20 Oct 2026: "my strategies are private").
+    `${esc(way)}`,
     `🕒 ${esc(IST.format(at))} IST${live.ltp ? ` · LTP <code>${fmt(live.ltp)}</code>` : ''}`,
     '',
     '📍 <b>ENTRY</b>',
@@ -176,7 +176,6 @@ export function entryAlertFor(r: MethodRead, live: { ltp?: number | null; at?: n
     ...(p.tp3 !== null ? [tp('TP3', p.tp3, p.why?.tp3 ? ` · ${esc(p.why.tp3)}` : ' · expected move')] : []),
     '',
     `📊 R:R <b>${p.rr.toFixed(2)}</b> · Quality ${r.score ?? '–'}/100`,
-    ...(why.length ? [`✅ Why: ${esc(why.join(' · '))}`] : []),
     ...(off.length ? [`⚠️ <b>Only a TRADE because gates are off</b>: ${esc(off.join(' · '))}`] : []),
     '<i>Paper-logged · no order placed</i>',
   ];
