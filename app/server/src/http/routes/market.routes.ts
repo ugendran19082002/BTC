@@ -2,12 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, VOL_STUDY_WIN, type VolWin, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick } from '../../report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, VOL_STUDY_WIN, type VolWin, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick, type WinSweepAsk, type WinSweepCellPick } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
-import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades } from '../../report/backtest-run.js';
+import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades, winSweep, winSweepTrades } from '../../report/backtest-run.js';
 import { cleanBlocks, cleanConfig, strategyStore } from './strategy.routes.js';
-import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
+import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, SIGNAL_TFS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
@@ -262,6 +262,82 @@ export function volRuleOf(q: Record<string, unknown>): VolRule | string {
   return { sl, delta, lots, win };
 }
 
+/**
+ * The days methods by win % are picked on, for a run over `r` (19 Oct 2026; read here for the sweep too, 20 Oct): `o_winon=`
+ * `before` (the default) the `o_windays=` (1 to 30, 7) finished days before the run; `same`, the run's own; `first`,
+ * the run's first `o_windays` days, the run then on the days after them; `custom`, `o_winfrom` to `o_winto`, the run
+ * then on its days after the last. With the days the run is left on. Or why not, in words.
+ */
+export function winDaysOf(q: Record<string, unknown>, r: { from: string; to: string }): { on: 'before' | 'same' | 'first' | 'custom'; pick: { from: string; to: string }; run: { from: string; to: string } } | string {
+  const on = q.o_winon === undefined || q.o_winon === '' ? 'before' : q.o_winon;
+  const days = q.o_windays === undefined || q.o_windays === '' ? 7 : Number(q.o_windays);
+  if (on !== 'before' && on !== 'same' && on !== 'first' && on !== 'custom') return 'methods are picked on the days "before" the run, on its "first" days, on the "same" days, or on "custom" days.';
+  if (on !== 'custom' && (!Number.isInteger(days) || days < 1 || days > 30)) return 'methods are picked on 1 to 30 days before it.';
+  const shift = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  if (on === 'same') return { on, pick: r, run: r };
+  if (on === 'custom') {
+    const pickFrom = typeof q.o_winfrom === 'string' ? q.o_winfrom : '', pickTo = typeof q.o_winto === 'string' ? q.o_winto : '';
+    if (!DAY.test(pickFrom) || !DAY.test(pickTo) || Number.isNaN(Date.parse(pickFrom)) || Number.isNaN(Date.parse(pickTo))) return 'custom days to pick on are a first and a last day, YYYY-MM-DD.';
+    if (pickFrom > pickTo) return 'the first day to pick on must not be after the last.';
+    if (pickFrom < REPORT_FIRST_DAY) return `the record starts ${REPORT_FIRST_DAY}; pick on days from then.`;
+    if ((Date.parse(pickTo) - Date.parse(pickFrom)) / 86_400_000 + 1 > 31) return 'methods are picked on at most 31 days.';
+    if (pickTo >= r.to) return `picking up to ${pickTo} leaves none of ${r.from} to ${r.to} to run on. End the pick before ${r.to}.`;
+    // Run on the run's days after the pick, never on one of its own.
+    return { on, pick: { from: pickFrom, to: pickTo }, run: pickTo >= r.from ? { from: shift(pickTo, 1), to: r.to } : r };
+  }
+  if (on === 'first') {
+    const pickTo = shift(r.from, days - 1);
+    if (pickTo >= r.to) return `picking on its first ${days} day${days === 1 ? '' : 's'} leaves none of ${r.from} to ${r.to} to run on. Pick on fewer days, or run over more.`;
+    return { on, pick: { from: r.from, to: pickTo }, run: { from: shift(pickTo, 1), to: r.to } };
+  }
+  const to = shift(r.from, -1), from = shift(r.from, -days);
+  if (to < REPORT_FIRST_DAY) return `there are no finished days before ${r.from} to pick from (the record starts ${REPORT_FIRST_DAY}). Pick on the run's first ${days} days instead, or start the run later.`;
+  return { on, pick: { from: from < REPORT_FIRST_DAY ? REPORT_FIRST_DAY : from, to }, run: r };
+}
+
+/** The most win % values and least-trades values a sweep takes: every pair is a backtest. */
+const SWEEP_PCTS_MAX = 12;
+const SWEEP_TRADES_MAX = 4;
+/**
+ * The bars of a win % sweep (20 Oct 2026): `?w_pcts=50,55,60` the win % values (whole, 1 to 100, at most
+ * `SWEEP_PCTS_MAX`) and `?w_trades=1,3` the least trades (whole, 1 to 100, at most `SWEEP_TRADES_MAX`), each in
+ * rising order, once. Or why not, in words.
+ */
+export function sweepBarsOf(q: Record<string, unknown>): { pcts: number[]; minTrades: number[] } | string {
+  const list = (k: string) => (typeof q[k] === 'string' && q[k] !== '' ? [...new Set((q[k] as string).split(',').map((x) => Number(x.trim())))].sort((a, b) => a - b) : []);
+  const pcts = list('w_pcts'), minTrades = list('w_trades');
+  if (!pcts.length) return 'Which win % values: w_pcts=50,55,60.';
+  if (pcts.some((x) => !(Number.isInteger(x) && x >= 1 && x <= 100))) return 'Each win % is a whole number from 1 to 100.';
+  if (pcts.length > SWEEP_PCTS_MAX) return `At most ${SWEEP_PCTS_MAX} win % values at once.`;
+  if (!minTrades.length) return 'Which least trades: w_trades=1,3.';
+  if (minTrades.some((x) => !(Number.isInteger(x) && x >= 1 && x <= 100))) return 'Each least trades is a whole number from 1 to 100.';
+  if (minTrades.length > SWEEP_TRADES_MAX) return `At most ${SWEEP_TRADES_MAX} least-trades values at once.`;
+  return { pcts, minTrades };
+}
+
+/**
+ * One cell of a sweep, for its trades (20 Oct 2026): `?w_row=` the row's id, and `?w_cell=` `saved`, `all`, or a bar as
+ * `<win %>:<least trades>` -- `60:3`. Or why not, in words.
+ */
+export function sweepCellOf(q: Record<string, unknown>): WinSweepCellPick | string {
+  const row = typeof q.w_row === 'string' ? q.w_row.trim() : '';
+  if (row === '' || row.length > 120) return 'Which row: w_row=<its id>.';
+  const cell = typeof q.w_cell === 'string' ? q.w_cell : '';
+  if (cell === 'saved' || cell === 'all') return { row, cell };
+  const m = /^(\d{1,3}):(\d{1,3})$/.exec(cell);
+  const pct = m ? Number(m[1]) : NaN, minTrades = m ? Number(m[2]) : NaN;
+  if (!(pct >= 1 && pct <= 100 && minTrades >= 1 && minTrades <= 100)) return 'Which cell: w_cell=saved, all, or <win %>:<least trades> -- 60:3.';
+  return { row, cell: { pct, minTrades } };
+}
+
+/** The rows of the single backtest's sweep: the settings whole, or (`?w_split=tf`) each time frame of them alone. */
+function sweepRowsOf(q: Record<string, unknown>, params: BacktestParams): WinSweepAsk['members'] {
+  const tfs = listOf(q, 'tf'), methods = listOf(q, 'method');
+  return q.w_split === 'tf'
+    ? (tfs ?? [...[...SIGNAL_TFS].reverse(), 'chain']).map((tf) => ({ id: tf, name: tf === 'chain' ? 'All (chain)' : tf, ask: { params, tfs: [tf], methods, strategy: null } }))
+    : [{ id: 'settings', name: 'These settings', ask: { params, tfs, methods, strategy: null } }];
+}
+
 /** Which of the study's trades to list: `?day=` (an expiry day of the range), `?side=fixed|by-vol`, `?by=atr|iv`. */
 export function volTradesPickOf(q: Record<string, unknown>, r: { from: string; to: string }): VolTradesPick | string {
   const day = typeof q.day === 'string' ? q.day : '';
@@ -367,6 +443,50 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const strategy = askedId === null ? null : (await backtestStrategies()).find((s) => s.id === askedId) ?? null;
     if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
     return signalBacktestTrades({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot }, pick);
+  });
+
+  /**
+   * Methods by win % at several bars, of the settings on the screen (owner, 20 Oct 2026: "an editable range -- the
+   * win %, the strategies and the least trades -- in the backtest"): asked as the backtest is, with the bars
+   * (`sweepBarsOf`) and the days picked on (`winDaysOf`). `?w_split=tf`: each time frame of it alone -- its methods
+   * picked on that time frame's own record -- one row each, as saved backtests by time frame would be. A strategy's
+   * methods are its own: not swept. Read-only.
+   */
+  app.get('/api/signal-backtest/win-sweep', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const runDays = rangeOf(q);
+    if (typeof runDays === 'string') return refuse(reply, 400, { error: runDays });
+    const params = backtestParamsOf(q);
+    if (typeof params === 'string') return refuse(reply, 400, { error: params });
+    if (typeof q.strategy === 'string' && q.strategy !== '') return refuse(reply, 400, { error: 'A strategy keeps its own methods: the sweep is of the settings. Choose "Settings" rather than a strategy.' });
+    const bars = sweepBarsOf(q);
+    if (typeof bars === 'string') return refuse(reply, 400, { error: bars });
+    if (q.w_split !== undefined && q.w_split !== '' && q.w_split !== 'tf') return refuse(reply, 400, { error: 'w_split is "tf" or absent.' });
+    const d = winDaysOf(q, runDays);
+    if (typeof d === 'string') return refuse(reply, 400, { error: `For the sweep: ${d}` });
+    return winSweep({ ...d.run, now: Date.now(), spot: tradingService().spot, pick: d.pick, ...bars, members: sweepRowsOf(q, params) });
+  });
+
+  /**
+   * One cell of the sweep, trade by trade (owner, 20 Oct 2026: "each cell, a tap, a popup, trade by trade"): asked as
+   * the sweep is, less its bars, with the cell (`sweepCellOf`). Its methods are worked out again as the sweep worked
+   * them, and named in the answer. Read-only.
+   */
+  app.get('/api/signal-backtest/win-sweep/trades', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const runDays = rangeOf(q);
+    if (typeof runDays === 'string') return refuse(reply, 400, { error: runDays });
+    const params = backtestParamsOf(q);
+    if (typeof params === 'string') return refuse(reply, 400, { error: params });
+    if (typeof q.strategy === 'string' && q.strategy !== '') return refuse(reply, 400, { error: 'A strategy keeps its own methods: the sweep is of the settings. Choose "Settings" rather than a strategy.' });
+    if (q.w_split !== undefined && q.w_split !== '' && q.w_split !== 'tf') return refuse(reply, 400, { error: 'w_split is "tf" or absent.' });
+    const at = sweepCellOf(q);
+    if (typeof at === 'string') return refuse(reply, 400, { error: at });
+    const d = winDaysOf(q, runDays);
+    if (typeof d === 'string') return refuse(reply, 400, { error: `For the sweep: ${d}` });
+    const members = sweepRowsOf(q, params);
+    if (!members.some((m) => m.id === at.row)) return refuse(reply, 404, { error: 'No such row in this sweep.' });
+    return winSweepTrades({ ...d.run, now: Date.now(), spot: tradingService().spot, pick: d.pick, pcts: [], minTrades: [], members }, at);
   });
 
   /**

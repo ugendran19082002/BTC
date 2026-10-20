@@ -258,3 +258,25 @@ export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };
 export type BtSlotRow = { slot: number; method: string; name: string; n: number; wins: number; net: number; charges: number };
 /** Which trades to list: one expiry day or all of them, a session of the day (slots, both in), one method. */
 export type TradePick = { day?: string | null; slotFrom?: number | null; slotTo?: number | null; method?: string | null };
+
+/**
+ * Methods by win % at several bars at once (20 Oct 2026): the bars, the days the methods are picked on, and -- of the
+ * single backtest -- whether each time frame is a row of its own.
+ */
+export type WinSweepAsk = {
+  pcts: number[]; minTrades: number[];
+  on: 'before' | 'first' | 'same' | 'custom'; days: number; pickFrom?: string; pickTo?: string;
+  split?: boolean;
+};
+/** What a list traded, dollars after charges; null where no method passed the bar -- nothing traded. */
+export type WinSweepCell = { methods: number; n: number; wins: number; net: number; charges: number } | null;
+export type WinSweepRow = { id: string; name: string; problem: string | null; saved: WinSweepCell; all: WinSweepCell; cells: WinSweepCell[][] };
+export type WinSweepResult = {
+  from: string; to: string; pick: { from: string; to: string }; pcts: number[]; minTrades: number[];
+  rows: WinSweepRow[];
+  /** Every row added up, each alone on its own limit. */
+  total: Omit<WinSweepRow, 'id' | 'name' | 'problem'>;
+  runs: number;
+};
+/** One cell of a sweep, for its trades: as saved, every method, or one bar. */
+export type WinSweepCellKey = 'saved' | 'all' | { pct: number; minTrades: number };

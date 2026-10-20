@@ -117,15 +117,19 @@ export const winPickFixWords = (f: Partial<WinPick>, w: WinPick) => (
         : f.pickFrom ? `Start the pick on ${dayLabel(f.pickFrom)}`
           : `Pick on the run's first ${plural(f.days ?? w.days)} instead`);
 
-export function RunWinPick({ value, onChange, run }: {
+export function RunWinPick({ value, onChange, run, daysOnly = false, whose = "Each saved backtest's" }: {
   value: WinPick; onChange: (w: WinPick) => void;
   /** The run's days: what the pick is checked against before the run is asked for. */
   run?: { from: string; to: string };
+  /** The days picked on alone, the win % and the least trades set elsewhere (20 Oct 2026: the win % sweep sets several). */
+  daysOnly?: boolean;
+  /** Whose methods are picked, as the words under it start: the saved backtests', or the settings'. */
+  whose?: string;
 }) {
   const put = (o: Partial<WinPick>) => onChange({ ...value, ...o });
   const check = run ? winPickProblem(value, run) : { problem: null, fix: null, note: null };
   const fixWords = (f: Partial<WinPick>) => winPickFixWords(f, value);
-  const badPct = !(value.pct >= 1 && value.pct <= 100), badTrades = !(Number.isInteger(value.minTrades) && value.minTrades >= 1 && value.minTrades <= 100);
+  const badPct = !daysOnly && !(value.pct >= 1 && value.pct <= 100), badTrades = !daysOnly && !(Number.isInteger(value.minTrades) && value.minTrades >= 1 && value.minTrades <= 100);
   const badDays = value.on !== 'custom' && value.on !== 'same' && !(Number.isInteger(value.days) && value.days >= 1 && value.days <= 30);
   // Custom chosen: the days it starts from, where none are kept yet.
   const choose = (on: WinPick['on']) => put(on === 'custom' && !(isDay(value.pickFrom) && isDay(value.pickTo)) && run ? { on, ...customPickFor(run) } : { on });
@@ -134,6 +138,7 @@ export function RunWinPick({ value, onChange, run }: {
     ? { from: value.pickTo >= run.from ? shift(value.pickTo, 1) : run.from, to: run.to } : null;
   return (
     <div className="grid min-w-0 gap-2">
+      {!daysOnly && <>
       <div className="grid min-w-0 gap-1">
         <span className="text-[12px] text-muted-foreground">Won at least</span>
         <div role="group" aria-label="Methods by win %, won at least" className="flex flex-wrap items-center gap-1.5">
@@ -148,6 +153,7 @@ export function RunWinPick({ value, onChange, run }: {
         </div>
         {value.minTrades < 3 && <span className="text-[11.5px] text-[var(--warn)]">One or two trades is luck, not a record: 1 of 1 is 100%.</span>}
       </div>
+      </>}
       <Segmented dense label="Methods by win %, picked on" value={value.on} onChange={choose}
         options={[
           { key: 'before', label: 'Days before', spoken: 'Picked on the days before the run, then tested on the run' },
@@ -197,15 +203,15 @@ export function RunWinPick({ value, onChange, run }: {
       )}
       <p className={value.on === 'same' ? 'm-0 text-[12px] leading-snug text-[var(--warn)]' : 'm-0 text-[12px] leading-snug text-muted-foreground'}>
         {value.on === 'before'
-          ? `Each saved backtest's methods picked on the ${value.days} finished days before the run, then run on days that took no part in picking them -- an honest test of the pick.`
+          ? `${whose} methods picked on the ${value.days} finished days before the run, then run on days that took no part in picking them -- an honest test of the pick.`
           : value.on === 'first'
-            ? `Each saved backtest's methods picked on the run's first ${plural(value.days)}${run && !check.problem ? ` (${daysWords(run.from, shift(run.from, value.days - 1))})` : ''}, then run on the days after them${run && !check.problem ? ` (${daysWords(shift(run.from, value.days), run.to)})` : ''} -- days that took no part in the pick, so still an honest test.`
+            ? `${whose} methods picked on the run's first ${plural(value.days)}${run && !check.problem ? ` (${daysWords(run.from, shift(run.from, value.days - 1))})` : ''}, then run on the days after them${run && !check.problem ? ` (${daysWords(shift(run.from, value.days), run.to)})` : ''} -- days that took no part in the pick, so still an honest test.`
             : value.on === 'custom'
               ? (tested && isDay(value.pickFrom) && isDay(value.pickTo)
-                ? `Each saved backtest's methods picked on ${daysWords(value.pickFrom, value.pickTo)} (${plural(span(value.pickFrom, value.pickTo))}), then run on ${daysWords(tested.from, tested.to)} (${plural(span(tested.from, tested.to))}) -- never on a day of the pick, so an honest test.`
-                : "Each saved backtest's methods picked on the days you choose, then run on the run's days after the last of them -- never on a day of the pick.")
+                ? `${whose} methods picked on ${daysWords(value.pickFrom, value.pickTo)} (${plural(span(value.pickFrom, value.pickTo))}), then run on ${daysWords(tested.from, tested.to)} (${plural(span(tested.from, tested.to))}) -- never on a day of the pick, so an honest test.`
+                : `${whose} methods picked on the days you choose, then run on the run's days after the last of them -- never on a day of the pick.`)
               : "Picked on the same days it is run on: the methods are chosen knowing how they did, so the result looks better than it can be. Use it to see the list; judge it on the days before."}
-        {' '}A saved backtest by a strategy keeps the strategy&apos;s methods. Nothing saved is changed -- each one&apos;s pick can be kept on it from the result.
+        {!daysOnly && <>{' '}A saved backtest by a strategy keeps the strategy&apos;s methods. Nothing saved is changed -- each one&apos;s pick can be kept on it from the result.</>}
       </p>
       {(badPct || badTrades || badDays) && <p role="alert" className="m-0 text-[12px] text-[var(--down)]">The win rate is from 1% to 100%, the least trades a whole number from 1 to 100, and the days 1 to 30.</p>}
     </div>

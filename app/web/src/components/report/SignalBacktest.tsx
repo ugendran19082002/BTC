@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { getBacktestTrades, getLiveCheck, getSignalBacktest, getVolStudy, getVolStudyTrades } from '@/api/signal-backtest';
+import { getBacktestTrades, getLiveCheck, getSignalBacktest, getVolStudy, getVolStudyTrades, getWinSweep, getWinSweepTrades } from '@/api/signal-backtest';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
@@ -22,6 +22,7 @@ import { Entry, Ledger, SETTLE_MS, Table, count, each, marginWorking, netClass, 
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
+import { WinSweep } from '@/components/report/WinSweep';
 import { BacktestStrikeBlocks } from '@/components/report/BacktestStrikeBlocks';
 import { BacktestTsl } from '@/components/report/BacktestTsl';
 import { BacktestPerpWiden } from '@/components/report/BacktestPerpWiden';
@@ -635,6 +636,7 @@ const RESULT_PARTS = [
   { id: 'bt-sessions', label: 'Sessions' },
   { id: 'bt-days', label: 'Days' },
   { id: 'bt-volsl', label: 'By volatility' },
+  { id: 'bt-winsweep', label: 'Win % sweep' },
   { id: 'bt-live', label: 'Live check' },
 ] as const;
 
@@ -1158,6 +1160,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               {together && <FoldAll what="the run together" state={runFolds} onChange={setRunFolds} />}
               {together
                 ? <PanelFolds state={runFolds} onChange={setRunFolds}><PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} blocked={runBlocked} onClose={() => setTogether(null)}
+                    onUseWin={(w) => setRunOver({ ...runOver, winPick: w })}
                     revision={savedList.filter((s) => together.ids.includes(s.id)).map((s) => `${s.id}:${s.updatedAt}`).join(',')} /></PanelFolds>
                 : <Panel title="Run together"><Empty>Run a portfolio, or tick two or more saved backtests and run them together: each is worked as it is alone, and they are added up -- the total, each one, each expiry day, and the margin held across all of them.</Empty></Panel>}
             </div>
@@ -1177,7 +1180,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   return page(
     <>
 
-      <ResultNav parts={RESULT_PARTS} has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || (t.n > 0 && (id !== 'bt-perp' || t.perpNetPts !== undefined))} />
+      <ResultNav parts={RESULT_PARTS} has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || id === 'bt-winsweep' || (t.n > 0 && (id !== 'bt-perp' || t.perpNetPts !== undefined))} />
       <Updating busy={read.stale} what="the backtest">
       <div id="bt-summary" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
       <Panel title="Backtest result">
@@ -1304,6 +1307,12 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       </Updating>
       {/* The SL, delta and lots by volatility against the settings as set, on these settings' signals (17 Oct 2026): asked for with a tap. */}
       <div id="bt-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><VolStudy askKey={JSON.stringify(query)} read={(a) => getVolStudy(query, a)} readTrades={(a, pick) => getVolStudyTrades(query, a, pick)} wide={wide} /></div>
+      {/* Methods by win % at several bars, of the settings (20 Oct 2026): a strategy keeps its own methods, so only by settings. */}
+      <div id="bt-winsweep" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
+        {strategyId
+          ? <Panel title="Methods by win % · sweep"><Empty>A strategy keeps its own methods: choose Settings above to sweep the methods by win %.</Empty></Panel>
+          : <WinSweep scope="single" askKey={JSON.stringify(query)} wide={wide} run={range} read={(a) => getWinSweep(query, a)} readTrades={(a, row, cell) => getWinSweepTrades(query, a, row, cell)} />}
+      </div>
       {/* The same backtest beside the live desk (14 Oct 2026): asked with the question on the screen, so it is the check of this result. */}
       <div id="bt-live" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><LiveCheck askKey={JSON.stringify(query)} read={() => getLiveCheck(query)} /></div>
       <DayTradesSheet day={openTrades?.key ?? null} title={openTrades?.title} read={() => getBacktestTrades(query, openTrades!.pick)} onClose={() => setOpenTrades(null)} />

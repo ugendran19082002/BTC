@@ -926,7 +926,7 @@ describe('SignalBacktest', () => {
     expect(run.getByText('Winners made')).toBeInTheDocument();
     expect(run.getByText(/1,300 signals went in the trade over all of them; 1,100 were traded here\. Not traded: 150 outside their hours, 50 while the account was full \(at most open\)\./)).toBeInTheDocument();
     const jump = screen.getAllByRole('navigation', { name: 'Jump to a part of the result' }).at(-1)!;
-    expect(within(jump).getAllByRole('button').map((x) => x.textContent)).toEqual(['Summary', 'Exits & time frames', 'Pairs', 'Methods', 'Days', 'By volatility', 'Live check']);
+    expect(within(jump).getAllByRole('button').map((x) => x.textContent)).toEqual(['Summary', 'Exits & time frames', 'Pairs', 'Methods', 'Days', 'By volatility', 'Win % sweep', 'Live check']);
     for (const name of ['Backtest: which exit closed the trades', 'Backtest by time frame', 'Backtest: methods in profit', 'Backtest by kind of day']) {
       expect(screen.getAllByRole('table', { name }).length, name).toBeGreaterThan(0);
     }

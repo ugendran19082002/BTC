@@ -11,6 +11,7 @@ import { CHAIN_KEY } from '../trading/pnl-history.js';
 import { FAMILIES, PATTERNS, candles, familyOf, sessionDayOf, sessionOf, type MinuteBar, type PatternKey } from './market-day.js';
 import { marketDays, marketReport, zeroTot, type Tot } from './market-report.js';
 import { selectLegs, type Candidate } from '../strategy/select.js';
+import { pickMethods } from '../strategy/pick-methods.js';
 import { exitMomentFor, istMinutes, istWeekday } from '../strategy/schedule.js';
 import {
   DEFAULT_CONFIG, SIGNAL_TFS, actionOf, exitRules, exitValueAt, sideCaps, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
@@ -1543,6 +1544,95 @@ async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
   };
 }
 
+/**
+ * Methods by win % at several bars at once (owner, 20 Oct 2026, after a table of net at win 50% to 75%, worked by
+ * hand: "an editable range -- the win %, the strategies and the least trades -- in the backtest and the portfolio").
+ *
+ * For each saved backtest (or the settings on the screen): every method's record on the pick days, as the run's
+ * "methods by win %" reads it, then -- for each least-trades and each win % -- the methods that pass (`pickMethods`)
+ * backtested on the run's days, each alone on its own limit. A cell is exactly what a run of that one with that bar
+ * would make. The same list at two bars is worked once. Beside them, as saved and every method, for the baseline.
+ */
+export type WinSweepAsk = {
+  from: string; to: string; now: number; spot?: number | null;
+  /** The days each one's methods are picked on: before the run, its first days, its own, or days chosen. */
+  pick: { from: string; to: string };
+  pcts: readonly number[]; minTrades: readonly number[];
+  members: PortfolioAsk['members'];
+};
+/** What a list traded: how many methods, trades, won, and money after charges, dollars. Null: no method passed -- nothing traded. */
+export type WinSweepCell = { methods: number; n: number; wins: number; net: number; charges: number } | null;
+export type WinSweepRow = {
+  id: string; name: string; problem: string | null;
+  saved: WinSweepCell; all: WinSweepCell;
+  /** By least trades, then by win %, in the order asked. */
+  cells: WinSweepCell[][];
+};
+export type WinSweep = {
+  from: string; to: string; pick: { from: string; to: string }; pcts: number[]; minTrades: number[];
+  rows: WinSweepRow[];
+  /** Every row added up -- each alone, so as a run together with each its own limit. */
+  total: Omit<WinSweepRow, 'id' | 'name' | 'problem'>;
+  /** The backtests it took, after the same lists were worked once. */
+  runs: number;
+};
+
+export function winSweepHere(o: WinSweepAsk): Promise<WinSweep> {
+  const run = working.then(() => winSweepNow(o));
+  working = run.catch(() => { });
+  return run;
+}
+
+async function winSweepNow(o: WinSweepAsk): Promise<WinSweep> {
+  let runs = 0;
+  const rows: WinSweepRow[] = [];
+  for (const m of o.members) {
+    const empty = { saved: null, all: null, cells: o.minTrades.map(() => o.pcts.map((): WinSweepCell => null)) };
+    if (!m.ask || m.problem) { rows.push({ id: m.id, name: m.name, problem: m.problem ?? 'It cannot be worked out.', ...empty }); continue; }
+    if (m.ask.strategy) { rows.push({ id: m.id, name: m.name, problem: 'Worked by a strategy: it keeps the strategy\'s methods.', ...empty }); continue; }
+    const ask = m.ask;
+    // One backtest a list of methods: `*` every one.
+    const done = new Map<string, WinSweepCell>();
+    const tried = async (methods: readonly string[] | null): Promise<WinSweepCell> => {
+      const key = methods === null ? '*' : [...methods].sort().join(',');
+      const had = done.get(key);
+      if (had !== undefined) return had;
+      runs++;
+      const r = await signalBacktestNow({ ...ask, methods, from: o.from, to: o.to, now: o.now, spot: o.spot ?? null });
+      const cell = { methods: methods?.length ?? r.choices.methods.length, n: r.total.n, wins: r.total.wins, net: r.total.net, charges: r.total.charges };
+      done.set(key, cell);
+      return cell;
+    };
+    // The record: every method on the pick days. Picked on the run's own days, it is also every method's run.
+    runs++;
+    const rec = await signalBacktestNow({ ...ask, methods: null, from: o.pick.from, to: o.pick.to, now: o.now, spot: o.spot ?? null });
+    if (o.pick.from === o.from && o.pick.to === o.to) done.set('*', { methods: rec.choices.methods.length, n: rec.total.n, wins: rec.total.wins, net: rec.total.net, charges: rec.total.charges });
+    const record = rec.choices.methods.map((x) => ({ method: x.key, trades: x.n, wins: x.wins, net: x.net }));
+    const all = await tried(null);
+    const saved = ask.methods ? await tried(ask.methods) : all;
+    const cells: WinSweepCell[][] = [];
+    for (const minTrades of o.minTrades) {
+      const line: WinSweepCell[] = [];
+      for (const winPct of o.pcts) {
+        const ids = pickMethods(record, { winPct, minTrades });
+        line.push(ids.length ? await tried(ids) : null);
+      }
+      cells.push(line);
+    }
+    rows.push({ id: m.id, name: m.name, problem: null, saved, all, cells });
+  }
+  const add = (xs: readonly WinSweepCell[]): WinSweepCell => xs.reduce<WinSweepCell>((t, c) => (c === null ? t
+    : { methods: (t?.methods ?? 0) + c.methods, n: (t?.n ?? 0) + c.n, wins: (t?.wins ?? 0) + c.wins, net: (t?.net ?? 0) + c.net, charges: (t?.charges ?? 0) + c.charges }), null);
+  const worked = rows.filter((r) => r.problem === null);
+  return {
+    from: o.from, to: o.to, pick: o.pick, pcts: [...o.pcts], minTrades: [...o.minTrades], rows, runs,
+    total: {
+      saved: add(worked.map((r) => r.saved)), all: add(worked.map((r) => r.all)),
+      cells: o.minTrades.map((_, i) => o.pcts.map((__, j) => add(worked.map((r) => r.cells[i]![j]!)))),
+    },
+  };
+}
+
 /** What a result is broken down by: the same for one backtest and for saved backtests run together (`breakdownOf`). */
 export type BtBreakdown = Pick<SignalBacktest, 'pairs' | 'byTf' | 'byMethod' | 'byPattern' | 'byFamily' | 'byVol'>;
 /** The cells of a result, added up every way the screen breaks it down -- each row with the days it had. */
@@ -2502,6 +2592,30 @@ export function signalBacktestTradesHere(o: Ask, pick: TradePick): Promise<BtDay
   const run = working.then(() => signalBacktestTradesNow(o, pick));
   working = run.catch(() => { });
   return run;
+}
+/**
+ * One cell of a win % sweep, trade by trade (owner, 20 Oct 2026: "each cell, a tap, a popup, trade by trade"): the row's
+ * methods for that cell worked out again as the sweep worked them -- as saved, every method, or those that passed the
+ * bar on the pick days -- and the row's trades with them over the run's days. `methods`: the list traded (null, every one).
+ */
+export type WinSweepCellPick = { row: string; cell: 'saved' | 'all' | { pct: number; minTrades: number } };
+export function winSweepTradesHere(o: WinSweepAsk, at: WinSweepCellPick): Promise<BtDayTrades & { methods: string[] | null }> {
+  const run = working.then(() => winSweepTradesNow(o, at));
+  working = run.catch(() => { });
+  return run;
+}
+async function winSweepTradesNow(o: WinSweepAsk, at: WinSweepCellPick): Promise<BtDayTrades & { methods: string[] | null }> {
+  const m = o.members.find((x) => x.id === at.row);
+  if (!m?.ask || m.problem || m.ask.strategy) throw new Error('That row was not swept: it cannot be worked out, or a strategy works it.');
+  const ask = m.ask;
+  let methods: readonly string[] | null = at.cell === 'all' ? null : at.cell === 'saved' ? ask.methods : null;
+  if (typeof at.cell === 'object') {
+    const rec = await signalBacktestNow({ ...ask, methods: null, from: o.pick.from, to: o.pick.to, now: o.now, spot: o.spot ?? null });
+    methods = pickMethods(rec.choices.methods.map((x) => ({ method: x.key, trades: x.n, wins: x.wins, net: x.net })), { winPct: at.cell.pct, minTrades: at.cell.minTrades });
+    if (!methods.length) return { ...listed(`${o.from}..${o.to}`, []), methods: [] };
+  }
+  const r = await signalBacktestTradesNow({ ...ask, methods, from: o.from, to: o.to, now: o.now, spot: o.spot ?? null }, {});
+  return { ...r, methods: methods ? [...methods] : null };
 }
 export function portfolioTradesHere(o: PortfolioAsk, pick: TradePick): Promise<BtDayTrades> {
   const run = working.then(() => portfolioTradesNow(o, pick));

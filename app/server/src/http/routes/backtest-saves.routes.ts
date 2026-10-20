@@ -4,10 +4,9 @@ import {
   PORTFOLIO_MEMBERS_MAX, clonePortfolio, cloneSave, dropPortfolio, dropSave, groupProblem, keepPortfolio, keepSave, listSaves, nameProblem, renameGroup, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
 import { DEFAULT_PARAMS, type BacktestParams } from '../../report/signal-backtest.js';
-import { liveCheck, portfolioBacktest, portfolioTrades, portfolioVolStudy, portfolioVolStudyTrades, signalBacktest } from '../../report/backtest-run.js';
-import { REPORT_FIRST_DAY } from '../../report/market-report.js';
+import { liveCheck, portfolioBacktest, portfolioTrades, portfolioVolStudy, portfolioVolStudyTrades, signalBacktest, winSweep, winSweepTrades } from '../../report/backtest-run.js';
 import { pickMethods } from '../../strategy/auto-methods.js';
-import { backtestParamsFrom, backtestParamsOf, backtestStrategies, liveAccounts, rangeOf, volRuleOf, volTradesPickOf } from './market.routes.js';
+import { backtestParamsFrom, backtestParamsOf, backtestStrategies, liveAccounts, rangeOf, sweepBarsOf, sweepCellOf, volRuleOf, volTradesPickOf, winDaysOf } from './market.routes.js';
 import { refuse } from '../refuse.js';
 
 /**
@@ -146,36 +145,12 @@ async function portfolioQuery(q: Record<string, unknown>) {
     let win: { pct: number; minTrades: number; on: 'before' | 'same' | 'first' | 'custom'; from: string; to: string } | null = null;
     if (q.o_win !== undefined && q.o_win !== '') {
       const pct = Number(q.o_win), minTrades = q.o_wintrades === undefined || q.o_wintrades === '' ? 3 : Number(q.o_wintrades);
-      const on = q.o_winon === undefined || q.o_winon === '' ? 'before' : q.o_winon;
-      const days = q.o_windays === undefined || q.o_windays === '' ? 7 : Number(q.o_windays);
       if (!(pct >= 1 && pct <= 100)) return { code: 400, error: 'For the run: the win rate is from 1% to 100%.' };
       if (!Number.isInteger(minTrades) || minTrades < 1 || minTrades > 100) return { code: 400, error: 'For the run: the least trades are a whole number from 1 to 100.' };
-      if (on !== 'before' && on !== 'same' && on !== 'first' && on !== 'custom') return { code: 400, error: 'For the run: methods are picked on the days "before" the run, on its "first" days, on the "same" days, or on "custom" days.' };
-      if (on !== 'custom' && (!Number.isInteger(days) || days < 1 || days > 30)) return { code: 400, error: 'For the run: methods are picked on 1 to 30 days before it.' };
-      const shift = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
-      if (on === 'same') win = { pct, minTrades, on, from: r.from, to: r.to };
-      else if (on === 'custom') {
-        const pickFrom = typeof q.o_winfrom === 'string' ? q.o_winfrom : '', pickTo = typeof q.o_winto === 'string' ? q.o_winto : '';
-        const day = /^\d{4}-\d{2}-\d{2}$/;
-        if (!day.test(pickFrom) || !day.test(pickTo) || Number.isNaN(Date.parse(pickFrom)) || Number.isNaN(Date.parse(pickTo))) return { code: 400, error: 'For the run: custom days to pick on are a first and a last day, YYYY-MM-DD.' };
-        if (pickFrom > pickTo) return { code: 400, error: 'For the run: the first day to pick on must not be after the last.' };
-        if (pickFrom < REPORT_FIRST_DAY) return { code: 400, error: `For the run: the record starts ${REPORT_FIRST_DAY}; pick on days from then.` };
-        if ((Date.parse(pickTo) - Date.parse(pickFrom)) / 86_400_000 + 1 > 31) return { code: 400, error: 'For the run: methods are picked on at most 31 days.' };
-        if (pickTo >= r.to) return { code: 400, error: `For the run: picking up to ${pickTo} leaves none of ${r.from} to ${r.to} to run on. End the pick before ${r.to}.` };
-        win = { pct, minTrades, on, from: pickFrom, to: pickTo };
-        // Run on the run's days after the pick, never on one of its own.
-        if (pickTo >= r.from) r = { from: shift(pickTo, 1), to: r.to };
-      }
-      else if (on === 'first') {
-        const pickTo = shift(r.from, days - 1);
-        if (pickTo >= r.to) return { code: 400, error: `For the run: picking on its first ${days} day${days === 1 ? '' : 's'} leaves none of ${r.from} to ${r.to} to run on. Pick on fewer days, or run over more.` };
-        win = { pct, minTrades, on, from: r.from, to: pickTo };
-        r = { from: shift(pickTo, 1), to: r.to };
-      } else {
-        const to = shift(r.from, -1), from = shift(r.from, -days);
-        if (to < REPORT_FIRST_DAY) return { code: 400, error: `For the run: there are no finished days before ${r.from} to pick from (the record starts ${REPORT_FIRST_DAY}). Pick on the run's first ${days} days instead, or start the run later.` };
-        win = { pct, minTrades, on, from: from < REPORT_FIRST_DAY ? REPORT_FIRST_DAY : from, to };
-      }
+      const d = winDaysOf(q, r);
+      if (typeof d === 'string') return { code: 400, error: `For the run: ${d}` };
+      win = { pct, minTrades, on: d.on, from: d.pick.from, to: d.pick.to };
+      r = d.run;
     }
     const own = saves.filter((s) => s.query.strategy !== null).map((s) => s.id);
     const members = saves.map((s) => {
@@ -341,6 +316,44 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
     const pick = volTradesPickOf(q, asked.r);
     if (typeof pick === 'string') return refuse(reply, 400, { error: pick });
     return portfolioVolStudyTrades({ ...asked.r, now: Date.now(), spot: tradingService().spot, members: asked.members, ...rule }, pick);
+  });
+
+  /**
+   * Methods by win % at several bars over the run's saved backtests (owner, 20 Oct 2026: "an editable range -- the
+   * win %, the strategies and the least trades -- in the portfolio"): the run's own query -- its saved backtests
+   * (`ids`, those ticked), hours and settings -- less its own pick, which the sweep makes at every bar; `w_pcts` and
+   * `w_trades` the bars (`sweepBarsOf`), and the days picked on as the run's pick reads them (`winDaysOf`). Each
+   * saved backtest alone, on its own limit: the run's shared one is not over it. Read-only.
+   */
+  app.get('/api/backtest-portfolio/win-sweep', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const bars = sweepBarsOf(q);
+    if (typeof bars === 'string') return refuse(reply, 400, { error: bars });
+    const { o_win: _win, o_wintrades: _trades, ...rest } = q;
+    const asked = await portfolioQuery(rest);
+    if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
+    const d = winDaysOf(q, asked.r);
+    if (typeof d === 'string') return refuse(reply, 400, { error: `For the sweep: ${d}` });
+    return winSweep({ ...d.run, now: Date.now(), spot: tradingService().spot, pick: d.pick, ...bars, members: asked.members });
+  });
+
+  /**
+   * One cell of the run's sweep, trade by trade (owner, 20 Oct 2026: "each cell, a tap, a popup, trade by trade"): the
+   * run's query with `ids` the row's saved backtest, and the cell (`sweepCellOf`). Read-only.
+   */
+  app.get('/api/backtest-portfolio/win-sweep/trades', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const at = sweepCellOf(q);
+    if (typeof at === 'string') return refuse(reply, 400, { error: at });
+    const { o_win: _win, o_wintrades: _trades, ...rest } = q;
+    const asked = await portfolioQuery(rest);
+    if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
+    const m = asked.members.find((x) => x.id === at.row);
+    if (!m) return refuse(reply, 404, { error: 'That saved backtest is not in this run.' });
+    if (!m.ask || m.problem || m.ask.strategy) return refuse(reply, 400, { error: m.problem ?? 'Worked by a strategy: it keeps the strategy\'s methods, and was not swept.' });
+    const d = winDaysOf(q, asked.r);
+    if (typeof d === 'string') return refuse(reply, 400, { error: `For the sweep: ${d}` });
+    return winSweepTrades({ ...d.run, now: Date.now(), spot: tradingService().spot, pick: d.pick, pcts: [], minTrades: [], members: asked.members }, at);
   });
 
   /**

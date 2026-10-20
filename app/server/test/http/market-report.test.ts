@@ -1037,6 +1037,98 @@ test('[critical] a backtest saved by name, run again, and several run together a
   const tooEarly = await get(`/api/backtest-portfolio?ids=${a.body.save.id}&from=2026-10-01&to=${QUIET}&limit=own&o_win=50`);
   assert.equal(tooEarly.status, 400);
   assert.match(tooEarly.body.error, /no finished days before 2026-10-01 to pick from .* Pick on the run's first 7 days instead/);
+  /*
+   * Methods by win % at several bars (20 Oct 2026, owner: "an editable range -- the win %, the strategies and the least
+   * trades"): each cell is what the run with that one bar makes of that saved backtest; as saved and every method beside.
+   */
+  const sweepOf = (extra: string) => get(`/api/backtest-portfolio/win-sweep?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own${extra}`);
+  const sweep = await sweepOf('&w_pcts=100,50,50&w_trades=1&o_winon=same');
+  assert.equal(sweep.status, 200, JSON.stringify(sweep.body).slice(0, 300));
+  assert.deepEqual([sweep.body.pcts, sweep.body.minTrades, sweep.body.pick, sweep.body.from, sweep.body.to], [[50, 100], [1], { from: CLIMB, to: QUIET }, CLIMB, QUIET], 'the bars once each, rising');
+  assert.deepEqual(sweep.body.rows.map((r: any) => [r.id, r.problem]), [[a.body.save.id, null], [b.body.save.id, null]]);
+  sweep.body.rows.forEach((r: any, i: number) => {
+    assert.equal(r.cells[0][0].n, winSame.body.members[i].total.n, `${r.name}: 50% of 1+ trades as the run with that bar`);
+    assert.ok(close(r.cells[0][0].net, winSame.body.members[i].total.net), `${r.name}: to the cent`);
+  });
+  assert.equal(sweep.body.rows[0].cells[0][0].methods, wonA.length);
+  assert.ok(close(sweep.body.rows[0].all.net, allA.body.total.net) && close(sweep.body.rows[0].saved.net, allA.body.total.net), 'saved with every method: the same as every method');
+  // As saved: its own methods, where it has a list.
+  const listed = await post('/api/backtest-saves', { name: 'Sweep, breakout only', query: { params: { ...WHOLE, lots: 3 }, tfs: ['15m'], methods: ['breakout'], strategy: null } });
+  const ownList = await get(`/api/backtest-portfolio/win-sweep?ids=${listed.body.save.id}&from=${CLIMB}&to=${QUIET}&w_pcts=50&w_trades=1&o_winon=same`);
+  const bSaved = await single('&lots=3&tf=15m&method=breakout'), bEvery = await single('&lots=3&tf=15m');
+  assert.ok(close(ownList.body.rows[0].saved.net, bSaved.body.total.net) && ownList.body.rows[0].saved.methods === 1, 'as saved: its own methods');
+  assert.ok(close(ownList.body.rows[0].all.net, bEvery.body.total.net), 'every method: its list set aside');
+  const ownCell = await get(`/api/backtest-portfolio/win-sweep/trades?ids=${listed.body.save.id}&from=${CLIMB}&to=${QUIET}&o_winon=same&w_row=${listed.body.save.id}&w_cell=saved`);
+  assert.deepEqual([ownCell.body.methods, ownCell.body.trades.length], [['breakout'], bSaved.body.total.n]);
+  await del(`/api/backtest-saves/${listed.body.save.id}`);
+  assert.ok(close(sweep.body.total.cells[0][0].net, winSame.body.total.net), 'the total: the run with that bar, each on its own limit');
+  for (const c of [sweep.body.rows[0].cells[0][1], sweep.body.rows[1].cells[0][1]]) assert.ok(c === null || c.wins === c.n, '100%: only methods that never lost, or none');
+  // Each cell, trade by trade (20 Oct 2026: "each cell, a tap, a popup"): the same trades it counted, with the methods that passed.
+  const cellTrades = (row: string, cell: string, extra = '&o_winon=same') => get(`/api/backtest-portfolio/win-sweep/trades?ids=${row}&from=${CLIMB}&to=${QUIET}&limit=own${extra}&w_row=${row}&w_cell=${cell}`);
+  const bar = await cellTrades(a.body.save.id, '50:1');
+  assert.equal(bar.status, 200, JSON.stringify(bar.body).slice(0, 300));
+  assert.deepEqual(bar.body.methods, wonA, 'the methods that passed, as the sweep picked them');
+  assert.equal(bar.body.trades.length, sweep.body.rows[0].cells[0][0].n, 'every trade the cell counted');
+  assert.ok(close(bar.body.trades.reduce((x: number, t: any) => x + t.netUsd, 0), sweep.body.rows[0].cells[0][0].net), 'and its net, to the cent');
+  assert.ok(bar.body.trades.every((t: any) => wonA.includes(t.method)));
+  const bAll = await cellTrades(b.body.save.id, 'all');
+  assert.deepEqual([bAll.body.methods, bAll.body.trades.length], [null, sweep.body.rows[1].all.n]);
+  const bAsSaved = await cellTrades(b.body.save.id, 'saved');
+  assert.deepEqual([bAsSaved.body.methods, bAsSaved.body.trades.length], [null, sweep.body.rows[1].saved.n], 'saved with no list: every method');
+  const noneAt = await cellTrades(a.body.save.id, '100:100');
+  assert.deepEqual([noneAt.status, noneAt.body.methods, noneAt.body.trades], [200, [], []], 'none passed: nothing traded');
+  for (const [cell, code, said] of [['60', 400, /Which cell/], ['0:1', 400, /Which cell/], ['saved&w_row=nope', 400, /./]] as const) {
+    const r = await cellTrades(a.body.save.id, cell);
+    assert.equal(r.status, code, cell);
+    assert.match(r.body.error, said);
+  }
+  const otherRow = await get(`/api/backtest-portfolio/win-sweep/trades?ids=${a.body.save.id}&from=${CLIMB}&to=${QUIET}&o_winon=same&w_row=${b.body.save.id}&w_cell=all`);
+  assert.equal(otherRow.status, 404);
+  // on the day before: as the run picks on it
+  const sweepBefore = await get(`/api/backtest-portfolio/win-sweep?ids=${a.body.save.id}&from=${QUIET}&to=${QUIET}&w_pcts=50&w_trades=1&o_windays=1`);
+  assert.equal(sweepBefore.status, 200, JSON.stringify(sweepBefore.body).slice(0, 300));
+  assert.deepEqual(sweepBefore.body.pick, { from: CLIMB, to: CLIMB });
+  assert.ok(close(sweepBefore.body.rows[0].cells[0][0].net, winBefore.body.members[0].total.net), 'picked on the day before, run on its own');
+  // its first days: run on the rest
+  const sweepFirst = await sweepOf('&w_pcts=50&w_trades=1&o_winon=first&o_windays=1');
+  assert.deepEqual([sweepFirst.body.from, sweepFirst.body.to, sweepFirst.body.pick], [QUIET, QUIET, { from: CLIMB, to: CLIMB }]);
+  // one that cannot be worked -- its strategy deleted -- is listed with why, not swept
+  const withStrategy = await get(`/api/backtest-portfolio/win-sweep?ids=${a.body.save.id},${c.body.save.id}&from=${CLIMB}&to=${QUIET}&w_pcts=50&w_trades=1&o_winon=same`);
+  assert.match(withStrategy.body.rows[1].problem, /strategy it is worked by has been deleted/);
+  assert.deepEqual([withStrategy.body.rows[1].all, withStrategy.body.rows[1].cells], [null, [[null]]]);
+  assert.ok(close(withStrategy.body.total.cells[0][0].net, sweep.body.rows[0].cells[0][0].net), 'and adds nothing');
+  for (const [bad, said] of [
+    ['&w_trades=1', /Which win % values/], ['&w_pcts=0&w_trades=1', /whole number from 1 to 100/], ['&w_pcts=50.5&w_trades=1', /whole number from 1 to 100/],
+    [`&w_pcts=${Array.from({ length: 13 }, (_, i) => 40 + i).join(',')}&w_trades=1`, /At most 12 win % values/],
+    ['&w_pcts=50', /Which least trades/], ['&w_pcts=50&w_trades=1,2,3,4,5', /At most 4 least-trades/],
+    ['&w_pcts=50&w_trades=1&o_winon=later', /^For the sweep: methods are picked on the days "before"/],
+    ['&w_pcts=50&w_trades=1&o_winon=first&o_windays=2', /^For the sweep: picking on its first 2 days leaves none/],
+  ] as const) {
+    const r = await sweepOf(bad);
+    assert.equal(r.status, 400, bad);
+    assert.match(r.body.error, said, bad);
+  }
+  // The single backtest's own: the settings on the screen, or each time frame of them alone.
+  const oneSweep = await get(`/api/signal-backtest/win-sweep?from=${CLIMB}&to=${QUIET}&window=all&w_pcts=50&w_trades=1&o_winon=same`);
+  assert.equal(oneSweep.status, 200, JSON.stringify(oneSweep.body).slice(0, 300));
+  assert.deepEqual(oneSweep.body.rows.map((r: any) => r.id), ['settings']);
+  assert.ok(close(oneSweep.body.rows[0].cells[0][0].net, withThose.body.total.net) && close(oneSweep.body.rows[0].all.net, allA.body.total.net), 'as the backtest with those methods');
+  const split = await get(`/api/signal-backtest/win-sweep?from=${CLIMB}&to=${QUIET}&window=all&tf=15m,5m&w_pcts=50&w_trades=1&o_winon=same&w_split=tf`);
+  assert.deepEqual(split.body.rows.map((r: any) => r.id), ['15m', '5m']);
+  const only15 = await single('&tf=15m');
+  assert.ok(close(split.body.rows[0].all.net, only15.body.total.net), 'a time frame alone');
+  const splitCell = await get(`/api/signal-backtest/win-sweep/trades?from=${CLIMB}&to=${QUIET}&window=all&tf=15m,5m&o_winon=same&w_split=tf&w_row=15m&w_cell=50:1`);
+  assert.equal(splitCell.status, 200, JSON.stringify(splitCell.body).slice(0, 300));
+  assert.equal(splitCell.body.trades.length, split.body.rows[0].cells[0][0]?.n ?? 0, 'a time frame row\'s cell, trade by trade');
+  const oneCell = await get(`/api/signal-backtest/win-sweep/trades?from=${CLIMB}&to=${QUIET}&window=all&o_winon=same&w_row=settings&w_cell=50:1`);
+  assert.ok(close(oneCell.body.trades.reduce((x: number, t: any) => x + t.netUsd, 0), oneSweep.body.rows[0].cells[0][0].net));
+  assert.equal((await get(`/api/signal-backtest/win-sweep/trades?from=${CLIMB}&to=${QUIET}&o_winon=same&w_row=4h&w_cell=all`)).status, 404, 'not a row of this sweep');
+  const byAll = await get(`/api/signal-backtest/win-sweep?from=${CLIMB}&to=${QUIET}&window=all&w_pcts=50&w_trades=1&o_winon=same&w_split=tf`);
+  assert.deepEqual(byAll.body.rows.map((r: any) => r.id), ['4h', '2h', '1h', '30m', '15m', '5m', '3m', 'chain'], 'every time frame, longest first, the chain last');
+  assert.equal((await get(`/api/signal-backtest/win-sweep?from=${CLIMB}&to=${QUIET}&w_pcts=50&w_trades=1&w_split=day`)).status, 400);
+  const byStrategy = await get(`/api/signal-backtest/win-sweep?from=${CLIMB}&to=${QUIET}&w_pcts=50&w_trades=1&strategy=${made.body.strategy.id}`);
+  assert.equal(byStrategy.status, 400);
+  assert.match(byStrategy.body.error, /keeps its own methods/);
   // a setting put over the run is not a setting saved
   const kept = (await get('/api/backtest-saves')).body.saves.find((s: any) => s.id === a.body.save.id).query.params;
   assert.deepEqual([kept.lots, kept.rule, kept.stopPct], [10, 'delta', 3]);

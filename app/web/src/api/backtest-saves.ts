@@ -1,11 +1,11 @@
 import { json, post } from '@/api/client';
-import { pickQuery, volQuery, type VolTradesPick } from '@/api/signal-backtest';
+import { pickQuery, sweepCellQuery, sweepQuery, volQuery, type VolTradesPick } from '@/api/signal-backtest';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import type { NoEntry, StrikeBlock } from '@/types/strategy';
 import { backtestBlockProblems } from '@/lib/backtest-strike-blocks';
 import type { BacktestParams, BreakEven, Tsl } from '@/types/signal-backtest';
 import { breakEvenQuery, tslQuery } from '@/lib/backtest-tsl';
-import type { TradePick, VolAsk, VolStudyResult } from '@/types/signal-backtest';
+import type { TradePick, VolAsk, VolStudyResult, WinSweepAsk, WinSweepCellKey, WinSweepResult } from '@/types/signal-backtest';
 import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
 
 /** Every saved backtest and portfolio, by name. */
@@ -65,6 +65,23 @@ export const getPortfolioVolStudyTrades = (a: VolAsk, pick: VolTradesPick, ids: 
   for (const [k, v] of volQuery(a)) p.set(k, v);
   p.set('day', pick.day); p.set('side', pick.side); p.set('by', pick.by);
   return json<BtDayTrades>(`/api/backtest-portfolio/vol-study/trades?${p}`);
+};
+
+/**
+ * Methods by win % at several bars over some of a run's saved backtests (`ids`, those ticked): asked as the run is, less
+ * its own methods by win % -- the sweep picks at every bar itself.
+ */
+export const getPortfolioWinSweep = (a: WinSweepAsk, ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED, over: PortfolioOver = {}) => {
+  const p = runSearch(ids, range, limit, cap, hours, { ...over, winPick: undefined });
+  for (const [k, v] of sweepQuery({ ...a, split: false })) p.set(k, v);
+  return json<WinSweepResult>(`/api/backtest-portfolio/win-sweep?${p}`);
+};
+
+/** One cell of the run's sweep, trade by trade: the row's saved backtest alone, asked as the run is. */
+export const getPortfolioWinSweepTrades = (a: WinSweepAsk, row: string, cell: WinSweepCellKey, range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED, over: PortfolioOver = {}) => {
+  const p = runSearch([row], range, limit, cap, hours, { ...over, winPick: undefined });
+  for (const [k, v] of [...sweepQuery({ ...a, split: false }), ...sweepCellQuery(row, cell)]) if (k !== 'w_pcts' && k !== 'w_trades') p.set(k, v);
+  return json<BtDayTrades>(`/api/backtest-portfolio/win-sweep/trades?${p}`);
 };
 
 /** A run together as the server reads it: the days, the saved backtests, whose limit, the hours and the settings over the run. */

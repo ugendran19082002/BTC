@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse, VolAsk, VolStudyResult } from '@/types/signal-backtest';
+import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse, VolAsk, VolStudyResult, WinSweepAsk, WinSweepCellKey, WinSweepResult } from '@/types/signal-backtest';
 import type { AutoMethodsRun, StrategyConfig, WalkForward } from '@/types/strategy';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import { strikeBlocksQuery } from '@/lib/backtest-strike-blocks';
@@ -89,6 +89,29 @@ export const getVolStudyTrades = (q: BacktestQuery, a: VolAsk, pick: VolTradesPi
   for (const [k, v] of volQuery(a)) p.set(k, v);
   p.set('day', pick.day); p.set('side', pick.side); p.set('by', pick.by);
   return json<BtDayTrades>(`/api/signal-backtest/vol-study/trades?${p}`);
+};
+/** A win % sweep as the server reads it: the bars, and the days picked on as the run's methods by win % reads them. */
+export function sweepQuery(a: WinSweepAsk): [string, string][] {
+  return [
+    ['w_pcts', a.pcts.join(',')], ['w_trades', a.minTrades.join(',')], ['o_winon', a.on],
+    ...(a.on === 'custom' ? [['o_winfrom', a.pickFrom ?? ''], ['o_winto', a.pickTo ?? '']] as [string, string][] : a.on === 'same' ? [] : [['o_windays', String(a.days)]] as [string, string][]),
+    ...(a.split ? [['w_split', 'tf']] as [string, string][] : []),
+  ];
+}
+/** Methods by win % at several bars, of the settings on the screen: each cell a backtest with the methods that passed. */
+export const getWinSweep = (q: BacktestQuery, a: WinSweepAsk) => {
+  const p = searchOf(q);
+  for (const [k, v] of sweepQuery(a)) p.set(k, v);
+  return json<WinSweepResult>(`/api/signal-backtest/win-sweep?${p}`);
+};
+/** A sweep's cell as the server reads it: its row, and `saved`, `all` or `<win %>:<least trades>`. */
+export const sweepCellQuery = (row: string, cell: WinSweepCellKey): [string, string][] =>
+  [['w_row', row], ['w_cell', typeof cell === 'string' ? cell : `${cell.pct}:${cell.minTrades}`]];
+/** One cell of the settings' sweep, trade by trade: asked as the sweep was, less its bars. */
+export const getWinSweepTrades = (q: BacktestQuery, a: WinSweepAsk, row: string, cell: WinSweepCellKey) => {
+  const p = searchOf(q);
+  for (const [k, v] of [...sweepQuery(a), ...sweepCellQuery(row, cell)]) if (k !== 'w_pcts' && k !== 'w_trades') p.set(k, v);
+  return json<BtDayTrades>(`/api/signal-backtest/win-sweep/trades?${p}`);
 };
 export const getLiveCheck = (q: BacktestQuery) => json<LiveCheck>(`/api/signal-backtest/live-check?${searchOf(q)}`);
 

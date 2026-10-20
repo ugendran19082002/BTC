@@ -18,6 +18,7 @@ import { methodsSchema } from '../entry/catalogue.js';
 import { DEFAULT_PARAMS, type SignalBacktest } from '../report/signal-backtest.js';
 import { signalBacktest } from '../report/backtest-run.js';
 import { sessionDayOf } from '../report/market-day.js';
+import { pickMethods } from './pick-methods.js';
 import { excludedBy, tfLabel, validateConfig, type AutoMethods, type AutoMethodsRun, type MethodUpdate, type Strategy, type StrategyConfig } from './types.js';
 
 const IST_MS = 5.5 * 3_600_000;
@@ -57,13 +58,7 @@ export function autoWindow(now: number, days: number): { from: string; to: strin
   return { from: iso(live - days * DAY_MS), to: iso(live - DAY_MS) };
 }
 
-/** The methods that won `winPct`% or more of `minTrades` trades or more, best net first. */
-export function pickMethods(records: readonly Pick<MethodRec, 'method' | 'trades' | 'wins' | 'net'>[], a: Pick<AutoMethods, 'winPct' | 'minTrades'>): string[] {
-  return records
-    .filter((r) => r.trades >= a.minTrades && (r.wins / r.trades) * 100 >= a.winPct - 1e-9)
-    .sort((x, y) => y.net - x.net)
-    .map((r) => r.method);
-}
+export { pickMethods };
 
 /** Today's run time, epoch ms: the IST date of `now` at `at`. */
 const runTimeOn = (now: number, at: string) => Date.parse(`${new Date(now + IST_MS).toISOString().slice(0, 10)}T${at}:00+05:30`);

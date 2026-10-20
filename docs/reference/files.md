@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-539 files listed, 280 test files counted below, images and lockfiles left out.
+541 files listed, 281 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 139 |
-| `app/web` | 141 |
+| `app/web` | 142 |
 
 ## `(root)`
 
@@ -213,6 +213,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [auto-methods.ts](../../app/server/src/strategy/auto-methods.ts) | A signal strategy's methods, picked again every day by their own record (owner, 16 Oct 2026: "daily, a time chosen, the methods picked by a win %, auto update on and off in the signal strategy form"). |
 | [exit-steps.ts](../../app/server/src/strategy/exit-steps.ts) | Time-based exits: move a strategy's target and stop as the day goes on. |
+| [pick-methods.ts](../../app/server/src/strategy/pick-methods.ts) | The methods that won a share of their trades, on enough of them (16 Oct 2026, `auto-methods.ts`): a module of its own so the backtest's thread can pick as the daily update does (20 Oct 2026, the wi... |
 | [runner.ts](../../app/server/src/strategy/runner.ts) | The loop that turns a due strategy into orders. |
 | [schedule.ts](../../app/server/src/strategy/schedule.ts) | The IST calendar day a moment falls in, as `YYYY-MM-DD`. |
 | [select.ts](../../app/server/src/strategy/select.ts) | Which legs a strategy sells today, and how many lots each. |
@@ -287,7 +288,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [accounts.ts](../../app/web/src/api/accounts.ts) | -- |
-| [backtest-saves.ts](../../app/web/src/api/backtest-saves.ts) | -- |
+| [backtest-saves.ts](../../app/web/src/api/backtest-saves.ts) | Methods by win % at several bars over some of a run's saved backtests (`ids`, those ticked): asked as the run is, less its own methods by win % -- the sweep picks at every bar itself. |
 | [client.ts](../../app/web/src/api/client.ts) | One place that knows how to talk to the API: JSON in and out, the session cookie, "not signed in" as its own error, and which failures are worth reporting to the error log. |
 | [desk.ts](../../app/web/src/api/desk.ts) | The desk's read calls: the option chain, spot and candles, what changed, the perpetual's tape, book and big prints, the trend plan's paper log, health and settings. |
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
@@ -484,6 +485,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [WidenCompare.tsx](../../app/web/src/components/report/WidenCompare.tsx) | The perp's SL and TGT three ways on the same trades (owner, 18 Oct 2026: "keep the widest vs back to the signal's own when calm -- in the backtest report"): the signal's own levels all trade; widen... |
 | [WinLossAnalysis.tsx](../../app/web/src/components/report/WinLossAnalysis.tsx) | -- |
 | [WinPickResult.tsx](../../app/web/src/components/report/WinPickResult.tsx) | What "Methods by win %" gave each saved backtest of a run (19 Oct 2026): its pick, by name, and a tap to keep the pick on the saved backtest itself -- the step that took the Backtest screen, an edi... |
+| [WinSweep.tsx](../../app/web/src/components/report/WinSweep.tsx) | Methods by win % at several bars at once (owner, 20 Oct 2026, after a table of net at win 50% to 75% worked by hand: "an editable range -- the win %, the strategies and the least trades -- in the b... |
 | [backtest-parts.tsx](../../app/web/src/components/report/backtest-parts.tsx) | The pieces the backtest's panels are made of -- the screen itself (`SignalBacktest.tsx`) and the saved backtests run together (`SavedBacktests.tsx`): a table whose rows fold on a phone, three money... |
 | [backtest-words.ts](../../app/web/src/components/report/backtest-words.ts) | A backtest's settings as the screen starts with them, and in words. |
 | [pnl-dashboard.css](../../app/web/src/components/report/pnl-dashboard.css) | ───────────────────────────────────────────────────────────────────────────── P&L Dashboard Upgraded Styling (Institutional / Premium Dark Theme) ───────────────────────────────────────────────────... |

@@ -4,12 +4,14 @@ import { SavedMethodsPicker } from '@/components/report/SavedMethodsPicker';
 import { WinPickResult } from '@/components/report/WinPickResult';
 import { usePersisted } from '@/hooks/usePersisted';
 import { ChevronDown, Copy, FolderOpen, Pencil, Search, Trash2 } from 'lucide-react';
-import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, getPortfolioVolStudy, getPortfolioVolStudyTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
+import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, getPortfolioVolStudy, getPortfolioVolStudyTrades, getPortfolioWinSweep, getPortfolioWinSweepTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { time12 } from '@/lib/time';
 import { overWords } from '@/components/report/backtest-words';
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
+import { WinSweep } from '@/components/report/WinSweep';
+import type { WinPick } from '@/components/report/RunWinPick';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import type { BacktestPortfolioResult, BacktestSave, BacktestSaves, BoardGrain, BtDayTrades, BtRow, SavedQuery, TradePick } from '@/types/signal-backtest';
@@ -68,12 +70,13 @@ export const RUN_PARTS = [
   { id: 'pf-sessions', label: 'Sessions' },
   { id: 'pf-days', label: 'Days' },
   { id: 'pf-volsl', label: 'By volatility' },
+  { id: 'pf-winsweep', label: 'Win % sweep' },
   { id: 'pf-live', label: 'Live check' },
 ] as const;
 
 /** Whether a part of the run is on the screen, for the jump bar: the summary and the two studies always; the rest once it traded. */
 function runHas(r: BacktestPortfolioResult, id: string): boolean {
-  if (id === 'pf-summary' || id === 'pf-volsl' || id === 'pf-live') return true;
+  if (id === 'pf-summary' || id === 'pf-volsl' || id === 'pf-winsweep' || id === 'pf-live') return true;
   if (r.total.n === 0) return false;
   if (id === 'pf-days') return true;
   if (id === 'pf-sessions') return (r.bySession?.length ?? 0) > 0;
@@ -261,8 +264,10 @@ function RunNote({ r }: { r: BacktestPortfolioResult }) {
  * The run together, where the results are shown: asked with the days on the screen, and again when they change.
  * Each one is a whole backtest, so the first run of a set takes a moment.
  */
-export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours = AS_SAVED, over = NO_OVER, wide = false, onClose, revision = '', blocked = null }: {
+export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours = AS_SAVED, over = NO_OVER, wide = false, onClose, revision = '', blocked = null, onUseWin }: {
   run: TogetherRun; range: { from: string; to: string }; limit?: PortfolioLimit;
+  /** A bar of the win % sweep taken over to the run's own methods by win % (20 Oct 2026). */
+  onUseWin?: (w: WinPick) => void;
   /**
    * The settings cannot be run, as the screen already knows (19 Oct 2026: methods by win % on the days before a run
    * from 1 Oct, refused by the server every time): not asked for, said here with the change that makes it work.
@@ -284,6 +289,8 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
   const asked = limit === 'shared' ? cap : null;
   const hoursKey = hours.window === 'custom' ? `custom:${hours.hoursFrom}-${hours.hoursTo}` : hours.window;
   const askKey = `${run.ids.join(',')}|${run.at ?? 0}|${revision}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`;
+  // The sweep's question is the run's less its own methods by win %, which the sweep picks at every bar itself: a bar taken over to the run leaves the sweep standing.
+  const sweepKey = `${askKey.slice(0, askKey.lastIndexOf('|'))}|${new URLSearchParams(overQuery({ ...over, winPick: undefined }))}`;
   // As the single backtest: asked once the run's settings stand still a moment -- each saved backtest in it is a whole backtest.
   const result = useAnswer(askKey, () => getBacktestPortfolio(run.ids, range, limit, asked, hours, over), 300_000, SETTLE_MS, blocked === null);
   if (blocked) {
@@ -330,6 +337,12 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
       {/* The SL, delta and lots by volatility over the run's saved backtests (17 Oct 2026): each on its own signals, added up. */}
       <div id="pf-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
         <VolStudy askKey={askKey} wide={wide} read={(a) => getPortfolioVolStudy(a, run.ids, range, limit, asked, hours, over)} readTrades={(a, pick) => getPortfolioVolStudyTrades(a, pick, run.ids, range, limit, asked, hours, over)} title="By volatility · SL, delta, lots, win % · over the run" />
+      </div>
+      {/* Methods by win % at several bars over the run's saved backtests (20 Oct 2026): asked for with a tap. */}
+      <div id="pf-winsweep" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
+        <WinSweep scope="portfolio" askKey={sweepKey} wide={wide} run={range} members={result.data.members.map((m) => ({ id: m.id, name: m.name }))} onUse={onUseWin}
+          read={(a, ids) => getPortfolioWinSweep(a, ids ?? run.ids, range, limit, asked, hours, over)}
+          readTrades={(a, row, cell) => getPortfolioWinSweepTrades(a, row, cell, range, limit, asked, hours, over)} />
       </div>
       <div id="pf-live" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
         <LiveCheck askKey={askKey} read={() => getPortfolioLiveCheck(run.title, run.ids, range, limit, asked, hours, over)} />

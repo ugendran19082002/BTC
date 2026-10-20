@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import {
-  clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, portfolioTradesHere, signalBacktestHere, signalBacktestTradesHere, volStudyHere, portfolioVolStudyHere, volStudyTradesHere, portfolioVolStudyTradesHere,
-  type Ask, type BacktestPortfolioResult, type BtDayTrades, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest, type TradePick, type VolStudy, type VolStudyAsk, type PortfolioVolStudyAsk, type VolTradesPick,
+  clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, portfolioTradesHere, signalBacktestHere, signalBacktestTradesHere, volStudyHere, portfolioVolStudyHere, volStudyTradesHere, portfolioVolStudyTradesHere, winSweepHere, winSweepTradesHere,
+  type Ask, type BacktestPortfolioResult, type BtDayTrades, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest, type TradePick, type VolStudy, type VolStudyAsk, type PortfolioVolStudyAsk, type VolTradesPick, type WinSweep, type WinSweepAsk, type WinSweepCellPick,
 } from './signal-backtest.js';
 import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
@@ -17,8 +17,8 @@ import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
 /** A backtest that has not answered in this long is given up on, and its thread with it. */
 export const BACKTEST_TIMEOUT_MS = 120_000;
-/** What the thread is asked to work: a backtest, a portfolio, a live check, the volatility study, or one day of a backtest or a portfolio. */
-type Work = { kind: 'run'; ask: Ask } | { kind: 'vol-study'; ask: VolStudyAsk } | { kind: 'portfolio-vol-study'; ask: PortfolioVolStudyAsk } | { kind: 'vol-trades'; ask: VolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio-vol-trades'; ask: PortfolioVolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'trades'; ask: Ask; pick: TradePick } | { kind: 'portfolio-trades'; ask: PortfolioAsk; pick: TradePick };
+/** What the thread is asked to work: a backtest, a portfolio, a live check, the volatility study, the win % sweep, or one day of a backtest or a portfolio. */
+type Work = { kind: 'run'; ask: Ask } | { kind: 'vol-study'; ask: VolStudyAsk } | { kind: 'portfolio-vol-study'; ask: PortfolioVolStudyAsk } | { kind: 'vol-trades'; ask: VolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio-vol-trades'; ask: PortfolioVolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'win-sweep'; ask: WinSweepAsk } | { kind: 'win-sweep-trades'; ask: WinSweepAsk; at: WinSweepCellPick } | { kind: 'trades'; ask: Ask; pick: TradePick } | { kind: 'portfolio-trades'; ask: PortfolioAsk; pick: TradePick };
 /** After a thread fails to start, none is tried again for this long. */
 const GIVE_UP_MS = 10 * 60_000;
 
@@ -140,6 +140,17 @@ export const portfolioVolStudy = (o: PortfolioVolStudyAsk): Promise<VolStudy> =>
 export const volStudyTrades = (o: VolStudyAsk, pick: VolTradesPick): Promise<BtDayTrades> => worked({ kind: 'vol-trades', ask: o, pick }, () => volStudyTradesHere(o, pick));
 export const portfolioVolStudyTrades = (o: PortfolioVolStudyAsk, pick: VolTradesPick): Promise<BtDayTrades> =>
   worked({ kind: 'portfolio-vol-trades', ask: o, pick }, () => portfolioVolStudyTradesHere(o, pick), BACKTEST_TIMEOUT_MS * Math.max(1, o.members.length));
+
+/**
+ * Methods by win % at several bars (`winSweepHere`): a record and a run a list for each of them, the same list worked
+ * once -- a whole backtest's time for each list there could be, and the record.
+ */
+export const winSweep = (o: WinSweepAsk): Promise<WinSweep> =>
+  worked({ kind: 'win-sweep', ask: o }, () => winSweepHere(o), BACKTEST_TIMEOUT_MS * Math.max(1, o.members.length) * Math.min(4, 1 + o.pcts.length * o.minTrades.length));
+
+/** One cell of a sweep, trade by trade (`winSweepTradesHere`): the record again, then the row's trades with that cell's list. */
+export const winSweepTrades = (o: WinSweepAsk, at: WinSweepCellPick): Promise<BtDayTrades & { methods: string[] | null }> =>
+  worked({ kind: 'win-sweep-trades', ask: o, at }, () => winSweepTradesHere(o, at), BACKTEST_TIMEOUT_MS * 4);
 
 /** The backtest of each strategy's own rules against what the desk did with the same signals (`liveCheckHere`). */
 export const liveCheck = (o: LiveCheckAsk): Promise<LiveCheck> => worked({ kind: 'live', ask: o }, () => liveCheckHere(o), BACKTEST_TIMEOUT_MS * 2);

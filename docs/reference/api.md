@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-116 routes.
+118 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -33,6 +33,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/backtest-portfolio/trades` | signed in | The run's trades, one by one (owner, 14 Oct 2026: "tap the count"; 15 Oct: "by session too"): the same query as the run, narrowed by `?day=`, `?sfrom=&sto=` and `?smethod=` as the single backtest's... |
 | GET | `/api/backtest-portfolio/vol-study` | signed in | The option's stop and strike as saved, against a stop and a delta by volatility, over the saved backtests of a run (17 Oct 2026): the run's own query -- its hours and the settings put over it -- wi... |
 | GET | `/api/backtest-portfolio/vol-study/trades` | signed in | One expiry day of the run's volatility study, trade by trade, each with its saved backtest and its level: `?day=&side=&by=`. |
+| GET | `/api/backtest-portfolio/win-sweep` | signed in | Methods by win % at several bars over the run's saved backtests (owner, 20 Oct 2026: "an editable range -- the win %, the strategies and the least trades -- in the portfolio"): the run's own query... |
 | POST | `/api/backtest-portfolios` | signed in | Keep a portfolio: a name, and two or more saved backtests in order. |
 | DELETE | `/api/backtest-portfolios/:id` | signed in | -- |
 | POST | `/api/backtest-portfolios/:id/clone` | signed in | A copy of a portfolio, the same saved backtests in the same order, as "<name> copy" (16 Oct 2026). |
@@ -98,6 +99,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/signal-backtest/trades` | signed in | The backtest's trades, one by one (owner, 14 Oct 2026: "tap the count -- each trade's entry, exit, SL, TGT, points and money"; 15 Oct: "by session too"): asked as the backtest itself is, and narrow... |
 | GET | `/api/signal-backtest/vol-study` | signed in | The option's stop and strike as set, against a stop and a strike's delta by how volatile it was at each signal's fill (owner, 17 Oct 2026): asked as the backtest itself is, with what is set by leve... |
 | GET | `/api/signal-backtest/vol-study/trades` | signed in | One expiry day of the volatility study, trade by trade (owner, 17 Oct 2026: "tap the count -- trade by trade"): asked as the study is, with `?day=&side=fixed\|by-vol&by=atr\|iv`. |
+| GET | `/api/signal-backtest/win-sweep` | signed in | Methods by win % at several bars, of the settings on the screen (owner, 20 Oct 2026: "an editable range -- the win %, the strategies and the least trades -- in the backtest"): asked as the backtest... |
 | POST | `/api/strategies/auto-methods/pick` | signed in | The methods' daily update, now, on the form's draft (owner, 16 Oct 2026): the list it would set by the draft's own win rate, least trades and days, and the run as it would be kept. |
 | POST | `/api/strategies/auto-methods/walk-forward` | signed in | The draft's daily-update rule walked forward, with an untouched holdout (18 Oct 2026, the R&D audit): each test day traded with what the rule picked from the days before it alone; the last `holdout... |
 
