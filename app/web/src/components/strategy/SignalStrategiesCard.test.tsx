@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { SignalStrategiesCard } from '@/components/strategy/SignalStrategiesCard';
+import { SignalStrategiesCard, lastUpdateWords, nextAutoRun } from '@/components/strategy/SignalStrategiesCard';
 import { DEFAULT_CONFIG, type Strategy, type StrategyStatus } from '@/types/strategy';
 import { blockNow, hoursLabel, istMinuteOf, pickWords } from '@/lib/strategy-blocks';
 import { time12 } from '@/lib/time';
@@ -653,7 +653,9 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
     await screen.findByText('VOL');
     const facts = (name: string) => screen.getByLabelText(`details of ${name}`);
     expect(facts('VOL')).toHaveTextContent('Option exitsTGT 70% → 97% by time (3 steps) · SL by volatility');
-    expect(facts('VOL')).toHaveTextContent(/Methodspicked daily at 9:00 PM · win ≥ 70% of 3\+ trades in 7 days · last Fri 9:00 PM: 2 picked/);
+    expect(facts('VOL')).toHaveTextContent(/Methods\d+ in use · last update Fri 9:00 PM on 9 Oct – 16 Oct: 2 in · 0 out/);
+    // The rule on a line of its own, with when it runs next; 3+ trades is not warned of.
+    expect(screen.getByLabelText('auto-update of VOL')).toHaveTextContent(/^win ≥ 70% of 3\+ trades in 7 days · next \w{3} 9:00 PM$/);
     // Read by its own source -- ATM IV says high -- and so a signal now: the high level's delta and SL.
     expect(facts('VOL')).toHaveTextContent('Volatility nowHigh by ATM IV → a signal now: Δ ≤ 0.08, SL +150%');
     expect(facts('VOL')).toHaveTextContent(/Today2 placed · 5 skipped · 1 refused · last Sat 9:47 PM, placed/);
@@ -663,7 +665,7 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
     expect(facts('PLAIN')).toHaveTextContent('Todayno signal yet since 5:30 PM');
   });
 
-  it('[critical] the card\'s money, entry and why not (19 Oct 2026): profit and loss today and 7 days, how it enters, the last skip and refusal', async () => {
+  it('[critical] the card\'s entry and why not (19 Oct 2026): how it enters, the last skip and refusal -- and no profit / loss line', async () => {
     const line = (o: Partial<{ n: number; wins: number; losses: number; net: number; won: number; lost: number }>) => ({ n: 0, wins: 0, losses: 0, net: 0, won: 0, lost: 0, ...o });
     const a = { ...strat('money', { ...SIG, ...allDay, minPremiumUsd: 10, entryPrice: 'offer', crossAfterSec: 5,
       noEntry: { on: true, windows: [{ from: '00:30', to: '01:30' }] }, signal: { ...SIG.signal, enterOn: 'zone', minSlPts: { [SIG.signal!.tf]: 250 } } }),
@@ -673,14 +675,14 @@ describe('the strike rule in force now, on each strategy\'s row', () => {
     getStrategies.mockResolvedValue(status([a, b]));
     render(<SignalStrategiesCard />);
     await screen.findByText('MONEY');
-    const money = screen.getByLabelText('profit and loss of MONEY');
-    expect(money).toHaveTextContent(/today \+₹[\d.,]+ · 5 closed: 3 won · 2 lost · PF 2\.50 \| 7 days −₹[\d.,]+ · 40 closed: 25 won · 15 lost · PF 0\.74/);
+    // Profit / loss is off the card (owner, 19 Oct 2026: "remove Profit / loss").
+    expect(screen.queryByLabelText('profit and loss of MONEY')).toBeNull();
+    expect(screen.getByLabelText('details of MONEY')).not.toHaveTextContent('Profit / loss');
     expect(screen.getByLabelText('details of MONEY')).toHaveTextContent(/Entryin the trade \(the perp at the zone\) · at the offer, to the bid over 5s · SL ≥ 250 · no entry 12:30 AM – 1:30 AM · premium ≥ \$10/);
     const not = screen.getByLabelText('not taken by MONEY');
     expect(not).toHaveTextContent(/last refused .*: Delta refused the request \(only_reduce_only_orders_allowed\)\./);
     expect(not).toHaveTextContent(/last skipped .*: SL too near: 120 pts/);
-    // nothing closed, nothing not taken: said plainly, no empty row
-    expect(screen.getByLabelText('profit and loss of QUIET')).toHaveTextContent('today nothing closed yet | 7 days nothing closed');
+    // nothing not taken: no empty row
     expect(screen.queryByLabelText('not taken by QUIET')).toBeNull();
   });
 
@@ -785,5 +787,31 @@ describe('the master switch and delete, on the card itself', () => {
     expect(del).toHaveTextContent('Tap again to delete');
     fireEvent.click(del);
     await waitFor(() => expect(deleteStrategy).toHaveBeenCalledWith('A'));
+  });
+});
+
+/** The daily update on the card (19 Oct 2026, owner: "remove Profit / loss; update the missing useful details"). */
+describe('the auto-update on the card', () => {
+  const allDay = { entryTime: '00:00', exitTime: '23:59' };
+  it('[critical] a rule of one trade is warned of: one win of one is 100%', async () => {
+    const a = strat('luck', { ...SIG, ...allDay, signal: { ...SIG.signal, autoMethods: { on: true, at: '21:00', winPct: 70, minTrades: 1, days: 14,
+      last: { at: Date.parse('2026-10-18T21:00:00+05:30'), from: '2026-10-05', to: '2026-10-18', picked: ['a', 'b', 'c'], before: ['a', 'd', 'e', 'f'] } } } });
+    const b = strat('kept', { ...SIG, ...allDay, signal: { ...SIG.signal, autoMethods: { on: true, at: '21:00', winPct: 60, minTrades: 5, days: 14,
+      last: { at: Date.parse('2026-10-18T21:00:00+05:30'), from: '2026-10-05', to: '2026-10-18', picked: ['a'], before: ['a'], note: 'No method passed' } } } });
+    getStrategies.mockResolvedValue(status([a, b]));
+    render(<SignalStrategiesCard />);
+    await screen.findByText('LUCK');
+    expect(screen.getByLabelText('auto-update of LUCK')).toHaveTextContent(/win ≥ 70% of 1\+ trade in 14 days · next .* · 1 trade can be luck: 5 is safer/);
+    expect(screen.getByLabelText('details of LUCK')).toHaveTextContent(/last update Sun 9:00 PM on 5 Oct – 18 Oct: 2 in · 3 out/);
+    expect(screen.getByLabelText('auto-update of KEPT')).not.toHaveTextContent('luck');
+    expect(screen.getByLabelText('details of KEPT')).toHaveTextContent('no method passed: the list was kept');
+  });
+
+  it('the next run: today at its time if still to come and not run since; else tomorrow', () => {
+    const at = (s: string) => Date.parse(`${s}+05:30`);
+    expect(nextAutoRun('21:00', at('2026-10-18T21:00:00'), at('2026-10-19T18:00:00'))).toBe(at('2026-10-19T21:00:00'));
+    expect(nextAutoRun('21:00', at('2026-10-19T21:00:00'), at('2026-10-19T21:00:30'))).toBe(at('2026-10-20T21:00:00'));
+    expect(nextAutoRun('21:00', at('2026-10-18T21:00:00'), at('2026-10-19T22:00:00'))).toBe(at('2026-10-20T21:00:00'));
+    expect(lastUpdateWords({ picked: ['a', 'b'], before: ['a', 'b'] })).toBe('no change');
   });
 });

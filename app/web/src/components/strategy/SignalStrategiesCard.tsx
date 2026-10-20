@@ -16,9 +16,8 @@ import { refreshGroupIndex } from '@/hooks/useGroupOf';
 import { defaultGroupFor, groupNameProblem, groupSections, moved, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
 import { time12 } from '@/lib/time';
-import { moneyText } from '@/lib/market-report';
 import { noEntryWords } from '@/lib/strategy-no-entry';
-import { slFilters, tgtFilters, type MoneyLine } from '@/types/strategy';
+import { slFilters, tgtFilters } from '@/types/strategy';
 import { blockNow, hoursLabel, istMinuteOf, pickWords } from '@/lib/strategy-blocks';
 import { buyCostPerLotUsd, buyTotals, globalMaxOpenProblem, marginPerLotUsd, roomLeft, signalTotals, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
 import { inr, usdToInr } from '@/lib/format';
@@ -91,10 +90,22 @@ const dayOrClock = (ms: number) => {
   const hhmm = d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
   return `${day} ${time12(hhmm)}`;
 };
-/** "+₹12.30 · 5 closed: 3 won · 2 lost": a money line in a few words; null with nothing closed. */
-export function moneyWords(m: MoneyLine | undefined): { net: number; words: string } | null {
-  if (!m || m.n === 0) return null;
-  return { net: m.net, words: `${m.n} closed: ${m.wins} won · ${m.losses} lost${m.lost > 0 ? ` · PF ${(m.won / m.lost).toFixed(2)}` : ''}` };
+/** "5 Oct – 18 Oct": a day range, short. */
+const daysShort = (from: string, to: string) => {
+  const d = (x: string) => new Date(`${x}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return from === to ? d(from) : `${d(from)} – ${d(to)}`;
+};
+/** When the daily update runs next, epoch ms: today at its time if that is still to come and it has not run since, else tomorrow. */
+export function nextAutoRun(at: string, lastAt: number | null | undefined, now = Date.now()): number {
+  const day = new Date(now + 330 * 60_000).toISOString().slice(0, 10);
+  const today = Date.parse(`${day}T${at}:00+05:30`);
+  return now < today && !((lastAt ?? 0) >= today) ? today : today + 86_400_000;
+}
+/** What the last daily update did: how many came in and went, or that the list was kept. */
+export function lastUpdateWords(last: { picked: string[]; before: string[]; note?: string | null }): string {
+  if (last.note) return 'no method passed: the list was kept';
+  const came = last.picked.filter((m) => !last.before.includes(m)).length, went = last.before.filter((m) => !last.picked.includes(m)).length;
+  return came || went ? `${came} in · ${went} out` : 'no change';
 }
 
 /** How a signal strategy enters, and the filters a signal must pass, in a line (19 Oct 2026, the card). */
@@ -139,10 +150,24 @@ function StrategyFacts({ s, volNow }: { s: Strategy; volNow?: { iv: VolLevelNow;
         <dt className={label}>Methods</dt>
         <dd className="m-0">
           {auto?.on
-            ? <>picked daily at {time12(auto.at)} · win ≥ {auto.winPct}% of {auto.minTrades}+ trades in {auto.days} days{auto.exclude?.on && auto.exclude.methods.length ? ` · ${auto.exclude.methods.length} excluded` : ''}{auto.last ? ` · last ${dayOrClock(auto.last.at)}: ${auto.last.note ? 'kept as it was' : `${auto.last.picked.length} picked`}` : ' · not run yet'}</>
+            ? <>{r?.methods.length ?? 0} in use{auto.last
+              ? <> · last update {dayOrClock(auto.last.at)} on {daysShort(auto.last.from, auto.last.to)}: <span className="text-foreground">{lastUpdateWords(auto.last)}</span></>
+              : ' · not updated yet'}</>
             : <>{r?.methods.length ?? 0} chosen by hand</>}
         </dd>
       </div>
+      {/* The daily update's rule, when it runs next, and a rule that lets luck in said so (19 Oct 2026: every strategy on 1+ trades). */}
+      {auto?.on && (
+        <div className={row}>
+          <dt className={label}>Auto-update</dt>
+          <dd className="m-0" aria-label={`auto-update of ${s.name}`}>
+            win ≥ {auto.winPct}% of {auto.minTrades}+ trade{auto.minTrades === 1 ? '' : 's'} in {auto.days} days
+            {auto.exclude?.on && auto.exclude.methods.length ? ` · ${auto.exclude.methods.length} excluded` : ''}
+            {' '}· next {dayOrClock(nextAutoRun(auto.at, auto.last?.at))}
+            {auto.minTrades < 3 && <span className="text-[var(--warn)]"> · {auto.minTrades} trade{auto.minTrades === 1 ? '' : 's'} can be luck: 5 is safer</span>}
+          </dd>
+        </div>
+      )}
       {by && (
         <div className={row}>
           <dt className={label}>Volatility now</dt>
@@ -154,22 +179,6 @@ function StrategyFacts({ s, volNow }: { s: Strategy; volNow?: { iv: VolLevelNow;
         </div>
       )}
       {r && <div className={row}><dt className={label}>Entry</dt><dd className="m-0">{entryWords(s)}</dd></div>}
-      {/* Its money after charges, from its closed trades: today, and the last 7 days (19 Oct 2026). */}
-      {s.money && (
-        <div className={row}>
-          <dt className={label}>Profit / loss</dt>
-          <dd className="m-0" aria-label={`profit and loss of ${s.name}`}>
-            {(() => {
-              const t = moneyWords(s.money.today), w = moneyWords(s.money.week);
-              return <>
-                <span>today {t ? <><b className={cn('font-semibold', t.net > 0 ? 'text-[var(--up)]' : t.net < 0 ? 'text-[var(--down)]' : 'text-foreground')}>{moneyText(t.net)}</b> · {t.words}</> : 'nothing closed yet'}</span>
-                <span className={label}> | </span>
-                <span>7 days {w ? <><b className={cn('font-semibold', w.net > 0 ? 'text-[var(--up)]' : w.net < 0 ? 'text-[var(--down)]' : 'text-foreground')}>{moneyText(w.net)}</b> · {w.words}</> : 'nothing closed'}</span>
-              </>;
-            })()}
-          </dd>
-        </div>
-      )}
       <div className={row}>
         <dt className={label}>Today</dt>
         <dd className="m-0">
