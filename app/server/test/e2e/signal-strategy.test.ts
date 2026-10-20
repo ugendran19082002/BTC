@@ -498,6 +498,13 @@ test('[critical] the trade history by IST day: today has them, a day before has 
   const r = await api('GET', `/api/strategies/signal-trades?from=${today}&to=${today}`);
   assert.equal(r.status, 200);
   assert.ok(r.body.trades.length > 0 && r.body.trades.every((t: any) => istDate(t.at) === today), 'only today\'s');
+  // Each not taken with the kinds of reason in its sentence (20 Oct 2026): the runner's own sentences, read back.
+  const kinds = (re: RegExp) => r.body.trades.find((t: any) => re.test(t.detail))?.reasons;
+  assert.deepEqual(kinds(/too late to enter/), ['late']);
+  assert.deepEqual(kinds(/in the same moment/), ['over']);
+  assert.ok(r.body.trades.filter((t: any) => t.status === 'placed' || t.status === 'would-place').every((t: any) => t.reasons.length === 0), 'taken: no reason');
+  const unread = r.body.trades.filter((t: any) => t.reasons.includes('other')).map((t: any) => t.detail);
+  assert.deepEqual(unread, [], 'every sentence the runner wrote here is a kind');
   const before = await api('GET', '/api/strategies/signal-trades?from=2020-01-01&to=2020-01-02');
   assert.deepEqual(before.body.trades, []);
   const bad = await api('GET', `/api/strategies/signal-trades?from=${today}&to=2020-01-01`);

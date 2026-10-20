@@ -23,6 +23,7 @@ import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/rep
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
 import { WinSweep } from '@/components/report/WinSweep';
+import { MethodsBoard } from '@/components/report/MethodsBoard';
 import { BacktestStrikeBlocks } from '@/components/report/BacktestStrikeBlocks';
 import { BacktestTsl } from '@/components/report/BacktestTsl';
 import { BacktestPerpWiden } from '@/components/report/BacktestPerpWiden';
@@ -637,6 +638,7 @@ const RESULT_PARTS = [
   { id: 'bt-days', label: 'Days' },
   { id: 'bt-volsl', label: 'By volatility' },
   { id: 'bt-winsweep', label: 'Win % sweep' },
+  { id: 'bt-methodsboard', label: 'Methods by win %' },
   { id: 'bt-live', label: 'Live check' },
 ] as const;
 
@@ -777,6 +779,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     if (again && !wide) requestAnimationFrame(() => resultRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }));
   };
   const [savedList, setSavedList] = useState<BacktestSave[]>([]);
+  // Bumped when the methods board keeps a list on a saved backtest: the saved list is read again.
+  const [savesRev, setSavesRev] = useState(0);
   /** A saved backtest's settings put on the screen: the result below is then worked for them, over the days chosen. */
   const load = (q: SavedQuery) => {
     setParams({ ...DEFAULTS, ...q.params }); setTfs(q.tfs); setMethods(q.methods); setStrategyId(q.strategy);
@@ -1086,7 +1090,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           <>
             <aside aria-label="Backtest settings" className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'xl:sticky xl:top-2 xl:max-h-[calc(100vh-1rem)] xl:overflow-y-auto xl:pr-1')}>
               {/* The saved backtests first (16 Oct 2026): a backtest is most often started from one, then changed below. */}
-              <SavedBacktests key="single" mode="single" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} />
+              <SavedBacktests key="single" mode="single" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={setTogether} onSaves={setSavedList} reloadKey={savesRev} />
               {settingsPanel}
               {filterBlock}
             </aside>
@@ -1104,7 +1108,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
                 same place in their columns React kept one for both: the list was not read again on the way in, so the
                 saved backtests were never handed up here (14 Oct 2026 -- the "Saved backtests" limit went missing).
               */}
-              <SavedBacktests key="portfolio" mode="portfolio" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={startRun} onSaves={setSavedList} />
+              <SavedBacktests key="portfolio" mode="portfolio" wide={wide} current={saved} wordsOf={(q) => settingsWords(q, strategies, true)} onLoad={load} run={together} onRun={startRun} onSaves={setSavedList} reloadKey={savesRev} />
               {/*
                 What the run is held to, in one panel that folds (14 Oct 2026): the days, the hours, the limit and the
                 six settings had grown to a screen and a half on a phone, above the portfolios and their Run buttons.
@@ -1157,6 +1161,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               </Panel>
             </aside>
             <div ref={resultRef} className="grid min-w-0 scroll-mt-2 grid-cols-[minmax(0,1fr)] gap-3">
+              {/* Every saved backtest side by side, its methods a tap away (20 Oct 2026). */}
+              <PanelFolds state={runFolds} onChange={setRunFolds}><MethodsBoard saves={savedList} onChanged={() => setSavesRev((n) => n + 1)} /></PanelFolds>
               {together && <FoldAll what="the run together" state={runFolds} onChange={setRunFolds} />}
               {together
                 ? <PanelFolds state={runFolds} onChange={setRunFolds}><PortfolioRun run={together} range={range} limit={limit} cap={cap} hours={hoursAsked} over={runOver} wide={wide} blocked={runBlocked} onClose={() => setTogether(null)}
@@ -1180,7 +1186,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   return page(
     <>
 
-      <ResultNav parts={RESULT_PARTS} has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || id === 'bt-winsweep' || (t.n > 0 && (id !== 'bt-perp' || t.perpNetPts !== undefined))} />
+      <ResultNav parts={RESULT_PARTS} has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || id === 'bt-winsweep' || id === 'bt-methodsboard' || (t.n > 0 && (id !== 'bt-perp' || t.perpNetPts !== undefined))} />
       <Updating busy={read.stale} what="the backtest">
       <div id="bt-summary" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
       <Panel title="Backtest result">
@@ -1313,6 +1319,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           ? <Panel title="Methods by win % · sweep"><Empty>A strategy keeps its own methods: choose Settings above to sweep the methods by win %.</Empty></Panel>
           : <WinSweep scope="single" askKey={JSON.stringify(query)} wide={wide} run={range} read={(a) => getWinSweep(query, a)} readTrades={(a, row, cell) => getWinSweepTrades(query, a, row, cell)} />}
       </div>
+      {/* Every saved backtest side by side, its methods a tap away (20 Oct 2026): their own settings, not the screen's. */}
+      <div id="bt-methodsboard" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><MethodsBoard saves={savedList} onChanged={() => setSavesRev((n) => n + 1)} /></div>
       {/* The same backtest beside the live desk (14 Oct 2026): asked with the question on the screen, so it is the check of this result. */}
       <div id="bt-live" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><LiveCheck askKey={JSON.stringify(query)} read={() => getLiveCheck(query)} /></div>
       <DayTradesSheet day={openTrades?.key ?? null} title={openTrades?.title} read={() => getBacktestTrades(query, openTrades!.pick)} onClose={() => setOpenTrades(null)} />

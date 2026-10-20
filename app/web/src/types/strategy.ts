@@ -512,6 +512,8 @@ export type SignalTrade = {
   id: number; strategyId: string; at: number; method: string; mode: string; tf: string; dir: 1 | -1;
   /** placed / would-place are trades; skipped, refused and failed are signals not taken, the reason in `detail`. */
   status: Exclude<SignalRunStatus, 'claimed'>; detail: string; tradeId: string | null;
+  /** Why not taken, as kinds read from `detail` (server: strategy/signal-reasons.ts); none when taken. An older server sends none. */
+  reasons?: SignalReason[];
   /** The signal's own plan on the BTC perp. */
   levels: { entryLo: number; entryHi: number; stop: number; tp1: number; tp2: number | null; tp3: number | null } | null;
   /** What the paper log saw on the perp: open (waiting at the zone), filled, tp1, stop, timeout, expired. */
@@ -610,3 +612,7 @@ export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /** The server's words for the perp SL skipped with no option stop, and for a strategy that buys. */
 export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is the only stop: set one, or keep the perp SL.';
 export const SKIP_PERP_BUY = 'A strategy that buys keeps the perp SL and TGT: its option has no stop resting at Delta.';
+
+/** The kinds of reason a signal was not taken (server: strategy/signal-reasons.ts `SIGNAL_REASONS`). */
+export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'own-max' | 'desk-max' | 'side-max' | 'no-entry' | 'late' | 'over'
+  | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'other';

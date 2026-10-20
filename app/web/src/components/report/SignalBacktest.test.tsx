@@ -1184,14 +1184,16 @@ describe('SignalBacktest', () => {
       total: tot({ n: 20, wins: 10, losses: 10, net: 2, won: 6, lost: 4, charges: 2 }), days: [],
       margin: { peakUsd: 0, peakDay: null, peakAt: null, peakOpen: 0, peakLots: 0, avgDailyPeakUsd: 0, sumOfPeaksUsd: 0 },
     });
+    // The run's own asks: the methods board beside it asks too, each alone (`own`, three arguments).
+    const runCalls = () => saves.getBacktestPortfolio.mock.calls.filter((c: unknown[]) => c.length > 3).length;
     show();
     await screen.findByText('Backtest result');
     fireEvent.click(screen.getByRole('radio', { name: 'Saved backtests run together, and their total' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Run the portfolio Both' }));
-    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(runCalls()).toBe(1));
     // Run again: asked again, though nothing in sight changed
     fireEvent.click(await screen.findByRole('button', { name: 'Run the portfolio Both' }));
-    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(runCalls()).toBe(2));
     // one of them changed (its methods kept on it, say): the run is asked again by itself
     saves.getBacktestSaves.mockResolvedValue({ saves: [saved('a1', 'Alpha', 2), saved('b22', 'Beta')], portfolios: [{ id: 'p1', name: 'Both', saveIds: ['a1', 'b22'], createdAt: 1, updatedAt: 1 }] });
     saves.saveBacktest.mockResolvedValue({ ok: true, save: saved('a1', 'Alpha', 2) });
@@ -1201,7 +1203,7 @@ describe('SignalBacktest', () => {
     const boxes = screen.getAllByRole('listbox');
     fireEvent.click(within(boxes[boxes.length - 1]!).getByText('#50 Gamma wall reaction'));
     fireEvent.click(within(panel).getByRole('button', { name: /^Update its methods/ }));
-    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenCalledTimes(3), { timeout: 3_000 });
+    await waitFor(() => expect(runCalls()).toBe(3), { timeout: 3_000 });
   });
 
   it('[critical] a saved backtest\'s methods picked by win % in the portfolio, and kept on it -- no trip to the Backtest screen (19 Oct 2026)', async () => {

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { signalReasons } from '../../strategy/signal-reasons.js';
 import { istDayRange } from '../../entry/catalogue.js';
 import { noteError } from '../../observability/errors.js';
 import { refuse } from '../refuse.js';
@@ -340,7 +341,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (range && 'error' in range) { reply.code(400); return { error: range.error }; }
     const trades = await strategyStore().signalTrades(2_000, undefined, range ?? undefined);
     const mine = await ofAccount(accountOf(req.query));
-    return { from: from ?? null, to: to ?? null, trades: mine ? trades.filter((t) => mine.has(t.strategyId)) : trades };
+    // Each one not taken with the kinds of reason in its sentence (20 Oct 2026: the phone's Not taken, by reason).
+    return { from: from ?? null, to: to ?? null, trades: (mine ? trades.filter((t) => mine.has(t.strategyId)) : trades).map((t) => ({ ...t, reasons: signalReasons(t.status, t.detail) })) };
   });
 
   /**

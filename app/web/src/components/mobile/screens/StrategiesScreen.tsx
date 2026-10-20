@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from 'react';
 import { getActivity, getDaySignals, getStats, methodNames } from '@/api/phone';
 import type { EntryMethodInfo } from '@/api/entry';
-import type { SignalRun, SignalTrade, StrategyRun } from '@/types/strategy';
+import type { SignalReason, SignalRun, SignalTrade, StrategyRun } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct } from '@/lib/format';
@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { accountTag, groupSections, onCount } from '@/lib/strategy-groups';
 import { OpenLimits } from '@/components/mobile/OpenLimits';
 import { usePhoneData } from '@/components/mobile/phone-context';
-import { Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
+import { Chip, Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
 import { GroupTag } from '@/components/strategy/GroupTag';
 
 /**
@@ -41,6 +41,18 @@ const FEEDS: { key: Feed; label: string; tone: string; none: string }[] = [
   { key: 'taken', label: 'Taken', tone: 'text-[var(--up)]', none: 'No signal taken today.' },
   { key: 'not', label: 'Not taken', tone: 'text-[var(--warn)]', none: 'Every signal today was taken.' },
 ];
+/**
+ * Not taken, by why (owner, 20 Oct 2026: "Not taken tapped: sub-tabs -- the perp SL min not met, the perp TGT min not
+ * met, max open full, and so on, all of them"): each kind of reason the server read from the row's sentence, in words.
+ */
+export const REASON_WORDS: Record<SignalReason, string> = {
+  'sl-min': 'Perp SL under min', 'sl-max': 'Perp SL over max', 'tgt-min': 'Perp TGT under min', 'tgt-max': 'Perp TGT over max',
+  'own-max': 'Strategy max open full', 'desk-max': 'Account max open full', 'side-max': 'CE / PE limit full',
+  'no-entry': 'No-entry window', late: 'Fill too old', over: 'Over before entry', premium: 'Premium too low', spread: 'Spread too wide',
+  'no-strike': 'No strike to sell', margin: 'Not enough margin', 'loss-limit': 'Daily loss limit', 'no-board': 'No option board',
+  delta: 'Delta refused', other: 'Other',
+};
+type Why = SignalReason | 'any';
 /** Rows a tab shows at first, and each "Show more" adds. */
 const PAGE = 40;
 
@@ -54,8 +66,9 @@ export function StrategiesScreen() {
   const [names, setNames] = useState<Map<string, EntryMethodInfo> | null>(null);
   useEffect(() => { methodNames().then(setNames).catch(() => setNames(new Map())); }, []);
   const [feed, setFeed] = usePersisted<Feed>('m-strategies-feed', 'all');
+  const [whyPick, setWhyPick] = usePersisted<Why>('m-strategies-why', 'any');
   const [limit, setLimit] = useState(PAGE);
-  useEffect(() => { setLimit(PAGE); }, [feed]);
+  useEffect(() => { setLimit(PAGE); }, [feed, whyPick]);
 
   const a = act.data;
   const today = a?.today ?? day;
@@ -66,11 +79,17 @@ export function StrategiesScreen() {
   const tab = FEEDS.some((f) => f.key === feed) ? feed : 'all';
   const takenN = all ? all.filter(taken).length : 0;
   const count: Record<Feed, number> = { all: all?.length ?? 0, taken: takenN, not: (all?.length ?? 0) - takenN };
-  const inTab = (all ?? []).filter((r) => (tab === 'all' ? true : tab === 'taken' ? taken(r) : !taken(r)));
+  // Not taken by why: each kind and how many it holds, most first; a signal with two is under both.
+  const notTaken = (all ?? []).filter((r) => !taken(r));
+  const reasonsOf = (r: SignalTrade): SignalReason[] => (r.reasons?.length ? r.reasons : ['other']);
+  const byWhy = [...notTaken.reduce((m, r) => { for (const k of reasonsOf(r)) m.set(k, (m.get(k) ?? 0) + 1); return m; }, new Map<SignalReason, number>())]
+    .sort((x, y) => y[1] - x[1]);
+  const why = whyPick !== 'any' && byWhy.some(([k]) => k === whyPick) ? whyPick : 'any';
+  const inTab = tab === 'not' ? notTaken.filter((r) => why === 'any' || reasonsOf(r).includes(why))
+    : (all ?? []).filter((r) => (tab === 'all' ? true : taken(r)));
   const signals = inTab.slice(0, limit);
   // Under Taken, how many were real orders; under Not taken, why -- each a count.
   const real = (all ?? []).filter((r) => r.status === 'placed').length;
-  const why = (['skipped', 'refused', 'failed'] as const).map((s) => [s, (all ?? []).filter((r) => r.status === s).length] as const).filter(([, n]) => n > 0);
   const tradesToday = runs.filter((r) => r.status === 'placed').length + real;
   const methods = month.data?.byMethod ?? [];
 
@@ -125,8 +144,17 @@ export function StrategiesScreen() {
         {all && tab === 'taken' && takenN > 0 && (
           <p className="m-0 mt-2 text-[12.5px] text-muted-foreground">{real} real order{real === 1 ? '' : 's'} · {takenN - real} paper (live orders off)</p>
         )}
-        {all && tab === 'not' && why.length > 0 && (
-          <p className="m-0 mt-2 text-[12.5px] text-muted-foreground">{why.map(([s, n]) => `${n} ${s}`).join(' · ')} — the reason is on each row</p>
+        {all && tab === 'not' && byWhy.length > 0 && (
+          <>
+            <div role="group" aria-label="Not taken, why" className="-mx-1 mt-2 flex gap-1.5 overflow-x-auto px-1 pb-1">
+              <Chip on={why === 'any'} onClick={() => setWhyPick('any')}>Any reason {notTaken.length}</Chip>
+              {byWhy.map(([k, n]) => <Chip key={k} on={why === k} onClick={() => setWhyPick(k)}>{REASON_WORDS[k]} {n}</Chip>)}
+            </div>
+            <p className="m-0 mt-1 text-[12px] text-muted-foreground">
+              {why === 'any' ? 'Tap a reason for its signals alone.' : `${inTab.length} not taken for: ${REASON_WORDS[why]}.`}
+              {byWhy.reduce((a, [, n]) => a + n, 0) > notTaken.length ? ' A signal with two reasons is under both.' : ''} The full reason is on each row.
+            </p>
+          </>
         )}
         {!all ? <Loading error={daySignals.error} what="today's signals" /> : signals.length === 0 ? <Empty>{FEEDS.find((f) => f.key === tab)!.none}</Empty> : (
           <ul className="m-0 mt-1 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Signals">

@@ -18,8 +18,8 @@ import { count } from '@/components/report/backtest-parts';
  * and "Only the N that won X% or more" included. Update keeps the list on the saved backtest; Cancel changes nothing.
  */
 const REPORT_FIRST_DAY = '2026-10-01';
-const PERIODS = [{ key: '7', label: 'Last 7 days', days: 7 }, { key: '14', label: 'Last 14 days', days: 14 }, { key: 'all', label: 'Since 1 Oct', days: 0 }] as const;
-type Period = (typeof PERIODS)[number]['key'];
+export const PERIODS = [{ key: '7', label: 'Last 7 days', days: 7 }, { key: '14', label: 'Last 14 days', days: 14 }, { key: 'all', label: 'Since 1 Oct', days: 0 }] as const;
+export type Period = (typeof PERIODS)[number]['key'];
 
 /** The last finished expiry day: today's settles at 5:30 PM IST. */
 export function lastFinishedDay(now = Date.now()): string {
@@ -34,14 +34,17 @@ export function periodRange(days: number, now = Date.now()): { from: string; to:
   return { from: from < REPORT_FIRST_DAY ? REPORT_FIRST_DAY : from, to };
 }
 
-export function SavedMethodsPicker({ save, onUpdate, onClose, busy = false, now = Date.now() }: {
+export function SavedMethodsPicker({ save, onUpdate, onClose, busy = false, now = Date.now(), period: given, onPeriod }: {
   save: BacktestSave;
   onUpdate: (methods: string[]) => void;
   onClose: () => void;
   busy?: boolean;
   now?: number;
+  /** The days, where the screen around it holds them (20 Oct 2026: the methods board, whose figures are of the same days). */
+  period?: Period; onPeriod?: (p: Period) => void;
 }) {
-  const [period, setPeriod] = usePersisted<Period>('savedMethods.period', '14');
+  const [kept, setKept] = usePersisted<Period>('savedMethods.period', '14');
+  const period = given ?? kept, setPeriod = onPeriod ?? setKept;
   const [winAtLeast, setWinAtLeast] = usePersisted<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
   const [draft, setDraft] = useState<string[]>(save.query.methods);
   const days = PERIODS.find((p) => p.key === period)?.days ?? 14;

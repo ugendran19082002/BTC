@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-541 files listed, 281 test files counted below, images and lockfiles left out.
+542 files listed, 282 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 139 |
-| `app/web` | 142 |
+| `app/web` | 143 |
 
 ## `(root)`
 
@@ -468,6 +468,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [LiveCheck.tsx](../../app/web/src/components/report/LiveCheck.tsx) | The live check, inside a backtest's result and a portfolio's (owner, 14 Oct 2026: "the real trades since 9:30 last night and the backtest's do not match in number -- check the calculation"; then "b... |
 | [MarketReport.tsx](../../app/web/src/components/report/MarketReport.tsx) | The market report (owner, 13 Oct 2026): "every day, the market's trend -- 5:31 PM to 5:29 PM, how the whole expiry went": each expiry day, newest first, with its high and low in points, its zigzag,... |
 | [MethodReport.tsx](../../app/web/src/components/report/MethodReport.tsx) | The Methods report (owner, 1 Oct 2026: "a tab of its own; two sections, 81 + 81: win rate, trades, win, loss, profit, loss, net"). |
+| [MethodsBoard.tsx](../../app/web/src/components/report/MethodsBoard.tsx) | Methods -- pick by win %, every strategy side by side (owner, 20 Oct 2026: "the strategies across, down the side the win %, total trades, profit, loss, loss trades, PF and the rest; a tap on any st... |
 | [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | One day, minute by minute: what the day was worth at each reading, with every fall from a high shaded underneath. |
 | [PerformanceStats.tsx](../../app/web/src/components/report/PerformanceStats.tsx) | -- |
 | [PerpVsOptions.tsx](../../app/web/src/components/report/PerpVsOptions.tsx) | The perp and the options apart, on the same signals and days (18 Oct 2026, the R&D audit: "perp R and options P&L after fees, separately -- a good perp result must not be taken for a good options o... |

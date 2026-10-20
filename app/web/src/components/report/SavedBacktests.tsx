@@ -379,7 +379,7 @@ const small = 'h-9 min-w-0 rounded-md border border-solid border-border bg-[var(
 const chipCls = (on: boolean) => cn('m-0 h-8 shrink-0 appearance-none rounded-full border border-solid px-3 font-[inherit] text-[12.5px]',
   on ? 'border-[var(--chosen)] bg-[var(--chosen-soft)] text-foreground' : 'border-border bg-transparent text-muted-foreground');
 
-export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run, onRun, onSaves, wide = false }: {
+export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run, onRun, onSaves, reloadKey = 0, wide = false }: {
   /**
    * Which of the screen's two sections this is in (owner, 13 Oct 2026: "the portfolio section or the backtest
    * section -- only one open at a time"). `single`: the saved backtests as a list to keep, put back on the screen,
@@ -398,6 +398,8 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
   onRun: (run: TogetherRun | null) => void;
   /** Told the saved backtests whenever they are read: the screen works one account's default limit out from them. */
   onSaves?: (saves: BacktestSave[]) => void;
+  /** Changed when a saved backtest was changed elsewhere on the screen (the methods board): the list is read again. */
+  reloadKey?: number;
   /** A wide desk: the list is always open. On a phone it folds to one line (`listOpen`). */
   wide?: boolean;
 }) {
@@ -443,7 +445,7 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
   const now = Date.now();
 
   const refresh = useCallback(() => getBacktestSaves().then((x) => { setList(x); setFailed(null); return x; }, (e: Error) => { setFailed(e.message); return null; }), []);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { void refresh(); }, [refresh, reloadKey]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (list) onSaves?.(list.saves); }, [list]);
 
