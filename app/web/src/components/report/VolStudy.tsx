@@ -241,7 +241,7 @@ function Compare({ by, fixed, moved, r, readDay }: { by: VolBy; fixed: VolStudyL
         <Empty>No signal in these days has a level by {by === 'iv' ? 'the ATM IV' : 'the candles'}: every trade kept the settings as set, so there is nothing to compare.</Empty>
       ) : (
         <>
-          <p role="status" className={cn('m-0 rounded-md px-3 py-2 text-[13.5px] leading-snug', diff > 0 && bothHalves ? 'bg-[rgba(38,161,123,0.14)]' : 'bg-[var(--chosen-soft)]')}>
+          <p role="status" className={cn('m-0 rounded-md px-3 py-2 text-[13.5px] leading-snug', diff > 0 && bothHalves ? 'bg-[color-mix(in_srgb,_var(--up)_14%,_transparent)]' : 'bg-[var(--chosen-soft)]')}>
             By volatility made <b className={netClass(diff)}>{moneyText(diff)}</b> {diff >= 0 ? 'more' : 'less'}{sized ? ' a lot' : ''} than as set,{' '}
             {bothHalves ? 'and was better in both halves of the days.' : neitherHalf ? 'and was not better in either half.' : 'but better in one half only -- not a rule yet.'}
           </p>
@@ -332,7 +332,7 @@ function RuleFields({ k, d, onChange, onEnter }: { k: RuleKey; d: Draft; onChang
                 {r.prefix && <span aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] text-muted-foreground">{r.prefix}</span>}
                 <input type="number" inputMode={r.whole ? 'numeric' : 'decimal'} min={r.min} max={r.max} step={r.step} aria-label={r.aria(l.label.toLowerCase())}
                   value={d[l.key]} onChange={(e) => onChange({ ...d, [l.key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') onEnter(); }}
-                  className={cn('h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] text-[16px] tabular-nums text-foreground [color-scheme:dark]', r.prefix ? 'pl-6' : 'pl-3', r.unit.length > 1 ? 'pr-10' : 'pr-7')} />
+                  className={cn('h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] text-[16px] tabular-nums text-foreground', r.prefix ? 'pl-6' : 'pl-3', r.unit.length > 1 ? 'pr-10' : 'pr-7')} />
                 <span aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">{r.unit}</span>
               </span>
             </label>
@@ -348,7 +348,7 @@ function RuleFields({ k, d, onChange, onEnter }: { k: RuleKey; d: Draft; onChang
  * move in points -- and the bar each gives, said under them as typed.
  */
 function WinFields({ d, onChange, onEnter }: { d: WinDraft; onChange: (d: WinDraft) => void; onEnter: () => void }) {
-  const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] pl-3 text-[16px] tabular-nums text-foreground [color-scheme:dark]';
+  const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] pl-3 text-[16px] tabular-nums text-foreground';
   const one = (key: 'base' | 'minTrades' | 'days', label: string, unit: string, aria: string, min: number, max: number) => (
     <label className="flex min-w-0 flex-col gap-1">
       <span className="text-[12.5px] font-medium">{label}</span>

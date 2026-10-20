@@ -39,13 +39,13 @@
 
 .pnl-kpi-card:hover {
   border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 12px rgba(14, 203, 129, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 12px color-mix(in srgb, var(--up) 8%, transparent);
   transform: translateY(-1px);
 }
 
 .pnl-kpi-card.tone-down:hover {
-  border-color: rgba(244, 63, 94, 0.35);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 12px rgba(244, 63, 94, 0.08);
+  border-color: color-mix(in srgb, var(--down) 35%, transparent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 12px color-mix(in srgb, var(--down) 8%, transparent);
 }
 
 .pnl-kpi-head {
@@ -58,7 +58,7 @@
 .pnl-kpi-label {
   font-size: 11px;
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--muted);
   letter-spacing: 0.2px;
 }
 
@@ -74,15 +74,15 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.3px;
-  color: #f8fafc;
+  color: var(--text);
 }
 
 .pnl-kpi-val.up {
-  color: #10b981;
+  color: var(--up);
 }
 
 .pnl-kpi-val.down {
-  color: #f43f5e;
+  color: var(--down);
 }
 
 .pnl-kpi-val.neutral {
@@ -94,7 +94,7 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--dim);
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
 }
@@ -110,13 +110,13 @@
 }
 
 .pnl-kpi-badge.up {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background: color-mix(in srgb, var(--up) 15%, transparent);
+  color: var(--up);
 }
 
 .pnl-kpi-badge.down {
-  background: rgba(244, 63, 94, 0.15);
-  color: #f43f5e;
+  background: color-mix(in srgb, var(--down) 15%, transparent);
+  color: var(--down);
 }
 
 .pnl-kpi-spark {
@@ -172,14 +172,14 @@
 .pnl-panel-title {
   font-size: 14px;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--text);
   letter-spacing: -0.2px;
 }
 
 .pnl-select {
   background: color-mix(in srgb, var(--panel) 90%, transparent);
   border: 1px solid color-mix(in srgb, var(--panel-3) 80%, transparent);
-  color: #cbd5e1;
+  color: var(--text);
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 6px;
@@ -204,7 +204,7 @@
 .pnl-pill-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 500;
   padding: 3px 10px;
@@ -214,14 +214,14 @@
 }
 
 .pnl-pill-btn.active {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-ink);
   font-weight: 600;
   box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .pnl-pill-btn:not(.active):hover {
-  color: #f1f5f9;
+  color: var(--text);
 }
 
 /* Performance Stats Grid */
@@ -252,7 +252,7 @@
 
 .pnl-perf-label {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--muted);
   margin-bottom: 4px;
 }
 
@@ -260,15 +260,15 @@
   font-size: 16px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: #f8fafc;
+  color: var(--text);
 }
 
 .pnl-perf-val.up {
-  color: #10b981;
+  color: var(--up);
 }
 
 .pnl-perf-val.down {
-  color: #f43f5e;
+  color: var(--down);
 }
 
 /* Win / Loss Donut Layout */
@@ -301,13 +301,13 @@
   font-size: 18px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: #f8fafc;
+  color: var(--text);
   line-height: 1.1;
 }
 
 .pnl-donut-sub {
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--muted);
   margin-top: 2px;
 }
 
@@ -323,7 +323,7 @@
   align-items: center;
   justify-content: space-between;
   font-size: 12px;
-  color: #cbd5e1;
+  color: var(--text);
 }
 
 .pnl-wl-legend-dot {
@@ -350,7 +350,7 @@
 }
 
 .pnl-wl-stat-label {
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .pnl-wl-stat-val {
@@ -360,9 +360,9 @@
 
 /* Daily P&L Chart */
 .pnl-daily-badge {
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.35);
-  color: #10b981;
+  background: color-mix(in srgb, var(--up) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--up) 35%, transparent);
+  color: var(--up);
   font-size: 11.5px;
   font-weight: 600;
   padding: 2px 8px;
@@ -385,7 +385,7 @@
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 11.5px;
-  color: #f1f5f9;
+  color: var(--text);
   pointer-events: none;
   white-space: nowrap;
 }
@@ -395,7 +395,7 @@
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .pnl-legend-dot {
@@ -411,9 +411,9 @@
   gap: 5px;
   font-size: 11px;
   font-weight: 600;
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: var(--up);
+  background: color-mix(in srgb, var(--up) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--up) 28%, transparent);
   padding: 2px 7px;
   border-radius: 9999px;
   letter-spacing: 0.2px;
@@ -423,8 +423,8 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 6px #10b981;
+  background: var(--up);
+  box-shadow: 0 0 6px var(--up);
   animation: pnlPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
@@ -448,7 +448,7 @@
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 11.5px;
-  color: #94a3b8;
+  color: var(--muted);
   line-height: 1.4;
 }
 
@@ -565,9 +565,9 @@
 .pnl-cal-summary-pill {
   font-size: 11px;
   font-weight: 600;
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: var(--up);
+  background: color-mix(in srgb, var(--up) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--up) 25%, transparent);
   padding: 1.5px 8px;
   border-radius: 9999px;
   font-variant-numeric: tabular-nums;
@@ -582,14 +582,14 @@
   border-radius: 4px;
   background: color-mix(in srgb, var(--panel) 80%, transparent);
   border: 1px solid color-mix(in srgb, var(--panel-3) 80%, transparent);
-  color: #94a3b8;
+  color: var(--muted);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .pnl-cal-nav-btn:hover {
   background: color-mix(in srgb, var(--line) 90%, transparent);
-  color: #f1f5f9;
+  color: var(--text);
   border-color: var(--accent);
 }
 
@@ -620,7 +620,7 @@
 .pnl-month-label {
   font-size: 12px;
   font-weight: 700;
-  color: #f1f5f9;
+  color: var(--text);
   letter-spacing: 0.4px;
   margin-bottom: 0;
 }
@@ -634,20 +634,20 @@
 }
 
 .pnl-month-net-badge.up {
-  background: rgba(16, 185, 129, 0.18);
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: color-mix(in srgb, var(--up) 18%, transparent);
+  color: var(--up);
+  border: 1px solid color-mix(in srgb, var(--up) 35%, transparent);
 }
 
 .pnl-month-net-badge.down {
-  background: rgba(244, 63, 94, 0.18);
-  color: #f43f5e;
-  border: 1px solid rgba(244, 63, 94, 0.35);
+  background: color-mix(in srgb, var(--down) 18%, transparent);
+  color: var(--down);
+  border: 1px solid color-mix(in srgb, var(--down) 35%, transparent);
 }
 
 .pnl-month-net-badge.flat {
   background: color-mix(in srgb, var(--panel-3) 30%, transparent);
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 /* Day of week */
@@ -660,7 +660,7 @@
 .pnl-dow span {
   font-size: 10px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--dim);
 }
 
 .pnl-dow-wk {
@@ -728,11 +728,11 @@
 }
 
 .pnl-week-val.up {
-  color: #10b981;
+  color: var(--up);
 }
 
 .pnl-week-val.down {
-  color: #f43f5e;
+  color: var(--down);
 }
 
 /* Compact Heatmap Mode */
@@ -760,52 +760,52 @@
 
 /* Heatmap color levels */
 .pnl-day.up.l1 {
-  background: rgba(16, 185, 129, 0.22);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: color-mix(in srgb, var(--up) 22%, transparent);
+  color: var(--up);
+  border: 1px solid color-mix(in srgb, var(--up) 35%, transparent);
 }
 
 .pnl-day.up.l2 {
-  background: rgba(16, 185, 129, 0.55);
-  color: #ffffff;
-  border: 1px solid rgba(16, 185, 129, 0.65);
+  background: color-mix(in srgb, var(--up) 55%, transparent);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--up) 65%, transparent);
 }
 
 .pnl-day.up.l3 {
-  background: #059669;
+  background: var(--up-fill);
   color: #ffffff;
-  border: 1px solid #10b981;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+  border: 1px solid var(--up);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--up) 40%, transparent);
 }
 
 .pnl-day.down.l1 {
-  background: rgba(244, 63, 94, 0.22);
-  color: #fb7185;
-  border: 1px solid rgba(244, 63, 94, 0.35);
+  background: color-mix(in srgb, var(--down) 22%, transparent);
+  color: var(--down);
+  border: 1px solid color-mix(in srgb, var(--down) 35%, transparent);
 }
 
 .pnl-day.down.l2 {
-  background: rgba(244, 63, 94, 0.55);
-  color: #ffffff;
-  border: 1px solid rgba(244, 63, 94, 0.65);
+  background: color-mix(in srgb, var(--down) 55%, transparent);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--down) 65%, transparent);
 }
 
 .pnl-day.down.l3 {
-  background: #e11d48;
+  background: var(--down-fill);
   color: #ffffff;
-  border: 1px solid #f43f5e;
-  box-shadow: 0 0 8px rgba(244, 63, 94, 0.4);
+  border: 1px solid var(--down);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--down) 40%, transparent);
 }
 
 .pnl-day.flat {
   background: color-mix(in srgb, var(--line) 70%, transparent);
-  color: #cbd5e1;
+  color: var(--text);
   border: 1px solid color-mix(in srgb, var(--panel-3) 50%, transparent);
 }
 
 .pnl-day.none {
   background: color-mix(in srgb, var(--panel) 45%, transparent);
-  color: #64748b;
+  color: var(--dim);
   border: 1px dashed color-mix(in srgb, var(--panel-3) 40%, transparent);
 }
 
@@ -820,7 +820,7 @@
 .pnl-day.selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-  border-color: #ffffff !important;
+  border-color: var(--text) !important;
   box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 75%, transparent);
   z-index: 6;
 }
@@ -854,25 +854,25 @@
 }
 
 .pnl-inspector-badge.up {
-  background: rgba(16, 185, 129, 0.2);
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: color-mix(in srgb, var(--up) 20%, transparent);
+  color: var(--up);
+  border: 1px solid color-mix(in srgb, var(--up) 35%, transparent);
 }
 
 .pnl-inspector-badge.down {
-  background: rgba(244, 63, 94, 0.2);
-  color: #f43f5e;
-  border: 1px solid rgba(244, 63, 94, 0.35);
+  background: color-mix(in srgb, var(--down) 20%, transparent);
+  color: var(--down);
+  border: 1px solid color-mix(in srgb, var(--down) 35%, transparent);
 }
 
 .pnl-inspector-badge.flat {
   background: color-mix(in srgb, var(--panel-3) 30%, transparent);
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .pnl-inspector-badge.neutral {
   background: color-mix(in srgb, var(--panel-3) 20%, transparent);
-  color: #64748b;
+  color: var(--dim);
 }
 
 .pnl-inspector-grid {
@@ -890,7 +890,7 @@
 
 .pnl-inspector-label {
   font-size: 10.5px;
-  color: #94a3b8;
+  color: var(--muted);
   letter-spacing: 0.2px;
 }
 
@@ -898,15 +898,15 @@
   font-size: 13.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: #f8fafc;
+  color: var(--text);
 }
 
 .pnl-inspector-val.up {
-  color: #10b981;
+  color: var(--up);
 }
 
 .pnl-inspector-val.down {
-  color: #f43f5e;
+  color: var(--down);
 }
 
 /* Mobile responsive rules for calendar */

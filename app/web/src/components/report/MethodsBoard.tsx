@@ -102,7 +102,7 @@ export function MethodsBoard({ saves, onChanged, now = Date.now() }: {
                             <button type="button" aria-pressed={editing === s.id} aria-label={`${s.name}: its methods, ${s.query.methods.length ? `${s.query.methods.length} picked` : 'every method'} -- pick by win %`}
                               onClick={() => setEditing(editing === s.id ? null : s.id)}
                               className={cn('m-0 min-h-[44px] w-full appearance-none rounded-md border border-solid px-2 py-1 text-right font-[inherit]',
-                                editing === s.id ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-transparent bg-transparent text-foreground hover:border-border')}>
+                                editing === s.id ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen-text)]' : 'border-transparent bg-transparent text-foreground hover:border-border')}>
                               <span className="block whitespace-nowrap font-semibold">{s.name}</span>
                               <span className="block whitespace-nowrap text-[11px] text-[var(--accent)] underline underline-offset-2">{s.query.methods.length ? `${s.query.methods.length} methods` : 'every method'} ✎</span>
                             </button>

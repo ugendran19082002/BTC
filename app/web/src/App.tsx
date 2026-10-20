@@ -7,6 +7,7 @@ import { NotSignedIn } from '@/api/client';
 import { getCandles, getChain, getExpiries, getHealth, getSpot } from '@/api/desk';
 import { getMe, type Stage } from '@/api/session';
 import { ProfileMenu } from '@/components/auth/ProfileMenu';
+import { ThemeToggle } from '@/components/ui/theme-switch';
 import { TwoStepSetup } from '@/components/auth/TwoStepSetup';
 import type { ChainResponse, ExpiryOption, Leg } from '@/types/desk';
 import { ChainTable, type ChainSellIntent } from '@/components/chain/ChainTable';
@@ -581,6 +582,7 @@ export default function App() {
             >
               <Smartphone className="h-4 w-4" aria-hidden="true" />
             </a>
+            <ThemeToggle />
             <ProfileMenu username={username} onSignedOut={() => setSignedIn(false)} />
           </div>
         </div>
@@ -709,7 +711,7 @@ export default function App() {
             <div className="desk-section-header fold-head !mt-0">
               <div className="desk-section-title-wrap">
                 <FoldButton open={chainOpen} onToggle={() => setChainOpen(!chainOpen)} label="option chain board" />
-                <div className="desk-section-icon" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' }}>
+                <div className="desk-section-icon" style={{ background: 'color-mix(in_srgb,_var(--violet)_12%,_transparent)', color: 'var(--violet)' }}>
                   <BarChart3 size={18} />
                 </div>
                 <div>
@@ -721,10 +723,10 @@ export default function App() {
                 <span className="desk-badge-pill" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent-line)' }}>
                   ATM: {snap?.atm ? snap.atm.toLocaleString() : '—'}
                 </span>
-                <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #2a303a' }}>
+                <span className="desk-badge-pill" style={{ background: 'color-mix(in_srgb,_var(--text)_5%,_transparent)', color: 'var(--muted)', border: '1px solid var(--line)' }}>
                   {distinctStrikes > 0 ? `${distinctStrikes} Strikes` : '— Strikes'}
                 </span>
-                <span className="desk-badge-pill" style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #2a303a' }}>
+                <span className="desk-badge-pill" style={{ background: 'color-mix(in_srgb,_var(--text)_5%,_transparent)', color: 'var(--muted)', border: '1px solid var(--line)' }}>
                   {data?.legs ? `${data.legs.length} Contracts` : '— Contracts'}
                 </span>
               </div>

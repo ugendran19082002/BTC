@@ -72,7 +72,7 @@ export function SortRow({ value, onChange, className, label = 'Sort' }: { value:
       {FILTER_SORTS.map((x) => (
         <button key={x.key} type="button" aria-pressed={value === x.key} onClick={() => onChange(x.key)}
           className={cn('m-0 h-8 shrink-0 appearance-none whitespace-nowrap rounded-full border border-solid px-2.5 font-[inherit] text-[12.5px] font-medium',
-            value === x.key ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-border bg-transparent text-muted-foreground')}>
+            value === x.key ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen-text)]' : 'border-border bg-transparent text-muted-foreground')}>
           {x.label}
         </button>
       ))}
@@ -184,7 +184,7 @@ export function FilterPicker({ noun, options, picked, onChange, split = false, w
           type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${noun.label} filter: ${words}`}
           className={cn(
             'm-0 inline-flex h-10 max-w-[12rem] shrink-0 appearance-none items-center gap-1 whitespace-nowrap rounded-full border border-solid px-2.5 text-left font-[inherit] text-[13.5px] font-medium',
-            on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-border bg-transparent text-foreground',
+            on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen-text)]' : 'border-border bg-transparent text-foreground',
           )}
         >
           {/* One chosen: its name alone, cut where it runs long -- the name says the kind. Otherwise the kind, and how many where several. */}
@@ -194,7 +194,7 @@ export function FilterPicker({ noun, options, picked, onChange, split = false, w
           {chosen.length > 1 && (
             <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-[var(--chosen)] px-1 text-[11.5px] font-bold tabular-nums text-[var(--chosen-ink)]">{chosen.length}</span>
           )}
-          <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', on ? 'text-[var(--chosen)]' : 'text-muted-foreground', open && 'rotate-180')} aria-hidden />
+          <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', on ? 'text-[var(--chosen-text)]' : 'text-muted-foreground', open && 'rotate-180')} aria-hidden />
         </button>
       </PopoverTrigger>
       {/* As wide as a phone allows, whatever the chip's own width; kept clear of the screen's edges wherever the chip sits in the row. */}
@@ -218,7 +218,7 @@ export function FilterPicker({ noun, options, picked, onChange, split = false, w
                 // The name, its count under it: four side by side fit a 360px phone that way (measured, 14 Oct 2026).
                 className={cn(
                   'm-0 flex min-h-[44px] min-w-0 flex-1 appearance-none flex-col items-center justify-center rounded-md border-0 px-1 py-1 font-[inherit] text-[12.5px] font-semibold leading-tight',
-                  side === x ? (x === 'up' ? 'bg-[var(--up-bg)] text-[var(--up)]' : x === 'down' ? 'bg-[var(--down-bg)] text-[var(--down)]' : x === 'win' ? 'bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'bg-muted text-foreground') : 'bg-transparent text-muted-foreground',
+                  side === x ? (x === 'up' ? 'bg-[var(--up-bg)] text-[var(--up)]' : x === 'down' ? 'bg-[var(--down-bg)] text-[var(--down)]' : x === 'win' ? 'bg-[var(--chosen-soft)] text-[var(--chosen-text)]' : 'bg-muted text-foreground') : 'bg-transparent text-muted-foreground',
                 )}
               >
                 <span className="whitespace-nowrap">{sideWords(x)}</span> <span className="text-[11.5px] tabular-nums opacity-80">{ofSide(x).length}</span>

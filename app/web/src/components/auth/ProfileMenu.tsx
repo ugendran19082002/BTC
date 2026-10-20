@@ -10,6 +10,7 @@ import { RecoveryCodes } from '@/components/auth/TwoStepSetup';
 import { ago, stamp } from '@/lib/format';
 import { usePersisted } from '@/hooks/usePersisted';
 import { cn } from '@/lib/utils';
+import { ThemeSwitch } from '@/components/ui/theme-switch';
 
 /**
  * The profile button in the header, and the account sheet behind it.
@@ -77,6 +78,11 @@ export function ProfileMenu({ username, onSignedOut }: { username: string | null
             <span className="text-foreground">
               Two-step sign-in {account?.twoFactorSince ? <>on since {stamp(account.twoFactorSince)}</> : 'on'}
             </span>
+          </div>
+
+          <div className="mb-3 grid gap-1.5">
+            <span className="text-[13px] font-semibold text-foreground">Theme</span>
+            <ThemeSwitch />
           </div>
 
           <Section id="password" title="Change password" icon={<KeyRound className="h-4 w-4" />} defaultOpen>

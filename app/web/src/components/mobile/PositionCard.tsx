@@ -57,7 +57,7 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
   return (
     <Card className={cn('!p-3', r.problems.length > 0 && 'border-[var(--down)]')}>
       {r.problems.length > 0 && (
-        <div role="alert" className="mb-2 flex gap-2 rounded-md bg-[var(--down-bg)] px-2.5 py-1.5 text-[13px] leading-snug text-[#ffb3ae]">
+        <div role="alert" className="mb-2 flex gap-2 rounded-md bg-[var(--down-bg)] px-2.5 py-1.5 text-[13px] leading-snug text-[var(--down-text)]">
           <AlertOctagon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--down)]" aria-hidden="true" />
           <span>{r.problems.join(' ')}</span>
         </div>

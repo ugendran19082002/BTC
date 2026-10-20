@@ -101,8 +101,8 @@ export function PnlCalendar({
       {/* Calendar Header Toolbar */}
       <div className="pnl-cal-toolbar">
         <div className="flex items-center gap-2">
-          <CalendarIcon size={14} className="text-sky-400" aria-hidden />
-          <span className="font-semibold text-slate-200 text-xs tracking-wide">P&L CALENDAR</span>
+          <CalendarIcon size={14} className="text-[var(--time)]" aria-hidden />
+          <span className="font-semibold text-foreground text-xs tracking-wide">P&L CALENDAR</span>
           {rows.length > 0 && (
             <span className="pnl-cal-summary-pill">
               {totalWinDays}W · {totalLossDays}L ({winRatePct}% Win)
@@ -249,7 +249,7 @@ export function PnlCalendar({
                             {formatCompactPnl(weekNetInr)}
                           </span>
                         ) : (
-                          <span className="text-slate-600">—</span>
+                          <span className="text-[var(--dim)]">—</span>
                         )}
                       </div>
                     )}
@@ -266,7 +266,7 @@ export function PnlCalendar({
         <div className="pnl-day-inspector" role="region" aria-label="Day detail">
           <div className="pnl-inspector-head">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-200">{formatInspectorDate(activeDayKey)}</span>
+              <span className="font-semibold text-foreground">{formatInspectorDate(activeDayKey)}</span>
               {activeRow ? (
                 <span className={`pnl-inspector-badge ${activeNetInr && activeNetInr > 0 ? 'up' : activeNetInr && activeNetInr < 0 ? 'down' : 'flat'}`}>
                   {activeNetInr && activeNetInr > 0 ? 'Profit Session' : activeNetInr && activeNetInr < 0 ? 'Loss Session' : 'Flat'}
@@ -275,7 +275,7 @@ export function PnlCalendar({
                 <span className="pnl-inspector-badge neutral">No Trades Recorded</span>
               )}
             </div>
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-muted-foreground">
               {selected === activeDayKey ? '● Selected for intraday line' : 'Tap to inspect intraday line'}
             </span>
           </div>
@@ -286,7 +286,7 @@ export function PnlCalendar({
                 <span className="pnl-inspector-label">Net P&L</span>
                 <span className={`pnl-inspector-val ${activeNetInr > 0 ? 'up' : activeNetInr < 0 ? 'down' : ''}`}>
                   {signedInr(activeNetInr)}
-                  <small className="text-slate-400 font-normal ml-1">({signedUsd(activeNetUsd ?? 0)})</small>
+                  <small className="text-muted-foreground font-normal ml-1">({signedUsd(activeNetUsd ?? 0)})</small>
                 </span>
               </div>
 
@@ -299,14 +299,14 @@ export function PnlCalendar({
 
               <div className="pnl-inspector-item">
                 <span className="pnl-inspector-label">Charges & Fees</span>
-                <span className="pnl-inspector-val text-slate-300">
+                <span className="pnl-inspector-val text-foreground">
                   −{inr(usdToInr(activeRow.chargesUsd))}
                 </span>
               </div>
 
               <div className="pnl-inspector-item">
                 <span className="pnl-inspector-label">Executed Trades</span>
-                <span className="pnl-inspector-val text-slate-200">
+                <span className="pnl-inspector-val text-foreground">
                   {activeRow.trades} trade{activeRow.trades === 1 ? '' : 's'}
                 </span>
               </div>

@@ -9,9 +9,9 @@ type Tone = 'neutral' | 'ok' | 'warn' | 'danger';
 
 const TONE: Record<Tone, string> = {
   neutral: 'border-border text-muted-foreground',
-  ok: 'border-[#3fb95055] bg-[#3fb95015] text-[var(--up)]',
-  warn: 'border-[#d2992255] bg-[#d2992215] text-[var(--warn)]',
-  danger: 'border-[#f8514955] bg-[#f8514915] text-[var(--down)]',
+  ok: 'border-[color-mix(in_srgb,_var(--up)_33%,_transparent)] bg-[color-mix(in_srgb,_var(--up)_8%,_transparent)] text-[var(--up)]',
+  warn: 'border-[color-mix(in_srgb,_var(--warn)_33%,_transparent)] bg-[color-mix(in_srgb,_var(--warn)_8%,_transparent)] text-[var(--warn)]',
+  danger: 'border-[color-mix(in_srgb,_var(--down)_33%,_transparent)] bg-[color-mix(in_srgb,_var(--down)_8%,_transparent)] text-[var(--down)]',
 };
 
 export function Badge({

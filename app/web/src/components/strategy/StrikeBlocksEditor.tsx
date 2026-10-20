@@ -186,7 +186,7 @@ export function StrikeBlocksEditor({ c, set, err, spot, first }: {
                 type="button"
                 onClick={split}
                 disabled={!windowOk || !(everyMin >= 1)}
-                className="m-0 h-8 appearance-none rounded-md border-0 bg-[var(--accent)] px-3 font-[inherit] text-[12px] font-medium text-white disabled:opacity-40"
+                className="m-0 h-8 appearance-none rounded-md border-0 bg-[var(--accent-fill)] px-3 font-[inherit] text-[12px] font-medium text-white disabled:opacity-40"
               >
                 Split
               </button>

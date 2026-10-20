@@ -48,7 +48,7 @@ export function BacktestBreakEven({ value, onChange, name = 'SL to entry' }: { v
                 const chosen = p.move === b.move && p.unit === b.unit;
                 return (
                   <button key={`${p.move}${p.unit}`} type="button" aria-pressed={chosen} onClick={() => onChange(p)}
-                    className={cn('m-0 h-9 appearance-none rounded-full border border-solid px-3 font-[inherit] text-[12.5px]', chosen ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-border bg-transparent text-muted-foreground')}>
+                    className={cn('m-0 h-9 appearance-none rounded-full border border-solid px-3 font-[inherit] text-[12.5px]', chosen ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen-text)]' : 'border-border bg-transparent text-muted-foreground')}>
                     {p.unit === 'pts' ? `${p.move} pts` : `${p.move}%`}
                   </button>
                 );

@@ -552,7 +552,7 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
         <button type="button" aria-label={`Run ${s.name}`} aria-current={shown?.id === s.id ? 'true' : undefined}
           onClick={() => { onLoad(s.query); setFromId(s.id); setSaid(null); }}
           className="m-0 min-h-[44px] w-full min-w-0 appearance-none border-0 bg-transparent p-0 text-left font-[inherit]">
-          <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', shown?.id === s.id ? 'text-[var(--chosen)]' : 'text-foreground')}>{s.name}{shown?.id === s.id ? ' · on the screen' : ''}</span>
+          <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', shown?.id === s.id ? 'text-[var(--chosen-text)]' : 'text-foreground')}>{s.name}{shown?.id === s.id ? ' · on the screen' : ''}</span>
           <span title={wordsOf(s.query)} className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere] overflow-hidden [-webkit-box-orient:vertical] [-webkit-line-clamp:2] [display:-webkit-box]">{wordsOf(s.query)}</span>
         </button>
         <p className="m-0 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-[var(--dim)]">
@@ -659,7 +659,7 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
           <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search the saved backtests"
             placeholder="Search" className={cn(small, 'w-full pl-8')} />
         </label>
-        <select aria-label="Order the saved backtests" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={cn(small, 'shrink-0 [color-scheme:dark]')}>
+        <select aria-label="Order the saved backtests" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={cn(small, 'shrink-0')}>
           <option value="name">A–Z</option>
           <option value="recent">Last changed first</option>
         </select>
@@ -772,7 +772,7 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
                     <li key={p.id} className={cn('grid min-w-0 gap-1.5 rounded-md border border-solid px-2.5 py-2', on ? 'border-[var(--chosen)] bg-[var(--chosen-soft)]' : 'border-[var(--line-soft)]', editedPortfolio?.id === p.id && 'border-[var(--accent)]')}>
                       <div className="flex min-w-0 items-start gap-2">
                         <span className="min-w-0 flex-1">
-                          <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', on && 'text-[var(--chosen)]')}>{p.name}{on ? ' · running' : ''}</span>
+                          <span className={cn('block text-[14px] font-semibold [overflow-wrap:anywhere]', on && 'text-[var(--chosen-text)]')}>{p.name}{on ? ' · running' : ''}</span>
                           <span className="block text-[11.5px] text-[var(--dim)]">{p.saveIds.length} saved backtests · changed {agoWords(p.updatedAt, now)}</span>
                         </span>
                         <button type="button" aria-label={`Run the portfolio ${p.name}`} className={cn(on ? quiet : solid, 'h-9')} onClick={() => setRun({ ids: p.saveIds, title: p.name })}>{on ? 'Run again' : 'Run'}</button>

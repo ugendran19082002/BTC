@@ -49,15 +49,15 @@ function OneSide({ side, pct, most, open, busy, onSave, onInvalid }: {
     if (n !== pct) void onSave(n).then((ok) => { if (!ok) setText(String(pct)); });
     else setCustom(!isPreset(pct));
   };
-  const field = 'm-0 h-6 rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-1 font-[inherit] text-[12px] text-foreground disabled:opacity-50';
+  const field = 'm-0 h-6 rounded border border-solid border-border bg-[var(--bg)] px-1 font-[inherit] text-[12px] text-foreground disabled:opacity-50';
   return (
     <span
       role="group" aria-label={`${side} limit`}
       className="desk-badge-pill inline-flex items-center gap-1.5"
       title={`The most ${side === 'CE' ? 'call' : 'put'} trades open at once, as a per cent of "at most open". Its own limit: the other side has its own, and the two together are still held to "at most open". 100% is no limit of its own.`}
       style={full
-        ? { background: 'rgba(250, 204, 21, 0.1)', color: '#facc15', border: '1px solid rgba(250, 204, 21, 0.3)' }
-        : { background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1', border: '1px solid #2a303a' }}
+        ? { background: 'color-mix(in_srgb,_var(--accent)_10%,_transparent)', color: 'var(--accent)', border: '1px solid color-mix(in_srgb,_var(--accent)_30%,_transparent)' }
+        : { background: 'color-mix(in_srgb,_var(--text)_5%,_transparent)', color: 'var(--text)', border: '1px solid var(--line)' }}
     >
       <span>{side} max</span>
       {custom ? (

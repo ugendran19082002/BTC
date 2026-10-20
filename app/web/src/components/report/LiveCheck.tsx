@@ -171,7 +171,7 @@ export function LiveCheckResult({ r }: { r: Check }) {
               {' '}Over all {days.length} days:
             </p>
           )}
-          <p role="status" aria-label="Whether they match" className={cn('m-0 rounded-md px-3 py-2 text-[14px] font-medium leading-snug', differ === 0 ? 'bg-[rgba(38,161,123,0.14)] text-[var(--up)]' : 'bg-[var(--chosen-soft)] text-foreground')}>
+          <p role="status" aria-label="Whether they match" className={cn('m-0 rounded-md px-3 py-2 text-[14px] font-medium leading-snug', differ === 0 ? 'bg-[color-mix(in_srgb,_var(--up)_14%,_transparent)] text-[var(--up)]' : 'bg-[var(--chosen-soft)] text-foreground')}>
             {differ === 0
               ? (saved
                 ? `They match: the live rules with these settings take the same ${count(t.backtest)} trades as the backtest${r.money.real && Math.abs(r.money.real.net - r.money.backtest.net) < 0.005 ? ', and make the same money' : ''}.`

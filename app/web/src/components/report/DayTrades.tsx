@@ -105,7 +105,7 @@ export function DayTradesSheet({ day, title, read, onClose }: {
   });
   const pick = (k: Only) => { setOnly(k); setShown(PAGE); };
   const chip = (on: boolean) => cn('m-0 flex min-h-[44px] shrink-0 appearance-none flex-col items-center justify-center whitespace-nowrap rounded-xl border border-solid px-3 py-1 font-[inherit] leading-tight',
-    on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-border bg-transparent text-foreground');
+    on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen-text)]' : 'border-border bg-transparent text-foreground');
 
   return (
     <Sheet open={day !== null} onOpenChange={(v) => { if (!v) onClose(); }}>

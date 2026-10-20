@@ -28,8 +28,8 @@ type Tone = 'down' | 'up' | 'accent';
 
 const TONES: Record<Tone, { track: string; fill: string; thumb: string; text: string }> = {
   down: { track: 'bg-[var(--down-bg)] border-[var(--down)]/40', fill: 'bg-[var(--down)]/30', thumb: 'bg-[var(--down)] text-white', text: 'text-[var(--down)]' },
-  up: { track: 'bg-[var(--up-bg)] border-[var(--up)]/40', fill: 'bg-[var(--up)]/30', thumb: 'bg-[var(--up)] text-black', text: 'text-[var(--up)]' },
-  accent: { track: 'bg-muted border-[var(--accent)]/40', fill: 'bg-[var(--accent)]/25', thumb: 'bg-[var(--accent)] text-black', text: 'text-foreground' },
+  up: { track: 'bg-[var(--up-bg)] border-[var(--up)]/40', fill: 'bg-[var(--up)]/30', thumb: 'bg-[var(--up-fill)] text-white', text: 'text-[var(--up)]' },
+  accent: { track: 'bg-muted border-[var(--accent)]/40', fill: 'bg-[var(--accent-fill)]/25', thumb: 'bg-[var(--accent-fill)] text-black', text: 'text-foreground' },
 };
 
 export function SwipeToConfirm({

@@ -35,7 +35,7 @@ export function Switch({
         className={cn(
           'relative m-0 mt-0.5 inline-flex h-6 w-11 flex-none cursor-pointer appearance-none items-center rounded-full border-0 p-0 transition-colors',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-          checked ? 'bg-[var(--accent)]' : 'bg-[var(--line)]',
+          checked ? 'bg-[var(--accent-fill)]' : 'bg-[var(--line)]',
         )}
       >
         <SwitchPrimitive.Thumb

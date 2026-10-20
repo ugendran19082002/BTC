@@ -33,13 +33,13 @@ export const CHART_TFS: readonly EntryTf[] = [...VIEW_ONLY_TFS, ...SINGLE_TFS];
 const COPY: Record<EntryMode, { title: (n: number) => string; accent: string; sub: string; tag: string }> = {
   single: {
     title: (n) => `${n} methods · without timeframe`,
-    accent: 'border-t-[#d97706]',
+    accent: 'border-t-[var(--warn)]',
     sub: 'Each method on one timeframe alone -- no higher-timeframe check.',
     tag: 'More signals',
   },
   mtf: {
     title: (n) => `${n} methods + timeframe`,
-    accent: 'border-t-[#26a17b]',
+    accent: 'border-t-[var(--up)]',
     sub: '4H/1H context → 30m/15m setup → 5m entry → 3m confirm → 1m execution.',
     tag: 'Fewer signals',
   },
@@ -205,9 +205,9 @@ function SelectedCard({ read, ltp }: { read: MethodRead | null; ltp: { price: nu
   if (!read) return <div className="rounded-lg border border-border p-2 text-[12px] text-muted-foreground">Choose a method.</div>;
   const p = read.plan;
   const head = read.state === 'TRADE'
-    ? { text: read.dir === 'short' ? 'SHORT SETUP' : 'LONG SETUP', cls: read.dir === 'short' ? 'bg-[#e2504f] text-white' : 'bg-[#26a17b] text-white' }
+    ? { text: read.dir === 'short' ? 'SHORT SETUP' : 'LONG SETUP', cls: read.dir === 'short' ? 'bg-[var(--down-fill)] text-white' : 'bg-[var(--up-fill)] text-white' }
     : read.state === 'WAIT'
-      ? { text: `WAIT${read.dir ? ` · ${read.dir} forming` : ''}`, cls: 'bg-[#b7791f] text-white' }
+      ? { text: `WAIT${read.dir ? ` · ${read.dir} forming` : ''}`, cls: 'bg-[var(--warn-fill)] text-white' }
       : { text: read.dir ? `NO TRADE · ${read.dir} refused` : 'NO TRADE', cls: 'bg-muted text-muted-foreground' };
   // Gates switched off that would have refused this read.
   const overridden = read.gates.filter((g) => !g.enabled && g.ok === false);
@@ -226,7 +226,7 @@ function SelectedCard({ read, ltp }: { read: MethodRead | null; ltp: { price: nu
       <div className={cn('mx-2 my-1.5 rounded py-1 text-center text-[14px] font-bold', head.cls)}>{head.text}</div>
       {/* A TRADE that only stands because a gate is switched off says so, loudly: with every gate on it would be NO TRADE. */}
       {read.state === 'TRADE' && overridden.length ? (
-        <p role="alert" className="mx-2 mb-1.5 mt-0 rounded border border-[var(--warn)] bg-[rgba(240,185,11,0.08)] px-2 py-1 text-[11.5px] text-[var(--warn)]">
+        <p role="alert" className="mx-2 mb-1.5 mt-0 rounded border border-[var(--warn)] bg-[color-mix(in_srgb,_var(--warn)_8%,_transparent)] px-2 py-1 text-[11.5px] text-[var(--warn)]">
           ⚠ Only a TRADE because {overridden.map((g) => g.label).join(', ')} {overridden.length === 1 ? 'is' : 'are'} switched off -- with every gate on this is NO TRADE ({overridden.map((g) => `${g.label} ${g.value ?? ''}`.trim()).join(' · ')}).
         </p>
       ) : null}

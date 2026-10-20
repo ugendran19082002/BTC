@@ -9,13 +9,13 @@
   --desk-border: var(--panel-2);
   --desk-border-highlight: var(--line);
   --desk-cyan: var(--accent);
-  --desk-green: #00e676;
-  --desk-red: #ff3b57;
-  --desk-amber: #f59e0b;
-  --desk-purple: #a855f7;
-  --desk-text-main: #f1f5f9;
-  --desk-text-muted: #8492a6;
-  --desk-text-dim: #4b5563;
+  --desk-green: var(--up);
+  --desk-red: var(--down);
+  --desk-amber: var(--warn);
+  --desk-purple: var(--violet);
+  --desk-text-main: var(--text);
+  --desk-text-muted: var(--muted);
+  --desk-text-dim: var(--dim);
 }
 
 .desk-root {
@@ -66,7 +66,7 @@
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.3px;
-  color: #fff;
+  color: var(--text);
   line-height: 1.1;
 }
 
@@ -79,8 +79,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(0, 230, 118, 0.12);
-  border: 1px solid rgba(0, 230, 118, 0.35);
+  background: color-mix(in srgb, var(--up) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--up) 35%, transparent);
   border-radius: 20px;
   padding: 4px 10px;
   font-size: 11px;
@@ -116,14 +116,14 @@
   background: var(--bg);
 }
 
-.desk-expiry-date { color: var(--desk-text, #e5e7eb); font-weight: 600; }
-.desk-expiry-countdown.is-soon { border-color: rgba(245, 158, 11, 0.7); }
-.desk-expiry-countdown.is-urgent { border-color: rgba(246, 70, 93, 0.6); background: rgba(246, 70, 93, 0.14); color: #f6465d; }
+.desk-expiry-date { color: var(--desk-text); font-weight: 600; }
+.desk-expiry-countdown.is-soon { border-color: color-mix(in srgb, var(--warn) 70%, transparent); }
+.desk-expiry-countdown.is-urgent { border-color: color-mix(in srgb, var(--down) 60%, transparent); background: color-mix(in srgb, var(--down) 14%, transparent); color: var(--down); }
 
 .desk-expiry-countdown {
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  background: rgba(245, 158, 11, 0.12);
-  color: #fbbf24;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 6px;

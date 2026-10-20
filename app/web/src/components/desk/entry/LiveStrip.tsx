@@ -52,13 +52,13 @@ export function LiveStrip({ plan, dir, ltp, now = Date.now() }: {
     // Which side of the zone, and which way that is: toward the fill, or toward the stop.
     above: dir === 'long'
       ? { text: `${fmt(out)} pts above the zone · waiting for it to come down`, cls: 'bg-muted text-foreground' }
-      : { text: `${fmt(out)} pts above the zone · toward the SL`, cls: 'bg-[rgba(226,80,79,0.18)] text-[var(--down)]' },
+      : { text: `${fmt(out)} pts above the zone · toward the SL`, cls: 'bg-[color-mix(in_srgb,_var(--down)_18%,_transparent)] text-[var(--down)]' },
     below: dir === 'long'
-      ? { text: `${fmt(out)} pts under the zone · toward the SL`, cls: 'bg-[rgba(226,80,79,0.18)] text-[var(--down)]' }
+      ? { text: `${fmt(out)} pts under the zone · toward the SL`, cls: 'bg-[color-mix(in_srgb,_var(--down)_18%,_transparent)] text-[var(--down)]' }
       : { text: `${fmt(out)} pts under the zone · waiting for it to come up`, cls: 'bg-muted text-foreground' },
-    in: { text: 'IN THE ENTRY ZONE', cls: 'bg-[var(--series)] text-[var(--accent-ink)]' },
-    'past-sl': { text: 'PAST THE STOP', cls: 'bg-[#e2504f] text-white' },
-    tp1: { text: 'AT / PAST TP1', cls: 'bg-[#26a17b] text-white' },
+    in: { text: 'IN THE ENTRY ZONE', cls: 'bg-[var(--series)] text-[var(--panel)]' },
+    'past-sl': { text: 'PAST THE STOP', cls: 'bg-[var(--down-fill)] text-white' },
+    tp1: { text: 'AT / PAST TP1', cls: 'bg-[var(--up-fill)] text-white' },
   };
   return (
     <div aria-label="live price" className="mx-2 mb-1.5 rounded border border-border px-2 py-1 text-[11.5px] tabular-nums">

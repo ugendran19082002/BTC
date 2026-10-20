@@ -70,7 +70,7 @@ export function AlertSwitch({ mode, alerts, onChanged }: {
               onClick={() => void flip()}
               title={ready ? `Telegram a TRADE ${way}, once per setup${mode === 'single' ? ` -- on ${tfs.join(', ')}` : ' -- its 5m entry'}` : 'Telegram is not set up on the server (TG_TOKEN, TG_CHAT_ID): the switch is kept, nothing is sent'}
               className={cn('inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-semibold',
-                on ? 'border-[#26a17b] bg-[rgba(38,161,123,0.15)] text-[var(--up)]' : 'border-border text-muted-foreground',
+                on ? 'border-[var(--up)] bg-[color-mix(in_srgb,_var(--up)_15%,_transparent)] text-[var(--up)]' : 'border-border text-muted-foreground',
                 busy && 'opacity-50')}>
         {on ? <Bell size={12} aria-hidden /> : <BellOff size={12} aria-hidden />}
         Telegram {on ? 'on' : 'off'}
@@ -83,7 +83,7 @@ export function AlertSwitch({ mode, alerts, onChanged }: {
         <div role="group" aria-label="alert timeframes" className="flex basis-full flex-wrap justify-end gap-0.5">
           {TFS.map((t) => (
             <button key={t} type="button" aria-pressed={tfs.includes(t)} disabled={busy} onClick={() => void pickTf(t)}
-                    className={cn('rounded border px-1 text-[10px]', tfs.includes(t) ? 'border-[#26a17b] text-[var(--up)]' : 'border-border text-muted-foreground')}>
+                    className={cn('rounded border px-1 text-[10px]', tfs.includes(t) ? 'border-[var(--up)] text-[var(--up)]' : 'border-border text-muted-foreground')}>
               {t}
             </button>
           ))}

@@ -222,7 +222,7 @@ function RuleNow({ s }: { s: Strategy }) {
   }
   return (
     <p aria-label={`strike rule now of ${s.name}`} className="m-0 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-muted-foreground">
-      <span className="rounded bg-[var(--accent)]/15 px-1.5 py-px text-[10.5px] font-semibold uppercase tracking-wide text-foreground">Now</span>
+      <span className="rounded bg-[var(--accent-fill)]/15 px-1.5 py-px text-[10.5px] font-semibold uppercase tracking-wide text-foreground">Now</span>
       {b.of > 1
         ? <span><b className="text-foreground">Block {b.n} of {b.of}</b> · {time12(b.from)} → {time12(b.until)} · {hoursLabel(b.minutesLeft)} left</span>
         : <span><b className="text-foreground">Same rule all the time</b></span>}
@@ -345,8 +345,8 @@ function GlobalMaxOpen({ value, allowed, openNow, busy, onSave, onInvalid }: {
       className="desk-badge-pill inline-flex items-center gap-1.5"
       title="One limit over every strategy: a signal is not taken while the desk already holds this many open trades -- positions and working orders, whichever strategy opened them. Each strategy's own limit still applies. It starts at what the strategies allow between them, and cannot be set above that."
       style={full
-        ? { background: 'rgba(250, 204, 21, 0.1)', color: '#facc15', border: '1px solid rgba(250, 204, 21, 0.3)' }
-        : { background: 'rgba(255, 255, 255, 0.05)', color: '#cbd5e1', border: '1px solid #2a303a' }}
+        ? { background: 'color-mix(in_srgb,_var(--accent)_10%,_transparent)', color: 'var(--accent)', border: '1px solid color-mix(in_srgb,_var(--accent)_30%,_transparent)' }
+        : { background: 'color-mix(in_srgb,_var(--text)_5%,_transparent)', color: 'var(--text)', border: '1px solid var(--line)' }}
     >
       <span>At most open</span>
       <NumberCommit
@@ -408,7 +408,7 @@ function NumberCommit({ label, value, busy, problem, onSave, onInvalid, classNam
       onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-      className={cn('m-0 rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-1 text-center font-[inherit] text-[12px] tabular-nums text-foreground disabled:opacity-50', className)}
+      className={cn('m-0 rounded border border-solid border-border bg-[var(--bg)] px-1 text-center font-[inherit] text-[12px] tabular-nums text-foreground disabled:opacity-50', className)}
     />
   );
 }
@@ -678,7 +678,7 @@ export function SignalStrategiesCard() {
             value={s.groupId ?? ''}
             disabled={busy === `move-${s.id}`}
             onChange={(e) => void act(`move-${s.id}`, () => moveToGroup(s.id, e.target.value === '' ? null : e.target.value))}
-            className="m-0 h-7 max-w-[14rem] rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-1 font-[inherit] text-[12px] text-foreground disabled:opacity-50"
+            className="m-0 h-7 max-w-[14rem] rounded border border-solid border-border bg-[var(--bg)] px-1 font-[inherit] text-[12px] text-foreground disabled:opacity-50"
           >
             {groups.filter((g) => g.id === s.groupId).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             {moveTargets(s, groups).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -699,7 +699,7 @@ export function SignalStrategiesCard() {
       <div className="desk-section-header fold-head !mt-0">
         <div className="desk-section-title-wrap">
           <FoldButton open={open} onToggle={() => setOpen(!open)} label="signal strategies" />
-          <div className="desk-section-icon" style={{ background: 'rgba(250, 204, 21, 0.12)', color: '#facc15' }}>
+          <div className="desk-section-icon" style={{ background: 'color-mix(in_srgb,_var(--accent)_12%,_transparent)', color: 'var(--accent)' }}>
             <Bot size={18} />
           </div>
           <div>
@@ -733,8 +733,8 @@ export function SignalStrategiesCard() {
           {data && (
             <span className="desk-badge-pill"
                   style={data.schedulerOn
-                    ? { background: 'rgba(34, 197, 94, 0.12)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }
-                    : { background: 'rgba(255, 255, 255, 0.05)', color: '#94a3b8', border: '1px solid #2a303a' }}>
+                    ? { background: 'color-mix(in_srgb,_var(--up)_12%,_transparent)', color: 'var(--up)', border: '1px solid color-mix(in_srgb,_var(--up)_30%,_transparent)' }
+                    : { background: 'color-mix(in_srgb,_var(--text)_5%,_transparent)', color: 'var(--muted)', border: '1px solid var(--line)' }}>
               Auto-trading {data.schedulerOn ? 'on' : 'off'}
             </span>
           )}
@@ -754,8 +754,8 @@ export function SignalStrategiesCard() {
           {data && (
             <span className="desk-badge-pill"
                   style={data.mode === 'live'
-                    ? { background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }
-                    : { background: 'rgba(250, 204, 21, 0.1)', color: '#facc15', border: '1px solid rgba(250, 204, 21, 0.3)' }}>
+                    ? { background: 'color-mix(in_srgb,_var(--down)_12%,_transparent)', color: 'var(--down)', border: '1px solid color-mix(in_srgb,_var(--down)_30%,_transparent)' }
+                    : { background: 'color-mix(in_srgb,_var(--accent)_10%,_transparent)', color: 'var(--accent)', border: '1px solid color-mix(in_srgb,_var(--accent)_30%,_transparent)' }}>
               {data.mode === 'live' ? 'LIVE' : 'PAPER'}
             </span>
           )}
@@ -912,7 +912,7 @@ export function SignalStrategiesCard() {
             aria-label="Name of the new group" autoFocus maxLength={40} value={newGroup} placeholder="Group name, e.g. Scalps 5m"
             onChange={(e) => setNewGroup(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') makeGroup(); if (e.key === 'Escape') setNewGroup(null); }}
-            className="m-0 h-8 w-56 max-w-full rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-2 font-[inherit] text-[13px] text-foreground"
+            className="m-0 h-8 w-56 max-w-full rounded border border-solid border-border bg-[var(--bg)] px-2 font-[inherit] text-[13px] text-foreground"
           />
           <Button size="sm" className="h-8" disabled={busy === 'new-group'} onClick={makeGroup}>
             {busy === 'new-group' && <Loader2 className="h-3 w-3 animate-spin" />} Make group
@@ -972,7 +972,7 @@ export function SignalStrategiesCard() {
                                   const to = targets.find((g) => g.id === e.target.value);
                                   if (to) void act('loose-move', () => takeIntoGroup(to.id, ids)).then((ok) => { if (ok) setNotice(`Moved ${ids.length} into "${to.name}".`); });
                                 }}
-                                className="m-0 h-8 max-w-[12rem] rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-1.5 font-[inherit] text-[12px] text-foreground disabled:opacity-50"
+                                className="m-0 h-8 max-w-[12rem] rounded border border-solid border-border bg-[var(--bg)] px-1.5 font-[inherit] text-[12px] text-foreground disabled:opacity-50"
                               >
                                 <option value="">Move all {loose.length} to…</option>
                                 {targets.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}

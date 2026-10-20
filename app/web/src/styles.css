@@ -63,22 +63,107 @@
    * view says what it is: the accent here, the phone's own green there (`:root[data-view='phone']`, set while the
    * phone app is up -- on the root, because its menus open outside its own frame).
    */
-  --chosen: var(--accent);
+  --chosen: var(--accent-fill);
   --chosen-ink: var(--accent-ink);
+  /* The chosen colour as words: a chosen tab's label, a link in the view's own colour. */
+  --chosen-text: var(--accent);
   --chosen-soft: var(--accent-soft);
   --chosen-line: var(--accent-line);
 
   --ring: #fcd53580;
   --shadow-lift: 0 1px 2px #00000059, 0 8px 24px -12px #00000080;
+
+  /*
+   * Roles, one each, so both themes say the same thing in their own colours (owner, 20 Oct 2026: "light and dark,
+   * every screen, desk and phone, one design"). Four greens and four reds had grown in the screens -- #26a17b,
+   * #10b981, #22c55e, #00e676 beside --up -- each a little different; now every one is a token.
+   *   --accent is the accent as TEXT or a line (a link, a focus ring); --accent-fill the accent as a FILL, with
+   *   --accent-ink on it. On the dark ground they are one yellow; on a white one yellow text cannot be read.
+   *   --up-fill / --down-fill / --warn-fill are solid badges with white text on them (BUY, SELL, WAIT): darker than
+   *   --up and --down, which are for numbers on the panel. 4.9-5.6:1 with white, the same in both themes.
+   *   --up-ink is text on a fill of --up itself.
+   *   --up-tint / --up-line (and down, warn): a faint ground and an edge of the colour, for a tag or a callout.
+   *   --hover: a row or a button under the pointer. --well: the ground of an input or a strip set into a panel.
+   *   --down-text: red words on --down-bg (an error inside a red box). --overlay: a label laid over a chart.
+   */
+  --accent-fill: var(--accent);
+  --up-fill: #08804f;
+  --down-fill: #c42a42;
+  --warn-fill: #9c6416;
+  /* A solid badge that is no side and no money: timed out, expired. */
+  --neutral-fill: #5b6472;
+  --up-ink: #041a11;
+  --up-tint: color-mix(in srgb, var(--up) 9%, transparent);
+  --up-line: color-mix(in srgb, var(--up) 35%, transparent);
+  --down-tint: color-mix(in srgb, var(--down) 9%, transparent);
+  --down-line: color-mix(in srgb, var(--down) 35%, transparent);
+  --warn-tint: color-mix(in srgb, var(--warn) 10%, transparent);
+  --warn-line: color-mix(in srgb, var(--warn) 35%, transparent);
+  --hover: color-mix(in srgb, var(--text) 4%, transparent);
+  --well: #0f1318;
+  --down-text: #ffb3ae;
+  --violet: #a855f7;
+  --overlay: color-mix(in srgb, var(--bg) 86%, transparent);
+  --grid: color-mix(in srgb, var(--text) 5%, transparent);
   color-scheme: dark;
 }
 
-/* The phone app's chosen colour: its own green, as every screen of it has had. */
+/*
+ * The light theme (20 Oct 2026): every token again, for a white ground. Each text colour is checked against the
+ * panel (`theme-contrast.test.ts`): text 15.8:1, muted 7.3, dim 4.8, up 4.9, down 5.6, warn 5.3, accent 5.2 -- the
+ * reading ones at 4.5:1 or more, as on the dark ground. Chosen in Settings (light, dark, or as the device is) and set
+ * on the root by `lib/theme.ts` before the first paint (`public/theme-boot.js`), so the page never flashes dark.
+ */
+:root[data-theme='light'] {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --panel-2: #f5f6f8;
+  --panel-3: #eceef1;
+  --line: #dfe2e6;
+  --line-soft: #eceef1;
+  --edge: #ffffff00;
+  --text: #1e2329;
+  --muted: #4f5763;
+  --dim: #6b7380;
+  --up: #03814f;
+  --down: #c7253e;
+  --buy: #1a5fd0;
+  --time: #2459b8;
+  --warn: #9c5d00;
+  --accent: #8f6500;
+  --accent-fill: #fcd535;
+  --accent-ink: #1e2329;
+  --accent-soft: color-mix(in srgb, #f0b90b 16%, transparent);
+  --accent-line: color-mix(in srgb, #c99400 55%, transparent);
+  --series: #57606a;
+  --charge: #c46a78;
+  --ce: var(--up);
+  --pe: var(--down);
+  --up-bg: #ecf8f2;
+  --down-bg: #fdeef0;
+  --warn-bg: #fdf4e1;
+  --ring: #c9940080;
+  --shadow-lift: 0 1px 2px #1e232914, 0 8px 24px -12px #1e232933;
+  --up-ink: #ffffff;
+  --well: #f5f6f8;
+  --down-text: #a3182e;
+  --violet: #7c3aed;
+  --overlay: color-mix(in srgb, #ffffff 90%, transparent);
+  --grid: color-mix(in srgb, var(--text) 7%, transparent);
+  color-scheme: light;
+}
+
+/* The phone app's chosen colour: its own green, as every screen of it has had -- filled, with its own ink on it. */
 :root[data-view='phone'] {
   --chosen: var(--up);
   --chosen-ink: var(--bg);
   --chosen-soft: var(--up-bg);
   --chosen-line: var(--up);
+  --chosen-text: var(--up);
+}
+:root[data-view='phone'][data-theme='light'] {
+  --chosen: var(--up-fill);
+  --chosen-ink: #ffffff;
 }
 
 /* A raised surface gets a lit top edge and a shadow under it. */
@@ -86,7 +171,7 @@
   box-shadow: inset 0 1px 0 0 var(--edge), var(--shadow-lift);
 }
 
-::selection { background: #fcd53533; color: var(--text); }
+::selection { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--text); }
 
 /* Slim, quiet scrollbars. The chain scrolls inside itself and the page scrolls
    behind it; two chunky platform bars beside each other read as chrome. */
@@ -191,7 +276,7 @@ header.top .top-row-2 {
    internal calculations and the protected decision cards remain unchanged. */
 
 /* The reference has a clear second band for the market measurements. */
-.desk-shell .ov-kpis { border: 1px solid var(--line); border-radius: 6px; padding: 0; background: #0f141a; overflow: hidden; }
+.desk-shell .ov-kpis { border: 1px solid var(--line); border-radius: 6px; padding: 0; background: var(--well); overflow: hidden; }
 .desk-shell .ov-kpi { border: 0; border-right: 1px solid var(--line-soft); border-radius: 0; box-shadow: none; }
 .desk-shell .ov-kpi:last-child { border-right: 0; }
 
@@ -221,7 +306,7 @@ header.top .top-row-2 {
 
 .tabs {
   display: flex; gap: 2px; margin-bottom: 8px; flex-wrap: nowrap; overflow-x: auto;
-  padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: #0f1318;
+  padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: var(--well);
   scrollbar-width: none;
 }
 .tabs::-webkit-scrollbar { display: none; }
@@ -234,8 +319,8 @@ header.top .top-row-2 {
   padding: 6px 11px; min-height: 30px; border-radius: 5px; cursor: pointer; font-size: 12px;
 }
 .tabs button svg { width: 13px; height: 13px; }
-.tabs button:hover { color: var(--text); background: #ffffff08; }
-.tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: inset 0 1px 0 #ffffff25; }
+.tabs button:hover { color: var(--text); background: var(--hover); }
+.tabs button.on { background: var(--accent-fill); border-color: var(--accent); color: var(--accent-ink); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 15%, transparent); }
 
 .bar {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
@@ -252,7 +337,7 @@ header.top .top-row-2 {
 .field input:focus, .field select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
 
 button.go {
-  background: var(--accent); color: var(--bg); border: 0; border-radius: 5px;
+  background: var(--accent-fill); color: var(--bg); border: 0; border-radius: 5px;
   padding: 7px 16px; font-weight: 600; cursor: pointer; font-size: 13px;
 }
 button.go:disabled { opacity: 0.5; cursor: default; }
@@ -303,7 +388,7 @@ th {
   background: var(--panel); font-family: inherit;
 }
 td.left, th.left { text-align: left; }
-tbody tr:hover { background: #ffffff08; }
+tbody tr:hover { background: var(--hover); }
 tr.atm td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 tr.atm td:first-child, tr.atm td:last-child { font-weight: 600; }
 
@@ -329,19 +414,19 @@ tr.atm td:first-child, tr.atm td:last-child { font-weight: 600; }
   border: 1px solid var(--line); color: var(--muted); margin-left: 6px;
   font-family: inherit; letter-spacing: 0.3px;
 }
-.tag.danger { color: var(--down); border-color: #f8514955; background: #f8514915; }
-.tag.ok { color: var(--up); border-color: #3fb95055; background: #3fb95015; }
-.tag.warn { color: var(--warn); border-color: #d2992255; background: #d2992215; }
+.tag.danger { color: var(--down); border-color: color-mix(in srgb, var(--down) 33%, transparent); background: color-mix(in srgb, var(--down) 8%, transparent); }
+.tag.ok { color: var(--up); border-color: color-mix(in srgb, var(--up) 33%, transparent); background: color-mix(in srgb, var(--up) 8%, transparent); }
+.tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 33%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
 /* The desk's pick: an outline, not a fill. It marks a strike on a board of two
    dozen; it is not the headline, and the settings it rests on are no longer on
    screen to argue with. */
 .tag.pick {
-  color: var(--up); border-color: #0ecb8166; background: none;
+  color: var(--up); border-color: color-mix(in srgb, var(--up) 40%, transparent); background: none;
   font-size: 9.5px; padding: 0 5px; font-weight: 600; cursor: help;
 }
 
 .err {
-  background: #f8514915; border: 1px solid #f8514955; color: #ffb3ae;
+  background: color-mix(in srgb, var(--down) 8%, transparent); border: 1px solid color-mix(in srgb, var(--down) 33%, transparent); color: var(--down-text);
   border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px;
 }
 .note { color: var(--dim); font-size: 11.5px; line-height: 1.6; margin-top: 10px; }
@@ -356,9 +441,9 @@ tr.atm td:first-child, tr.atm td:last-child { font-weight: 600; }
   margin-bottom: 12px;
   background: var(--panel);
 }
-.verdict.enter { border-left-color: var(--up);   background: linear-gradient(90deg, #3fb95012, transparent 260px); }
-.verdict.wait  { border-left-color: var(--warn); background: linear-gradient(90deg, #d2992212, transparent 260px); }
-.verdict.aside { border-left-color: var(--down); background: linear-gradient(90deg, #f8514912, transparent 260px); }
+.verdict.enter { border-left-color: var(--up);   background: linear-gradient(90deg, color-mix(in srgb, var(--up) 7%, transparent), transparent 260px); }
+.verdict.wait  { border-left-color: var(--warn); background: linear-gradient(90deg, color-mix(in srgb, var(--warn) 7%, transparent), transparent 260px); }
+.verdict.aside { border-left-color: var(--down); background: linear-gradient(90deg, color-mix(in srgb, var(--down) 7%, transparent), transparent 260px); }
 
 /* Side by side rather than stacked: the verdict is one line and the checks are
    short, so a single tall column wasted most of the screen above the fold. */
@@ -393,7 +478,7 @@ tr.atm td:first-child, tr.atm td:last-child { font-weight: 600; }
 
 /* Selling receives the bid; the column is highlighted because it is the number
    that decides whether a trade is worth doing. */
-th.bidcol, td.bidcol { color: var(--up); background: #3fb9500a; }
+th.bidcol, td.bidcol { color: var(--up); background: color-mix(in srgb, var(--up) 4%, transparent); }
 td.strikecell { background: var(--panel-2); font-weight: 600; }
 tr.atm td.strikecell { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 
@@ -412,13 +497,13 @@ code {
 .bar { align-items: flex-start; }
 /* Buying pays the ask; selling receives the bid. Two different numbers, and
    confusing them is the difference between the backtest and the account. */
-th.askcol, td.askcol { color: var(--down); background: #f851490a; }
+th.askcol, td.askcol { color: var(--down); background: color-mix(in srgb, var(--down) 4%, transparent); }
 .pinned {
   margin-top: 4px; align-self: flex-start;
-  background: #d2992218; border: 1px solid #d2992255; color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 33%, transparent); color: var(--warn);
   border-radius: 999px; padding: 1px 9px; font-size: 10.5px; cursor: pointer;
 }
-.pinned:hover { background: #d2992230; }
+.pinned:hover { background: color-mix(in srgb, var(--warn) 19%, transparent); }
 
 /* ── what to sell ─────────────────────────────────────────────────────────── */
 /* Nothing spans columns any more: the lead row already gives the
@@ -435,9 +520,9 @@ th.zerocol, td.zerocol {
 }
 table.moves { font-size: 12px; margin-top: 2px; }
 table.moves th { position: static; background: transparent; padding-top: 0; }
-table.moves td, table.moves th { padding: 3px 6px; border-bottom: 1px solid #ffffff08; }
+table.moves td, table.moves th { padding: 3px 6px; border-bottom: 1px solid var(--line-soft); }
 table.probs { font-size: 11.8px; margin-top: 8px; width: 100%; }
-table.probs td { padding: 2px 0; border-bottom: 1px solid #ffffff06; }
+table.probs td { padding: 2px 0; border-bottom: 1px solid var(--line-soft); }
 table.probs td.left { color: var(--muted); }
 .note.warn { color: var(--warn); }
 .pinned.off { background: transparent; border-color: var(--line); color: var(--dim); }
@@ -493,14 +578,14 @@ tr.sold td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
    suggests -- so it gets its own colour and a left edge rather than a second
    shade of the same blue. Drawn under `sold` in the file so that a strike which
    is both reads as held: what you have done outweighs what was suggested. */
-tr.holding td { background: #d2992212; }
+tr.holding td { background: color-mix(in srgb, var(--warn) 7%, transparent); }
 tr.holding td:first-child { box-shadow: inset 2px 0 0 var(--warn); }
 .tag.held {
-  color: var(--warn); border-color: #d2992255; background: #d2992218;
+  color: var(--warn); border-color: color-mix(in srgb, var(--warn) 33%, transparent); background: color-mix(in srgb, var(--warn) 9%, transparent);
   font-variant-numeric: tabular-nums;
 }
-.tag.held.up { color: var(--up); border-color: #3fb95055; background: #3fb95015; }
-.tag.held.down { color: var(--down); border-color: #f8514955; background: #f8514915; }
+.tag.held.up { color: var(--up); border-color: color-mix(in srgb, var(--up) 33%, transparent); background: color-mix(in srgb, var(--up) 8%, transparent); }
+.tag.held.down { color: var(--down); border-color: color-mix(in srgb, var(--down) 33%, transparent); background: color-mix(in srgb, var(--down) 8%, transparent); }
 td.sellcell {
   background: color-mix(in srgb, var(--accent) 10%, transparent); font-weight: 600;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 23%, transparent);
@@ -553,8 +638,8 @@ td.sellcell {
 .liveprice b { font-weight: 600; }
 .liveprice > span { font-size: 11.5px; }
 .liveprice .liveprice-age { color: var(--dim); font-size: 10px; white-space: nowrap; }
-.liveprice.is-stale { border-color: var(--warn, #d9a441); }
-.liveprice.is-stale .liveprice-age { color: var(--warn, #d9a441); font-weight: 650; }
+.liveprice.is-stale { border-color: var(--warn); }
+.liveprice.is-stale .liveprice-age { color: var(--warn); font-weight: 650; }
 .liveprice .dot {
   width: 6px; height: 6px; border-radius: 50%; background: var(--dim);
   align-self: center; flex: none;
@@ -582,7 +667,7 @@ td.sellcell {
   padding: 3px 7px; cursor: pointer;
   border-radius: 3px;
 }
-.chain td.tappable button:hover { background: var(--accent); color: #0b0e11; font-weight: 600; }
+.chain td.tappable button:hover { background: var(--accent-fill); color: var(--accent-ink); font-weight: 600; }
 .chain td.tappable button:focus { outline: none; }
 /* Only when the keyboard put it there. A ring left behind by a click reads as
    a stuck cell, and there is no ring on a mouse user who can see the cursor. */
@@ -612,11 +697,11 @@ td.sellcell {
 .tabs button .pnl.down { color: var(--down); }
 @media (max-width: 760px) { .tabs button .pnl { display: none; } }
 
-.tabs button .pip.pip-bad { background: var(--down); color: #fff; }
+.tabs button .pip.pip-bad { background: var(--down-fill); color: #fff; }
 .tabs button .pip {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 16px; height: 16px; margin-left: 6px; padding: 0 4px;
-  border-radius: 999px; background: var(--accent); color: #0b0e11;
+  border-radius: 999px; background: var(--accent-fill); color: var(--accent-ink);
   font-size: 10px; font-weight: 700; line-height: 1;
 }
 
@@ -657,15 +742,15 @@ td.sellcell {
    is for. Solid, white on red, and it pulses once a second so it is visible
    from across the room. */
 .mode-live {
-  background: var(--down);
+  background: var(--down-fill);
   color: #fff;
-  box-shadow: 0 0 0 1px #f6465d66, 0 0 12px -2px #f6465d80;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--down) 40%, transparent), 0 0 12px -2px color-mix(in srgb, var(--down) 50%, transparent);
 }
 .mode-live .dot { animation: mode-pulse 1.6s ease-in-out infinite; }
 .mode-paper {
   background: var(--warn-bg);
   color: var(--warn);
-  box-shadow: inset 0 0 0 1px #f0b90b40;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 25%, transparent);
 }
 @keyframes mode-pulse {
   0%, 100% { opacity: 1; }
@@ -688,7 +773,7 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
    just is not one you can cross to. The board is two dozen prices and none of
    them said which. */
 .chain td.bidcol.wide, .chain td.bidcol.wide button { color: var(--dim); text-decoration: line-through; }
-.chain td.bidcol.wide button:hover { color: #0b0e11; text-decoration: none; }
+.chain td.bidcol.wide button:hover { color: var(--accent-ink); text-decoration: none; }
 .note .warnbid { color: var(--dim); text-decoration: line-through; }
 
 /* ── header, pinned ─────────────────────────────────────────────────────────
@@ -768,7 +853,7 @@ tr.atm td {
 }
 tr.atm td.strikecell {
   background: color-mix(in srgb, var(--accent) 19%, transparent);
-  color: #fff;
+  color: var(--text);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 56%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--accent) 56%, transparent);
 }
 tr.atm td:first-child, tr.atm td:last-child { font-weight: 600; }
@@ -791,12 +876,12 @@ td.sigcol button { min-height: 26px; }
 /* Four tiers. Strong is filled, candidate outlined in the same green: the two
    are both worth selling and the fill is the only thing separating them, which
    keeps a board of greens readable. */
-td.sig-strong button, td.sig-strong span { color: #041a11; border-color: var(--up); background: var(--up); }
-td.sig-candidate button, td.sig-candidate span { color: var(--up); border-color: #0ecb8166; background: #0ecb811f; }
-td.sig-watch button, td.sig-watch span { color: var(--warn); border-color: #f0b90b66; background: #f0b90b1f; }
-td.sig-avoid button, td.sig-avoid span { color: var(--down); border-color: #f6465d55; background: #f6465d17; }
+td.sig-strong button, td.sig-strong span { color: var(--up-ink); border-color: var(--up); background: var(--up); }
+td.sig-candidate button, td.sig-candidate span { color: var(--up); border-color: color-mix(in srgb, var(--up) 40%, transparent); background: color-mix(in srgb, var(--up) 12%, transparent); }
+td.sig-watch button, td.sig-watch span { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+td.sig-avoid button, td.sig-avoid span { color: var(--down); border-color: color-mix(in srgb, var(--down) 33%, transparent); background: color-mix(in srgb, var(--down) 9%, transparent); }
 /* the old three-name set, for anything still rendering it */
-td.sig-sell button, td.sig-sell span { color: var(--up); border-color: #0ecb8166; background: #0ecb811f; }
+td.sig-sell button, td.sig-sell span { color: var(--up); border-color: color-mix(in srgb, var(--up) 40%, transparent); background: color-mix(in srgb, var(--up) 12%, transparent); }
 td.sigcol button:hover { filter: brightness(1.35); }
 td.sigcol button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 
@@ -899,7 +984,7 @@ td.evcol.down { color: var(--down); }
 }
 .chain-chip:hover { color: var(--text); border-color: var(--dim); }
 .chain-chip.on {
-  background: #fcd5351f; border-color: #fcd53566; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent);
 }
 .chain-chip:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 
@@ -910,9 +995,9 @@ td.evcol.down { color: var(--down); }
   cursor: pointer; border-radius: 4px;
   min-height: 26px;
 }
-.chain td.strikecell .strikebtn:hover { background: var(--accent); color: #0b0e11; }
+.chain td.strikecell .strikebtn:hover { background: var(--accent-fill); color: var(--accent-ink); }
 .chain td.strikecell .strikebtn:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
-tr.atm td.strikecell .strikebtn { color: #fff; }
+tr.atm td.strikecell .strikebtn { color: var(--text); }
 
 @media (max-width: 760px) {
   /* The toolbar wraps to its own line rather than squeezing the chips. */
@@ -980,7 +1065,7 @@ td.scorecol b { font-weight: 600; font-size: 11.5px; }
 }
 .scorebar i { display: block; height: 100%; background: currentColor; }
 td.score-strong { color: var(--up); }
-td.score-good { color: #7fd4a4; }
+td.score-good { color: var(--up); }
 td.score-mid { color: var(--warn); }
 td.score-weak { color: var(--down); }
 
@@ -1030,7 +1115,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .colpick-box {
   flex: none; width: 15px; height: 15px; margin-top: 1px;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--line); border-radius: 4px; color: #041a11;
+  border: 1px solid var(--line); border-radius: 4px; color: var(--up-ink);
 }
 .colpick-row.on .colpick-box { background: var(--up); border-color: var(--up); }
 
@@ -1197,7 +1282,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   /* A hairline that says the column is pinned rather than merely first. */
   box-shadow: 1px 0 0 var(--line);
 }
-.chain-one tr.atm td.strikecell { background: #1c3350; }
+.chain-one tr.atm td.strikecell { background: color-mix(in srgb, var(--buy) 22%, var(--panel)); }
 .chain-one tr.sold td.strikecell,
 .chain-one tr.holding td.strikecell { background: var(--panel-2); }
 
@@ -1292,7 +1377,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   display: inline-flex; align-items: center; justify-content: center;
 }
 .pnl-day.empty { background: transparent; cursor: default; }
-.pnl-day.flat { background: var(--panel-2); } .pnl-day.up.l2 { background: #0ecb8180; } .pnl-day.down.l2 { background: #f6465d80; }
+.pnl-day.flat { background: var(--panel-2); } .pnl-day.up.l2 { background: color-mix(in srgb, var(--up) 50%, transparent); } .pnl-day.down.l2 { background: color-mix(in srgb, var(--down) 50%, transparent); }
 .pnl-day:not(.empty):hover, .pnl-day.selected { border-color: var(--text); color: var(--text); }
 .pnl-day:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .pnl-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 11px; color: var(--muted); }
@@ -1458,7 +1543,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .desk-metrics dd { margin: 0; font-size: 12.5px; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .desk-metrics dd.warn { color: var(--warn); }
 .desk-metrics-bar { height: 4px; border-radius: 2px; background: var(--line-soft); overflow: hidden; }
-.desk-metrics-bar span { display: block; height: 100%; background: var(--accent); }
+.desk-metrics-bar span { display: block; height: 100%; background: var(--accent-fill); }
 .desk-metrics-bar span.warn { background: var(--warn); }
 
 /* The settings screen: every number the desk works to, in one place. */
@@ -1535,22 +1620,22 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 /* Big move risk (BreakRiskCard.tsx): user-friendly, modern glassmorphic styling */
 .ov-br-active {
-  border: 1px solid rgba(245, 158, 11, 0.35) !important;
-  box-shadow: 0 4px 24px -2px rgba(245, 158, 11, 0.08), inset 0 1px 0 rgba(245, 158, 11, 0.2);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent) !important;
+  box-shadow: 0 4px 24px -2px color-mix(in srgb, var(--warn) 8%, transparent), inset 0 1px 0 color-mix(in srgb, var(--warn) 20%, transparent);
   border-radius: 12px !important;
   background: linear-gradient(180deg, var(--bg) 0%, var(--bg) 100%) !important;
 }
 
 .ov-br-active .ov-panel-head {
-  background: rgba(245, 158, 11, 0.04);
-  border-bottom: 1px solid rgba(245, 158, 11, 0.15);
+  background: color-mix(in srgb, var(--warn) 4%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 15%, transparent);
   padding: 10px 14px;
 }
 
 .ov-br-active .ov-panel-head h3 {
   font-size: 14px;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--text);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1559,7 +1644,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-br-quiet {
   margin: 6px 0 10px;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--muted);
   line-height: 1.5;
 }
 
@@ -1567,10 +1652,10 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-br-when {
   margin: 0 0 12px;
   font-size: 12.5px;
-  color: #94a3b8;
+  color: var(--muted);
   background: color-mix(in srgb, var(--panel) 70%, transparent);
   border: 1px solid var(--line);
-  border-left: 3px solid #f59e0b;
+  border-left: 3px solid var(--warn);
   border-radius: 8px;
   padding: 8px 12px;
   display: flex;
@@ -1581,7 +1666,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 
 .ov-br-when b {
-  color: #f1f5f9;
+  color: var(--text);
   font-weight: 700;
 }
 
@@ -1606,12 +1691,12 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 
 .ov-br-head > div:hover {
-  border-color: #334155;
+  border-color: var(--line);
   transform: translateY(-1px);
 }
 
 .ov-br-label {
-  color: #8492a6;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -1623,7 +1708,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   font-weight: 750;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
-  color: #f8fafc;
+  color: var(--text);
 }
 
 .ov-br-head > div:nth-child(1) .ov-br-big {
@@ -1631,15 +1716,15 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 
 .ov-br-head > div:nth-child(2) .ov-br-big {
-  color: #a855f7;
+  color: var(--violet);
 }
 
 .ov-br-head > div:nth-child(3) .ov-br-big {
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .ov-br-sub {
-  color: #94a3b8;
+  color: var(--muted);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   line-height: 1.3;
@@ -1661,7 +1746,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 
 .ov-br-zones caption {
   text-align: left;
-  color: #cbd5e1;
+  color: var(--text);
   font-size: 12px;
   font-weight: 600;
   padding: 8px 12px;
@@ -1670,7 +1755,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 
 .ov-br-zones thead th {
-  color: #8492a6;
+  color: var(--muted);
   font-weight: 600;
   font-size: 11px;
   text-transform: uppercase;
@@ -1690,7 +1775,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 
 .ov-br-zones tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 
 .ov-br-zones tbody tr:not(:last-child) td,
@@ -1712,12 +1797,12 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 
 .ov-br-zones th[scope=row].ov-up,
 .ov-br-zones tr:has(.ov-up) td {
-  color: #00e676;
+  color: var(--up);
 }
 
 .ov-br-zones th[scope=row].ov-down,
 .ov-br-zones tr:has(.ov-down) td {
-  color: #ff3b57;
+  color: var(--down);
 }
 
 /* Strike Distance Cards */
@@ -1745,11 +1830,11 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 }
 
 .ov-br-strikes li:hover {
-  border-color: #334155;
+  border-color: var(--line);
 }
 
 .ov-br-strikes li b {
-  color: #f1f5f9;
+  color: var(--text);
   font-weight: 700;
 }
 
@@ -1757,9 +1842,9 @@ td.liq-normal, td.liq-none { color: var(--dim); }
   margin: 10px 0;
   padding: 10px 14px;
   border-radius: 8px;
-  background: rgba(255, 59, 87, 0.12);
-  border: 1px solid rgba(255, 59, 87, 0.35);
-  color: #ff5277;
+  background: color-mix(in srgb, var(--down) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--down) 35%, transparent);
+  color: var(--down);
   font-size: 12.5px;
   font-weight: 600;
   line-height: 1.4;
@@ -1841,7 +1926,7 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-chain .ov-strike { text-align: center; font-weight: 600; background: var(--panel-2); }
 .ov-chain tr.ov-atm td { border-top-color: var(--accent); }
 .ov-chain tr.ov-atm .ov-strike { color: var(--accent); }
-.ov-chain td.ov-itm { background: #ffffff06; }
+.ov-chain td.ov-itm { background: var(--hover); }
 .ov-chain td.ov-sel { background: var(--accent-soft); }
 .ov-click { cursor: pointer; }
 .ov-click:hover { background: var(--panel-3); }
@@ -1905,14 +1990,14 @@ td.liq-normal, td.liq-none { color: var(--dim); }
 .ov-inline-spark { display: inline-flex; align-items: center; gap: 6px; }
 .ov-inline-spark .ov-spark { margin-top: 0; width: 60px; height: 16px; }
 .ov-line-week { stroke: var(--series); stroke-width: 1.2; stroke-dasharray: 4 3; }
-.ov-line-month { stroke: #c084fc; stroke-width: 1.2; stroke-dasharray: 2 3; }
+.ov-line-month { stroke: var(--violet); stroke-width: 1.2; stroke-dasharray: 2 3; }
 .ov-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
 .ov-legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--accent); margin-left: 8px; }
 .ov-legend i.ov-legend-week { border-top-style: dashed; border-top-color: var(--series); }
-.ov-legend i.ov-legend-month { border-top-style: dotted; border-top-color: #c084fc; }
+.ov-legend i.ov-legend-month { border-top-style: dotted; border-top-color: var(--violet); }
 .ov-legend i:first-child { margin-left: 0; }
 .ov-meter { display: inline-block; width: 60px; height: 6px; margin-left: 6px; vertical-align: middle; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
-.ov-meter > span { display: block; height: 100%; background: var(--accent); }
+.ov-meter > span { display: block; height: 100%; background: var(--accent-fill); }
 
 /* Live screen: the screen bar and the expiry header (image 2's right column head) */
 .ov-screenbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; margin-bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; flex-wrap: wrap; }
@@ -1998,7 +2083,7 @@ tr.ov-maxpain td.ov-strike { text-decoration: underline dotted; }
 .ov-hero-leg b { font-size: 14px; }
 .ov-hero-leg .ov-sell { align-self: flex-start; margin-top: 4px; }
 .ov-triggers td, .ov-changes td { padding: 2px 5px; white-space: nowrap; }
-tr.ov-fired td { background: rgba(239, 68, 68, .10); }
+tr.ov-fired td { background: color-mix(in srgb, var(--down) 10%, transparent); }
 .ov-formulas { margin: 4px 0; padding-left: 16px; font-size: 11.5px; color: var(--muted); }
 .ov-formulas b { color: var(--text); }
 .ov-board-read { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 4px; }
@@ -2011,7 +2096,7 @@ tr.ov-fired td { background: rgba(239, 68, 68, .10); }
 .ov-panel-body > table, .ov-panel-body .ov-reco { max-width: none; }
 .ov-triggers { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
 .ov-triggers li { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; padding: 3px 6px; border-radius: 4px; font-size: 11.5px; }
-.ov-triggers li.ov-fired { background: rgba(239, 68, 68, .10); }
+.ov-triggers li.ov-fired { background: color-mix(in srgb, var(--down) 10%, transparent); }
 .ov-trigger-name { font-weight: 600; } .ov-trigger-state { font-weight: 700; font-size: 10.5px; }
 .ov-trigger-detail { grid-column: 1 / -1; color: var(--text); font-variant-numeric: tabular-nums; }
 .ov-trigger-detail b { font-weight: 500; }
@@ -2033,11 +2118,11 @@ tr.ov-fired td { background: rgba(239, 68, 68, .10); }
 tr.focused td { box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent); }
 tr.focused td.strikecell { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 tr.focused-c td.strikecell ~ td, tr.focused-p td:not(.strikecell ~ td):not(.strikecell) { box-shadow: none; opacity: .75; }
-tr.focused .tag.focus { background: var(--accent); color: #111; }
+tr.focused .tag.focus { background: var(--accent-fill); color: var(--accent-ink); }
 .chain tbody tr:has(td.strikecell) { cursor: pointer; }
 .ov-ages { display: inline-flex; gap: 8px; font-size: 11.5px; color: var(--muted); padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; font-variant-numeric: tabular-nums; }
 .ov-ages b { color: var(--text); font-weight: 600; }
-.ov-ages-stale { border-color: color-mix(in srgb, var(--warn, #d29922) 60%, transparent); }
+.ov-ages-stale { border-color: color-mix(in srgb, var(--warn) 60%, transparent); }
 .ov-decay-chart { margin-top: 4px; }
 .ov-decay-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 240px); gap: 12px; align-items: start; }
 @container (max-width: 520px) { .ov-decay-row { grid-template-columns: 1fr; } }
@@ -2049,10 +2134,10 @@ tr.focused .tag.focus { background: var(--accent); color: #111; }
 .ov-trigger-state { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: .03em; }
 .ov-trigger-state i { width: 8px; height: 8px; border-radius: 999px; background: var(--muted); }
 .ov-lamp-normal { color: var(--up); } .ov-lamp-normal i { background: var(--up); }
-.ov-lamp-watch { color: #e3b341; } .ov-lamp-watch i { background: #e3b341; }
+.ov-lamp-watch { color: var(--warn); } .ov-lamp-watch i { background: var(--warn); }
 .ov-lamp-triggered { color: var(--down); } .ov-lamp-triggered i { background: var(--down); }
 .ov-lamp-none { color: var(--muted); }
-.ov-triggers li.ov-watching { background: rgba(227, 179, 65, .08); }
+.ov-triggers li.ov-watching { background: color-mix(in srgb, var(--warn) 8%, transparent); }
 .ov-decide-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @container (max-width: 720px) { .ov-decide-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 480px) { .ov-decide-3 { grid-template-columns: 1fr; } }
@@ -2094,7 +2179,7 @@ tr.focused .tag.focus { background: var(--accent); color: #111; }
 .ov-linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
 .ov-bottom { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; }
 .ov-impact-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 8px; font-size: 12px; }
-.ov-warn { color: #e3b341; }
+.ov-warn { color: var(--warn); }
 .ov-movement td { padding: 2px 4px; white-space: nowrap; }
 .ov-signals { display: inline-flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
 .ov-gates-1, .ov-card4 .ov-gates-1 { grid-template-columns: 1fr !important; font-size: 12px; gap: 3px; }
@@ -2257,13 +2342,13 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
   margin: 0;
   font-size: 16px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text);
   letter-spacing: -0.2px;
 }
 
 .desk-section-subtitle {
   font-size: 11px;
-  color: #8492a6;
+  color: var(--muted);
 }
 
 .desk-section-badges {
@@ -2328,30 +2413,30 @@ table.ov-mini.ov-levels { width: auto; min-width: 100%; }
 }
 
 .sig-row:hover {
-  background: rgba(255, 255, 255, 0.03) !important;
+  background: color-mix(in srgb, var(--text) 3%, transparent) !important;
   border-radius: 6px !important;
 }
 
 .sig-when b {
-  color: #fff !important;
+  color: var(--text) !important;
 }
 
 .sig-badge.waiting {
-  background: rgba(245, 158, 11, 0.15) !important;
-  color: #fbbf24 !important;
-  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+  background: color-mix(in srgb, var(--warn) 15%, transparent) !important;
+  color: var(--warn) !important;
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent) !important;
 }
 
 .sig-badge.up {
-  background: rgba(0, 230, 118, 0.15) !important;
-  color: #00e676 !important;
-  border: 1px solid rgba(0, 230, 118, 0.3) !important;
+  background: color-mix(in srgb, var(--up) 15%, transparent) !important;
+  color: var(--up) !important;
+  border: 1px solid color-mix(in srgb, var(--up) 30%, transparent) !important;
 }
 
 .sig-badge.down {
-  background: rgba(255, 59, 87, 0.15) !important;
-  color: #ff3b57 !important;
-  border: 1px solid rgba(255, 59, 87, 0.3) !important;
+  background: color-mix(in srgb, var(--down) 15%, transparent) !important;
+  color: var(--down) !important;
+  border: 1px solid color-mix(in srgb, var(--down) 30%, transparent) !important;
 }
 
 /* User-friendly Option Chain improvements */
@@ -2387,7 +2472,7 @@ section.live-chain {
 .chain-chip {
   background: var(--bg) !important;
   border: 1px solid var(--line) !important;
-  color: #e2e8f0 !important;
+  color: var(--text) !important;
   border-radius: 8px !important;
   padding: 5px 12px !important;
   font-size: 11.5px !important;
@@ -2403,7 +2488,7 @@ section.live-chain {
 .chain-chip.on {
   background: var(--accent-soft) !important;
   border-color: var(--accent) !important;
-  color: #fff !important;
+  color: var(--text) !important;
 }
 
 .chain-link {
@@ -2498,7 +2583,7 @@ section.live-chain {
 .ov-trigger-score b { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
 .ov-trigger-bar { flex: 1 1 auto; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
 .ov-trigger-bar > i { display: block; height: 100%; background: var(--muted); }
-.ov-watching .ov-trigger-bar > i { background: var(--warn, #d9a441); }
+.ov-watching .ov-trigger-bar > i { background: var(--warn); }
 .ov-fired .ov-trigger-bar > i { background: var(--down); }
 .ov-note { margin: 8px 0 0; font-size: 10.5px; color: var(--muted); line-height: 1.45; }
 /* On a phone the three columns stay -- the state is the reading's point -- just narrower;

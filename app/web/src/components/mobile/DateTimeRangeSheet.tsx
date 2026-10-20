@@ -34,7 +34,7 @@ export function DateTimeRangeSheet({ value, by, now, onApply, onClose }: {
     return () => { document.body.style.overflow = before; window.removeEventListener('keydown', esc); };
   }, [onClose]);
 
-  const field = 'h-12 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[16px] text-foreground [color-scheme:dark]';
+  const field = 'h-12 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[16px] text-foreground';
   const same = (a: DateTimeRange, b: DateTimeRange) => a.from === b.from && a.to === b.to && a.fromTime === b.fromTime && a.toTime === b.toTime;
   const end = (name: 'From' | 'To', dayKey: 'from' | 'to', timeKey: 'fromTime' | 'toTime') => (
     <fieldset className="m-0 grid min-w-0 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-2 border-0 p-0">

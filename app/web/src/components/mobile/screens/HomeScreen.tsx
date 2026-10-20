@@ -67,7 +67,7 @@ export function HomeScreen() {
       {critical.length > 0 && (
         <button
           type="button" onClick={() => p.go({ tab: 'more', sub: 'alerts' })}
-          className="flex w-full items-center gap-2.5 rounded-lg border border-[var(--down)] bg-[var(--down-bg)] px-3 py-2.5 text-left font-[inherit] text-[#ffb3ae]"
+          className="flex w-full items-center gap-2.5 rounded-lg border border-[var(--down)] bg-[var(--down-bg)] px-3 py-2.5 text-left font-[inherit] text-[var(--down-text)]"
         >
           <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden="true" />
           {/* Two lines before it is cut: the line that cannot wait was losing its reason to the ellipsis. */}

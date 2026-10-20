@@ -201,7 +201,7 @@ export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProp
       <div className="pnl-panel-header fold-head">
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1"><FoldButton open={open} onToggle={() => setOpen(!open)} label="Daily P&L Chart" /><h2 className="pnl-panel-title m-0">Daily P&L</h2></span>
-          <span className={cn('pnl-daily-badge', total < 0 && 'text-rose-400 bg-rose-500/10 border-rose-500/20')}>
+          <span className={cn('pnl-daily-badge', total < 0 && 'text-[var(--down)] bg-[var(--down-tint)] border-[var(--down-line)]')}>
             {includeCharges ? 'Net' : 'Gross'} {signedInr(total)}
           </span>
         </div>

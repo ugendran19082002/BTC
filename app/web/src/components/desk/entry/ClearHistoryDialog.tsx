@@ -92,7 +92,7 @@ export function ClearHistoryDialog({ onCleared }: { onCleared: (c: ClearCounts) 
     <Sheet open={open} onOpenChange={openWith}>
       <button type="button" onClick={() => openWith(true)} aria-label="clear data"
               title="Clear the signal history between two times"
-              className="inline-flex items-center gap-1 rounded-md border border-[#e2504f] px-2.5 py-1 font-semibold text-[#e2504f] hover:bg-[#e2504f]/10">
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--down)] px-2.5 py-1 font-semibold text-[var(--down)] hover:bg-[color-mix(in_srgb,_var(--down)_10%,_transparent)]">
         <Trash2 size={13} aria-hidden /> Clear data
       </button>
       {open ? (
@@ -110,12 +110,12 @@ export function ClearHistoryDialog({ onCleared }: { onCleared: (c: ClearCounts) 
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] font-semibold text-muted-foreground">From (IST)</span>
                 <input type="datetime-local" aria-label="from" value={fromText} max={toText || undefined} onChange={(e) => { setFrom(e.target.value); setSure(false); }}
-                       className="h-9 rounded-md border border-border bg-muted px-2 text-foreground [color-scheme:dark]" />
+                       className="h-9 rounded-md border border-border bg-muted px-2 text-foreground" />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] font-semibold text-muted-foreground">To (IST, this minute included)</span>
                 <input type="datetime-local" aria-label="to" value={toText} min={fromText || undefined} onChange={(e) => { setTo(e.target.value); setSure(false); }}
-                       className="h-9 rounded-md border border-border bg-muted px-2 text-foreground [color-scheme:dark]" />
+                       className="h-9 rounded-md border border-border bg-muted px-2 text-foreground" />
               </label>
             </div>
 
@@ -157,7 +157,7 @@ export function ClearHistoryDialog({ onCleared }: { onCleared: (c: ClearCounts) 
               Cancel
             </button>
             <button type="button" onClick={clear} disabled={!can}
-                    className={cn('h-9 flex-1 rounded-md font-semibold text-white', can ? 'bg-[#e2504f] hover:opacity-90' : 'cursor-not-allowed bg-[#e2504f]/40')}>
+                    className={cn('h-9 flex-1 rounded-md font-semibold text-white', can ? 'bg-[var(--down-fill)] hover:opacity-90' : 'cursor-not-allowed bg-[color-mix(in_srgb,_var(--down)_40%,_transparent)]')}>
               {busy ? 'Clearing…' : c && c.signals > 0 ? `Clear ${n(c.signals)} signal${c.signals === 1 ? '' : 's'}` : 'Clear'}
             </button>
           </SheetFooter>

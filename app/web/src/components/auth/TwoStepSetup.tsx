@@ -71,7 +71,7 @@ export function TwoStepSetup({ onDone, onRestart }: { onDone: () => void; onRest
           const at = ['scan', 'verify', 'codes'].indexOf(step);
           return (
             <li key={s} aria-current={step === s ? 'step' : undefined}
-                className={cn('h-1.5 flex-1 rounded-full', i <= at ? 'bg-[var(--accent)]' : 'bg-[var(--line)]')} />
+                className={cn('h-1.5 flex-1 rounded-full', i <= at ? 'bg-[var(--accent-fill)]' : 'bg-[var(--line)]')} />
           );
         })}
       </ol>

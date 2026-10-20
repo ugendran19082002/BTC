@@ -93,7 +93,7 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
   };
 
   return (
-    <section aria-label={`group ${group.name}`} className="fold-host rounded-xl border border-solid border-[var(--line)] bg-[var(--bg,#0a0d10)]/40 p-2" data-folded={!open}>
+    <section aria-label={`group ${group.name}`} className="fold-host rounded-xl border border-solid border-[var(--line)] bg-[var(--bg)]/40 p-2" data-folded={!open}>
       {/* `fold-head`: the one row a folded section keeps (styles.css) -- without it the fold button folded away too. */}
       <div className="fold-head flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <FoldButton open={open} onToggle={() => setOpen(!open)} label={`group ${group.name}`} />
@@ -106,7 +106,7 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
               aria-label={`New name for ${group.name}`} autoFocus maxLength={40} value={renaming}
               onChange={(e) => setRenaming(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setRenaming(null); }}
-              className="m-0 h-8 w-44 rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-2 font-[inherit] text-[13px] text-foreground"
+              className="m-0 h-8 w-44 rounded border border-solid border-border bg-[var(--bg)] px-2 font-[inherit] text-[13px] text-foreground"
             />
             <Button size="sm" className="h-8" disabled={busy === key('rename')} onClick={saveName}>
               {busy === key('rename') && <Loader2 className="h-3 w-3 animate-spin" />} Save
@@ -182,7 +182,7 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
               aria-label="Clone to account"
               value={cloning.accountId ?? ''}
               onChange={(e) => setCloning({ ...cloning, accountId: e.target.value === '' ? null : Number(e.target.value) })}
-              className="m-0 h-8 rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-1.5 font-[inherit] text-[13px] text-foreground"
+              className="m-0 h-8 rounded border border-solid border-border bg-[var(--bg)] px-1.5 font-[inherit] text-[13px] text-foreground"
             >
               {accounts === null && <option value={group.accountId ?? ''}>{group.accountName ?? 'This account'}</option>}
               {accounts?.filter((a) => a.readable).map((a) => (
@@ -197,7 +197,7 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
               placeholder={sameAccount ? `${group.name} copy` : group.name}
               onChange={(e) => setCloning({ ...cloning, name: e.target.value })}
               onKeyDown={(e) => { if (e.key === 'Enter') doClone(); }}
-              className="m-0 h-8 w-44 rounded border border-solid border-border bg-[var(--bg,#0a0d10)] px-2 font-[inherit] text-[13px] text-foreground"
+              className="m-0 h-8 w-44 rounded border border-solid border-border bg-[var(--bg)] px-2 font-[inherit] text-[13px] text-foreground"
             />
           </label>
           <Button size="sm" className="h-8" disabled={busy === key('clone') || of === 0} onClick={doClone}>

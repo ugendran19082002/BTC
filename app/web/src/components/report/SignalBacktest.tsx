@@ -74,7 +74,7 @@ function CustomHours({ from, to, onApply, onClose }: { from: string; to: string;
   const [b, setB] = useState(to);
   const ok = (v: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
   const problem = !ok(a) || !ok(b) ? 'Pick both times.' : a === b ? 'The From and To times must differ.' : null;
-  const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[16px] text-foreground [color-scheme:dark]';
+  const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[16px] text-foreground';
   return (
     <div className="grid gap-2 rounded-md border border-[var(--line-soft)] p-3">
       <div className="grid grid-cols-2 gap-3">
@@ -157,7 +157,7 @@ function SlTgtRange({ value, onApply }: { value: Range; onApply: (r: Range) => v
       <span className="relative min-w-0 flex-1">
         <input type="number" inputMode="numeric" min={0} max={20_000} step={10} aria-label={`${k.startsWith('sl') ? 'SL' : 'TGT'} ${k.endsWith('Min') ? 'at least' : 'at most'}, points`}
           value={draft[k]} onChange={(e) => setDraft((d) => ({ ...d, [k]: e.target.value }))} onBlur={apply} onKeyDown={(e) => { if (e.key === 'Enter') apply(); }}
-          className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] pl-3 pr-9 text-[15px] tabular-nums text-foreground [color-scheme:dark]" />
+          className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] pl-3 pr-9 text-[15px] tabular-nums text-foreground" />
         <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">pts</span>
       </span>
     </label>
@@ -227,7 +227,7 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
   const load = (s: number, xs: readonly Step[]) => { setFirst(String(Math.round(s * 100))); setRows(asRows(xs)); };
   // Whose steps are in use, where they are a strategy's own unchanged: what the list shows as chosen.
   const from = copyFrom.findIndex((x) => Math.round(x.pct * 100) === Math.round(start * 100) && JSON.stringify(x.steps) === JSON.stringify(steps));
-  const field = 'h-11 min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] tabular-nums text-foreground [color-scheme:dark]';
+  const field = 'h-11 min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] tabular-nums text-foreground';
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-2 rounded-md border border-[var(--line-soft)] p-3 max-sm:p-2">
       {copyFrom.length > 0 ? (
@@ -236,7 +236,7 @@ function TargetSteps({ start, steps, copyFrom, onApply }: {
           <span className="text-[12px] text-muted-foreground">Target steps of</span>
           <select aria-label="Whose target steps" value={from === -1 ? '' : String(from)}
             onChange={(e) => { const x = copyFrom[Number(e.target.value)]; if (e.target.value !== '' && x) { load(x.pct, x.steps); onApply(x.pct, x.steps); } }}
-            className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[15px] text-foreground [color-scheme:dark]">
+            className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[15px] text-foreground">
             {from === -1 && <option value="">Your own steps, below</option>}
             {copyFrom.map((x, i) => <option key={`${x.name}-${i}`} value={i}>{x.name} · {Math.round(x.pct * 100)}% → {Math.round((x.steps.at(-1)?.pct ?? x.pct) * 100)}%, {x.steps.length} step{x.steps.length === 1 ? '' : 's'}</option>)}
           </select>
@@ -329,7 +329,7 @@ function CustomValue({ value, presets, spec, name, onChange }: { value: number; 
             min={spec.min} max={spec.max} step={spec.step} value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') apply(); if (e.key === 'Escape') setOpen(false); }}
-            className="h-10 w-24 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] text-foreground [color-scheme:dark]"
+            className="h-10 w-24 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] text-foreground"
           />
           <span className="text-[12.5px] text-muted-foreground">{spec.unit}</span>
           <button type="button" onClick={apply} disabled={problem !== null}
@@ -801,7 +801,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         <span className="text-[12px] text-muted-foreground">Backtest by</span>
         <select
           value={strategyId ?? ''} onChange={(e) => setStrategyId(e.target.value === '' ? null : e.target.value)}
-          className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[15px] text-foreground [color-scheme:dark]"
+          className="h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[15px] text-foreground"
         >
           <option value="">These settings (every signal)</option>
           {strategies.map((x) => (

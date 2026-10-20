@@ -30,7 +30,7 @@ export function DateRangeSheet({ value, today, onApply, onClose }: {
     return () => { document.body.style.overflow = before; window.removeEventListener('keydown', esc); };
   }, [onClose]);
 
-  const field = 'h-12 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[16px] text-foreground [color-scheme:dark]';
+  const field = 'h-12 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-3 text-[16px] text-foreground';
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center" role="presentation">
       <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 border-0 bg-black/60 p-0" tabIndex={-1} />

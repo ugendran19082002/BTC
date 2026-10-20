@@ -229,15 +229,15 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
 
           <div className="flex items-center gap-3 ml-2">
             <span className="pnl-legend-pill">
-              <i className="pnl-legend-dot" style={{ background: '#10b981' }} />
+              <i className="pnl-legend-dot" style={{ background: 'var(--up)' }} />
               Total P&L
             </span>
             <span className="pnl-legend-pill">
-              <i className="pnl-legend-dot" style={{ background: '#c9d1d9' }} />
+              <i className="pnl-legend-dot" style={{ background: 'var(--series)' }} />
               Realized
             </span>
             <span className="pnl-legend-pill">
-              <i className="pnl-legend-dot" style={{ background: '#f59e0b' }} />
+              <i className="pnl-legend-dot" style={{ background: 'var(--warn)' }} />
               Unrealized
             </span>
           </div>
@@ -285,11 +285,11 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
             >
               <defs>
                 <linearGradient id="pnlCurveGlow" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                  <stop offset="0%" stopColor="var(--up)" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="var(--up)" stopOpacity="0.0" />
                 </linearGradient>
                 <filter id="pnlLineGlow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#10b981" floodOpacity="0.6" />
+                  <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="var(--up)" floodOpacity="0.6" />
                 </filter>
               </defs>
 
@@ -304,7 +304,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                       y1={y}
                       x2={W - padRight}
                       y2={y}
-                      stroke={isZero ? 'rgba(148, 163, 184, 0.4)' : 'rgba(35, 40, 48, 0.25)'}
+                      stroke={isZero ? 'color-mix(in_srgb,_var(--muted)_40%,_transparent)' : 'color-mix(in_srgb,_var(--panel-3)_25%,_transparent)'}
                       strokeWidth={isZero ? 1.2 : 0.8}
                       strokeDasharray={isZero ? 'none' : '3 3'}
                     />
@@ -312,7 +312,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                       x={padLeft - 6}
                       y={y + 3.5}
                       textAnchor="end"
-                      fill="#64748b"
+                      fill="var(--dim)"
                       fontSize="9.5"
                       fontFamily="sans-serif"
                     >
@@ -329,7 +329,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
               <path
                 d={unrealizedPathD}
                 fill="none"
-                stroke="#f59e0b"
+                stroke="var(--warn)"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -339,7 +339,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
               <path
                 d={realizedPathD}
                 fill="none"
-                stroke="#c9d1d9"
+                stroke="var(--series)"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -349,7 +349,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
               <path
                 d={totalPathD}
                 fill="none"
-                stroke="#10b981"
+                stroke="var(--up)"
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -369,8 +369,8 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                     cx={x}
                     cy={yTot}
                     r={isLast ? 3.5 : 2}
-                    fill="#10b981"
-                    stroke="#0a0d10"
+                    fill="var(--up)"
+                    stroke="var(--bg)"
                     strokeWidth="1.5"
                   />
                 );
@@ -383,7 +383,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                   y1={padTop}
                   x2={getX(hoverIndex)}
                   y2={H - padBottom}
-                  stroke="rgba(255, 255, 255, 0.4)"
+                  stroke="color-mix(in_srgb,_var(--text)_40%,_transparent)"
                   strokeWidth="1"
                   strokeDasharray="2 2"
                 />
@@ -400,7 +400,7 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                     x={x}
                     y={H - 8}
                     textAnchor="middle"
-                    fill="#94a3b8"
+                    fill="var(--muted)"
                     fontSize="10"
                     fontFamily="sans-serif"
                   >
@@ -421,13 +421,13 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                   maxWidth: 'min(240px, calc(100% - 28px))',
                 }}
               >
-                <div className="font-semibold text-slate-300 mb-1">{activePoint.fullDate}</div>
+                <div className="font-semibold text-foreground mb-1">{activePoint.fullDate}</div>
                 <div className="flex items-center justify-between gap-4 py-0.5">
-                  <span className="flex items-center gap-1.5 text-slate-400">
-                    <i className="pnl-legend-dot" style={{ background: '#10b981' }} />
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <i className="pnl-legend-dot" style={{ background: 'var(--up)' }} />
                     Total P&L
                   </span>
-                  <span className="font-bold text-emerald-400 tabular-nums">
+                  <span className="font-bold text-[var(--up)] tabular-nums">
                     {metricType === '% Return'
                       ? `${transformVal(activePoint.totalPnl).toFixed(2)}%`
                       : activePoint.totalPnl.toLocaleString('en-IN')}
@@ -435,11 +435,11 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                 </div>
 
                 <div className="flex items-center justify-between gap-4 py-0.5">
-                  <span className="flex items-center gap-1.5 text-slate-400">
-                    <i className="pnl-legend-dot" style={{ background: '#c9d1d9' }} />
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <i className="pnl-legend-dot" style={{ background: 'var(--series)' }} />
                     Realized
                   </span>
-                  <span className="font-bold text-sky-400 tabular-nums">
+                  <span className="font-bold text-[var(--series)] tabular-nums">
                     {metricType === '% Return'
                       ? `${transformVal(activePoint.realized).toFixed(2)}%`
                       : activePoint.realized.toLocaleString('en-IN')}
@@ -447,11 +447,11 @@ export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
                 </div>
 
                 <div className="flex items-center justify-between gap-4 py-0.5">
-                  <span className="flex items-center gap-1.5 text-slate-400">
-                    <i className="pnl-legend-dot" style={{ background: '#f59e0b' }} />
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <i className="pnl-legend-dot" style={{ background: 'var(--warn)' }} />
                     Unrealized
                   </span>
-                  <span className="font-bold text-amber-400 tabular-nums">
+                  <span className="font-bold text-[var(--warn)] tabular-nums">
                     {metricType === '% Return'
                       ? `${transformVal(activePoint.unrealized).toFixed(2)}%`
                       : activePoint.unrealized.toLocaleString('en-IN')}

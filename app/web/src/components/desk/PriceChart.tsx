@@ -10,7 +10,8 @@ import { TF_SECONDS } from '@/lib/live-bar';
 import { closedBars, type TfRead } from '@/lib/smc/context';
 import { volRegime } from '@/lib/vol-regime';
 import { ScenePrimitive } from './chart/scene-primitive';
-import { C } from './chart/scene';
+import { C, setChartTheme } from './chart/scene';
+import { useTheme } from '@/lib/theme';
 import { ChartHud } from './chart/ChartHud';
 import type { PerpOiChange } from '@/api/desk';
 import { LtpChip } from './chart/LtpChip';
@@ -89,7 +90,10 @@ export function PriceChart({
   const compact = size === 'compact';
 
   // ── What is drawn: the entry section's setup, and nothing else ────────────
-  const scene = useMemo(() => (entry ? entryScene(entry, bars) : []), [bars.length, entry]);
+  // The theme's colours, before anything below draws with them (20 Oct 2026, light and dark).
+  const { theme } = useTheme();
+  setChartTheme(theme);
+  const scene = useMemo(() => (entry ? entryScene(entry, bars) : []), [bars.length, entry, theme]);
   // The volatility read is taken off closed candles: the forming one changes every tick.
   const closed = closedBars(bars, tfSec, Math.floor(Date.now() / 1000));
   const lastClosed = closed[closed.length - 1];
@@ -104,15 +108,15 @@ export function PriceChart({
       width: host.clientWidth || 720,
       height: host.clientHeight || 480,
       layout: {
-        background: { type: ColorType.Solid, color: '#0a0d10' },
-        textColor: 'rgba(206, 216, 230, 0.85)',
+        background: { type: ColorType.Solid, color: C.ground },
+        textColor: C.axisText,
         fontSize: 11,
         attributionLogo: false,
       },
-      grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.12)', scaleMargins: { top: 0.1, bottom: 0.2 } },
+      grid: { vertLines: { color: C.grid }, horzLines: { color: C.grid } },
+      rightPriceScale: { borderColor: C.axisLine, scaleMargins: { top: 0.1, bottom: 0.2 } },
       timeScale: {
-        borderColor: 'rgba(255,255,255,0.12)', timeVisible: true, secondsVisible: false, rightOffset: RIGHT_BARS, barSpacing: 8,
+        borderColor: C.axisLine, timeVisible: true, secondsVisible: false, rightOffset: RIGHT_BARS, barSpacing: 8,
         // The axis in IST like the crosshair: without this the library labels it in UTC, and one candle read 11:10 on the axis and 16:40 on hover.
         tickMarkFormatter: (t: Time) => IST_TICK.format(Number(t) * 1000),
       },
@@ -175,7 +179,7 @@ export function PriceChart({
   // candle, and a new candle is one more: both are `update()` on the tail -- the library redraws one
   // bar instead of re-reading the whole history four times a second. Anything else (the poll's
   // fresh history, a switch of timeframe, a new chart) is `setData`.
-  const sentRef = useRef<{ series: ISeriesApi<'Candlestick'> | null; bars: readonly Candle[] }>({ series: null, bars: [] });
+  const sentRef = useRef<{ series: ISeriesApi<'Candlestick'> | null; bars: readonly Candle[]; theme?: string }>({ series: null, bars: [] });
   useEffect(() => {
     const candles = candleRef.current;
     const volume = volumeRef.current;
@@ -183,17 +187,30 @@ export function PriceChart({
     const toCandle = (b: Candle) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close });
     const toVolume = (b: Candle) => ({
       time: b.time as UTCTimestamp, value: b.volume,
-      color: b.close >= b.open ? 'rgba(38,161,123,0.45)' : 'rgba(226,80,79,0.45)',
+      color: b.close >= b.open ? C.volUp : C.volDown,
     });
-    const tail = tailFrom(sentRef.current.series === candles ? sentRef.current.bars : [], bars);
+    // Sent in another theme: all again, each volume bar in this one's colour.
+    const tail = tailFrom(sentRef.current.series === candles && sentRef.current.theme === theme ? sentRef.current.bars : [], bars);
     if (tail >= 0) {
       for (let i = tail; i < bars.length; i++) { candles.update(toCandle(bars[i]!)); volume.update(toVolume(bars[i]!)); }
     } else {
       candles.setData(bars.map(toCandle));
       volume.setData(bars.map(toVolume));
     }
-    sentRef.current = { series: candles, bars };
-  }, [bars, error]);
+    sentRef.current = { series: candles, bars, theme };
+  }, [bars, error, theme]);
+
+  // Another theme: the chart's ground, axis and grid, the candles, and every volume bar again (their colour is each bar's own).
+  useEffect(() => {
+    const chart = chartRef.current, candles = candleRef.current;
+    if (!chart || !candles) return;
+    chart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: C.ground }, textColor: C.axisText },
+      grid: { vertLines: { color: C.grid }, horzLines: { color: C.grid } },
+      rightPriceScale: { borderColor: C.axisLine }, timeScale: { borderColor: C.axisLine },
+    });
+    candles.applyOptions({ upColor: C.bull, downColor: C.bear, borderUpColor: C.bull, borderDownColor: C.bear, wickUpColor: C.bull, wickDownColor: C.bear });
+  }, [theme]);
 
   // Open each timeframe on its recent bars, with room on the right for the levels.
   useEffect(() => {

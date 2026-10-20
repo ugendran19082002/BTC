@@ -135,7 +135,7 @@ export function PnlKpiCards({ rows, totalsNetUsd, includeCharges, status, orders
               <svg width="68" height="26" viewBox="0 0 68 26" fill="none">
                 <path
                   d={totalPathD}
-                  stroke={totalTone === 'down' ? '#f43f5e' : '#10b981'}
+                  stroke={totalTone === 'down' ? 'var(--down)' : 'var(--up)'}
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -209,7 +209,7 @@ export function PnlKpiCards({ rows, totalsNetUsd, includeCharges, status, orders
                       width="5"
                       height={h}
                       rx="1"
-                      fill={isUp ? '#10b981' : '#f43f5e'}
+                      fill={isUp ? 'var(--up)' : 'var(--down)'}
                       opacity={0.8}
                     />
                   );

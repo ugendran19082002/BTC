@@ -115,7 +115,7 @@ export function AccountsPanel() {
       )}
 
       {view?.envKeyLeft && (
-        <p className="m-0 mb-2 rounded-md border border-solid border-[#d2992255] bg-[#d2992215] px-2.5 py-1.5 text-[12px] text-[var(--warn)]">
+        <p className="m-0 mb-2 rounded-md border border-solid border-[color-mix(in_srgb,_var(--warn)_33%,_transparent)] bg-[color-mix(in_srgb,_var(--warn)_8%,_transparent)] px-2.5 py-1.5 text-[12px] text-[var(--warn)]">
           The server's .env still holds an API key. It is no longer read — the accounts here are what the desk uses — so empty
           DELTA_API_KEY and DELTA_API_SECRET there.
         </p>
@@ -216,7 +216,7 @@ function AccountRow({ a, only, busy, asking, said, editing, onEdit, onAsk, onTes
   const mine = (action: string) => busy === `${a.id}:${action}`;
   const ask = asking && asking.id === a.id ? asking.what : null;
   return (
-    <li aria-label={a.name} className={cn('rounded-md border border-solid p-3', a.isDefault ? 'border-[#3fb95055]' : 'border-border', !a.active && 'opacity-80')}>
+    <li aria-label={a.name} className={cn('rounded-md border border-solid p-3', a.isDefault ? 'border-[color-mix(in_srgb,_var(--up)_33%,_transparent)]' : 'border-border', !a.active && 'opacity-80')}>
       {editing ? (
         <form aria-label={`edit ${a.name}`} className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]" onSubmit={(e) => { e.preventDefault(); onRename(); }}>
           <label className={field}>Name

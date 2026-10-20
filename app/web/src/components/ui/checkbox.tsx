@@ -36,7 +36,7 @@ export const Checkbox = React.forwardRef<
         className={cn(
           'pointer-events-none flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border transition-colors',
           checked
-            ? 'border-[var(--accent)] bg-[var(--accent)] text-[#0b0e11]'
+            ? 'border-[var(--accent)] bg-[var(--accent-fill)] text-[var(--accent-ink)]'
             : 'border-border bg-muted text-transparent',
         )}
       >

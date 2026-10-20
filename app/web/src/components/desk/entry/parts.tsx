@@ -14,9 +14,9 @@ export function signalOf(r: Pick<MethodRead, 'state' | 'dir'>): 'BUY' | 'SELL' |
 }
 
 const CHIP: Record<ReturnType<typeof signalOf>, string> = {
-  BUY: 'bg-[#26a17b] text-white',
-  SELL: 'bg-[#e2504f] text-white',
-  WAIT: 'bg-[#b7791f] text-white',
+  BUY: 'bg-[var(--up-fill)] text-white',
+  SELL: 'bg-[var(--down-fill)] text-white',
+  WAIT: 'bg-[var(--warn-fill)] text-white',
   NO: 'bg-muted text-muted-foreground',
 };
 
@@ -33,7 +33,7 @@ const BADGE: Record<MethodRead['group'], string> = {
   breakout: 'bg-[#475569]',
   pullback: 'bg-[#7c3aed]',
   reversal: 'bg-[#db2777]',
-  flow: 'bg-[#d97706]',
+  flow: 'bg-[var(--warn-fill)]',
 };
 
 export const GROUP_NAME: Record<MethodRead['group'], string> = {
@@ -120,7 +120,7 @@ export function GateChip({ read }: { read: Pick<MethodRead, 'gates' | 'dir'> | n
   return (
     <span title={title}
           className={cn('inline-block whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-semibold',
-            failed ? 'bg-[rgba(226,80,79,0.15)] text-[var(--down)]' : 'bg-[rgba(38,161,123,0.15)] text-[var(--up)]')}>
+            failed ? 'bg-[color-mix(in_srgb,_var(--down)_15%,_transparent)] text-[var(--down)]' : 'bg-[color-mix(in_srgb,_var(--up)_15%,_transparent)] text-[var(--up)]')}>
       {failed ? `✗ ${GATE_SHORT[failed.key] ?? failed.label}` : `✓ ${readCount}/${readCount}`}
     </span>
   );

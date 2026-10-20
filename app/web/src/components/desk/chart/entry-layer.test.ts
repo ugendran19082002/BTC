@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ENTRY, entryScene } from './entry-layer';
+import { entryScene } from './entry-layer';
+import { C, CHART_PALETTES, setChartTheme } from './scene';
 import type { EntryOverlay } from '@/types/entry';
+
+const ENTRY = C.entry;
 
 const bars = Array.from({ length: 20 }, (_, i) => ({ time: 1_000 + i * 300, open: 1, high: 2, low: 0, close: 1, volume: 1 }));
 const long: EntryOverlay = { dir: 'long', entryLo: 84_120, entryHi: 84_160, stop: 83_980, tp1: 84_300, tp2: 84_500, tp3: null, rr: 2.4, label: '#3 Liquidity sweep', triggerTime: 1_000 + 12 * 300 };
@@ -31,5 +34,19 @@ describe('the entry setup on the chart', () => {
   it('a TP3 only when there is one, and nothing without candles', () => {
     expect(entryScene({ ...long, tp3: 85_000 }, bars).some((x) => x.t === 'line' && x.label?.startsWith('TP3'))).toBe(true);
     expect(entryScene(long, [])).toEqual([]);
+  });
+});
+
+describe('the entry in the theme\'s colours (20 Oct 2026, light and dark)', () => {
+  it('drawn after a theme is chosen, in that theme\'s grey and green and red', () => {
+    try {
+      setChartTheme('light');
+      const items = entryScene(long, bars);
+      const line = (p: string) => items.find((x) => x.t === 'line' && x.label?.startsWith(p)) as { color: string };
+      expect(line('ENTRY').color).toBe(CHART_PALETTES.light.entry);
+      expect(line('SL').color).toBe(CHART_PALETTES.light.bear);
+      expect(line('TP1').color).toBe(CHART_PALETTES.light.bull);
+    } finally { setChartTheme('dark'); }
+    expect(C.entry).toBe(CHART_PALETTES.dark.entry);
   });
 });

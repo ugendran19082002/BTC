@@ -90,7 +90,7 @@ export function LossBudget({ status, dense = false }: { status: TradeStatus; den
           onClick={() => void change({ on: !on })}
           className={cn(
             'absolute right-0 top-0 m-0 inline-flex h-6 w-11 cursor-pointer appearance-none items-center rounded-full border-0 p-0 transition-colors disabled:opacity-60',
-            on ? 'bg-[var(--accent)]' : 'bg-[var(--line)]',
+            on ? 'bg-[var(--accent-fill)]' : 'bg-[var(--line)]',
           )}
         >
           {/* Off, the thumb is lighter than the track: a dark thumb on a dark track read as no switch at all. */}

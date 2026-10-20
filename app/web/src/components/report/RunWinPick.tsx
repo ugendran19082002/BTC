@@ -133,7 +133,7 @@ export function RunWinPick({ value, onChange, run, daysOnly = false, whose = "Ea
   const badDays = value.on !== 'custom' && value.on !== 'same' && !(Number.isInteger(value.days) && value.days >= 1 && value.days <= 30);
   // Custom chosen: the days it starts from, where none are kept yet.
   const choose = (on: WinPick['on']) => put(on === 'custom' && !(isDay(value.pickFrom) && isDay(value.pickTo)) && run ? { on, ...customPickFor(run) } : { on });
-  const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] text-foreground [color-scheme:dark]';
+  const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[15px] text-foreground';
   const tested = run && value.on === 'custom' && isDay(value.pickTo) && !check.problem
     ? { from: value.pickTo >= run.from ? shift(value.pickTo, 1) : run.from, to: run.to } : null;
   return (

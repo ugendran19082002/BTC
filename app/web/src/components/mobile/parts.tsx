@@ -173,7 +173,7 @@ export function Chip({ on, onClick, children }: { on: boolean; onClick: () => vo
       type="button" aria-pressed={on} onClick={onClick}
       className={cn(
         'h-10 shrink-0 whitespace-nowrap rounded-full border px-4 text-[14px] font-medium',
-        on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen)]' : 'border-border bg-transparent text-muted-foreground',
+        on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen-text)]' : 'border-border bg-transparent text-muted-foreground',
       )}
     >
       {children}

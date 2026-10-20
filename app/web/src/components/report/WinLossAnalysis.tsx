@@ -134,7 +134,7 @@ export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
               cx="60"
               cy="60"
               r={R}
-              stroke="rgba(42, 48, 58, 0.6)"
+              stroke="color-mix(in_srgb,_var(--line)_60%,_transparent)"
               strokeWidth="12"
               fill="none"
             />
@@ -143,7 +143,7 @@ export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
                 cx="60"
                 cy="60"
                 r={R}
-                stroke="#10b981"
+                stroke="var(--up)"
                 strokeWidth="12"
                 strokeDasharray={`${winStroke} ${C}`}
                 strokeDashoffset="0"
@@ -157,7 +157,7 @@ export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
                 cx="60"
                 cy="60"
                 r={R}
-                stroke="#f43f5e"
+                stroke="var(--down)"
                 strokeWidth="12"
                 strokeDasharray={`${lossStroke} ${C}`}
                 strokeDashoffset={-winStroke}
@@ -177,30 +177,30 @@ export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
         <div className="pnl-wl-legend">
           <div className="pnl-wl-legend-item">
             <span>
-              <i className="pnl-wl-legend-dot" style={{ background: '#10b981' }} />
+              <i className="pnl-wl-legend-dot" style={{ background: 'var(--up)' }} />
               Wins
             </span>
-            <span className="font-semibold text-slate-200">
+            <span className="font-semibold text-foreground">
               {viewMode === 'count' ? winCount : winPnlStr}
             </span>
           </div>
 
           <div className="pnl-wl-legend-item">
             <span>
-              <i className="pnl-wl-legend-dot" style={{ background: '#f43f5e' }} />
+              <i className="pnl-wl-legend-dot" style={{ background: 'var(--down)' }} />
               Losses
             </span>
-            <span className="font-semibold text-slate-200">
+            <span className="font-semibold text-foreground">
               {viewMode === 'count' ? lossCount : lossPnlStr}
             </span>
           </div>
 
           <div className="pnl-wl-legend-item">
             <span>
-              <i className="pnl-wl-legend-dot" style={{ background: '#94a3b8' }} />
+              <i className="pnl-wl-legend-dot" style={{ background: 'var(--muted)' }} />
               Breakeven
             </span>
-            <span className="font-semibold text-slate-400">
+            <span className="font-semibold text-muted-foreground">
               {viewMode === 'count' ? breakevenCount : '₹0'}
             </span>
           </div>
@@ -211,15 +211,15 @@ export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
       <div className="pnl-wl-bottom">
         <div className="pnl-wl-stat-row">
           <span className="pnl-wl-stat-label">Avg win</span>
-          <span className="pnl-wl-stat-val text-emerald-400">{avgWinStr}</span>
+          <span className="pnl-wl-stat-val text-[var(--up)]">{avgWinStr}</span>
         </div>
         <div className="pnl-wl-stat-row">
           <span className="pnl-wl-stat-label">Avg loss</span>
-          <span className="pnl-wl-stat-val text-rose-400">{avgLossStr}</span>
+          <span className="pnl-wl-stat-val text-[var(--down)]">{avgLossStr}</span>
         </div>
         <div className="pnl-wl-stat-row">
           <span className="pnl-wl-stat-label">Profit factor</span>
-          <span className="pnl-wl-stat-val text-emerald-400">{profitFactorStr}</span>
+          <span className="pnl-wl-stat-val text-[var(--up)]">{profitFactorStr}</span>
         </div>
       </div>
     </div>

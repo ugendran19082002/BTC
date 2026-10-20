@@ -97,7 +97,7 @@ export function TradeDetail({ tradeId, onClose, onSignedOut }: { tradeId: string
               </div>
               {t!.charges && <div className="mt-2 text-[12px] text-muted-foreground">Charges paid <Money value={t!.charges.paidUsd} className="[&>span]:text-[12px]" /></div>}
               {(t!.alarm || t!.protectionProblem || t!.plan?.exitProblem) && (
-                <div role="alert" className="mt-3 rounded-md bg-[var(--down-bg)] px-3 py-2 text-[13.5px] text-[#ffb3ae]">
+                <div role="alert" className="mt-3 rounded-md bg-[var(--down-bg)] px-3 py-2 text-[13.5px] text-[var(--down-text)]">
                   {[t!.alarm, t!.protectionProblem, t!.plan?.exitProblem].filter(Boolean).join(' ')}
                 </div>
               )}

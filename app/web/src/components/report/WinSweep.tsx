@@ -57,7 +57,7 @@ export function tradesOf(text: string): number[] | string {
   return out;
 }
 
-const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] pl-3 text-[16px] tabular-nums text-foreground [color-scheme:dark]';
+const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] pl-3 text-[16px] tabular-nums text-foreground';
 const span = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
 const daysWords = (from: string, to: string) => `${from === to ? dayLabel(from) : `${dayLabel(from)} – ${dayLabel(to)}`} (${span(from, to)} day${span(from, to) === 1 ? '' : 's'})`;
 const wonText = (c: NonNullable<WinSweepCell>) => (c.n ? pct(c.wins / c.n, 0) : '—');

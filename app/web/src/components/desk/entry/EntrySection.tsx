@@ -154,8 +154,8 @@ export function EntrySection({ desk, onTimeframes, belowHeader, bottom }: {
               {board ? (
                 <>
                   <span className="sr-only">{`${counts.trade} trade · ${counts.wait} wait · ${nReads - counts.trade - counts.wait} no trade`}</span>
-                  <span aria-hidden className="rounded-full bg-[#26a17b]/20 px-2 py-0.5 font-semibold text-[#26a17b]">{counts.trade} TRADE</span>
-                  <span aria-hidden className="rounded-full bg-[#b7791f]/20 px-2 py-0.5 font-semibold text-[#d69e2e]">{counts.wait} WAIT</span>
+                  <span aria-hidden className="rounded-full bg-[color-mix(in_srgb,_var(--up)_20%,_transparent)] px-2 py-0.5 font-semibold text-[var(--up)]">{counts.trade} TRADE</span>
+                  <span aria-hidden className="rounded-full bg-[color-mix(in_srgb,_var(--warn)_20%,_transparent)] px-2 py-0.5 font-semibold text-[var(--warn)]">{counts.wait} WAIT</span>
                   <span aria-hidden className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{nReads - counts.trade - counts.wait} NO TRADE</span>
                   <span className="text-muted-foreground">read {new Date(board.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} · on closed candles</span>
                 </>

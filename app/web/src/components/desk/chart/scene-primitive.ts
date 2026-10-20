@@ -3,7 +3,7 @@ import type {
   PrimitivePaneViewZOrder, SeriesAttachedParameter, SeriesType, Time,
 } from 'lightweight-charts';
 import { placeLabels, stacked, type LabelRequest, type Rect } from './label-layout';
-import type { SceneBox, SceneItem, SceneLine } from './scene';
+import { C, type SceneBox, type SceneItem, type SceneLine } from './scene';
 
 /**
  * Draws a scene (scene.ts) on the chart's own canvas, as a series primitive.
@@ -186,7 +186,7 @@ export class ScenePrimitive implements ISeriesPrimitive<Time> {
     const inside: Rect = { x, y: top + 2, w, h: LABEL_H };
     const above: Rect = { x, y: top - LABEL_H - 2, w, h: LABEL_H };
     labels.push({
-      id: nextId(), priority: it.priority, text: it.label, color: it.labelColor ?? it.stroke ?? '#e5e7eb',
+      id: nextId(), priority: it.priority, text: it.label, color: it.labelColor ?? it.stroke ?? C.text,
       candidates: h >= LABEL_H + 4 ? [inside, above] : [above, { ...above, y: top + h + 2 }],
     });
   }
@@ -194,7 +194,7 @@ export class ScenePrimitive implements ISeriesPrimitive<Time> {
 
 function pill(ctx: Ctx, r: Rect, text: string, color: string) {
   ctx.save();
-  ctx.fillStyle = 'rgba(10, 13, 16, 0.86)';
+  ctx.fillStyle = C.pill;
   ctx.strokeStyle = color;
   ctx.globalAlpha = 1;
   ctx.lineWidth = 1;

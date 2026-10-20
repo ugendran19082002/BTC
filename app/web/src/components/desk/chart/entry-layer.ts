@@ -10,8 +10,6 @@ import { C, type SceneItem } from './scene';
 
 const fmt = (p: number) => Math.round(p).toLocaleString('en-US');
 /** The entry's own colour: the neutral data line (`--series` in styles.css), apart from the stop (red) and the targets (green) on either side of it. */
-export const ENTRY = '#c9d1d9';
-const ENTRY_FILL = 'rgba(201,209,217,0.12)';
 
 export function entryScene(e: EntryOverlay, bars: readonly Candle[]): SceneItem[] {
   if (!bars.length) return [];
@@ -34,10 +32,10 @@ export function entryScene(e: EntryOverlay, bars: readonly Candle[]): SceneItem[
   const items: SceneItem[] = [
     {
       t: 'box', layer: 'entry', x1, x2: 'right', y1: e.entryLo, y2: Math.max(e.entryHi, e.entryLo + 1),
-      fill: ENTRY_FILL, stroke: ENTRY,
+      fill: C.entryFill, stroke: C.entry,
       label: `${long ? 'LONG' : 'SHORT'} ${e.label} · entry ${fmt(e.entryLo)}–${fmt(e.entryHi)}`, labelColor: C.text, priority: 96,
     },
-    { t: 'line', layer: 'entry', x1, x2: 'right', y: fill, color: ENTRY, width: 2, label: `ENTRY ${fmt(fill)}`, labelAt: 'end', priority: 96 },
+    { t: 'line', layer: 'entry', x1, x2: 'right', y: fill, color: C.entry, width: 2, label: `ENTRY ${fmt(fill)}`, labelAt: 'end', priority: 96 },
     { t: 'line', layer: 'entry', x1, x2: 'right', y: e.stop, color: C.bear, width: 1.5, label: `SL ${fmt(e.stop)} · ${at(e.stop)}`, labelAt: 'end', priority: 95 },
     { t: 'line', layer: 'entry', x1, x2: 'right', y: e.tp1, color: C.bull, width: 1.5, label: `TP1 ${fmt(e.tp1)} · ${at(e.tp1)} · R:R ${e.rr.toFixed(1)}`, labelAt: 'end', priority: 95 },
   ];

@@ -4,6 +4,7 @@ import { usePhoneData } from '@/components/mobile/phone-context';
 import { Panel, Pill, Row, Rows } from '@/components/mobile/parts';
 import { ago, stamp } from '@/lib/format';
 import { DeskSwitch } from '@/components/mobile/DeskSwitch';
+import { ThemeSwitch } from '@/components/ui/theme-switch';
 
 /**
  * Status and settings (6 Oct 2026): the desk's health in full, who is signed in and how, which build the server
@@ -17,6 +18,10 @@ export function SettingsScreen() {
   return (
     <>
       <HealthCard glance={p.glance} error={p.glanceError} />
+
+      <Panel title="Theme">
+        <ThemeSwitch />
+      </Panel>
 
       <Panel title="This phone">
         <Rows>

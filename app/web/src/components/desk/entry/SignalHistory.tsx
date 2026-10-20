@@ -33,18 +33,18 @@ const signedPts = (v: number) => `${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))}`;
 
 /** The signal tabs, and what each asks the server for. */
 export const TABS = {
-  all: { label: 'All', q: {}, tone: 'var(--accent)', title: 'Every signal' },
+  all: { label: 'All', q: {}, tone: 'var(--accent-fill)', title: 'Every signal' },
   // In play now: waiting at the zone or filled, not yet out at TP1, the stop or time.
-  trading: { label: 'TRADING', q: { state: 'TRADE', live: true }, tone: 'var(--accent)', title: 'In play now: waiting at the zone, filled, or a runner after TGT1' },
-  trades: { label: 'BUY & SELL', q: { state: 'TRADE' }, tone: 'var(--accent)', title: 'Every TRADE, either way' },
-  buy: { label: 'BUY', q: { state: 'TRADE', dir: 1 }, tone: '#26a17b', title: 'TRADEs to buy' },
-  sell: { label: 'SELL', q: { state: 'TRADE', dir: -1 }, tone: '#e2504f', title: 'TRADEs to sell' },
-  wait: { label: 'WAIT', q: { state: 'WAIT' }, tone: '#b7791f', title: 'Forming, not yet a TRADE' },
+  trading: { label: 'TRADING', q: { state: 'TRADE', live: true }, tone: 'var(--accent-fill)', title: 'In play now: waiting at the zone, filled, or a runner after TGT1' },
+  trades: { label: 'BUY & SELL', q: { state: 'TRADE' }, tone: 'var(--accent-fill)', title: 'Every TRADE, either way' },
+  buy: { label: 'BUY', q: { state: 'TRADE', dir: 1 }, tone: 'var(--up-fill)', title: 'TRADEs to buy' },
+  sell: { label: 'SELL', q: { state: 'TRADE', dir: -1 }, tone: 'var(--down-fill)', title: 'TRADEs to sell' },
+  wait: { label: 'WAIT', q: { state: 'WAIT' }, tone: 'var(--warn-fill)', title: 'Forming, not yet a TRADE' },
   // How each TRADE ended in the paper log.
-  tgt: { label: 'TGT HIT', q: { state: 'TRADE', outcome: 'tp1' }, tone: '#26a17b', title: 'Out at TGT1' },
-  sl: { label: 'SL HIT', q: { state: 'TRADE', outcome: 'stop' }, tone: '#e2504f', title: 'Out at the stop' },
-  timeout: { label: 'TIMED OUT', q: { state: 'TRADE', outcome: 'timeout' }, tone: '#64748b', title: 'Closed on time, neither level reached' },
-  expired: { label: 'EXPIRED', q: { state: 'TRADE', outcome: 'expired' }, tone: '#64748b', title: 'Never filled: the window passed, the SL broke first, or price ran to TGT1 without it' },
+  tgt: { label: 'TGT HIT', q: { state: 'TRADE', outcome: 'tp1' }, tone: 'var(--up-fill)', title: 'Out at TGT1' },
+  sl: { label: 'SL HIT', q: { state: 'TRADE', outcome: 'stop' }, tone: 'var(--down-fill)', title: 'Out at the stop' },
+  timeout: { label: 'TIMED OUT', q: { state: 'TRADE', outcome: 'timeout' }, tone: 'var(--neutral-fill)', title: 'Closed on time, neither level reached' },
+  expired: { label: 'EXPIRED', q: { state: 'TRADE', outcome: 'expired' }, tone: 'var(--neutral-fill)', title: 'Never filled: the window passed, the SL broke first, or price ran to TGT1 without it' },
 } as const satisfies Record<string, { label: string; q: Pick<SignalFilter, 'state' | 'dir' | 'live' | 'outcome'>; tone: string; title: string }>;
 type Tab = keyof typeof TABS;
 
@@ -278,10 +278,10 @@ export function SignalHistory() {
         {(Object.keys(TABS) as Tab[]).map((t, k) => (
           <button key={t} type="button" role="tab" aria-selected={f.tab === t} onClick={() => set({ tab: t })} title={TABS[t].title}
                   // The accent is a light ground: its text is the dark ink, where the buy / sell / neutral tones carry white.
-                  style={f.tab === t ? { background: TABS[t].tone, borderColor: TABS[t].tone, ...(TABS[t].tone === 'var(--accent)' ? { color: 'var(--accent-ink)' } : {}) } : undefined}
+                  style={f.tab === t ? { background: TABS[t].tone, borderColor: TABS[t].tone, ...(TABS[t].tone === 'var(--accent-fill)' ? { color: 'var(--accent-ink)' } : {}) } : undefined}
                   className={cn('shrink-0 rounded-md border px-2.5 py-1 font-semibold', k === 6 && 'ml-2',
                     f.tab === t ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground')}>
-            {t === 'trading' ? <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-[#26a17b] align-middle" /> : null}
+            {t === 'trading' ? <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-[var(--up-fill)] align-middle" /> : null}
             {TABS[t].label}
           </button>
         ))}
@@ -330,13 +330,13 @@ export function SignalHistory() {
         }} />
         <a href={entrySignalsCsvUrl({ ...query, limit: undefined, offset: undefined } as Omit<SignalFilter, 'limit' | 'offset'>)} download
            aria-label="download for Excel" title={`Every signal these filters match${total ? ` (${total})` : ''}, in this order, as a spreadsheet (CSV, opens in Excel)`}
-           className="inline-flex items-center gap-1 rounded-md border border-[#26a17b] px-2.5 py-1 font-semibold text-[#26a17b] hover:bg-[#26a17b]/10">
+           className="inline-flex items-center gap-1 rounded-md border border-[var(--up)] px-2.5 py-1 font-semibold text-[var(--up)] hover:bg-[color-mix(in_srgb,_var(--up)_10%,_transparent)]">
           <Download size={13} aria-hidden /> Excel{total ? ` · ${total}` : ''}
         </a>
         </div>
       </div>
 
-      {cleared ? <p role="status" className="m-0 mb-2 rounded-md bg-[#26a17b]/15 px-2 py-1 font-semibold text-[#26a17b]">{cleared}</p> : null}
+      {cleared ? <p role="status" className="m-0 mb-2 rounded-md bg-[color-mix(in_srgb,_var(--up)_15%,_transparent)] px-2 py-1 font-semibold text-[var(--up)]">{cleared}</p> : null}
       {data ? <Summary s={data.summary} /> : null}
 
       {error && !data ? <p role="alert" className="m-0 text-[var(--down)]">Could not read the history: {error.message}</p> : null}
@@ -481,7 +481,7 @@ function SignalTag({ s }: { s: EntrySignal }) {
   const side = s.dir === 1 ? 'BUY' : 'SELL';
   return (
     <>
-      <span className={cn('whitespace-nowrap rounded px-1 font-bold', s.state === 'WAIT' ? 'bg-[#b7791f] text-white' : s.dir === 1 ? 'bg-[#26a17b] text-white' : 'bg-[#e2504f] text-white')}>
+      <span className={cn('whitespace-nowrap rounded px-1 font-bold', s.state === 'WAIT' ? 'bg-[var(--warn-fill)] text-white' : s.dir === 1 ? 'bg-[var(--up-fill)] text-white' : 'bg-[var(--down-fill)] text-white')}>
         {s.state === 'WAIT' ? `WAIT ${side}` : side}
       </span>
       {s.gatesOff.length ? <span className="ml-1 text-[10px] text-[var(--warn)]" title={`gates off: ${s.gatesOff.join(', ')}`}>gates off</span> : null}

@@ -525,7 +525,7 @@ export function OrdersPanel() {
                     variant={p === currentPage ? 'default' : 'outline'}
                     className={cn(
                       'h-7 min-w-7 px-1.5 text-[11px]',
-                      p === currentPage && 'bg-[var(--accent)] font-semibold text-white',
+                      p === currentPage && 'bg-[var(--accent-fill)] font-semibold text-white',
                     )}
                     onClick={() => setPage(p)}
                   >

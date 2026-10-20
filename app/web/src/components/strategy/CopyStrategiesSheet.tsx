@@ -105,7 +105,7 @@ export function CopyStrategiesSheet({ open, onOpenChange, into, pick, shownAccou
     }
   };
 
-  const field = 'm-0 h-10 w-full rounded-md border border-solid border-border bg-[var(--bg,#0a0d10)] px-2 font-[inherit] text-[14px] text-foreground sm:h-9 sm:text-[13px]';
+  const field = 'm-0 h-10 w-full rounded-md border border-solid border-border bg-[var(--bg)] px-2 font-[inherit] text-[14px] text-foreground sm:h-9 sm:text-[13px]';
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -126,7 +126,7 @@ export function CopyStrategiesSheet({ open, onOpenChange, into, pick, shownAccou
                 {(['existing', 'new'] as const).map((m) => (
                   <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)}
                           className={cn('h-9 rounded-md border-0 font-[inherit] text-[13px] font-medium',
-                            mode === m ? 'bg-[var(--accent)] text-black' : 'bg-transparent text-muted-foreground')}>
+                            mode === m ? 'bg-[var(--accent-fill)] text-black' : 'bg-transparent text-muted-foreground')}>
                     {m === 'existing' ? 'A group that exists' : 'A new group'}
                   </button>
                 ))}

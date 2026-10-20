@@ -173,7 +173,7 @@ export function LoginPage({ onSignedIn, onNeedsSetup, startAtCode = false, viewO
 
 function ErrorBox({ text }: { text: string }) {
   return (
-    <div role="alert" className="rounded-md border border-[#f8514955] bg-[#f8514915] px-3 py-2 text-[12.5px] text-[#ffb3ae]">
+    <div role="alert" className="rounded-md border border-[color-mix(in_srgb,_var(--down)_33%,_transparent)] bg-[color-mix(in_srgb,_var(--down)_8%,_transparent)] px-3 py-2 text-[12.5px] text-[var(--down-text)]">
       {text}
     </div>
   );

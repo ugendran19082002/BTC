@@ -180,7 +180,7 @@ export function TimePicker({
                 'm-0 h-8 w-14 appearance-none rounded-md border border-solid font-[inherit] text-[13px] font-semibold',
                 'disabled:cursor-not-allowed disabled:opacity-35',
                 period === p
-                  ? 'border-[var(--accent)] bg-[var(--accent)] text-black'
+                  ? 'border-[var(--accent)] bg-[var(--accent-fill)] text-black'
                   : 'border-border bg-transparent text-muted-foreground',
               )}
             >
@@ -219,7 +219,7 @@ export function TimePicker({
                 'font-[inherit] text-[13.5px] tabular-nums transition-colors',
                 'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                 'disabled:cursor-not-allowed disabled:opacity-25',
-                selected ? 'bg-[var(--accent)] font-semibold text-black' : 'bg-transparent text-foreground hover:bg-background',
+                selected ? 'bg-[var(--accent-fill)] font-semibold text-black' : 'bg-transparent text-foreground hover:bg-background',
               )}
               style={{ left: DIAL / 2 + p.x, top: DIAL / 2 + p.y }}
             >

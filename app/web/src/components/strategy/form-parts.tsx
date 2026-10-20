@@ -288,7 +288,7 @@ export function DaysField({ c, set, err }: { c: StrategyConfig; set: SetField; e
               aria-pressed={on}
               onClick={() => toggle(i)}
               className={cn('m-0 h-10 appearance-none rounded-md border border-solid font-[inherit] text-[12px] font-medium',
-                on ? 'border-[var(--warn)] bg-[var(--warn)] text-black' : 'border-[var(--line)] bg-transparent text-[var(--dim)]')}
+                on ? 'border-[var(--warn-fill)] bg-[var(--warn-fill)] text-white' : 'border-[var(--line)] bg-transparent text-[var(--dim)]')}
             >
               {d}
             </button>
@@ -496,7 +496,7 @@ export function DeltaFields({ rule, onChange, error }: { rule: DeltaRule; onChan
             <button
               key={d} type="button" aria-pressed={rule.max === d} onClick={() => onChange({ ...rule, max: d })}
               className={cn('m-0 h-9 min-w-[2.75rem] appearance-none rounded-md border border-solid px-2 font-[inherit] text-[12px] font-medium tabular-nums',
-                rule.max === d ? 'border-[var(--accent)] bg-[var(--accent)] text-white' : 'border-[var(--line)] bg-transparent text-muted-foreground')}
+                rule.max === d ? 'border-[var(--accent)] bg-[var(--accent-fill)] text-white' : 'border-[var(--line)] bg-transparent text-muted-foreground')}
             >
               {d.toFixed(2)}
             </button>
