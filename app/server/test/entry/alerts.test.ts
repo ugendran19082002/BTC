@@ -29,7 +29,8 @@ test('[critical] the message, in sections: signal, entry, stop loss, targets, th
   const a = entryAlertFor(r, { ltp: 84_205, at: Date.UTC(2026, 8, 30, 14, 33) })!;
   const lines = a.text.split('\n');
   assert.equal(lines[0], '🟢 <b>BUY SIGNAL</b> · BTCUSD');
-  assert.equal(lines[1], '<b>#3 Liquidity sweep</b> · with timeframe · 5m entry');
+  // Never the method (20 Oct 2026, owner: "my strategies are private"): its way and time frame only.
+  assert.equal(lines[1], 'with timeframe · 5m entry');
   assert.match(lines[2]!, /^🕒 30 Sept?,? 20:03 IST · LTP <code>84,205<\/code>$/, 'when, in IST, and the live price');
   // Section 1: the entry, and where it fills -- the top of the zone for a long.
   assert.ok(a.text.includes('📍 <b>ENTRY</b>\nZone   <code>84,120 – 84,160</code>\nFill   <code>84,160</code>  (the zone\'s top edge)'));
@@ -38,7 +39,7 @@ test('[critical] the message, in sections: signal, entry, stop loss, targets, th
   // Section 3: each target in points and R from the fill.
   assert.ok(a.text.includes('🎯 <b>TARGETS</b>\nTP1   <code>84,300</code>  +140 pts · 0.8R\nTP2   <code>84,500</code>  +340 pts · 1.9R'));
   assert.match(a.text, /📊 R:R <b>1\.90<\/b> · Quality 72\/100/);
-  assert.match(a.text, /✅ Why: swept a swing low · MSS$/m, 'the method\'s own steps (with the chain, its 5m entry)');
+  for (const secret of ['Liquidity sweep', '#3', 'liquidity-sweep', 'swept a swing low', 'MSS', 'Why']) assert.ok(!a.text.includes(secret), `no ${secret}: not the method, nor its steps`);
   assert.match(a.text, /no order placed<\/i>$/);
   assert.equal(a.key, `entry:mtf:liquidity-sweep:long:${T}`, 'one key per setup');
 });
@@ -66,8 +67,11 @@ test('[critical] a setup is heard once, when the paper log first writes it -- no
   assert.deepEqual(heard, ['liquidity-sweep']);
 });
 
-test('names are escaped for Telegram HTML', () => {
-  assert.match(entryAlertFor(trade({ name: 'A & <B>' }))!.text, /#3 A &amp; &lt;B&gt;/);
+test('[critical] the method is in no signal alert, whatever its name', () => {
+  const text = entryAlertFor(trade({ name: 'A & <B>' }))!.text;
+  assert.ok(!text.includes('A &amp; &lt;B&gt;') && !text.includes('A & <B>'));
+  assert.match(sampleAlertText(), /BUY SIGNAL/);
+  assert.ok(!sampleAlertText().includes('FVG retest'), 'the test message too');
 });
 
 // ------------------------------------------------------------ timeframes and the log

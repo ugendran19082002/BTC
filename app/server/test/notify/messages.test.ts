@@ -275,7 +275,9 @@ test('[critical] a signal strategy\'s trade: the signal, its SL and TGT on the B
     signal: { method: 'breakout', n: 1, name: 'Breakout', mode: 'single', tf: '15m', dir: 1, triggerTime: 1 },
   };
   const entry = last([submitted(), fill('entry', 100, 100.5)], plan)!;
-  assert.match(entry.text, /📡 Signal <b>#1 Breakout<\/b> BUY · 15m, without the chain/);
+  // The signal by its side and time frame, never its method (20 Oct 2026, owner: "my strategies are private").
+  assert.match(entry.text, /📡 Signal <b>BUY<\/b> · 15m, without the chain/);
+  assert.ok(!/#1|breakout/.test(entry.text.replace('Breakout &lt;PE&gt;', '')), 'no method, by name or number');
   assert.match(entry.text, /📈 BTC perp  🛑 SL <b>84,600\.00<\/b>   🎯 TGT <b>85,500\.00<\/b>/);
   assert.match(entry.text, /Option backstop: 🎯 Target 90\.00   🛑 Stop 110\.00/);
   assert.match(entry.text, /strategy “Breakout &lt;PE&gt;”/, 'named, and escaped');
@@ -291,7 +293,7 @@ test('[critical] a signal strategy\'s trade: the signal, its SL and TGT on the B
   ], plan)!;
   assert.match(out.text, /CLOSED AT MARKET/);
   assert.match(out.text, /ℹ️ BTC perp at 84590 reached the signal's stop 84600/);
-  assert.match(out.text, /📡 Signal <b>#1 Breakout<\/b> BUY/);
+  assert.match(out.text, /📡 Signal <b>BUY<\/b>/);
 
   const chain = last([submitted(), fill('entry', 100, 100.5)], { ...plan, signal: { ...plan.signal!, mode: 'mtf', tf: '5m', dir: -1 } })!;
   assert.match(chain.text, /SELL · with the timeframe chain/);
