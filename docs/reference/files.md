@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-542 files listed, 282 test files counted below, images and lockfiles left out.
+543 files listed, 283 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 139 |
+| `app/server` | 140 |
 | `app/web` | 143 |
 
 ## `(root)`
@@ -217,6 +217,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [runner.ts](../../app/server/src/strategy/runner.ts) | The loop that turns a due strategy into orders. |
 | [schedule.ts](../../app/server/src/strategy/schedule.ts) | The IST calendar day a moment falls in, as `YYYY-MM-DD`. |
 | [select.ts](../../app/server/src/strategy/select.ts) | Which legs a strategy sells today, and how many lots each. |
+| [signal-reasons.ts](../../app/server/src/strategy/signal-reasons.ts) | Why a signal was not taken, as keys (owner, 20 Oct 2026: "Not taken, tapped: sub-tabs -- the perp SL min not met, the perp TGT min not met, max open full, and so on, all of them"). |
 | [store.ts](../../app/server/src/strategy/store.ts) | Saved strategies and their run journal. |
 | [types.ts](../../app/server/src/strategy/types.ts) | A saved strategy: everything the desk needs to place a day's trade without being asked twice. |
 

@@ -37,7 +37,7 @@ beforeEach(() => { window.localStorage.clear(); getDaySignals.mockReset(); id = 
 
 describe('StrategiesScreen: the day\'s signals in three tabs', () => {
   it('[critical] All, Taken and Not taken, each with its count; a tap shows only those, with the real orders and the reasons said', async () => {
-    getDaySignals.mockResolvedValue({ trades: [sig('placed'), sig('would-place'), sig('would-place'), sig('skipped'), sig('skipped'), sig('refused'), sig('failed')] });
+    getDaySignals.mockResolvedValue({ trades: [sig('placed', { reasons: [] }), sig('would-place'), sig('would-place'), sig('skipped', { reasons: ['sl-min', 'tgt-min'] }), sig('skipped', { reasons: ['sl-min'] }), sig('refused', { reasons: ['premium'] }), sig('failed')] });
     show();
     await waitFor(() => expect(tabs().getByRole('button', { name: 'All 7' })).toBeInTheDocument());
     expect(getDaySignals).toHaveBeenCalledWith('2026-10-10', null);
@@ -51,8 +51,20 @@ describe('StrategiesScreen: the day\'s signals in three tabs', () => {
 
     fireEvent.click(tabs().getByRole('button', { name: 'Not taken 4' }));
     expect(rows()).toHaveLength(4);
-    expect(screen.getByText(/2 skipped · 1 refused · 1 failed/)).toBeInTheDocument();
     expect(tabs().getByRole('button', { name: 'Not taken 4' })).toHaveAttribute('aria-pressed', 'true');
+    // Not taken, by why (20 Oct 2026): each kind with its count, most first; a signal with two under both; one with none read is Other.
+    const why = () => within(screen.getByRole('group', { name: 'Not taken, why' }));
+    expect(why().getAllByRole('button').map((b) => b.textContent)).toEqual(['Any reason 4', 'Perp SL under min 2', 'Perp TGT under min 1', 'Premium too low 1', 'Other 1']);
+    expect(screen.getByText(/A signal with two reasons is under both/)).toBeInTheDocument();
+    fireEvent.click(why().getByRole('button', { name: 'Perp SL under min 2' }));
+    expect(rows()).toHaveLength(2);
+    expect(screen.getByText(/2 not taken for: Perp SL under min\./)).toBeInTheDocument();
+    fireEvent.click(why().getByRole('button', { name: 'Perp TGT under min 1' }));
+    expect(rows()).toHaveLength(1);
+    // kept on the phone
+    expect(window.localStorage.getItem(Object.keys(window.localStorage).find((k) => k.endsWith('m-strategies-why'))!)).toBe('"tgt-min"');
+    fireEvent.click(why().getByRole('button', { name: 'Any reason 4' }));
+    expect(rows()).toHaveLength(4);
   });
 
   it('[critical] the tab is remembered on the phone; an empty one says so in words', async () => {
