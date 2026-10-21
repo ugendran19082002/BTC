@@ -1,6 +1,6 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { costOf, deskMetrics, noteDeltaCall, notePass, noteSignalRun, resetDeskMetrics, DELTA_WINDOW_MS } from '../../src/observability/desk-metrics.js';
+import { costOf, deskMetrics, noteDeltaCall, notePass, noteSignalRun, quotaKeyOf, quotaUsedPctOf, resetDeskMetrics, DELTA_WINDOW_MS, QUOTA_LADDER } from '../../src/observability/desk-metrics.js';
 
 /**
  * The desk's gauges (4 Oct 2026): calls to Delta and the quota they use, how
@@ -66,4 +66,45 @@ test('nothing noted is nothing shown, and a note can never throw', () => {
   assert.deepEqual([m.delta.calls, m.passes.count, m.signalRun.count], [0, 0, 0]);
   assert.equal(m.delta.response.p50Ms, null);
   assert.doesNotThrow(() => noteDeltaCall({ method: 'GET', path: undefined as unknown as string, ms: 1, outcome: 'ok' }));
+});
+
+/**
+ * Each login on its own quota (21 Oct 2026): Delta throttles authenticated requests by user ID, and the desk trades two
+ * accounts. It counted them as one -- 132.7% at 3:02 PM with nothing refused -- and the stop watch stood down for it.
+ */
+test('[critical] each login counted against its own 20,000; the share said is the busiest login\'s, never their sum', () => {
+  const a = quotaKeyOf({ key: 'key-of-account-one' }), b = quotaKeyOf({ key: 'key-of-account-two' });
+  assert.notEqual(a, b);
+  assert.match(a, /^[0-9a-f]{12}$/, 'a short hash: the key itself is never kept');
+  assert.ok(!a.includes('key'));
+  // 13,200 units each: 66% of each login's own quota
+  for (const q of [a, b]) for (let i = 0; i < 2_640; i++) noteDeltaCall({ method: 'POST', path: '/v2/orders', ms: 1, outcome: 'ok', quota: q }, T + i);
+  assert.equal(quotaUsedPctOf(a, T + 10_000), 66);
+  assert.equal(quotaUsedPctOf(b, T + 10_000), 66);
+  const m = deskMetrics(T + 10_000);
+  assert.equal(m.delta.usedPct, 66, 'not 132');
+  assert.equal(m.delta.units, 26_400, 'the units of both, as they were');
+  assert.deepEqual(m.delta.logins.map((l) => l.usedPct), [66, 66]);
+  assert.equal(quotaKeyOf(null), 'none');
+});
+
+test('[critical] who steps back first as a login\'s quota fills: the rest, then the target, then the stop', () => {
+  assert.ok(QUOTA_LADDER.others < QUOTA_LADDER.target && QUOTA_LADDER.target < QUOTA_LADDER.stop && QUOTA_LADDER.stop < QUOTA_LADDER.stopRun);
+  assert.ok(QUOTA_LADDER.stopRun < 100, 'and never to Delta saying no');
+});
+
+test('[critical] a signed call is counted against its own login: two accounts\' calls are two quotas', async () => {
+  const { signed } = await import('../../src/delta/signed.js');
+  const real = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ success: true, result: [] }), { status: 200 })) as typeof fetch;
+  try {
+    const one = { key: 'key-one', secret: 's1' }, two = { key: 'key-two', secret: 's2' };
+    for (let i = 0; i < 4; i++) await signed(one, { method: 'GET', path: '/v2/positions/margined' });
+    await signed(two, { method: 'POST', path: '/v2/orders', body: {} });
+    const m = deskMetrics();
+    const by = new Map(m.delta.logins.map((l) => [l.quota, l.units]));
+    assert.equal(by.get(quotaKeyOf(one)), 12, 'four reads of 3 on the first login');
+    assert.equal(by.get(quotaKeyOf(two)), 5, 'one order of 5 on the second');
+    assert.equal(by.get('none'), undefined, 'none uncounted');
+  } finally { globalThis.fetch = real; }
 });

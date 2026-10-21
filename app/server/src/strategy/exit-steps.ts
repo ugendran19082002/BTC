@@ -1,4 +1,5 @@
 import type { TradeRecord } from '../trading/engine.js';
+import { QUOTA_LADDER } from '../observability/desk-metrics.js';
 import type { ExitAsk } from '../trading/order-plan.js';
 import { istMinutes } from './schedule.js';
 import {
@@ -45,17 +46,18 @@ export type ExitStepperDeps = {
   /**
    * The stop first, the target second (owner, 21 Oct 2026): true while Delta's call quota is to be kept for stops.
    * A target's step then waits -- tried again at the next tick -- and a stop's step goes on: a stop moved by the clock
-   * is the stop. Absent: never.
+   * is the stop. Asked for each strategy, whose account's own quota is the one that counts. Absent: never.
    */
-  stopsFirst?: () => boolean;
+  stopsFirst?: (s: Strategy) => boolean;
   now: () => number;
 };
 
 /**
- * Above this share of Delta's five-minute quota a target's step waits for a later tick (21 Oct 2026): a step moves every
+ * Above this share of its account's Delta quota a target's step waits for a later tick (21 Oct 2026): a step moves every
  * open trade's target at once -- an edit each, ninety of them -- and the stop watch keeps looking at stops up to 90%.
+ * The SL first, the TGT second, the rest after (`QUOTA_LADDER`).
  */
-export const TARGET_STEP_QUOTA_PCT = 80;
+export const TARGET_STEP_QUOTA_PCT = QUOTA_LADDER.target;
 
 /** "0:0" is the starting values -- what the entry was placed with. */
 const START = '0:0';
@@ -101,7 +103,7 @@ export class StrategyExitStepper {
       const [prevTarget, prevStop] = prev.split(':');
       // The quota kept for stops: a target's step waits, and a stop's goes on alone -- the stage written says so, so
       // the target's is still owed and moves at a later tick.
-      const holdTarget = String(t.stage) !== prevTarget && (this.d.stopsFirst?.() ?? false);
+      const holdTarget = String(t.stage) !== prevTarget && (this.d.stopsFirst?.(s) ?? false);
       const stopMoves = String(st.stage) !== prevStop;
       if (holdTarget && !stopMoves) continue;
       const stage = holdTarget ? `${prevTarget}:${st.stage}` : key;

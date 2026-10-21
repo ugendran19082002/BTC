@@ -1,3 +1,4 @@
+import { QUOTA_LADDER } from '../observability/desk-metrics.js';
 import type { TradeRecord } from './engine.js';
 
 /**
@@ -23,7 +24,7 @@ export const ENTRY_WATCH_MS = 250;
 /** The most trades polled on one look: each poll is up to three lookups at Delta. */
 export const ENTRY_WATCH_PER_LOOK = 2;
 /** Above this share of Delta's quota, the urgent polls stop and the loop alone carries on. */
-export const ENTRY_WATCH_QUOTA_PCT = 50;
+export const ENTRY_WATCH_QUOTA_PCT = QUOTA_LADDER.others;
 
 /** A working entry, or a position without its target on the book. */
 export const isUrgent = (r: Pick<TradeRecord, 'state'>): boolean =>

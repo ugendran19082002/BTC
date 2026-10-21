@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { monitorEventLoopDelay, type IntervalHistogram } from 'node:perf_hooks';
 
 /**
@@ -36,7 +37,23 @@ export function costOf(method: string, path: string): { kind: DeltaKind; units: 
   return { kind: 'other', units: 1 };
 }
 
-type Call = { at: number; ms: number; units: number; kind: DeltaKind; outcome: DeltaOutcome };
+type Call = { at: number; ms: number; units: number; kind: DeltaKind; outcome: DeltaOutcome; quota: string };
+
+/**
+ * Whose quota a call is on (21 Oct 2026). Delta throttles "authenticated requests by user ID" -- each login its own
+ * 20,000 units -- and the desk trades two accounts, each with its key. It counted every call against one 20,000: at 3:02
+ * PM it read 132.7% used, Delta refused nothing, and the stop watch stood down for a quota that was not spent. A short
+ * hash of the API key names the login; the key itself is never kept.
+ */
+export const quotaKeyOf = (creds: { key: string } | null | undefined): string =>
+  (creds?.key ? createHash('sha256').update(creds.key).digest('hex').slice(0, 12) : 'none');
+
+/**
+ * Who steps back first as a login's quota fills (owner, 21 Oct 2026: "the SL exit first, then the TGT exit, then the
+ * rest"). The rest -- the entry watch's quick looks, the background fetch of past prices -- at 50%; a target's time
+ * step at 85% (`TARGET_STEP_QUOTA_PCT`); a stop at its level at 90% and a stop in a run at 95% (`stop-watch.ts`).
+ */
+export const QUOTA_LADDER = { others: 50, target: 85, stop: 90, stopRun: 95 } as const;
 type Pass = { at: number; ms: number; trades: number };
 type Run = { at: number; readMs: number; calcMs: number; early: boolean; afterCloseMs: number | null };
 
@@ -53,10 +70,10 @@ const keep = <T extends { at: number }>(xs: T[], now: number, ms = DELTA_WINDOW_
 };
 
 /** One signed call to Delta, as it ended. */
-export function noteDeltaCall(c: { method: string; path: string; ms: number; outcome: DeltaOutcome }, now = Date.now()): void {
+export function noteDeltaCall(c: { method: string; path: string; ms: number; outcome: DeltaOutcome; quota?: string }, now = Date.now()): void {
   try {
     const { kind, units } = costOf(c.method, c.path);
-    calls.push({ at: now, ms: c.ms, units, kind, outcome: c.outcome });
+    calls.push({ at: now, ms: c.ms, units, kind, outcome: c.outcome, quota: c.quota ?? 'none' });
     if (c.outcome === 'rate-limited') rateLimited = { total: rateLimited.total + 1, lastAt: now };
     if (calls.length > 512 && now - calls[0]!.at > DELTA_WINDOW_MS) calls = keep(calls, now);
   } catch { /* a gauge never stops a call */ }
@@ -99,11 +116,22 @@ const spread = (xs: number[]) => ({ p50Ms: pct(xs, 0.5), p95Ms: pct(xs, 0.95), m
 
 export type DeskMetrics = ReturnType<typeof deskMetrics>;
 
+/** One login's share of its own quota over the last five minutes, in percent. */
+export function quotaUsedPctOf(quota: string, now = Date.now()): number {
+  calls = keep(calls, now);
+  const units = calls.reduce((n, c) => n + (c.quota === quota ? c.units : 0), 0);
+  return Math.round((units / DELTA_QUOTA_UNITS) * 1000) / 10;
+}
+
 /** The last five minutes, as the screen shows them. */
 export function deskMetrics(now = Date.now()) {
   calls = keep(calls, now);
   passes = keep(passes, now);
   const units = calls.reduce((n, c) => n + c.units, 0);
+  // Each login on its own quota; the share said is the busiest login's -- the one nearest Delta saying no.
+  const byLogin = new Map<string, number>();
+  for (const c of calls) byLogin.set(c.quota, (byLogin.get(c.quota) ?? 0) + c.units);
+  const busiest = Math.max(0, ...byLogin.values());
   const kinds = new Map<DeltaKind, { calls: number; units: number }>();
   for (const c of calls) {
     const k = kinds.get(c.kind) ?? { calls: 0, units: 0 };
@@ -119,7 +147,9 @@ export function deskMetrics(now = Date.now()) {
       quotaUnits: DELTA_QUOTA_UNITS,
       calls: calls.length,
       units,
-      usedPct: Math.round((units / DELTA_QUOTA_UNITS) * 1000) / 10,
+      /** The busiest login's share of its own quota (each login has its 20,000). */
+      usedPct: Math.round((busiest / DELTA_QUOTA_UNITS) * 1000) / 10,
+      logins: [...byLogin.entries()].map(([quota, u]) => ({ quota, units: u, usedPct: Math.round((u / DELTA_QUOTA_UNITS) * 1000) / 10 })).sort((a, b) => b.units - a.units),
       byKind: [...kinds.entries()].map(([kind, v]) => ({ kind, ...v })).sort((a, b) => b.units - a.units),
       response: spread(calls.filter((c) => c.outcome !== 'failed').map((c) => c.ms)),
       failed: calls.filter((c) => c.outcome === 'failed').length,

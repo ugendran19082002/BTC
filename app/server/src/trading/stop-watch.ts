@@ -1,4 +1,5 @@
 import { STOP_RUN_SHARE, backstopOf, type TradeRecord } from './engine.js';
+import { QUOTA_LADDER } from '../observability/desk-metrics.js';
 
 /**
  * The fast watch on a sold option's own stop (13 Oct 2026).
@@ -65,8 +66,8 @@ export const STOP_WATCH_BOARD_STALE_MS = 10_000;
  * stops at 77-105, and Delta's backstops closed them at 144-188. A stop's look is the cheapest call the desk makes --
  * the quota is better saved anywhere else.
  */
-export const STOP_WATCH_QUOTA_PCT = 90;
-export const STOP_WATCH_QUOTA_HARD_PCT = 95;
+export const STOP_WATCH_QUOTA_PCT = QUOTA_LADDER.stop;
+export const STOP_WATCH_QUOTA_HARD_PCT = QUOTA_LADDER.stopRun;
 
 /**
  * The open trades the watch has anything to do for: a short holding contracts, with a stop of its own that is

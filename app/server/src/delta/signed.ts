@@ -9,7 +9,7 @@ import { createHmac } from 'node:crypto';
  * be right about the signature and about never echoing a secret.
  */
 
-import { noteDeltaCall } from '../observability/desk-metrics.js';
+import { noteDeltaCall, quotaKeyOf } from '../observability/desk-metrics.js';
 
 export const BASE = 'https://api.india.delta.exchange';
 
@@ -129,7 +129,8 @@ export async function signedPage<T>(creds: Creds | null, req: SignedRequest): Pr
 
   // Counted, never judged: how many, how long, how each ended (observability/desk-metrics.ts).
   const sentAt = performance.now();
-  const counted = (outcome: 'ok' | 'refused' | 'rate-limited' | 'failed') => noteDeltaCall({ method, path, ms: performance.now() - sentAt, outcome });
+  const quota = quotaKeyOf(creds);
+  const counted = (outcome: 'ok' | 'refused' | 'rate-limited' | 'failed') => noteDeltaCall({ method, path, ms: performance.now() - sentAt, outcome, quota });
 
   let res: Response;
   try {

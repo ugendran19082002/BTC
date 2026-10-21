@@ -28,7 +28,7 @@ import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import type { ExchangePort } from './exchange/port.js';
 import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-watch.js';
-import { deskMetrics, notePass } from '../observability/desk-metrics.js';
+import { notePass, quotaKeyOf, quotaUsedPctOf } from '../observability/desk-metrics.js';
 import { ENTRY_WATCH_MS, EntryWatch } from './entry-watch.js';
 import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
@@ -103,6 +103,8 @@ export class TradingService {
   private currentMode: DeskMode;
   /** The real exchange, signed with this desk's own broker account's key; null on a desk with no account. */
   private readonly live: ExchangePort | null;
+  /** This account's login, whose own share of Delta's quota its watches read (`quotaKeyOf`). */
+  private quotaKey = 'none';
   /** The default broker account's id, or null with none: what a new trade and a P&L reading are stamped with. */
   private currentAccountId: number | null;
   get accountId(): number | null { return this.currentAccountId; }
@@ -164,6 +166,7 @@ export class TradingService {
         })
       : null;
     this.live = creds ? new DeltaExchange(creds) : null;
+    this.quotaKey = quotaKeyOf(creds);
     this.currentAccountId = accountId;
     this.paperExchange = new PaperExchange({ balanceUsd: 1_000 });
     // A mode chosen in the browser outlives a restart; without one, the
@@ -372,7 +375,7 @@ export class TradingService {
    */
   readonly entryWatch = new EntryWatch({
     poll: (tradeId) => this.engine.poll(tradeId),
-    quotaUsedPct: () => deskMetrics().delta.usedPct,
+    quotaUsedPct: () => this.quotaUsedPct(),
     onSettled: () => this.underlyingWatch.stale(),
   });
 
@@ -385,7 +388,7 @@ export class TradingService {
   readonly stopWatch = new OptionStopWatch({
     asks: cachedAsks,
     check: (symbol, tradeIds) => this.engine.checkStops(symbol, tradeIds),
-    quotaUsedPct: () => deskMetrics().delta.usedPct,
+    quotaUsedPct: () => this.quotaUsedPct(),
     // Said where the errors go, once an episode: a stop the watch could not look at is a stop left to the loop.
     onStandDown: (why) => noteError({
       source: 'trading', level: 'warn', where: 'stop-watch',
@@ -515,6 +518,9 @@ export class TradingService {
       notePass(performance.now() - began, polled);
     }
   }
+
+  /** This account's own share of Delta's five-minute quota, in percent: each login has its own (21 Oct 2026). */
+  quotaUsedPct(): number { return quotaUsedPctOf(this.quotaKey); }
 
   // ------------------------------------------------------------------ api
   async place(input: PlaceInput) {
