@@ -359,3 +359,58 @@ test('[critical] a stop\'s close is a buy limit 15% through the offer it was jud
   await r.engine.poll('ce-1');
   assert.equal((await state('ce-1')).position, 0, 'the rest at the market: the close still happens');
 });
+
+/**
+ * Every trade of one contract at its stop closed together, not one after another (21 Oct 2026). On 19 Oct fifteen
+ * trades on the P-82400 at stops of 39-48 were closed seven seconds apart: the first filled at 49, the fifteenth at
+ * 56, two minutes on. The venue is made slow here -- each order and each cancel takes a while to answer -- and how
+ * many are in flight at once is counted.
+ */
+function slowVenue(r: Awaited<ReturnType<typeof book>>['r']) {
+  const live = { place: 0, cancel: 0 }, most = { place: 0, cancel: 0 };
+  const later = () => new Promise((done) => setTimeout(done, 15));
+  const place = r.ex.placeOrder.bind(r.ex), cancel = r.ex.cancelOrder.bind(r.ex);
+  r.ex.placeOrder = async (...a: Parameters<typeof place>) => {
+    if (a[0].role !== 'exit') return place(...a);
+    live.place++; most.place = Math.max(most.place, live.place);
+    try { await later(); return await place(...a); } finally { live.place--; }
+  };
+  r.ex.cancelOrder = async (...a: Parameters<typeof cancel>) => {
+    live.cancel++; most.cancel = Math.max(most.cancel, live.cancel);
+    try { await later(); return await cancel(...a); } finally { live.cancel--; }
+  };
+  return most;
+}
+
+test('[critical] the trades of one contract at their stops are closed together: every buy-back in flight at once', async () => {
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 100.5, 101)], limits: { allowPyramiding: true } });
+  const ids = ['a', 'b', 'c', 'd', 'e'];
+  for (const id of ids) {
+    assert.equal((await r.engine.open(planFor(ceProduct(), { tradeId: id, stopPrice: 110, lots: 10 }))).ok, true);
+    await r.engine.poll(id);
+  }
+  r.ex.tick(quote(CE, 111, 112, { ts: r.now(), mark: 100 }));
+  assert.deepEqual(await r.engine.checkStops(CE, ids), [], 'the count starts');
+  r.advance(STOP_CONFIRM_MS); r.ex.tick(quote(CE, 111, 112, { ts: r.now(), mark: 100 }));
+  const most = slowVenue(r as never);
+  assert.deepEqual(await r.engine.checkStops(CE, ids), ids, 'every one closed, in the order asked');
+  assert.equal(most.place, ids.length, 'all five buy-backs in flight together');
+  for (const id of ids) {
+    const rec = (await r.store.get(id))!;
+    assert.equal(rec.state.position, 0, id);
+    // its own two legs off the book, each written once, before its buy-back
+    const kinds = rec.events.map((e) => (e.t === 'sibling_cancelled' ? `off:${e.role}` : e.t));
+    assert.ok(kinds.indexOf('off:take_profit') >= 0 && kinds.indexOf('off:stop_loss') >= 0, `${id}: both legs off`);
+    assert.ok(kinds.indexOf('off:stop_loss') < kinds.indexOf('exit_submitted') && kinds.indexOf('off:take_profit') < kinds.indexOf('exit_submitted'), `${id}: before the buy-back`);
+  }
+});
+
+test('[critical] a close takes its target and its backstop off together, then buys back: the two cancels overlap', async () => {
+  const { r } = await book();
+  const most = slowVenue(r);
+  await r.engine.closeNow('ce-1', 'manual exit');
+  assert.equal((await r.store.get('ce-1'))!.state.position, 0);
+  assert.equal(most.cancel, 2, 'target and backstop cancelled at the same time');
+  const ev = (await r.store.get('ce-1'))!.events.filter((e) => e.t === 'sibling_cancelled').map((e) => (e as { role: string }).role);
+  assert.deepEqual(ev, ['take_profit', 'stop_loss'], 'written in their order, once each');
+});

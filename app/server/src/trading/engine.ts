@@ -1238,8 +1238,12 @@ export class TradeEngine {
    * for a contract whose offer in memory is at a stop, every few seconds while it stays there.
    *
    * One quote is read from the exchange for the contract, and each trade is judged on it by the poll's own check
-   * (`stopIfReached`) in its own queue, one after another: the same count, the same close, the same guards. A
-   * trade a poll is closing, or has closed, has nothing left to do here.
+   * (`stopIfReached`) in its own queue -- all of them at once (21 Oct 2026). One after another, ten trades on one
+   * strike at the same stop were closed seven seconds apart: on 19 Oct the P-82400's first close filled at 49 against
+   * a stop of 42 and its fifteenth at 56, two minutes on, the offer rising all the while; and while a contract's check
+   * ran, the watch looked at it no more. Each trade still has its own lock, its own cancels and its own close, and
+   * Delta's limits are far off: cancels cost nothing, and 500 operations a second a product. A trade a poll is
+   * closing, or has closed, has nothing left to do here.
    *
    * Returns the trades that need no more watching -- closed, closing, or gone -- so the watch stops asking about
    * them without waiting for the loop's next read.
@@ -1248,16 +1252,15 @@ export class TradeEngine {
     const quote = await this.exchange.getQuote(symbol).catch(() => null);
     if (!quote) return [];
     const over: string[] = [];
-    for (const tradeId of tradeIds) {
-      await this.withTrade(tradeId, async () => {
-        const rec = await this.d.store.get(tradeId);
-        const closing = (r: TradeRecord) => isDone(r.state) || r.state.phase === 'exit_pending' || r.state.position === 0;
-        if (!rec || rec.plan.symbol !== symbol || closing(rec)) { over.push(tradeId); return; }
-        if (rec.state.phase === 'entry_unknown') return;
-        if (closing(await this.stopIfReached(rec, quote))) over.push(tradeId);
-      }).catch((e) => this.note('stop watch', { orderId: tradeId, symbol }, e));
-    }
-    return over;
+    await Promise.all(tradeIds.map((tradeId) => this.withTrade(tradeId, async () => {
+      const rec = await this.d.store.get(tradeId);
+      const closing = (r: TradeRecord) => isDone(r.state) || r.state.phase === 'exit_pending' || r.state.position === 0;
+      if (!rec || rec.plan.symbol !== symbol || closing(rec)) { over.push(tradeId); return; }
+      if (rec.state.phase === 'entry_unknown') return;
+      if (closing(await this.stopIfReached(rec, quote))) over.push(tradeId);
+    }).catch((e) => this.note('stop watch', { orderId: tradeId, symbol }, e))));
+    // In the order asked, whichever finished first.
+    return tradeIds.filter((id) => over.includes(id));
   }
 
   /** Take a working entry off the book and end the trade. */
@@ -2137,24 +2140,26 @@ export class TradeEngine {
     let rec = recIn;
     const winner = rec.state.exitWinner;
     const unconfirmed: string[] = [];
-    for (const [role, cid] of [
-      ['take_profit', rec.state.protection.takeProfit],
-      ['stop_loss', rec.state.protection.stopLoss],
-    ] as const) {
-      if (!cid) continue;
-      if (!all && role === winner) continue;
+    /*
+     * The two legs looked up and taken off together (21 Oct 2026): a stop's close waited a second for its target's
+     * cancel and another for its backstop's before the buy-back went out, the offer moving meanwhile. They are this
+     * trade's own two orders and independent of each other, and Delta charges nothing for a cancel. Written to the
+     * journal one after the other, in their order, once both have answered.
+     */
+    const legs = ([['take_profit', rec.state.protection.takeProfit], ['stop_loss', rec.state.protection.stopLoss]] as const)
+      .filter(([role, cid]) => cid && (all || role !== winner));
+    const gone = await Promise.all(legs.map(async ([, cid]) => {
       let o: ExchangeOrder | null;
       try {
-        o = await this.exchange.getOrderByClientId(cid, rec.plan.symbol);
+        o = await this.exchange.getOrderByClientId(cid!, rec.plan.symbol);
       } catch (e) {
-        this.note('cancel sibling', { orderId: cid, symbol: rec.plan.symbol }, e);
-        unconfirmed.push(role === 'take_profit' ? 'target' : 'stop');
-        continue;
+        this.note('cancel sibling', { orderId: cid!, symbol: rec.plan.symbol }, e);
+        return false;
       }
-      if (o && (o.status === 'open' || o.status === 'partial') && !(await this.cancelAndVerify(o))) {
-        unconfirmed.push(role === 'take_profit' ? 'target' : 'stop');
-        continue;
-      }
+      return !(o && (o.status === 'open' || o.status === 'partial') && !(await this.cancelAndVerify(o)));
+    }));
+    for (const [i, [role]] of legs.entries()) {
+      if (!gone[i]) { unconfirmed.push(role === 'take_profit' ? 'target' : 'stop'); continue; }
       rec = await this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
     }
     this.noteLeftover(rec, unconfirmed);

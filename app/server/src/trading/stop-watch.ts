@@ -56,8 +56,13 @@ export const STOP_WATCH_BOARD_STALE_MS = 10_000;
  * P-82400's offer was 75.9 against eight stops at 42-48, and nothing closed them until Delta's own backstops at 70-80
  * filled sixteen seconds later at 58-76 -- while the watch said nothing about why. A run's look is one ticker read
  * (3 of Delta's 20,000 units a five minutes) every few seconds per contract, and it closes at once.
+ *
+ * And from 21 Oct 2026 the soft line is 90%, not 75%. At 2:19:49 PM the quota passed 75% and the watch stepped back
+ * from every stop at its level; eleven seconds later the C-BTC-83600's offer went from 64 to 192, through some fifty
+ * stops at 77-105, and Delta's backstops closed them at 144-188. A stop's look is the cheapest call the desk makes --
+ * the quota is better saved anywhere else.
  */
-export const STOP_WATCH_QUOTA_PCT = 75;
+export const STOP_WATCH_QUOTA_PCT = 90;
 export const STOP_WATCH_QUOTA_HARD_PCT = 95;
 
 /**
