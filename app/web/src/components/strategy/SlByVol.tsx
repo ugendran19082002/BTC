@@ -17,7 +17,7 @@ const LEVELS = [
 ] as const;
 const pct = (share: number) => `+${Math.round(share * 100)}%`;
 
-export function SlByVolFields({ value, onChange, ownStopPct, byPct, hasSteps, buying, live, sharedWithDelta, onStopByPct, onDropSteps, error }: {
+export function SlByVolFields({ value, onChange, ownStopPct, byPct, hasSteps, live, sharedWithDelta, onStopByPct, onDropSteps, error }: {
   value: SlByVol | null | undefined;
   onChange: (v: SlByVol) => void;
   /** The strategy's own SL as a share (0: none): what an unknown level keeps. */
@@ -26,7 +26,6 @@ export function SlByVolFields({ value, onChange, ownStopPct, byPct, hasSteps, bu
   byPct: boolean;
   /** The SL has time steps: a trade's SL would move by the clock, and this holds one. */
   hasSteps: boolean;
-  buying: boolean;
   live: boolean;
   /** Delta by volatility is on: both read the one source, and a change of it here changes it there. */
   sharedWithDelta: boolean;
@@ -38,8 +37,7 @@ export function SlByVolFields({ value, onChange, ownStopPct, byPct, hasSteps, bu
   const set = <K extends keyof SlByVol>(k: K, x: SlByVol[K]) => onChange({ ...v, [k]: x });
   const by = v.by === 'atr' ? 'ATR 2h' : 'ATM IV';
   const defaults = v.low === DEFAULT_SL_BY_VOL.low && v.medium === DEFAULT_SL_BY_VOL.medium && v.high === DEFAULT_SL_BY_VOL.high;
-  const blocked = buying ? 'For a strategy that sells: a bought option\'s stop is a sale under the entry, not set this way.'
-    : !byPct ? 'It sets the option SL as a per cent of the premium: the SL is set in points or as a price now.'
+  const blocked = !byPct ? 'It sets the option SL as a per cent of the premium: the SL is set in points or as a price now.'
       : hasSteps ? 'It holds one SL a trade, set at its signal: the SL\'s time steps would move it.' : null;
   return (
     <section aria-label="SL by volatility" className={cn('mt-3 rounded-lg border border-solid px-2.5 py-1.5', v.on ? 'border-[var(--accent)]' : 'border-border')}>
@@ -100,10 +98,10 @@ export function SlByVolFields({ value, onChange, ownStopPct, byPct, hasSteps, bu
           {blocked && (
             <p role="alert" className="m-0 rounded-md border border-solid border-[var(--down)]/40 px-2.5 py-2 text-[12px] leading-snug text-[var(--down)]">
               {blocked}{' '}
-              {!buying && !byPct && (
+              {!byPct && (
                 <button type="button" onClick={onStopByPct} className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2">Set the SL by %</button>
               )}
-              {!buying && byPct && hasSteps && (
+              {byPct && hasSteps && (
                 <button type="button" onClick={onDropSteps} className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2">Remove the SL time steps</button>
               )}
             </p>

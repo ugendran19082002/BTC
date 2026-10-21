@@ -20,7 +20,9 @@ export type PrecheckCode =
   | 'PREMIUM_TOO_LOW'
   | 'INSUFFICIENT_MARGIN' | 'DUPLICATE_POSITION' | 'MAX_POSITION' | 'DAILY_LOSS_LIMIT'
   | 'WRONG_EXIT_SIDE' | 'KILL_SWITCH'
-  | 'LEVERAGE_TOO_HIGH' | 'STOP_BEYOND_LIQUIDATION' | 'EXIT_WRONG_SIDE_OF_ENTRY' | 'STOP_INSIDE_SPREAD';
+  | 'LEVERAGE_TOO_HIGH' | 'STOP_BEYOND_LIQUIDATION' | 'EXIT_WRONG_SIDE_OF_ENTRY' | 'STOP_INSIDE_SPREAD'
+  /** This desk only sells options (21 Oct 2026): an order to buy one to hold. */
+  | 'SELL_ONLY';
 
 export type Failure = { code: PrecheckCode; message: string };
 export type PrecheckResult = { ok: true } | { ok: false; failures: Failure[] };
@@ -45,8 +47,6 @@ export type RiskLimits = {
   minBookCoverage: number;
   /** Total short contracts allowed across the book. */
   maxShortContracts: number;
-  /** Total contracts allowed held bought, across the book: the long limit (5 Oct 2026), the short limit's mirror. */
-  maxLongContracts: number;
   /**
    * Stop the day once losses reach this, in USD.
    *
@@ -116,7 +116,6 @@ export const DEFAULT_LIMITS: RiskLimits = {
   maxSpreadPct: 0.15,
   minBookCoverage: 0.5,
   maxShortContracts: 500,
-  maxLongContracts: 500,
   maxDailyLossUsd: 25,
   minPremiumUsd: 5,
   allowPyramiding: false,
@@ -406,92 +405,6 @@ export function precheck(input: PrecheckInput): PrecheckResult {
     }
   }
 
-  return f.length === 0 ? { ok: true } : { ok: false, failures: f };
-}
-
-/**
- * The gate for buying an option to open (5 Oct 2026).
- *
- * A bought option is not a short with the sign changed, so it has a gate of its own rather than the seller's
- * with exceptions: there is no margin, no close-out and no cap on lots short, and the most it can lose is what
- * was paid. What is the same is checked the same way and in the same words -- the contract is the one meant,
- * the market can be seen, the book is not too wide to cross (a buy at the market always crosses), the size is
- * whole lots, the day's loss budget -- and two things are a buyer's: the premium and its fee must be in the
- * free balance, and the account must not be short this contract, where a buy would close that position
- * instead of opening one.
- */
-export type PrecheckBuyInput = {
-  now: number;
-  size: number;
-  expect: PrecheckInput['intent']['expect'];
-  product: ProductSpec | null;
-  quote: Quote | null;
-  feedHealthy: boolean;
-  tradingEnabled: boolean;
-  availableUsd: number;
-  /** What the premium and its fee come to, in USD, at the offer. Null when there is no offer to price it at. */
-  costUsd: number | null;
-  /** Signed contracts the account holds on this contract at the exchange. */
-  existingPosition: number;
-  /** Contracts held bought across every contract, as a positive number. Absent: not checked. */
-  totalLongContracts?: number;
-  dayPnlUsd: number;
-  limits: RiskLimits;
-};
-
-export function precheckBuy(input: PrecheckBuyInput): PrecheckResult {
-  const f: Failure[] = [];
-  const add = (code: PrecheckCode, message: string) => f.push({ code, message });
-  const { product, quote, limits, expect } = input;
-
-  if (!input.tradingEnabled) add('KILL_SWITCH', 'Trading is switched off.');
-
-  if (!product) {
-    add('NO_PRODUCT', 'No such contract on the exchange.');
-  } else {
-    if (product.underlying !== expect.underlying) add('WRONG_UNDERLYING', `Signal is ${expect.underlying}, contract is ${product.underlying}.`);
-    if (product.optionSide !== expect.optionSide) add('WRONG_OPTION_SIDE', `Signal is ${expect.optionSide}, contract is ${product.optionSide}.`);
-    if (product.strike !== expect.strike) add('WRONG_STRIKE', `Signal is ${expect.strike}, contract is ${product.strike}.`);
-    if (product.expiryTs !== expect.expiryTs) add('WRONG_EXPIRY', 'Contract expiry does not match the signal.');
-    if (product.state === 'expired' || product.expiryTs * 1000 <= input.now) add('EXPIRED', 'Contract has expired.');
-    else if (product.state !== 'live') add('NOT_TRADABLE', `Contract is ${product.state}.`);
-  }
-
-  if (!input.feedHealthy) add('FEED_DOWN', 'Price feed is not connected.');
-  if (!quote) {
-    add('NO_QUOTE', 'No quote for this contract.');
-  } else {
-    const age = input.now - quote.ts;
-    if (age > limits.maxQuoteAgeMs) add('STALE_QUOTE', `Last quote is ${(age / 1000).toFixed(1)}s old.`);
-    const spread = spreadPct(quote.bid, quote.ask);
-    if (spread === null || !(quote.ask !== null && quote.ask > 0)) {
-      add('NO_QUOTE', 'No offer to buy at.');
-    } else if (spread > limits.maxSpreadPct) {
-      add('SPREAD_TOO_WIDE', `Spread is ${(spread * 100).toFixed(1)}%, limit is ${(limits.maxSpreadPct * 100).toFixed(0)}% for an order that crosses it.`);
-    }
-    if (quote.askSize !== null && quote.askSize < input.size * limits.minBookCoverage) {
-      add('THIN_BOOK', `Only ${quote.askSize} on the ask against ${input.size} wanted.`);
-    }
-  }
-
-  if (!(input.size > 0)) add('MIN_SIZE', 'Size must be greater than zero.');
-  else if (product && !isWholeLots(input.size, product.lotSize)) add('LOT_SIZE', `Size ${input.size} is not a whole number of ${product.lotSize}-contract lots.`);
-
-  if (input.existingPosition < 0) {
-    add('DUPLICATE_POSITION', `This account is short ${-input.existingPosition} on this contract: a buy would close that position, not open one.`);
-  }
-  // The long limit: the buyer's mirror of the short limit's MAX_POSITION.
-  if (input.totalLongContracts !== undefined && input.totalLongContracts + input.size > limits.maxLongContracts) {
-    add('MAX_POSITION', `Would take total long to ${input.totalLongContracts + input.size}, limit is ${limits.maxLongContracts}.`);
-  }
-  if (input.costUsd !== null && input.costUsd > input.availableUsd) {
-    add('INSUFFICIENT_MARGIN', `Costs $${input.costUsd.toFixed(2)} to buy, have $${input.availableUsd.toFixed(2)} free.`);
-  }
-  // The most a bought option can lose is what was paid for it: that is its worst case against the day's budget.
-  const room = limits.maxDailyLossUsd + Math.min(0, input.dayPnlUsd);
-  if (input.costUsd !== null && input.costUsd > room) {
-    add('DAILY_LOSS_LIMIT', lossRefusal(`${input.costUsd.toFixed(2)} (the premium paid)`, limits.maxDailyLossUsd, input.dayPnlUsd, 2));
-  }
   return f.length === 0 ? { ok: true } : { ok: false, failures: f };
 }
 

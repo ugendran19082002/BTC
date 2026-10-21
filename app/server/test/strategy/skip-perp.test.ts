@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_CONFIG, SKIP_PERP_BUY, SKIP_SL_NEEDS_STOP, validateConfig, type SignalRule, type Strategy, type StrategyConfig } from '../../src/strategy/types.js';
+import { DEFAULT_CONFIG, SELL_ONLY_RULE, SKIP_SL_NEEDS_STOP, validateConfig, type SignalRule, type Strategy, type StrategyConfig } from '../../src/strategy/types.js';
 import { planOfStrategy } from '../../src/report/signal-backtest.js';
 import { sessionOf } from '../../src/report/market-day.js';
 
@@ -24,8 +24,8 @@ test('[critical] the perp SL skipped needs an option stop -- a fixed one, one by
   assert.deepEqual(skipProblems(signal({ skipPerpTgt: true }, { stopLossPct: 0 })), []);
 });
 
-test('[critical] a strategy that buys keeps both; and they are on or off', () => {
-  assert.ok(validateConfig(signal({ action: 'buy', skipPerpTgt: true }, { takeProfitPct: 0, stopLossPct: 0 })).includes(SKIP_PERP_BUY));
+test('[critical] a strategy that buys is not taken at all (21 Oct 2026: selling only); and the switches are on or off', () => {
+  assert.ok(validateConfig(signal({ action: 'buy', skipPerpTgt: true }, { takeProfitPct: 0, stopLossPct: 0 })).includes(SELL_ONLY_RULE));
   assert.ok(validateConfig(signal({ skipPerpSl: 'yes' as unknown as boolean }, { stopLossPct: 2 })).some((p) => /on or off/.test(p)));
 });
 

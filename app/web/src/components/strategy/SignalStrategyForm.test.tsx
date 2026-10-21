@@ -441,12 +441,6 @@ describe('saving', () => {
     expect(saveStrategy).not.toHaveBeenCalled();
   });
 
-  it('a strategy that buys keeps both: no switches', () => {
-    show(signalStrategy({ action: 'buy' }, { takeProfitPct: 0, stopLossPct: 0 }));
-    tab('Entry & exit');
-    expect(screen.queryByRole('switch', { name: 'Skip perp SL' })).toBeNull();
-  });
-
   it('the group it is in is a tag beside its name at the top; none, no tag (16 Oct 2026)', () => {
     const { unmount } = render(<SignalStrategyForm editing={signalStrategy()} groupName="80% Win" open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
     expect(screen.getByRole('dialog', { name: /^Edit / })).toBeInTheDocument();
@@ -615,108 +609,17 @@ describe('the method list: profitable by a rule you can see, and filtered by res
   });
 });
 
-describe('bought or sold: the BUY and SELL tabs over the leg', () => {
+describe('selling only (21 Oct 2026): no BUY choice', () => {
   const legs = () => screen.getByLabelText('leg from the signal');
 
-  it('[critical] SELL is what a strategy is: a BUY signal sells the PE, a SELL the CE -- and an older strategy reads as SELL', () => {
-    const { unmount } = render(<SignalStrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
+  it('[critical] there is no BUY or SELL choice: a BUY signal sells the PE, a SELL the CE -- and live orders place sell orders', () => {
+    render(<SignalStrategyForm editing={null} open onOpenChange={() => {}} onSaved={() => {}} balanceUsd={228} spot={85_000} />);
     tab('Strike & lots');
-    const sides = within(screen.getByRole('radiogroup', { name: 'option buy or sell' }));
-    expect(sides.getAllByRole('radio').map((r) => r.textContent)).toEqual(['BUY', 'SELL']);
-    expect(sides.getByRole('radio', { name: 'SELL' })).toBeChecked();
+    expect(screen.queryByRole('radiogroup', { name: 'option buy or sell' })).toBeNull();
     expect(legs()).toHaveTextContent('BUY signal → sells PEwins as BTC rises or holds');
     expect(legs()).toHaveTextContent('SELL signal → sells CEwins as BTC falls or holds');
-    unmount();
-    // Saved before the choice existed: no `action` on it at all.
-    const older = signalStrategy();
-    delete (older.config.signal as Partial<SignalRule>).action;
-    show(older);
-    tab('Strike & lots');
-    expect(within(screen.getByRole('radiogroup', { name: 'option buy or sell' })).getByRole('radio', { name: 'SELL' })).toBeChecked();
-  });
-
-  it('[critical] BUY: a BUY signal buys the CE, a SELL the PE; its target open and its stop under 100%; live orders off until switched on -- and saved as bought', async () => {
-    show(signalStrategy({}, { liveOrders: true, takeProfitPct: 0.5 }));
-    tab('Strike & lots');
-    radio('option buy or sell', 'BUY');
-    expect(legs()).toHaveTextContent('BUY signal → buys CEwins as BTC rises');
-    expect(legs()).toHaveTextContent('SELL signal → buys PEwins as BTC falls');
-    expect(screen.getByRole('note')).toHaveTextContent('Bought at the offer, sold to close. The most it can lose is the premium paid.');
-    expect(screen.getByText(/a BUY buys a call, a SELL a put/)).toBeInTheDocument();
-
-    // Live orders went off with the change of side -- real orders of the other kind are switched on on purpose.
-    const live = screen.getByRole('switch', { name: /Live orders/ });
-    expect(live).not.toBeChecked();
-    fireEvent.click(live);
-    expect(live).toBeChecked();
-    expect(screen.getByText(/ON — each signal places a real buy order at Delta\./)).toBeInTheDocument();
-
-    // The option's own exits: both, each off at 0 -- the seller's 50% target did not come across as a buyer's.
-    tab('Entry & exit');
-    expect(screen.getByLabelText('Take profit percent')).toHaveValue('0');
-    expect(screen.getByLabelText('Stop loss percent')).toHaveValue('0');
-    expect(screen.getByText(/Bought: the target is a sale over the entry, with no upper limit; the stop a sale under it, up to 99% — the premium and no more\./)).toBeInTheDocument();
-    expect(screen.queryByText(/Add one: \+200%/)).toBeNull(); // the seller's advice is not the buyer's
-    // The entry is the offer a buyer pays -- not the seller's "rest at the offer, then sell at the bid".
-    expect(screen.getByLabelText('entry price for a bought option')).toHaveTextContent('A buyer pays the offer: each signal is bought with a limit at the offer of its strike');
-    expect(screen.queryByRole('radiogroup', { name: 'entry price' })).toBeNull();
-    expect(screen.queryByLabelText('cross after seconds')).toBeNull();
-    expect(screen.queryByText(/then sells at the bid/)).toBeNull();
-    expect(screen.queryByText(/buys the option back/)).toBeNull();
-    expect(screen.getByLabelText('exits on the BTC perp')).toHaveTextContent('A bought option would be sold the moment the perp reaches either');
-    // Its stop is a sale under the entry, up to 99%: 40% lost, never "buys back above the entry" -- and 150% is refused.
-    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '40' } });
-    expect(within(screen.getByRole('region', { name: 'Stop loss' })).getByText(/sells once it has lost 40% of the premium paid/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '150' } });
-    expect(await screen.findByText('Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '40' } });
-    // Its target is a sale over the entry, and open: 300% up is a buyer's target, and is taken.
-    fireEvent.change(screen.getByLabelText('Take profit percent'), { target: { value: '300' } });
-    expect(within(screen.getByRole('region', { name: 'Take profit' })).getByText(/sells once it is up 300% on the premium paid/)).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText(/must be between/)).toBeNull());
-    expect(screen.queryByText(/buys back/)).toBeNull();
-
-    fireEvent.click(saveButton());
-    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
-    expect(saved().config.signal!.action).toBe('buy');
-    expect(saved().config.liveOrders).toBe(true);
-    expect([saved().config.takeProfitPct, saved().config.stopLossPct]).toEqual([3, 0.4]);
-  });
-
-  it('[critical] the size of a BUY strategy is its premium, not a seller\'s margin', () => {
-    // 1 lot a signal, at most 2 open, paying at most $40: 2 contracts x $40 x 0.001 BTC = $0.08 of premium.
-    show(signalStrategy({ action: 'buy', maxOpen: 2 }, { lots: 1, strikeRule: 'premium', premium: { mode: 'atMost', usd: 40, fallbackUsd: null } }));
-    tab('Strike & lots');
-    expect(screen.getByText('Premium, at most')).toBeInTheDocument();
-    expect(screen.queryByText(/at 200x/)).toBeNull();
-    expect(screen.getByText('$0.080 premium, no margin')).toBeInTheDocument();
-    // Sold, the same strategy shows the seller's margin, as before.
-    radio('option buy or sell', 'SELL');
-    expect(screen.getByText('Margin')).toBeInTheDocument();
-    expect(screen.getByText(/at 200x/)).toBeInTheDocument();
-  });
-
-  it('[critical] back to SELL: the exits start off again and take the seller\'s limits -- target up to 99%, stop open -- and live orders can be on', async () => {
-    show(signalStrategy({ action: 'buy' }, { takeProfitPct: 3, stopLossPct: 0.4 }));
-    tab('Entry & exit');
-    expect(screen.getByLabelText('Take profit percent')).toHaveValue('300'); // a buyer's target, as saved
-    tab('Strike & lots');
-    radio('option buy or sell', 'SELL');
-    expect(legs()).toHaveTextContent('BUY signal → sells PE');
-    tab('Entry & exit');
-    // The buyer's 300% did not come across as a seller's target.
-    expect(screen.getByLabelText('Take profit percent')).toHaveValue('0');
-    expect(screen.getByLabelText('Stop loss percent')).toHaveValue('0');
-    expect(screen.getByText(/Sold: the target is a buy-back under the entry, up to 99%, resting at Delta\. The stop is a buy-back over the entry: the desk watches it/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Take profit percent'), { target: { value: '300' } });
-    expect(await screen.findByText('Take profit must be between 0 and 99% of the credit.')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Take profit percent'), { target: { value: '80' } });
-    fireEvent.change(screen.getByLabelText('Stop loss percent'), { target: { value: '300' } });
-    await waitFor(() => expect(screen.queryByText(/must be between/)).toBeNull());
-    expect(within(screen.getByRole('region', { name: 'Stop loss' })).getByText(/buys back 300% above the entry/)).toBeInTheDocument();
-    const live = screen.getByRole('switch', { name: /Live orders/ });
-    fireEvent.click(live);
-    expect(live).toBeChecked();
+    expect(screen.getByRole('dialog')).toHaveTextContent('sold as one option');
+    expect(screen.queryByText(/bought as one option|premium paid|Bought at the offer/)).toBeNull();
   });
 });
 
@@ -1337,11 +1240,6 @@ describe('the stop and the close-out, said under the stop', () => {
     expect(note()).toHaveTextContent('This stop is inside that, and stands as set.');
   });
 
-  it('a bought option has no close-out to be held inside: nothing is said', () => {
-    show(signalStrategy({ action: 'buy' }, { stopMode: 'pct', stopLossPct: 0.5 }));
-    tab('Entry & exit');
-    expect(note()).not.toBeInTheDocument();
-  });
 });
 
 describe('the no-entry window: no new entry between two times, nothing open closed (9 Oct 2026)', () => {
@@ -1461,7 +1359,7 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     await waitFor(() => expect(labels(by)).toEqual(['All 4', 'Profit 1', 'Loss 1', 'No trades 2', 'Win ≥30% 1']));
   });
 
-  it('[critical] where no record as options can be had -- a strategy that buys, or the desk says no -- the list is the perp\'s points, and says why', async () => {
+  it('[critical] where no record as options can be had -- the desk says no -- the list is the perp\'s points, and says why', async () => {
     getMethodOptionRecord.mockRejectedValue(new Error('Entry time must be a time of day, like 5:30 AM.'));
     show(signalStrategy({ methods: [] }));
     tab('Signals');
@@ -1472,14 +1370,6 @@ describe('the method list by the option, not the perp (13 Oct 2026)', () => {
     await waitFor(() => expect(labels(by)).toEqual(['All 4', 'Profit 2', 'Loss 1', 'No trades 1', 'Win ≥30% 2']));
     fireEvent.click(within(by).getByRole('button', { name: /^Loss/ }));
     expect(boxes()).toEqual(['#6 BOS']);
-  });
-
-  it('a strategy that buys is not asked about: its list is the perp\'s points', async () => {
-    show(signalStrategy({ methods: [], action: 'buy' }));
-    tab('Signals');
-    expect(await screen.findByText(/As options cannot be shown: A record as options is worked out for strategies that sell\./)).toBeInTheDocument();
-    await new Promise((r) => setTimeout(r, 600));
-    expect(getMethodOptionRecord).not.toHaveBeenCalled();
   });
 
   it('[critical] "Backtest settings" is the Backtest screen\'s own method list -- its settings, this strategy\'s timeframes -- beside the strategy\'s, with both counts said', async () => {
@@ -1665,9 +1555,6 @@ describe('delta by volatility (17 Oct 2026): the backtest\'s logic on the form',
     expect(screen.getByRole('radio', { name: 'By delta' })).toBeChecked();
     await waitFor(() => expect(within(box()).queryByRole('alert')).toBeNull());
     expect(saveButton()).toHaveTextContent(/^Save$/);
-    // Bought: not for it.
-    radio('option buy or sell', 'BUY');
-    expect(within(box()).getByRole('alert')).toHaveTextContent('For a strategy that sells');
   });
 
   it('[critical] with live orders on, saying that a save reaches real orders -- and to run it off first', () => {

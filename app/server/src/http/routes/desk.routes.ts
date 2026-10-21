@@ -11,7 +11,7 @@ import { DEFAULT_WALL_WITHIN_EM, optionStructure } from '../../domain/structure.
 import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { reloadCalibration } from '../../domain/calibration.js';
 import { loadDays, reloadDays } from '../../backtest/backtest.js';
-import { tradingService, LONG_CAP_KEY, LOSS_LIMIT_KEY, LOSS_LIMIT_ON_KEY, SHORT_CAP_KEY } from '../../trading/service.js';
+import { tradingService, LOSS_LIMIT_KEY, LOSS_LIMIT_ON_KEY, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange } from '../../market/flow.js';
@@ -589,8 +589,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
         ceiling: svc.shortCeilingContracts,
         chosen: svc.shortCapSetting,
       },
-      /** The long limit: no margin ceiling -- a bought option is paid for in full. */
-      longCap: { inForce: svc.maxLongContracts, chosen: svc.longCapSetting },
       /** The day's loss budget on this account: on or off, the amount in force, half the account, and the one chosen. */
       lossLimit: svc.lossLimit,
     };
@@ -635,13 +633,6 @@ export function registerDeskRoutes(app: FastifyInstance) {
       return { ok: true, key, value: String(res.cap), shortCap: {
         inForce: res.cap, ceiling: svc.shortCeilingContracts, chosen: svc.shortCapSetting,
       } };
-    }
-
-    if (key === LONG_CAP_KEY) {
-      const svc = tradingService();
-      const res = await svc.setLongCap(Number(value));
-      if (!res.ok) return refuse(reply, 422, { error: res.reason });
-      return { ok: true, key, value: String(res.cap), longCap: { inForce: res.cap, chosen: svc.longCapSetting } };
     }
 
     /*

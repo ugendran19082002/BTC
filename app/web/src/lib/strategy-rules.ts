@@ -1,4 +1,4 @@
-import { BUY_NO_STEPS, CHAIN_PTS, SKIP_PERP_BUY, SKIP_SL_NEEDS_STOP, autoMethodsProblems, deltaByVolProblems, slByVolProblems, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, deltaProblem, distanceProblem, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
+import { CHAIN_PTS, SKIP_SL_NEEDS_STOP, autoMethodsProblems, deltaByVolProblems, slByVolProblems, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, deltaProblem, distanceProblem, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -98,10 +98,8 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
   }
   // Each exit, start and time steps, in whichever mode it is read -- said under its own box.
   const rules = exitRules(c);
-  // A bought option's exits are the sold one's turned over: its stop ends at the premium, its target is open.
-  const bought = c.trigger === 'signal' && c.signal?.action === 'buy';
-  for (const m of exitRuleProblems('target', rules.target, c.entryTime, c.exitTime, bought)) say('takeProfitPct', m);
-  for (const m of exitRuleProblems('stop', rules.stop, c.entryTime, c.exitTime, bought)) say('stopLossPct', m);
+  for (const m of exitRuleProblems('target', rules.target, c.entryTime, c.exitTime)) say('takeProfitPct', m);
+  for (const m of exitRuleProblems('stop', rules.stop, c.entryTime, c.exitTime)) say('stopLossPct', m);
 
   if (!Number.isInteger(c.graceMin) || c.graceMin < 1 || c.graceMin > 240) {
     say('graceMin', 'The late-entry window must be a whole number of minutes from 1 to 240.');
@@ -114,8 +112,6 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
       say('signalMethods', 'A signal strategy needs its signals: the way, the timeframe and at least one method.');
     } else {
       if (r.mode !== 'mtf' && r.mode !== 'single') say('signalMode', 'Pick with the timeframe chain or without it.');
-      // A bought option's target and stop hold one level each (the server's words).
-      if (r.action === 'buy' && (c.targetSteps?.length || c.stopSteps?.length)) say('stopLossPct', BUY_NO_STEPS);
       if (r.mode === 'single') {
         const tfs = r.tfs ?? [r.tf];
         if (tfs.length === 0) say('signalTf', 'Pick at least one timeframe.');
@@ -142,26 +138,22 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
       if (!Array.isArray(r.methods) || r.methods.length === 0) say('signalMethods', 'Pick at least one method whose signals to take.');
       // The methods' daily update -- the server's words.
       for (const m of autoMethodsProblems(r.autoMethods)) say('autoMethods', m);
-      if (r.autoMethods?.on && r.action === 'buy') say('autoMethods', 'The methods\' daily update picks by the record as options sold: a strategy that buys cannot use it.');
       // Delta by volatility -- the server's words: by delta, one rule all window, sold; each level 0.02 to 0.50.
       for (const m of deltaByVolProblems(r.deltaByVol)) say('deltaByVol', m);
       if (r.deltaByVol?.on) {
         if (c.strikeRule !== 'delta') say('deltaByVol', 'Delta by volatility needs the strike picked by delta.');
         if ((c.strikeBlocks ?? []).length > 0) say('deltaByVol', 'Delta by volatility sets the delta for the whole window: remove the strike blocks, or switch it off.');
-        if (r.action === 'buy') say('deltaByVol', 'Delta by volatility is for a strategy that sells.');
       }
       // SL by volatility -- the server's words: a per cent, no SL time steps, sold, and one source with the delta's.
       for (const m of slByVolProblems(r.slByVol)) say('slByVol', m);
       if (r.slByVol?.on) {
         if ((c.stopMode ?? 'pct') !== 'pct') say('slByVol', 'SL by volatility sets the option SL as a per cent of the premium: set the SL by %.');
         if ((c.stopSteps ?? []).length > 0) say('slByVol', 'SL by volatility holds one SL a trade, set at its signal: remove the SL time steps, or switch it off.');
-        if (r.action === 'buy') say('slByVol', 'SL by volatility is for a strategy that sells.');
         if (r.deltaByVol?.on && r.deltaByVol.by !== r.slByVol.by) say('slByVol', 'The SL and the delta by volatility read one source: pick the same for both.');
       }
       if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') say('signalTarget', 'The target must be TGT1, TGT2 or TGT3.');
       // The perp's levels skipped -- the server's words: one that buys keeps both; the SL skipped needs an option stop.
-      if ((r.skipPerpSl || r.skipPerpTgt) && r.action === 'buy') say('skipPerp', SKIP_PERP_BUY);
-      if (r.skipPerpSl && r.action !== 'buy') {
+      if (r.skipPerpSl) {
         const stopOn = (c.stopMode ?? 'pct') === 'pct' ? c.stopLossPct > 0 : c.stopMode === 'points' ? (c.stopLossPoints ?? 0) > 0 : (c.stopLossAt ?? 0) > 0;
         if (!stopOn && !(c.stopSteps ?? []).some((x) => x.value > 0) && !r.slByVol?.on) say('skipPerp', SKIP_SL_NEEDS_STOP);
       }

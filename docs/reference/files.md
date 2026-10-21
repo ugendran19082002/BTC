@@ -539,7 +539,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ClosePositionSheet.tsx](../../app/web/src/components/trade/ClosePositionSheet.tsx) | "Close now", asked once more with everything on the table -- and with a size. |
 | [EditExitsSheet.tsx](../../app/web/src/components/trade/EditExitsSheet.tsx) | Change the stop and the target on a position that is already on. |
 | [ExitBars.tsx](../../app/web/src/components/trade/ExitBars.tsx) | The two exits, each behind a tick box, each a number you type. |
-| [LongExitsForm.tsx](../../app/web/src/components/trade/LongExitsForm.tsx) | A bought position's exits (5 Oct 2026): the mirror of a short's. |
 | [LossBudget.tsx](../../app/web/src/components/trade/LossBudget.tsx) | The day's loss budget, and the two things the owner can do to it (13 Oct 2026): switch it on or off, and set its amount. |
 | [ModeBanner.tsx](../../app/web/src/components/trade/ModeBanner.tsx) | The alarm across the top of the page: a position with nothing behind it -- no stop, no target -- interrupts everything else until it is dealt with. |
 | [ModeSwitch.tsx](../../app/web/src/components/trade/ModeSwitch.tsx) | Which book the desk is trading on, and the switch between them. |
@@ -727,6 +726,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [0019-sl-by-volatility.md](../decisions/0019-sl-by-volatility.md) | 0019 — A signal strategy's option SL may be set by how volatile it is at each signal |
 | [0020-venue-restricted-and-outage.md](../decisions/0020-venue-restricted-and-outage.md) | 0020 — When Delta takes no new orders, or does not answer, the desk holds still and says so once |
 | [README.md](../decisions/README.md) | Decisions |
+
+## `docs/delta/`
+
+| File | What it is |
+|---|---|
+| [document.md](../delta/document.md) | python code to generate signature |
 
 ## `docs/features/`
 

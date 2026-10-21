@@ -682,8 +682,8 @@ function autoExcludeProblems(e: unknown): string[] {
 }
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
-/** A bought option's exits hold one level each: a timetable of them is not built for buying. */
-export const BUY_NO_STEPS = 'A BUY strategy\'s option target and stop hold one level each: remove the time steps.';
+/** The words a strategy that buys is refused in: this desk only sells options (21 Oct 2026). */
+export const SELL_ONLY_RULE = 'This desk only sells options: a strategy that buys is not taken.';
 export type SignalEntry = 'zone' | 'signal';
 /** Where a rule with the chain keeps its distance filters: one number each, beside the per-timeframe ones of a rule without it. */
 export const CHAIN_PTS = 'chain' as const;
@@ -1032,7 +1032,7 @@ export function exitAsk(rule: ExitRule, value: number, leg: 'target' | 'stop') {
 }
 
 /** Why one exit value is not usable, in words; null when it is. */
-function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown, bought = false): string | null {
+function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown): string | null {
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
   if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return `${Leg} cannot be negative or blank.`;
   if (mode === 'points') {
@@ -1042,11 +1042,6 @@ function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown, bo
     return v > MAX_EXIT_POINTS ? `${Leg} must be a price of at most ${MAX_EXIT_POINTS.toLocaleString('en-US')}.` : null;
   }
   // Sold: the target is a buy-back under the entry, so at most 99% of the credit; the stop, over it, has no such end.
-  // Bought, the two change places: the stop is a sale under the entry -- the premium and no more -- and the target over it is open.
-  if (bought) {
-    if (leg === 'target') return v > MAX_STOP_PCT ? 'Take profit must be between 0 and 2000% of the premium paid.' : null;
-    return v > MAX_TARGET_PCT ? 'Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.' : null;
-  }
   if (leg === 'target') return v > MAX_TARGET_PCT ? 'Take profit must be between 0 and 99% of the credit.' : null;
   return v > MAX_STOP_PCT ? 'Stop loss must be between 0 and 2000% of the credit.' : null;
 }
@@ -1062,8 +1057,6 @@ function exitValueProblem(leg: 'target' | 'stop', mode: ExitMode, v: unknown, bo
 export function exitRuleProblems(
   leg: 'target' | 'stop', rule: { mode?: unknown; value: unknown; steps?: unknown },
   entryTime: string | undefined, exitTime: string | undefined,
-  /** The option is bought, not sold: its stop ends at the premium and its target is open (`exitValueProblem`). */
-  bought = false,
 ): string[] {
   const bad: string[] = [];
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
@@ -1072,7 +1065,7 @@ export function exitRuleProblems(
     return bad;
   }
   const mode: ExitMode = rule.mode === 'points' || rule.mode === 'price' ? rule.mode : 'pct';
-  const first = exitValueProblem(leg, mode, rule.value, bought);
+  const first = exitValueProblem(leg, mode, rule.value);
   if (first) bad.push(first);
   const steps = rule.steps;
   if (steps === undefined || steps === null) return bad;
@@ -1097,7 +1090,7 @@ export function exitRuleProblems(
       }
       last = Math.max(last, at);
     }
-    const p = exitValueProblem(leg, mode, st.value, bought);
+    const p = exitValueProblem(leg, mode, st.value);
     if (p) bad.push(`Step ${n}: ${p}`);
   });
   return bad;
@@ -1258,13 +1251,11 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     bad.push(...minOtmProblems(p));
   }
   // Both fields are always kept, whichever mode reads them, so both are checked.
-  // A bought option's exits are the sold one's turned over: its stop ends at the premium, its target is open.
-  const bought = c.trigger === 'signal' && c.signal?.action === 'buy';
-  if (!(typeof c.takeProfitPct === 'number') || c.takeProfitPct < 0 || c.takeProfitPct > (bought ? MAX_STOP_PCT : MAX_TARGET_PCT)) {
-    bad.push(bought ? 'Take profit must be between 0 and 2000% of the premium paid.' : 'Take profit must be between 0 and 99% of the credit.');
+  if (!(typeof c.takeProfitPct === 'number') || c.takeProfitPct < 0 || c.takeProfitPct > MAX_TARGET_PCT) {
+    bad.push('Take profit must be between 0 and 99% of the credit.');
   }
-  if (!(typeof c.stopLossPct === 'number') || c.stopLossPct < 0 || c.stopLossPct > (bought ? MAX_TARGET_PCT : MAX_STOP_PCT)) {
-    bad.push(bought ? 'Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.' : 'Stop loss must be between 0 and 2000% of the credit.');
+  if (!(typeof c.stopLossPct === 'number') || c.stopLossPct < 0 || c.stopLossPct > MAX_STOP_PCT) {
+    bad.push('Stop loss must be between 0 and 2000% of the credit.');
   }
   for (const leg of ['target', 'stop'] as const) {
     const mode = leg === 'target' ? c.targetMode : c.stopMode;
@@ -1273,7 +1264,7 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
     const steps = leg === 'target' ? c.targetSteps : c.stopSteps;
     const value = mode === 'points' ? points : mode === 'price' ? at : (leg === 'target' ? c.takeProfitPct : c.stopLossPct);
     // The percentage itself was checked just above; only a mode, points and steps are new here.
-    const found = exitRuleProblems(leg, { mode, value: value ?? 0, steps }, c.entryTime, c.exitTime, bought)
+    const found = exitRuleProblems(leg, { mode, value: value ?? 0, steps }, c.entryTime, c.exitTime)
       .filter((m) => !/^(Take profit|Stop loss) must be between/.test(m));
     bad.push(...found);
   }
@@ -1320,20 +1311,16 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
   if (c.trigger === 'signal' && c.signal?.deltaByVol?.on) {
     if (c.strikeRule !== 'delta') bad.push('Delta by volatility needs the strike picked by delta.');
     if (Array.isArray(c.strikeBlocks) && c.strikeBlocks.length > 0) bad.push('Delta by volatility sets the delta for the whole window: remove the strike blocks, or switch it off.');
-    if (c.signal.action === 'buy') bad.push('Delta by volatility is for a strategy that sells.');
   }
   // By volatility it replaces one number -- the option SL's per cent -- for the whole trade, so: a per cent, no timetable, sold.
   if (c.trigger === 'signal' && c.signal?.slByVol?.on) {
     if ((c.stopMode ?? 'pct') !== 'pct') bad.push('SL by volatility sets the option SL as a per cent of the premium: set the SL by %.');
     if (Array.isArray(c.stopSteps) && c.stopSteps.length > 0) bad.push('SL by volatility holds one SL a trade, set at its signal: remove the SL time steps, or switch it off.');
-    if (c.signal.action === 'buy') bad.push('SL by volatility is for a strategy that sells.');
     // One reading a signal: a trade is never "low" for its delta and "high" for its SL.
     if (c.signal.deltaByVol?.on && c.signal.deltaByVol.by !== c.signal.slByVol.by) bad.push('The SL and the delta by volatility read one source: pick the same for both.');
   }
   if (c.liveOrders !== undefined && typeof c.liveOrders !== 'boolean') bad.push('Live orders must be on or off.');
   bad.push(...noEntryProblems(c.noEntry, c.entryTime, c.exitTime, c.trigger === 'signal'));
-  // A bought option's target and stop are judged by the desk at one level each (engine.ts `longExitIfReached`): no timetable yet.
-  if (c.trigger === 'signal' && c.signal?.action === 'buy' && ((c.targetSteps ?? []).length || (c.stopSteps ?? []).length)) bad.push(BUY_NO_STEPS);
   // The perp's SL left out: the option's own stop is then the trade's only stop, so it must be there.
   if (c.trigger === 'signal' && c.signal?.skipPerpSl === true && actionOf(c.signal) === 'sell') {
     // A stop by the clock or by volatility is a stop as well: some level of it is always in force.
@@ -1344,7 +1331,6 @@ export function validateConfig(c: Partial<StrategyConfig>): string[] {
 }
 /** The words a save is refused in when the perp's SL is left out with no option stop (the form says the same). */
 export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is the only stop: set one, or keep the perp SL.';
-export const SKIP_PERP_BUY = 'A strategy that buys keeps the perp SL and TGT: its option has no stop resting at Delta.';
 
 /** What is wrong with a signal rule, in words: an empty list when nothing is. */
 export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[] {
@@ -1360,14 +1346,12 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
   else if (r.methods.some((m) => !ids.has(m))) bad.push(`No such method: ${r.methods.filter((m) => !ids.has(m)).join(', ')}.`);
   if (r.target !== 'tp1' && r.target !== 'tp2' && r.target !== 'tp3') bad.push('The target must be TGT1, TGT2 or TGT3.');
   if (r.enterOn !== undefined && r.enterOn !== 'zone' && r.enterOn !== 'signal') bad.push('Enter at the entry zone or at the signal.');
-  if (r.action !== undefined && r.action !== 'sell' && r.action !== 'buy') bad.push('Pick whether the option is bought or sold.');
+  // This desk only sells options (owner, 21 Oct 2026: "SELL only -- no BUY choice"): a rule to buy is not taken.
+  if (r.action !== undefined && r.action !== 'sell') bad.push(SELL_ONLY_RULE);
   for (const k of ['skipPerpSl', 'skipPerpTgt'] as const) if (r[k] !== undefined && typeof r[k] !== 'boolean') bad.push('Skip perp SL and Skip perp TGT are on or off.');
-  if ((r.skipPerpSl === true || r.skipPerpTgt === true) && r.action === 'buy') bad.push(SKIP_PERP_BUY);
   bad.push(...autoMethodsProblems(r.autoMethods));
   bad.push(...deltaByVolProblems(r.deltaByVol));
   bad.push(...slByVolProblems(r.slByVol));
-  // The record it picks by is the option sold: one that buys has none to pick from.
-  if (r.autoMethods?.on && r.action === 'buy') bad.push('The methods\' daily update picks by the record as options sold: a strategy that buys cannot use it.');
   if (!Number.isInteger(r.maxOpen) || (r.maxOpen ?? 0) < 1 || (r.maxOpen ?? 0) > MAX_SIGNAL_OPEN) {
     bad.push(`At most 1 to ${MAX_SIGNAL_OPEN} of its trades open at once.`);
   }

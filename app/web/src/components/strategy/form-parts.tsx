@@ -657,11 +657,8 @@ export function SizeFields({ c, set, err, sizing, spot, label, warnings }: {
             <span className="tabular-nums text-foreground">{sizing.maxContracts}</span>
           </div>
           <div className="flex justify-between gap-2">
-            {/* Sold: margin at 200x. Bought: the premium, paid in full -- no margin. */}
-            <span className="text-muted-foreground">{sizing.basis === 'premium' ? 'Premium, at most' : 'Margin'}</span>
-            <span className="tabular-nums text-foreground">
-              {sizing.basis === 'premium' ? (sizing.priced ? inr(sizing.marginInr) : 'set by the strike') : spot ? inr(sizing.marginInr) : '—'}
-            </span>
+            <span className="text-muted-foreground">Margin</span>
+            <span className="tabular-nums text-foreground">{spot ? inr(sizing.marginInr) : '—'}</span>
           </div>
           {sizing.shareOfAccount !== null && (
             <div className="flex justify-between gap-2">
@@ -673,9 +670,7 @@ export function SizeFields({ c, set, err, sizing, spot, label, warnings }: {
           )}
         </div>
       </div>
-      {sizing.basis === 'premium'
-        ? <p className="m-0 mt-1 text-right text-[11px] text-[var(--dim)]">{sizing.priced ? `${usd(sizing.marginUsd)} premium, no margin` : 'no margin: the premium is paid in full'}</p>
-        : spot ? <p className="m-0 mt-1 text-right text-[11px] text-[var(--dim)]">{usd(sizing.marginUsd)} at 200x</p> : null}
+      {spot ? <p className="m-0 mt-1 text-right text-[11px] text-[var(--dim)]">{usd(sizing.marginUsd)} at 200x</p> : null}
       <Warnings items={warnings.filter((w) => /margin|account|funded|premium/i.test(w))} />
     </>
   );
@@ -741,11 +736,9 @@ export function EntryPriceFields({ c, set, err, allowSet = true }: {
  * distance over its entry, and a share past that is held just inside it. Said here, with the premium up to which
  * the stop stands as asked, so a trade showing 251% under a 300% setting is not read as a mistake (`stopHoldNote`).
  */
-export function OptionExitFields({ c, setC, exits, err, reference, warnings, className, legs = ['target', 'stop'], bought = false, spot }: {
+export function OptionExitFields({ c, setC, exits, err, reference, warnings, className, legs = ['target', 'stop'], spot }: {
   /** BTC now, where the form has it: what the close-out's room is worked out from. */
   spot?: number | null;
-  /** The option is bought, not sold: its stop is under the entry (ExitRuleEditor). */
-  bought?: boolean;
   /** Which of the two to offer: both, or the stop alone (a bought option has no target limit of its own). */
   legs?: readonly ('target' | 'stop')[];
   c: StrategyConfig;
@@ -771,13 +764,12 @@ export function OptionExitFields({ c, setC, exits, err, reference, warnings, cla
             entryTime={c.entryTime}
             exitTime={c.exitTime}
             samplePrice={reference.price}
-            sampleLabel={bought ? 'bought at' : reference.label}
-            bought={bought}
+            sampleLabel={reference.label}
             error={err(leg === 'target' ? 'takeProfitPct' : 'stopLossPct')}
           />
         ))}
       </div>
-      {!bought && legs.includes('stop') && <StopHoldNote rule={exits.stop} spot={spot} />}
+      {legs.includes('stop') && <StopHoldNote rule={exits.stop} spot={spot} />}
       <Warnings items={warnings.filter((w) => /target and no stop/.test(w))} />
       <Warnings items={[...stepWarnings(c, 'target'), ...stepWarnings(c, 'stop')]} />
     </>

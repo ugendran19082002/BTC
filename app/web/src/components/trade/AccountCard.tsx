@@ -4,9 +4,8 @@ import type { TradeStatus } from '@/types/trade';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { KV } from '@/components/ui/kv';
 import { Money } from '@/components/ui/money';
-import { getSettings, setLongCap, setShortCap, type LongCap, type ShortCap } from '@/api/desk';
+import { getSettings, setShortCap, type ShortCap } from '@/api/desk';
 import { LossBudget } from '@/components/trade/LossBudget';
-import { usePersisted } from '@/hooks/usePersisted';
 import { inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -100,8 +99,8 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
 
         <div className="my-0.5 h-px bg-border" />
 
-        {/* The daily loss limit beside the short / long limit: two columns, each label over its figure, so they fit a phone.
-            What is left to sell or buy, and the ₹ note, sit under the loss limit. */}
+        {/* The daily loss limit beside the short limit: two columns, each label over its figure, so they fit a phone.
+            What is left to sell, and the ₹ note, sit under the loss limit. */}
         <PositionLimits status={status} heldShort={held} lossCell={<LossBudget status={status} dense />        } note={unrealised !== 0 && (
           <p className="m-0 mt-2 text-[11px] text-[var(--dim)]">₹ shown at ₹85 per $1.</p>
         )} />
@@ -138,39 +137,23 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
 }
 
 /**
- * The account's two position limits, each on its own tab -- SELL (the short limit) and BUY (the long limit) --
- * with how much more it can sell or buy right now (5 Oct 2026). The tab chosen is remembered in this browser.
+ * The account's position limit -- the short limit -- with how much more it can sell right now (5 Oct 2026). Selling
+ * only (21 Oct 2026: "SELL only, no BUY choice"): the BUY tab, the long limit and the room to buy are gone.
  *
- * The figures are the order gates' own: the limit less what is held, the margin the free balance carries for a
- * sale, and for a buy what the free balance pays for and the day's loss budget allows. Each limit is per account
- * and editable; the server decides, and a short limit above what margin carries is refused.
+ * The figures are the order gates' own: the limit less what is held, and the margin the free balance carries for a
+ * sale. The limit is per account and editable; the server decides, and one above what margin carries is refused.
  */
-type Side = 'sell' | 'buy';
 function PositionLimits({ status, heldShort, lossCell, note }: { status: TradeStatus; heldShort: number; lossCell: React.ReactNode; note?: React.ReactNode }) {
-  const [side, setSide] = usePersisted<Side>('positions:limits-side', 'sell');
-  // The BUY tab's table by premium: closed until asked for, then remembered.
-  const [buyDetail, setBuyDetail] = usePersisted<boolean>('positions:buy-room-open', false);
-  const tab = (s: Side, label: string, name: string) => (
-    <button
-      key={s} type="button" role="tab" aria-selected={side === s} aria-label={name} onClick={() => setSide(s)}
-      className={cn('m-0 h-7 flex-1 appearance-none rounded-md border-0 px-2 font-[inherit] text-[12px] font-semibold',
-        side === s ? 'bg-background shadow-sm' : 'bg-transparent text-muted-foreground',
-        side === s && (s === 'buy' ? 'text-[var(--up)]' : 'text-[var(--down)]'))}
-    >
-      {label}
-    </button>
-  );
   const room = status.room;
-  // Several accounts together: the limits are sums, read here and changed on each account's own tab.
+  // Several accounts together: the limit is a sum, read here and changed on each account's own tab.
   const several = Boolean(status.combined);
   const shortHeld = status.positions.reduce((n, p) => n + (p.size < 0 ? -p.size : 0), 0);
-  const longHeld = status.positions.reduce((n, p) => n + (p.size > 0 ? p.size : 0), 0);
   return (
     <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-      {/* Left: the day's loss limit, and under it what is left on the chosen side -- the column was empty there. */}
+      {/* Left: the day's loss limit, and under it what is left to sell. */}
       <div className="min-w-0">
         {lossCell}
-        {room && side === 'sell' && (
+        {room && (
           <p aria-label="room to sell" className="m-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
             <span className="block">Can still sell <b className="text-foreground tabular-nums">{room.sell.lots.toLocaleString('en-US')} lots</b></span>
             <span className="block">Limit leaves {room.sell.byLimit.toLocaleString('en-US')}</span>
@@ -178,76 +161,22 @@ function PositionLimits({ status, heldShort, lossCell, note }: { status: TradeSt
             {room.sell.perLotUsd !== null && <span className="block text-[var(--dim)]">About {inr(usdToInr(room.sell.perLotUsd))} margin a lot</span>}
           </p>
         )}
-        {room && side === 'buy' && (
-          <div aria-label="room to buy" className="mt-2 text-[11.5px] leading-snug text-muted-foreground">
-            <span className="block">Limit leaves <b className="text-foreground tabular-nums">{room.buy.byLimit.toLocaleString('en-US')} lots</b></span>
-            {room.freeUsd !== null && <span className="block">Free {inr(usdToInr(room.freeUsd))}</span>}
-            <span className="block">{room.buy.lossRoomUsd === null ? 'Loss budget off' : `Loss budget ${inr(usdToInr(room.buy.lossRoomUsd))} left`}</span>
-            {/* The detail and the table by premium behind a toggle, remembered. */}
-            <button
-              type="button" aria-expanded={buyDetail} aria-controls="buy-room-detail" onClick={() => setBuyDetail(!buyDetail)}
-              className="m-0 inline-flex min-h-8 appearance-none items-center gap-1 border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2"
-            >
-              {buyDetail ? 'Hide lots by premium' : 'Show lots by premium'}
-            </button>
-          </div>
-        )}
         {note}
       </div>
       <div className="min-w-0">
-        <div role="tablist" aria-label="position limits" className="mb-1.5 flex gap-0.5 rounded-lg bg-muted p-0.5">
-          {tab('sell', 'SELL', 'SELL · short limit')}
-          {tab('buy', 'BUY', 'BUY · long limit')}
-        </div>
-        {side === 'sell'
-          ? <LimitLine side="sell" held={several ? shortHeld : room?.sell.held ?? heldShort} inForce={status.limits.maxShortContracts} readOnly={several} />
-          : <LimitLine side="buy" held={several ? longHeld : room?.buy.held ?? 0} inForce={status.limits.maxLongContracts ?? room?.buy.limit ?? 500} readOnly={several} />}
+        <LimitLine held={several ? shortHeld : room?.sell.held ?? heldShort} inForce={status.limits.maxShortContracts} readOnly={several} />
         {several && <p className="m-0 mt-1 text-[11px] leading-snug text-[var(--dim)]">Every account&apos;s limit added. Change one on its own tab.</p>}
       </div>
-      {/* The table by premium needs the card's width. */}
-      {room && side === 'buy' && buyDetail && (
-        <div id="buy-room-detail" className="col-span-2 min-w-0 text-[12px] leading-snug text-muted-foreground">
-          <p className="m-0">
-            A bought option uses no margin: it is paid for in full from the free balance, and its cost counts
-            against today&apos;s loss budget.
-          </p>
-          <table aria-label="lots you can buy, by premium" className="mt-1.5 w-full border-collapse text-[12px]">
-            <thead>
-              <tr className="text-[11px] text-[var(--dim)]">
-                <th scope="col" className="py-0.5 text-left font-medium">Premium</th>
-                <th scope="col" className="py-0.5 text-right font-medium">Costs a lot</th>
-                <th scope="col" className="py-0.5 text-right font-medium">Can buy</th>
-              </tr>
-            </thead>
-            <tbody>
-              {room.buy.byPremium.map((r) => (
-                <tr key={r.premium} className="border-t border-solid border-[var(--line)]">
-                  <td className="py-0.5 text-left tabular-nums">${r.premium}</td>
-                  <td className="py-0.5 text-right tabular-nums">{inr(usdToInr(r.perLotUsd))}</td>
-                  <td className="py-0.5 text-right font-semibold tabular-nums text-foreground">{r.lots.toLocaleString('en-US')} lots</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="m-0 mt-1 text-[11px] text-[var(--dim)]">
-            {room.buy.lossRoomUsd === null
-              ? 'Each row is the smaller of the limit and the free balance, at that premium, fees included. The loss budget is off.'
-              : 'Each row is the smallest of the limit, the free balance and the loss budget, at that premium, fees included.'}
-          </p>
-        </div>
-      )}
     </div>
   );
 }
 
 /**
- * One position limit -- the most contracts held short (SELL) or bought (BUY) at once, across all strikes. Editable,
- * but the server decides: it refuses a short limit above what margin can carry, and this shows the answer it gave
- * rather than the number typed.
+ * The short limit -- the most contracts held short at once, across all strikes. Editable, but the server decides: it
+ * refuses one above what margin can carry, and this shows the answer it gave rather than the number typed.
  */
-function LimitLine({ side, held, inForce, readOnly = false }: { side: Side; held: number; inForce: number; readOnly?: boolean }) {
+function LimitLine({ held, inForce, readOnly = false }: { held: number; inForce: number; readOnly?: boolean }) {
   const [shortCap, setShortCapState] = useState<ShortCap | null>(null);
-  const [longCap, setLongCapState] = useState<LongCap | null>(null);
   const [draft, setDraft] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -258,17 +187,16 @@ function LimitLine({ side, held, inForce, readOnly = false }: { side: Side; held
     if (readOnly) return;
     let live = true;
     getSettings()
-      .then((r) => { if (live) { setShortCapState(r.shortCap); setLongCapState(r.longCap ?? null); } })
+      .then((r) => { if (live) setShortCapState(r.shortCap); })
       // Still worth showing without it; the limit in force comes from the status poll.
       .catch(() => {});
     return () => { live = false; };
   }, [readOnly]);
 
-  const selling = side === 'sell';
-  const limit = readOnly ? inForce : (selling ? shortCap?.inForce : longCap?.inForce) ?? inForce;
-  const ceiling = selling ? shortCap?.ceiling ?? null : null;
+  const limit = readOnly ? inForce : shortCap?.inForce ?? inForce;
+  const ceiling = shortCap?.ceiling ?? null;
   const used = limit > 0 ? held / limit : 0;
-  const name = selling ? 'Short limit' : 'Long limit';
+  const name = 'Short limit';
 
   const save = async () => {
     const n = Number(draft);
@@ -279,8 +207,7 @@ function LimitLine({ side, held, inForce, readOnly = false }: { side: Side; held
     setSaving(true);
     setRefusal(null);
     try {
-      if (selling) setShortCapState((await setShortCap(n)).shortCap);
-      else setLongCapState((await setLongCap(n)).longCap);
+      setShortCapState((await setShortCap(n)).shortCap);
       setEditing(false);
     } catch (e) {
       setRefusal((e as Error).message);
@@ -295,13 +222,11 @@ function LimitLine({ side, held, inForce, readOnly = false }: { side: Side; held
       <dl className="m-0">
         <dt
           className="m-0 w-fit cursor-help text-[12px] text-muted-foreground underline decoration-dotted underline-offset-2"
-          title={selling
-            ? 'The most contracts this account will be short across all strikes. New sells stop here.'
-            : 'The most contracts this account will hold bought across all strikes. New buys stop here.'}
+          title="The most contracts this account will be short across all strikes. New sells stop here."
         >
           {name}
         </dt>
-        <dd className="m-0 mt-0.5 tabular-nums" aria-label={selling ? 'short cap' : 'long cap'}>
+        <dd className="m-0 mt-0.5 tabular-nums" aria-label="short cap">
           <span className="text-[13px] text-foreground">
             {held} <span className="text-[11.5px] text-[var(--dim)]">of {limit} contracts</span>
           </span>
@@ -332,7 +257,7 @@ function LimitLine({ side, held, inForce, readOnly = false }: { side: Side; held
             step={1}
             inputMode="numeric"
             value={draft}
-            aria-label={selling ? 'most contracts short' : 'most contracts long'}
+            aria-label="most contracts short"
             className="h-9 w-24 rounded border border-[var(--line)] bg-transparent px-2 text-[14px] tabular-nums text-foreground"
             onChange={(e) => setDraft(e.target.value)}
           />

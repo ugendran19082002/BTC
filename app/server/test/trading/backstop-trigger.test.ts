@@ -1,6 +1,6 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BACKSTOP_LAST_BELOW, LONG_STOP_CONFIRM_MS, STOP_CONFIRM_MS, backstopTriggerFor } from '../../src/trading/engine.js';
+import { BACKSTOP_LAST_BELOW, backstopTriggerFor } from '../../src/trading/engine.js';
 import { orderBody, resetLastTriggerForTest } from '../../src/trading/exchange/delta.js';
 import type { PlaceOrderRequest } from '../../src/trading/types.js';
 import { rig, ceProduct, planFor, quote } from './harness.js';
@@ -92,9 +92,4 @@ test('[critical] a refusal that is not about the trigger is not sent around, and
   const next = answers(resting);
   await ex.placeOrder(stop({ triggerOn: 'last', clientOrderId: 'abc123S2' }));
   assert.deepEqual(next.map((b) => b.stop_trigger_method), ['last_traded_price'], 'still the last trade');
-});
-
-test('[critical] a bought option\'s stop keeps its own wait: fifteen seconds, apart from a sold one\'s three', () => {
-  assert.equal(LONG_STOP_CONFIRM_MS, 15_000);
-  assert.equal(STOP_CONFIRM_MS, 3_000);
 });

@@ -14,13 +14,13 @@ const sell = status({
   balanceUsd: 51.29, walletUsd: 75.47, marginUsedUsd: 24.18, unrealisedPnlUsd: 1.4, realisedTodayUsd: 6.35, lossTodayUsd: 2.25,
   today: { realisedUsd: 6.35, unrealisedUsd: 1.4, chargesUsd: 1.59, netUsd: 6.16, lossUsd: 2.25, profitUsd: 8.6 },
   open: [trade('s1', -5), trade('s2', -6)], positions: [{ symbol: 'P', size: -11 } as never],
-  limits: { ...status({}).limits, maxShortContracts: 116, maxLongContracts: 500, maxDailyLossUsd: 25.65 },
+  limits: { ...status({}).limits, maxShortContracts: 116, maxDailyLossUsd: 25.65 },
 });
 const buy = status({
   balanceUsd: 2.35, walletUsd: 2.39, marginUsedUsd: 0.04, unrealisedPnlUsd: 0.005, realisedTodayUsd: -3,
   today: { realisedUsd: -3, unrealisedUsd: 0.005, chargesUsd: 0.002, netUsd: -2.997, lossUsd: 3, profitUsd: 0 },
   open: [trade('b1', 1)], positions: [{ symbol: 'C', size: 1 } as never],
-  limits: { ...status({}).limits, maxShortContracts: 10, maxLongContracts: 500, maxDailyLossUsd: 1.18 },
+  limits: { ...status({}).limits, maxShortContracts: 10, maxDailyLossUsd: 1.18 },
 });
 const both = () => mergeStatuses([{ account: { id: 1, name: 'SELL' }, status: sell }, { account: { id: 2, name: 'BUY' }, status: buy }])!;
 
@@ -36,7 +36,7 @@ describe('several accounts as one', () => {
     expect(m.today!.lossUsd).toBeCloseTo(5.25);
     expect(m.open.map((t) => [t.tradeId, t.account?.name])).toEqual([['s1', 'SELL'], ['s2', 'SELL'], ['b1', 'BUY']]);
     expect(m.positions).toHaveLength(2);
-    expect([m.limits.maxShortContracts, m.limits.maxLongContracts]).toEqual([126, 1000]);
+    expect(m.limits.maxShortContracts).toBe(126);
     expect(m.room).toBeUndefined();
   });
 

@@ -157,48 +157,6 @@ export function protectionFor(entry: number, ask: ExitAsk): { takeProfitPrice?: 
   };
 }
 
-/** A bought option's own exits, as kept on the plan (`TradePlan.longExits`). */
-export type LongExits = NonNullable<TradePlan['longExits']>;
-type LongLeg = NonNullable<LongExits['target']>;
-
-/**
- * A bought option's target and stop as prices, off the price paid: the target over it, the stop under it.
- * A leg that is absent, zero or not a number is null -- off.
- */
-export function longLevels(own: TradePlan['longExits'] | undefined, entry: number): { target: number | null; stop: number | null } {
-  const levelOf = (r: LongLeg | null | undefined, up: boolean): number | null => {
-    if (!r || !Number.isFinite(r.value) || !(r.value > 0)) return null;
-    return r.mode === 'pct' ? entry * (1 + (up ? r.value : -r.value))
-      : r.mode === 'points' ? entry + (up ? r.value : -r.value) : r.value;
-  };
-  return { target: levelOf(own?.target, true), stop: levelOf(own?.stop, false) };
-}
-
-/**
- * The exits asked for on an open bought position, as `longExits` (5 Oct 2026). The edit sheet speaks the short's
- * words -- takeProfitPct and so on -- and for a long they mean the mirror: the target a share *over* the price paid,
- * with no ceiling, the stop a share *under* it, at most all of it. A leg not asked about keeps what it had.
- * A price on the wrong side of the entry is refused, with the reason, rather than placed.
- */
-export function longExitsFor(entry: number, ask: ExitAsk, prev: TradePlan['longExits'] | undefined): { exits: LongExits } | { problem: string } {
-  const leg = (at: number | undefined, points: number | undefined, pct: number | undefined, prior: LongLeg | null | undefined): LongLeg | null | undefined => {
-    if ((at ?? 0) > 0) return { mode: 'price', value: at! };
-    if ((points ?? 0) > 0) return { mode: 'points', value: points! };
-    if ((pct ?? 0) > 0) return { mode: 'pct', value: pct! };
-    // Asked about and zero: off. Not asked about at all: as it was.
-    return at !== undefined || points !== undefined || pct !== undefined ? null : prior;
-  };
-  const target = leg(ask.takeProfitAt, ask.takeProfitPoints, ask.takeProfitPct, prev?.target);
-  const stop = leg(ask.stopAt, ask.stopLossPoints, ask.stopLossPct, prev?.stop);
-  const next: LongExits = { target: target ?? null, stop: stop ?? null };
-  const lv = longLevels(next, entry);
-  if (lv.target !== null && !(lv.target > entry)) return { problem: `A target of ${round1(lv.target)} must be over the ${entry} paid: a bought option makes money as its price rises.` };
-  if (next.stop && (lv.stop === null || !(lv.stop < entry) || !(lv.stop > 0))) {
-    return { problem: `A stop must be under the ${entry} paid and above zero: a bought option loses as its price falls, and can lose at most what was paid.` };
-  }
-  return { exits: next };
-}
-
 /** The stop as it was asked for, before any hold inside the close-out: what `stopFor` returned until 8 Oct 2026. */
 export const stopAsked = (entry: number, x: ExitAsk): number | null =>
   (x.stopAt ?? 0) > 0
@@ -331,10 +289,11 @@ export type PlaceInput = {
   underlying?: TradePlan['underlying'];
   /** The signal a signal strategy traded (engine.ts `TradePlan.signal`). Never set from the ticket. */
   signal?: TradePlan['signal'];
-  /** Sold to open (the default, and the ticket's) or bought to open -- a BUY-side strategy's trade. */
+  /**
+   * Sold to open -- the only way this desk trades (21 Oct 2026). `buy` is refused by the engine's gate (`SELL_ONLY`);
+   * it is named here only so a caller that asks for it is told no, rather than quietly sold.
+   */
   action?: 'sell' | 'buy';
-  /** A bought option's own target and stop, judged by the desk on the bid (engine.ts `TradePlan.longExits`). */
-  longExits?: TradePlan['longExits'];
 };
 
 export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
@@ -398,7 +357,6 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
     ...(input.underlying ? { underlying: input.underlying } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
     action: input.action === 'buy' ? 'buy' : 'sell',
-    ...(input.action === 'buy' && input.longExits ? { longExits: input.longExits } : {}),
     expect: {
       underlying: 'BTC',
       optionSide: input.optionSide,
@@ -406,13 +364,6 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
       expiryTs: input.expiryTs,
     },
   };
-  // Bought: nothing rests at the exchange. Every resting exit this desk places is a buy-back of a short, so a
-  // bought option carries none; its own target and stop are `longExits`, judged by the desk.
-  if (plan.action === 'buy') {
-    plan.takeProfitPrice = null;
-    plan.stopPrice = null;
-    delete plan.exitAsk;
-  }
   return plan;
 }
 

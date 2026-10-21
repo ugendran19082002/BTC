@@ -374,9 +374,6 @@ export function autoMethodsProblems(a: AutoMethods | null | undefined): string[]
 }
 export const EXCLUDE_NONE = 'Pick at least one method to exclude, or switch Exclude off.';
 export type SignalAction = 'sell' | 'buy';
-export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');
-/** A bought option's exits hold one level each (the server's words). */
-export const BUY_NO_STEPS = 'A BUY strategy\'s option target and stop hold one level each: remove the time steps.';
 /** Where a rule with the chain keeps its distance filters (server: CHAIN_PTS). */
 export const CHAIN_PTS = 'chain' as const;
 export type PtsKey = SignalTf | typeof CHAIN_PTS;
@@ -609,9 +606,8 @@ export const DEFAULT_CONFIG: StrategyConfig = {
 
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-/** The server's words for the perp SL skipped with no option stop, and for a strategy that buys. */
+/** The server's words for the perp SL skipped with no option stop. */
 export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is the only stop: set one, or keep the perp SL.';
-export const SKIP_PERP_BUY = 'A strategy that buys keeps the perp SL and TGT: its option has no stop resting at Delta.';
 
 /** The kinds of reason a signal was not taken (server: strategy/signal-reasons.ts `SIGNAL_REASONS`). */
 export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'own-max' | 'desk-max' | 'side-max' | 'no-entry' | 'late' | 'over'

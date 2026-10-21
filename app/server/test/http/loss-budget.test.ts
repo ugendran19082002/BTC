@@ -27,9 +27,8 @@ const { Secrets } = await import('../../src/auth/secrets.js');
 const { closePool, one } = await import('../../src/db/pool.js');
 const { initTradingService, tradingService } = await import('../../src/trading/service.js');
 const { initStrategyStore } = await import('../../src/http/routes/strategy.routes.js');
-const { roomOf } = await import('../../src/http/routes/trade.routes.js');
 const { brokerAccounts } = await import('../../src/delta/accounts.js');
-const { DEFAULT_LIMITS, failureCodes, precheckBuy } = await import('../../src/trading/precheck.js');
+const { DEFAULT_LIMITS, failureCodes } = await import('../../src/trading/precheck.js');
 const { rig, ceProduct, planFor, quote, T0 } = await import('../trading/harness.js');
 
 await initTradingService();
@@ -65,7 +64,7 @@ test('[critical] untouched, the budget is on at half the account -- as it always
   const status = (await api('GET', '/api/trade/status')).body;
   assert.equal(status.limits.maxDailyLossUsd, balance / 2);
   assert.equal(status.limits.dailyLossOn, true);
-  assert.equal(status.room.buy.lossRoomUsd, balance / 2);
+  assert.equal(status.room.buy, undefined, 'selling only: no room to buy');
 });
 
 test('[critical] an amount of your own: kept for the account it is set on, and the gate follows it at once', async () => {
@@ -106,8 +105,6 @@ test('[critical] switched off: no day\'s loss refuses an order, the figure is st
   // A number, on or off: an unbounded figure does not survive JSON.
   assert.equal(status.limits.maxDailyLossUsd, 2500.5);
   assert.equal(status.limits.dailyLossOn, false);
-  assert.equal(status.room.buy.lossRoomUsd, null);
-  assert.ok(status.room.buy.byPremium.every((r: { byLoss: number | null }) => r.byLoss === null));
 
   const on = await api('POST', '/api/settings', { key: 'daily_loss_limit_on', value: '1' });
   assert.equal(on.body.lossLimit.on, true);
@@ -139,26 +136,3 @@ test('[critical] the gate itself: a spent budget refuses, the same order goes th
   assert.ok(placed.ok, JSON.stringify(placed.ok ? '' : placed.precheck));
 });
 
-test('the gate with room left says what it always said; a buy is held to the same budget and the same switch', () => {
-  const CE = 'C-BTC-80000-080926';
-  const base = {
-    now: T0, size: 10, expect: { underlying: 'BTC', optionSide: 'CE' as const, strike: 80_000, expiryTs: ceProduct().expiryTs },
-    product: ceProduct(), quote: quote(CE, 20, 21), feedHealthy: true, tradingEnabled: true,
-    availableUsd: 100, costUsd: 3, existingPosition: 0, dayPnlUsd: -4, limits: { ...DEFAULT_LIMITS, maxDailyLossUsd: 5 },
-  };
-  const some = precheckBuy(base);
-  assert.equal(some.ok ? '' : some.failures[0]!.message, 'Worst case $3.00 (the premium paid) exceeds the $1.00 left in today\'s loss budget.');
-  const none = precheckBuy({ ...base, dayPnlUsd: -5 });
-  assert.match(none.ok ? '' : none.failures[0]!.message, /^Today's loss budget is used up: \$5\.00 lost against a budget of \$5\.00\./);
-  assert.deepEqual(precheckBuy({ ...base, dayPnlUsd: -500, limits: { ...base.limits, maxDailyLossUsd: Infinity } }), { ok: true });
-});
-
-test('the room to buy with the budget off: the limit and the free balance are what is left to bind', () => {
-  const kept = roomOf({ trades: [], freeUsd: 1_000, spot: 85_000, shortLimit: 100, longLimit: 5_000, lossRoomUsd: 1 });
-  const free = roomOf({ trades: [], freeUsd: 1_000, spot: 85_000, shortLimit: 100, longLimit: 5_000, lossRoomUsd: null });
-  const at = (r: typeof kept) => r.buy.byPremium.find((x) => x.premium === 200)!;
-  assert.equal(at(kept).lots, at(kept).byLoss, 'a dollar of budget binds');
-  assert.equal(at(free).byLoss, null);
-  assert.equal(at(free).lots, at(free).byFree, 'off, the free balance does');
-  assert.equal(free.buy.lossRoomUsd, null);
-});

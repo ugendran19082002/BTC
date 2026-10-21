@@ -11,7 +11,7 @@ import {
   DEFAULT_LIMITS, ceilingMarginPerContract, dailyLossLimitFor, maxShortContractsFor, type RiskLimits,
 } from './precheck.js';
 import { fundsRequiredPerContract } from './margin.js';
-import { DEFAULT_LEVERAGE, exitPriceProblem, longExitsFor, orderPlan, protectionFor, type ExitAsk, type PlaceInput } from './order-plan.js';
+import { DEFAULT_LEVERAGE, exitPriceProblem, orderPlan, protectionFor, type ExitAsk, type PlaceInput } from './order-plan.js';
 
 export { stopFor, stopPriceFor, targetFor, targetPriceFor } from './order-plan.js';
 import { isDone, isLong } from './machine.js';
@@ -64,10 +64,6 @@ const STATUS_REFRESH_MS = 1_000;
 const STATUS_STALE_MS = 4_000;
 /** Where the chosen short cap is kept, so it outlives a restart. */
 export const SHORT_CAP_KEY = 'max_short_contracts';
-/** Where the chosen long limit is kept, per account like the short one. */
-export const LONG_CAP_KEY = 'max_long_contracts';
-/** The most a long limit may be set to: a typo guard. A bought option's real bound is the free balance. */
-export const MAX_LONG_CAP = 100_000;
 /** Where the day's loss budget chosen for an account is kept, in USD. Unset or empty, it is half the balance. */
 export const LOSS_LIMIT_KEY = 'daily_loss_limit_usd';
 /** Whether the day's loss budget stops new orders on an account: '0' is off, anything else is on. */
@@ -187,8 +183,6 @@ export class TradingService {
       // than whatever it was when the process started.
       limits: { ...DEFAULT_LIMITS, ...limits, get maxDailyLossUsd() {
         return limits.maxDailyLossUsd ?? self.dailyLossGateUsd;
-      }, get maxLongContracts() {
-        return limits.maxLongContracts ?? self.maxLongContracts;
       }, get maxShortContracts() {
         // Same reasoning as the loss limit: read at the moment the gate runs,
         // so changing the setting takes effect on the next order rather than
@@ -581,13 +575,8 @@ export class TradingService {
     if (!rec) return null;
     const entry = rec.state.entryAvgPrice;
     if (entry === null) return rec.state;
-    // A bought position: the same words, mirrored, kept as its own exits (5 Oct 2026). Never the short's fields,
-    // which the short's stop watcher would act on.
-    if (isLong(rec.state)) {
-      const next = longExitsFor(entry, ask, rec.plan.longExits);
-      if ('problem' in next) throw new ExitAskError(next.problem);
-      return this.engine.updateLongExits(tradeId, next.exits);
-    }
+    // A bought position is not this desk's to manage (21 Oct 2026: it only sells): its exits are not moved, it is closed by hand.
+    if (isLong(rec.state)) throw new ExitAskError('This desk only sells options: a bought position is not managed here -- close it by hand.');
     // Asked for as prices, the levels must sit the right side of the entry.
     const wrong = exitPriceProblem(entry, ask);
     if (wrong) throw new ExitAskError(wrong);
@@ -965,24 +954,6 @@ export class TradingService {
     // At what Delta is charging per contract on the shorts held, where that is the dearer (`ceilingMarginPerContract`).
     const each = ceilingMarginPerContract(per, this.lastMarginUsedUsd, this.lastShortContracts);
     return Math.floor(this.lastBalance / each) + this.lastShortContracts;
-  }
-
-  /** The long limit in force on this account: the one chosen, else the default. */
-  get maxLongContracts(): number {
-    const raw = Number(accountSetting(this.settings, LONG_CAP_KEY, this.currentAccountId));
-    return Number.isInteger(raw) && raw >= 1 ? raw : DEFAULT_LIMITS.maxLongContracts;
-  }
-  get longCapSetting(): number | null {
-    const raw = Number(accountSetting(this.settings, LONG_CAP_KEY, this.currentAccountId));
-    return Number.isInteger(raw) && raw >= 1 ? raw : null;
-  }
-  /** Change the long limit, for this account. No margin ceiling: a bought option is paid for in full. */
-  async setLongCap(contracts: number): Promise<{ ok: true; cap: number } | { ok: false; reason: string }> {
-    if (!Number.isInteger(contracts) || contracts < 1 || contracts > MAX_LONG_CAP) {
-      return { ok: false, reason: `The long limit must be a whole number of contracts, from 1 to ${MAX_LONG_CAP.toLocaleString('en-US')}.` };
-    }
-    await this.settings.set(accountKey(LONG_CAP_KEY, this.currentAccountId), String(contracts));
-    return { ok: true, cap: this.maxLongContracts };
   }
 
   /** The cap the desk has been asked to hold itself to on the account it is trading on, if any. */

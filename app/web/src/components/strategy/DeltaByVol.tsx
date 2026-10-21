@@ -20,7 +20,7 @@ const LEVELS = [
 /** The Low delta above which the measuring found the losses began (1-17 Oct 2026, the live strategies). */
 const LOW_SAFE_MAX = 0.19;
 
-export function DeltaByVolFields({ value, onChange, ownDelta, byDelta, hasBlocks, buying, live, onPickByDelta, error }: {
+export function DeltaByVolFields({ value, onChange, ownDelta, byDelta, hasBlocks, live, onPickByDelta, error }: {
   value: DeltaByVol | null | undefined;
   onChange: (v: DeltaByVol) => void;
   /** The strategy's own delta: what an unknown level keeps. Null with no delta rule. */
@@ -28,7 +28,6 @@ export function DeltaByVolFields({ value, onChange, ownDelta, byDelta, hasBlocks
   /** The strike is picked by delta: what this sets one number of. */
   byDelta: boolean;
   hasBlocks: boolean;
-  buying: boolean;
   /** Live orders on: a change reaches real orders from the next signal. */
   live: boolean;
   /** Turn the strike rule to delta, for a strategy picked by something else. */
@@ -39,8 +38,7 @@ export function DeltaByVolFields({ value, onChange, ownDelta, byDelta, hasBlocks
   const set = <K extends keyof DeltaByVol>(k: K, x: DeltaByVol[K]) => onChange({ ...v, [k]: x });
   const measured = v.low === DEFAULT_DELTA_BY_VOL.low && v.medium === DEFAULT_DELTA_BY_VOL.medium && v.high === DEFAULT_DELTA_BY_VOL.high;
   const by = v.by === 'atr' ? 'ATR 2h' : 'ATM IV';
-  const blocked = buying ? 'For a strategy that sells: a bought option is not picked this way.'
-    : !byDelta ? 'It sets the delta, so the strike must be picked by delta.'
+  const blocked = !byDelta ? 'It sets the delta, so the strike must be picked by delta.'
       : hasBlocks ? 'It sets the delta for the whole window: the strike blocks would be set aside. Remove them to use it.' : null;
   return (
     <section aria-label="Delta by volatility" className={cn('mt-3 rounded-lg border border-solid px-2.5 py-1.5', v.on ? 'border-[var(--accent)]' : 'border-border')}>
@@ -100,7 +98,7 @@ export function DeltaByVolFields({ value, onChange, ownDelta, byDelta, hasBlocks
           {blocked && (
             <p role="alert" className="m-0 rounded-md border border-solid border-[var(--down)]/40 px-2.5 py-2 text-[12px] leading-snug text-[var(--down)]">
               {blocked}{' '}
-              {!buying && !byDelta && (
+              {!byDelta && (
                 <button type="button" onClick={onPickByDelta}
                   className="m-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)] underline underline-offset-2">
                   Pick the strike by delta

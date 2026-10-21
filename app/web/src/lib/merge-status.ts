@@ -54,7 +54,6 @@ export function mergeStatuses(parts: readonly StatusPart[]): TradeStatus | null 
     limits: {
       ...first.limits,
       maxShortContracts: sum(st.map((s) => s.limits.maxShortContracts)),
-      maxLongContracts: sum(st.map((s) => s.limits.maxLongContracts ?? 0)),
       maxDailyLossUsd: sum(kept.map((s) => s.limits.maxDailyLossUsd)),
       dailyLossOn: kept.length > 0,
     },

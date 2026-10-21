@@ -48,7 +48,7 @@ export function withExitRule(c: StrategyConfig, leg: ExitLeg, rule: ExitRule): S
 }
 
 /** Why one exit value cannot be used, in words; null when it can. The ticket and the form share it. */
-export function exitValueProblem(leg: ExitLeg, mode: ExitMode, v: number, bought = false): string | null {
+export function exitValueProblem(leg: ExitLeg, mode: ExitMode, v: number): string | null {
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
   if (!Number.isFinite(v) || v < 0) return `${Leg} cannot be negative or blank.`;
   if (mode === 'points') {
@@ -59,10 +59,6 @@ export function exitValueProblem(leg: ExitLeg, mode: ExitMode, v: number, bought
   }
   // Sold: the target is a buy-back under the entry, so at most 99% of the credit; the stop, over it, has no such end.
   // Bought, the two change places: the stop is a sale under the entry -- the premium and no more -- and the target over it is open.
-  if (bought) {
-    if (leg === 'target') return v > MAX_STOP_PCT ? 'Take profit must be between 0 and 2000% of the premium paid.' : null;
-    return v > MAX_TARGET_PCT ? 'Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.' : null;
-  }
   if (leg === 'target') return v > MAX_TARGET_PCT ? 'Take profit must be between 0 and 99% of the credit.' : null;
   return v > MAX_STOP_PCT ? 'Stop loss must be between 0 and 2000% of the credit.' : null;
 }
@@ -72,10 +68,10 @@ export function exitValueProblem(leg: ExitLeg, mode: ExitMode, v: number, bought
  * the entry and before the exit -- the position is gone by then -- and after
  * the step before it.
  */
-export function exitRuleProblems(leg: ExitLeg, rule: ExitRule, entryTime: string, exitTime: string, bought = false): string[] {
+export function exitRuleProblems(leg: ExitLeg, rule: ExitRule, entryTime: string, exitTime: string): string[] {
   const bad: string[] = [];
   const Leg = leg === 'target' ? 'Take profit' : 'Stop loss';
-  const first = exitValueProblem(leg, rule.mode, rule.value, bought);
+  const first = exitValueProblem(leg, rule.mode, rule.value);
   if (first) bad.push(first);
   if (rule.steps.length > MAX_EXIT_STEPS) bad.push(`${Leg} can change at most ${MAX_EXIT_STEPS} times a day.`);
   const windowOk = isHhmm(entryTime) && isHhmm(exitTime);
@@ -95,7 +91,7 @@ export function exitRuleProblems(leg: ExitLeg, rule: ExitRule, entryTime: string
       }
       last = Math.max(last, at);
     }
-    const p = exitValueProblem(leg, rule.mode, st.value, bought);
+    const p = exitValueProblem(leg, rule.mode, st.value);
     if (p) bad.push(`Step ${n}: ${p}`);
   });
   return bad;
@@ -136,13 +132,11 @@ export const suggestedFallback = (p: { mode: PremiumMode; usd: number }): number
  */
 export function fillSteps(o: {
   leg: ExitLeg; mode: ExitMode; entryTime: string; exitTime: string; start: number; everyMin: number; by: number;
-  /** A bought option: the stop is the one with the 99% ceiling, the target the open one. */
-  bought?: boolean;
 }): ExitStep[] {
   if (!isHhmm(o.entryTime) || !isHhmm(o.exitTime) || !(o.everyMin >= 1)) return [];
   const entry = minutesOf(o.entryTime);
   const span = minutesForward(entry, minutesOf(o.exitTime));
-  const ceiling = o.mode !== 'pct' ? MAX_EXIT_POINTS : (o.leg === 'target') !== Boolean(o.bought) ? MAX_TARGET_PCT : MAX_STOP_PCT;
+  const ceiling = o.mode !== 'pct' ? MAX_EXIT_POINTS : o.leg === 'target' ? MAX_TARGET_PCT : MAX_STOP_PCT;
   const steps: ExitStep[] = [];
   let value = o.start;
   for (let at = o.everyMin; at < span && steps.length < MAX_EXIT_STEPS; at += o.everyMin) {

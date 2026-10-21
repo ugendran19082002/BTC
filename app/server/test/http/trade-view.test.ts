@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { tradeView } from '../../src/http/routes/trade.routes.js';
 import { closePool } from '../../src/db/pool.js';
 import { rig, ceProduct, planFor, quote } from '../trading/harness.js';
+import { initialTrade, replay } from '../../src/trading/machine.js';
+import type { TradeRecord } from '../../src/trading/engine.js';
 
 after(closePool);
 
@@ -98,31 +100,20 @@ test('[critical] a target Delta would not take is said, with why -- until one is
   assert.equal(tradeView(placedSince).protectionProblem, null, 'placed since: no problem now');
 });
 
-test('[critical] a bought position\'s card is told its own exits and its account, and is priced at the bid', async () => {
-  const r = rig({ quotes: [quote(CE, 39.5, 40)] });
-  const plan = planFor(ceProduct(), {
-    lots: 1, action: 'buy', accountId: 2, stopPrice: null, takeProfitPrice: null,
-    entry: { type: 'limit', limitPrice: 40, timeoutMs: 0, marketFallback: false, chase: null },
-    longExits: { target: { mode: 'pct', value: 3.5 }, stop: { mode: 'pct', value: 0.5 } },
-  });
-  await r.engine.open(plan);
-  await r.engine.poll(plan.tradeId);
-  const rec = r.store.peek(plan.tradeId)!;
-  assert.equal(rec.state.position, 1, 'long 1');
-  const resting = await r.ex.getOpenOrders(CE);
+test('[critical] an old bought position still reads as bought, priced at the bid; a short\'s card as ever (21 Oct 2026: selling only)', async () => {
+  // Nothing is bought any more: one from the history -- or bought by hand -- is a record with a long position.
+  const s0 = initialTrade({ tradeId: 'old-long', symbol: CE, productId: ceProduct().productId, optionSide: 'CE', requestedSize: 1, at: 0 });
+  const state = replay(s0, [{ t: 'fill', role: 'entry', side: 'buy', size: 1, price: 40, orderId: 'b', at: 1 }]);
+  const rec = { plan: planFor(ceProduct(), { tradeId: 'old-long', lots: 1, action: 'buy', accountId: 2, stopPrice: null, takeProfitPrice: null }), events: [], state } as TradeRecord;
   const q = quote(CE, 44, 46, { mark: 45 });
-  const v = tradeView(rec, [], 0.001, q, 80_000, resting);
-  // Without these the Edit exits form opened with the target unticked, and saving it took the target off.
-  assert.deepEqual(v.plan.longExits, { target: { mode: 'pct', value: 3.5 }, stop: { mode: 'pct', value: 0.5 } });
-  assert.equal(v.plan.accountId, 2);
+  const v = tradeView(rec, [], 0.001, q, 80_000, []);
   assert.equal(v.plan.action, 'buy');
-  assert.equal(v.onBook?.target, 180, 'the sale resting at 350% over the 40 paid');
+  assert.equal(v.plan.accountId, 2);
   // A bought position is sold at the bid: the same whatever the offer or the mark says.
-  const other = tradeView(rec, [], 0.001, { ...q, ask: 60, mark: 50 }, 80_000, resting);
+  const other = tradeView(rec, [], 0.001, { ...q, ask: 60, mark: 50 }, 80_000, []);
   assert.equal(v.live.netIfClosedUsd, other.live.netIfClosedUsd);
-  // A short's card says neither.
   const short = tradeView(await shortAt(20), [], 0.001, quote(CE, 9, 11, { mark: 10 }), 80_000);
-  assert.deepEqual([short.plan.longExits, short.plan.accountId], [null, null]);
+  assert.deepEqual([short.plan.action, short.plan.accountId], ['sell', null]);
 });
 
 /**

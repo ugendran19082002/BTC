@@ -1,5 +1,5 @@
 import {
-  actionOf, asSignalConfig, DEFAULT_CONFIG, DEFAULT_DELTA, DEFAULT_SIGNAL_RULE, legOfSignal, MAX_OPEN_PRESETS, MAX_SIGNAL_OPEN, type SignalAction, type SignalRule, type Strategy,
+  asSignalConfig, DEFAULT_CONFIG, DEFAULT_DELTA, DEFAULT_SIGNAL_RULE, legOfSignal, MAX_OPEN_PRESETS, MAX_SIGNAL_OPEN, type SignalRule, type Strategy,
 } from '@/types/strategy';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
@@ -94,26 +94,14 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
     const o = r[other];
     return { ...p, signal: { ...r, [k]: v, ...(o?.on && v.on && o.by !== v.by ? { [other]: { ...o, by: v.by } } : {}) } };
   });
-  // Bought or sold: the leg, the entry and the option's exits all follow it.
-  const buying = actionOf(rule) === 'buy';
   const live = Boolean(c.liveOrders);
-  const setAction = (a: SignalAction) => d.setC((p) => (actionOf(p.signal) === a ? p : {
-    ...p,
-    signal: { ...(p.signal ?? DEFAULT_SIGNAL_RULE), action: a },
-    // The option's own target and stop mean the opposite thing bought and sold -- a 200% stop is a seller's, a
-    // 300% target a buyer's -- so a change of side starts both off (0) rather than carry a number across.
-    targetMode: 'pct' as const, takeProfitPct: 0, takeProfitPoints: 0, takeProfitAt: 0, targetSteps: [],
-    stopMode: 'pct' as const, stopLossPct: 0, stopLossPoints: 0, stopLossAt: 0, stopSteps: [],
-    // Changing side switches live orders off: real orders of the other kind are switched on again on purpose, never carried over.
-    liveOrders: false,
-  }));
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         title={editing ? `Edit ${editing.name}` : 'New signal strategy'}
         tag={editing ? groupName : group?.name ?? null}
-        description={`Each TRADE signal of the methods you pick, ${buying ? 'bought' : 'sold'} as one option. Times are IST.${!editing && group ? ` Made in the group "${group.name}".` : ''}`}
+        description={`Each TRADE signal of the methods you pick, sold as one option. Times are IST.${!editing && group ? ` Made in the group "${group.name}".` : ''}`}
         className="sm:w-[min(760px,94vw)]"
       >
         <NameField value={d.name} onChange={d.setName} touched={d.nameTouched} onTouched={() => d.setNameTouched(true)}
@@ -137,37 +125,16 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
 
           {tab === 'sell' && (
             <>
-              {/*
-                Buy the option or sell it (owner, 5 Oct 2026). Sold is what every strategy did before the choice:
-                a BUY signal sells the put, a SELL the call. Bought, a BUY signal buys the call, a SELL the put.
-              */}
-              <Stack label="Option — buy it or sell it" className="mb-3">
-                <div role="radiogroup" aria-label="option buy or sell" className="flex gap-0.5 rounded-lg bg-muted p-0.5">
-                  {([['buy', 'BUY'], ['sell', 'SELL']] as const).map(([v, label]) => (
-                    <button key={v} type="button" role="radio" aria-checked={actionOf(rule) === v} onClick={() => setAction(v)}
-                            className={cn('m-0 h-9 flex-1 appearance-none rounded-md border-0 px-2 font-[inherit] text-[12.5px] font-semibold',
-                              actionOf(rule) === v ? 'bg-background shadow-sm' : 'bg-transparent text-muted-foreground',
-                              actionOf(rule) === v && (v === 'buy' ? 'text-[var(--up)]' : 'text-[var(--down)]'))}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {buying && (
-                  <p role="note" className="m-0 mt-1.5 rounded-md border border-solid border-border px-2.5 py-2 text-[11.5px] leading-snug text-muted-foreground">
-                    Bought at the offer, sold to close. The most it can lose is the premium paid. Its option target and stop are
-                    watched by the desk on the bid, so they act while the desk is up — like the perp&apos;s SL and TGT.
-                  </p>
-                )}
-              </Stack>
+              {/* Sold, always (21 Oct 2026: this desk only sells options): a BUY signal sells the put, a SELL the call. */}
               <Stack label="Leg — from the signal">
                 <div className="grid grid-cols-2 gap-2" aria-label="leg from the signal">
                   <div className="rounded-lg bg-muted px-2.5 py-2 text-[12px]">
-                    <span className="font-semibold text-[var(--up)]">BUY</span> signal → {buying ? 'buys' : 'sells'} <b>{legOfSignal('long', actionOf(rule))}</b>
-                    <span className="mt-0.5 block text-[10.5px] text-muted-foreground">{buying ? 'wins as BTC rises' : 'wins as BTC rises or holds'}</span>
+                    <span className="font-semibold text-[var(--up)]">BUY</span> signal → sells <b>{legOfSignal('long', 'sell')}</b>
+                    <span className="mt-0.5 block text-[10.5px] text-muted-foreground">wins as BTC rises or holds</span>
                   </div>
                   <div className="rounded-lg bg-muted px-2.5 py-2 text-[12px]">
-                    <span className="font-semibold text-[var(--down)]">SELL</span> signal → {buying ? 'buys' : 'sells'} <b>{legOfSignal('short', actionOf(rule))}</b>
-                    <span className="mt-0.5 block text-[10.5px] text-muted-foreground">{buying ? 'wins as BTC falls' : 'wins as BTC falls or holds'}</span>
+                    <span className="font-semibold text-[var(--down)]">SELL</span> signal → sells <b>{legOfSignal('short', 'sell')}</b>
+                    <span className="mt-0.5 block text-[10.5px] text-muted-foreground">wins as BTC falls or holds</span>
                   </div>
                 </div>
               </Stack>
@@ -177,7 +144,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               <DeltaByVolFields
                 value={rule.deltaByVol} onChange={(v) => setByVol('deltaByVol', v)} error={err('deltaByVol')}
                 ownDelta={c.strikeRule === 'delta' ? c.delta?.max ?? null : null} byDelta={c.strikeRule === 'delta'}
-                hasBlocks={(c.strikeBlocks ?? []).length > 0} buying={buying} live={live}
+                hasBlocks={(c.strikeBlocks ?? []).length > 0} live={live}
                 onPickByDelta={() => d.setC((p) => ({ ...p, strikeRule: 'delta', delta: p.delta ?? { ...DEFAULT_DELTA } }))}
               />
               <SizeFields c={c} set={set} err={err} sizing={d.sizing} spot={spot} label="Lots per signal" warnings={d.warnings} />
@@ -204,26 +171,11 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                   ]}
                 />
               </Stack>
-              {buying ? (
-                // Bought: a limit at the offer -- it crosses, and pays no more than the price it was judged at. The
-                // seller's fields (rest at the offer, then sell at the bid) are not shown as if they applied.
-                <div aria-label="entry price for a bought option" className="rounded-lg border border-solid border-border px-2.5 py-2">
-                  <div className="text-[12.5px] font-medium text-foreground">Entry price — the offer</div>
-                  <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
-                    A buyer pays the offer: each signal is bought with a limit at the offer of its strike,{' '}
-                    {(rule.enterOn ?? 'zone') === 'zone' ? 'when the perp reaches the zone' : 'at the candle that makes the signal'}.
-                    Still unfilled {SIGNAL_ENTRY_MIN} minutes later, it is cancelled.
-                  </p>
-                </div>
-              ) : (
-                <>
                   <EntryPriceFields c={c} set={set} err={err} allowSet={false} />
                   <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
                     Sent once, within a second of {(rule.enterOn ?? 'zone') === 'zone' ? 'the perp reaching the zone' : 'the candle that makes the signal'}.
                     Still unfilled {SIGNAL_ENTRY_MIN} minutes later, it is cancelled — a late fill on a signal is a different trade.
                   </p>
-                </>
-              )}
 
               {/*
                 The exits that matter: the signal's own SL and TGT on the BTC
@@ -234,12 +186,10 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                 <div className="text-[12.5px] font-medium text-foreground">Exits on the BTC perp — from each signal</div>
                 <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
                   The SL and TGT are the signal&apos;s own levels on the BTC perpetual, made by its method for each signal
-                  (SL past the structure by 0.25 ATR). {buying
-                    ? 'A bought option would be sold the moment the perp reaches either; its record on the perp is kept the same way.'
-                    : 'The desk watches the perp’s last trade and buys the option back the moment either is reached.'}
+                  (SL past the structure by 0.25 ATR). The desk watches the perp’s last trade and buys the option back the moment either is reached.
                 </p>
                 {/* The perp's own levels skipped (18 Oct 2026): a strategy that sells only -- its option's stop then closes a loser. */}
-                {!buying && (
+                {(
                   <div className="mt-2">
                     <BacktestSkipPerp live name="Perp SL and TGT, skipped" sl={rule.skipPerpSl === true} tgt={rule.skipPerpTgt === true}
                       optionStop={c.stopLossPct > 0} optionTarget={c.takeProfitPct > 0} error={err('skipPerp')}
@@ -259,7 +209,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                   />
                 </Stack>
                 <Stack label="At most open at once" error={err('maxOpen')} className="mt-2"
-                       hint={`1 to ${MAX_SIGNAL_OPEN}. ${buying ? 'Counts the would-buys still in play.' : 'Live orders off counts the would-sells still in play.'} A signal past this is written down and not taken.`}>
+                       hint={`1 to ${MAX_SIGNAL_OPEN}. Live orders off counts the would-sells still in play. A signal past this is written down and not taken.`}>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Input value={String(rule.maxOpen)} aria-label="max open" inputMode="numeric" className="w-20"
                            onChange={(e) => setRule('maxOpen', Math.trunc(num(e.target.value, 0)))} />
@@ -284,24 +234,23 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
                 <li><b className="text-foreground">Option TP / SL</b> — only if you set them below (0 = off, nothing placed). Set, they rest at Delta: whichever is reached first closes the trade, and they still work if the desk is down.</li>
               </ol>
               <div className="mt-3 text-[12px] text-muted-foreground">
-                {buying
-                  ? 'Option TP / SL — optional, 0 is off. Bought: the target is a sale over the entry, with no upper limit; the stop a sale under it, up to 99% — the premium and no more.'
-                  : 'Option TP / SL — optional, 0 is off. Sold: the target is a buy-back under the entry, up to 99%, resting at Delta. The stop is a buy-back over the entry: the desk watches it and buys back at the market once the offer holds there 15 s; a backup stop rests at Delta further out, just inside the close-out, in case the desk is down.'}
+                Option TP / SL — optional, 0 is off. Sold: the target is a buy-back under the entry, up to 99%, resting at Delta. The stop is a
+                buy-back over the entry: the desk watches it and buys back at once when the offer and Delta&apos;s mark are both through it, or once
+                the offer holds there 3 s; a backup stop rests at Delta further out, just inside the close-out, in case the desk is down.
               </div>
               {/* The "no target and no stop" warning is for a clock strategy; this one always has the perp's SL and TGT. */}
-              {/* Both, bought or sold; bought, each is on the other side of the entry (ExitRuleEditor). */}
-              <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} bought={buying} spot={spot}
+                            <OptionExitFields c={c} setC={d.setC} exits={d.exits} err={err} reference={d.reference} spot={spot}
                                 warnings={d.warnings.filter((w) => !/target and no stop/.test(w))} className="mt-1" />
               {/* The option SL by how volatile it is at each signal (17 Oct 2026): one number of the stop above, by level. */}
               <SlByVolFields
                 value={rule.slByVol} onChange={(v) => setByVol('slByVol', v)} error={err('slByVol')}
                 ownStopPct={(c.stopMode ?? 'pct') === 'pct' ? c.stopLossPct : 0} byPct={(c.stopMode ?? 'pct') === 'pct'}
-                hasSteps={(c.stopSteps ?? []).length > 0} buying={buying} live={live}
+                hasSteps={(c.stopSteps ?? []).length > 0} live={live}
                 sharedWithDelta={Boolean(rule.deltaByVol?.on)}
                 onStopByPct={() => d.setC((p) => ({ ...p, stopMode: 'pct', stopLossPct: p.stopLossPct > 0 ? p.stopLossPct : 1.6, stopLossPoints: 0, stopLossAt: 0 }))}
                 onDropSteps={() => d.setC((p) => ({ ...p, stopSteps: [] }))}
               />
-              {!buying && d.exits.stop.value <= 0 && !d.exits.stop.steps.some((st) => st.value > 0) && (
+              {d.exits.stop.value <= 0 && !d.exits.stop.steps.some((st) => st.value > 0) && (
                 <p role="note" className="m-0 mt-2 rounded-md border border-solid border-[var(--warn)]/40 bg-[var(--warn)]/10 px-2.5 py-2 text-[11.5px] leading-snug text-[var(--warn)]">
                   Option stop off — nothing is placed on the option. Only the perp SL protects the trade, and only while the desk can see the perp.{' '}
                   <button type="button" onClick={() => d.setC((p) => ({ ...p, stopMode: 'pct', stopLossPct: 2, stopSteps: [] }))}
@@ -334,7 +283,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
               <Switch
                 label="Live orders"
                 description={live
-                  ? `ON — each signal places a real ${buying ? 'buy' : 'sell'} order at Delta.`
+                  ? 'ON — each signal places a real sell order at Delta.'
                   : 'Off — each signal is written down as the order it would be. Nothing is sent.'}
                 checked={live}
                 onCheckedChange={(on) => set('liveOrders', on)}

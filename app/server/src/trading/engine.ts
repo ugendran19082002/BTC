@@ -1,13 +1,13 @@
 import type {
   AddWorking, ExchangeOrder, OptionSide, OrderRole, PlaceOrderRequest, ProductSpec, Quote, TradeEvent, TradeState,
 } from './types.js';
-import { CHASE_STEPS, exitPriceProblem, longLevels, protectionFor, type ExitAsk, type LongExits } from './order-plan.js';
+import { CHASE_STEPS, exitPriceProblem, protectionFor, type ExitAsk } from './order-plan.js';
 import type { Candle } from '../market/delta.js';
 import { applyEvent, initialTrade, isDone, protectionSize } from './machine.js';
 import {
-  priceFor, lotsToContracts, roundToTick, slippageOf, stopFillLimit, stopPriceFor, targetTickFor, SLIPPAGE_ALERT_PCT, STOP_LIMIT_MIN_TICKS, STOP_LIMIT_SLACK,
+  priceFor, lotsToContracts, slippageOf, stopFillLimit, stopPriceFor, targetTickFor, SLIPPAGE_ALERT_PCT, STOP_LIMIT_MIN_TICKS, STOP_LIMIT_SLACK,
 } from './money.js';
-import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits, precheckBuy } from './precheck.js';
+import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskLimits } from './precheck.js';
 import { clampLeverage, fundsRequiredPerContract, liquidationRoom, premiumUsd } from './margin.js';
 import { fillChargesUsd } from './charges.js';
 import { closeEligibility, closePreview, type ClosePreview } from './close-preview.js';
@@ -584,14 +584,6 @@ export function underlyingTouched(
  */
 export const STOP_CONFIRM_MS = 3_000;
 /**
- * A bought option's stop, on the bid (`longExitIfReached`): its own wait, apart from a sold one's (owner, 21 Oct 2026:
- * "the long option's stop policy decided on its own"). Fifteen seconds, as it was before the sold stop went to three:
- * what a bought option can lose is what was paid for it, and a thin option's bid is pulled and put back -- a short wait
- * sells it on a flicker.
- */
-export const LONG_STOP_CONFIRM_MS = 15_000;
-
-/**
  * What the backstop resting at Delta is armed by (21 Oct 2026). Delta's mark for a cheap option is not a price on the
  * expiry day: over a week of the desk's minute record the mark was more than twice the offer in 10.8% of the minutes
  * with the offer under 5 and 0.28% with it at 5-20, and almost never above; on 19 Oct the P-82200 was marked 8.8, 32.5,
@@ -965,23 +957,11 @@ export class TradeEngine {
     const size = product ? lotsToContracts(plan.lots, product.lotSize) : plan.lots;
     const held = positions.find((p) => p.symbol === plan.symbol)?.size ?? 0;
     /*
-     * A bought option goes through the buyer's gate (precheck.ts `precheckBuy`): no margin, no short cap, and
-     * a worst case that is the premium paid. Priced at the offer, with the taker fee, against the free balance.
+     * This desk sells options and buys them back; it does not buy one to hold (owner, 21 Oct 2026: "I only sell and exit
+     * -- no BUY entries"). A plan to buy is refused here, whoever asks, before anything is sent.
      */
     if (plan.action === 'buy') {
-      if (this.judgedOn.size > 256) this.judgedOn.clear();
-      if (quote) this.judgedOn.set(plan.tradeId, { bid: quote.bid ?? null, ask: quote.ask ?? null, mark: quote.mark ?? null, at: quote.ts });
-      const ask = quote?.ask ?? null;
-      const costUsd = ask !== null && ask > 0
-        ? premiumUsd(ask, size, product?.contractValue)
-          + fillChargesUsd({ price: ask, contracts: size, contractValue: product?.contractValue ?? 0.001, spot }).totalUsd
-        : null;
-      return precheckBuy({
-        now: this.now(), size, expect: plan.expect, product, quote,
-        feedHealthy: this.feedHealthy(), tradingEnabled: this.d.tradingEnabled !== false,
-        availableUsd: balance, costUsd, existingPosition: held, dayPnlUsd: await this.dayPnl(), limits: this.limits,
-        totalLongContracts: positions.reduce((n, p) => n + (p.size > 0 ? p.size : 0), 0),
-      });
+      return { ok: false, failures: [{ code: 'SELL_ONLY', message: 'This desk only sells options: buying one to hold is not taken.' }] };
     }
     /*
      * "Already holding" is about who is asking (0011). A strategy is refused
@@ -1080,8 +1060,7 @@ export class TradeEngine {
         tradeId: plan.tradeId, symbol: plan.symbol, productId: product?.productId ?? 0,
         optionSide: plan.optionSide, requestedSize: size, at,
         // A stop asked for off the fill has no price until the fill, and is still wanted.
-        // A bought option has no resting stop at all: its exits are the desk's to judge (`longExitIfReached`).
-        wantsProtection: plan.action === 'buy' ? false : plan.stopPrice !== null || asksStop(plan.exitAsk),
+        wantsProtection: plan.stopPrice !== null || asksStop(plan.exitAsk),
         contractValue: product?.contractValue,
       }),
     };
@@ -1328,22 +1307,7 @@ export class TradeEngine {
     return this.withTrade(tradeId, () => this.updateProtectionInner(tradeId, next, follow, exitStage));
   }
 
-  /**
-   * Move a bought position's own target and stop (`plan.longExits`). The short's fields stay null on a long:
-   * `stopIfReached` judges `plan.stopPrice` as a short's stop, and on a long it would sell a winner.
-   */
-  updateLongExits(tradeId: string, next: LongExits): Promise<TradeState | null> {
-    return this.withTrade(tradeId, async () => {
-      let rec = await this.d.store.get(tradeId);
-      if (!rec) return null;
-      if (rec.state.position <= 0) return rec.state;
-      rec.plan = { ...rec.plan, longExits: next, takeProfitPrice: null, stopPrice: null };
-      this.protectAfter.delete(tradeId);
-      rec = await this.protect(rec);
-      await this.d.store.save(rec);
-      return rec.state;
-    });
-  }
+
 
   /**
    * Buy back at the market, right now: all of it, or the `size` asked for.
@@ -1631,10 +1595,8 @@ export class TradeEngine {
     if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
       rec = await this.stopIfReached(rec);
     }
-    // A bought option's own target and stop: nothing rests at the exchange for them, so they are judged here.
-    if (rec.state.position > 0 && rec.state.phase !== 'exit_pending') {
-      rec = await this.longExitIfReached(rec);
-    }
+    // A bought position is not this desk's (it only sells): said once, and left to be closed by hand (`notOurs`).
+    if (rec.state.position > 0 && rec.state.phase !== 'exit_pending') rec = await this.notOurs(rec);
 
     if (rec.state.position === 0 && rec.state.entrySize > 0 && rec.state.phase !== 'flat') {
       rec = await this.cancelSiblings(rec, true);
@@ -1717,8 +1679,9 @@ export class TradeEngine {
    * cancel is exactly how two live orders happen.
    */
   async protect(recIn: TradeRecord): Promise<TradeRecord> {
-    // A bought position has its own: a resting sale at the target (`protectLong`). Everything below is a short's.
-    if (recIn.state.position > 0 || recIn.plan.action === 'buy') return this.protectLong(recIn);
+    // A bought position: nothing is put behind it. Every order below is a short's buy-back, and on a long a reduce-only
+    // buy would add to it, not close it. It is said once (`notOurs`) and closed by hand.
+    if (recIn.state.position > 0 || recIn.plan.action === 'buy') return recIn;
     let rec = anchorExits(recIn);
     const size = protectionSize(rec.state);
     if (size === 0) return rec;
@@ -2036,108 +1999,6 @@ export class TradeEngine {
   }
 
   /** Take every protective order off the book, verifying each one. */
-  /**
-   * A bought position's target, resting at Delta (5 Oct 2026): a reduce-only limit **sale** at the target off the
-   * price paid (`plan.longExits`), the mirror of a short's resting buy-back. Until now nothing rested for a long and
-   * the desk sold at the market when the bid reached it -- which works only while the desk is up, and showed
-   * "target none" on a position that had one.
-   *
-   * A resting sale fills at its price or better and cannot fire early. The stop still rests nowhere: the desk
-   * judges it on the bid (`longExitIfReached`), and what a bought option can lose is what was paid for it.
-   * Same discipline as `protect()`: the book is read first, an order at the wrong price is edited in place,
-   * a cancel is verified before anything replaces it.
-   */
-  private async protectLong(rec: TradeRecord): Promise<TradeRecord> {
-    const size = rec.state.position > 0 ? rec.state.position : 0;
-    if (size === 0) return rec;
-    const entry = rec.state.entryAvgPrice;
-    const wanted = entry !== null && entry > 0 ? longLevels(rec.plan.longExits, entry).target : null;
-    // Nothing wanted and nothing recorded: nothing to read the book for.
-    if (wanted === null && !rec.state.protection.takeProfit) return rec;
-
-    const notBefore = this.protectAfter.get(rec.state.tradeId);
-    if (notBefore !== undefined && this.now() < notBefore) return rec;
-    // The venue taking nothing new: the resting sale is left where it is, and asked again after the hold (as `protect`).
-    const restriction = this.exchange.restriction?.() ?? null;
-    if (restriction) {
-      this.protectAfter.set(rec.state.tradeId, restriction.until);
-      this.protectionOwed.add(rec.state.tradeId);
-      return rec;
-    }
-
-    const [held, product, book] = await Promise.all([
-      this.exchange.getPositions()
-        .then((ps) => ps.find((p) => p.symbol === rec.plan.symbol)?.size ?? 0)
-        .catch(() => null),
-      this.exchange.getProduct(rec.plan.symbol).catch(() => null),
-      this.exchange.getOpenOrders(rec.plan.symbol).catch(() => null),
-    ]);
-    if (held === null || book === null) return rec;
-    // A reduce-only sale needs a long the exchange agrees exists.
-    if (!(held > 0)) {
-      this.protectAfter.set(rec.state.tradeId, this.now() + PROTECT_RETRY_MS);
-      return rec;
-    }
-
-    const tick = product?.tickSize ?? 0.1;
-    const attempt = rec.events.filter((e) => e.t === 'protection_placed' || e.t === 'protection_failed').length;
-    const siblings = await this.siblingsOn(rec);
-    const live = book.filter((o) => o.reduceOnly && o.side === 'sell' && o.type === 'limit'
-      && (o.status === 'open' || o.status === 'partial') && !TradeEngine.ownedByAnother(o, siblings));
-    // Down to the tick -- towards filling -- and never at or under what was paid: that is not a target.
-    const target = wanted === null ? null : (() => {
-      const down = roundToTick(wanted, tick, 'down');
-      return entry !== null && down <= entry ? roundToTick(entry + tick, tick, 'up') : down;
-    })();
-
-    let failure: string | null = null;
-    let tp: string | null = null;
-    const keep = target === null ? undefined : live.find((o) => o.limitPrice === target && o.size - o.filledSize === size);
-    if (!keep && target !== null && live.length === 1 && live[0]!.filledSize === 0) {
-      try {
-        await this.exchange.editOrder(live[0]!, { limitPrice: target, size });
-        tp = live[0]!.clientOrderId ?? clientId(rec.state.tradeId, 'take_profit', attempt);
-      } catch (e) {
-        // Refused for the venue's state: it rests where it is -- the long way would cancel it with nothing to put back.
-        if (e instanceof VenueRestricted) { failure = (e as Error).message; tp = live[0]!.clientOrderId ?? clientId(rec.state.tradeId, 'take_profit', attempt); }
-        /* otherwise the long way, below */
-      }
-    }
-    if (tp === null) {
-      for (const o of live) {
-        if (o === keep) continue;
-        if (!(await this.cancelAndVerify(o))) failure ??= 'could not cancel the target already on the book';
-      }
-      if (keep) tp = keep.clientOrderId;
-      else if (failure === null && target !== null) {
-        const cid = clientId(rec.state.tradeId, 'take_profit', attempt);
-        try {
-          await this.exchange.placeOrder({
-            clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
-            side: 'sell', type: 'limit', size, limitPrice: target, reduceOnly: true, role: 'take_profit',
-          });
-          tp = cid;
-        } catch (e) {
-          failure = (e as Error).message;
-        }
-      }
-    }
-
-    const sizeNow = tp === null ? 0 : size;
-    if (tp !== rec.state.protection.takeProfit || rec.state.protection.stopLoss !== null || (rec.state.protection.size ?? 0) !== sizeNow) {
-      rec = await this.commit(rec, { t: 'protection_placed', takeProfit: tp, stopLoss: null, size: sizeNow, at: this.now() });
-    }
-    if (failure === null) {
-      this.protectAfter.delete(rec.state.tradeId);
-      this.protectionOwed.delete(rec.state.tradeId);
-      return rec;
-    }
-    this.protectionOwed.add(rec.state.tradeId);
-    const tries = rec.events.filter((x) => x.t === 'protection_failed').length;
-    this.protectAfter.set(rec.state.tradeId, this.now() + Math.min(PROTECT_RETRY_MAX_MS, PROTECT_RETRY_MS * 2 ** tries));
-    return await this.commit(rec, { t: 'protection_failed', reason: failure, at: this.now() });
-  }
-
   private async clearProtection(recIn: TradeRecord): Promise<TradeRecord> {
     let rec = recIn;
     const book = await this.exchange.getOpenOrders(rec.plan.symbol).catch(() => []);
@@ -2152,7 +2013,6 @@ export class TradeEngine {
     }
     return rec;
   }
-
   /**
    * One exit won. Take the other one off the book.
    *
@@ -2578,48 +2438,15 @@ export class TradeEngine {
   }
 
   /**
-   * A bought option's own target and stop (`plan.longExits`), judged on the bid.
-   *
-   * A bought position is sold at the bid, so the bid is the price that says a level is really reached -- the
-   * mirror of a short's stop on the offer (`stopIfReached`). The target is taken the moment the bid is there:
-   * selling into a bid at or over the target is the target. The stop has to hold for `LONG_STOP_CONFIRM_MS`, like a
-   * short's, so one stray quote does not sell the position. A missing or stale bid does nothing.
-   *
-   * Nothing rests at the exchange for these, so they work only while the desk is up -- as the signal's levels
-   * on the perp do. What a bought option can lose is bounded all the same: what was paid for it.
+   * A bought position on a trade of this desk's (21 Oct 2026): it only sells options, so a long is not its own -- an old
+   * record, or one bought by hand. Nothing is placed behind it or sold for it; it is said once, where the alarms go, to
+   * be closed by hand (`closeNow` sells it).
    */
-  private async longExitIfReached(rec: TradeRecord): Promise<TradeRecord> {
-    const own = rec.plan.longExits;
-    const entry = rec.state.entryAvgPrice;
-    if (!own || entry === null || !(entry > 0)) return rec;
-    const levels = longLevels(own, entry);
-    // A target resting at Delta (`protectLong`) is the target: it fills at its price. The desk sells at the
-    // market only when nothing rests for it -- placement refused, say.
-    const target = ownsClientId(rec.state.tradeId, rec.state.protection.takeProfit ?? null) ? null : levels.target;
-    const stop = levels.stop;
-    if (target === null && stop === null) return rec;
-
-    const id = rec.state.tradeId;
-    const quote = await this.exchange.getQuote(rec.plan.symbol).catch(() => null);
-    const bid = quote?.bid ?? null;
-    if (quote === null || this.now() - quote.ts > MARK_STALE_MS) return rec;
-    if (bid === null || !Number.isFinite(bid) || bid <= 0) return rec;
-    const p2 = (n: number) => (Math.round(n * 100) / 100).toString();
-
-    if (target !== null && bid >= target) {
-      this.stopSince.delete(id);
-      await this.closeNowInner(id, `option target reached: the bid at ${p2(bid)} (target ${p2(target)}, bought at ${p2(entry)})`);
-      return await this.d.store.get(id) ?? rec;
-    }
-    if (stop === null || bid > stop) { this.stopSince.delete(id); return rec; }
-    const since = this.stopSince.get(id) ?? this.now();
-    this.stopSince.set(id, since);
-    if (this.now() - since < LONG_STOP_CONFIRM_MS) return rec;
-    this.stopSince.delete(id);
-    await this.closeNowInner(id, `option stop reached: the bid held at ${p2(bid)} (stop ${p2(stop)}, bought at ${p2(entry)}) for ${Math.round((this.now() - since) / 1000)} s`);
-    return await this.d.store.get(id) ?? rec;
+  private async notOurs(rec: TradeRecord): Promise<TradeRecord> {
+    const reason = 'A bought position: this desk only sells options and does not manage it. Close it by hand.';
+    if (rec.events.some((e) => e.t === 'protection_failed' && e.reason === reason)) return rec;
+    return this.commit(rec, { t: 'protection_failed', reason, at: this.now() });
   }
-
   /**
    * The underlying's own exit (`plan.underlying`): the perp's last trade at the
    * signal's stop or target, and the option is bought back at the market.
@@ -3309,15 +3136,8 @@ export function targetHoldOf(rec: TradeRecord): { holds: number; until: number }
 }
 
 export function missingProtection(rec: TradeRecord, now = Date.now()): boolean {
-  // A bought position: only a target rests (`protectLong`), off `plan.longExits`.
-  if (rec.state.position > 0) {
-    const entry = rec.state.entryAvgPrice;
-    const wants = entry !== null && entry > 0 && longLevels(rec.plan.longExits, entry).target !== null;
-    const tp = rec.state.protection.takeProfit ?? null;
-    return wants
-      ? !ownsClientId(rec.state.tradeId, tp) || (rec.state.protection.size ?? 0) !== rec.state.position
-      : tp !== null;
-  }
+  // A bought position: nothing is put behind it (`notOurs`), so nothing is missing.
+  if (rec.state.position > 0) return false;
   const wantsStop = rec.plan.stopPrice !== null;
   /*
    * A target held off the book (`noteTargetChurn`) is not missing: it is meant to be away. Read as missing, every

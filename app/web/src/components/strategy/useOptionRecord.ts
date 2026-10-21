@@ -5,7 +5,7 @@ import { rangeOf } from '@/lib/market-report';
 import { BACKTEST_DEFAULTS, settingsWords } from '@/components/report/backtest-words';
 import { exitRules } from '@/lib/strategy-exits';
 import { time12 } from '@/lib/time';
-import { CHAIN_PTS, actionOf, ruleTfs, type StrategyConfig } from '@/types/strategy';
+import { CHAIN_PTS, ruleTfs, type StrategyConfig } from '@/types/strategy';
 import type { BacktestParams, MethodOptionRecord, SignalBacktestResponse } from '@/types/signal-backtest';
 
 /**
@@ -42,18 +42,17 @@ export function useOptionRecord(c: StrategyConfig, on: boolean): OptionRecordSta
   const [state, setState] = useState<OptionRecordState>({ data: null, error: null, busy: false });
   const asked = useRef(0);
   const rule = c.signal;
-  const sells = actionOf(rule) === 'sell';
   // What the record depends on: the rules, without which methods are ticked and how many may be open.
   const key = useMemo(
     () => (rule ? JSON.stringify({ ...c, liveOrders: false, signal: { ...rule, methods: [], maxOpen: 1 } }) : ''),
     [c, rule],
   );
-  const ready = on && Boolean(rule) && sells && (rule!.mode === 'mtf' || ruleTfs(rule!).length > 0);
+  const ready = on && Boolean(rule) && (rule!.mode === 'mtf' || ruleTfs(rule!).length > 0);
   useEffect(() => {
     if (!on) return;
-    if (!rule || !sells) {
+    if (!rule) {
       asked.current++;
-      setState({ data: null, error: rule ? 'A record as options is worked out for strategies that sell.' : null, busy: false });
+      setState({ data: null, error: null, busy: false });
       return;
     }
     if (!ready) { asked.current++; setState((s) => ({ ...s, busy: false })); return; }
@@ -67,7 +66,7 @@ export function useOptionRecord(c: StrategyConfig, on: boolean): OptionRecordSta
     }, OPTION_RECORD_WAIT_MS);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, ready, on, sells]);
+  }, [key, ready, on]);
   const screen = useScreenRecord(c, on && ready);
   return { ...state, screen };
 }

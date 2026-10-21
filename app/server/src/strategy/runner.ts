@@ -741,46 +741,8 @@ export class StrategyRunner {
       + (args.limitPrice !== undefined ? stopHeldWords(args.limitPrice, args) : '')
       + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · ${perpLevels}${block}`;
 
-    /*
-     * A BUY-side strategy (5 Oct 2026). A buyer pays the offer: the order is a limit at the offer -- it crosses,
-     * and it cannot pay more than the price it was judged at -- cancelled if still unfilled after
-     * SIGNAL_ENTRY_MS. It goes through the buyer's gate (engine.ts `precheckBuy`), carries the perp's SL and TGT
-     * as every signal trade does, and its own option target and stop as levels the desk judges on the bid.
-     * With live orders off it is written down as the order it would be, as before.
-     */
-    if (action === 'buy') {
-      // The option's own exits, where set, on the buyer's side of the offer paid: the target a sale over it, the stop a sale under it.
-      const own = exitRules(s.config);
-      const paid = Number(chosen.ask);
-      const levelOf = (r: { mode: string; value: number }, up: boolean): number | null => (!(r.value > 0) || !(paid > 0) ? null
-        : Math.max(0, Math.round((r.mode === 'pct' ? paid * (1 + (up ? r.value : -r.value)) : r.mode === 'points' ? paid + (up ? r.value : -r.value) : r.value) * 100) / 100));
-      const ownTgt = levelOf(own.target, true), ownStop = levelOf(own.stop, false);
-      const bought = `buy ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.ask ?? '—'}`
-        + `${ownTgt !== null ? ` · option TGT ${ownTgt}` : ''}${ownStop !== null ? ` · option SL ${ownStop}` : ''}`
-        + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · ${perpLevels}${block}`;
-      if (!(Number(chosen.ask) > 0)) { await finish('refused', `refused: ${leg} ${chosen.strike} has no offer to buy at${block}`); return; }
-      if (!s.config.liveOrders) { await finish('would-place', `live orders off: would ${bought}`); return; }
-      const { target: tgtRule, stop: stopRule } = exitRules(s.config);
-      const buyArgs = {
-        symbol: args.symbol, optionSide: leg, strike: chosen.strike, expiryTs: snap.expiryTs, lots: chosen.lots,
-        strategyId: s.id, strategyName: s.name, origin: 'strategy' as const,
-        action: 'buy' as const, limitPrice: paid, timeoutMs: SIGNAL_ENTRY_MS,
-        longExits: {
-          target: tgtRule.value > 0 ? { mode: tgtRule.mode, value: tgtRule.value } : null,
-          stop: stopRule.value > 0 ? { mode: stopRule.mode, value: stopRule.value } : null,
-        },
-        underlying: args.underlying, signal: args.signal,
-      };
-      const res = await svc.place(buyArgs);
-      if (!res.ok) {
-        await finish('refused', `${bought} -- refused: ${res.precheck ? failureText(res.precheck) : 'refused'}`);
-        this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'failed', detail: 'refused', failedLegs: [bought], at: now }, ctx));
-        return;
-      }
-      await finish('placed', bought, res.state.tradeId);
-      this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'placed', detail: bought, failedLegs: [], at: now }, ctx));
-      return;
-    }
+    // This desk only sells options (owner, 21 Oct 2026): a strategy saved to buy is refused on save, and here too.
+    if (action === 'buy') { await finish('refused', 'this desk only sells options: a strategy that buys is not traded'); return; }
 
     if (!s.config.liveOrders) {
       const p = await svc.wouldPlace(args);

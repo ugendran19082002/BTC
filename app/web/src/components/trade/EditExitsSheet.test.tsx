@@ -329,42 +329,13 @@ const bought = (over: Partial<Trade> = {}): Trade => trade({
   ...over,
 });
 
-describe('a bought position', () => {
-  it('[critical] reads as bought, its target over the price paid with no 99% cap, and no liquidation', () => {
+describe('a bought position (selling only, 21 Oct 2026)', () => {
+  it('[critical] is not managed here: a note to close it by hand, and no exit form and nothing to save', () => {
     render(<EditExitsSheet trade={bought()} open onOpenChange={() => {}} />);
-    expect(screen.getByText('Bought 1 @ 40.00')).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'target percent' })).toHaveValue('350');
-    expect(screen.getByText('On Delta now · target').nextSibling).toHaveTextContent('sell at 180.00');
-    expect(screen.queryByText(/liquidat/i)).toBeNull();
-    expect(screen.queryByText(/of the credit/i)).toBeNull();
-    expect(screen.getByRole('button', { name: 'Save exits' })).toBeEnabled();
-  });
-
-  it('[critical] saves the target and a stop as the long\'s shares', async () => {
-    const done = vi.fn();
-    render(<EditExitsSheet trade={bought()} open onOpenChange={done} />);
-    fireEvent.change(screen.getByRole('textbox', { name: 'target percent' }), { target: { value: '500' } });
-    fireEvent.click(screen.getByRole('checkbox', { name: 'stop on' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'stop percent' }), { target: { value: '40' } });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save exits' })); });
-    expect(updateExits).toHaveBeenCalledWith('t1', { takeProfitPct: 5, stopLossPct: 0.4 });
-    await waitFor(() => expect(done).toHaveBeenCalledWith(false));
-  });
-
-  it('[critical] a target resting at Delta that the plan does not name opens as that price, and saving it keeps it', async () => {
-    const t = bought();
-    render(<EditExitsSheet trade={{ ...t, plan: { ...t.plan!, longExits: undefined } }} open onOpenChange={() => {}} />);
-    expect(screen.getByRole('checkbox', { name: 'target on' })).toBeChecked();
-    expect(screen.getByRole('textbox', { name: 'target price' })).toHaveValue('180');
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save exits' })); });
-    expect(updateExits).toHaveBeenCalledWith('t1', { takeProfitPrice: 180, stopLossPct: 0 });
-  });
-
-  it('refuses a stop over 100% or a target price under what was paid, before sending', () => {
-    render(<EditExitsSheet trade={bought()} open onOpenChange={() => {}} />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'stop on' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'stop percent' }), { target: { value: '120' } });
-    expect(screen.getByText(/at most 100% under the price paid/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save exits' })).toBeDisabled();
+    expect(screen.getByRole('note')).toHaveTextContent('This desk only sells options: a bought position is not managed here');
+    expect(screen.queryByRole('textbox', { name: 'target percent' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'stop on' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save exits' })).toBeNull();
+    expect(updateExits).not.toHaveBeenCalled();
   });
 });

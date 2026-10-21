@@ -4,7 +4,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Input } from '@/components/ui/input';
 import { NumberField } from '@/components/ui/number-field';
-import { CHAIN_PTS, DEFAULT_AUTO_METHODS, actionOf, legOfSignal, ptsKeysOf, ruleTfs, SIGNAL_TFS, type PtsKey, type SignalRule, type SignalTf } from '@/types/strategy';
+import { CHAIN_PTS, DEFAULT_AUTO_METHODS, legOfSignal, ptsKeysOf, ruleTfs, SIGNAL_TFS, type PtsKey, type SignalRule, type SignalTf } from '@/types/strategy';
 import type { MethodRead, MethodReportRow } from '@/types/entry';
 import type { AutoMethodsRun, Strategy, WalkForward } from '@/types/strategy';
 import { AutoMethodsFields } from '@/components/strategy/AutoMethods';
@@ -352,7 +352,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           pickNow={pickNow ? (a) => pickNow({ ...rule, autoMethods: a }) : undefined}
           walkNow={walkNow ? (a, o) => walkNow({ ...rule, autoMethods: a }, o) : undefined}
           nameOf={(id) => { const m = nameOf(id); return m ? `#${m.n} ${m.name}` : id; }}
-          blocked={actionOf(rule) === 'buy' && !rule.autoMethods?.on ? 'Picks by the record as options sold: a strategy that buys cannot use it.' : null}
+          blocked={null}
           error={errors.auto}
           excludeList={(ids, put) => (
             <MethodList
@@ -550,12 +550,12 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
               <ul className="m-0 mt-1 list-none p-0">
                 {live.map((r) => {
                   const p = r.plan!;
-                  const leg = legOfSignal(r.dir!, rule.action === 'buy' ? 'buy' : 'sell');
+                  const leg = legOfSignal(r.dir!, 'sell');
                   return (
                     <li key={`${r.id}|${r.mode}|${r.tf}`} className="py-0.5 text-[11.5px] leading-snug tabular-nums">
                       <span className="text-muted-foreground">#{r.n} {nameOf(r.id)?.name ?? r.name}{rule.mode === 'single' && tfs.length > 1 ? ` (${r.tf})` : ''}</span>{' '}
                       <span className={r.dir === 'long' ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{r.dir === 'long' ? 'BUY' : 'SELL'}</span>
-                      {rule.action === 'buy' ? ' → buys ' : ' → sells '}<b className="font-semibold text-foreground">{leg}</b>
+                      {' → sells '}<b className="font-semibold text-foreground">{leg}</b>
                       {' · perp SL '}{px(p.stop)}
                       {' · TGT1 '}{px(p.tp1)}
                       {p.tp2 != null && <> · TGT2 {px(p.tp2)}</>}

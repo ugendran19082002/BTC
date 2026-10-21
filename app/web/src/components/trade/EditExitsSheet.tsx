@@ -5,7 +5,6 @@ import type { Trade } from '@/types/trade';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { ExitBars } from '@/components/trade/ExitBars';
-import { LongExitsForm } from '@/components/trade/LongExitsForm';
 import { Figure } from '@/components/ui/figure';
 import { checkExits } from '@/lib/exit-checks';
 import { exitAskOf, inputProblem, levelOf, type ExitInput } from '@/lib/exit-input';
@@ -100,7 +99,7 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
 
   if (!trade) return null;
 
-  // A bought position has its own exits: over the price paid and under it, not a short's credit and liquidation.
+  // A bought position: this desk only sells options (21 Oct 2026) and does not manage one -- its exits are not edited.
   if (trade.position > 0) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -111,8 +110,9 @@ export function EditExitsSheet({ trade, open, onOpenChange, onSaved }: {
             <Figure label="P&L" value={signedInr(usdToInr(trade.live?.unrealisedPnl ?? null))} second={signedUsd(trade.live?.unrealisedPnl ?? null)}
                     tone={trade.live?.unrealisedPnl == null || trade.live.unrealisedPnl === 0 ? undefined : trade.live.unrealisedPnl > 0 ? 'up' : 'down'} />
           </div>
-          {/* Keyed on the opening, so the poll replacing the trade every second does not reset what is being typed. */}
-          {open && <LongExitsForm key={trade.tradeId} trade={trade} onCancel={() => onOpenChange(false)} onDone={() => { onSaved?.(); onOpenChange(false); }} />}
+          <p role="note" className="m-0 rounded-md border border-solid border-[var(--warn-line)] bg-[var(--warn-tint)] px-2.5 py-2 text-[12.5px] leading-snug text-[var(--warn)]">
+            This desk only sells options: a bought position is not managed here -- nothing is placed behind it. Close it by hand.
+          </p>
         </SheetContent>
       </Sheet>
     );

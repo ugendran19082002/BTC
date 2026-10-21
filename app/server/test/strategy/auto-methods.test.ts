@@ -116,10 +116,10 @@ test('[critical] its settings are checked before a save', () => {
   assert.deepEqual(autoMethodsProblems(undefined), []);
   const bad = autoMethodsProblems({ on: true, at: '9pm', winPct: 0, minTrades: 1.5, days: 31 });
   assert.equal(bad.length, 4);
-  // a strategy that buys has no record as options to pick by
+  // a strategy that buys is not taken at all (21 Oct 2026: selling only)
   const buys = signal(['a']);
   buys.signal!.action = 'buy';
-  assert.ok(validateConfig(buys).some((p) => /strategy that buys cannot use it/.test(p)));
+  assert.ok(validateConfig(buys).some((p) => /only sells options/.test(p)));
   assert.deepEqual(validateConfig(signal(['a'])).filter((p) => /daily update/.test(p)), []);
 });
 

@@ -55,7 +55,6 @@ export const getSpot = () => json<{ spot: number; at: number }>('/api/spot');
 export type ShortCap = { inForce: number; ceiling: number | null; chosen: number | null };
 
 /** The long limit, per account: no margin ceiling -- a bought option is paid for in full. */
-export type LongCap = { inForce: number; chosen: number | null };
 
 /**
  * The day's loss budget on one account: whether it stops orders, the amount in force, half the account (what it
@@ -65,7 +64,7 @@ export type LossLimit = { on: boolean; inForceUsd: number; defaultUsd: number; c
 
 /** The desk settings, as the account being shown has them (its own limits). */
 export const getSettings = () =>
-  json<{ settings: Record<string, string | null>; shortCap: ShortCap; longCap?: LongCap; lossLimit?: LossLimit }>(withAccount('/api/settings'));
+  json<{ settings: Record<string, string | null>; shortCap: ShortCap; lossLimit?: LossLimit }>(withAccount('/api/settings'));
 
 /**
  * Change the day's loss budget on the account being shown: switch it on or off, or set its amount in USD
@@ -76,14 +75,6 @@ export const setLossLimit = (ask: { on?: boolean; usd?: number | null }) =>
     ...(ask.on !== undefined
       ? { key: 'daily_loss_limit_on', value: ask.on ? '1' : '0' }
       : { key: 'daily_loss_limit_usd', value: ask.usd == null ? 'default' : String(ask.usd) }),
-    ...(accountScope() === null ? {} : { accountId: accountScope() }),
-  });
-
-/** Ask for a long limit on the account being shown. */
-export const setLongCap = (contracts: number) =>
-  post<{ ok: true; key: string; value: string; longCap: LongCap }>('/api/settings', {
-    key: 'max_long_contracts',
-    value: String(contracts),
     ...(accountScope() === null ? {} : { accountId: accountScope() }),
   });
 
