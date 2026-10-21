@@ -772,11 +772,11 @@ export class StrategyRunner {
       const res = await svc.place(buyArgs);
       if (!res.ok) {
         await finish('refused', `${bought} -- refused: ${res.precheck ? failureText(res.precheck) : 'refused'}`);
-        this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'failed', detail: `${said}: refused`, failedLegs: [bought], at: now }, ctx));
+        this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'failed', detail: 'refused', failedLegs: [bought], at: now }, ctx));
         return;
       }
       await finish('placed', bought, res.state.tradeId);
-      this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'placed', detail: `${said}: ${bought}`, failedLegs: [], at: now }, ctx));
+      this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'placed', detail: bought, failedLegs: [], at: now }, ctx));
       return;
     }
 
@@ -791,11 +791,11 @@ export class StrategyRunner {
     const res = await svc.place(args);
     if (!res.ok) {
       await finish('refused', `${what} -- refused: ${res.precheck ? failureText(res.precheck) : 'refused'}`);
-      this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'failed', detail: `${said}: refused`, failedLegs: [what], at: now }, ctx));
+      this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'failed', detail: 'refused', failedLegs: [what], at: now }, ctx));
       return;
     }
     await finish('placed', what, res.state.tradeId);
-    this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'placed', detail: `${said}: ${what}`, failedLegs: [], at: now }, ctx));
+    this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'placed', detail: what, failedLegs: [], at: now }, ctx));
   }
 
   private async claimAndFinish(s: Strategy, day: string, status: 'refused' | 'skipped', detail: string): Promise<void> {
