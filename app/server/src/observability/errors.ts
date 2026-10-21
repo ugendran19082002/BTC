@@ -51,6 +51,8 @@ export type ErrorRow = ErrorReport & {
   /** How many identical failures folded into this row. */
   count: number;
   resolved: boolean;
+  /** When it was deleted from the screen; kept on record `DELETED_KEEP_MS` past that (21 Oct 2026). */
+  deletedAt: number | null;
 };
 
 const MIGRATIONS: Migration[] = [
@@ -85,10 +87,24 @@ const MIGRATIONS: Migration[] = [
     id: 'errors-002-to-public',
     up: moveToPublic([['errors.log', 'errors']], ['errors']),
   },
+  {
+    /*
+     * Deleted from the screen, kept on record (21 Oct 2026, owner's list #6: "the logs disappear"). Delete all on
+     * 20 Oct emptied the table, and the 13:01 target could not be traced; a deletion is a date now, and the row goes
+     * `DELETED_KEEP_MS` after it.
+     */
+    id: 'errors-003-deleted-at',
+    up: `
+      ALTER TABLE errors ADD COLUMN IF NOT EXISTS deleted_at BIGINT;
+      CREATE INDEX IF NOT EXISTS errors_by_deleted ON errors (deleted_at) WHERE deleted_at IS NOT NULL;
+    `,
+  },
 ];
 
 /** Keep the table from growing without bound on a long-running desk. */
 const MAX_ROWS = 2_000;
+/** How long a row deleted from the screen is kept for an investigation. */
+export const DELETED_KEEP_MS = 30 * 86_400_000;
 const MAX_FIELD = 4_000;
 
 const trim = (s: string | null | undefined, n = MAX_FIELD) =>
@@ -190,15 +206,18 @@ export class ErrorLog {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, 1)
            ON CONFLICT (fingerprint) DO UPDATE SET
              last_seen = EXCLUDED.last_seen,
-             count     = errors.count + 1,
              -- the newest stack is the most likely to still be reachable
              stack     = COALESCE(EXCLUDED.stack, errors.stack),
              context   = COALESCE(EXCLUDED.context, errors.context),
-             resolved  = FALSE`,
+             resolved  = FALSE,
+             -- deleted and back: a fresh row on the screen, counted from now
+             count      = CASE WHEN errors.deleted_at IS NULL THEN errors.count + 1 ELSE 1 END,
+             first_seen = CASE WHEN errors.deleted_at IS NULL THEN errors.first_seen ELSE EXCLUDED.first_seen END,
+             deleted_at = NULL`,
           params,
         );
         // Every so often, not every time: the cap is a ceiling, not a target.
-        if (++this.writes % 50 === 0) await this.prune();
+        if (++this.writes % 50 === 0) await this.prune(now);
       })
       .catch(() => {
         // Deliberately silent: there is nowhere left to report a reporting failure.
@@ -208,15 +227,16 @@ export class ErrorLog {
   /** Wait for every record() so far to be in the database. */
   flush(): Promise<void> { return this.queue; }
 
-  async list(opts: { limit?: number; source?: ErrorSource; includeResolved?: boolean } = {}): Promise<ErrorRow[]> {
-    const { limit = 100, source, includeResolved = false } = opts;
-    const where: string[] = [];
+  /** The rows on the screen; `deleted`, instead, the ones deleted from it and still kept. */
+  async list(opts: { limit?: number; source?: ErrorSource; includeResolved?: boolean; deleted?: boolean } = {}): Promise<ErrorRow[]> {
+    const { limit = 100, source, includeResolved = false, deleted = false } = opts;
+    const where: string[] = [deleted ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL'];
     const params: (string | number)[] = [];
     if (source) { params.push(source); where.push(`source = $${params.length}`); }
-    if (!includeResolved) where.push('resolved = FALSE');
+    if (!includeResolved && !deleted) where.push('resolved = FALSE');
     params.push(limit);
     const sql =
-      `SELECT * FROM errors ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ` +
+      `SELECT * FROM errors WHERE ${where.join(' AND ')} ` +
       `ORDER BY last_seen DESC LIMIT $${params.length}`;
     return (await rows<Record<string, unknown>>(sql, params)).map(toRow);
   }
@@ -224,10 +244,10 @@ export class ErrorLog {
   /** Counts for the badge, so the UI does not have to fetch the list to know. */
   async summary(): Promise<{ total: number; unresolved: number; bySource: Record<string, number> }> {
     const counts = await one<{ total: number; unresolved: number }>(
-      'SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE NOT resolved) AS unresolved FROM errors',
+      'SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE NOT resolved) AS unresolved FROM errors WHERE deleted_at IS NULL',
     );
     const by = await rows<{ source: string; n: number }>(
-      'SELECT source, COUNT(*) AS n FROM errors WHERE NOT resolved GROUP BY source',
+      'SELECT source, COUNT(*) AS n FROM errors WHERE NOT resolved AND deleted_at IS NULL GROUP BY source',
     );
     return {
       total: counts?.total ?? 0,
@@ -236,33 +256,47 @@ export class ErrorLog {
     };
   }
 
-  /** Gone for good. "Mark read" hides; this removes. */
-  async remove(id: number): Promise<void> {
-    await query('DELETE FROM errors WHERE id = $1', [id]);
-  }
-
-  async resolve(id: number): Promise<void> {
-    await query('UPDATE errors SET resolved = TRUE WHERE id = $1', [id]);
-  }
-
-  async resolveAll(): Promise<number> {
-    const r = await query('UPDATE errors SET resolved = TRUE WHERE NOT resolved');
+  /**
+   * Off the screen, and a repeat starts it again from one; kept on record `DELETED_KEEP_MS` for an investigation (21 Oct
+   * 2026). "Mark read" hides; this deletes from the screen. Nothing is removed from the table by a tap.
+   */
+  async remove(id: number, now = Date.now()): Promise<number> {
+    const r = await query('UPDATE errors SET deleted_at = $2, resolved = TRUE WHERE id = $1 AND deleted_at IS NULL', [id, now]);
     return r.rowCount ?? 0;
   }
 
+  /** Every row on the screen deleted from it, as `remove`; how many. */
+  async removeAll(now = Date.now()): Promise<number> {
+    await this.flush();
+    const r = await query('UPDATE errors SET deleted_at = $1, resolved = TRUE WHERE deleted_at IS NULL', [now]);
+    return r.rowCount ?? 0;
+  }
+
+  async resolve(id: number): Promise<void> {
+    await query('UPDATE errors SET resolved = TRUE WHERE id = $1 AND deleted_at IS NULL', [id]);
+  }
+
+  async resolveAll(): Promise<number> {
+    const r = await query('UPDATE errors SET resolved = TRUE WHERE NOT resolved AND deleted_at IS NULL');
+    return r.rowCount ?? 0;
+  }
+
+  /** The table emptied for good: for a test's fresh start, never a route. */
   async clear(): Promise<void> {
     await this.flush();
     await query('DELETE FROM errors');
   }
 
-  private async prune(): Promise<void> {
-    // Keep the newest MAX_ROWS, unresolved ones first; whatever falls past
-    // that -- the oldest resolved rows -- goes. An unresolved failure is never
-    // dropped to make room for a newer one.
+  private async prune(now = Date.now()): Promise<void> {
+    // Deleted from the screen past keeping: gone.
+    await query('DELETE FROM errors WHERE deleted_at < $1', [now - DELETED_KEEP_MS]);
+    // Then keep the newest MAX_ROWS, unresolved ones first; whatever falls past
+    // that -- deleted rows first, then the oldest resolved -- goes. An unresolved
+    // failure is never dropped to make room for a newer one.
     await query(
       `DELETE FROM errors WHERE id IN (
          SELECT id FROM errors
-         ORDER BY resolved ASC, last_seen DESC
+         ORDER BY resolved ASC, (deleted_at IS NOT NULL) ASC, last_seen DESC
          OFFSET $1
        )`,
       [MAX_ROWS],
@@ -284,6 +318,7 @@ function toRow(r: Record<string, unknown>): ErrorRow {
     lastSeen: r.last_seen as number,
     count: r.count as number,
     resolved: r.resolved as boolean,
+    deletedAt: (r.deleted_at as number | null) ?? null,
   };
 }
 

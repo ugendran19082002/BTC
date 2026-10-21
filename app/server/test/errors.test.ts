@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ErrorLog, groupWhere, redact } from '../src/observability/errors.js';
+import { DELETED_KEEP_MS, ErrorLog, groupWhere, redact } from '../src/observability/errors.js';
 import { refuse, wasRefusal, worthLogging } from '../src/http/refuse.js';
 import { closePool, one } from '../src/db/pool.js';
 
@@ -182,6 +182,58 @@ test('[critical] the table is capped, and an unresolved failure is never dropped
   assert.ok(s.total <= 2_000, `capped: ${s.total}`);
   assert.equal(s.unresolved, 51, 'the old unresolved one and the fifty new ones all survive');
   assert.equal((await log.list({ source: 'trading' }))[0]?.message, 'still broken');
+});
+
+test('[critical] deleted from the screen is kept on record (21 Oct 2026: Delete all took what the 13:01 target needed): off the list and the badge, still read back', async () => {
+  const log = await fresh();
+  log.record({ source: 'trading', message: 'target placed twice' }, 1_000);
+  log.record({ source: 'server', message: 'b' }, 1_000);
+  log.record({ source: 'server', message: 'c' }, 1_000);
+  await log.flush();
+  const [one] = await log.list({ source: 'trading' });
+  assert.equal(await log.remove(one!.id, 5_000), 1);
+  assert.equal(await log.remove(one!.id, 6_000), 0, 'deleted once: the date it went is kept');
+  assert.deepEqual((await log.list({ includeResolved: true })).map((r) => r.message).sort(), ['b', 'c']);
+  assert.equal(await log.removeAll(7_000), 2);
+  assert.deepEqual(await log.list({ includeResolved: true }), []);
+  assert.deepEqual(await log.summary(), { total: 0, unresolved: 0, bySource: {} });
+  // ...and read back, whole, with when each went.
+  const kept = await log.list({ deleted: true });
+  assert.equal(kept.length, 3);
+  const t = kept.find((r) => r.message === 'target placed twice')!;
+  assert.equal(t.deletedAt, 5_000);
+  assert.equal(t.source, 'trading');
+});
+
+test('[critical] deleted and back: on the screen again, counted from one, from when it came back', async () => {
+  const log = await fresh();
+  for (let i = 0; i < 70; i++) log.record({ source: 'exchange', message: 'Delta 502' }, 1_000 + i);
+  await log.flush();
+  await log.removeAll(2_000);
+  log.record({ source: 'exchange', message: 'Delta 502' }, 3_000);
+  await log.flush();
+  const [r] = await log.list();
+  assert.equal(r?.count, 1);
+  assert.equal(r?.firstSeen, 3_000);
+  assert.equal(r?.deletedAt, null);
+  assert.equal(r?.resolved, false);
+  assert.deepEqual(await log.list({ deleted: true }), []);
+});
+
+test('[critical] a deleted row goes after 30 days, not before; one on the screen stays however old', async () => {
+  const log = await fresh();
+  log.record({ source: 'server', message: 'old, deleted' }, 0);
+  log.record({ source: 'server', message: 'new, deleted' }, 0);
+  log.record({ source: 'server', message: 'old, on the screen' }, 0);
+  await log.flush();
+  const rows = await log.list();
+  await log.remove(rows.find((r) => r.message === 'old, deleted')!.id, 1_000);
+  await log.remove(rows.find((r) => r.message === 'new, deleted')!.id, 2_000);
+  // Fifty writes start a prune, at their own time: 30 days and a moment after the first deletion, not the second.
+  for (let i = 0; i < 50; i++) log.record({ source: 'browser', message: `fresh ${i}` }, 1_000 + DELETED_KEEP_MS + 500);
+  await log.flush();
+  assert.deepEqual((await log.list({ deleted: true })).map((r) => r.message), ['new, deleted']);
+  assert.ok((await log.list({ source: 'server' })).some((r) => r.message === 'old, on the screen'));
 });
 
 test('clearing empties it', async () => {

@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-546 files listed, 287 test files counted below, images and lockfiles left out.
+547 files listed, 288 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 142 |
+| `app/server` | 143 |
 | `app/web` | 145 |
 
 ## `(root)`
@@ -195,6 +195,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [desk-metrics.ts](../../app/server/src/observability/desk-metrics.ts) | What the desk costs and how long it takes, counted -- so the next change to its speed is decided on numbers. |
 | [errors.ts](../../app/server/src/observability/errors.ts) | Every failure this system has, in one table. |
 | [glance.ts](../../app/server/src/observability/glance.ts) | "Is everything all right?" in one answer, for the phone (6 Oct 2026). |
+| [log-files.ts](../../app/server/src/observability/log-files.ts) | The server's log, kept on disk as well as on stdout (21 Oct 2026, owner's list #6: "the logs disappear"). |
 
 ## `app/server/src/report/`
 

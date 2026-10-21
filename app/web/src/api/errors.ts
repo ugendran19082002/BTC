@@ -16,7 +16,7 @@ export function getErrors(opts: { source?: ErrorSource; resolved?: boolean; limi
 
 export const resolveError = (id: number) => post<{ ok: true }>('/api/errors/resolve', { id });
 
-/** Removes the row. `resolveError` only hides it, and a repeat brings it back. */
+/** Off the screen, and a repeat starts it from one; the server keeps it on record 30 days (21 Oct 2026). `resolveError` only marks it read. */
 export const deleteError = (id: number) => post<{ ok: true; deleted: number }>('/api/errors/delete', { id });
 export const deleteAllErrors = () => post<{ ok: true; deleted: number }>('/api/errors/delete', { all: true });
 export const resolveAllErrors = () => post<{ ok: true; resolved: number }>('/api/errors/resolve', { all: true });

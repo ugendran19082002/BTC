@@ -17,6 +17,8 @@ export type ErrorRow = {
   /** How many identical failures folded into this row. */
   count: number;
   resolved: boolean;
+  /** Deleted from the screen at; the server keeps it 30 days past that. */
+  deletedAt?: number | null;
 };
 
 export type ErrorSummary = {

@@ -16,6 +16,11 @@ export type Config = {
   port: number;
   logLevel: string;
   /**
+   * The server log on disk as well as stdout, one file a day, so a rebuild does not take it (`observability/log-files.ts`).
+   * Null, stdout only -- a test, a laptop.
+   */
+  logFiles: { dir: string; keepDays: number; maxBytes: number } | null;
+  /**
    * Whether the desk starts on the real exchange.
    *
    * Live is the default once credentials exist, because a desk that silently
@@ -83,6 +88,9 @@ const telegramFromEnv = (): Config['telegram'] => {
 export const config: Config = {
   port: num(process.env.PORT, 8787),
   logLevel: process.env.LOG_LEVEL ?? 'info',
+  logFiles: process.env.LOG_DIR?.trim()
+    ? { dir: process.env.LOG_DIR.trim(), keepDays: Math.max(1, num(process.env.LOG_KEEP_DAYS, 30)), maxBytes: Math.max(10, num(process.env.LOG_MAX_MB, 1024)) * 1_048_576 }
+    : null,
   liveTradingDefault: !isOff(process.env.DELTA_LIVE_TRADING),
   paperLocked: isOff(process.env.DELTA_LIVE_TRADING),
   telegram: telegramFromEnv(),

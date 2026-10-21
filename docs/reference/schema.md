@@ -6,7 +6,7 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-40 tables, 73 migrations.
+40 tables, 74 migrations.
 
 ## Migrations applied
 
@@ -16,7 +16,7 @@ the way it is, is in [database.md](database.md).
 | broker | `broker-001-accounts` |
 | chart | `chart-002-drop-annotations` |
 | entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time`, `entry-015-setups-expire-why`, `entry-017-setups-regime`, `entry-017-signals-regime`, `entry-018-alerts-retired-methods`, `entry-018-setups-retired-methods`, `entry-018-signals-retired-methods`, `entry-019-methods`, `entry-020-cleared`, `entry-020-history-clears`, `entry-021-method-order-side`, `entry-022-setups-by-time` |
-| errors | `errors-001-log`, `errors-002-to-public` |
+| errors | `errors-001-log`, `errors-002-to-public`, `errors-003-deleted-at` |
 | market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-016-book-heat`, `market-017-drop-large-prints`, `market-018-option-marks-1m` |
 | report | `report-002-backtest-saves`, `report-003-backtest-save-groups` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables`, `strategy-006-signal-runs`, `strategy-007-drop-trend-paper`, `strategy-008-broker-account`, `strategy-009-signal-action`, `strategy-010-groups`, `strategy-011-display-order`, `strategy-012-method-updates`, `strategy-013-method-updates-tf`, `strategy-014-signal-runs-at` |
@@ -414,7 +414,9 @@ the way it is, is in [database.md](database.md).
 | `last_seen` | bigint |  |  |
 | `count` | integer |  | `1` |
 | `resolved` | boolean |  | `false` |
+| `deleted_at` | bigint | yes |  |
 
+- `errors_by_deleted` (deleted_at) WHERE (deleted_at IS NOT NULL)
 - `errors_fingerprint_key` unique (fingerprint)
 - `errors_log_by_source` (source, last_seen DESC)
 - `errors_log_by_time` (last_seen DESC)

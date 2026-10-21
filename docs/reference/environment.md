@@ -21,7 +21,10 @@ deploy variables are read by docker compose and the scripts from `deploy/.env`.
 | `DESK_SESSION_SECRET` | [service.ts](../../app/server/src/auth/service.ts), [accounts.ts](../../app/server/src/delta/accounts.ts) | yes | Seals the authenticator secret, the recovery codes and the broker accounts' API keys. Required for sign-in and for keeping an account; rotating it means setting up two-step sign-in again (`npm run auth -- reset-2fa`) and entering each API key again. |
 | `DESK_URL` | [config.ts](../../app/server/src/config.ts) | yes | Where the desk is reached from outside, e.g. `https://delta.thannigo.in`. Set, each fill alert links to that trade on the phone (`/m?trade=<id>`); blank or not an http(s) address, the alerts carry no link. |
 | `DESK_USER` | [service.ts](../../app/server/src/auth/service.ts) | yes | Seeds the first sign-in user. Read once; afterwards the user lives in `auth_user`. |
+| `LOG_DIR` | [config.ts](../../app/server/src/config.ts) | **no** | Where the server log is also written, one file a day (`api-YYYY-MM-DD.log`, IST), so a rebuild does not lose it. Unset: stdout only. `/srv/logs` in the compose file, a volume of its own. |
+| `LOG_KEEP_DAYS` | [config.ts](../../app/server/src/config.ts) | **no** | Days of log files kept in `LOG_DIR`. Default `30`. |
 | `LOG_LEVEL` | [config.ts](../../app/server/src/config.ts) | **no** | Fastify log level. Default `info`. |
+| `LOG_MAX_MB` | [config.ts](../../app/server/src/config.ts) | **no** | The most the log files in `LOG_DIR` take, in MB; the oldest day goes first, today never. Default `1024`. |
 | `PORT` | [config.ts](../../app/server/src/config.ts) | yes | HTTP port the API listens on. Default `8787`. |
 | `TG_CHAT_ID` | [config.ts](../../app/server/src/config.ts) | yes | The Telegram chat the alerts go to. |
 | `TG_TOKEN` | [config.ts](../../app/server/src/config.ts) | yes | Telegram bot token for fill and security alerts. Alerts are off unless both this and `TG_CHAT_ID` are set. |
@@ -34,7 +37,9 @@ deploy variables are read by docker compose and the scripts from `deploy/.env`.
 | `DB_ADMIN_PASSWORD` | [.env.example](../../deploy/.env.example) | Password for `DB_ADMIN_USER`. |
 | `DB_ADMIN_USER` | [.env.example](../../deploy/.env.example) | A named admin login for a person (`deploy/db-admin-role.sh`). |
 | `DB_READONLY_PASSWORD` | [.env.example](../../deploy/.env.example) | Password for `desk_ro`, the read-only role (`deploy/db-readonly-role.sh`). |
+| `LOG_KEEP_DAYS` | [docker-compose.yml](../../deploy/docker-compose.yml) | Days of log files kept in `LOG_DIR`. Default `30`. |
 | `LOG_LEVEL` | [docker-compose.yml](../../deploy/docker-compose.yml) | Fastify log level. Default `info`. |
+| `LOG_MAX_MB` | [docker-compose.yml](../../deploy/docker-compose.yml) | The most the log files in `LOG_DIR` take, in MB; the oldest day goes first, today never. Default `1024`. |
 | `POSTGRES_PASSWORD` | [.env.example](../../deploy/.env.example), [docker-compose.yml](../../deploy/docker-compose.yml) | Password of the `desk` database role. **Required** by compose. |
 | `TAG` | [docker-compose.yml](../../deploy/docker-compose.yml) | Image tag compose runs. Set by `deploy.sh`; default `latest`. |
 | `WEB_BIND` | [docker-compose.yml](../../deploy/docker-compose.yml) | Host address the web container is published on. Default `172.17.0.1` (the docker bridge), so only the edge proxy reaches it. |

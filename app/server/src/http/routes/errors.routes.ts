@@ -40,14 +40,16 @@ export function registerErrorRoutes(app: FastifyInstance) {
   });
 
   // The error log, newest first: by source, resolved or not.
+  // `deleted=1`: the rows deleted from the screen, still kept for an investigation (21 Oct 2026).
   app.get('/api/errors', async (req) => {
-    const q = req.query as { limit?: string; source?: string; resolved?: string };
+    const q = req.query as { limit?: string; source?: string; resolved?: string; deleted?: string };
     const source = q.source && SOURCES.has(q.source as ErrorSource) ? (q.source as ErrorSource) : undefined;
     return {
       errors: await log.list({
         limit: Math.min(500, Number(q.limit ?? 100)),
         source,
         includeResolved: q.resolved === '1' || q.resolved === 'true',
+        deleted: q.deleted === '1' || q.deleted === 'true',
       }),
       summary: await log.summary(),
     };
@@ -57,19 +59,17 @@ export function registerErrorRoutes(app: FastifyInstance) {
    * Delete rather than hide.
    *
    * Separate from resolve on purpose: "mark read" says *I have seen this*, and
-   * a repeat brings it back. This says *stop keeping it*, which is what you
-   * want after a bug is fixed and its seventy retries are just noise.
+   * a repeat brings it back. This says *stop showing it*, which is what you
+   * want after a bug is fixed and its seventy retries are just noise -- and a
+   * repeat starts it again from one. Off the screen, not out of the record: a
+   * deleted row is kept 30 days (`DELETED_KEEP_MS`), because Delete all on
+   * 20 Oct took what the 13:01 target needed to be traced (21 Oct 2026).
    */
   app.post('/api/errors/delete', async (req, reply) => {
     const { id, all } = (req.body ?? {}) as { id?: number; all?: boolean };
-    if (all) {
-      const n = (await log.summary()).total;
-      await log.clear();
-      return { ok: true, deleted: n };
-    }
+    if (all) return { ok: true, deleted: await log.removeAll() };
     if (typeof id !== 'number') { reply.code(400); return { error: 'id or all is required' }; }
-    await log.remove(id);
-    return { ok: true, deleted: 1 };
+    return { ok: true, deleted: await log.remove(id) };
   });
 
   // Mark one error row, or all of them, resolved: off the list, still on record.

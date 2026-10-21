@@ -102,6 +102,7 @@ export function ErrorLogPanel() {
                 size="sm"
                 variant="ghost"
                 className="text-[var(--down)] hover:bg-[var(--down-bg)]"
+                title="Off the screen; each is kept on record 30 days, for tracing a problem later"
                 onClick={() => { void deleteAllErrors().then(() => refresh()); }}
               >
                 <Trash2 className="h-3 w-3" />
@@ -241,6 +242,7 @@ function ErrorRowView({ row, onResolved }: { row: ErrorRow; onResolved: () => vo
               size="sm"
               variant="ghost"
               className="ml-auto h-9 text-[var(--down)] hover:bg-[var(--down-bg)]"
+              title="Off the screen; kept on record 30 days, for tracing a problem later"
               onClick={() => { void deleteError(row.id).then(onResolved); }}
             >
               <Trash2 className="h-3 w-3" />

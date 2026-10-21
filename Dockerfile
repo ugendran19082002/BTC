@@ -43,7 +43,7 @@ COPY app/server/package.json ./app/server/package.json
 # opens it read-only; everything it writes goes to PostgreSQL (DATABASE_URL).
 # SQLite in WAL mode still needs the directory writable for its shared-memory
 # file, so it is a volume, not image content.
-RUN mkdir -p /srv/data && chown -R node:node /srv/data
+RUN mkdir -p /srv/data /srv/logs && chown -R node:node /srv/data /srv/logs
 USER node
 
 EXPOSE 8787

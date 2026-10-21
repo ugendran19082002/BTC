@@ -77,7 +77,9 @@ each table holds: [reference/database.md](../reference/database.md).
 ## When something looks wrong
 
 1. The **errors** tab -- server, browser, exchange and trading failures in one
-   list, folded by fingerprint.
+   list, folded by fingerprint. Delete takes a row off the screen, not out of
+   the table: it is kept 30 days with its `deleted_at`, then pruned
+   (`GET /api/errors?deleted=1`, or `SELECT * FROM errors WHERE deleted_at IS NOT NULL`).
 2. `/api/health` -- `feed` (socket and REST freshness, reconnects), `db`, the
    migration ledger. From outside, without a session, it says only whether the
    desk and its database are up; the detail comes to a signed-in browser, or
@@ -86,5 +88,11 @@ each table holds: [reference/database.md](../reference/database.md).
 3. `docker logs btc-desk-api-1` -- `grep 'socket open'` against `reconnects`
    tells a silent socket from a working one
    ([decision 0007](../decisions/0007-feed-age-is-the-newest-source.md)).
+   That is this container's log only; a rebuild starts a new one. Every day
+   since 21 Oct 2026 is in the `logs` volume, one JSON-lines file
+   a day by the IST date, kept `LOG_KEEP_DAYS` (30) days and `LOG_MAX_MB`
+   (1024) in all:
+   `docker compose -f deploy/docker-compose.yml exec api ls -l /srv/logs`,
+   `docker compose -f deploy/docker-compose.yml exec api tail -f /srv/logs/api-$(TZ=Asia/Kolkata date +%F).log`.
 4. For a trade: its `trade_events`, in order. For a strategy: `strategy_runs`
    ([features/strategies.md](../features/strategies.md#why-a-strategy-is-refused)).

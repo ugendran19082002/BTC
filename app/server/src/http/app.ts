@@ -19,6 +19,7 @@ import { runAsDesk } from '../trading/service.js';
 import type { Tester } from '../delta/accounts.js';
 import type { AccountSummaryReader } from './routes/accounts.routes.js';
 import { noteError } from '../observability/errors.js';
+import { logFiles, type LogStream } from '../observability/log-files.js';
 import { refuse, wasRefusal, worthLogging } from './refuse.js';
 
 /**
@@ -104,6 +105,10 @@ declare module 'fastify' {
   }
 }
 
+/** One log stream a process, whichever app is built: two would hold the same day's file open twice. */
+let logs: LogStream | null = null;
+const logStream = (o: NonNullable<typeof config.logFiles>) => (logs ??= logFiles(o));
+
 export async function buildApp(o: {
   auth?: AuthService;
   now?: () => number;
@@ -115,7 +120,7 @@ export async function buildApp(o: {
   accountSummary?: AccountSummaryReader;
 } = {}): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: { level: config.logLevel },
+    logger: { level: config.logLevel, ...(config.logFiles ? { stream: logStream(config.logFiles) } : {}) },
     trustProxy: TRUSTED_PROXIES,
   });
   if (o.onRoute) app.addHook('onRoute', o.onRoute);

@@ -103,10 +103,17 @@ services:
       # Room for the heap to grow before V8 starts collecting hard. The desk
       # rests near 100 MB; this is headroom, not a need.
       NODE_OPTIONS: --max-old-space-size=1536
+      # The server log on disk too, one file a day, on a volume of its own: Docker's
+      # own log goes with the container at every rebuild (docs/history/2026-10.md, 21 Oct).
+      LOG_DIR: /srv/logs
+      LOG_KEEP_DAYS: ${LOG_KEEP_DAYS:-30}
+      LOG_MAX_MB: ${LOG_MAX_MB:-1024}
     volumes:
       # chain.db, and the retired SQLite files kept as the rollback path after
       # the cutover (docs/history/2026-09.md, 19 Sep).
       - data:/srv/data
+      # api-YYYY-MM-DD.log, kept LOG_KEEP_DAYS days.
+      - logs:/srv/logs
     # No host port. The browser reaches the API through the web container over
     # the compose network, so nothing on the host can talk to it directly.
     # To poke at it while debugging:
@@ -233,5 +240,7 @@ services:
 volumes:
   # chain.db and the retired SQLite files
   data:
+  # the API's log, a file a day (LOG_DIR)
+  logs:
   # PostgreSQL's data directory
   pgdata:
