@@ -27,6 +27,7 @@ const { initTradingService, tradingService } = await import('../../src/trading/s
 const { initStrategyStore, strategyStore } = await import('../../src/http/routes/strategy.routes.js');
 const { StrategyRunner, signalKeyOf } = await import('../../src/strategy/runner.js');
 const { exitMomentFor, istDate } = await import('../../src/strategy/schedule.js');
+const { SELL_ONLY_RULE } = await import('../../src/strategy/types.js');
 type MethodRead = import('../../src/entry/types.js').MethodRead;
 type SignalBoard = import('../../src/strategy/runner.js').SignalBoard;
 
@@ -978,86 +979,19 @@ test('[critical] a maximum too: a signal whose SL or TGT is further than its tim
   await api('POST', '/api/strategies/sig-max/enabled', { enabled: false });
 });
 
-// ------------------------------------------------------------ bought or sold
+// ------------------------------------------------------------ sold only
 
-test('[critical] a BUY-side strategy: a BUY signal buys the call, a SELL the put -- written down with live orders off, bought for real with them on', async () => {
-  // The base config's exits are a seller's (a 99% target, a 300% stop): a bought option starts with its own off.
-  const bought = { ...config, takeProfitPct: 0, stopLossPct: 0, signal: { ...config.signal, tfs: ['5m'], maxOpen: 10, action: 'buy' } };
-  const carried = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...config, signal: { ...config.signal, action: 'buy' } } });
-  assert.ok(carried.body.problems.includes('Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.'), 'a seller\'s 300% stop is not carried into a bought option');
-  // Its target and stop hold one level each: a timetable of them is refused, in words.
-  const stepped = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...bought, stopLossPct: 0.4, stopSteps: [{ at: '12:00', value: 0.3 }] } });
-  assert.equal(stepped.status, 422);
-  assert.ok(stepped.body.problems.includes('A BUY strategy\'s option target and stop hold one level each: remove the time steps.'), stepped.body.problems.join(' '));
-  const odd = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...bought, signal: { ...bought.signal, action: 'hold' } } });
-  assert.ok(odd.body.problems.includes('Pick whether the option is bought or sold.'), odd.body.problems.join(' '));
-
-  assert.equal((await api('POST', '/api/strategies', { name: 'Sig buy', config: bought })).status, 200);
-  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-buy'");
-  assert.equal(row!.config.signal.action, 'buy');
-
-  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
-    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+test('[critical] selling only (21 Oct 2026: "SELL choice only, no BUY"): a strategy that buys, or names anything but sell, is refused on save, and nothing is written', async () => {
+  const before = (await rows('SELECT id FROM strategies')).length;
+  for (const action of ['buy', 'hold']) {
+    const r = await api('POST', '/api/strategies', { name: 'Sig buy', config: { ...config, takeProfitPct: 0, stopLossPct: 0, signal: { ...config.signal, tfs: ['5m'], action } } });
+    assert.equal(r.status, 422, JSON.stringify(r.body));
+    assert.ok(r.body.problems.includes(SELL_ONLY_RULE), r.body.problems.join(' | '));
   }
-  await api('POST', '/api/strategies/sig-buy/enabled', { enabled: true });
-  await tradingService().settings.set('scheduler_enabled', '1');
-  clock = TEN;
-  const last = async () => (await runsOf('sig-buy')).at(-1)!;
-  const tradesBefore = (await rows('SELECT trade_id FROM trades')).length;
-
-  await runner.onSignal(signal());                       // a BUY signal: the call, bought
-  const up = await last();
-  assert.equal(up.status, 'would-place', up.detail);
-  assert.match(up.detail, /^#1 Breakout BUY \| live orders off: would buy CE \d+ x1 @ [\d.]+ · perp SL 84600 · TGT 85500$/);
-  assert.equal(up.trade_id, null);
-
-  await runner.onSignal(signal({ dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1 } }));
-  assert.match((await last()).detail, /SELL \| live orders off: would buy PE \d+ x1 @ [\d.]+ · perp SL 85400 · TGT 84500$/, 'a SELL signal: the put, bought');
-
-  assert.equal((await rows('SELECT trade_id FROM trades')).length, tradesBefore, 'nothing was placed: no trade, no order');
-
-  /*
-   * Its own exits are the sold option's turned over. Sold: a target up to 99% (a buy-back under the entry), a stop
-   * with no such end. Bought: a stop up to 99% -- the premium and no more -- and a target that is open.
-   */
-  const own = (o: Record<string, unknown>) => api('POST', '/api/strategies', { id: 'sig-buy', name: 'Sig buy', config: { ...bought, targetMode: 'pct', stopMode: 'pct', takeProfitPct: 0, stopLossPct: 0, ...o } });
-  const all = await own({ stopLossPct: 1.5 });
-  assert.ok(all.body.problems.includes('Stop loss must be between 0 and 99% of the premium paid: a bought option can lose its premium and no more.'), JSON.stringify(all.body));
-  assert.ok((await own({ takeProfitPct: 25 })).body.problems.includes('Take profit must be between 0 and 2000% of the premium paid.'));
-  // The same numbers on a SELL strategy are refused the other way round: its target ends at 99%, its stop does not.
-  const sold = await api('POST', '/api/strategies', { name: 'Sig sold exits', config: { ...bought, signal: { ...bought.signal, action: 'sell' }, targetMode: 'pct', stopMode: 'pct', takeProfitPct: 3, stopLossPct: 3 } });
-  assert.deepEqual(sold.body.problems, ['Take profit must be between 0 and 99% of the credit.'], 'a 300% target is no seller\'s; a 300% stop is');
-  // A 300% target and a 40% stop on the offer paid, 18.5: sold at 74, or at 11.1.
-  const ok = await own({ takeProfitPct: 3, stopLossPct: 0.4 });
-  assert.equal(ok.status, 200, JSON.stringify(ok.body));
-  await runner.onSignal(signal());
-  assert.match((await last()).detail, /would buy CE \d+ x1 @ 18\.5 · option TGT 74 · option SL 11\.1 · perp SL 84600 · TGT 85500$/);
-
-  // Live orders on: it is a real order now -- bought at the offer, long on the exchange, its exits on the plan.
-  const on = await own({ takeProfitPct: 3, stopLossPct: 0.4, liveOrders: true });
-  assert.equal(on.status, 200, JSON.stringify(on.body));
-  // A clean account: a call an earlier case left short would be closed by this buy rather than opened.
-  await freshAccount();
-  await runner.onSignal(signal());
-  const placed = await last();
-  assert.equal(placed.status, 'placed', placed.detail);
-  assert.match(placed.detail, /^#1 Breakout BUY \| buy CE \d+ x1 @ 18\.5 · option TGT 74 · option SL 11\.1 · perp SL 84600 · TGT 85500$/);
-  const trade = await one<{ position: number; plan: Record<string, any> }>('SELECT position, plan FROM trades WHERE trade_id = $1', [placed.trade_id]);
-  assert.equal(trade!.position, 1, 'long one contract');
-  assert.equal(trade!.plan.action, 'buy');
-  assert.deepEqual([trade!.plan.takeProfitPrice, trade!.plan.stopPrice], [null, null], 'nothing resting at the exchange');
-  assert.deepEqual(trade!.plan.longExits, { target: { mode: 'pct', value: 3 }, stop: { mode: 'pct', value: 0.4 } });
-  assert.deepEqual(trade!.plan.underlying.stop, 84_600);
-  const sym = trade!.plan.symbol as string;
-  assert.equal((await paper().getPositions()).find((p) => p.symbol === sym)?.size ?? 0, 1, 'and on the exchange');
-  assert.deepEqual((await paper().getOpenOrders(sym)).filter((o) => o.reduceOnly), [], 'no buy-back over a long');
-
-  // Closed through the desk, as the end of its window or the perp's levels close it (those are in buy-orders.test.ts): sold.
-  await tradingService().close(placed.trade_id!, undefined, 'the end of its window');
-  const closed = (await tradingService().trade(placed.trade_id!))!;
-  assert.equal(closed.state.position, 0);
-  assert.equal(closed.state.fills.find((f) => f.role === 'exit')!.side, 'sell', 'closed with a sale');
-  await api('POST', '/api/strategies/sig-buy/enabled', { enabled: false });
+  assert.equal((await rows('SELECT id FROM strategies')).length, before, 'no row saved');
+  // A seller saves as before.
+  const sold = await api('POST', '/api/strategies', { name: 'Sig sold', config: { ...config, signal: { ...config.signal, tfs: ['5m'], action: 'sell' } } });
+  assert.equal(sold.status, 200, JSON.stringify(sold.body));
 });
 
 test('[critical] at the zone, the distance is measured from the fill -- and with the chain a timeframe\'s number is not read, the chain\'s own is', async () => {
@@ -1610,7 +1544,7 @@ test('[critical] delta by volatility (17 Oct 2026): checked on save; each signal
   const refusals: [Record<string, unknown>, RegExp][] = [
     [{ ...byDeltaConfig, strikeRule: 'premium' }, /Delta by volatility needs the strike picked by delta\./],
     [{ ...byDeltaConfig, strikeBlocks: [{ at: '13:00', strikeRule: 'delta', strikeStep: 0, delta: { max: 0.1 } }] }, /remove the strike blocks, or switch it off/],
-    [{ ...byDeltaConfig, signal: { ...byDeltaConfig.signal, action: 'buy' }, takeProfitPct: 0, stopLossPct: 0 }, /Delta by volatility is for a strategy that sells\./],
+    [{ ...byDeltaConfig, signal: { ...byDeltaConfig.signal, action: 'buy' }, takeProfitPct: 0, stopLossPct: 0 }, /This desk only sells options: a strategy that buys is not taken\./],
     [{ ...byDeltaConfig, signal: { ...byDeltaConfig.signal, deltaByVol: { ...dv, high: 0.6 } } }, /The high volatility delta must be from 0\.02 to 0\.50\./],
     [{ ...byDeltaConfig, signal: { ...byDeltaConfig.signal, deltaByVol: { ...dv, by: 'vix' } } }, /read by ATR 2h or by ATM IV/],
   ];
@@ -1675,7 +1609,7 @@ test('[critical] SL by volatility (17 Oct 2026): checked on save; each trade pla
   const refusals: [Record<string, unknown>, RegExp][] = [
     [{ ...slConfig, stopMode: 'points', stopLossPoints: 40 }, /set the SL by %/],
     [{ ...slConfig, stopSteps: [{ at: '13:00', value: 2 }] }, /remove the SL time steps, or switch it off/],
-    [{ ...slConfig, signal: { ...slConfig.signal, action: 'buy' }, takeProfitPct: 0, stopLossPct: 0 }, /SL by volatility is for a strategy that sells\./],
+    [{ ...slConfig, signal: { ...slConfig.signal, action: 'buy' }, takeProfitPct: 0, stopLossPct: 0 }, /This desk only sells options: a strategy that buys is not taken\./],
     [{ ...slConfig, signal: { ...slConfig.signal, slByVol: { ...sv, low: 12 } } }, /The low volatility SL must be from \+10% to \+1,000% of the premium\./],
     [{ ...slConfig, strikeRule: 'delta', delta: { max: 0.12 }, signal: { ...slConfig.signal, deltaByVol: { on: true, by: 'atr', low: 0.18, medium: 0.1, high: 0.08 } } }, /read one source: pick the same for both/],
   ];

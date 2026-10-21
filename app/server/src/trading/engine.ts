@@ -2025,7 +2025,21 @@ export class TradeEngine {
    * the trade's own poll while it is open, by `sweepLeftovers` once it is done,
    * and said out loud after `LEFTOVER_ALARM_MS`.
    */
-  private async cancelSiblings(recIn: TradeRecord, all = false): Promise<TradeRecord> {
+  /** Each resting leg of the trade, looked up now: by its client id, as `cancelSiblings` reads it. */
+  private lookLegs(rec: TradeRecord): ReadonlyMap<string, Promise<ExchangeOrder | null>> {
+    const out = new Map<string, Promise<ExchangeOrder | null>>();
+    for (const cid of [rec.state.protection.takeProfit, rec.state.protection.stopLoss]) {
+      if (!cid) continue;
+      const read = this.exchange.getOrderByClientId(cid, rec.plan.symbol);
+      // A failed read is answered where it is used; one not used at all is not an error of anyone's.
+      read.catch(() => {});
+      out.set(cid, read);
+    }
+    return out;
+  }
+
+  /** `looked`: the legs already looked up (`lookLegs`), by client id; a leg not in it is looked up here. */
+  private async cancelSiblings(recIn: TradeRecord, all = false, looked?: ReadonlyMap<string, Promise<ExchangeOrder | null>>): Promise<TradeRecord> {
     let rec = recIn;
     const winner = rec.state.exitWinner;
     const unconfirmed: string[] = [];
@@ -2040,7 +2054,7 @@ export class TradeEngine {
     const gone = await Promise.all(legs.map(async ([, cid]) => {
       let o: ExchangeOrder | null;
       try {
-        o = await this.exchange.getOrderByClientId(cid!, rec.plan.symbol);
+        o = await (looked?.get(cid!) ?? this.exchange.getOrderByClientId(cid!, rec.plan.symbol));
       } catch (e) {
         this.note('cancel sibling', { orderId: cid!, symbol: rec.plan.symbol }, e);
         return false;
@@ -2571,6 +2585,14 @@ export class TradeEngine {
     // position. It comes off first, and what it filled is counted before the
     // size of the close is read.
     if (rec.state.adding) rec = await this.endAdd(rec, 'closing the position');
+    /*
+     * The two legs looked up while the position is read (21 Oct 2026, `npm run bench:sl`: a stop's six calls in a row
+     * before its buy-back, this one of them). Both are reads and neither waits on the other. What they found is used
+     * only if the position read changed nothing; when it did -- a fill found, the legs replaced -- they are looked up
+     * again after it, as before.
+     */
+    const looked = this.lookLegs(rec);
+    const seen = rec.events.length;
     rec = await this.syncPosition(rec);
     const held = protectionSize(rec.state);
     if (held === 0) return rec.state;
@@ -2590,7 +2612,7 @@ export class TradeEngine {
     }
     const all = size >= held;
 
-    await this.cancelSiblings(rec, true);
+    await this.cancelSiblings(rec, true, rec.events.length === seen ? looked : undefined);
     const n = rec.events.filter((e) => e.t === 'exit_submitted').length + 1;
     const cid = clientId(tradeId, 'exit', n);
     const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
