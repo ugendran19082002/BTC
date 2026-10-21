@@ -574,23 +574,28 @@ export function underlyingTouched(
 /**
  * How long the offer has to stay at or through the stop before the desk
  * closes. A short is bought back at the offer, so the offer is the price that
- * says the stop is really reached; fifteen seconds of it is a market that has
- * moved, not one stray quote.
+ * says the stop is really reached.
+ *
+ * Three seconds, from 21 Oct 2026 (owner: "first priority: the SL exit -- no slippage, the right price, the right
+ * speed"). It was fifteen, to let one stray offer pass; in a market that is moving it was fifteen seconds of the offer
+ * running on: over 18-21 Oct the first trade of each burst at its stop filled a median 12.5% past it, and the C-83600
+ * went from 64 to 192 inside a minute. The board is refreshed every second, so three seconds is three readings in a
+ * row through the stop -- a stray quote is one.
  */
-export const STOP_CONFIRM_MS = 15_000;
+export const STOP_CONFIRM_MS = 3_000;
 /**
  * A run, not a stray quote (13 Oct 2026). At 09:02 IST the 83,400 call was offered at 145 and a minute later at
  * 274: thirteen shorts with their stops at 160-172 waited out their fifteen seconds, the exchange's backstop at
  * ~235 fired first, and they were bought back at 254-266 -- about 90 points past the stops. Fifteen seconds keeps
  * one stray offer from closing a good trade; it is too long for a market that is really moving. So:
  *
- *   - the offer AND the mark both at or through the stop, for `STOP_CONFIRM_FAST_MS`: closed. Two prices from
- *     two sources agreeing is a moved market; the mark alone printing through a quiet book (26 Sep) is not, and
- *     the offer alone keeps its fifteen seconds.
+ *   - the offer AND the mark both at or through the stop: closed at the first look (21 Oct 2026; three seconds
+ *     before). Two prices from two sources agreeing is a moved market; the mark alone printing through a quiet
+ *     book (26 Sep) is not, and the offer alone keeps its `STOP_CONFIRM_MS`.
  *   - the offer `STOP_RUN_SHARE` of the way from the stop to the backstop: closed at once. The backstop is about
  *     to buy at whatever is offered; the desk's own close, with its price capped, comes first.
  */
-export const STOP_CONFIRM_FAST_MS = 3_000;
+export const STOP_CONFIRM_FAST_MS = 0;
 export const STOP_RUN_SHARE = 0.5;
 
 /**
@@ -640,8 +645,11 @@ export const ORPHAN_MIN_AGE_MS = 30_000;
 /** How many unknown orders behind a contract's fills one reconcile looks up, at most. */
 export const FILL_LOOKUPS = 40;
 
-/** How long a close at the market has to fill before what is left is sent again. */
-export const CLOSE_FOLLOW_UP_MS = 3_000;
+/**
+ * How long a close has to fill before what is left is sent again (1.5 s from 21 Oct 2026, 3 s before): a stop's close
+ * is a limit through the offer, and one a moving market has run past is bought at the market sooner.
+ */
+export const CLOSE_FOLLOW_UP_MS = 1_500;
 
 /**
  * The price a stop's close is capped at: the offer it was judged on and the same slack as the exchange stop
@@ -2536,7 +2544,7 @@ export class TradeEngine {
     const why = run
       ? `stop reached: the offer at ${ask} is ${Math.round(STOP_RUN_SHARE * 100)}% of the way from the stop ${stop} to the backstop ${backstop} -- a run, closed at once`
       : bothSince !== null && this.now() - bothSince >= STOP_CONFIRM_FAST_MS
-        ? `stop reached: the offer at ${ask} and the mark at ${Math.round(mark! * 100) / 100} both through the stop ${stop} for ${Math.round((this.now() - bothSince) / 1000)} s`
+        ? `stop reached: the offer at ${ask} and the mark at ${Math.round(mark! * 100) / 100} both through the stop ${stop}${this.now() - bothSince >= 1_000 ? ` for ${Math.round((this.now() - bothSince) / 1000)} s` : ''}`
         : held >= STOP_CONFIRM_MS ? `stop reached: the offer held at ${ask} (stop ${stop}) for ${Math.round(held / 1000)} s` : null;
     if (why === null) return rec;
     this.stopSince.delete(id);

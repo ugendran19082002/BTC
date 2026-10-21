@@ -264,6 +264,42 @@ describe('StrategyExitStepper', () => {
     assert.match(d.told[0]!, /Morning · C-BTC-80000-220926: target 85% \(from 7:30 AM\)/);
   });
 
+  test('[critical] the stop first, the target second (21 Oct 2026): while the quota is kept for stops a target\'s step waits, and moves at a later tick', async () => {
+    const d = fakeDesk([{}, {}]);
+    let busy = true;
+    const s = new StrategyExitStepper({ ...d.deps, stopsFirst: () => busy });
+    d.clock.t = ist('07:30');
+    assert.deepEqual(await s.consider(morning()), [], 'busy: no target moves');
+    assert.equal(d.moves.length, 0);
+    d.clock.t += 20_000;
+    assert.deepEqual(await s.consider(morning()), [], 'still busy: still owed');
+    busy = false;
+    d.clock.t += 20_000;
+    assert.deepEqual(await s.consider(morning()), ['T0', 'T1'], 'the quota back: both moved');
+    assert.deepEqual(d.moves.map((m) => m.ask), [{ takeProfitPct: 0.85, takeProfitPoints: 0 }, { takeProfitPct: 0.85, takeProfitPoints: 0 }]);
+    assert.deepEqual(await s.consider(morning()), [], 'and once only');
+  });
+
+  test('[critical] a stop\'s step goes on while the quota is kept for stops -- the target\'s waits, and is still owed', async () => {
+    const d = fakeDesk();
+    const recorded: string[] = [];
+    let busy = true;
+    const s = new StrategyExitStepper({ ...d.deps, stopsFirst: () => busy, move: async (id, ask, stage) => { recorded.push(stage); await d.deps.move(id, ask, stage); } });
+    const both = morning({ stopMode: 'points', stopLossPoints: 10, stopSteps: [{ at: '07:30', value: 20 }] });
+    d.clock.t = ist('07:30');
+    assert.deepEqual(await s.consider(both), ['T0']);
+    assert.deepEqual(d.moves[0]!.ask, { stopLossPct: 0, stopLossPoints: 20 }, 'the stop alone');
+    assert.deepEqual(recorded, ['0:1'], 'written as the target still at its start, the stop at its first step');
+    assert.match(d.told[0]!, /stop 20 pts/);
+    assert.doesNotMatch(d.told[0]!, /target 85%/, 'the target is not said to have moved');
+    busy = false;
+    d.clock.t += 20_000;
+    d.rows[0]!.plan.exitStage = '0:1';
+    assert.deepEqual(await s.consider(both), ['T0']);
+    assert.deepEqual(d.moves[1]!.ask, { takeProfitPct: 0.85, takeProfitPoints: 0 }, 'then the target, alone');
+    assert.deepEqual(recorded, ['0:1', '1:1']);
+  });
+
   test('a stop ladder in points moves the stop, not the target', async () => {
     const d = fakeDesk();
     const s = new StrategyExitStepper(d.deps);

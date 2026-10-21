@@ -64,7 +64,7 @@ test('[critical] a trade whose offer is at its stop is handed to the engine at o
   assert.deepEqual(x.calls, [{ symbol: CE, ids: ['a', 'c'], at: T0 }]);
 });
 
-test('[critical] while the offer stays at the stop the engine is asked again every few seconds: fifteen seconds are acted on at fifteen', async () => {
+test('[critical] while the offer stays at the stop the engine is asked again every second: the stop\'s seconds are acted on the moment they are up', async () => {
   const x = watch();
   x.w.note([t('a', CE, 164)]);
   x.offers({ [CE]: 170 });
@@ -75,7 +75,7 @@ test('[critical] while the offer stays at the stop the engine is asked again eve
     await x.w.settle();
     x.advance(1_000);
   }
-  assert.deepEqual(asked, [0, 3, 6, 9, 12, 15, 18], `every ${STOP_WATCH_RECHECK_MS / 1000} s, so the first look after ${STOP_CONFIRM_MS / 1000} s is at 15`);
+  assert.deepEqual(asked, Array.from({ length: 19 }, (_, s) => s), `every ${STOP_WATCH_RECHECK_MS / 1000} s, so the look at ${STOP_CONFIRM_MS / 1000} s is the close`);
 });
 
 test('[critical] back under the stop: one more look, so the engine forgets its count -- and then it is left alone', async () => {
@@ -86,12 +86,10 @@ test('[critical] back under the stop: one more look, so the engine forgets its c
   await x.w.settle();
   x.advance(1_000);
   x.offers({ [CE]: 162 });                        // under a's stop, still over b's
-  assert.deepEqual(x.w.tick(), ['a'], 'a is looked at once more, to clear its count; b was asked about a second ago');
+  assert.deepEqual(x.w.tick(), ['a', 'b'], 'a is looked at once more, to clear its count; b is still at its stop, asked again each second');
   await x.w.settle();
   x.advance(1_000);
-  assert.deepEqual(x.w.tick(), [], 'a is under its stop and was told so');
-  x.advance(1_000);
-  assert.deepEqual(x.w.tick(), ['b'], 'b is still at its stop: asked again three seconds after the first time');
+  assert.deepEqual(x.w.tick(), ['b'], 'a is under its stop and was told so: left alone');
 });
 
 test('[critical] a trade the engine says is over is not asked about again, before the loop has even read the book', async () => {
@@ -209,21 +207,21 @@ async function book() {
 /** The book's offer moved; the mark stays under every stop unless said, so the offer alone is what is judged. */
 const offer = (r: Awaited<ReturnType<typeof book>>['r'], symbol: string, bid: number, ask: number, mark = 100) => r.ex.tick(quote(symbol, bid, ask, { ts: r.now(), mark }));
 
-test('[critical] the engine\'s check for one contract: the count starts at the first look and the close is at the first look fifteen seconds on', async () => {
+test('[critical] the engine\'s check for one contract: the count starts at the first look and the close is at the first look its seconds on', async () => {
   const { r, state } = await book();
   offer(r, CE, 111, 112);                          // through ce-1's stop of 110; ce-2's is 120; the put is untouched
   assert.deepEqual(await r.engine.checkStops(CE, ['ce-1', 'ce-2']), [], 'the first look starts the count and closes nothing');
   assert.equal((await state('ce-1')).position, -10);
-  for (const s of [3, 6, 9, 12]) {
-    r.advance(3_000); offer(r, CE, 111, 112);
+  for (const s of [1, 2]) {
+    r.advance(1_000); offer(r, CE, 111, 112);
     assert.deepEqual(await r.engine.checkStops(CE, ['ce-1', 'ce-2']), [], `${s} s: still counting`);
   }
-  r.advance(3_000); offer(r, CE, 111, 112);
-  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1', 'ce-2']), ['ce-1'], 'fifteen seconds: closed, and said to be over');
+  r.advance(1_000); offer(r, CE, 111, 112);
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1', 'ce-2']), ['ce-1'], 'three seconds: closed, and said to be over');
   const closed = (await r.store.get('ce-1'))!;
   assert.equal(closed.state.position, 0);
   const why = closed.events.find((e) => e.t === 'exit_submitted') as { reason?: string } | undefined;
-  assert.equal(why?.reason, 'stop reached: the offer held at 112 (stop 110) for 15 s');
+  assert.equal(why?.reason, 'stop reached: the offer held at 112 (stop 110) for 3 s');
   assert.equal((await state('ce-2')).position, -10, 'the same contract under its own stop is left alone');
   assert.equal((await state('pe-1')).position, -10);
   assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), ['ce-1'], 'asked again about a closed trade: over, nothing done');
@@ -291,16 +289,13 @@ test('[critical] the watch and the engine together: a stop reached is closed fif
 
 // ------------------------------------------------------------------ a run, not a stray quote (13 Oct 2026)
 
-test('[critical] the offer and the mark both through the stop: closed after three seconds, not fifteen', async () => {
+test('[critical] the offer and the mark both through the stop: closed at the first look (21 Oct 2026, the SL first)', async () => {
   const { r, state } = await book();
+  assert.equal(STOP_CONFIRM_FAST_MS, 0);
   offer(r, CE, 111, 112, 111.5);                   // ce-1's stop is 110: the offer and the mark agree
-  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), []);
-  r.advance(STOP_CONFIRM_FAST_MS - 1_000); offer(r, CE, 111, 112, 111.5);
-  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), [], 'two seconds: not yet');
-  r.advance(1_000); offer(r, CE, 111, 112, 111.5);
-  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), ['ce-1']);
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), ['ce-1'], 'no wait');
   const why = (await r.store.get('ce-1'))!.events.find((e) => e.t === 'exit_submitted') as { reason?: string };
-  assert.equal(why.reason, 'stop reached: the offer at 112 and the mark at 111.5 both through the stop 110 for 3 s');
+  assert.equal(why.reason, 'stop reached: the offer at 112 and the mark at 111.5 both through the stop 110');
   assert.equal((await state('ce-2')).position, -10, 'ce-2\'s stop of 120 is not reached');
 });
 
@@ -312,14 +307,13 @@ test('[critical] the mark alone through the stop, the offer under it, is not a s
     r.advance(3_000);
   }
   assert.equal((await state('ce-1')).position, -10);
-  // and the mark dropping back under while the offer stays through falls back to the fifteen seconds
-  offer(r, CE, 111, 112, 111.5);
-  await r.engine.checkStops(CE, ['ce-1']);
-  r.advance(2_000); offer(r, CE, 111, 112, 100);
-  r.advance(2_000); offer(r, CE, 111, 112, 100);
-  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), [], 'the mark went back: no fast close');
-  r.advance(STOP_CONFIRM_MS - 4_000); offer(r, CE, 111, 112, 100);
-  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), ['ce-1'], 'the offer held fifteen seconds: closed as before');
+  // and the offer through with the mark under it is the offer alone: its own seconds, unbroken
+  offer(r, CE, 111, 112, 100);
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), [], 'the mark is under: no fast close');
+  r.advance(STOP_CONFIRM_MS - 1_000); offer(r, CE, 111, 112, 100);
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), [], 'not yet its seconds');
+  r.advance(1_000); offer(r, CE, 111, 112, 100);
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), ['ce-1'], 'the offer held its seconds: closed');
 });
 
 test('[critical] a run -- the offer half way from the stop to the backstop -- is closed at the first look', async () => {

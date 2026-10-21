@@ -2,7 +2,7 @@ import { clientId, clientStem, roleOfClientId } from '../../src/trading/engine.j
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, ceProduct, peProduct, planFor, quote, holdOffer, T0 } from './harness.js';
-import { backstopFor } from '../../src/trading/engine.js';
+import { STOP_CONFIRM_MS, backstopFor } from '../../src/trading/engine.js';
 import { failureCodes, precheck, DEFAULT_LIMITS } from '../../src/trading/precheck.js';
 import { protectionSize } from '../../src/trading/machine.js';
 import { clientId } from '../../src/trading/engine.js';
@@ -215,10 +215,22 @@ test('14 the stop triggers and buys the position back -- once the offer has held
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
   for (const px of [105, 109]) r.ex.tick(quote(CE, px - 0.5, px + 0.5, { mark: px, ts: r.now() }));
-  const { first, held } = await holdOffer(r, CE, 109.5, 110.5, plan.tradeId, { mark: 110 });
-  assert.equal(first?.position, -100, 'an offer at the stop starts the count; it does not close');
-  assert.equal(held?.position, 0);
+  const { first, held } = await holdOffer(r, CE, 109.5, 110.5, plan.tradeId, { mark: 108 });
+  assert.equal(first?.position, -100, 'the offer at the stop with the mark under it starts the count; it does not close');
+  assert.equal(held?.position, 0, `closed once the offer held ${STOP_CONFIRM_MS / 1000} s`);
   assert.equal(held?.phase, 'flat');
+});
+
+test('14a the offer and the mark both through the stop: bought back at the first look (21 Oct 2026, the SL first)', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct());
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  r.ex.tick(quote(CE, 109.5, 110.5, { mark: 110, ts: r.now() }));
+  const s = await r.engine.poll(plan.tradeId);
+  assert.equal(s?.position, 0, 'two prices agree: no wait');
+  const why = (await r.store.get(plan.tradeId))!.events.find((e) => e.t === 'exit_submitted') as { reason?: string };
+  assert.equal(why.reason, 'stop reached: the offer at 110.5 and the mark at 110 both through the stop 110');
 });
 
 test('14b a mark spike with the offer under the stop is not a stop -- the 26 September C-84400 case', async () => {
@@ -237,14 +249,15 @@ test('14c an offer that falls back under the stop starts the count again', async
   const plan = planFor(ceProduct());
   await r.engine.open(plan);
   await r.engine.poll(plan.tradeId);
-  r.ex.tick(quote(CE, 110, 111, { ts: r.now() }));
+  // The mark under the stop throughout: the offer alone, which must hold its seconds unbroken.
+  r.ex.tick(quote(CE, 110, 111, { ts: r.now(), mark: 105 }));
   await r.engine.poll(plan.tradeId);
-  r.advance(10_000);
-  r.ex.tick(quote(CE, 105, 106, { ts: r.now() }));
+  r.advance(2_000);
+  r.ex.tick(quote(CE, 105, 106, { ts: r.now(), mark: 105 }));
   await r.engine.poll(plan.tradeId);
-  r.advance(10_000);
-  r.ex.tick(quote(CE, 110, 111, { ts: r.now() }));
-  assert.equal((await r.engine.poll(plan.tradeId))?.position, -100, '20 s since the first touch, but not 15 s in a row');
+  r.advance(2_000);
+  r.ex.tick(quote(CE, 110, 111, { ts: r.now(), mark: 105 }));
+  assert.equal((await r.engine.poll(plan.tradeId))?.position, -100, '4 s since the first touch, but not 3 s in a row');
 });
 
 test('15 a gap through the stop books the price that actually filled, not the trigger', async () => {

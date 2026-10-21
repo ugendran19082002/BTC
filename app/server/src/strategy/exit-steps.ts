@@ -42,8 +42,20 @@ export type ExitStepperDeps = {
    * move as it lands. Only ever called for a strategy that has steps, so a fixed target leaves no line.
    */
   note?: (tradeId: string, note: { kind: 'schedule' | 'moved'; title: string; detail?: string }) => Promise<unknown>;
+  /**
+   * The stop first, the target second (owner, 21 Oct 2026): true while Delta's call quota is to be kept for stops.
+   * A target's step then waits -- tried again at the next tick -- and a stop's step goes on: a stop moved by the clock
+   * is the stop. Absent: never.
+   */
+  stopsFirst?: () => boolean;
   now: () => number;
 };
+
+/**
+ * Above this share of Delta's five-minute quota a target's step waits for a later tick (21 Oct 2026): a step moves every
+ * open trade's target at once -- an edit each, ninety of them -- and the stop watch keeps looking at stops up to 90%.
+ */
+export const TARGET_STEP_QUOTA_PCT = 80;
 
 /** "0:0" is the starting values -- what the entry was placed with. */
 const START = '0:0';
@@ -87,22 +99,30 @@ export class StrategyExitStepper {
       const prev = trade.plan.exitStage ?? this.applied.get(id) ?? START;
       if (prev === key) { this.applied.set(id, key); continue; }
       const [prevTarget, prevStop] = prev.split(':');
+      // The quota kept for stops: a target's step waits, and a stop's goes on alone -- the stage written says so, so
+      // the target's is still owed and moves at a later tick.
+      const holdTarget = String(t.stage) !== prevTarget && (this.d.stopsFirst?.() ?? false);
+      const stopMoves = String(st.stage) !== prevStop;
+      if (holdTarget && !stopMoves) continue;
+      const stage = holdTarget ? `${prevTarget}:${st.stage}` : key;
+      // What is said of the move: a held target did not move.
+      const tNow = holdTarget ? { ...t, stage: Number(prevTarget) } : t;
       // Only the leg whose stage changed: the other may have been moved by hand.
       const ask: ExitAsk = {
-        ...(String(t.stage) !== prevTarget ? exitAsk(target, t.value, 'target') : {}),
-        ...(String(st.stage) !== prevStop ? exitAsk(stop, st.value, 'stop') : {}),
+        ...(String(t.stage) !== prevTarget && !holdTarget ? exitAsk(target, t.value, 'target') : {}),
+        ...(stopMoves ? exitAsk(stop, st.value, 'stop') : {}),
       };
       // What the exits rest at before the move: read now, as the record may be the one the move changes.
       const was = { target: trade.plan.takeProfitPrice, stop: trade.plan.stopPrice };
       // Not marked until it lands: a move that throws is tried again next tick.
-      await this.d.move(id, ask, key);
-      this.applied.set(id, key);
+      await this.d.move(id, ask, stage);
+      this.applied.set(id, stage);
       moved.push(id);
-      this.d.tell?.(stepWords(s, trade.plan.symbol, target, t, prevTarget, stop, st, prevStop), id);
+      this.d.tell?.(stepWords(s, trade.plan.symbol, target, tNow, prevTarget, stop, st, prevStop), id);
       // On the trade's journal too: what moved, from what, at which step -- and the new buy-back price where it is known.
       if (this.d.note) {
         const after = (await Promise.resolve(this.d.openTrades(s.id)).catch(() => [] as TradeRecord[])).find((x) => x.state.tradeId === id) ?? null;
-        await this.d.note(id, movedNote(s, target, t, prevTarget, stop, st, prevStop, was, after)).catch(() => {});
+        await this.d.note(id, movedNote(s, target, tNow, prevTarget, stop, st, prevStop, was, after)).catch(() => {});
       }
     }
     // Forget trades that are gone, so the map does not grow for ever.

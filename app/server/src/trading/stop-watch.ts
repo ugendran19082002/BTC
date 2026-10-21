@@ -44,8 +44,11 @@ export type StopWatched = {
 
 /** How often the board in memory is held against the stops: as often as it is refreshed. */
 export const STOP_WATCH_MS = 1_000;
-/** How often the engine is asked again about a trade whose offer is still at its stop. */
-export const STOP_WATCH_RECHECK_MS = 3_000;
+/**
+ * How often the engine is asked again about a trade whose offer is still at its stop: every second, as the board is
+ * refreshed (21 Oct 2026; three before), so the close goes the moment the stop's seconds are up -- not up to three later.
+ */
+export const STOP_WATCH_RECHECK_MS = 1_000;
 /** A board in memory older than this decides nothing: the loop alone carries on. */
 export const STOP_WATCH_BOARD_STALE_MS = 10_000;
 /**

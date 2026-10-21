@@ -14,7 +14,8 @@ import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
 import { lastPerp } from '../market/flow.js';
 import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
-import { StrategyExitStepper } from './exit-steps.js';
+import { StrategyExitStepper, TARGET_STEP_QUOTA_PCT } from './exit-steps.js';
+import { deskMetrics } from '../observability/desk-metrics.js';
 import { DEFAULT_LEVERAGE, stopHeldWords, stopRoomInside } from '../trading/order-plan.js';
 import { liquidationRoom } from '../trading/margin.js';
 import { volLevelNow, type VolBy, type VolLevel } from '../report/signal-backtest.js';
@@ -170,6 +171,8 @@ export class StrategyRunner {
       move: (tradeId, ask, stage) => tradingService().updateExits(tradeId, ask, stage),
       // On the trade's own journal, for its timeline on the phone: the day's steps once, each move as it lands.
       note: (tradeId, note) => tradingService().noteExitStep(tradeId, note),
+      // The stop first, the target second (21 Oct 2026): a target's step waits while Delta's quota is kept for stops.
+      stopsFirst: () => deskMetrics().delta.usedPct >= TARGET_STEP_QUOTA_PCT,
       // Not told on Telegram (owner, 14 Oct 2026: "dynamic tgt telegram alert vena, romba varuthu"): a step moves
       // every open trade at once -- 55 messages at 11:30 that morning -- and each move is on the trade's timeline.
       now: this.now,
