@@ -584,6 +584,26 @@ export function underlyingTouched(
  */
 export const STOP_CONFIRM_MS = 3_000;
 /**
+ * A bought option's stop, on the bid (`longExitIfReached`): its own wait, apart from a sold one's (owner, 21 Oct 2026:
+ * "the long option's stop policy decided on its own"). Fifteen seconds, as it was before the sold stop went to three:
+ * what a bought option can lose is what was paid for it, and a thin option's bid is pulled and put back -- a short wait
+ * sells it on a flicker.
+ */
+export const LONG_STOP_CONFIRM_MS = 15_000;
+
+/**
+ * What the backstop resting at Delta is armed by (21 Oct 2026). Delta's mark for a cheap option is not a price on the
+ * expiry day: over a week of the desk's minute record the mark was more than twice the offer in 10.8% of the minutes
+ * with the offer under 5 and 0.28% with it at 5-20, and almost never above; on 19 Oct the P-82200 was marked 8.8, 32.5,
+ * 44.5, 9.5, 42.8, 4.0, 36 in a quarter of an hour against an offer of 6-8. Eighteen backstops fired so, each bought
+ * back under the desk's own stop -- a good trade closed for nothing. Armed by the last trade, none of those fifteen in
+ * the record would have fired. A premium of `BACKSTOP_LAST_BELOW` or more keeps the mark, which there is a price and the
+ * last trade can be stale. Delta refusing the last trade, it goes on the mark (`DeltaExchange.placeOrder`).
+ */
+export const BACKSTOP_LAST_BELOW = 20;
+export const backstopTriggerFor = (entry: number | null | undefined): 'mark' | 'last' =>
+  (entry !== null && entry !== undefined && entry > 0 && entry < BACKSTOP_LAST_BELOW ? 'last' : 'mark');
+/**
  * A run, not a stray quote (13 Oct 2026). At 09:02 IST the 83,400 call was offered at 145 and a minute later at
  * 274: thirteen shorts with their stops at 160-172 waited out their fifteen seconds, the exchange's backstop at
  * ~235 fired first, and they were bought back at 254-266 -- about 90 points past the stops. Fifteen seconds keeps
@@ -1959,6 +1979,7 @@ export class TradeEngine {
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
         side: 'buy', type: 'stop_limit', size, stopPrice: price,
         limitPrice: stopFillLimit('buy', price, tick), reduceOnly: true, role: 'stop_loss',
+        triggerOn: backstopTriggerFor(rec.state.entryAvgPrice),
       }).then(() => {}),
     );
 
@@ -2561,7 +2582,7 @@ export class TradeEngine {
    *
    * A bought position is sold at the bid, so the bid is the price that says a level is really reached -- the
    * mirror of a short's stop on the offer (`stopIfReached`). The target is taken the moment the bid is there:
-   * selling into a bid at or over the target is the target. The stop has to hold for `STOP_CONFIRM_MS`, like a
+   * selling into a bid at or over the target is the target. The stop has to hold for `LONG_STOP_CONFIRM_MS`, like a
    * short's, so one stray quote does not sell the position. A missing or stale bid does nothing.
    *
    * Nothing rests at the exchange for these, so they work only while the desk is up -- as the signal's levels
@@ -2593,7 +2614,7 @@ export class TradeEngine {
     if (stop === null || bid > stop) { this.stopSince.delete(id); return rec; }
     const since = this.stopSince.get(id) ?? this.now();
     this.stopSince.set(id, since);
-    if (this.now() - since < STOP_CONFIRM_MS) return rec;
+    if (this.now() - since < LONG_STOP_CONFIRM_MS) return rec;
     this.stopSince.delete(id);
     await this.closeNowInner(id, `option stop reached: the bid held at ${p2(bid)} (stop ${p2(stop)}, bought at ${p2(entry)}) for ${Math.round((this.now() - since) / 1000)} s`);
     return await this.d.store.get(id) ?? rec;

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, ceProduct, planFor, quote, T0 } from './harness.js';
-import { STOP_CONFIRM_MS, type TradePlan } from '../../src/trading/engine.js';
+import { LONG_STOP_CONFIRM_MS, STOP_CONFIRM_MS, type TradePlan } from '../../src/trading/engine.js';
 import { DEFAULT_LIMITS, failureCodes, precheckBuy } from '../../src/trading/precheck.js';
 import { initialTrade, replay } from '../../src/trading/machine.js';
 import { orderPlan } from '../../src/trading/order-plan.js';
@@ -161,10 +161,14 @@ test('[critical] the stop is judged on the bid and has to hold, like a short\'s 
   // 40% lost from 101 is 60.6. A bid there once is not enough.
   r.ex.setQuote(quote(CE, 60, 61, { ts: r.now() }));
   assert.equal((await r.engine.poll('t-buy-1'))!.position, 10, 'one quote at the stop does not sell');
+  // A bought option's own wait (21 Oct 2026): not the sold one's three seconds.
   r.advance(STOP_CONFIRM_MS);
   r.ex.setQuote(quote(CE, 60, 61, { ts: r.now() }));
+  assert.equal((await r.engine.poll('t-buy-1'))!.position, 10, 'a sold option\'s three seconds do not sell a bought one');
+  r.advance(LONG_STOP_CONFIRM_MS - STOP_CONFIRM_MS);
+  r.ex.setQuote(quote(CE, 60, 61, { ts: r.now() }));
   const s = await r.engine.poll('t-buy-1');
-  assert.equal(s!.position, 0, 'held for the confirm time: sold');
+  assert.equal(s!.position, 0, 'held for its own fifteen seconds: sold');
   assert.ok(s!.realisedPnl < 0);
   assert.ok(s!.realisedPnl >= -101 * 10 * 0.001, 'never more than was paid');
 });

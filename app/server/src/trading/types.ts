@@ -65,6 +65,11 @@ export type PlaceOrderRequest = {
   stopPrice?: number;
   /** An exit must never be able to open a position on the other side. */
   reduceOnly?: boolean;
+  /**
+   * What a stop order is armed by at the venue: Delta's mark (the default) or the last trade (21 Oct 2026, the
+   * backstop of a cheap option: `backstopTriggerFor`). Ignored for other orders.
+   */
+  triggerOn?: 'mark' | 'last';
   role: OrderRole;
 };
 

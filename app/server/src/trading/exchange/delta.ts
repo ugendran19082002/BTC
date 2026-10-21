@@ -245,6 +245,13 @@ const refusedRead = (e: unknown): never => {
  * product_id", which reads as a one-of, and sending both is exactly the kind of
  * thing a schema rejects.
  */
+/** Delta refused a stop armed by the last trade once: every stop is armed by the mark from then on (`placeOrder`). */
+let lastTriggerRefused = false;
+/** Delta refused a stop for being armed by the last trade, and created nothing. */
+class LastTriggerRefused extends Error { constructor(message: string) { super(message); this.name = 'LastTriggerRefused'; } }
+/** For tests: the refusal forgotten. */
+export function resetLastTriggerForTest(): void { lastTriggerRefused = false; }
+
 export function orderBody(req: PlaceOrderRequest): Record<string, unknown> {
   const body: Record<string, unknown> = {
     product_id: req.productId,
@@ -267,8 +274,10 @@ export function orderBody(req: PlaceOrderRequest): Record<string, unknown> {
     body.stop_price = String(req.stopPrice);
     // Options are thin, so the last trade can be minutes old and the spot is a
     // different instrument's price. The mark is what Delta itself values the
-    // position at, so it is what the stop should watch.
-    body.stop_trigger_method = 'mark_price';
+    // position at, so it is what the stop watches -- unless asked for the last
+    // trade (21 Oct 2026): a cheap option's mark spikes on the expiry day, and a
+    // backstop armed by it fired with nothing traded near it (`backstopTriggerFor`).
+    body.stop_trigger_method = req.triggerOn === 'last' && !lastTriggerRefused ? 'last_traded_price' : 'mark_price';
     if (req.type === 'stop_limit' && req.limitPrice !== undefined) {
       // A limit, priced through the trigger. Delta validates a market order for
       // price impact when it is placed and refuses it as `unsupported` when the
@@ -419,6 +428,20 @@ export class DeltaExchange implements ExchangePort {
       return await this.send(req);
     } catch (e) {
       /*
+       * A stop armed by the last trade, refused (21 Oct 2026): sent again at once armed by the mark, as every stop was
+       * until then -- a refusal created nothing, and the same client id makes a duplicate impossible. A backstop on the
+       * mark beats none. Said once, and the last trade not asked for again by this process.
+       */
+      if (e instanceof LastTriggerRefused && !lastTriggerRefused) {
+        lastTriggerRefused = true;
+        noteError({
+          source: 'exchange', level: 'warn', where: 'POST /v2/orders', code: 'last_trigger_refused',
+          message: `Delta refused a stop armed by the last trade (${e.message}); the backstop was placed on the mark instead, and every stop goes on the mark from now on.`,
+          context: { symbol: req.symbol, clientOrderId: req.clientOrderId },
+        });
+        return await this.send({ ...req, triggerOn: 'mark' });
+      }
+      /*
        * Getting out matters more than the price. A reduce-only market order
        * Delta cannot price is retried once as a limit through the touch: it
        * cannot open a position, the refusal proves the first one does not
@@ -452,6 +475,11 @@ export class DeltaExchange implements ExchangePort {
       clearRestricted();
       return toOrder(o);
     } catch (e) {
+      // A stop armed by the last trade that Delta will not take as such: its trigger, or the order's shape, refused --
+      // not its position or its price. `placeOrder` sends it again on the mark.
+      if (e instanceof DeltaRefused && req.triggerOn === 'last' && /bad_schema|trigger/i.test(`${e.code} ${e.detail ?? ''} ${e.message}`)) {
+        throw new LastTriggerRefused(e.message);
+      }
       /*
        * One contract Delta will only reduce (19 Oct 2026): an opening order refused for it alone. Noted, so the strike
        * picker sells the next one out instead of this one again; its product read afresh, as its state has changed.
