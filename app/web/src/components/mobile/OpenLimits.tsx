@@ -1,6 +1,6 @@
 import { getActivity } from '@/api/phone';
 import { usePoll } from '@/hooks/usePoll';
-import { sideCaps } from '@/lib/side-max';
+import { sideCaps, strikeCapOf, strikeWords } from '@/lib/side-max';
 import { cn } from '@/lib/utils';
 import type { StrategyStatus } from '@/types/strategy';
 import { usePhoneData } from '@/components/mobile/phone-context';
@@ -14,7 +14,7 @@ import { Panel } from '@/components/mobile/parts';
  * the desk. With an account chosen it is that account's; on "All accounts", one block for each.
  */
 
-type Limits = Pick<StrategyStatus, 'signalMaxOpen' | 'openNow' | 'signalSideMaxPct' | 'openBySide'>;
+type Limits = Pick<StrategyStatus, 'signalMaxOpen' | 'openNow' | 'signalSideMaxPct' | 'openBySide' | 'signalStrikeMaxPct' | 'busiestStrike' | 'signalStrikeFull'>;
 
 /** One bar: what it is, how many of how many, and the share filled. Full is said in a word as well as a colour. */
 function Bar({ label, now, most, note, name }: { label: string; now: number; most: number; note?: string; name: string }) {
@@ -43,6 +43,7 @@ export function LimitsBlock({ d, title }: { d: Limits; title?: string }) {
   if (!open || !d.signalSideMaxPct) return null;
   const caps = sideCaps(cap, d.signalSideMaxPct);
   const who = title ? `${title}: ` : '';
+  const strikeMost = d.signalStrikeMaxPct === undefined ? null : strikeCapOf(cap, d.signalStrikeMaxPct);
   return (
     <section aria-label={title ? `open limits of ${title}` : 'open limits'} className="grid gap-2.5">
       {title && <h3 className="m-0 text-[13px] font-semibold text-muted-foreground">{title}</h3>}
@@ -62,6 +63,12 @@ export function LimitsBlock({ d, title }: { d: Limits; title?: string }) {
             </p>
           )}
         </>
+      )}
+      {/* The most on one strike (22 Oct 2026): its own limit, cap or none; the strike holding the most is what it meets. */}
+      {strikeMost !== null && (
+        d.busiestStrike
+          ? <Bar label="Busiest strike" note={`${strikeWords(d.busiestStrike.symbol)} · max ${d.signalStrikeMaxPct}% = ${strikeMost} a strike${d.signalStrikeFull === 'skip' ? ', then skip' : ', then the next out'}`} now={d.busiestStrike.open} most={strikeMost} name={`${who}busiest strike, of the most on one strike`} />
+          : <p className="m-0 text-[13.5px] text-muted-foreground">At most <b className="text-foreground">{strikeMost}</b> on one strike ({d.signalStrikeMaxPct}%); none open.</p>
       )}
     </section>
   );
@@ -85,7 +92,7 @@ export function OpenLimits({ shown }: { /** The chosen account's read, already o
       <div className="grid gap-4">
         {blocks.map((b) => <LimitsBlock key={b.id} d={b.d} title={every ? b.name : undefined} />)}
       </div>
-      <p className="m-0 mt-2.5 text-[11.5px] text-muted-foreground">CE and PE each have their own limit; together they stay within &ldquo;at most open&rdquo;. Set on the desk&apos;s Strategy screen.</p>
+      <p className="m-0 mt-2.5 text-[11.5px] text-muted-foreground">CE and PE each have their own limit; together they stay within &ldquo;at most open&rdquo;. A strike at its most skips its next signal. Set on the desk&apos;s Strategy screen.</p>
     </Panel>
   );
 }

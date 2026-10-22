@@ -9,7 +9,7 @@
  * -- refused: ..." -- so only what follows "refused:" is read for it: the SL and TGT there are the order's, not a reason.
  */
 export const SIGNAL_REASONS = [
-  'sl-min', 'sl-max', 'tgt-min', 'tgt-max', 'own-max', 'desk-max', 'side-max', 'no-entry', 'late', 'over',
+  'sl-min', 'sl-max', 'tgt-min', 'tgt-max', 'own-max', 'desk-max', 'side-max', 'strike-max', 'no-entry', 'late', 'over',
   'premium', 'spread', 'no-strike', 'margin', 'loss-limit', 'no-board', 'delta', 'other',
 ] as const;
 export type SignalReason = (typeof SIGNAL_REASONS)[number];
@@ -24,6 +24,8 @@ const KINDS: [SignalReason, RegExp][] = [
   ['late', /too late to enter/i],
   ['over', /over before it could be entered|in the same moment/i],
   ['side-max', /already has \d+ (CE|PE) open/],
+  // Before the desk's own: "the desk already has 10 open on PE 83000" says the desk's words too.
+  ['strike-max', /already has \d+ open on (CE|PE) \d+/],
   ['desk-max', /the desk already has \d+ open/],
   ['own-max', /^already \d+ of its trades? open/],
   ['loss-limit', /loss budget|loss limit/i],

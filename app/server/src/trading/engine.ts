@@ -1264,7 +1264,7 @@ export class TradeEngine {
       const closing = (r: TradeRecord) => isDone(r.state) || r.state.phase === 'exit_pending' || r.state.position === 0;
       if (!rec || rec.plan.symbol !== symbol || closing(rec)) { over.push(tradeId); return; }
       if (rec.state.phase === 'entry_unknown') return;
-      if (closing(await this.stopIfReached(rec, quote))) over.push(tradeId);
+      if (closing(await this.stopIfReached(rec, quote, 'watch'))) over.push(tradeId);
     }).catch((e) => this.note('stop watch', { orderId: tradeId, symbol }, e))));
     // In the order asked, whichever finished first.
     return tradeIds.filter((id) => over.includes(id));
@@ -1593,7 +1593,7 @@ export class TradeEngine {
       rec = await this.underlyingExit(rec);
     }
     if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
-      rec = await this.stopIfReached(rec);
+      rec = await this.stopIfReached(rec, undefined, 'loop');
     }
     // A bought position is not this desk's (it only sells): said once, and left to be closed by hand (`notOurs`).
     if (rec.state.position > 0 && rec.state.phase !== 'exit_pending') rec = await this.notOurs(rec);
@@ -2398,7 +2398,7 @@ export class TradeEngine {
    * never comes down, the position stays on until it expires or you close it
    * -- that is what a target is.
    */
-  private async stopIfReached(rec: TradeRecord, read?: Quote | null): Promise<TradeRecord> {
+  private async stopIfReached(rec: TradeRecord, read?: Quote | null, via?: 'watch' | 'loop'): Promise<TradeRecord> {
     const stop = rec.plan.stopPrice;
     if (stop === null) return rec;
 
@@ -2447,7 +2447,7 @@ export class TradeEngine {
 
     // An exit that happens beats a better price that might not -- but not at any price: the close is a buy limit
     // through the offer it was judged on (`closeLimitFor`), and what it cannot fill is sent again at the market.
-    await this.closeNowInner(id, why, undefined, ask);
+    await this.closeNowInner(id, why, undefined, ask, via);
     return await this.d.store.get(id) ?? rec;
   }
 
@@ -2576,7 +2576,7 @@ export class TradeEngine {
    * over what is left; that path is the one the desk already trusts after
    * every add.
    */
-  private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number, offer?: number): Promise<TradeState | null> {
+  private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number, offer?: number, via?: 'watch' | 'loop'): Promise<TradeState | null> {
     let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     // Size from the exchange, not from memory: someone may have closed part of
@@ -2622,6 +2622,7 @@ export class TradeEngine {
       clientOrderId: cid,
       closing: { clientOrderId: cid, size, heldBefore: held, all, submittedAt: this.now() },
       reason,
+      ...(via ? { via } : {}),
       at: this.now(),
     });
     try {

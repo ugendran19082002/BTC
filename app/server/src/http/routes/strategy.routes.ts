@@ -6,7 +6,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -432,6 +432,12 @@ export function registerStrategyRoutes(app: FastifyInstance) {
         CE: elsewhere ? 0 : openTrades.filter((t) => t.plan.optionSide === 'CE').length,
         PE: elsewhere ? 0 : openTrades.filter((t) => t.plan.optionSide === 'PE').length,
       },
+      // The most on one strike (0: none), and the strike holding the most now -- what the next signal there meets.
+      // A per cent of that cap, 10 where none is chosen; what it allows a strike is worked from the cap (`strikeCapOf`).
+      signalStrikeMaxPct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, account ?? svc.accountId)),
+      // And what a signal does at it: the next strike out (the default), or skip.
+      signalStrikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, account ?? svc.accountId)),
+      busiestStrike: elsewhere ? null : busiestOf(openTrades),
       /*
        * The desk's limit on lots short at once (the order gate's MAX_POSITION), and
        * the lots the desk holds short now, working entries at the size they asked
@@ -994,6 +1000,28 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     return { ok: true, signalMaxOpen: max as number };
   });
 
+  // The most open on one strike, this account's: per cent of "at most open", 1 to 100; null is back to the default (10).
+  app.post('/api/strategies/strike-max', async (req, reply) => {
+    const { pct, accountId } = (req.body ?? {}) as { pct?: unknown; accountId?: unknown };
+    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const most = pct === undefined ? null : pct;
+    const problem = strikeMaxProblem(most);
+    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+    await svc.settings.set(accountKey(STRIKE_MAX_KEY, account), most === null ? '' : String(most));
+    return { ok: true, signalStrikeMaxPct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, account)) };
+  });
+
+  // What a signal does at a full strike, this account's: 'next' (the next strike out) or 'skip'; null is back to the default.
+  app.post('/api/strategies/strike-full', async (req, reply) => {
+    const { mode, accountId } = (req.body ?? {}) as { mode?: unknown; accountId?: unknown };
+    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const want = mode === undefined ? null : mode;
+    const problem = strikeFullProblem(want);
+    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+    await svc.settings.set(accountKey(STRIKE_FULL_KEY, account), want === null ? '' : String(want));
+    return { ok: true, signalStrikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, account)) };
+  });
+
   // One side's own limit under the cap: per cent of "at most open" for calls, or for puts; null is back to the default.
   app.post('/api/strategies/side-max', async (req, reply) => {
     const { side, pct, accountId } = (req.body ?? {}) as { side?: unknown; pct?: unknown; accountId?: unknown };
@@ -1019,4 +1047,13 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const mine = await ofAccount(accountOf(req.query));
     return { runs: mine ? runs.filter((r) => mine.has(r.strategyId)) : runs };
   });
+}
+
+/** The contract with the most open trades on it, and how many; null with none open. */
+function busiestOf(open: readonly { plan: { symbol: string } }[]): { symbol: string; open: number } | null {
+  const by = new Map<string, number>();
+  for (const t of open) by.set(t.plan.symbol, (by.get(t.plan.symbol) ?? 0) + 1);
+  let top: { symbol: string; open: number } | null = null;
+  for (const [symbol, n] of by) if (!top || n > top.open) top = { symbol, open: n };
+  return top;
 }

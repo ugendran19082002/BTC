@@ -101,6 +101,12 @@ export type StopWatchDeps = {
    * `STOP_WATCH_QUOTA_PCT` with a trade at its stop not looked at. Once an episode, for the error log.
    */
   onStandDown?: (why: { kind: 'board' | 'quota'; watched: number; atStop: number; usedPct: number | null; boardAgeMs: number | null }) => void;
+  /**
+   * The watch working again after a stand-down, with how long it was down (22 Oct 2026: five stand-downs between
+   * 07:07 and 07:37 were one row in the error log, first and last seen, and whether one covered the 07:11 stops
+   * could not be told). Each episode, start and end, goes to the server log, which a rebuild no longer takes.
+   */
+  onStandUp?: (was: { kind: 'board' | 'quota'; since: number; forMs: number }) => void;
   now?: () => number;
 };
 
@@ -112,6 +118,8 @@ export class OptionStopWatch {
   private readonly busy = new Map<string, Promise<void>>();
   /** The stand-down being had, said once (`onStandDown`); null while the watch is working. */
   private down: 'board' | 'quota' | null = null;
+  /** When the stand-down being had began. */
+  private downSince = 0;
   private readonly now: () => number;
 
   constructor(private readonly d: StopWatchDeps) {
@@ -168,7 +176,7 @@ export class OptionStopWatch {
     }
 
     if (passedOver > 0) this.standDown({ kind: 'quota', watched: this.list.length, atStop: passedOver, usedPct: used, boardAgeMs: now - board.at });
-    else this.down = null;
+    else this.standUp();
     const out: string[] = [];
     for (const [symbol, ids] of due) {
       if (this.busy.has(symbol)) continue;
@@ -193,8 +201,18 @@ export class OptionStopWatch {
 
   private standDown(why: Parameters<NonNullable<StopWatchDeps['onStandDown']>>[0]): void {
     if (this.down === why.kind) return;
+    // One kind of stand-down giving way to the other: the first one is over.
+    if (this.down !== null) this.standUp();
     this.down = why.kind;
+    this.downSince = this.now();
     try { this.d.onStandDown?.(why); } catch { /* said or not, the watch goes on */ }
+  }
+
+  private standUp(): void {
+    if (this.down === null) return;
+    const was = { kind: this.down, since: this.downSince, forMs: this.now() - this.downSince };
+    this.down = null;
+    try { this.d.onStandUp?.(was); } catch { /* said or not, the watch goes on */ }
   }
 
   /** Every check handed over has answered. For shutdown and for tests. */

@@ -2,7 +2,7 @@ import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setScheduler, setSideMax, setSignalMaxOpen, setStrategyEnabled, takeIntoGroup } from '@/api/strategy';
+import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setScheduler, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setStrategyEnabled, takeIntoGroup } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus, type VolLevelNow } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { SignalTradeHistory } from '@/components/strategy/SignalTradeHistory';
 import { StrategyGroupSection } from '@/components/strategy/StrategyGroupSection';
 import { CopyStrategiesSheet } from '@/components/strategy/CopyStrategiesSheet';
 import { SideMax } from '@/components/strategy/SideMax';
+import { StrikeMax } from '@/components/strategy/StrikeMax';
 import { refreshGroupIndex } from '@/hooks/useGroupOf';
 import { defaultGroupFor, groupNameProblem, groupSections, moved, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
@@ -713,6 +714,19 @@ export function SignalStrategiesCard() {
               open={data.openBySide}
               busy={busy === 'side-max'}
               onSave={(side, pct) => act('side-max', () => setSideMax(side, pct))}
+              onInvalid={setFailed}
+            />
+          )}
+          {/* The most on one strike (22 Oct 2026), and the strike holding the most now. Absent on a server from before it. */}
+          {data && data.signalStrikeMaxPct !== undefined && data.signalMaxOpen !== undefined && (
+            <StrikeMax
+              pct={data.signalStrikeMaxPct}
+              cap={data.signalMaxOpen}
+              busiest={data.busiestStrike ?? null}
+              full={data.signalStrikeFull}
+              busy={busy === 'strike-max'}
+              onSave={(n) => act('strike-max', () => setStrikeMax(n))}
+              onSaveFull={(mode) => act('strike-max', () => setStrikeFull(mode))}
               onInvalid={setFailed}
             />
           )}

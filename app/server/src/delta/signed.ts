@@ -10,10 +10,22 @@ import { createHmac } from 'node:crypto';
  */
 
 import { noteDeltaCall, quotaKeyOf } from '../observability/desk-metrics.js';
+import { deskLockOk } from '../db/desk-lock.js';
 
 export const BASE = 'https://api.india.delta.exchange';
 
 export type Creds = { key: string; secret: string };
+
+/**
+ * A write to Delta from a process that no longer holds the desk lock (db/desk-lock.ts, 22 Oct 2026): not sent. Its
+ * heartbeat has gone unanswered -- the process froze, or lost its database -- and another may be trading in its place.
+ */
+export class NotTheDesk extends Error {
+  constructor() {
+    super('This process no longer holds the desk lock: nothing is sent to Delta from it.');
+    this.name = 'NotTheDesk';
+  }
+}
 
 export class NotConfigured extends Error {
   constructor() {
@@ -124,6 +136,8 @@ export async function signed<T>(creds: Creds | null, req: SignedRequest): Promis
 export async function signedPage<T>(creds: Creds | null, req: SignedRequest): Promise<{ result: T; after: string | null }> {
   if (!creds) throw new NotConfigured();
   const { method, path, query = '', body } = req;
+  // An order, a cancel, an edit, a leverage: only from the one desk trading. A read changes nothing, and is let through.
+  if (method !== 'GET' && !deskLockOk()) throw new NotTheDesk();
   const payload = body === undefined ? '' : JSON.stringify(body);
   const ts = Math.floor(Date.now() / 1000).toString();
 

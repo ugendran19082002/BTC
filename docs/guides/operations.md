@@ -96,3 +96,13 @@ each table holds: [reference/database.md](../reference/database.md).
    `docker compose -f deploy/docker-compose.yml exec api tail -f /srv/logs/api-$(TZ=Asia/Kolkata date +%F).log`.
 4. For a trade: its `trade_events`, in order. For a strategy: `strategy_runs`
    ([features/strategies.md](../features/strategies.md#why-a-strategy-is-refused)).
+5. **Which process is trading** (since 22 Oct 2026, `db/desk-lock.ts`). One process at a time holds the desk lock
+   -- a PostgreSQL advisory lock taken before anything else at boot -- and only it may write to Delta. A second one
+   (a container started by mistake, a laptop on this database) waits as a standby, logging `desk lock held by
+   another process ... waiting as a standby` every 30 s, and boots -- recovering every open trade from Delta first
+   -- once the lock is free. The holder's heartbeat is a `SELECT 1` every 5 s; silent 30 s, a standby ends that
+   session and takes over; a process whose lock is lost exits, and Docker starts it again to wait its turn. Who
+   holds it:
+   `SELECT a.pid, a.application_name, a.client_addr, now() - a.state_change AS silent FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE l.locktype = 'advisory' AND l.classid = 1651794788 AND l.objid = 2 AND l.granted;`
+   A deploy that never comes up healthy with `waiting as a standby` in its log means another process holds it:
+   find it with that query before anything else.

@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-547 files listed, 291 test files counted below, images and lockfiles left out.
+550 files listed, 293 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 146 |
-| `app/web` | 145 |
+| `app/server` | 147 |
+| `app/web` | 146 |
 
 ## `(root)`
 
@@ -76,6 +76,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [desk-lock.ts](../../app/server/src/db/desk-lock.ts) | One desk trading at a time (22 Oct 2026, the architecture plan's step 3: "a single active SL executor with safe failover"). |
 | [import-sqlite.ts](../../app/server/src/db/import-sqlite.ts) | Copy the desk's SQLite files into PostgreSQL, once, at the cutover. |
 | [migrate.ts](../../app/server/src/db/migrate.ts) | Schema changes that run once and are remembered. |
 | [pool.ts](../../app/server/src/db/pool.ts) | The one connection pool to the desk's database. |
@@ -192,6 +193,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [desk-log.ts](../../app/server/src/observability/desk-log.ts) | The server log, for the parts of the desk built before the HTTP app is (22 Oct 2026). |
 | [desk-metrics.ts](../../app/server/src/observability/desk-metrics.ts) | What the desk costs and how long it takes, counted -- so the next change to its speed is decided on numbers. |
 | [errors.ts](../../app/server/src/observability/errors.ts) | Every failure this system has, in one table. |
 | [glance.ts](../../app/server/src/observability/glance.ts) | "Is everything all right?" in one answer, for the phone (6 Oct 2026). |
@@ -303,7 +305,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
 | [signal-backtest.ts](../../app/web/src/api/signal-backtest.ts) | -- |
 | [strategy-groups.ts](../../app/web/src/api/strategy-groups.ts) | Read quietly: the index only puts a tag beside a strategy's name, and a screen without it is the screen as it was -- so a failure is no answer (null), never an error said or logged. |
-| [strategy.ts](../../app/web/src/api/strategy.ts) | Copy one, settings and all, as a new draft. |
+| [strategy.ts](../../app/web/src/api/strategy.ts) | One side's own limit under "at most open": per cent of it, for calls or for puts -- each on its own, the other not touched. |
 | [trade.ts](../../app/web/src/api/trade.ts) | The order desk. |
 
 ## `app/web/src/components/accounts/`
@@ -522,6 +524,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [SlByVol.tsx](../../app/web/src/components/strategy/SlByVol.tsx) | SL by volatility in the signal strategy form (owner, 17 Oct 2026: "SL by volatility in the strategy form, as delta -- Entry & exit"). |
 | [StrategyGroupSection.tsx](../../app/web/src/components/strategy/StrategyGroupSection.tsx) | One group of strategies on the Signal Strategies card (owner, 10 Oct 2026): its name, whose account, how many are on, and what is done to the group as one -- every strategy on or off, renamed, clon... |
 | [StrikeBlocksEditor.tsx](../../app/web/src/components/strategy/StrikeBlocksEditor.tsx) | A signal strategy's strike rule, over its window (4 Oct 2026). |
+| [StrikeMax.tsx](../../app/web/src/components/strategy/StrikeMax.tsx) | The most open at once on one strike (owner's list #1, 22 Oct 2026: "50 trades on one strike"; ten were opened on the P-83000 inside six seconds that morning, 07:00, and all ten stopped together at... |
 | [WalkForwardTest.tsx](../../app/web/src/components/strategy/WalkForwardTest.tsx) | "Test this rule": the daily update's rule walked forward, with an untouched holdout (18 Oct 2026, the R&D audit: "pick on the days before, test on the next, and validate on the last days without th... |
 | [form-parts.tsx](../../app/web/src/components/strategy/form-parts.tsx) | The strategy forms' parts: every field group a strategy has, written once. |
 | [useOptionRecord.ts](../../app/web/src/components/strategy/useOptionRecord.ts) | Every method's record as options under the strategy on the form (owner, 13 Oct 2026: "in the strategy form the signal filter's profit and loss must be by the option's TGT and SL, not the perp's"). |

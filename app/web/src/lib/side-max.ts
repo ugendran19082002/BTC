@@ -26,3 +26,24 @@ export function sideMaxProblem(v: number): string | null {
   return Number.isInteger(v) && v >= 0 && v <= 100
     ? null : 'A side\'s limit must be a whole number of per cent of "at most open", from 0 to 100.';
 }
+
+/**
+ * The most open at once on one strike (owner's list #1, 22 Oct 2026), a per cent of "at most open" as each side's is
+ * (owner: "strike max as a %, based on max open"); the server's rule (strategy/types.ts `strikeCapOf`): 10% where none
+ * is chosen, to the nearest trade and at least one; 100% is no limit of its own, and so is no "at most open".
+ */
+export const STRIKE_MAX_DEFAULT_PCT = 10;
+export const STRIKE_MAX_PRESETS = [5, 10, 15, 20, 30, 50, 100] as const;
+export function strikeCapOf(cap: number, pct: number): number | null {
+  if (!(cap > 0) || pct >= 100) return null;
+  return Math.min(cap, Math.max(1, Math.round((cap * pct) / 100)));
+}
+/** Why the most on one strike cannot be saved, in the server's words; null when it can. */
+export function strikeMaxProblem(v: number): string | null {
+  return Number.isInteger(v) && v >= 1 && v <= 100 ? null : 'The most on one strike must be a whole number of per cent of "at most open", from 1 to 100.';
+}
+/** "PE 83000" for "P-BTC-83000-221026". */
+export const strikeWords = (symbol: string): string => {
+  const m = /^([CP])-BTC-(\d+)-/.exec(symbol);
+  return m ? `${m[1] === 'C' ? 'CE' : 'PE'} ${m[2]}` : symbol;
+};

@@ -8,7 +8,7 @@ import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, actionOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -714,9 +714,41 @@ export class StrategyRunner {
      * that morning, was lifted the same day: the reduce-only churn it answered was the desk reading only a hundred of
      * the account's open orders (0015), and the rule cut the strategies to one trade in six.
      */
-    const sel = selectLegs({ ...vol.s, config: { ...vol.s.config, ...at.pick, legs: leg } }, sellable(snap.expiry, snap.candidates, now), { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
-    const chosen = sel.legs[0];
+    const pickFrom = (cs: readonly Candidate[]) => selectLegs({ ...vol.s, config: { ...vol.s.config, ...at.pick, legs: leg } }, cs, { wallWithinEm: wallWithinEm(), spot: snap.spot, hoursToExpiry: hoursLeft(snap.expiryTs, now) });
+    const board = sellable(snap.expiry, snap.candidates, now);
+    let sel = pickFrom(board);
+    let chosen = sel.legs[0];
     if (!chosen) { await finish('refused', `${describeSelection(sel)}${block}`); return; }
+
+    /*
+     * The most on one strike (owner's list #1, 22 Oct 2026; `STRIKE_MAX_KEY`): the account's open trades on the
+     * contract this signal would sell -- positions and working orders, every strategy and the ticket, as the cap above
+     * counts them -- against its own number. At it (owner, the same day: "forward it to the next strike, if every
+     * condition is okay"; `STRIKE_FULL_KEY`), the strategy's own rule picks again among the strikes further out that
+     * are not full -- never one nearer the money -- and everything after holds there as it would have here. None
+     * passes, or the account says skip: skipped.
+     */
+    let forwarded = '';
+    // A per cent of the account's "at most open" (`cap`, above), as each side's is.
+    const strikePct = strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, svc.accountId));
+    const strikeCap = strikeCapOf(cap, strikePct);
+    if (strikeCap !== null) {
+      const onIt = (c: Pick<Candidate, 'cp' | 'strike'>) => openNow.filter((t) => t.plan.symbol === `${c.cp}-BTC-${c.strike}-${snap.expiry}`).length;
+      const full = chosen;
+      const held = onIt(full);
+      if (held >= strikeCap) {
+        const atMost = `the desk already has ${held} open on ${leg} ${full.strike} -- at most ${strikeCap} on one strike (${strikePct}% of the ${cap})`;
+        if (strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, svc.accountId)) === 'skip') {
+          await finish('skipped', `${atMost}${block}`);
+          return;
+        }
+        const out = board.filter((c) => c.cp === full.cp && (full.cp === 'C' ? c.strike > full.strike : c.strike < full.strike) && onIt(c) < strikeCap);
+        sel = pickFrom(out);
+        chosen = sel.legs[0];
+        if (!chosen) { await finish('skipped', `${atMost}, and no strike further out passes the strategy's rule (${describeSelection(sel)})${block}`); return; }
+        forwarded = ` · ${leg} ${full.strike} full (${held} of ${strikeCap}): the next strike out`;
+      }
+    }
 
     const target = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
     const args = {
@@ -737,6 +769,7 @@ export class StrategyRunner {
     const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
       + elseWords(chosen)
       + ruleWords(chosen)
+      + forwarded
       // A stop held inside the close-out is said beside the strike it was held for.
       + (args.limitPrice !== undefined ? stopHeldWords(args.limitPrice, args) : '')
       + `${perpIn ? ` · perp ${fill ? 'filled' : 'at'} ${Math.round(perpIn)}` : ''} · ${perpLevels}${block}`;
@@ -748,7 +781,7 @@ export class StrategyRunner {
       const p = await svc.wouldPlace(args);
       // A gate's refusal names the strike it turned down and, where the rule failed, that it was the else strike:
       // the history's Skipped tab then says the whole of why, not only the gate's half.
-      const turnedDown = `${leg} ${chosen.strike} @ ${chosen.price}${elseWords(chosen)}${ruleWords(chosen)}`;
+      const turnedDown = `${leg} ${chosen.strike} @ ${chosen.price}${elseWords(chosen)}${ruleWords(chosen)}${forwarded}`;
       await finish(p.ok ? 'would-place' : 'refused', p.ok ? `live orders off: would ${what}` : `refused: ${turnedDown} — ${failureText(p)}${block}`);
       return;
     }

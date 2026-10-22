@@ -553,6 +553,12 @@ export type StrategyStatus = {
   signalSideMaxPct?: { CE: number; PE: number };
   /** How many of each side are open now, which each limit is counted against. Absent on an older server. */
   openBySide?: { CE: number; PE: number };
+  /** The most open at once on one strike, this account's (22 Oct 2026): per cent of "at most open", 10 where none is chosen. Absent on a server from before it. */
+  signalStrikeMaxPct?: number;
+  /** At a full strike: the strategy's rule picks again further out ('next', the default), or the signal is skipped. */
+  signalStrikeFull?: 'next' | 'skip';
+  /** The strike holding the most open trades now, and how many; null with none open. */
+  busiestStrike?: { symbol: string; open: number } | null;
   /** The desk's limit on lots short at once (the order gate's), and the lots it holds short now. Absent on an older server. */
   shortCap?: number;
   shortNow?: number;
@@ -610,5 +616,5 @@ export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is the only stop: set one, or keep the perp SL.';
 
 /** The kinds of reason a signal was not taken (server: strategy/signal-reasons.ts `SIGNAL_REASONS`). */
-export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'own-max' | 'desk-max' | 'side-max' | 'no-entry' | 'late' | 'over'
+export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'own-max' | 'desk-max' | 'side-max' | 'strike-max' | 'no-entry' | 'late' | 'over'
   | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'other';

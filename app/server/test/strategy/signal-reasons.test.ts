@@ -15,6 +15,8 @@ const cases: [string, string, string[]][] = [
   ['skipped', 'inside the no-entry window 4:00 PM – 5:25 PM — no new entry until 5:25 PM', ['no-entry']],
   ['skipped', 'the desk already has 200 open (positions and working orders, all strategies) -- at most 200 at once across all', ['desk-max']],
   ['skipped', 'the desk already has 160 PE open -- at most 160 PE at once (80% of the 200)', ['side-max']],
+  ['skipped', 'the desk already has 10 open on PE 83000 -- at most 10 on one strike (10% of the 100)', ['strike-max']],
+  ['skipped', 'the desk already has 10 open on CE 85200 -- at most 9 on one strike (10% of the 88) · block 2, from 1:00 PM', ['strike-max']],
   ['skipped', 'already 5 of its trades open (5 live) -- at most 5', ['own-max']],
   ['skipped', 'already 1 of its trade open (1 would-sell) -- at most 1', ['own-max']],
   ['skipped', 'the perp filled at 81645 300s ago -- too late to enter (a 5m signal within 120s)', ['late']],

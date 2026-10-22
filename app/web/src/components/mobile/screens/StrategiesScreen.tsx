@@ -47,7 +47,7 @@ const FEEDS: { key: Feed; label: string; tone: string; none: string }[] = [
  */
 export const REASON_WORDS: Record<SignalReason, string> = {
   'sl-min': 'Perp SL under min', 'sl-max': 'Perp SL over max', 'tgt-min': 'Perp TGT under min', 'tgt-max': 'Perp TGT over max',
-  'own-max': 'Strategy max open full', 'desk-max': 'Account max open full', 'side-max': 'CE / PE limit full',
+  'own-max': 'Strategy max open full', 'desk-max': 'Account max open full', 'side-max': 'CE / PE limit full', 'strike-max': 'Strike max open full',
   'no-entry': 'No-entry window', late: 'Fill too old', over: 'Over before entry', premium: 'Premium too low', spread: 'Spread too wide',
   'no-strike': 'No strike to sell', margin: 'Not enough margin', 'loss-limit': 'Daily loss limit', 'no-board': 'No option board',
   delta: 'Delta refused', other: 'Other',

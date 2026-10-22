@@ -803,6 +803,51 @@ export function sideCaps(cap: number, pct: { CE: number; PE: number }): { CE: nu
   return { CE: of(pct.CE), PE: of(pct.PE) };
 }
 
+/**
+ * The most trades open at once on one strike, one account's (owner's list #1, 22 Oct 2026: "50 trades on one strike";
+ * on 22 Oct ten were opened on the P-83000 inside six seconds at 07:00 and all ten stopped together at 07:11). Replayed on the
+ * desk's real trades since 8 Oct, a cap of 10 kept 72% of them and cut the worst five minutes on one strike to 38%
+ * (docs/history/2026-10.md, 21 Oct). Counted as the other limits are -- positions and working orders, every strategy
+ * and the ticket -- on the contract the signal would sell. At the cap, what `STRIKE_FULL_KEY` says: the next strike
+ * out by the strategy's own rule, or skipped.
+ *
+ * A per cent of "at most open", as each side's limit is (owner, 22 Oct 2026: "strike max as a %, based on max open"):
+ * 10% the default -- ten of the 100, nine of the 88 the two accounts allow -- to the nearest trade, at least one;
+ * 100% is no limit of its own; with no "at most open" there is nothing to take a per cent of, and no limit.
+ */
+export const STRIKE_MAX_KEY = 'signal_strike_max_pct';
+export const STRIKE_MAX_DEFAULT_PCT = 10;
+/** The setting as stored: the per cent, 1 to 100; the default where absent, empty or unreadable. */
+export function strikeMaxOf(raw: string | null | undefined): number {
+  if (raw === null || raw === undefined || raw === '') return STRIKE_MAX_DEFAULT_PCT;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= 100 ? n : STRIKE_MAX_DEFAULT_PCT;
+}
+/** How many trades one strike may hold: its per cent of the cap, at least one; null where there is no cap, or 100%. */
+export function strikeCapOf(cap: number, pct: number): number | null {
+  if (!(cap > 0) || pct >= 100) return null;
+  return Math.min(cap, Math.max(1, Math.round((cap * pct) / 100)));
+}
+/**
+ * What a signal does when its strike is at the most (owner, 22 Oct 2026: "86000CE full -- forward it: 86200CE, if every
+ * condition is okay, fill that"). 'next', the default: the strategy's own strike rule picks again among the strikes
+ * further out -- above a call's, below a put's -- that are not full themselves; the rule, the premium floor, the spread
+ * and every gate after it hold there as they would have on the first. Never nearer the money. None that passes: skipped.
+ * 'skip': skipped at once.
+ */
+export const STRIKE_FULL_KEY = 'signal_strike_full';
+export type StrikeFull = 'next' | 'skip';
+export const STRIKE_FULL_DEFAULT: StrikeFull = 'next';
+export const strikeFullOf = (raw: string | null | undefined): StrikeFull => (raw === 'skip' || raw === 'next' ? raw : STRIKE_FULL_DEFAULT);
+export const strikeFullProblem = (v: unknown): string | null =>
+  v === null || v === 'next' || v === 'skip' ? null : 'When a strike is full, pick the next strike out or skip.';
+/** Why the most on one strike cannot be saved, in words; null when it can. `null` itself is "back to the default", and can. */
+export function strikeMaxProblem(v: unknown): string | null {
+  if (v === null) return null;
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 100
+    ? null : 'The most on one strike must be a whole number of per cent of "at most open", from 1 to 100.';
+}
+
 /** What the switched-on signal strategies allow between them: the sum of each one's own "at most open". */
 export function signalEntriesAllowed(strategies: readonly Pick<Strategy, 'enabled' | 'config'>[]): number {
   return strategies

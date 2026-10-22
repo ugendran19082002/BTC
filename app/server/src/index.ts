@@ -13,6 +13,8 @@ import { liveChain } from './market/chain.js';
 import { readMarket } from './market/moves.js';
 import { marketSchema } from './market/oi-history.js';
 import { errorLog } from './observability/errors.js';
+import { deskLog, hasDeskLog, setDeskLog } from './observability/desk-log.js';
+import { takeDeskLock } from './db/desk-lock.js';
 import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-snapshots.js';
 import { captureBoard, chainFeaturesSchema } from './market/chain-features.js';
 import { wallWithinEm } from './http/routes/desk.routes.js';
@@ -50,6 +52,19 @@ import { readEntryContext } from './entry/read.js';
  * journal must not take an order. `initTradingService` also loads the
  * settings cache every sync getter reads from.
  */
+/*
+ * One desk trading at a time (db/desk-lock.ts): the lock first, before the migrations and before Delta is spoken to.
+ * A second process waits here as a standby; once it has the lock it boots as this one did, and the trading services'
+ * own recovery reads every open trade back from Delta before acting. Lost, the process exits, sends nothing more on
+ * the way out, and Docker starts it again to wait its turn.
+ */
+const lockLine = (msg: string, fields: Record<string, unknown> = {}) =>
+  process.stdout.write(`${JSON.stringify({ level: 30, time: Date.now(), pid: process.pid, ...fields, msg })}\n`);
+await takeDeskLock({
+  // Before the app is built there is only stdout; after, the server's log, which reaches the day's file too.
+  log: (msg, fields) => { if (hasDeskLog()) deskLog('warn', msg, fields); else lockLine(msg, fields); },
+  onLost: () => { setTimeout(() => process.exit(1), 250).unref(); },
+});
 const desk = await initTradingService();
 // The rest of the schemas, for the same reason: a table that is only created
 // on the first request that needs it is a deploy that reports healthy with
@@ -80,6 +95,9 @@ const auth = await authFromEnv({
   onAlert: (text) => desk.notifier?.notify({ key: 'security', text }),
 });
 const app = await buildApp({ auth });
+// The trading services were made before the app: their lines reach its log -- stdout and the day's file -- from here.
+setDeskLog((level, fields, msg) => app.log[level](fields, msg));
+app.log.info({ deskLock: 'held' }, 'desk lock held: this process is the one desk trading (db/desk-lock.ts)');
 await app.listen({ port: config.port, host: '0.0.0.0' });
 
 app.log.info(`chain snapshots loaded: ${loadDays().length}`);

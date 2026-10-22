@@ -1705,3 +1705,69 @@ test('[critical] the card\'s day (17 Oct 2026): each signal strategy\'s placed, 
   await query('DELETE FROM strategy_signal_runs WHERE strategy_id = $1', [id]);
   await api('POST', '/api/strategies', { id, name: 'Sig day', config });
 });
+
+test('[critical] the most on one strike (22 Oct 2026, owner\'s list #1): a per cent of "at most open", 10 where none is chosen; at it, the strategy\'s rule picks again further out (owner: "86000CE full -- forward it to 86200CE, if every condition is okay"), never nearer the money; skip on asking; 100% is none', async () => {
+  await freshDesk();
+  const { strikeCapOf } = await import('../../src/strategy/types.js');
+  // The two live accounts' caps: ten of the 100, nine of the 88; at least one; none without a cap, or at 100%.
+  assert.deepEqual([strikeCapOf(100, 10), strikeCapOf(88, 10), strikeCapOf(5, 1), strikeCapOf(0, 10), strikeCapOf(100, 100)], [10, 9, 1, null, null]);
+  const MSG = 'The most on one strike must be a whole number of per cent of "at most open", from 1 to 100.';
+  for (const bad of [0, 101, 2.5, 'ten']) {
+    const r = await api('POST', '/api/strategies/strike-max', { pct: bad });
+    assert.equal(r.status, 422, String(bad));
+    assert.deepEqual(r.body.problems, [MSG]);
+  }
+  const first = (await api('GET', '/api/strategies')).body;
+  assert.deepEqual([first.signalStrikeMaxPct, first.signalStrikeFull], [10, 'next'], 'ten per cent where none is chosen, and forward');
+  assert.equal((await api('POST', '/api/strategies/strike-full', { mode: 'sideways' })).status, 422);
+
+  // One strategy, its own limit far off; the account's "at most open" 20: two a strike.
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig strike', config: { ...config, signal: { ...config.signal, maxOpen: 20 }, liveOrders: true } })).status, 200);
+  await api('POST', '/api/strategies/sig-strike/enabled', { enabled: true });
+  assert.equal((await api('POST', '/api/strategies/max-open', { max: 20 })).status, 200);
+  const saved = await api('POST', '/api/strategies/strike-max', { pct: 10 });
+  assert.deepEqual([saved.status, saved.body.signalStrikeMaxPct], [200, 10]);
+  assert.equal((await one<{ value: string }>("SELECT value FROM settings WHERE key = 'signal_strike_max_pct'"))!.value, '10');
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const next = async () => { quoteBoard(); await runner.onSignal(signal()); return (await runsOf('sig-strike')).at(-1)!; };
+  const runs = [await next(), await next(), await next()];
+  // Only the one put on the board: full, and nothing further out -- skipped, and said why.
+  assert.deepEqual(runs.map((r) => r.status), ['placed', 'placed', 'skipped'], runs.map((r) => r.detail).join(' / '));
+  assert.match(runs[2]!.detail, new RegExp(`\\| the desk already has 2 open on PE ${PUT} -- at most 2 on one strike \\(10% of the 20\\), and no strike further out passes the strategy's rule`));
+  assert.equal(runs[2]!.trade_id, null, 'nothing sent');
+  assert.deepEqual((await api('GET', '/api/strategies')).body.busiestStrike, { symbol: `P-BTC-${PUT}-${EXPIRY}`, open: 2 });
+  const { signalReasons } = await import('../../src/strategy/signal-reasons.js');
+  assert.deepEqual(signalReasons('skipped', runs[2]!.detail), ['strike-max'], 'Not taken, why: under its own tab');
+
+  const restoreStrikes = extraStrikes(3);
+  try {
+    // Strikes further out (and the call side's, which are not this put's): the next signal is sold one strike out, by
+    // the strategy's own premium rule, and the row says it was forwarded. Then that one fills to two, and the next out.
+    const fwd = await next();
+    assert.equal(fwd.status, 'placed', fwd.detail);
+    assert.match(fwd.detail, new RegExp(`\\| sell PE ${PUT - 200} x1 @ [\\d.]+.* · PE ${PUT} full \\(2 of 2\\): the next strike out`));
+    await next();
+    const two = await next();
+    assert.match(two.detail, new RegExp(`\\| sell PE ${PUT - 400} x1 .* · PE ${PUT} full \\(2 of 2\\): the next strike out`), 'the one out full too: further still');
+    const opened = (await tradingService().openTrades()).map((t) => t.plan.symbol);
+    assert.ok(!opened.some((sym) => sym.startsWith('C-')), 'never the other side');
+    assert.ok(opened.every((sym) => Number(sym.split('-')[2]) <= PUT), 'never nearer the money than the full strike');
+
+    // Skip, on asking: at the full strike the signal is skipped, though strikes further out have room.
+    assert.equal((await api('POST', '/api/strategies/strike-full', { mode: 'skip' })).body.signalStrikeFull, 'skip');
+    const skipped = await next();
+    assert.equal(skipped.status, 'skipped');
+    assert.match(skipped.detail, new RegExp(`\\| the desk already has 2 open on PE ${PUT} -- at most 2 on one strike \\(10% of the 20\\)$`));
+    assert.equal((await api('POST', '/api/strategies/strike-full', { mode: null })).body.signalStrikeFull, 'next', 'null: the default again');
+
+    // 100% is no limit of its own: the next is placed on the first strike again.
+    assert.equal((await api('POST', '/api/strategies/strike-max', { pct: 100 })).body.signalStrikeMaxPct, 100);
+    const free = await next();
+    assert.equal(free.status, 'placed', free.detail);
+    assert.match(free.detail, new RegExp(`\\| sell PE ${PUT} x1 `));
+    assert.equal((await api('POST', '/api/strategies/strike-max', { pct: null })).body.signalStrikeMaxPct, 10);
+  } finally { restoreStrikes(); }
+  await api('POST', '/api/strategies/max-open', { max: 0 });
+  await api('POST', '/api/strategies/sig-strike/enabled', { enabled: false });
+});

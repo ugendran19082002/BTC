@@ -19,18 +19,20 @@ import { ceProduct, peProduct, planFor, quote, rig, T0 } from './harness.js';
 const CE = 'C-BTC-80000-080926', PE = 'P-BTC-77000-080926';
 
 type StandDown = Parameters<NonNullable<StopWatchDeps['onStandDown']>>[0];
+type StandUp = Parameters<NonNullable<StopWatchDeps['onStandUp']>>[0];
 function watch(o: { used?: () => number } = {}) {
   const downs: StandDown[] = [];
+  const ups: StandUp[] = [];
   let now = T0;
   let board: { at: number; asks: Map<string, number> } | null = { at: T0, asks: new Map() };
   const calls: { symbol: string; ids: string[]; at: number }[] = [];
   let answer: (symbol: string, ids: readonly string[]) => Promise<readonly string[]> = async () => [];
   const w = new OptionStopWatch({
-    asks: () => board, quotaUsedPct: o.used ?? (() => 0), now: () => now, onStandDown: (why) => downs.push(why),
+    asks: () => board, quotaUsedPct: o.used ?? (() => 0), now: () => now, onStandDown: (why) => downs.push(why), onStandUp: (was) => ups.push(was),
     check: (symbol, ids) => { calls.push({ symbol, ids: [...ids], at: now }); return answer(symbol, ids); },
   });
   return {
-    w, calls, downs,
+    w, calls, downs, ups,
     /** The board as of now: each contract's offer. */
     offers(asks: Record<string, number>) { board = { at: now, asks: new Map(Object.entries(asks)) }; },
     noBoard() { board = null; },
@@ -187,6 +189,38 @@ test('a board gone stale is said once while it lasts -- the loop alone is judgin
   x.advance(STOP_WATCH_BOARD_STALE_MS + 1);
   x.w.tick();
   assert.equal(x.downs.length, 2, 'fresh again in between: a new episode');
+});
+
+test('[critical] 22 Oct 2026: each stand-down\'s end is said too, with when it began and how long it lasted -- an error row keeps only the first and the last', () => {
+  const x = watch();
+  x.w.note([t('a', CE, 164)]);
+  x.offers({ [CE]: 100 });
+  const began = T0 + STOP_WATCH_BOARD_STALE_MS + 1;
+  x.advance(STOP_WATCH_BOARD_STALE_MS + 1);
+  x.w.tick();
+  assert.deepEqual(x.ups, [], 'still down: nothing ended');
+  x.advance(4_000);
+  x.w.tick();
+  assert.deepEqual(x.ups, [], 'a second look while down is the same episode');
+  x.offers({ [CE]: 100 });                         // fresh again
+  x.w.tick();
+  assert.deepEqual(x.ups, [{ kind: 'board', since: began, forMs: 4_000 }]);
+  x.w.tick();
+  assert.equal(x.ups.length, 1, 'said once');
+});
+
+test('[critical] a stand-down of one kind giving way to the other ends the first: each episode has its own end', () => {
+  let used = 0;
+  const x = watch({ used: () => used });
+  x.w.note([t('a', CE, 164)]);
+  x.offers({ [CE]: 170 });                         // at its stop, not a run
+  used = STOP_WATCH_QUOTA_HARD_PCT;
+  x.w.tick();
+  assert.equal(x.downs.at(-1)!.kind, 'quota');
+  x.advance(STOP_WATCH_BOARD_STALE_MS + 1);        // and now the board is old too
+  x.w.tick();
+  assert.deepEqual(x.downs.map((d) => d.kind), ['quota', 'board']);
+  assert.deepEqual(x.ups, [{ kind: 'quota', since: T0, forMs: STOP_WATCH_BOARD_STALE_MS + 1 }]);
 });
 
 // ------------------------------------------------------------------ on the real engine
@@ -407,4 +441,18 @@ test('[critical] a close takes its target and its backstop off together, then bu
   assert.equal(most.cancel, 2, 'target and backstop cancelled at the same time');
   const ev = (await r.store.get('ce-1'))!.events.filter((e) => e.t === 'sibling_cancelled').map((e) => (e as { role: string }).role);
   assert.deepEqual(ev, ['take_profit', 'stop_loss'], 'written in their order, once each');
+});
+
+test('[critical] 22 Oct 2026: each stop\'s close says who judged it -- the fast watch, or the loop while the watch stood down', async () => {
+  const { r } = await book();
+  offer(r, CE, 111, 112, 111.5);                   // ce-1's stop of 110: offer and mark both through, closed at once
+  assert.deepEqual(await r.engine.checkStops(CE, ['ce-1']), ['ce-1']);
+  const viaOf = async (id: string) => ((await r.store.get(id))!.events.find((e) => e.t === 'exit_submitted') as { via?: string }).via;
+  assert.equal(await viaOf('ce-1'), 'watch');
+  offer(r, PE, 111, 112, 111.5);                   // pe-1's stop of 110, judged by the loop's own pass
+  await r.engine.poll('pe-1');
+  assert.equal(await viaOf('pe-1'), 'loop');
+  // A close that is not a stop on the offer says no one: a person's.
+  await r.engine.closeNow('ce-2', 'manual exit');
+  assert.equal(await viaOf('ce-2'), undefined);
 });

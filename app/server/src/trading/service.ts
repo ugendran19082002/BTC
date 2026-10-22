@@ -23,6 +23,7 @@ import { cachedAsks, candles } from '../market/delta.js';
 import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
+import { deskLog } from '../observability/desk-log.js';
 import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
@@ -384,12 +385,16 @@ export class TradingService {
     check: (symbol, tradeIds) => this.engine.checkStops(symbol, tradeIds),
     quotaUsedPct: () => this.quotaUsedPct(),
     // Said where the errors go, once an episode: a stop the watch could not look at is a stop left to the loop.
-    onStandDown: (why) => noteError({
-      source: 'trading', level: 'warn', where: 'stop-watch',
-      message: why.kind === 'board'
+    // And each episode, start and end, to the server log (22 Oct 2026): the error row folds them into one.
+    onStandDown: (why) => {
+      const message = why.kind === 'board'
         ? 'Stop watch stood down: the ticker board is not fresh, so stops are judged by the loop alone until it is.'
-        : 'Stop watch stood down: Delta\'s call quota is nearly used, so stops at their level (not yet a run) wait for the loop.',
-      context: { ...why },
+        : 'Stop watch stood down: Delta\'s call quota is nearly used, so stops at their level (not yet a run) wait for the loop.';
+      noteError({ source: 'trading', level: 'warn', where: 'stop-watch', message, context: { ...why } });
+      deskLog('warn', message, { stopWatch: 'down', accountId: this.accountId, ...why });
+    },
+    onStandUp: (was) => deskLog('info', `Stop watch working again after ${(was.forMs / 1000).toFixed(1)} s stood down (${was.kind === 'board' ? 'ticker board not fresh' : 'quota'}).`, {
+      stopWatch: 'up', accountId: this.accountId, kind: was.kind, since: was.since, forMs: was.forMs,
     }),
   });
 

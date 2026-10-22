@@ -33,6 +33,16 @@ export const setSignalMaxOpen = (max: number) =>
  * One side's own limit under "at most open": per cent of it, for calls or for puts -- each on its own, the other not
  * touched. One account's, as the cap is.
  */
+/** The most open on one strike, the shown account's: per cent of "at most open", 1 to 100; null back to the default. */
+export const setStrikeMax = (pct: number | null) =>
+  post<{ ok: true; signalStrikeMaxPct: number }>(
+    '/api/strategies/strike-max', accountScope() === null ? { pct } : { pct, accountId: accountScope() });
+
+/** What a signal does at a full strike, the shown account's: the next strike out, or skip. */
+export const setStrikeFull = (mode: 'next' | 'skip') =>
+  post<{ ok: true; signalStrikeFull: 'next' | 'skip' }>(
+    '/api/strategies/strike-full', accountScope() === null ? { mode } : { mode, accountId: accountScope() });
+
 export const setSideMax = (side: 'CE' | 'PE', pct: number) =>
   post<{ ok: true; signalSideMaxPct: { CE: number; PE: number } }>(
     '/api/strategies/side-max', accountScope() === null ? { side, pct } : { side, pct, accountId: accountScope() });

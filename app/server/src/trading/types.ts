@@ -383,6 +383,12 @@ export type TradeEvent =
       closing?: ExitWorking;
       /** Why the desk closed, in words, when it was the desk's own decision (a stop, an underlying level, the exit time). */
       reason?: string;
+      /**
+       * Who judged a stop on the option's offer (22 Oct 2026): the fast watch, a look a second (`stop-watch.ts`), or
+       * the loop's own pass over each trade -- which is all there is while the watch stands down. Absent on any other
+       * close, and on events written before.
+       */
+      via?: 'watch' | 'loop';
       at: number;
     }
   /** `reason`: the exchange's own, where it cancelled the order itself (Delta's `cancellation_reason`). */
