@@ -19,7 +19,7 @@ import { unrealisedPnlUsd } from './margin.js';
 import { midOf } from './money.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
-import { cachedAsks, candles } from '../market/delta.js';
+import { cachedAsks, cachedQuote, candles } from '../market/delta.js';
 import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
@@ -198,6 +198,9 @@ export class TradingService {
       // The option's own candles, for a stop the strategy asked to watch on
       // the close rather than on the touch.
       candles: (symbol, startSec, endSec, resolution) => candles(symbol, startSec, endSec, resolution),
+      // A stop's look judged on the live board when it is fresh (engine `BOARD_QUOTE_FRESH_MS`). Live only: a paper
+      // desk's own book is what its fills are made on.
+      boardQuote: (symbol) => (this.mode === 'live' ? cachedQuote(symbol) : null),
       // The perpetual's last trade off the tape, for a signal strategy's exits on the underlying.
       underlying: () => lastPerp(),
       // Every trade of the perp since a moment, off the same tape: a touch between two looks is still a touch.

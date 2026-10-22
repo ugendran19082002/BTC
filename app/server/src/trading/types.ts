@@ -391,6 +391,8 @@ export type TradeEvent =
       via?: 'watch' | 'loop';
       /** How old the quote the stop was judged on was, by Delta's own time (`market/venue-time.ts`), in ms. */
       quoteAgeMs?: number;
+      /** Where that quote came from: the board in memory (the socket, dated by Delta), or a request to Delta. */
+      quoteFrom?: 'board' | 'rest';
       at: number;
     }
   /** `reason`: the exchange's own, where it cancelled the order itself (Delta's `cancellation_reason`). */

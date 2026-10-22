@@ -190,6 +190,22 @@ export function cachedAsks(symbols: readonly string[]): { at: number; asks: Map<
   return { at: tickerCache.at, asks };
 }
 
+/**
+ * One contract's quote off the board in memory, dated by Delta's own time (22 Oct 2026): what the stop watch's look is
+ * judged on when it is fresh enough, instead of another request to Delta (`TradeEngine.checkStops`). Nothing is
+ * fetched; null with no board, or no such contract on it.
+ */
+export function cachedQuote(symbol: string): { symbol: string; bid: number | null; ask: number | null; bidSize: number | null; askSize: number | null; mark: number | null; ts: number } | null {
+  if (!tickerCache) return null;
+  const t = tickerCache.data.find((x) => x.symbol === symbol);
+  if (!t) return null;
+  const n = (v: string | null | undefined) => { const x = Number(v ?? Number.NaN); return Number.isFinite(x) ? x : null; };
+  return {
+    symbol, bid: n(t.quotes?.best_bid), ask: n(t.quotes?.best_ask), bidSize: n(t.quotes?.bid_size), askSize: n(t.quotes?.ask_size),
+    mark: n(t.mark_price), ts: venueAt(t.timestamp ?? null, tickerCache.at),
+  };
+}
+
 /** Where the board is coming from, for /api/health and the screen. */
 export function tickerFeedHealth(): FeedHealth & { batchAt: number | null } {
   const h = tickerSocket?.health() ?? { source: 'none' as const, connected: false, lastMessageAt: null, symbols: 0, reconnects: 0 };

@@ -94,6 +94,8 @@ export function rig(opts: {
   underlyingRange?: EngineDeps['underlyingRange'];
   /** How long a poll waits for its order lookups; the engine's own (3s) when not given. */
   lookupBudgetMs?: number;
+  /** The board in memory's quote for a contract, as the live desk hands it over; none when not given. */
+  boardQuote?: EngineDeps['boardQuote'];
 } = {}): Rig {
   const ex = new PaperExchange({ balanceUsd: opts.balanceUsd ?? 100_000 });
   for (const p of opts.products ?? [ceProduct()]) ex.addProduct(p);
@@ -129,6 +131,7 @@ export function rig(opts: {
     underlying: opts.underlying,
     underlyingRange: opts.underlyingRange,
     lookupBudgetMs: opts.lookupBudgetMs,
+    boardQuote: opts.boardQuote,
     // A confirming read waits for real in the desk; not in a test.
     wait: async () => {},
     onSwallowed: (what, _order, error) => swallowed.push({ what, message: error.message }),

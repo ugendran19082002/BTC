@@ -54,6 +54,8 @@ done
 
 say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+# The api handed over without a gap where the running one holds the desk lock (deploy/handover.sh).
+. "$ROOT/deploy/handover.sh"
 
 # Old images, removed the safe way.
 #
@@ -302,7 +304,9 @@ if [[ $BACKUP -eq 1 ]] && $COMPOSE ps --status running -q db 2>/dev/null | grep 
 fi
 
 say "starting"
-TAG="$TAG" WEB_PORT="$WEB_PORT" WEB_BIND="$WEB_BIND" $COMPOSE up -d
+export TAG WEB_PORT WEB_BIND
+# Stop-then-start left about seven seconds with no stop watched; the hand-over, a second or two (handover.sh).
+handover_up || fail "the hand-over did not complete: the running desk was left as it was, or put back"
 
 say "waiting for health"
 for i in $(seq 1 30); do

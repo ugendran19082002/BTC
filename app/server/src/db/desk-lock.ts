@@ -32,6 +32,7 @@ export const HEARTBEAT_MS = 5_000;
 export const FRESH_MS = 15_000;
 /** A holder silent this long is taken to be gone. Six missed heartbeats. */
 export const STALE_MS = 30_000;
+/** How long a standby waits in the lock's own queue between looks at the holder: it is handed the lock the moment it is free. */
 export const RETRY_MS = 2_000;
 
 export type DeskLock = {
@@ -106,7 +107,18 @@ export async function takeDeskLock(o: {
       saidAt = now();
       o.log(`desk lock held by another process${h ? ` (pid ${h.pid}, ${h.app}${h.addr ? ` at ${h.addr}` : ''})` : ''}: waiting as a standby -- nothing is traded from here until it is free`, { deskLock: 'standby', holder: h });
     }
-    await new Promise((done) => setTimeout(done, retryMs));
+    // In the lock's own queue, not a sleep (22 Oct 2026, the deploy's hand-over): the server hands it over the moment
+    // the holder lets go, and after `retryMs` without it the holder is looked at again.
+    await client.query(`SET lock_timeout = ${Math.max(1, Math.round(retryMs))}`);
+    try {
+      await client.query('SELECT pg_advisory_lock($1, $2)', [DESK_LOCK_KEYS[0], DESK_LOCK_KEYS[1]]);
+      await client.query('SET lock_timeout = 0');
+      break;
+    } catch (e) {
+      // lock_not_available: still held -- look again. Anything else is the connection's, and is thrown.
+      if ((e as { code?: string }).code !== '55P03') throw e;
+    }
+    await client.query('SET lock_timeout = 0');
   }
   held = true;
   lastOk = now();

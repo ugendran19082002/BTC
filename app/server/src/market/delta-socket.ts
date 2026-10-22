@@ -91,6 +91,8 @@ export function tickerOf(m: Record<string, unknown>): Ticker | null {
   const q = m.quotes as Record<string, unknown> | null | undefined;
   return {
     symbol,
+    // When Delta took it, µs (22 Oct 2026: about a second old as it arrives) -- what a quote read off the board is dated by.
+    timestamp: numOrNull(m.timestamp),
     contract_type: contractType,
     underlying_asset_symbol: 'BTC',
     strike_price: strike,

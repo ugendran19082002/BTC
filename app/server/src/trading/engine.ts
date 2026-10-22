@@ -425,6 +425,12 @@ export type EngineDeps = {
    * through the stop that came back inside before the desk looked was not a stop at all.
    */
   underlyingRange?: (sinceMs: number) => PerpRange | null;
+  /**
+   * The contract's quote off the board in memory, dated by Delta's own time (22 Oct 2026). The fast watch's look is
+   * judged on it when it is under `BOARD_QUOTE_FRESH_MS` old -- one request to Delta fewer before a stop's buy-back,
+   * and the same board the watch saw the stop on -- and on a quote asked of Delta otherwise. Absent: always asked.
+   */
+  boardQuote?: (symbol: string) => Quote | null;
 };
 
 /** The perp's extremes over a stretch of the tape. */
@@ -516,6 +522,12 @@ const LOOKUP_BUDGET_MS = 3_000;
  * because the feed stalled rather than because the price moved.
  */
 const MARK_STALE_MS = 15_000;
+/**
+ * The board's quote is taken for the fast watch's look while this fresh, by Delta's own time (22 Oct 2026). The socket
+ * delivers it about a second after Delta takes it; Delta's own REST answer was 0.8-2.7 s old asked past its CDN, and a
+ * request to Delta besides. Older than this -- the socket quiet, the poll the feed -- the quote is asked of Delta.
+ */
+export const BOARD_QUOTE_FRESH_MS = 2_000;
 /**
  * How long a leverage the desk set itself is taken as still set. Leverage is a
  * setting on the product at Delta, not on the order; the desk asked for it
@@ -1256,7 +1268,9 @@ export class TradeEngine {
    * them without waiting for the loop's next read.
    */
   async checkStops(symbol: string, tradeIds: readonly string[]): Promise<string[]> {
-    const quote = await this.exchange.getQuote(symbol).catch(() => null);
+    const board = this.d.boardQuote?.(symbol) ?? null;
+    const fromBoard = board !== null && this.now() - board.ts <= BOARD_QUOTE_FRESH_MS;
+    const quote = fromBoard ? board : await this.exchange.getQuote(symbol).catch(() => null);
     if (!quote) return [];
     const over: string[] = [];
     await Promise.all(tradeIds.map((tradeId) => this.withTrade(tradeId, async () => {
@@ -1264,7 +1278,7 @@ export class TradeEngine {
       const closing = (r: TradeRecord) => isDone(r.state) || r.state.phase === 'exit_pending' || r.state.position === 0;
       if (!rec || rec.plan.symbol !== symbol || closing(rec)) { over.push(tradeId); return; }
       if (rec.state.phase === 'entry_unknown') return;
-      if (closing(await this.stopIfReached(rec, quote, 'watch'))) over.push(tradeId);
+      if (closing(await this.stopIfReached(rec, quote, 'watch', fromBoard ? 'board' : 'rest'))) over.push(tradeId);
     }).catch((e) => this.note('stop watch', { orderId: tradeId, symbol }, e))));
     // In the order asked, whichever finished first.
     return tradeIds.filter((id) => over.includes(id));
@@ -2398,7 +2412,7 @@ export class TradeEngine {
    * never comes down, the position stays on until it expires or you close it
    * -- that is what a target is.
    */
-  private async stopIfReached(rec: TradeRecord, read?: Quote | null, via?: 'watch' | 'loop'): Promise<TradeRecord> {
+  private async stopIfReached(rec: TradeRecord, read?: Quote | null, via?: 'watch' | 'loop', quoteFrom: 'board' | 'rest' = 'rest'): Promise<TradeRecord> {
     const stop = rec.plan.stopPrice;
     if (stop === null) return rec;
 
@@ -2447,7 +2461,7 @@ export class TradeEngine {
 
     // An exit that happens beats a better price that might not -- but not at any price: the close is a buy limit
     // through the offer it was judged on (`closeLimitFor`), and what it cannot fill is sent again at the market.
-    await this.closeNowInner(id, why, undefined, ask, via, Math.max(0, this.now() - quote.ts));
+    await this.closeNowInner(id, why, undefined, ask, via, Math.max(0, this.now() - quote.ts), quoteFrom);
     return await this.d.store.get(id) ?? rec;
   }
 
@@ -2576,7 +2590,7 @@ export class TradeEngine {
    * over what is left; that path is the one the desk already trusts after
    * every add.
    */
-  private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number, offer?: number, via?: 'watch' | 'loop', quoteAgeMs?: number): Promise<TradeState | null> {
+  private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number, offer?: number, via?: 'watch' | 'loop', quoteAgeMs?: number, quoteFrom?: 'board' | 'rest'): Promise<TradeState | null> {
     let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     // Size from the exchange, not from memory: someone may have closed part of
@@ -2624,6 +2638,7 @@ export class TradeEngine {
       reason,
       ...(via ? { via } : {}),
       ...(quoteAgeMs !== undefined ? { quoteAgeMs: Math.round(quoteAgeMs) } : {}),
+      ...(quoteFrom && quoteAgeMs !== undefined ? { quoteFrom } : {}),
       at: this.now(),
     });
     try {

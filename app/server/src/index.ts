@@ -61,6 +61,14 @@ import { readEntryContext } from './entry/read.js';
  */
 const lockLine = (msg: string, fields: Record<string, unknown> = {}) =>
   process.stdout.write(`${JSON.stringify({ level: 30, time: Date.now(), pid: process.pid, ...fields, msg })}\n`);
+/*
+ * The board before the lock (22 Oct 2026, the deploy's hand-over): the ticker socket and its REST poll are market data,
+ * read-only, and a standby that warms them while it waits takes over with a board seconds fresh, rather than spend the
+ * first seconds of its turn opening a socket while no stop is watched. Nothing here writes to Delta.
+ */
+const boardLine = (line: string) => { if (hasDeskLog()) deskLog('info', line); else lockLine(line); };
+startTickerPoller(8_000);
+startTickerSocket(boardLine);
 await takeDeskLock({
   // Before the app is built there is only stdout; after, the server's log, which reaches the day's file too.
   log: (msg, fields) => { if (hasDeskLog()) deskLog('warn', msg, fields); else lockLine(msg, fields); },
@@ -166,10 +174,8 @@ app.log.info(
 );
 
 // The board: the socket delivers it the moment it changes, the REST poll is
-// the cold start and the fallback. Both warmed here so the first page load is
-// served from memory.
-startTickerPoller(8_000);
-startTickerSocket((line) => app.log.info(line));
+// the cold start and the fallback. Both started before the desk lock (above), so
+// the first page load -- and a stop's first look after a hand-over -- is served from memory.
 liveTickers()
   .then((t) => {
     app.log.info(`ticker cache warmed: ${t.length} BTC contracts`);

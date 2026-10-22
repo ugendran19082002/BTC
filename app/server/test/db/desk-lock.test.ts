@@ -82,3 +82,19 @@ test('[critical] the fence: no write reaches Delta from a process whose lock is 
   await lock.release();
   assert.equal(deskLockOk(), true, 'released on purpose: unarmed again');
 });
+
+test('[critical] the standby waits in the lock\'s own queue: handed the lock the moment it is free, not at its next look', async () => {
+  const first = await take({ log: () => {}, onLost: () => {} });
+  held.push(first);
+  const b = lines();
+  let tookAt = 0;
+  // A look at the holder only every five seconds: a sleep between tries would hand it over up to five seconds late.
+  const waiting = take({ log: b.log, onLost: () => {}, retryMs: 5_000 }, 10_000).then((l) => { tookAt = Date.now(); held.push(l); return l; });
+  await until(() => b.said.length > 0, 'the standby says so');
+  await new Promise((r) => setTimeout(r, 200));
+  const freedAt = Date.now();
+  await first.release();
+  const second = await waiting;
+  assert.ok(tookAt - freedAt < 1_000, `taken ${tookAt - freedAt} ms after it was free`);
+  await second.release();
+});

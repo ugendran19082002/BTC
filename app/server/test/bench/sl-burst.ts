@@ -18,11 +18,14 @@ import { withLatency, type Latency, type VenueCall } from '../trading/venue-late
  *   npm run bench:sl            (about a minute)
  */
 
-type Row = { n: number; contracts: number; lat: Latency; firstMs: number; lastMs: number; flatMs: number; calls: number; most: number; units: number; exits: number; flat: number; byKind: string };
+type Row = { board: boolean; n: number; contracts: number; lat: Latency; firstMs: number; lastMs: number; flatMs: number; calls: number; most: number; units: number; exits: number; flat: number; byKind: string };
 
-async function burst(n: number, contracts: number, lat: Latency): Promise<Row> {
+async function burst(n: number, contracts: number, lat: Latency, board = false): Promise<Row> {
   const products = Array.from({ length: contracts }, (_, i) => ceProduct({ symbol: `C-BTC-${80_000 + i * 200}-080926`, productId: 111 + i, strike: 80_000 + i * 200 }));
+  // The live desk's board in memory (22 Oct 2026): the watch's look judged on it while fresh, no request for the quote.
+  const onBoard = new Map<string, ReturnType<typeof quote>>();
   const r = rig({
+    boardQuote: board ? (s) => onBoard.get(s) ?? null : undefined,
     products, quotes: products.map((p) => quote(p.symbol, 100.5, 101)),
     limits: { allowPyramiding: true, maxShortContracts: 100_000 }, balanceUsd: 10_000_000,
   });
@@ -32,14 +35,14 @@ async function burst(n: number, contracts: number, lat: Latency): Promise<Row> {
     if (!opened.ok) throw new Error(`t${i} not opened: ${JSON.stringify(opened)}`);
     await r.engine.poll(`t${i}`);
   }
-  const board = { at: r.now(), asks: new Map<string, number>() };
-  const w = new OptionStopWatch({ asks: () => board, quotaUsedPct: () => 0, now: () => r.now(), check: (s, ids) => r.engine.checkStops(s, ids) });
+  const watchBoard = { at: r.now(), asks: new Map<string, number>() };
+  const w = new OptionStopWatch({ asks: () => watchBoard, quotaUsedPct: () => 0, now: () => r.now(), check: (s, ids) => r.engine.checkStops(s, ids) });
   w.note(stopWatchedOf(await r.store.open()));
   if (w.size !== n) throw new Error(`${w.size} of ${n} watched`);
 
   // Through every stop, offer and mark together.
-  for (const p of products) { r.ex.tick(quote(p.symbol, 111, 112, { ts: r.now(), mark: 111.5 })); board.asks.set(p.symbol, 112); }
-  board.at = r.now();
+  for (const p of products) { r.ex.tick(quote(p.symbol, 111, 112, { ts: r.now(), mark: 111.5 })); onBoard.set(p.symbol, quote(p.symbol, 111, 112, { ts: r.now() - 900, mark: 111.5 })); watchBoard.asks.set(p.symbol, 112); }
+  watchBoard.at = r.now();
   const venue = withLatency(r.ex, lat);
   const t0 = performance.now();
   w.tick();
@@ -53,7 +56,7 @@ async function burst(n: number, contracts: number, lat: Latency): Promise<Row> {
   const kinds = new Map<string, number>();
   for (const c of venue.calls) kinds.set(c.method, (kinds.get(c.method) ?? 0) + 1);
   return {
-    n, contracts, lat,
+    board, n, contracts, lat,
     firstMs: Math.min(...exits.map((c) => c.sentMs)) - t0, lastMs: Math.max(...exits.map((c) => c.sentMs)) - t0, flatMs,
     calls: venue.calls.length, most: venue.mostInFlight(), units: venue.calls.reduce((s, c: VenueCall) => s + c.units, 0),
     exits: exits.length, flat,
@@ -71,17 +74,18 @@ for (const lat of LATENCIES) {
     for (const n of [1, 10, 25, 50]) {
       if (n < contracts) continue;
       rows.push(await burst(n, contracts, lat));
+      rows.push(await burst(n, contracts, lat, true));
     }
   }
 }
 
 const s = (ms: number) => `${(ms / 1000).toFixed(2)} s`;
 console.log('\nStops at once, offer and mark through every stop: timed from the first look\n');
-console.log('| Trades | Contracts | Delta read / order | First buy-back sent | Last sent | All flat | Calls | Most in flight | Quota units | Buy-backs | Flat |');
-console.log('|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|');
+console.log('| Quote | Trades | Contracts | Delta read / order | First buy-back sent | Last sent | All flat | Calls | Most in flight | Quota units | Buy-backs | Flat |');
+console.log('|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|');
 for (const x of rows) {
-  console.log(`| ${x.n} | ${x.contracts} | ${x.lat.readMs} / ${x.lat.writeMs} ms | ${s(x.firstMs)} | ${s(x.lastMs)} | ${s(x.flatMs)} | ${x.calls} | ${x.most} | ${x.units} | ${x.exits} | ${x.flat}/${x.n} |`);
+  console.log(`| ${x.board ? 'board' : 'asked'} | ${x.n} | ${x.contracts} | ${x.lat.readMs} / ${x.lat.writeMs} ms | ${s(x.firstMs)} | ${s(x.lastMs)} | ${s(x.flatMs)} | ${x.calls} | ${x.most} | ${x.units} | ${x.exits} | ${x.flat}/${x.n} |`);
 }
-console.log('\nCalls, the 50 on one contract at today\'s latency:', rows.find((x) => x.n === 50 && x.contracts === 1)?.byKind);
+console.log('\nCalls, the 50 on one contract at today\'s latency:', rows.find((x) => x.n === 50 && x.contracts === 1 && !x.board)?.byKind);
 const bad = rows.filter((x) => x.flat !== x.n || x.exits !== x.n);
 if (bad.length) { console.error('\nNOT ALL CLOSED ONCE:', bad.map((x) => `${x.n}x${x.contracts}`).join(', ')); process.exit(1); }
