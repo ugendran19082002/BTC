@@ -44,18 +44,22 @@ async function portfolioQuery(q: Record<string, unknown>) {
     if (saves.length !== ids.length) return { code: 404, error: 'One of those saved backtests is gone: it may have been deleted.' };
     const strategies = await backtestStrategies();
     if (q.limit !== undefined && q.limit !== '' && q.limit !== 'shared' && q.limit !== 'own') return { code: 400, error: 'The limit is "shared" (one account) or "own" (each its own).' };
-    let shared: { deskMax: number; cePct: number; pePct: number } | null = null;
+    let shared: { deskMax: number; cePct: number; pePct: number; strikePct?: number; strikeFull?: 'next' | 'skip' } | null = null;
     if (q.limit !== 'own') {
       const num = (v: unknown) => (v === undefined || v === '' ? null : Number(v));
       const max = num(q.max), ce = num(q.ce), pe = num(q.pe);
       if (max !== null) {
         if (!Number.isInteger(max) || max < 1 || max > 500) return { code: 400, error: 'At most open is a whole number from 1 to 500.' };
         if ((ce !== null && !(ce >= 1 && ce <= 100)) || (pe !== null && !(pe >= 1 && pe <= 100))) return { code: 400, error: 'CE max and PE max are from 1% to 100%.' };
-        shared = { deskMax: max, cePct: ce ?? 100, pePct: pe ?? 100 };
+        // The most on one strike over all of them (22 Oct 2026), as one account's runner holds it.
+        const sk = num(q.sk);
+        if (sk !== null && !(Number.isInteger(sk) && sk >= 1 && sk <= 100)) return { code: 400, error: 'The most on one strike is a whole per cent of at most open, from 1 to 100.' };
+        if (q.skf !== undefined && q.skf !== '' && q.skf !== 'next' && q.skf !== 'skip') return { code: 400, error: 'At a full strike: "next" (the next strike out) or "skip".' };
+        shared = { deskMax: max, cePct: ce ?? 100, pePct: pe ?? 100, strikePct: sk ?? 100, strikeFull: q.skf === 'skip' ? 'skip' : 'next' };
       } else {
         // The account's limit as the saved backtests themselves carry it: the largest of them.
         const top = saves.map((s) => s.query.params).filter((p) => (p.deskMax ?? 0) > 0).sort((a, b) => (b.deskMax ?? 0) - (a.deskMax ?? 0))[0];
-        if (top) shared = { deskMax: top.deskMax!, cePct: top.cePct ?? 100, pePct: top.pePct ?? 100 };
+        if (top) shared = { deskMax: top.deskMax!, cePct: top.cePct ?? 100, pePct: top.pePct ?? 100, strikePct: top.strikePct ?? 100, strikeFull: top.strikeFull ?? 'next' };
       }
     }
     /*

@@ -49,7 +49,7 @@ const RESULT: SignalBacktestResponse = {
   params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 },
   deskLimits: [{ account: 'Savings', max: 58, ce: 80, pe: 80 }, { account: 'Expenses', max: 35, ce: 80, pe: 80 }],
   margin: { peakUsd: 300, peakDay: '2026-10-13', peakAt: Date.parse('2026-10-13T04:29:00+05:30'), peakOpen: 58, peakLots: 580, avgDailyPeakUsd: 200, avgTradeUsd: 5.2 },
-  signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
+  signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
   strategy: null,
   strategies: [
     { id: '1h-time', name: '1h time', enabled: true, account: 'Savings', methods: ['gamma'], tfs: ['4h'], target: { pct: 0.7, steps: [{ at: '23:30', pct: 0.75 }, { at: '03:30', pct: 0.85 }] } },
@@ -382,6 +382,32 @@ describe('SignalBacktest', () => {
     fireEvent.click(within(limits.getByRole('group', { name: 'At most open, every trade together' })).getByRole('button', { name: 'No limit' }));
     await waitFor(() => expect(lastQuery().params.deskMax).toBe(0));
     expect(limits.queryByRole('group', { name: /^PE max/ })).not.toBeInTheDocument();
+  });
+
+  it('[critical] 22 Oct 2026: the most on one strike, as the live desk holds it -- a per cent of at most open, then the next strike out or skip; an account\'s own in one tap', async () => {
+    const LIVE = { ...RESULT, deskLimits: [{ account: 'Savings', max: 111, ce: 80, pe: 80, sk: 20, skf: 'next' as const }] };
+    getSignalBacktest.mockResolvedValue(LIVE);
+    show();
+    await screen.findByText('Backtest result');
+    const limits = within(screen.getByRole('region', { name: "The desk's limits" }));
+    expect(limits.queryByRole('group', { name: /^Strike max/ })).not.toBeInTheDocument();
+    fireEvent.click(limits.getByRole('button', { name: 'Savings · 111 · CE 80% · PE 80% · strike 20%' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ deskMax: 111, strikePct: 20, strikeFull: 'next' }));
+    expect(limits.getByRole('group', { name: 'Strike max: at most 22 open on one strike' })).toBeInTheDocument();
+    const full = within(limits.getByRole('group', { name: 'When a strike is full' }));
+    expect(full.getByRole('button', { name: 'Next strike out · default' })).toHaveAttribute('aria-pressed', 'true');
+    getSignalBacktest.mockResolvedValue({ ...LIVE, params: { ...RESULT.params, deskMax: 111, strikePct: 20, strikeFull: 'skip' }, skipped: { ...RESULT.skipped, 'strike-limit': 9 }, forwarded: 0 });
+    fireEvent.click(full.getByRole('button', { name: 'Skip' }));
+    await waitFor(() => expect(lastQuery().params.strikeFull).toBe('skip'));
+    expect(await screen.findByText(/9 with its strike at its most \(skip, as set\)/)).toBeInTheDocument();
+    getSignalBacktest.mockResolvedValue({ ...LIVE, params: { ...RESULT.params, deskMax: 111, strikePct: 10 }, forwarded: 14 });
+    fireEvent.click(full.getByRole('button', { name: 'Next strike out · default' }));
+    fireEvent.click(within(limits.getByRole('group', { name: /^Strike max/ })).getByRole('button', { name: '10%' }));
+    await waitFor(() => expect(lastQuery().params).toMatchObject({ strikePct: 10, strikeFull: 'next' }));
+    expect(await screen.findByText(/14 sold one strike further out or more/)).toBeInTheDocument();
+    fireEvent.click(within(limits.getByRole('group', { name: /^Strike max/ })).getByRole('button', { name: '100% · no limit' }));
+    await waitFor(() => expect(lastQuery().params.strikePct).toBe(100));
+    expect(limits.queryByRole('group', { name: 'When a strike is full' })).not.toBeInTheDocument();
   });
 
   it('[critical] custom hours: a From and a To time, past midnight too, said after and changeable', async () => {
@@ -1110,7 +1136,7 @@ describe('SignalBacktest', () => {
     await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 58, ce: 80, pe: 80 }, { window: 'saved' }, {}));
     expect((capOf().getByLabelText('At most open, together') as HTMLInputElement).value).toBe('58');
     expect(run().getByText(/2 saved backtests,/).textContent).toBe('Thu 1 Oct → Tue 13 Oct · 2 saved backtests, traded as one account: at most 120 open together (CE 96 · PE 96), the longer time frame first, as the desk takes them.');
-    expect(run().getByText('37 signals found the account, or their side of it, full and were not traded.')).toBeInTheDocument();
+    expect(run().getByText('37 signals found the account, or their side of it, or their strike with nowhere further out, full and were not traded.')).toBeInTheDocument();
     expect(run().getByText(/the most held at once was 120 trades at 9:15 AM on the Mon 12 Oct expiry -- never more than the account's 120 --/)).toBeInTheDocument();
 
     // each its own: asked again, and said -- with the warning that it may be more than one account holds

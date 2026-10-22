@@ -43,6 +43,7 @@ function shapeOf(q: SavedQuery): string {
     rule: p.rule, value: p.value, lots: p.lots, targetPct: p.targetPct, stopPct: p.stopPct, window: p.window,
     hours: p.window === 'custom' ? [p.hoursFrom ?? '', p.hoursTo ?? ''] : null,
     deskMax: p.deskMax ?? 0, cePct: p.cePct ?? 100, pePct: p.pePct ?? 100,
+    strike: (p.strikePct ?? 100) < 100 ? [p.strikePct, p.strikeFull ?? 'next'] : null,
     range: [p.slMin ?? 0, p.slMax ?? 0, p.tgtMin ?? 0, p.tgtMax ?? 0],
     steps: (p.targetSteps ?? []).map((s) => [s.at, Math.round(s.pct * 10_000)]), vol: p.vol ?? 'off', volBy: p.volBy ?? 'atr', minPremium: p.minPremium ?? 10,
     noEntry: p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`) : null,
@@ -135,11 +136,14 @@ function PortfolioResult({ title, r, wide, readTrades, widen }: {
           <p className="m-0 text-[13px] text-muted-foreground">
             {dayLabel(r.from)} → {dayLabel(r.to)} · {r.members.length} saved backtests,{' '}
             {r.shared
-              ? <>traded as <b className="font-medium text-foreground">one account</b>: at most {r.shared.max} open together (CE {r.shared.ce} · PE {r.shared.pe}), the longer time frame first, as the desk takes them.</>
+              ? <>traded as <b className="font-medium text-foreground">one account</b>: at most {r.shared.max} open together (CE {r.shared.ce} · PE {r.shared.pe}{r.shared.strike != null ? ` · ${r.shared.strike} a strike, ${r.shared.strikeFull === 'skip' ? 'then skip' : 'then the next out'}` : ''}), the longer time frame first, as the desk takes them.</>
               : 'each worked as it is alone and added up.'}
           </p>
           {r.shared && r.shared.turnedAway > 0 && (
-            <p className="m-0 mt-0.5 text-[12.5px] text-muted-foreground">{count(r.shared.turnedAway)} signals found the account, or their side of it, full and were not traded.</p>
+            <p className="m-0 mt-0.5 text-[12.5px] text-muted-foreground">{count(r.shared.turnedAway)} signals found the account, or their side of it, or their strike with nowhere further out, full and were not traded.</p>
+          )}
+          {r.shared && (r.shared.forwarded ?? 0) > 0 && (
+            <p className="m-0 mt-0.5 text-[12.5px] text-muted-foreground">{count(r.shared.forwarded!)} sold one strike further out or more, the strike their rule picked being at its most -- as the desk forwards them.</p>
           )}
           {failed.map((m) => <p key={m.id} role="alert" className="m-0 mt-1 text-[12.5px] text-[var(--warn)]"><b className="font-semibold">{m.name}</b> is left out: {m.problem}</p>)}
           {t.n === 0 ? <div className="mt-2 grid gap-3"><Empty>None of them traded in this range.</Empty>{r.winPick && <WinPickResult pick={r.winPick} members={r.members} nameOf={(id) => id} />}</div> : (

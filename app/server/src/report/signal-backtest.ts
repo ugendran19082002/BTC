@@ -14,7 +14,7 @@ import { selectLegs, type Candidate } from '../strategy/select.js';
 import { pickMethods } from '../strategy/pick-methods.js';
 import { exitMomentFor, istMinutes, istWeekday } from '../strategy/schedule.js';
 import {
-  DEFAULT_CONFIG, SIGNAL_TFS, actionOf, exitRules, exitValueAt, sideCaps, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
+  DEFAULT_CONFIG, SIGNAL_TFS, actionOf, exitRules, exitValueAt, sideCaps, strikeCapOf, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
   type SignalTf, type Strategy, type StrategyConfig, type StrikeBlock, volSourceOf,
 } from '../strategy/types.js';
 
@@ -68,6 +68,13 @@ export type BacktestParams = {
    * rounds it (`sideCaps`). Absent: none.
    */
   deskMax?: number; cePct?: number; pePct?: number;
+  /**
+   * The most open on one strike, as the live desk holds it (22 Oct 2026, owner: "strike max and forward to the next
+   * strike -- in the backtest and the portfolio too"): this per cent of `deskMax`, at least one (`strikeCapOf`); 100,
+   * or absent, none. At it, `strikeFull`: 'next' (the default, as live) has the rule pick again among the strikes
+   * further out that are not full, never nearer the money; 'skip' skips the signal.
+   */
+  strikePct?: number; strikeFull?: 'next' | 'skip';
   /**
    * Take a signal only if its SL and TGT are in range (13 Oct 2026, as the strategy form's): the BTC points from
    * the perp entry to the signal's SL, and to its TGT, at least the minimum and at most the maximum. 0 is off.
@@ -318,10 +325,18 @@ export function ivReader(today: readonly AtmIv[], prior: readonly AtmIv[]): (at:
 export const DAY_START_IST = '17:30';
 export const DEFAULT_PARAMS: BacktestParams = { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 };
 /** The desk's limits of a set of settings: null with none. */
-export function deskCapsOf(p: Pick<BacktestParams, 'deskMax' | 'cePct' | 'pePct'>): { max: number; side: { CE: number; PE: number } | null } | null {
+export type DeskCaps = {
+  max: number; side: { CE: number; PE: number } | null;
+  /** The most open on one strike (`strikePct` of `max`); null, none. And what a signal does at it. */
+  strike: number | null; strikeFull: 'next' | 'skip';
+};
+export function deskCapsOf(p: Pick<BacktestParams, 'deskMax' | 'cePct' | 'pePct' | 'strikePct' | 'strikeFull'>): DeskCaps | null {
   const max = p.deskMax ?? 0;
   if (!(max > 0)) return null;
-  return { max, side: sideCaps(max, { CE: p.cePct ?? 100, PE: p.pePct ?? 100 }) };
+  return {
+    max, side: sideCaps(max, { CE: p.cePct ?? 100, PE: p.pePct ?? 100 }),
+    strike: strikeCapOf(max, p.strikePct ?? 100), strikeFull: p.strikeFull === 'skip' ? 'skip' : 'next',
+  };
 }
 /** An option is not sold for less than this, as the strategies' own floor; a backtest may set its own (`minPremium`). */
 export const MIN_PREMIUM = 10;
@@ -333,9 +348,9 @@ const BOARD_NEAR_MS = 5 * MIN;
 /** `option-tsl`: the option's stop, after a trailing stop had moved it; `option-be` at the price sold (break-even) */
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'option-be' | 'window-end';
 export const BT_EXITS: readonly BtExit[] = ['perp-tgt', 'perp-sl', 'option-tgt', 'option-sl', 'option-tsl', 'option-be', 'window-end'];
-export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
-export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'volatility', 'at-limit', 'desk-limit', 'side-limit', 'no-board', 'no-strike', 'no-exit-price'];
-const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'strike-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
+export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'volatility', 'at-limit', 'desk-limit', 'side-limit', 'strike-limit', 'no-board', 'no-strike', 'no-exit-price'];
+const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
 
 export type BtSignal = {
   method: string; mode: 'single' | 'mtf'; tf: string; dir: 1 | -1; filledAt: number; fillPrice: number; stop: number;
@@ -429,6 +444,8 @@ export type BtTrade = {
   perpStopEnd?: number; perpTgtEnd?: number;
   /** The perp level that ends it at its target, as the rules read the signal (TGT1, 2 or 3). */
   perpTgt?: number;
+  /** Sold here because the strike its rule picked first was full (`strikePct`, 'next'): that strike. */
+  fwdFrom?: number;
 };
 
 /** The strike a rule picks from one side of one reading of the board: out of the money, with a bid worth selling. Null with none. */
@@ -495,7 +512,7 @@ export type DayPlan = {
   /** At most this many open at once; null, any number. */
   maxOpen: number | null;
   /** The desk's own limits on top: at most this many across all, and each side at most so many. Null: none. */
-  desk?: { max: number; side: { CE: number; PE: number } | null } | null;
+  desk?: DeskCaps | null;
 };
 
 /** The screen's own settings as a plan: every signal in the hours chosen, one strike rule, a fixed number of lots, no limit. */
@@ -823,7 +840,7 @@ export function simulateTogether(o: {
   // The 1m ATR at each minute's close, worked out once for every book that widens the perp's levels.
   const minuteAtrs = o.books.some((b) => b.plan.perpWiden) ? minuteAtr(o.bars) : null;
   /** When each trade still open ends, its side and whose it is: what "at most N open" and each side's limit count. */
-  let open: { until: number; side: 'CE' | 'PE'; book: number }[] = [];
+  let open: { until: number; side: 'CE' | 'PE'; book: number; cp: 'C' | 'P'; strike: number }[] = [];
   const shared = o.shared ?? null;
   // One line for all of them, in the order the desk takes signals; two books' same signal, in the books' own order.
   const line = o.books.flatMap((b, book) => b.signals.map((sig) => ({ sig, book }))).sort((a, b) => signalOrder(a.sig, b.sig) || a.book - b.book);
@@ -862,6 +879,25 @@ export function simulateTogether(o: {
       picks.set(pickKey, picked);
     }
     if (!picked) { skip('no-strike'); continue; }
+    /*
+     * The most on one strike, as the runner holds it (strategy/runner.ts, 22 Oct 2026): what is open on the strike
+     * picked -- the account's, every book's where they share it -- against its number. At it, skipped; or, forwarding,
+     * the rule picks again among the strikes further out (above a call's, below a put's) not full themselves.
+     */
+    let fwdFrom: number | undefined;
+    if (desk?.strike != null) {
+      const cap = desk.strike;
+      const onStrike = (k: number) => mine.reduce((n, x) => n + (x.cp === cp && x.strike === k ? 1 : 0), 0);
+      const first = picked.row;
+      if (onStrike(first.strike) >= cap) {
+        if (desk.strikeFull === 'skip') { skip('strike-limit'); continue; }
+        const out = readingAt(board, times[near]!).filter((r) => r.cp === cp && (cp === 'C' ? r.strike > first.strike : r.strike < first.strike) && onStrike(r.strike) < cap);
+        const again = out.length ? (levelPick ?? plan.pick)(out, cp, times[near]!) : null;
+        if (!again) { skip('strike-limit'); continue; }
+        picked = again;
+        fwdFrom = first.strike;
+      }
+    }
     const pick = picked.row, lots = plan.lotsByVol && vol ? plan.lotsByVol[vol] : picked.lots;
     const entry = pick.bid!, entryAt = times[near]!;
     const target = plan.targetOf(sig);
@@ -958,9 +994,9 @@ export function simulateTogether(o: {
 
     const charges = fillChargesUsd({ price: entry, contracts: lots, contractValue: CONTRACT_VALUE, spot: pick.spot }).totalUsd
       + fillChargesUsd({ price: exit, contracts: lots, contractValue: CONTRACT_VALUE, spot: exitSpot }).totalUsd;
-    open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE', book });
+    open.push({ until: exitAt, side: cp === 'P' ? 'PE' : 'CE', book, cp, strike: pick.strike });
     trades.push({
-      signal: sig, cp, strike: pick.strike, lots, entryAt, entry, exitAt, exit, by,
+      signal: sig, cp, strike: pick.strike, lots, entryAt, entry, exitAt, exit, by, ...(fwdFrom !== undefined ? { fwdFrom } : {}),
       netUsd: (entry - exit) * lots * CONTRACT_VALUE - charges, chargesUsd: charges, vol,
       marginUsd: fundsRequiredPerContract({ spot: pick.spot ?? sig.fillPrice, premium: entry, leverage: 200, contractValue: CONTRACT_VALUE }) * lots,
       perpPts: (perpPx - sig.fillPrice) * sig.dir,
@@ -1061,7 +1097,7 @@ function cellsOf(day: string, trades: readonly BtTrade[]): BtCell[] {
 /** A trade's time open and the margin it held, with what it is filtered by: what the day's peak margin is worked from. */
 type Span = { at: number; until: number; margin: number; lots: number; tf: string; method: string };
 /** A day's signals by what they are filtered by: how many there were of a time frame and method, and why those not traded were not. */
-type Tally = { tf: string; method: string; signals: number; skipped: Record<BtSkip, number> };
+type Tally = { tf: string; method: string; signals: number; skipped: Record<BtSkip, number>; /** Traded one strike further out, the one picked first being full. */ fwd: number };
 type HeldDay = { at: number; cells: BtCell[]; tally: Tally[]; spans: Span[]; grain: BoardGrain };
 const held = new Map<string, HeldDay>();
 /** At most this many worked days are kept -- some sixty sets of settings over a fortnight; the longest unasked-for goes first. */
@@ -1073,7 +1109,9 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
-export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|wid:${p.widenSlAtr ?? 0}-${p.widenTgtAtr ?? 0}-${p.widenMode ?? 'widest'}|skip:${p.skipPerpSl ? 'sl' : ''}${p.skipPerpTgt ? 'tgt' : ''}|be:${p.breakEven ? `${p.breakEven.move}${p.breakEven.unit}` : ''}`;
+/** The most on one strike as a key: its per cent and what is done at it; none at 100 or absent. */
+const strikeKey = (p: Pick<BacktestParams, 'strikePct' | 'strikeFull'>) => ((p.strikePct ?? 100) >= 100 ? 'sk:-' : `sk:${p.strikePct}${p.strikeFull === 'skip' ? 's' : 'n'}`);
+export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${strikeKey(p)}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|wid:${p.widenSlAtr ?? 0}-${p.widenTgtAtr ?? 0}-${p.widenMode ?? 'widest'}|skip:${p.skipPerpSl ? 'sl' : ''}${p.skipPerpTgt ? 'tgt' : ''}|be:${p.breakEven ? `${p.breakEven.move}${p.breakEven.unit}` : ''}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   // Its methods' history too: a new day's pick is another backtest of the same rules (`methodsAt`).
@@ -1263,11 +1301,12 @@ async function dayOf(day: string, key: string, now: number, planFor: (span: { fr
   const tallyOf = (sig: BtSignal) => {
     const tf = sig.mode === 'mtf' ? CHAIN_KEY : sig.tf, k = `${tf}|${sig.method}`;
     let x = tally.get(k);
-    if (!x) { x = { tf, method: sig.method, signals: 0, skipped: noSkips() }; tally.set(k, x); }
+    if (!x) { x = { tf, method: sig.method, signals: 0, skipped: noSkips(), fwd: 0 }; tally.set(k, x); }
     return x;
   };
   for (const sig of signals) tallyOf(sig).signals++;
   for (const x of r.refused) tallyOf(x.signal).skipped[x.why]++;
+  for (const t of r.trades) if (t.fwdFrom !== undefined) tallyOf(t.signal).fwd++;
   const out: HeldDay = {
     at: now, cells: cellsOf(day, r.trades), tally: [...tally.values()], grain: d.grain,
     spans: r.trades.map((t) => ({ at: t.signal.filledAt, until: t.exitAt, margin: t.marginUsd, lots: t.lots, tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, method: t.signal.method })),
@@ -1308,6 +1347,8 @@ export type SignalBacktest = {
   margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, together. */ peakLots: number; avgDailyPeakUsd: number; avgTradeUsd: number };
   /** Signals in the trade in the range, how many were traded, and why the rest were not. */
   signals: number; skipped: Record<BtSkip, number>;
+  /** Of those traded, how many on a strike further out than the rule's first pick, that one being full (`strikePct`). */
+  forwarded?: number;
   total: BtTot;
   days: (BtTot & { day: string; pattern: PatternKey | null; live: boolean; grain: BoardGrain })[];
   /**
@@ -1370,14 +1411,20 @@ export type PortfolioAsk = {
    * places (`simulateTogether`); their own "at most open" settings are set aside for it. Null or absent: each as
    * it is alone, its own limit on its own trades.
    */
-  shared?: { deskMax: number; cePct: number; pePct: number } | null;
+  shared?: { deskMax: number; cePct: number; pePct: number; strikePct?: number; strikeFull?: 'next' | 'skip' } | null;
   /** Each with its settings; one that cannot be worked -- its strategy deleted -- carries why, and is listed with nothing. */
   members: { id: string; name: string; ask: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'> | null; problem?: string | null }[];
 };
 export type BacktestPortfolioResult = {
   from: string; to: string;
   /** The one limit they were traded under together, as the desk rounds it; null where each kept its own. */
-  shared: { max: number; ce: number; pe: number; cePct: number; pePct: number; /** Signals that found the account, or their side of it, full. */ turnedAway: number } | null;
+  shared: {
+    max: number; ce: number; pe: number; cePct: number; pePct: number;
+    /** The most on one strike, and its per cent of `max`; null, none. What a signal did at it, and how many went further out. */
+    strike: number | null; strikePct: number; strikeFull: 'next' | 'skip'; forwarded: number;
+    /** Signals that found the account, or their side of it, or their strike with nowhere further out, full. */
+    turnedAway: number;
+  } | null;
   /** Each method in each fifteen-minute slot, all of them together (`BtSlotRow`). */
   bySession: BtSlotRow[];
   members: { id: string; name: string; problem: string | null; signals: number; total: BtTot; marginPeakUsd: number; priced: Record<BoardGrain, number> | null }[];
@@ -1438,7 +1485,7 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
   const rows: BacktestPortfolioResult['days'] = [];
   const cells: BtCell[] = [];
   const skipped = noSkips();
-  let peak = { usd: 0, at: null as number | null, open: 0, lots: 0, day: null as string | null }, daily = 0, dailyN = 0, turnedAway = 0;
+  let peak = { usd: 0, at: null as number | null, open: 0, lots: 0, day: null as string | null }, daily = 0, dailyN = 0, turnedAway = 0, forwarded = 0;
   for (const d of days) {
     const { from, to } = sessionOf(d.day);
     const raw = await rawDay(d.day, o.now, fetched.get(expiryCodeOf(d.day))?.contracts ?? 0);
@@ -1459,7 +1506,8 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
       const t = dayCells.reduce((a, c) => addBt(a, c.tot), zeroBt());
       addBt(totals[i]!, t);
       signals[i]! += out.trades.length + out.refused.length;
-      turnedAway += out.skipped['desk-limit'] + out.skipped['side-limit'];
+      turnedAway += out.skipped['desk-limit'] + out.skipped['side-limit'] + out.skipped['strike-limit'];
+      forwarded += out.trades.reduce((n, t) => n + (t.fwdFrom !== undefined ? 1 : 0), 0);
       priced[i]![raw.grain]++;
       row.n += t.n; row.wins += t.wins; row.net += t.net; row.charges += t.charges; row.byMember[i] = t.net;
       const mine = out.trades.map((x) => ({ at: x.signal.filledAt, until: x.exitAt, margin: x.marginUsd, lots: x.lots }));
@@ -1481,7 +1529,10 @@ async function portfolioShared(o: PortfolioAsk, caps: NonNullable<ReturnType<typ
     from: o.from, to: o.to, members, bySession: slotList(sessions),
     breakdown: breakdownOf(cells, new Map(days.map((d) => [d.day, d.pattern])), nameOf),
     signals: signals.reduce((a, x) => a + x, 0), skipped,
-    shared: { max: caps.max, ce: caps.side?.CE ?? caps.max, pe: caps.side?.PE ?? caps.max, cePct: o.shared!.cePct, pePct: o.shared!.pePct, turnedAway },
+    shared: {
+      max: caps.max, ce: caps.side?.CE ?? caps.max, pe: caps.side?.PE ?? caps.max, cePct: o.shared!.cePct, pePct: o.shared!.pePct,
+      strike: caps.strike, strikePct: o.shared!.strikePct ?? 100, strikeFull: caps.strikeFull, forwarded, turnedAway,
+    },
     total: totals.reduce((t, x) => addBt(t, x), zeroBt()),
     days: rows,
     margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, peakLots: peak.lots, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, sumOfPeaksUsd: peaks.reduce((a, x) => a + x, 0) },
@@ -1680,7 +1731,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
   const names = new Map((await rows<{ id: string; n: number | null; name: string }>('SELECT id, n, name FROM entry_methods')).map((m) => [m.id, m.n === null ? m.name : `#${m.n} ${m.name}`]));
   const nameOf = (id: string) => names.get(id) ?? id;
   const skipped = noSkips();
-  let signals = 0;
+  let signals = 0, forwarded = 0;
   const every: BtCell[] = [];
   const st = o.strategy ?? null;
   // A strategy's own signals, each on the methods it had then (`ownSignal`).
@@ -1700,7 +1751,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
   const chosen = (sig: BtSignal) => (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method));
   const takes = (sig: BtSignal) => ownOnly(sig) && (caps === null || chosen(sig));
   const filterKey = caps === null ? '' : `|tf:${(o.tfs ?? []).join(',')}|m:${(o.methods ?? []).join(',')}`;
-  const key = (st ? `${strategyKey(st)}${o.draft ? '|draft' : ''}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|vol:${volOnly}|vb:${volBy}` : paramsKey(o.params)) + filterKey;
+  const key = (st ? `${strategyKey(st)}${o.draft ? '|draft' : ''}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|${strikeKey(o.params)}|vol:${volOnly}|vb:${volBy}` : paramsKey(o.params)) + filterKey;
   for (const d of days) {
     const h = await dayOf(d.day, key, o.now, (span) => (st ? strategyPlan(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day), by: volBy }, marksSeen(d.day));
     grainOf.set(d.day, h.grain);
@@ -1708,6 +1759,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
     for (const x of h.tally) {
       if ((o.tfs && !o.tfs.includes(x.tf)) || (o.methods && !o.methods.includes(x.method))) continue;
       signals += x.signals;
+      forwarded += x.fwd ?? 0;
       for (const k of BT_SKIPS) skipped[k] += x.skipped[k];
     }
     every.push(...h.cells);
@@ -1728,6 +1780,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
       rule: st.config.strikeRule === 'delta' ? 'delta' : 'premium', value: st.config.strikeRule === 'delta' ? (st.config.delta?.max ?? 0) : (st.config.premium?.usd ?? 0), lots: st.config.lots,
       targetPct: exits.target.mode === 'pct' ? exits.target.value : 0, stopPct: exits.stop.mode === 'pct' ? exits.stop.value : 0, window: 'desk',
       deskMax: o.params.deskMax ?? 0, cePct: o.params.cePct ?? 100, pePct: o.params.pePct ?? 100, vol: o.params.vol ?? 'off',
+      ...(o.params.strikePct !== undefined ? { strikePct: o.params.strikePct } : {}), ...(o.params.strikeFull ? { strikeFull: o.params.strikeFull } : {}),
       ...(volBy === 'iv' ? { volBy } : {}),
     }
     : o.params;
@@ -1751,7 +1804,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
   cellsOut?.push(...cells);
   const distinct = (xs: { key: string; name: string }[]) => [...new Map(xs.map((x) => [x.key, x])).values()];
   return {
-    from: o.from, to: o.to, params, signals, skipped,
+    from: o.from, to: o.to, params, signals, skipped, forwarded,
     margin: { peakUsd: peak.usd, peakDay: peak.day, peakAt: peak.at, peakOpen: peak.open, peakLots: peak.lots, avgDailyPeakUsd: dailyN ? daily / dailyN : 0, avgTradeUsd: tradeN ? tradeMargin / tradeN : 0 },
     strategy: st ? { id: st.id, name: st.name, accountId: st.accountId ?? null, caveats: strategyCaveats(st), real: real! } : null,
     total: cells.reduce((t, c) => addBt(t, c.tot), zeroBt()),
@@ -2037,14 +2090,14 @@ export function portfolioVolStudyHere(o: PortfolioVolStudyAsk): Promise<VolStudy
 export type LiveCheckAsk = {
   from: string; to: string; now: number;
   /** Each trading account's strategies and its limit on open trades as it stands (null: none). */
-  accounts: { id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number } | null; strategies: Strategy[] }[];
+  accounts: { id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number; strikePct?: number; strikeFull?: 'next' | 'skip' } | null; strategies: Strategy[] }[];
   /**
    * Saved backtests to lay beside the desk in place of the strategies' own rules (owner, 14 Oct 2026: "check the
    * backtest and the portfolio"): the members worked as they are in a portfolio run -- under one account's limit
    * (`shared`) or each its own -- and every trade of theirs looked up in what the desk did with that signal under
    * any strategy. Absent: each strategy by its own rules.
    */
-  portfolio?: { name: string; shared: { deskMax: number; cePct: number; pePct: number } | null; members: { id: string; name: string; ask: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'> }[] } | null;
+  portfolio?: { name: string; shared: { deskMax: number; cePct: number; pePct: number; strikePct?: number; strikeFull?: 'next' | 'skip' } | null; members: { id: string; name: string; ask: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'> }[] } | null;
   spot?: number | null;
   /** Only these strategies are reported -- one chosen on the screen; its account's others are still worked beside it, for the same places. */
   only?: string[];
@@ -2159,6 +2212,7 @@ const BT_WHY: Record<BtSkip, string> = {
   'at-limit': 'its own most open at once',
   'desk-limit': 'the account\'s limit on open trades',
   'side-limit': 'the account\'s CE / PE limit',
+  'strike-limit': 'the account\'s most on one strike (and none further out to forward to)',
   'no-board': 'no option prices on record at that minute',
   'no-strike': 'no strike its rule could sell on the recorded prices',
   'no-exit-price': 'no price on record to exit at',
@@ -2488,6 +2542,8 @@ export type BtTradeRow = {
   optTgt: number | null; optStop: number | null;
   /** Where a trailing stop had brought the stop by the exit; null where it never moved. */
   optStopEnd: number | null;
+  /** Sold here because the strike first picked was full: that strike. Null where it was not forwarded. */
+  fwdFrom: number | null;
   /** Where the widening had taken the perp's SL and target by the exit; null where they never moved. */
   perpStopEnd: number | null; perpTgtEnd: number | null;
   perpPts: number; netUsd: number; chargesUsd: number;
@@ -2526,7 +2582,7 @@ const rowOf = (t: BtTrade, nameOf: (id: string) => string, member?: string): BtT
   at: t.signal.filledAt, method: t.signal.method, name: nameOf(t.signal.method), tf: t.signal.mode === 'mtf' ? CHAIN_KEY : t.signal.tf, dir: t.signal.dir,
   perpEntry: t.signal.fillPrice, perpSl: t.signal.stop, perpTgt: t.perpTgt ?? t.signal.target,
   cp: t.cp, strike: t.strike, lots: t.lots, entryAt: t.entryAt, entry: t.entry, exitAt: t.exitAt, exit: t.exit, by: t.by,
-  optTgt: t.optTgt ?? null, optStop: t.optStop ?? null, optStopEnd: t.optStopEnd ?? null, perpStopEnd: t.perpStopEnd ?? null, perpTgtEnd: t.perpTgtEnd ?? null, perpPts: t.perpPts, netUsd: t.netUsd, chargesUsd: t.chargesUsd,
+  optTgt: t.optTgt ?? null, optStop: t.optStop ?? null, optStopEnd: t.optStopEnd ?? null, fwdFrom: t.fwdFrom ?? null, perpStopEnd: t.perpStopEnd ?? null, perpTgtEnd: t.perpTgtEnd ?? null, perpPts: t.perpPts, netUsd: t.netUsd, chargesUsd: t.chargesUsd,
   ...(member ? { member } : {}),
 });
 const listed = (day: string, xs: BtTradeRow[]): BtDayTrades => {

@@ -88,7 +88,10 @@ export const getPortfolioWinSweepTrades = (a: WinSweepAsk, row: string, cell: Wi
 function runSearch(ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit, cap: PortfolioCap | null, hours: PortfolioHours, over: PortfolioOver): URLSearchParams {
   return new URLSearchParams({
     ids: ids.join(','), from: range.from, to: range.to,
-    ...(limit === 'own' ? { limit: 'own' } : cap ? { max: String(cap.max), ce: String(cap.ce), pe: String(cap.pe) } : {}),
+    ...(limit === 'own' ? { limit: 'own' } : cap ? {
+      max: String(cap.max), ce: String(cap.ce), pe: String(cap.pe),
+      ...(cap.sk !== undefined && cap.sk < 100 ? { sk: String(cap.sk), ...(cap.skf === 'skip' ? { skf: 'skip' } : {}) } : {}),
+    } : {}),
     ...(hours.window === 'saved' ? {} : { hours: hours.window, ...(hours.window === 'custom' ? { hfrom: hours.hoursFrom ?? '', hto: hours.hoursTo ?? '' } : {}) }),
     ...overQuery(over),
   });
@@ -169,7 +172,11 @@ export type PortfolioHours = { window: 'saved' | 'desk' | 'all' | 'custom'; hour
 export const AS_SAVED: PortfolioHours = { window: 'saved' };
 
 /** One account's limit as it is asked for: at most this many open together, and each side this per cent of it. */
-export type PortfolioCap = { max: number; ce: number; pe: number };
+export type PortfolioCap = {
+  max: number; ce: number; pe: number;
+  /** The most on one strike, per cent of `max` (100 or absent: none), and at it the next strike out or skip. */
+  sk?: number; skf?: 'next' | 'skip';
+};
 
 /**
  * Whose limit on open trades a run together is held to: `shared`, one account's -- the largest "at most open" among

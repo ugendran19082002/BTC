@@ -301,12 +301,24 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   assert.deepEqual(all.body.deskLimits, [], 'no broker account on this desk: no limits to offer');
   assert.equal(all.body.signals, 6, 'the one never filled is not a signal in the trade');
   assert.equal(all.body.total.n, 6);
-  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
   // at most two open at once: the first two are open when the others fill
   const capped = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&max=2&ce=80&pe=80`);
   assert.deepEqual([capped.body.params.deskMax, capped.body.total.n], [2, capped.body.total.n]);
   assert.ok(capped.body.skipped['desk-limit'] + capped.body.skipped['side-limit'] > 0, JSON.stringify(capped.body.skipped));
   assert.ok(capped.body.total.n < all.body.total.n);
+  // The most on one strike (22 Oct 2026): checked, kept on the settings only where it is set, and said in the skips.
+  for (const bad of ['0', '101', '2.5', 'x']) assert.equal((await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&max=10&sk=${bad}`)).status, 400, bad);
+  assert.equal((await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&max=10&sk=20&skf=sideways`)).status, 400);
+  const perStrike = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&max=10&sk=10&skf=skip`);
+  assert.equal(perStrike.status, 200, JSON.stringify(perStrike.body).slice(0, 300));
+  assert.deepEqual([perStrike.body.params.strikePct, perStrike.body.params.strikeFull], [10, 'skip'], 'ten per cent of ten: one a strike');
+  assert.ok(perStrike.body.skipped['strike-limit'] > 0, JSON.stringify(perStrike.body.skipped));
+  assert.equal(perStrike.body.total.n + perStrike.body.skipped['strike-limit'] <= all.body.total.n, true);
+  const fwd = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&max=10&sk=10`);
+  assert.equal(fwd.body.params.strikeFull, undefined, 'next, the default, not written');
+  assert.ok(typeof fwd.body.forwarded === 'number', 'how many went one strike further out');
+  assert.equal(fwd.body.forwarded + fwd.body.skipped['strike-limit'], perStrike.body.skipped['strike-limit'], 'each one skipped was forwarded, or had nowhere further out');
   assert.equal(capped.body.choices.methods.find((m: any) => m.key === 'breakout').n, all.body.choices.methods.find((m: any) => m.key === 'breakout').n, 'the method list says what each makes without a limit');
   assert.deepEqual(Object.keys(all.body.total.exits), ['perp-tgt'], 'each bought back when the perp reached its target');
   assert.equal(all.body.total.exits['perp-tgt'].n, 6);
@@ -836,6 +848,23 @@ test('[critical] a backtest saved by name, run again, and several run together a
   assert.equal(one.body.total.n, one.body.members.reduce((n: number, x: any) => n + x.total.n, 0));
   assert.ok(one.body.margin.peakOpen <= 2 && one.body.margin.peakUsd < run.body.margin.peakUsd, JSON.stringify(one.body.margin));
   assert.ok(close(one.body.days[0].net, one.body.days[0].byMember[0] + one.body.days[0].byMember[1]) && close(one.body.total.net, one.body.days[0].net));
+  // The most on one strike over both (22 Oct 2026): the account's, as its runner holds it; skip turns more away, and
+  // the next strike out trades what skip turned away wherever a strike further out had room.
+  assert.equal((await get(`/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&max=10&sk=0`)).status, 400);
+  const wide = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&max=10&ce=100&pe=100`);
+  const skipped = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&max=10&ce=100&pe=100&sk=10&skf=skip`);
+  const forward = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&max=10&ce=100&pe=100&sk=10`);
+  assert.deepEqual([skipped.body.shared.strike, skipped.body.shared.strikePct, skipped.body.shared.strikeFull], [1, 10, 'skip']);
+  assert.ok(skipped.body.shared.turnedAway > wide.body.shared.turnedAway, 'one a strike, skipped: more turned away');
+  assert.equal(skipped.body.shared.forwarded, 0);
+  assert.equal(forward.body.shared.strikeFull, 'next');
+  assert.equal(forward.body.total.n, skipped.body.total.n + forward.body.shared.forwarded, 'forwarded: the ones skip turned away that found a strike further out');
+  // Saved with it, read back with it: the settings keep their most on one strike.
+  const strikeSave = await post('/api/backtest-saves', { name: 'One a strike', query: { params: { ...WHOLE, deskMax: 10, strikePct: 20, strikeFull: 'skip' }, tfs: [], methods: [], strategy: null } });
+  assert.equal(strikeSave.status, 200, JSON.stringify(strikeSave.body));
+  const back = (await get('/api/backtest-saves')).body.saves.find((x: any) => x.id === strikeSave.body.save.id);
+  assert.deepEqual([back.query.params.strikePct, back.query.params.strikeFull], [20, 'skip']);
+  await app.inject({ method: 'DELETE', url: `/api/backtest-saves/${strikeSave.body.save.id}`, headers: cookie });
   // each its own, said: as before
   const own = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${b.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&max=2`);
   assert.deepEqual([own.body.shared, own.body.total.n], [null, run.body.total.n]);

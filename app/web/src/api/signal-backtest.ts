@@ -17,6 +17,11 @@ function searchOf(q: BacktestQuery): URLSearchParams {
   if (q.params.vol && q.params.vol !== 'off') p.set('vol', q.params.vol);
   if (q.params.volBy === 'iv') p.set('volby', 'iv');
   if (q.params.minPremium !== undefined && q.params.minPremium !== 10) p.set('minprem', String(q.params.minPremium));
+  // The most on one strike, only where it is a limit; and skip, only where it is asked (next is the default).
+  if (q.params.deskMax > 0 && q.params.strikePct !== undefined && q.params.strikePct < 100) {
+    p.set('sk', String(q.params.strikePct));
+    if (q.params.strikeFull === 'skip') p.set('skf', 'skip');
+  }
   if (q.params.window === 'custom' && q.params.hoursFrom && q.params.hoursTo) { p.set('hfrom', q.params.hoursFrom); p.set('hto', q.params.hoursTo); }
   // Only windows that are right for the hours: the editor says what is wrong with any other.
   const noEntry = noEntryQuery(q.params);

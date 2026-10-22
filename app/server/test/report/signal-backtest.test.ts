@@ -72,7 +72,7 @@ test('[critical] a BUY sells the put at the bid of the reading nearest its fill,
   // the perp reaches 84,500 in minute 302; the put decays from 40 to 10 over the day
   const r = simulateDay({ from, to, params: P, signals: [sig(31)], bars: perp([[0, 84_000], [300, 84_490], [310, 84_560], [1_439, 84_600]]),
     board: byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]), ...contract('C', 85_000, 0.09, [[0, 40], [1_435, 10]])]) });
-  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
   const [t] = r.trades;
   assert.equal(t!.cp, 'P'); assert.equal(t!.strike, 83_200);
   assert.equal(t!.entryAt, from + 30 * MIN, 'the 5-minute reading nearest minute 31');
@@ -211,7 +211,7 @@ test('[critical] the desk\'s limits: at most N open across every signal, and eac
   const sides = run({ deskMax: 4, pePct: 50, cePct: 100 });
   assert.deepEqual(sides.trades.map((t) => t.cp), ['P', 'P', 'C', 'C']);
   assert.equal(sides.skipped['side-limit'], 1);
-  assert.deepEqual(deskCapsOf({ deskMax: 35, cePct: 80, pePct: 80 }), { max: 35, side: { CE: 28, PE: 28 } }, 'the desk\'s own rounding: 80% of 35 is 28');
+  assert.deepEqual(deskCapsOf({ deskMax: 35, cePct: 80, pePct: 80 }), { max: 35, side: { CE: 28, PE: 28 }, strike: null, strikeFull: 'next' }, 'the desk\'s own rounding: 80% of 35 is 28');
   assert.equal(deskCapsOf({ deskMax: 0, cePct: 80, pePct: 80 }), null, 'no "at most open": no side limit either');
   // a trade that has closed frees its place
   const early = simulateDay({ from, to, signals: [sig(10), sig(400)], bars: perp([[0, 84_000], [100, 84_000], [120, 84_600], [1_439, 84_600]]), board, plan: planOfParams({ ...P, deskMax: 1 }, { from, to }) });
@@ -920,4 +920,35 @@ test('[critical] win % by volatility: a method passes on enough trades won at th
   const half = new Map([['x', { n: 4, wins: 2 }]]);
   const w = { ...VOL_STUDY_WIN, base: 50, minTrades: 3 };
   assert.deepEqual((['low', 'medium', 'high'] as const).map((l) => passesBar(half, 'x', winBarAt(w, l), w.minTrades)), [true, true, false]);
+});
+
+test('[critical] 22 Oct 2026: the most on one strike, as the live desk holds it -- at it, the next strike out by the rule (never nearer the money), or skipped; none at 100%', async () => {
+  const { deskCapsOf, planOfParams } = await import('../../src/report/signal-backtest.js');
+  const bars = perp([[0, 84_000], [1_439, 84_050]]);             // every trade stays open all day
+  const board = byTime(ladder('P', 83_400, -0.09, [[0, 40], [1_435, 30]], 8));
+  const signals = [sig(10), sig(20), sig(30), sig(40), sig(50)];
+  const run = (o: Partial<BacktestParams>) => simulateDay({ from, to, signals, bars, board, plan: planOfParams({ ...P, deskMax: 10, ...o }, { from, to }) });
+  assert.deepEqual(deskCapsOf({ deskMax: 10, strikePct: 20 })!.strike, 2, '20% of 10');
+  assert.equal(deskCapsOf({ deskMax: 111, strikePct: 20 })!.strike, 22, 'the live account\'s: 20% of 111');
+
+  const free = run({});
+  const first = free.trades[0]!.strike;
+  assert.ok(free.trades.every((t) => t.strike === first && t.fwdFrom === undefined), 'no limit: all on the one strike');
+
+  const next = run({ strikePct: 20 });
+  assert.equal(next.trades.length, 5, 'every signal traded');
+  const strikes = next.trades.map((t) => t.strike);
+  assert.deepEqual(strikes, [first, first, first - 200, first - 200, first - 400], 'two a strike, each next one further out');
+  assert.deepEqual(next.trades.map((t) => t.fwdFrom), [undefined, undefined, first, first, first], 'the forwarded ones say from where');
+  assert.ok(strikes.every((k) => k <= first), 'never nearer the money than the first pick');
+  assert.equal(next.skipped['strike-limit'], 0);
+
+  const skip = run({ strikePct: 20, strikeFull: 'skip' });
+  assert.deepEqual(skip.trades.map((t) => t.strike), [first, first]);
+  assert.equal(skip.skipped['strike-limit'], 3);
+
+  // Nowhere further out: a full strike with no room beyond is a skip, said as one.
+  const end = simulateDay({ from, to, signals, bars, board: byTime(contract('P', 83_400, -0.09, [[0, 40], [1_435, 30]])), plan: planOfParams({ ...P, deskMax: 10, strikePct: 20 }, { from, to }) });
+  assert.equal(end.trades.length, 2);
+  assert.equal(end.skipped['strike-limit'], 3);
 });

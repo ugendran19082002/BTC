@@ -10,13 +10,18 @@ export type WidenMode = 'widest' | 'calm';
 export type TslUnit = 'pts' | 'pct';
 /** Every `move` the premium falls from the price sold, the option's stop comes down `by`; never back up (18 Oct 2026). */
 export type Tsl = { move: number; moveUnit: TslUnit; by: number; byUnit: TslUnit };
-export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
+export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'strike-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
 export type BacktestParams = {
   rule: 'delta' | 'premium'; value: number; lots: number; targetPct: number; stopPct: number; window: 'desk' | 'all' | 'custom';
   /** With `custom`: the signals filled from this IST time to this one, "HH:MM"; it may run past midnight. */
   hoursFrom?: string; hoursTo?: string;
   /** The desk's limits: at most this many open at once (0: none), and each side at most this per cent of it. */
   deskMax: number; cePct: number; pePct: number;
+  /**
+   * The most open on one strike, as the live desk holds it (22 Oct 2026): this per cent of `deskMax` (100 or absent:
+   * none), and at it the next strike out by the rule ('next', the default) or skip.
+   */
+  strikePct?: number; strikeFull?: 'next' | 'skip';
   /** A signal only if its SL and TGT are in range: BTC points from the perp entry, minimum and maximum, 0 off. */
   slMin?: number; slMax?: number; tgtMin?: number; tgtMax?: number;
   /** A target by the clock: `targetPct` to begin with, then each step's share of the premium kept from its IST time. Absent or empty: fixed. */
@@ -72,8 +77,10 @@ export type SignalBacktestResponse = {
   /** The margin the trades shown would have held, by the desk's 200x estimate. */
   margin: { peakUsd: number; peakDay: string | null; peakAt: number | null; peakOpen: number; /** The lots open at that moment, together. An older server sends none. */ peakLots?: number; avgDailyPeakUsd: number; avgTradeUsd: number };
   /** Each trading account's limits as they stand: offered as one tap. */
-  deskLimits: { account: string; max: number; ce: number; pe: number }[];
+  deskLimits: { account: string; max: number; ce: number; pe: number; /** Absent from an older server. */ sk?: number; skf?: 'next' | 'skip' }[];
   signals: number; skipped: Record<BtSkip, number>;
+  /** Of those traded, how many on a strike further out, the one picked first being full. Absent from an older server. */
+  forwarded?: number;
   total: BtTot;
   days: (BtTot & { day: string; pattern: string | null; live: boolean; grain?: BoardGrain })[];
   /** Expiry days by what their options were priced on. An older server sends none. */
@@ -118,7 +125,11 @@ export type BacktestPortfolioResult = {
    * The one limit they were traded under together, as one account -- at most `max` open across all of them, `ce`
    * calls and `pe` puts -- and how many signals found it full. Null: each kept its own limit and they were added up.
    */
-  shared?: { max: number; ce: number; pe: number; cePct: number; pePct: number; turnedAway: number } | null;
+  shared?: {
+    max: number; ce: number; pe: number; cePct: number; pePct: number; turnedAway: number;
+    /** The most on one strike and its per cent, what was done at it, and how many went further out. Absent from an older server. */
+    strike?: number | null; strikePct?: number; strikeFull?: 'next' | 'skip'; forwarded?: number;
+  } | null;
   /**
    * The hours the run was held to, over every member worked by settings; `own` names the members a strategy works,
    * which kept that strategy's hours. Null or absent: each as it was saved.
@@ -241,6 +252,8 @@ export type BtTradeRow = {
   optTgt: number | null; optStop: number | null;
   /** Where a trailing SL had brought the stop by the exit; null (or absent from an older server) where it never moved. */
   optStopEnd?: number | null;
+  /** Sold here because the strike first picked was full: that strike. Null (or absent) where it was not forwarded. */
+  fwdFrom?: number | null;
   /** Where the widening had taken the perp's SL and target by the exit; null (or absent) where they never moved. */
   perpStopEnd?: number | null; perpTgtEnd?: number | null;
   perpPts: number; netUsd: number; chargesUsd: number;

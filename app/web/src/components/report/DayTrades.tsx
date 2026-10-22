@@ -248,6 +248,7 @@ export function TradeCard({ t }: { t: BtTradeRow }) {
       <p className="m-0 text-[12.5px] text-muted-foreground">
         {t.level ? <><span className={cn('font-medium', t.level === 'high' ? 'text-[var(--down)]' : t.level === 'low' ? 'text-[var(--up)]' : 'text-foreground')}>{LEVEL_WORDS[t.level]} volatility</span> · </> : null}
         {t.member ? <>{t.member} · </> : null}{t.tf === 'chain' ? 'TF chain' : t.tf} · <span className={t.dir === 1 ? 'text-[var(--up)]' : 'text-[var(--down)]'}>{side}</span> · sold {leg} × {count(t.lots)}
+        {t.fwdFrom != null && <> · <span className="text-[var(--warn)]">forwarded from {t.cp === 'P' ? 'PE' : 'CE'} {t.fwdFrom.toLocaleString('en-US')}</span>, its strike full</>}
       </p>
       <dl className="m-0 grid grid-cols-2 gap-x-3 gap-y-1 text-[12.5px] sm:grid-cols-4">
         <div><dt className="text-muted-foreground">Entry</dt><dd className="m-0 tabular-nums">{opt(t.entry)} <span className="text-muted-foreground">at {timeIst(t.entryAt)}</span></dd></div>

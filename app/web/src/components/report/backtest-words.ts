@@ -60,7 +60,7 @@ export function settingsWords(q: SavedQuery, strategies: readonly { id: string; 
     !byStrategy ? strikeBlocksWords(p.strikeBlocks) : null,
     !byStrategy && p.noEntry?.on && p.noEntry.windows.length ? `no entry ${p.noEntry.windows.map((w) => `${time12(w.from)} – ${time12(w.to)}`).join(', ')}` : null,
     p.vol && p.vol !== 'off' ? `${p.vol} volatility${p.volBy === 'iv' ? ' by ATM IV' : ''}` : null,
-    p.deskMax > 0 ? `at most ${p.deskMax} open · CE ${p.cePct}% · PE ${p.pePct}%` : 'no open limit',
+    p.deskMax > 0 ? `at most ${p.deskMax} open · CE ${p.cePct}% · PE ${p.pePct}%${(p.strikePct ?? 100) < 100 ? ` · strike ${p.strikePct}%${p.strikeFull === 'skip' ? ' (skip)' : ' (then the next out)'}` : ''}` : 'no open limit',
     withFilters && q.tfs.length ? `on ${q.tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ')}` : null,
     withFilters && q.methods.length ? `${q.methods.length} method${q.methods.length === 1 ? '' : 's'}` : null,
   ].filter(Boolean).join(' · ');

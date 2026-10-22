@@ -108,6 +108,7 @@ export function skippedParts(sk: Partial<Record<BtSkip, number>>, o: { byStrateg
     n('at-limit') ? `${count(n('at-limit'))} while ${o.run ? 'that one' : 'it'} already had its most open` : null,
     n('desk-limit') ? `${count(n('desk-limit'))} while ${o.run ? 'the account was full' : `${p.deskMax} were open`} (at most open)` : null,
     n('side-limit') ? `${count(n('side-limit'))} while that side was at its CE / PE max` : null,
+    n('strike-limit') ? `${count(n('strike-limit'))} with ${o.run ? 'their' : 'its'} strike at its most${(o.run || p.strikeFull !== 'skip') ? ' and none further out to go to' : ' (skip, as set)'}` : null,
     n('no-strike') ? `${count(n('no-strike'))} with no strike inside the rule${o.run || o.byStrategy ? ' worth its floor' : floor > 0 ? ` worth $${floor}` : ''}` : null,
     n('no-board') ? `${count(n('no-board'))} with no option prices recorded then` : null,
     n('no-exit-price') ? `${count(n('no-exit-price'))} with no price to exit at` : null,

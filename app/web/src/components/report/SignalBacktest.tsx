@@ -121,6 +121,7 @@ const CUSTOM = {
   deskMax: { unit: 'open', min: 0, max: 500, step: 1, whole: true, toShown: (v) => v, fromShown: (v) => v, label: (v) => (v > 0 ? String(v) : 'No limit') },
   minPremium: { unit: '$', min: 0, max: 500, step: 1, toShown: (v) => v, fromShown: (v) => Math.round(v * 10) / 10, label: (v) => (v > 0 ? `$${v}` : 'Off') },
   sidePct: { unit: '%', min: 1, max: 100, step: 5, toShown: (v) => v, fromShown: (v) => Math.round(v), label: (v) => `${v}%` },
+  strikePct: { unit: '%', min: 1, max: 100, step: 5, whole: true, toShown: (v) => v, fromShown: (v) => Math.round(v), label: (v) => (v >= 100 ? 'No limit' : `${v}%`) },
 } satisfies Record<string, Custom>;
 
 type Range = { slMin: number; slMax: number; tgtMin: number; tgtMax: number };
@@ -342,6 +343,11 @@ function CustomValue({ value, presets, spec, name, onChange }: { value: number; 
 }
 const DESK_MAX = [0, 20, 35, 58];
 const SIDE_PCTS = [50, 60, 70, 80, 90, 100];
+/** A limit's most on one strike, only where it is one: none (100, or absent) leaves the limit as it always was. */
+const strikeCap = (sk: number | undefined, skf: 'next' | 'skip' | undefined): Pick<PortfolioCap, 'sk' | 'skf'> =>
+  (sk !== undefined && sk < 100 ? { sk, skf: skf ?? 'next' } : {});
+/** The most on one strike, per cent of "at most open", as the Signal Strategies card offers it; 100 is none. */
+const STRIKE_PCTS = [5, 10, 15, 20, 30, 50, 100];
 /** Each side's most open, as the desk rounds it (strategy/types.ts `sideCaps`): at least one, never more than the whole. */
 const sideOf = (max: number, pctOf: number) => Math.min(max, Math.max(1, Math.round((max * pctOf) / 100)));
 
@@ -573,38 +579,40 @@ function SharedCap({ value, fallback, picks = [], edited, onApply, onReset }: {
   edited: boolean; onApply: (c: PortfolioCap) => void; onReset: () => void;
 }) {
   const shown = value ?? fallback;
-  const text = (c: PortfolioCap | null) => ({ max: c ? String(c.max) : '', ce: c ? String(c.ce) : '', pe: c ? String(c.pe) : '' });
+  const text = (c: PortfolioCap | null) => ({ max: c ? String(c.max) : '', ce: c ? String(c.ce) : '', pe: c ? String(c.pe) : '', sk: c ? String(c.sk ?? 100) : '' });
   const [draft, setDraft] = useState(text(shown));
-  const key = shown ? `${shown.max}/${shown.ce}/${shown.pe}` : '';
+  const skf = shown?.skf ?? 'next';
+  const key = shown ? `${shown.max}/${shown.ce}/${shown.pe}/${shown.sk ?? 100}/${skf}` : '';
   // What is in force changed from outside -- another run, Default, a new default: the fields follow it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setDraft(text(shown)); }, [key]);
-  const max = Number(draft.max), ce = Number(draft.ce), pe = Number(draft.pe);
+  const max = Number(draft.max), ce = Number(draft.ce), pe = Number(draft.pe), sk = draft.sk.trim() === '' ? 100 : Number(draft.sk);
   const problem = draft.max.trim() === '' ? (shown ? 'Type how many may be open together, or tap Default.' : null)
     : !Number.isInteger(max) || max < 1 || max > 500 ? 'At most open is a whole number from 1 to 500.'
       : !(ce >= 1 && ce <= 100) || !(pe >= 1 && pe <= 100) ? 'CE max and PE max are from 1% to 100%.'
-        : null;
-  const apply = () => { if (!problem && draft.max.trim() !== '' && `${max}/${ce}/${pe}` !== key) onApply({ max, ce, pe }); };
+        : !(Number.isInteger(sk) && sk >= 1 && sk <= 100) ? 'Strike max is a whole per cent of at most open, from 1 to 100 (100: none).'
+          : null;
+  const apply = (full = skf) => { if (!problem && draft.max.trim() !== '' && `${max}/${ce}/${pe}/${sk}/${full}` !== key) onApply({ max, ce, pe, ...strikeCap(sk, full) }); };
   const field = 'h-11 w-full min-w-0 rounded-md border border-border bg-[var(--bg)] px-2 text-[16px] tabular-nums text-foreground';
-  const input = (name: 'max' | 'ce' | 'pe', label: string, unit: string) => (
+  const input = (name: 'max' | 'ce' | 'pe' | 'sk', label: string, unit: string) => (
     <label className="grid min-w-0 gap-1">
       <span className="text-[12px] text-muted-foreground">{label}</span>
       <span className="flex min-w-0 items-center gap-1">
         <input type="number" inputMode="numeric" aria-label={label} value={draft[name]} placeholder={name === 'max' ? 'none' : '100'}
-          onChange={(e) => setDraft({ ...draft, [name]: e.target.value })} onBlur={apply}
+          onChange={(e) => setDraft({ ...draft, [name]: e.target.value })} onBlur={() => apply()}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }} className={field} />
         {unit && <span className="text-[12.5px] text-muted-foreground">{unit}</span>}
       </span>
     </label>
   );
-  const said = (c: PortfolioCap) => `${c.max} open · CE ${c.ce}% · PE ${c.pe}%`;
-  const same = (a: PortfolioCap, b: PortfolioCap | null) => b !== null && a.max === b.max && a.ce === b.ce && a.pe === b.pe;
+  const said = (c: PortfolioCap) => `${c.max} open · CE ${c.ce}% · PE ${c.pe}%${(c.sk ?? 100) < 100 ? ` · strike ${c.sk}%${c.skf === 'skip' ? ' (skip)' : ''}` : ''}`;
+  const same = (a: PortfolioCap, b: PortfolioCap | null) => b !== null && a.max === b.max && a.ce === b.ce && a.pe === b.pe && (a.sk ?? 100) === (b.sk ?? 100) && (a.skf ?? 'next') === (b.skf ?? 'next');
   return (
     <div role="group" aria-label="One account's limit" className="grid min-w-0 gap-1.5">
       {picks.length > 0 && (
         <div role="group" aria-label="Limits to take" className="flex flex-wrap gap-1.5">
           {picks.map((x) => (
-            <Chip key={`${x.label}|${said(x.cap)}`} on={same(x.cap, shown)} onClick={() => (same(x.cap, fallback) ? onReset() : onApply(x.cap))}>{x.label} · {x.cap.max} · CE {x.cap.ce}% · PE {x.cap.pe}%</Chip>
+            <Chip key={`${x.label}|${said(x.cap)}`} on={same(x.cap, shown)} onClick={() => (same(x.cap, fallback) ? onReset() : onApply(x.cap))}>{x.label} · {x.cap.max} · CE {x.cap.ce}% · PE {x.cap.pe}%{(x.cap.sk ?? 100) < 100 ? ` · strike ${x.cap.sk}%` : ''}</Chip>
           ))}
         </div>
       )}
@@ -612,6 +620,14 @@ function SharedCap({ value, fallback, picks = [], edited, onApply, onReset }: {
         {input('max', 'At most open, together', '')}
         {input('ce', 'CE max', '%')}
         {input('pe', 'PE max', '%')}
+      </div>
+      {/* The most on one strike, as the live desk holds it (22 Oct 2026); 100 is none. And what a signal does at it. */}
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] items-end gap-2">
+        {input('sk', 'Strike max', '%')}
+        <div role="group" aria-label="When a strike is full" className="flex min-w-0 flex-wrap gap-1.5 pb-1">
+          <Chip on={skf === 'next'} onClick={() => apply('next')}>Full: next strike out</Chip>
+          <Chip on={skf === 'skip'} onClick={() => apply('skip')}>Full: skip</Chip>
+        </div>
       </div>
       <p role={problem ? 'alert' : 'status'} className={cn('m-0 px-1 text-[12px] leading-snug', problem ? 'text-[var(--down)]' : 'text-muted-foreground')}>
         {problem ?? (!shown ? 'No saved backtest and no account has an “at most open”: none is shared until one is typed here.'
@@ -723,7 +739,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       ...(!byStrategy && params.noEntry?.on && params.noEntry.windows.length ? [`no entry ${params.noEntry.windows.map((w) => `${time12(w.from)}–${time12(w.to)}`).join(', ')}`] : []),
       (params.vol ?? 'off') === 'off' ? 'every volatility' : `${params.vol} volatility only`,
       params.volBy === 'iv' ? 'volatility by ATM IV' : null,
-      params.deskMax > 0 ? `at most ${params.deskMax} open · CE ${params.cePct}% · PE ${params.pePct}%` : 'no open limit',
+      params.deskMax > 0 ? `at most ${params.deskMax} open · CE ${params.cePct}% · PE ${params.pePct}%${(params.strikePct ?? 100) < 100 ? ` · strike ${params.strikePct}%${params.strikeFull === 'skip' ? ' (skip)' : ''}` : ''}` : 'no open limit',
     ].filter(Boolean).join(' · '),
     filters: [
       tfs.length ? tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ') : 'every time frame',
@@ -936,9 +952,9 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         {(r?.deskLimits?.length ?? 0) > 0 && (
           <ChipRow label="As an account has them now">
             {(r?.deskLimits ?? []).map((d) => (
-              <Chip key={d.account} on={params.deskMax === d.max && params.cePct === d.ce && params.pePct === d.pe}
-                onClick={() => set({ deskMax: d.max, cePct: d.ce, pePct: d.pe })}>
-                {d.account} · {d.max} · CE {d.ce}% · PE {d.pe}%
+              <Chip key={d.account} on={params.deskMax === d.max && params.cePct === d.ce && params.pePct === d.pe && (params.strikePct ?? 100) === (d.sk ?? 100) && (params.strikeFull ?? 'next') === (d.skf ?? 'next')}
+                onClick={() => set({ deskMax: d.max, cePct: d.ce, pePct: d.pe, strikePct: d.sk ?? 100, strikeFull: d.skf ?? 'next' })}>
+                {d.account} · {d.max} · CE {d.ce}% · PE {d.pe}%{d.sk !== undefined && d.sk < 100 ? ` · strike ${d.sk}%` : ''}
               </Chip>
             ))}
           </ChipRow>
@@ -956,9 +972,22 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
             </ChipRow>
           );
         })}
+        {/* The most on one strike, as the live desk holds it (22 Oct 2026): a per cent of at most open, and at it the next strike out or skip. */}
+        {params.deskMax > 0 && (
+          <ChipRow label={`Strike max: ${(params.strikePct ?? 100) >= 100 ? 'no limit of its own' : `at most ${sideOf(params.deskMax, params.strikePct!)} open on one strike`}`}>
+            {STRIKE_PCTS.map((p) => <Chip key={p} on={(params.strikePct ?? 100) === p} onClick={() => set({ strikePct: p })}>{p === 100 ? '100% · no limit' : `${p}%`}</Chip>)}
+            <CustomValue value={params.strikePct ?? 100} presets={STRIKE_PCTS} spec={CUSTOM.strikePct} name="Strike max" onChange={(v) => set({ strikePct: v })} />
+          </ChipRow>
+        )}
+        {params.deskMax > 0 && (params.strikePct ?? 100) < 100 && (
+          <ChipRow label="When a strike is full">
+            <Chip on={(params.strikeFull ?? 'next') === 'next'} onClick={() => set({ strikeFull: 'next' })}>Next strike out · default</Chip>
+            <Chip on={params.strikeFull === 'skip'} onClick={() => set({ strikeFull: 'skip' })}>Skip</Chip>
+          </ChipRow>
+        )}
         {params.deskMax > 0 && (
           <p className="m-0 text-[12px] leading-snug text-muted-foreground">
-            A signal is skipped while that many are open, as the desk does. With a limit, the time frame and method filters below choose which signals compete for the places.
+            A signal is skipped while that many are open, as the desk does. At a full strike it is sold on the next strike out by the strike rule -- never nearer the money -- or skipped, as chosen. With a limit, the time frame and method filters below choose which signals compete for the places.
           </p>
         )}
         </section>
@@ -1048,10 +1077,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const ran = together ? savedList.filter((x) => together.ids.includes(x.id)) : savedList;
   const carried = ran.map((x) => x.query.params).filter((p) => (p.deskMax ?? 0) > 0).sort((a, b) => b.deskMax - a.deskMax)[0];
   const accounts = [...(r?.deskLimits ?? [])].sort((a, b) => b.max - a.max);
-  const capOfSaved: PortfolioCap | null = carried ? { max: carried.deskMax, ce: carried.cePct ?? 100, pe: carried.pePct ?? 100 } : null;
-  const capDefault: PortfolioCap | null = accounts[0] ? { max: accounts[0].max, ce: accounts[0].ce, pe: accounts[0].pe } : capOfSaved;
+  const capOfSaved: PortfolioCap | null = carried ? { max: carried.deskMax, ce: carried.cePct ?? 100, pe: carried.pePct ?? 100, ...strikeCap(carried.strikePct, carried.strikeFull) } : null;
+  const capDefault: PortfolioCap | null = accounts[0] ? { max: accounts[0].max, ce: accounts[0].ce, pe: accounts[0].pe, ...strikeCap(accounts[0].sk, accounts[0].skf) } : capOfSaved;
   const capPicks: { label: string; cap: PortfolioCap }[] = [
-    ...accounts.map((a) => ({ label: a.account, cap: { max: a.max, ce: a.ce, pe: a.pe } })),
+    ...accounts.map((a) => ({ label: a.account, cap: { max: a.max, ce: a.ce, pe: a.pe, ...strikeCap(a.sk, a.skf) } })),
     ...(capOfSaved ? [{ label: 'Saved backtests', cap: capOfSaved }] : []),
   ];
   const cap = capTyped ?? capDefault;
@@ -1062,7 +1091,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   const runSummary = [
     `${dayLabel(range.from)} → ${dayLabel(range.to)}`,
     hoursAsked.window === 'saved' ? 'hours as saved' : hoursAsked.window === 'desk' ? '9:30 PM → 3:59 PM' : hoursAsked.window === 'all' ? 'whole day' : `${time12(hoursAsked.hoursFrom ?? '')} → ${time12(hoursAsked.hoursTo ?? '')}`,
-    limit === 'own' ? 'each its own limit' : cap ? `one account: ${cap.max} open · CE ${cap.ce}% · PE ${cap.pe}%` : 'one account',
+    limit === 'own' ? 'each its own limit' : cap ? `one account: ${cap.max} open · CE ${cap.ce}% · PE ${cap.pe}%${(cap.sk ?? 100) < 100 ? ` · strike ${cap.sk}%` : ''}` : 'one account',
     overSaid.length ? overSaid.join(' · ') : 'settings as saved',
   ].join(' · ');
   const title = wide && (
@@ -1250,6 +1279,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
         <p className="m-0 mt-2 text-[12.5px] leading-snug text-muted-foreground">
           {count(r.signals)} signals went in the trade; {count(r.signals - notTraded)} were traded here.
           {notTraded > 0 && <> Not traded: {skippedParts(r.skipped, { byStrategy, params, floor }).join(', ')}.</>}
+          {(r.forwarded ?? 0) > 0 && <> {count(r.forwarded!)} sold one strike further out or more, the strike first picked being at its most.</>}
           {/* The counts are of the time frames and methods chosen, as the tiles above are (13 Oct 2026: they were of every signal). */}
         </p>
         {pricedWords(r.priced) && <p className="m-0 mt-1.5 text-[12.5px] leading-snug text-muted-foreground">{pricedWords(r.priced)}</p>}

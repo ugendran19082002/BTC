@@ -7,7 +7,7 @@ import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades, winSweep, winSweepTrades } from '../../report/backtest-run.js';
 import { cleanBlocks, cleanConfig, strategyStore } from './strategy.routes.js';
-import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, SIGNAL_TFS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
+import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, strikeFullOf, strikeMaxOf, SIGNAL_TFS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
@@ -66,7 +66,7 @@ export async function backtestStrategies(): Promise<BacktestStrategy[]> {
  * Each trading account's signal strategies that sell, with its limit on open trades as it stands: the desk's side
  * of a live check (`liveCheckHere`), which works an account's strategies together under that limit.
  */
-export async function liveAccounts(): Promise<{ id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number } | null; strategies: Strategy[] }[]> {
+export async function liveAccounts(): Promise<{ id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number; strikePct: number; strikeFull: 'next' | 'skip' } | null; strategies: Strategy[] }[]> {
   const every = await backtestStrategies();
   const svc = tradingService();
   const nameOf = (id: number | null) => { try { return id == null ? null : brokerAccounts().get(id)?.name ?? null; } catch { return null; } };
@@ -74,7 +74,11 @@ export async function liveAccounts(): Promise<{ id: number | null; name: string 
     const max = globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, id));
     return {
       id, name: nameOf(id),
-      caps: max > 0 ? { deskMax: max, cePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, id)), pePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, id)) } : null,
+      // And the most on one strike, as the account's runner holds it (22 Oct 2026).
+      caps: max > 0 ? {
+        deskMax: max, cePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, id)), pePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, id)),
+        strikePct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, id)), strikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, id)),
+      } : null,
       strategies: every.filter((s) => (s.accountId ?? null) === id),
     };
   });
@@ -104,6 +108,12 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
   const deskMax = num('max', 0), cePct = num('ce', 100), pePct = num('pe', 100);
   if (!Number.isInteger(deskMax) || deskMax < 0 || deskMax > 500) return 'At most open is a whole number from 0 (no limit) to 500.';
   if (!(cePct >= 1 && cePct <= 100) || !(pePct >= 1 && pePct <= 100)) return 'CE max and PE max are from 1% to 100%.';
+  // The most on one strike, as the live desk holds it (22 Oct 2026): `?sk=` per cent of at most open, 1 to 100 (100, or
+  // absent, none), and `?skf=next|skip` -- at it, the next strike out (the default, as live) or skip.
+  const strikePct = num('sk', 100);
+  if (!Number.isInteger(strikePct) || strikePct < 1 || strikePct > 100) return 'The most on one strike is a whole per cent of at most open, from 1 to 100.';
+  const strikeFull = q.skf === undefined || q.skf === '' ? 'next' : q.skf;
+  if (strikeFull !== 'next' && strikeFull !== 'skip') return 'At a full strike: "next" (the next strike out) or "skip".';
   // The SL and TGT range, in BTC points: `?slmin=&slmax=&tgtmin=&tgtmax=`, 0 off.
   const slMin = num('slmin', 0), slMax = num('slmax', 0), tgtMin = num('tgtmin', 0), tgtMax = num('tgtmax', 0);
   for (const v of [slMin, slMax, tgtMin, tgtMax]) if (!(v >= 0 && v <= 20_000)) return 'An SL or TGT distance is from 0 (off) to 20,000 points.';
@@ -201,6 +211,7 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
   return {
     rule, value, lots, targetPct, stopPct, window, deskMax, cePct, pePct, slMin, slMax, tgtMin, tgtMax, vol, minPremium,
     // Only where it is not the default, so settings saved before it are the same settings as ever.
+    ...(strikePct < 100 ? { strikePct, ...(strikeFull === 'skip' ? { strikeFull: 'skip' as const } : {}) } : {}),
     ...(volBy === 'iv' ? { volBy } : {}),
     ...(window === 'custom' ? { hoursFrom, hoursTo } : {}), ...(targetSteps.length ? { targetSteps } : {}), ...(noEntry ? { noEntry } : {}),
     ...(strikeBlocks ? { strikeBlocks } : {}), ...(tsl ? { tsl } : {}),
@@ -353,7 +364,7 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
   const x = p as Partial<BacktestParams>;
   return backtestParamsOf({
     rule: x.rule, value: x.value, lots: x.lots, tp: x.targetPct, sl: x.stopPct, window: x.window, hfrom: x.hoursFrom, hto: x.hoursTo,
-    max: x.deskMax, ce: x.cePct, pe: x.pePct, slmin: x.slMin, slmax: x.slMax, tgtmin: x.tgtMin, tgtmax: x.tgtMax, vol: x.vol, volby: x.volBy, minprem: x.minPremium,
+    max: x.deskMax, ce: x.cePct, pe: x.pePct, sk: x.strikePct, skf: x.strikeFull, slmin: x.slMin, slmax: x.slMax, tgtmin: x.tgtMin, tgtmax: x.tgtMax, vol: x.vol, volby: x.volBy, minprem: x.minPremium,
     tsteps: Array.isArray(x.targetSteps) && x.targetSteps.length ? x.targetSteps.map((s) => `${s.at}:${Math.round(s.pct * 10_000) / 100}`).join(',') : undefined,
     // Kept off with its times, as the form keeps them; only an on switch is a rule.
     noentry: x.noEntry?.on && Array.isArray(x.noEntry.windows) ? x.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : undefined,
@@ -397,13 +408,16 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const result = await signalBacktest({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot });
     // Each trading account's own limits as they stand, for the screen to offer as one tap.
     const svc = tradingService();
-    let deskLimits: { account: string; max: number; ce: number; pe: number }[] = [];
+    let deskLimits: { account: string; max: number; ce: number; pe: number; sk: number; skf: 'next' | 'skip' }[] = [];
     try {
       deskLimits = brokerAccounts().list().filter((a) => a.active).map((a) => ({
         account: a.name,
         max: globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, a.id)),
         ce: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, a.id)),
         pe: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, a.id)),
+        // And its most on one strike (22 Oct 2026): per cent of the max, and what a signal does at it.
+        sk: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, a.id)),
+        skf: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, a.id)),
       })).filter((x) => x.max > 0);
     } catch { /* no account set up: none to offer */ }
     return {
@@ -556,7 +570,7 @@ export function registerMarketRoutes(app: FastifyInstance) {
     if (typeof params === 'string') return refuse(reply, 400, { error: params });
     return liveCheck({
       ...base,
-      portfolio: { name: 'these settings', shared: (params.deskMax ?? 0) > 0 ? { deskMax: params.deskMax!, cePct: params.cePct ?? 100, pePct: params.pePct ?? 100 } : null, members: [{ id: 'screen', name: 'These settings', ask: { params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy: null } }] },
+      portfolio: { name: 'these settings', shared: (params.deskMax ?? 0) > 0 ? { deskMax: params.deskMax!, cePct: params.cePct ?? 100, pePct: params.pePct ?? 100, strikePct: params.strikePct ?? 100, strikeFull: params.strikeFull ?? 'next' } : null, members: [{ id: 'screen', name: 'These settings', ask: { params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy: null } }] },
     });
   });
 
