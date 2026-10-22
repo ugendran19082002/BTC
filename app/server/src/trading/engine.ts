@@ -522,6 +522,8 @@ const LOOKUP_BUDGET_MS = 3_000;
  * because the feed stalled rather than because the price moved.
  */
 const MARK_STALE_MS = 15_000;
+/** A target the look-up cannot find anywhere is put back only after it has been missing this long (`protect`). */
+export const TARGET_NOWHERE_MS = 60_000;
 /**
  * The board's quote is taken for the fast watch's look while this fresh, by Delta's own time (22 Oct 2026). The socket
  * delivers it about a second after Delta takes it; Delta's own REST answer was 0.8-2.7 s old asked past its CDN, and a
@@ -785,6 +787,8 @@ export function roleOfClientId(clientOrderId: string | null, stem: string): Orde
 export class TradeEngine {
   /** When each trade's offer was first seen at or through its stop, for the confirmation. In memory: a restart starts the count again. */
   private readonly stopSince = new Map<string, number>();
+  /** Since when each trade's recorded target has been found nowhere (`TARGET_NOWHERE_MS`). In memory: a restart looks again. */
+  private readonly targetNowhere = new Map<string, number>();
   /** When each trade's offer and mark were first seen through its stop together (`STOP_CONFIRM_FAST_MS`). In memory, like `stopSince`. */
   private readonly bothSince = new Map<string, number>();
   /** Trades whose close has been given up on at the market, so that is said once. */
@@ -1806,6 +1810,24 @@ export class TradeEngine {
           failedLegs.add(role);
           return recorded;
         }
+        /*
+         * Asked, and answered "nowhere" (22 Oct 2026, 14:00:55): the 2 PM step moved C-BTC-83400-221026's targets and
+         * one trade's T1 went on while its T0 still rested -- 16 reduce-only buy-backs for 15 contracts, Delta cut a
+         * sibling's target to fit (`no_position_left_for_reduce_only`), and that sibling read short for 44 minutes after
+         * the contract was flat. "Nowhere" is the look-up having found nothing, not proof the order is gone: the target
+         * is not put beside it until it has been nowhere for `TARGET_NOWHERE_MS`, read after read. The stop protects
+         * meanwhile, and the next look finds it -- or it really is gone, and a minute on, a target goes back on.
+         */
+        if (seen === null && role === 'take_profit') {
+          const since = this.targetNowhere.get(rec.state.tradeId) ?? this.now();
+          this.targetNowhere.set(rec.state.tradeId, since);
+          if (this.now() - since < TARGET_NOWHERE_MS) {
+            failure ??= 'the target already placed was not found: none put beside it until it has been missing a minute';
+            failedLegs.add(role);
+            return recorded;
+          }
+        }
+        if (seen) this.targetNowhere.delete(rec.state.tradeId);
         if (seen && seen.reduceOnly && (seen.status === 'open' || seen.status === 'partial') && match(seen)) live = [...live, seen];
       }
       // Both legs round towards firing rather than towards a better price: a
@@ -1998,8 +2020,11 @@ export class TradeEngine {
    * the order back.
    */
   private async cancelAndVerify(order: ExchangeOrder): Promise<boolean> {
-    await this.exchange.cancelOrder(order).catch((e) => this.note('cancel', order, e));
-    if (!order.clientOrderId) return true;
+    // A cancel the venue did not take is not one (22 Oct 2026): only its look-up can say it is gone -- and "nowhere"
+    // after a cancel refused is no proof, so it is not taken as one.
+    let refused = false;
+    await this.exchange.cancelOrder(order).catch((e) => { refused = !(e instanceof OrderGone); this.note('cancel', order, e); });
+    if (!order.clientOrderId) return !refused;
     let after: ExchangeOrder | null;
     try {
       after = await this.exchange.getOrderByClientId(order.clientOrderId, order.symbol);
@@ -2008,7 +2033,7 @@ export class TradeEngine {
       // confirmed cancel, which is the one answer this method exists to rule out.
       return false;
     }
-    if (after === null) return true;                       // gone from the book
+    if (after === null) return !refused;                   // gone from the book -- if the cancel was taken
     return after.status !== 'open' && after.status !== 'partial';
   }
 

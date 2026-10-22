@@ -231,6 +231,9 @@ function toOrder(o: DeltaOrder): ExchangeOrder {
  * again, never "gone". So it throws, and the engine's callers -- which already
  * treat a throw as "could not ask" -- ask again next poll.
  */
+/** Delta's refusals of a cancel that mean the order is not on the book: not found there, already filled, already cancelled. */
+export const ORDER_GONE = /not_found|already_(filled|cancel|closed)|order_closed/;
+
 const refusedRead = (e: unknown): never => {
   if (e instanceof DeltaRefused) throw new ExchangeUnavailable(`lookup refused: ${e.message}`);
   throw e;
@@ -543,10 +546,11 @@ export class DeltaExchange implements ExchangePort {
       path: '/v2/orders',
       body: { id: Number(order.orderId), product_id: order.productId },
     }).catch((e) => {
-      // An order that is already gone is the state we wanted. Only a deliberate
-      // refusal says that: Delta's own failure arrives as ExchangeUnavailable
-      // from call(), and is thrown so the caller goes and checks.
-      if (e instanceof DeltaRefused) return;
+      // An order that is already gone is the state we wanted -- and only a refusal that says so means it (22 Oct 2026).
+      // Any refusal was taken for "gone" until then: an `expired_signature` on 22 Oct 13:51 was a cancel Delta never
+      // made, read as made. Delta's own failure arrives as ExchangeUnavailable from call(); both are thrown, so the
+      // caller goes and checks.
+      if (e instanceof DeltaRefused && ORDER_GONE.test(e.code)) return;
       throw e;
     });
   }
