@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
@@ -402,7 +402,7 @@ export function VolStudy({ askKey, read, readTrades, wide = false, title = 'By v
   readTrades?: (a: VolAsk, pick: VolTradesPick) => Promise<BtDayTrades>;
   wide?: boolean; title?: string;
 }) {
-  const [stored, setStored] = usePersisted<VolDrafts>('signalBacktest.volStudy.rules', VOL_DRAFTS);
+  const [stored, setStored] = useSynced<VolDrafts>('signalBacktest.volStudy.rules', VOL_DRAFTS);
   // Anything kept by an older build is filled in from the defaults rather than read as empty fields.
   const drafts: VolDrafts = { sl: { ...VOL_DRAFTS.sl, ...stored?.sl }, delta: { ...VOL_DRAFTS.delta, ...stored?.delta }, lots: { ...VOL_DRAFTS.lots, ...stored?.lots }, win: { ...WIN_DEFAULT, ...stored?.win } };
   const [run, setRun] = useState<{ key: string; ask: VolAsk; data: VolStudyResult | null; error: Error | null; busy: boolean } | null>(null);

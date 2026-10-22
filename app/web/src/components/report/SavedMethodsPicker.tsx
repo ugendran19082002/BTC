@@ -4,7 +4,7 @@ import { pct } from '@/lib/format';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { WIN_AT_LEAST_PCT } from '@/lib/win-line';
 import { cn } from '@/lib/utils';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import type { BacktestSave } from '@/types/signal-backtest';
 import { Chip } from '@/components/mobile/parts';
 import { FilterPicker, METHODS } from '@/components/mobile/FilterPicker';
@@ -43,9 +43,9 @@ export function SavedMethodsPicker({ save, onUpdate, onClose, busy = false, now 
   /** The days, where the screen around it holds them (20 Oct 2026: the methods board, whose figures are of the same days). */
   period?: Period; onPeriod?: (p: Period) => void;
 }) {
-  const [kept, setKept] = usePersisted<Period>('savedMethods.period', '14');
+  const [kept, setKept] = useSynced<Period>('savedMethods.period', '14');
   const period = given ?? kept, setPeriod = onPeriod ?? setKept;
-  const [winAtLeast, setWinAtLeast] = usePersisted<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
+  const [winAtLeast, setWinAtLeast] = useSynced<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
   const [draft, setDraft] = useState<string[]>(save.query.methods);
   const days = PERIODS.find((p) => p.key === period)?.days ?? 14;
   const range = periodRange(days, now);

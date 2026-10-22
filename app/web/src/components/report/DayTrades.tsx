@@ -6,7 +6,7 @@ import { dayLabel, moneyText, ptsText, timeIst } from '@/lib/market-report';
 import { pct } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { FilterBar, FilterPicker, METHODS, SortRow, STRATEGIES, sortOptions, type FilterOption, type FilterSort } from '@/components/mobile/FilterPicker';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { WIN_AT_LEAST_PCT } from '@/lib/win-line';
 import type { BtDayTrades, BtExit, BtTradeRow, VolStudyLevel } from '@/types/signal-backtest';
 
@@ -60,8 +60,8 @@ export function DayTradesSheet({ day, title, read, onClose }: {
   // The volatility study's list: one level, or all (null).
   const [level, setLevel] = useState<VolStudyLevel | null>(null);
   // The Win tab's line in the method pick, the same one the Backtest's Method list keeps.
-  const [winAtLeast, setWinAtLeast] = usePersisted<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
-  const [methodSort, setMethodSort] = usePersisted<FilterSort>('methods.sort', 'default');
+  const [winAtLeast, setWinAtLeast] = useSynced<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
+  const [methodSort, setMethodSort] = useSynced<FilterSort>('methods.sort', 'default');
   useEffect(() => {
     if (!day) return;
     let live = true;

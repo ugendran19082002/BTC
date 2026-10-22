@@ -332,6 +332,7 @@ async function migrateEverything(): Promise<void> {
   const { initTradingService } = await import('../trading/service.js');
   const { marketSchema } = await import('../market/oi-history.js');
   const { errorLog } = await import('../observability/errors.js');
+  const { uiSettings } = await import('../ui/settings.js');
   const { optionSnapshotsSchema } = await import('../market/option-snapshots.js');
   const { optionMarksSchema } = await import('../market/option-marks.js');
   const { backtestSavesSchema } = await import('../report/backtest-saves.js');
@@ -349,6 +350,7 @@ async function migrateEverything(): Promise<void> {
   await initTradingService();
   await marketSchema();
   await errorLog().ready;
+  await uiSettings().ready;
   await optionSnapshotsSchema();
   await optionMarksSchema();
   await backtestSavesSchema();

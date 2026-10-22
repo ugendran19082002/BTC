@@ -1125,6 +1125,16 @@ describe('SignalBacktest', () => {
     fireEvent.blur(capOf().getByLabelText('CE max'));
     await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 60, ce: 50, pe: 80 }, { window: 'saved' }, {}));
     expect(capOf().getByRole('status')).toHaveTextContent('Your own: 60 open · CE 50% · PE 80%. The default is 58 open · CE 80% · PE 80%. Default');
+    // 22 Oct 2026 ("strike max 30, next strike out -- nothing is worked again"): the most on one strike, and next or
+    // skip, are part of the question -- each change is asked for again.
+    fireEvent.change(capOf().getByLabelText('Strike max'), { target: { value: '30' } });
+    fireEvent.blur(capOf().getByLabelText('Strike max'));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 60, ce: 50, pe: 80, sk: 30, skf: 'next' }, { window: 'saved' }, {}));
+    fireEvent.click(within(capOf().getByRole('group', { name: 'When a strike is full' })).getByRole('button', { name: 'Full: skip' }));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 60, ce: 50, pe: 80, sk: 30, skf: 'skip' }, { window: 'saved' }, {}));
+    fireEvent.change(capOf().getByLabelText('Strike max'), { target: { value: '100' } });
+    fireEvent.blur(capOf().getByLabelText('Strike max'));
+    await waitFor(() => expect(saves.getBacktestPortfolio).toHaveBeenLastCalledWith(['a1', 'b22'], { from: '2026-10-01', to: '2026-10-13' }, 'shared', { max: 60, ce: 50, pe: 80 }, { window: 'saved' }, {}));
     // one that cannot be meant is said, and not asked for
     fireEvent.change(capOf().getByLabelText('At most open, together'), { target: { value: '0' } });
     fireEvent.blur(capOf().getByLabelText('At most open, together'));

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import type { DayRow } from '@/types/report';
 import { inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -128,8 +128,8 @@ export interface DailyPnlChartProps {
 
 export function DailyPnlChart({ rows, includeCharges = true }: DailyPnlChartProps) {
   const [open, setOpen] = useFold('pnl-daily');
-  const [period, setPeriod] = usePersisted<Period>('report:daily-period', 'Daily');
-  const [asTable, setAsTable] = usePersisted<boolean>('report:daily-table', false);
+  const [period, setPeriod] = useSynced<Period>('report:daily-period', 'Daily');
+  const [asTable, setAsTable] = useSynced<boolean>('report:daily-table', false);
   const [at, setAt] = useState<number | null>(null);
 
   // Drawn in real pixels at the card's width, so a bar is never wider than 24px and text is never scaled.

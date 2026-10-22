@@ -1,7 +1,7 @@
 import { pct } from '@/lib/format';
 import { moneyText, ptsText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { useState } from 'react';
 import type { BtRow, BtTot } from '@/types/signal-backtest';
 import { Chip, Panel } from '@/components/mobile/parts';
@@ -37,7 +37,7 @@ export function PerpVsOptions({ total, rows, pairs = [], byTf = [] }: {
   byTf?: readonly BtRow[];
 }) {
   const [onlyApart, setOnlyApart] = useState(false);
-  const [tfPick, setTf] = usePersisted<string>('signalBacktest.perpVsOptions.tf', 'all');
+  const [tfPick, setTf] = useSynced<string>('signalBacktest.perpVsOptions.tf', 'all');
   const frames = byTf.filter((r) => r.n > 0 && r.perpNetPts !== undefined);
   // A time frame chosen before and not in this result: all of them.
   const tf = tfPick !== 'all' && frames.some((r) => r.key === tfPick) ? tfPick : 'all';

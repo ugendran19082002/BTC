@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import type { DayRow } from '@/types/report';
 import type { OrderRecord } from '@/types/trade';
 import { signedInr, usdToInr } from '@/lib/format';
@@ -12,7 +12,7 @@ export interface WinLossAnalysisProps {
 
 export function WinLossAnalysis({ rows, orders = [] }: WinLossAnalysisProps) {
   const [open, setOpen] = useFold('pnl-winloss');
-  const [viewMode, setViewMode] = usePersisted<'count' | 'pnl'>('report:winloss-view', 'count');
+  const [viewMode, setViewMode] = useSynced<'count' | 'pnl'>('report:winloss-view', 'count');
 
   const {
     winCount,

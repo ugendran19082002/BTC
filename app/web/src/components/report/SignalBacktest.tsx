@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { getBacktestTrades, getLiveCheck, getSignalBacktest, getVolStudy, getVolStudyTrades, getWinSweep, getWinSweepTrades } from '@/api/signal-backtest';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
@@ -662,30 +662,30 @@ const RESULT_PARTS = [
 
 export function SignalBacktest({ now = Date.now(), wide = false }: { now?: number; wide?: boolean }) {
   const expiry = useExpiryRange('signalBacktest', now);
-  const [stored, setParams] = usePersisted<BacktestParams>('signalBacktest.params', DEFAULTS);
-  const [tfs, setTfs] = usePersisted<string[]>('signalBacktest.tfs', []);
-  const [methods, setMethods] = usePersisted<string[]>('signalBacktest.methods', []);
+  const [stored, setParams] = useSynced<BacktestParams>('signalBacktest.params', DEFAULTS);
+  const [tfs, setTfs] = useSynced<string[]>('signalBacktest.tfs', []);
+  const [methods, setMethods] = useSynced<string[]>('signalBacktest.methods', []);
   // The methods dropdown's Win tab line, kept on this browser like the rest of the filters (default 30%).
-  const [winAtLeast, setWinAtLeast] = usePersisted<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
+  const [winAtLeast, setWinAtLeast] = useSynced<number>('signalBacktest.winAtLeast', WIN_AT_LEAST_PCT);
   // How the method lists are ordered, the same in every one of them (`FilterSort`): kept in this browser.
-  const [methodSort, setMethodSort] = usePersisted<FilterSort>('methods.sort', 'default');
+  const [methodSort, setMethodSort] = useSynced<FilterSort>('methods.sort', 'default');
   // The trades open one by one (`DayTradesSheet`): of an expiry day, a session, a method in one; null: none.
   const [openTrades, setOpenTrades] = useState<{ key: string; title?: string; pick: TradePick } | null>(null);
   // A saved strategy to backtest by (owner, 13 Oct 2026); null is the settings below.
-  const [strategyId, setStrategyId] = usePersisted<string | null>('signalBacktest.strategy', null);
+  const [strategyId, setStrategyId] = useSynced<string | null>('signalBacktest.strategy', null);
   /*
    * Strategies whose methods and timeframes are ticked for these settings (owner, 13 Oct 2026: "a strategy list
    * beside Methods; choosing one selects its methods"). A shortcut for the two filters, not a rule of its own: the
    * methods and timeframes are what is asked for, and changing either by hand ends it.
    */
-  const [fromStrategies, setFromStrategies] = usePersisted<string[]>('signalBacktest.fromStrategies', []);
+  const [fromStrategies, setFromStrategies] = useSynced<string[]>('signalBacktest.fromStrategies', []);
   const [pickingHours, setPickingHours] = useState(false);
   // Dynamic chosen and its steps not in use yet: the editor is open, the backtest still by what was last used.
   const [dynamicDraft, setDynamicDraft] = useState(false);
   // Open on a desk, folded on a phone to begin with; the choice is remembered on each.
-  const [settingsOpen, setSettingsOpen] = usePersisted<boolean>(`signalBacktest.settingsOpen.${wide ? 'desk' : 'phone'}`, wide);
+  const [settingsOpen, setSettingsOpen] = useSynced<boolean>(`signalBacktest.settingsOpen.${wide ? 'desk' : 'phone'}`, wide);
   // The settings' sections folded to their one line (16 Oct 2026), kept in this browser: none to begin with.
-  const [shut, setShut] = usePersisted<string[]>('signalBacktest.sectionsShut', []);
+  const [shut, setShut] = useSynced<string[]>('signalBacktest.sectionsShut', []);
   const folded = new Set(Array.isArray(shut) ? shut : []);
   const fold = (title: string) => ({ open: !folded.has(title), onToggle: () => setShut(folded.has(title) ? [...folded].filter((x) => x !== title) : [...folded, title]) });
   const pickMethods = (m: string[]) => { setMethods(m); setFromStrategies([]); };
@@ -754,25 +754,25 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
    * portfolios, the saved backtests to tick, and what they come to together. Which is open, and the last run
    * together, are kept in this browser.
    */
-  const [storedMode, setMode] = usePersisted<'single' | 'portfolio'>('signalBacktest.mode', 'single');
+  const [storedMode, setMode] = useSynced<'single' | 'portfolio'>('signalBacktest.mode', 'single');
   /*
    * Every part of the result folds (owner, 17 Oct 2026: "the backtest and the portfolio run's output -- every part
    * expand and collapse"), by its title, kept in this browser: the backtest's and the run's apart, all open to begin with.
    */
-  const [resultFolds, setResultFolds] = usePersisted<FoldState>('signalBacktest.resultFolds', ALL_OPEN);
-  const [runFolds, setRunFolds] = usePersisted<FoldState>('signalBacktest.runFolds', ALL_OPEN);
+  const [resultFolds, setResultFolds] = useSynced<FoldState>('signalBacktest.resultFolds', ALL_OPEN);
+  const [runFolds, setRunFolds] = useSynced<FoldState>('signalBacktest.runFolds', ALL_OPEN);
   // A section kept by an older build that is no longer one (the live check had a tab for a morning) is the single backtest.
   const mode = storedMode === 'portfolio' ? 'portfolio' : 'single';
-  const [together, setTogether] = usePersisted<TogetherRun | null>('signalBacktest.together', null);
+  const [together, setTogether] = useSynced<TogetherRun | null>('signalBacktest.together', null);
   // One account's limit over a run together, or each saved backtest's own (`PortfolioLimit`): one account to begin with.
-  const [limit, setLimit] = usePersisted<PortfolioLimit>('signalBacktest.together.limit', 'shared');
+  const [limit, setLimit] = useSynced<PortfolioLimit>('signalBacktest.together.limit', 'shared');
   // One account's limit: typed here and kept, or (null) the default worked out below.
-  const [capTyped, setCapTyped] = usePersisted<PortfolioCap | null>('signalBacktest.together.cap', null);
+  const [capTyped, setCapTyped] = useSynced<PortfolioCap | null>('signalBacktest.together.cap', null);
   // The hours a run together is held to (owner, 13 Oct 2026: the hours choice, "wanted in the portfolio section"): each saved backtest's own to begin with.
-  const [runHours, setRunHours] = usePersisted<PortfolioHours>('signalBacktest.together.hours', AS_SAVED);
+  const [runHours, setRunHours] = useSynced<PortfolioHours>('signalBacktest.together.hours', AS_SAVED);
   const [pickingRunHours, setPickingRunHours] = useState(false);
   // The other settings a run together can be given, each its own switch (`RunFilters`): all off to begin with.
-  const [runOver, setRunOver] = usePersisted<PortfolioOver>('signalBacktest.together.over', {});
+  const [runOver, setRunOver] = useSynced<PortfolioOver>('signalBacktest.together.over', {});
   // Methods by win % the run's days cannot have (no days before it): not asked of the server, said with its fix.
   const pick = runOver.winPick;
   const pickCheck = pick ? winPickProblem(pick, range) : null;
@@ -781,7 +781,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
     fix: pickCheck.fix ? { label: winPickFixWords(pickCheck.fix, pick), apply: () => setRunOver({ ...runOver, winPick: { ...pick, ...pickCheck.fix } }) } : null,
   } : null;
   // Open on a desk, folded on a phone to begin with, as the Settings panel is; the choice is remembered on each.
-  const [runOpen, setRunOpen] = usePersisted<boolean>(`signalBacktest.runOpen.${wide ? 'desk' : 'phone'}`, wide);
+  const [runOpen, setRunOpen] = useSynced<boolean>(`signalBacktest.runOpen.${wide ? 'desk' : 'phone'}`, wide);
   /*
    * A run started on a phone is shown: its result is under the portfolios and the saved backtests, a screen or two
    * down, and a tap on Run that changed nothing in sight read as a tap that did nothing. Every tap on Run, the one

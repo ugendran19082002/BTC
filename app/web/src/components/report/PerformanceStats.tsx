@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import type { DayRow } from '@/types/report';
 import type { OrderRecord } from '@/types/trade';
 import { signedInr, usdToInr } from '@/lib/format';
@@ -14,7 +14,7 @@ export interface PerformanceStatsProps {
 
 export function PerformanceStats({ rows, orders = [] }: PerformanceStatsProps) {
   const [open, setOpen] = useFold('pnl-stats');
-  const [filter, setFilter] = usePersisted<StatsFilter>('report:stats-filter', 'All Trades');
+  const [filter, setFilter] = useSynced<StatsFilter>('report:stats-filter', 'All Trades');
 
   // Filter orders dynamically based on user choice
   const filteredOrders = useMemo(() => {

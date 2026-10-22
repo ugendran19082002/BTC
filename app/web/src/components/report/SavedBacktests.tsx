@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { WidenCompare } from '@/components/report/WidenCompare';
 import { SavedMethodsPicker } from '@/components/report/SavedMethodsPicker';
 import { WinPickResult } from '@/components/report/WinPickResult';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { ChevronDown, Copy, FolderOpen, Pencil, Search, Trash2 } from 'lucide-react';
 import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, getPortfolioVolStudy, getPortfolioVolStudyTrades, getPortfolioWinSweep, getPortfolioWinSweepTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
@@ -292,7 +292,7 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
 }) {
   const asked = limit === 'shared' ? cap : null;
   const hoursKey = hours.window === 'custom' ? `custom:${hours.hoursFrom}-${hours.hoursTo}` : hours.window;
-  const askKey = `${run.ids.join(',')}|${run.at ?? 0}|${revision}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`;
+  const askKey = `${run.ids.join(',')}|${run.at ?? 0}|${revision}|${range.from}|${range.to}|${limit}|${asked ? `${asked.max}/${asked.ce}/${asked.pe}/${asked.sk ?? 100}/${asked.skf ?? 'next'}` : ''}|${hoursKey}|${new URLSearchParams(overQuery(over))}`;
   // The sweep's question is the run's less its own methods by win %, which the sweep picks at every bar itself: a bar taken over to the run leaves the sweep standing.
   const sweepKey = `${askKey.slice(0, askKey.lastIndexOf('|'))}|${new URLSearchParams(overQuery({ ...over, winPick: undefined }))}`;
   // As the single backtest: asked once the run's settings stand still a moment -- each saved backtest in it is a whole backtest.
@@ -435,15 +435,15 @@ export function SavedBacktests({ mode = 'single', current, wordsOf, onLoad, run,
    * Groups fold, and a group can be renamed (or emptied out) in one go.
    */
   const [search, setSearch] = useState('');
-  const [sort, setSort] = usePersisted<Sort>('savedBacktests.sort', 'name');
-  const [groupPick, setGroupPick] = usePersisted<GroupPick>('savedBacktests.group', ALL);
-  const [closedGroups, setClosedGroups] = usePersisted<string[]>('savedBacktests.closedGroups', []);
+  const [sort, setSort] = useSynced<Sort>('savedBacktests.sort', 'name');
+  const [groupPick, setGroupPick] = useSynced<GroupPick>('savedBacktests.group', ALL);
+  const [closedGroups, setClosedGroups] = useSynced<string[]>('savedBacktests.closedGroups', []);
   const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
   /*
    * On a phone the saved list folds to one line (owner, 14 Oct 2026: "the backtest screen, user friendly"): eight
    * saved backtests were 1,200px between the settings and the result. Kept as last left, in this browser.
    */
-  const [listOpen, setListOpen] = usePersisted<boolean>('savedBacktests.listOpen.phone', false);
+  const [listOpen, setListOpen] = useSynced<boolean>('savedBacktests.listOpen.phone', false);
   const listShown = wide || listOpen;
   const setRun = onRun;
   const now = Date.now();

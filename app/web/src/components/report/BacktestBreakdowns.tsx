@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { pct } from '@/lib/format';
 import { moneyText, ptsText } from '@/lib/market-report';
 import type { PairStat } from '@/lib/method-pairs';
@@ -169,7 +169,7 @@ export function BacktestBreakdowns({ total: t, b, wide, idPrefix, sessions, expi
   /** The perp levels three ways (`WidenCompare`), where widening is on: the caller's, as it knows how to ask again. */
   widen?: ReactNode;
 }) {
-  const [grouping, setGrouping] = usePersisted<'kind' | 'family'>('signalBacktest.grouping', 'family');
+  const [grouping, setGrouping] = useSynced<'kind' | 'family'>('signalBacktest.grouping', 'family');
   const sl = t.exits['perp-sl'], tg = t.exits['perp-tgt'];
   const best = b.pairs.filter((p) => p.n > 0 && p.net > 0).map(pairOf);
   const worst = b.pairs.filter((p) => p.n > 0 && p.net < 0).map(pairOf).sort((x, y) => x.net - y.net || y.trades - x.trades);

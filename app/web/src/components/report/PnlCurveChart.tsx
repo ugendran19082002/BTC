@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import type { DayRow } from '@/types/report';
 import type { TradeStatus } from '@/types/trade';
 import { usdToInr } from '@/lib/format';
@@ -22,8 +22,8 @@ interface CurvePoint {
 
 export function PnlCurveChart({ rows, status }: PnlCurveChartProps) {
   const [open, setOpen] = useFold('pnl-curve');
-  const [viewMode, setViewMode] = usePersisted<'Cumulative' | 'Daily' | 'Weekly' | 'Monthly'>('report:curve-view', 'Cumulative');
-  const [metricType, setMetricType] = usePersisted<'P&L' | '% Return'>('report:curve-metric', 'P&L');
+  const [viewMode, setViewMode] = useSynced<'Cumulative' | 'Daily' | 'Weekly' | 'Monthly'>('report:curve-view', 'Cumulative');
+  const [metricType, setMetricType] = useSynced<'P&L' | '% Return'>('report:curve-metric', 'P&L');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const balanceInr = status?.balanceUsd ? (usdToInr(status.balanceUsd) ?? 0) : 0;

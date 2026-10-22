@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { count, netClass } from '@/components/report/backtest-parts';
 import { moneyText } from '@/lib/market-report';
 import { pct } from '@/lib/format';
@@ -51,7 +51,7 @@ export function SessionTable({ rows, onOpen }: {
   /** Open the trades of a session -- or of one method in it -- one by one. */
   onOpen: (pick: TradePick, title: string) => void;
 }) {
-  const [minutes, setMinutes] = usePersisted<number>('backtest.sessionMinutes', 60);
+  const [minutes, setMinutes] = useSynced<number>('backtest.sessionMinutes', 60);
   const len = (SESSION_LENGTHS as readonly number[]).includes(minutes) ? minutes : 60;
   const [open, setOpen] = useState<number | null>(null);
   const sessions = sessionsOf(rows, len);

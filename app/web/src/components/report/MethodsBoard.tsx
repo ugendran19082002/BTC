@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { getBacktestPortfolio, saveBacktest } from '@/api/backtest-saves';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
@@ -49,7 +49,7 @@ export function MethodsBoard({ saves, onChanged, now = Date.now() }: {
   now?: number;
 }) {
   // The same days as each one's method picker: what it is picked on is what is shown here.
-  const [period, setPeriod] = usePersisted<Period>('savedMethods.period', '14');
+  const [period, setPeriod] = useSynced<Period>('savedMethods.period', '14');
   const days = PERIODS.find((p) => p.key === period)?.days ?? 14;
   const range = periodRange(days, now);
   const bySettings = saves.filter((s) => s.query.strategy === null);

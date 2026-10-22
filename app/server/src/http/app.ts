@@ -7,6 +7,7 @@ import { tradingService } from '../trading/service.js';
 import { registerDeskRoutes } from './routes/desk.routes.js';
 import { registerTradeRoutes } from './routes/trade.routes.js';
 import { registerErrorRoutes } from './routes/errors.routes.js';
+import { registerUiSettingsRoutes } from './routes/ui-settings.routes.js';
 import { registerStrategyRoutes } from './routes/strategy.routes.js';
 import { registerReportRoutes } from './routes/report.routes.js';
 import { registerMarketRoutes } from './routes/market.routes.js';
@@ -231,6 +232,7 @@ export async function buildApp(o: {
   registerDeskRoutes(app);
   registerTradeRoutes(app);
   registerErrorRoutes(app);
+  registerUiSettingsRoutes(app);
   registerStrategyRoutes(app);
   registerReportRoutes(app);
   registerMarketRoutes(app);

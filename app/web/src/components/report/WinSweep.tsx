@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from 'react';
 import { Loader2 } from 'lucide-react';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
@@ -188,7 +188,7 @@ export function WinSweep({ scope, askKey, read, readTrades, run, members, onUse,
   onUse?: (w: WinPick) => void;
   wide?: boolean;
 }) {
-  const [stored, setStored] = usePersisted<SweepDraft>(`signalBacktest.winSweep.${scope}`, SWEEP_DEFAULT);
+  const [stored, setStored] = useSynced<SweepDraft>(`signalBacktest.winSweep.${scope}`, SWEEP_DEFAULT);
   const d: SweepDraft = { ...SWEEP_DEFAULT, ...stored };
   // Picked on days the run is not on, to begin with -- an honest test; the same days are a tap away, and said for what they are.
   const pick: WinPick = d.pick ?? winPickFor(run);

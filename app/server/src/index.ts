@@ -13,6 +13,7 @@ import { liveChain } from './market/chain.js';
 import { readMarket } from './market/moves.js';
 import { marketSchema } from './market/oi-history.js';
 import { errorLog } from './observability/errors.js';
+import { uiSettings } from './ui/settings.js';
 import { deskLog, hasDeskLog, setDeskLog } from './observability/desk-log.js';
 import { takeDeskLock } from './db/desk-lock.js';
 import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-snapshots.js';
@@ -80,6 +81,8 @@ const desk = await initTradingService();
 // the table missing. Every ledger entry is on `/api/health` before `listen`.
 await marketSchema();
 await errorLog().ready;
+// The screen's own choices, kept by the desk (ui/settings.ts).
+await uiSettings().ready;
 await optionSnapshotsSchema();
 await flowSchema();
 // These five were migrated on their first write until 30 Sep 2026, so a fresh

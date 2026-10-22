@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { dayLabel, expiryDayOf, rangeOf, type RangeKey } from '@/lib/market-report';
 import { daysIn } from '@/lib/custom-range';
 import { Segmented } from '@/components/mobile/parts';
@@ -23,8 +23,8 @@ const OPTIONS: { key: Choice; label: string; spoken: string }[] = [
 const MAX_DAYS = 190;
 
 export function useExpiryRange(prefix: string, now: number): { range: { from: string; to: string }; control: ReactNode } {
-  const [stored, setChoice] = usePersisted<Choice>(`${prefix}.range`, 'all');
-  const [custom, setCustom] = usePersisted<{ from: string; to: string } | null>(`${prefix}.custom`, null);
+  const [stored, setChoice] = useSynced<Choice>(`${prefix}.range`, 'all');
+  const [custom, setCustom] = useSynced<{ from: string; to: string } | null>(`${prefix}.custom`, null);
   const [picking, setPicking] = useState(false);
   const today = expiryDayOf(now);
   // A custom choice with no range kept (an older build, cleared storage) is "since 1 Oct".

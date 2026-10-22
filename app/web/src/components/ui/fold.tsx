@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { cn } from '@/lib/utils';
 
 /**
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
  * visible: a folded card that hides its name is a card you cannot find again.
  */
 export function useFold(id: string, defaultOpen = true) {
-  return usePersisted<boolean>(`open:${id}`, defaultOpen);
+  return useSynced<boolean>(`open:${id}`, defaultOpen);
 }
 
 /** The chevron that folds a card: down when open, sideways when folded. Named for a screen reader. */

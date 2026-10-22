@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { getMarketBreakdown, getMarketReport } from '@/api/market-report';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { pct } from '@/lib/format';
 import {
   dayLabel, exitLines, netText, num, pairOf, ptsText, sparkOf, timeIst, toneOf, winRate,
@@ -300,7 +300,7 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
   wide?: boolean;
 }) {
   const expiry = useExpiryRange('marketReport', now);
-  const [source, setSource] = usePersisted<Source>('marketReport.source', 'real');
+  const [source, setSource] = useSynced<Source>('marketReport.source', 'real');
   const [allDays, setAllDays] = useState(false);
   const range = expiry.range;
   // The answer is kept with what was asked: the days of the range before are greyed while the new one is read.

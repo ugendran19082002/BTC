@@ -2,7 +2,7 @@ import * as React from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 
 /**
  * A card whose body folds away, remembered per card.
@@ -43,7 +43,7 @@ export function CollapsibleCard({
   rightInline?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = usePersisted<boolean>(`open:${id}`, defaultOpen);
+  const [open, setOpen] = useSynced<boolean>(`open:${id}`, defaultOpen);
 
   return (
     <Collapsible.Root

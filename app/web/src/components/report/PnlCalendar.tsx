@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import type { DayRow } from '@/types/report';
 import { byDay, heat, monthsOf, netOf } from '@/lib/report';
 import { inr, signedInr, signedUsd, usdToInr } from '@/lib/format';
@@ -34,7 +34,7 @@ export function PnlCalendar({
   selected,
   onSelect,
 }: PnlCalendarProps) {
-  const [viewMode, setViewMode] = usePersisted<'detailed' | 'compact'>('report:calendar-view', 'detailed');
+  const [viewMode, setViewMode] = useSynced<'detailed' | 'compact'>('report:calendar-view', 'detailed');
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 

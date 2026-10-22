@@ -4,7 +4,7 @@ import { Download, RefreshCw } from 'lucide-react';
 import { daysCsvUrl, getDays, getMtm } from '@/api/report';
 import { getOrderHistory, getShownStatus } from '@/api/trade';
 import { usePoll } from '@/hooks/usePoll';
-import { usePersisted } from '@/hooks/usePersisted';
+import { useSynced } from '@/hooks/useSynced';
 import { Switch } from '@/components/ui/switch';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { DayPicker } from '@/components/ui/day-picker';
@@ -34,9 +34,9 @@ import './pnl-dashboard.css';
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function ReportPanel() {
-  const [from, setFrom] = usePersisted('report:from', daysAgoIst(90));
-  const [to, setTo] = usePersisted('report:to', todayIst());
-  const [includeCharges, setIncludeCharges] = usePersisted('report:charges', true);
+  const [from, setFrom] = useSynced('report:from', daysAgoIst(90));
+  const [to, setTo] = useSynced('report:to', todayIst());
+  const [includeCharges, setIncludeCharges] = useSynced('report:charges', true);
   const [day, setDay] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
