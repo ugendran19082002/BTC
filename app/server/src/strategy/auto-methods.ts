@@ -63,12 +63,22 @@ export { pickMethods };
 /** Today's run time, epoch ms: the IST date of `now` at `at`. */
 const runTimeOn = (now: number, at: string) => Date.parse(`${new Date(now + IST_MS).toISOString().slice(0, 10)}T${at}:00+05:30`);
 
-/** Whether a strategy's update is due: on, today's time passed, and not run since it. Once a day, caught up after a restart. */
+/**
+ * Whether a strategy's update is due: on, its time passed, and not run since. Once a day, caught up after a restart --
+ * and across midnight (22 Oct 2026): a run due at 23:30 that the desk was down for was never made, since after midnight
+ * "today's" time was the next one. The time due is the last one at or before now, today's or yesterday's; yesterday's
+ * is caught up only where the update was running -- it ran the day before -- so switching it on in the morning waits
+ * for its own time, as it always did.
+ */
 export function autoDue(s: Pick<Strategy, 'config'>, now: number): boolean {
   const a = s.config.trigger === 'signal' ? s.config.signal?.autoMethods : null;
   if (!a?.on) return false;
-  const when = runTimeOn(now, a.at);
-  return Number.isFinite(when) && now >= when && !((a.last?.at ?? 0) >= when);
+  const today = runTimeOn(now, a.at);
+  if (!Number.isFinite(today)) return false;
+  const due = now >= today ? today : today - DAY_MS;
+  const last = a.last?.at ?? 0;
+  if (last >= due) return false;
+  return due === today || last >= due - DAY_MS;
 }
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
@@ -138,7 +148,17 @@ export async function runAutoMethods(now: number, d: AutoDeps): Promise<string[]
     }
     const fresh = await d.get(s.id);
     const rule = fresh?.config.signal;
-    if (!fresh || !rule?.autoMethods?.on) continue;
+    // Every run leaves its row (22 Oct 2026: a strategy switched off, or deleted, while its record was worked left none,
+    // and its card said nothing of the evening). Nothing written to it: it is not the strategy's to change any more.
+    const worked = run.records ?? [];
+    const asked = run.before;
+    const skipped = (note: string) => d.log({
+      at: now, strategyId: s.id, strategyName: (fresh ?? s).name, accountId: (fresh ?? s).accountId ?? null, source: 'daily',
+      tf: tfLabel(s.config.signal!), rule: { winPct: a.winPct, minTrades: a.minTrades, days: a.days }, from: run.from, to: run.to,
+      before: asked, after: asked, records: worked, note,
+    }).catch((e: Error) => d.warn(`methods' daily update for ${s.name}: not logged: ${e.message}`));
+    if (!fresh) { await skipped('The strategy was deleted while its record was worked out: nothing was written.'); continue; }
+    if (!rule?.autoMethods?.on) { await skipped('The daily update was switched off while its record was worked out: the list was left as it was.'); continue; }
     // The list as it stands now is the one replaced (a save from the form may have come in the meantime); kept, it
     // stays -- less what is excluded now, unless that would empty it.
     const before = rule.methods;
@@ -148,7 +168,11 @@ export async function runAutoMethods(now: number, d: AutoDeps): Promise<string[]
     run = { ...brief, before, picked: after };
     const config: StrategyConfig = { ...fresh.config, signal: { ...rule, methods: after, autoMethods: { ...rule.autoMethods, last: run } } };
     const problems = validateConfig(config);
-    if (problems.length) { d.warn(`methods' daily update for ${s.name} not saved: ${problems.join(' ')}`); continue; }
+    if (problems.length) {
+      d.warn(`methods' daily update for ${s.name} not saved: ${problems.join(' ')}`);
+      await skipped(`Not saved -- the strategy's settings would not be accepted with it: ${problems.join(' ')} The list was left as it was.`);
+      continue;
+    }
     await d.save({ ...fresh, config });
     done.push(s.id);
     await d.log({

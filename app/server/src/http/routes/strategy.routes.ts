@@ -549,7 +549,10 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (problems.length) return refuse(reply, 422, { error: problems.join(' '), problems });
 
     const s = strategyStore();
-    const id = b.id ? String(b.id) : idFrom(name);
+    // A new one by its name -- unless that name was a deleted strategy's, whose record is still kept (`idTaken`):
+    // then a number after it, so the new one starts with no past of another's.
+    const named = b.id ? String(b.id) : idFrom(name);
+    const id = b.id || await s.get(named) ? named : await freshStrategyId(s, named);
     // Arming and saving are separate acts. A new strategy is never born armed.
     const existing = await s.get(id);
     const enabled = existing ? existing.enabled : false;
@@ -627,9 +630,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     // A name already taken gets a number rather than silently overwriting the
     // strategy it collides with: a copy that eats its own source is the worst
     // possible reading of "clone".
-    const wanted = b.id ? String(b.id) : idFrom(name);
-    let newId = wanted;
-    for (let n = 2; await s.get(newId); n++) newId = `${wanted}-${n}`.slice(0, 48);
+    const newId = await freshStrategyId(s, b.id ? String(b.id) : idFrom(name));
 
     return {
       ok: true,
@@ -639,7 +640,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        */
       strategy: await s.save({
         id: newId, name, enabled: false, accountId: from.accountId ?? null, groupId: from.groupId ?? null,
-        config: from.config.trigger === 'signal' ? { ...from.config, liveOrders: false } : from.config,
+        config: copiedConfig(from.config),
       }),
     };
   });
@@ -880,12 +881,10 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const copies: Strategy[] = [];
     for (const x of (await s.all()).filter((y) => y.groupId === from.id)) {
       const copyName = sameAccount ? `${x.name} copy` : x.name;
-      const wanted = idFrom(copyName);
-      let newId = wanted;
-      for (let n = 2; await s.get(newId); n++) newId = `${wanted}-${n}`.slice(0, 48);
+      const newId = await freshStrategyId(s, idFrom(copyName));
       copies.push(await s.save({
         id: newId, name: copyName, enabled: false, accountId: acct.accountId, groupId: group.id,
-        config: x.config.trigger === 'signal' ? { ...x.config, liveOrders: false } : x.config,
+        config: copiedConfig(x.config),
       }));
     }
     return { ok: true, group: named(group), strategies: copies };
@@ -1056,4 +1055,24 @@ function busiestOf(open: readonly { plan: { symbol: string } }[]): { symbol: str
   let top: { symbol: string; open: number } | null = null;
   for (const [symbol, n] of by) if (!top || n > top.open) top = { symbol, open: n };
   return top;
+}
+
+/** An id no strategy has had -- live or deleted with its record kept (`idTaken`) -- from the one wanted, a number after it. */
+async function freshStrategyId(s: { idTaken: (id: string) => Promise<boolean> }, wanted: string): Promise<string> {
+  let id = wanted;
+  for (let n = 2; await s.idTaken(id); n++) id = `${wanted}-${n}`.slice(0, 48);
+  return id;
+}
+
+/**
+ * A strategy's settings as a copy takes them: live orders off (2 Oct 2026: a copy is a draft, looked at before it trades),
+ * and its methods' daily update without the original's last run (22 Oct 2026) -- carried over, the copy read as updated
+ * already that day and was not, and showed the original's update as its own.
+ */
+function copiedConfig(c: StrategyConfig): StrategyConfig {
+  if (c.trigger !== 'signal') return c;
+  const sig = c.signal;
+  const auto = sig?.autoMethods;
+  const { last: _last, ...fresh } = auto ?? {};
+  return { ...c, liveOrders: false, ...(sig ? { signal: { ...sig, ...(auto ? { autoMethods: fresh as typeof auto } : {}) } } : {}) };
 }

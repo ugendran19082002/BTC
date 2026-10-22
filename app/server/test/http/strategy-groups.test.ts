@@ -336,3 +336,38 @@ test('[critical] a group removed with its strategies: all of them, only when eve
   assert.deepEqual([alone.body.ungrouped, alone.body.deleted], [1, 0]);
   assert.equal((await list()).strategies.find((x: any) => x.id === 'kept-one').groupId, null);
 });
+
+test('[critical] 22 Oct 2026: a copy does not carry the original\'s last daily update -- it is due on its own -- and a deleted strategy\'s id, with its record, is never taken by a new one', async () => {
+  const s = strategyStore();
+  // A strategy whose methods' daily update ran this evening.
+  const last = { at: Date.now() - 60_000, from: '2026-10-14', to: '2026-10-21', picked: ['breakout'], before: ['bos'] };
+  await s.save({
+    id: 'auto-src', name: 'Auto src', enabled: false, accountId: main(), groupId: null,
+    config: { ...(config as never), signal: { ...config.signal, autoMethods: { on: true, at: '21:00', winPct: 75, minTrades: 3, days: 7, last } } } as never,
+  });
+  const copy = await api('POST', '/api/strategies/auto-src/clone', { name: 'Auto copy' });
+  assert.equal(copy.status, 200, JSON.stringify(copy.body));
+  const auto = copy.body.strategy.config.signal.autoMethods;
+  assert.equal(auto.on, true, 'the update itself is copied');
+  assert.equal(auto.last, undefined, 'its last run is not');
+  assert.equal(copy.body.strategy.config.liveOrders, false);
+  assert.deepEqual((await s.get('auto-src'))!.config.signal!.autoMethods!.last, last, 'the original keeps its own');
+
+  // A strategy with a record, deleted; a new one under the same name takes a fresh id, not the record.
+  assert.equal((await api('POST', '/api/strategies', { name: 'Reborn', config })).body.strategy?.id ?? (await s.get('reborn'))?.id, 'reborn');
+  await s.logMethodUpdate({
+    at: Date.now(), strategyId: 'reborn', strategyName: 'Reborn', accountId: main(), source: 'daily', tf: '5m',
+    rule: { winPct: 75, minTrades: 3, days: 7 }, from: '2026-10-14', to: '2026-10-21', before: ['bos'], after: ['breakout'], records: [], note: null,
+  });
+  assert.equal((await api('DELETE', '/api/strategies/reborn')).status, 200);
+  const again = await api('POST', '/api/strategies', { name: 'Reborn', config });
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  const ids = (await s.all()).filter((x) => x.name === 'Reborn').map((x) => x.id);
+  assert.deepEqual(ids, ['reborn-2'], 'a number after it: the deleted one\'s record stays its own');
+  // A name with no past keeps its plain id; and saving an existing one by its name still saves that one.
+  await api('POST', '/api/strategies', { name: 'Brand new', config });
+  assert.ok(await s.get('brand-new'));
+  await api('POST', '/api/strategies', { name: 'Brand new', config: { ...config, lots: 2 } });
+  assert.equal((await s.get('brand-new'))!.config.lots, 2);
+  assert.equal((await s.all()).filter((x) => x.name === 'Brand new').length, 1);
+});

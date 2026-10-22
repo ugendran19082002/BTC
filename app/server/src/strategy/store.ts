@@ -538,6 +538,23 @@ export class StrategyStore {
   }
 
   /**
+   * Whether an id is anyone's: a strategy now, or one deleted whose record is still kept -- its runs, its signals, its
+   * method updates, its trades (22 Oct 2026: a strategy made under the name of a deleted one took its id, and the
+   * deleted one's 30 days of signals and updates read as the new one's). A new strategy never takes an id with a past.
+   */
+  async idTaken(id: string): Promise<boolean> {
+    const r = await one<{ taken: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM strategies WHERE id = $1)
+           OR EXISTS (SELECT 1 FROM strategy_signal_runs WHERE strategy_id = $1)
+           OR EXISTS (SELECT 1 FROM strategy_runs WHERE strategy_id = $1)
+           OR EXISTS (SELECT 1 FROM strategy_method_updates WHERE strategy_id = $1)
+           OR EXISTS (SELECT 1 FROM trades WHERE plan->>'strategyId' = $1) AS taken`,
+      [id],
+    );
+    return r?.taken === true;
+  }
+
+  /**
    * `accountId`: the broker account a new strategy belongs to. Written when it is made; a saved one keeps its own.
    * `groupId` likewise: the group a new one is made in. A saved one keeps its group -- it is moved by `setGroup`.
    */

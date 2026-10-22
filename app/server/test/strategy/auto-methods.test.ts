@@ -237,3 +237,53 @@ test('[critical] the walk honours Exclude, as the daily update does', () => {
   assert.ok(w.days.every((d) => !d.picked.includes('a')), 'never picked, and out of the list it starts from');
   assert.equal(w.rule.excluded, 1);
 });
+
+test('[critical] 22 Oct 2026: a run due late in the evening that the desk was down for is caught up after midnight -- where the update was running; switched on in the morning, it waits for its time', () => {
+  const s = (last: number | null) => strategy('x', signal(['a'], { at: '23:30', last: last === null ? null : { at: last, from: '', to: '', picked: [], before: [] } }));
+  // Ran on the 15th at 23:30; the desk was down from 23:00 on the 16th until 00:20 on the 17th.
+  assert.equal(autoDue(s(IST('2026-10-15T23:30:20')), IST('2026-10-17T00:20:00')), true, 'the 16th\'s run, caught up');
+  assert.equal(autoDue(s(IST('2026-10-17T00:20:30')), IST('2026-10-17T00:21:00')), false, 'and once only');
+  assert.equal(autoDue(s(IST('2026-10-17T00:20:30')), IST('2026-10-17T23:30:00')), true, 'the 17th\'s at its own time');
+  // Never run: switched on at 10 AM, its first run is tonight's, not last night's.
+  assert.equal(autoDue(s(null), IST('2026-10-17T10:00:00')), false);
+  // Off for a week, switched on again in the morning: last night's is not caught up either -- it was not running.
+  assert.equal(autoDue(s(IST('2026-10-09T23:30:20')), IST('2026-10-17T10:00:00')), false);
+});
+
+test('[critical] 22 Oct 2026: every run leaves its row -- switched off, deleted, or not accepted while its record was worked out', async () => {
+  const now = IST('2026-10-16T21:00:10');
+  const make = () => new Map<string, Strategy>([
+    ['gone', strategy('gone', signal(['breakout']))],
+    ['off', strategy('off', signal(['breakout']))],
+    ['bad', strategy('bad', signal(['bos']))],
+  ]);
+  const db = make();
+  const logged: Parameters<AutoDeps['log']>[0][] = [];
+  const d: AutoDeps = {
+    log: async (u) => { logged.push(u); },
+    all: async () => [...db.values()],
+    // Meanwhile: 'gone' deleted, 'off' switched off.
+    get: async (id) => {
+      if (id === 'gone') return null;
+      const s = db.get(id)!;
+      if (id === 'bad') return s;
+      return { ...s, config: { ...s.config, signal: { ...s.config.signal!, autoMethods: { ...s.config.signal!.autoMethods!, on: false } } } };
+    },
+    save: async () => assert.fail('nothing is written'),
+    // For 'bad', a method no longer in the catalogue: its settings would not be accepted with it.
+    pick: async (c, _a, at) => c.signal!.methods.includes('bos')
+      ? { at, from: '2026-10-10', to: '2026-10-16', picked: ['no-such-method'], before: ['bos'], records: [] }
+      : { at, from: '2026-10-10', to: '2026-10-16', picked: ['momentum'], before: ['breakout'], records: [{ method: 'momentum', trades: 5, wins: 5, net: 0.4 }] },
+    warn: () => {},
+  };
+  assert.deepEqual(await runAutoMethods(now, d), []);
+  assert.deepEqual(logged.slice(0, 2).map((u) => [u.strategyId, u.before, u.after, u.note]), [
+    ['gone', ['breakout'], ['breakout'], 'The strategy was deleted while its record was worked out: nothing was written.'],
+    ['off', ['breakout'], ['breakout'], 'The daily update was switched off while its record was worked out: the list was left as it was.'],
+  ]);
+  const bad = logged.find((u) => u.strategyId === 'bad');
+  assert.ok(bad, logged.map((u) => u.strategyId).join(','));
+  assert.deepEqual([bad!.before, bad!.after], [['bos'], ['bos']]);
+  assert.match(bad!.note!, /^Not saved -- the strategy's settings would not be accepted with it: .*No such method.* The list was left as it was\.$/);
+  assert.deepEqual(logged[0]!.records, [{ method: 'momentum', trades: 5, wins: 5, net: 0.4 }], 'and the record it was worked on');
+});
