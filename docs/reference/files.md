@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-553 files listed, 297 test files counted below, images and lockfiles left out.
+554 files listed, 298 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 151 |
+| `app/server` | 152 |
 | `app/web` | 146 |
 
 ## `(root)`
@@ -182,6 +182,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [perp-minute.ts](../../app/server/src/market/perp-minute.ts) | The BTC perp's price in each of these minutes (epoch ms, on the minute): its average traded price over the minute (`trade_flow_1m.vwap`, the tape), else its mark at the minute (`index_1m.mark`). |
 | [price-change.ts](../../app/server/src/market/price-change.ts) | BTC now against then: how far the price has moved over each window back, and since the desk's own marks -- the first entry of the open positions, and the contract's day start (the previous 17:30 IS... |
 | [shock-now.ts](../../app/server/src/market/shock-now.ts) | One sudden-move reading from a live board, assembled the way the live screen assembles it, from parts the chain route already holds. |
+| [venue-time.ts](../../app/server/src/market/venue-time.ts) | When Delta's own reading was taken, not when it reached the desk (22 Oct 2026). |
 
 ## `app/server/src/notify/`
 

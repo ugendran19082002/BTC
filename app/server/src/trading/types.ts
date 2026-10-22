@@ -389,6 +389,8 @@ export type TradeEvent =
        * close, and on events written before.
        */
       via?: 'watch' | 'loop';
+      /** How old the quote the stop was judged on was, by Delta's own time (`market/venue-time.ts`), in ms. */
+      quoteAgeMs?: number;
       at: number;
     }
   /** `reason`: the exchange's own, where it cancelled the order itself (Delta's `cancellation_reason`). */

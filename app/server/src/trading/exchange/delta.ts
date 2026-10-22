@@ -7,6 +7,7 @@ import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, VenueRest
 import { FULL_HOLD_MS, REDUCE_ONLY_HOLD_MS, noteContractFull, noteReduceOnly } from '../contract-restrictions.js';
 import type { ExchangeFill } from './port.js';
 import { noteError } from '../../observability/errors.js';
+import { uncached, venueAt } from '../../market/venue-time.js';
 
 /** A read's timeout, and how many times it is tried. See `call`. */
 const READ_TIMEOUT_MS = 8_000;
@@ -144,6 +145,8 @@ type DeltaProduct = {
 
 type DeltaTicker = {
   symbol: string;
+  /** When Delta took the reading, microseconds. */
+  timestamp?: number | null;
   mark_price?: string | null;
   quotes?: {
     best_bid?: string | null; best_ask?: string | null;
@@ -852,7 +855,8 @@ export class DeltaExchange implements ExchangePort {
   /** The ticker is public, but it is fetched here so the port has one home. */
   async getQuote(symbol: string): Promise<Quote | null> {
     const t = await this.call<DeltaTicker>({
-      method: 'GET', path: `/v2/tickers/${encodeURIComponent(symbol)}`,
+      // Past the CDN's five seconds (market/venue-time.ts): this is the quote a stop is judged on.
+      method: 'GET', path: `/v2/tickers/${encodeURIComponent(symbol)}`, query: `?${uncached()}`,
     }).catch(() => null);
     if (!t) return null;
     return {
@@ -862,10 +866,9 @@ export class DeltaExchange implements ExchangePort {
       bidSize: num(t.quotes?.bid_size ?? null),
       askSize: num(t.quotes?.ask_size ?? null),
       mark: num(t.mark_price ?? null),
-      // The REST ticker has no timestamp of its own, so the moment we received
-      // it is the only honest answer. It also means the staleness gate measures
-      // our own polling gap, which is the thing that actually goes wrong.
-      ts: Date.now(),
+      // When Delta took it, not when it arrived (22 Oct 2026): the staleness gate then measures the quote's own age --
+      // a cached or lagging one included -- and not only the desk's polling gap.
+      ts: venueAt(t.timestamp, Date.now()),
     };
   }
 }

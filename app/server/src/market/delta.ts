@@ -7,6 +7,7 @@
  */
 
 import { TickerSocket, type FeedHealth } from './delta-socket.js';
+import { uncached, venueAt } from './venue-time.js';
 
 const BASE = 'https://api.india.delta.exchange/v2';
 
@@ -14,6 +15,8 @@ export type Candle = { time: number; open: number; high: number; low: number; cl
 
 export type Ticker = {
   symbol: string;
+  /** When Delta took the board, microseconds: one value for every contract of a reading. */
+  timestamp?: number | null;
   contract_type: string;
   underlying_asset_symbol: string;
   strike_price: string;
@@ -111,10 +114,13 @@ async function fetchTickersFresh(): Promise<Ticker[]> {
   if (tickerInflight) return tickerInflight;
   tickerInflight = (async () => {
     try {
-      const r = await req<Ticker[]>('/tickers?contract_types=call_options,put_options');
+      // Past the CDN's five seconds, and stamped with Delta's own snapshot time (market/venue-time.ts): this is the
+      // board the stop watch judges freshness by while the socket is quiet.
+      const r = await req<Ticker[]>(`/tickers?contract_types=call_options,put_options&${uncached()}`);
       const data = (r ?? []).filter((t) => t.underlying_asset_symbol === 'BTC');
       if (data.length > 0) {
-        tickerCache = { at: Date.now(), data };
+        const newest = data.reduce((m, t) => Math.max(m, Number(t.timestamp ?? 0)), 0);
+        tickerCache = { at: venueAt(newest || null, Date.now()), data };
         // The full list is the truth about which contracts exist; the socket
         // carries on from it.
         tickerSocket?.seed(data);

@@ -2447,7 +2447,7 @@ export class TradeEngine {
 
     // An exit that happens beats a better price that might not -- but not at any price: the close is a buy limit
     // through the offer it was judged on (`closeLimitFor`), and what it cannot fill is sent again at the market.
-    await this.closeNowInner(id, why, undefined, ask, via);
+    await this.closeNowInner(id, why, undefined, ask, via, Math.max(0, this.now() - quote.ts));
     return await this.d.store.get(id) ?? rec;
   }
 
@@ -2576,7 +2576,7 @@ export class TradeEngine {
    * over what is left; that path is the one the desk already trusts after
    * every add.
    */
-  private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number, offer?: number, via?: 'watch' | 'loop'): Promise<TradeState | null> {
+  private async closeNowInner(tradeId: string, reason = 'manual exit', want?: number, offer?: number, via?: 'watch' | 'loop', quoteAgeMs?: number): Promise<TradeState | null> {
     let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     // Size from the exchange, not from memory: someone may have closed part of
@@ -2623,6 +2623,7 @@ export class TradeEngine {
       closing: { clientOrderId: cid, size, heldBefore: held, all, submittedAt: this.now() },
       reason,
       ...(via ? { via } : {}),
+      ...(quoteAgeMs !== undefined ? { quoteAgeMs: Math.round(quoteAgeMs) } : {}),
       at: this.now(),
     });
     try {
