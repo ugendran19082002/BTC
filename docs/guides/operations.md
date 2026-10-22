@@ -94,6 +94,10 @@ each table holds: [reference/database.md](../reference/database.md).
    (1024) in all:
    `docker compose -f deploy/docker-compose.yml exec api ls -l /srv/logs`,
    `docker compose -f deploy/docker-compose.yml exec api tail -f /srv/logs/api-$(TZ=Asia/Kolkata date +%F).log`.
+   Once a minute (since 22 Oct 2026, `observability/minute-log.ts`) a line says how the thread held up: `minute
+   07:08: loop p99 3.5 ms, worst 68.5 ms; 1 hold of 250 ms or more (07:08:02.10 449 ms); signals read 358 ms, worked
+   286 ms in their own thread (4 ms on this one)`. `grep '"msg":"minute' ` the day's file for them; a hold beside a
+   stop that was late, or a "worked ... on this thread" (the signals' thread could not answer), is where to look.
 4. For a trade: its `trade_events`, in order. For a strategy: `strategy_runs`
    ([features/strategies.md](../features/strategies.md#why-a-strategy-is-refused)).
 5. **Which process is trading** (since 22 Oct 2026, `db/desk-lock.ts`). One process at a time holds the desk lock

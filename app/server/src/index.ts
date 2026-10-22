@@ -32,7 +32,8 @@ import { noteError } from './observability/errors.js';
 import { entryRecord, entrySchema, gradeSetups, onSetupFilled, recordSetups } from './entry/paper.js';
 import { gatesSchema } from './entry/gates.js';
 import { alertSettings, alertsSchema, sendEntryAlert, wanted } from './entry/alerts.js';
-import { allReads } from './entry/engine.js';
+import { readsOf, useReadsThread } from './entry/reads-run.js';
+import { startMinuteLog } from './observability/minute-log.js';
 import { telegramLogSchema } from './notify/telegram-log.js';
 import { pruneSignals, recordSignals, signalsSchema } from './entry/signals.js';
 import { methodsSchema } from './entry/catalogue.js';
@@ -98,6 +99,8 @@ const app = await buildApp({ auth });
 // The trading services were made before the app: their lines reach its log -- stdout and the day's file -- from here.
 setDeskLog((level, fields, msg) => app.log[level](fields, msg));
 app.log.info({ deskLock: 'held' }, 'desk lock held: this process is the one desk trading (db/desk-lock.ts)');
+// The thread, a minute at a time, in the day's file: its timers' lateness, each hold over a quarter second, the signals' time.
+startMinuteLog({ log: (msg, fields) => app.log.info(fields, msg) });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 
 app.log.info(`chain snapshots loaded: ${loadDays().length}`);
@@ -213,6 +216,8 @@ setTimeout(recordBoardNow, 25_000).unref();
  */
 // The backtest itself is worked in a thread of its own (report/backtest-run.ts): nothing it does can hold up a look at a stop.
 useBacktestThread((message) => noteError({ source: 'server', level: 'warn', where: 'signal-backtest', message }));
+// And the minute's signals in a thread of their own (entry/reads-run.ts): every method on every timeframe held this one.
+useReadsThread((message) => noteError({ source: 'server', level: 'warn', where: 'signal-reads', message }));
 /*
  * And its first answer is got ready before anyone asks: the screen's own opening question -- since the report's
  * first day, the desk's rules -- three minutes after the start, in that thread. Reading a fortnight of days a
@@ -297,10 +302,11 @@ const recordEntries = (look: 'early' | 'settled' = 'settled') => {
       // Telegram for the ways switched on and their chosen timeframes, once per setup as it is first
       // written, each attempt written down (entry_alert_log) -- sent or failed, and why.
       const settings = await alertSettings().catch(() => []);
-      // Timed: this is every method on every way, on the thread the SL and TGT watch runs on.
-      const calcFrom = performance.now();
-      const reads = allReads(ctx);
-      noteSignalRun(readMs, performance.now() - calcFrom, { early: look === 'early', afterCloseMs: Date.now() - boundary });
+      // Every method on every way: in the signals' own thread (22 Oct 2026), so the SL and TGT watch, the ticker
+      // socket and the orders are not held up by them; here, the same reads, whenever that thread cannot answer.
+      const worked = await readsOf(ctx);
+      const reads = worked.reads;
+      noteSignalRun(readMs, worked.calcMs, { early: look === 'early', afterCloseMs: Date.now() - boundary, where: worked.where, mainMs: worked.mainMs });
       // With the market as it stood: the tape's last trade (fresh) and the option board's index.
       const fresh = ctx.ltp && ctx.now - ctx.ltp.at <= 15_000 ? ctx.ltp.price : null;
       await recordSignals(reads, ctx.now, { ltp: fresh, index: ctx.options?.spot ?? null });

@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-550 files listed, 293 test files counted below, images and lockfiles left out.
+553 files listed, 297 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 147 |
+| `app/server` | 151 |
 | `app/web` | 146 |
 
 ## `(root)`
@@ -127,6 +127,8 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [paper.ts](../../app/server/src/entry/paper.ts) | The entry setups' paper log: the forward test the 24 reads need before any of them is believed. |
 | [prims.ts](../../app/server/src/entry/prims.ts) | The price-action pieces the twelve entry methods are built from. |
 | [read.ts](../../app/server/src/entry/read.ts) | The entry engine's view of the market, read once per board. |
+| [reads-run.ts](../../app/server/src/entry/reads-run.ts) | Where the minute's signals are worked (22 Oct 2026): in a thread of their own once the server has asked for one (`useReadsThread`, from index.ts), and otherwise here -- a test, a script. |
+| [reads-worker.ts](../../app/server/src/entry/reads-worker.ts) | The signals' own thread (22 Oct 2026). |
 | [signals.ts](../../app/server/src/entry/signals.ts) | The signal journal: every signal the entry engine gives -- every WAIT and every TRADE, on every timeframe, with the chain and without it -- written on the server, so nothing depends on a screen bei... |
 | [types.ts](../../app/server/src/entry/types.ts) | The shapes of the entry engine (docs/features/entry-setups.md). |
 | [version.ts](../../app/server/src/entry/version.ts) | A counter that moves whenever the entry tables are written -- a signal recorded, a setup logged or graded, an alert logged. |
@@ -198,6 +200,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [errors.ts](../../app/server/src/observability/errors.ts) | Every failure this system has, in one table. |
 | [glance.ts](../../app/server/src/observability/glance.ts) | "Is everything all right?" in one answer, for the phone (6 Oct 2026). |
 | [log-files.ts](../../app/server/src/observability/log-files.ts) | The server's log, kept on disk as well as on stdout (21 Oct 2026, owner's list #6: "the logs disappear"). |
+| [minute-log.ts](../../app/server/src/observability/minute-log.ts) | The thread, a minute at a time, in the server log (22 Oct 2026, owner: "every minute the event loop's delay and the signal calc's time in the log file"). |
 
 ## `app/server/src/report/`
 

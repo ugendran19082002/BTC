@@ -55,7 +55,13 @@ export const quotaKeyOf = (creds: { key: string } | null | undefined): string =>
  */
 export const QUOTA_LADDER = { others: 50, target: 85, stop: 90, stopRun: 95 } as const;
 type Pass = { at: number; ms: number; trades: number };
-type Run = { at: number; readMs: number; calcMs: number; early: boolean; afterCloseMs: number | null };
+type Run = {
+  at: number; readMs: number; calcMs: number; early: boolean; afterCloseMs: number | null;
+  /** Where the methods were worked (22 Oct 2026): their own thread, or this one -- the thread the stops are watched on. */
+  where: 'thread' | 'here';
+  /** What of it this thread spent: all of `calcMs` here; handing the board over and taking the reads back, there. */
+  mainMs: number;
+};
 
 let calls: Call[] = [];
 let passes: Pass[] = [];
@@ -85,9 +91,15 @@ export function notePass(ms: number, trades: number, now = Date.now()): void {
 }
 
 /** One signal run: reading the market, then every method on it. The second holds the thread. */
-export function noteSignalRun(readMs: number, calcMs: number, o: { early?: boolean; afterCloseMs?: number } = {}, now = Date.now()): void {
-  try { runs.push({ at: now, readMs, calcMs, early: o.early === true, afterCloseMs: o.afterCloseMs ?? null }); if (runs.length > 240) runs = runs.slice(-120); } catch { /* as above */ }
+export function noteSignalRun(readMs: number, calcMs: number, o: { early?: boolean; afterCloseMs?: number; where?: 'thread' | 'here'; mainMs?: number } = {}, now = Date.now()): void {
+  try {
+    runs.push({ at: now, readMs, calcMs, early: o.early === true, afterCloseMs: o.afterCloseMs ?? null, where: o.where ?? 'here', mainMs: o.mainMs ?? calcMs });
+    if (runs.length > 240) runs = runs.slice(-120);
+  } catch { /* as above */ }
 }
+
+/** The signal runs at or after `since`, oldest first: for the minute's line in the server log (minute-log.ts). */
+export const signalRunsSince = (since: number): readonly Run[] => runs.filter((r) => r.at >= since);
 
 // The thread itself: how late a timer fires is how long something held it. Sampled in windows of a minute.
 let loop: IntervalHistogram | null = null;
