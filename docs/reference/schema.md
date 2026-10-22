@@ -6,7 +6,7 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-40 tables, 74 migrations.
+41 tables, 75 migrations.
 
 ## Migrations applied
 
@@ -21,10 +21,11 @@ the way it is, is in [database.md](database.md).
 | report | `report-002-backtest-saves`, `report-003-backtest-save-groups` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables`, `strategy-006-signal-runs`, `strategy-007-drop-trend-paper`, `strategy-008-broker-account`, `strategy-009-signal-action`, `strategy-010-groups`, `strategy-011-display-order`, `strategy-012-method-updates`, `strategy-013-method-updates-tf`, `strategy-014-signal-runs-at` |
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public`, `trading-007-broker-account`, `trading-007-retire-best-pick-settings`, `trading-008-mtm-by-account`, `trading-008-retire-contract-lots` |
+| ui | `ui-001-settings` |
 
 ## Tables
 
-[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`backtest_portfolios`](#backtest_portfolios) · [`backtest_saves`](#backtest_saves) · [`book_heat_1m`](#book_heat_1m) · [`broker_accounts`](#broker_accounts) · [`chain_features`](#chain_features) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alert_log`](#entry_alert_log) · [`entry_alerts`](#entry_alerts) · [`entry_cleared`](#entry_cleared) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_history_clears`](#entry_history_clears) · [`entry_methods`](#entry_methods) · [`entry_setups`](#entry_setups) · [`entry_signals`](#entry_signals) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_marks_1m`](#option_marks_1m) · [`option_marks_fetched`](#option_marks_fetched) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_groups`](#strategy_groups) · [`strategy_method_updates`](#strategy_method_updates) · [`strategy_runs`](#strategy_runs) · [`strategy_signal_runs`](#strategy_signal_runs) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades)
+[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`backtest_portfolios`](#backtest_portfolios) · [`backtest_saves`](#backtest_saves) · [`book_heat_1m`](#book_heat_1m) · [`broker_accounts`](#broker_accounts) · [`chain_features`](#chain_features) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alert_log`](#entry_alert_log) · [`entry_alerts`](#entry_alerts) · [`entry_cleared`](#entry_cleared) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_history_clears`](#entry_history_clears) · [`entry_methods`](#entry_methods) · [`entry_setups`](#entry_setups) · [`entry_signals`](#entry_signals) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_marks_1m`](#option_marks_1m) · [`option_marks_fetched`](#option_marks_fetched) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_groups`](#strategy_groups) · [`strategy_method_updates`](#strategy_method_updates) · [`strategy_runs`](#strategy_runs) · [`strategy_signal_runs`](#strategy_signal_runs) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades) · [`ui_settings`](#ui_settings)
 
 ### auth_events
 
@@ -750,3 +751,13 @@ the way it is, is in [database.md](database.md).
 - `trades_by_phase` (phase)
 - `trades_by_updated_at` (updated_at DESC)
 - `trades_pkey` unique (trade_id)
+
+### ui_settings
+
+| Column | Type | Null | Default |
+|---|---|---|---|
+| `key` | text |  |  |
+| `value` | jsonb |  |  |
+| `updated_at` | bigint |  |  |
+
+- `ui_settings_pkey` unique (key)

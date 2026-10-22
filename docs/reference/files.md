@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-555 files listed, 301 test files counted below, images and lockfiles left out.
+559 files listed, 303 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 154 |
-| `app/web` | 147 |
+| `app/server` | 155 |
+| `app/web` | 148 |
 
 ## `(root)`
 
@@ -161,6 +161,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [strategy.routes.ts](../../app/server/src/http/routes/strategy.routes.ts) | The strategy desk: what is saved, what is armed, and when it next runs. |
 | [stream.routes.ts](../../app/server/src/http/routes/stream.routes.ts) | `GET /api/stream` -- the status, the price and "the board changed", pushed. |
 | [trade.routes.ts](../../app/server/src/http/routes/trade.routes.ts) | The order desk. |
+| [ui-settings.routes.ts](../../app/server/src/http/routes/ui-settings.routes.ts) | -- |
 
 ## `app/server/src/market/`
 
@@ -258,6 +259,12 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [paper.ts](../../app/server/src/trading/exchange/paper.ts) | An exchange you can lie to. |
 | [port.ts](../../app/server/src/trading/exchange/port.ts) | Everything the engine is allowed to do to an exchange. |
 
+## `app/server/src/ui/`
+
+| File | What it is |
+|---|---|
+| [settings.ts](../../app/server/src/ui/settings.ts) | The screen's own choices, kept by the desk (22 Oct 2026, owner: "what I choose in the backtest and the portfolio -- keep it on the database side; I cannot set it all again every time"; "collapse an... |
+
 ## `app/web/`
 
 | File | What it is |
@@ -311,6 +318,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [strategy-groups.ts](../../app/web/src/api/strategy-groups.ts) | Read quietly: the index only puts a tag beside a strategy's name, and a screen without it is the screen as it was -- so a failure is no answer (null), never an error said or logged. |
 | [strategy.ts](../../app/web/src/api/strategy.ts) | One side's own limit under "at most open": per cent of it, for calls or for puts -- each on its own, the other not touched. |
 | [trade.ts](../../app/web/src/api/trade.ts) | The order desk. |
+| [ui-settings.ts](../../app/web/src/api/ui-settings.ts) | The screen's own choices, kept by the desk (server: ui/settings.ts). |
 
 ## `app/web/src/components/accounts/`
 
@@ -595,6 +603,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [usePersisted.ts](../../app/web/src/hooks/usePersisted.ts) | State that survives a reload, kept in localStorage. |
 | [usePoll.ts](../../app/web/src/hooks/usePoll.ts) | Call something on a timer and keep the last good answer. |
 | [useStream.ts](../../app/web/src/hooks/useStream.ts) | The desk, pushed: one connection instead of three polls a second. |
+| [useSynced.ts](../../app/web/src/hooks/useSynced.ts) | A choice the desk keeps for every screen (22 Oct 2026, owner: "what I choose in the backtest and the portfolio -- keep it on the database side; I cannot set it all again every time"; "collapse and... |
 
 ## `app/web/src/lib/`
 

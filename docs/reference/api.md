@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-122 routes.
+125 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -187,3 +187,11 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/trade/quote` | signed in | One contract's book and product details, for the ticket. |
 | POST | `/api/trade/reconcile` | signed in | Ask the exchange and believe it, on demand. |
 | GET | `/api/trade/status` | signed in | The desk now: mode, balance, positions, open trades with their live P&L, and alarms. |
+
+## [ui-settings.routes.ts](../../app/server/src/http/routes/ui-settings.routes.ts)
+
+| Method | Path | Session | What |
+|---|---|---|---|
+| GET | `/api/ui-settings` | signed in | -- |
+| PUT | `/api/ui-settings` | signed in | -- |
+| DELETE | `/api/ui-settings/:key` | signed in | -- |
