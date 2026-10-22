@@ -110,3 +110,9 @@ each table holds: [reference/database.md](../reference/database.md).
    `SELECT a.pid, a.application_name, a.client_addr, now() - a.state_change AS silent FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE l.locktype = 'advisory' AND l.classid = 1651794788 AND l.objid = 2 AND l.granted;`
    A deploy that never comes up healthy with `waiting as a standby` in its log means another process holds it:
    find it with that query before anything else.
+   A deploy hands the desk over with it (since 22 Oct 2026, `deploy/handover.sh`): the new api starts beside the
+   running one, opens its board and waits at the lock; the old one is stopped, the new one is handed the lock the
+   moment it is free (measured 1.7-2.1 s from the stop to healthy, against about 7 s stop-then-start). Where the running
+   api holds no lock -- a build from before it -- the deploy is the plain stop-then-start, so two never trade together.
+   A new api that never reaches the lock is removed and the old one is not touched; one that takes it and does not
+   come up healthy is removed and the old one started again, which takes the lock back.

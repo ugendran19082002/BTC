@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-554 files listed, 299 test files counted below, images and lockfiles left out.
+555 files listed, 299 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -680,6 +680,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [deploy.sh](../../deploy/deploy.sh) | Build and deploy the BTC Options Desk. |
 | [docker-compose.yml](../../deploy/docker-compose.yml) | Run from the repository root: docker compose -f deploy/docker-compose.yml up -d |
 | [export-data.sh](../../deploy/export-data.sh) | Pack the desk's data for another server. |
+| [handover.sh](../../deploy/handover.sh) | shellcheck shell=bash |
 | [import-data.sh](../../deploy/import-data.sh) | Load the data packed by deploy/export-data.sh into this server's desk. |
 | [nginx-adminer.conf](../../deploy/nginx-adminer.conf) | Canonical copy of the edge vhost for adminer.thannigo.in -- the BTC desk's database console. |
 | [nginx.conf](../../deploy/nginx.conf) | Canonical copy of the edge vhost for delta.thannigo.in. |
