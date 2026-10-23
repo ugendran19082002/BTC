@@ -275,7 +275,11 @@ export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };
  * One method's trades in one fifteen-minute slot of the trading day, over the range (server: `BtSlotRow`). Slot 0 is
  * 5:30-5:45 PM IST, when the daily contract's day begins; 95 the last quarter before the next 5:30 PM.
  */
-export type BtSlotRow = { slot: number; method: string; name: string; n: number; wins: number; net: number; charges: number };
+export type BtSlotRow = {
+  slot: number; method: string; name: string; n: number; wins: number; net: number; charges: number;
+  /** Of them, those bought back at a stop loss, the perp's or the option's (23 Oct 2026); absent from an older server. */
+  stops?: number;
+};
 /** Which trades to list: one expiry day or all of them, a session of the day (slots, both in), one method. */
 export type TradePick = { day?: string | null; slotFrom?: number | null; slotTo?: number | null; method?: string | null };
 

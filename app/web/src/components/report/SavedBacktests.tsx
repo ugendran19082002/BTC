@@ -121,7 +121,7 @@ function PortfolioResult({ title, r, wide, readTrades, widen }: {
   const sessions = (r.bySession?.length ?? 0) > 0 ? (
     // By session of the day, all of them together (owner, 15 Oct 2026): 1h by default, 15m to 6h.
     <Panel title="By session of the day, together">
-      <SessionTable rows={r.bySession!} onOpen={(pick, title) => setOpenTrades({ key: `session:${pick.slotFrom}-${pick.slotTo}:${pick.method ?? ''}`, title, pick })} />
+      <SessionTable rows={r.bySession!} baseKey="portfolio" about={{ words: title, from: r.from, to: r.to }} onOpen={(pick, title) => setOpenTrades({ key: `session:${pick.slotFrom}-${pick.slotTo}:${pick.method ?? ''}`, title, pick })} />
     </Panel>
   ) : null;
   const expiryDays = (

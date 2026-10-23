@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_WIN, chasing, passesBar, recordBefore, tallyOf, winBarAt, breakEvenProblems, breakEvenReached, minuteAtr, paramsKey, perpFeePts, perpOf, widenAfter, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_WIN, chasing, passesBar, recordBefore, tallyOf, winBarAt, breakEvenProblems, breakEvenReached, minuteAtr, paramsKey, perpFeePts, perpOf, widenAfter, pickStrike, planOfParams, simulateDay, stopsOf, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
 import { sessionOf, type MinuteBar } from '../../src/report/market-day.js';
 import { fillChargesUsd } from '../../src/trading/charges.js';
 
@@ -989,4 +989,10 @@ test('[critical] the chase guard (22 Oct 2026): from its time, a signal selling 
   // a guard is part of what a run is: worked apart from the run without it
   assert.notEqual(paramsKey(P), paramsKey({ ...P, chase: guard }));
   assert.notEqual(paramsKey({ ...P, chase: guard }), paramsKey({ ...P, chase: { ...guard, pts: 300 } }));
+});
+
+test('SL % per session counts the stop losses, the perp\'s and the option\'s, not a trailing SL or break-even (23 Oct 2026)', () => {
+  const e = (n: number) => ({ n, wins: 0, net: 0 });
+  assert.equal(stopsOf({ exits: { 'perp-sl': e(2), 'option-sl': e(1), 'option-tsl': e(4), 'option-be': e(3), 'option-tgt': e(5) } }), 3);
+  assert.equal(stopsOf({ exits: {} }), 0);
 });

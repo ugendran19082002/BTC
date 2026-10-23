@@ -1331,7 +1331,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
           ) : undefined}
           sessions={(r.bySession?.length ?? 0) > 0 ? (
             <Panel title="By session of the day">
-              <SessionTable rows={r.bySession!} onOpen={(pick, title) => setOpenTrades({ key: `session:${pick.slotFrom}-${pick.slotTo}:${pick.method ?? ''}`, title, pick })} />
+              <SessionTable rows={r.bySession!} about={{ words: summary, from: r.from, to: r.to }} busy={read.stale} onOpen={(pick, title) => setOpenTrades({ key: `session:${pick.slotFrom}-${pick.slotTo}:${pick.method ?? ''}`, title, pick })} />
             </Panel>
           ) : null}
           expiryDays={(

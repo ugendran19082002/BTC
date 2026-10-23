@@ -1091,13 +1091,19 @@ export const slotOf = (ms: number): number => {
   return Math.floor(((sinceStart + day) % day) / SLOT_MS);
 };
 type BtCell = { day: string; method: string; mode: 'single' | 'mtf'; tf: string; vol: VolLevel | null; slot: number; tot: BtTot };
-/** One method's trades in one fifteen-minute slot, over the range: what the session table is added up from. */
-export type BtSlotRow = { slot: number; method: string; name: string; n: number; wins: number; net: number; charges: number };
+/**
+ * One method's trades in one fifteen-minute slot, over the range: what the session table is added up from. `stops`:
+ * of them, those bought back at a stop loss -- the perp's or the option's, not a trailing SL or break-even (23 Oct
+ * 2026, owner: "SL % per session").
+ */
+export type BtSlotRow = { slot: number; method: string; name: string; n: number; wins: number; net: number; charges: number; stops: number };
+const STOP_EXITS: readonly BtExit[] = ['perp-sl', 'option-sl'];
+export const stopsOf = (t: Pick<BtTot, 'exits'>) => STOP_EXITS.reduce((n, k) => n + (t.exits[k]?.n ?? 0), 0);
 function slotRows(cells: readonly Pick<BtCell, 'slot' | 'method' | 'tot'>[], nameOf: (id: string) => string, into = new Map<string, BtSlotRow>()): Map<string, BtSlotRow> {
   for (const c of cells) {
     const k = `${c.slot}|${c.method}`;
-    const r = into.get(k) ?? { slot: c.slot, method: c.method, name: nameOf(c.method), n: 0, wins: 0, net: 0, charges: 0 };
-    r.n += c.tot.n; r.wins += c.tot.wins; r.net += c.tot.net; r.charges += c.tot.charges;
+    const r = into.get(k) ?? { slot: c.slot, method: c.method, name: nameOf(c.method), n: 0, wins: 0, net: 0, charges: 0, stops: 0 };
+    r.n += c.tot.n; r.wins += c.tot.wins; r.net += c.tot.net; r.charges += c.tot.charges; r.stops += stopsOf(c.tot);
     into.set(k, r);
   }
   return into;
@@ -1615,7 +1621,7 @@ async function portfolioNow(o: PortfolioAsk): Promise<BacktestPortfolioResult> {
   const sessions = new Map<string, BtSlotRow>();
   for (const r of worked) for (const x of r.bySession) {
     const k = `${x.slot}|${x.method}`, h = sessions.get(k);
-    if (h) { h.n += x.n; h.wins += x.wins; h.net += x.net; h.charges += x.charges; } else sessions.set(k, { ...x });
+    if (h) { h.n += x.n; h.wins += x.wins; h.net += x.net; h.charges += x.charges; h.stops += x.stops; } else sessions.set(k, { ...x });
   }
   const known = await marketDays(o.from, o.to, o.now);
   const names = await methodNames();
