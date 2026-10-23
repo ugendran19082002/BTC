@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { getBacktestTrades, getLiveCheck, getSignalBacktest, getVolStudy, getVolStudyTrades, getWinSweep, getWinSweepTrades } from '@/api/signal-backtest';
+import { getBacktestTrades, getLiveCheck, getSessionStudy, getSessionStudyTrades, getSignalBacktest, getVolStudy, getVolStudyTrades, getWinSweep, getWinSweepTrades } from '@/api/signal-backtest';
 import { useSynced } from '@/hooks/useSynced';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
@@ -22,6 +22,7 @@ import { Entry, Ledger, SETTLE_MS, Table, count, each, marginWorking, netClass, 
 import { PortfolioRun, SavedBacktests, type TogetherRun } from '@/components/report/SavedBacktests';
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
+import { SessionStudy } from '@/components/report/SessionStudy';
 import { WinSweep } from '@/components/report/WinSweep';
 import { MethodsBoard } from '@/components/report/MethodsBoard';
 import { BacktestStrikeBlocks } from '@/components/report/BacktestStrikeBlocks';
@@ -660,6 +661,7 @@ const RESULT_PARTS = [
   { id: 'bt-sessions', label: 'Sessions' },
   { id: 'bt-days', label: 'Days' },
   { id: 'bt-volsl', label: 'By volatility' },
+  { id: 'bt-sessionstudy', label: 'By session' },
   { id: 'bt-winsweep', label: 'Win % sweep' },
   { id: 'bt-methodsboard', label: 'Methods by win %' },
   { id: 'bt-live', label: 'Live check' },
@@ -1227,7 +1229,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
   return page(
     <>
 
-      <ResultNav parts={RESULT_PARTS} has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || id === 'bt-winsweep' || id === 'bt-methodsboard' || (t.n > 0 && (id !== 'bt-perp' || t.perpNetPts !== undefined))} />
+      <ResultNav parts={RESULT_PARTS} has={(id) => id === 'bt-summary' || id === 'bt-live' || id === 'bt-volsl' || id === 'bt-sessionstudy' || id === 'bt-winsweep' || id === 'bt-methodsboard' || (t.n > 0 && (id !== 'bt-perp' || t.perpNetPts !== undefined))} />
       <Updating busy={read.stale} what="the backtest">
       <div id="bt-summary" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
       <Panel title="Backtest result">
@@ -1355,6 +1357,8 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       </Updating>
       {/* The SL, delta and lots by volatility against the settings as set, on these settings' signals (17 Oct 2026): asked for with a tap. */}
       <div id="bt-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><VolStudy askKey={JSON.stringify(query)} read={(a) => getVolStudy(query, a)} readTrades={(a, pick) => getVolStudyTrades(query, a, pick)} wide={wide} /></div>
+      {/* The SL, delta and win % by session of the day (23 Oct 2026): the same signals, as set and by session. */}
+      <div id="bt-sessionstudy" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]"><SessionStudy askKey={JSON.stringify(query)} read={(a) => getSessionStudy(query, a)} readTrades={(a, pick) => getSessionStudyTrades(query, a, pick)} wide={wide} /></div>
       {/* Methods by win % at several bars, of the settings (20 Oct 2026): a strategy keeps its own methods, so only by settings. */}
       <div id="bt-winsweep" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
         {strategyId

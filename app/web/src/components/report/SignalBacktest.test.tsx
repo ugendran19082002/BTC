@@ -21,7 +21,8 @@ const NO_CHECK = {
 const getLiveCheck = vi.fn();
 const getBacktestTrades = vi.fn();
 const getVolStudy = vi.fn();
-vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a), getLiveCheck: (...a: unknown[]) => getLiveCheck(...a), getBacktestTrades: (...a: unknown[]) => getBacktestTrades(...a), getVolStudy: (...a: unknown[]) => getVolStudy(...a) }));
+const getSessionStudy = vi.fn();
+vi.mock('@/api/signal-backtest', () => ({ getSignalBacktest: (...a: unknown[]) => getSignalBacktest(...a), getLiveCheck: (...a: unknown[]) => getLiveCheck(...a), getBacktestTrades: (...a: unknown[]) => getBacktestTrades(...a), getVolStudy: (...a: unknown[]) => getVolStudy(...a), getSessionStudy: (...a: unknown[]) => getSessionStudy(...a) }));
 
 const saves = { getBacktestSaves: vi.fn(), saveBacktest: vi.fn(), deleteBacktestSave: vi.fn(), savePortfolio: vi.fn(), deletePortfolio: vi.fn(), getBacktestPortfolio: vi.fn(), getPortfolioLiveCheck: vi.fn(), getPortfolioTrades: vi.fn() };
 vi.mock('@/api/backtest-saves', async () => ({
@@ -754,6 +755,10 @@ describe('SignalBacktest', () => {
     expect(screen.getByRole('button', { name: 'By volatility' })).toBeInTheDocument();
     expect(screen.getByText('By volatility · SL, delta, lots, win % · research')).toBeInTheDocument();
     expect(getVolStudy).not.toHaveBeenCalled();
+    // And the SL, delta and win % by session beside it (23 Oct 2026), asked for with a tap too.
+    expect(screen.getByRole('button', { name: 'By session' })).toBeInTheDocument();
+    expect(screen.getByText('By session · SL, delta, win % · research')).toBeInTheDocument();
+    expect(getSessionStudy).not.toHaveBeenCalled();
   });
 
   it('[critical] every part of the result folds by its heading; Collapse all and Expand all; kept in this browser', async () => {
@@ -967,7 +972,7 @@ describe('SignalBacktest', () => {
     expect(run.getByText('Winners made')).toBeInTheDocument();
     expect(run.getByText(/1,300 signals went in the trade over all of them; 1,100 were traded here\. Not traded: 150 outside their hours, 50 while the account was full \(at most open\)\./)).toBeInTheDocument();
     const jump = screen.getAllByRole('navigation', { name: 'Jump to a part of the result' }).at(-1)!;
-    expect(within(jump).getAllByRole('button').map((x) => x.textContent)).toEqual(['Summary', 'Exits & time frames', 'Pairs', 'Methods', 'Days', 'By volatility', 'Win % sweep', 'Live check']);
+    expect(within(jump).getAllByRole('button').map((x) => x.textContent)).toEqual(['Summary', 'Exits & time frames', 'Pairs', 'Methods', 'Days', 'By volatility', 'By session', 'Win % sweep', 'Live check']);
     for (const name of ['Backtest: which exit closed the trades', 'Backtest by time frame', 'Backtest: methods in profit', 'Backtest by kind of day']) {
       expect(screen.getAllByRole('table', { name }).length, name).toBeGreaterThan(0);
     }

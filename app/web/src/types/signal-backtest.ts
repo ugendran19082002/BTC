@@ -268,6 +268,8 @@ export type BtTradeRow = {
   member?: string;
   /** In the volatility study's list: the level at its fill, which set its SL, delta or lots. */
   level?: VolStudyLevel;
+  /** In the session study's list: the session it filled in (from 0; -1, none), which set its SL, delta or win %. */
+  session?: number;
 };
 /** One expiry day's trades: `total` of them, the first `trades.length` listed. */
 export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };
@@ -304,3 +306,35 @@ export type WinSweepResult = {
 };
 /** One cell of a sweep, for its trades: as saved, every method, or one bar. */
 export type WinSweepCellKey = 'saved' | 'all' | { pct: number; minTrades: number };
+
+/**
+ * The SL, delta and win % by session of the day, asked (23 Oct 2026; server `sessionRuleOf`): each session an IST span
+ * read forward from 5:30 PM; in it `delta` the most a strike may have, `sl` the option stop's per cent over the
+ * premium (150 is +150%), `win` the least per cent its method won -- each null to keep it as set. Methods by win % read
+ * the `days` before each day on `minTrades` or more; `base` the bar as set, or null for none.
+ */
+export type SessionRuleAsk = { from: string; to: string; delta: number | null; sl: number | null; win: number | null };
+export type SessionAsk = { sessions: SessionRuleAsk[]; win: { base: number | null; minTrades: number; days: number } };
+/** Which of the study's trades to list: a side, a session (-1 none; null all), a day (null every day). */
+export type SessionTradesPick = { side: 'fixed' | 'by-session'; session: number | null; day: string | null };
+/** One side of the session study (server `SessionStudyLine`); `stops` the trades bought back at a stop loss, the perp's or the option's. */
+export type SessionStudyLine = {
+  rule: 'fixed' | 'by-session';
+  n: number; wins: number; net: number; charges: number; stops: number;
+  worstDay: { day: string; net: number } | null;
+  maxDrawdown: number;
+  halves: [number, number];
+  /** Each session in the order asked, then -1: the signals in none. */
+  bySession: { session: number; n: number; wins: number; net: number; stops: number }[];
+  byDay: { day: string; live: boolean; n: number; wins: number; net: number; charges: number }[];
+};
+/** The session study (server `SessionStudy`): each session's `sl` here is a share of the premium (1.5 is +150%). */
+export type SessionStudyResult = {
+  from: string; to: string; days: number; secondHalfFrom: string | null;
+  sessions: { from: string; to: string; delta: number | null; sl: number | null; win: number | null }[];
+  win: { base: number | null; minTrades: number; days: number };
+  fixed: { pct: number; stepped: boolean; each: number[] };
+  signals: number; sameTrades: boolean;
+  lines: [SessionStudyLine, SessionStudyLine];
+  members?: { id: string; name: string; problem: string | null }[];
+};

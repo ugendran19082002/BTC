@@ -4,9 +4,9 @@ import {
   PORTFOLIO_MEMBERS_MAX, clonePortfolio, cloneSave, dropPortfolio, dropSave, groupProblem, keepPortfolio, keepSave, listSaves, nameProblem, renameGroup, savesByIds, type SavedQuery,
 } from '../../report/backtest-saves.js';
 import { DEFAULT_PARAMS, type BacktestParams } from '../../report/signal-backtest.js';
-import { liveCheck, portfolioBacktest, portfolioTrades, portfolioVolStudy, portfolioVolStudyTrades, signalBacktest, winSweep, winSweepTrades } from '../../report/backtest-run.js';
+import { liveCheck, portfolioBacktest, portfolioSessionStudy, portfolioSessionStudyTrades, portfolioTrades, portfolioVolStudy, portfolioVolStudyTrades, signalBacktest, winSweep, winSweepTrades } from '../../report/backtest-run.js';
 import { pickMethods } from '../../strategy/auto-methods.js';
-import { backtestParamsFrom, backtestParamsOf, backtestStrategies, liveAccounts, rangeOf, sweepBarsOf, sweepCellOf, volRuleOf, volTradesPickOf, winDaysOf } from './market.routes.js';
+import { backtestParamsFrom, backtestParamsOf, backtestStrategies, liveAccounts, rangeOf, sessionRuleOf, sessionTradesPickOf, sweepBarsOf, sweepCellOf, volRuleOf, volTradesPickOf, winDaysOf } from './market.routes.js';
 import { refuse } from '../refuse.js';
 
 /**
@@ -323,6 +323,32 @@ export function registerBacktestSavesRoutes(app: FastifyInstance) {
     const pick = volTradesPickOf(q, asked.r);
     if (typeof pick === 'string') return refuse(reply, 400, { error: pick });
     return portfolioVolStudyTrades({ ...asked.r, now: Date.now(), spot: tradingService().spot, members: asked.members, ...rule }, pick);
+  });
+
+  /**
+   * The SL, the delta and win % by session over the saved backtests of a run (23 Oct 2026): the run's own query with
+   * the sessions as the single backtest's study takes them (`sessionRuleOf`); each traded on its own signals with no
+   * limit, added up. Read-only.
+   */
+  app.get('/api/backtest-portfolio/session-study', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const asked = await portfolioQuery(q);
+    if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
+    const rule = sessionRuleOf(q);
+    if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
+    return portfolioSessionStudy({ ...asked.r, now: Date.now(), spot: tradingService().spot, members: asked.members, ...rule });
+  });
+
+  /** The run's session study, trade by trade, each with its saved backtest and its session: `?side=&session=&day=`. */
+  app.get('/api/backtest-portfolio/session-study/trades', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const asked = await portfolioQuery(q);
+    if ('error' in asked) return refuse(reply, asked.code ?? 400, { error: asked.error ?? '' });
+    const rule = sessionRuleOf(q);
+    if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
+    const pick = sessionTradesPickOf(q, asked.r, rule.sessions.length);
+    if (typeof pick === 'string') return refuse(reply, 400, { error: pick });
+    return portfolioSessionStudyTrades({ ...asked.r, now: Date.now(), spot: tradingService().spot, members: asked.members, ...rule }, pick);
   });
 
   /**

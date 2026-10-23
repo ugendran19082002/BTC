@@ -1,12 +1,12 @@
 import { json, post } from '@/api/client';
-import { pickQuery, sweepCellQuery, sweepQuery, volQuery, type VolTradesPick } from '@/api/signal-backtest';
+import { pickQuery, sessionPickQuery, sessionQuery, sweepCellQuery, sweepQuery, volQuery, type VolTradesPick } from '@/api/signal-backtest';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import type { NoEntry, StrikeBlock } from '@/types/strategy';
 import { backtestBlockProblems } from '@/lib/backtest-strike-blocks';
 import type { BacktestParams, BreakEven, Chase, Tsl } from '@/types/signal-backtest';
 import { breakEvenQuery, tslQuery } from '@/lib/backtest-tsl';
 import { chaseQuery } from '@/lib/backtest-chase';
-import type { TradePick, VolAsk, VolStudyResult, WinSweepAsk, WinSweepCellKey, WinSweepResult } from '@/types/signal-backtest';
+import type { SessionAsk, SessionStudyResult, SessionTradesPick, TradePick, VolAsk, VolStudyResult, WinSweepAsk, WinSweepCellKey, WinSweepResult } from '@/types/signal-backtest';
 import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
 
 /** Every saved backtest and portfolio, by name. */
@@ -66,6 +66,18 @@ export const getPortfolioVolStudyTrades = (a: VolAsk, pick: VolTradesPick, ids: 
   for (const [k, v] of volQuery(a)) p.set(k, v);
   p.set('day', pick.day); p.set('side', pick.side); p.set('by', pick.by);
   return json<BtDayTrades>(`/api/backtest-portfolio/vol-study/trades?${p}`);
+};
+
+/** The SL, delta and win % by session over a run together's saved backtests: asked exactly as the run is. */
+export const getPortfolioSessionStudy = (a: SessionAsk, ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED, over: PortfolioOver = {}) => {
+  const p = runSearch(ids, range, limit, cap, hours, over);
+  for (const [k, v] of sessionQuery(a)) p.set(k, v);
+  return json<SessionStudyResult>(`/api/backtest-portfolio/session-study?${p}`);
+};
+export const getPortfolioSessionStudyTrades = (a: SessionAsk, pick: SessionTradesPick, ids: readonly string[], range: { from: string; to: string }, limit: PortfolioLimit = 'shared', cap: PortfolioCap | null = null, hours: PortfolioHours = AS_SAVED, over: PortfolioOver = {}) => {
+  const p = runSearch(ids, range, limit, cap, hours, over);
+  for (const [k, v] of [...sessionQuery(a), ...sessionPickQuery(pick)]) p.set(k, v);
+  return json<BtDayTrades>(`/api/backtest-portfolio/session-study/trades?${p}`);
 };
 
 /**

@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SignalBacktestResponse, VolAsk, VolStudyResult, WinSweepAsk, WinSweepCellKey, WinSweepResult } from '@/types/signal-backtest';
+import type { BacktestQuery, BtDayTrades, LiveCheck, TradePick, MethodOptionRecord, SessionAsk, SessionStudyResult, SessionTradesPick, SignalBacktestResponse, VolAsk, VolStudyResult, WinSweepAsk, WinSweepCellKey, WinSweepResult } from '@/types/signal-backtest';
 import type { AutoMethodsRun, StrategyConfig, WalkForward } from '@/types/strategy';
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import { strikeBlocksQuery } from '@/lib/backtest-strike-blocks';
@@ -98,6 +98,28 @@ export const getVolStudyTrades = (q: BacktestQuery, a: VolAsk, pick: VolTradesPi
   for (const [k, v] of volQuery(a)) p.set(k, v);
   p.set('day', pick.day); p.set('side', pick.side); p.set('by', pick.by);
   return json<BtDayTrades>(`/api/signal-backtest/vol-study/trades?${p}`);
+};
+/** The session study as the server reads it (`sessionRuleOf`): the sessions as JSON, and methods by win %. */
+export function sessionQuery(a: SessionAsk): [string, string][] {
+  return [
+    ['ss', JSON.stringify(a.sessions)], ...(a.win.base === null ? [] : [['swb', String(a.win.base)] as [string, string]]),
+    ['swt', String(a.win.minTrades)], ['swd', String(a.win.days)],
+  ];
+}
+/** Its trades: one side, a session (-1 none) or all, a day or every one. */
+export function sessionPickQuery(pick: SessionTradesPick): [string, string][] {
+  return [['side', pick.side], ...(pick.session === null ? [] : [['session', String(pick.session)] as [string, string]]), ...(pick.day ? [['day', pick.day] as [string, string]] : [])];
+}
+/** The SL, delta and win % by session of the day against as set, on the same signals (23 Oct 2026). Report only. */
+export const getSessionStudy = (q: BacktestQuery, a: SessionAsk) => {
+  const p = searchOf(q);
+  for (const [k, v] of sessionQuery(a)) p.set(k, v);
+  return json<SessionStudyResult>(`/api/signal-backtest/session-study?${p}`);
+};
+export const getSessionStudyTrades = (q: BacktestQuery, a: SessionAsk, pick: SessionTradesPick) => {
+  const p = searchOf(q);
+  for (const [k, v] of [...sessionQuery(a), ...sessionPickQuery(pick)]) p.set(k, v);
+  return json<BtDayTrades>(`/api/signal-backtest/session-study/trades?${p}`);
 };
 /** A win % sweep as the server reads it: the bars, and the days picked on as the run's methods by win % reads them. */
 export function sweepQuery(a: WinSweepAsk): [string, string][] {

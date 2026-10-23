@@ -4,12 +4,13 @@ import { SavedMethodsPicker } from '@/components/report/SavedMethodsPicker';
 import { WinPickResult } from '@/components/report/WinPickResult';
 import { useSynced } from '@/hooks/useSynced';
 import { ChevronDown, Copy, FolderOpen, Pencil, Search, Trash2 } from 'lucide-react';
-import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioTrades, getPortfolioVolStudy, getPortfolioVolStudyTrades, getPortfolioWinSweep, getPortfolioWinSweepTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
+import { AS_SAVED, cloneBacktestSave, clonePortfolio, deleteBacktestSave, deletePortfolio, getBacktestPortfolio, getBacktestSaves, getPortfolioLiveCheck, getPortfolioSessionStudy, getPortfolioSessionStudyTrades, getPortfolioTrades, getPortfolioVolStudy, getPortfolioVolStudyTrades, getPortfolioWinSweep, getPortfolioWinSweepTrades, overQuery, renameBacktestGroup, saveBacktest, savePortfolio, type PortfolioCap, type PortfolioHours, type PortfolioLimit, type PortfolioOver } from '@/api/backtest-saves';
 import { pct } from '@/lib/format';
 import { time12 } from '@/lib/time';
 import { overWords } from '@/components/report/backtest-words';
 import { LiveCheck } from '@/components/report/LiveCheck';
 import { VolStudy } from '@/components/report/VolStudy';
+import { SessionStudy } from '@/components/report/SessionStudy';
 import { WinSweep } from '@/components/report/WinSweep';
 import type { WinPick } from '@/components/report/RunWinPick';
 import { dayLabel, moneyText, timeIst } from '@/lib/market-report';
@@ -72,13 +73,14 @@ export const RUN_PARTS = [
   { id: 'pf-sessions', label: 'Sessions' },
   { id: 'pf-days', label: 'Days' },
   { id: 'pf-volsl', label: 'By volatility' },
+  { id: 'pf-sessionstudy', label: 'By session' },
   { id: 'pf-winsweep', label: 'Win % sweep' },
   { id: 'pf-live', label: 'Live check' },
 ] as const;
 
 /** Whether a part of the run is on the screen, for the jump bar: the summary and the two studies always; the rest once it traded. */
 function runHas(r: BacktestPortfolioResult, id: string): boolean {
-  if (id === 'pf-summary' || id === 'pf-volsl' || id === 'pf-winsweep' || id === 'pf-live') return true;
+  if (id === 'pf-summary' || id === 'pf-volsl' || id === 'pf-sessionstudy' || id === 'pf-winsweep' || id === 'pf-live') return true;
   if (r.total.n === 0) return false;
   if (id === 'pf-days') return true;
   if (id === 'pf-sessions') return (r.bySession?.length ?? 0) > 0;
@@ -342,6 +344,10 @@ export function PortfolioRun({ run, range, limit = 'shared', cap = null, hours =
       {/* The SL, delta and lots by volatility over the run's saved backtests (17 Oct 2026): each on its own signals, added up. */}
       <div id="pf-volsl" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
         <VolStudy askKey={askKey} wide={wide} read={(a) => getPortfolioVolStudy(a, run.ids, range, limit, asked, hours, over)} readTrades={(a, pick) => getPortfolioVolStudyTrades(a, pick, run.ids, range, limit, asked, hours, over)} title="By volatility · SL, delta, lots, win % · over the run" />
+      </div>
+      {/* The SL, delta and win % by session over the run's saved backtests (23 Oct 2026): each on its own signals, added up. */}
+      <div id="pf-sessionstudy" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">
+        <SessionStudy askKey={askKey} wide={wide} read={(a) => getPortfolioSessionStudy(a, run.ids, range, limit, asked, hours, over)} readTrades={(a, pick) => getPortfolioSessionStudyTrades(a, pick, run.ids, range, limit, asked, hours, over)} title="By session · SL, delta, win % · over the run" />
       </div>
       {/* Methods by win % at several bars over the run's saved backtests (20 Oct 2026): asked for with a tap. */}
       <div id="pf-winsweep" className="grid min-w-0 scroll-mt-14 grid-cols-[minmax(0,1fr)]">

@@ -2,10 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DAY_START_IST, DEFAULT_PARAMS, MIN_PREMIUM, type Chase, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, VOL_STUDY_WIN, type VolWin, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick, type WinSweepAsk, type WinSweepCellPick } from '../../report/signal-backtest.js';
+import { DAY_START_IST, DEFAULT_PARAMS, MIN_PREMIUM, type Chase, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, VOL_STUDY_WIN, type VolWin, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick, type WinSweepAsk, type WinSweepCellPick, SESSION_RULES_MAX, SESSION_WIN, type SessionRule, type SessionTradesPick, type SessionWin } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
-import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades, winSweep, winSweepTrades } from '../../report/backtest-run.js';
+import { liveCheck, sessionStudy, sessionStudyTrades, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades, winSweep, winSweepTrades } from '../../report/backtest-run.js';
 import { cleanBlocks, cleanConfig, strategyStore } from './strategy.routes.js';
 import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, strikeFullOf, strikeMaxOf, SIGNAL_TFS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, minutesForward, minutesOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
@@ -290,6 +290,56 @@ export function volRuleOf(q: Record<string, unknown>): VolRule | string {
 }
 
 /**
+ * What the session study sets (23 Oct 2026): `?ss=` the sessions as JSON, `[{"from":"11:00","to":"16:00","delta":0.08,
+ * "sl":150,"win":70}]` -- each an IST span read forward from 5:30 PM (`to` 17:30 is the day's end), none over another,
+ * at most `SESSION_RULES_MAX`; in each, `delta` 0.02 to 0.50, `sl` the option stop's per cent over the premium (10 to
+ * 1,000), `win` the least per cent its method won (1 to 100), each null or absent to keep it as set. Methods by win %:
+ * `?swb=` the bar as set (1 to 100; absent, none), `?swt=` the least trades (1 to 100, 3), `?swd=` the days read
+ * before each day (1 to 30, 14). Something must differ from as set. Or why not, in words.
+ */
+export function sessionRuleOf(q: Record<string, unknown>): { sessions: SessionRule[]; win: SessionWin } | string {
+  let raw: unknown;
+  try { raw = JSON.parse(typeof q.ss === 'string' ? q.ss : ''); } catch { return 'The sessions are a list, ?ss=[{"from":"11:00","to":"16:00","delta":0.08,"sl":150,"win":70}].'; }
+  if (!Array.isArray(raw) || raw.length === 0) return 'Add a session to set its delta, SL or win %.';
+  if (raw.length > SESSION_RULES_MAX) return `At most ${SESSION_RULES_MAX} sessions.`;
+  const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/, start = minutesOf(DAY_START_IST);
+  const sessions: SessionRule[] = [];
+  for (const [i, x] of raw.entries()) {
+    const r = (x ?? {}) as Record<string, unknown>, n = i + 1;
+    if (typeof r.from !== 'string' || typeof r.to !== 'string' || !hhmm.test(r.from) || !hhmm.test(r.to)) return `Session ${n} is a From and a To time, HH:MM (IST).`;
+    if (r.from === r.to) return `Session ${n}'s From and To times must differ.`;
+    const num = (v: unknown) => (v === undefined || v === null || v === '' ? null : Number(v));
+    const delta = num(r.delta), sl = num(r.sl), win = num(r.win);
+    if (delta !== null && !(delta >= 0.02 && delta <= 0.5)) return `Session ${n}'s delta is from 0.02 to 0.50.`;
+    if (sl !== null && !(sl >= 10 && sl <= 1_000)) return `Session ${n}'s SL is from 10% to 1,000% of the premium.`;
+    if (win !== null && !(win >= 1 && win <= 100)) return `Session ${n}'s win % is from 1% to 100%.`;
+    sessions.push({ from: r.from, to: r.to, delta: delta === null ? null : Math.round(delta * 100) / 100, sl: sl === null ? null : Math.round(sl) / 100, win: win === null ? null : Math.round(win * 10) / 10 });
+  }
+  // Read forward from 5:30 PM, as the session table is: a span is [from, to), and no two share a minute.
+  const spans = sessions.map((x) => [minutesForward(start, minutesOf(x.from)), minutesForward(start, minutesOf(x.to)) || 1_440] as const);
+  for (const [i, [f, t]] of spans.entries()) {
+    if (t <= f) return `Session ${i + 1} runs past 5:30 PM, the daily contract's end: end it by then, or start another after it.`;
+    for (const [j, [g, u]] of spans.entries()) if (j < i && f < u && g < t) return `Sessions ${j + 1} and ${i + 1} overlap: a signal must be of one session.`;
+  }
+  const num = (k: string, dflt: number | null) => (q[k] === undefined || q[k] === '' ? dflt : Number(q[k]));
+  const base = num('swb', SESSION_WIN.base), minTrades = num('swt', SESSION_WIN.minTrades)!, days = num('swd', SESSION_WIN.days)!;
+  if (base !== null && !(base >= 1 && base <= 100)) return 'The win % as set is from 1% to 100%.';
+  if (!(Number.isInteger(minTrades) && minTrades >= 1 && minTrades <= 100)) return 'The least trades are a whole number from 1 to 100.';
+  if (!(Number.isInteger(days) && days >= 1 && days <= 30)) return 'The days read for the win % are a whole number from 1 to 30.';
+  if (!sessions.some((x) => x.delta !== null || x.sl !== null || x.win !== null)) return 'Set a delta, an SL or a win % in a session: as it stands it is the settings as set.';
+  return { sessions, win: { base: base === null ? null : Math.round(base * 10) / 10, minTrades, days } };
+}
+/** Which of the session study's trades to list: `?side=fixed|by-session`, `?session=` an index or -1 (absent: all), `?day=` one of the days (absent: all). */
+export function sessionTradesPickOf(q: Record<string, unknown>, r: { from: string; to: string }, n: number): SessionTradesPick | string {
+  if (q.side !== 'fixed' && q.side !== 'by-session') return 'The side is "fixed" (as set) or "by-session".';
+  const session = q.session === undefined || q.session === '' ? null : Number(q.session);
+  if (session !== null && !(Number.isInteger(session) && session >= -1 && session < n)) return 'The session is one of those asked (from 0), or -1 for none.';
+  const day = typeof q.day === 'string' && q.day !== '' ? q.day : null;
+  if (day !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < r.from || day > r.to)) return 'The day is one of the expiry days asked for, as YYYY-MM-DD.';
+  return { side: q.side, session, day };
+}
+
+/**
  * The days methods by win % are picked on, for a run over `r` (19 Oct 2026; read here for the sweep too, 20 Oct): `o_winon=`
  * `before` (the default) the `o_windays=` (1 to 30, 7) finished days before the run; `same`, the run's own; `first`,
  * the run's first `o_windays` days, the run then on the days after them; `custom`, `o_winfrom` to `o_winto`, the run
@@ -537,6 +587,41 @@ export function registerMarketRoutes(app: FastifyInstance) {
     const strategy = askedId === null ? null : (await backtestStrategies()).find((s) => s.id === askedId) ?? null;
     if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
     return volStudy({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot, ...rule });
+  });
+
+  /**
+   * The option's SL, the strike's delta and methods by win % by session of the day, against as set (owner, 23 Oct
+   * 2026): asked as the backtest itself is, with the sessions (`sessionRuleOf`). Report only: nothing is changed.
+   */
+  app.get('/api/signal-backtest/session-study', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const r = rangeOf(q);
+    if (typeof r === 'string') return refuse(reply, 400, { error: r });
+    const params = backtestParamsOf(q);
+    if (typeof params === 'string') return refuse(reply, 400, { error: params });
+    const rule = sessionRuleOf(q);
+    if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
+    const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
+    const strategy = askedId === null ? null : (await backtestStrategies()).find((s) => s.id === askedId) ?? null;
+    if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
+    return sessionStudy({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot, ...rule });
+  });
+
+  /** The session study's trades, one by one: asked as the study is, with `?side=&session=&day=` (`sessionTradesPickOf`). */
+  app.get('/api/signal-backtest/session-study/trades', async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const r = rangeOf(q);
+    if (typeof r === 'string') return refuse(reply, 400, { error: r });
+    const params = backtestParamsOf(q);
+    if (typeof params === 'string') return refuse(reply, 400, { error: params });
+    const rule = sessionRuleOf(q);
+    if (typeof rule === 'string') return refuse(reply, 400, { error: rule });
+    const pick = sessionTradesPickOf(q, r, rule.sessions.length);
+    if (typeof pick === 'string') return refuse(reply, 400, { error: pick });
+    const askedId = typeof q.strategy === 'string' && q.strategy !== '' ? q.strategy : null;
+    const strategy = askedId === null ? null : (await backtestStrategies()).find((s) => s.id === askedId) ?? null;
+    if (askedId !== null && !strategy) return refuse(reply, 404, { error: 'No such signal strategy to backtest: it may have been deleted, or it buys rather than sells.' });
+    return sessionStudyTrades({ ...r, now: Date.now(), params, tfs: listOf(q, 'tf'), methods: listOf(q, 'method'), strategy, spot: tradingService().spot, ...rule }, pick);
   });
 
   /**

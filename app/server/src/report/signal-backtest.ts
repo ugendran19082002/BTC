@@ -514,6 +514,12 @@ export type DayPlan = {
   /** The lots by the same level ("fewer lots when it is volatile"), in place of the pick's own. A level not known keeps them. */
   lotsByVol?: Record<VolLevel, number> | null;
   /**
+   * The option's stop and the strike by the session of the day the signal filled in (the session study, 23 Oct 2026):
+   * `at` the session of a moment (-1: none of them), and each session's stop (a share of the premium) and pick, in
+   * place of the plan's own -- and of a level's -- for that trade. A null keeps the plan's own; so does no session.
+   */
+  bySession?: { at: (ms: number) => number; stopPct: readonly (number | null)[]; pick: readonly (DayPlan['pick'] | null)[] } | null;
+  /**
    * When a trade still open is closed by the rules (18 Oct 2026): a strategy closes what it opened at its exit time
    * (strategy/runner.ts `considerExit`, `exitMomentFor`), not at the settlement. Absent: held to the end of the day.
    */
@@ -905,8 +911,12 @@ export function simulateTogether(o: {
     const cp = sig.dir === 1 ? 'P' as const : 'C' as const;
     // Several trades may share a contract, and several books one signal, as on the desk (the one-per-contract rule of 14 Oct morning was lifted).
     // The strike rule of this signal's level where the plan picks by volatility; the reading, the side and the rule decide the pick.
-    const levelPick = plan.pickByVol && vol ? plan.pickByVol[vol] : null;
-    const pickKey = (near * 2 + (cp === 'P' ? 1 : 0)) * 4 + (levelPick && vol ? 1 + VOL_LEVELS.indexOf(vol) : 0);
+    // A session's own strike first, where the plan sets one by the session of the day.
+    const sess = plan.bySession ? plan.bySession.at(t0) : -1;
+    const sessPick = sess >= 0 ? plan.bySession!.pick[sess] ?? null : null;
+    const volPick = plan.pickByVol && vol ? plan.pickByVol[vol] : null;
+    const levelPick = sessPick ?? volPick;
+    const pickKey = ((near * 2 + (cp === 'P' ? 1 : 0)) * 4 + (!sessPick && volPick && vol ? 1 + VOL_LEVELS.indexOf(vol) : 0)) * 32 + (sessPick ? 1 + sess : 0);
     let picked = picks.get(pickKey);
     if (picked === undefined) {
       picked = (levelPick ?? plan.pick)(readingAt(board, times[near]!), cp, times[near]!);
@@ -963,7 +973,8 @@ export function simulateTogether(o: {
     const series = board.series.get(`${cp}${pick.strike}`);
     // The option's own levels at a moment: fixed all day, or by the clock where the plan has steps -- or, where the
     // plan sets the stop by volatility and this signal's level is known, that level's stop for the whole trade.
-    const volStop = plan.stopPctByVol && vol ? plan.stopPctByVol[vol] : null;
+    const sessStop = sess >= 0 ? plan.bySession!.stopPct[sess] ?? null : null;
+    const volStop = sessStop ?? (plan.stopPctByVol && vol ? plan.stopPctByVol[vol] : null);
     const tgtAtFn = plan.targetPctAt, stopAtFn = volStop === null ? plan.stopPctAt : undefined;
     const level = (pc: number, sign: 1 | -1) => (pc > 0 ? entry * (1 + sign * pc) : null);
     const fixedTgt = level(plan.targetPct, -1), fixedStop = level(volStop ?? plan.stopPct, 1);
@@ -2000,20 +2011,24 @@ function studyLine(rule: VolStudyLine['rule'], xs: readonly Labelled[], days: re
 
 type StudyBook = Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>;
 /** A book of the study as it trades: which signals are its own, and its plan -- as set, or with what is set by level. Shared by the study and its trade list. */
-function studyBookOf(b: StudyBook): { takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }, byVol: VolRule | null) => DayPlan } {
+function studyBookOf(b: StudyBook): { takes: (sig: BtSignal) => boolean; planFor: (span: { from: number; to: number }, byVol: VolRule | null, bySession?: readonly SessionRule[] | null) => DayPlan } {
   const st = b.strategy ?? null, own = ownSignal(st);
   return {
     takes: (sig: BtSignal) => own(sig)
       && (!b.tfs || b.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!b.methods || b.methods.includes(sig.method)),
     // No limit of any kind, so the rules trade the same signals; the volatility filter is the study's own subject, so it is off too.
-    planFor: (span: { from: number; to: number }, byVol: VolRule | null): DayPlan => {
+    planFor: (span: { from: number; to: number }, byVol: VolRule | null, bySession: readonly SessionRule[] | null = null): DayPlan => {
       const base = st ? { ...planOfStrategy(st, span, null), maxOpen: null } : planOfParams({ ...b.params, deskMax: 0 }, span);
-      if (!byVol) return base;
       // A level's strike: the live rules' own pick with that delta -- the settings' rule turned to delta, or the
       // strategy's with its strike blocks set aside (one delta for the level, not the clock's).
       const deltaPick = (d: number): DayPlan['pick'] => (st
         ? planOfStrategy({ ...st, config: { ...st.config, strikeRule: 'delta', delta: { ...st.config.delta, max: d }, strikeBlocks: [], signal: { ...st.config.signal!, deltaByVol: null, slByVol: null } } } as Strategy, span, null).pick
         : planOfStrategy(strategyOfParams({ ...b.params, rule: 'delta', value: d, strikeBlocks: [] }, null, null), span).pick);
+      // A session's: the same pick with its delta, and its stop -- each kept as set where the session leaves it.
+      if (bySession) {
+        return { ...base, bySession: { at: (ms) => sessionIndexAt(bySession, ms), stopPct: bySession.map((x) => x.sl), pick: bySession.map((x) => (x.delta === null ? null : deltaPick(x.delta))) } };
+      }
+      if (!byVol) return base;
       return {
         ...base,
         ...(byVol.sl ? { stopPctByVol: byVol.sl } : {}),
@@ -2103,6 +2118,191 @@ export function volStudyHere(o: VolStudyAsk): Promise<VolStudy> {
 }
 export function portfolioVolStudyHere(o: PortfolioVolStudyAsk): Promise<VolStudy> {
   const run = working.then(() => portfolioVolStudyNow(o));
+  working = run.catch(() => { });
+  return run;
+}
+
+// ------------------------------------------------------------------------------------------------ the session study
+
+/**
+ * The option's SL, the strike's delta and methods by win % by the session of the day (owner, 23 Oct 2026: "session
+ * based -- delta, SL %, win % -- make them editable; I will check it by session"): the volatility study's question
+ * with the session a signal filled in for its level. Each session is IST `from` to `to`, read forward from the
+ * daily contract's 5:30 PM, the first that holds a fill its own; a signal in none keeps the settings as set. In a
+ * session, `delta` the most a strike sold may have, `sl` the option's stop (a share of the premium: 1.5 is +150%),
+ * `win` the least share (per cent) its method must have won -- each null to keep it as set.
+ */
+export type SessionRule = { from: string; to: string; delta: number | null; sl: number | null; win: number | null };
+/**
+ * Methods by win %, as the volatility study reads them: a method's record over the `days` calendar days before the
+ * signal's day, on `minTrades` or more. `base`: the bar as set, for every signal on both sides and outside the
+ * sessions; null, no bar as set -- a session's own bar then only on the session side.
+ */
+export type SessionWin = { base: number | null; minTrades: number; days: number };
+export const SESSION_RULES_MAX = 24;
+export const SESSION_WIN: SessionWin = { base: null, minTrades: 3, days: 14 };
+
+/** The first session holding a moment, by its IST minute read forward from 5:30 PM; -1 in none. `to` at 5:30 PM is the day's end. */
+export function sessionIndexAt(rules: readonly Pick<SessionRule, 'from' | 'to'>[], ms: number): number {
+  const start = minutesOf(DAY_START_IST), m = minutesForward(start, istMinutes(ms));
+  for (let i = 0; i < rules.length; i++) {
+    const from = minutesForward(start, minutesOf(rules[i]!.from)), to = minutesForward(start, minutesOf(rules[i]!.to)) || 1_440;
+    if (m >= from && m < to) return i;
+  }
+  return -1;
+}
+/** The stop-loss exits a session's SL % counts: the perp's and the option's, as the session table's (`stopsOf`). */
+const isStop = (t: Pick<BtTrade, 'by'>) => STOP_EXITS.includes(t.by);
+
+export type SessionStudyAsk = Ask & { sessions: SessionRule[]; win: SessionWin };
+export type PortfolioSessionStudyAsk = Pick<PortfolioAsk, 'from' | 'to' | 'now' | 'spot' | 'members'> & { sessions: SessionRule[]; win: SessionWin };
+/** Which trades of the study to list: a side, a session (-1: in none; null: all) and a day (null: every day). */
+export type SessionTradesPick = { side: 'fixed' | 'by-session'; session: number | null; day: string | null };
+export type SessionStudyLine = {
+  rule: 'fixed' | 'by-session';
+  n: number; wins: number; net: number; charges: number;
+  /** Trades bought back at a stop loss, the perp's or the option's. */
+  stops: number;
+  worstDay: { day: string; net: number } | null;
+  maxDrawdown: number;
+  halves: [number, number];
+  /** Each session in the order given, then -1: the signals in none of them. */
+  bySession: { session: number; n: number; wins: number; net: number; stops: number }[];
+  byDay: { day: string; live: boolean; n: number; wins: number; net: number; charges: number }[];
+};
+export type SessionStudy = {
+  from: string; to: string; days: number; secondHalfFrom: string | null;
+  sessions: SessionRule[]; win: SessionWin;
+  /** The plan's own stop, as the volatility study says it (`VolStudy.fixed`). */
+  fixed: { pct: number; stepped: boolean; each: number[] };
+  signals: number;
+  /** Both sides traded the same signals: they do unless a session's delta or win % leaves some out. */
+  sameTrades: boolean;
+  lines: [SessionStudyLine, SessionStudyLine];
+  members?: { id: string; name: string; problem: string | null }[];
+};
+
+type InSession = { day: string; t: BtTrade; session: number; book: number };
+function sessionLine(rule: SessionStudyLine['rule'], xs: readonly InSession[], n: number, days: readonly string[], mid: number, live: ReadonlySet<string>): SessionStudyLine {
+  const keys = [...Array.from({ length: n }, (_, i) => i), -1];
+  const by = new Map(keys.map((k) => [k, { session: k, n: 0, wins: 0, net: 0, stops: 0 }]));
+  const dayRows = new Map(days.map((d) => [d, { day: d, live: live.has(d), n: 0, wins: 0, net: 0, charges: 0 }]));
+  const out = { n: 0, wins: 0, net: 0, charges: 0, stops: 0 };
+  for (const { day, t, session } of xs) {
+    const win = t.netUsd > 0, stop = isStop(t);
+    for (const r of [out, by.get(session)!]) { r.n++; r.net += t.netUsd; if (win) r.wins++; if (stop) r.stops++; }
+    out.charges += t.chargesUsd;
+    const d = dayRows.get(day);
+    if (d) { d.n++; d.net += t.netUsd; d.charges += t.chargesUsd; if (win) d.wins++; }
+  }
+  let run = 0, peak = 0, maxDrawdown = 0, worstDay: SessionStudyLine['worstDay'] = null;
+  const halves: [number, number] = [0, 0];
+  days.forEach((d, i) => {
+    const r = dayRows.get(d)!;
+    run += r.net; peak = Math.max(peak, run); maxDrawdown = Math.max(maxDrawdown, peak - run);
+    halves[i < mid ? 0 : 1] += r.net;
+    if (r.n > 0 && (worstDay === null || r.net < worstDay.net)) worstDay = { day: d, net: r.net };
+  });
+  return { rule, ...out, worstDay, maxDrawdown, halves, bySession: [...by.values()], byDay: [...dayRows.values()] };
+}
+
+/**
+ * The same signals twice, as set and by session, with no limit of any kind -- as the volatility study, so an earlier
+ * exit on one side never frees a place for a trade the other did not take. With `collect`, the trades that pick names,
+ * for its list, worked the same way so the list adds up to the study.
+ */
+async function sessionStudyOf(o: { from: string; to: string; now: number; books: readonly StudyBook[]; sessions: readonly SessionRule[]; win: SessionWin; collect?: SessionTradesPick }): Promise<{ study: Omit<SessionStudy, 'members'>; picked: InSession[] }> {
+  await Promise.all([flowSchema(), optionSnapshotsSchema(), optionMarksSchema(), entrySchema(), methodsSchema()]);
+  const win = o.win, rules = o.sessions;
+  const barOf = (session: number): number | null => (session >= 0 ? rules[session]!.win ?? win.base : win.base);
+  const winOn = win.base !== null || rules.some((x) => x.win !== null);
+  const back = 8 + (winOn ? win.days : 0);
+  const before = new Date(Date.parse(`${o.from}T00:00:00Z`) - back * 86_400_000).toISOString().slice(0, 10);
+  const known = await marketDays(before, o.to, o.now);
+  const days = known.filter((d) => d.day >= o.from).map((d) => d.day);
+  const warmFrom = winOn ? new Date(Date.parse(`${o.from}T00:00:00Z`) - win.days * 86_400_000).toISOString().slice(0, 10) : o.from;
+  const warm = known.filter((d) => d.day >= warmFrom && d.day < o.from && !d.live).map((d) => d.day);
+  const live = new Set(known.filter((d) => d.day >= o.from && d.live).map((d) => d.day));
+  const baselineOf = (day: string): number | null => {
+    const prior = known.filter((d) => d.day < day && d.stats && !d.live).slice(-5).map((d) => d.stats!.atr);
+    return prior.length ? prior.reduce((a, x) => a + x, 0) / prior.length : null;
+  };
+  // Only the days asked are read where a list of one day is asked for -- and the days before it, for its record.
+  const want = (day: string) => !o.collect?.day || day === o.collect.day || (winOn && day < o.collect.day);
+  const runDays = days.filter(want), warmDays = warm.filter(want);
+  await preloadIv([...warmDays, ...runDays], o.now);
+  const fetched = await marksFetchedBy([...warmDays, ...runDays].map(expiryCodeOf));
+  const books = o.books.map(studyBookOf);
+  const tallies = o.books.map(() => new Map<string, WinTally>());
+  const fixedTrades: InSession[] = [], sessTrades: InSession[] = [], picked: InSession[] = [];
+  let signals = 0, sameTrades = true;
+  const fixedOf = books.map(() => ({ pct: 0, stepped: false }));
+  const keyOf = (t: BtTrade) => `${t.signal.method}|${t.signal.mode}|${t.signal.tf}|${t.signal.dir}|${t.signal.filledAt}|${t.signal.fillPrice}`;
+  const passes = (record: WinTally | null, t: BtTrade, bar: number | null) => bar === null || !record || passesBar(record, t.signal.method, bar, win.minTrades);
+  for (const day of [...warmDays, ...runDays]) {
+    const inRange = day >= o.from;
+    const { from, to } = sessionOf(day);
+    const raw = await rawDay(day, o.now, fetched.get(expiryCodeOf(day))?.contracts ?? 0);
+    const readers: Record<VolBy, (at: number) => VolLevel | null> = { atr: volReader(raw.minutes, baselineOf(day)), iv: await ivReaderOf(day, o.now) };
+    const bars = raw.minutes.filter((b) => b.at >= from);
+    books.forEach((b, i) => {
+      const sigs = raw.signals.filter(b.takes);
+      if (inRange) signals += sigs.length;
+      const base = b.planFor({ from, to }, null);
+      // Read by the strategy's own source where it sets anything by volatility, as the desk's own trades are.
+      const read = readers[ownVolBy(o.books[i]!.strategy, 'atr')!];
+      const play = (plan: DayPlan) => simulateDay({ from, to, signals: sigs, plan, volAt: read, bars, board: raw.board }).trades;
+      const flat = play(base);
+      const record = winOn ? recordBefore(tallies[i]!, day, win.days) : null;
+      if (winOn) tallies[i]!.set(day, tallyOf(flat));
+      if (!inRange || (o.collect?.day && day !== o.collect.day)) return;
+      fixedOf[i] = { pct: base.stopPct, stepped: !!base.stopPctAt };
+      const label = (t: BtTrade): InSession => ({ day, t, session: sessionIndexAt(rules, t.signal.filledAt), book: i });
+      const asSet = flat.filter((t) => passes(record, t, win.base)).map(label);
+      const moved = play(b.planFor({ from, to }, null, rules)).map(label).filter((x) => passes(record, x.t, barOf(x.session)));
+      fixedTrades.push(...asSet); sessTrades.push(...moved);
+      if (moved.length !== asSet.length || moved.some((x, j) => keyOf(x.t) !== keyOf(asSet[j]!.t))) sameTrades = false;
+      const c = o.collect;
+      if (c) picked.push(...(c.side === 'fixed' ? asSet : moved).filter((x) => c.session === null || x.session === c.session));
+    });
+  }
+  const mid = Math.ceil(days.length / 2);
+  return {
+    study: {
+      from: o.from, to: o.to, days: days.length, secondHalfFrom: days[mid] ?? null, sessions: rules.map((x) => ({ ...x })), win: { ...win },
+      fixed: { pct: fixedOf[0]?.pct ?? 0, stepped: fixedOf.some((f) => f.stepped), each: [...new Set(fixedOf.map((f) => f.pct))] },
+      signals, sameTrades,
+      lines: [sessionLine('fixed', fixedTrades, rules.length, days, mid, live), sessionLine('by-session', sessTrades, rules.length, days, mid, live)],
+    },
+    picked,
+  };
+}
+
+const membersOf = (o: PortfolioSessionStudyAsk) => o.members.map((m) => ({ id: m.id, name: m.name, problem: m.ask && !m.problem ? null : (m.problem ?? 'It cannot be worked out.') }));
+const booksOf = (o: PortfolioSessionStudyAsk) => o.members.flatMap((m) => (m.ask && !m.problem ? [m.ask] : []));
+async function sessionRowsOf(books: readonly StudyBook[], names: readonly (string | undefined)[], o: { from: string; to: string; now: number; sessions: SessionRule[]; win: SessionWin }, pick: SessionTradesPick): Promise<BtDayTrades> {
+  const { picked } = await sessionStudyOf({ ...o, books, collect: pick });
+  const nameOf = await methodNames();
+  return listed(pick.day ?? `${o.from}..${o.to}`, picked.map((x) => ({ ...rowOf(x.t, (id) => nameOf.get(id) ?? id, names[x.book]), session: x.session })));
+}
+export function sessionStudyHere(o: SessionStudyAsk): Promise<SessionStudy> {
+  const run = working.then(async () => (await sessionStudyOf({ ...o, books: [o] })).study);
+  working = run.catch(() => { });
+  return run;
+}
+export function portfolioSessionStudyHere(o: PortfolioSessionStudyAsk): Promise<SessionStudy> {
+  const run = working.then(async () => ({ ...(await sessionStudyOf({ ...o, books: booksOf(o) })).study, members: membersOf(o) }));
+  working = run.catch(() => { });
+  return run;
+}
+export function sessionStudyTradesHere(o: SessionStudyAsk, pick: SessionTradesPick): Promise<BtDayTrades> {
+  const run = working.then(() => sessionRowsOf([o], [undefined], o, pick));
+  working = run.catch(() => { });
+  return run;
+}
+export function portfolioSessionStudyTradesHere(o: PortfolioSessionStudyAsk, pick: SessionTradesPick): Promise<BtDayTrades> {
+  const ok = o.members.filter((m) => m.ask && !m.problem);
+  const run = working.then(() => sessionRowsOf(ok.map((m) => m.ask!), ok.map((m) => m.name), o, pick));
   working = run.catch(() => { });
   return run;
 }
@@ -2592,6 +2792,8 @@ export type BtTradeRow = {
   member?: string;
   /** In the volatility study's trade list: the level at its fill, which set its SL, delta or lots. */
   level?: VolStudyLevel;
+  /** In the session study's trade list: the session it filled in, which set its SL, delta or win % (-1: none). */
+  session?: number;
 };
 export type BtDayTrades = { day: string; total: number; trades: BtTradeRow[] };
 /**

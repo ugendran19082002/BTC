@@ -1413,6 +1413,67 @@ test('[critical] strike blocks are times of the expiry day: a run\'s block befor
   }
 });
 
+test('[critical] the SL, the delta and win % by session against as set, on the same signals -- the backtest and the portfolio (23 Oct 2026)', async () => {
+  const base = `from=${CLIMB}&to=${CLIMB}&window=all`;
+  const ss = (x: object[]) => `ss=${encodeURIComponent(JSON.stringify(x))}`;
+  // The climb's six fills: 6:00, 7:00 and 8:50 PM in the first session; 10:30 PM and 12:10 AM in the second; 3:30 AM in none.
+  const two = [{ from: '17:30', to: '21:00', sl: 150, win: 50 }, { from: '21:00', to: '01:00', delta: 0.08 }];
+  const r = await get(`/api/signal-backtest/session-study?${base}&${ss(two)}&swt=1&swd=1`);
+  assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
+  assert.deepEqual(r.body.sessions, [{ from: '17:30', to: '21:00', delta: null, sl: 1.5, win: 50 }, { from: '21:00', to: '01:00', delta: 0.08, sl: null, win: null }]);
+  assert.deepEqual([r.body.win, r.body.signals, r.body.days, r.body.fixed.pct], [{ base: null, minTrades: 1, days: 1 }, 6, 1, 3]);
+  const [fixed, moved] = r.body.lines;
+  const by = (l: any) => l.bySession.map((x: any) => [x.session, x.n]);
+  assert.deepEqual(by(fixed), [[0, 3], [1, 2], [-1, 1]], 'as set: every signal traded, each in its session');
+  // By session: the first session's 50% bar has no record before the climb, so none; the second's 0.08 finds no strike
+  // (the board's are 0.09 out); the one in none keeps the settings as set.
+  assert.deepEqual(by(moved), [[0, 0], [1, 0], [-1, 1]]);
+  assert.equal(r.body.sameTrades, false);
+  assert.deepEqual([fixed.n, moved.n, fixed.byDay.map((d: any) => [d.day, d.n])], [6, 1, [[CLIMB, 6]]]);
+  assert.ok(Math.abs(moved.bySession[2].net - fixed.bySession[2].net) < 1e-9, 'outside every session: the same trade, the same money');
+
+  // The SL alone: the same trades -- the board decays, no stop is reached -- each in the first at +150%, the rest at the plan's +300%.
+  const sl = await get(`/api/signal-backtest/session-study?${base}&${ss([{ from: '17:30', to: '21:00', sl: 150 }])}`);
+  assert.deepEqual([sl.body.sameTrades, sl.body.lines.map((l: any) => [l.n, l.stops])], [true, [[6, 0], [6, 0]]]);
+  const list = await get(`/api/signal-backtest/session-study/trades?${base}&${ss([{ from: '17:30', to: '21:00', sl: 150 }])}&side=by-session&session=0`);
+  assert.equal(list.status, 200, JSON.stringify(list.body).slice(0, 300));
+  assert.deepEqual([list.body.total, [...new Set(list.body.trades.map((t: any) => t.session))], [...new Set(list.body.trades.map((t: any) => Math.round((t.optStop / t.entry - 1) * 100)))]], [3, [0], [150]]);
+  const rest = await get(`/api/signal-backtest/session-study/trades?${base}&${ss([{ from: '17:30', to: '21:00', sl: 150 }])}&side=by-session&session=-1&day=${CLIMB}`);
+  assert.deepEqual([rest.body.total, [...new Set(rest.body.trades.map((t: any) => Math.round((t.optStop / t.entry - 1) * 100)))]], [3, [300]]);
+  const all = await get(`/api/signal-backtest/session-study/trades?${base}&${ss([{ from: '17:30', to: '21:00', sl: 150 }])}&side=fixed`);
+  assert.ok(Math.abs(all.body.trades.reduce((a: number, t: any) => a + t.netUsd, 0) - sl.body.lines[0].net) < 1e-6, 'the list is the study\'s own trades');
+
+  // Refused in words.
+  for (const [q, why] of [
+    ['ss=nope', /The sessions are a list/], [ss([]), /Add a session/], [ss([{ from: '9:00', to: '10:00', sl: 150 }]), /Session 1 is a From and a To time/],
+    [ss([{ from: '10:00', to: '10:00', sl: 150 }]), /must differ/], [ss([{ from: '16:00', to: '18:00', sl: 150 }]), /runs past 5:30 PM/],
+    [ss([{ from: '18:00', to: '20:00', sl: 150 }, { from: '19:00', to: '21:00', sl: 150 }]), /Sessions 1 and 2 overlap/],
+    [ss([{ from: '18:00', to: '20:00', delta: 0.9 }]), /delta is from 0\.02 to 0\.50/], [ss([{ from: '18:00', to: '20:00', sl: 5 }]), /SL is from 10% to 1,000%/],
+    [ss([{ from: '18:00', to: '20:00', win: 0 }]), /win % is from 1% to 100%/], [ss([{ from: '18:00', to: '20:00' }]), /as it stands it is the settings as set/],
+    [`${ss([{ from: '18:00', to: '20:00', sl: 150 }])}&swb=0`, /win % as set/], [`${ss([{ from: '18:00', to: '20:00', sl: 150 }])}&swd=31`, /days read for the win %/],
+  ] as const) assert.match((await get(`/api/signal-backtest/session-study?${base}&${q}`)).body.error, why, q);
+  for (const [q, why] of [['side=both', /"fixed" \(as set\) or "by-session"/], ['side=fixed&session=1', /one of those asked/], [`side=fixed&day=${dayBack(20)}`, /one of the expiry days/]] as const) {
+    assert.match((await get(`/api/signal-backtest/session-study/trades?${base}&${ss([{ from: '17:30', to: '21:00', sl: 150 }])}&${q}`)).body.error, why, q);
+  }
+
+  // Saved backtests run together: each on its own signals, no limit, added up; each trade with whose it is.
+  const params = (await get(`/api/signal-backtest?${base}`)).body.params;
+  const one = await post('/api/backtest-saves', { name: 'sess one', query: { params, tfs: ['15m'], methods: [], strategy: null } });
+  const twoS = await post('/api/backtest-saves', { name: 'sess two', query: { params, tfs: ['1h'], methods: [], strategy: null } });
+  try {
+    const ids = `ids=${one.body.save.id},${twoS.body.save.id}&from=${CLIMB}&to=${CLIMB}&max=1`;
+    const folio = await get(`/api/backtest-portfolio/session-study?${ids}&${ss([{ from: '17:30', to: '21:00', sl: 150 }])}`);
+    assert.equal(folio.status, 200, JSON.stringify(folio.body).slice(0, 300));
+    assert.deepEqual(folio.body.members.map((m: any) => [m.name, m.problem]), [['sess one', null], ['sess two', null]]);
+    assert.deepEqual(folio.body.lines.map((l: any) => l.n), [5, 5], 'the 15m three and the 1h two: the run\'s "at most 1 open" is not laid over the study');
+    const ft = await get(`/api/backtest-portfolio/session-study/trades?${ids}&${ss([{ from: '17:30', to: '21:00', sl: 150 }])}&side=by-session`);
+    assert.deepEqual([ft.body.total, [...new Set(ft.body.trades.map((t: any) => t.member))].sort()], [5, ['sess one', 'sess two']]);
+    assert.match((await get(`/api/backtest-portfolio/session-study?${ids}&${ss([])}`)).body.error, /Add a session/);
+  } finally {
+    for (const x of [one, twoS]) await app.inject({ method: 'DELETE', url: `/api/backtest-saves/${x.body.save.id}`, headers: cookie });
+  }
+});
+
 test('[critical] volatility by ATM IV, and the option stop by volatility against the fixed one, on the same trades (17 Oct 2026)', async () => {
   const climbCode = `${CLIMB.slice(8, 10)}${CLIMB.slice(5, 7)}${CLIMB.slice(2, 4)}`;
   const base = `from=${CLIMB}&to=${CLIMB}&window=all`;

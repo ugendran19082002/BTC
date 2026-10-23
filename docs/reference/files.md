@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-561 files listed, 304 test files counted below, images and lockfiles left out.
+563 files listed, 306 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 155 |
-| `app/web` | 149 |
+| `app/web` | 151 |
 
 ## `(root)`
 
@@ -497,6 +497,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [RunWinPick.tsx](../../app/web/src/components/report/RunWinPick.tsx) | Methods by win %, for a run together (owner, 19 Oct 2026: "in the portfolio, pick the saved backtests' methods by win % with a tap"): every saved backtest worked by settings given its own methods t... |
 | [SavedBacktests.tsx](../../app/web/src/components/report/SavedBacktests.tsx) | Backtests kept by name, and run together (owner, 13 Oct 2026: "save a backtest's settings and run a saved one; several saved ones as a portfolio, with the total of them all"). |
 | [SavedMethodsPicker.tsx](../../app/web/src/components/report/SavedMethodsPicker.tsx) | A saved backtest's methods picked in the portfolio, by their record (owner, 19 Oct 2026: "in the portfolio, against a saved backtest, pick by win % with a tap -- not Backtest, edit, Win, update, an... |
+| [SessionStudy.tsx](../../app/web/src/components/report/SessionStudy.tsx) | The option's SL, the strike's delta and methods by win % by session of the day, as research (owner, 23 Oct 2026: "session based -- delta, SL %, win % -- make them editable; I will check it by sessi... |
 | [SessionTable.tsx](../../app/web/src/components/report/SessionTable.tsx) | The backtest by session of the day (owner, 15 Oct 2026: "by session, 1h by default, 15m to 6h; the methods in each; the count opens its trades"). |
 | [SignalBacktest.tsx](../../app/web/src/components/report/SignalBacktest.tsx) | The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price? |
 | [Updating.tsx](../../app/web/src/components/report/Updating.tsx) | A read that knows which question its answer is to (owner, 13 Oct 2026: "after choosing a filter it should say it is loading; the old values stay on the screen"). |
@@ -639,6 +640,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [price-change.ts](../../app/web/src/lib/price-change.ts) | The phone's Price changes screen (owner, 7 Oct 2026): BTC's index now against each window back -- a minute out to half a day -- and against the desk's own marks, the first entry of what it holds an... |
 | [report-error.ts](../../app/web/src/lib/report-error.ts) | Send a browser failure to the server so it lands in the same log as everything else. |
 | [report.ts](../../app/web/src/lib/report.ts) | The calendar's arithmetic, kept out of the drawing so it can be checked. |
+| [session-study.ts](../../app/web/src/lib/session-study.ts) | The SL, delta and win % by session of the day, as typed (owner, 23 Oct 2026: "session based -- delta, SL %, win % -- make them editable; I will check it by session"). |
 | [side-max.ts](../../app/web/src/lib/side-max.ts) | Each side's own limit under "at most open" (owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own -- not a split that adds up to 100"; "default 80%"). |
 | [stop-hold.ts](../../app/web/src/lib/stop-hold.ts) | Where a sold option's stop can sit, and what the desk does with one asked for past that (8 Oct 2026). |
 | [strategy-blocks.ts](../../app/web/src/lib/strategy-blocks.ts) | A signal strategy's strike rule over its window, as the form works with it. |

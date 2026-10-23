@@ -697,6 +697,35 @@ test('[critical] a strategy that sets its SL by volatility is backtested as the 
   assert.equal(ownVolBy(points, undefined), undefined);
 });
 
+test('[critical] the session of the day a moment is in: read forward from 5:30 PM, the first that holds it; 5:30 PM as a To is the day\'s end (23 Oct 2026)', async () => {
+  const { sessionIndexAt } = await import('../../src/report/signal-backtest.js');
+  const rules = [{ from: '17:30', to: '21:00' }, { from: '23:00', to: '01:00' }, { from: '11:00', to: '17:30' }];
+  // `from` is 5:30 PM IST: minute 0 of the expiry day.
+  assert.deepEqual([0, 209, 210, 330, 449, 450, 900, 1_049, 1_050, 1_439].map((m) => sessionIndexAt(rules, from + m * MIN)), [0, 0, -1, 1, 1, -1, -1, -1, 2, 2],
+    '5:30 PM and 8:59 PM in the first; 9 PM in none; 11 PM to 12:59 AM over midnight; 11 AM to the day\'s end');
+  assert.equal(sessionIndexAt([], from), -1);
+});
+
+test('[critical] the stop and the strike by session: each trade its session\'s, held to its exit; a session that leaves one, and a signal in none, keep the plan\'s own', async () => {
+  const { planOfStrategy, strategyOfParams, sessionIndexAt } = await import('../../src/report/signal-backtest.js');
+  const flat = perp([[0, 84_000], [1_439, 84_100]]);
+  // Two puts: 0.09 out at 83,200 and 0.06 out at 82,600; the nearer offered at 102 at minute 300 (+155% over 40), then down.
+  const board = byTime([...contract('P', 83_200, -0.09, [[0, 40], [295, 40], [300, 100], [310, 30], [1_435, 1]]), ...contract('P', 82_600, -0.06, [[0, 40], [1_435, 30]])]);
+  const deltaPick = (d: number) => planOfStrategy(strategyOfParams({ ...P, rule: 'delta', value: d }, null, null), { from, to }).pick;
+  // 5:30-7:10 PM: SL +150%; 7:10-8:50 PM: delta 0.07; after: none.
+  const rules = [{ from: '17:30', to: '19:10' }, { from: '19:10', to: '20:50' }];
+  const plan = { ...planOf(), bySession: { at: (ms: number) => sessionIndexAt(rules, ms), stopPct: [1.5, null], pick: [null, deltaPick(0.07)] } };
+  const r = simulateDay({ from, to, signals: [sig(30), sig(130), sig(230)], bars: flat, board, plan });
+  assert.deepEqual(r.trades.map((t) => [t.strike, t.by, Math.round((t.optStop! / t.entry - 1) * 100)]), [[83_200, 'option-sl', 150], [82_600, 'window-end', 300], [83_200, 'option-tgt', 300]],
+    'the first its session\'s +150% stop, hit; the second its session\'s 0.07 strike and the plan\'s +300%; the third, in none, the plan\'s own');
+  // Without it: the plan's own for every one, the same signals.
+  const fixed = simulateDay({ from, to, signals: [sig(30), sig(130), sig(230)], bars: flat, board, plan: planOf() });
+  assert.deepEqual(fixed.trades.map((t) => [t.strike, t.by]), [[83_200, 'option-tgt'], [83_200, 'option-tgt'], [83_200, 'option-tgt']]);
+  // A session's strike is its own pick, not one remembered from another session's at the same reading.
+  const same = simulateDay({ from, to, signals: [sig(129), sig(131)], bars: flat, board, plan: { ...plan, bySession: { ...plan.bySession, at: (ms: number) => (ms < from + 130 * MIN ? 0 : 1) } } });
+  assert.deepEqual(same.trades.map((t) => t.strike), [83_200, 82_600]);
+});
+
 // ------------------------------------------------------------ live parity (18 Oct 2026)
 
 test('[critical] a strategy\'s methods at a moment: the list after the last change before it; before the first change, what that change replaced; no history, its list as it stands', async () => {

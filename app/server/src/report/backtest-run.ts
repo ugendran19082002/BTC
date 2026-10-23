@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import {
-  clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, portfolioTradesHere, signalBacktestHere, signalBacktestTradesHere, volStudyHere, portfolioVolStudyHere, volStudyTradesHere, portfolioVolStudyTradesHere, winSweepHere, winSweepTradesHere,
-  type Ask, type BacktestPortfolioResult, type BtDayTrades, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest, type TradePick, type VolStudy, type VolStudyAsk, type PortfolioVolStudyAsk, type VolTradesPick, type WinSweep, type WinSweepAsk, type WinSweepCellPick,
+  clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, portfolioTradesHere, signalBacktestHere, signalBacktestTradesHere, volStudyHere, portfolioVolStudyHere, volStudyTradesHere, portfolioVolStudyTradesHere, winSweepHere, winSweepTradesHere, sessionStudyHere, portfolioSessionStudyHere, sessionStudyTradesHere, portfolioSessionStudyTradesHere,
+  type Ask, type BacktestPortfolioResult, type BtDayTrades, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest, type TradePick, type VolStudy, type VolStudyAsk, type PortfolioVolStudyAsk, type VolTradesPick, type WinSweep, type WinSweepAsk, type WinSweepCellPick, type SessionStudy, type SessionStudyAsk, type PortfolioSessionStudyAsk, type SessionTradesPick,
 } from './signal-backtest.js';
 import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
@@ -18,7 +18,9 @@ import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 /** A backtest that has not answered in this long is given up on, and its thread with it. */
 export const BACKTEST_TIMEOUT_MS = 120_000;
 /** What the thread is asked to work: a backtest, a portfolio, a live check, the volatility study, the win % sweep, or one day of a backtest or a portfolio. */
-type Work = { kind: 'run'; ask: Ask } | { kind: 'vol-study'; ask: VolStudyAsk } | { kind: 'portfolio-vol-study'; ask: PortfolioVolStudyAsk } | { kind: 'vol-trades'; ask: VolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio-vol-trades'; ask: PortfolioVolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'win-sweep'; ask: WinSweepAsk } | { kind: 'win-sweep-trades'; ask: WinSweepAsk; at: WinSweepCellPick } | { kind: 'trades'; ask: Ask; pick: TradePick } | { kind: 'portfolio-trades'; ask: PortfolioAsk; pick: TradePick };
+type Work = { kind: 'run'; ask: Ask } | { kind: 'vol-study'; ask: VolStudyAsk } | { kind: 'portfolio-vol-study'; ask: PortfolioVolStudyAsk } | { kind: 'vol-trades'; ask: VolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio-vol-trades'; ask: PortfolioVolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'win-sweep'; ask: WinSweepAsk } | { kind: 'win-sweep-trades'; ask: WinSweepAsk; at: WinSweepCellPick } | { kind: 'trades'; ask: Ask; pick: TradePick } | { kind: 'portfolio-trades'; ask: PortfolioAsk; pick: TradePick }
+  | { kind: 'session-study'; ask: SessionStudyAsk } | { kind: 'portfolio-session-study'; ask: PortfolioSessionStudyAsk }
+  | { kind: 'session-trades'; ask: SessionStudyAsk; pick: SessionTradesPick } | { kind: 'portfolio-session-trades'; ask: PortfolioSessionStudyAsk; pick: SessionTradesPick };
 /** After a thread fails to start, none is tried again for this long. */
 const GIVE_UP_MS = 10 * 60_000;
 
@@ -140,6 +142,16 @@ export const portfolioVolStudy = (o: PortfolioVolStudyAsk): Promise<VolStudy> =>
 export const volStudyTrades = (o: VolStudyAsk, pick: VolTradesPick): Promise<BtDayTrades> => worked({ kind: 'vol-trades', ask: o, pick }, () => volStudyTradesHere(o, pick));
 export const portfolioVolStudyTrades = (o: PortfolioVolStudyAsk, pick: VolTradesPick): Promise<BtDayTrades> =>
   worked({ kind: 'portfolio-vol-trades', ask: o, pick }, () => portfolioVolStudyTradesHere(o, pick), BACKTEST_TIMEOUT_MS * Math.max(1, o.members.length));
+
+/** The option's SL, the strike's delta and win % by session against as set (`sessionStudyHere`): two backtests' work and a record. */
+export const sessionStudy = (o: SessionStudyAsk): Promise<SessionStudy> => worked({ kind: 'session-study', ask: o }, () => sessionStudyHere(o), BACKTEST_TIMEOUT_MS * 3);
+export const portfolioSessionStudy = (o: PortfolioSessionStudyAsk): Promise<SessionStudy> =>
+  worked({ kind: 'portfolio-session-study', ask: o }, () => portfolioSessionStudyHere(o), BACKTEST_TIMEOUT_MS * 3 * Math.max(1, o.members.length));
+/** The study's trades of one side, by session and day: the study worked again, so as long as it. */
+export const sessionStudyTrades = (o: SessionStudyAsk, pick: SessionTradesPick): Promise<BtDayTrades> =>
+  worked({ kind: 'session-trades', ask: o, pick }, () => sessionStudyTradesHere(o, pick), BACKTEST_TIMEOUT_MS * 3);
+export const portfolioSessionStudyTrades = (o: PortfolioSessionStudyAsk, pick: SessionTradesPick): Promise<BtDayTrades> =>
+  worked({ kind: 'portfolio-session-trades', ask: o, pick }, () => portfolioSessionStudyTradesHere(o, pick), BACKTEST_TIMEOUT_MS * 3 * Math.max(1, o.members.length));
 
 /**
  * Methods by win % at several bars (`winSweepHere`): a record and a run a list for each of them, the same list worked
