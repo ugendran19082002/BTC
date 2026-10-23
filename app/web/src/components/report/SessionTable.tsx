@@ -126,7 +126,8 @@ export function SessionTable({ rows, onOpen, baseKey = 'backtest', about, busy =
   const keep = () => { if (about && !busy) setBase(baseOf(rows, about, Date.now())); };
   /** A small line under a figure: its change against the baseline, coloured by whether that is better. */
   const change = (text: string | null, d: number, label: string) => (text === null ? null : (
-    <span aria-label={`${label} ${text} against the baseline`} className={cn('block whitespace-nowrap text-[11px] tabular-nums', Math.abs(d) < 1e-9 ? 'text-muted-foreground' : d > 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>{text}</span>
+    // A change of a rate is said in points, but shown as the bare number: a narrow column has no room for the unit.
+    <span aria-label={`${label} ${text} against the baseline`} className={cn('block whitespace-nowrap text-[11px] tabular-nums', Math.abs(d) < 1e-9 ? 'text-muted-foreground' : d > 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>{text.replace(/ pts$/, '')}</span>
   ));
   const countBtn = (n: number, label: string, onClick: () => void) => (
     <button type="button" onClick={onClick} aria-label={label}
@@ -252,7 +253,7 @@ export function SessionTable({ rows, onOpen, baseKey = 'backtest', about, busy =
       <p className="m-0 text-[12px] text-muted-foreground">
         Tap a session for its methods, the best first; tap a count for its trades, one by one, over every day.
         {hasStops && ' SL: of the trades, those bought back at a stop loss (the perp\'s or the option\'s; not a trailing SL or break-even).'}
-        {base && ' Under each figure, its change against the baseline: green is better (for SL, fewer).'}
+        {base && ' Under each figure, its change against the baseline (won and SL in percentage points); green is better, for SL fewer.'}
       </p>
     </div>
   );
