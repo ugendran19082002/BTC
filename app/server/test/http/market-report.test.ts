@@ -301,7 +301,7 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   assert.deepEqual(all.body.deskLimits, [], 'no broker account on this desk: no limits to offer');
   assert.equal(all.body.signals, 6, 'the one never filled is not a signal in the trade');
   assert.equal(all.body.total.n, 6);
-  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(all.body.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, chase: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
   // at most two open at once: the first two are open when the others fill
   const capped = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&max=2&ce=80&pe=80`);
   assert.deepEqual([capped.body.params.deskMax, capped.body.total.n], [2, capped.body.total.n]);
@@ -319,6 +319,13 @@ test('[critical] the backtest: every signal in the trade sold as an option on th
   assert.equal(fwd.body.params.strikeFull, undefined, 'next, the default, not written');
   assert.ok(typeof fwd.body.forwarded === 'number', 'how many went one strike further out');
   assert.equal(fwd.body.forwarded + fwd.body.skipped['strike-limit'], perStrike.body.skipped['strike-limit'], 'each one skipped was forwarded, or had nowhere further out');
+  // The chase guard (22 Oct 2026): the climb's buys after 11 PM sell the way BTC has run since 7 PM -- skipped, and said.
+  const chased = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&chase=19:00-23:00-100`);
+  assert.equal(chased.status, 200, JSON.stringify(chased.body).slice(0, 300));
+  assert.deepEqual(chased.body.params.chase, { from: '19:00', after: '23:00', pts: 100 });
+  assert.equal(chased.body.skipped.chase, 2, 'the two filled after 11 PM, 320 and 530 over 7 PM: ' + JSON.stringify(chased.body.skipped));
+  assert.equal(chased.body.total.n + chased.body.skipped.chase, all.body.total.n, 'each left out a chase, the rest traded');
+  assert.equal((await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&window=all&chase=off`)).body.params.chase, undefined, 'off: none');
   assert.equal(capped.body.choices.methods.find((m: any) => m.key === 'breakout').n, all.body.choices.methods.find((m: any) => m.key === 'breakout').n, 'the method list says what each makes without a limit');
   assert.deepEqual(Object.keys(all.body.total.exits), ['perp-tgt'], 'each bought back when the perp reached its target');
   assert.equal(all.body.total.exits['perp-tgt'].n, 6);
@@ -393,6 +400,7 @@ test('the backtest refuses settings it cannot mean', async () => {
   for (const [q, why] of [
     ['rule=gamma', /"delta" or "premium"/], ['rule=delta&value=0.9', /0\.02 to 0\.5/], ['rule=premium&value=5', /10 to 500/],
     ['lots=0', /whole number from 1 to 1,000/], ['max=600', /0 \(no limit\) to 500/], ['max=10&ce=0', /1% to 100%/], ['lots=2.5', /whole number/], ['tp=1.5', /0 \(none\) to 0\.99/], ['sl=50', /0 \(none\) to 10/], ['window=night', /"desk", "all" or "custom"/], ['window=custom&hfrom=22:00', /From and a To time/], ['window=custom&hfrom=22:00&hto=22:00', /must differ/], ['window=custom&hfrom=25:00&hto=02:00', /HH:MM/], ['slmin=-1', /0 \(off\) to 20,000/], ['vol=wild', /"off", "low", "medium" or "high"/], ['tsteps=2330:73', /HH:MM:NN/], ['tsteps=23:30:0', /1% to 99%/], ['tsteps=23:30:150', /HH:MM:NN/], ['tsteps=23:30:73,23:30:80', /same time/], ['tp=0&tsteps=23:30:73', /needs a target to start from/], ['slmin=500&slmax=200', /SL maximum must not be under/], ['tgtmin=500&tgtmax=200', /TGT maximum/],
+    ['chase=7-11-400', /HH:MM-HH:MM-N/], ['chase=11:00-07:00-400', /checked from a time after/], ['chase=07:00-11:00-10', /50 to 20,000 points/],
   ] as const) {
     const r = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&${q}`);
     assert.equal(r.status, 400, q);
@@ -426,6 +434,12 @@ test('[critical] the backtest by a saved strategy: its methods and timeframe, it
   assert.deepEqual([r.body.params.rule, r.body.params.value, r.body.params.lots], ['delta', 0.1, 3]);
   // what its real orders made in the range: none were placed under this name
   assert.equal(r.body.strategy.real.n, 0);
+  // the chase guard over a strategy (22 Oct 2026): asked of the market, so a strategy's run takes it -- the 9:20 PM buy,
+  // about 145 over 6:30 PM, is skipped before its "at most one open" is counted; the 7 PM one, about 30 over, is not
+  const chased = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&strategy=${id}&chase=18:30-19:00-100`);
+  assert.equal(chased.status, 200, JSON.stringify(chased.body).slice(0, 300));
+  assert.deepEqual([chased.body.total.n, chased.body.skipped.chase, chased.body.skipped['at-limit']], [1, 1, 1]);
+  assert.deepEqual(chased.body.params.chase, { from: '18:30', after: '19:00', pts: 100 }, 'said back with the strategy\'s own');
 
   // a strategy that does not exist, or no longer does, is said so
   const gone = await get(`/api/signal-backtest?from=${CLIMB}&to=${CLIMB}&strategy=nope`);
@@ -924,6 +938,15 @@ test('[critical] a backtest saved by name, run again, and several run together a
   const c = await post('/api/backtest-saves', { name: 'By a strategy', query: { params: WHOLE, tfs: [], methods: [], strategy: made.body.strategy.id } });
   const withIt = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${c.body.save.id}&from=${CLIMB}&to=${QUIET}`);
   assert.deepEqual(withIt.body.members.map((x: any) => [x.problem, x.total.n]), [[null, 6], [null, 3]], 'by its own rules: the three 15m breakouts');
+  // the chase guard for the run is put over one by a strategy too (22 Oct 2026), as its single backtest takes it
+  const chaseRun = await get(`/api/backtest-portfolio?ids=${c.body.save.id}&from=${CLIMB}&to=${QUIET}&limit=own&o_chase=18:30-19:00-100`);
+  const chaseOne = await get(`/api/signal-backtest?from=${CLIMB}&to=${QUIET}&strategy=${made.body.strategy.id}&chase=18:30-19:00-100`);
+  assert.equal(chaseRun.status, 200, JSON.stringify(chaseRun.body).slice(0, 300));
+  assert.equal(chaseOne.status, 200, JSON.stringify(chaseOne.body).slice(0, 300));
+  assert.ok(chaseOne.body.skipped.chase > 0, JSON.stringify(chaseOne.body.skipped));
+  assert.equal(chaseRun.body.members[0].total.n, chaseOne.body.total.n);
+  assert.ok(close(chaseRun.body.members[0].total.net, chaseOne.body.total.net), 'to the cent');
+  assert.equal(chaseRun.body.skipped.chase, chaseOne.body.skipped.chase);
   assert.equal((await del(`/api/strategies/${made.body.strategy.id}`)).status, 200);
   const without = await get(`/api/backtest-portfolio?ids=${a.body.save.id},${c.body.save.id}&from=${CLIMB}&to=${QUIET}`);
   assert.match(without.body.members[1].problem, /strategy it is worked by has been deleted/);
@@ -988,6 +1011,8 @@ test('[critical] a backtest saved by name, run again, and several run together a
     ['o_noperpsl=1&o_noperptgt=0', '&noperpsl=1', '&noperpsl=1&lots=3&tf=15m', { skipPerpSl: true, skipPerpTgt: false }],
     // The option's stop to the price sold for the run (18 Oct 2026)
     ['o_be=10pct', '&be=10pct', '&be=10pct&lots=3&tf=15m', { breakEven: { move: 10, unit: 'pct' } }],
+    // The chase guard for the run (22 Oct 2026)
+    ['o_chase=19:00-23:00-100', '&chase=19:00-23:00-100', '&chase=19:00-23:00-100&lots=3&tf=15m', { chase: { from: '19:00', after: '23:00', pts: 100 } }],
   ] as const) {
     const run = await get(`${pair}&${ask}`);
     assert.equal(run.status, 200, `${ask}: ${JSON.stringify(run.body).slice(0, 300)}`);
@@ -1168,7 +1193,7 @@ test('[critical] a backtest saved by name, run again, and several run together a
     ['o_rule=delta&o_value=0.9', /For the run: A delta limit is from 0\.02 to 0\.5/], ['o_tsteps=23:30:75', /needs the target it starts from/], ['o_slmin=500&o_slmax=100', /SL maximum must not be under its minimum/],
     ['o_tsl=5pts', /For the run: A trailing SL is a price move and an SL move/], ['o_sl=0&o_tsl=5pts:5pts', /needs an option stop to move/],
     ['o_tsl=5pts:9pts', /SL cannot move further than the price did/], ['o_wsl=101', /For the run: Widening with volatility is from 0 \(off\) to 100 ATRs/], ['o_wmode=both', /"widest" or "calm"/], ['o_noperpsl=yes', /noperpsl is 0 or 1/],
-    ['o_be=5', /A move to break-even is a premium fall in pts or pct/], ['o_be=0pts', /break-even is more than 0/]] as const) {
+    ['o_be=5', /A move to break-even is a premium fall in pts or pct/], ['o_be=0pts', /break-even is more than 0/], ['o_chase=07:00-11:00', /For the run: The chase guard is/]] as const) {
     const r = await get(`${pair}&${bad}`);
     assert.equal(r.status, 400, bad);
     assert.match(r.body.error, said);

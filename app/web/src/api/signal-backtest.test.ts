@@ -36,3 +36,14 @@ describe('the most on one strike, asked', () => {
     expect(asked().has('sk')).toBe(false);
   });
 });
+
+describe('the chase guard, asked (22 Oct 2026)', () => {
+  it('[critical] sent as from-after-points where it is right; nothing for none or a wrong one', async () => {
+    await getSignalBacktest(q({ chase: { from: '07:00', after: '11:00', pts: 400 } }));
+    expect(asked().get('chase')).toBe('07:00-11:00-400');
+    for (const p of [{}, { chase: { from: '07:00', after: '11:00', pts: 10 } }]) {
+      await getSignalBacktest(q(p));
+      expect(asked().has('chase')).toBe(false);
+    }
+  });
+});

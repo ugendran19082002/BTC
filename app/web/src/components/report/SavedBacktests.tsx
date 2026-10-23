@@ -52,6 +52,7 @@ function shapeOf(q: SavedQuery): string {
     widen: [p.widenSlAtr ?? 0, p.widenTgtAtr ?? 0, p.widenMode ?? 'widest'],
     skip: [p.skipPerpSl === true, p.skipPerpTgt === true],
     be: p.breakEven ?? null,
+    chase: p.chase ?? null,
     tfs: [...q.tfs].sort(), methods: [...q.methods].sort(), strategy: q.strategy,
   });
 }

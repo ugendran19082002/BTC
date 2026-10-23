@@ -4,6 +4,7 @@ import type { AutoMethodsRun, StrategyConfig, WalkForward } from '@/types/strate
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import { strikeBlocksQuery } from '@/lib/backtest-strike-blocks';
 import { WIDEN_ATR_MAX, breakEvenQuery, tslQuery } from '@/lib/backtest-tsl';
+import { chaseQuery } from '@/lib/backtest-chase';
 
 /** A backtest's question as the server reads it: the days, the settings, the filters, the strategy. Shared with its live check, so both are of the same thing. */
 function searchOf(q: BacktestQuery): URLSearchParams {
@@ -41,6 +42,9 @@ function searchOf(q: BacktestQuery): URLSearchParams {
   if ((widen(q.params.widenSlAtr) || widen(q.params.widenTgtAtr)) && q.params.widenMode === 'calm') p.set('wmode', 'calm');
   if (q.params.skipPerpSl) p.set('noperpsl', '1');
   if (q.params.skipPerpTgt) p.set('noperptgt', '1');
+  // The chase guard only where it is right: its editor says what is wrong with any other.
+  const chase = chaseQuery(q.params.chase);
+  if (chase) p.set('chase', chase);
   if (q.tfs.length) p.set('tf', q.tfs.join(','));
   if (q.methods.length) p.set('method', q.methods.join(','));
   if (q.strategy) p.set('strategy', q.strategy);

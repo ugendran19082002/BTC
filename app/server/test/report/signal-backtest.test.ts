@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_WIN, passesBar, recordBefore, tallyOf, winBarAt, breakEvenProblems, breakEvenReached, minuteAtr, paramsKey, perpFeePts, perpOf, widenAfter, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
+import { DEFAULT_PARAMS, MIN_PREMIUM, VOL_STUDY_WIN, chasing, passesBar, recordBefore, tallyOf, winBarAt, breakEvenProblems, breakEvenReached, minuteAtr, paramsKey, perpFeePts, perpOf, widenAfter, pickStrike, planOfParams, simulateDay, tslProblems, tslTrail, type BacktestParams, type BoardRow, type BtSignal } from '../../src/report/signal-backtest.js';
 import { sessionOf, type MinuteBar } from '../../src/report/market-day.js';
 import { fillChargesUsd } from '../../src/trading/charges.js';
 
@@ -72,7 +72,7 @@ test('[critical] a BUY sells the put at the bid of the reading nearest its fill,
   // the perp reaches 84,500 in minute 302; the put decays from 40 to 10 over the day
   const r = simulateDay({ from, to, params: P, signals: [sig(31)], bars: perp([[0, 84_000], [300, 84_490], [310, 84_560], [1_439, 84_600]]),
     board: byTime([...contract('P', 83_200, -0.09, [[0, 40], [1_435, 10]]), ...contract('C', 85_000, 0.09, [[0, 40], [1_435, 10]])]) });
-  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+  assert.deepEqual(r.skipped, { 'outside-window': 0, 'no-entry-window': 0, distance: 0, chase: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
   const [t] = r.trades;
   assert.equal(t!.cp, 'P'); assert.equal(t!.strike, 83_200);
   assert.equal(t!.entryAt, from + 30 * MIN, 'the 5-minute reading nearest minute 31');
@@ -951,4 +951,42 @@ test('[critical] 22 Oct 2026: the most on one strike, as the live desk holds it 
   const end = simulateDay({ from, to, signals, bars, board: byTime(contract('P', 83_400, -0.09, [[0, 40], [1_435, 30]])), plan: planOfParams({ ...P, deskMax: 10, strikePct: 20 }, { from, to }) });
   assert.equal(end.trades.length, 2);
   assert.equal(end.skipped['strike-limit'], 3);
+});
+
+test('[critical] the chase guard (22 Oct 2026): from its time, a signal selling the way BTC has already run from the morning is skipped -- the other way, before it, or a smaller move is traded', () => {
+  // 07:00 IST is minute 810 of the expiry day, 11:00 minute 1,050, 12:00 minute 1,110. BTC climbs 500 from 07:00 to 11:50.
+  const up = perp([[0, 84_000], [810, 84_000], [1_100, 84_500], [1_439, 84_500]]);
+  const down = perp([[0, 84_000], [810, 84_000], [1_100, 83_500], [1_439, 83_500]]);
+  const guard = { from: '07:00', after: '11:00', pts: 400 };
+  const at = (min: number, dir: 1 | -1, fillPrice: number) => sig(min, { dir, fillPrice, stop: fillPrice - 300 * dir, target: fillPrice + 500 * dir });
+  // a buy (a PE sold) at 12:00 after the climb: chasing; a sell (a CE sold) then: against the move, taken
+  assert.equal(chasing(guard, at(1_110, 1, 84_500), up), true);
+  assert.equal(chasing(guard, at(1_110, -1, 84_500), up), false);
+  // the same, mirrored on a fall
+  assert.equal(chasing(guard, at(1_110, -1, 83_500), down), true);
+  assert.equal(chasing(guard, at(1_110, 1, 83_500), down), false);
+  // before 11:00 it is not checked, however far BTC has run; a move under the points is not a chase
+  assert.equal(chasing(guard, at(1_040, 1, 84_480), up), false);
+  assert.equal(chasing({ ...guard, pts: 600 }, at(1_110, 1, 84_500), up), false);
+  // at exactly the points, a chase
+  assert.equal(chasing({ ...guard, pts: 500 }, at(1_110, 1, 84_500), up), true);
+  // the move is the perp's own minutes, 07:00's against the last closed before the fill: a fill price is not read
+  assert.equal(chasing(guard, at(1_110, 1, 84_000), up), true);
+  const back = perp([[0, 84_000], [810, 84_000], [1_000, 84_500], [1_100, 84_100], [1_439, 84_100]]);
+  assert.equal(chasing(guard, at(1_110, 1, 84_500), back), false, 'run up and back by noon: 100 from the morning');
+  // the night before 07:00 is the same expiry day's start: a signal at 11 PM is before both times, not checked
+  assert.equal(chasing(guard, at(330, 1, 85_000), up), false);
+
+  // in a day's run: skipped as `chase`, the rest traded or skipped for their own reasons
+  const board = byTime([...ladder('P', 83_200, -0.09, [[0, 40], [1_435, 4]]), ...ladder('C', 85_800, 0.09, [[0, 40], [1_435, 4]])]);
+  const signals = [at(1_040, 1, 84_480), at(1_110, 1, 84_500), at(1_110, -1, 84_500)];
+  const off = simulateDay({ from, to, signals, bars: up, board, plan: planOf() });
+  const on = simulateDay({ from, to, signals, bars: up, board, plan: planOf({ ...P, chase: guard }) });
+  assert.equal(off.skipped.chase, 0);
+  assert.equal(on.skipped.chase, 1);
+  assert.deepEqual(on.refused.filter((x) => x.why === 'chase').map((x) => x.signal), [signals[1]]);
+  assert.equal(on.trades.length, off.trades.length - 1, 'only the chase left out');
+  // a guard is part of what a run is: worked apart from the run without it
+  assert.notEqual(paramsKey(P), paramsKey({ ...P, chase: guard }));
+  assert.notEqual(paramsKey({ ...P, chase: guard }), paramsKey({ ...P, chase: { ...guard, pts: 300 } }));
 });

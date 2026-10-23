@@ -91,10 +91,11 @@ async function portfolioQuery(q: Record<string, unknown>) {
      * `widest` or `calm` -- together, 0 off;
      * a member by a strategy keeps its own levels), `o_be` (the option's stop to the price sold once the premium has fallen
      * so far, `10pct` / `5pts`, or `off`), `o_noperpsl` / `o_noperptgt` (the perp's SL and TGT left out, 1, or used, 0 --
-     * the two together; a member by a strategy keeps the desk's). One that is absent is off: each member's own. They are
+     * the two together; a member by a strategy keeps the desk's), `o_chase` (the chase guard, 22 Oct 2026: `07:00-11:00-400`,
+     * or `off` to take every member's away -- over a member by a strategy too, as the volatility filter is). One that is absent is off: each member's own. They are
      * read and held to their limits by the single backtest's own parser, so a value means here what it means there.
      */
-    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax', 'noentry', 'vol', 'volby', 'sblocks', 'tsl', 'wsl', 'wtgt', 'wmode', 'be', 'noperpsl', 'noperptgt'] as const;
+    const O_KEYS = ['rule', 'value', 'tp', 'tsteps', 'sl', 'lots', 'minprem', 'slmin', 'slmax', 'tgtmin', 'tgtmax', 'noentry', 'vol', 'volby', 'sblocks', 'tsl', 'wsl', 'wtgt', 'wmode', 'be', 'noperpsl', 'noperptgt', 'chase'] as const;
     const asked: Record<string, unknown> = {};
     for (const k of O_KEYS) if (q[`o_${k}`] !== undefined && q[`o_${k}`] !== '') asked[k] = q[`o_${k}`];
     const has = (k: (typeof O_KEYS)[number]) => k in asked;
@@ -129,6 +130,8 @@ async function portfolioQuery(q: Record<string, unknown>) {
       ...(has('vol') ? { vol: read.vol ?? 'off' } : {}),
       // Read by the candles unless the run says the IV; a strategy that sets its delta by volatility keeps its own source.
       ...(has('volby') ? { volBy: read.volBy ?? 'atr' } : {}),
+      // The chase guard is asked of the market, as the volatility filter is; `off` takes each member's own away.
+      ...(has('chase') ? { chase: read.chase } : {}),
     };
     Object.assign(settings, market);
     const changed = Object.keys(settings).length > 0;

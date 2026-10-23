@@ -3,8 +3,9 @@ import { pickQuery, sweepCellQuery, sweepQuery, volQuery, type VolTradesPick } f
 import { noEntryQuery } from '@/lib/backtest-no-entry';
 import type { NoEntry, StrikeBlock } from '@/types/strategy';
 import { backtestBlockProblems } from '@/lib/backtest-strike-blocks';
-import type { BacktestParams, BreakEven, Tsl } from '@/types/signal-backtest';
+import type { BacktestParams, BreakEven, Chase, Tsl } from '@/types/signal-backtest';
 import { breakEvenQuery, tslQuery } from '@/lib/backtest-tsl';
+import { chaseQuery } from '@/lib/backtest-chase';
 import type { TradePick, VolAsk, VolStudyResult, WinSweepAsk, WinSweepCellKey, WinSweepResult } from '@/types/signal-backtest';
 import type { BacktestPortfolio, BacktestPortfolioResult, BtDayTrades, BacktestSave, BacktestSaves, LiveCheck, SavedQuery } from '@/types/signal-backtest';
 
@@ -129,6 +130,8 @@ export type PortfolioOver = {
   skipPerp?: { sl: boolean; tgt: boolean };
   /** The option's stop to the price sold over every member; null takes each one's own away for the run. */
   breakEven?: { be: BreakEven | null };
+  /** The chase guard over every member, a strategy's too (22 Oct 2026); null takes each one's own away for the run. */
+  chase?: { chase: Chase | null };
 };
 
 /** The run's settings as the route reads them: the single backtest's own names, each under `o_`. */
@@ -156,6 +159,7 @@ export function overQuery(o: PortfolioOver): Record<string, string> {
     else { const s = tslQuery({ tsl: t, stopPct: o.stop?.stopPct ?? 3 }); if (s) q.o_tsl = s; }
   }
   if (o.breakEven) { const s = o.breakEven.be === null ? 'off' : breakEvenQuery(o.breakEven.be); if (s) q.o_be = s; }
+  if (o.chase) { const s = o.chase.chase === null ? 'off' : chaseQuery(o.chase.chase); if (s) q.o_chase = s; }
   // Only a pick that is right: the run's settings say what is wrong with any other.
   if (o.winPick && o.winPick.pct >= 1 && o.winPick.pct <= 100 && Number.isInteger(o.winPick.minTrades) && o.winPick.minTrades >= 1 && o.winPick.minTrades <= 100) { q.o_win = String(o.winPick.pct); q.o_wintrades = String(o.winPick.minTrades); q.o_winon = o.winPick.on; if (o.winPick.on === 'custom') { q.o_winfrom = o.winPick.pickFrom ?? ''; q.o_winto = o.winPick.pickTo ?? ''; } else q.o_windays = String(o.winPick.days); }
   if (o.skipPerp) { q.o_noperpsl = o.skipPerp.sl ? '1' : '0'; q.o_noperptgt = o.skipPerp.tgt ? '1' : '0'; }

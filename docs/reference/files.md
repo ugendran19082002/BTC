@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-559 files listed, 303 test files counted below, images and lockfiles left out.
+561 files listed, 304 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 155 |
-| `app/web` | 148 |
+| `app/web` | 149 |
 
 ## `(root)`
 
@@ -473,6 +473,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [BacktestBreakEven.tsx](../../app/web/src/components/report/BacktestBreakEven.tsx) | The option's stop to the price sold, in the backtest and a run together (owner, 18 Oct 2026: "SL move to the entry price -- a new option, pts and %"): once the premium has fallen X from the price s... |
 | [BacktestBreakdowns.tsx](../../app/web/src/components/report/BacktestBreakdowns.tsx) | A result broken down, the same for one backtest and for saved backtests run together (owner, 17 Oct 2026: "the backtest's output screen and the portfolio's do not match -- best practice, user frien... |
+| [BacktestChase.tsx](../../app/web/src/components/report/BacktestChase.tsx) | The chase guard, in the backtest and a run together (owner, 22 Oct 2026: "B: chase 11:00, 400pt -- in the backtest settings, to test"): from a time of day, a signal that would sell the way BTC has... |
 | [BacktestCurve.tsx](../../app/web/src/components/report/BacktestCurve.tsx) | The backtest's running total, expiry day by expiry day (owner, 14 Oct 2026: "the backtest screen, user friendly"): whether the settings make money steadily or on one lucky day, and the worst stretc... |
 | [BacktestPerpWiden.tsx](../../app/web/src/components/report/BacktestPerpWiden.tsx) | The perp's SL and TGT widened with volatility, in the backtest and a run together (owner, 18 Oct 2026: "when the signal comes, its PERP SL and PERP TGT are the least; as volatility rises the SL and... |
 | [BacktestSkipPerp.tsx](../../app/web/src/components/report/BacktestSkipPerp.tsx) | -- |
@@ -610,6 +611,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | File | What it is |
 |---|---|
 | [account-scope.ts](../../app/web/src/lib/account-scope.ts) | Which broker account the account-based screens are showing (owner, 5 Oct 2026): strategies, orders and P&L are read for one account at a time, chosen on the tabs above them. |
+| [backtest-chase.ts](../../app/web/src/lib/backtest-chase.ts) | The chase guard's own rules, as the server holds them (`backtestParamsOf`): two times of the expiry day, the check after the reference read forward from 5:30 PM, and 50 to 20,000 points. |
 | [backtest-no-entry.ts](../../app/web/src/lib/backtest-no-entry.ts) | The backtest's no-entry windows (owner, 15 Oct 2026: "no-entry window in the backtest's settings, as the strategy form has"): the form's own rules, held to the backtest's hours rather than a strate... |
 | [backtest-strike-blocks.ts](../../app/web/src/lib/backtest-strike-blocks.ts) | The backtest's strike rule by time of day (owner, 18 Oct 2026: "the strategy form's strike blocks, in the backtest and the portfolio"): the form's own blocks and rules, held to the backtest's hours. |
 | [backtest-tsl.ts](../../app/web/src/lib/backtest-tsl.ts) | A trailing SL on the backtest's option stop (owner, 18 Oct 2026: "TSL in the backtest -- points and per cent; as the price moves from the entry, the SL moves"): every `move` the premium falls from... |

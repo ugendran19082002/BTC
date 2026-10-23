@@ -10,7 +10,7 @@ export type WidenMode = 'widest' | 'calm';
 export type TslUnit = 'pts' | 'pct';
 /** Every `move` the premium falls from the price sold, the option's stop comes down `by`; never back up (18 Oct 2026). */
 export type Tsl = { move: number; moveUnit: TslUnit; by: number; byUnit: TslUnit };
-export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'strike-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
+export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'chase' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'strike-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
 export type BacktestParams = {
   rule: 'delta' | 'premium'; value: number; lots: number; targetPct: number; stopPct: number; window: 'desk' | 'all' | 'custom';
   /** With `custom`: the signals filled from this IST time to this one, "HH:MM"; it may run past midnight. */
@@ -49,7 +49,14 @@ export type BacktestParams = {
   skipPerpSl?: boolean; skipPerpTgt?: boolean;
   /** The option's stop to the price sold once the premium has fallen `move` (18 Oct 2026); absent, off. */
   breakEven?: BreakEven;
+  /**
+   * The chase guard (22 Oct 2026): from `after` (IST), a signal that would sell the way BTC has already moved `pts` or
+   * more since `from`, the same expiry day, is skipped. A backtest's alone; absent, off.
+   */
+  chase?: Chase;
 };
+/** The chase guard: two times of the expiry day, "HH:MM", and the BTC points. */
+export type Chase = { from: string; after: string; pts: number };
 /** A break-even: the premium's fall from the price sold, in points or a per cent of it, after which the stop is the price sold. */
 export type BreakEven = { move: number; unit: TslUnit };
 

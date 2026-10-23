@@ -31,6 +31,8 @@ import { WidenCompare } from '@/components/report/WidenCompare';
 import { BacktestSkipPerp } from '@/components/report/BacktestSkipPerp';
 import { RunWinPick, winPickFixWords, winPickFor, winPickProblem, winPickWords } from '@/components/report/RunWinPick';
 import { BacktestBreakEven } from '@/components/report/BacktestBreakEven';
+import { BacktestChase } from '@/components/report/BacktestChase';
+import { CHASE_DEFAULT, chaseProblems, chaseWords } from '@/lib/backtest-chase';
 import { breakEvenWords, tslProblems, tslWords } from '@/lib/backtest-tsl';
 import { backtestBlockProblems, strikeBlocksWords } from '@/lib/backtest-strike-blocks';
 import { BacktestBreakdowns, ChargesNote, DayAverages, GRAIN, ResultNav, WinnersLosers, pricedWords, skippedParts } from '@/components/report/BacktestBreakdowns';
@@ -416,7 +418,7 @@ function RunFilters({ over, onChange, seed, stepSources, wide, run }: {
     delete next[key];
     onChange(next);
   };
-  const { strike, target, stop, lots, minPremium, range, noEntry, vol, strikeBlocks, tsl, perpWiden, breakEven, skipPerp, winPick } = over;
+  const { strike, target, stop, lots, minPremium, range, noEntry, vol, strikeBlocks, tsl, perpWiden, breakEven, skipPerp, winPick, chase } = over;
   const values = strike?.rule === 'premium' ? PREMIUMS : DELTAS;
   const dynamic = (target?.targetSteps?.length ?? 0) > 0 || dynamicDraft;
   const switchedOn = Object.keys(over).length;
@@ -550,6 +552,11 @@ function RunFilters({ over, onChange, seed, stepSources, wide, run }: {
               { key: 'iv', label: 'ATM IV', spoken: 'For the run, volatility by the at-the-money implied volatility' },
             ]} />
         </>}
+      </RunFilter>
+      {/* The chase guard over every one of them, a strategy's too (22 Oct 2026): asked of the market, as the volatility filter is. */}
+      <RunFilter name="Chase guard" on={!!chase} said={chase ? (chase.chase && chaseProblems(chase.chase).length ? 'not used (see its settings)' : chaseWords(chase.chase) ?? 'no chase guard') : ''}
+        onToggle={() => flip('chase', { chase: seed.chase ?? CHASE_DEFAULT })}>
+        {chase && <BacktestChase name="Chase guard, for the run" value={chase.chase} onChange={(c) => put({ chase: { chase: c } })} />}
       </RunFilter>
       {/* No-entry windows over every one of them, for the run (15 Oct 2026): the form's editor, held to the whole day. */}
       <RunFilter name="No-entry window" on={!!noEntry} said={noEntry ? said({ noEntry: { ...noEntry, on: true } }) : ''}
@@ -739,6 +746,7 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
       ...(!byStrategy && params.noEntry?.on && params.noEntry.windows.length ? [`no entry ${params.noEntry.windows.map((w) => `${time12(w.from)}–${time12(w.to)}`).join(', ')}`] : []),
       (params.vol ?? 'off') === 'off' ? 'every volatility' : `${params.vol} volatility only`,
       params.volBy === 'iv' ? 'volatility by ATM IV' : null,
+      params.chase ? (chaseProblems(params.chase).length ? 'chase guard not used (see its settings)' : chaseWords(params.chase)) : null,
       params.deskMax > 0 ? `at most ${params.deskMax} open · CE ${params.cePct}% · PE ${params.pePct}%${(params.strikePct ?? 100) < 100 ? ` · strike ${params.strikePct}%${params.strikeFull === 'skip' ? ' (skip)' : ''}` : ''}` : 'no open limit',
     ].filter(Boolean).join(' · '),
     filters: [
@@ -945,6 +953,10 @@ export function SignalBacktest({ now = Date.now(), wide = false }: { now?: numbe
               ? <>The at-the-money implied volatility when the signal fills, against the same hour of the five expiry days before: their lowest third is low, the highest high. No IV reading in the 6 minutes before the fill: unknown, never low.</>
               : <>The last two hours of 15-minute candles when the signal fills, against the average of the five expiry days before: low is under 0.8×, high over 1.3×, medium between.</>}
           </p>
+        </div>
+        {/* The chase guard (22 Oct 2026): off to begin with; with a strategy too -- it is asked of the market. */}
+        <div className="border-0 border-b border-solid border-[var(--line-soft)] pb-3">
+          <BacktestChase value={params.chase ?? null} onChange={(chase) => set({ chase: chase ?? undefined })} />
         </div>
         <section aria-label="The desk's limits" className="grid gap-2">
           <div className="text-[13px] font-semibold">The desk&apos;s limits <span className="font-normal text-muted-foreground">· as on the Signal Strategies card</span></div>

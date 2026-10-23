@@ -2,12 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
 import { sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
-import { DEFAULT_PARAMS, MIN_PREMIUM, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, VOL_STUDY_WIN, type VolWin, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick, type WinSweepAsk, type WinSweepCellPick } from '../../report/signal-backtest.js';
+import { DAY_START_IST, DEFAULT_PARAMS, MIN_PREMIUM, type Chase, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, VOL_STUDY_WIN, type VolWin, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick, type WinSweepAsk, type WinSweepCellPick } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades, winSweep, winSweepTrades } from '../../report/backtest-run.js';
 import { cleanBlocks, cleanConfig, strategyStore } from './strategy.routes.js';
-import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, strikeFullOf, strikeMaxOf, SIGNAL_TFS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
+import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, strikeFullOf, strikeMaxOf, SIGNAL_TFS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, minutesForward, minutesOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
@@ -142,6 +142,21 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
   // What that level is read from: `?volby=atr|iv` -- the candles' ATR (the default) or the board's ATM implied volatility.
   const volBy = q.volby === undefined || q.volby === '' ? 'atr' : q.volby;
   if (volBy !== 'atr' && volBy !== 'iv') return 'Volatility is read by "atr" or "iv".';
+  /*
+   * The chase guard (22 Oct 2026): `?chase=07:00-11:00-400` -- from 11:00 IST, skip a signal that sells the way BTC
+   * has moved 400 points or more since 07:00 the same expiry day. Both read forward from 5:30 PM, the check after the
+   * reference; 50 to 20,000 points. `off` or absent: none.
+   */
+  let chase: Chase | undefined;
+  if (typeof q.chase === 'string' && q.chase.trim() !== '' && q.chase.trim() !== 'off') {
+    const m = /^(\d\d:\d\d)-(\d\d:\d\d)-(\d+)$/.exec(q.chase.trim());
+    if (!m || !hhmm.test(m[1]!) || !hhmm.test(m[2]!)) return 'The chase guard is a time the move is read from, a time it is checked from and the points, HH:MM-HH:MM-N -- for example 07:00-11:00-400.';
+    const start = minutesOf(DAY_START_IST);
+    if (!(minutesForward(start, minutesOf(m[2]!)) > minutesForward(start, minutesOf(m[1]!)))) return 'The chase guard is checked from a time after the one the move is read from, in the same expiry day (from 5:30 PM).';
+    const pts = Number(m[3]);
+    if (!(pts >= 50 && pts <= 20_000)) return 'The chase guard\'s move is from 50 to 20,000 points.';
+    chase = { from: m[1]!, after: m[2]!, pts };
+  }
   // The least premium an option is sold for: `?minprem=`, dollars, 0 for no floor. Absent: 10.
   const minPremium = num('minprem', MIN_PREMIUM);
   if (!(minPremium >= 0 && minPremium <= 500)) return 'The minimum premium is from 0 (no floor) to 500 dollars.';
@@ -218,6 +233,7 @@ export function backtestParamsOf(q: Record<string, unknown>): BacktestParams | s
     ...(widenSlAtr > 0 ? { widenSlAtr } : {}), ...(widenTgtAtr > 0 ? { widenTgtAtr } : {}),
     ...((widenSlAtr > 0 || widenTgtAtr > 0) && widenMode === 'calm' ? { widenMode: 'calm' as const } : {}),
     ...(skipPerpSl ? { skipPerpSl } : {}), ...(skipPerpTgt ? { skipPerpTgt } : {}), ...(breakEven ? { breakEven } : {}),
+    ...(chase ? { chase } : {}),
   };
 }
 
@@ -373,6 +389,7 @@ export function backtestParamsFrom(p: unknown): BacktestParams | string {
     wsl: x.widenSlAtr, wtgt: x.widenTgtAtr, wmode: x.widenMode,
     noperpsl: x.skipPerpSl === true ? '1' : undefined, noperptgt: x.skipPerpTgt === true ? '1' : undefined,
     be: x.breakEven && typeof x.breakEven === 'object' ? `${x.breakEven.move}${x.breakEven.unit}` : undefined,
+    chase: x.chase && typeof x.chase === 'object' ? `${x.chase.from}-${x.chase.after}-${x.chase.pts}` : undefined,
   });
 }
 

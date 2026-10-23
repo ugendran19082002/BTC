@@ -104,6 +104,7 @@ export function skippedParts(sk: Partial<Record<BtSkip, number>>, o: { byStrateg
     n('outside-window') ? `${count(n('outside-window'))} outside ${o.run ? 'their hours' : o.byStrategy ? 'its days and hours' : 'the hours chosen'}` : null,
     n('no-entry-window') ? `${count(n('no-entry-window'))} inside ${o.run ? 'a' : 'its'} no-entry window` : null,
     n('distance') ? `${count(n('distance'))} with the SL or TGT outside ${o.run ? 'their range' : o.byStrategy ? 'its distances' : 'the range set'}` : null,
+    n('chase') ? `${count(n('chase'))} selling the way BTC had already run (chase guard)` : null,
     n('volatility') ? `${count(n('volatility'))} not in ${o.run ? 'the volatility asked for' : `${p.vol ?? 'that'} volatility`}` : null,
     n('at-limit') ? `${count(n('at-limit'))} while ${o.run ? 'that one' : 'it'} already had its most open` : null,
     n('desk-limit') ? `${count(n('desk-limit'))} while ${o.run ? 'the account was full' : `${p.deskMax} were open`} (at most open)` : null,

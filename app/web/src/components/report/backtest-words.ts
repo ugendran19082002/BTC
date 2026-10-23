@@ -2,6 +2,7 @@ import { time12 } from '@/lib/time';
 import type { BacktestParams, SavedQuery } from '@/types/signal-backtest';
 import { strikeBlocksWords } from '@/lib/backtest-strike-blocks';
 import { breakEvenWords, tslWords } from '@/lib/backtest-tsl';
+import { chaseWords } from '@/lib/backtest-chase';
 
 /**
  * A backtest's settings as the screen starts with them, and in words. Apart from the screen itself
@@ -60,6 +61,7 @@ export function settingsWords(q: SavedQuery, strategies: readonly { id: string; 
     !byStrategy ? strikeBlocksWords(p.strikeBlocks) : null,
     !byStrategy && p.noEntry?.on && p.noEntry.windows.length ? `no entry ${p.noEntry.windows.map((w) => `${time12(w.from)} – ${time12(w.to)}`).join(', ')}` : null,
     p.vol && p.vol !== 'off' ? `${p.vol} volatility${p.volBy === 'iv' ? ' by ATM IV' : ''}` : null,
+    chaseWords(p.chase),
     p.deskMax > 0 ? `at most ${p.deskMax} open · CE ${p.cePct}% · PE ${p.pePct}%${(p.strikePct ?? 100) < 100 ? ` · strike ${p.strikePct}%${p.strikeFull === 'skip' ? ' (skip)' : ' (then the next out)'}` : ''}` : 'no open limit',
     withFilters && q.tfs.length ? `on ${q.tfs.map((t) => (t === 'chain' ? 'TF chain' : t)).join(', ')}` : null,
     withFilters && q.methods.length ? `${q.methods.length} method${q.methods.length === 1 ? '' : 's'}` : null,
@@ -93,5 +95,6 @@ export function overWords(p: Partial<BacktestParams>): string[] {
   if (p.noEntry?.on && p.noEntry.windows.length) out.push(`no entry ${p.noEntry.windows.map((w) => `${time12(w.from)} – ${time12(w.to)}`).join(', ')}`);
   if (p.strikeBlocks !== undefined) out.push(strikeBlocksWords(p.strikeBlocks) ?? 'one strike rule all day');
   if (p.vol !== undefined) out.push(p.vol === 'off' ? 'every volatility' : `${p.vol} volatility only${p.volBy === 'iv' ? ' (ATM IV)' : ''}`);
+  if (p.chase !== undefined) out.push(chaseWords(p.chase) ?? 'no chase guard');
   return out;
 }

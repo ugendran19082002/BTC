@@ -49,7 +49,7 @@ const RESULT: SignalBacktestResponse = {
   params: { rule: 'delta', value: 0.1, lots: 10, targetPct: 0.9, stopPct: 3, window: 'desk', deskMax: 0, cePct: 100, pePct: 100 },
   deskLimits: [{ account: 'Savings', max: 58, ce: 80, pe: 80 }, { account: 'Expenses', max: 35, ce: 80, pe: 80 }],
   margin: { peakUsd: 300, peakDay: '2026-10-13', peakAt: Date.parse('2026-10-13T04:29:00+05:30'), peakOpen: 58, peakLots: 580, avgDailyPeakUsd: 200, avgTradeUsd: 5.2 },
-  signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
+  signals: 1_400, skipped: { 'outside-window': 300, 'no-entry-window': 0, distance: 0, chase: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 95, 'no-exit-price': 5 },
   strategy: null,
   strategies: [
     { id: '1h-time', name: '1h time', enabled: true, account: 'Savings', methods: ['gamma'], tfs: ['4h'], target: { pct: 0.7, steps: [{ at: '23:30', pct: 0.75 }, { at: '03:30', pct: 0.85 }] } },
@@ -219,6 +219,21 @@ describe('SignalBacktest', () => {
     expect(screen.getAllByText(/SL to entry after 25%/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('switch', { name: 'SL to entry, on or off' }));
     await waitFor(() => expect(lastQuery().params.breakEven).toBeUndefined());
+  });
+
+  it('[critical] the chase guard (22 Oct 2026): off to begin with; on, asked for from 11 AM at 400 pts since 7 AM; a time and points chosen; off, gone', async () => {
+    show();
+    await screen.findByText('Backtest result');
+    expect(lastQuery().params.chase).toBeUndefined();
+    fireEvent.click(screen.getByRole('switch', { name: 'Chase guard, on or off' }));
+    await waitFor(() => expect(lastQuery().params.chase).toEqual({ from: '07:00', after: '11:00', pts: 400 }));
+    expect(screen.getAllByText(/chase guard from 11:00 AM, 400 pts since 7:00 AM/).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Chase guard example')).toHaveTextContent('108,400 or more at 11:00 AM or later: a buy signal -- a PE sold -- is skipped');
+    fireEvent.click(within(screen.getByRole('group', { name: 'Chase guard: checked from, presets' })).getByRole('button', { name: '12:00 PM' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Chase guard: points, presets' })).getByRole('button', { name: '300 pts' }));
+    await waitFor(() => expect(lastQuery().params.chase).toEqual({ from: '07:00', after: '12:00', pts: 300 }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Chase guard, on or off' }));
+    await waitFor(() => expect(lastQuery().params.chase).toBeUndefined());
   });
 
   it('[critical] the perp\'s SL and TGT widened with volatility (18 Oct 2026): a multiplier each, asked for; the signal\'s own, gone', async () => {
@@ -1280,10 +1295,10 @@ describe('SignalBacktest', () => {
     const folio = () => within(screen.getByRole('complementary', { name: 'Portfolio' }));
     const set = () => within(folio().getByRole('region', { name: 'Settings for the run' }));
     const sw = (name: string) => set().getByRole('switch', { name: `${name}, for the run` });
-    const NAMES = ['Methods by win %', 'Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Trailing SL', 'SL to entry', 'Skip perp SL / TGT', 'Perp SL & TGT by volatility', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'No-entry window'];
+    const NAMES = ['Methods by win %', 'Strike', 'Strike by time of day', 'Option target', 'Option stop', 'Trailing SL', 'SL to entry', 'Skip perp SL / TGT', 'Perp SL & TGT by volatility', 'Lots a signal', 'Minimum premium', 'SL and TGT range', 'Volatility filter', 'Chase guard', 'No-entry window'];
     // every one off to begin with, each saying whose settings run
     expect(set().getAllByRole('switch').map((x) => [x.getAttribute('aria-label'), x.getAttribute('aria-checked')])).toEqual(NAMES.map((n) => [`${n}, for the run`, 'false']));
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(14);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(15);
     expect(set().getByText('· all off')).toBeInTheDocument();
     expect(set().queryByRole('button', { name: 'Switch all off' })).toBeNull();
     // folded on a phone to begin with: one line of what the run is held to, and Change
@@ -1361,6 +1376,16 @@ describe('SignalBacktest', () => {
     fireEvent.click(sw('Strike by time of day'));
     await waitFor(() => expect(last()).toEqual({}));
 
+    // the chase guard over every one of them (22 Oct 2026), from the single backtest's own -- off there, the study's own
+    fireEvent.click(sw('Chase guard'));
+    await waitFor(() => expect(last()).toEqual({ chase: { chase: { from: '07:00', after: '11:00', pts: 400 } } }));
+    expect(set().getByText('For the run: chase guard from 11:00 AM, 400 pts since 7:00 AM')).toBeInTheDocument();
+    fireEvent.click(set().getByRole('switch', { name: 'Chase guard, for the run, on or off' }));
+    await waitFor(() => expect(last()).toEqual({ chase: { chase: null } }));
+    expect(set().getByText('For the run: no chase guard')).toBeInTheDocument();
+    fireEvent.click(sw('Chase guard'));
+    await waitFor(() => expect(last()).toEqual({}));
+
     // the volatility filter over every one of them: the level and what it is read by, together
     fireEvent.click(sw('Volatility filter'));
     await waitFor(() => expect(last()).toEqual({ vol: { vol: 'off', volBy: 'atr' } }));
@@ -1371,7 +1396,7 @@ describe('SignalBacktest', () => {
     fireEvent.click(sw('Volatility filter'));
     await waitFor(() => expect(last()).toEqual({}));
     await waitFor(() => expect(screen.queryByRole('note', { name: 'What this run was held to' })).toBeNull());
-    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(14);
+    expect(set().getAllByText('Off · each saved backtest’s own')).toHaveLength(15);
   });
 
   it('a run\'s settings as the route reads them: the single backtest\'s own names under o_, and nothing for a switch that is off', async () => {
@@ -1387,6 +1412,10 @@ describe('SignalBacktest', () => {
     // the range goes whole, zeros too: "no range for any of them" is asked for, not left out
     expect(overQuery({ range: { slMin: 250, slMax: 0, tgtMin: 250, tgtMax: 0 } })).toEqual({ o_slmin: '250', o_slmax: '0', o_tgtmin: '250', o_tgtmax: '0' });
     expect(overQuery({ vol: { vol: 'low', volBy: 'atr' } })).toEqual({ o_vol: 'low', o_volby: 'atr' });
+    // the chase guard for the run, or off to take each one's own away; a wrong one is not asked for
+    expect(overQuery({ chase: { chase: { from: '07:00', after: '11:00', pts: 400 } } })).toEqual({ o_chase: '07:00-11:00-400' });
+    expect(overQuery({ chase: { chase: null } })).toEqual({ o_chase: 'off' });
+    expect(overQuery({ chase: { chase: { from: '11:00', after: '07:00', pts: 400 } } })).toEqual({});
   });
 });
 

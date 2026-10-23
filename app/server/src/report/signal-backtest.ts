@@ -143,7 +143,16 @@ export type BacktestParams = {
    * is the stop from then on). Beside a trailing SL, the tighter of the two. Absent: off.
    */
   breakEven?: { move: number; unit: TslUnit };
+  /**
+   * The chase guard (owner, 22 Oct 2026, after the afternoon losses were found on the days BTC ran one way from the
+   * morning: "B: chase 11:00, 400pt -- in the backtest settings, to test"): from `after` (IST), a signal that would
+   * sell the way BTC has already moved `pts` or more since `from` is skipped as `chase` -- a buy (a PE sold) after a
+   * rise, a sell (a CE sold) after a fall. The move is the perp's last minute closed before the fill against its
+   * minute at `from`, of the same expiry day. A backtest's alone: the live desk takes such signals. Absent: off.
+   */
+  chase?: Chase;
 };
+export type Chase = { from: string; after: string; pts: number };
 export type WidenMode = 'widest' | 'calm';
 export const WIDEN_MODES: readonly WidenMode[] = ['widest', 'calm'];
 /** The most the perp's widening may ask for, in ATRs of the 1m candles: a 1m ATR is a few tens of points. */
@@ -348,9 +357,9 @@ const BOARD_NEAR_MS = 5 * MIN;
 /** `option-tsl`: the option's stop, after a trailing stop had moved it; `option-be` at the price sold (break-even) */
 export type BtExit = 'perp-tgt' | 'perp-sl' | 'option-tgt' | 'option-sl' | 'option-tsl' | 'option-be' | 'window-end';
 export const BT_EXITS: readonly BtExit[] = ['perp-tgt', 'perp-sl', 'option-tgt', 'option-sl', 'option-tsl', 'option-be', 'window-end'];
-export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'strike-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
-export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'volatility', 'at-limit', 'desk-limit', 'side-limit', 'strike-limit', 'no-board', 'no-strike', 'no-exit-price'];
-const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
+export type BtSkip = 'outside-window' | 'no-entry-window' | 'distance' | 'chase' | 'volatility' | 'at-limit' | 'desk-limit' | 'side-limit' | 'strike-limit' | 'no-board' | 'no-strike' | 'no-exit-price';
+export const BT_SKIPS: readonly BtSkip[] = ['outside-window', 'no-entry-window', 'distance', 'chase', 'volatility', 'at-limit', 'desk-limit', 'side-limit', 'strike-limit', 'no-board', 'no-strike', 'no-exit-price'];
+const noSkips = (): Record<BtSkip, number> => ({ 'outside-window': 0, 'no-entry-window': 0, distance: 0, chase: 0, volatility: 0, 'at-limit': 0, 'desk-limit': 0, 'side-limit': 0, 'strike-limit': 0, 'no-board': 0, 'no-strike': 0, 'no-exit-price': 0 });
 
 export type BtSignal = {
   method: string; mode: 'single' | 'mtf'; tf: string; dir: 1 | -1; filledAt: number; fillPrice: number; stop: number;
@@ -513,6 +522,8 @@ export type DayPlan = {
   maxOpen: number | null;
   /** The desk's own limits on top: at most this many across all, and each side at most so many. Null: none. */
   desk?: DeskCaps | null;
+  /** The chase guard (`BacktestParams.chase`, `chasing`); absent, off. */
+  chase?: Chase | null;
 };
 
 /** The screen's own settings as a plan: every signal in the hours chosen, one strike rule, a fixed number of lots, no limit. */
@@ -546,6 +557,7 @@ export function planOfParams(p: BacktestParams, span: { from: number; to: number
     targetPct: p.targetPct, stopPct: p.stopPct, maxOpen: null, desk: deskCapsOf(p),
     ...(p.tsl ? { tsl: p.tsl } : {}),
     ...(p.breakEven ? { breakEven: p.breakEven } : {}),
+    ...(p.chase ? { chase: p.chase } : {}),
     ...(p.skipPerpSl || p.skipPerpTgt ? { skipPerp: { sl: p.skipPerpSl === true, tgt: p.skipPerpTgt === true } } : {}),
     ...((p.widenSlAtr ?? 0) > 0 || (p.widenTgtAtr ?? 0) > 0 ? { perpWiden: { slAtr: p.widenSlAtr ?? 0, tgtAtr: p.widenTgtAtr ?? 0, mode: p.widenMode ?? 'widest' } } : {}),
     // By the clock, where steps are set: read by the function a strategy's own steps are (`exitValueAt`).
@@ -714,6 +726,27 @@ function firstAfter<T>(xs: readonly T[], t: number, at: (x: T) => number): numbe
 }
 const atOf = (x: { at: number }) => x.at;
 
+/**
+ * Whether a signal sells the way the expiry day has already run (`BacktestParams.chase`): filled at or after `after`,
+ * and the perp's last minute closed before the fill `pts` or more from its minute at `from` the same day, up for a
+ * buy and down for a sell. Both are the minutes' own closes, so the move is of one record. Both times are read
+ * forward from 5:30 PM, as the target steps are. No minute at `from` closed before the fill: not chasing.
+ */
+export function chasing(c: Chase, sig: BtSignal, bars: readonly MinuteBar[]): boolean {
+  const start = minutesOf(DAY_START_IST), fill = minutesForward(start, istMinutes(sig.filledAt));
+  const from = minutesForward(start, minutesOf(c.from));
+  if (fill < minutesForward(start, minutesOf(c.after)) || fill < from) return false;
+  const at = Math.floor(sig.filledAt / MIN) * MIN - (fill - from) * MIN;
+  const ref = bars[firstAfter(bars, at - 1, atOf)], now = bars[firstAfter(bars, sig.filledAt - MIN, atOf) - 1];
+  if (!ref || !now || ref.at > now.at) return false;
+  const move = now.close - ref.close;
+  return Math.abs(move) >= c.pts && Math.sign(move) === sig.dir;
+}
+/** A strategy's plan with the backtest's chase guard on it: the guard is the run's, not the strategy's. */
+const withChase = (plan: DayPlan, p: Pick<BacktestParams, 'chase'>): DayPlan => (p.chase ? { ...plan, chase: p.chase } : plan);
+/** The chase guard in a cache key. */
+const chaseKey = (p: Pick<BacktestParams, 'chase'>) => (p.chase ? `|ch:${p.chase.from}-${p.chase.after}-${p.chase.pts}` : '');
+
 const TF_RANK: Record<string, number> = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1_800, '1h': 3_600, '2h': 7_200, '4h': 14_400 };
 /**
  * The order signals are taken in: as they filled; and those that filled in the same second -- many do, the graders
@@ -853,6 +886,7 @@ export function simulateTogether(o: {
     const skip = (why: BtSkip) => { out.skipped[why]++; out.refused.push({ signal: sig, why }); };
     const refused = plan.refuses(sig);
     if (refused) { skip(refused); continue; }
+    if (plan.chase && chasing(plan.chase, sig, o.bars)) { skip('chase'); continue; }
     const vol = me.volAt ? me.volAt(t0) : null;
     // A signal whose volatility cannot be said is not one of the level asked for.
     if (me.volOnly && vol !== me.volOnly) { skip('volatility'); continue; }
@@ -1111,7 +1145,7 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
 }
 /** The most on one strike as a key: its per cent and what is done at it; none at 100 or absent. */
 const strikeKey = (p: Pick<BacktestParams, 'strikePct' | 'strikeFull'>) => ((p.strikePct ?? 100) >= 100 ? 'sk:-' : `sk:${p.strikePct}${p.strikeFull === 'skip' ? 's' : 'n'}`);
-export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${strikeKey(p)}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|wid:${p.widenSlAtr ?? 0}-${p.widenTgtAtr ?? 0}-${p.widenMode ?? 'widest'}|skip:${p.skipPerpSl ? 'sl' : ''}${p.skipPerpTgt ? 'tgt' : ''}|be:${p.breakEven ? `${p.breakEven.move}${p.breakEven.unit}` : ''}`;
+export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${strikeKey(p)}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|wid:${p.widenSlAtr ?? 0}-${p.widenTgtAtr ?? 0}-${p.widenMode ?? 'widest'}|skip:${p.skipPerpSl ? 'sl' : ''}${p.skipPerpTgt ? 'tgt' : ''}|be:${p.breakEven ? `${p.breakEven.move}${p.breakEven.unit}` : ''}${chaseKey(p)}`;
 /** A strategy's rules as a key: its id, and its rules themselves -- edited, it is another backtest. */
 function strategyKey(s: Strategy): string {
   // Its methods' history too: a new day's pick is another backtest of the same rules (`methodsAt`).
@@ -1455,7 +1489,7 @@ function bookOf(o: Pick<Ask, 'params' | 'tfs' | 'methods' | 'strategy'>): { take
   return {
     takes: (sig) => own(sig)
       && (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method)),
-    planFor: (span) => (st ? planOfStrategy(st, span, null) : planOfParams(free, span)),
+    planFor: (span) => (st ? withChase(planOfStrategy(st, span, null), o.params) : planOfParams(free, span)),
     volOnly: o.params.vol && o.params.vol !== 'off' ? o.params.vol : null,
     volBy: ownVolBy(st, o.params.volBy) ?? 'atr',
   };
@@ -1738,7 +1772,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
   // A strategy is only ever asked about its own signals: its way of reading, its timeframes, its methods.
   const ownOnly = ownSignal(st);
   const caps = deskCapsOf(o.params);
-  const strategyPlan = (s: Strategy, span: { from: number; to: number }, desk: DayPlan['desk']): DayPlan => (o.draft ? { ...planOfStrategy(s, span, desk), maxOpen: null } : planOfStrategy(s, span, desk));
+  const strategyPlan = (s: Strategy, span: { from: number; to: number }, desk: DayPlan['desk']): DayPlan => withChase(o.draft ? { ...planOfStrategy(s, span, desk), maxOpen: null } : planOfStrategy(s, span, desk), o.params);
   const spansByDay = new Map<string, Span[]>();
   const fetched = await marksFetchedBy(days.map((d) => expiryCodeOf(d.day)));
   const marksSeen = (day: string) => fetched.get(expiryCodeOf(day))?.contracts ?? 0;
@@ -1751,7 +1785,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
   const chosen = (sig: BtSignal) => (!o.tfs || o.tfs.includes(sig.mode === 'mtf' ? CHAIN_KEY : sig.tf)) && (!o.methods || o.methods.includes(sig.method));
   const takes = (sig: BtSignal) => ownOnly(sig) && (caps === null || chosen(sig));
   const filterKey = caps === null ? '' : `|tf:${(o.tfs ?? []).join(',')}|m:${(o.methods ?? []).join(',')}`;
-  const key = (st ? `${strategyKey(st)}${o.draft ? '|draft' : ''}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|${strikeKey(o.params)}|vol:${volOnly}|vb:${volBy}` : paramsKey(o.params)) + filterKey;
+  const key = (st ? `${strategyKey(st)}${o.draft ? '|draft' : ''}|${o.params.deskMax ?? 0}|${o.params.cePct ?? 100}|${o.params.pePct ?? 100}|${strikeKey(o.params)}|vol:${volOnly}|vb:${volBy}${chaseKey(o.params)}` : paramsKey(o.params)) + filterKey;
   for (const d of days) {
     const h = await dayOf(d.day, key, o.now, (span) => (st ? strategyPlan(st, span, caps) : planOfParams(o.params, span)), takes, { only: volOnly, baseline: baselineOf(d.day), by: volBy }, marksSeen(d.day));
     grainOf.set(d.day, h.grain);
@@ -1770,7 +1804,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
   if (caps !== null) {
     const free = { ...o.params, deskMax: 0 };
     for (const d of days) {
-      const h = await dayOf(d.day, st ? `${strategyKey(st)}|vol:${volOnly}|vb:${volBy}` : paramsKey(free), o.now, (span) => (st ? strategyPlan(st, span, null) : planOfParams(free, span)), ownOnly, { only: volOnly, baseline: baselineOf(d.day), by: volBy }, marksSeen(d.day));
+      const h = await dayOf(d.day, st ? `${strategyKey(st)}|vol:${volOnly}|vb:${volBy}${chaseKey(o.params)}` : paramsKey(free), o.now, (span) => (st ? strategyPlan(st, span, null) : planOfParams(free, span)), ownOnly, { only: volOnly, baseline: baselineOf(d.day), by: volBy }, marksSeen(d.day));
       listCells.push(...h.cells);
     }
   } else listCells.push(...every);
@@ -1781,7 +1815,7 @@ async function signalBacktestNow(o: Ask, shownOut?: Map<string, Span[]>, cellsOu
       targetPct: exits.target.mode === 'pct' ? exits.target.value : 0, stopPct: exits.stop.mode === 'pct' ? exits.stop.value : 0, window: 'desk',
       deskMax: o.params.deskMax ?? 0, cePct: o.params.cePct ?? 100, pePct: o.params.pePct ?? 100, vol: o.params.vol ?? 'off',
       ...(o.params.strikePct !== undefined ? { strikePct: o.params.strikePct } : {}), ...(o.params.strikeFull ? { strikeFull: o.params.strikeFull } : {}),
-      ...(volBy === 'iv' ? { volBy } : {}),
+      ...(volBy === 'iv' ? { volBy } : {}), ...(o.params.chase ? { chase: o.params.chase } : {}),
     }
     : o.params;
   const real = st && o.draft ? zeroTot() : st
@@ -2208,6 +2242,7 @@ const BT_WHY: Record<BtSkip, string> = {
   'outside-window': 'outside its days and hours, as its rules stand now',
   'no-entry-window': 'inside its no-entry window, as its rules stand now',
   distance: 'its SL / TGT distance, as its rules stand now',
+  chase: 'the chase guard (a backtest setting: the desk takes these)',
   volatility: 'the volatility filter',
   'at-limit': 'its own most open at once',
   'desk-limit': 'the account\'s limit on open trades',
@@ -2600,7 +2635,7 @@ async function signalBacktestDayRows(o: Ask, day: string, member?: string): Prom
   // As the whole run takes them (`signalBacktestNow`): with a limit, the filters choose who competes for the places.
   const takes = (sig: BtSignal) => ownOnly(sig) && (caps === null || chosen(sig));
   const span = { from: c.from, to: c.to };
-  const plan = st ? (o.draft ? { ...planOfStrategy(st, span, caps), maxOpen: null } : planOfStrategy(st, span, caps)) : planOfParams(o.params, span);
+  const plan = st ? withChase(o.draft ? { ...planOfStrategy(st, span, caps), maxOpen: null } : planOfStrategy(st, span, caps), o.params) : planOfParams(o.params, span);
   const volOnly: VolLevel | null = o.params.vol && o.params.vol !== 'off' ? o.params.vol : null;
   const r = simulateDay({
     from: c.from, to: c.to, signals: c.raw.signals.filter(takes), plan,
