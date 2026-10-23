@@ -126,7 +126,7 @@ export function SessionTable({ rows, onOpen, baseKey = 'backtest', about, busy =
   const keep = () => { if (about && !busy) setBase(baseOf(rows, about, Date.now())); };
   /** A small line under a figure: its change against the baseline, coloured by whether that is better. */
   const change = (text: string | null, d: number, label: string) => (text === null ? null : (
-    <span aria-label={`${label} ${text} against the baseline`} className={cn('block text-[11px] tabular-nums', Math.abs(d) < 1e-9 ? 'text-muted-foreground' : d > 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>{text}</span>
+    <span aria-label={`${label} ${text} against the baseline`} className={cn('block whitespace-nowrap text-[11px] tabular-nums', Math.abs(d) < 1e-9 ? 'text-muted-foreground' : d > 0 ? 'text-[var(--up)]' : 'text-[var(--down)]')}>{text}</span>
   ));
   const countBtn = (n: number, label: string, onClick: () => void) => (
     <button type="button" onClick={onClick} aria-label={label}
@@ -231,7 +231,7 @@ export function SessionTable({ rows, onOpen, baseKey = 'backtest', about, busy =
                       <span className={cn('block font-semibold tabular-nums', netClass(s.sum.net))}>{s.sum.n > 0 ? moneyText(s.sum.net) : '—'}</span>
                       {was ? change(moneyText(s.sum.net - was.net), s.sum.net - was.net, 'Net')
                         : <span className={cn('block text-[11px] tabular-nums', netClass(s.sum.net))}>{moneyText(s.sum.net / s.sum.n)} each</span>}
-                      <span aria-hidden className="mt-1 ml-auto block h-1 rounded-full" style={{ width: `${Math.max(4, (100 * Math.abs(s.sum.net)) / most)}%`, background: s.sum.net >= 0 ? 'var(--up)' : 'var(--down)', opacity: 0.7 }} />
+                      {s.sum.n > 0 && <span aria-hidden className="mt-1 ml-auto block h-1 rounded-full" style={{ width: `${Math.max(4, (100 * Math.abs(s.sum.net)) / most)}%`, background: s.sum.net >= 0 ? 'var(--up)' : 'var(--down)', opacity: 0.7 }} />}
                     </td>
                   </tr>
                   {isOpen && s.methods.map((m) => (
