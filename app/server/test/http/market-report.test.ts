@@ -1420,7 +1420,8 @@ test('[critical] the SL, the delta and win % by session against as set, on the s
   const two = [{ from: '17:30', to: '21:00', sl: 150, win: 50 }, { from: '21:00', to: '01:00', delta: 0.08 }];
   const r = await get(`/api/signal-backtest/session-study?${base}&${ss(two)}&swt=1&swd=1`);
   assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300));
-  assert.deepEqual(r.body.sessions, [{ from: '17:30', to: '21:00', delta: null, sl: 1.5, win: 50 }, { from: '21:00', to: '01:00', delta: 0.08, sl: null, win: null }]);
+  const none = { slMin: null, slMax: null, tgtMin: null, tgtMax: null };
+  assert.deepEqual(r.body.sessions, [{ from: '17:30', to: '21:00', delta: null, sl: 1.5, win: 50, ...none }, { from: '21:00', to: '01:00', delta: 0.08, sl: null, win: null, ...none }]);
   assert.deepEqual([r.body.win, r.body.signals, r.body.days, r.body.fixed.pct], [{ base: null, minTrades: 1, days: 1 }, 6, 1, 3]);
   const [fixed, moved] = r.body.lines;
   const by = (l: any) => l.bySession.map((x: any) => [x.session, x.n]);
@@ -1443,9 +1444,20 @@ test('[critical] the SL, the delta and win % by session against as set, on the s
   const all = await get(`/api/signal-backtest/session-study/trades?${base}&${ss([{ from: '17:30', to: '21:00', sl: 150 }])}&side=fixed`);
   assert.ok(Math.abs(all.body.trades.reduce((a: number, t: any) => a + t.netUsd, 0) - sl.body.lines[0].net) < 1e-6, 'the list is the study\'s own trades');
 
+  // The SL and TGT range by session (24 Oct 2026): a session's own stands for the run's, so it loosens as well as
+  // tightens. The run's SL at least 20,000 pts takes nothing; the first session's 0 lets its three back in.
+  const looser = await get(`/api/signal-backtest/session-study?${base}&slmin=20000&${ss([{ from: '17:30', to: '21:00', slMin: 0 }])}`);
+  assert.equal(looser.status, 200, JSON.stringify(looser.body).slice(0, 300));
+  assert.deepEqual(looser.body.lines.map((l: any) => [l.n, by(l)]), [[0, [[0, 0], [-1, 0]]], [3, [[0, 3], [-1, 0]]]]);
+  // And tighter: 20,000 in the second session leaves out its two, every other signal as set.
+  const tighter = await get(`/api/signal-backtest/session-study?${base}&${ss([{ from: '21:00', to: '01:00', slMin: 20_000 }])}`);
+  assert.deepEqual(tighter.body.lines.map((l: any) => [l.n, by(l)]), [[6, [[0, 2], [-1, 4]]], [4, [[0, 0], [-1, 4]]]]);
+
   // Refused in words.
   for (const [q, why] of [
-    ['ss=nope', /The sessions are a list/], [ss([]), /Add a session/], [ss([{ from: '9:00', to: '10:00', sl: 150 }]), /Session 1 is a From and a To time/],
+    ['ss=nope', /The sessions are a list/],
+    [ss([{ from: '18:00', to: '20:00', tgtMax: -1 }]), /SL or TGT distance is from 0 \(off\) to 20,000 points/],
+    [ss([{ from: '18:00', to: '20:00', slMin: 400, slMax: 300 }]), /Session 1's SL maximum must not be under its minimum/], [ss([]), /Add a session/], [ss([{ from: '9:00', to: '10:00', sl: 150 }]), /Session 1 is a From and a To time/],
     [ss([{ from: '10:00', to: '10:00', sl: 150 }]), /must differ/], [ss([{ from: '16:00', to: '18:00', sl: 150 }]), /runs past 5:30 PM/],
     [ss([{ from: '18:00', to: '20:00', sl: 150 }, { from: '19:00', to: '21:00', sl: 150 }]), /Sessions 1 and 2 overlap/],
     [ss([{ from: '18:00', to: '20:00', delta: 0.9 }]), /delta is from 0\.02 to 0\.50/], [ss([{ from: '18:00', to: '20:00', sl: 5 }]), /SL is from 10% to 1,000%/],

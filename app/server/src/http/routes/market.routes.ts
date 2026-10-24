@@ -293,7 +293,8 @@ export function volRuleOf(q: Record<string, unknown>): VolRule | string {
  * What the session study sets (23 Oct 2026): `?ss=` the sessions as JSON, `[{"from":"11:00","to":"16:00","delta":0.08,
  * "sl":150,"win":70}]` -- each an IST span read forward from 5:30 PM (`to` 17:30 is the day's end), none over another,
  * at most `SESSION_RULES_MAX`; in each, `delta` 0.02 to 0.50, `sl` the option stop's per cent over the premium (10 to
- * 1,000), `win` the least per cent its method won (1 to 100), each null or absent to keep it as set. Methods by win %:
+ * 1,000), `win` the least per cent its method won (1 to 100), `slMin`, `slMax`, `tgtMin`, `tgtMax` the SL and TGT
+ * range in BTC points (0 off to 20,000), each null or absent to keep it as set. Methods by win %:
  * `?swb=` the bar as set (1 to 100; absent, none), `?swt=` the least trades (1 to 100, 3), `?swd=` the days read
  * before each day (1 to 30, 14). Something must differ from as set. Or why not, in words.
  */
@@ -313,7 +314,10 @@ export function sessionRuleOf(q: Record<string, unknown>): { sessions: SessionRu
     if (delta !== null && !(delta >= 0.02 && delta <= 0.5)) return `Session ${n}'s delta is from 0.02 to 0.50.`;
     if (sl !== null && !(sl >= 10 && sl <= 1_000)) return `Session ${n}'s SL is from 10% to 1,000% of the premium.`;
     if (win !== null && !(win >= 1 && win <= 100)) return `Session ${n}'s win % is from 1% to 100%.`;
-    sessions.push({ from: r.from, to: r.to, delta: delta === null ? null : Math.round(delta * 100) / 100, sl: sl === null ? null : Math.round(sl) / 100, win: win === null ? null : Math.round(win * 10) / 10 });
+    const slMin = num(r.slMin), slMax = num(r.slMax), tgtMin = num(r.tgtMin), tgtMax = num(r.tgtMax);
+    for (const v of [slMin, slMax, tgtMin, tgtMax]) if (v !== null && !(v >= 0 && v <= 20_000)) return `Session ${n}'s SL or TGT distance is from 0 (off) to 20,000 points.`;
+    for (const [lo, hi, name] of [[slMin, slMax, 'SL'], [tgtMin, tgtMax, 'TGT']] as const) if (lo && hi && hi < lo) return `Session ${n}'s ${name} maximum must not be under its minimum.`;
+    sessions.push({ from: r.from, to: r.to, delta: delta === null ? null : Math.round(delta * 100) / 100, sl: sl === null ? null : Math.round(sl) / 100, win: win === null ? null : Math.round(win * 10) / 10, slMin, slMax, tgtMin, tgtMax });
   }
   // Read forward from 5:30 PM, as the session table is: a span is [from, to), and no two share a minute.
   const spans = sessions.map((x) => [minutesForward(start, minutesOf(x.from)), minutesForward(start, minutesOf(x.to)) || 1_440] as const);
@@ -326,7 +330,7 @@ export function sessionRuleOf(q: Record<string, unknown>): { sessions: SessionRu
   if (base !== null && !(base >= 1 && base <= 100)) return 'The win % as set is from 1% to 100%.';
   if (!(Number.isInteger(minTrades) && minTrades >= 1 && minTrades <= 100)) return 'The least trades are a whole number from 1 to 100.';
   if (!(Number.isInteger(days) && days >= 1 && days <= 30)) return 'The days read for the win % are a whole number from 1 to 30.';
-  if (!sessions.some((x) => x.delta !== null || x.sl !== null || x.win !== null)) return 'Set a delta, an SL or a win % in a session: as it stands it is the settings as set.';
+  if (!sessions.some((x) => x.delta !== null || x.sl !== null || x.win !== null || x.slMin !== null || x.slMax !== null || x.tgtMin !== null || x.tgtMax !== null)) return 'Set a delta, an SL, a win % or an SL / TGT range in a session: as it stands it is the settings as set.';
   return { sessions, win: { base: base === null ? null : Math.round(base * 10) / 10, minTrades, days } };
 }
 /** Which of the session study's trades to list: `?side=fixed|by-session`, `?session=` an index or -1 (absent: all), `?day=` one of the days (absent: all). */

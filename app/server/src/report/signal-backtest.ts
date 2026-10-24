@@ -1160,6 +1160,16 @@ function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMi
   const lo = (v: number, min = 0) => min > 0 && v < min, hi = (v: number, max = 0) => max > 0 && v > max;
   return lo(sl, p.slMin) || hi(sl, p.slMax) || lo(tgt, p.tgtMin) || hi(tgt, p.tgtMax);
 }
+type PtsRange = Pick<BacktestParams, 'slMin' | 'slMax' | 'tgtMin' | 'tgtMax'>;
+/** The SL and TGT range a run reads a signal by, and the target it measures to: a strategy's own (by timeframe, to its TGT), or the settings' (to TGT1). */
+function rangeAsSet(st: Strategy | null, p: PtsRange): (sig: BtSignal) => { range: PtsRange; target: number } {
+  if (!st) return (sig) => ({ range: p, target: sig.target });
+  const rule = st.config.signal!;
+  return (sig) => ({
+    range: { slMin: minSlPtsFor(rule, sig.tf), slMax: maxSlPtsFor(rule, sig.tf), tgtMin: minTgtPtsFor(rule, sig.tf), tgtMax: maxTgtPtsFor(rule, sig.tf) },
+    target: (rule.target === 'tp3' ? sig.tp3 : rule.target === 'tp2' ? sig.tp2 : null) ?? sig.target,
+  });
+}
 /** The most on one strike as a key: its per cent and what is done at it; none at 100 or absent. */
 const strikeKey = (p: Pick<BacktestParams, 'strikePct' | 'strikeFull'>) => ((p.strikePct ?? 100) >= 100 ? 'sk:-' : `sk:${p.strikePct}${p.strikeFull === 'skip' ? 's' : 'n'}`);
 export const paramsKey = (p: BacktestParams) => `${p.rule}|${p.value}|${p.lots}|${p.targetPct}|${p.stopPct}|${p.window}${p.window === 'custom' ? `:${p.hoursFrom}-${p.hoursTo}` : ''}|${p.deskMax ?? 0}|${p.cePct ?? 100}|${p.pePct ?? 100}|${strikeKey(p)}|${p.slMin ?? 0}-${p.slMax ?? 0}-${p.tgtMin ?? 0}-${p.tgtMax ?? 0}|${(p.targetSteps ?? []).map((x) => `${x.at}=${x.pct}`).join(',')}|vol:${p.vol ?? 'off'}|vb:${p.volBy ?? 'atr'}|floor:${p.minPremium ?? MIN_PREMIUM}|ne:${p.noEntry?.on ? p.noEntry.windows.map((w) => `${w.from}-${w.to}`).join(',') : ''}|sb:${p.strikeBlocks?.length ? JSON.stringify(p.strikeBlocks) : ''}|tsl:${p.tsl ? tslQueryOf(p.tsl) : ''}|wid:${p.widenSlAtr ?? 0}-${p.widenTgtAtr ?? 0}-${p.widenMode ?? 'widest'}|skip:${p.skipPerpSl ? 'sl' : ''}${p.skipPerpTgt ? 'tgt' : ''}|be:${p.breakEven ? `${p.breakEven.move}${p.breakEven.unit}` : ''}${chaseKey(p)}`;
@@ -2026,7 +2036,20 @@ function studyBookOf(b: StudyBook): { takes: (sig: BtSignal) => boolean; planFor
         : planOfStrategy(strategyOfParams({ ...b.params, rule: 'delta', value: d, strikeBlocks: [] }, null, null), span).pick);
       // A session's: the same pick with its delta, and its stop -- each kept as set where the session leaves it.
       if (bySession) {
-        return { ...base, bySession: { at: (ms) => sessionIndexAt(bySession, ms), stopPct: bySession.map((x) => x.sl), pick: bySession.map((x) => (x.delta === null ? null : deltaPick(x.delta))) } };
+        const asSet = rangeAsSet(st, b.params);
+        const ranged = bySession.some((x) => RANGE_KEYS.some((k) => x[k] != null));
+        // The SL and TGT distance is the last thing a plan refuses for: a signal past every other check is read by its
+        // session's range, figure by figure, the run's where the session leaves one blank.
+        const refuses: DayPlan['refuses'] = (sig) => {
+          const why = base.refuses(sig), s = sessionIndexAt(bySession, sig.filledAt);
+          if (s < 0 || (why !== null && why !== 'distance')) return why;
+          const own = bySession[s]!, { range, target } = asSet(sig);
+          return outOfRange(sig, target, { slMin: own.slMin ?? range.slMin, slMax: own.slMax ?? range.slMax, tgtMin: own.tgtMin ?? range.tgtMin, tgtMax: own.tgtMax ?? range.tgtMax }) ? 'distance' : null;
+        };
+        return {
+          ...base, ...(ranged ? { refuses } : {}),
+          bySession: { at: (ms) => sessionIndexAt(bySession, ms), stopPct: bySession.map((x) => x.sl), pick: bySession.map((x) => (x.delta === null ? null : deltaPick(x.delta))) },
+        };
       }
       if (!byVol) return base;
       return {
@@ -2130,9 +2153,16 @@ export function portfolioVolStudyHere(o: PortfolioVolStudyAsk): Promise<VolStudy
  * with the session a signal filled in for its level. Each session is IST `from` to `to`, read forward from the
  * daily contract's 5:30 PM, the first that holds a fill its own; a signal in none keeps the settings as set. In a
  * session, `delta` the most a strike sold may have, `sl` the option's stop (a share of the premium: 1.5 is +150%),
- * `win` the least share (per cent) its method must have won -- each null to keep it as set.
+ * `win` the least share (per cent) its method must have won -- each null to keep it as set. The SL and TGT range by
+ * session too (owner, 24 Oct 2026: "add per session"): `slMin`, `slMax`, `tgtMin`, `tgtMax` the BTC points from the
+ * perp entry to the signal's SL and to its target, as the run's own range reads them -- each null to keep the run's,
+ * 0 off; set, it stands for the run's figure in that session, so it can loosen the run's range as well as tighten it.
  */
-export type SessionRule = { from: string; to: string; delta: number | null; sl: number | null; win: number | null };
+export type SessionRule = {
+  from: string; to: string; delta: number | null; sl: number | null; win: number | null;
+  slMin?: number | null; slMax?: number | null; tgtMin?: number | null; tgtMax?: number | null;
+};
+const RANGE_KEYS = ['slMin', 'slMax', 'tgtMin', 'tgtMax'] as const;
 /**
  * Methods by win %, as the volatility study reads them: a method's record over the `days` calendar days before the
  * signal's day, on `minTrades` or more. `base`: the bar as set, for every signal on both sides and outside the

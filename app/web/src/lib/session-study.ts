@@ -5,16 +5,20 @@ import type { SessionAsk } from '@/types/signal-backtest';
  * The SL, delta and win % by session of the day, as typed (owner, 23 Oct 2026: "session based -- delta, SL %, win %
  * -- make them editable; I will check it by session"). Each session is an IST From and To, read forward from the daily
  * contract's 5:30 PM as the session table is; in it each figure is typed or left blank, and a blank one is the settings
- * as set. Held to the server's own rules (`sessionRuleOf`) before it is asked.
+ * as set. Held to the server's own rules (`sessionRuleOf`) before it is asked. The SL and TGT range by session too
+ * (owner, 24 Oct 2026: "add per session"): BTC points from the perp entry, a blank the run's own, 0 off.
  */
-export type SessionDraft = { from: string; to: string; delta: string; sl: string; win: string };
+export type SessionDraft = { from: string; to: string; delta: string; sl: string; win: string; slMin: string; slMax: string; tgtMin: string; tgtMax: string };
+export const RANGE_KEYS = ['slMin', 'slMax', 'tgtMin', 'tgtMax'] as const;
+/** A session's figures, every one blank: as set. */
+export const BLANK_FIGURES = { delta: '', sl: '', win: '', slMin: '', slMax: '', tgtMin: '', tgtMax: '' };
 export type SessionDrafts = { sessions: SessionDraft[]; win: { base: string; minTrades: string; days: string } };
 
 export const SESSIONS_MAX = 24;
 const DAY_START = '17:30';
 /** The afternoon, the SL tighter -- the study of 22 Oct 2026's question -- to begin from. */
 export const SESSION_DRAFTS: SessionDrafts = {
-  sessions: [{ from: '12:00', to: '17:30', delta: '', sl: '150', win: '' }],
+  sessions: [{ from: '12:00', to: '17:30', ...BLANK_FIGURES, sl: '150' }],
   win: { base: '', minTrades: '3', days: '14' },
 };
 
@@ -45,19 +49,22 @@ export function sessionDraftProblem(d: SessionDrafts): string | null {
     if (delta !== null && !(delta >= 0.02 && delta <= 0.5)) return `Session ${n}'s delta is from 0.02 to 0.50.`;
     if (sl !== null && !(sl >= 10 && sl <= 1_000)) return `Session ${n}'s SL is from 10% to 1,000% of the premium.`;
     if (win !== null && !(win >= 1 && win <= 100)) return `Session ${n}'s win % is from 1% to 100%.`;
+    const slMin = num(s.slMin), slMax = num(s.slMax), tgtMin = num(s.tgtMin), tgtMax = num(s.tgtMax);
+    if ([slMin, slMax, tgtMin, tgtMax].some((v) => v !== null && !(v >= 0 && v <= 20_000))) return `Session ${n}'s SL or TGT distance is from 0 (off) to 20,000 points.`;
+    for (const [lo, hi, name] of [[slMin, slMax, 'SL'], [tgtMin, tgtMax, 'TGT']] as const) if (lo && hi && hi < lo) return `Session ${n}'s ${name} maximum must not be under its minimum.`;
   }
   const base = num(d.win.base), trades = num(d.win.minTrades), days = num(d.win.days);
   if (base !== null && !(base >= 1 && base <= 100)) return 'The win % as set is from 1% to 100%, or blank for none.';
   if (!(trades !== null && Number.isInteger(trades) && trades >= 1 && trades <= 100)) return 'The least trades are a whole number from 1 to 100.';
   if (!(days !== null && Number.isInteger(days) && days >= 1 && days <= 30)) return 'The days read are a whole number from 1 to 30.';
-  if (!d.sessions.some((s) => num(s.delta) !== null || num(s.sl) !== null || num(s.win) !== null)) return 'Type a delta, an SL or a win % in a session: blank everywhere is the settings as set.';
+  if (!d.sessions.some((s) => (['delta', 'sl', 'win', ...RANGE_KEYS] as const).some((k) => num(s[k]) !== null))) return 'Type a delta, an SL, a win % or an SL / TGT range in a session: blank everywhere is the settings as set.';
   return null;
 }
 
 /** The sessions as the server is asked: each blank a null. */
 export function sessionAskOf(d: SessionDrafts): SessionAsk {
   return {
-    sessions: d.sessions.map((s) => ({ from: s.from, to: s.to, delta: num(s.delta), sl: num(s.sl), win: num(s.win) })),
+    sessions: d.sessions.map((s) => ({ from: s.from, to: s.to, delta: num(s.delta), sl: num(s.sl), win: num(s.win), slMin: num(s.slMin), slMax: num(s.slMax), tgtMin: num(s.tgtMin), tgtMax: num(s.tgtMax) })),
     win: { base: num(d.win.base), minTrades: Number(d.win.minTrades), days: Number(d.win.days) },
   };
 }
@@ -73,7 +80,7 @@ export function nextSession(d: SessionDrafts): SessionDraft | null {
   if (from >= 1_440) return null;
   const to = Math.min(1_440, from + 120, ...spans.filter(([f]) => f > from).map(([f]) => f));
   const hhmm = (m: number) => { const x = (start + m) % 1_440; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
-  return { from: hhmm(from), to: hhmm(to), delta: '', sl: '', win: '' };
+  return { from: hhmm(from), to: hhmm(to), ...BLANK_FIGURES };
 }
 
 /** The whole day in sessions of `hours`, from 5:30 PM, each blank: a grid to type into. */
@@ -81,13 +88,20 @@ export function splitDay(hours: number): SessionDraft[] {
   const out: SessionDraft[] = [];
   for (let m = 0; m < 1_440; m += hours * 60) {
     const hhmm = (x: number) => { const y = (start + x) % 1_440; return `${String(Math.floor(y / 60)).padStart(2, '0')}:${String(y % 60).padStart(2, '0')}`; };
-    out.push({ from: hhmm(m), to: hhmm(Math.min(1_440, m + hours * 60)), delta: '', sl: '', win: '' });
+    out.push({ from: hhmm(m), to: hhmm(Math.min(1_440, m + hours * 60)), ...BLANK_FIGURES });
   }
   return out;
 }
 
-/** What a session sets, in a few words: "Δ 0.08 · SL +150% · won ≥ 70%", or "as set". `sl` a share (1.5) as the result has it. */
-export function ruleWords(s: { delta: number | null; sl: number | null; win: number | null }): string {
-  const w = [s.delta === null ? null : `Δ ${s.delta.toFixed(2)}`, s.sl === null ? null : `SL +${Math.round(s.sl * 100)}%`, s.win === null ? null : `won ≥ ${s.win}%`].filter(Boolean);
+/**
+ * What a session sets, in a few words: "Δ 0.08 · SL +150% · won ≥ 70% · SL ≥ 150 pts · TGT ≤ off", or "as set". `sl` a
+ * share (1.5) as the result has it; the range in points as the run's own range says it.
+ */
+export function ruleWords(s: { delta: number | null; sl: number | null; win: number | null } & Partial<Record<(typeof RANGE_KEYS)[number], number | null>>): string {
+  const pts = (name: string, op: string, v: number | null | undefined) => (v == null ? null : `${name} ${op} ${v === 0 ? 'off' : `${v.toLocaleString('en-IN')} pts`}`);
+  const w = [
+    s.delta === null ? null : `Δ ${s.delta.toFixed(2)}`, s.sl === null ? null : `SL +${Math.round(s.sl * 100)}%`, s.win === null ? null : `won ≥ ${s.win}%`,
+    pts('SL', '≥', s.slMin), pts('SL', '≤', s.slMax), pts('TGT', '≥', s.tgtMin), pts('TGT', '≤', s.tgtMax),
+  ].filter(Boolean);
   return w.length ? w.join(' · ') : 'as set';
 }

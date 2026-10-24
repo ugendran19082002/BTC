@@ -4,7 +4,7 @@ import { useSynced } from '@/hooks/useSynced';
 import { pct } from '@/lib/format';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
-import { SESSIONS_MAX, SESSION_DRAFTS, nextSession, ruleWords, sessionAskOf, sessionDraftProblem, sessionSpanWords, splitDay, type SessionDraft, type SessionDrafts } from '@/lib/session-study';
+import { RANGE_KEYS, SESSIONS_MAX, SESSION_DRAFTS, nextSession, ruleWords, sessionAskOf, sessionDraftProblem, sessionSpanWords, splitDay, type SessionDraft, type SessionDrafts } from '@/lib/session-study';
 import type { BtDayTrades, SessionAsk, SessionStudyResult, SessionTradesPick } from '@/types/signal-backtest';
 import { DayTradesSheet } from '@/components/report/DayTrades';
 import { Empty, Panel } from '@/components/mobile/parts';
@@ -29,6 +29,13 @@ const FIELDS: { key: Field; label: string; min: number; max: number; step: numbe
   { key: 'sl', label: 'SL +%', min: 10, max: 1_000, step: 10, aria: (n) => `Session ${n}: option SL, per cent over the premium` },
   { key: 'win', label: 'Won ≥ %', min: 1, max: 100, step: 1, aria: (n) => `Session ${n}: the least win per cent of its method` },
 ];
+// The SL and TGT range, as the run's own: BTC points from the perp entry to the signal's SL and target.
+const RANGE_FIELDS: { key: (typeof RANGE_KEYS)[number]; label: string; aria: (n: number) => string }[] = [
+  { key: 'slMin', label: 'SL ≥ pts', aria: (n) => `Session ${n}: the least points to the signal's SL` },
+  { key: 'slMax', label: 'SL ≤ pts', aria: (n) => `Session ${n}: the most points to the signal's SL` },
+  { key: 'tgtMin', label: 'TGT ≥ pts', aria: (n) => `Session ${n}: the least points to the signal's TGT` },
+  { key: 'tgtMax', label: 'TGT ≤ pts', aria: (n) => `Session ${n}: the most points to the signal's TGT` },
+];
 const SPLITS = [3, 4, 6];
 const input = 'h-11 w-full min-w-0 rounded-md border border-solid border-border bg-[var(--bg)] text-[16px] tabular-nums text-foreground placeholder:text-[13px] placeholder:text-muted-foreground';
 const chip = 'm-0 h-9 appearance-none rounded-full border border-solid border-border bg-transparent px-3 font-[inherit] text-[12.5px] text-muted-foreground';
@@ -38,7 +45,7 @@ function draftsOf(x: SessionDrafts | null | undefined): SessionDrafts {
   const ok = (s: unknown): s is SessionDraft => !!s && typeof (s as SessionDraft).from === 'string' && typeof (s as SessionDraft).to === 'string';
   const str = (v: unknown) => (typeof v === 'string' ? v : '');
   return {
-    sessions: Array.isArray(x?.sessions) ? x.sessions.filter(ok).map((s) => ({ from: s.from, to: s.to, delta: str(s.delta), sl: str(s.sl), win: str(s.win) })) : SESSION_DRAFTS.sessions,
+    sessions: Array.isArray(x?.sessions) ? x.sessions.filter(ok).map((s) => ({ from: s.from, to: s.to, delta: str(s.delta), sl: str(s.sl), win: str(s.win), slMin: str(s.slMin), slMax: str(s.slMax), tgtMin: str(s.tgtMin), tgtMax: str(s.tgtMax) })) : SESSION_DRAFTS.sessions,
     win: { ...SESSION_DRAFTS.win, ...(x?.win ?? {}) },
   };
 }
@@ -162,7 +169,7 @@ function Whole({ r }: { r: SessionStudyResult }) {
   );
 }
 
-/** One session's times and its three figures, each blank for as set. */
+/** One session's times, its three figures and its SL and TGT range, each blank for as set. */
 function SessionFields({ n, s, onChange, onRemove, onEnter }: { n: number; s: SessionDraft; onChange: (s: SessionDraft) => void; onRemove: () => void; onEnter: () => void }) {
   return (
     <li className="grid min-w-0 gap-2 rounded-md border border-solid border-[var(--line-soft)] p-2.5">
@@ -186,6 +193,19 @@ function SessionFields({ n, s, onChange, onRemove, onEnter }: { n: number; s: Se
           </label>
         ))}
       </div>
+      <fieldset className="m-0 grid min-w-0 gap-1 border-0 p-0">
+        <legend className="p-0 text-[12px] text-muted-foreground">SL and TGT range · BTC pts from the perp entry · 0 off</legend>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {RANGE_FIELDS.map((f) => (
+            <label key={f.key} className="flex min-w-0 flex-col gap-1">
+              <span className="text-[12.5px] font-medium">{f.label}</span>
+              <input type="number" inputMode="numeric" min={0} max={20_000} step={10} aria-label={f.aria(n)} placeholder="as set"
+                value={s[f.key]} onChange={(e) => onChange({ ...s, [f.key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') onEnter(); }}
+                className={cn(input, 'px-2.5')} />
+            </label>
+          ))}
+        </div>
+      </fieldset>
     </li>
   );
 }
@@ -237,7 +257,7 @@ export function SessionStudy({ askKey, read, readTrades, wide = false, title = '
     <Panel title={title}>
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
         <p className="m-0 text-[13px] leading-snug text-muted-foreground">
-          The same signals, twice: as set above, and with each session&apos;s own delta, SL and win % -- by the time each signal filled (IST, from the
+          The same signals, twice: as set above, and with each session&apos;s own delta, SL, win % and SL / TGT range -- by the time each signal filled (IST, from the
           daily contract&apos;s 5:30 PM). A blank figure, and a signal in no session, keep the settings. <b className="font-medium text-foreground">Research only: no strategy, setting or order changes.</b>
         </p>
         <fieldset className="m-0 grid min-w-0 gap-2 rounded-md border border-solid border-[var(--line-soft)] px-3 py-2">

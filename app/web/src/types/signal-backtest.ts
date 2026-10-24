@@ -313,7 +313,11 @@ export type WinSweepCellKey = 'saved' | 'all' | { pct: number; minTrades: number
  * premium (150 is +150%), `win` the least per cent its method won -- each null to keep it as set. Methods by win % read
  * the `days` before each day on `minTrades` or more; `base` the bar as set, or null for none.
  */
-export type SessionRuleAsk = { from: string; to: string; delta: number | null; sl: number | null; win: number | null };
+export type SessionRuleAsk = {
+  from: string; to: string; delta: number | null; sl: number | null; win: number | null;
+  /** The SL and TGT range in BTC points from the perp entry: null the run's own, 0 off (24 Oct 2026). */
+  slMin?: number | null; slMax?: number | null; tgtMin?: number | null; tgtMax?: number | null;
+};
 export type SessionAsk = { sessions: SessionRuleAsk[]; win: { base: number | null; minTrades: number; days: number } };
 /** Which of the study's trades to list: a side, a session (-1 none; null all), a day (null every day). */
 export type SessionTradesPick = { side: 'fixed' | 'by-session'; session: number | null; day: string | null };

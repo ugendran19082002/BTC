@@ -50,11 +50,15 @@ describe('SessionStudy', () => {
     expect(screen.getAllByRole('button', { name: /^Remove session/ })).toHaveLength(1);
   });
 
+  const range = { slMin: 1500, slMax: null, tgtMin: null, tgtMax: null };
   it('[critical] Compare asks with the sessions typed; each session as set beside by session, its changes coloured; a count opens its trades', async () => {
     render(<SessionStudy askKey="q" read={read} readTrades={readTrades} />);
     fireEvent.change(screen.getByLabelText('Session 1: the least win per cent of its method'), { target: { value: '70' } });
+    // The SL and TGT range by session (24 Oct 2026): BTC points, a blank the run's own.
+    fireEvent.change(screen.getByLabelText("Session 1: the least points to the signal's SL"), { target: { value: '1500' } });
+    expect(screen.getByText(/A trade keeps its session's figures/)).toHaveTextContent('SL +150% · won ≥ 70% · SL ≥ 1,500 pts.');
     fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
-    expect(read).toHaveBeenCalledWith({ sessions: [{ from: '12:00', to: '17:30', delta: null, sl: 150, win: 70 }], win: { base: null, minTrades: 3, days: 14 } });
+    expect(read).toHaveBeenCalledWith({ sessions: [{ from: '12:00', to: '17:30', delta: null, sl: 150, win: 70, ...range }], win: { base: null, minTrades: 3, days: 14 } });
     await waitFor(() => expect(screen.getByLabelText('Each session')).toBeInTheDocument());
     expect(screen.getByText(/By session made/)).toHaveTextContent(`By session made ${moneyText(0.5)} more than as set, and was better in both halves of the days.`);
     const afternoon = screen.getByRole('row', { name: /12:00 PM – 5:30 PM/ });
@@ -66,7 +70,7 @@ describe('SessionStudy', () => {
     const sl = within(screen.getByLabelText('The whole')).getByRole('row', { name: /SL hit/ });
     expect(within(sl).getAllByRole('cell')[1]).toHaveTextContent('17% (better)');
     fireEvent.click(within(afternoon).getByRole('button', { name: 'As set: the 10 trades of 12:00 PM – 5:30 PM' }));
-    await waitFor(() => expect(readTrades).toHaveBeenCalledWith({ sessions: [{ from: '12:00', to: '17:30', delta: null, sl: 150, win: 70 }], win: { base: null, minTrades: 3, days: 14 } }, { side: 'fixed', session: 0, day: null }));
+    await waitFor(() => expect(readTrades).toHaveBeenCalledWith({ sessions: [{ from: '12:00', to: '17:30', delta: null, sl: 150, win: 70, ...range }], win: { base: null, minTrades: 3, days: 14 } }, { side: 'fixed', session: 0, day: null }));
   });
 
   it('a change after the comparison: the last one is marked as of other sessions until compared again', async () => {
