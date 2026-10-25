@@ -237,7 +237,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [close-preview.ts](../../app/server/src/trading/close-preview.ts) | What buying back part or all of a position would book, before it is sent: which sizes may be closed, and the net after every charge at the price the close would pay -- the ask, or a resting target... |
 | [contract-restrictions.ts](../../app/server/src/trading/contract-restrictions.ts) | Contracts the exchange will only reduce (19 Oct 2026, the error log: Delta refused two sales of P-BTC-78800-191026 at 23:41 and 23:48 IST, "only_reduce_only_orders_allowed" -- one contract, not the... |
 | [engine.ts](../../app/server/src/trading/engine.ts) | The thing that actually trades. |
-| [entry-watch.ts](../../app/server/src/trading/entry-watch.ts) | The trades that cannot wait for the loop: an entry order still working, and a position that has no target resting yet. |
+| [entry-watch.ts](../../app/server/src/trading/entry-watch.ts) | The trades that cannot wait for the loop: an entry order still working, a position that has no target resting yet, and a close of the desk's own still working (25 Oct 2026). |
 | [machine.ts](../../app/server/src/trading/machine.ts) | The trade lifecycle as a pure reducer. |
 | [margin.ts](../../app/server/src/trading/margin.ts) | What leverage actually does to a sold option. |
 | [money.ts](../../app/server/src/trading/money.ts) | Prices and sizes the exchange will actually accept. |

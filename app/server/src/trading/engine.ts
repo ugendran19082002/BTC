@@ -530,6 +530,19 @@ export const TARGET_NOWHERE_MS = 60_000;
  * request to Delta besides. Older than this -- the socket quiet, the poll the feed -- the quote is asked of Delta.
  */
 export const BOARD_QUOTE_FRESH_MS = 2_000;
+
+/**
+ * The newer of two readings of a contract's book, by Delta's own time (25 Oct 2026; decision 0007: an age is the
+ * newest source's). An entry was judged on Delta's REST ticker alone, and at the busy candle closes (9:30, 11:30,
+ * 2:45 PM) that answer was 3 to 6 s old -- 68 orders refused as a stale quote, 25 signals missed by every strategy --
+ * while the socket's board, about a second behind Delta, carried the same contracts. Either alone when the other is
+ * missing; the REST answer when they are the same age.
+ */
+export function newestQuote(rest: Quote | null, board: Quote | null): Quote | null {
+  if (!board) return rest;
+  if (!rest) return board;
+  return board.ts > rest.ts ? board : rest;
+}
 /**
  * How long a leverage the desk set itself is taken as still set. Leverage is a
  * setting on the product at Delta, not on the order; the desk asked for it
@@ -964,12 +977,16 @@ export class TradeEngine {
     /** An add: holding the contract already is the point, and it has its own premium floor. */
     add?: { addingToOwn: true; minPremiumUsd: number },
   ): Promise<PrecheckResult> {
-    const [quote, balance, positions, spot] = await Promise.all([
+    const [asked, balance, positions, spot] = await Promise.all([
       this.exchange.getQuote(plan.symbol).catch(() => null),
       this.exchange.getBalanceUsd().catch(() => 0),
       this.exchange.getPositions().catch(() => []),
       this.d.spot ? Promise.resolve(this.d.spot()) : Promise.resolve(null),
     ]);
+    // The board is a second opinion: one that cannot be read is none, never a reason the gate does not answer.
+    let board: Quote | null = null;
+    try { board = this.d.boardQuote?.(plan.symbol) ?? null; } catch { board = null; }
+    const quote = newestQuote(asked, board);
     const size = product ? lotsToContracts(plan.lots, product.lotSize) : plan.lots;
     const held = positions.find((p) => p.symbol === plan.symbol)?.size ?? 0;
     /*
@@ -1784,6 +1801,8 @@ export class TradeEngine {
     const failedLegs = new Set<'take_profit' | 'stop_loss'>();
     // A leg left resting at its old level because the venue took no change: where it rests, for the record.
     const restsOld = new Map<'take_profit' | 'stop_loss', number | null>();
+    // A recorded exit found filled while this ran: taken in, and the book is left for the next poll (`settle`).
+    let filledMeanwhile = false;
     const settle = async (
       role: 'take_profit' | 'stop_loss',
       wanted: number | null,
@@ -1828,6 +1847,19 @@ export class TradeEngine {
           }
         }
         if (seen) this.targetNowhere.delete(rec.state.tradeId);
+        /*
+         * Found, and filled: not on the book because it bought back (25 Oct 2026, 14:01). The 2 PM step re-asked
+         * C-BTC-81600-251026's targets as T0 filled at 1.3; the read missed T0, the look-up found it filled and it was
+         * passed over, so T1 went on, Delta cancelled it for want of a position (`no_position_left_for_reduce_only`)
+         * and T1 became the record -- T0's fill was not read until 17:29, nine trades short on the screen for three
+         * and a half hours on a flat contract. The fill is taken in now, and nothing is placed: the record is the
+         * order that filled, and the poll that follows ends the trade or protects what is left at its new size.
+         */
+        if (seen && seen.filledSize > 0 && seen.status !== 'open' && seen.status !== 'partial') {
+          const before = rec.state.fills.length;
+          rec = await this.absorb(rec, seen, role);
+          if (rec.state.fills.length > before) { filledMeanwhile = true; return recorded; }
+        }
         if (seen && seen.reduceOnly && (seen.status === 'open' || seen.status === 'partial') && match(seen)) live = [...live, seen];
       }
       // Both legs round towards firing rather than towards a better price: a
@@ -1957,6 +1989,9 @@ export class TradeEngine {
         reduceOnly: true, role: 'take_profit',
       }).then(() => {}),
     );
+    // A fill came in: the size and the legs here were worked for the position before it. Nothing more is placed; the
+    // other exit goes, as the poll takes it off after any exit's fill, before it can reopen the position (0006).
+    if (filledMeanwhile) return rec.state.exitWinner ? this.cancelSiblings(rec) : rec;
 
     /*
      * The stop stays a trigger at the exchange, because its whole value is that
@@ -1981,6 +2016,7 @@ export class TradeEngine {
         triggerOn: backstopTriggerFor(rec.state.entryAvgPrice),
       }).then(() => {}),
     );
+    if (filledMeanwhile) return rec.state.exitWinner ? this.cancelSiblings(rec) : rec;
 
     // Size is part of the identity of a protective order, not a detail of it:
     // the same ids covering a different number of contracts is a change.
@@ -2383,6 +2419,7 @@ export class TradeEngine {
     let rec = await this.d.store.get(tradeId);
     if (!rec) return null;
     if (rec.state.position === 0) return rec.state;
+    const was = anchorExits(rec).plan;
 
     // A leg that is set here stops following its old ask; it follows the new
     // one if `follow` carries one, and is pinned to its price if not.
@@ -2401,6 +2438,21 @@ export class TradeEngine {
       ...(exitStage !== undefined ? { exitStage } : {}),
     };
     rec.state = { ...rec.state, wantsProtection: rec.plan.stopPrice !== null };
+
+    /*
+     * A move that moves nothing (25 Oct 2026): the 2 PM step took C-BTC-81600-251026's target "from 90% to 90%" --
+     * the same 1.3 -- and the book was read and reconciled for it on every trade at once, as one of them filled.
+     * Where both levels come out where they were and both legs are on the book, only the plan is written (its ask and
+     * its stage); Delta is not asked anything. A trade still owed an exit goes the whole way, as before.
+     */
+    const now = anchorExits(rec).plan;
+    const onBook = rec.state.phase === 'protected'
+      && (now.takeProfitPrice === null || rec.state.protection.takeProfit !== null)
+      && (now.stopPrice === null || rec.state.protection.stopLoss !== null);
+    if (onBook && now.takeProfitPrice === was.takeProfitPrice && now.stopPrice === was.stopPrice) {
+      await this.d.store.save(rec);
+      return rec.state;
+    }
 
     // An explicit change is not a retry, so the backoff does not apply to it.
     this.protectAfter.delete(tradeId);

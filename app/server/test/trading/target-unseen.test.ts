@@ -20,7 +20,7 @@ async function sold(r: Rig, id = 'T') {
   return r.store.peek(id)!;
 }
 /** The venue's own book, not as a read shows it. */
-const targets = async (r: Rig) => (await REAL.get(r)!(CE)).filter((o) => o.reduceOnly && o.type === 'limit' && (o.status === 'open' || o.status === 'partial'));
+const targets = async (r: Rig) => (await (REAL.get(r) ?? r.ex.getOpenOrders.bind(r.ex))(CE)).filter((o) => o.reduceOnly && o.type === 'limit' && (o.status === 'open' || o.status === 'partial'));
 const REAL = new WeakMap<Rig, (s?: string) => ReturnType<Rig['ex']['getOpenOrders']>>();
 /** The next `n` reads of the contract's open orders leave out the trade's resting target. */
 function missTarget(r: Rig, n = 1) {
@@ -123,4 +123,55 @@ test('[critical] a cancel the venue refused is not a cancel: found nowhere after
   r.ex.getOrderByClientId = async (...a: Parameters<typeof byId>) => (a[0] === rec.state.protection.takeProfit ? null : byId(...a));
   await r.engine.updateProtection('T', protectionFor(15, { takeProfitPct: 0.95 }), { takeProfitPct: 0.95 });
   assert.equal((await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly && o.type === 'limit' && o.status === 'open').length, 1, 'the one target, not two');
+});
+
+/**
+ * 25 Oct 2026, 14:01: the 2 PM step re-asked C-BTC-81600-251026's targets as one trade's T0 filled at 1.3. The read
+ * missed T0 -- it was no longer resting -- and the look-up found it filled and passed it over, so T1 went on; Delta
+ * cancelled T1 (`no_position_left_for_reduce_only`) and T1 became the record. T0's fill was not read until 17:29: nine
+ * trades short on the screen for three and a half hours on a contract the account no longer held.
+ */
+test('[critical] the target the read missed is found filled: its fill is taken in at once, nothing is put on in its place', async () => {
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 15, 15.5)] });
+  // Two strategies' trades on the one contract (0011), as on the day.
+  await r.engine.open({ ...orderPlan({ ...base, limitPrice: 15, takeProfitPct: 0.8, stopLossPct: 3 }, 'A'), origin: 'strategy', strategyId: 'a' });
+  await r.engine.open({ ...orderPlan({ ...base, limitPrice: 15, takeProfitPct: 0.9, stopLossPct: 3 }, 'B'), origin: 'strategy', strategyId: 'b' });
+  for (let i = 0; i < 12; i++) { r.advance(1_250); await r.engine.poll('A'); await r.engine.poll('B'); }
+  const a = r.store.peek('A')!;
+  assert.deepEqual([a.state.phase, r.store.peek('B')!.state.phase], ['protected', 'protected']);
+  // A's target (3) fills at the venue; B's (1.5) does not, so the contract is still held -- by B.
+  r.ex.tick(quote(CE, 2.5, 3, { ts: r.now() }));
+  missTarget(r, 1);
+  const placed: string[] = [];
+  const place = r.ex.placeOrder.bind(r.ex);
+  r.ex.placeOrder = async (o) => { placed.push(o.clientOrderId); return place(o); };
+  await r.engine.updateProtection('A', protectionFor(15, { takeProfitPct: 0.85 }), { takeProfitPct: 0.85 });
+  const after = r.store.peek('A')!;
+  assert.deepEqual(after.state.fills.filter((f) => f.role === 'take_profit').map((f) => [f.size, f.price]), [[1, 3]], 'T0\'s fill, read now');
+  assert.equal(after.state.position, 0);
+  assert.equal(after.state.protection.takeProfit, a.state.protection.takeProfit, 'the record is still the order that filled');
+  assert.deepEqual(placed, [], 'no T1 beside a filled T0');
+  for (let i = 0; i < 3; i++) { r.advance(1_250); await r.engine.poll('A'); }
+  assert.equal(r.store.peek('A')!.state.phase, 'flat');
+  const left = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly && (o.status === 'open' || o.status === 'partial'));
+  assert.deepEqual(left.map((o) => o.clientOrderId).sort(), ['BS0', 'BT0'], 'A has nothing left resting; B keeps its pair');
+  assert.equal(r.store.peek('B')!.state.position, -1, 'B, the sibling, is left as it was');
+});
+
+test('[critical] a step that moves nothing -- 90% to 90% -- asks Delta nothing; its stage is still written, and a real move still goes on', async () => {
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 15, 15.5)] });
+  const before = await sold(r);
+  const calls: string[] = [];
+  for (const k of ['getOpenOrders', 'getPositions', 'getOrderByClientId', 'placeOrder', 'editOrder', 'cancelOrder'] as const) {
+    const real = (r.ex[k] as (...a: unknown[]) => unknown).bind(r.ex);
+    (r.ex as unknown as Record<string, unknown>)[k] = (...a: unknown[]) => { calls.push(k); return real(...a); };
+  }
+  await r.engine.updateProtection('T', protectionFor(15, { takeProfitPct: 0.8 }), { takeProfitPct: 0.8 }, '1:0');
+  const same = r.store.peek('T')!;
+  assert.deepEqual(calls, [], 'not one call');
+  assert.equal(same.plan.exitStage, '1:0');
+  assert.deepEqual([same.plan.takeProfitPrice, same.state.protection], [before.plan.takeProfitPrice, before.state.protection]);
+  await r.engine.updateProtection('T', protectionFor(15, { takeProfitPct: 0.9 }), { takeProfitPct: 0.9 }, '2:0');
+  assert.ok(calls.includes('editOrder') || calls.includes('placeOrder'), 'a new level is sent');
+  assert.equal((await targets(r))[0]!.limitPrice, r.store.peek('T')!.plan.takeProfitPrice);
 });

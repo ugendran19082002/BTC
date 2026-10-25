@@ -250,6 +250,8 @@ export class TradingService {
       // The mode is read at the moment of the fill, not captured, so a paper
       // fill can never reach the phone dressed as a live one.
       onEvent: async (event, before, after, plan) => {
+        // A close sent -- by the stop watch, the perp's watch, the clock or a hand -- is followed up off the loop (25 Oct 2026).
+        if (event.t === 'exit_submitted' && after.position !== 0) this.entryWatch.add(after.tradeId, true);
         if (!this.notifier || !this.alertsOn) return;
         const alert = alertFor(event, before, after, plan, this.alertContext());
         if (alert) this.notifier.notify(alert);

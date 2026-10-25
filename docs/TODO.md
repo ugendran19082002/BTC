@@ -21,6 +21,9 @@ Updated 30 Sep 2026 (evening): 25 items closed that afternoon -- see the history
   order path), with the owner's go-ahead. **But** at 13:19 the same day a pass of 13 s had no trade in it: not the
   polling. Look first at what holds the thread (`/api/desk/metrics` `thread`, the signal run's `calc`) and at
   `sweepLeftovers`; the phone's warning now says which it likely was.
+  25 Oct 2026: a stop's close no longer waits on the pass -- its follow-up came 22 and 33 s late with 44 trades open,
+  and a close is now on the urgent watch from the moment it is sent ([history](history/2026-10.md)). Fills of resting
+  targets, and exit times, still wait for it.
 
 ## Phone view and a phone-friendly desk
 
