@@ -131,24 +131,31 @@ export const getSignalTrades = (range: { from: string; to: string } | null) =>
   json<{ from: string | null; to: string | null; trades: SignalTrade[] }>(
     withAccount(`/api/strategies/signal-trades${range ? `?from=${range.from}&to=${range.to}` : ''}`));
 
-/** Every change to the signal strategies' methods, newest first: the daily updates and the form's saves, for the account shown. */
-export const getMethodUpdates = (o: { source?: MethodUpdateSource | null; strategy?: string | null; from?: string; to?: string; limit?: number } = {}) => {
+/**
+ * Every change to the signal strategies' methods, newest first: the daily updates and the form's saves -- of every
+ * account, or the one given. Not the account the desk's tabs show (25 Oct 2026): the Logs tab has no account tabs, so
+ * a choice made on Strategy hid the other accounts' changes there; the screen has its own account chips.
+ */
+export const getMethodUpdates = (o: { source?: MethodUpdateSource | null; strategy?: string | null; from?: string; to?: string; limit?: number; account?: number | null } = {}) => {
   const q = new URLSearchParams();
   if (o.from) q.set('from', o.from);
   if (o.to) q.set('to', o.to);
   if (o.source) q.set('source', o.source);
   if (o.strategy) q.set('strategy', o.strategy);
   if (o.limit) q.set('limit', String(o.limit));
+  if (o.account != null) q.set('account', String(o.account));
   const qs = q.toString();
-  return json<{ updates: MethodUpdate[] }>(withAccount(`/api/strategies/method-updates${qs ? `?${qs}` : ''}`));
+  return json<{ updates: MethodUpdate[] }>(`/api/strategies/method-updates${qs ? `?${qs}` : ''}`);
 };
 
 /** A pick of the methods asked for now: running, or done -- how many strategies it took and saved. */
 export type PickNowRun = { running: boolean; at: number; strategies: number; updated: number; doneAt: number | null; error: string | null };
 
-/** The methods' daily update, now (25 Oct 2026): every strategy with it on, for the account shown -- or the one given. */
-export const runMethodPicks = (strategyId?: string | null) =>
-  post<PickNowRun>(withAccount('/api/strategies/auto-methods/run'), strategyId ? { strategyId } : {});
+const pickUrl = (account: number | null) => `/api/strategies/auto-methods/run${account === null ? '' : `?account=${account}`}`;
 
-/** The last pick asked for now, and how many strategies one would take, for the account shown. */
-export const getMethodPicks = () => json<{ last: PickNowRun | null; strategies: number }>(withAccount('/api/strategies/auto-methods/run'));
+/** The methods' daily update, now (25 Oct 2026): every strategy with it on -- of one account, or the one strategy given. */
+export const runMethodPicks = (o: { strategyId?: string | null; account?: number | null } = {}) =>
+  post<PickNowRun>(pickUrl(o.account ?? null), o.strategyId ? { strategyId: o.strategyId } : {});
+
+/** The last pick asked for now, and how many strategies one would take -- of every account, or the one given. */
+export const getMethodPicks = (account: number | null = null) => json<{ last: PickNowRun | null; strategies: number }>(pickUrl(account));

@@ -169,16 +169,19 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
   const accountOf = (id: number | null) => (id === null ? null : accounts?.accounts.find((a) => a.id === id)?.name ?? `Account ${id}`);
 
   const every = data?.updates ?? [];
-  // The accounts the changes are of, each with how many strategies; one chosen that is not here is all of them.
+  // Every saved account, each with how many strategies changed in the range -- shown whether or not it has changes
+  // (25 Oct 2026: on a range of one account's changes the chips were gone) -- and changes of no account, if any.
+  // One chosen that is not here is all of them.
   const accountKey = (id: number | null) => (id === null ? 'none' : String(id));
   const accountsHere = useMemo(() => {
     const by = new Map<string, { key: string; id: number | null; strategies: Set<string> }>();
+    for (const a of accounts?.accounts ?? []) by.set(accountKey(a.id), { key: accountKey(a.id), id: a.id, strategies: new Set() });
     for (const x of every) {
       const k = accountKey(x.accountId);
       (by.get(k) ?? by.set(k, { key: k, id: x.accountId, strategies: new Set() }).get(k)!).strategies.add(x.strategyId);
     }
     return [...by.values()];
-  }, [every]);
+  }, [every, accounts]);
   const pickedAccount = accountsHere.some((a) => a.key === account) ? account : 'all';
   const all = useMemo(() => (pickedAccount === 'all' ? every : every.filter((x) => accountKey(x.accountId) === pickedAccount)), [every, pickedAccount]);
   const strategies = useMemo(() => [...new Map(all.map((u) => [u.strategyId, u.strategyName])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [all]);
@@ -208,8 +211,23 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
           </p>
         </div>
       )}
+      {/* Whose: every account, or one (18 Oct 2026) -- the log's and Pick now's. */}
+      {accountsHere.length > 1 && (
+        <div role="group" aria-label="Account" className="flex flex-wrap gap-1">
+          <button type="button" aria-pressed={pickedAccount === 'all'} onClick={() => { setAccount('all'); setShown(PAGE); }} className={chip(pickedAccount === 'all')}>All accounts</button>
+          {accountsHere.map((a) => (
+            <button key={a.key} type="button" aria-pressed={pickedAccount === a.key} onClick={() => { setAccount(a.key); setStrategy(''); setShown(PAGE); }} className={chip(pickedAccount === a.key)}>
+              {accountOf(a.id) ?? 'No account'} <span className="tabular-nums text-[var(--dim)]">{a.strategies.size}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Writes the strategies' lists, so on the desk only: the phone signs in view only. */}
-      {!compact && <PickNow strategy={picked ? { id: picked, name: strategies.find(([id]) => id === picked)?.[1] ?? picked } : null} onDone={afterPick} />}
+      {!compact && (
+        <PickNow strategy={picked ? { id: picked, name: strategies.find(([id]) => id === picked)?.[1] ?? picked } : null}
+                 account={/^\d+$/.test(pickedAccount) ? { id: Number(pickedAccount), name: accountOf(Number(pickedAccount))! } : null} onDone={afterPick} />
+      )}
 
       {/* When: the quick picks, or two dates. */}
       <div className="grid min-w-0 gap-1.5">
@@ -232,18 +250,6 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
           <span className="text-[12px] text-muted-foreground">{rangeWords}</span>
         </div>
       </div>
-
-      {/* Whose: every account, or one (18 Oct 2026). */}
-      {accountsHere.length > 1 && (
-        <div role="group" aria-label="Account" className="flex flex-wrap gap-1">
-          <button type="button" aria-pressed={pickedAccount === 'all'} onClick={() => { setAccount('all'); setShown(PAGE); }} className={chip(pickedAccount === 'all')}>All accounts</button>
-          {accountsHere.map((a) => (
-            <button key={a.key} type="button" aria-pressed={pickedAccount === a.key} onClick={() => { setAccount(a.key); setStrategy(''); setShown(PAGE); }} className={chip(pickedAccount === a.key)}>
-              {accountOf(a.id) ?? 'No account'} <span className="tabular-nums text-[var(--dim)]">{a.strategies.size}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* What: the view, the kind of change, the strategy. */}
       <div className="flex flex-wrap items-center gap-1.5">

@@ -13,7 +13,9 @@ vi.mock('@/api/strategy', () => ({
 vi.mock('@/api/entry', () => ({
   getEntryMethods: async () => ({ methods: [{ id: 'breakout', n: 1, name: 'Breakout' }, { id: 'bos', n: 6, name: 'BOS' }, { id: 'trap', n: 9, name: 'Trap' }] }),
 }));
-vi.mock('@/api/accounts', () => ({ getAccounts: async () => ({ accounts: [{ id: 1, name: 'Savings' }, { id: 2, name: 'Expenses' }] }) }));
+const TWO_ACCOUNTS = { accounts: [{ id: 1, name: 'Savings' }, { id: 2, name: 'Expenses' }] };
+const getAccounts = vi.fn();
+vi.mock('@/api/accounts', () => ({ getAccounts: (...a: unknown[]) => getAccounts(...a) }));
 
 const { MethodUpdatesLog, rangeKeyOf, rangeOf, ruleWords, sortMethods, stepRange, summarize } = await import('@/components/strategy/MethodUpdatesLog');
 
@@ -32,7 +34,7 @@ const THREE = [
 ];
 
 beforeEach(() => {
-  window.localStorage.clear(); getMethodUpdates.mockReset(); runMethodPicks.mockReset();
+  window.localStorage.clear(); getMethodUpdates.mockReset(); runMethodPicks.mockReset(); getAccounts.mockReset().mockResolvedValue(TWO_ACCOUNTS);
   getMethodPicks.mockReset().mockResolvedValue({ last: null, strategies: 3 });
 });
 
@@ -144,9 +146,11 @@ describe('the method updates log, account by account (18 Oct 2026)', () => {
     expect(within(await screen.findByRole('group', { name: 'Account' })).getByRole('button', { name: /^Expenses/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('one account only: no account row', async () => {
+  it('a desk of one account: no account row', async () => {
+    getAccounts.mockResolvedValue({ accounts: [{ id: 1, name: 'Savings' }] });
     getMethodUpdates.mockResolvedValue({ updates: [THREE[0]!, THREE[2]!] });
     render(<MethodUpdatesLog now={NOW} />);
+    await waitFor(() => expect(getAccounts).toHaveBeenCalled());
     await screen.findByRole('tab', { name: 'Summary' });
     expect(screen.queryByRole('group', { name: 'Account' })).toBeNull();
   });
@@ -168,14 +172,14 @@ describe('the calendar and Pick now (25 Oct 2026)', () => {
     runMethodPicks.mockResolvedValue(started);
     window.localStorage.setItem('btc-desk:method-log:range', JSON.stringify('yesterday'));
     render(<MethodUpdatesLog now={NOW} />);
-    expect(await screen.findByText('3 strategies with the daily update on.')).toBeInTheDocument();
+    expect(await screen.findByText('3 strategies with the daily update on across every account.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
     const ask = screen.getByRole('alertdialog', { name: 'Pick the methods now' });
     expect(ask).toHaveTextContent('Pick the methods now for 3 strategies?');
     expect(runMethodPicks).not.toHaveBeenCalled();
     getMethodPicks.mockResolvedValue({ last: started, strategies: 3 });
     fireEvent.click(within(ask).getByRole('button', { name: 'Pick now for 3 strategies' }));
-    await waitFor(() => expect(runMethodPicks).toHaveBeenCalledWith(null));
+    await waitFor(() => expect(runMethodPicks).toHaveBeenCalledWith({ strategyId: null, account: null }));
     expect(await screen.findByText(/Picking for 3 strategies since/)).toBeInTheDocument();
     getMethodPicks.mockResolvedValue({ last: { ...started, running: false, updated: 3, doneAt: NOW + 30_000 }, strategies: 3 });
     await waitFor(() => expect(screen.getByText(/Last picked now at .*: 3 strategies of 3 saved\./)).toBeInTheDocument(), { timeout: 4_000 });
@@ -190,11 +194,27 @@ describe('the calendar and Pick now (25 Oct 2026)', () => {
     fireEvent.change(await screen.findByRole('combobox', { name: 'Strategy' }), { target: { value: '15m' } });
     fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
     fireEvent.click(screen.getByRole('button', { name: 'Pick now for 15m time' }));
-    await waitFor(() => expect(runMethodPicks).toHaveBeenCalledWith('15m'));
+    await waitFor(() => expect(runMethodPicks).toHaveBeenCalledWith({ strategyId: '15m', account: null }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Not picked: A pick is already running');
     unmount();
     render(<MethodUpdatesLog compact now={NOW} />);
     await screen.findByRole('tab', { name: 'Summary' });
     expect(screen.queryByRole('button', { name: 'Pick now' })).toBeNull();
+  });
+
+  it('[critical] every account is a chip, changes or none -- and Pick now picks the account chosen (25 Oct 2026)', async () => {
+    getMethodUpdates.mockResolvedValue({ updates: [THREE[0]!] }); // account 1's changes only
+    runMethodPicks.mockResolvedValue({ running: true, at: NOW, strategies: 8, updated: 0, doneAt: null, error: null });
+    render(<MethodUpdatesLog now={NOW} />);
+    const group = await screen.findByRole('group', { name: 'Account' });
+    await waitFor(() => expect(within(group).getByRole('button', { name: /Expenses/ })).toBeInTheDocument());
+    expect(getMethodUpdates).toHaveBeenCalledWith({ source: null, from: '2026-10-10', to: '2026-10-16', limit: 1_000 }); // every account's
+    getMethodPicks.mockResolvedValue({ last: null, strategies: 8 });
+    fireEvent.click(within(group).getByRole('button', { name: /Expenses/ }));
+    await waitFor(() => expect(getMethodPicks).toHaveBeenLastCalledWith(2));
+    expect(await screen.findByText('8 strategies with the daily update on in Expenses.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now for 8 strategies of Expenses' }));
+    await waitFor(() => expect(runMethodPicks).toHaveBeenCalledWith({ strategyId: null, account: 2 }));
   });
 });

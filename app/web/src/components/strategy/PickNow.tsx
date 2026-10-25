@@ -13,17 +13,19 @@ import { cn } from '@/lib/utils';
 const istTime = (ms: number) => new Date(ms).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' });
 const strategies = (n: number) => `${n} ${n === 1 ? 'strategy' : 'strategies'}`;
 
-export function PickNow({ strategy, onDone }: { strategy: { id: string; name: string } | null; onDone: () => void }) {
+export function PickNow({ strategy, account = null, onDone }: {
+  strategy: { id: string; name: string } | null; account?: { id: number; name: string } | null; onDone: () => void;
+}) {
   const [asking, setAsking] = useState(false);
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   // Started here: until the server's answer says it is done, asked often.
   const [mine, setMine] = useState<number | null>(null);
-  const { data, refresh } = usePoll(getMethodPicks, mine !== null ? 2_000 : 60_000, { deps: [mine] });
+  const { data, refresh } = usePoll(() => getMethodPicks(account?.id ?? null), mine !== null ? 2_000 : 60_000, { deps: [mine, account?.id] });
   const last = data?.last ?? null;
   const running = !!last?.running || sending;
   const n = strategy ? 1 : data?.strategies ?? 0;
-  const whom = strategy ? strategy.name : strategies(n);
+  const whom = strategy ? strategy.name : `${strategies(n)}${account ? ` of ${account.name}` : ''}`;
 
   const told = useRef<number | null>(null);
   useEffect(() => {
@@ -38,7 +40,7 @@ export function PickNow({ strategy, onDone }: { strategy: { id: string; name: st
     setRefused(null);
     setSending(true);
     try {
-      const r = await runMethodPicks(strategy?.id ?? null);
+      const r = await runMethodPicks({ strategyId: strategy?.id ?? null, account: account?.id ?? null });
       setMine(r.at);
     } catch (e) {
       setRefused((e as Error).message);
@@ -68,7 +70,7 @@ export function PickNow({ strategy, onDone }: { strategy: { id: string; name: st
                 ? last.error
                   ? <span className="text-[var(--down)]">The pick at {istTime(last.at)} stopped: {last.error}</span>
                   : `Last picked now at ${istTime(last.at)}: ${strategies(last.updated)} of ${last.strategies} saved.`
-                : strategy ? `For ${strategy.name}.` : `${strategies(n)} with the daily update on.`}
+                : strategy ? `For ${strategy.name}.` : `${strategies(n)} with the daily update on${account ? ` in ${account.name}` : ' across every account'}.`}
           </span>
         )}
       </div>
