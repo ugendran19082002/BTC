@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
  * the server answers at once and this asks every two seconds until it is done, then `onDone` refreshes the log.
  */
 const istTime = (ms: number) => new Date(ms).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' });
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+const strategies = (n: number) => `${n} ${n === 1 ? 'strategy' : 'strategies'}`;
 
 export function PickNow({ strategy, onDone }: { strategy: { id: string; name: string } | null; onDone: () => void }) {
   const [asking, setAsking] = useState(false);
@@ -23,7 +23,7 @@ export function PickNow({ strategy, onDone }: { strategy: { id: string; name: st
   const last = data?.last ?? null;
   const running = !!last?.running || sending;
   const n = strategy ? 1 : data?.strategies ?? 0;
-  const whom = strategy ? strategy.name : plural(n, 'strategy');
+  const whom = strategy ? strategy.name : strategies(n);
 
   const told = useRef<number | null>(null);
   useEffect(() => {
@@ -61,14 +61,14 @@ export function PickNow({ strategy, onDone }: { strategy: { id: string; name: st
           </button>
         )}
         {!asking && (
-          <span role="status" className="text-[12px] text-muted-foreground">
+          <span aria-live="polite" className="text-[12px] text-muted-foreground">
             {running && last
-              ? `Picking for ${plural(last.strategies, 'strategy')} since ${istTime(last.at)}: the changes come in below when it is done.`
+              ? `Picking for ${strategies(last.strategies)} since ${istTime(last.at)}: the changes come in below when it is done.`
               : last?.doneAt
                 ? last.error
                   ? <span className="text-[var(--down)]">The pick at {istTime(last.at)} stopped: {last.error}</span>
-                  : `Last picked now at ${istTime(last.at)}: ${plural(last.updated, 'strategy')} of ${last.strategies} saved.`
-                : strategy ? `For ${strategy.name}.` : `${plural(n, 'strategy')} with the daily update on.`}
+                  : `Last picked now at ${istTime(last.at)}: ${strategies(last.updated)} of ${last.strategies} saved.`
+                : strategy ? `For ${strategy.name}.` : `${strategies(n)} with the daily update on.`}
           </span>
         )}
       </div>

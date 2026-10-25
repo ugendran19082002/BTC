@@ -3,13 +3,19 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { MethodUpdate } from '@/types/strategy';
 
 const getMethodUpdates = vi.fn();
-vi.mock('@/api/strategy', () => ({ getMethodUpdates: (...a: unknown[]) => getMethodUpdates(...a) }));
+const getMethodPicks = vi.fn();
+const runMethodPicks = vi.fn();
+vi.mock('@/api/strategy', () => ({
+  getMethodUpdates: (...a: unknown[]) => getMethodUpdates(...a),
+  getMethodPicks: (...a: unknown[]) => getMethodPicks(...a),
+  runMethodPicks: (...a: unknown[]) => runMethodPicks(...a),
+}));
 vi.mock('@/api/entry', () => ({
   getEntryMethods: async () => ({ methods: [{ id: 'breakout', n: 1, name: 'Breakout' }, { id: 'bos', n: 6, name: 'BOS' }, { id: 'trap', n: 9, name: 'Trap' }] }),
 }));
 vi.mock('@/api/accounts', () => ({ getAccounts: async () => ({ accounts: [{ id: 1, name: 'Savings' }, { id: 2, name: 'Expenses' }] }) }));
 
-const { MethodUpdatesLog, rangeOf, ruleWords, sortMethods, summarize } = await import('@/components/strategy/MethodUpdatesLog');
+const { MethodUpdatesLog, rangeKeyOf, rangeOf, ruleWords, sortMethods, stepRange, summarize } = await import('@/components/strategy/MethodUpdatesLog');
 
 const NOW = Date.parse('2026-10-16T22:00:00+05:30');
 const AT = Date.parse('2026-10-16T21:00:00+05:30');
@@ -25,7 +31,10 @@ const THREE = [
   u({ id: 3, at: AT - 86_400_000, strategyId: '3m', strategyName: '3m time', tf: '3m', before: ['trap'], after: ['trap'], added: [], dropped: [], records: [], note: 'No method won 75% of 3 trades or more: the list was kept.' }),
 ];
 
-beforeEach(() => { window.localStorage.clear(); getMethodUpdates.mockReset(); });
+beforeEach(() => {
+  window.localStorage.clear(); getMethodUpdates.mockReset(); runMethodPicks.mockReset();
+  getMethodPicks.mockReset().mockResolvedValue({ last: null, strategies: 3 });
+});
 
 describe('the method updates log (16 Oct 2026)', () => {
   it('[critical] the dates: today, yesterday, the last 7 days, this month, or two picked -- IST, both ends included', () => {
@@ -75,9 +84,13 @@ describe('the method updates log (16 Oct 2026)', () => {
     // another range: asked of the server
     fireEvent.click(within(screen.getByRole('group', { name: 'Dates' })).getByRole('button', { name: 'Yesterday' }));
     await waitFor(() => expect(getMethodUpdates).toHaveBeenLastCalledWith({ source: null, from: '2026-10-15', to: '2026-10-15', limit: 1_000 }));
-    fireEvent.click(within(screen.getByRole('group', { name: 'Dates' })).getByRole('button', { name: 'Custom' }));
-    fireEvent.change(screen.getByLabelText('From date'), { target: { value: '2026-10-01' } });
-    await waitFor(() => expect(getMethodUpdates).toHaveBeenLastCalledWith(expect.objectContaining({ from: '2026-10-01' })));
+    // back a day at a time from a day (25 Oct 2026: the calendar's arrows) -- a stepped range is Custom's from then on
+    fireEvent.click(screen.getByRole('button', { name: 'Earlier' }));
+    await waitFor(() => expect(getMethodUpdates).toHaveBeenLastCalledWith(expect.objectContaining({ from: '2026-10-14', to: '2026-10-14' })));
+    expect(within(screen.getByRole('group', { name: 'Dates' })).getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Later' }));
+    await waitFor(() => expect(getMethodUpdates).toHaveBeenLastCalledWith(expect.objectContaining({ from: '2026-10-15', to: '2026-10-15' })));
+    expect(within(screen.getByRole('group', { name: 'Dates' })).getByRole('button', { name: 'Yesterday' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('[critical] the timeline: each change by day, daily or by hand, before → after, the rule, a kept day with why -- its methods and records on a tap', async () => {
@@ -136,5 +149,52 @@ describe('the method updates log, account by account (18 Oct 2026)', () => {
     render(<MethodUpdatesLog now={NOW} />);
     await screen.findByRole('tab', { name: 'Summary' });
     expect(screen.queryByRole('group', { name: 'Account' })).toBeNull();
+  });
+});
+
+describe('the calendar and Pick now (25 Oct 2026)', () => {
+  it('[critical] a range from the calendar is its quick pick when it is one; the arrows move it by its own length, never past today', () => {
+    expect(rangeKeyOf({ from: '2026-10-16', to: '2026-10-16' }, NOW)).toBe('today');
+    expect(rangeKeyOf({ from: '2026-10-10', to: '2026-10-16' }, NOW)).toBe('7d');
+    expect(rangeKeyOf({ from: '2026-10-11', to: '2026-10-12' }, NOW)).toBe('custom');
+    expect(stepRange({ from: '2026-10-16', to: '2026-10-16' }, -1, '2026-10-16')).toEqual({ from: '2026-10-15', to: '2026-10-15' });
+    expect(stepRange({ from: '2026-10-01', to: '2026-10-07' }, 1, '2026-10-16')).toEqual({ from: '2026-10-08', to: '2026-10-14' });
+    expect(stepRange({ from: '2026-10-08', to: '2026-10-14' }, 1, '2026-10-16')).toEqual({ from: '2026-10-10', to: '2026-10-16' });
+  });
+
+  it('[critical] Pick now asks first, starts, says it is running, and when done shows today\'s changes', async () => {
+    getMethodUpdates.mockResolvedValue({ updates: THREE });
+    const started = { running: true, at: NOW, strategies: 3, updated: 0, doneAt: null, error: null };
+    runMethodPicks.mockResolvedValue(started);
+    window.localStorage.setItem('btc-desk:method-log:range', JSON.stringify('yesterday'));
+    render(<MethodUpdatesLog now={NOW} />);
+    expect(await screen.findByText('3 strategies with the daily update on.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
+    const ask = screen.getByRole('alertdialog', { name: 'Pick the methods now' });
+    expect(ask).toHaveTextContent('Pick the methods now for 3 strategies?');
+    expect(runMethodPicks).not.toHaveBeenCalled();
+    getMethodPicks.mockResolvedValue({ last: started, strategies: 3 });
+    fireEvent.click(within(ask).getByRole('button', { name: 'Pick now for 3 strategies' }));
+    await waitFor(() => expect(runMethodPicks).toHaveBeenCalledWith(null));
+    expect(await screen.findByText(/Picking for 3 strategies since/)).toBeInTheDocument();
+    getMethodPicks.mockResolvedValue({ last: { ...started, running: false, updated: 3, doneAt: NOW + 30_000 }, strategies: 3 });
+    await waitFor(() => expect(screen.getByText(/Last picked now at .*: 3 strategies of 3 saved\./)).toBeInTheDocument(), { timeout: 4_000 });
+    // written today, read on yesterday: moved to today
+    await waitFor(() => expect(getMethodUpdates).toHaveBeenLastCalledWith(expect.objectContaining({ from: '2026-10-16', to: '2026-10-16' })));
+  });
+
+  it('a pick refused is said; one strategy chosen is picked alone; the phone has no button', async () => {
+    getMethodUpdates.mockResolvedValue({ updates: THREE });
+    runMethodPicks.mockRejectedValue(new Error('A pick is already running: its changes come into the log when it is done.'));
+    const { unmount } = render(<MethodUpdatesLog now={NOW} />);
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Strategy' }), { target: { value: '15m' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now for 15m time' }));
+    await waitFor(() => expect(runMethodPicks).toHaveBeenCalledWith('15m'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not picked: A pick is already running');
+    unmount();
+    render(<MethodUpdatesLog compact now={NOW} />);
+    await screen.findByRole('tab', { name: 'Summary' });
+    expect(screen.queryByRole('button', { name: 'Pick now' })).toBeNull();
   });
 });
