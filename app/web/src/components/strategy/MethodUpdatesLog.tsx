@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { getMethodUpdates } from '@/api/strategy';
 import { getEntryMethods } from '@/api/entry';
 import { getAccounts } from '@/api/accounts';
@@ -7,6 +8,8 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import { MethodTimeframes } from '@/components/strategy/MethodTimeframes';
+import { PickNow } from '@/components/strategy/PickNow';
+import { DateRangePicker, type DateRangeValue } from '@/components/ui/date-range-picker';
 import type { MethodRecordLine, MethodUpdate, MethodUpdateSource } from '@/types/strategy';
 
 /**
@@ -45,6 +48,20 @@ export function rangeOf(key: RangeKey, now: number, custom: { from: string; to: 
     return custom.from <= custom.to ? custom : { from: custom.to, to: custom.from };
   }
   return { from: shift(today, -6), to: today };
+}
+
+/** The quick pick a range is, if it is one; a range from the calendar that matches none is custom. */
+export function rangeKeyOf(v: DateRangeValue, now: number): RangeKey {
+  const hit = RANGES.find((r) => r.v !== 'custom' && rangeOf(r.v, now, v).from === v.from && rangeOf(r.v, now, v).to === v.to);
+  return hit?.v ?? 'custom';
+}
+
+/** The range moved back or on by its own length -- a day a day, a week a week -- never past today. */
+export function stepRange(v: DateRangeValue, by: -1 | 1, today: string): DateRangeValue {
+  const days = Math.round((Date.parse(`${v.to}T00:00:00Z`) - Date.parse(`${v.from}T00:00:00Z`)) / DAY_MS) + 1;
+  const to = shift(v.to, by * days);
+  if (to > today) return { from: shift(today, 1 - days), to: today };
+  return { from: shift(v.from, by * days), to };
 }
 
 /** A record in a few words: "4/5 won (80%) · +₹34". */
@@ -137,8 +154,12 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
   const [methodSort, setMethodSort] = usePersisted<MethodSort>('method-log:sort', 'moves');
   const [shown, setShown] = useState(PAGE);
   const range = rangeOf(RANGES.some((r) => r.v === rangeKey) ? rangeKey : '7d', now, custom);
-  const { data, error } = usePoll(() => getMethodUpdates({ source: show === 'all' ? null : show, from: range.from, to: range.to, limit: 1_000 }), 60_000,
+  const { data, error, refresh } = usePoll(() => getMethodUpdates({ source: show === 'all' ? null : show, from: range.from, to: range.to, limit: 1_000 }), 60_000,
     { deps: [show, range.from, range.to] });
+  const today = istDay(now);
+  const pickRange = (v: DateRangeValue) => { setCustom(v); setRangeKey(rangeKeyOf(v, now)); setShown(PAGE); };
+  // A pick now is written today: a range without today is moved to it, so its changes are what is shown.
+  const afterPick = () => { if (range.to < today) setRangeKey('today'); else void refresh(); };
   const { data: catalogue } = usePoll(getEntryMethods, 3_600_000);
   const { data: accounts } = usePoll(getAccounts, 3_600_000);
   const nameOf = useMemo(() => {
@@ -187,6 +208,8 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
           </p>
         </div>
       )}
+      {/* Writes the strategies' lists, so on the desk only: the phone signs in view only. */}
+      {!compact && <PickNow strategy={picked ? { id: picked, name: strategies.find(([id]) => id === picked)?.[1] ?? picked } : null} onDone={afterPick} />}
 
       {/* When: the quick picks, or two dates. */}
       <div className="grid min-w-0 gap-1.5">
@@ -195,13 +218,19 @@ export function MethodUpdatesLog({ compact = false, now = Date.now() }: { compac
             <button key={r.v} type="button" aria-pressed={rangeKey === r.v} onClick={() => { setRangeKey(r.v); setShown(PAGE); }} className={chip(rangeKey === r.v)}>{r.label}</button>
           ))}
         </div>
-        {rangeKey === 'custom' && (
-          <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-muted-foreground">
-            <input type="date" aria-label="From date" value={custom.from} max={istDay(now)} onChange={(e) => setCustom({ ...custom, from: e.target.value })} className={field} />
-            <span>to</span>
-            <input type="date" aria-label="To date" value={custom.to} max={istDay(now)} onChange={(e) => setCustom({ ...custom, to: e.target.value })} className={field} />
-          </div>
-        )}
+        {/* The calendar (25 Oct 2026, owner: "date picker upgrade"): the range shown, a range or a day picked on it,
+            and back and on by the range's own length -- a day at a time to read the days one after another. */}
+        <div className="flex flex-wrap items-center gap-1">
+          <button type="button" aria-label="Earlier" onClick={() => pickRange(stepRange(range, -1, today))} className={cn(chip(false), 'px-1.5')}>
+            <ChevronLeft aria-hidden className="h-3.5 w-3.5" />
+          </button>
+          <DateRangePicker value={range} onChange={pickRange} className="h-8 text-[12px]" />
+          <button type="button" aria-label="Later" disabled={range.to >= today} onClick={() => pickRange(stepRange(range, 1, today))}
+                  className={cn(chip(false), 'px-1.5 disabled:opacity-40')}>
+            <ChevronRight aria-hidden className="h-3.5 w-3.5" />
+          </button>
+          <span className="text-[12px] text-muted-foreground">{rangeWords}</span>
+        </div>
       </div>
 
       {/* Whose: every account, or one (18 Oct 2026). */}

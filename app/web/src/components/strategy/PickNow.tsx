@@ -63,7 +63,7 @@ export function PickNow({ strategy, onDone }: { strategy: { id: string; name: st
         {!asking && (
           <span role="status" className="text-[12px] text-muted-foreground">
             {running && last
-              ? `Picking for ${plural(last.strategies, 'strategy')} since ${istTime(last.at)} -- the changes come in below when it is done.`
+              ? `Picking for ${plural(last.strategies, 'strategy')} since ${istTime(last.at)}: the changes come in below when it is done.`
               : last?.doneAt
                 ? last.error
                   ? <span className="text-[var(--down)]">The pick at {istTime(last.at)} stopped: {last.error}</span>
@@ -80,7 +80,7 @@ export function PickNow({ strategy, onDone }: { strategy: { id: string; name: st
             The day&apos;s own run still comes at its time.
           </p>
           <div className="flex flex-wrap gap-1.5">
-            <button type="button" onClick={() => void start()} className={cn(btn, 'border-[var(--accent)] bg-[var(--accent)] font-semibold text-primary-foreground')}>
+            <button type="button" onClick={() => void start()} className={cn(btn, 'border-primary bg-primary font-semibold text-primary-foreground')}>
               Pick now for {whom}
             </button>
             <button type="button" onClick={() => setAsking(false)} className={cn(btn, 'border-border bg-transparent text-muted-foreground')}>Cancel</button>
