@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoDue, autoPick, autoWindow, lessExcluded, pickMethods, runAutoMethods, walkForward, type AutoDeps, type DayRecord } from '../../src/strategy/auto-methods.js';
+import { autoDue, autoPick, autoWindow, lessExcluded, pickMethods, runAutoMethods, runAutoMethodsAlone, walkForward, type AutoDeps, type DayRecord } from '../../src/strategy/auto-methods.js';
 import { DEFAULT_AUTO_METHODS, DEFAULT_CONFIG, autoMethodsProblems, validateConfig, type AutoMethods, type Strategy, type StrategyConfig } from '../../src/strategy/types.js';
 
 /**
@@ -286,4 +286,44 @@ test('[critical] 22 Oct 2026: every run leaves its row -- switched off, deleted,
   assert.deepEqual([bad!.before, bad!.after], [['bos'], ['bos']]);
   assert.match(bad!.note!, /^Not saved -- the strategy's settings would not be accepted with it: .*No such method.* The list was left as it was\.$/);
   assert.deepEqual(logged[0]!.records, [{ method: 'momentum', trades: 5, wins: 5, net: 0.4 }], 'and the record it was worked on');
+});
+
+test('[critical] 25 Oct 2026: Pick now takes every strategy with the update on, whatever its time -- or the one, or the account, asked', async () => {
+  const now = IST('2026-10-25T17:21:00'); // before every strategy's own time: none is due
+  const db = new Map<string, Strategy>([
+    ['a', strategy('a', signal(['bos']))],
+    ['b', { ...strategy('b', signal(['bos'], { at: '23:00' })), accountId: 2 }],
+    ['off', strategy('off', signal(['bos'], { on: false }))],
+  ]);
+  const d: AutoDeps = {
+    log: async () => {}, all: async () => [...db.values()], get: async (id) => db.get(id) ?? null, save: async (s) => { db.set(s.id, s); },
+    pick: async (_c, _a, at) => ({ at, from: '2026-10-18', to: '2026-10-24', picked: ['momentum'], before: ['bos'], records: [] }),
+    warn: () => assert.fail('no warning expected'),
+  };
+  assert.deepEqual(await runAutoMethods(now, d), [], 'the minute\'s look: nothing due yet');
+  assert.deepEqual(await runAutoMethods(now, d, { now: true, strategyId: 'b' }), ['b']);
+  assert.deepEqual(await runAutoMethods(now, d, { now: true, accountId: 1 }), ['a']);
+  assert.deepEqual(await runAutoMethods(now, d, { now: true }), ['a', 'b'], 'again: a pick asked is never "already run"');
+  assert.deepEqual(db.get('off')!.config.signal!.methods, ['bos'], 'the update off is never picked');
+  // The day's own run still comes at its time: a pick before it does not stand in for it.
+  assert.ok(autoDue(db.get('a')!, IST('2026-10-25T21:00:10')));
+});
+
+test('[critical] 25 Oct 2026: one run at a time -- a Pick now beside the minute\'s look is told, not queued', async () => {
+  let release!: () => void;
+  const held = new Promise<void>((r) => { release = r; });
+  const db = new Map([['a', strategy('a', signal(['bos']))]]);
+  const d: AutoDeps = {
+    log: async () => {}, all: async () => [...db.values()], get: async (id) => db.get(id) ?? null, save: async () => {},
+    pick: async (_c, _a, at) => { await held; return { at, from: '2026-10-18', to: '2026-10-24', picked: ['bos'], before: ['bos'], records: [] }; },
+    warn: () => {},
+  };
+  const first = runAutoMethodsAlone(Date.now(), d, { now: true });
+  assert.ok(first);
+  assert.equal(runAutoMethodsAlone(Date.now(), d, { now: true }), null);
+  release();
+  assert.deepEqual(await first, ['a']);
+  const next = runAutoMethodsAlone(Date.now(), d, { now: true });
+  assert.ok(next, 'free again once it is done');
+  await next;
 });

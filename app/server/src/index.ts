@@ -4,10 +4,10 @@ import { authFromEnv } from './auth/service.js';
 import { loadDays } from './backtest/backtest.js';
 import { brokerAccounts, envKeyLeft } from './delta/accounts.js';
 import { refreshBrokerAccounts } from './http/routes/accounts.routes.js';
-import { deskOpen, initTradingService, tradingService } from './trading/service.js';
-import { initStrategyStore } from './http/routes/strategy.routes.js';
+import { deskOpen, initTradingService } from './trading/service.js';
+import { autoMethodsDeps, initStrategyStore } from './http/routes/strategy.routes.js';
 import { StrategyRunner } from './strategy/runner.js';
-import { autoPick, runAutoMethods } from './strategy/auto-methods.js';
+import { runAutoMethodsAlone } from './strategy/auto-methods.js';
 import { liveTickers, startTickerPoller, startTickerSocket } from './market/delta.js';
 import { liveChain } from './market/chain.js';
 import { readMarket } from './market/moves.js';
@@ -346,18 +346,9 @@ setInterval(() => { pruneSignals(Date.now()).catch(warn('entry-signals')); }, 6 
 // row changed by hand in a console. A default changed that way is followed only when no live position is open.
 setInterval(() => { refreshBrokerAccounts().catch(warn('broker-accounts')); }, 24 * 3_600_000).unref();
 // The signal strategies' methods picked again by their record, each at its own time once a day (strategy/auto-methods.ts).
-// Looked at every minute; never two runs at once -- a run is a backtest a strategy, one after another.
-let picking = false;
-setInterval(() => {
-  if (picking) return;
-  picking = true;
-  runAutoMethods(Date.now(), {
-    all: () => strategies.all(), get: (id) => strategies.get(id), save: (s) => strategies.save(s),
-    pick: (c, a, now) => autoPick(c, a, now, tradingService().spot),
-    log: (u) => strategies.logMethodUpdate(u),
-    warn: (message) => noteError({ source: 'server', level: 'warn', where: 'auto-methods', message }),
-  }).catch(warn('auto-methods')).finally(() => { picking = false; });
-}, 60_000).unref();
+// Looked at every minute; never two runs at once, nor one beside a Pick now -- a run is a backtest a strategy, one
+// after another. A minute a run is still going is skipped: what is due is still due at the next.
+setInterval(() => { runAutoMethodsAlone(Date.now(), autoMethodsDeps())?.catch(warn('auto-methods')); }, 60_000).unref();
 // The paper log on the live tape: fills, stops and targets as they print (entry/live-grade.ts). Four looks a
 // second, and never two at once: a look still writing is not joined by another queued behind it.
 let grading = false;

@@ -124,6 +124,28 @@ export type AutoDeps = {
   warn: (message: string) => void;
 };
 
+/** A run asked for rather than due: every strategy with the update on, or one strategy, or one account's. */
+export type AutoAsk = { now?: boolean; strategyId?: string | null; accountId?: number | null };
+
+/** Whether a pick asked for now takes a strategy: its update on, and the one or the account asked, if any. */
+export function autoAsked(s: Pick<Strategy, 'id' | 'accountId' | 'config'>, ask: AutoAsk): boolean {
+  if (s.config.trigger !== 'signal' || !s.config.signal?.autoMethods?.on) return false;
+  if (ask.strategyId && s.id !== ask.strategyId) return false;
+  return ask.accountId == null || s.accountId === ask.accountId;
+}
+
+let running: Promise<string[]> | null = null;
+
+/**
+ * One run at a time, the minute's look and a pick asked from the screen alike (25 Oct 2026): two at once would each
+ * work out a strategy's record and each write it. Null when one is already running -- nothing is queued.
+ */
+export function runAutoMethodsAlone(now: number, d: AutoDeps, ask: AutoAsk = {}): Promise<string[]> | null {
+  if (running) return null;
+  running = runAutoMethods(now, d, ask).finally(() => { running = null; });
+  return running;
+}
+
 /**
  * Every strategy whose update is due, one after the other (the backtest thread takes one at a time). Each is
  * read again before it is written, and only its list and `last` change: a save from the form in the minute the
@@ -131,10 +153,14 @@ export type AutoDeps = {
  *
  * Nothing is sent (owner, 20 Oct 2026: "my strategies are private -- no Telegram for the methods' update"): each run is
  * kept in `strategy_method_updates`, on the strategy's card and the Methods log, and a failure is a warning in the log.
+ *
+ * `ask.now` (owner, 25 Oct 2026: "a Pick now button: the strategies pick now"): every strategy with the update on --
+ * or the one asked for, or those of one account -- whatever its time, as its own run would. Its `last` is the run's,
+ * so a pick made before the day's time does not stand in for it: the day's own run still comes.
  */
-export async function runAutoMethods(now: number, d: AutoDeps): Promise<string[]> {
+export async function runAutoMethods(now: number, d: AutoDeps, ask: AutoAsk = {}): Promise<string[]> {
   const done: string[] = [];
-  for (const s of (await d.all()).filter((x) => autoDue(x, now))) {
+  for (const s of (await d.all()).filter((x) => (ask.now ? autoAsked(x, ask) : autoDue(x, now)))) {
     const a = s.config.signal!.autoMethods!;
     let run: AutoMethodsRun;
     try {

@@ -142,3 +142,13 @@ export const getMethodUpdates = (o: { source?: MethodUpdateSource | null; strate
   const qs = q.toString();
   return json<{ updates: MethodUpdate[] }>(withAccount(`/api/strategies/method-updates${qs ? `?${qs}` : ''}`));
 };
+
+/** A pick of the methods asked for now: running, or done -- how many strategies it took and saved. */
+export type PickNowRun = { running: boolean; at: number; strategies: number; updated: number; doneAt: number | null; error: string | null };
+
+/** The methods' daily update, now (25 Oct 2026): every strategy with it on, for the account shown -- or the one given. */
+export const runMethodPicks = (strategyId?: string | null) =>
+  post<PickNowRun>(withAccount('/api/strategies/auto-methods/run'), strategyId ? { strategyId } : {});
+
+/** The last pick asked for now, and how many strategies one would take, for the account shown. */
+export const getMethodPicks = () => json<{ last: PickNowRun | null; strategies: number }>(withAccount('/api/strategies/auto-methods/run'));

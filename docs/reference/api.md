@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-129 routes.
+131 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -143,6 +143,8 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/strategies/:id/clone` | signed in | Copy a strategy, settings and all, as a new one that is not armed. |
 | POST | `/api/strategies/:id/enabled` | signed in | Switch one strategy on or off. |
 | POST | `/api/strategies/:id/group` | signed in | Move a strategy into a group of its own account, or out of any (`groupId` null). |
+| GET | `/api/strategies/auto-methods/run` | signed in | The last pick asked for now, and how many strategies one would take (`?account=`): for the Pick now button. |
+| POST | `/api/strategies/auto-methods/run` | signed in | The methods' daily update, now (owner, 25 Oct 2026: "a Pick now button: the strategies pick now and update"): every strategy with the update on -- `?account=` one account's, `{ strategyId }` one --... |
 | POST | `/api/strategies/delete-many` | signed in | Remove several strategies together -- those in no group, say. |
 | POST | `/api/strategies/max-open` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
 | GET | `/api/strategies/method-updates` | signed in | Every change to the signal strategies' methods, newest first (16 Oct 2026): the daily updates and the form's saves. |

@@ -6,6 +6,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
+import { autoAsked, autoPick, runAutoMethodsAlone, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
 import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
@@ -39,6 +40,21 @@ export const strategyStore = (): StrategyStore => {
   if (!store) throw new Error('strategyStore() before initStrategyStore(): the store is opened at boot, in index.ts');
   return store;
 };
+
+/** What the methods' update runs on: the desk's own each minute (index.ts), and Pick now. */
+export const autoMethodsDeps = (): AutoDeps => {
+  const s = strategyStore();
+  return {
+    all: () => s.all(), get: (id) => s.get(id), save: (x) => s.save(x),
+    pick: (c, a, now) => autoPick(c, a, now, tradingService().spot),
+    log: (u) => s.logMethodUpdate(u),
+    warn: (message) => noteError({ source: 'server', level: 'warn', where: 'auto-methods', message }),
+  };
+};
+
+/** The last pick asked for now, since the API started. */
+type PickNow = { running: boolean; at: number; strategies: number; updated: number; doneAt: number | null; error: string | null };
+let pickNow: PickNow | null = null;
 
 /**
  * Only `at` and `value` of each step, in the order sent. Not sorted: a step
@@ -602,6 +618,35 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (since !== null && upTo !== null && upTo < since) return refuse(reply, 400, { error: 'to is before from.' });
     const until = upTo === null ? null : upTo + 86_400_000;
     return { updates: await strategyStore().methodUpdates({ accountId: accountOf(req.query), strategyId: q.strategy || null, source, limit, since, until }) };
+  });
+
+  /**
+   * The methods' daily update, now (owner, 25 Oct 2026: "a Pick now button: the strategies pick now and update"):
+   * every strategy with the update on -- `?account=` one account's, `{ strategyId }` one -- picked and saved as its
+   * own run would, each change in the log. A run is a backtest a strategy, so it is started and answered at once
+   * (202); `GET` says when it is done. One at a time, with the desk's own runs too: 409 while one is running.
+   */
+  app.post('/api/strategies/auto-methods/run', async (req, reply) => {
+    const strategyId = ((req.body ?? {}) as { strategyId?: unknown }).strategyId;
+    const ask: AutoAsk = { now: true, strategyId: typeof strategyId === 'string' && strategyId ? strategyId : null, accountId: accountOf(req.query) };
+    const n = (await strategyStore().all()).filter((s) => autoAsked(s, ask)).length;
+    if (!n) return refuse(reply, 422, { error: ask.strategyId ? 'That strategy\'s daily update is off: switch it on in its Signals tab.' : 'No signal strategy has its daily update on.' });
+    const at = Date.now();
+    const run = runAutoMethodsAlone(at, autoMethodsDeps(), ask);
+    if (!run) return refuse(reply, 409, { error: 'A pick is already running: its changes come into the log when it is done.' });
+    pickNow = { running: true, at, strategies: n, updated: 0, doneAt: null, error: null };
+    run.then((ids) => { pickNow = { ...pickNow!, running: false, updated: ids.length, doneAt: Date.now() }; },
+      (e: Error) => {
+        pickNow = { ...pickNow!, running: false, doneAt: Date.now(), error: e.message };
+        noteError({ source: 'server', level: 'warn', where: 'auto-methods', message: `pick now: ${e.message}` });
+      });
+    return reply.code(202).send(pickNow);
+  });
+
+  /** The last pick asked for now, and how many strategies one would take (`?account=`): for the Pick now button. */
+  app.get('/api/strategies/auto-methods/run', async (req) => {
+    const strategies = (await strategyStore().all()).filter((s) => autoAsked(s, { now: true, accountId: accountOf(req.query) })).length;
+    return { last: pickNow, strategies };
   });
 
   /**
