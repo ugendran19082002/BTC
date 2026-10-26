@@ -3,7 +3,7 @@ import { NumberField } from '@/components/ui/number-field';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
-import { DEFAULT_AUTO_METHODS, EXCLUDE_NONE, MAX_AUTO_DAYS, type AutoMethods, type AutoMethodsRun, type WalkForward } from '@/types/strategy';
+import { DEFAULT_AUTO_METHODS, EXCLUDE_NONE, MAX_AUTO_DAYS, MAX_AUTO_EVERY, type AutoMethods, type AutoMethodsRun, type WalkForward } from '@/types/strategy';
 import { WalkForwardTest } from '@/components/strategy/WalkForwardTest';
 
 /**
@@ -17,10 +17,15 @@ import { WalkForwardTest } from '@/components/strategy/WalkForwardTest';
  * Exclude (owner, 18 Oct 2026: "an exclude option -- what I select there must not be chosen; on and off; on, at
  * least one picked; the methods list below, reused; the same filter and sort"): the methods ticked there are
  * never picked, on the same list as the strategy's own methods. Off keeps the ticks for the next time it is on.
+ *
+ * How often and only if better (owner, 26 Oct 2026: "daily, a week, or a custom update; the new list only if it is
+ * better, else leave it"): every day, once a week or every N days, counted from the last pick; and, switched on, a
+ * new list is taken only where it made more over the look-back than the list in use.
  */
 const WIN_PRESETS = [60, 70, 75, 80] as const;
 const DAY_PRESETS = [3, 7, 14, 30] as const;
 const TRADE_PRESETS = [1, 3, 5, 10] as const;
+const EVERY_PRESETS = [{ days: 1, label: 'Daily' }, { days: 7, label: 'Weekly' }] as const;
 /** What did best when measured (8-15 Oct 2026, each day picked from the days before it). */
 const BEST_WIN = 75;
 
@@ -30,7 +35,10 @@ const when = (ms: number) => new Date(ms).toLocaleString('en-IN', { timeZone: 'A
 /** The rule in one sentence, as the desk will follow it. */
 export function autoWords(a: AutoMethods): string {
   const out = a.exclude?.on ? a.exclude.methods.length : 0;
-  return `Every day at ${time12(a.at)} IST, keep the methods that won ${a.winPct}% or more of at least ${plural(a.minTrades, 'trade')} over the last ${plural(a.days, 'day')}${out ? `, never the ${plural(out, 'excluded method')}` : ''}. If none do, the list stays as it is.`;
+  const every = a.every && a.every > 1 ? a.every : 1;
+  const often = every === 1 ? 'Every day' : every === 7 ? 'Once a week' : `Every ${every} days`;
+  const better = a.onlyIfBetter ? ' The new list is taken only if it made more over those days than the one in use.' : '';
+  return `${often} at ${time12(a.at)} IST, keep the methods that won ${a.winPct}% or more of at least ${plural(a.minTrades, 'trade')} over the last ${plural(a.days, 'day')}${out ? `, never the ${plural(out, 'excluded method')}` : ''}. If none do, the list stays as it is.${better}`;
 }
 
 /** An on / off switch, a thumb's width to tap. */
@@ -139,6 +147,29 @@ export function AutoMethodsFields({
             </div>
             <span className="text-[11px] leading-snug text-[var(--dim)]">1 of 1 is 100%: a few more trades keep a lucky one out.</span>
           </div>
+          <div className="grid gap-1">
+            <span className={label}>How often</span>
+            <div role="group" aria-label="How often presets" className="flex flex-wrap items-center gap-1">
+              {EVERY_PRESETS.map((p) => (
+                <button key={p.days} type="button" aria-pressed={(a.every ?? 1) === p.days} onClick={() => set('every', p.days)} className={chip((a.every ?? 1) === p.days)}>{p.label}</button>
+              ))}
+              <NumberField label="Update every, days" value={a.every ?? 1} unit="d" decimals={0} className="w-20" onChange={(n) => set('every', n)} />
+            </div>
+            <span className="text-[11px] leading-snug text-[var(--dim)]">Days between picks, 1 to {MAX_AUTO_EVERY}, counted from the last one -- a Pick now starts the count again.</span>
+          </div>
+        </div>
+      )}
+      {!blocked && a.on && (
+        <div className="mt-2.5 flex min-w-0 items-center justify-between gap-3 rounded-md border border-solid border-border p-2">
+          <span className="min-w-0">
+            <span className="block text-[12.5px] font-medium text-foreground">Only if better</span>
+            <span className="block text-[11px] leading-snug text-[var(--dim)]">
+              {a.onlyIfBetter
+                ? 'On: the new list is taken only if its methods made more over the look-back than the list in use. Else the list stays, and the log says why.'
+                : 'Off: the new list is always taken.'}
+            </span>
+          </span>
+          <Toggle on={a.onlyIfBetter === true} label="Only if better" onClick={() => set('onlyIfBetter', !a.onlyIfBetter)} />
         </div>
       )}
       {!blocked && a.on && (

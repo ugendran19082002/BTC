@@ -147,3 +147,29 @@ describe('Exclude, in the methods\' daily update (18 Oct 2026)', () => {
     expect(await screen.findByLabelText('Left out, excluded')).toHaveTextContent('Passed but excluded: #9 Trap.');
   });
 });
+
+describe('how often, and only if better (26 Oct 2026)', () => {
+  it('[critical] daily to begin with; weekly, or a number of days typed; the sentence says which', () => {
+    render(<Harness start={{ ...DEFAULT_AUTO_METHODS, on: true }} />);
+    const often = within(screen.getByRole('group', { name: 'How often presets' }));
+    expect(often.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(often.getByRole('button', { name: 'Weekly' }));
+    expect(saved().every).toBe(7);
+    expect(autoWords(saved())).toMatch(/^Once a week at 9:00 PM IST, keep the methods/);
+    fireEvent.change(screen.getByLabelText('Update every, days'), { target: { value: '3' } });
+    expect(saved().every).toBe(3);
+    expect(autoWords(saved())).toMatch(/^Every 3 days at 9:00 PM IST/);
+    expect(autoMethodsProblems({ ...saved(), every: 31 })).toEqual(['The update runs every 1 to 30 days.']);
+    expect(autoMethodsProblems({ ...saved(), every: 30 })).toEqual([]);
+  });
+
+  it('[critical] only if better: off to begin with; on, the sentence and the box say the list stays unless the new one made more', () => {
+    render(<Harness start={{ ...DEFAULT_AUTO_METHODS, on: true }} />);
+    const sw = screen.getByRole('switch', { name: 'Only if better' });
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(sw);
+    expect(saved().onlyIfBetter).toBe(true);
+    expect(autoWords(saved())).toMatch(/The new list is taken only if it made more over those days than the one in use\.$/);
+    expect(screen.getByText(/On: the new list is taken only if its methods made more/)).toBeInTheDocument();
+  });
+});

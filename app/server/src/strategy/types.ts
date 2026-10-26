@@ -614,9 +614,23 @@ export type AutoMethods = {
    * must not be chosen; on and off; on, at least one picked"). Off keeps the methods ticked for the next time it is on.
    */
   exclude?: AutoExclude | null;
+  /**
+   * How often, in days (owner, 26 Oct 2026: "daily, a week, or a custom update"): 1 every day, 7 once a week, up to
+   * `MAX_AUTO_EVERY`; counted from the last pick, a "Pick now" included. Absent: every day, as before.
+   */
+  every?: number;
+  /**
+   * Only if better (owner, 26 Oct 2026: "the new list only if it is better, else leave it"): the new pick is taken
+   * only where its methods made more over the look-back than the list in use, on the same record; else the list stays.
+   */
+  onlyIfBetter?: boolean;
   /** What the last pick did; written by the desk (or by "Pick now" on the form), kept by a save. */
   last?: AutoMethodsRun | null;
 };
+/** The longest a strategy's update may wait between picks, in days. */
+export const MAX_AUTO_EVERY = 30;
+/** Days between picks: 1 where not set. */
+export const everyOf = (a: Pick<AutoMethods, 'every'> | null | undefined): number => (Number.isInteger(a?.every) && a!.every! > 1 ? a!.every! : 1);
 export type AutoExclude = { on: boolean; methods: string[] };
 /** The methods a daily update leaves out: the excluded ones while Exclude is on, else none. */
 export const excludedBy = (a: Pick<AutoMethods, 'exclude'> | null | undefined): ReadonlySet<string> =>
@@ -667,6 +681,8 @@ export function autoMethodsProblems(a: unknown): string[] {
   if (typeof x.winPct !== 'number' || !Number.isFinite(x.winPct) || x.winPct < 1 || x.winPct > 100) bad.push('The daily update\'s win rate must be from 1% to 100%.');
   if (!Number.isInteger(x.minTrades) || x.minTrades! < 1 || x.minTrades! > 100) bad.push('The daily update\'s least trades must be a whole number from 1 to 100.');
   if (!Number.isInteger(x.days) || x.days! < 1 || x.days! > MAX_AUTO_DAYS) bad.push(`The daily update looks back 1 to ${MAX_AUTO_DAYS} days.`);
+  if (x.every !== undefined && (!Number.isInteger(x.every) || x.every < 1 || x.every > MAX_AUTO_EVERY)) bad.push(`The update runs every 1 to ${MAX_AUTO_EVERY} days.`);
+  if (x.onlyIfBetter !== undefined && typeof x.onlyIfBetter !== 'boolean') bad.push('Say whether the new list is taken only when it is better.');
   bad.push(...autoExcludeProblems(x.exclude));
   return bad;
 }

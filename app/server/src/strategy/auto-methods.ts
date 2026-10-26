@@ -19,7 +19,7 @@ import { DEFAULT_PARAMS, type SignalBacktest } from '../report/signal-backtest.j
 import { signalBacktest } from '../report/backtest-run.js';
 import { sessionDayOf } from '../report/market-day.js';
 import { pickMethods } from './pick-methods.js';
-import { excludedBy, tfLabel, validateConfig, type AutoMethods, type AutoMethodsRun, type MethodUpdate, type Strategy, type StrategyConfig } from './types.js';
+import { everyOf, excludedBy, tfLabel, validateConfig, type AutoMethods, type AutoMethodsRun, type MethodUpdate, type Strategy, type StrategyConfig } from './types.js';
 
 const IST_MS = 5.5 * 3_600_000;
 const DAY_MS = 86_400_000;
@@ -69,6 +69,9 @@ const runTimeOn = (now: number, at: string) => Date.parse(`${new Date(now + IST_
  * "today's" time was the next one. The time due is the last one at or before now, today's or yesterday's; yesterday's
  * is caught up only where the update was running -- it ran the day before -- so switching it on in the morning waits
  * for its own time, as it always did.
+ *
+ * Every N days (26 Oct 2026): at its time on the day N days after the last pick's, or the first time after that the
+ * desk is up -- the last pick a "Pick now" too, which starts the count again. Every day is as above.
  */
 export function autoDue(s: Pick<Strategy, 'config'>, now: number): boolean {
   const a = s.config.trigger === 'signal' ? s.config.signal?.autoMethods : null;
@@ -78,8 +81,14 @@ export function autoDue(s: Pick<Strategy, 'config'>, now: number): boolean {
   const due = now >= today ? today : today - DAY_MS;
   const last = a.last?.at ?? 0;
   if (last >= due) return false;
+  const every = everyOf(a);
+  if (every > 1 && last > 0) return istDayOf(due) - istDayOf(last) >= every;
   return due === today || last >= due - DAY_MS;
 }
+/** The IST calendar day of a moment, as a day number. */
+const istDayOf = (ms: number) => Math.floor((ms + IST_MS) / DAY_MS);
+/** Money over the look-back, for a note: "$1.23". */
+const usd = (x: number) => `${x < 0 ? '-' : ''}$${Math.abs(x).toFixed(2)}`;
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
@@ -189,9 +198,21 @@ export async function runAutoMethods(now: number, d: AutoDeps, ask: AutoAsk = {}
     // stays -- less what is excluded now, unless that would empty it.
     const before = rule.methods;
     const took = run.picked.filter((m) => !excludedBy(rule.autoMethods).has(m));
-    const after = run.note || !took.length ? lessExcluded(before, rule.autoMethods) : took;
+    let after = run.note || !took.length ? lessExcluded(before, rule.autoMethods) : took;
     const { records = [], ...brief } = run;
     run = { ...brief, before, picked: after };
+    /*
+     * Only if better (owner, 26 Oct 2026): the new list against the one in use, on the same record -- each method's
+     * money over the look-back, as the pick read it -- and taken only where it made more. A tie keeps the list in use.
+     */
+    if (rule.autoMethods.onlyIfBetter && !run.note && [...after].sort().join() !== [...before].sort().join()) {
+      const made = (list: readonly string[]) => records.filter((r) => list.includes(r.method)).reduce((n, r) => n + r.net, 0);
+      const now = made(before), next = made(after);
+      if (!(next > now)) {
+        after = lessExcluded(before, rule.autoMethods);
+        run = { ...run, picked: after, note: `Kept: the list in use made ${usd(now)} over ${run.from} to ${run.to}, the new pick ${usd(next)} -- not better.` };
+      }
+    }
     const config: StrategyConfig = { ...fresh.config, signal: { ...rule, methods: after, autoMethods: { ...rule.autoMethods, last: run } } };
     const problems = validateConfig(config);
     if (problems.length) {

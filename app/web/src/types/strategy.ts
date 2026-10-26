@@ -321,7 +321,11 @@ export function deltaByVolProblems(a: DeltaByVol | null | undefined): string[] {
   return bad;
 }
 /** Once a day at `at` (IST): the methods that won `winPct`% or more of `minTrades`+ trades over the last `days` finished expiry days. */
-export type AutoMethods = { on: boolean; at: string; winPct: number; minTrades: number; days: number; exclude?: AutoExclude | null; last?: AutoMethodsRun | null };
+/**
+ * `every`: days between picks, 1 a day (absent too), 7 a week, up to `MAX_AUTO_EVERY`, counted from the last pick.
+ * `onlyIfBetter`: the new list taken only where it made more over the look-back than the list in use (26 Oct 2026).
+ */
+export type AutoMethods = { on: boolean; at: string; winPct: number; minTrades: number; days: number; every?: number; onlyIfBetter?: boolean; exclude?: AutoExclude | null; last?: AutoMethodsRun | null };
 /** Methods the daily update never picks, however they did (18 Oct 2026); off keeps the ticks for next time. */
 export type AutoExclude = { on: boolean; methods: string[] };
 /**
@@ -361,6 +365,7 @@ export type MethodUpdate = {
 /** Win 75%, re-picked daily: what did best when it was measured (8-15 Oct 2026, each day from the days before it). */
 export const DEFAULT_AUTO_METHODS: AutoMethods = { on: false, at: '21:00', winPct: 75, minTrades: 3, days: 7 };
 export const MAX_AUTO_DAYS = 30;
+export const MAX_AUTO_EVERY = 30;
 /** The server's `autoMethodsProblems`, in its words. */
 export function autoMethodsProblems(a: AutoMethods | null | undefined): string[] {
   if (!a) return [];
@@ -369,6 +374,7 @@ export function autoMethodsProblems(a: AutoMethods | null | undefined): string[]
   if (!Number.isFinite(a.winPct) || a.winPct < 1 || a.winPct > 100) bad.push('The daily update\'s win rate must be from 1% to 100%.');
   if (!Number.isInteger(a.minTrades) || a.minTrades < 1 || a.minTrades > 100) bad.push('The daily update\'s least trades must be a whole number from 1 to 100.');
   if (!Number.isInteger(a.days) || a.days < 1 || a.days > MAX_AUTO_DAYS) bad.push(`The daily update looks back 1 to ${MAX_AUTO_DAYS} days.`);
+  if (a.every !== undefined && (!Number.isInteger(a.every) || a.every < 1 || a.every > MAX_AUTO_EVERY)) bad.push(`The update runs every 1 to ${MAX_AUTO_EVERY} days.`);
   if (a.exclude?.on && !a.exclude.methods.length) bad.push(EXCLUDE_NONE);
   return bad;
 }

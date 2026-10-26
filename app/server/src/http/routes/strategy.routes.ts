@@ -279,6 +279,9 @@ function cleanAuto(raw: unknown): Pick<SignalRule, 'autoMethods'> | Record<strin
   return {
     autoMethods: {
       on: a.on === true, at: String(a.at ?? ''), winPct: num(a.winPct), minTrades: num(a.minTrades), days: num(a.days),
+      // How often and only-if-better (26 Oct 2026): kept only when sent, so a strategy that never set them is stored as before.
+      ...(a.every !== undefined && a.every !== null && (a.every as unknown) !== '' ? { every: num(a.every) } : {}),
+      ...(a.onlyIfBetter !== undefined && a.onlyIfBetter !== null ? { onlyIfBetter: a.onlyIfBetter } : {}),
       ...(exclude ? { exclude: exclude as AutoMethods['exclude'] } : {}),
       ...(last ? { last: {
         at: Number(last.at), from: String(last.from ?? ''), to: String(last.to ?? ''),

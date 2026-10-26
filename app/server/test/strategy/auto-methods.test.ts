@@ -327,3 +327,56 @@ test('[critical] 25 Oct 2026: one run at a time -- a Pick now beside the minute\
   assert.ok(next, 'free again once it is done');
   await next;
 });
+
+/** How often, and only if better (owner, 26 Oct 2026: "daily, a week, or custom; the new list only if it is better"). */
+const lastAt = (at: number) => ({ at, from: '2026-10-01', to: '2026-10-14', picked: ['bos'], before: ['bos'] });
+
+test('[critical] every 7 days: due at its time on the seventh day after the last pick, not before; a day is as before', () => {
+  const ranAt = IST('2026-10-20T21:00:10');
+  const weekly = strategy('w', signal(['bos'], { every: 7, last: lastAt(ranAt) }));
+  assert.equal(autoDue(weekly, IST('2026-10-21T21:00:30')), false, 'the next day');
+  assert.equal(autoDue(weekly, IST('2026-10-26T21:00:30')), false, 'the sixth day');
+  assert.equal(autoDue(weekly, IST('2026-10-27T20:59:00')), false, 'the seventh, before its time');
+  assert.equal(autoDue(weekly, IST('2026-10-27T21:00:30')), true, 'the seventh, at its time');
+  assert.equal(autoDue(weekly, IST('2026-10-29T10:00:00')), true, 'missed while the desk was down: caught up');
+  const custom = strategy('c', signal(['bos'], { every: 3, last: lastAt(ranAt) }));
+  assert.deepEqual(['22', '23'].map((d) => autoDue(custom, IST(`2026-10-${d}T21:00:30`))), [false, true]);
+  const daily = strategy('d', signal(['bos'], { last: lastAt(ranAt) }));
+  assert.equal(autoDue(daily, IST('2026-10-21T21:00:30')), true, 'no `every`: every day, as before');
+});
+
+test('[critical] a Pick now starts the count again: weekly, nothing at that evening\'s time; daily, the evening run still comes', () => {
+  const pickedAt = IST('2026-10-26T17:00:00');
+  assert.equal(autoDue(strategy('w', signal(['bos'], { every: 7, last: lastAt(pickedAt) })), IST('2026-10-26T21:00:30')), false);
+  assert.equal(autoDue(strategy('w', signal(['bos'], { every: 7, last: lastAt(pickedAt) })), IST('2026-11-02T21:00:30')), true);
+  assert.equal(autoDue(strategy('d', signal(['bos'], { last: lastAt(pickedAt) })), IST('2026-10-26T21:00:30')), true);
+});
+
+test('[critical] only if better: a new list that made less, or the same, over the look-back is not taken -- one that made more is', async () => {
+  const run = async (records: { method: string; trades: number; wins: number; net: number }[]) => {
+    const db = new Map([['s', strategy('s', signal(['bos', 'trap'], { onlyIfBetter: true }))]]);
+    const logged: Parameters<AutoDeps['log']>[0][] = [];
+    const d: AutoDeps = {
+      log: async (u) => { logged.push(u); }, all: async () => [...db.values()], get: async (id) => db.get(id) ?? null, save: async (s) => { db.set(s.id, s); },
+      pick: async (_c, _a, at) => ({ at, from: '2026-10-13', to: '2026-10-26', picked: ['momentum'], before: ['bos', 'trap'], records }),
+      warn: () => assert.fail('no warning expected'),
+    };
+    await runAutoMethods(IST('2026-10-26T21:00:10'), d);
+    return { methods: db.get('s')!.config.signal!.methods, note: logged[0]!.note };
+  };
+  const worse = await run([{ method: 'momentum', trades: 5, wins: 5, net: 0.2 }, { method: 'bos', trades: 6, wins: 5, net: 0.3 }, { method: 'trap', trades: 2, wins: 1, net: -0.05 }]);
+  assert.deepEqual(worse.methods, ['bos', 'trap'], 'kept: 0.20 is not more than 0.25');
+  assert.equal(worse.note, 'Kept: the list in use made $0.25 over 2026-10-13 to 2026-10-26, the new pick $0.20 -- not better.');
+  const better = await run([{ method: 'momentum', trades: 5, wins: 5, net: 0.4 }, { method: 'bos', trades: 6, wins: 2, net: -0.3 }]);
+  assert.deepEqual([better.methods, better.note], [['momentum'], null]);
+});
+
+test('how often and only-if-better are checked on save: 1 to 30 days, a yes or a no; absent, as before', () => {
+  const base = { ...DEFAULT_AUTO_METHODS, on: true };
+  assert.deepEqual(autoMethodsProblems(base), []);
+  assert.deepEqual(autoMethodsProblems({ ...base, every: 7, onlyIfBetter: true }), []);
+  assert.deepEqual(autoMethodsProblems({ ...base, every: 0 }), ['The update runs every 1 to 30 days.']);
+  assert.deepEqual(autoMethodsProblems({ ...base, every: 31 }), ['The update runs every 1 to 30 days.']);
+  assert.deepEqual(autoMethodsProblems({ ...base, every: 2.5 }), ['The update runs every 1 to 30 days.']);
+  assert.deepEqual(autoMethodsProblems({ ...base, onlyIfBetter: 'yes' as unknown as boolean }), ['Say whether the new list is taken only when it is better.']);
+});
