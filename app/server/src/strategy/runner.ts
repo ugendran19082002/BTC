@@ -13,7 +13,7 @@ import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
 import { lastPerp } from '../market/flow.js';
-import { missedEntryAlert, runAlertFor, type Alert, type AlertContext } from '../notify/messages.js';
+import { missedEntryAlert, runAlertFor, signalRefusedAlert, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyExitStepper, TARGET_STEP_QUOTA_PCT } from './exit-steps.js';
 import { DEFAULT_LEVERAGE, stopHeldWords, stopRoomInside } from '../trading/order-plan.js';
 import { liquidationRoom } from '../trading/margin.js';
@@ -787,8 +787,9 @@ export class StrategyRunner {
     }
     const res = await svc.place(args);
     if (!res.ok) {
-      await finish('refused', `${what} -- refused: ${res.precheck ? failureText(res.precheck) : 'refused'}`);
-      this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'failed', detail: 'refused', failedLegs: [what], at: now }, ctx));
+      const why = res.precheck ? failureText(res.precheck) : 'refused';
+      await finish('refused', `${what} -- refused: ${why}`);
+      this.alert((ctx) => signalRefusedAlert(s.name, what, why, now, ctx));
       return;
     }
     await finish('placed', what, res.state.tradeId);

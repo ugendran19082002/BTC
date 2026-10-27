@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyEvent, initialTrade } from '../../src/trading/machine.js';
 import {
-  alertFor, missedEntryAlert, PROBLEM_REPEAT_MS, runAlertFor, type Alert, type RunOutcome,
+  alertFor, missedEntryAlert, PROBLEM_REPEAT_MS, runAlertFor, signalRefusedAlert, type Alert, type RunOutcome,
 } from '../../src/notify/messages.js';
 import type { TradePlan } from '../../src/trading/engine.js';
 import type { TradeEvent, TradeState } from '../../src/trading/types.js';
@@ -121,6 +121,18 @@ test('a day that stood aside says so and why, so a quiet phone is never a myster
   assert.match(a.text, /No order was placed/);
 });
 
+test('a signal the gates turned down says the order and the gate’s reason, and that it was this signal only', () => {
+  // 27 Oct 2026, 07:25 IST: it went out as AUTO-TRADE FAILED, "nothing was sold today", with no reason.
+  const what = 'sell CE 81000 x1 @ 37 (delta 0.11) · perp filled 80045 · perp SL skipped · TGT skipped';
+  const a = signalRefusedAlert('3m time', what, 'Last quote is 3.9s old.', AT, LIVE);
+  assert.match(a.text, /⚠️ <b>SIGNAL NOT TAKEN · 3m time<\/b>/);
+  assert.match(a.text, /sell CE 81000 x1 @ 37 .* — refused: Last quote is 3\.9s old\./);
+  assert.match(a.text, /Only this signal/);
+  assert.doesNotMatch(a.text, /AUTO-TRADE FAILED|nothing was sold today/);
+  assert.match(a.text, /17:17 IST · auto-trading · LIVE/);
+  assert.equal(a.key, 'signal-refused:3m time:2026-09-10');
+});
+
 test('an entry window that closed with nothing tried is an alert, naming the window', () => {
   const a = missedEntryAlert('Baseline', '05:29', 60, AT, LIVE);
   assert.match(a.text, /🚨 <b>ENTRY MISSED · Baseline<\/b>/);
@@ -139,8 +151,9 @@ test('every & and < in every problem alert is escaped, because Telegram refuses 
     runAlertFor(outcome({ status: 'refused', detail: 'bid < floor & ask > cap' }), LIVE),
     runAlertFor(outcome({ status: 'failed', failedLegs: ['CE <x> & y'] }), LIVE),
     missedEntryAlert('A & B <test>', '05:29', 60, AT, LIVE),
+    signalRefusedAlert('A & B', 'sell CE <x> & y', 'bid < floor & ask > cap', AT, LIVE),
   ].filter((a): a is Alert => a !== null);
-  assert.ok(all.length >= 4);
+  assert.ok(all.length >= 5);
   for (const a of all) {
     const withoutTags = a.text.replace(/<\/?(b|i)>/g, '');
     assert.doesNotMatch(withoutTags, /&(?!amp;|lt;|gt;|quot;)|<|>/, a.text);

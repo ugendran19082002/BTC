@@ -584,6 +584,23 @@ export function runAlertFor(r: RunOutcome, ctx: AlertContext): Alert | null {
   return null;
 }
 
+/**
+ * A signal strategy's order the desk's own gates turned down: one signal, not the day -- the strategy goes on taking
+ * the next. Until 27 Oct 2026 it went out in a clock run's words, AUTO-TRADE FAILED and "nothing was sold today",
+ * with the order and without the gate's reason (owner: "auto trade failed alert, what it means I do not understand").
+ */
+export function signalRefusedAlert(strategy: string, what: string, reason: string, at: number, ctx: AlertContext): Alert {
+  return {
+    key: `signal-refused:${strategy}:${istDateKey(at)}`,
+    text: lines(
+      headline(ctx, '⚠️', `SIGNAL NOT TAKEN · ${escape(strategy)}`), '',
+      `${escape(what)} — refused: ${escape(reason)}`,
+      'Only this signal: the strategy goes on taking the next ones.', '',
+      `🕒 ${istTime(at)} IST · auto-trading · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`,
+    ),
+  };
+}
+
 /** The entry window closed with nothing tried: the desk or the price feed was down the whole time. */
 export function missedEntryAlert(
   strategy: string, entryTime: string, graceMin: number, at: number, ctx: AlertContext,
