@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-564 files listed, 307 test files counted below, images and lockfiles left out.
+565 files listed, 309 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 156 |
-| `app/web` | 151 |
+| `app/server` | 157 |
+| `app/web` | 152 |
 
 ## `(root)`
 
@@ -541,6 +541,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [StrikeBlocksEditor.tsx](../../app/web/src/components/strategy/StrikeBlocksEditor.tsx) | A signal strategy's strike rule, over its window (4 Oct 2026). |
 | [StrikeMax.tsx](../../app/web/src/components/strategy/StrikeMax.tsx) | The most open at once on one strike (owner's list #1, 22 Oct 2026: "50 trades on one strike"; ten were opened on the P-83000 inside six seconds that morning, 07:00, and all ten stopped together at... |
 | [WalkForwardTest.tsx](../../app/web/src/components/strategy/WalkForwardTest.tsx) | "Test this rule": the daily update's rule walked forward, with an untouched holdout (18 Oct 2026, the R&D audit: "pick on the days before, test on the next, and validate on the last days without th... |
+| [ZoneFresh.tsx](../../app/web/src/components/strategy/ZoneFresh.tsx) | The fill window (owner, 28 Oct 2026: "the zone-fill table on the screen -- dynamic: UI, backend, DB"): how late a perp zone fill may still be entered as an option, seconds by time frame, this accou... |
 | [form-parts.tsx](../../app/web/src/components/strategy/form-parts.tsx) | The strategy forms' parts: every field group a strategy has, written once. |
 | [useOptionRecord.ts](../../app/web/src/components/strategy/useOptionRecord.ts) | Every method's record as options under the strategy on the form (owner, 13 Oct 2026: "in the strategy form the signal filter's profit and loss must be by the option's TGT and SL, not the perp's"). |
 | [useStrategyDraft.ts](../../app/web/src/components/strategy/useStrategyDraft.ts) | A strategy being edited: the config, the name, what is wrong with them and on which tab, and saving -- the part both strategy forms share, so the clock form and the signal form check and save the s... |

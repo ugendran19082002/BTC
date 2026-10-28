@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-131 routes.
+132 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -154,6 +154,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/strategies/signal-trades` | signed in | The signal strategies' trade history for a range of IST days (or minutes): the Live screen's Trade history and its date picker. |
 | POST | `/api/strategies/strike-full` | signed in | What a signal does at a full strike, this account's: 'next' (the next strike out) or 'skip'; null is back to the default. |
 | POST | `/api/strategies/strike-max` | signed in | The most open on one strike, this account's: per cent of "at most open", 1 to 100; null is back to the default (10). |
+| POST | `/api/strategies/zone-fresh` | signed in | The fill window, this account's (owner, 28 Oct 2026): `{ seconds: { "3m": 90, ... } }`, whole seconds from 10 to 1800 a time frame; one left out keeps the default; `null` is every time frame back t... |
 | POST | `/api/strategy-groups` | signed in | Make a group, empty, for one account. |
 | DELETE | `/api/strategy-groups/:id` | signed in | Remove a group. |
 | POST | `/api/strategy-groups/:id` | signed in | Rename a group. |

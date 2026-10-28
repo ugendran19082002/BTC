@@ -8,7 +8,7 @@ import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
@@ -84,8 +84,17 @@ export const ZONE_FILL_FRESH_MS = 90_000;
 const ZONE_FILL_FRESH_BY_TF: Partial<Record<Tf, number>> = {
   '15m': 150_000, '30m': 210_000, '1h': 300_000, '2h': 450_000, '4h': 600_000,
 };
-/** The longest a zone fill of this timeframe's signal may have waited and still be entered (ms). */
+/** The longest a zone fill of this timeframe's signal may have waited and still be entered (ms): the desk's default. */
 export const zoneFillFreshMs = (tf: Tf): number => ZONE_FILL_FRESH_BY_TF[tf] ?? ZONE_FILL_FRESH_MS;
+/**
+ * The same, as the account has set it (28 Oct 2026, `ZONE_FRESH_KEY`, on the strategies card): read at each signal, so a
+ * change on the screen counts from the next one; a time frame the setting has no figure for keeps the default.
+ */
+export function zoneFreshFor(raw: string | null | undefined, tf: Tf): number {
+  const set = zoneFreshOf(raw) as Partial<Record<Tf, number>>;
+  const s = set[tf];
+  return s === undefined ? zoneFillFreshMs(tf) : s * 1_000;
+}
 /** A signal strategy's entry rests at most this long; whatever is still unfilled then is cancelled. */
 export const SIGNAL_ENTRY_MS = 5 * 60_000;
 
@@ -579,7 +588,8 @@ export class StrategyRunner {
         return;
       }
       const ago = now - fill.filledAt * 1_000;
-      const fresh = zoneFillFreshMs(r.tf);
+      const svc = tradingService();
+      const fresh = zoneFreshFor(accountSetting(svc.settings, ZONE_FRESH_KEY, svc.accountId), r.tf);
       if (ago > fresh) {
         await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round(ago / 1_000)}s ago -- too late to enter (a ${r.tf} signal within ${Math.round(fresh / 1_000)}s)`);
         return;

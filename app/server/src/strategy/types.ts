@@ -858,6 +858,34 @@ export const strikeFullOf = (raw: string | null | undefined): StrikeFull => (raw
 export const strikeFullProblem = (v: unknown): string | null =>
   v === null || v === 'next' || v === 'skip' ? null : 'When a strike is full, pick the next strike out or skip.';
 /** Why the most on one strike cannot be saved, in words; null when it can. `null` itself is "back to the default", and can. */
+/**
+ * How late a zone fill may be entered, in seconds, by the signal's time frame -- one account's (owner, 28 Oct 2026: "the
+ * fill window on the screen, dynamic: UI, backend, DB"). Kept as JSON, {"3m": 90, ...}; a time frame not in it keeps the
+ * desk's own figure (`ZONE_FRESH_DEFAULT_S`, the 13 Oct limits that grow with the time frame). Read by the runner at
+ * each signal, so a change counts from the next one.
+ */
+export const ZONE_FRESH_KEY = 'signal_zone_fresh_s';
+export const ZONE_FRESH_DEFAULT_S: Readonly<Record<SignalTf, number>> = { '3m': 90, '5m': 90, '15m': 150, '30m': 210, '1h': 300, '2h': 450, '4h': 600 };
+export const ZONE_FRESH_MIN_S = 10;
+export const ZONE_FRESH_MAX_S = 1_800;
+const freshOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= ZONE_FRESH_MIN_S && n <= ZONE_FRESH_MAX_S;
+/** The setting as stored: each time frame's seconds, the default for any not set, empty or unreadable. */
+export function zoneFreshOf(raw: string | null | undefined): Record<SignalTf, number> {
+  let set: Record<string, unknown> = {};
+  try { const v = raw ? JSON.parse(raw) : {}; if (v && typeof v === 'object' && !Array.isArray(v)) set = v; } catch { /* the defaults */ }
+  return Object.fromEntries(SIGNAL_TFS.map((tf) => [tf, freshOk(set[tf]) ? set[tf] : ZONE_FRESH_DEFAULT_S[tf]])) as Record<SignalTf, number>;
+}
+/** Why a fill window cannot be saved, in words; null when it can. `null` itself is "back to the defaults", and can. */
+export function zoneFreshProblem(v: unknown): string | null {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return 'The fill window is seconds by time frame: {"3m": 90, ...}.';
+  for (const [k, n] of Object.entries(v)) {
+    if (!(SIGNAL_TFS as readonly string[]).includes(k)) return `No time frame "${k}": ${SIGNAL_TFS.join(', ')}.`;
+    if (!freshOk(n)) return `The ${k} fill window must be whole seconds from ${ZONE_FRESH_MIN_S} to ${ZONE_FRESH_MAX_S}.`;
+  }
+  return null;
+}
+
 export function strikeMaxProblem(v: unknown): string | null {
   if (v === null) return null;
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 100

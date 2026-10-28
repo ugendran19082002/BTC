@@ -7,7 +7,7 @@ import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow } from '../../strategy/runner.js';
 import { autoAsked, autoPick, runAutoMethodsAlone, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -456,6 +456,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       signalStrikeMaxPct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, account ?? svc.accountId)),
       // And what a signal does at it: the next strike out (the default), or skip.
       signalStrikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, account ?? svc.accountId)),
+      // How late a zone fill may still be entered, seconds by time frame (28 Oct 2026): the account's, the default where unset.
+      signalZoneFreshS: zoneFreshOf(accountSetting(svc.settings, ZONE_FRESH_KEY, account ?? svc.accountId)),
       busiestStrike: elsewhere ? null : busiestOf(openTrades),
       /*
        * The desk's limit on lots short at once (the order gate's MAX_POSITION), and
@@ -1067,6 +1069,21 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
     await svc.settings.set(accountKey(STRIKE_FULL_KEY, account), want === null ? '' : String(want));
     return { ok: true, signalStrikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, account)) };
+  });
+
+  /**
+   * The fill window, this account's (owner, 28 Oct 2026): `{ seconds: { "3m": 90, ... } }`, whole seconds from 10 to 1800 a
+   * time frame; one left out keeps the default; `null` is every time frame back to the default. The runner reads it at
+   * each signal, so it counts from the next one.
+   */
+  app.post('/api/strategies/zone-fresh', async (req, reply) => {
+    const { seconds, accountId } = (req.body ?? {}) as { seconds?: unknown; accountId?: unknown };
+    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const want = seconds === undefined ? null : seconds;
+    const problem = zoneFreshProblem(want);
+    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+    await svc.settings.set(accountKey(ZONE_FRESH_KEY, account), want === null ? '' : JSON.stringify(want));
+    return { ok: true, signalZoneFreshS: zoneFreshOf(accountSetting(svc.settings, ZONE_FRESH_KEY, account)) };
   });
 
   // One side's own limit under the cap: per cent of "at most open" for calls, or for puts; null is back to the default.

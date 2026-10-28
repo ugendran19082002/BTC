@@ -351,6 +351,34 @@ test('[critical] a zone fill 5 minutes old: a 4h signal is still entered, a 5m o
   await off(id);
 });
 
+test('[critical] the fill window set on the screen (28 Oct 2026): the next signal is held to it; null is back to the defaults; nonsense is refused', async () => {
+  const id = await make('Zone window', main, { enterOn: 'zone' });
+  const last = async () => (await runsOf(id)).at(-1)!;
+  try {
+    const set = await api('POST', '/api/strategies/zone-fresh', { seconds: { '5m': 120 }, accountId: main });
+    assert.equal(set.status, 200, JSON.stringify(set.body));
+    assert.equal(set.body.signalZoneFreshS['5m'], 120);
+    assert.equal(set.body.signalZoneFreshS['4h'], 600, 'a time frame not set keeps its default');
+    assert.equal((await api('GET', `/api/strategies?account=${main}`)).body.signalZoneFreshS['5m'], 120, 'and the card reads it back');
+    await runner.onSetupFilled(await logged(signal('5m')).then((s) => fill('5m', 110, { triggerAt: s.triggerTime! })));
+    assert.equal((await last()).status, 'would-place', '110 s inside the 120 set: ' + (await last()).detail);
+    await runner.onSetupFilled(fill('5m', 121));
+    assert.match((await last()).detail, /121s ago -- too late to enter \(a 5m signal within 120s\)$/);
+    // back to the defaults
+    assert.equal((await api('POST', '/api/strategies/zone-fresh', { seconds: null, accountId: main })).body.signalZoneFreshS['5m'], 90);
+    await runner.onSetupFilled(await logged(signal('5m')).then((s) => fill('5m', 110, { triggerAt: s.triggerTime! })));
+    assert.match((await last()).detail, /110s ago -- too late to enter \(a 5m signal within 90s\)$/);
+    for (const [bad, said] of [[{ '5m': 5 }, /5m fill window must be whole seconds from 10 to 1800/], [{ '7m': 60 }, /No time frame "7m"/], [{ '5m': 90.5 }, /whole seconds/], [[90], /seconds by time frame/]] as const) {
+      const r = await api('POST', '/api/strategies/zone-fresh', { seconds: bad, accountId: main });
+      assert.equal(r.status, 422, JSON.stringify(bad));
+      assert.match(r.body.error, said);
+    }
+  } finally {
+    await api('POST', '/api/strategies/zone-fresh', { seconds: null, accountId: main });
+    await off(id);
+  }
+});
+
 test('[critical] a late fill the perp has already finished -- at the signal\'s stop, or its target -- is not entered', async () => {
   const id = await make('Zone over', main, { enterOn: 'zone' });
   const last = async () => (await runsOf(id)).at(-1)!;

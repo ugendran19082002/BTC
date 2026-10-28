@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { MethodUpdate, MethodUpdateSource, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
+import type { MethodUpdate, MethodUpdateSource, SignalTf, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
 import { accountScope, withAccount } from '@/lib/account-scope';
 
 /** The strategies of the broker account being shown (lib/account-scope.ts); with none chosen, every account's. */
@@ -42,6 +42,11 @@ export const setStrikeMax = (pct: number | null) =>
 export const setStrikeFull = (mode: 'next' | 'skip') =>
   post<{ ok: true; signalStrikeFull: 'next' | 'skip' }>(
     '/api/strategies/strike-full', accountScope() === null ? { mode } : { mode, accountId: accountScope() });
+
+/** The fill window, the shown account's: seconds by time frame, only those not at their default; null, all back to it. */
+export const setZoneFresh = (seconds: Partial<Record<SignalTf, number>> | null) =>
+  post<{ ok: true; signalZoneFreshS: Record<SignalTf, number> }>(
+    '/api/strategies/zone-fresh', accountScope() === null ? { seconds } : { seconds, accountId: accountScope() });
 
 export const setSideMax = (side: 'CE' | 'PE', pct: number) =>
   post<{ ok: true; signalSideMaxPct: { CE: number; PE: number } }>(
