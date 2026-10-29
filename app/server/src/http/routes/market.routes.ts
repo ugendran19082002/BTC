@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { tradingService } from '../../trading/service.js';
-import { sessionDayOf } from '../../report/market-day.js';
+import { SETTLE_MIN_IST, sessionDayOf } from '../../report/market-day.js';
 import { REPORT_FIRST_DAY, REPORT_MAX_DAYS, marketBreakdown, marketReport, type ReportFilters } from '../../report/market-report.js';
 import { DAY_START_IST, DEFAULT_PARAMS, MIN_PREMIUM, type Chase, WIDEN_ATR_MAX, WIDEN_MODES, type WidenMode, breakEvenProblems, tslProblems, tslQueryOf, type Tsl, type TslUnit, type BacktestStrategy, VOL_STUDY_DELTA, VOL_STUDY_LOTS, VOL_STUDY_SL, VOL_STUDY_WIN, type VolWin, backtestable, strategyCaveats, type BacktestParams, type VolLevel, type VolRule, type VolTradesPick, type WinSweepAsk, type WinSweepCellPick, SESSION_RULES_MAX, SESSION_WIN, type SessionRule, type SessionTradesPick, type SessionWin } from '../../report/signal-backtest.js';
 import { rows } from '../../db/pool.js';
@@ -34,6 +34,28 @@ export function rangeOf(q: { from?: unknown; to?: unknown }, now = Date.now()): 
   if (from > to) return 'The start date must not be after the end date.';
   if (Date.parse(to) - Date.parse(from) > REPORT_MAX_DAYS * 86_400_000) return `At most ${REPORT_MAX_DAYS} days at a time.`;
   return { from, to };
+}
+
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+/** "17:31" as a minute of the expiry day: 0 is 5:30 PM IST, 1439 is 5:29 PM. */
+const sessionMinute = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number) as [number, number];
+  return (h * 60 + m - SETTLE_MIN_IST + 1_440) % 1_440;
+};
+
+/**
+ * `fromTime` / `toTime` (IST, `HH:MM`): only trades entered from one minute to the other, both included, in the order
+ * of an expiry day -- 17:31 to 17:29 is the whole contract but its settlement minute, 07:00 to 11:00 the morning.
+ * Neither: the whole day (null). One without the other, or the end before the start, is refused in words.
+ */
+export function windowOf(q: { fromTime?: unknown; toTime?: unknown }): { from: number; to: number } | null | string {
+  const a = q.fromTime === undefined || q.fromTime === '' ? null : String(q.fromTime);
+  const b = q.toTime === undefined || q.toTime === '' ? null : String(q.toTime);
+  if (a === null && b === null) return null;
+  if (a === null || b === null || !HHMM.test(a) || !HHMM.test(b)) return 'Give both times, as HH:MM (IST).';
+  const w = { from: sessionMinute(a), to: sessionMinute(b) };
+  if (w.from > w.to) return 'The end time comes before the start in the contract\'s day (5:30 PM to 5:30 PM IST).';
+  return w;
 }
 
 function listOf(q: unknown, name: 'tf' | 'method' | 'strategy'): string[] | null {
@@ -794,17 +816,24 @@ export function registerMarketRoutes(app: FastifyInstance) {
     return walkForwardOf(asked, auto!, { from, to, holdout, now, spot: tradingService().spot, first: REPORT_FIRST_DAY });
   });
 
-  /** Each expiry day with its figures, its kind and both records' totals. `?account=` is one broker account's orders. */
+  /**
+   * Each expiry day with its figures, its kind and both records' totals. `?account=` is one broker account's orders;
+   * `?fromTime=&toTime=` only the trades entered in that window of each day (`windowOf`).
+   */
   app.get('/api/market-report', async (req, reply) => {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
-    return marketReport({ ...r, now: Date.now(), spot: tradingService().spot, ...NO_FILTERS, account: accountOf(req.query) });
+    const window = windowOf((req.query ?? {}) as { fromTime?: unknown; toTime?: unknown });
+    if (typeof window === 'string') return refuse(reply, 400, { error: window });
+    return marketReport({ ...r, now: Date.now(), spot: tradingService().spot, ...NO_FILTERS, account: accountOf(req.query), window });
   });
 
-  /** One expiry day opened (`?day=`): both records by pair, timeframe, method and strategy. */
+  /** One expiry day opened (`?day=`): both records by pair, timeframe, method and strategy, in the same window. */
   app.get('/api/market-report/breakdown', async (req, reply) => {
     const day = (req.query as { day?: unknown } | null)?.day;
     if (typeof day !== 'string' || !DAY.test(day) || Number.isNaN(Date.parse(day))) return refuse(reply, 400, { error: 'Day must be YYYY-MM-DD.' });
-    return marketBreakdown({ from: day, to: day, now: Date.now(), spot: tradingService().spot, day, ...NO_FILTERS, account: accountOf(req.query) });
+    const window = windowOf((req.query ?? {}) as { fromTime?: unknown; toTime?: unknown });
+    if (typeof window === 'string') return refuse(reply, 400, { error: window });
+    return marketBreakdown({ from: day, to: day, now: Date.now(), spot: tradingService().spot, day, ...NO_FILTERS, account: accountOf(req.query), window });
   });
 }

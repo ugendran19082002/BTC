@@ -274,6 +274,47 @@ test('[critical] a day opened: both records by pair, timeframe, method and strat
   assert.deepEqual([quiet.body.signal.total.n, quiet.body.real.total.n], [1, 1]);
 });
 
+test('[critical] a time window: only the trades entered in it, each day; the day\'s figures and kind stay the whole day\'s (29 Oct 2026)', async () => {
+  const whole = await get(`/api/market-report?from=${CLIMB}&to=${QUIET}`);
+  // 5:31 PM to 5:29 PM, the phone's default: the whole contract -- every trade here is entered after its first minute.
+  const contract = await get(`/api/market-report?from=${CLIMB}&to=${QUIET}&fromTime=17:31&toTime=17:29`);
+  assert.equal(contract.status, 200, JSON.stringify(contract.body));
+  assert.deepEqual(contract.body.total, whole.body.total);
+
+  // 6:00 PM to 7:05 PM, minutes 30 to 95 of the day, both ends in: the climb's first two signals (30, 90) and their orders (31, 91).
+  const early = await get(`/api/market-report?from=${CLIMB}&to=${QUIET}&fromTime=18:00&toTime=19:05`);
+  const [climb, quiet] = early.body.days;
+  assert.deepEqual([climb.signal.n, climb.signal.net, climb.signal.open], [2, 900, 0]);
+  assert.deepEqual([climb.real.n, climb.real.open], [2, 0]);
+  const two = gross(40, 4) + gross(40, 22);
+  assert.ok(climb.real.net < two && climb.real.net > two - 0.3, String(climb.real.net));
+  assert.deepEqual([quiet.signal.n, quiet.real.n], [1, 1], 'the quiet day\'s 6:30 PM trades are in it too');
+  assert.deepEqual(climb.stats, whole.body.days[0].stats, 'the figures are the whole day\'s');
+  assert.equal(climb.pattern, whole.body.days[0].pattern);
+  assert.equal(early.body.total.real.n, 3);
+
+  // 8:00 PM to 11:00 PM: the stop and the timeout; three orders closed and the one still open.
+  const late = await get(`/api/market-report?from=${CLIMB}&to=${CLIMB}&fromTime=20:00&toTime=23:00`);
+  assert.deepEqual([late.body.days[0].signal.n, late.body.days[0].signal.net], [2, -250]);
+  assert.deepEqual([late.body.days[0].real.n, late.body.days[0].real.open], [3, 1]);
+
+  // A day opened in the same window.
+  const opened = await get(`/api/market-report/breakdown?day=${CLIMB}&fromTime=18:00&toTime=19:05`);
+  assert.deepEqual([opened.body.signal.total.n, opened.body.real.total.n], [2, 2]);
+  assert.deepEqual(opened.body.real.byStrategy.map((s: any) => [s.name, s.n]), [['15m time', 2]]);
+
+  for (const [url, why] of [
+    [`/api/market-report?from=${CLIMB}&to=${QUIET}&fromTime=18:00`, /Give both times/],
+    [`/api/market-report?from=${CLIMB}&to=${QUIET}&fromTime=6pm&toTime=7pm`, /HH:MM/],
+    [`/api/market-report?from=${CLIMB}&to=${QUIET}&fromTime=19:00&toTime=18:00`, /comes before the start/],
+    [`/api/market-report/breakdown?day=${CLIMB}&fromTime=25:00&toTime=26:00`, /HH:MM/],
+  ] as const) {
+    const r = await get(url);
+    assert.equal(r.status, 400, url);
+    assert.match(r.body.error, why);
+  }
+});
+
 test('a bad range or day is refused in words', async () => {
   for (const [url, why] of [
     ['/api/market-report?from=13-10-2026', /YYYY-MM-DD/],

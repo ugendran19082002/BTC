@@ -174,12 +174,19 @@ export function addTot(a: Tot, b: Tot): Tot {
   return a;
 }
 
-/** One method on one timeframe on one expiry day -- and, for real orders, of one strategy on one account. */
+/**
+ * One method on one timeframe on one expiry day, entered in one minute of it -- and, for real orders, of one strategy on
+ * one account. `min`: the minute of the expiry day it was entered in, 0 (5:30 PM IST) to 1439 (5:29 PM), which the time
+ * window is read against (29 Oct 2026).
+ */
 export type Cell = {
   day: string; method: string; mode: 'single' | 'mtf'; tf: string;
-  strategy: string | null; account: number | null;
+  strategy: string | null; account: number | null; min: number;
   tot: Tot;
 };
+
+/** The minute of its expiry day a moment falls in: 0 is 5:30 PM IST, 1439 is 5:29 PM. */
+export const sessionMinuteOf = (ms: number): number => Math.floor((ms - sessionOf(sessionDayOf(ms)).from) / 60_000);
 
 /** A day's cells are kept this long while the day can still change, and for good after. */
 const FRESH_MS = 60_000;
@@ -211,6 +218,8 @@ async function signalCells(days: readonly string[], now: number): Promise<Cell[]
     const from = sessionOf(need[0]!).from, to = sessionOf(need[need.length - 1]!).to;
     const xs = await rows<Record<string, string | number | null>>(
       `SELECT to_char(to_timestamp(filled_at) AT TIME ZONE 'Asia/Kolkata' + interval '6 hours 30 minutes', 'YYYY-MM-DD') AS day,
+              -- the minute of the expiry day, from 5:30 PM IST (12:00 UTC)
+              ((filled_at - 43200) % 86400) / 60 AS min,
               method, mode, tf, status,
               count(*) AS n,
               count(*) FILTER (WHERE r_net > 0) AS wins,
@@ -222,14 +231,15 @@ async function signalCells(days: readonly string[], now: number): Promise<Cell[]
           -- a setup is filled within bars of being seen: the index on first_seen keeps this off the whole table
           AND first_seen >= $3
           AND status IN ('filled', 'tp1', 'stop', 'timeout')
-        GROUP BY 1, method, mode, tf, status`,
+        GROUP BY 1, 2, method, mode, tf, status`,
       [Math.floor(from / 1_000), Math.floor(to / 1_000), from - 5 * 86_400_000],
     );
     const by = new Map<string, Cell>();
     for (const x of xs) {
       const day = String(x.day);
-      const key = `${day}|${x.method}|${x.mode}|${x.tf}`;
-      const cell = by.get(key) ?? { day, method: String(x.method), mode: x.mode === 'mtf' ? 'mtf' as const : 'single' as const, tf: String(x.tf), strategy: null, account: null, tot: zeroTot() };
+      const min = Number(x.min);
+      const key = `${day}|${min}|${x.method}|${x.mode}|${x.tf}`;
+      const cell = by.get(key) ?? { day, method: String(x.method), mode: x.mode === 'mtf' ? 'mtf' as const : 'single' as const, tf: String(x.tf), strategy: null, account: null, min, tot: zeroTot() };
       by.set(key, cell);
       const n = Number(x.n), t = cell.tot;
       if (x.status === 'filled') { t.open += n; continue; }
@@ -265,13 +275,15 @@ async function orderCells(days: readonly string[], now: number, spot: number | n
       const sig = x.plan.signal;
       const entries = (x.state.fills ?? []).filter((f) => f.role === 'entry');
       if (!sig || entries.length === 0) continue;
-      const day = sessionDayOf(Math.min(...entries.map((f) => f.ts)));
+      const entered = Math.min(...entries.map((f) => f.ts));
+      const day = sessionDayOf(entered);
       if (!wanted.has(day)) continue;
+      const min = sessionMinuteOf(entered);
       // By the name it was placed under: a strategy deleted and made again, or cloned under the same name, is one line.
       const strategy = x.plan.strategyName ?? x.plan.strategyId ?? BY_HAND;
       const account = x.broker_account_id === null ? null : Number(x.broker_account_id);
-      const key = `${day}|${sig.method}|${sig.mode}|${sig.tf}|${strategy}|${account}`;
-      const cell = by.get(key) ?? { day, method: sig.method, mode: sig.mode, tf: sig.tf, strategy, account, tot: zeroTot() };
+      const key = `${day}|${min}|${sig.method}|${sig.mode}|${sig.tf}|${strategy}|${account}`;
+      const cell = by.get(key) ?? { day, method: sig.method, mode: sig.mode, tf: sig.tf, strategy, account, min, tot: zeroTot() };
       by.set(key, cell);
       const t = cell.tot;
       const closed = closedNet({ plan: x.plan, state: x.state, events: [] }, spot);
@@ -296,6 +308,12 @@ export type ReportFilters = {
   account: number | null;
   /** Only these timeframes (`chain` for the timeframe chain), methods and strategies (by name); null, all. */
   tfs: readonly string[] | null; methods: readonly string[] | null; strategies: readonly string[] | null;
+  /**
+   * Only trades entered from `from` to `to`, minutes of the expiry day (`sessionMinuteOf`), both included (owner, 29 Oct
+   * 2026: "from time to time, 5:31 PM to 5:29 PM, one contract by default, changeable"). The day's figures and its kind
+   * are the whole day's whatever this says. Absent or null: the whole day.
+   */
+  window?: { from: number; to: number } | null;
 };
 
 /** The timeframe a cell is filtered and listed under: its own, or `chain` when read with the timeframe chain. */
@@ -355,7 +373,8 @@ async function namesOf(): Promise<Names> {
 }
 
 const kept = (cells: readonly Cell[], f: ReportFilters, real: boolean): Cell[] => cells.filter((c) =>
-  (!f.tfs || f.tfs.includes(tfKeyOf(c)))
+  (!f.window || (c.min >= f.window.from && c.min <= f.window.to))
+  && (!f.tfs || f.tfs.includes(tfKeyOf(c)))
   && (!f.methods || f.methods.includes(c.method))
   && (!real || ((f.account === null || c.account === f.account) && (!f.strategies || f.strategies.includes(c.strategy ?? BY_HAND)))));
 
