@@ -22,6 +22,10 @@ import { strategyStore } from './strategy.routes.js';
 import { exitByOf } from '../../strategy/store.js';
 import { perpAtMinutes } from '../../market/perp-minute.js';
 import { telegramLog } from '../../notify/telegram-log.js';
+import { brokerAccounts } from '../../delta/accounts.js';
+
+/** The most trades `/api/trade/closed` reads at once: ninety days of three accounts is about 30,000 today. */
+const CLOSED_MAX = 100_000;
 
 /**
  * The order desk.
@@ -972,6 +976,44 @@ export function registerTradeRoutes(app: FastifyInstance) {
       ),
       trades: rows,
     };
+  });
+
+  /**
+   * Every closed trade of a range, for the phone's Trade history (owner, 29 Oct 2026: "the history screen's P&L -- the
+   * values look wrong"). `/api/trade/history` reads the range's newest 500 trades, waiting and cancelled orders among
+   * them, and the phone kept the closed ones of those: that day "All accounts" read 389 of 726 trades closed today, and
+   * 30 days on High +₹558 where -₹2,073 was booked. This reads the whole range -- the store's sanity ceiling aside, said
+   * as `truncated` -- and answers only what the list shows, the money as every screen works it (`tradeView`).
+   * `from` / `to` and `?account=` as `/api/trade/history` takes them.
+   */
+  app.get('/api/trade/closed', async (req) => {
+    const q = req.query as { from?: string; to?: string };
+    const from = istDayStart(q.from ?? istToday()) ?? istDayStart(istToday())!;
+    const to = istDayEnd(q.to ?? q.from ?? istToday()) ?? istDayEnd(istToday())!;
+    const recs = await journal().between(Math.min(from, to), Math.max(from + 86_400_000, to), CLOSED_MAX, accountOf(req.query), { events: false });
+    const closed = await forScreens(recs.filter((r) => r.state.position === 0 && r.state.exitSize > 0));
+    // Whose trade each is: a trade from before accounts has it on its row, not in its plan.
+    const owners = await journal().accountsOf(closed.filter((r) => r.plan.accountId == null).map((r) => r.state.tradeId)).catch(() => new Map<string, number>());
+    const named = new Map<number, string>();
+    try { for (const a of brokerAccounts().list()) named.set(a.id, a.name); } catch { /* no accounts loaded: ids alone */ }
+    const trades = closed.map((r) => {
+      const v = tradeView(r, [], r.state.contractValue, null, svc.spot);
+      const id = r.plan.accountId ?? owners.get(r.state.tradeId) ?? null;
+      const sig = r.plan.signal;
+      return {
+        tradeId: r.state.tradeId, symbol: r.state.symbol, optionSide: r.state.optionSide, position: 0, exitSize: r.state.exitSize,
+        entryAvgPrice: r.state.entryAvgPrice, exitAvgPrice: r.state.exitAvgPrice, realisedPnl: r.state.realisedPnl,
+        netRealisedUsd: v.netRealisedUsd, exitBy: v.exitBy, updatedAt: r.state.updatedAt,
+        // When it went in and came out, and whether it was bought: all a row reads of its fills.
+        fills: r.state.fills.map((f) => ({ role: f.role, side: f.side, ts: f.ts })),
+        plan: {
+          origin: v.plan.origin, action: v.plan.action, strategyId: v.plan.strategyId, strategyName: v.plan.strategyName,
+          signal: sig ? { n: sig.n, name: sig.name, mode: sig.mode, tf: sig.tf } : null,
+        },
+        account: id === null ? null : { id, name: named.get(id) ?? `Account ${id}` },
+      };
+    });
+    return { from: q.from ?? istToday(), to: q.to ?? q.from ?? istToday(), truncated: recs.length >= CLOSED_MAX, trades };
   });
 
   // One trade with its whole event journal, for the Orders detail.
