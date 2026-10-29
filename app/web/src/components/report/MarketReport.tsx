@@ -4,8 +4,8 @@ import { getMarketBreakdown, getMarketReport } from '@/api/market-report';
 import { useSynced } from '@/hooks/useSynced';
 import { pct } from '@/lib/format';
 import {
-  dayLabel, exitLines, netText, num, pairOf, ptsText, sparkOf, timeIst, toneOf, winRate,
-  type Source,
+  dayLabel, exitLines, isWholeContract, moneyText, netText, num, pairOf, ptsText, sparkOf, timeIst, toneOf, windowLabel, winRate,
+  type Source, type TimeWindow,
 } from '@/lib/market-report';
 import { cn } from '@/lib/utils';
 import type { DayStats, MarketDay, MarketReportResponse, Row, Tot } from '@/types/market-report';

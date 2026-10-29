@@ -39,6 +39,34 @@ export function timeIst(ms: number): string {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
+/**
+ * A window of each expiry day, IST `HH:MM`, both ends included (owner, 29 Oct 2026: "from time to time, 5:31 PM to
+ * 5:29 PM, one contract by default, changeable"): only the trades entered in it are counted.
+ */
+export type TimeWindow = { from: string; to: string };
+/** One contract, open to settlement: what the window is until it is changed. */
+export const WHOLE_CONTRACT: TimeWindow = { from: '17:31', to: '17:29' };
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+/** "17:31" as a minute of the expiry day: 0 is 5:30 PM IST, 1439 is 5:29 PM -- the server's own reading (`windowOf`). */
+export const contractMinute = (hhmm: string): number => {
+  const [h, m] = hhmm.split(':').map(Number) as [number, number];
+  return (h * 60 + m - (17 * 60 + 30) + 1_440) % 1_440;
+};
+export const isWholeContract = (w: TimeWindow): boolean => w.from === WHOLE_CONTRACT.from && w.to === WHOLE_CONTRACT.to;
+/** What is wrong with a window, in the words the server uses; null when it can be asked for. */
+export function windowProblem(w: TimeWindow): string | null {
+  if (!HHMM.test(w.from) || !HHMM.test(w.to)) return 'Give both times.';
+  if (contractMinute(w.from) > contractMinute(w.to)) return 'The end comes before the start in the contract\'s day (5:30 PM to 5:30 PM).';
+  return null;
+}
+/** "5:31 PM": a window's end as it is said. */
+export function clock12(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number) as [number, number];
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+/** "7:00 AM → 11:00 AM", or "Whole contract". */
+export const windowLabel = (w: TimeWindow): string => (isWholeContract(w) ? 'Whole contract' : `${clock12(w.from)} → ${clock12(w.to)}`);
+
 const sign = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '');
 /** A whole number of points with thousands: "1,240". */
 export const num = (n: number): string => Math.round(Math.abs(n)).toLocaleString('en-US');
