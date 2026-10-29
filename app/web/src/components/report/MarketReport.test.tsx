@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { DayStats, MarketBreakdownResponse, MarketReportResponse, Row, Tot } from '@/types/market-report';
 import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context';
+import { moneyText } from '@/lib/market-report';
 
 /**
  * The market report (owner, 13 Oct 2026): each expiry day's kind of market with its figures -- high, low, zigzag,
@@ -74,7 +75,7 @@ const BREAKDOWN: MarketBreakdownResponse = {
 // Tue 13 Oct 2026, 11:00 IST
 const NOW = at('2026-10-13T11:00:00');
 const show = (wide = false) => render(<MarketReport account={null} now={NOW} wide={wide} />);
-const lastAsk = () => getMarketReport.mock.calls.at(-1)! as [{ from: string; to: string }, number | null];
+const lastAsk = () => getMarketReport.mock.calls.at(-1)! as [{ from: string; to: string }, number | null, { from: string; to: string }];
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -87,7 +88,7 @@ describe('MarketReport', () => {
   it('[critical] the report is the expiry days, newest first, and nothing else: asked since 1 Oct to the day in progress', async () => {
     show();
     const days = within(await screen.findByRole('region', { name: 'Each expiry day' }));
-    expect(lastAsk()).toEqual([{ from: '2026-10-01', to: '2026-10-13' }, null]);
+    expect(lastAsk()).toEqual([{ from: '2026-10-01', to: '2026-10-13' }, null, { from: '17:31', to: '17:29' }]);
     expect(days.getAllByRole('heading', { level: 3 }).length).toBe(2);
     // the panels that were taken out the day they were built
     for (const gone of [/What stands out/, /By kind of day/, /By method/, 'Market type', 'Trend family']) expect(screen.queryByText(gone)).not.toBeInTheDocument();
@@ -136,7 +137,7 @@ describe('MarketReport', () => {
     expect(getMarketBreakdown).not.toHaveBeenCalled();
     fireEvent.click(days.getAllByRole('button', { name: /Show exits, pairs and time frames/ })[0]!);
     const best = within(await days.findByRole('list', { name: 'Best pairs · real orders' }));
-    expect(getMarketBreakdown).toHaveBeenCalledWith('2026-10-13', null);
+    expect(getMarketBreakdown).toHaveBeenCalledWith('2026-10-13', null, { from: '17:31', to: '17:29' });
     expect(best.getByText('#16 Previous day H/L rejection')).toBeInTheDocument();
     expect(within(days.getByRole('list', { name: 'Worst pairs · real orders' })).getByText('#54 Liquidity replenishment')).toBeInTheDocument();
     const byTf = within(days.getByRole('table', { name: 'By time frame, real orders' }));
@@ -203,11 +204,58 @@ describe('MarketReport', () => {
     expect(await screen.findByRole('heading', { level: 2, name: /^Market report/ })).toBeInTheDocument();
   });
 
+  it('[critical] the P&L on top: the real orders\' money over the range after charges, trades, won, the best and worst day; the signal history under it', async () => {
+    show();
+    const card = within(await screen.findByRole('region', { name: 'P&L of the range' }));
+    expect(card.getByText('Whole contract')).toBeInTheDocument();
+    expect(card.getByLabelText('Net, after charges')).toHaveTextContent(moneyText(REAL_MON.net + REAL_TUE.net));
+    expect(card.getByText(/2 expiry days · every account/)).toBeInTheDocument();
+    expect(card.getByText('Trades').nextSibling).toHaveTextContent('307 · 13 open');
+    expect(card.getByText('Won').nextSibling).toHaveTextContent('51%');
+    expect(card.getByText('Best · Mon 12 Oct').nextSibling).toHaveTextContent(moneyText(REAL_MON.net));
+    expect(card.getByText('Worst · Tue 13 Oct').nextSibling).toHaveTextContent(moneyText(REAL_TUE.net));
+    expect(card.getByText(/Signal history: 7,302 closed · 45% won · −?[\d,]+ pts/)).toBeInTheDocument();
+  });
+
+  it('[critical] the time window: 5:31 PM to 5:29 PM to begin with; changed, applied with a tap, said on each day, kept, and one tap back to the whole contract', async () => {
+    const { unmount } = show();
+    await screen.findByRole('region', { name: 'Each expiry day' });
+    const box = within(screen.getByRole('region', { name: 'Time window' }));
+    expect(box.getByLabelText('Trades entered from')).toHaveValue('17:31');
+    expect(box.getByLabelText('Trades entered to')).toHaveValue('17:29');
+    expect(box.getByText(/5:31 PM → 5:29 PM: the whole contract/)).toBeInTheDocument();
+    expect(box.queryByRole('button', { name: 'Apply' })).toBeNull();
+
+    // the end before the start, in the contract's day: said, and not asked for
+    fireEvent.change(box.getByLabelText('Trades entered from'), { target: { value: '11:00' } });
+    fireEvent.change(box.getByLabelText('Trades entered to'), { target: { value: '07:00' } });
+    expect(box.getByRole('alert')).toHaveTextContent(/end comes before the start/);
+    expect(box.getByRole('button', { name: 'Apply' })).toBeDisabled();
+    fireEvent.click(box.getByRole('button', { name: 'Cancel' }));
+    expect(box.getByLabelText('Trades entered from')).toHaveValue('17:31');
+
+    const asked = getMarketReport.mock.calls.length;
+    fireEvent.change(box.getByLabelText('Trades entered from'), { target: { value: '07:00' } });
+    fireEvent.change(box.getByLabelText('Trades entered to'), { target: { value: '11:00' } });
+    expect(getMarketReport.mock.calls.length).toBe(asked);      // nothing asked while the times are turned
+    fireEvent.click(box.getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(lastAsk()[2]).toEqual({ from: '07:00', to: '11:00' }));
+    expect(await screen.findAllByText('Trades entered 7:00 AM → 11:00 AM')).toHaveLength(2);
+    expect(within(screen.getByRole('region', { name: 'P&L of the range' })).getByText('7:00 AM → 11:00 AM')).toBeInTheDocument();
+
+    // kept: the next time it opens, it opens on the window
+    unmount();
+    show();
+    await waitFor(() => expect(lastAsk()[2]).toEqual({ from: '07:00', to: '11:00' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'Time window' })).getByRole('button', { name: 'Whole contract' }));
+    await waitFor(() => expect(lastAsk()[2]).toEqual({ from: '17:31', to: '17:29' }));
+  });
+
   it('[critical] on the phone, under More: read for the account the phone is showing', async () => {
     render(<PhoneContext.Provider value={{ now: NOW, accountParam: 2 } as PhoneData}><MarketReportScreen /></PhoneContext.Provider>);
     await screen.findByRole('region', { name: 'Each expiry day' });
-    expect(lastAsk()).toEqual([{ from: '2026-10-01', to: '2026-10-13' }, 2]);
+    expect(lastAsk()).toEqual([{ from: '2026-10-01', to: '2026-10-13' }, 2, { from: '17:31', to: '17:29' }]);
     fireEvent.click(screen.getAllByRole('button', { name: /Show exits, pairs and time frames/ })[0]!);
-    await waitFor(() => expect(getMarketBreakdown).toHaveBeenCalledWith('2026-10-13', 2));
+    await waitFor(() => expect(getMarketBreakdown).toHaveBeenCalledWith('2026-10-13', 2, { from: '17:31', to: '17:29' }));
   });
 });

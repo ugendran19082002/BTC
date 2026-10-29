@@ -12,6 +12,7 @@ import type { DayStats, MarketDay, MarketReportResponse, Row, Tot } from '@/type
 import { Empty, Loading, Panel, Pill, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { PairList } from '@/components/mobile/PairList';
 import { useExpiryRange } from '@/components/report/ExpiryRange';
+import { useTimeWindow } from '@/components/report/TimeWindow';
 import { Updating, useAnswer } from '@/components/report/Updating';
 
 /**
@@ -39,21 +40,63 @@ const FAMILY_TONE = { up: 'up', down: 'down', range: 'dim', turn: 'warn' } as co
 
 const netClass = (n: number) => (n > 0 ? 'text-[var(--up)]' : n < 0 ? 'text-[var(--down)]' : '');
 
-/** One record in a line: "342 closed · 48% won · +₹1,076", and what is still open. */
-function RecordLine({ label, source, tot }: { label: string; source: Source; tot: Tot }) {
+/** One record in a line: "342 closed · 48% won · +₹1,076", and what is still open. `big`: the P&L the day is read for. */
+function RecordLine({ label, source, tot, big = false }: { label: string; source: Source; tot: Tot; big?: boolean }) {
   const rate = winRate(tot);
   return (
-    <div className="flex items-baseline justify-between gap-2 text-[13px]">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
+    <div className={cn('flex flex-wrap items-baseline justify-between gap-x-2', big ? 'text-[13.5px]' : 'text-[13px]')}>
+      <span className={cn('shrink-0', big ? 'font-medium text-foreground' : 'text-muted-foreground')}>{label}</span>
       <span className="min-w-0 text-right tabular-nums">
         {tot.n === 0 && tot.open === 0 ? <span className="text-muted-foreground">none</span> : (
           <>
             <span className="text-muted-foreground">{tot.n.toLocaleString('en-US')} closed{rate !== null ? ` · ${pct(rate, 0)} won` : ''}{tot.open ? ` · ${tot.open} open` : ''} · </span>
-            <b className={cn('whitespace-nowrap font-semibold', netClass(tot.net))}>{netText(source, tot.net)}</b>
+            <b className={cn('whitespace-nowrap font-semibold', big && 'text-[16px]', netClass(tot.net))}>{netText(source, tot.net)}</b>
           </>
         )}
       </span>
     </div>
+  );
+}
+
+/**
+ * The range's P&L, on top (owner, 29 Oct 2026: "the P&L there, with account tabs and a time window"): the real
+ * orders' money after charges over every day shown, in the window -- trades, won, the best and the worst day -- and
+ * the signal history's points in a line under it, never added in.
+ */
+function PnlCard({ r, account, hours }: { r: MarketReportResponse; account: number | null; hours: TimeWindow }) {
+  const t = r.total.real;
+  const rate = winRate(t);
+  const traded = r.days.filter((d) => d.real.n > 0);
+  const best = traded.length ? traded.reduce((a, d) => (d.real.net > a.real.net ? d : a)) : null;
+  const worst = traded.length > 1 ? traded.reduce((a, d) => (d.real.net < a.real.net ? d : a)) : null;
+  const s = r.total.signal;
+  const sRate = winRate(s);
+  return (
+    <Panel>
+      <section aria-label="P&L of the range">
+        <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2">
+          <h2 className="m-0 text-[13px] font-semibold">P&amp;L · real orders</h2>
+          <span className="text-[11.5px] text-muted-foreground">{windowLabel(hours)}</span>
+        </div>
+        <p className={cn('m-0 mt-1 text-[28px] font-semibold leading-tight tabular-nums', netClass(t.net))} aria-label="Net, after charges">
+          {t.n === 0 && t.open === 0 ? '—' : moneyText(t.net)}
+        </p>
+        <p className="m-0 text-[12px] text-muted-foreground">
+          after charges · {r.days.length} expiry day{r.days.length === 1 ? '' : 's'}{account === null ? ' · every account' : ''}
+        </p>
+        <div className="mt-2">
+          <Stats>
+            <Stat label="Trades">{t.n.toLocaleString('en-IN')}{t.open ? ` · ${t.open} open` : ''}</Stat>
+            <Stat label="Won">{rate === null ? '—' : pct(rate, 0)}</Stat>
+            <Stat label={best ? `Best · ${dayLabel(best.day)}` : 'Best day'} tone={best ? toneOf(best.real.net) : undefined}>{best ? moneyText(best.real.net) : '—'}</Stat>
+            <Stat label={worst ? `Worst · ${dayLabel(worst.day)}` : 'Worst day'} tone={worst ? toneOf(worst.real.net) : undefined}>{worst ? moneyText(worst.real.net) : '—'}</Stat>
+          </Stats>
+        </div>
+        <p className="m-0 mt-2 text-[12px] text-muted-foreground tabular-nums">
+          Signal history: {s.n === 0 ? 'none' : `${s.n.toLocaleString('en-IN')} closed${sRate !== null ? ` · ${pct(sRate, 0)} won` : ''} · ${ptsText(s.net)}`}
+        </p>
+      </section>
+    </Panel>
   );
 }
 
@@ -146,8 +189,8 @@ function RowsTable({ caption, first, rows, source }: { caption: string; first: s
  * One expiry day opened: which exit closed its trades, its best and worst pairs, by timeframe and by strategy --
  * of one record at a time, chosen here (the switch sat at the top of the page while the page had other panels).
  */
-function Breakdown({ day, account, source, onSource, wide }: { day: string; account: number | null; source: Source; onSource: (s: Source) => void; wide: boolean }) {
-  const read = useAnswer(JSON.stringify([day, account]), () => getMarketBreakdown(day, account), 180_000);
+function Breakdown({ day, account, hours, source, onSource, wide }: { day: string; account: number | null; hours: TimeWindow; source: Source; onSource: (s: Source) => void; wide: boolean }) {
+  const read = useAnswer(JSON.stringify([day, account, hours]), () => getMarketBreakdown(day, account, hours), 180_000);
   if (!read.data) return <Loading error={read.error} what="the breakdown" />;
   const side = read.data[source];
   const amount = (p: { net: number }) => netText(source, p.net);
@@ -259,7 +302,7 @@ function PatternPill({ report, pattern, family }: { report: MarketReportResponse
   return <Pill tone={FAMILY_TONE[family ?? 'range']}>#{p.id} {p.name}</Pill>;
 }
 
-function DayCard({ report, d, account, source, onSource, wide }: { report: MarketReportResponse; d: MarketDay; account: number | null; source: Source; onSource: (s: Source) => void; wide: boolean }) {
+function DayCard({ report, d, account, hours, source, onSource, wide }: { report: MarketReportResponse; d: MarketDay; account: number | null; hours: TimeWindow; source: Source; onSource: (s: Source) => void; wide: boolean }) {
   const [open, setOpen] = useState(false);
   const p = report.catalogue.find((x) => x.key === d.pattern);
   return (
@@ -283,11 +326,12 @@ function DayCard({ report, d, account, source, onSource, wide }: { report: Marke
         <Empty>Too little of the tape was recorded for this day to measure it ({d.bars} minutes).</Empty>
       )}
       <div className="mt-2 grid gap-1 border-t border-[var(--line-soft)] pt-2">
+        {!isWholeContract(hours) && <p className="m-0 text-[11.5px] text-muted-foreground">Trades entered {windowLabel(hours)}</p>}
+        <RecordLine label="Real orders" source="real" tot={d.real} big />
         <RecordLine label="Signal history" source="signal" tot={d.signal} />
-        <RecordLine label="Real orders" source="real" tot={d.real} />
       </div>
       <Toggle open={open} onClick={() => setOpen((v) => !v)} what="exits, pairs and time frames" />
-      {open && <Breakdown day={d.day} account={account} source={source} onSource={onSource} wide={wide} />}
+      {open && <Breakdown day={d.day} account={account} hours={hours} source={source} onSource={onSource} wide={wide} />}
     </Panel>
   );
 }
@@ -300,16 +344,19 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
   wide?: boolean;
 }) {
   const expiry = useExpiryRange('marketReport', now);
+  const times = useTimeWindow('marketReport');
   const [source, setSource] = useSynced<Source>('marketReport.source', 'real');
   const [allDays, setAllDays] = useState(false);
   const range = expiry.range;
+  const hours = times.window;
   // The answer is kept with what was asked: the days of the range before are greyed while the new one is read.
-  const read = useAnswer(JSON.stringify([range, account]), () => getMarketReport(range, account), 120_000);
+  const read = useAnswer(JSON.stringify([range, account, hours]), () => getMarketReport(range, account, hours), 120_000);
   const r = read.data;
   const head = (
     <>
       {wide && <h2 className="m-0 mt-2 px-1 text-[15px] font-semibold">Market report <span className="text-[12.5px] font-normal text-muted-foreground">· each expiry day&apos;s kind of market, and what the methods made on it</span></h2>}
       {expiry.control}
+      {times.control}
     </>
   );
   if (!r) return <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">{head}<Panel><Loading error={read.error} what="the market report" /></Panel></div>;
@@ -322,11 +369,12 @@ export function MarketReport({ account, now = Date.now(), wide = false }: {
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       {head}
       <Updating busy={read.stale} failed={read.failed} what="the market report">
+        <PnlCard r={r} account={account} hours={hours} />
         <section aria-label="Each expiry day" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
           <h2 className="m-0 px-1 text-[10.5px] font-semibold uppercase tracking-[0.8px] text-muted-foreground">Each expiry day, newest first</h2>
           {newestFirst.length === 0 && <Panel><Empty>No expiry day in this range.</Empty></Panel>}
           <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3', wide && 'lg:grid-cols-2 2xl:grid-cols-3')}>
-            {shownDays.map((d) => <DayCard key={d.day} report={r} d={d} account={account} source={source} onSource={setSource} wide={false} />)}
+            {shownDays.map((d) => <DayCard key={d.day} report={r} d={d} account={account} hours={hours} source={source} onSource={setSource} wide={false} />)}
           </div>
           {newestFirst.length > FIRST && (
             <button

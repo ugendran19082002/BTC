@@ -12,12 +12,12 @@ import { clock12, isWholeContract, WHOLE_CONTRACT, windowProblem, type TimeWindo
 export function useTimeWindow(prefix: string): { window: TimeWindow; whole: boolean; control: ReactNode } {
   const [stored, setStored] = useSynced<TimeWindow>(`${prefix}.window`, WHOLE_CONTRACT);
   // A kept window that cannot be asked for (an older build, storage edited by hand) is the whole contract.
-  const window = stored && windowProblem(stored) === null ? stored : WHOLE_CONTRACT;
-  const [draft, setDraft] = useState<TimeWindow>(window);
-  useEffect(() => { setDraft(window); }, [window.from, window.to]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hours = stored && windowProblem(stored) === null ? stored : WHOLE_CONTRACT;
+  const [draft, setDraft] = useState<TimeWindow>(hours);
+  useEffect(() => { setDraft(hours); }, [hours.from, hours.to]); // eslint-disable-line react-hooks/exhaustive-deps
   const problem = windowProblem(draft);
-  const changed = draft.from !== window.from || draft.to !== window.to;
-  const whole = isWholeContract(window);
+  const changed = draft.from !== hours.from || draft.to !== hours.to;
+  const whole = isWholeContract(hours);
 
   const time = (end: 'from' | 'to', label: string) => (
     <label className="grid min-w-0 gap-0.5 text-[12px] text-muted-foreground">
@@ -63,7 +63,7 @@ export function useTimeWindow(prefix: string): { window: TimeWindow; whole: bool
             Apply
           </button>
           <button
-            type="button" onClick={() => setDraft(window)}
+            type="button" onClick={() => setDraft(hours)}
             className="h-11 rounded-md border border-solid border-border bg-transparent font-[inherit] text-[14px] text-foreground"
           >
             Cancel
@@ -72,5 +72,5 @@ export function useTimeWindow(prefix: string): { window: TimeWindow; whole: bool
       )}
     </section>
   );
-  return { window, whole, control };
+  return { window: hours, whole, control };
 }

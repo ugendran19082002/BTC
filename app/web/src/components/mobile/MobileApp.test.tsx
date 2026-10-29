@@ -249,6 +249,18 @@ describe('signed in', () => {
     fireEvent.click(within(chips).getByRole('button', { name: 'BUY' }));
     await waitFor(() => expect(getTradeStatus).toHaveBeenCalledWith(2));
   });
+
+  it('[critical] the Market report has the account chips too: it reads one account\'s orders (29 Oct 2026)', async () => {
+    getAccounts.mockResolvedValue({
+      accounts: [{ id: 1, name: 'High', active: true, trading: true, readable: true }, { id: 2, name: 'Low', active: true, trading: true, readable: true }],
+      max: 5, canStore: true, mode: 'live',
+    });
+    getStatusOfAccounts.mockResolvedValue(status([]));
+    window.history.replaceState(null, '', '/m?tab=more&sub=report');
+    render(<MobileApp />);
+    const chips = await screen.findByRole('group', { name: 'Accounts' });
+    expect(within(chips).getAllByRole('button').map((b) => b.textContent)).toEqual(['All accounts', 'High', 'Low']);
+  });
 });
 
 describe('switching to the desk', () => {

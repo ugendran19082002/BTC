@@ -247,7 +247,8 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
           </nav>
         }
       >
-        {trading.length > 1 && route.tab !== 'more' || (route.tab === 'more' && route.sub && ['history', 'account', 'strategies'].includes(route.sub) && trading.length > 1) ? (
+        {/* The Market report reads one account's orders too (29 Oct 2026: it had none of these, and read whatever was chosen elsewhere). */}
+        {trading.length > 1 && route.tab !== 'more' || (route.tab === 'more' && route.sub && ['history', 'account', 'strategies', 'report'].includes(route.sub) && trading.length > 1) ? (
           <Chips label="Accounts">
             <Chip on={shown === 'all'} onClick={() => setChoice('all')}>All accounts</Chip>
             {trading.map((a) => <Chip key={a.id} on={shown === a.id} onClick={() => setChoice(a.id)}>{a.name}</Chip>)}
