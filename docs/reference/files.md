@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-565 files listed, 310 test files counted below, images and lockfiles left out.
+566 files listed, 310 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -500,6 +500,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [SessionStudy.tsx](../../app/web/src/components/report/SessionStudy.tsx) | The option's SL, the strike's delta and methods by win % by session of the day, as research (owner, 23 Oct 2026: "session based -- delta, SL %, win % -- make them editable; I will check it by sessi... |
 | [SessionTable.tsx](../../app/web/src/components/report/SessionTable.tsx) | The backtest by session of the day (owner, 15 Oct 2026: "by session, 1h by default, 15m to 6h; the methods in each; the count opens its trades"). |
 | [SignalBacktest.tsx](../../app/web/src/components/report/SignalBacktest.tsx) | The backtest (owner, 13 Oct 2026): "can the signal history be backtested on the past contracts' market price? |
+| [TimeWindow.tsx](../../app/web/src/components/report/TimeWindow.tsx) | The time window of each expiry day a report counts trades in (owner, 29 Oct 2026: "from time to time, e.g. 5:31 PM to 5:29 PM -- one contract by default, changeable, saved, user friendly on a phone"). |
 | [Updating.tsx](../../app/web/src/components/report/Updating.tsx) | A read that knows which question its answer is to (owner, 13 Oct 2026: "after choosing a filter it should say it is loading; the old values stay on the screen"). |
 | [VolStudy.tsx](../../app/web/src/components/report/VolStudy.tsx) | The option's SL, the strike's delta and the lots by volatility, as research on the desk's own trades (owner, 17 Oct 2026: "Volatility by ATR 2h / ATM IV; SL, delta and lots -- Low, Normal and High... |
 | [WidenCompare.tsx](../../app/web/src/components/report/WidenCompare.tsx) | The perp's SL and TGT three ways on the same trades (owner, 18 Oct 2026: "keep the widest vs back to the signal's own when calm -- in the backtest report"): the signal's own levels all trade; widen... |

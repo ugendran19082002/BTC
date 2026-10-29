@@ -89,14 +89,36 @@ Gone with that request: the filters by time frame, method and strategy, "What st
 the range's totals panel, and "By kind of day". Their sums are still what the backtest reads a strategy's real
 orders through (`ReportFilters`, kept inside `market-report.ts`).
 
+**Added on 29 Oct 2026** (owner: "the market report on the phone -- the P&L there, an account tab, and from time to
+time, e.g. 5:31 PM to 5:29 PM, one contract by default, changeable, saved, user friendly on a phone"):
+
+- **Account chips** over the report on the phone (All accounts and each trading account), as History and
+  Strategies have; before, the report read whatever account was chosen on another screen, without saying so.
+- **Trades entered**, a time window of each expiry day: From and To on the phone's own time wheel, 5:31 PM → 5:29 PM
+  (the whole contract) to begin with, applied with a tap -- a window whose end comes before its start in the
+  contract's day is refused in words -- and one tap back to the whole contract. Only the trades entered in it are
+  counted, in both records, on the days and in an opened day; the day's figures and its kind stay the whole day's.
+  Kept with the report's other choices (`useSynced`, `marketReport.window`): on the phone at once, and by the desk
+  where the session may write. Each day card says the window when it is not the whole contract.
+- **P&L · real orders** on top: the range's money after charges in the window, trades and how many are open, won,
+  the best and the worst day, and the signal history's points in a line under it, never added in. In each day card
+  the real orders' line comes first and larger.
+
+The whole contract by default is 5:31 PM to 5:29 PM as asked: a trade entered in the settlement minute itself
+(5:30 PM) is outside it. The strategies take no entry then (their windows open at 7:00 AM).
+
 ## The API
 
-`GET /api/market-report?from=&to=&account=` -- `days` (each with `stats`, `pattern`, `why`, `family`, `signal`,
+`GET /api/market-report?from=&to=&account=&fromTime=&toTime=` -- `days` (each with `stats`, `pattern`, `why`, `family`, `signal`,
 `real`), `total`, `catalogue` (the twenty). `from` and `to` are expiry days; without them, 1 Oct 2026 to the day
-in progress; at most 190 days.
+in progress; at most 190 days. `fromTime` / `toTime` (IST `HH:MM`, both or neither, `windowOf` in
+`market.routes.ts`): only the trades entered from one minute to the other, both included, read in the order of the
+expiry day -- 17:31 to 17:29 is the contract but its settlement minute, 19:00 to 18:00 is refused. Each day's
+trades are kept by the minute they were entered in (`Cell.min`, 0 at 5:30 PM), so a window is a filter over what is
+already held, never a new read.
 
-`GET /api/market-report/breakdown?day=&account=` -- that day's `signal` and `real`, each with `total`, `pairs`,
-`byTf`, `byMethod`, `byStrategy`.
+`GET /api/market-report/breakdown?day=&account=&fromTime=&toTime=` -- that day's `signal` and `real`, each with `total`, `pairs`,
+`byTf`, `byMethod`, `byStrategy`; in the window, the same way.
 
 A day's trades are added up in memory and kept for a minute while the day can still change -- twelve hours past
 its settlement for orders, four days for signals -- and for good after. Thirteen days read in about a second
