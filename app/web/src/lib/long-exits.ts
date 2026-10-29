@@ -15,5 +15,5 @@ export function longLevels(plan: Trade['plan'] | null | undefined, entry: number
 }
 
 /** Bought to open: by the plan, or -- on a record without one -- by its entry fills being buys. */
-export const isLongTrade = (t: Pick<Trade, 'plan' | 'fills'>): boolean =>
+export const isLongTrade = (t: { plan?: { action?: string | null } | null; fills?: readonly { role: string; side: string }[] | null }): boolean =>
   t.plan?.action === 'buy' || (t.fills ?? []).some((f) => f.role === 'entry' && f.side === 'buy');

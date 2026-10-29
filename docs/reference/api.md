@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-132 routes.
+133 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -186,6 +186,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/trade/close` | signed in | Close a position, all of it or part of it. |
 | POST | `/api/trade/close-all` | signed in | Square off everything. |
 | POST | `/api/trade/close/preview` | signed in | What closing that many would book, in money. |
+| GET | `/api/trade/closed` | signed in | Every closed trade of a range, for the phone's Trade history (owner, 29 Oct 2026: "the history screen's P&L -- the values look wrong"). |
 | GET | `/api/trade/history` | signed in | The order book, looking backwards. |
 | POST | `/api/trade/mode` | signed in | Throw the switch between the real exchange and the simulator. |
 | POST | `/api/trade/place` | signed in | Place an order from the ticket: every gate runs again here, and a refusal comes back as 422 with the reasons. |

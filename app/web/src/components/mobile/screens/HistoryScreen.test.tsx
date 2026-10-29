@@ -12,8 +12,8 @@ const inr = (usd: number) => signedInr(usdToInr(usd));
  * responsive"): a From and a To each a date and a time, a trade counted by its entry or its exit; and the signal's
  * time frame, one or several, each with its count.
  */
-const getOrders = vi.fn();
-vi.mock('@/api/phone', () => ({ getOrders: (...a: unknown[]) => getOrders(...a) }));
+const getClosed = vi.fn();
+vi.mock('@/api/phone', () => ({ getClosed: (...a: unknown[]) => getClosed(...a) }));
 const { HistoryScreen } = await import('@/components/mobile/screens/HistoryScreen');
 
 const NOW = istMs('2026-10-19', '15:00');
@@ -47,7 +47,7 @@ const sheet = () => screen.getByRole('dialog', { name: 'Date and time' });
 
 beforeEach(() => {
   window.localStorage.clear();
-  getOrders.mockReset().mockResolvedValue({ from: '', to: '', counts: {}, trades: TRADES });
+  getClosed.mockReset().mockResolvedValue({ from: '', to: '', truncated: false, trades: TRADES });
 });
 
 describe('HistoryScreen', () => {
@@ -76,7 +76,7 @@ describe('HistoryScreen', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Custom range')).toHaveTextContent('18 Oct 9:30 PM → 19 Oct 6:00 AM · by entry time');
     expect(rows()).toHaveLength(1);
-    expect(getOrders).toHaveBeenLastCalledWith('2026-10-17', '2026-10-19', null, 'completed');
+    expect(getClosed).toHaveBeenLastCalledWith('2026-10-17', '2026-10-19', null);
   });
 
   it('[critical] by exit time: a trade entered before the From and closed in it counts', async () => {

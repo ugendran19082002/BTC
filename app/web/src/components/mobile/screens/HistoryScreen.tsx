@@ -3,8 +3,7 @@ import { ChevronDown, SlidersHorizontal, X } from 'lucide-react';
 import { usePersisted } from '@/hooks/usePersisted';
 import { rangeMs, timeQuickPicks, timeRangeProblem, timeRangeWords, type DateTimeRange } from '@/lib/date-time-range';
 import { DateTimeRangeSheet, type RangeBy } from '@/components/mobile/DateTimeRangeSheet';
-import { getOrders } from '@/api/phone';
-import type { OrderRecord } from '@/types/trade';
+import { getClosed, type ClosedTrade } from '@/api/phone';
 import { usePoll } from '@/hooks/usePoll';
 import { clock, contractLabel, duration, pct, price, signedInr, stamp, usdToInr } from '@/lib/format';
 import { dayLabel } from '@/lib/market-report';
@@ -39,27 +38,27 @@ const RANGES: { key: RangeKey; label: string; spoken?: string; days: number }[] 
 ];
 const RANGE_WORDS: Record<Exclude<RangeKey, 'custom'>, string> = { today: 'Today', 7: 'Last 7 days', 30: 'Last 30 days', 90: 'Last 90 days' };
 /** A trade's signal time frame: its own, `chain` with the timeframe chain; null with no signal. */
-const tfOf = (o: OrderRecord): string | null => (o.plan?.signal ? (o.plan.signal.mode === 'mtf' ? 'chain' : o.plan.signal.tf) : null);
+const tfOf = (o: ClosedTrade): string | null => (o.plan?.signal ? (o.plan.signal.mode === 'mtf' ? 'chain' : o.plan.signal.tf) : null);
 const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', 'chain'];
 const tfName = (k: string) => (k === 'chain' ? 'TF chain' : k);
-const entryAt = (o: OrderRecord) => { const ts = o.fills.filter((f) => f.role === 'entry').map((f) => f.ts); return ts.length ? Math.min(...ts) : o.updatedAt; };
+const entryAt = (o: ClosedTrade) => { const ts = o.fills.filter((f) => f.role === 'entry').map((f) => f.ts); return ts.length ? Math.min(...ts) : o.updatedAt; };
 const dayShift = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 type Result = 'all' | 'win' | 'loss';
 type Opt = 'all' | 'CE' | 'PE';
 type Act = 'all' | 'sell' | 'buy';
 
-const netOf = (o: OrderRecord) => o.netRealisedUsd ?? o.realisedPnl;
-const closedAt = (o: OrderRecord) => Math.max(o.updatedAt, ...o.fills.filter((f) => f.role !== 'entry').map((f) => f.ts));
-const heldOf = (o: OrderRecord) => closedAt(o) - entryAt(o);
+const netOf = (o: ClosedTrade) => o.netRealisedUsd ?? o.realisedPnl;
+const closedAt = (o: ClosedTrade) => Math.max(o.updatedAt, ...o.fills.filter((f) => f.role !== 'entry').map((f) => f.ts));
+const heldOf = (o: ClosedTrade) => closedAt(o) - entryAt(o);
 
 /** How a trade closed (the server's `exitBy`), in a word and a colour: a target green, a stop red, the rest grey. */
-type ExitKind = NonNullable<OrderRecord['exitBy']>;
+type ExitKind = NonNullable<ClosedTrade['exitBy']>;
 const EXITS: { key: ExitKind; word: string; tone: 'up' | 'down' | 'dim' }[] = [
   { key: 'option-tgt', word: 'TGT', tone: 'up' }, { key: 'perp-tgt', word: 'Perp TGT', tone: 'up' },
   { key: 'option-sl', word: 'SL', tone: 'down' }, { key: 'perp-sl', word: 'Perp SL', tone: 'down' },
   { key: 'window-end', word: 'Time exit', tone: 'dim' }, { key: 'manual', word: 'By hand', tone: 'dim' },
 ];
-const exitOf = (o: OrderRecord) => EXITS.find((x) => x.key === o.exitBy) ?? null;
+const exitOf = (o: ClosedTrade) => EXITS.find((x) => x.key === o.exitBy) ?? null;
 
 /**
  * The order of the list (owner, 29 Oct 2026: "trade history -- a sort; in and out both on the row"): by when it
@@ -67,7 +66,7 @@ const exitOf = (o: OrderRecord) => EXITS.find((x) => x.key === o.exitBy) ?? null
  * the worst first; by how long it was held. The ones by time are listed under their days.
  */
 type Sort = 'out-new' | 'out-old' | 'in-new' | 'net-high' | 'net-low' | 'held-long';
-const SORTS: { key: Sort; label: string; by: (a: OrderRecord, b: OrderRecord) => number; dayOf?: (o: OrderRecord) => number }[] = [
+const SORTS: { key: Sort; label: string; by: (a: ClosedTrade, b: ClosedTrade) => number; dayOf?: (o: ClosedTrade) => number }[] = [
   { key: 'out-new', label: 'Newest exit', by: (a, b) => closedAt(b) - closedAt(a), dayOf: closedAt },
   { key: 'out-old', label: 'Oldest exit', by: (a, b) => closedAt(a) - closedAt(b), dayOf: closedAt },
   { key: 'in-new', label: 'Newest entry', by: (a, b) => entryAt(b) - entryAt(a), dayOf: entryAt },
@@ -102,7 +101,8 @@ export function HistoryScreen() {
   // The days asked of the server: a custom range's, a day either side -- a trade entered in it may close after it.
   const from = isCustom ? dayShift(custom.from, -1) : range.days === 0 ? today : daysAgoIst(range.days, p.now);
   const to = isCustom ? (dayShift(custom.to, 1) > today ? today : dayShift(custom.to, 1)) : today;
-  const orders = usePoll(() => getOrders(from, to, p.accountParam, 'completed'), 60_000, { deps: [from, to, p.accountParam] });
+  // Every closed trade of the days asked, not the newest 500 of any kind (29 Oct 2026: the totals were of what was left).
+  const orders = usePoll(() => getClosed(from, to, p.accountParam), 60_000, { deps: [from, to, p.accountParam] });
   const rangeWords = isCustom ? `${timeRangeWords(custom)} · by ${by === 'entry' ? 'entry' : 'exit'} time` : RANGE_WORDS[range.key === 'custom' ? 'today' : range.key];
 
   const closed = useMemo(() => (orders.data?.trades ?? []).filter((o) => o.position === 0 && o.exitSize > 0), [orders.data]);
@@ -252,7 +252,7 @@ const PAGE = 40;
  * What the trades shown made, on top: the net after charges, how many and how many won, the average win and loss, the
  * best and the worst. Of the trades the filters leave, said so when they leave fewer than the range holds.
  */
-function Summary({ trades, words, filtered }: { trades: readonly OrderRecord[]; words: string; filtered: boolean }) {
+function Summary({ trades, words, filtered }: { trades: readonly ClosedTrade[]; words: string; filtered: boolean }) {
   const nets = trades.map(netOf);
   const net = nets.reduce((a, n) => a + n, 0);
   const won = nets.filter((n) => n > 0), lost = nets.filter((n) => n < 0);
@@ -310,7 +310,7 @@ function Choices({ label, children }: { label: string; children: ReactNode }) {
  * a choice takes effect at once, the list behind it, and the button says how many are left to see.
  */
 function FilterSheet({ trades, tfCounts, tfPicked, onTfs, f, strategies, onSet, onClear, shown, onClose }: {
-  trades: readonly OrderRecord[]; tfCounts: [string, number][]; tfPicked: string[]; onTfs: (v: string[]) => void;
+  trades: readonly ClosedTrade[]; tfCounts: [string, number][]; tfPicked: string[]; onTfs: (v: string[]) => void;
   f: Filters; strategies: string[]; onSet: (p: Partial<Filters>) => void; onClear: () => void; shown: number; onClose: () => void;
 }) {
   useEffect(() => {
@@ -320,7 +320,7 @@ function FilterSheet({ trades, tfCounts, tfPicked, onTfs, f, strategies, onSet, 
     window.addEventListener('keydown', esc);
     return () => { document.body.style.overflow = before; window.removeEventListener('keydown', esc); };
   }, [onClose]);
-  const count = (test: (o: OrderRecord) => boolean) => trades.filter(test).length;
+  const count = (test: (o: ClosedTrade) => boolean) => trades.filter(test).length;
   const n = (k: number) => <span className="tabular-nums opacity-70">{k}</span>;
   const exits = EXITS.map((x) => [x, count((o) => o.exitBy === x.key)] as const).filter(([, k]) => k > 0);
   return (
@@ -408,7 +408,7 @@ function Leg({ label, at, px, day }: { label: string; at: number; px: number | n
 }
 
 // Memoised (10 Oct 2026): the screen redraws with the shell's clock every 5 s, and its forty rows with it, unchanged.
-const ClosedRow = memo(function ClosedRow({ o, today, openTrade, showAccount }: { o: OrderRecord; today: string; openTrade: (tradeId: string) => void; showAccount: boolean }) {
+const ClosedRow = memo(function ClosedRow({ o, today, openTrade, showAccount }: { o: ClosedTrade; today: string; openTrade: (tradeId: string) => void; showAccount: boolean }) {
   const net = netOf(o);
   const long = isLongTrade(o);
   const exit = exitOf(o);

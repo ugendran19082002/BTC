@@ -4,7 +4,7 @@
  * one broker account by `account`, or every account with none.
  */
 import { json } from '@/api/client';
-import type { OrderHistory, OrderStatus, Trade } from '@/types/trade';
+import type { OrderHistory, OrderRecord, OrderStatus, Trade, TradeOrigin } from '@/types/trade';
 import type { SignalCounts, SignalTrade, StrategyStatus } from '@/types/strategy';
 import type { DaysReport } from '@/types/report';
 import type { EntryMethodInfo } from '@/api/entry';
@@ -84,6 +84,22 @@ export function methodNames(): Promise<Map<string, EntryMethodInfo>> {
     .catch((e) => { methods = null; throw e; });
   return methods;
 }
+
+/**
+ * A closed trade as the phone's Trade history reads it (server: `/api/trade/closed`): what it was, how it went in and
+ * out, how it closed and what it made after charges -- a tenth of a full order row, so ninety days fit a phone.
+ */
+export type ClosedTrade = Pick<OrderRecord, 'tradeId' | 'symbol' | 'optionSide' | 'position' | 'exitSize' | 'entryAvgPrice' | 'exitAvgPrice' | 'realisedPnl' | 'netRealisedUsd' | 'exitBy' | 'updatedAt'> & {
+  fills: { role: string; side: 'buy' | 'sell'; ts: number }[];
+  plan: { origin: TradeOrigin; action?: 'buy' | 'sell'; strategyId: string | null; strategyName: string | null; signal: { n: number; name: string; mode: 'single' | 'mtf'; tf: string } | null };
+  account: { id: number; name: string } | null;
+};
+/**
+ * Every closed trade of IST days (29 Oct 2026): `getOrders` reads the days' newest 500 trades of any kind, which on a
+ * busy day held fewer than half of its closed ones -- the history's totals were of what was left.
+ */
+export const getClosed = (from: string, to: string, account: number | null) =>
+  json<{ from: string; to: string; truncated: boolean; trades: ClosedTrade[] }>(withAcct(`/api/trade/closed?from=${from}&to=${to}`, account));
 
 /** The order book, looking backwards, for IST days: every trade opened in them, with its status and outcome. */
 export const getOrders = (from: string, to: string, account: number | null, status: OrderStatus | null = null) =>
