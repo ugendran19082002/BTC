@@ -796,8 +796,11 @@ export class StrategyStore {
    * perp, what the paper log saw happen on the perp, and -- for a real order --
    * the option's fill, exit, why it closed and the money.
    */
-  /** `range`: signals from `from` up to (not incl.) `to`, epoch ms -- the history's date picker. */
-  async signalTrades(limit = 100, strategyId?: string, range?: { from: number; to: number }): Promise<SignalTrade[]> {
+  /**
+   * `range`: signals from `from` up to (not incl.) `to`, epoch ms -- the history's date picker. `strategyIds`: those
+   * strategies' alone, asked of the database, so `limit` is of theirs and not of every account's.
+   */
+  async signalTrades(limit = 100, strategyId?: string, range?: { from: number; to: number }, strategyIds?: readonly string[]): Promise<SignalTrade[]> {
     const xs = await rows<SignalTradeRow>(
       `SELECT r.id, r.strategy_id, r.signal_key, r.method, r.mode, r.tf, r.dir, r.status, r.detail, r.trade_id, r.at,
               t.position AS t_position, t.plan AS t_plan, t.state AS t_state,
@@ -814,8 +817,9 @@ export class StrategyStore {
           AND e.trigger_at = split_part(r.signal_key, '|', 5)::bigint
         WHERE r.status <> 'claimed' AND ($2::text IS NULL OR r.strategy_id = $2)
           AND ($3::bigint IS NULL OR r.at >= $3) AND ($4::bigint IS NULL OR r.at < $4)
+          AND ($5::text[] IS NULL OR r.strategy_id = ANY($5))
         ORDER BY r.at DESC LIMIT $1`,
-      [limit, strategyId ?? null, range?.from ?? null, range?.to ?? null],
+      [limit, strategyId ?? null, range?.from ?? null, range?.to ?? null, strategyIds ? [...strategyIds] : null],
     );
     const out = xs.map(signalTradeFrom);
     // A real order's perp entry where it was not kept on the trade: the perp that minute, marked approximate.
@@ -836,6 +840,15 @@ export class StrategyStore {
       }
     }
     return out;
+  }
+
+  /** Every signal's status and sentence in a range, and nothing else: what the range is counted by (`signalCounts`). */
+  async signalStatuses(range: { from: number; to: number }, strategyIds?: readonly string[]): Promise<{ status: string; detail: string }[]> {
+    return rows<{ status: string; detail: string }>(
+      `SELECT status, detail FROM strategy_signal_runs
+        WHERE status <> 'claimed' AND at >= $1 AND at < $2 AND ($3::text[] IS NULL OR strategy_id = ANY($3))`,
+      [range.from, range.to, strategyIds ? [...strategyIds] : null],
+    );
   }
 
   /** Add to the signal's row what became of the trade it placed: "closed at 5:29 PM". */

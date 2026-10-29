@@ -51,3 +51,21 @@ export function signalReasons(status: string, detail: string): SignalReason[] {
   }
   return out.length ? out : ['other'];
 }
+
+/** A range's signals counted: all, taken (`placed`: real orders of them), not taken, and not taken by kind. */
+export type SignalCounts = { all: number; taken: number; placed: number; notTaken: number; byReason: Partial<Record<SignalReason, number>> };
+
+/**
+ * Every signal of a range counted, not the page the list carries (29 Oct 2026, owner: "the phone's Not taken count is
+ * wrong"). A signal with two kinds is under both, as on the screen.
+ */
+export function signalCounts(lines: readonly { status: string; detail: string }[]): SignalCounts {
+  const out: SignalCounts = { all: lines.length, taken: 0, placed: 0, notTaken: 0, byReason: {} };
+  for (const l of lines) {
+    const kinds = signalReasons(l.status, l.detail);
+    if (!kinds.length) { out.taken += 1; if (l.status === 'placed') out.placed += 1; continue; }
+    out.notTaken += 1;
+    for (const k of kinds) out.byReason[k] = (out.byReason[k] ?? 0) + 1;
+  }
+  return out;
+}

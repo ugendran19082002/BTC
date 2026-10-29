@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { signalReasons } from '../../strategy/signal-reasons.js';
+import { signalCounts, signalReasons } from '../../strategy/signal-reasons.js';
 import { istDayRange } from '../../entry/catalogue.js';
 import { noteError } from '../../observability/errors.js';
 import { refuse } from '../refuse.js';
@@ -358,10 +358,15 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const { from, to } = (req.query ?? {}) as { from?: string; to?: string };
     const range = istDayRange(from, to);
     if (range && 'error' in range) { reply.code(400); return { error: range.error }; }
-    const trades = await strategyStore().signalTrades(2_000, undefined, range ?? undefined);
     const mine = await ofAccount(accountOf(req.query));
+    const ids = mine ? [...mine] : undefined;
+    // The account's own, asked of the database: filtered after the newest 2,000 of every account were read, an
+    // account's day lost its morning once the three accounts together passed 2,000 (29 Oct 2026, from 12:45 IST).
+    const trades = await strategyStore().signalTrades(2_000, undefined, range ?? undefined, ids);
+    // The range counted whole, not the 2,000 the list carries: on 29 Oct the phone said Taken 28 at High for 286 taken.
+    const counts = range ? signalCounts(await strategyStore().signalStatuses(range, ids)) : null;
     // Each one not taken with the kinds of reason in its sentence (20 Oct 2026: the phone's Not taken, by reason).
-    return { from: from ?? null, to: to ?? null, trades: (mine ? trades.filter((t) => mine.has(t.strategyId)) : trades).map((t) => ({ ...t, reasons: signalReasons(t.status, t.detail) })) };
+    return { from: from ?? null, to: to ?? null, counts, trades: trades.map((t) => ({ ...t, reasons: signalReasons(t.status, t.detail) })) };
   });
 
   /**

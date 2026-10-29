@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SIGNAL_REASONS, signalReasons } from '../../src/strategy/signal-reasons.js';
+import { SIGNAL_REASONS, signalCounts, signalReasons } from '../../src/strategy/signal-reasons.js';
 
 /**
  * Why a signal was not taken, as keys (20 Oct 2026, owner: "Not taken: sub-tabs by reason"). The sentences are the
@@ -42,4 +42,23 @@ test('[critical] each of the runner\'s sentences read back into its kinds, a ref
 
 test('a signal taken has no reason', () => {
   for (const s of ['placed', 'would-place', 'claimed']) assert.deepEqual(signalReasons(s, `${name}live orders off: would sell PE 81400`), []);
+});
+
+test('[critical] a range counted: taken and its real orders, not taken, and each kind -- a signal with two under both', () => {
+  const lines = [
+    { status: 'placed', detail: 'sell PE 81400 x1 @ 13' },
+    { status: 'would-place', detail: 'live orders off: would sell PE 81400' },
+    ...cases.map(([status, detail]) => ({ status, detail: `${name}${detail}` })),
+  ];
+  const c = signalCounts(lines);
+  assert.equal(c.all, cases.length + 2);
+  assert.equal(c.taken, 2);
+  assert.equal(c.placed, 1, 'only the real order');
+  assert.equal(c.notTaken, cases.length);
+  assert.equal(c.byReason['sl-min'], 2, 'the SL-and-TGT signal is under SL too');
+  assert.equal(c.byReason['tgt-min'], 1);
+  assert.equal(c.byReason.premium, 2, 'the spread-and-premium refusal is under premium too');
+  assert.equal(c.byReason.other, 1);
+  assert.equal(Object.values(c.byReason).reduce((a, n) => a + (n ?? 0), 0), cases.flatMap((x) => x[2]).length);
+  assert.deepEqual(signalCounts([]), { all: 0, taken: 0, placed: 0, notTaken: 0, byReason: {} });
 });
