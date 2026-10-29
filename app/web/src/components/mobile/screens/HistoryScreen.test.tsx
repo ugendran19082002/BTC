@@ -88,6 +88,42 @@ describe('HistoryScreen', () => {
     expect(screen.getByLabelText('Custom range')).toHaveTextContent('by exit time');
   });
 
+  it('[critical] each row: In and Out side by side, each its time and price -- a date where it is not today -- and how long it was held', async () => {
+    show();
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    const a = rows().find((r) => r.textContent!.includes('S a'))!;
+    const [inLeg, outLeg] = [within(a).getByText('In').parentElement!, within(a).getByText('Out').parentElement!];
+    expect(inLeg).toHaveTextContent(/18 Oct.*22:00/);        // entered the evening before: its date said
+    expect(inLeg).toHaveTextContent('50.00');
+    expect(outLeg).toHaveTextContent('01:00');                // closed today: the time alone
+    expect(outLeg).not.toHaveTextContent(/Oct/);
+    expect(outLeg).toHaveTextContent('40.00');
+    expect(a).toHaveTextContent('held 3h 00m');
+  });
+
+  it('[critical] sorted: newest exit first to begin with; by entry, by money either way, by time held -- remembered on the phone', async () => {
+    const order = () => rows().map((r) => /S ([abcd])/.exec(r.textContent!)![1]);
+    const { unmount } = show();
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    expect(order()).toEqual(['d', 'c', 'b', 'a']);
+    const sort = screen.getByRole('combobox', { name: 'Sort' });
+    for (const [label, want] of [
+      ['Oldest exit first', ['a', 'b', 'c', 'd']],
+      ['Newest entry first', ['d', 'c', 'b', 'a']],
+      ['Most made first', ['d', 'a', 'c', 'b']],
+      ['Most lost first', ['b', 'c', 'a', 'd']],
+      ['Held longest first', ['a', 'd', 'c', 'b']],      // 3 h, 1 h, then the two half-hours newest first
+    ] as const) {
+      fireEvent.change(sort, { target: { value: within(sort).getByRole('option', { name: label }).getAttribute('value') } });
+      expect(order(), label).toEqual(want);
+    }
+    expect(screen.getByText(/4 trades · 3 won/)).toBeInTheDocument();      // the count is the same in any order
+    unmount();
+    show();
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    expect(order()).toEqual(['a', 'd', 'c', 'b']);
+  });
+
   it('[critical] a backwards range is said and cannot be shown; Cancel keeps what was there', async () => {
     show();
     await waitFor(() => expect(rows()).toHaveLength(4));

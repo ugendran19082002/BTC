@@ -250,6 +250,31 @@ describe('signed in', () => {
     await waitFor(() => expect(getTradeStatus).toHaveBeenCalledWith(2));
   });
 
+  it('[critical] Home\'s positions by CE and PE: each with its count, a tap shows that side alone, remembered; a side with none cannot be chosen', async () => {
+    signedIn();
+    const ce = (id: string) => trade({ tradeId: id, symbol: `C-BTC-8${id.length}000-071026`, optionSide: 'CE' });
+    const pe = (id: string) => trade({ tradeId: id, symbol: 'P-BTC-76000-071026', optionSide: 'PE' });
+    getTradeStatus.mockResolvedValue(status([ce('c1'), ce('c22'), pe('p1')]));
+    const { unmount } = render(<MobileApp />);
+    const tabs = within(await screen.findByRole('group', { name: 'CE or PE' }));
+    expect(tabs.getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['All 3', 'CE 2', 'PE 1']);
+    const list = () => within(screen.getByRole('list', { name: 'Open positions' })).getAllByRole('listitem');
+    expect(list()).toHaveLength(3);
+    fireEvent.click(tabs.getByRole('button', { name: 'PE 1' }));
+    expect(list()).toHaveLength(1);
+    expect(tabs.getByRole('button', { name: 'PE 1' })).toHaveAttribute('aria-pressed', 'true');
+    unmount();
+    const again = render(<MobileApp />);
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Open positions' })).getAllByRole('listitem')).toHaveLength(1));
+    again.unmount();
+    // PE remembered, and then none open on it: All, and PE cannot be chosen
+    getTradeStatus.mockResolvedValue(status([ce('c1')]));
+    render(<MobileApp />);
+    const now = within(await screen.findByRole('group', { name: 'CE or PE' }));
+    await waitFor(() => expect(now.getByRole('button', { name: 'All 1' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(now.getByRole('button', { name: 'PE 0' })).toBeDisabled();
+  });
+
   it('[critical] the Market report has the account chips too: it reads one account\'s orders (29 Oct 2026)', async () => {
     getAccounts.mockResolvedValue({
       accounts: [{ id: 1, name: 'High', active: true, trading: true, readable: true }, { id: 2, name: 'Low', active: true, trading: true, readable: true }],

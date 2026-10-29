@@ -3,6 +3,8 @@ import { json } from '@/api/client';
 import { getOrders, getStats } from '@/api/phone';
 import type { MtmReport } from '@/types/report';
 import { usePoll } from '@/hooks/usePoll';
+import { usePersisted } from '@/hooks/usePersisted';
+import type { Trade } from '@/types/trade';
 import { clock, contractLabel, pct, price, size } from '@/lib/format';
 import { isRunning, isWaiting } from '@/lib/trade-events';
 import { lossBudget, positionRisk } from '@/lib/position-risk';
@@ -46,6 +48,13 @@ export function HomeScreen() {
   const [pressureWindow, setPressureWindow] = usePressureWindow();
   const pressure = usePressure(30_000, pressureWindow);
   const priceMoves = usePriceMoves(30_000);
+  // The positions by CE and PE, each with its count (owner, 29 Oct 2026: "on Home, in Positions, a small tab -- the CE
+  // count, the PE count, phone friendly"). Remembered on the phone; a side with none left falls back to All.
+  const [sidePick, setSidePick] = usePersisted<Side>('m-home-positions-side', 'all');
+  const open = s?.open ?? [];
+  const sideN: Record<Side, number> = { all: open.length, CE: open.filter((t) => t.optionSide === 'CE').length, PE: open.filter((t) => t.optionSide === 'PE').length };
+  const side: Side = sidePick !== 'all' && sideN[sidePick] === 0 ? 'all' : sidePick;
+  const listed = side === 'all' ? open : open.filter((t) => t.optionSide === side);
 
   return (
     <>
@@ -117,10 +126,11 @@ export function HomeScreen() {
       </Panel>
 
       <Panel title={s ? `Positions · ${running} running${waitingN ? ` · ${waitingN} waiting` : ''}` : 'Positions'} right={s && s.open.length > 0 ? <button type="button" onClick={() => p.go({ tab: 'positions' })} className="-my-[13px] inline-flex min-h-[44px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">Risk →</button> : undefined}>
+        {s && s.open.length > 0 && <SideTabs n={sideN} value={side} onChange={setSidePick} />}
         {!s ? <Empty>Reading positions…</Empty> : s.open.length === 0 ? <Empty>No open positions, no order waiting.</Empty> : (
-          <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
+          <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Open positions">
             {/* Running first; an order still waiting to fill after them, in amber, with where it rests. */}
-            {[...s.open].sort((a, b) => Number(isWaiting(a)) - Number(isWaiting(b))).map((t) => {
+            {[...listed].sort((a, b) => Number(isWaiting(a)) - Number(isWaiting(b))).map((t) => {
               const r = positionRisk(t, { alarms: s.alarms, perpMark: p.perp });
               if (isWaiting(t)) {
                 const limit = t.plan?.entry.limitPrice ?? null;
@@ -193,6 +203,35 @@ export function HomeScreen() {
         )}
       </Panel>
     </>
+  );
+}
+
+type Side = 'all' | Trade['optionSide'];
+const SIDES: { key: Side; label: string }[] = [{ key: 'all', label: 'All' }, { key: 'CE', label: 'CE' }, { key: 'PE', label: 'PE' }];
+
+/**
+ * All, CE and PE over the positions, each its count over its word, three equal tiles a thumb's height -- the
+ * Strategies screen's tabs, smaller. Counted over everything open: positions and orders waiting to fill. A side with
+ * none is shown, dimmed, and cannot be chosen.
+ */
+function SideTabs({ n, value, onChange }: { n: Record<Side, number>; value: Side; onChange: (s: Side) => void }) {
+  return (
+    <div role="group" aria-label="CE or PE" className="mb-1.5 grid grid-cols-3 gap-1.5">
+      {SIDES.map((x) => {
+        const on = value === x.key;
+        return (
+          <button
+            key={x.key} type="button" aria-pressed={on} aria-label={`${x.label} ${n[x.key]}`} disabled={n[x.key] === 0 && x.key !== 'all'}
+            onClick={() => onChange(x.key)}
+            className={cn('flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-solid px-1 font-[inherit] disabled:opacity-40',
+              on ? 'border-foreground/60 bg-muted' : 'border-border bg-transparent')}
+          >
+            <span className={cn('text-[16px] font-semibold tabular-nums', on ? 'text-foreground' : 'text-muted-foreground')}>{n[x.key]}</span>
+            <span className={cn('truncate text-[12.5px]', on ? 'text-foreground' : 'text-muted-foreground')}>{x.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

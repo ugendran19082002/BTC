@@ -5,7 +5,7 @@ import { DateTimeRangeSheet, type RangeBy } from '@/components/mobile/DateTimeRa
 import { getOrders } from '@/api/phone';
 import type { OrderRecord } from '@/types/trade';
 import { usePoll } from '@/hooks/usePoll';
-import { clock, contractLabel, price, signedInr, usdToInr } from '@/lib/format';
+import { clock, contractLabel, duration, price, signedInr, stamp, usdToInr } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { isLongTrade } from '@/lib/long-exits';
 import { usePhoneData } from '@/components/mobile/phone-context';
@@ -41,6 +41,23 @@ type Act = 'all' | 'sell' | 'buy';
 
 const netOf = (o: OrderRecord) => o.netRealisedUsd ?? o.realisedPnl;
 const closedAt = (o: OrderRecord) => Math.max(o.updatedAt, ...o.fills.filter((f) => f.role !== 'entry').map((f) => f.ts));
+const heldOf = (o: OrderRecord) => closedAt(o) - entryAt(o);
+
+/**
+ * The order of the list (owner, 29 Oct 2026: "trade history -- a sort; in and out both on the row"): by when it
+ * closed, the newest first as it always was, or the oldest; by when it was entered; by what it made, most first or
+ * the worst first; by how long it was held. Remembered on the phone. The count and the total above are the same in
+ * any order.
+ */
+type Sort = 'out-new' | 'out-old' | 'in-new' | 'net-high' | 'net-low' | 'held-long';
+const SORTS: { key: Sort; label: string; by: (a: OrderRecord, b: OrderRecord) => number }[] = [
+  { key: 'out-new', label: 'Newest exit first', by: (a, b) => closedAt(b) - closedAt(a) },
+  { key: 'out-old', label: 'Oldest exit first', by: (a, b) => closedAt(a) - closedAt(b) },
+  { key: 'in-new', label: 'Newest entry first', by: (a, b) => entryAt(b) - entryAt(a) },
+  { key: 'net-high', label: 'Most made first', by: (a, b) => netOf(b) - netOf(a) || closedAt(b) - closedAt(a) },
+  { key: 'net-low', label: 'Most lost first', by: (a, b) => netOf(a) - netOf(b) || closedAt(b) - closedAt(a) },
+  { key: 'held-long', label: 'Held longest first', by: (a, b) => heldOf(b) - heldOf(a) || closedAt(b) - closedAt(a) },
+];
 
 export function HistoryScreen() {
   const p = usePhoneData();
@@ -53,6 +70,8 @@ export function HistoryScreen() {
   const [opt, setOpt] = useState<Opt>('all');
   const [act, setAct] = useState<Act>('all');
   const [strategy, setStrategy] = useState('all');
+  const [sortKey, setSortKey] = usePersisted<Sort>('m-history-sort', 'out-new');
+  const sort = SORTS.find((s) => s.key === sortKey) ?? SORTS[0]!;
   const today = todayIst(p.now);
   const range = RANGES.find((r) => r.key === rangeKey) ?? RANGES[0]!;
   // A custom range that no longer holds (a bad value kept) is this expiry day's, said so by the sheet when opened.
@@ -84,11 +103,12 @@ export function HistoryScreen() {
     && (result === 'all' || (result === 'win' ? netOf(o) > 0 : netOf(o) < 0))
     && (opt === 'all' || o.optionSide === opt)
     && (act === 'all' || (act === 'buy') === isLongTrade(o))
-    && (strategy === 'all' || placedBy(o.plan).label === strategy));
+    && (strategy === 'all' || placedBy(o.plan).label === strategy))
+    .sort(sort.by);
   const total = shown.reduce((n, o) => n + netOf(o), 0);
   // Forty rows at a time (10 Oct 2026): thirty days is a thousand-odd trades, drawn at once on a phone. The count and the total above are of all.
   const [limit, setLimit] = useState(PAGE);
-  useEffect(() => { setLimit(PAGE); }, [from, to, win?.from, win?.to, by, tfPicked.join(','), result, opt, act, strategy, p.accountParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setLimit(PAGE); }, [from, to, win?.from, win?.to, by, tfPicked.join(','), result, opt, act, strategy, sortKey, p.accountParam]); // eslint-disable-line react-hooks/exhaustive-deps
   const wins = shown.filter((o) => netOf(o) > 0).length;
 
   return (
@@ -131,6 +151,9 @@ export function HistoryScreen() {
           {strategies.map((x) => <option key={x} value={x}>{x}</option>)}
         </Select>
       )}
+      <Select label="Sort" value={sort.key} onChange={(v) => setSortKey(v as Sort)}>
+        {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+      </Select>
 
       <Panel
         title={orders.data ? `${shown.length} trade${shown.length === 1 ? '' : 's'} · ${wins} won` : 'Closed trades'}
@@ -141,7 +164,7 @@ export function HistoryScreen() {
         ) : (
           <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Closed trades">
             {shown.slice(0, limit).map((o) => (
-              <ClosedRow key={`${o.account?.id ?? ''}-${o.tradeId}`} o={o} openTrade={p.openTrade} showAccount={p.shown === 'all'} />
+              <ClosedRow key={`${o.account?.id ?? ''}-${o.tradeId}`} o={o} today={today} openTrade={p.openTrade} showAccount={p.shown === 'all'} />
             ))}
           </ul>
         )}
@@ -161,8 +184,25 @@ export function HistoryScreen() {
 /** Rows drawn at first, and each "Show more" adds. */
 const PAGE = 40;
 
+/** A moment on a row: its time on today's IST date, its date and time on any other -- a 30-day list spans many days. */
+const whenText = (ms: number, today: string) => (todayIst(ms) === today ? clock(ms) : stamp(ms));
+
+/**
+ * One leg of a row, In or Out: when and at what (owner, 29 Oct 2026: "in and out both on the row"). Two of them side
+ * by side, each half the row, so a 360px phone reads both without a line wrapping.
+ */
+function Leg({ label, at, px, today }: { label: string; at: number; px: number | null; today: string }) {
+  return (
+    <span className="grid min-w-0 gap-px rounded-md bg-muted px-2 py-1.5">
+      <span className="text-[10.5px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">{label}</span>
+      <When className="truncate text-[12.5px]">{whenText(at, today)}</When>
+      <span className="truncate text-[13px] font-medium tabular-nums text-foreground">{price(px)}</span>
+    </span>
+  );
+}
+
 // Memoised (10 Oct 2026): the screen redraws with the shell's clock every 5 s, and its forty rows with it, unchanged.
-const ClosedRow = memo(function ClosedRow({ o, openTrade, showAccount }: { o: OrderRecord; openTrade: (tradeId: string) => void; showAccount: boolean }) {
+const ClosedRow = memo(function ClosedRow({ o, today, openTrade, showAccount }: { o: OrderRecord; today: string; openTrade: (tradeId: string) => void; showAccount: boolean }) {
   const net = netOf(o);
   const long = isLongTrade(o);
   return (
@@ -172,12 +212,13 @@ const ClosedRow = memo(function ClosedRow({ o, openTrade, showAccount }: { o: Or
           <span className="truncate text-[14.5px] font-semibold">{long ? 'BUY' : 'SELL'} {contractLabel(o.symbol)}</span>
           <span className={net > 0 ? 'font-semibold text-[var(--up)]' : net < 0 ? 'font-semibold text-[var(--down)]' : 'font-semibold'}>{signedInr(usdToInr(net))}</span>
         </span>
-        <span className="block text-[12.5px] tabular-nums text-muted-foreground">
-          <When>{clock(closedAt(o))}</When> · in {price(o.entryAvgPrice)} → out {price(o.exitAvgPrice)}
+        <span className="mt-1 grid grid-cols-2 gap-1.5">
+          <Leg label="In" at={entryAt(o)} px={o.entryAvgPrice} today={today} />
+          <Leg label="Out" at={closedAt(o)} px={o.exitAvgPrice} today={today} />
         </span>
         <PlacedLine
-          plan={o.plan} className="mt-0.5"
-          rest={[o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ${o.plan.signal.tf}` : null, showAccount && o.account ? o.account.name : null]}
+          plan={o.plan} className="mt-1"
+          rest={[`held ${duration(heldOf(o))}`, o.plan?.signal ? `#${o.plan.signal.n} ${o.plan.signal.name} · ${o.plan.signal.tf}` : null, showAccount && o.account ? o.account.name : null]}
         />
       </ListButton>
     </li>
