@@ -630,3 +630,6 @@ export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is 
 /** The kinds of reason a signal was not taken (server: strategy/signal-reasons.ts `SIGNAL_REASONS`). */
 export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'own-max' | 'desk-max' | 'side-max' | 'strike-max' | 'no-entry' | 'late' | 'over'
   | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'other';
+
+/** A range's signals counted whole (server: strategy/signal-reasons.ts `signalCounts`); `placed`: the real orders of the taken. */
+export type SignalCounts = { all: number; taken: number; placed: number; notTaken: number; byReason: Partial<Record<SignalReason, number>> };

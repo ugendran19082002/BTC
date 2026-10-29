@@ -5,7 +5,7 @@
  */
 import { json } from '@/api/client';
 import type { OrderHistory, OrderStatus, Trade } from '@/types/trade';
-import type { SignalTrade, StrategyStatus } from '@/types/strategy';
+import type { SignalCounts, SignalTrade, StrategyStatus } from '@/types/strategy';
 import type { DaysReport } from '@/types/report';
 import type { EntryMethodInfo } from '@/api/entry';
 
@@ -37,11 +37,12 @@ export const getTradeDetail = (tradeId: string) =>
 export const getActivity = (account: number | null) => json<StrategyStatus>(withAcct('/api/strategies?lite=1', account));
 
 /**
- * Every signal the signal strategies saw on one IST day (`YYYY-MM-DD`), newest first, and what became of each:
- * the whole day (up to 2,000), not the latest sixty `getActivity` carries -- so the counts are the day's.
+ * The signals the signal strategies saw on one IST day (`YYYY-MM-DD`), newest first, and what became of each: the
+ * newest 2,000 as rows, and `counts` over the whole day -- what the tabs say (29 Oct 2026: a busy day is more than
+ * 2,000). A server from before counts sends none.
  */
 export const getDaySignals = (day: string, account: number | null) =>
-  json<{ trades: SignalTrade[] }>(withAcct(`/api/strategies/signal-trades?from=${day}&to=${day}`, account));
+  json<{ trades: SignalTrade[]; counts?: SignalCounts | null }>(withAcct(`/api/strategies/signal-trades?from=${day}&to=${day}`, account));
 
 /** One group of closed trades (server: trading/pnl-history.ts `TradeStatsGroup`), named for the screen. */
 export type StatsGroup = {

@@ -78,6 +78,33 @@ describe('StrategiesScreen: the day\'s signals in three tabs', () => {
     await waitFor(() => expect(tabs().getByRole('button', { name: 'Not taken 0' })).toHaveAttribute('aria-pressed', 'true'));
   });
 
+  it('[critical] a day longer than the rows: every count is the server\'s over the whole day, and the list says it is the newest', async () => {
+    // 29 Oct 2026, High at 16:40 IST: the newest 2,000 rows of every account counted here read Taken 28 for 286.
+    getDaySignals.mockResolvedValue({
+      trades: [sig('placed', { reasons: [] }), sig('skipped', { reasons: ['premium'] }), sig('refused', { reasons: ['spread', 'premium'] })],
+      counts: { all: 1690, taken: 286, placed: 280, notTaken: 1404, byReason: { 'sl-min': 900, premium: 520, spread: 10, 'tgt-min': 0 } },
+    });
+    show();
+    await waitFor(() => expect(tabs().getByRole('button', { name: 'All 1690' })).toBeInTheDocument());
+    expect(tabs().getByRole('button', { name: 'Taken 286' })).toBeInTheDocument();
+    expect(tabs().getByRole('button', { name: 'Not taken 1404' })).toBeInTheDocument();
+    const stat = (label: string) => screen.getByText(label).parentElement!;
+    expect(within(stat('Signals')).getByText('1690')).toBeInTheDocument();
+    expect(within(stat('Trades today')).getByText('280')).toBeInTheDocument();
+    expect(screen.getByText('The newest 3 of 1,690 are listed; the counts are the whole day\'s.')).toBeInTheDocument();
+
+    fireEvent.click(tabs().getByRole('button', { name: 'Taken 286' }));
+    expect(screen.getByText('280 real orders · 6 paper (live orders off)')).toBeInTheDocument();
+
+    fireEvent.click(tabs().getByRole('button', { name: 'Not taken 1404' }));
+    const why = () => within(screen.getByRole('group', { name: 'Not taken, why' }));
+    expect(why().getAllByRole('button').map((b) => b.textContent)).toEqual(['Any reason 1404', 'Perp SL under min 900', 'Premium too low 520', 'Spread too wide 10']);
+    fireEvent.click(why().getByRole('button', { name: 'Premium too low 520' }));
+    expect(rows()).toHaveLength(2);
+    expect(screen.getByText(/520 not taken for: Premium too low\./)).toBeInTheDocument();
+    expect(screen.getByText('The newest 2 of 520 are listed; the counts are the whole day\'s.')).toBeInTheDocument();
+  });
+
   it('a long day: forty at a time, the rest a tap away -- never cut off without a word', async () => {
     getDaySignals.mockResolvedValue({ trades: Array.from({ length: 95 }, () => sig('skipped')) });
     show();

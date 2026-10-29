@@ -76,20 +76,31 @@ export function StrategiesScreen() {
   const methodOf = (id: string) => { const m = names?.get(id); return m ? `#${m.n} ${m.name}` : id; };
   const runs = (a?.runs ?? []).filter((r) => r.runDate === today);
   const all = daySignals.data?.trades ?? null;
+  /*
+   * Every count is the server's over the whole day (29 Oct 2026, owner: "Not taken count wrong, cross every value"):
+   * the rows are the newest 2,000, and counted here a busy day lost its morning -- High read Taken 28 for 286. A
+   * server from before counts sends none, and the rows are counted as before.
+   */
+  const served = daySignals.data?.counts ?? null;
   const tab = FEEDS.some((f) => f.key === feed) ? feed : 'all';
-  const takenN = all ? all.filter(taken).length : 0;
-  const count: Record<Feed, number> = { all: all?.length ?? 0, taken: takenN, not: (all?.length ?? 0) - takenN };
-  // Not taken by why: each kind and how many it holds, most first; a signal with two is under both.
   const notTaken = (all ?? []).filter((r) => !taken(r));
   const reasonsOf = (r: SignalTrade): SignalReason[] => (r.reasons?.length ? r.reasons : ['other']);
-  const byWhy = [...notTaken.reduce((m, r) => { for (const k of reasonsOf(r)) m.set(k, (m.get(k) ?? 0) + 1); return m; }, new Map<SignalReason, number>())]
+  const takenN = served ? served.taken : all ? all.filter(taken).length : 0;
+  const notTakenN = served ? served.notTaken : notTaken.length;
+  const count: Record<Feed, number> = { all: served ? served.all : all?.length ?? 0, taken: takenN, not: notTakenN };
+  // Not taken by why: each kind and how many it holds, most first; a signal with two is under both.
+  const byWhy = (served
+    ? Object.entries(served.byReason).filter((e): e is [SignalReason, number] => (e[1] ?? 0) > 0)
+    : [...notTaken.reduce((m, r) => { for (const k of reasonsOf(r)) m.set(k, (m.get(k) ?? 0) + 1); return m; }, new Map<SignalReason, number>())])
     .sort((x, y) => y[1] - x[1]);
   const why = whyPick !== 'any' && byWhy.some(([k]) => k === whyPick) ? whyPick : 'any';
   const inTab = tab === 'not' ? notTaken.filter((r) => why === 'any' || reasonsOf(r).includes(why))
     : (all ?? []).filter((r) => (tab === 'all' ? true : taken(r)));
   const signals = inTab.slice(0, limit);
+  // How many the tab holds over the day, against the rows here: more, and the screen says the list is the newest.
+  const tabN = tab === 'not' ? (why === 'any' ? notTakenN : byWhy.find(([k]) => k === why)?.[1] ?? 0) : count[tab];
   // Under Taken, how many were real orders; under Not taken, why -- each a count.
-  const real = (all ?? []).filter((r) => r.status === 'placed').length;
+  const real = served ? served.placed : (all ?? []).filter((r) => r.status === 'placed').length;
   const tradesToday = runs.filter((r) => r.status === 'placed').length + real;
   const methods = month.data?.byMethod ?? [];
 
@@ -98,7 +109,7 @@ export function StrategiesScreen() {
     <>
       <Stats cols={3}>
         <Stat label="Active">{a.strategies.filter((s) => s.enabled).length} of {a.strategies.length}</Stat>
-        <Stat label="Signals">{all ? all.length : '…'}</Stat>
+        <Stat label="Signals">{all ? count.all : '…'}</Stat>
         <Stat label="Trades today">{tradesToday}</Stat>
       </Stats>
       {!a.schedulerOn && <p className="m-0 rounded-md bg-[var(--warn-bg)] px-3 py-2 text-[13.5px] text-[var(--warn)]">The scheduler is off: no strategy enters or exits on its own.</p>}
@@ -147,12 +158,12 @@ export function StrategiesScreen() {
         {all && tab === 'not' && byWhy.length > 0 && (
           <>
             <div role="group" aria-label="Not taken, why" className="-mx-1 mt-2 flex gap-1.5 overflow-x-auto px-1 pb-1">
-              <Chip on={why === 'any'} onClick={() => setWhyPick('any')}>Any reason {notTaken.length}</Chip>
+              <Chip on={why === 'any'} onClick={() => setWhyPick('any')}>Any reason {notTakenN}</Chip>
               {byWhy.map(([k, n]) => <Chip key={k} on={why === k} onClick={() => setWhyPick(k)}>{REASON_WORDS[k]} {n}</Chip>)}
             </div>
             <p className="m-0 mt-1 text-[12px] text-muted-foreground">
-              {why === 'any' ? 'Tap a reason for its signals alone.' : `${inTab.length} not taken for: ${REASON_WORDS[why]}.`}
-              {byWhy.reduce((a, [, n]) => a + n, 0) > notTaken.length ? ' A signal with two reasons is under both.' : ''} The full reason is on each row.
+              {why === 'any' ? 'Tap a reason for its signals alone.' : `${tabN} not taken for: ${REASON_WORDS[why]}.`}
+              {byWhy.reduce((a, [, n]) => a + n, 0) > notTakenN ? ' A signal with two reasons is under both.' : ''} The full reason is on each row.
             </p>
           </>
         )}
@@ -171,6 +182,12 @@ export function StrategiesScreen() {
           >
             Show {Math.min(PAGE, inTab.length - signals.length)} more · {signals.length} of {inTab.length}
           </button>
+        )}
+        {/* The counts are the day's; the list is its newest 2,000 -- said where they part, never left to look wrong. */}
+        {all && tabN > inTab.length && (
+          <p className="m-0 mt-2 text-[12px] text-muted-foreground">
+            The newest {inTab.length.toLocaleString('en-IN')} of {tabN.toLocaleString('en-IN')} are listed; the counts are the whole day&apos;s.
+          </p>
         )}
       </Panel>
 
