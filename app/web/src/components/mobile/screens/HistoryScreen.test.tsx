@@ -3,6 +3,9 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context';
 import { istMs } from '@/lib/date-time-range';
 import type { OrderRecord } from '@/types/trade';
+import { signedInr, usdToInr } from '@/lib/format';
+
+const inr = (usd: number) => signedInr(usdToInr(usd));
 
 /**
  * Trade history on the phone (owner, 19 Oct 2026: "a custom date and time range, user friendly; a time frame filter,
@@ -27,9 +30,9 @@ const closed = (id: string, tf: string, mode: 'mtf' | 'single', inAt: number, ou
 } as unknown as OrderRecord);
 const TRADES = [
   closed('a', '5m', 'single', at('2026-10-18', '22:00'), at('2026-10-19', '01:00'), 2),
-  closed('b', '15m', 'single', at('2026-10-19', '10:00'), at('2026-10-19', '10:30'), -1),
+  { ...closed('b', '15m', 'single', at('2026-10-19', '10:00'), at('2026-10-19', '10:30'), -1), exitBy: 'perp-sl' as const },
   closed('c', '5m', 'mtf', at('2026-10-19', '11:00'), at('2026-10-19', '11:30'), 1),
-  closed('d', '5m', 'single', at('2026-10-19', '12:00'), at('2026-10-19', '13:00'), 3),
+  { ...closed('d', '5m', 'single', at('2026-10-19', '12:00'), at('2026-10-19', '13:00'), 3), exitBy: 'option-tgt' as const },
 ];
 const show = () => render(
   <PhoneContext.Provider value={{ now: NOW, accountParam: null, shown: 'one', openTrade: () => {} } as unknown as PhoneData}>
@@ -38,6 +41,8 @@ const show = () => render(
 );
 const rows = () => screen.queryAllByRole('button', { name: /open the trade$/ });
 const tfChip = (name: RegExp) => within(screen.getByRole('group', { name: 'Time frame' })).getByRole('button', { name });
+const filters = () => screen.getByRole('dialog', { name: 'Filters' });
+const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
 const sheet = () => screen.getByRole('dialog', { name: 'Date and time' });
 
 beforeEach(() => {
@@ -46,9 +51,10 @@ beforeEach(() => {
 });
 
 describe('HistoryScreen', () => {
-  it('[critical] time frame chips, each with its count; one or several picked, All TF clears', async () => {
+  it('[critical] time frame chips in the Filters sheet, each with its count; one or several picked, All TF clears', async () => {
     show();
     await waitFor(() => expect(rows()).toHaveLength(4));
+    openFilters();
     expect(tfChip(/^5m/)).toHaveTextContent('5m 2');
     expect(tfChip(/^15m/)).toHaveTextContent('15m 1');
     expect(tfChip(/^TF chain/)).toHaveTextContent('TF chain 1');
@@ -92,7 +98,7 @@ describe('HistoryScreen', () => {
     show();
     await waitFor(() => expect(rows()).toHaveLength(4));
     const a = rows().find((r) => r.textContent!.includes('S a'))!;
-    const [inLeg, outLeg] = [within(a).getByText('In').parentElement!, within(a).getByText('Out').parentElement!];
+    const [inLeg, outLeg] = [within(a).getByText('In').parentElement!.parentElement!, within(a).getByText('Out').parentElement!.parentElement!];
     expect(inLeg).toHaveTextContent(/18 Oct.*22:00/);        // entered the evening before: its date said
     expect(inLeg).toHaveTextContent('50.00');
     expect(outLeg).toHaveTextContent('01:00');                // closed today: the time alone
@@ -122,6 +128,72 @@ describe('HistoryScreen', () => {
     show();
     await waitFor(() => expect(rows()).toHaveLength(4));
     expect(order()).toEqual(['a', 'd', 'c', 'b']);
+  });
+
+  it('[critical] on top, what the trades shown made: net after charges, trades and won, the average win and loss, the best and the worst', async () => {
+    show();
+    const card = within(await screen.findByRole('region', { name: 'What these trades made' }));
+    expect(card.getByText('Today')).toBeInTheDocument();
+    expect(card.getByText(/^4 trades · 75% won$/)).toBeInTheDocument();
+    const tile = (label: string) => card.getByText(label).nextSibling;
+    expect(tile('Avg win')).toHaveTextContent(inr(2));          // (2 + 1 + 3) / 3
+    expect(tile('Avg loss')).toHaveTextContent(inr(-1));
+    expect(tile('Best')).toHaveTextContent(inr(3));
+    expect(tile('Worst')).toHaveTextContent(inr(-1));
+  });
+
+  it('[critical] the filters in one sheet: each choice its count, at once, said over the list a tap to take off, counted on the button, remembered; Clear all', async () => {
+    const { unmount } = show();
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    openFilters();
+    const sheet = within(filters());
+    expect(within(sheet.getByRole('group', { name: 'Result' })).getAllByRole('button').map((b) => b.textContent)).toEqual(['All 4', 'Won 3', 'Lost 1']);
+    expect(within(sheet.getByRole('group', { name: 'How it closed' })).getAllByRole('button').map((b) => b.textContent)).toEqual(['Any', 'TGT 1', 'Perp SL 1']);
+    fireEvent.click(sheet.getByRole('button', { name: 'Won 3' }));
+    expect(sheet.getByRole('button', { name: 'Show 3 trades' })).toBeInTheDocument();
+    fireEvent.click(sheet.getByRole('button', { name: 'Show 3 trades' }));
+    expect(screen.queryByRole('dialog', { name: 'Filters' })).not.toBeInTheDocument();
+    expect(rows()).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Filters, 1 on' })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'What these trades made' })).getByText(/filtered/)).toBeInTheDocument();
+    // remembered
+    unmount();
+    show();
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Filters on' })).getByRole('button', { name: 'Take off Won' }));
+    expect(rows()).toHaveLength(4);
+    expect(screen.queryByRole('group', { name: 'Filters on' })).not.toBeInTheDocument();
+    // two on, then Clear all
+    openFilters();
+    fireEvent.click(within(filters()).getByRole('button', { name: 'Perp SL 1' }));
+    fireEvent.click(within(filters()).getByRole('button', { name: /^5m/ }));
+    fireEvent.click(within(filters()).getByRole('button', { name: /^Show/ }));
+    expect(screen.getByRole('button', { name: 'Filters, 2 on' })).toBeInTheDocument();
+    expect(rows()).toHaveLength(0);
+    expect(screen.getByText('None match these filters.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+    expect(rows()).toHaveLength(4);
+  });
+
+  it('[critical] in time order the list is by day, each day with its count and money; in money order it is one list', async () => {
+    show();
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    const heads = () => screen.queryAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(heads()).toEqual(['Today']);                          // every exit on the 19th, a's at 1:00 AM
+    expect(screen.getByText(/^4 trades · /)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'in-new' } });
+    expect(heads()).toEqual(['Today', 'Yesterday']);             // a entered on the 18th
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'net-high' } });
+    expect(heads()).toEqual([]);
+  });
+
+  it('each row says how it closed: a target in green words, a stop in red', async () => {
+    show();
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    const row = (id: string) => rows().find((r) => r.textContent!.includes(`S ${id}`))!;
+    expect(within(row('d')).getByText('TGT')).toBeInTheDocument();
+    expect(within(row('b')).getByText('Perp SL')).toBeInTheDocument();
+    expect(within(row('a')).queryByText(/TGT|SL/)).toBeNull();
   });
 
   it('[critical] a backwards range is said and cannot be shown; Cancel keeps what was there', async () => {
