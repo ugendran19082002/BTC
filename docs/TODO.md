@@ -285,6 +285,15 @@ Still open:
 
 ## Screen
 
+- [ ] **The reports read at most 5,000 trades, newest first, and say nothing when cut** (found 29 Oct 2026 with the
+  phone's signal counts, [history](history/2026-10.md)). `journal().between(..., 5_000, ...)` in `report.routes.ts`
+  (three routes, `GET /api/report/stats` among them: the phone's P&L 7 / 30 / 90 days and Strategies' "Methods, 30
+  days") and in `strategy.routes.ts` `recentTrades` (the desk's strategy cards' week, every account). On 29 Oct "All
+  accounts" over 30 or 90 days began on 21 Oct (10,147 trades in the window); High's 30 days began on 9 Oct (5,729);
+  every account's 7 days was 4,867, at the edge. Reading all of them is 26 ms and 18 MB in the database today, but
+  about 1,000 trades a day are written now. The owner's choice: a higher cap with the screen saying where it was cut,
+  or the statistics summed in SQL. `announceDay` (the day's Telegram summary) reads 500 trades an account (High wrote 431
+  that day). The money gates are not affected: the loss budget reads every trade of the day (`statesSince`).
 - [ ] **Chart data-failure states** (gap, duplicate, stale feed) drawn as
   "DATA UNAVAILABLE" rather than candles on bad data.
 - [ ] **A candle touching both stop and target** is resolved as the stop;
