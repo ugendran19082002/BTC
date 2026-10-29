@@ -214,7 +214,7 @@ describe('MarketReport', () => {
     expect(card.getByText('Won').nextSibling).toHaveTextContent('51%');
     expect(card.getByText('Best · Mon 12 Oct').nextSibling).toHaveTextContent(moneyText(REAL_MON.net));
     expect(card.getByText('Worst · Tue 13 Oct').nextSibling).toHaveTextContent(moneyText(REAL_TUE.net));
-    expect(card.getByText(/Signal history: 7,302 closed · 45% won · −?[\d,]+ pts/)).toBeInTheDocument();
+    expect(card.getByText(/Signal history: 7,302 closed · 45% won · \+32,039 pts/)).toBeInTheDocument();
   });
 
   it('[critical] the time window: 5:31 PM to 5:29 PM to begin with; changed, applied with a tap, said on each day, kept, and one tap back to the whole contract', async () => {
