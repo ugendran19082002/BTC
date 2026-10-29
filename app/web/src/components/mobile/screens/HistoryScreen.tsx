@@ -68,12 +68,12 @@ const exitOf = (o: OrderRecord) => EXITS.find((x) => x.key === o.exitBy) ?? null
  */
 type Sort = 'out-new' | 'out-old' | 'in-new' | 'net-high' | 'net-low' | 'held-long';
 const SORTS: { key: Sort; label: string; by: (a: OrderRecord, b: OrderRecord) => number; dayOf?: (o: OrderRecord) => number }[] = [
-  { key: 'out-new', label: 'Newest exit first', by: (a, b) => closedAt(b) - closedAt(a), dayOf: closedAt },
-  { key: 'out-old', label: 'Oldest exit first', by: (a, b) => closedAt(a) - closedAt(b), dayOf: closedAt },
-  { key: 'in-new', label: 'Newest entry first', by: (a, b) => entryAt(b) - entryAt(a), dayOf: entryAt },
-  { key: 'net-high', label: 'Most made first', by: (a, b) => netOf(b) - netOf(a) || closedAt(b) - closedAt(a) },
-  { key: 'net-low', label: 'Most lost first', by: (a, b) => netOf(a) - netOf(b) || closedAt(b) - closedAt(a) },
-  { key: 'held-long', label: 'Held longest first', by: (a, b) => heldOf(b) - heldOf(a) || closedAt(b) - closedAt(a) },
+  { key: 'out-new', label: 'Newest exit', by: (a, b) => closedAt(b) - closedAt(a), dayOf: closedAt },
+  { key: 'out-old', label: 'Oldest exit', by: (a, b) => closedAt(a) - closedAt(b), dayOf: closedAt },
+  { key: 'in-new', label: 'Newest entry', by: (a, b) => entryAt(b) - entryAt(a), dayOf: entryAt },
+  { key: 'net-high', label: 'Most made', by: (a, b) => netOf(b) - netOf(a) || closedAt(b) - closedAt(a) },
+  { key: 'net-low', label: 'Most lost', by: (a, b) => netOf(a) - netOf(b) || closedAt(b) - closedAt(a) },
+  { key: 'held-long', label: 'Held longest', by: (a, b) => heldOf(b) - heldOf(a) || closedAt(b) - closedAt(a) },
 ];
 
 /** What the sheet chooses: kept together, so one key holds them and Clear all is one write. */
@@ -300,7 +300,7 @@ function Choices({ label, children }: { label: string; children: ReactNode }) {
   return (
     <fieldset className="m-0 min-w-0 border-0 p-0">
       <legend className="mb-1.5 p-0 text-[13px] font-medium text-muted-foreground">{label}</legend>
-      <div role="group" aria-label={label} className="flex flex-wrap gap-2">{children}</div>
+      <div className="flex flex-wrap gap-2">{children}</div>
     </fieldset>
   );
 }
@@ -327,7 +327,7 @@ function FilterSheet({ trades, tfCounts, tfPicked, onTfs, f, strategies, onSet, 
     <div className="fixed inset-0 z-40 flex items-end justify-center" role="presentation">
       <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 border-0 bg-black/60 p-0" tabIndex={-1} />
       <div role="dialog" aria-modal="true" aria-labelledby="history-filters-title"
-        className="relative max-h-[88vh] w-full max-w-[560px] overflow-y-auto rounded-t-2xl border-t border-border bg-background px-4 pb-[calc(16px+env(safe-area-inset-bottom))] pt-2">
+        className="relative max-h-[88vh] w-full max-w-[560px] overflow-y-auto rounded-t-2xl border-t border-border bg-background px-4 pb-[env(safe-area-inset-bottom)] pt-2">
         <div aria-hidden="true" className="mx-auto mb-2 h-1 w-10 rounded-full bg-[var(--line)]" />
         <div className="flex items-center justify-between">
           <h2 id="history-filters-title" className="m-0 text-[17px] font-semibold">Filters</h2>
@@ -375,9 +375,10 @@ function FilterSheet({ trades, tfCounts, tfPicked, onTfs, f, strategies, onSet, 
             </Choices>
           )}
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <button type="button" onClick={onClear} className="h-12 rounded-lg border border-border bg-transparent font-[inherit] text-[15px] text-foreground">Clear all</button>
-          <button type="button" onClick={onClose} className="h-12 rounded-lg border-0 bg-[var(--up)] font-[inherit] text-[15px] font-semibold text-[var(--bg)]">
+        {/* Held at the foot of the sheet however far it is scrolled: the way out is always a thumb away. */}
+        <div className="sticky bottom-0 -mx-4 mt-4 grid grid-cols-2 gap-3 border-t border-solid border-x-0 border-b-0 border-[var(--line-soft)] bg-background px-4 pb-3 pt-3">
+          <button type="button" onClick={onClear} className="h-12 rounded-lg border border-solid border-border bg-transparent font-[inherit] text-[15px] text-foreground">Clear all</button>
+          <button type="button" onClick={onClose} className="h-12 whitespace-nowrap rounded-lg border-0 bg-[var(--up)] px-2 font-[inherit] text-[14px] font-semibold text-[var(--bg)]">
             Show {shown} trade{shown === 1 ? '' : 's'}
           </button>
         </div>
@@ -394,13 +395,14 @@ const whenText = (ms: number, day: string) => (todayIst(ms) === day ? clock(ms) 
  * by side, each half the row, so a 320px phone reads both without a line wrapping.
  */
 function Leg({ label, at, px, day }: { label: string; at: number; px: number | null; day: string }) {
+  // The price beside its word, the moment on a line of its own: "28 Oct, 17:24" has the box's whole width at 320px.
   return (
     <span className="grid min-w-0 gap-0.5 rounded-md bg-muted px-2 py-1.5 leading-tight">
-      <span className="flex min-w-0 items-baseline gap-1.5">
+      <span className="flex min-w-0 items-baseline justify-between gap-1.5">
         <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">{label}</span>
-        <When className="truncate text-[12px]">{whenText(at, day)}</When>
+        <span className="min-w-0 truncate text-[14px] font-semibold tabular-nums text-foreground">{price(px)}</span>
       </span>
-      <span className="truncate text-[14px] font-semibold tabular-nums text-foreground">{price(px)}</span>
+      <When className="truncate text-[12px]">{whenText(at, day)}</When>
     </span>
   );
 }
@@ -417,7 +419,6 @@ const ClosedRow = memo(function ClosedRow({ o, today, openTrade, showAccount }: 
         <span className="flex min-w-0 items-center gap-1.5">
           <span className={cn('shrink-0 text-[12px] font-bold', long ? 'text-[var(--buy)]' : 'text-[var(--down)]')}>{long ? 'BUY' : 'SELL'}</span>
           <span className="truncate text-[14.5px] font-semibold">{contractLabel(o.symbol)}</span>
-          {exit && <Pill tone={exit.tone}>{exit.word}</Pill>}
         </span>
         <span className={cn('shrink-0 text-[15px] font-semibold tabular-nums', net > 0 ? 'text-[var(--up)]' : net < 0 ? 'text-[var(--down)]' : '')}>{signedInr(usdToInr(net))}</span>
       </span>
@@ -426,9 +427,12 @@ const ClosedRow = memo(function ClosedRow({ o, today, openTrade, showAccount }: 
         <Leg label="Out" at={closedAt(o)} px={o.exitAvgPrice} day={today} />
       </span>
       {/* Wraps rather than cuts (29 Oct 2026: at 320px the strategy and the signal were each an ellipsis). */}
+      {/* How it closed leads the line, where the contract above keeps its room; a tag shortens only past a whole line. */}
       <span className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-        <StrategyTag plan={o.plan} className="max-w-full" />
-        <GroupTag strategyId={o.plan?.strategyId} className="max-w-full" />
+        {exit && <Pill tone={exit.tone}>{exit.word}</Pill>}
+        {/* Here a name longer than the line wraps onto a second one; elsewhere the tag keeps its one line. */}
+        <StrategyTag plan={o.plan} className="max-w-full shrink-0 [&>span]:whitespace-normal [&>span]:break-words" />
+        <GroupTag strategyId={o.plan?.strategyId} className="max-w-full shrink-0" />
         <span className="min-w-0 text-[12px] leading-snug text-muted-foreground">{words}</span>
       </span>
     </ListButton>

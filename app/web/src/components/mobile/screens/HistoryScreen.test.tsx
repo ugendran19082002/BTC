@@ -114,11 +114,11 @@ describe('HistoryScreen', () => {
     expect(order()).toEqual(['d', 'c', 'b', 'a']);
     const sort = screen.getByRole('combobox', { name: 'Sort' });
     for (const [label, want] of [
-      ['Oldest exit first', ['a', 'b', 'c', 'd']],
-      ['Newest entry first', ['d', 'c', 'b', 'a']],
-      ['Most made first', ['d', 'a', 'c', 'b']],
-      ['Most lost first', ['b', 'c', 'a', 'd']],
-      ['Held longest first', ['a', 'd', 'c', 'b']],      // 3 h, 1 h, then the two half-hours newest first
+      ['Oldest exit', ['a', 'b', 'c', 'd']],
+      ['Newest entry', ['d', 'c', 'b', 'a']],
+      ['Most made', ['d', 'a', 'c', 'b']],
+      ['Most lost', ['b', 'c', 'a', 'd']],
+      ['Held longest', ['a', 'd', 'c', 'b']],      // 3 h, 1 h, then the two half-hours newest first
     ] as const) {
       fireEvent.change(sort, { target: { value: within(sort).getByRole('option', { name: label }).getAttribute('value') } });
       expect(order(), label).toEqual(want);
@@ -180,7 +180,7 @@ describe('HistoryScreen', () => {
     await waitFor(() => expect(rows()).toHaveLength(4));
     const heads = () => screen.queryAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(heads()).toEqual(['Today']);                          // every exit on the 19th, a's at 1:00 AM
-    expect(screen.getByText(/^4 trades · /)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Today' }).nextSibling).toHaveTextContent(`4 trades · ${inr(5)}`);
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'in-new' } });
     expect(heads()).toEqual(['Today', 'Yesterday']);             // a entered on the 18th
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'net-high' } });
