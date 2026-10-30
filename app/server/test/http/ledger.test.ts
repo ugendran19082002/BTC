@@ -48,6 +48,15 @@ const call = async (method: 'GET' | 'POST', url: string, payload?: object) => {
   return { status: r.statusCode, body: r.json() as Record<string, any> };
 };
 
+/** Sync a day as the phone does -- a job, answered at once -- wait for it, and the checks it kept for the day. */
+const synced = async (body: { day: string; accountId?: number }) => {
+  const s = await call('POST', '/api/ledger/sync', body);
+  assert.equal(s.status, 202, JSON.stringify(s.body));
+  assert.equal(s.body.already, false);
+  await L.syncRunning();
+  return { sync: s.body.sync, rows: (await L.ledgerRows(body.accountId ?? null, body.day, body.day)).map((r) => ({ ...r })) };
+};
+
 const DAY_MS = 86_400_000;
 const NOW = Date.now();
 const YESTERDAY = istDate(NOW - DAY_MS);
@@ -103,11 +112,11 @@ test('[critical] a day checked by hand: the desk\'s profit, loss and charges, De
 
   // Delta booked the same, its fee within a cent of the desk's formula.
   L.setWalletReader(async () => wallet(desk.realisedUsd, desk.chargesUsd + 0.01, noonOf(YESTERDAY)));
-  const s = await call('POST', '/api/ledger/sync', { day: YESTERDAY, accountId: one });
-  assert.equal(s.status, 200, JSON.stringify(s.body));
-  assert.equal(s.body.rows.length, 1);
-  assert.equal(s.body.rows[0].status, 'match');
-  assert.ok(Math.abs(s.body.rows[0].diffUsd - 0.01) < 1e-9);
+  const s = await synced({ day: YESTERDAY, accountId: one });
+  assert.equal(s.rows.length, 1);
+  assert.equal(s.rows[0]!.status, 'match');
+  assert.ok(Math.abs(s.rows[0]!.diffUsd! - 0.01) < 1e-9);
+  assert.equal(s.sync.status, 'running', 'answered at once, still running');
 
   const after = (await call('GET', `/api/ledger?from=${YESTERDAY}&to=${YESTERDAY}&account=${one}`)).body;
   const d = after.days[0];
@@ -122,23 +131,23 @@ test('[critical] a day checked by hand: the desk\'s profit, loss and charges, De
 
 test('[critical] a mismatch says where it lies -- in the charges, or in what the trades booked; an unread wallet is said, never a match', async () => {
   L.setWalletReader(async () => wallet(desk.realisedUsd - 0.5, desk.chargesUsd, noonOf(YESTERDAY)));
-  let r = (await call('POST', '/api/ledger/sync', { day: YESTERDAY, accountId: one })).body.rows[0];
+  let r = (await synced({ day: YESTERDAY, accountId: one })).rows[0]! as any;
   assert.equal(r.status, 'mismatch');
   assert.ok(Math.abs(r.diffUsd - 0.5) < 1e-9);
   assert.match(r.detail, /Charges agree: the difference is in what the trades booked\./);
 
   L.setWalletReader(async () => wallet(desk.realisedUsd, desk.chargesUsd + 0.4, noonOf(YESTERDAY)));
-  r = (await call('POST', '/api/ledger/sync', { day: YESTERDAY, accountId: one })).body.rows[0];
+  r = (await synced({ day: YESTERDAY, accountId: one })).rows[0]! as any;
   assert.equal(r.status, 'mismatch');
   assert.match(r.detail, /Charges differ by \$0\.40/);
 
   L.setWalletReader(async () => { throw new Error('Delta refused the request (unauthorized).'); });
-  r = (await call('POST', '/api/ledger/sync', { day: YESTERDAY, accountId: one })).body.rows[0];
+  r = (await synced({ day: YESTERDAY, accountId: one })).rows[0]! as any;
   assert.equal(r.status, 'unread');
   assert.match(r.detail, /could not be read: Delta refused the request \(unauthorized\)\./);
 
   L.setLedgerPaper(() => true);
-  r = (await call('POST', '/api/ledger/sync', { day: YESTERDAY, accountId: one })).body.rows[0];
+  r = (await synced({ day: YESTERDAY, accountId: one })).rows[0]! as any;
   assert.equal(r.status, 'paper');
   L.setLedgerPaper(() => false);
 });
@@ -150,7 +159,7 @@ test('[critical] a read that came back short is not judged a mismatch: fewer wal
     entries: [{ id: 'one', at, type: 'commission', amount: 0.00007, balance: 65.35, asset: 'USD' }], complete: true,
     read: { pages: 1, rows: 214, kept: 1, outside: 0, unparsed: 213, firstAt: '1730271234567890', lastAt: '2026-10-29T06:30:00Z' },
   }));
-  const r = (await call('POST', '/api/ledger/sync', { day: YESTERDAY, accountId: one })).body.rows[0];
+  const r = (await synced({ day: YESTERDAY, accountId: one })).rows[0]! as any;
   assert.equal(r.status, 'unread');
   assert.equal(r.diffUsd, null);
   assert.match(r.detail, /Delta's wallet gave 1 entry for the desk's 3 trades: the read came back short, so the day is not judged\./);
@@ -160,8 +169,8 @@ test('[critical] a read that came back short is not judged a mismatch: fewer wal
 
 test('[critical] every account: each account\'s verdict beside the sum; a day changed since its check is said', async () => {
   L.setWalletReader(async (id) => (id === one ? wallet(desk.realisedUsd, desk.chargesUsd, noonOf(YESTERDAY)) : { entries: [], complete: true }));
-  const s = await call('POST', '/api/ledger/sync', { day: YESTERDAY });
-  assert.deepEqual(s.body.rows.map((r: any) => [r.accountId, r.status]).sort(), [[one, 'match'], [two, 'match']].sort(), 'an account with nothing on either side matches');
+  const s = await synced({ day: YESTERDAY });
+  assert.deepEqual(s.rows.map((r: any) => [r.accountId, r.status]).sort(), [[one, 'match'], [two, 'match']].sort(), 'an account with nothing on either side matches');
   const all = (await call('GET', `/api/ledger?from=${YESTERDAY}&to=${YESTERDAY}`)).body;
   const d = all.days[0];
   assert.equal(d.status, 'match');
@@ -218,28 +227,55 @@ test('the phone hears of a mismatch: both nets, the difference and where it lies
   assert.match(a.text, /Desk <b>\+₹530\.40<\/b> \(\+\$6\.24\) · Delta <b>\+₹516\.80<\/b> \(\+\$6\.08\) · off by ₹13\.60 \(\$0\.16\)/);
 });
 
-test('[critical] a range synced at once: started and answered, checked in the background newest first, its progress said, one range at a time', async () => {
+test('[critical] a range synced as one job: answered at once, read newest first, followed after a refresh, never two at once; a restart carries it on', async () => {
   await query('DELETE FROM ledger_days');
   let release: () => void = () => {};
   const gate = new Promise<void>((r) => { release = r; });
-  // Delta slow on the first day, so the range is seen running.
+  // Delta slow on the first day, so the job is seen running.
   L.setWalletReader(async (_id, from) => { if (from === Date.parse(`${istDate(NOW)}T00:00:00+05:30`)) await gate; return { entries: [], complete: true }; });
   const from = istDate(NOW - 2 * DAY_MS), to = istDate(NOW);
   const s = await call('POST', '/api/ledger/sync', { from, to });
-  assert.equal(s.status, 200, JSON.stringify(s.body));
-  assert.deepEqual(s.body, { started: true, from, to, days: 3 });
-  const running = (await call('GET', `/api/ledger?from=${from}&to=${to}`)).body.progress;
-  assert.deepEqual([running.total, running.done, running.day], [3, 0, to], 'newest first, and said while it runs');
-  const again = await call('POST', '/api/ledger/sync', { from, to });
-  assert.equal(again.status, 409);
-  assert.match(again.body.error, /Already checking 3 days \(0 done\)/);
+  assert.equal(s.status, 202, JSON.stringify(s.body));
+  assert.equal(s.body.already, false);
+  assert.deepEqual([s.body.sync.total, s.body.sync.days, s.body.sync.status], [3, [to, istDate(NOW - DAY_MS), from], 'running'], 'newest first');
+
+  // A refresh, a second tap, a second phone: the job running is the answer, nothing new is started.
+  await new Promise((r) => setTimeout(r, 20));
+  const seen = (await call('GET', `/api/ledger?from=${from}&to=${to}`)).body;
+  assert.deepEqual([seen.sync.id, seen.sync.status, seen.sync.done, seen.sync.day], [s.body.sync.id, 'running', 0, to]);
+  assert.equal(seen.busy, true);
+  for (const body of [{ from, to }, { day: from }]) {
+    const again = await call('POST', '/api/ledger/sync', body);
+    assert.equal(again.status, 200);
+    assert.equal(again.body.already, true);
+    assert.equal(again.body.sync.id, s.body.sync.id);
+  }
+  assert.equal(Number((await query("SELECT count(*) AS n FROM ledger_syncs WHERE status = 'running'")).rows[0].n), 1, 'one running, by the database');
   release();
-  for (let i = 0; i < 100 && (await call('GET', `/api/ledger?from=${from}&to=${to}`)).body.progress; i++) await new Promise((r) => setTimeout(r, 20));
-  const after = await call('GET', `/api/ledger?from=${from}&to=${to}`);
-  assert.equal(after.body.progress, null);
+  await L.syncRunning();
+  const after = (await call('GET', `/api/ledger?from=${from}&to=${to}`)).body;
+  assert.deepEqual([after.sync.id, after.sync.status, after.sync.done, after.busy], [s.body.sync.id, 'done', 3, false]);
   const kept = await L.ledgerRows(null, from, to);
   assert.equal(kept.length, 3 * 2, 'every day, every account');
-  assert.ok(kept.every((r) => r.how === 'manual'));
+
+  // Left running by a process that stopped after its first day: the next one carries on from the second.
+  await query('DELETE FROM ledger_days');
+  await query(`INSERT INTO ledger_syncs (account_id, days, done, day, status, started_at) VALUES (NULL, $1, 1, $2, 'running', $3)`,
+    [JSON.stringify([to, istDate(NOW - DAY_MS), from]), istDate(NOW - DAY_MS), Date.now()]);
+  const resumed = await L.resumeSync();
+  assert.ok(resumed);
+  await L.syncRunning();
+  assert.deepEqual((await L.ledgerRows(null, from, to)).map((r) => r.day).sort(), [from, from, istDate(NOW - DAY_MS), istDate(NOW - DAY_MS)], 'the two days left, not the one done');
+  const last = await L.currentSync();
+  assert.deepEqual([last!.status, last!.done, last!.resumed], ['done', 3, 1]);
+
+  // Picked up too often: failed with why, never run for ever.
+  await query(`INSERT INTO ledger_syncs (account_id, days, status, resumed, started_at) VALUES (NULL, $1, 'running', 3, $2)`, [JSON.stringify([to]), Date.now() + 1]);
+  assert.equal(await L.resumeSync(), null);
+  const given = await L.currentSync();
+  assert.equal(given!.status, 'failed');
+  assert.match(given!.error!, /Stopped by 3 restarts in the middle: sync again\./);
+
   for (const [body, why] of [[{ from }, /both days/], [{ from: to, to: from }, /must not be after/], [{ from: istDate(NOW - 200 * DAY_MS), to }, /last 92 days/]] as const) {
     const r = await call('POST', '/api/ledger/sync', body);
     assert.equal(r.status, 400, JSON.stringify(body));
