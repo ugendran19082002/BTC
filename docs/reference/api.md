@@ -95,7 +95,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | Method | Path | Session | What |
 |---|---|---|---|
 | GET | `/api/ledger` | signed in | The ledger for a range of IST days (`from`, `to`; the last seven without them; at most 92): each day the desk's profit, loss, charges and net worked out now, and the check kept for it -- Delta's si... |
-| POST | `/api/ledger/sync` | signed in | Check a day now (`day`, today without one; `accountId`, every account without one): the desk's figures and Delta's wallet read again, judged and kept. |
+| POST | `/api/ledger/sync` | signed in | Sync with Delta (30 Oct 2026, owner: "sync by the days chosen; the loading state after a refresh; no duplicate sync -- save it in the backend; one at a time, best practice"): `day` (today without o... |
 
 ## [market.routes.ts](../../app/server/src/http/routes/market.routes.ts)
 
