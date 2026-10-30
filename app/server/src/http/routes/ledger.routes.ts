@@ -7,6 +7,7 @@ import {
   type DeskDay, type LedgerRow, type LedgerStatus,
 } from '../../ledger/ledger.js';
 import type { WalletDay } from '../../ledger/wallet.js';
+import { dayTrades } from '../../ledger/day-trades.js';
 
 /**
  * The ledger's routes (ledger/ledger.ts): the days as the desk booked them and as Delta's wallet has them, and a check
@@ -119,6 +120,18 @@ export function registerLedgerRoutes(app: FastifyInstance) {
         mismatched: days.filter((d) => d.status === 'mismatch').length,
       },
     };
+  });
+
+  /**
+   * One day's trades, each on its line (`ledger/day-trades.ts`): strike, CE or PE, sold or bought, when and at what it
+   * went in and came out, how it closed, Delta's charges, what it booked and its net -- and the day's own figures beside
+   * them, the ledger row's. `?account=<id>`; without it, every account's.
+   */
+  app.get('/api/ledger/day', async (req, reply) => {
+    const day = (req.query as { day?: unknown } | null)?.day;
+    if (typeof day !== 'string' || !DAY.test(day) || Number.isNaN(Date.parse(day))) return refuse(reply, 400, { error: 'Day must be YYYY-MM-DD.' });
+    if (day > istDate(Date.now())) return refuse(reply, 400, { error: 'A day still to come has no trades.' });
+    return { day, account: accountOf(req.query), ...(await dayTrades(accountOf(req.query), day)) };
   });
 
   /**

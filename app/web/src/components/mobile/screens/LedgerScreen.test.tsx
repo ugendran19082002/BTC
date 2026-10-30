@@ -11,7 +11,8 @@ import { signedInr, usdToInr } from '@/lib/format';
 const getLedger = vi.fn();
 const syncLedger = vi.fn();
 const syncLedgerRange = vi.fn();
-vi.mock('@/api/ledger', () => ({ getLedger: (...a: unknown[]) => getLedger(...a), syncLedger: (...a: unknown[]) => syncLedger(...a), syncLedgerRange: (...a: unknown[]) => syncLedgerRange(...a) }));
+const getLedgerDay = vi.fn();
+vi.mock('@/api/ledger', () => ({ getLedger: (...a: unknown[]) => getLedger(...a), syncLedger: (...a: unknown[]) => syncLedger(...a), syncLedgerRange: (...a: unknown[]) => syncLedgerRange(...a), getLedgerDay: (...a: unknown[]) => getLedgerDay(...a) }));
 const { LedgerScreen } = await import('@/components/mobile/screens/LedgerScreen');
 
 const inr = (usd: number) => signedInr(usdToInr(usd));
@@ -54,6 +55,7 @@ beforeEach(() => {
   getLedger.mockReset().mockResolvedValue(LEDGER());
   syncLedger.mockReset().mockResolvedValue({ sync: job({ days: ['2026-10-29'] }), already: false });
   syncLedgerRange.mockReset().mockResolvedValue({ sync: job(), already: false });
+  getLedgerDay.mockReset().mockResolvedValue({ day: '2026-10-28', account: null, desk: day('2026-10-28').desk, trades: [] });
 });
 
 describe('LedgerScreen', () => {
@@ -154,5 +156,16 @@ describe('LedgerScreen', () => {
     show();
     expect(await screen.findByText(/No broker account is switched on/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sync today' })).toBeDisabled();
+  });
+
+  it('[critical] a day opened offers its trades: one tap opens them in a sheet, for that day and the account shown', async () => {
+    show();
+    await screen.findByRole('list', { name: 'Ledger days' });
+    fireEvent.click(days().getByRole('button', { name: /^Wed 28 Oct: open the day/ }));
+    fireEvent.click(screen.getByRole('button', { name: /See the 214 trades/ }));
+    expect(await screen.findByRole('dialog', { name: /Wed 28 Oct · trades/ })).toBeInTheDocument();
+    expect(getLedgerDay).toHaveBeenCalledWith('2026-10-28', null);
+    fireEvent.click(within(screen.getByRole('dialog', { name: /trades/ })).getAllByRole('button', { name: 'Close' })[0]!);
+    expect(screen.queryByRole('dialog', { name: /trades/ })).not.toBeInTheDocument();
   });
 });

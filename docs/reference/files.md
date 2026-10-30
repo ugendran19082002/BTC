@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-572 files listed, 316 test files counted below, images and lockfiles left out.
+574 files listed, 317 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 162 |
-| `app/web` | 154 |
+| `app/web` | 155 |
 
 ## `(root)`
 
@@ -168,6 +168,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [day-trades.ts](../../app/server/src/ledger/day-trades.ts) | One ledger day's trades, each on its own line (owner, 30 Oct 2026: "the entries under a day, a tap opens them: entry, exit, charges, P&L, the strike, PE or CE, entry time, exit time -- mobile frien... |
 | [ledger.ts](../../app/server/src/ledger/ledger.ts) | The ledger (owner, 29 Oct 2026: "a ledger on the phone, day by day -- profit, loss, charges, others; my system's P&L and the Delta app's reconciled, checked every day at 11:59 PM and synced by hand... |
 | [wallet.ts](../../app/server/src/ledger/wallet.ts) | Delta's own record of an account's money, a day at a time (owner, 29 Oct 2026: "my system and the Delta app's P&L, reconciled -- checked every day at 11:59 PM, and synced by hand"). |
 
@@ -426,6 +427,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [ExitRail.tsx](../../app/web/src/components/mobile/ExitRail.tsx) | The price between its target and its stop, drawn (owner's reference, 6 Oct 2026): TGT at the left, SL at the right, the entry between, and a marker for the price now that slides as it moves -- the... |
 | [FilterPicker.tsx](../../app/web/src/components/mobile/FilterPicker.tsx) | The phone's tick-several filter (owner, 8 Oct 2026: "strategy select option, multiple select dropdown, mobile user friendly -- the same filter on the signal filters", then "same UI, add a methods f... |
 | [HealthCard.tsx](../../app/web/src/components/mobile/HealthCard.tsx) | The phone's desk-health card: one line first -- a word, an icon and a colour, never colour alone -- then the reasons in the server's words, then the six readings behind them. |
+| [LedgerDaySheet.tsx](../../app/web/src/components/mobile/LedgerDaySheet.tsx) | One ledger day's trades, from the bottom of the screen (owner, 30 Oct 2026: "the entries under a day, a tap opens a popup: entry, exit, charges, P&L, the strike, PE or CE, entry time, exit time --... |
 | [MobileApp.tsx](../../app/web/src/components/mobile/MobileApp.tsx) | Home and the More list come with the phone; every other screen is a chunk of its own (10 Oct 2026), so the first screen paints without downloading the thirteen behind it. |
 | [OpenLimits.tsx](../../app/web/src/components/mobile/OpenLimits.tsx) | The limits on open trades, on the phone (owner, 12 Oct 2026: "show it on the phone -- user friendly, mobile friendly"): how much of "at most open" is in use, and each side's own limit under it -- c... |
 | [PairList.tsx](../../app/web/src/components/mobile/PairList.tsx) | One list of method + timeframe pairs on the phone (owner, 6 Oct 2026): the best, or the worst -- of the closed trades on P&L, or of the signal history under More. |

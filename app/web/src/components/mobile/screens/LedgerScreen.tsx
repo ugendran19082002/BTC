@@ -9,6 +9,7 @@ import { daysAgoIst, todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Empty, Loading, Panel, Pill, Rupees, Segmented, Stat, Stats } from '@/components/mobile/parts';
+import { LedgerDaySheet } from '@/components/mobile/LedgerDaySheet';
 
 /**
  * The ledger (owner, 29 Oct 2026: "a ledger on the phone, day by day -- profit, loss, charges, others; my system's
@@ -52,6 +53,8 @@ export function LedgerScreen() {
   const [problem, setProblem] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  // The day whose trades are open in the sheet (30 Oct 2026, owner: "the entries under a day, a tap opens a popup").
+  const [tradesOf, setTradesOf] = useState<string | null>(null);
   const [polled, setPolled] = useState<LedgerSync | null>(null);
   const running = polled?.status === 'running' || asking !== null;
   const led = usePoll(() => getLedger(from, today, p.accountParam).then((x) => { setPolled(x.sync ?? null); return x; }), running ? 3_000 : 60_000, { deps: [from, today, p.accountParam] });
@@ -146,11 +149,15 @@ export function LedgerScreen() {
                   <DayItem
                     key={d.day} d={d} today={today} open={open === d.day} onToggle={() => setOpen(open === d.day ? null : d.day)}
                     syncing={asking === d.day || jobDay === d.day || (jobRunning && job.day === d.day)} busy={busy} onSync={() => void start(d.day)}
+                    onTrades={() => setTradesOf(d.day)}
                   />
                 ))}
               </ul>
             )}
           </Panel>
+          {tradesOf && (
+            <LedgerDaySheet day={tradesOf} account={p.accountParam} showAccount={p.accountParam === null} onOpenTrade={p.openTrade} onClose={() => setTradesOf(null)} />
+          )}
           <p className="m-0 px-1 text-[12px] leading-snug text-muted-foreground">
             Desk: every fill of the day, the profit and loss of each exit, Delta&apos;s charges on each fill. Delta: the day&apos;s wallet entries --
             trading and charges against the desk, credits as others, deposits and withdrawals apart. They match within ₹{Math.round(usdToInr(r.toleranceUsd) ?? 0)}.
@@ -216,8 +223,8 @@ function Reconciled({ checked, matched, mismatched, days }: { checked: number; m
 }
 
 /** One day: its figures at a glance, and opened, the desk and Delta side by side. */
-function DayItem({ d, today, open, onToggle, syncing, busy, onSync }: {
-  d: LedgerDay; today: string; open: boolean; onToggle: () => void; syncing: boolean; busy: boolean; onSync: () => void;
+function DayItem({ d, today, open, onToggle, syncing, busy, onSync, onTrades }: {
+  d: LedgerDay; today: string; open: boolean; onToggle: () => void; syncing: boolean; busy: boolean; onSync: () => void; onTrades: () => void;
 }) {
   const v = VERDICT[d.status];
   const name = d.day === today ? 'Today' : dayLabel(d.day);
@@ -253,7 +260,7 @@ function DayItem({ d, today, open, onToggle, syncing, busy, onSync }: {
           {d.changed && <span className="text-[var(--warn)]"> · changed since checked</span>}
         </span>
       </button>
-      {open && <DayDetail d={d} syncing={syncing} busy={busy} onSync={onSync} />}
+      {open && <DayDetail d={d} syncing={syncing} busy={busy} onSync={onSync} onTrades={onTrades} />}
     </li>
   );
 }
@@ -269,7 +276,7 @@ function Mini({ label, value, tone }: { label: string; value: string; tone?: 'up
 }
 
 /** The desk and Delta side by side, line by line; the difference; where it lies; when and how it was checked. */
-function DayDetail({ d, syncing, busy, onSync }: { d: LedgerDay; syncing: boolean; busy: boolean; onSync: () => void }) {
+function DayDetail({ d, syncing, busy, onSync, onTrades }: { d: LedgerDay; syncing: boolean; busy: boolean; onSync: () => void; onTrades: () => void }) {
   const w = d.delta;
   const line = (label: string, desk: number | null, delta: number | null, strong = false) => (
     <div className={cn('grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] items-baseline gap-2 py-1 text-[13px] tabular-nums', strong && 'font-semibold')}>
@@ -280,6 +287,15 @@ function DayDetail({ d, syncing, busy, onSync }: { d: LedgerDay; syncing: boolea
   );
   return (
     <div className="mt-2 rounded-lg border border-solid border-[var(--line-soft)] px-3 py-2" aria-label="The day, desk and Delta">
+      {d.desk.trades > 0 && (
+        <button
+          type="button" onClick={onTrades}
+          className="mb-2 flex h-11 w-full items-center justify-between gap-2 rounded-lg border-0 bg-muted px-3 font-[inherit] text-[14px] font-medium text-foreground"
+        >
+          <span>See the {d.desk.trades.toLocaleString('en-IN')} trade{d.desk.trades === 1 ? '' : 's'}</span>
+          <span aria-hidden="true" className="text-muted-foreground">›</span>
+        </button>
+      )}
       <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 border-b border-solid border-x-0 border-t-0 border-[var(--line-soft)] pb-1 text-[11.5px] font-semibold uppercase tracking-[0.5px] text-muted-foreground">
         <span />
         <span className="text-right">Desk</span>

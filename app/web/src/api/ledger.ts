@@ -48,3 +48,15 @@ export const syncLedger = (day: string | null, account: number | null) =>
 /** Sync every day from `from` to `to` (30 Oct 2026, owner: "7 days chosen, sync all seven"): one job, newest day first. */
 export const syncLedgerRange = (from: string, to: string, account: number | null) =>
   post<SyncStarted>('/api/ledger/sync', { from, to, ...(account === null ? {} : { accountId: account }) });
+
+/** One trade of a ledger day (server: ledger/day-trades.ts): the whole trade's figures, in dollars. */
+export type DayTrade = {
+  tradeId: string; symbol: string; strike: number | null; optionSide: 'CE' | 'PE'; action: 'sell' | 'buy'; contracts: number;
+  entryAt: number | null; exitAt: number | null; entryPrice: number | null; exitPrice: number | null;
+  chargesUsd: number; grossUsd: number; netUsd: number;
+  exitBy: 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'manual' | null;
+  open: boolean; spans: boolean; strategy: string | null; account: { id: number; name: string } | null; orderIds: string[];
+};
+/** A ledger day's trades, newest exit first, and the day's own figures -- the ledger row's. */
+export const getLedgerDay = (day: string, account: number | null) =>
+  json<{ day: string; account: number | null; desk: DeskDay; trades: DayTrade[] }>(`/api/ledger/day?day=${day}${account === null ? '' : `&account=${account}`}`);

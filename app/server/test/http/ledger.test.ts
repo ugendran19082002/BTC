@@ -282,3 +282,48 @@ test('[critical] a range synced as one job: answered at once, read newest first,
     assert.match(r.body.error, why);
   }
 });
+
+test('[critical] a day\'s trades, each on its line -- strike, side, in and out, charges, net -- adding up to the ledger row; a trade over midnight on both days, said', async () => {
+  const row = (await call('GET', `/api/ledger?from=${YESTERDAY}&to=${YESTERDAY}&account=${one}`)).body.days[0];
+  const r = await call('GET', `/api/ledger/day?day=${YESTERDAY}&account=${one}`);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const ts = r.body.trades as any[];
+  assert.equal(ts.length, row.desk.trades);
+  assert.deepEqual(r.body.desk, row.desk, 'the day\'s own figures are the ledger row\'s');
+  const sum = (k: string) => ts.reduce((n, t) => n + t[k], 0);
+  assert.ok(Math.abs(sum('netUsd') - row.desk.netUsd) < 1e-9, 'the lines add up to the row');
+  assert.ok(Math.abs(sum('chargesUsd') - row.desk.chargesUsd) < 1e-9);
+  const t = ts.find((x) => x.exitPrice === 90)!;
+  assert.deepEqual([t.strike, t.optionSide, t.action, t.contracts, t.entryPrice, t.open, t.spans, t.exitBy, t.strategy, t.account.id],
+    [84000, 'PE', 'sell', 10, 40, false, false, 'option-tgt', '15m time', one]);
+  assert.ok(t.entryAt < t.exitAt);
+  assert.ok(Math.abs(t.grossUsd - (40 - 90) * 10 * 0.001) < 1e-9);
+  assert.ok(Math.abs(t.netUsd - (t.grossUsd - t.chargesUsd)) < 1e-12);
+  assert.deepEqual(t.orderIds, [`${t.tradeId}-e`, `${t.tradeId}-x`]);
+  assert.ok(ts.every((x, i) => i === 0 || (ts[i - 1].exitAt ?? 0) >= (x.exitAt ?? 0)), 'newest exit first');
+
+  // Sold at 11:50 PM, bought back at 12:10 AM: the trade is on both days, whole; each day counts its own fill.
+  const id = 'P-BTC-84000-LG-MIDNIGHT';
+  const late = Date.parse(`${YESTERDAY}T23:50:00+05:30`), early = late + 20 * 60_000;
+  const plan = { tradeId: id, symbol: 'P-BTC-84000-281026', origin: 'strategy', strategyId: '15m-time', strategyName: '15m time', accountId: one, lots: 10,
+    entry: { type: 'limit', limitPrice: 40, timeoutMs: 5000, marketFallback: false }, takeProfitPrice: 4, stopPrice: 140 };
+  const state = { tradeId: id, symbol: plan.symbol, productId: 1, phase: 'flat', position: 0, optionSide: 'PE', contractValue: 0.001, requestedSize: 10, entrySize: 10,
+    entryAvgPrice: 40, exitSize: 10, exitAvgPrice: 4, realisedPnl: 0.36, exitWinner: 'take_profit', exitReason: null, updatedAt: early,
+    fills: [{ orderId: `${id}-e`, role: 'entry', side: 'sell', size: 10, price: 40, ts: late }, { orderId: `${id}-x`, role: 'take_profit', side: 'buy', size: 10, price: 4, ts: early }],
+    protection: { takeProfit: null, stopLoss: null }, wantsProtection: true };
+  await query('INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at, broker_account_id) VALUES ($1, $2, $3, 0, $4, $5, $6, $7)',
+    [id, plan.symbol, 'flat', JSON.stringify(plan), JSON.stringify(state), early, one]);
+  for (const d of [YESTERDAY, istDate(NOW)]) {
+    const m = ((await call('GET', `/api/ledger/day?day=${d}&account=${one}`)).body.trades as any[]).find((x) => x.tradeId === id);
+    assert.ok(m, d);
+    assert.equal(m.spans, true);
+    assert.ok(Math.abs(m.grossUsd - 0.36) < 1e-9, 'the whole trade\'s figures');
+  }
+
+  assert.equal(((await call('GET', `/api/ledger/day?day=${YESTERDAY}&account=${two}`)).body.trades as any[]).length, 0, 'one account\'s');
+  for (const [q, why] of [['day=28-10-2026', /YYYY-MM-DD/], [`day=${istDate(NOW + 2 * DAY_MS)}`, /still to come/]] as const) {
+    const bad = await call('GET', `/api/ledger/day?${q}`);
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.error, why);
+  }
+});
