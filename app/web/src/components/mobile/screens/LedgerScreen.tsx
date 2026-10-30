@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
-import { getLedger, syncLedger, syncLedgerRange, type LedgerDay, type LedgerProgress, type LedgerStatus } from '@/api/ledger';
+import { getLedger, syncLedger, syncLedgerRange, type LedgerDay, type LedgerStatus, type LedgerSync } from '@/api/ledger';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { signedInr, stamp, usdToInr } from '@/lib/format';
@@ -42,27 +42,41 @@ export function LedgerScreen() {
   const range = RANGES.find((r) => r.key === rangeKey) ?? RANGES[0]!;
   const today = todayIst(p.now);
   const from = daysAgoIst(range.days - 1, p.now);
-  const [ranging, setRanging] = useState(false);
-  // Every three seconds while a range is being checked, so its days fill in as they are read; a minute otherwise.
-  const [fast, setFast] = useState(false);
-  const led = usePoll(() => getLedger(from, today, p.accountParam), fast ? 3_000 : 60_000, { deps: [from, today, p.accountParam] });
-  const [syncing, setSyncing] = useState<string | null>(null);
+  /*
+   * The sync is the server's (30 Oct 2026, owner: "the loading state after a refresh, an old click still working; no
+   * duplicate sync"): which button turns, how far it has got and which day it is reading are all read off the job it
+   * keeps, so a refresh, another phone, or the desk show the same -- and a tap while one runs is handed that one. Asked
+   * every three seconds while it runs, so its days fill in as they are read; a minute otherwise.
+   */
+  const [asking, setAsking] = useState<'today' | 'range' | string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const progress = led.data?.progress ?? null;
-  const rangeRunning = progress !== null || ranging;
-  useEffect(() => { setFast(progress !== null); }, [progress !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [polled, setPolled] = useState<LedgerSync | null>(null);
+  const running = polled?.status === 'running' || asking !== null;
+  const led = usePoll(() => getLedger(from, today, p.accountParam).then((x) => { setPolled(x.sync ?? null); return x; }), running ? 3_000 : 60_000, { deps: [from, today, p.accountParam] });
+  const job = led.data?.sync ?? null;
+  const jobRunning = job?.status === 'running';
+  const busy = jobRunning || asking !== null;
+  // What the running job is: today alone, one other day, or a range -- the button it turns.
+  const jobIsToday = jobRunning && job.total === 1 && job.days[0] === today;
+  const jobIsRange = jobRunning && job.total > 1;
+  const jobDay = jobRunning && job.total === 1 ? job.days[0] : null;
 
-  const sync = async (day: string | null) => {
-    setSyncing(day ?? today);
+  const start = async (what: 'today' | 'range' | string) => {
+    setAsking(what);
     setProblem(null);
-    try { await syncLedger(day, p.accountParam); await led.refresh(); } catch (e) { setProblem((e as Error).message); } finally { setSyncing(null); }
-  };
-  // The range on screen, every day of it: started at once, its days read in the background, newest first.
-  const syncRange = async () => {
-    setRanging(true);
-    setProblem(null);
-    try { await syncLedgerRange(from, today, p.accountParam); setFast(true); await led.refresh(); } catch (e) { setProblem((e as Error).message); } finally { setRanging(false); }
+    setNote(null);
+    try {
+      const res = what === 'range' ? await syncLedgerRange(from, today, p.accountParam) : await syncLedger(what === 'today' ? null : what, p.accountParam);
+      if (res.already) setNote(`A sync was already running (${res.sync.total === 1 ? dayLabel(res.sync.days[0]!) : `${res.sync.total} days`}): following it, nothing new started.`);
+      setPolled(res.sync);
+      await led.refresh();
+    } catch (e) {
+      setProblem((e as Error).message);
+    } finally {
+      setAsking(null);
+    }
   };
 
   const r = led.data;
@@ -103,22 +117,23 @@ export function LedgerScreen() {
               {/* Two in a row (owner, 30 Oct 2026: "beside Sync today, a second column"): today now, or every day of the range shown. */}
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  type="button" disabled={syncing !== null || rangeRunning || r.accounts.length === 0} onClick={() => void sync(null)}
+                  type="button" disabled={busy || r.accounts.length === 0} onClick={() => void start('today')} aria-busy={jobIsToday || asking === 'today'}
                   className="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg border-0 bg-[var(--up)] px-2 font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-50"
                 >
-                  <RefreshCw aria-hidden="true" className={cn('h-4 w-4 shrink-0', syncing === today && 'animate-spin')} />
-                  <span className="truncate">{syncing === today ? 'Checking…' : 'Sync today'}</span>
+                  <RefreshCw aria-hidden="true" className={cn('h-4 w-4 shrink-0', (jobIsToday || asking === 'today') && 'animate-spin')} />
+                  <span className="truncate">{jobIsToday || asking === 'today' ? 'Checking…' : 'Sync today'}</span>
                 </button>
                 <button
-                  type="button" disabled={syncing !== null || rangeRunning || r.accounts.length === 0} onClick={() => void syncRange()}
-                  aria-label={`Sync all ${range.days} days with Delta`}
+                  type="button" disabled={busy || r.accounts.length === 0} onClick={() => void start('range')} aria-busy={jobIsRange || asking === 'range'}
+                  aria-label={jobIsRange ? `Checking ${job.done} of ${job.total} days` : `Sync all ${range.days} days with Delta`}
                   className="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-solid border-[var(--up)] bg-transparent px-2 font-[inherit] text-[14px] font-semibold text-[var(--up)] disabled:opacity-50"
                 >
-                  <RefreshCw aria-hidden="true" className={cn('h-4 w-4 shrink-0', rangeRunning && 'animate-spin')} />
-                  <span className="truncate">{rangeRunning ? 'Checking…' : `Sync ${range.days} days`}</span>
+                  <RefreshCw aria-hidden="true" className={cn('h-4 w-4 shrink-0', (jobIsRange || asking === 'range') && 'animate-spin')} />
+                  <span className="truncate tabular-nums">{jobIsRange ? `${job.done} of ${job.total}…` : asking === 'range' ? 'Starting…' : `Sync ${range.days} days`}</span>
                 </button>
               </div>
-              {progress && <RangeProgress p={progress} />}
+              {job && <SyncStatus job={job} />}
+              {note && <p role="status" className="m-0 text-[12.5px] text-[var(--warn)]">{note}</p>}
               {r.accounts.length === 0 && <p className="m-0 text-[12.5px] text-[var(--warn)]">No broker account is switched on: there is no Delta wallet to check against.</p>}
               {problem && <p role="alert" className="m-0 text-[12.5px] text-[var(--down)]">{problem}</p>}
             </section>
@@ -130,7 +145,7 @@ export function LedgerScreen() {
                 {r.days.map((d) => (
                   <DayItem
                     key={d.day} d={d} today={today} open={open === d.day} onToggle={() => setOpen(open === d.day ? null : d.day)}
-                    syncing={syncing === d.day} busy={syncing !== null || rangeRunning} onSync={() => void sync(d.day)}
+                    syncing={asking === d.day || jobDay === d.day || (jobRunning && job.day === d.day)} busy={busy} onSync={() => void start(d.day)}
                   />
                 ))}
               </ul>
@@ -147,20 +162,35 @@ export function LedgerScreen() {
   );
 }
 
-/** A range being checked: how far it has got, as a bar and in words, and the day it is reading. */
-function RangeProgress({ p }: { p: LedgerProgress }) {
-  const share = p.total ? p.done / p.total : 0;
-  return (
-    <div role="status" aria-label="Range sync">
-      <p className="m-0 mb-1 flex flex-wrap justify-between gap-x-2 text-[12.5px]">
-        <span className="text-muted-foreground">Checking {p.total} days with Delta{p.day ? ` · now ${dayLabel(p.day)}` : ''}</span>
-        <span className="font-medium tabular-nums">{p.done} of {p.total}</span>
-      </p>
-      <div className="h-2 overflow-hidden rounded-full bg-muted" role="presentation">
-        <div className="h-full rounded-full bg-[var(--up)] transition-[width]" style={{ width: `${Math.round(share * 100)}%` }} />
+/**
+ * The sync, as the server keeps it: running -- how far, the day it is reading, a bar -- or how the last one ended, with
+ * why when it did not finish. The same after a refresh as before it.
+ */
+function SyncStatus({ job }: { job: LedgerSync }) {
+  const what = job.total === 1 ? dayLabel(job.days[0]!) : `${job.total} days`;
+  if (job.status === 'running') {
+    const share = job.total ? job.done / job.total : 0;
+    return (
+      <div role="status" aria-label="Sync with Delta, running">
+        <p className="m-0 mb-1 flex flex-wrap justify-between gap-x-2 text-[12.5px]">
+          <span className="text-muted-foreground">Checking {what} with Delta{job.total > 1 && job.day ? ` · now ${dayLabel(job.day)}` : ''}</span>
+          {job.total > 1 && <span className="font-medium tabular-nums">{job.done} of {job.total}</span>}
+        </p>
+        <div className="h-2 overflow-hidden rounded-full bg-muted" role="presentation">
+          <div className={cn('h-full rounded-full bg-[var(--up)] transition-[width]', job.total === 1 && 'animate-pulse')} style={{ width: `${job.total === 1 ? 100 : Math.round(share * 100)}%` }} />
+        </div>
+        <p className="m-0 mt-1 text-[11.5px] text-muted-foreground">
+          Kept by the desk: it carries on if you leave or refresh this screen{job.resumed ? ', and it carried on after the desk restarted' : ''}. It waits whenever Delta is busy with the desk&apos;s orders.
+        </p>
       </div>
-      <p className="m-0 mt-1 text-[11.5px] text-muted-foreground">Newest day first; it waits whenever Delta is busy with the desk&apos;s orders.</p>
-    </div>
+    );
+  }
+  return (
+    <p role="status" aria-label="Sync with Delta, last" className={cn('m-0 text-[12.5px]', job.status === 'failed' ? 'text-[var(--down)]' : 'text-muted-foreground')}>
+      {job.status === 'failed'
+        ? <>The last sync ({what}) stopped after {job.done} of {job.total}: {job.error ?? 'it did not finish'}.</>
+        : <>Last sync: {what}, finished <span className="tabular-nums text-[var(--time)]">{stamp(job.finishedAt ?? job.startedAt)}</span>.</>}
+    </p>
   );
 }
 

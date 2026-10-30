@@ -19,12 +19,18 @@ export type LedgerDay = {
   checkedDeskUsd: number | null; changed: boolean; checkedAt: number | null; how: 'auto' | 'manual' | null;
   perAccount?: { accountId: number; name: string; status: LedgerStatus; diffUsd: number | null }[];
 };
-/** A range being checked in the background: how many days, how many done, the one being read now. */
-export type LedgerProgress = { from: string; to: string; total: number; done: number; day: string | null; startedAt: number };
+/**
+ * A sync asked for by hand, as the server keeps it (`ledger_syncs`): its days newest first, how many done, the one being
+ * read; running, done, or failed with why. One runs at a time, whoever asked.
+ */
+export type LedgerSync = {
+  id: number; accountId: number | null; days: string[]; total: number; done: number; day: string | null;
+  status: 'running' | 'done' | 'failed'; error: string | null; resumed: number; startedAt: number; finishedAt: number | null;
+};
 export type Ledger = {
   from: string; to: string; account: number | null; accounts: { id: number; name: string }[]; busy: boolean; lastAutoAt: number | null;
-  /** Absent from an older server. */
-  progress?: LedgerProgress | null;
+  /** The sync running now, or the newest one; absent from an older server. */
+  sync?: LedgerSync | null;
   toleranceUsd: number; days: LedgerDay[];
   totals: { desk: Omit<DeskDay, 'open'>; delta: WalletDay | null; days: number; checked: number; matched: number; mismatched: number };
 };
@@ -32,10 +38,13 @@ export type Ledger = {
 export const getLedger = (from: string, to: string, account: number | null) =>
   json<Ledger>(`/api/ledger?from=${from}&to=${to}${account === null ? '' : `&account=${account}`}`);
 
-/** Check a day now: today without one, every account without one. */
-export const syncLedger = (day: string | null, account: number | null) =>
-  post<{ day: string; rows: unknown[] }>('/api/ledger/sync', { ...(day ? { day } : {}), ...(account === null ? {} : { accountId: account }) });
+/** What a sync asked for answers: the job, and `already` when one was running and that one is answered instead. */
+export type SyncStarted = { sync: LedgerSync; already: boolean };
 
-/** Check every day from `from` to `to` (30 Oct 2026, owner: "7 days chosen, sync all seven"): started at once, read in the background. */
+/** Sync a day: today without one, every account without one. A job, answered at once and followed on `getLedger`. */
+export const syncLedger = (day: string | null, account: number | null) =>
+  post<SyncStarted>('/api/ledger/sync', { ...(day ? { day } : {}), ...(account === null ? {} : { accountId: account }) });
+
+/** Sync every day from `from` to `to` (30 Oct 2026, owner: "7 days chosen, sync all seven"): one job, newest day first. */
 export const syncLedgerRange = (from: string, to: string, account: number | null) =>
-  post<{ started: true; from: string; to: string; days: number }>('/api/ledger/sync', { from, to, ...(account === null ? {} : { accountId: account }) });
+  post<SyncStarted>('/api/ledger/sync', { from, to, ...(account === null ? {} : { accountId: account }) });
