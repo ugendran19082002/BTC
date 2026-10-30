@@ -42,6 +42,30 @@ const MIGRATIONS: Migration[] = [{
     );
     CREATE INDEX IF NOT EXISTS ledger_days_by_day ON ledger_days (day DESC);
   `,
+}, {
+  /*
+   * Every sync asked for by hand, kept (owner, 30 Oct 2026: "the loading state after a refresh, an old click still
+   * working; no duplicate sync -- save it in the backend; one sync at a time, best practice"). The partial unique index
+   * is what makes it one at a time: a second tap, a second phone, the new API while the old one hands over in a deploy
+   * -- the database lets one row be running, and every other asker is handed that one.
+   */
+  id: 'ledger-002-syncs',
+  up: `
+    CREATE TABLE IF NOT EXISTS ledger_syncs (
+      id          BIGINT  GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      account_id  BIGINT,
+      days        JSONB   NOT NULL,
+      done        INTEGER NOT NULL DEFAULT 0,
+      day         TEXT,
+      status      TEXT    NOT NULL CHECK (status IN ('running', 'done', 'failed')),
+      error       TEXT,
+      resumed     INTEGER NOT NULL DEFAULT 0,
+      started_at  BIGINT  NOT NULL,
+      finished_at BIGINT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ledger_syncs_one_running ON ledger_syncs ((true)) WHERE status = 'running';
+    CREATE INDEX IF NOT EXISTS ledger_syncs_by_time ON ledger_syncs (started_at DESC);
+  `,
 }];
 
 let ready: Promise<void> | null = null;
@@ -213,6 +237,106 @@ export function checkDays(day: string, accountIds: readonly number[] | null, how
   const next = (running ?? Promise.resolve([])).then(run, run).finally(() => { if (running === next) running = null; });
   running = next;
   return next;
+}
+
+/**
+ * A sync asked for by hand -- one day or a range -- as a job the database keeps (`ledger_syncs`): its days newest first,
+ * how many are done, the one being read. Started once (`startSync`): asked again while it runs, whoever asks is handed
+ * the one running, never a second. Run in the background (`runSync`), one day after another, every account a day,
+ * waiting while Delta's quota is busy (`QUIET_PCT`, up to a minute a day) so a week of wallet reads never crowds the
+ * desk's orders. A restart in the middle -- a deploy -- picks it up where it stopped (`resumeSync`, at boot).
+ */
+export type LedgerSync = {
+  id: number; accountId: number | null; days: string[]; total: number; done: number; day: string | null;
+  status: 'running' | 'done' | 'failed'; error: string | null; resumed: number; startedAt: number; finishedAt: number | null;
+};
+type SyncRow = { id: string; account_id: string | null; days: string[]; done: number; day: string | null; status: LedgerSync['status']; error: string | null; resumed: number; started_at: string; finished_at: string | null };
+const syncOf = (r: SyncRow): LedgerSync => ({
+  id: Number(r.id), accountId: r.account_id === null ? null : Number(r.account_id), days: r.days, total: r.days.length, done: r.done, day: r.day,
+  status: r.status, error: r.error, resumed: r.resumed, startedAt: Number(r.started_at), finishedAt: r.finished_at === null ? null : Number(r.finished_at),
+});
+const SYNC_COLS = 'id, account_id, days, done, day, status, error, resumed, started_at, finished_at';
+/** A job that has resumed this many times is given up on: something in it fails every time. */
+const MAX_RESUMES = 3;
+
+/** The sync running now, or the newest one -- what the screen shows, after a refresh as before it. */
+export async function currentSync(): Promise<LedgerSync | null> {
+  await ledgerSchema();
+  const r = await one<SyncRow>(`SELECT ${SYNC_COLS} FROM ledger_syncs ORDER BY (status = 'running') DESC, started_at DESC, id DESC LIMIT 1`);
+  return r ? syncOf(r) : null;
+}
+
+/**
+ * Start a sync of `days` (any order; one is a day) for one account, or every one with null. `already`: a sync was
+ * running, and that one is answered instead -- this one is not started.
+ */
+export async function startSync(days: readonly string[], accountId: number | null, now = Date.now()): Promise<{ sync: LedgerSync; already: boolean }> {
+  await ledgerSchema();
+  const newestFirst = [...new Set(days)].sort().reverse();
+  const made = await one<SyncRow>(
+    `INSERT INTO ledger_syncs (account_id, days, status, started_at) VALUES ($1, $2, 'running', $3)
+     ON CONFLICT DO NOTHING RETURNING ${SYNC_COLS}`,
+    [accountId, JSON.stringify(newestFirst), now],
+  );
+  if (!made) {
+    const running = await one<SyncRow>(`SELECT ${SYNC_COLS} FROM ledger_syncs WHERE status = 'running' LIMIT 1`);
+    if (running) return { sync: syncOf(running), already: true };
+    return startSync(days, accountId, now);          // it finished between the two reads: start this one
+  }
+  const sync = syncOf(made);
+  void runSync(sync);
+  return { sync, already: false };
+}
+
+/** For the tests: how long a sync waits between looks at a busy quota. */
+let quotaWaitMs = 2_000;
+export const setLedgerQuotaWait = (ms: number) => { quotaWaitMs = ms; };
+/** The job this process is running: one at a time here as in the table. */
+let inProcess: Promise<void> | null = null;
+/** For the tests: the job this process is running, to wait for. */
+export const syncRunning = () => inProcess;
+
+function runSync(job: LedgerSync): Promise<void> {
+  const run = async () => {
+    const accounts = ledgerAccounts().map((a) => a.id);
+    const ids = job.accountId === null ? null : accounts.includes(job.accountId) ? [job.accountId] : [];
+    try {
+      for (let i = job.done; i < job.days.length; i++) {
+        const day = job.days[i]!;
+        await query(`UPDATE ledger_syncs SET day = $2 WHERE id = $1`, [job.id, day]);
+        for (let waited = 0; deskMetrics().delta.usedPct > QUIET_PCT && waited < 60_000; waited += quotaWaitMs) await new Promise((r) => setTimeout(r, quotaWaitMs));
+        if (ids === null || ids.length) await checkDays(day, ids, 'manual');
+        await query(`UPDATE ledger_syncs SET done = $2 WHERE id = $1`, [job.id, i + 1]);
+      }
+      await query(`UPDATE ledger_syncs SET status = 'done', day = NULL, finished_at = $2 WHERE id = $1`, [job.id, Date.now()]);
+    } catch (e) {
+      const message = (e as Error).message;
+      noteError({ source: 'server', level: 'warn', where: 'ledger', message: `ledger sync not finished: ${message}` });
+      await query(`UPDATE ledger_syncs SET status = 'failed', error = $2, finished_at = $3 WHERE id = $1`, [job.id, message.slice(0, 300), Date.now()]).catch(() => {});
+    }
+  };
+  const next = (inProcess ?? Promise.resolve()).then(run, run).finally(() => { if (inProcess === next) inProcess = null; });
+  inProcess = next;
+  return next;
+}
+
+/**
+ * At boot (index.ts): a sync the last process left running -- a deploy, a crash -- carries on from the day it had got
+ * to. One that has been picked up `MAX_RESUMES` times already is failed, with why, rather than tried for ever.
+ */
+export async function resumeSync(): Promise<LedgerSync | null> {
+  await ledgerSchema();
+  const r = await one<SyncRow>(`SELECT ${SYNC_COLS} FROM ledger_syncs WHERE status = 'running' LIMIT 1`);
+  if (!r) return null;
+  const job = syncOf(r);
+  if (job.resumed >= MAX_RESUMES) {
+    await query(`UPDATE ledger_syncs SET status = 'failed', error = $2, finished_at = $3 WHERE id = $1`,
+      [job.id, `Stopped by ${MAX_RESUMES} restarts in the middle: sync again.`, Date.now()]);
+    return null;
+  }
+  await query(`UPDATE ledger_syncs SET resumed = resumed + 1 WHERE id = $1`, [job.id]);
+  void runSync({ ...job, resumed: job.resumed + 1 });
+  return job;
 }
 
 /** Delta's quota this busy, the catching-up waits: an order matters more than yesterday's ledger. */

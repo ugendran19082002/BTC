@@ -178,4 +178,13 @@ export async function readWallet(creds: Creds, fromMs: number, toMs: number): Pr
   return { entries, complete: false, read };
 }
 
-const dedupe = (xs: WalletEntry[]) => { const seen = new Set<string>(); return xs.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true))); };
+/**
+ * Each entry once, however the pages overlapped at their edges. By the whole entry -- its id, time, type, amount, the
+ * balance after it -- never the id alone (30 Oct 2026: the live read kept 1 of 2,179 rows a day; Delta's wallet rows
+ * do not carry an id that tells them apart, its reference shows `"id": 0`). Two entries the same in all of that are one.
+ */
+export const distinctEntries = (xs: readonly WalletEntry[]): WalletEntry[] => {
+  const seen = new Set<string>();
+  return xs.filter((x) => { const k = `${x.id}|${x.at}|${x.type}|${x.amount}|${x.balance}|${x.asset}`; return seen.has(k) ? false : (seen.add(k), true); });
+};
+const dedupe = distinctEntries;

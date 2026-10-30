@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketOf, signsOf, timeOf, walletDayOf, type WalletEntry } from '../../src/ledger/wallet.js';
+import { bucketOf, distinctEntries, signsOf, timeOf, walletDayOf, type WalletEntry } from '../../src/ledger/wallet.js';
 
 /**
  * A day of Delta's wallet summed (29 Oct 2026, the ledger): by what each entry is, its sign read off Delta's own
@@ -76,4 +76,12 @@ test('[critical] Delta\'s times however it writes them: microseconds in a string
   assert.equal(timeOf('2024-09-09T06:56:52Z'), ms);
   assert.equal(timeOf('2024-09-09T06:56:52.123456Z'), ms + 123);
   for (const bad of [null, undefined, '', 'yesterday', '0', -5, {}]) assert.equal(timeOf(bad), null, String(bad));
+});
+
+test('[critical] each entry once by the whole entry, never the id alone: Delta\'s rows share one id, and a day of them was read as one', () => {
+  // 30 Oct 2026, live: 2,179 rows read, 1 kept -- every row the same id.
+  const rows = Array.from({ length: 2_179 }, (_, i): WalletEntry => ({ id: '0', at: AT + i * 1_000, type: i % 2 ? 'commission' : 'cashflow', amount: 0.01, balance: 100 + i * 0.01, asset: 'USD' }));
+  assert.equal(distinctEntries(rows).length, 2_179);
+  // An overlap between two pages: the same entry twice is once.
+  assert.equal(distinctEntries([...rows.slice(0, 100), ...rows.slice(95, 200)]).length, 200);
 });

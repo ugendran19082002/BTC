@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
-import { getLedger, syncLedger, type LedgerDay, type LedgerStatus } from '@/api/ledger';
+import { getLedger, syncLedger, syncLedgerRange, type LedgerDay, type LedgerProgress, type LedgerStatus } from '@/api/ledger';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { signedInr, stamp, usdToInr } from '@/lib/format';
@@ -42,15 +42,27 @@ export function LedgerScreen() {
   const range = RANGES.find((r) => r.key === rangeKey) ?? RANGES[0]!;
   const today = todayIst(p.now);
   const from = daysAgoIst(range.days - 1, p.now);
-  const led = usePoll(() => getLedger(from, today, p.accountParam), 60_000, { deps: [from, today, p.accountParam] });
+  const [ranging, setRanging] = useState(false);
+  // Every three seconds while a range is being checked, so its days fill in as they are read; a minute otherwise.
+  const [fast, setFast] = useState(false);
+  const led = usePoll(() => getLedger(from, today, p.accountParam), fast ? 3_000 : 60_000, { deps: [from, today, p.accountParam] });
   const [syncing, setSyncing] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const progress = led.data?.progress ?? null;
+  const rangeRunning = progress !== null || ranging;
+  useEffect(() => { setFast(progress !== null); }, [progress !== null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sync = async (day: string | null) => {
     setSyncing(day ?? today);
     setProblem(null);
     try { await syncLedger(day, p.accountParam); await led.refresh(); } catch (e) { setProblem((e as Error).message); } finally { setSyncing(null); }
+  };
+  // The range on screen, every day of it: started at once, its days read in the background, newest first.
+  const syncRange = async () => {
+    setRanging(true);
+    setProblem(null);
+    try { await syncLedgerRange(from, today, p.accountParam); setFast(true); await led.refresh(); } catch (e) { setProblem((e as Error).message); } finally { setRanging(false); }
   };
 
   const r = led.data;
@@ -88,13 +100,25 @@ export function LedgerScreen() {
                 Checked by itself every day at 11:59 PM.{' '}
                 {r.lastAutoAt ? <>Last: <span className="tabular-nums text-[var(--time)]">{stamp(r.lastAutoAt)}</span>.</> : 'Not yet run.'}
               </p>
-              <button
-                type="button" disabled={syncing !== null || r.accounts.length === 0} onClick={() => void sync(null)}
-                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border-0 bg-[var(--up)] font-[inherit] text-[14.5px] font-semibold text-[var(--bg)] disabled:opacity-50"
-              >
-                <RefreshCw aria-hidden="true" className={cn('h-4 w-4', syncing === today && 'animate-spin')} />
-                {syncing === today ? 'Checking with Delta…' : 'Sync today with Delta'}
-              </button>
+              {/* Two in a row (owner, 30 Oct 2026: "beside Sync today, a second column"): today now, or every day of the range shown. */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button" disabled={syncing !== null || rangeRunning || r.accounts.length === 0} onClick={() => void sync(null)}
+                  className="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg border-0 bg-[var(--up)] px-2 font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-50"
+                >
+                  <RefreshCw aria-hidden="true" className={cn('h-4 w-4 shrink-0', syncing === today && 'animate-spin')} />
+                  <span className="truncate">{syncing === today ? 'Checking…' : 'Sync today'}</span>
+                </button>
+                <button
+                  type="button" disabled={syncing !== null || rangeRunning || r.accounts.length === 0} onClick={() => void syncRange()}
+                  aria-label={`Sync all ${range.days} days with Delta`}
+                  className="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-solid border-[var(--up)] bg-transparent px-2 font-[inherit] text-[14px] font-semibold text-[var(--up)] disabled:opacity-50"
+                >
+                  <RefreshCw aria-hidden="true" className={cn('h-4 w-4 shrink-0', rangeRunning && 'animate-spin')} />
+                  <span className="truncate">{rangeRunning ? 'Checking…' : `Sync ${range.days} days`}</span>
+                </button>
+              </div>
+              {progress && <RangeProgress p={progress} />}
               {r.accounts.length === 0 && <p className="m-0 text-[12.5px] text-[var(--warn)]">No broker account is switched on: there is no Delta wallet to check against.</p>}
               {problem && <p role="alert" className="m-0 text-[12.5px] text-[var(--down)]">{problem}</p>}
             </section>
@@ -106,7 +130,7 @@ export function LedgerScreen() {
                 {r.days.map((d) => (
                   <DayItem
                     key={d.day} d={d} today={today} open={open === d.day} onToggle={() => setOpen(open === d.day ? null : d.day)}
-                    syncing={syncing === d.day} busy={syncing !== null} onSync={() => void sync(d.day)}
+                    syncing={syncing === d.day} busy={syncing !== null || rangeRunning} onSync={() => void sync(d.day)}
                   />
                 ))}
               </ul>
@@ -120,6 +144,23 @@ export function LedgerScreen() {
         </>
       )}
     </>
+  );
+}
+
+/** A range being checked: how far it has got, as a bar and in words, and the day it is reading. */
+function RangeProgress({ p }: { p: LedgerProgress }) {
+  const share = p.total ? p.done / p.total : 0;
+  return (
+    <div role="status" aria-label="Range sync">
+      <p className="m-0 mb-1 flex flex-wrap justify-between gap-x-2 text-[12.5px]">
+        <span className="text-muted-foreground">Checking {p.total} days with Delta{p.day ? ` · now ${dayLabel(p.day)}` : ''}</span>
+        <span className="font-medium tabular-nums">{p.done} of {p.total}</span>
+      </p>
+      <div className="h-2 overflow-hidden rounded-full bg-muted" role="presentation">
+        <div className="h-full rounded-full bg-[var(--up)] transition-[width]" style={{ width: `${Math.round(share * 100)}%` }} />
+      </div>
+      <p className="m-0 mt-1 text-[11.5px] text-muted-foreground">Newest day first; it waits whenever Delta is busy with the desk&apos;s orders.</p>
+    </div>
   );
 }
 

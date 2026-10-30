@@ -19,8 +19,12 @@ export type LedgerDay = {
   checkedDeskUsd: number | null; changed: boolean; checkedAt: number | null; how: 'auto' | 'manual' | null;
   perAccount?: { accountId: number; name: string; status: LedgerStatus; diffUsd: number | null }[];
 };
+/** A range being checked in the background: how many days, how many done, the one being read now. */
+export type LedgerProgress = { from: string; to: string; total: number; done: number; day: string | null; startedAt: number };
 export type Ledger = {
   from: string; to: string; account: number | null; accounts: { id: number; name: string }[]; busy: boolean; lastAutoAt: number | null;
+  /** Absent from an older server. */
+  progress?: LedgerProgress | null;
   toleranceUsd: number; days: LedgerDay[];
   totals: { desk: Omit<DeskDay, 'open'>; delta: WalletDay | null; days: number; checked: number; matched: number; mismatched: number };
 };
@@ -31,3 +35,7 @@ export const getLedger = (from: string, to: string, account: number | null) =>
 /** Check a day now: today without one, every account without one. */
 export const syncLedger = (day: string | null, account: number | null) =>
   post<{ day: string; rows: unknown[] }>('/api/ledger/sync', { ...(day ? { day } : {}), ...(account === null ? {} : { accountId: account }) });
+
+/** Check every day from `from` to `to` (30 Oct 2026, owner: "7 days chosen, sync all seven"): started at once, read in the background. */
+export const syncLedgerRange = (from: string, to: string, account: number | null) =>
+  post<{ started: true; from: string; to: string; days: number }>('/api/ledger/sync', { from, to, ...(account === null ? {} : { accountId: account }) });

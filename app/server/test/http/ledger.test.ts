@@ -217,3 +217,32 @@ test('the phone hears of a mismatch: both nets, the difference and where it lies
   assert.match(a.text, /LEDGER OFF · High · 2026-10-28/);
   assert.match(a.text, /Desk <b>\+₹530\.40<\/b> \(\+\$6\.24\) · Delta <b>\+₹516\.80<\/b> \(\+\$6\.08\) · off by ₹13\.60 \(\$0\.16\)/);
 });
+
+test('[critical] a range synced at once: started and answered, checked in the background newest first, its progress said, one range at a time', async () => {
+  await query('DELETE FROM ledger_days');
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  // Delta slow on the first day, so the range is seen running.
+  L.setWalletReader(async (_id, from) => { if (from === Date.parse(`${istDate(NOW)}T00:00:00+05:30`)) await gate; return { entries: [], complete: true }; });
+  const from = istDate(NOW - 2 * DAY_MS), to = istDate(NOW);
+  const s = await call('POST', '/api/ledger/sync', { from, to });
+  assert.equal(s.status, 200, JSON.stringify(s.body));
+  assert.deepEqual(s.body, { started: true, from, to, days: 3 });
+  const running = (await call('GET', `/api/ledger?from=${from}&to=${to}`)).body.progress;
+  assert.deepEqual([running.total, running.done, running.day], [3, 0, to], 'newest first, and said while it runs');
+  const again = await call('POST', '/api/ledger/sync', { from, to });
+  assert.equal(again.status, 409);
+  assert.match(again.body.error, /Already checking 3 days \(0 done\)/);
+  release();
+  for (let i = 0; i < 100 && (await call('GET', `/api/ledger?from=${from}&to=${to}`)).body.progress; i++) await new Promise((r) => setTimeout(r, 20));
+  const after = await call('GET', `/api/ledger?from=${from}&to=${to}`);
+  assert.equal(after.body.progress, null);
+  const kept = await L.ledgerRows(null, from, to);
+  assert.equal(kept.length, 3 * 2, 'every day, every account');
+  assert.ok(kept.every((r) => r.how === 'manual'));
+  for (const [body, why] of [[{ from }, /both days/], [{ from: to, to: from }, /must not be after/], [{ from: istDate(NOW - 200 * DAY_MS), to }, /last 92 days/]] as const) {
+    const r = await call('POST', '/api/ledger/sync', body);
+    assert.equal(r.status, 400, JSON.stringify(body));
+    assert.match(r.body.error, why);
+  }
+});

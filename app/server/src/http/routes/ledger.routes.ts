@@ -3,7 +3,7 @@ import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
 import { istDate } from '../../strategy/schedule.js';
 import {
-  LEDGER_MAX_DAYS, TOLERANCE_USD, checkDays, deskDays, ledgerAccounts, ledgerBusy, ledgerRows, lastAutoCheck,
+  LEDGER_MAX_DAYS, TOLERANCE_USD, checkDays, checkRange, deskDays, ledgerAccounts, ledgerBusy, ledgerProgress, ledgerRows, lastAutoCheck,
   type DeskDay, type LedgerRow, type LedgerStatus,
 } from '../../ledger/ledger.js';
 import type { WalletDay } from '../../ledger/wallet.js';
@@ -109,7 +109,7 @@ export function registerLedgerRoutes(app: FastifyInstance) {
     const sumDesk = (k: keyof DeskDay) => days.reduce((n, d) => n + d.desk[k], 0);
     const judged = days.filter((d) => d.delta !== null && d.status !== 'paper' && d.status !== 'unread');
     return {
-      from, to, account, accounts, busy: ledgerBusy(), lastAutoAt, toleranceUsd: TOLERANCE_USD, days,
+      from, to, account, accounts, busy: ledgerBusy(), progress: ledgerProgress(), lastAutoAt, toleranceUsd: TOLERANCE_USD, days,
       totals: {
         desk: { realisedUsd: sumDesk('realisedUsd'), profitUsd: sumDesk('profitUsd'), lossUsd: sumDesk('lossUsd'), chargesUsd: sumDesk('chargesUsd'), netUsd: sumDesk('netUsd'), trades: sumDesk('trades') },
         delta: judged.length ? sumWallet(judged.map((d) => d.delta!)) : null,
@@ -124,22 +124,44 @@ export function registerLedgerRoutes(app: FastifyInstance) {
   /**
    * Check a day now (`day`, today without one; `accountId`, every account without one): the desk's figures and
    * Delta's wallet read again, judged and kept. One check at a time: a second asked while one runs waits for it.
+   *
+   * Or a range (`from` and `to`, the days the screen shows; 30 Oct 2026, owner: "7 days chosen, sync all seven"):
+   * started and answered at once, `started` and how many days, checked in the background newest first (`checkRange`)
+   * while `GET /api/ledger` says how far it has got (`progress`). One range at a time: a second is refused while one runs.
    */
   app.post('/api/ledger/sync', async (req, reply) => {
-    const b = (req.body ?? {}) as { day?: unknown; accountId?: unknown };
+    const b = (req.body ?? {}) as { day?: unknown; from?: unknown; to?: unknown; accountId?: unknown };
     const today = istDate(Date.now());
-    const day = b.day === undefined || b.day === null || b.day === '' ? today : String(b.day);
-    if (!DAY.test(day) || Number.isNaN(Date.parse(day))) return refuse(reply, 400, { error: 'Day must be YYYY-MM-DD.' });
-    if (day > today) return refuse(reply, 400, { error: 'A day still to come has nothing to check.' });
-    if ((Date.parse(today) - Date.parse(day)) / DAY_MS >= LEDGER_MAX_DAYS) return refuse(reply, 400, { error: `Only the last ${LEDGER_MAX_DAYS} days can be checked.` });
+    const given = (v: unknown) => v !== undefined && v !== null && v !== '';
+    const dayProblem = (d: string) => (!DAY.test(d) || Number.isNaN(Date.parse(d)) ? 'Days must be YYYY-MM-DD.'
+      : d > today ? 'A day still to come has nothing to check.'
+        : (Date.parse(today) - Date.parse(d)) / DAY_MS >= LEDGER_MAX_DAYS ? `Only the last ${LEDGER_MAX_DAYS} days can be checked.` : null);
     const accounts = ledgerAccounts();
     let ids: number[] | null = null;
-    if (b.accountId !== undefined && b.accountId !== null && b.accountId !== '') {
+    if (given(b.accountId)) {
       const id = Number(b.accountId);
       if (!accounts.some((a) => a.id === id)) return refuse(reply, 400, { error: 'No such account switched on, or its key cannot be opened.' });
       ids = [id];
     }
     if (accounts.length === 0) return refuse(reply, 409, { error: 'No broker account is switched on: there is no Delta wallet to check against.' });
+
+    if (given(b.from) || given(b.to)) {
+      if (!given(b.from) || !given(b.to)) return refuse(reply, 400, { error: 'Give both days of the range.' });
+      const from = String(b.from), to = String(b.to) > today ? today : String(b.to);
+      const problem = dayProblem(from) ?? dayProblem(to);
+      if (problem) return refuse(reply, 400, { error: problem });
+      if (from > to) return refuse(reply, 400, { error: 'The start day must not be after the end day.' });
+      const days: string[] = [];
+      for (let d = from; d <= to; d = shift(d, 1)) days.push(d);
+      const now = ledgerProgress();
+      if (now) return refuse(reply, 409, { error: `Already checking ${now.total} days (${now.done} done): wait for it to finish.` });
+      void checkRange(days, ids);
+      return { started: true, from, to, days: days.length };
+    }
+
+    const day = given(b.day) ? String(b.day) : today;
+    const problem = dayProblem(day);
+    if (problem) return refuse(reply, 400, { error: problem === 'Days must be YYYY-MM-DD.' ? 'Day must be YYYY-MM-DD.' : problem });
     return { day, rows: await checkDays(day, ids, 'manual') };
   });
 }
