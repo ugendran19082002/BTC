@@ -231,7 +231,9 @@ function DayItem({ d, today, open, onToggle, syncing, busy, onSync }: {
         <span className="flex min-w-0 items-center justify-between gap-2">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-[14.5px] font-semibold">{name}</span>
-            <Pill tone={v.tone}>{v.word(d.diffUsd)}</Pill>
+            {syncing
+              ? <span className="inline-flex items-center gap-1 text-[12px] text-[var(--up)]"><RefreshCw aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> Checking…</span>
+              : <Pill tone={v.tone}>{v.word(d.diffUsd)}</Pill>}
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
             <Rupees usd={d.desk.netUsd} signed size="sm" />

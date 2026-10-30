@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context';
-import type { Ledger, LedgerDay, WalletDay } from '@/api/ledger';
+import type { Ledger, LedgerDay, LedgerSync, WalletDay } from '@/api/ledger';
 import { signedInr, usdToInr } from '@/lib/format';
 
 /**
@@ -10,7 +10,8 @@ import { signedInr, usdToInr } from '@/lib/format';
  */
 const getLedger = vi.fn();
 const syncLedger = vi.fn();
-vi.mock('@/api/ledger', () => ({ getLedger: (...a: unknown[]) => getLedger(...a), syncLedger: (...a: unknown[]) => syncLedger(...a) }));
+const syncLedgerRange = vi.fn();
+vi.mock('@/api/ledger', () => ({ getLedger: (...a: unknown[]) => getLedger(...a), syncLedger: (...a: unknown[]) => syncLedger(...a), syncLedgerRange: (...a: unknown[]) => syncLedgerRange(...a) }));
 const { LedgerScreen } = await import('@/components/mobile/screens/LedgerScreen');
 
 const inr = (usd: number) => signedInr(usdToInr(usd));
@@ -37,6 +38,10 @@ const LEDGER = (o: Partial<Ledger> = {}): Ledger => ({
   totals: { desk: { realisedUsd: 21, profitUsd: 28.5, lossUsd: 7.5, chargesUsd: 2.76, netUsd: 18.24, trades: 642 }, delta: wallet({ othersUsd: 0.2, fundingUsd: 0 }), days: 3, checked: 2, matched: 1, mismatched: 1 },
   ...o,
 });
+const job = (o: Partial<LedgerSync> = {}): LedgerSync => {
+  const days = o.days ?? ['2026-10-29', '2026-10-28', '2026-10-27', '2026-10-26', '2026-10-25', '2026-10-24', '2026-10-23'];
+  return { id: 7, accountId: null, days, total: days.length, done: 0, day: days[0]!, status: 'running', error: null, resumed: 0, startedAt: NOW - 60_000, finishedAt: null, ...o };
+};
 const show = () => render(
   <PhoneContext.Provider value={{ now: NOW, accountParam: null, shown: 'all' } as unknown as PhoneData}>
     <LedgerScreen />
@@ -47,7 +52,8 @@ const days = () => within(screen.getByRole('list', { name: 'Ledger days' }));
 beforeEach(() => {
   window.localStorage.clear();
   getLedger.mockReset().mockResolvedValue(LEDGER());
-  syncLedger.mockReset().mockResolvedValue({ day: '2026-10-29', rows: [] });
+  syncLedger.mockReset().mockResolvedValue({ sync: job({ days: ['2026-10-29'] }), already: false });
+  syncLedgerRange.mockReset().mockResolvedValue({ sync: job(), already: false });
 });
 
 describe('LedgerScreen', () => {
@@ -93,28 +99,60 @@ describe('LedgerScreen', () => {
     expect(box.getByText('Deposits & withdrawals').nextSibling).toHaveTextContent(inr(50));
   });
 
-  it('[critical] Sync today asks for today on the account shown, then reads the ledger again; a day\'s own Sync asks for that day', async () => {
+  it('[critical] Sync today asks for today on the account shown; Sync 7 days asks for the range shown; a day\'s own Sync asks for that day', async () => {
     show();
     await screen.findByRole('list', { name: 'Ledger days' });
-    const asked = getLedger.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: 'Sync today with Delta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sync today' }));
     await waitFor(() => expect(syncLedger).toHaveBeenCalledWith(null, null));
-    await waitFor(() => expect(getLedger.mock.calls.length).toBeGreaterThan(asked));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync all 7 days with Delta' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Sync all 7 days with Delta' }));
+    await waitFor(() => expect(syncLedgerRange).toHaveBeenCalledWith('2026-10-23', '2026-10-29', null));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync today' })).toBeEnabled());
     fireEvent.click(days().getByRole('button', { name: /^Tue 27 Oct: open the day/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Sync this day' }));
     await waitFor(() => expect(syncLedger).toHaveBeenLastCalledWith('2026-10-27', null));
   });
 
-  it('a sync Delta refuses is said, and the screen stays; no account switched on: nothing to check against, said', async () => {
+  it('[critical] a sync the desk is running shows as running when the screen opens -- after a refresh as before it: both buttons held, how far it has got, the day it reads', async () => {
+    getLedger.mockResolvedValue(LEDGER({ sync: job({ done: 2, day: '2026-10-27' }) }));
+    show();
+    await screen.findByRole('list', { name: 'Ledger days' });
+    const range = screen.getByRole('button', { name: 'Checking 2 of 7 days' });
+    expect(range).toBeDisabled();
+    expect(range).toHaveTextContent('2 of 7…');
+    expect(screen.getByRole('button', { name: 'Sync today' })).toBeDisabled();
+    const status = screen.getByRole('status', { name: 'Sync with Delta, running' });
+    expect(status).toHaveTextContent('Checking 7 days with Delta · now Tue 27 Oct');
+    expect(status).toHaveTextContent(/carries on if you leave or refresh this screen/);
+    expect(within(days().getByRole('button', { name: /^Tue 27 Oct/ })).getByText('Checking…')).toBeInTheDocument();
+    // Asked every three seconds while it runs: the next answer finishes it, and the buttons come back.
+    getLedger.mockResolvedValue(LEDGER({ sync: job({ done: 7, day: null, status: 'done', finishedAt: NOW }) }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync today' })).toBeEnabled(), { timeout: 5_000 });
+    expect(screen.getByRole('status', { name: 'Sync with Delta, last' })).toHaveTextContent(/Last sync: 7 days, finished/);
+  });
+
+  it('[critical] a tap while a sync runs starts nothing new: it is handed the one running, and says so', async () => {
+    syncLedger.mockResolvedValue({ sync: job({ done: 3 }), already: true });
+    show();
+    await screen.findByRole('list', { name: 'Ledger days' });
+    fireEvent.click(screen.getByRole('button', { name: 'Sync today' }));
+    expect(await screen.findByText('A sync was already running (7 days): following it, nothing new started.')).toBeInTheDocument();
+  });
+
+  it('a sync Delta refuses is said, and the screen stays; a sync that stopped says why; no account switched on: nothing to check against', async () => {
     syncLedger.mockRejectedValue(new Error('Delta refused the request (unauthorized).'));
     const { unmount } = show();
     await screen.findByRole('list', { name: 'Ledger days' });
-    fireEvent.click(screen.getByRole('button', { name: 'Sync today with Delta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sync today' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Delta refused the request (unauthorized).');
     unmount();
+    getLedger.mockResolvedValue(LEDGER({ sync: job({ done: 2, status: 'failed', error: 'Stopped by 3 restarts in the middle: sync again.', finishedAt: NOW }) }));
+    const stopped = show();
+    expect(await screen.findByRole('status', { name: 'Sync with Delta, last' })).toHaveTextContent('The last sync (7 days) stopped after 2 of 7: Stopped by 3 restarts in the middle: sync again..');
+    stopped.unmount();
     getLedger.mockResolvedValue(LEDGER({ accounts: [] }));
     show();
     expect(await screen.findByText(/No broker account is switched on/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sync today with Delta' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sync today' })).toBeDisabled();
   });
 });
