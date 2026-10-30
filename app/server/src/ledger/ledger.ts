@@ -349,7 +349,8 @@ const autoDone = new Set<string>();
  * itself is said once on the phone.
  */
 export async function ledgerTick(now = Date.now()): Promise<void> {
-  if (running) return;
+  // A check of its own, or a sync asked for by hand, already reading Delta: this minute waits for the next.
+  if (running || inProcess) return;
   const accounts = ledgerAccounts();
   if (accounts.length === 0) return;
   const today = istDate(now);

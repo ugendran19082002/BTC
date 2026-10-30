@@ -3,7 +3,7 @@ import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
 import { istDate } from '../../strategy/schedule.js';
 import {
-  LEDGER_MAX_DAYS, TOLERANCE_USD, checkDays, checkRange, deskDays, ledgerAccounts, ledgerBusy, ledgerProgress, ledgerRows, lastAutoCheck,
+  LEDGER_MAX_DAYS, TOLERANCE_USD, currentSync, deskDays, ledgerAccounts, ledgerBusy, ledgerRows, lastAutoCheck, startSync,
   type DeskDay, type LedgerRow, type LedgerStatus,
 } from '../../ledger/ledger.js';
 import type { WalletDay } from '../../ledger/wallet.js';
@@ -100,7 +100,7 @@ export function registerLedgerRoutes(app: FastifyInstance) {
     if ((Date.parse(to) - Date.parse(from)) / DAY_MS + 1 > LEDGER_MAX_DAYS) return refuse(reply, 400, { error: `At most ${LEDGER_MAX_DAYS} days at a time.` });
     const account = accountOf(req.query);
     const accounts = ledgerAccounts();
-    const [desk, kept, lastAutoAt] = await Promise.all([deskDays(account, from, to), ledgerRows(account, from, to), lastAutoCheck(account)]);
+    const [desk, kept, lastAutoAt, sync] = await Promise.all([deskDays(account, from, to), ledgerRows(account, from, to), lastAutoCheck(account), currentSync()]);
     const days = [...new Set([...desk.keys(), ...kept.map((r) => r.day)])].sort().reverse().map((day) => {
       const d = desk.get(day) ?? ZERO;
       const rs = kept.filter((r) => r.day === day);
@@ -109,7 +109,7 @@ export function registerLedgerRoutes(app: FastifyInstance) {
     const sumDesk = (k: keyof DeskDay) => days.reduce((n, d) => n + d.desk[k], 0);
     const judged = days.filter((d) => d.delta !== null && d.status !== 'paper' && d.status !== 'unread');
     return {
-      from, to, account, accounts, busy: ledgerBusy(), progress: ledgerProgress(), lastAutoAt, toleranceUsd: TOLERANCE_USD, days,
+      from, to, account, accounts, busy: ledgerBusy() || sync?.status === 'running', sync, lastAutoAt, toleranceUsd: TOLERANCE_USD, days,
       totals: {
         desk: { realisedUsd: sumDesk('realisedUsd'), profitUsd: sumDesk('profitUsd'), lossUsd: sumDesk('lossUsd'), chargesUsd: sumDesk('chargesUsd'), netUsd: sumDesk('netUsd'), trades: sumDesk('trades') },
         delta: judged.length ? sumWallet(judged.map((d) => d.delta!)) : null,
@@ -122,12 +122,11 @@ export function registerLedgerRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Check a day now (`day`, today without one; `accountId`, every account without one): the desk's figures and
-   * Delta's wallet read again, judged and kept. One check at a time: a second asked while one runs waits for it.
-   *
-   * Or a range (`from` and `to`, the days the screen shows; 30 Oct 2026, owner: "7 days chosen, sync all seven"):
-   * started and answered at once, `started` and how many days, checked in the background newest first (`checkRange`)
-   * while `GET /api/ledger` says how far it has got (`progress`). One range at a time: a second is refused while one runs.
+   * Sync with Delta (30 Oct 2026, owner: "sync by the days chosen; the loading state after a refresh; no duplicate
+   * sync -- save it in the backend; one at a time, best practice"): `day` (today without one), or `from` and `to` (the
+   * days the screen shows), for `accountId` or every account. Kept as a job and answered at once (202) with it: the
+   * screen follows it on `GET /api/ledger` (`sync`), after a refresh as before. One at a time: asked while one runs,
+   * that one is answered (`already`), and nothing new is started -- however many taps, phones or processes ask.
    */
   app.post('/api/ledger/sync', async (req, reply) => {
     const b = (req.body ?? {}) as { day?: unknown; from?: unknown; to?: unknown; accountId?: unknown };
@@ -137,31 +136,30 @@ export function registerLedgerRoutes(app: FastifyInstance) {
       : d > today ? 'A day still to come has nothing to check.'
         : (Date.parse(today) - Date.parse(d)) / DAY_MS >= LEDGER_MAX_DAYS ? `Only the last ${LEDGER_MAX_DAYS} days can be checked.` : null);
     const accounts = ledgerAccounts();
-    let ids: number[] | null = null;
+    let accountId: number | null = null;
     if (given(b.accountId)) {
-      const id = Number(b.accountId);
-      if (!accounts.some((a) => a.id === id)) return refuse(reply, 400, { error: 'No such account switched on, or its key cannot be opened.' });
-      ids = [id];
+      accountId = Number(b.accountId);
+      if (!accounts.some((a) => a.id === accountId)) return refuse(reply, 400, { error: 'No such account switched on, or its key cannot be opened.' });
     }
     if (accounts.length === 0) return refuse(reply, 409, { error: 'No broker account is switched on: there is no Delta wallet to check against.' });
 
+    let days: string[];
     if (given(b.from) || given(b.to)) {
       if (!given(b.from) || !given(b.to)) return refuse(reply, 400, { error: 'Give both days of the range.' });
       const from = String(b.from), to = String(b.to) > today ? today : String(b.to);
       const problem = dayProblem(from) ?? dayProblem(to);
       if (problem) return refuse(reply, 400, { error: problem });
       if (from > to) return refuse(reply, 400, { error: 'The start day must not be after the end day.' });
-      const days: string[] = [];
+      days = [];
       for (let d = from; d <= to; d = shift(d, 1)) days.push(d);
-      const now = ledgerProgress();
-      if (now) return refuse(reply, 409, { error: `Already checking ${now.total} days (${now.done} done): wait for it to finish.` });
-      void checkRange(days, ids);
-      return { started: true, from, to, days: days.length };
+    } else {
+      const day = given(b.day) ? String(b.day) : today;
+      const problem = dayProblem(day);
+      if (problem) return refuse(reply, 400, { error: problem === 'Days must be YYYY-MM-DD.' ? 'Day must be YYYY-MM-DD.' : problem });
+      days = [day];
     }
-
-    const day = given(b.day) ? String(b.day) : today;
-    const problem = dayProblem(day);
-    if (problem) return refuse(reply, 400, { error: problem === 'Days must be YYYY-MM-DD.' ? 'Day must be YYYY-MM-DD.' : problem });
-    return { day, rows: await checkDays(day, ids, 'manual') };
+    const started = await startSync(days, accountId);
+    reply.code(started.already ? 200 : 202);
+    return started;
   });
 }

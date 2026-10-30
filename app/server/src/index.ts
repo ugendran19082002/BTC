@@ -36,7 +36,7 @@ import { alertSettings, alertsSchema, sendEntryAlert, wanted } from './entry/ale
 import { readsOf, useReadsThread } from './entry/reads-run.js';
 import { startMinuteLog } from './observability/minute-log.js';
 import { telegramLogSchema } from './notify/telegram-log.js';
-import { ledgerSchema, ledgerTick } from './ledger/ledger.js';
+import { ledgerSchema, ledgerTick, resumeSync } from './ledger/ledger.js';
 import { pruneSignals, recordSignals, signalsSchema } from './entry/signals.js';
 import { methodsSchema } from './entry/catalogue.js';
 import { readEntryContext } from './entry/read.js';
@@ -354,6 +354,8 @@ setInterval(() => { runAutoMethodsAlone(Date.now(), autoMethodsDeps())?.catch(wa
 // The ledger (29 Oct 2026): each account's day checked against Delta's wallet at 11:59 PM IST, and a missed day of the last
 // week caught up while Delta's quota is quiet (ledger/ledger.ts).
 setInterval(() => { ledgerTick(Date.now()).catch(warn('ledger')); }, 60_000).unref();
+// A ledger sync the last process left running (a deploy in the middle of it) carries on where it stopped.
+resumeSync().catch(warn('ledger-sync'));
 // The paper log on the live tape: fills, stops and targets as they print (entry/live-grade.ts). Four looks a
 // second, and never two at once: a look still writing is not joined by another queued behind it.
 let grading = false;
