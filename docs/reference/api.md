@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-135 routes.
+136 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -155,6 +155,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/strategies/delete-many` | signed in | Remove several strategies together -- those in no group, say. |
 | POST | `/api/strategies/max-open` | signed in | The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off. |
 | GET | `/api/strategies/method-updates` | signed in | Every change to the signal strategies' methods, newest first (16 Oct 2026): the daily updates and the form's saves. |
+| POST | `/api/strategies/momentum-guard` | signed in | The momentum guard, this account's (owner, 30 Oct 2026): `{ guard: { on: true, pts: 250 } }`, whole points from 50 to 2000; `null` is back to the default, off. |
 | GET | `/api/strategies/runs` | signed in | The run journal on its own, for the history panel. |
 | POST | `/api/strategies/scheduler` | signed in | The master switch for the whole scheduler. |
 | POST | `/api/strategies/side-max` | signed in | One side's own limit under the cap: per cent of "at most open" for calls, or for puts; null is back to the default. |

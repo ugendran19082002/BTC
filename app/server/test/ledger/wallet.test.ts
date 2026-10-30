@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketOf, signsOf, walletDayOf, type WalletEntry } from '../../src/ledger/wallet.js';
+import { bucketOf, signsOf, timeOf, walletDayOf, type WalletEntry } from '../../src/ledger/wallet.js';
 
 /**
  * A day of Delta's wallet summed (29 Oct 2026, the ledger): by what each entry is, its sign read off Delta's own
@@ -65,4 +65,15 @@ test('every type Delta lists has its bucket; an unknown one is an other, and sai
     assert.deepEqual(bucketOf(t), { bucket: b, known: true }, t);
   }
   assert.deepEqual(bucketOf('nothing_like_it'), { bucket: 'others', known: false });
+});
+
+test('[critical] Delta\'s times however it writes them: microseconds in a string, milliseconds, seconds, an ISO date; nothing else is a time', () => {
+  const ms = Date.UTC(2024, 8, 9, 6, 56, 52);
+  assert.equal(timeOf(String(ms * 1_000)), ms, 'microseconds in a string, as its order replies write them');
+  assert.equal(timeOf(ms * 1_000), ms);
+  assert.equal(timeOf(String(ms)), ms, 'milliseconds');
+  assert.equal(timeOf(ms / 1_000), ms, 'seconds');
+  assert.equal(timeOf('2024-09-09T06:56:52Z'), ms);
+  assert.equal(timeOf('2024-09-09T06:56:52.123456Z'), ms + 123);
+  for (const bad of [null, undefined, '', 'yesterday', '0', -5, {}]) assert.equal(timeOf(bad), null, String(bad));
 });

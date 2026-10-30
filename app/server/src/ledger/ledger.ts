@@ -7,7 +7,7 @@ import { istDate, istMinutes } from '../strategy/schedule.js';
 import { deskMetrics } from '../observability/desk-metrics.js';
 import { noteError } from '../observability/errors.js';
 import { ledgerAlert } from '../notify/messages.js';
-import { readWallet, walletDayOf, type WalletDay, type WalletEntry } from './wallet.js';
+import { readWallet, walletDayOf, type WalletDay, type WalletEntry, type WalletRead } from './wallet.js';
 
 /**
  * The ledger (owner, 29 Oct 2026: "a ledger on the phone, day by day -- profit, loss, charges, others; my system's
@@ -97,6 +97,17 @@ export async function deskDays(accountId: number | null, from: string, to: strin
 export function judge(desk: DeskDay, delta: WalletDay | null, o: { paper: boolean; unread?: string | null }): { status: LedgerStatus; diffUsd: number | null; detail: string } {
   if (o.paper) return { status: 'paper', diffUsd: null, detail: 'The desk traded on paper: Delta holds none of its trades.' };
   if (!delta) return { status: 'unread', diffUsd: null, detail: o.unread ?? 'Delta\'s wallet could not be read.' };
+  /*
+   * A read that came back short is not a day that does not match (30 Oct 2026: the first live checks found one wallet
+   * entry a day against hundreds of the desk's fills, and called every day "charges differ"). Every trade is at least
+   * two fills and each fill a commission, so fewer entries than trades is the read, not the money: said as unread,
+   * with what the read saw.
+   */
+  if (desk.trades > 0 && delta.entries < desk.trades) {
+    const r = delta.read;
+    const seen = r ? ` Read: ${r.pages} page${r.pages === 1 ? '' : 's'}, ${r.rows} rows from Delta, ${r.kept} of the day, ${r.outside} outside it, ${r.unparsed} with no readable time${r.firstAt ? `; times as Delta wrote them: ${r.firstAt}${r.lastAt && r.lastAt !== r.firstAt ? ` … ${r.lastAt}` : ''}` : ''}.` : '';
+    return { status: 'unread', diffUsd: null, detail: `Delta's wallet gave ${delta.entries} entr${delta.entries === 1 ? 'y' : 'ies'} for the desk's ${desk.trades} trade${desk.trades === 1 ? '' : 's'}: the read came back short, so the day is not judged.${seen}` };
+  }
   const diffUsd = desk.netUsd - delta.netUsd;
   const notes: string[] = [];
   if (!delta.complete) notes.push('Delta\'s wallet had more entries than were read: the figures are of what was read.');
@@ -152,7 +163,7 @@ export function ledgerAccounts(): { id: number; name: string }[] {
 }
 
 /** Read by the tests in place of Delta. */
-export type WalletReader = (accountId: number, fromMs: number, toMs: number) => Promise<{ entries: WalletEntry[]; complete: boolean }>;
+export type WalletReader = (accountId: number, fromMs: number, toMs: number) => Promise<{ entries: WalletEntry[]; complete: boolean; read?: WalletRead }>;
 const deltaWallet: WalletReader = async (accountId, fromMs, toMs) => {
   const creds = brokerAccounts().credsOf(accountId);
   if (!creds) throw new Error('This account\'s key cannot be opened.');
@@ -176,7 +187,7 @@ export async function checkDay(accountId: number, day: string, how: 'auto' | 'ma
     const { from, to } = dayBounds(day);
     try {
       const w = await reader(accountId, from, Math.min(to, now + 1));
-      delta = walletDayOf(w.entries, w.complete);
+      delta = walletDayOf(w.entries, w.complete, w.read);
     } catch (e) {
       unread = `Delta's wallet could not be read: ${(e as Error).message}`;
     }

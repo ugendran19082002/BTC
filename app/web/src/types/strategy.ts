@@ -242,6 +242,11 @@ export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h';
 export const ZONE_FRESH_DEFAULT_S: Readonly<Record<SignalTf, number>> = { '3m': 90, '5m': 90, '15m': 150, '30m': 210, '1h': 300, '2h': 450, '4h': 600 };
 export const ZONE_FRESH_MIN_S = 10;
 export const ZONE_FRESH_MAX_S = 1_800;
+/** The momentum guard, one account's (server `MOMENTUM_GUARD_KEY`, 30 Oct 2026): no call sold after the perp rose `pts` in the hour. */
+export type MomentumGuard = { on: boolean; pts: number };
+export const MOMENTUM_GUARD_DEFAULT_PTS = 250;
+export const MOMENTUM_GUARD_MIN_PTS = 50;
+export const MOMENTUM_GUARD_MAX_PTS = 2_000;
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 /** "At most open at once" is typed, 1 to this (server: MAX_SIGNAL_OPEN). */
 export const MAX_SIGNAL_OPEN = 100;
@@ -569,6 +574,8 @@ export type StrategyStatus = {
   signalStrikeFull?: 'next' | 'skip';
   /** The fill window, this account's (28 Oct 2026): how late a zone fill may still be entered, seconds by time frame. Absent on an older server. */
   signalZoneFreshS?: Record<SignalTf, number>;
+  /** The momentum guard, this account's (30 Oct 2026), and the perp's rise over the hour now (null when unknown). Absent on an older server. */
+  signalMomentumGuard?: MomentumGuard & { now: { perp: number; hourAgo: number; rise: number } | null };
   /** The strike holding the most open trades now, and how many; null with none open. */
   busiestStrike?: { symbol: string; open: number } | null;
   /** The desk's limit on lots short at once (the order gate's), and the lots it holds short now. Absent on an older server. */

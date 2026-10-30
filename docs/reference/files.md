@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-571 files listed, 314 test files counted below, images and lockfiles left out.
+572 files listed, 316 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 161 |
-| `app/web` | 153 |
+| `app/server` | 162 |
+| `app/web` | 154 |
 
 ## `(root)`
 
@@ -540,6 +540,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [MethodList.tsx](../../app/web/src/components/strategy/MethodList.tsx) | The 81 methods as a list to tick, each with its record: searched, by family, by result, by order side and sorted. |
 | [MethodTimeframes.tsx](../../app/web/src/components/strategy/MethodTimeframes.tsx) | The method updates by time frame, day by day (owner, 16 Oct 2026: "the methods update report, more user friendly: by time frame with its methods, in and out, date wise"). |
 | [MethodUpdatesLog.tsx](../../app/web/src/components/strategy/MethodUpdatesLog.tsx) | Every change to the signal strategies' methods (owner, 16 Oct 2026: "the daily methods changes, logged, saved in the db, shown in a logs menu and on the phone's More"; then "today, yesterday, last... |
+| [MomentumGuard.tsx](../../app/web/src/components/strategy/MomentumGuard.tsx) | The momentum guard (owner, 30 Oct 2026: "Momentum 1h >= +250, CE mattum, default off"): no new call is sold while the perp has risen its points or more over the last hour, this account's. |
 | [PickNow.tsx](../../app/web/src/components/strategy/PickNow.tsx) | Pick now (owner, 25 Oct 2026: "a Pick now button: whatever is there now, the strategies pick now and update"): the methods' daily update, run at once -- every strategy with it on for the account sh... |
 | [ReorderList.tsx](../../app/web/src/components/strategy/ReorderList.tsx) | A list put in order by dragging (owner, 10 Oct 2026: "drag to change the order, user friendly"). |
 | [SideMax.tsx](../../app/web/src/components/strategy/SideMax.tsx) | Each side's own limit under "at most open" (owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own; the total still held to the max open; user friendly"). |

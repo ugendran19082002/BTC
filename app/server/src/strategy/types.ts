@@ -886,6 +886,42 @@ export function zoneFreshProblem(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The momentum guard, one account's (owner, 30 Oct 2026, after the October study: "Momentum 1h >= +250, CE mattum, default
+ * off"): no new call is sold while the perp has risen this many points or more over the last hour -- the perp's last trade
+ * against its average price in the minute an hour before. Puts are never held back by it, nor is anything already open.
+ * The study: CE sells it would have refused won 55% against 71% for all of them; 13 Oct's spike was most of what it saved.
+ * Blocking puts on a fall as well cost money every way it was tested, so there is no setting for it.
+ * Kept as JSON, {"on": true, "pts": 250}; off where unset or unreadable. Read by the runner at each signal.
+ */
+export const MOMENTUM_GUARD_KEY = 'signal_momentum_guard';
+export type MomentumGuard = { on: boolean; pts: number };
+export const MOMENTUM_GUARD_DEFAULT: Readonly<MomentumGuard> = { on: false, pts: 250 };
+export const MOMENTUM_GUARD_MIN_PTS = 50;
+export const MOMENTUM_GUARD_MAX_PTS = 2_000;
+const guardPtsOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= MOMENTUM_GUARD_MIN_PTS && n <= MOMENTUM_GUARD_MAX_PTS;
+/** The setting as stored: on or off and its points, the default for whatever is unset or unreadable. */
+export function momentumGuardOf(raw: string | null | undefined): MomentumGuard {
+  let v: Record<string, unknown> = {};
+  try { const x = raw ? JSON.parse(raw) : {}; if (x && typeof x === 'object' && !Array.isArray(x)) v = x; } catch { /* the default */ }
+  return { on: v.on === true, pts: guardPtsOk(v.pts) ? v.pts : MOMENTUM_GUARD_DEFAULT.pts };
+}
+/** Why a momentum guard cannot be saved, in words; null when it can. `null` itself is "back to the default" (off), and can. */
+export function momentumGuardProblem(v: unknown): string | null {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return 'The momentum guard is {"on": true, "pts": 250}.';
+  const { on, pts } = v as Record<string, unknown>;
+  if (typeof on !== 'boolean') return 'Say whether the momentum guard is on: true or false.';
+  if (!guardPtsOk(pts)) return `The momentum guard's rise must be whole points from ${MOMENTUM_GUARD_MIN_PTS} to ${MOMENTUM_GUARD_MAX_PTS}.`;
+  return null;
+}
+/**
+ * Whether the guard holds this signal back: a call to be sold, the guard on, and the perp up its points or more in the
+ * hour. A rise that cannot be read (no price now, or none an hour ago) holds nothing back.
+ */
+export const momentumBlocks = (g: MomentumGuard, sells: 'CE' | 'PE' | null, rise: number | null): boolean =>
+  g.on && sells === 'CE' && rise !== null && rise >= g.pts;
+
 export function strikeMaxProblem(v: unknown): string | null {
   if (v === null) return null;
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 100

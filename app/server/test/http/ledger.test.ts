@@ -143,6 +143,21 @@ test('[critical] a mismatch says where it lies -- in the charges, or in what the
   L.setLedgerPaper(() => false);
 });
 
+test('[critical] a read that came back short is not judged a mismatch: fewer wallet entries than the desk\'s trades is said as unread, with what the read saw', async () => {
+  // 30 Oct 2026, live: one commission entry a day against hundreds of fills, every day called "charges differ".
+  const at = noonOf(YESTERDAY);
+  L.setWalletReader(async () => ({
+    entries: [{ id: 'one', at, type: 'commission', amount: 0.00007, balance: 65.35, asset: 'USD' }], complete: true,
+    read: { pages: 1, rows: 214, kept: 1, outside: 0, unparsed: 213, firstAt: '1730271234567890', lastAt: '2026-10-29T06:30:00Z' },
+  }));
+  const r = (await call('POST', '/api/ledger/sync', { day: YESTERDAY, accountId: one })).body.rows[0];
+  assert.equal(r.status, 'unread');
+  assert.equal(r.diffUsd, null);
+  assert.match(r.detail, /Delta's wallet gave 1 entry for the desk's 3 trades: the read came back short, so the day is not judged\./);
+  assert.match(r.detail, /Read: 1 page, 214 rows from Delta, 1 of the day, 0 outside it, 213 with no readable time; times as Delta wrote them: 1730271234567890 … 2026-10-29T06:30:00Z\./);
+  assert.equal(r.delta.read.unparsed, 213, 'the read kept with the check');
+});
+
 test('[critical] every account: each account\'s verdict beside the sum; a day changed since its check is said', async () => {
   L.setWalletReader(async (id) => (id === one ? wallet(desk.realisedUsd, desk.chargesUsd, noonOf(YESTERDAY)) : { entries: [], complete: true }));
   const s = await call('POST', '/api/ledger/sync', { day: YESTERDAY });

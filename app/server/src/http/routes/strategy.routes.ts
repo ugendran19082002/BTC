@@ -5,9 +5,9 @@ import { noteError } from '../../observability/errors.js';
 import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
-import { inSignalWindow } from '../../strategy/runner.js';
+import { inSignalWindow, perpRiseNow } from '../../strategy/runner.js';
 import { autoAsked, autoPick, runAutoMethodsAlone, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -463,6 +463,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       signalStrikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, account ?? svc.accountId)),
       // How late a zone fill may still be entered, seconds by time frame (28 Oct 2026): the account's, the default where unset.
       signalZoneFreshS: zoneFreshOf(accountSetting(svc.settings, ZONE_FRESH_KEY, account ?? svc.accountId)),
+      // The momentum guard (30 Oct 2026): on or off, its points, and the perp's rise over the hour now -- what the next call meets.
+      signalMomentumGuard: { ...momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account ?? svc.accountId)), now: await perpRiseNow(now).catch(() => null) },
       busiestStrike: elsewhere ? null : busiestOf(openTrades),
       /*
        * The desk's limit on lots short at once (the order gate's MAX_POSITION), and
@@ -1089,6 +1091,21 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
     await svc.settings.set(accountKey(ZONE_FRESH_KEY, account), want === null ? '' : JSON.stringify(want));
     return { ok: true, signalZoneFreshS: zoneFreshOf(accountSetting(svc.settings, ZONE_FRESH_KEY, account)) };
+  });
+
+  /**
+   * The momentum guard, this account's (owner, 30 Oct 2026): `{ guard: { on: true, pts: 250 } }`, whole points from 50 to
+   * 2000; `null` is back to the default, off. The runner reads it at each signal, so it counts from the next one.
+   */
+  app.post('/api/strategies/momentum-guard', async (req, reply) => {
+    const { guard, accountId } = (req.body ?? {}) as { guard?: unknown; accountId?: unknown };
+    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const want = guard === undefined ? null : guard;
+    const problem = momentumGuardProblem(want);
+    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+    const { on, pts } = (want ?? {}) as { on?: boolean; pts?: number };
+    await svc.settings.set(accountKey(MOMENTUM_GUARD_KEY, account), want === null ? '' : JSON.stringify({ on, pts }));
+    return { ok: true, signalMomentumGuard: momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account)) };
   });
 
   // One side's own limit under the cap: per cent of "at most open" for calls, or for puts; null is back to the default.

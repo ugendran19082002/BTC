@@ -8,11 +8,12 @@ import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import { METHODS } from '../entry/methods.js';
 import { lastPerp } from '../market/flow.js';
+import { perpAtMinutes } from '../market/perp-minute.js';
 import { missedEntryAlert, runAlertFor, signalRefusedAlert, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyExitStepper, TARGET_STEP_QUOTA_PCT } from './exit-steps.js';
 import { DEFAULT_LEVERAGE, stopHeldWords, stopRoomInside } from '../trading/order-plan.js';
@@ -142,6 +143,18 @@ function perpNow(): number | null {
   return l && Date.now() - l.at <= 15_000 ? l.price : null;
 }
 
+/** The perp's price an hour before `at`: its average in that minute, else its mark then (`perpAtMinutes`); null if neither was kept. */
+async function perpHourBefore(at: number): Promise<number | null> {
+  const minute = Math.floor((at - 3_600_000) / 60_000) * 60_000;
+  return (await perpAtMinutes([minute]).catch(() => new Map<number, number>())).get(minute) ?? null;
+}
+/** The perp now, an hour ago, and the rise between: what the momentum guard reads, for the strategies card. Null when either is unknown. */
+export async function perpRiseNow(at = Date.now()): Promise<{ perp: number; hourAgo: number; rise: number } | null> {
+  const perp = perpNow();
+  const hourAgo = perp === null ? null : await perpHourBefore(at);
+  return perp === null || hourAgo === null ? null : { perp, hourAgo, rise: perp - hourAgo };
+}
+
 /** One signal's turn in one account's line. */
 type SignalTurn = { tfSec: number; seq: number; run: () => Promise<void>; done: () => void; failed: (e: unknown) => void };
 /** One account's line of signals, and whether one of them is being traded right now. */
@@ -168,6 +181,8 @@ export class StrategyRunner {
     private readonly perp: () => number | null = perpNow,
     /** How volatile it is now, for a strategy that sets its delta by it: the backtest's own reading, or a test's. */
     private readonly volLevel: (by: VolBy, at: number) => Promise<VolLevel | null> = volLevelNow,
+    /** The perp an hour before a moment, for the momentum guard: the desk's minutes, or a test's. */
+    private readonly perpHourAgo: (at: number) => Promise<number | null> = perpHourBefore,
   ) {
     /*
      * Time-based exits: at each step's time, the target or stop of every open
@@ -613,6 +628,22 @@ export class StrategyRunner {
         await finish('skipped', fill
           ? `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round((now - fill.filledAt * 1_000) / 1_000)}s ago and is at ${Math.round(perpNow)} now, already at the signal's ${past} -- over before it could be entered`
           : `the perp is at ${Math.round(perpNow)} now, already at the signal's ${past} -- over before it could be entered`);
+        return;
+      }
+    }
+
+    /*
+     * The momentum guard (owner, 30 Oct 2026; `MOMENTUM_GUARD_KEY`, the account's, off unless set): a call is not sold
+     * while the perp has risen its points or more over the last hour -- a rally that fast tends to run on through the
+     * calls' stops (13 Oct; 8 AM on 30 Oct, when every call sold stopped out). Puts, and what is already open, go on.
+     */
+    const guard = momentumGuardOf(accountSetting(tradingService().settings, MOMENTUM_GUARD_KEY, tradingService().accountId));
+    const sells = actionOf(rule) === 'sell' ? legOfSignal(dir, 'sell') : null;
+    if (guard.on && sells === 'CE' && perpNow !== null) {
+      const before = await this.perpHourAgo(now);
+      const rise = before === null ? null : perpNow - before;
+      if (momentumBlocks(guard, sells, rise)) {
+        await finish('skipped', `the perp is up ${Math.round(rise!)} pts in the last hour (${Math.round(before!)} to ${Math.round(perpNow)}) -- the momentum guard sells no call after a rise of ${guard.pts} or more`);
         return;
       }
     }

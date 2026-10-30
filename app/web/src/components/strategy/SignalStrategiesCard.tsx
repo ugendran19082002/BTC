@@ -2,7 +2,7 @@ import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setScheduler, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setStrategyEnabled, setZoneFresh, takeIntoGroup } from '@/api/strategy';
+import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setMomentumGuard, setScheduler, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setStrategyEnabled, setZoneFresh, takeIntoGroup } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus, type VolLevelNow } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { CopyStrategiesSheet } from '@/components/strategy/CopyStrategiesSheet';
 import { SideMax } from '@/components/strategy/SideMax';
 import { StrikeMax } from '@/components/strategy/StrikeMax';
 import { ZoneFresh } from '@/components/strategy/ZoneFresh';
+import { MomentumGuard } from '@/components/strategy/MomentumGuard';
 import { refreshGroupIndex } from '@/hooks/useGroupOf';
 import { defaultGroupFor, groupNameProblem, groupSections, moved, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
@@ -734,6 +735,11 @@ export function SignalStrategiesCard() {
           {/* How late a zone fill may still be entered, by time frame (28 Oct 2026). Absent on a server from before it. */}
           {data?.signalZoneFreshS && (
             <ZoneFresh seconds={data.signalZoneFreshS} busy={busy === 'zone-fresh'} onSave={(ch) => act('zone-fresh', () => setZoneFresh(ch))} />
+          )}
+          {/* No call sold after the perp rose its points in the hour (30 Oct 2026). Absent on a server from before it. */}
+          {data?.signalMomentumGuard && (
+            <MomentumGuard guard={data.signalMomentumGuard} now={data.signalMomentumGuard.now} busy={busy === 'momentum-guard'}
+                           onSave={(g) => act('momentum-guard', () => setMomentumGuard(g))} />
           )}
           {data && (
             <span className="desk-badge-pill"

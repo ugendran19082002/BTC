@@ -434,6 +434,52 @@ test('[critical] a signal entered at once is held to the same: the perp already 
   }
 });
 
+test('[critical] the momentum guard (30 Oct 2026): off until set; on, no call is sold after the perp rose its points in the hour -- puts go on; nonsense is refused', async () => {
+  const id = await make('Momentum', main, { enterOn: 'signal' });
+  const last = async () => (await runsOf(id)).at(-1)!;
+  // The perp an hour ago, as the guard reads it: null is "not kept".
+  let hourAgo: number | null = 84_700;
+  const guarded = new StrategyRunner(strategyStore(), () => clock, async () => board, () => perp, undefined, async () => hourAgo);
+  // A SELL signal sells the call; a BUY signal the put.
+  const sellCall = () => logged(signal('15m', { dir: 'short', plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1.25 } }));
+  try {
+    perp = 85_010;                                             // up 310 in the hour
+    await guarded.onSignal(await sellCall());
+    assert.equal((await last()).status, 'would-place', 'off until set: ' + (await last()).detail);
+    assert.deepEqual((await api('GET', `/api/strategies?account=${main}`)).body.signalMomentumGuard, { on: false, pts: 250, now: null }, 'off, and no fresh print to read a rise from');
+
+    const set = await api('POST', '/api/strategies/momentum-guard', { guard: { on: true, pts: 250 }, accountId: main });
+    assert.equal(set.status, 200, JSON.stringify(set.body));
+    assert.deepEqual(set.body.signalMomentumGuard, { on: true, pts: 250 });
+    assert.equal((await api('GET', `/api/strategies?account=${main}`)).body.signalMomentumGuard.on, true, 'and the card reads it back');
+    await guarded.onSignal(await sellCall());
+    assert.equal((await last()).status, 'skipped');
+    assert.match((await last()).detail, /the perp is up 310 pts in the last hour \(84700 to 85010\) -- the momentum guard sells no call after a rise of 250 or more$/);
+    // a point short of it, the put on the same rise, and no price an hour ago: each entered
+    hourAgo = 84_761;
+    await guarded.onSignal(await sellCall());
+    assert.equal((await last()).status, 'would-place', '249 up: ' + (await last()).detail);
+    hourAgo = 84_700;
+    await guarded.onSignal(await logged(signal('15m')));
+    assert.equal((await last()).status, 'would-place', 'a put: ' + (await last()).detail);
+    hourAgo = null;
+    await guarded.onSignal(await sellCall());
+    assert.equal((await last()).status, 'would-place', 'no rise to read: ' + (await last()).detail);
+
+    for (const [bad, said] of [[{ on: true, pts: 10 }, /whole points from 50 to 2000/], [{ on: 'yes', pts: 250 }, /true or false/], [[250], /"on": true, "pts": 250/]] as const) {
+      const r = await api('POST', '/api/strategies/momentum-guard', { guard: bad, accountId: main });
+      assert.equal(r.status, 422, JSON.stringify(bad));
+      assert.match(r.body.error, said);
+    }
+    // null is back to off
+    assert.deepEqual((await api('POST', '/api/strategies/momentum-guard', { guard: null, accountId: main })).body.signalMomentumGuard, { on: false, pts: 250 });
+  } finally {
+    perp = null;
+    await api('POST', '/api/strategies/momentum-guard', { guard: null, accountId: main });
+    await off(id);
+  }
+});
+
 test('[critical] a strategy that skips the perp SL (18 Oct 2026): the perp at the signal\'s SL does not stop the entry, and the order says it is skipped', async () => {
   const id = await make('Skip SL', main, { enterOn: 'zone', skipPerpSl: true });
   const last = async () => (await runsOf(id)).at(-1)!;
