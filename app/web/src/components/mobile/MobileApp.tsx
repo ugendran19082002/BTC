@@ -34,6 +34,7 @@ const OrdersScreen = lazy(() => load.orders().then((m) => ({ default: m.OrdersSc
 const TradeDetail = lazy(() => load.trade().then((m) => ({ default: m.TradeDetail })));
 const HistoryScreen = lazy(() => import('@/components/mobile/screens/HistoryScreen').then((m) => ({ default: m.HistoryScreen })));
 const SignalPairsScreen = lazy(() => import('@/components/mobile/screens/SignalPairsScreen').then((m) => ({ default: m.SignalPairsScreen })));
+const LedgerScreen = lazy(() => import('@/components/mobile/screens/LedgerScreen').then((m) => ({ default: m.LedgerScreen })));
 const MarketReportScreen = lazy(() => import('@/components/mobile/screens/MarketReportScreen').then((m) => ({ default: m.MarketReportScreen })));
 const BacktestScreen = lazy(() => import('@/components/mobile/screens/BacktestScreen').then((m) => ({ default: m.BacktestScreen })));
 const MethodLogScreen = lazy(() => import('@/components/mobile/screens/MethodLogScreen').then((m) => ({ default: m.MethodLogScreen })));
@@ -248,7 +249,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
         }
       >
         {/* The Market report reads one account's orders too (29 Oct 2026: it had none of these, and read whatever was chosen elsewhere). */}
-        {trading.length > 1 && route.tab !== 'more' || (route.tab === 'more' && route.sub && ['history', 'account', 'strategies', 'report'].includes(route.sub) && trading.length > 1) ? (
+        {trading.length > 1 && route.tab !== 'more' || (route.tab === 'more' && route.sub && ['history', 'account', 'strategies', 'report', 'ledger'].includes(route.sub) && trading.length > 1) ? (
           <Chips label="Accounts">
             <Chip on={shown === 'all'} onClick={() => setChoice('all')}>All accounts</Chip>
             {trading.map((a) => <Chip key={a.id} on={shown === a.id} onClick={() => setChoice(a.id)}>{a.name}</Chip>)}
@@ -276,6 +277,7 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
                 : route.tab === 'history' || route.sub === 'history' ? <HistoryScreen />
                   : route.sub === 'pairs' ? <SignalPairsScreen />
                     : route.sub === 'report' ? <MarketReportScreen />
+                    : route.sub === 'ledger' ? <LedgerScreen />
                     : route.sub === 'backtest' ? <BacktestScreen />
                     : route.sub === 'price' ? <PriceChangeScreen />
                       : route.sub === 'pressure' ? <PressureScreen />

@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-133 routes.
+135 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -89,6 +89,13 @@ What: the first sentence of the comment directly above the route. A dash means t
 | POST | `/api/errors` | signed in | The browser reports here. |
 | POST | `/api/errors/delete` | signed in | Delete rather than hide. |
 | POST | `/api/errors/resolve` | signed in | Mark one error row, or all of them, resolved: off the list, still on record. |
+
+## [ledger.routes.ts](../../app/server/src/http/routes/ledger.routes.ts)
+
+| Method | Path | Session | What |
+|---|---|---|---|
+| GET | `/api/ledger` | signed in | The ledger for a range of IST days (`from`, `to`; the last seven without them; at most 92): each day the desk's profit, loss, charges and net worked out now, and the check kept for it -- Delta's si... |
+| POST | `/api/ledger/sync` | signed in | Check a day now (`day`, today without one; `accountId`, every account without one): the desk's figures and Delta's wallet read again, judged and kept. |
 
 ## [market.routes.ts](../../app/server/src/http/routes/market.routes.ts)
 

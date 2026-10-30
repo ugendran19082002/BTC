@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-566 files listed, 311 test files counted below, images and lockfiles left out.
+571 files listed, 314 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 159 |
-| `app/web` | 152 |
+| `app/server` | 161 |
+| `app/web` | 153 |
 
 ## `(root)`
 
@@ -155,6 +155,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [desk.routes.ts](../../app/server/src/http/routes/desk.routes.ts) | The desk's read routes: health, the option chain, spot and candles, what changed, the perpetual's tape, book and big prints for the chart, the trend plan's paper log, chain.db reloads and the desk... |
 | [entry.routes.ts](../../app/server/src/http/routes/entry.routes.ts) | The entry section's routes: the 24 reads (twelve methods, with the timeframe chain and without it) and their paper record. |
 | [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts) | The error log, readable and writable from the browser. |
+| [ledger.routes.ts](../../app/server/src/http/routes/ledger.routes.ts) | The ledger's routes (ledger/ledger.ts): the days as the desk booked them and as Delta's wallet has them, and a check made by hand. |
 | [market.routes.ts](../../app/server/src/http/routes/market.routes.ts) | The market report (13 Oct 2026): every expiry day -- 5:30 PM IST to 5:30 PM IST -- with the kind of day the BTC perp had, and what the signal history and the real orders made on it. |
 | [report.routes.ts](../../app/server/src/http/routes/report.routes.ts) | The record as a calendar, and a day as a line. |
 | [session.routes.ts](../../app/server/src/http/routes/session.routes.ts) | Sign-in, two-step setup, and the account page. |
@@ -162,6 +163,13 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [stream.routes.ts](../../app/server/src/http/routes/stream.routes.ts) | `GET /api/stream` -- the status, the price and "the board changed", pushed. |
 | [trade.routes.ts](../../app/server/src/http/routes/trade.routes.ts) | The order desk. |
 | [ui-settings.routes.ts](../../app/server/src/http/routes/ui-settings.routes.ts) | -- |
+
+## `app/server/src/ledger/`
+
+| File | What it is |
+|---|---|
+| [ledger.ts](../../app/server/src/ledger/ledger.ts) | The ledger (owner, 29 Oct 2026: "a ledger on the phone, day by day -- profit, loss, charges, others; my system's P&L and the Delta app's reconciled, checked every day at 11:59 PM and synced by hand... |
+| [wallet.ts](../../app/server/src/ledger/wallet.ts) | Delta's own record of an account's money, a day at a time (owner, 29 Oct 2026: "my system and the Delta app's P&L, reconciled -- checked every day at 11:59 PM, and synced by hand"). |
 
 ## `app/server/src/market/`
 
@@ -310,6 +318,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [entry.ts](../../app/web/src/api/entry.ts) | One page of the signal history, the total matching, and the summary over all of it. |
 | [errors.ts](../../app/web/src/api/errors.ts) | The error log: read it, resolve or delete a row, and report a failure from this browser into the same table the server writes to. |
 | [glance.ts](../../app/web/src/api/glance.ts) | The desk's health for the phone (6 Oct 2026): GET /api/desk/glance, judged at the server in observability/glance.ts. |
+| [ledger.ts](../../app/web/src/api/ledger.ts) | The ledger (server: ledger/ledger.ts, http/routes/ledger.routes.ts): each IST day as the desk booked it and as Delta's wallet has it, judged -- checked by itself at 11:59 PM, and by hand from here. |
 | [market-report.ts](../../app/web/src/api/market-report.ts) | -- |
 | [phone.ts](../../app/web/src/api/phone.ts) | The phone's reads beyond the glance (Level 2, 6 Oct 2026): one trade's journal, the strategies' activity, and the closed trades' statistics. |
 | [report.ts](../../app/web/src/api/report.ts) | The P&L screen's calls: the record as a calendar, one day's mark-to-market line, and the spreadsheet download. |
@@ -443,6 +452,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [BacktestScreen.tsx](../../app/web/src/components/mobile/screens/BacktestScreen.tsx) | More → Backtest (owner, 13 Oct 2026): the signal history sold as options on the prices the contracts really had. |
 | [HistoryScreen.tsx](../../app/web/src/components/mobile/screens/HistoryScreen.tsx) | Trade history (6 Oct 2026): the closed trades, not the orders -- what each made after charges. |
 | [HomeScreen.tsx](../../app/web/src/components/mobile/screens/HomeScreen.tsx) | Home (6 Oct 2026): everything in one screen a person needs to know the desk is fine -- today's money, the desk's health, the open positions, the margin, the last order -- each tapping through to it... |
+| [LedgerScreen.tsx](../../app/web/src/components/mobile/screens/LedgerScreen.tsx) | The ledger (owner, 29 Oct 2026: "a ledger on the phone, day by day -- profit, loss, charges, others; my system's P&L and the Delta app's reconciled, checked every day at 11:59 PM and synced by hand... |
 | [MarketReportScreen.tsx](../../app/web/src/components/mobile/screens/MarketReportScreen.tsx) | More → Market report (owner, 13 Oct 2026): every expiry day's kind of market and what the signal history and the real orders made on it. |
 | [MarketScreen.tsx](../../app/web/src/components/mobile/screens/MarketScreen.tsx) | Market (6 Oct 2026): BTC as the desk sees it -- the perp's last trade, mark and index, the day's change and range, funding and open interest -- and the next daily settlement. |
 | [MethodLogScreen.tsx](../../app/web/src/components/mobile/screens/MethodLogScreen.tsx) | More → Method updates (owner, 16 Oct 2026): every change to the signal strategies' methods, the daily update's and the form's, for the account shown. |

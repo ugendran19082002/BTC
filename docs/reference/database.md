@@ -19,6 +19,7 @@ ambiguous (`auth_sessions`, `strategy_runs`).
 | errors | `errors` | everything | Every failure, from all three tiers, in one place. |
 | market | `oi_snapshots`, `chain_features`, `option_snapshots`, `option_snapshots_1m`, `option_marks_1m`, `option_marks_fetched`, `trade_flow_1m`, `option_flow_1m`, `book_heat_1m`, `perp_snapshots`, `index_1m` | the chain route, the API's recorders, the perp's trade socket, and the book sampler | What open interest and at-the-money volatility *were*, so a change in either is readable. Disposable. |
 | report | `backtest_saves`, `backtest_portfolios` | the Backtest screen | Backtests kept by name (their settings as JSON, never a result) and the sets of them run together ([signal-backtest.md](../features/signal-backtest.md#saved-backtests-and-portfolios)). |
+| P&L ledger | `ledger_days` | `ledger/ledger.ts`: at 11:59 PM IST, and Sync on the phone | Each broker account's IST day as the desk booked it and as Delta's wallet has it, judged ([below](#ledger_days--the-desk-against-deltas-wallet)). |
 | chart | none | -- | `chart_annotations` (levels saved on the price chart) was dropped on 4 Oct 2026 with the chart's layers (`chart-002-drop-annotations`); it held no rows. |
 | ledger | `schema_migrations` | `db/migrate.ts` | The one ledger of what has been done to the database. |
 | `chain.db` (SQLite) | 6 | the harvester, offline | Two years of settled option chains. Read-only at runtime. |
@@ -402,6 +403,28 @@ switched on there is the one paper desk over the whole journal, as before
 there were accounts. `mtm_samples` is keyed by moment and account
 (`trading-008-mtm-by-account`), since two desks can take a reading in the same
 millisecond.
+
+---
+
+## `ledger_days` — the desk against Delta's wallet
+
+Since 29 Oct 2026 (owner: "my system's P&L and the Delta app's reconciled, checked every day at 11:59 PM, and synced by
+hand"). One row per broker account per IST day (`PRIMARY KEY (broker_account_id, day)`), written by a check and
+overwritten by the next: the newest check of a day is the one kept.
+
+| Column | Type | What it holds |
+|---|---|---|
+| `broker_account_id`, `day` | BIGINT, TEXT | The account and its IST day, `YYYY-MM-DD`, midnight to midnight. |
+| `desk` | JSONB | The desk's day as the check found it -- the P&L calendar's own row (`daysReport`): realised, profit, loss, charges, net, trades, and how many were still open. |
+| `delta` | JSONB | Delta's wallet for the day (`ledger/wallet.ts`): trading, charges, funding, others, transfers, the net (trading + charges + funding), the opening and closing balances, every type's count and sum. Null when it could not be read, or on a paper day. |
+| `status` | TEXT | `match` (the nets within `TOLERANCE_USD`, $0.05), `mismatch`, `open` (trades still open: the sides can differ until they close), `unread`, `paper`. |
+| `diff_usd`, `detail` | | The desk's net less Delta's, and where it lies: in the charges, or in what the trades booked. |
+| `how`, `checked_at` | TEXT, BIGINT | `auto` (11:59 PM, or a missed day caught up) or `manual` (Sync); when. |
+
+Delta's side is read whole and split by what each entry *is*, never by what it is thought to carry, and each type's
+sign is read off Delta's own balance column -- how Delta books an option is not in its reference ([decision
+0002](../decisions/0002-simulator-is-not-the-venue.md)). The screen works the desk's day afresh on every read and says
+when it has moved since the check. Nothing prunes the table: one row an account a day.
 
 ---
 

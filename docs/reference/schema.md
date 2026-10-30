@@ -6,7 +6,7 @@ The desk's PostgreSQL database as a fresh deploy creates it: every table in `pub
 the catalogue after every store's migrations have run. What each table is *for*, and why it is shaped
 the way it is, is in [database.md](database.md).
 
-41 tables, 75 migrations.
+43 tables, 77 migrations.
 
 ## Migrations applied
 
@@ -17,15 +17,17 @@ the way it is, is in [database.md](database.md).
 | chart | `chart-002-drop-annotations` |
 | entry | `entry-001-setups`, `entry-002-gates`, `entry-003-setups-gates-off`, `entry-004-alerts`, `entry-005-signals`, `entry-006-alert-log`, `entry-007-signal-prices`, `entry-008-alerts-no-1m`, `entry-008-signals-no-1m`, `entry-009-alert-log-by-setup`, `entry-010-r-without-fees`, `entry-011-signal-targets`, `entry-012-setups-targets`, `entry-013-setups-missed`, `entry-014-signals-trades-by-time`, `entry-015-setups-expire-why`, `entry-017-setups-regime`, `entry-017-signals-regime`, `entry-018-alerts-retired-methods`, `entry-018-setups-retired-methods`, `entry-018-signals-retired-methods`, `entry-019-methods`, `entry-020-cleared`, `entry-020-history-clears`, `entry-021-method-order-side`, `entry-022-setups-by-time` |
 | errors | `errors-001-log`, `errors-002-to-public`, `errors-003-deleted-at` |
+| ledger | `ledger-001-days` |
 | market | `market-001-oi-snapshots`, `market-002-chain-features`, `market-003-to-public`, `market-004-option-snapshots`, `market-005-flow`, `market-006-flow-large-counts`, `market-007-option-flow`, `market-008-option-snapshots-1m`, `market-009-drop-iv-term`, `market-013-index-1m`, `market-014-chain-band-pcts`, `market-016-book-heat`, `market-017-drop-large-prints`, `market-018-option-marks-1m` |
 | report | `report-002-backtest-saves`, `report-003-backtest-save-groups` |
 | strategy | `strategy-001-tables`, `strategy-002-seed`, `strategy-003-to-public`, `strategy-004-retire-extras`, `strategy-005-drop-retired-tables`, `strategy-006-signal-runs`, `strategy-007-drop-trend-paper`, `strategy-008-broker-account`, `strategy-009-signal-action`, `strategy-010-groups`, `strategy-011-display-order`, `strategy-012-method-updates`, `strategy-013-method-updates-tf`, `strategy-014-signal-runs-at` |
+| telegram | `telegram-001-log` |
 | trading | `trading-001-settings`, `trading-002-default-settings`, `trading-003-trades`, `trading-004-mtm-samples`, `trading-005-settings-to-public`, `trading-006-journal-to-public`, `trading-007-broker-account`, `trading-007-retire-best-pick-settings`, `trading-008-mtm-by-account`, `trading-008-retire-contract-lots` |
 | ui | `ui-001-settings` |
 
 ## Tables
 
-[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`backtest_portfolios`](#backtest_portfolios) · [`backtest_saves`](#backtest_saves) · [`book_heat_1m`](#book_heat_1m) · [`broker_accounts`](#broker_accounts) · [`chain_features`](#chain_features) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alert_log`](#entry_alert_log) · [`entry_alerts`](#entry_alerts) · [`entry_cleared`](#entry_cleared) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_history_clears`](#entry_history_clears) · [`entry_methods`](#entry_methods) · [`entry_setups`](#entry_setups) · [`entry_signals`](#entry_signals) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_marks_1m`](#option_marks_1m) · [`option_marks_fetched`](#option_marks_fetched) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_groups`](#strategy_groups) · [`strategy_method_updates`](#strategy_method_updates) · [`strategy_runs`](#strategy_runs) · [`strategy_signal_runs`](#strategy_signal_runs) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades) · [`ui_settings`](#ui_settings)
+[`auth_events`](#auth_events) · [`auth_limits`](#auth_limits) · [`auth_recovery_codes`](#auth_recovery_codes) · [`auth_sessions`](#auth_sessions) · [`auth_user`](#auth_user) · [`backtest_portfolios`](#backtest_portfolios) · [`backtest_saves`](#backtest_saves) · [`book_heat_1m`](#book_heat_1m) · [`broker_accounts`](#broker_accounts) · [`chain_features`](#chain_features) · [`entry_alert_changes`](#entry_alert_changes) · [`entry_alert_log`](#entry_alert_log) · [`entry_alerts`](#entry_alerts) · [`entry_cleared`](#entry_cleared) · [`entry_gate_changes`](#entry_gate_changes) · [`entry_gates`](#entry_gates) · [`entry_history_clears`](#entry_history_clears) · [`entry_methods`](#entry_methods) · [`entry_setups`](#entry_setups) · [`entry_signals`](#entry_signals) · [`errors`](#errors) · [`index_1m`](#index_1m) · [`ledger_days`](#ledger_days) · [`mtm_samples`](#mtm_samples) · [`oi_snapshots`](#oi_snapshots) · [`option_flow_1m`](#option_flow_1m) · [`option_marks_1m`](#option_marks_1m) · [`option_marks_fetched`](#option_marks_fetched) · [`option_snapshots`](#option_snapshots) · [`option_snapshots_1m`](#option_snapshots_1m) · [`perp_snapshots`](#perp_snapshots) · [`schema_migrations`](#schema_migrations) · [`settings`](#settings) · [`strategies`](#strategies) · [`strategy_groups`](#strategy_groups) · [`strategy_method_updates`](#strategy_method_updates) · [`strategy_runs`](#strategy_runs) · [`strategy_signal_runs`](#strategy_signal_runs) · [`telegram_log`](#telegram_log) · [`trade_events`](#trade_events) · [`trade_flow_1m`](#trade_flow_1m) · [`trades`](#trades) · [`ui_settings`](#ui_settings)
 
 ### auth_events
 
@@ -433,6 +435,25 @@ the way it is, is in [database.md](database.md).
 
 - `index_1m_pkey` unique (at)
 
+### ledger_days
+
+| Column | Type | Null | Default |
+|---|---|---|---|
+| `broker_account_id` | bigint |  |  |
+| `day` | text |  |  |
+| `desk` | jsonb |  |  |
+| `delta` | jsonb | yes |  |
+| `status` | text |  |  |
+| `diff_usd` | double precision | yes |  |
+| `detail` | text |  | `''::text` |
+| `how` | text |  |  |
+| `checked_at` | bigint |  |  |
+
+- `ledger_days_by_day` (day DESC)
+- `ledger_days_pkey` unique (broker_account_id, day)
+- `ledger_days_how_check` CHECK ((how = ANY (ARRAY['auto'::text, 'manual'::text])))
+- `ledger_days_status_check` CHECK ((status = ANY (ARRAY['match'::text, 'mismatch'::text, 'open'::text, 'unread'::text, 'paper'::text])))
+
 ### mtm_samples
 
 | Column | Type | Null | Default |
@@ -699,6 +720,21 @@ the way it is, is in [database.md](database.md).
 - `strategy_signal_runs_by_time` (at DESC)
 - `strategy_signal_runs_pkey` unique (id)
 - `strategy_signal_runs_strategy_id_signal_key_key` unique (strategy_id, signal_key)
+
+### telegram_log
+
+| Column | Type | Null | Default |
+|---|---|---|---|
+| `id` | bigint |  | identity |
+| `at` | bigint |  |  |
+| `key` | text |  |  |
+| `status` | text |  |  |
+| `text` | text |  |  |
+| `error` | text | yes |  |
+
+- `telegram_log_by_time` (at DESC)
+- `telegram_log_pkey` unique (id)
+- `telegram_log_status_check` CHECK ((status = ANY (ARRAY['sent'::text, 'failed'::text, 'repeat'::text])))
 
 ### trade_events
 

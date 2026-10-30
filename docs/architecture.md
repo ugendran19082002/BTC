@@ -94,6 +94,7 @@ reach its journal must not take an order.
 | 10 s sample, 20 s write | The perp's order book, binned at $10 | `book_heat_1m` |
 | 1 min | The day's mark-to-market P&L | `mtm_samples` |
 | 1 min | The 24 entry setups read; each new TRADE written, working ones graded on 1m candles | `entry_setups` |
+| 1 min | The ledger: at 11:59 PM IST each account's day against Delta's wallet; otherwise a missed day of the last week, while Delta's quota is quiet | `ledger_days` |
 
 A recorder that fails writes one warning to the error log; it never stops the
 desk.
@@ -189,7 +190,7 @@ costs an alert, never an order.
   from the profile screen. Missing configuration fails closed.
 - **View only**: a sign-in from the phone carries `view: true`, and its session's `scope` is `view` from the
   password step to the end. The gate refuses such a session every write but sign-in, sign-out and its own
-  error reports, and the security page -- an allow-list (`viewRefuses` in `http/app.ts`), so a route added
+  error reports, a ledger check (it reads Delta's wallet and keeps what it found -- no order, no setting), and the security page -- an allow-list (`viewRefuses` in `http/app.ts`), so a route added
   later is closed to it, and a test sweeps every write route the app registers. The phone has no buttons; a
   lost phone is not trusted to keep to its screen.
 - **The gate** decides on the route Fastify matched, never on the URL text

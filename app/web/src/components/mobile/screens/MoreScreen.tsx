@@ -1,4 +1,4 @@
-import { Activity, ArrowDownUp, Bell, Bot, CalendarRange, FlaskConical, Gauge, Landmark, LineChart, ListChecks, Settings } from 'lucide-react';
+import { Activity, ArrowDownUp, Bell, BookOpen, Bot, CalendarRange, FlaskConical, Gauge, Landmark, LineChart, ListChecks, Settings } from 'lucide-react';
 import { usePhone, type Sub } from '@/components/mobile/phone-context';
 import { Panel, ListButton } from '@/components/mobile/parts';
 import { phoneAlerts } from '@/lib/phone-alerts';
@@ -7,6 +7,7 @@ import { DeskSwitch } from '@/components/mobile/DeskSwitch';
 /** More (6 Oct 2026): the screens that do not need a tab of their own, one tap each. */
 
 const ITEMS: { sub: Sub; label: string; hint: string; icon: typeof Bell }[] = [
+  { sub: 'ledger', label: 'Ledger', hint: 'Each day\'s profit, loss and charges, checked against Delta', icon: BookOpen },
   { sub: 'pairs', label: 'Signal history pairs', hint: 'Best and worst method + time frame', icon: ArrowDownUp },
   { sub: 'report', label: 'Market report', hint: 'Each expiry day\'s market type, and the best pairs on it', icon: CalendarRange },
   { sub: 'backtest', label: 'Backtest', hint: 'Signal history sold as options, on the contracts\' real prices', icon: FlaskConical },
@@ -21,7 +22,7 @@ const ITEMS: { sub: Sub; label: string; hint: string; icon: typeof Bell }[] = [
 ];
 
 export const SUB_TITLE: Record<Sub, string> = {
-  history: 'Trade history', pairs: 'Signal pairs', report: 'Market report', backtest: 'Backtest', price: 'Price change', pressure: 'Pressure', account: 'Account', market: 'Market', strategies: 'Strategies', 'method-log': 'Method updates', alerts: 'Alerts', settings: 'Status',
+  history: 'Trade history', pairs: 'Signal pairs', report: 'Market report', backtest: 'Backtest', price: 'Price change', pressure: 'Pressure', account: 'Account', market: 'Market', strategies: 'Strategies', 'method-log': 'Method updates', ledger: 'Ledger', alerts: 'Alerts', settings: 'Status',
 };
 
 export function MoreScreen() {

@@ -365,6 +365,8 @@ async function migrateEverything(): Promise<void> {
   await alertsSchema();
   await signalsSchema();
   await methodsSchema();
+  await (await import('../notify/telegram-log.js')).telegramLogSchema();
+  await (await import('../ledger/ledger.js')).ledgerSchema();
 }
 
 type Col = { table_name: string; column_name: string; data_type: string; udt_name: string; is_nullable: string; column_default: string | null; is_identity: string };

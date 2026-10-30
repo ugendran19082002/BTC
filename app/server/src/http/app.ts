@@ -15,6 +15,7 @@ import { registerBacktestSavesRoutes } from './routes/backtest-saves.routes.js';
 import { registerStreamRoutes } from './routes/stream.routes.js';
 import { registerEntryRoutes } from './routes/entry.routes.js';
 import { registerAccountRoutes } from './routes/accounts.routes.js';
+import { registerLedgerRoutes } from './routes/ledger.routes.js';
 import { deskOfRequest } from './account-query.js';
 import { runAsDesk } from '../trading/service.js';
 import type { Tester } from '../delta/accounts.js';
@@ -85,8 +86,12 @@ const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * sign-out, and its own failures to the error log. An allow-list, so a route added later is closed to it until
  * somebody decides otherwise -- the screen that holds the session has no buttons, but a lost phone is not trusted
  * to keep to its screen.
+ *
+ * And a ledger check (29 Oct 2026, owner: "the ledger -- synced by hand on the phone"): it reads Delta's wallet with the
+ * account's own key and keeps what it found in `ledger_days`, the same thing the desk does by itself at 11:59 PM. No
+ * order, no setting, nothing a lost phone could use against the account.
  */
-const VIEW_WRITES = new Set(['/api/login', '/api/login/code', '/api/logout', '/api/errors']);
+const VIEW_WRITES = new Set(['/api/login', '/api/login/code', '/api/logout', '/api/errors', '/api/ledger/sync']);
 /** Reads a view session is not given: the account's security page -- the devices, their addresses, the security log. */
 const VIEW_HIDDEN = new Set(['/api/security']);
 const VIEW_ONLY = { error: 'This device is signed in view only: it can read the desk, not change it.', viewOnly: true };
@@ -241,6 +246,7 @@ export async function buildApp(o: {
   // Telegram for the entry section's test alert; none when the trading service or Telegram is not set up.
   registerEntryRoutes(app, () => { try { return tradingService().notifier; } catch { return null; } });
   registerAccountRoutes(app, { test: o.accountTest, summary: o.accountSummary, auth });
+  registerLedgerRoutes(app);
 
   return app;
 }

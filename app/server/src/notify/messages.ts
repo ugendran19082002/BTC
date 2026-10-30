@@ -601,6 +601,23 @@ export function signalRefusedAlert(strategy: string, what: string, reason: strin
   };
 }
 
+/**
+ * The day's ledger did not agree with Delta's wallet (ledger/ledger.ts, checked at 11:59 PM IST): the two nets, the
+ * difference and where it lies. Once a day an account, and only on a live day -- a paper day has nothing on Delta.
+ */
+export function ledgerAlert(o: { account: string; day: string; deskUsd: number; deltaUsd: number; detail: string }): Alert {
+  const diff = o.deskUsd - o.deltaUsd;
+  return {
+    key: `ledger:${o.account}:${o.day}`,
+    text: lines(
+      `⚠️ <b>LEDGER OFF · ${escape(o.account)} · ${escape(o.day)}</b>`, '',
+      `Desk ${signedMoney(o.deskUsd, true)} · Delta ${signedMoney(o.deltaUsd, true)} · off by ${inr(diff)} (${usd(diff)})`,
+      escape(o.detail), '',
+      'Open the Ledger on the phone to see the day side by side, and sync it again.',
+    ),
+  };
+}
+
 /** The entry window closed with nothing tried: the desk or the price feed was down the whole time. */
 export function missedEntryAlert(
   strategy: string, entryTime: string, graceMin: number, at: number, ctx: AlertContext,
