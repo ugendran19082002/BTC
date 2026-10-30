@@ -114,11 +114,11 @@ export function LedgerScreen() {
                 Checked by itself every day at 11:59 PM.{' '}
                 {r.lastAutoAt ? <>Last: <span className="tabular-nums text-[var(--time)]">{stamp(r.lastAutoAt)}</span>.</> : 'Not yet run.'}
               </p>
-              {/* Two in a row (owner, 30 Oct 2026: "beside Sync today, a second column"): today now, or every day of the range shown. */}
+              {/* Two in a row (owner, 30 Oct 2026: "beside Sync today, a second column"): today now, or every day of the range shown. A point smaller under 360px, where 14px cut both to "Sync tod…". */}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button" disabled={busy || r.accounts.length === 0} onClick={() => void start('today')} aria-busy={jobIsToday || asking === 'today'}
-                  className="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg border-0 bg-[var(--up)] px-2 font-[inherit] text-[14px] font-semibold text-[var(--bg)] disabled:opacity-50"
+                  className="flex h-11 min-w-0 items-center justify-center gap-1 rounded-lg border-0 bg-[var(--up)] px-1.5 font-[inherit] text-[13px] font-semibold text-[var(--bg)] disabled:opacity-50 min-[360px]:gap-1.5 min-[360px]:px-2 min-[360px]:text-[14px]"
                 >
                   <RefreshCw aria-hidden="true" className={cn('h-4 w-4 shrink-0', (jobIsToday || asking === 'today') && 'animate-spin')} />
                   <span className="truncate">{jobIsToday || asking === 'today' ? 'Checking…' : 'Sync today'}</span>
@@ -126,7 +126,7 @@ export function LedgerScreen() {
                 <button
                   type="button" disabled={busy || r.accounts.length === 0} onClick={() => void start('range')} aria-busy={jobIsRange || asking === 'range'}
                   aria-label={jobIsRange ? `Checking ${job.done} of ${job.total} days` : `Sync all ${range.days} days with Delta`}
-                  className="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-solid border-[var(--up)] bg-transparent px-2 font-[inherit] text-[14px] font-semibold text-[var(--up)] disabled:opacity-50"
+                  className="flex h-11 min-w-0 items-center justify-center gap-1 rounded-lg border border-solid border-[var(--up)] bg-transparent px-1.5 font-[inherit] text-[13px] font-semibold text-[var(--up)] disabled:opacity-50 min-[360px]:gap-1.5 min-[360px]:px-2 min-[360px]:text-[14px]"
                 >
                   <RefreshCw aria-hidden="true" className={cn('h-4 w-4 shrink-0', (jobIsRange || asking === 'range') && 'animate-spin')} />
                   <span className="truncate tabular-nums">{jobIsRange ? `${job.done} of ${job.total}…` : asking === 'range' ? 'Starting…' : `Sync ${range.days} days`}</span>
