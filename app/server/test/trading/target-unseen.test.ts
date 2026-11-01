@@ -158,6 +158,22 @@ test('[critical] the target the read missed is found filled: its fill is taken i
   assert.equal(r.store.peek('B')!.state.position, -1, 'B, the sibling, is left as it was');
 });
 
+/**
+ * 30 Oct 2026: "Target asked 2.25, filled 3.0 -- +0.75 points against it" -- the step had moved the plan to 85% and
+ * the 80% target, still resting at 3, filled at 3. Judged against the price the order rested at, it is no slippage.
+ */
+test('[critical] a target that fills at its own price as a step moves the plan raises no slippage alarm', async () => {
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 15, 15.5)] });
+  await r.engine.open({ ...orderPlan({ ...base, limitPrice: 15, takeProfitPct: 0.8, stopLossPct: 3 }, 'A'), origin: 'strategy', strategyId: 'a' });
+  await r.engine.open({ ...orderPlan({ ...base, limitPrice: 15, takeProfitPct: 0.9, stopLossPct: 3 }, 'B'), origin: 'strategy', strategyId: 'b' });
+  for (let i = 0; i < 12; i++) { r.advance(1_250); await r.engine.poll('A'); await r.engine.poll('B'); }
+  r.ex.tick(quote(CE, 2.5, 3, { ts: r.now() }));
+  missTarget(r, 1);
+  await r.engine.updateProtection('A', protectionFor(15, { takeProfitPct: 0.85 }), { takeProfitPct: 0.85 });
+  assert.deepEqual(r.store.peek('A')!.state.fills.filter((f) => f.role === 'take_profit').map((f) => f.price), [3]);
+  assert.deepEqual(r.alarms.filter((a) => /asked/.test(a.message)).map((a) => a.message), [], 'filled at the 3 it rested at');
+});
+
 test('[critical] a step that moves nothing -- 90% to 90% -- asks Delta nothing; its stage is still written, and a real move still goes on', async () => {
   const r = rig({ products: [ceProduct()], quotes: [quote(CE, 15, 15.5)] });
   const before = await sold(r);

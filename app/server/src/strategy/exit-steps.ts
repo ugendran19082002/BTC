@@ -1,4 +1,5 @@
 import type { TradeRecord } from '../trading/engine.js';
+import { ExchangeUnavailable, VenueRestricted } from '../trading/exchange/port.js';
 import { QUOTA_LADDER } from '../observability/desk-metrics.js';
 import type { ExitAsk } from '../trading/order-plan.js';
 import { istMinutes } from './schedule.js';
@@ -59,6 +60,13 @@ export type ExitStepperDeps = {
  */
 export const TARGET_STEP_QUOTA_PCT = QUOTA_LADDER.target;
 
+/**
+ * Trades moved at once (30 Oct 2026): one at a time, a step over ~90 trades waited on ~90 Delta edits in turn -- 7 to 8
+ * minutes typically, 58 at worst -- and the strategy's entries and exits waited behind it on the same tick. Each trade
+ * has its own lock in the engine, so moves on different trades do not meet.
+ */
+export const EXIT_STEP_CONCURRENCY = 4;
+
 /** "0:0" is the starting values -- what the entry was placed with. */
 const START = '0:0';
 
@@ -87,11 +95,12 @@ export class StrategyExitStepper {
     const key = `${t.stage}:${st.stage}`;
 
     const trades = await this.d.openTrades(s.id);
-    const moved: string[] = [];
     const dynamic = target.steps.length > 0 || stop.steps.length > 0;
-    for (const trade of trades) {
+    const moved: (string | null)[] = trades.map(() => null);
+    const notes: { id: string; make: (after: TradeRecord | null) => { kind: 'moved'; title: string; detail: string } }[] = [];
+    const step = async (trade: TradeRecord, i: number): Promise<void> => {
       const id = trade.state.tradeId;
-      if (trade.state.position === 0 || trade.state.entryAvgPrice === null) continue;
+      if (trade.state.position === 0 || trade.state.entryAvgPrice === null) return;
       // The day's steps, said once on a trade of a strategy that has any: the first time it is seen holding a position.
       if (dynamic && this.d.note && !(trade.events ?? []).some((e) => e.t === 'exit_step' && e.kind === 'schedule')) {
         await this.d.note(id, { kind: 'schedule', title: scheduleTitle(target, stop), detail: scheduleWords(s, target, stop) }).catch(() => {});
@@ -99,13 +108,13 @@ export class StrategyExitStepper {
       // The stage written on the trade wins: it survives a restart, this map
       // does not. A trade with neither was placed with the starting values.
       const prev = trade.plan.exitStage ?? this.applied.get(id) ?? START;
-      if (prev === key) { this.applied.set(id, key); continue; }
+      if (prev === key) { this.applied.set(id, key); return; }
       const [prevTarget, prevStop] = prev.split(':');
       // The quota kept for stops: a target's step waits, and a stop's goes on alone -- the stage written says so, so
-      // the target's is still owed and moves at a later tick.
+      // the target's is still owed and moves at a later tick. Asked as each move starts: the moves before it spent quota.
       const holdTarget = String(t.stage) !== prevTarget && (this.d.stopsFirst?.(s) ?? false);
       const stopMoves = String(st.stage) !== prevStop;
-      if (holdTarget && !stopMoves) continue;
+      if (holdTarget && !stopMoves) return;
       const stage = holdTarget ? `${prevTarget}:${st.stage}` : key;
       // What is said of the move: a held target did not move.
       const tNow = holdTarget ? { ...t, stage: Number(prevTarget) } : t;
@@ -119,20 +128,42 @@ export class StrategyExitStepper {
       // Not marked until it lands: a move that throws is tried again next tick.
       await this.d.move(id, ask, stage);
       this.applied.set(id, stage);
-      moved.push(id);
+      moved[i] = id;
       this.d.tell?.(stepWords(s, trade.plan.symbol, target, tNow, prevTarget, stop, st, prevStop), id);
-      // On the trade's journal too: what moved, from what, at which step -- and the new buy-back price where it is known.
-      if (this.d.note) {
-        const after = (await Promise.resolve(this.d.openTrades(s.id)).catch(() => [] as TradeRecord[])).find((x) => x.state.tradeId === id) ?? null;
-        await this.d.note(id, movedNote(s, target, tNow, prevTarget, stop, st, prevStop, was, after)).catch(() => {});
+      notes.push({ id, make: (after) => movedNote(s, target, tNow, prevTarget, stop, st, prevStop, was, after) });
+    };
+
+    // A few at a time. A trade whose move fails is left for the next tick and the others go on; Delta not answering,
+    // or taking nothing new, stops the moves not yet started -- each would only meet it again. The first failure is
+    // still thrown, for the runner's log.
+    const failed: unknown[] = [];
+    let next = 0;
+    const worker = async () => {
+      while (next < trades.length && !failed.some(venueTrouble)) {
+        const i = next++;
+        await step(trades[i]!, i).catch((e) => { failed.push(e); });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(EXIT_STEP_CONCURRENCY, trades.length) }, worker));
+
+    // On the trades' journals too: what moved, from what, at which step -- and the new buy-back price where it is known,
+    // read once for every trade moved.
+    if (this.d.note && notes.length) {
+      const now = await Promise.resolve(this.d.openTrades(s.id)).catch(() => [] as TradeRecord[]);
+      for (const n of notes) {
+        const after = now.find((x) => x.state.tradeId === n.id) ?? null;
+        await this.d.note(n.id, n.make(after)).catch(() => {});
       }
     }
     // Forget trades that are gone, so the map does not grow for ever.
     const open = new Set(trades.filter((x) => x.state.position !== 0).map((x) => x.state.tradeId));
     for (const id of [...this.applied.keys()]) if (!open.has(id)) this.applied.delete(id);
-    return moved;
+    if (failed.length) throw failed[0];
+    return moved.filter((id): id is string => id !== null);
   }
 }
+
+const venueTrouble = (e: unknown) => e instanceof ExchangeUnavailable || e instanceof VenueRestricted;
 
 /** "Dynamic target on" / "Dynamic stop on" / both: which exits move by the clock. */
 function scheduleTitle(target: ExitRule, stop: ExitRule): string {

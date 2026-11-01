@@ -297,6 +297,13 @@ export function orderBody(req: PlaceOrderRequest): Record<string, unknown> {
   return body;
 }
 
+/**
+ * How long a contract's ticker answers every trade that asks (30 Oct 2026): each of ~55 trades on one contract read its
+ * own, and Delta refused 2,133 of them in 26 minutes -- stops judged on nothing while the refusals ran. The quote keeps
+ * Delta's own time (`venueAt`), so the staleness gate still sees its real age.
+ */
+export const QUOTE_SHARE_MS = 750;
+
 const OPTION_SIDE = (contractType: string) =>
   contractType.startsWith('call') ? ('CE' as const) : ('PE' as const);
 
@@ -344,6 +351,8 @@ function isExpectedRefusal(
 
 export class DeltaExchange implements ExchangePort {
   private products = new Map<string, ProductSpec>();
+  /** Per contract, the ticker read in flight or just answered; `at` is when it settled (in flight: never stale). */
+  private quotes = new Map<string, { at: number; q: Promise<Quote | null> }>();
 
   constructor(private readonly creds: Creds | null) {}
 
@@ -856,8 +865,18 @@ export class DeltaExchange implements ExchangePort {
     return spec;
   }
 
-  /** The ticker is public, but it is fetched here so the port has one home. */
-  async getQuote(symbol: string): Promise<Quote | null> {
+  /** The ticker is public, but it is fetched here so the port has one home. One read per contract at a time, shared. */
+  getQuote(symbol: string): Promise<Quote | null> {
+    const held = this.quotes.get(symbol);
+    if (held && Date.now() - held.at < QUOTE_SHARE_MS) return held.q;
+    const entry = { at: Infinity, q: this.readQuote(symbol) };
+    this.quotes.set(symbol, entry);
+    // A refusal is shared as well: the next ask in the window would only be refused again.
+    void entry.q.finally(() => { entry.at = Date.now(); });
+    return entry.q;
+  }
+
+  private async readQuote(symbol: string): Promise<Quote | null> {
     const t = await this.call<DeltaTicker>({
       // Past the CDN's five seconds (market/venue-time.ts): this is the quote a stop is judged on.
       method: 'GET', path: `/v2/tickers/${encodeURIComponent(symbol)}`, query: `?${uncached()}`,

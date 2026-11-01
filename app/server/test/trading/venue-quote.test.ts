@@ -1,7 +1,7 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { DeltaExchange } from '../../src/trading/exchange/delta.js';
+import { DeltaExchange, QUOTE_SHARE_MS } from '../../src/trading/exchange/delta.js';
 import { venueAt } from '../../src/market/venue-time.js';
 import { cachedAsks, liveTickers } from '../../src/market/delta.js';
 import { ceProduct, planFor, quote, rig } from './harness.js';
@@ -39,6 +39,7 @@ test('[critical] a stop\'s quote is asked past the CDN -- a query no request mad
   assert.ok(q);
   assert.equal(q!.ask, 124.4);
   assert.ok(Math.abs(q!.ts - at) <= 1, `dated ${Date.now() - q!.ts} ms ago, as Delta took it`);
+  await new Promise((r) => setTimeout(r, QUOTE_SHARE_MS + 20));
   await ex.getQuote('P-BTC-81800-221026');
   assert.equal(seen.length, 2);
   const [a, b] = seen.map((s) => new URL(s.url));
@@ -49,6 +50,36 @@ test('[critical] a stop\'s quote is asked past the CDN -- a query no request mad
   const h = seen[0]!.headers;
   const want = createHmac('sha256', 's').update(`GET${h.timestamp}${a!.pathname}${a!.search}`).digest('hex');
   assert.equal(h.signature, want);
+});
+
+test('[critical] one ticker read per contract: every trade asking at once shares it, for a moment; another contract reads its own (30 Oct 2026)', async () => {
+  const seen: Seen[] = [];
+  answering(ticker({ timestamp: (Date.now() - 300) * 1_000 }), seen);
+  const ex = new DeltaExchange({ key: 'k', secret: 's' });
+  const qs = await Promise.all(Array.from({ length: 55 }, () => ex.getQuote('P-BTC-81800-221026')));
+  assert.equal(seen.length, 1, '55 trades, one read');
+  assert.ok(qs.every((q) => q?.ask === 124.4));
+  await ex.getQuote('P-BTC-81800-221026');
+  assert.equal(seen.length, 1, 'just answered: shared');
+  await ex.getQuote('C-BTC-86200-221026');
+  assert.equal(seen.length, 2, 'another contract');
+  await new Promise((r) => setTimeout(r, QUOTE_SHARE_MS + 20));
+  await ex.getQuote('P-BTC-81800-221026');
+  assert.equal(seen.length, 3, 'past the window: read again');
+});
+
+test('[critical] a refused ticker read is shared too: the trades waiting on it are not each refused again', async () => {
+  let asked = 0;
+  globalThis.fetch = (async () => {
+    asked++;
+    return new Response(JSON.stringify({ success: false, error: { code: 'rate_limited' } }), { status: 429, headers: { 'content-type': 'application/json', 'x-rate-limit-reset': '1000' } });
+  }) as typeof fetch;
+  const ex = new DeltaExchange({ key: 'k', secret: 's' });
+  const qs = await Promise.all(Array.from({ length: 20 }, () => ex.getQuote('P-BTC-81800-221026')));
+  assert.ok(qs.every((q) => q === null));
+  assert.equal(asked, 1);
+  await ex.getQuote('P-BTC-81800-221026');
+  assert.equal(asked, 1);
 });
 
 test('[critical] no timestamp on the answer: dated as it arrived, as before', async () => {

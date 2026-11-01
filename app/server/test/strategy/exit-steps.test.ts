@@ -5,11 +5,12 @@ import {
   DEFAULT_CONFIG, exitAsk, exitRules, exitValueAt, minutesOf, validateConfig,
   type ExitRule, type Strategy, type StrategyConfig,
 } from '../../src/strategy/types.js';
-import { StrategyExitStepper, exitWords, type ExitStepperDeps } from '../../src/strategy/exit-steps.js';
+import { EXIT_STEP_CONCURRENCY, StrategyExitStepper, exitWords, type ExitStepperDeps } from '../../src/strategy/exit-steps.js';
 import {
   exitPriceProblem, orderPlan, protectionFor, stopFor, stopPriceByPoints, targetFor, targetPriceByPoints, targetPriceFor, type ExitAsk,
 } from '../../src/trading/order-plan.js';
 import { backstopFor, type TradeRecord } from '../../src/trading/engine.js';
+import { ExchangeUnavailable } from '../../src/trading/exchange/port.js';
 import { rig, ceProduct, planFor, quote, T0 } from '../trading/harness.js';
 
 /**
@@ -362,6 +363,65 @@ describe('StrategyExitStepper', () => {
     d.clock.t = ist('12:00');
     await s.consider(strat({ takeProfitPct: 0.8 }));
     assert.equal(asked, 0);
+  });
+
+  test('[critical] a step over many trades moves a few at once, never more, and says them in the trades\' order (30 Oct 2026)', async () => {
+    const d = fakeDesk(Array.from({ length: 12 }, () => ({})));
+    let inFlight = 0, most = 0;
+    const s = new StrategyExitStepper({ ...d.deps, move: async (tradeId, ask) => {
+      inFlight++; most = Math.max(most, inFlight);
+      await new Promise((r) => setTimeout(r, 5 + (Number(tradeId.slice(1)) % 3) * 5));
+      inFlight--; d.moves.push({ tradeId, ask });
+    } });
+    d.clock.t = ist('07:30');
+    assert.deepEqual(await s.consider(morning()), d.rows.map((r) => r.state.tradeId));
+    assert.equal(d.moves.length, 12);
+    assert.equal(most, EXIT_STEP_CONCURRENCY);
+  });
+
+  test('[critical] one trade\'s move refused does not hold up the others; it alone is owed next tick, and the refusal still reaches the log', async () => {
+    const d = fakeDesk([{}, {}, {}]);
+    const s = new StrategyExitStepper({ ...d.deps, move: async (tradeId, ask) => {
+      if (tradeId === 'T0' && !d.moves.some((m) => m.tradeId === 'T1')) throw new Error('levels the wrong side');
+      d.moves.push({ tradeId, ask });
+    } });
+    d.clock.t = ist('07:30');
+    await assert.rejects(s.consider(morning()), /levels the wrong side/);
+    assert.deepEqual(d.moves.map((m) => m.tradeId).sort(), ['T1', 'T2']);
+    assert.deepEqual(await s.consider(morning()), ['T0']);
+  });
+
+  test('[critical] Delta not answering stops the moves not yet started: each would only meet it again', async () => {
+    const d = fakeDesk(Array.from({ length: 10 }, () => ({})));
+    let asked = 0;
+    const s = new StrategyExitStepper({ ...d.deps, move: async () => { asked++; throw new ExchangeUnavailable('Delta is not answering'); } });
+    d.clock.t = ist('07:30');
+    await assert.rejects(s.consider(morning()), ExchangeUnavailable);
+    assert.ok(asked <= EXIT_STEP_CONCURRENCY, `${asked} asked`);
+  });
+
+  test('[critical] the quota kept for stops is asked as each move starts: a target\'s step that began under it goes on, the rest wait', async () => {
+    const d = fakeDesk(Array.from({ length: 8 }, () => ({})));
+    const s = new StrategyExitStepper({ ...d.deps, stopsFirst: () => d.moves.length >= 2 });
+    d.clock.t = ist('07:30');
+    const moved = await s.consider(morning());
+    assert.ok(moved.length >= 2 && moved.length <= EXIT_STEP_CONCURRENCY + 1, `${moved.length} moved`);
+    assert.ok(moved.length < 8, 'the quota stopped the rest');
+  });
+
+  test('[critical] the moves\' notes read the trades back once, not once a move', async () => {
+    const d = fakeDesk(Array.from({ length: 6 }, () => ({})));
+    let reads = 0;
+    const notes: string[] = [];
+    const s = new StrategyExitStepper({
+      ...d.deps,
+      openTrades: () => { reads++; return d.rows; },
+      note: async (id, n) => { if (n.kind === 'moved') notes.push(id); },
+    });
+    d.clock.t = ist('07:30');
+    await s.consider(morning());
+    assert.equal(notes.length, 6);
+    assert.equal(reads, 2, 'the trades, then once more for the notes');
   });
 
   test('every open trade of the strategy moves -- both legs of a strangle', async () => {

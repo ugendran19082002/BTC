@@ -1215,7 +1215,11 @@ export class TradeEngine {
        * where the alerts go.
        */
       if (role === 'stop_loss' || role === 'take_profit') {
-        const wanted = role === 'stop_loss' ? rec.plan.stopPrice : rec.plan.takeProfitPrice;
+        // Against the price the filled order rested at (30 Oct 2026): a time step moves the plan before Delta's edit
+        // lands, and an old target filling at its own price in between read as 30% "against it". The plan only where
+        // the order says nothing.
+        const resting = role === 'stop_loss' ? order.stopPrice : order.limitPrice;
+        const wanted = resting ?? (role === 'stop_loss' ? rec.plan.stopPrice : rec.plan.takeProfitPrice);
         const slip = slippageOf(role, wanted ?? null, price);
         if (slip && slip.pct >= SLIPPAGE_ALERT_PCT) {
           this.d.onAlarm?.(
@@ -2056,21 +2060,30 @@ export class TradeEngine {
    * the order back.
    */
   private async cancelAndVerify(order: ExchangeOrder): Promise<boolean> {
+    return (await this.cancelAndRead(order)).gone;
+  }
+
+  /**
+   * Cancel, look again, and say what was seen: `gone` as `cancelAndVerify` answers it, and the order as it stands after
+   * -- which may have filled meanwhile. A stop triggered in the moment it was being taken off is not cancelled, it is
+   * a fill (30 Oct 2026, below), and only the order read back can say so.
+   */
+  private async cancelAndRead(order: ExchangeOrder): Promise<{ gone: boolean; after: ExchangeOrder | null }> {
     // A cancel the venue did not take is not one (22 Oct 2026): only its look-up can say it is gone -- and "nowhere"
     // after a cancel refused is no proof, so it is not taken as one.
     let refused = false;
     await this.exchange.cancelOrder(order).catch((e) => { refused = !(e instanceof OrderGone); this.note('cancel', order, e); });
-    if (!order.clientOrderId) return !refused;
+    if (!order.clientOrderId) return { gone: !refused, after: null };
     let after: ExchangeOrder | null;
     try {
       after = await this.exchange.getOrderByClientId(order.clientOrderId, order.symbol);
     } catch {
       // Could not ask is not gone. Until 1 Oct 2026 a failed read counted as a
       // confirmed cancel, which is the one answer this method exists to rule out.
-      return false;
+      return { gone: false, after: null };
     }
-    if (after === null) return !refused;                   // gone from the book -- if the cancel was taken
-    return after.status !== 'open' && after.status !== 'partial';
+    if (after === null) return { gone: !refused, after: null };   // gone from the book -- if the cancel was taken
+    return { gone: after.status !== 'open' && after.status !== 'partial', after };
   }
 
   /** Take every protective order off the book, verifying each one. */
@@ -2126,18 +2139,31 @@ export class TradeEngine {
      */
     const legs = ([['take_profit', rec.state.protection.takeProfit], ['stop_loss', rec.state.protection.stopLoss]] as const)
       .filter(([role, cid]) => cid && (all || role !== winner));
-    const gone = await Promise.all(legs.map(async ([, cid]) => {
+    const seen = await Promise.all(legs.map(async ([, cid]): Promise<{ gone: boolean; order: ExchangeOrder | null }> => {
       let o: ExchangeOrder | null;
       try {
         o = await (looked?.get(cid!) ?? this.exchange.getOrderByClientId(cid!, rec.plan.symbol));
       } catch (e) {
         this.note('cancel sibling', { orderId: cid!, symbol: rec.plan.symbol }, e);
-        return false;
+        return { gone: false, order: null };
       }
-      return !(o && (o.status === 'open' || o.status === 'partial') && !(await this.cancelAndVerify(o)));
+      if (!o) return { gone: true, order: null };
+      if (o.status !== 'open' && o.status !== 'partial') return { gone: true, order: o };
+      const c = await this.cancelAndRead(o);
+      return { gone: c.gone, order: c.after ?? o };
     }));
     for (const [i, [role]] of legs.entries()) {
-      if (!gone[i]) { unconfirmed.push(role === 'take_profit' ? 'target' : 'stop'); continue; }
+      /*
+       * A leg that filled is a fill, not a cancel (30 Oct 2026, account 1, C-BTC-79000): the backstop of a trade the desk
+       * was closing triggered at 10:41:49 and filled at 254, two seconds before the desk's own close filled at 248. Its
+       * look-up said "not open", which read as cancelled: the fill was never booked, the close bought a second contract,
+       * and a sibling on the contract was found flat on Delta at 11:03 with nothing booked for it. What a leg filled is
+       * taken in here while the trade still holds -- the close that follows sees the position it leaves, and sends
+       * nothing once there is nothing left to close.
+       */
+      const o = seen[i]!.order;
+      if (o && o.filledSize > 0 && rec.state.position !== 0) rec = await this.absorb(rec, o, role);
+      if (!seen[i]!.gone) { unconfirmed.push(role === 'take_profit' ? 'target' : 'stop'); continue; }
       rec = await this.commit(rec, { t: 'sibling_cancelled', role, at: this.now() });
     }
     this.noteLeftover(rec, unconfirmed);
@@ -2703,7 +2729,12 @@ export class TradeEngine {
     }
     const all = size >= held;
 
-    await this.cancelSiblings(rec, true, rec.events.length === seen ? looked : undefined);
+    rec = await this.cancelSiblings(rec, true, rec.events.length === seen ? looked : undefined);
+    // What the legs filled while they were taken off is the exit, in whole or in part (30 Oct 2026, `cancelSiblings`):
+    // the close is of what is held now -- nothing, once a backstop has bought it all back.
+    const left = protectionSize(rec.state);
+    if (left === 0) return rec.state;
+    const sending = Math.min(size, left);
     const n = rec.events.filter((e) => e.t === 'exit_submitted').length + 1;
     const cid = clientId(tradeId, 'exit', n);
     const product = await this.exchange.getProduct(rec.plan.symbol).catch(() => null);
@@ -2711,7 +2742,7 @@ export class TradeEngine {
       t: 'exit_submitted',
       role: 'manual',
       clientOrderId: cid,
-      closing: { clientOrderId: cid, size, heldBefore: held, all, submittedAt: this.now() },
+      closing: { clientOrderId: cid, size: sending, heldBefore: left, all: all || sending >= left, submittedAt: this.now() },
       reason,
       ...(via ? { via } : {}),
       ...(quoteAgeMs !== undefined ? { quoteAgeMs: Math.round(quoteAgeMs) } : {}),
@@ -2727,12 +2758,16 @@ export class TradeEngine {
       const ack = await this.exchange.placeOrder({
         clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
         // A short is bought back; a bought position is sold. Reduce-only either way: a close never opens.
-        side, size, reduceOnly: true, role: 'exit',
+        side, size: sending, reduceOnly: true, role: 'exit',
         ...(limit !== null ? { type: 'limit' as const, limitPrice: limit } : { type: 'market' as const }),
       });
       rec = await this.absorb(rec, ack, 'exit');
     } catch (e) {
       rec = await this.commit(rec, { t: 'protection_failed', reason: `${reason} failed: ${(e as Error).message}`, at: this.now() });
+      // Refused is an answer -- nothing was placed -- and the exits were taken off for it: they go back on now, not a
+      // poll later (30 Oct 2026: `immediate_liquidation`, six seconds short with no stop at Delta). No answer is not
+      // one: the close may be working, and the poll reads it before anything is put beside it.
+      if (e instanceof OrderRejected && rec.state.position !== 0) rec = await this.protect(rec);
     }
     return rec.state;
   }
