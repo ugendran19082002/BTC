@@ -7,7 +7,7 @@ import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow, perpRiseNow } from '../../strategy/runner.js';
 import { autoAsked, autoPick, runAutoMethodsAlone, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, REENTRY_KEY, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -465,6 +465,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       signalZoneFreshS: zoneFreshOf(accountSetting(svc.settings, ZONE_FRESH_KEY, account ?? svc.accountId)),
       // The momentum guard (30 Oct 2026): on or off, its points, and the perp's rise over the hour now -- what the next call meets.
       signalMomentumGuard: { ...momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account ?? svc.accountId)), now: await perpRiseNow(now).catch(() => null) },
+      signalReentry: reentryOf(accountSetting(svc.settings, REENTRY_KEY, account ?? svc.accountId)),
       busiestStrike: elsewhere ? null : busiestOf(openTrades),
       /*
        * The desk's limit on lots short at once (the order gate's MAX_POSITION), and
@@ -1106,6 +1107,22 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const { on, pts } = (want ?? {}) as { on?: boolean; pts?: number };
     await svc.settings.set(accountKey(MOMENTUM_GUARD_KEY, account), want === null ? '' : JSON.stringify({ on, pts }));
     return { ok: true, signalMomentumGuard: momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account)) };
+  });
+
+  /**
+   * Re-entry after an option SL, this account's (owner, 1 Nov 2026): `{ reentry: { on: true, max: 2, size: 1 } }` -- up to
+   * `max` (1-5) in a row, each `size` (1-7) times the strategy's lots; `null` is back to the default, off. The runner reads it
+   * at each stop, so it counts from the next one.
+   */
+  app.post('/api/strategies/reentry', async (req, reply) => {
+    const { reentry, accountId } = (req.body ?? {}) as { reentry?: unknown; accountId?: unknown };
+    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const want = reentry === undefined ? null : reentry;
+    const problem = reentryProblem(want);
+    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+    const { on, max, size } = (want ?? {}) as { on?: boolean; max?: number; size?: number };
+    await svc.settings.set(accountKey(REENTRY_KEY, account), want === null ? '' : JSON.stringify({ on, max, size }));
+    return { ok: true, signalReentry: reentryOf(accountSetting(svc.settings, REENTRY_KEY, account)) };
   });
 
   // One side's own limit under the cap: per cent of "at most open" for calls, or for puts; null is back to the default.

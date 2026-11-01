@@ -2,7 +2,7 @@ import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setMomentumGuard, setScheduler, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setStrategyEnabled, setZoneFresh, takeIntoGroup } from '@/api/strategy';
+import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setMomentumGuard, setReentry, setScheduler, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setStrategyEnabled, setZoneFresh, takeIntoGroup } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus, type VolLevelNow } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { SideMax } from '@/components/strategy/SideMax';
 import { StrikeMax } from '@/components/strategy/StrikeMax';
 import { ZoneFresh } from '@/components/strategy/ZoneFresh';
 import { MomentumGuard } from '@/components/strategy/MomentumGuard';
+import { Reentry } from '@/components/strategy/Reentry';
 import { refreshGroupIndex } from '@/hooks/useGroupOf';
 import { defaultGroupFor, groupNameProblem, groupSections, moved, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
@@ -740,6 +741,10 @@ export function SignalStrategiesCard() {
           {data?.signalMomentumGuard && (
             <MomentumGuard guard={data.signalMomentumGuard} now={data.signalMomentumGuard.now} busy={busy === 'momentum-guard'}
                            onSave={(g) => act('momentum-guard', () => setMomentumGuard(g))} />
+          )}
+          {/* The other side sold after an option SL (1 Nov 2026). Absent on a server from before it. */}
+          {data?.signalReentry && (
+            <Reentry reentry={data.signalReentry} busy={busy === 'reentry'} onSave={(r) => act('reentry', () => setReentry(r))} />
           )}
           {data && (
             <span className="desk-badge-pill"

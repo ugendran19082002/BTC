@@ -922,6 +922,40 @@ export function momentumGuardProblem(v: unknown): string | null {
 export const momentumBlocks = (g: MomentumGuard, sells: 'CE' | 'PE' | null, rise: number | null): boolean =>
   g.on && sells === 'CE' && rise !== null && rise >= g.pts;
 
+/**
+ * Re-entry after an option SL, one account's (owner, 1 Nov 2026: "SL exit aana opposite side entry ... normal trade rule
+ * ithuku apply aakunum, but no-entry window restrict pana kudathu"): a signal strategy's trade closed by its option stop
+ * -- the desk's stop watch, or the stop resting at Delta -- is followed at once by a sale of the other side, call for put
+ * or put for call, by the same strategy and through every rule its signals pass except the no-entry window. A re-entry
+ * that is itself stopped is followed the same way, up to `max` in a row; each sells `size` times the strategy's lots.
+ * The study (12-30 Oct, the 930 option stops on real fills): +₹1,253 a contract on +₹5,125, the loss up 3%; the same
+ * side again lost ₹342 on 13 Oct alone. A third in a row came twice in the month, a fourth never.
+ * Kept as JSON, {"on": true, "max": 2, "size": 1}; off where unset or unreadable. Read by the runner at each stop.
+ */
+export const REENTRY_KEY = 'signal_reentry';
+export type Reentry = { on: boolean; max: number; size: number };
+export const REENTRY_DEFAULT: Readonly<Reentry> = { on: false, max: 2, size: 1 };
+export const REENTRY_MAX_IN_A_ROW = 5;
+export const REENTRY_MAX_SIZE = 7;
+const reentryMaxOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= REENTRY_MAX_IN_A_ROW;
+const reentrySizeOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= REENTRY_MAX_SIZE;
+/** The setting as stored: on or off, how many in a row and how many times the lots; the default for whatever is unset or unreadable. */
+export function reentryOf(raw: string | null | undefined): Reentry {
+  let v: Record<string, unknown> = {};
+  try { const x = raw ? JSON.parse(raw) : {}; if (x && typeof x === 'object' && !Array.isArray(x)) v = x; } catch { /* the default */ }
+  return { on: v.on === true, max: reentryMaxOk(v.max) ? v.max : REENTRY_DEFAULT.max, size: reentrySizeOk(v.size) ? v.size : REENTRY_DEFAULT.size };
+}
+/** Why a re-entry setting cannot be saved, in words; null when it can. `null` itself is "back to the default" (off), and can. */
+export function reentryProblem(v: unknown): string | null {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return 'Re-entry is {"on": true, "max": 2, "size": 1}.';
+  const { on, max, size } = v as Record<string, unknown>;
+  if (typeof on !== 'boolean') return 'Say whether re-entry is on: true or false.';
+  if (!reentryMaxOk(max)) return `Re-entries in a row must be a whole number from 1 to ${REENTRY_MAX_IN_A_ROW}.`;
+  if (!reentrySizeOk(size)) return `A re-entry's size must be a whole number of times the lots, from 1 to ${REENTRY_MAX_SIZE}.`;
+  return null;
+}
+
 export function strikeMaxProblem(v: unknown): string | null {
   if (v === null) return null;
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 100

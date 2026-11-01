@@ -15,6 +15,7 @@ import { DEFAULT_LEVERAGE, exitPriceProblem, orderPlan, protectionFor, type Exit
 
 export { stopFor, stopPriceFor, targetFor, targetPriceFor } from './order-plan.js';
 import { isDone, isLong } from './machine.js';
+import { announceOptionStop, optionStopped } from './option-stop.js';
 import { unrealisedPnlUsd } from './margin.js';
 import { midOf } from './money.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
@@ -252,6 +253,11 @@ export class TradingService {
       onEvent: async (event, before, after, plan) => {
         // A close sent -- by the stop watch, the perp's watch, the clock or a hand -- is followed up off the loop (25 Oct 2026).
         if (event.t === 'exit_submitted' && after.position !== 0) this.entryWatch.add(after.tradeId, true);
+        // A signal strategy's trade out on its option stop: the runner may sell the other side (1 Nov 2026, `REENTRY_KEY`).
+        if (before.position !== 0 && after.position === 0 && plan.origin === 'strategy' && plan.signal) {
+          const rec = await this.store.get(after.tradeId);
+          if (optionStopped(after, rec?.events ?? [])) announceOptionStop({ plan, state: after });
+        }
         if (!this.notifier || !this.alertsOn) return;
         const alert = alertFor(event, before, after, plan, this.alertContext());
         if (alert) this.notifier.notify(alert);

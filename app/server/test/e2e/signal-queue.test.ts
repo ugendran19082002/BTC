@@ -120,7 +120,7 @@ const logged = async (s: MethodRead): Promise<MethodRead> => {
 };
 
 const TFS: Tf[] = ['5m', '15m', '30m', '1h', '2h', '4h'];
-const config = (o: { maxOpen?: number; enterOn?: 'signal' | 'zone'; skipPerpSl?: boolean; skipPerpTgt?: boolean } = {}) => ({
+const config = (o: { maxOpen?: number; enterOn?: 'signal' | 'zone'; skipPerpSl?: boolean; skipPerpTgt?: boolean; noEntry?: { from: string; to: string } } = {}) => ({
   trigger: 'signal', signal: { mode: 'single', tf: '5m', tfs: TFS, methods: ['breakout'], target: 'tp1', maxOpen: o.maxOpen ?? 50, enterOn: o.enterOn ?? 'signal',
     ...(o.skipPerpSl ? { skipPerpSl: true } : {}), ...(o.skipPerpTgt ? { skipPerpTgt: true } : {}) },
   liveOrders: false,
@@ -129,6 +129,7 @@ const config = (o: { maxOpen?: number; enterOn?: 'signal' | 'zone'; skipPerpSl?:
   entryPrice: 'offer', crossAfterSec: 5, maxCrossSpreadPct: 0.5,
   takeProfitPct: 0.99, stopLossPct: 3, minPremiumUsd: 1,
   weekdays: [0, 1, 2, 3, 4, 5, 6], graceMin: 60,
+  ...(o.noEntry ? { noEntry: { on: true, windows: [o.noEntry] } } : {}),
 });
 const runsOf = (id: string) => rows<{ status: string; detail: string; signal_key: string }>(
   'SELECT status, detail, signal_key FROM strategy_signal_runs WHERE strategy_id = $1 ORDER BY id', [id]);
@@ -475,6 +476,81 @@ test('[critical] the momentum guard (30 Oct 2026): off until set; on, no call is
     assert.deepEqual((await api('POST', '/api/strategies/momentum-guard', { guard: null, accountId: main })).body.signalMomentumGuard, { on: false, pts: 250 });
   } finally {
     perp = null;
+    await api('POST', '/api/strategies/momentum-guard', { guard: null, accountId: main });
+    await off(id);
+  }
+});
+
+test('[critical] re-entry after an option SL (1 Nov 2026): off until set; on, the other side is sold by the same strategy -- inside its no-entry window too -- up to its most in a row, at its size; nonsense is refused', async () => {
+  // 10:00 is inside this strategy's no-entry window: its signals are skipped there, its re-entries are not.
+  const id = await make('Re-entry', main, { enterOn: 'signal', noEntry: { from: '09:30', to: '11:00' } });
+  const last = async () => (await runsOf(id)).at(-1)!;
+  type TradePlan = import('../../src/trading/engine.js').TradePlan;
+  type TradeState = import('../../src/trading/types.js').TradeState;
+  let n = 0;
+  /** A trade of this strategy's on the call or the put, out on its option stop; `again` for one that was itself a re-entry. */
+  const stopped = (side: 'CE' | 'PE', again?: number) => {
+    const strike = side === 'CE' ? CALL : PUT;
+    const tradeId = `${side === 'CE' ? 'C' : 'P'}-BTC-${strike}-${EXPIRY}-stopped-${++n}`;
+    const plan = {
+      tradeId, symbol: `${side === 'CE' ? 'C' : 'P'}-BTC-${strike}-${EXPIRY}`, origin: 'strategy', strategyId: id, accountId: main,
+      signal: { method: 'breakout', n: 1, name: 'Breakout', mode: 'single', tf: '15m', dir: side === 'CE' ? -1 : 1, triggerTime: 1_790_500_000,
+        ...(again ? { reentry: { of: 'earlier', n: again } } : {}) },
+      expect: { underlying: 'BTC', optionSide: side, strike, expiryTs: EXPIRY_TS },
+    } as unknown as TradePlan;
+    return { plan, state: { tradeId, exitWinner: 'stop_loss', position: 0 } as unknown as TradeState };
+  };
+  try {
+    await runner.onSignal(await logged(signal('15m')));
+    assert.match((await last()).detail, /inside the no-entry window 9:30 AM – 11:00 AM/, 'its own signals are held to the window');
+    const rows = (await runsOf(id)).length;
+    await runner.onOptionStop(stopped('CE'));
+    assert.equal((await runsOf(id)).length, rows, 'off until set: nothing done, nothing written');
+    assert.deepEqual((await api('GET', `/api/strategies?account=${main}`)).body.signalReentry, { on: false, max: 2, size: 1 });
+
+    const set = await api('POST', '/api/strategies/reentry', { reentry: { on: true, max: 2, size: 3 }, accountId: main });
+    assert.equal(set.status, 200, JSON.stringify(set.body));
+    assert.deepEqual(set.body.signalReentry, { on: true, max: 2, size: 3 });
+    assert.equal((await api('GET', `/api/strategies?account=${main}`)).body.signalReentry.on, true, 'and the card reads it back');
+
+    // A call stopped: the put is sold, three times the lots, in the window, with no perp levels of its own.
+    const call = stopped('CE');
+    await runner.onOptionStop(call);
+    assert.equal((await last()).status, 'would-place', (await last()).detail);
+    assert.match((await last()).detail, new RegExp(`^#1 Breakout BUY · re-entry 1 after the option SL on ${call.plan.tradeId} \\| live orders off: would sell PE ${PUT} x3 @ `));
+    assert.match((await last()).detail, /perp SL · TGT none \(a re-entry: the option's own exits\)/);
+    assert.match((await last()).signal_key, new RegExp(`\\|re1\\|${call.plan.tradeId}$`));
+    // told twice, taken once
+    await runner.onOptionStop(call);
+    assert.equal((await runsOf(id)).filter((r) => r.signal_key.endsWith(call.plan.tradeId)).length, 1);
+    // A put stopped: the call is sold. A second re-entry in a row is taken; a third is past the most of two.
+    await runner.onOptionStop(stopped('PE', 1));
+    assert.match((await last()).detail, /^#1 Breakout SELL · re-entry 2 after the option SL on .* would sell CE 86000 x3 @ /);
+    await runner.onOptionStop(stopped('PE', 2));
+    assert.equal((await last()).status, 'skipped');
+    assert.match((await last()).detail, /re-entry 3 in a row -- this account re-enters at most 2 in a row$/);
+    // The normal rules still hold: the momentum guard sells no call after a rise.
+    const guarded = new StrategyRunner(strategyStore(), () => clock, async () => board, () => perp, undefined, async () => 84_700);
+    await api('POST', '/api/strategies/momentum-guard', { guard: { on: true, pts: 250 }, accountId: main });
+    perp = 85_010;
+    await guarded.onOptionStop(stopped('PE'));
+    assert.match((await last()).detail, /re-entry 1 .* the momentum guard sells no call after a rise of 250 or more$/);
+    // Another account's setting is its own: the second account's strategy is not re-entered.
+    const other = await make('Re-entry, other', second, { enterOn: 'signal' });
+    const before = (await runsOf(other)).length;
+    await runner.onOptionStop({ ...stopped('CE'), plan: { ...stopped('CE').plan, strategyId: other, accountId: second } });
+    assert.equal((await runsOf(other)).length, before, 'off on that account');
+    await off(other);
+
+    for (const [bad, said] of [[{ on: true, max: 6, size: 1 }, /from 1 to 5/], [{ on: true, max: 2, size: 8 }, /from 1 to 7/], [{ on: 'yes', max: 2, size: 1 }, /true or false/]] as const) {
+      const r = await api('POST', '/api/strategies/reentry', { reentry: bad, accountId: main });
+      assert.equal(r.status, 422, JSON.stringify(bad));
+      assert.match(r.body.error, said);
+    }
+    assert.deepEqual((await api('POST', '/api/strategies/reentry', { reentry: null, accountId: main })).body.signalReentry, { on: false, max: 2, size: 1 });
+  } finally {
+    perp = null;
+    await api('POST', '/api/strategies/reentry', { reentry: null, accountId: main });
     await api('POST', '/api/strategies/momentum-guard', { guard: null, accountId: main });
     await off(id);
   }

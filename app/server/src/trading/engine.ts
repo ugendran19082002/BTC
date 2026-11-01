@@ -122,6 +122,8 @@ export type TradeOrigin = 'manual' | 'strategy' | 'best-pick';
 
 export type TradeSignal = {
   method: string; n: number; name: string; mode: 'mtf' | 'single'; tf: string; dir: 1 | -1; triggerTime: number;
+  /** A re-entry after an option stop (1 Nov 2026): the trade stopped, and which re-entry in a row this is. Absent on the signal's own. */
+  reentry?: { of: string; n: number };
 };
 
 export type TradePlan = {

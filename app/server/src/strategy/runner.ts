@@ -8,9 +8,10 @@ import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, REENTRY_KEY, reentryOf, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
+import type { OptionStop } from '../trading/option-stop.js';
 import { METHODS } from '../entry/methods.js';
 import { lastPerp } from '../market/flow.js';
 import { perpAtMinutes } from '../market/perp-minute.js';
@@ -448,6 +449,23 @@ export class StrategyRunner {
       ? () => this.takeSignal(s, r, f) : null));
   }
 
+  /**
+   * A signal strategy's trade closed by its option stop (trading/option-stop.ts): with re-entry on for its account
+   * (`REENTRY_KEY`), the same strategy sells the other side now -- the put for a stopped call, the call for a stopped
+   * put -- in turn with the signals, through the same queues and the same rules but the no-entry window.
+   */
+  onOptionStop(t: OptionStop): Promise<void> {
+    const sig = t.plan.signal;
+    if (t.plan.origin !== 'strategy' || !t.plan.strategyId || !sig) return Promise.resolve();
+    // A call stopped: the market rose, so the put is sold -- a BUY's leg; a put stopped, the call -- a SELL's.
+    const dir = t.plan.expect.optionSide === 'CE' ? 'long' : 'short';
+    const r = {
+      id: sig.method, n: sig.n, name: sig.name, mode: sig.mode, tf: sig.tf, dir, state: 'TRADE', triggerTime: sig.triggerTime, plan: null,
+    } as unknown as MethodRead;
+    const re = { of: t.plan.tradeId, n: (sig.reentry?.n ?? 0) + 1 };
+    return this.inTurn(sig.tf as Tf, (s) => (s.id === t.plan.strategyId ? () => this.takeSignal(s, r, null, re) : null));
+  }
+
   /*
    * THE QUEUES (13 Oct 2026).
    *
@@ -576,21 +594,34 @@ export class StrategyRunner {
     if (chosen) await tradingService().warmEntry(`${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`);
   }
 
-  private async takeSignal(s: Strategy, r: MethodRead, fill: SetupFill | null): Promise<void> {
+  /**
+   * `re`: a re-entry after an option stop (`onOptionStop`) -- the trade stopped and which in a row this is. It has no
+   * levels of its own on the perp (`r.plan` is null): it is held to everything a signal is but the no-entry window, the
+   * perp's levels and the distances to them, and exits on the option's own stop and target and the strategy's exit time.
+   */
+  private async takeSignal(s: Strategy, r: MethodRead, fill: SetupFill | null, re: { of: string; n: number } | null = null): Promise<void> {
     const now = this.now();
     if (!inSignalWindow(s, now)) return;              // outside its days or hours: not its signal
+    const again = re ? reentryOf(accountSetting(tradingService().settings, REENTRY_KEY, tradingService().accountId)) : null;
+    if (again && !again.on) return;                   // re-entry off for this account: nothing to write down
     const rule = s.config.signal!;
     const plan = r.plan!;
     const dir: 1 | -1 = r.dir === 'long' ? 1 : -1;
-    const key = signalKeyOf(r);
+    // A re-entry's own claim: one per stopped trade, beside its signal's (the trigger stays the key's fifth part).
+    const key = re ? `${signalKeyOf(r)}|re${re.n}|${re.of}` : signalKeyOf(r);
     if (!await this.store.claimSignal(s.id, key, { method: r.id, mode: r.mode, tf: r.tf, dir }, now)) return;
-    const said = `#${r.n} ${r.name} ${dir === 1 ? 'BUY' : 'SELL'}`;
+    const said = `#${r.n} ${r.name} ${dir === 1 ? 'BUY' : 'SELL'}${re ? ` · re-entry ${re.n} after the option SL on ${re.of}` : ''}`;
     const finish = (status: Parameters<StrategyStore['finishSignal']>[2], detail: string, tradeId: string | null = null) =>
       this.store.finishSignal(s.id, key, status, `${said} | ${detail}`, tradeId);
+    if (re && again && re.n > again.max) {
+      await finish('skipped', `re-entry ${re.n} in a row -- this account re-enters at most ${again.max} in a row`);
+      return;
+    }
 
     // A no-entry window (owner, 9 Oct 2026): the signal is written down, not taken -- at the moment it would
     // have entered, the zone's fill for one that enters there. What is already open keeps its exits.
-    const blocked = noEntryWindowAt(s.config, istMinutes(now));
+    // Not a re-entry's (owner, 1 Nov 2026: "no-entry window restrict pana kudathu").
+    const blocked = re ? null : noEntryWindowAt(s.config, istMinutes(now));
     if (blocked) {
       await finish('skipped', `inside the no-entry window ${noEntryWords(blocked)} — no new entry until ${time12(blocked.to)}`);
       return;
@@ -619,7 +650,7 @@ export class StrategyRunner {
      * too (18 Oct 2026 audit): it waits its turn in the account's queue, and the perp moves meanwhile.
      */
     const perpNow = this.perp();
-    if (perpNow !== null) {
+    if (perpNow !== null && !re) {
       const goal = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
       // Only a level the strategy closes on: one it skips does not end the trade, so it does not end the entry either.
       const past = !rule.skipPerpSl && (dir === 1 ? perpNow <= plan.stop : perpNow >= plan.stop) ? `SL ${Math.round(plan.stop)}`
@@ -663,7 +694,7 @@ export class StrategyRunner {
     // And the most each may be (5 Oct 2026): a stop or a target further than its timeframe's maximum is skipped the same way.
     const mostSl = maxSlPtsFor(rule, r.tf);
     const mostTgt = maxTgtPtsFor(rule, r.tf);
-    if (needSl > 0 || needTgt > 0 || mostSl > 0 || mostTgt > 0) {
+    if (!re && (needSl > 0 || needTgt > 0 || mostSl > 0 || mostTgt > 0)) {
       const from = fill?.fillPrice ?? this.perp() ?? (plan.entryLo + plan.entryHi) / 2;
       // The target the trade would exit at: the rule's, TGT1 where the signal has no TGT2 / TGT3.
       const tgt = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
@@ -791,23 +822,24 @@ export class StrategyRunner {
       }
     }
 
-    const target = (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
+    const target = re ? null : (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;
     const args = {
       // Its SL by volatility rides in here: the exits it enters with are the level's (`exitsNow`).
       ...placeArgs(vol.s, {
         symbol: `${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`,
         optionSide: leg, strike: chosen.strike, expiryTs: snap.expiryTs,
-        lots: chosen.lots, ask: chosen.ask, spot: snap.spot, cancelAfterMs: SIGNAL_ENTRY_MS,
+        lots: chosen.lots * (again?.size ?? 1), ask: chosen.ask, spot: snap.spot, cancelAfterMs: SIGNAL_ENTRY_MS,
       }),
       // The signal's own levels, on the perp: the trade's real exits. The premium stop stays at Delta as the backstop.
       // A level the strategy skips (18 Oct 2026) goes as none: the engine and the fast watch then judge only the other.
-      underlying: { dir, stop: rule.skipPerpSl ? null : plan.stop, target: rule.skipPerpTgt ? null : target, source: 'BTC perp', entry: fill?.fillPrice ?? this.perp() },
-      signal: { method: r.id, n: r.n, name: r.name, mode: r.mode, tf: r.tf, dir, triggerTime: r.triggerTime! },
+      underlying: { dir, stop: re || rule.skipPerpSl ? null : plan.stop, target: re || rule.skipPerpTgt ? null : target, source: 'BTC perp', entry: fill?.fillPrice ?? this.perp() },
+      signal: { method: r.id, n: r.n, name: r.name, mode: r.mode, tf: r.tf, dir, triggerTime: r.triggerTime!, ...(re ? { reentry: re } : {}) },
     };
     const perpIn = args.underlying.entry;
     // The perp's levels as the order carries them: one skipped is said so, not shown as if it were watched.
-    const perpLevels = `perp SL ${rule.skipPerpSl ? 'skipped' : Math.round(plan.stop)} · TGT ${rule.skipPerpTgt ? 'skipped' : Math.round(target)}`;
-    const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
+    const perpLevels = re ? 'perp SL · TGT none (a re-entry: the option\'s own exits)'
+      : `perp SL ${rule.skipPerpSl ? 'skipped' : Math.round(plan.stop)} · TGT ${rule.skipPerpTgt ? 'skipped' : Math.round(target!)}`;
+    const what = `sell ${leg} ${chosen.strike} x${args.lots} @ ${chosen.price}`
       + elseWords(chosen)
       + ruleWords(chosen)
       + forwarded

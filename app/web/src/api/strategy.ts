@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { MethodUpdate, MethodUpdateSource, MomentumGuard, SignalTf, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
+import type { MethodUpdate, MethodUpdateSource, MomentumGuard, Reentry, SignalTf, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
 import { accountScope, withAccount } from '@/lib/account-scope';
 
 /** The strategies of the broker account being shown (lib/account-scope.ts); with none chosen, every account's. */
@@ -52,6 +52,11 @@ export const setZoneFresh = (seconds: Partial<Record<SignalTf, number>> | null) 
 export const setMomentumGuard = (guard: MomentumGuard | null) =>
   post<{ ok: true; signalMomentumGuard: MomentumGuard }>(
     '/api/strategies/momentum-guard', accountScope() === null ? { guard } : { guard, accountId: accountScope() });
+
+/** Re-entry after an option SL, the shown account's: on or off, how many in a row, the size; null, back to the default (off). */
+export const setReentry = (reentry: Reentry | null) =>
+  post<{ ok: true; signalReentry: Reentry }>(
+    '/api/strategies/reentry', accountScope() === null ? { reentry } : { reentry, accountId: accountScope() });
 
 export const setSideMax = (side: 'CE' | 'PE', pct: number) =>
   post<{ ok: true; signalSideMaxPct: { CE: number; PE: number } }>(
