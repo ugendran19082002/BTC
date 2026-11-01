@@ -5,8 +5,8 @@ import { REENTRY_DEFAULT } from '@/types/strategy';
 
 /** Re-entry on the strategies card (1 Nov 2026): after an SL and after a target, each with its time range, this account's. */
 describe('re-entry', () => {
-  const SL = { on: true, from: '07:00', to: '17:29', max: 2, size: 1 };
-  const TGT = { on: true, from: '07:00', to: '10:00', max: 1, size: 1 };
+  const SL = { on: true, from: '07:00', to: '17:29', max: 2 };
+  const TGT = { on: true, from: '07:00', to: '10:00', max: 1 };
 
   it('[critical] off to begin with; on, the pill says which and when', () => {
     const { rerender } = render(<Reentry reentry={REENTRY_DEFAULT} onSave={async () => true} />);
@@ -43,9 +43,10 @@ describe('re-entry', () => {
     fireEvent.change(screen.getByLabelText('After target: to'), { target: { value: '07:00' } });
     expect(screen.getByRole('alert')).toHaveTextContent('After target: the time range must not start and end at the same minute.');
     fireEvent.change(screen.getByLabelText('After target: to'), { target: { value: '11:00' } });
-    fireEvent.change(screen.getByLabelText('After target: size'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('After target: max in a row'), { target: { value: '2' } });
+    expect(screen.queryByLabelText('After target: size')).toBeNull();
     fireEvent.click(save);
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ sl: SL, tgt: { ...TGT, to: '11:00', size: 2 } }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ sl: SL, tgt: { ...TGT, to: '11:00', max: 2 } }));
   });
 
   it('"Defaults" puts both back off (null)', async () => {

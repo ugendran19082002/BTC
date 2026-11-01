@@ -835,7 +835,7 @@ export class StrategyRunner {
       ...placeArgs(vol.s, {
         symbol: `${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`,
         optionSide: leg, strike: chosen.strike, expiryTs: snap.expiryTs,
-        lots: chosen.lots * (again?.size ?? 1), ask: chosen.ask, spot: snap.spot, cancelAfterMs: SIGNAL_ENTRY_MS,
+        lots: chosen.lots, ask: chosen.ask, spot: snap.spot, cancelAfterMs: SIGNAL_ENTRY_MS,
       }),
       // The signal's own levels, on the perp: the trade's real exits. The premium stop stays at Delta as the backstop.
       // A level the strategy skips (18 Oct 2026) goes as none: the engine and the fast watch then judge only the other.
@@ -846,7 +846,7 @@ export class StrategyRunner {
     // The perp's levels as the order carries them: one skipped is said so, not shown as if it were watched.
     const perpLevels = re ? 'perp SL · TGT none (a re-entry: the option\'s own exits)'
       : `perp SL ${rule.skipPerpSl ? 'skipped' : Math.round(plan.stop)} · TGT ${rule.skipPerpTgt ? 'skipped' : Math.round(target!)}`;
-    const what = `sell ${leg} ${chosen.strike} x${args.lots} @ ${chosen.price}`
+    const what = `sell ${leg} ${chosen.strike} x${chosen.lots} @ ${chosen.price}`
       + elseWords(chosen)
       + ruleWords(chosen)
       + forwarded

@@ -481,7 +481,7 @@ test('[critical] the momentum guard (30 Oct 2026): off until set; on, no call is
   }
 });
 
-test('[critical] re-entry after an option exit (1 Nov 2026): off until set; after an SL the other side, after a target the same side, by the same strategy -- inside its no-entry window too -- each in its own time range, up to its most in a row, at its size; nonsense is refused', async () => {
+test('[critical] re-entry after an option exit (1 Nov 2026): off until set; after an SL the other side, after a target the same side, by the same strategy at its own lots -- inside its no-entry window too -- each in its own time range, up to its most in a row; nonsense is refused', async () => {
   // 10:00 is inside this strategy's no-entry window: its signals are skipped there, its re-entries are not.
   const id = await make('Re-entry', main, { enterOn: 'signal', noEntry: { from: '09:30', to: '11:00' } });
   const last = async () => (await runsOf(id)).at(-1)!;
@@ -501,8 +501,8 @@ test('[critical] re-entry after an option exit (1 Nov 2026): off until set; afte
     } as unknown as TradePlan;
     return { plan, state: { tradeId, exitWinner: by === 'stop' ? 'stop_loss' : 'take_profit', position: 0 } as unknown as TradeState, by };
   };
-  const SL = { on: true, from: '09:00', to: '17:00', max: 2, size: 3 };
-  const TGT = { on: true, from: '09:00', to: '11:00', max: 1, size: 2 };
+  const SL = { on: true, from: '09:00', to: '17:00', max: 2 };
+  const TGT = { on: true, from: '09:00', to: '11:00', max: 1 };
   const set = (reentry: unknown) => api('POST', '/api/strategies/reentry', { reentry, accountId: main });
   const card = async () => (await api('GET', `/api/strategies?account=${main}`)).body.signalReentry;
   try {
@@ -513,40 +513,40 @@ test('[critical] re-entry after an option exit (1 Nov 2026): off until set; afte
     await runner.onOptionExit(exited('PE', 'target'));
     assert.equal((await runsOf(id)).length, rows, 'off until set: nothing done, nothing written');
     assert.deepEqual(await card(), {
-      sl: { on: false, from: '07:00', to: '17:29', max: 2, size: 1 }, tgt: { on: false, from: '07:00', to: '10:00', max: 1, size: 1 }, today: { sl: 0, tgt: 0 },
+      sl: { on: false, from: '07:00', to: '17:29', max: 2 }, tgt: { on: false, from: '07:00', to: '10:00', max: 1 }, today: { sl: 0, tgt: 0 },
     });
 
     const saved = await set({ sl: SL, tgt: TGT });
     assert.equal(saved.status, 200, JSON.stringify(saved.body));
     assert.deepEqual(saved.body.signalReentry, { sl: SL, tgt: TGT });
 
-    // A call stopped: the put is sold, three times the lots, in the window, with no perp levels of its own.
+    // A call stopped: the put is sold, at the strategy's own lot, in the window, with no perp levels of its own.
     const call = exited('CE', 'stop');
     await runner.onOptionExit(call);
     assert.equal((await last()).status, 'would-place', (await last()).detail);
-    assert.match((await last()).detail, new RegExp(`^#1 Breakout BUY · re-entry after SL 1/2 \\(of ${call.plan.tradeId}\\) \\| live orders off: would sell PE ${PUT} x3 @ `));
+    assert.match((await last()).detail, new RegExp(`^#1 Breakout BUY · re-entry after SL 1/2 \\(of ${call.plan.tradeId}\\) \\| live orders off: would sell PE ${PUT} x1 @ `));
     assert.match((await last()).detail, /perp SL · TGT none \(a re-entry: the option's own exits\)/);
     assert.match((await last()).signal_key, new RegExp(`\\|sl1\\|${call.plan.tradeId}$`));
     // told twice, taken once
     await runner.onOptionExit(call);
     assert.equal((await runsOf(id)).filter((r) => r.signal_key.endsWith(call.plan.tradeId)).length, 1);
 
-    // A put at its target: the put again, twice the lots.
+    // A put at its target: the put again.
     const put = exited('PE', 'target');
     await runner.onOptionExit(put);
-    assert.match((await last()).detail, new RegExp(`^#1 Breakout BUY · re-entry after target 1/1 \\(of ${put.plan.tradeId}\\) \\| live orders off: would sell PE ${PUT} x2 @ `));
+    assert.match((await last()).detail, new RegExp(`^#1 Breakout BUY · re-entry after target 1/1 \\(of ${put.plan.tradeId}\\) \\| live orders off: would sell PE ${PUT} x1 @ `));
     assert.match((await last()).signal_key, /\|tg1\|/);
 
     // In a row: a second after an SL is taken, a third is not; a second after a target is past its one. Nothing written for either.
     await runner.onOptionExit(exited('PE', 'stop', { n: 1, after: 'stop', chain: 1 }));
-    assert.match((await last()).detail, /^#1 Breakout SELL · re-entry after SL 2\/2 .* would sell CE 86000 x3 @ /);
+    assert.match((await last()).detail, /^#1 Breakout SELL · re-entry after SL 2\/2 .* would sell CE 86000 x1 @ /);
     const before = (await runsOf(id)).length;
     await runner.onOptionExit(exited('CE', 'stop', { n: 2, after: 'stop', chain: 2 }));
     await runner.onOptionExit(exited('PE', 'target', { n: 1, after: 'target', chain: 1 }));
     assert.equal((await runsOf(id)).length, before, 'past its most in a row: not taken, and no row');
     // A change of kind starts the count again: an SL re-entry out at its target is followed as a first after a target.
     await runner.onOptionExit(exited('PE', 'target', { n: 1, after: 'stop', chain: 1 }));
-    assert.match((await last()).detail, /re-entry after target 1\/1 .* would sell PE 84000 x2 @ /);
+    assert.match((await last()).detail, /re-entry after target 1\/1 .* would sell PE 84000 x1 @ /);
     // ...but the whole chain stops at the two maxima added (2 + 1).
     const chained = (await runsOf(id)).length;
     await runner.onOptionExit(exited('PE', 'target', { n: 2, after: 'stop', chain: 3 }));
@@ -572,7 +572,7 @@ test('[critical] re-entry after an option exit (1 Nov 2026): off until set; afte
     await off(other);
 
     for (const [bad, said] of [
-      [{ sl: { ...SL, max: 6 }, tgt: TGT }, /from 1 to 5/], [{ sl: SL, tgt: { ...TGT, size: 8 } }, /from 1 to 7/],
+      [{ sl: { ...SL, max: 6 }, tgt: TGT }, /from 1 to 5/],
       [{ sl: SL, tgt: { ...TGT, from: '9:00' } }, /two IST times/], [{ on: true, max: 2, size: 1 }, /"sl": \{\.\.\.\}/],
     ] as const) {
       const r = await set(bad);
@@ -580,7 +580,7 @@ test('[critical] re-entry after an option exit (1 Nov 2026): off until set; afte
       assert.match(r.body.error, said);
     }
     assert.deepEqual((await set(null)).body.signalReentry, {
-      sl: { on: false, from: '07:00', to: '17:29', max: 2, size: 1 }, tgt: { on: false, from: '07:00', to: '10:00', max: 1, size: 1 },
+      sl: { on: false, from: '07:00', to: '17:29', max: 2 }, tgt: { on: false, from: '07:00', to: '10:00', max: 1 },
     });
   } finally {
     perp = null;

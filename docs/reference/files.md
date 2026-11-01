@@ -250,7 +250,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [machine.ts](../../app/server/src/trading/machine.ts) | The trade lifecycle as a pure reducer. |
 | [margin.ts](../../app/server/src/trading/margin.ts) | What leverage actually does to a sold option. |
 | [money.ts](../../app/server/src/trading/money.ts) | Prices and sizes the exchange will actually accept. |
-| [option-stop.ts](../../app/server/src/trading/option-stop.ts) | A trade closed by its option stop, told to whoever asked (1 Nov 2026): the strategy runner, which may sell the other side in its place (strategy/types.ts `REENTRY_KEY`). |
+| [option-exit.ts](../../app/server/src/trading/option-exit.ts) | A trade closed by its option's own stop or target, told to whoever asked (1 Nov 2026): the strategy runner, which may sell again in its place (strategy/types.ts `REENTRY_KEY`). |
 | [order-plan.ts](../../app/server/src/trading/order-plan.ts) | An order request, turned into the plan the engine trades. |
 | [pnl-history.ts](../../app/server/src/trading/pnl-history.ts) | The record as a calendar, and a day as a line. |
 | [precheck.ts](../../app/server/src/trading/precheck.ts) | The gates a trade passes before a single byte goes to the exchange. |
@@ -545,7 +545,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [MethodUpdatesLog.tsx](../../app/web/src/components/strategy/MethodUpdatesLog.tsx) | Every change to the signal strategies' methods (owner, 16 Oct 2026: "the daily methods changes, logged, saved in the db, shown in a logs menu and on the phone's More"; then "today, yesterday, last... |
 | [MomentumGuard.tsx](../../app/web/src/components/strategy/MomentumGuard.tsx) | The momentum guard (owner, 30 Oct 2026: "Momentum 1h >= +250, CE mattum, default off"): no new call is sold while the perp has risen its points or more over the last hour, this account's. |
 | [PickNow.tsx](../../app/web/src/components/strategy/PickNow.tsx) | Pick now (owner, 25 Oct 2026: "a Pick now button: whatever is there now, the strategies pick now and update"): the methods' daily update, run at once -- every strategy with it on for the account sh... |
-| [Reentry.tsx](../../app/web/src/components/strategy/Reentry.tsx) | Re-entry after an option SL (owner, 1 Nov 2026: "SL exit aana opposite side entry ... no-entry window restrict pana kudathu"), this account's: a signal strategy's trade out on its option stop is fo... |
+| [Reentry.tsx](../../app/web/src/components/strategy/Reentry.tsx) | Re-entry after an option exit (owner, 1 Nov 2026), this account's: a signal strategy's trade out on its option SL is followed by a sale of the other side, one out on its target by the same side aga... |
 | [ReorderList.tsx](../../app/web/src/components/strategy/ReorderList.tsx) | A list put in order by dragging (owner, 10 Oct 2026: "drag to change the order, user friendly"). |
 | [SideMax.tsx](../../app/web/src/components/strategy/SideMax.tsx) | Each side's own limit under "at most open" (owner, 12 Oct 2026: "CE max 80% and PE max 80%, each on its own; the total still held to the max open; user friendly"). |
 | [SignalRuleEditor.tsx](../../app/web/src/components/strategy/SignalRuleEditor.tsx) | Which signals a signal strategy takes: the way (with the timeframe chain, or without it on one timeframe), and the methods -- picked from the 81, each with its record so far in that way, so the cho... |

@@ -934,32 +934,31 @@ export const momentumBlocks = (g: MomentumGuard, sells: 'CE' | 'PE' | null, rise
  *        lost; to 11:00 +₹1,049 more, all of it on 30 Oct; all day +₹5,986 with 480 stops and the loss fifteen-fold.
  *
  * `max` is how many of one kind in a row (a re-entry closed the same way again); a change of kind starts its count
- * again, and the whole chain stops at the two maxima added. Each sells `size` times the strategy's lots. A third in a row
- * came twice in the month, so 2 is the most that mattered. Kept as JSON, {"sl": {...}, "tgt": {...}}; off where unset or
- * unreadable. The first shape, {"on", "max", "size"} (built the same day), reads as the SL rule all day.
+ * again, and the whole chain stops at the two maxima added. Each sells the strategy's own lots (owner, the same day: "lot
+ * size venaam, strategy-la lot size atha call panikanum"). A third in a row came twice in the month, so 2 is the most that
+ * mattered. Kept as JSON, {"sl": {...}, "tgt": {...}}; off where unset or unreadable. The first shape, {"on", "max",
+ * "size"} (built the same day), reads as the SL rule all day; a `size` kept from then is not read.
  */
 export const REENTRY_KEY = 'signal_reentry';
-export type ReentryRule = { on: boolean; from: string; to: string; max: number; size: number };
+export type ReentryRule = { on: boolean; from: string; to: string; max: number };
 export type Reentry = { sl: ReentryRule; tgt: ReentryRule };
 export type ReentryKind = keyof Reentry;
 export const REENTRY_DEFAULT: Readonly<Reentry> = {
-  sl: { on: false, from: '07:00', to: '17:29', max: 2, size: 1 },
-  tgt: { on: false, from: '07:00', to: '10:00', max: 1, size: 1 },
+  sl: { on: false, from: '07:00', to: '17:29', max: 2 },
+  tgt: { on: false, from: '07:00', to: '10:00', max: 1 },
 };
 export const REENTRY_MAX_IN_A_ROW = 5;
-export const REENTRY_MAX_SIZE = 7;
 const reentryMaxOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= REENTRY_MAX_IN_A_ROW;
-const reentrySizeOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= REENTRY_MAX_SIZE;
 const objectOf = (x: unknown): Record<string, unknown> => (x && typeof x === 'object' && !Array.isArray(x) ? x as Record<string, unknown> : {});
 function ruleOf(v: Record<string, unknown>, d: ReentryRule): ReentryRule {
   const timesOk = isHhmm(v.from) && isHhmm(v.to) && v.from !== v.to;
   return {
     on: v.on === true,
     from: timesOk ? v.from as string : d.from, to: timesOk ? v.to as string : d.to,
-    max: reentryMaxOk(v.max) ? v.max : d.max, size: reentrySizeOk(v.size) ? v.size : d.size,
+    max: reentryMaxOk(v.max) ? v.max : d.max,
   };
 }
-/** The setting as stored: each rule on or off, its time range, how many in a row and its size; the default for whatever is unset or unreadable. */
+/** The setting as stored: each rule on or off, its time range and how many in a row; the default for whatever is unset or unreadable. */
 export function reentryOf(raw: string | null | undefined): Reentry {
   let v: Record<string, unknown> = {};
   try { v = objectOf(raw ? JSON.parse(raw) : {}); } catch { /* the default */ }
@@ -971,7 +970,7 @@ const KIND_WORDS: Record<ReentryKind, string> = { sl: 'After an SL', tgt: 'After
 /** Why a re-entry setting cannot be saved, in words; null when it can. `null` itself is "back to the default" (off), and can. */
 export function reentryProblem(v: unknown): string | null {
   if (v === null) return null;
-  if (!v || typeof v !== 'object' || Array.isArray(v) || !('sl' in v) || !('tgt' in v)) return 'Re-entry is {"sl": {...}, "tgt": {...}}, each {"on", "from", "to", "max", "size"}.';
+  if (!v || typeof v !== 'object' || Array.isArray(v) || !('sl' in v) || !('tgt' in v)) return 'Re-entry is {"sl": {...}, "tgt": {...}}, each {"on", "from", "to", "max"}.';
   for (const kind of ['sl', 'tgt'] as const) {
     const r = objectOf((v as Record<string, unknown>)[kind]);
     const said = KIND_WORDS[kind];
@@ -979,7 +978,6 @@ export function reentryProblem(v: unknown): string | null {
     if (!isHhmm(r.from) || !isHhmm(r.to)) return `${said}: the time range is two IST times, HH:MM.`;
     if (r.from === r.to) return `${said}: the time range must not start and end at the same minute.`;
     if (!reentryMaxOk(r.max)) return `${said}: re-entries in a row must be a whole number from 1 to ${REENTRY_MAX_IN_A_ROW}.`;
-    if (!reentrySizeOk(r.size)) return `${said}: the size must be a whole number of times the lots, from 1 to ${REENTRY_MAX_SIZE}.`;
   }
   return null;
 }

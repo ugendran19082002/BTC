@@ -1112,8 +1112,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
 
   /**
    * Re-entry after an option exit, this account's (owner, 1 Nov 2026): `{ reentry: { sl: rule, tgt: rule } }`, each rule
-   * `{ on, from, to, max, size }` -- its IST time range, up to `max` (1-5) in a row, `size` (1-7) times the strategy's
-   * lots; `null` is back to the default, both off. The runner reads it at each exit, so it counts from the next one.
+   * `{ on, from, to, max }` -- its IST time range and up to `max` (1-5) in a row, each at the strategy's own lots; `null`
+   * is back to the default, both off. The runner reads it at each exit, so it counts from the next one.
    */
   app.post('/api/strategies/reentry', async (req, reply) => {
     const { reentry, accountId } = (req.body ?? {}) as { reentry?: unknown; accountId?: unknown };
@@ -1121,7 +1121,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const want = reentry === undefined ? null : reentry;
     const problem = reentryProblem(want);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    // Kept as read back: the two rules and their five fields, nothing else that came with them.
+    // Kept as read back: the two rules and their four fields, nothing else that came with them.
     await svc.settings.set(accountKey(REENTRY_KEY, account), want === null ? '' : JSON.stringify(reentryOf(JSON.stringify(want))));
     return { ok: true, signalReentry: reentryOf(accountSetting(svc.settings, REENTRY_KEY, account)) };
   });

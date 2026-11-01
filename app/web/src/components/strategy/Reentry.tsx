@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { REENTRY_DEFAULT, REENTRY_MAX_IN_A_ROW, REENTRY_MAX_SIZE, type Reentry as Setting, type ReentryRule } from '@/types/strategy';
+import { REENTRY_DEFAULT, REENTRY_MAX_IN_A_ROW, type Reentry as Setting, type ReentryRule } from '@/types/strategy';
 
 /**
  * Re-entry after an option exit (owner, 1 Nov 2026), this account's: a signal strategy's trade out on its option SL is
@@ -11,8 +11,8 @@ import { REENTRY_DEFAULT, REENTRY_MAX_IN_A_ROW, REENTRY_MAX_SIZE, type Reentry a
  */
 
 type Kind = keyof Setting;
-type Draft = { on: boolean; from: string; to: string; max: string; size: string };
-const draftOf = (r: ReentryRule): Draft => ({ on: r.on, from: r.from, to: r.to, max: String(r.max), size: String(r.size) });
+type Draft = { on: boolean; from: string; to: string; max: string };
+const draftOf = (r: ReentryRule): Draft => ({ on: r.on, from: r.from, to: r.to, max: String(r.max) });
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const whole = (text: string, most: number) => {
   const n = Number(text);
@@ -22,12 +22,11 @@ const whole = (text: string, most: number) => {
 const problemOf = (d: Draft): string | null =>
   !HHMM.test(d.from) || !HHMM.test(d.to) ? 'the time range is two times'
     : d.from === d.to ? 'the time range must not start and end at the same minute'
-      : !whole(d.max, REENTRY_MAX_IN_A_ROW) ? `in a row: a whole number from 1 to ${REENTRY_MAX_IN_A_ROW}`
-        : !whole(d.size, REENTRY_MAX_SIZE) ? `size: a whole number from 1 to ${REENTRY_MAX_SIZE}` : null;
-const ruleOf = (d: Draft): ReentryRule => ({ on: d.on, from: d.from, to: d.to, max: Number(d.max), size: Number(d.size) });
+      : !whole(d.max, REENTRY_MAX_IN_A_ROW) ? `in a row: a whole number from 1 to ${REENTRY_MAX_IN_A_ROW}` : null;
+const ruleOf = (d: Draft): ReentryRule => ({ on: d.on, from: d.from, to: d.to, max: Number(d.max) });
 /** "07:00" -> "7", "17:29" -> "17:29": for the pill. */
 const short = (hhmm: string) => { const [h, m] = hhmm.split(':'); return m === '00' ? String(Number(h)) : `${Number(h)}:${m}`; };
-const same = (a: ReentryRule, b: ReentryRule) => a.on === b.on && a.from === b.from && a.to === b.to && a.max === b.max && a.size === b.size;
+const same = (a: ReentryRule, b: ReentryRule) => a.on === b.on && a.from === b.from && a.to === b.to && a.max === b.max;
 
 const KINDS: { kind: Kind; title: string; does: string; label: string }[] = [
   { kind: 'sl', title: 'After SL', does: 'sell the OPPOSITE side', label: 'After SL' },
@@ -87,17 +86,13 @@ export function Reentry({ reentry, today = null, busy, onSave }: {
               <span>Max in a row</span>
               <input aria-label={`${label}: max in a row`} inputMode="numeric" value={draft[kind].max} disabled={busy}
                      onChange={(e) => set(kind, 'max', e.target.value.replace(/[^0-9]/g, '').slice(0, 1))} className={cn(field, 'w-9 text-right')} />
-              <span>Size</span>
-              <input aria-label={`${label}: size`} inputMode="numeric" value={draft[kind].size} disabled={busy}
-                     onChange={(e) => set(kind, 'size', e.target.value.replace(/[^0-9]/g, '').slice(0, 1))} className={cn(field, 'w-9 text-right')} />
-              <span>× lots</span>
             </div>
             {problems[kind] && <p role="alert" className="m-0 mt-1.5 text-[11.5px] text-[var(--down)]">{label}: {problems[kind]}.</p>}
           </fieldset>
         ))}
         <p className="m-0 text-[11.5px] leading-snug text-muted-foreground">
-          Same rules as the strategy: delta, min premium, SL, target, caps, momentum guard. The no-entry window is ignored;
-          each re-entry's own time range is used instead.
+          Same rules and lot size as the strategy: delta, lots, min premium, SL, target, caps, momentum guard. The no-entry
+          window is ignored; each re-entry's own time range is used instead.
         </p>
         {today && (
           <p aria-label="Today" className="m-0 mt-1.5 text-[11.5px] tabular-nums text-muted-foreground">

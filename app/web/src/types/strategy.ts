@@ -249,16 +249,15 @@ export const MOMENTUM_GUARD_MIN_PTS = 50;
 export const MOMENTUM_GUARD_MAX_PTS = 2_000;
 /**
  * Re-entry after an option exit, one account's (server `REENTRY_KEY`, 1 Nov 2026): after an SL the other side, after a
- * target the same side -- each in its own IST time range, up to `max` in a row, `size` times the lots.
+ * target the same side -- each in its own IST time range, up to `max` in a row, at the strategy's own lots.
  */
-export type ReentryRule = { on: boolean; from: string; to: string; max: number; size: number };
+export type ReentryRule = { on: boolean; from: string; to: string; max: number };
 export type Reentry = { sl: ReentryRule; tgt: ReentryRule };
 export const REENTRY_DEFAULT: Readonly<Reentry> = {
-  sl: { on: false, from: '07:00', to: '17:29', max: 2, size: 1 },
-  tgt: { on: false, from: '07:00', to: '10:00', max: 1, size: 1 },
+  sl: { on: false, from: '07:00', to: '17:29', max: 2 },
+  tgt: { on: false, from: '07:00', to: '10:00', max: 1 },
 };
 export const REENTRY_MAX_IN_A_ROW = 5;
-export const REENTRY_MAX_SIZE = 7;
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 /** "At most open at once" is typed, 1 to this (server: MAX_SIGNAL_OPEN). */
 export const MAX_SIGNAL_OPEN = 100;
