@@ -5,7 +5,7 @@ import { loadDays } from './backtest/backtest.js';
 import { brokerAccounts, envKeyLeft } from './delta/accounts.js';
 import { refreshBrokerAccounts } from './http/routes/accounts.routes.js';
 import { deskOpen, initTradingService } from './trading/service.js';
-import { onOptionStop } from './trading/option-stop.js';
+import { onOptionExit } from './trading/option-exit.js';
 import { autoMethodsDeps, initStrategyStore } from './http/routes/strategy.routes.js';
 import { StrategyRunner } from './strategy/runner.js';
 import { runAutoMethodsAlone } from './strategy/auto-methods.js';
@@ -157,10 +157,10 @@ runner.start();
  */
 onSetupFilled((f) => { void runner.onSetupFilled(f).catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'signal-strategy', message: `zone entry not taken: ${e.message}` })); });
 /*
- * A signal strategy's trade out on its option stop, on any account's desk: the runner sells the other side where that
- * account has re-entry on (1 Nov 2026, strategy/types.ts `REENTRY_KEY`).
+ * A signal strategy's trade out on its option's stop or target, on any account's desk: the runner sells again where that
+ * account has re-entry on for it (1 Nov 2026, strategy/types.ts `REENTRY_KEY`).
  */
-onOptionStop((t) => { void runner.onOptionStop(t).catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'signal-strategy', message: `re-entry not taken: ${e.message}` })); });
+onOptionExit((t) => { void runner.onOptionExit(t).catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'signal-strategy', message: `re-entry not taken: ${e.message}` })); });
 
 app.log.info(
   desk.mode === 'live'

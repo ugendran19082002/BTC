@@ -8,10 +8,10 @@ import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting } from '../db/settings.js';
-import { GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, REENTRY_KEY, reentryOf, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
-import type { OptionStop } from '../trading/option-stop.js';
+import type { OptionExit } from '../trading/option-exit.js';
 import { METHODS } from '../entry/methods.js';
 import { lastPerp } from '../market/flow.js';
 import { perpAtMinutes } from '../market/perp-minute.js';
@@ -450,19 +450,25 @@ export class StrategyRunner {
   }
 
   /**
-   * A signal strategy's trade closed by its option stop (trading/option-stop.ts): with re-entry on for its account
-   * (`REENTRY_KEY`), the same strategy sells the other side now -- the put for a stopped call, the call for a stopped
-   * put -- in turn with the signals, through the same queues and the same rules but the no-entry window.
+   * A signal strategy's trade closed by its option's stop or target (trading/option-exit.ts): with that kind of re-entry
+   * on for its account (`REENTRY_KEY`), the same strategy sells again now -- after a stop the other side, the put for a
+   * stopped call and the call for a stopped put; after a target the same side -- in turn with the signals, through the
+   * same queues and the same rules but the no-entry window.
    */
-  onOptionStop(t: OptionStop): Promise<void> {
+  onOptionExit(t: OptionExit): Promise<void> {
     const sig = t.plan.signal;
     if (t.plan.origin !== 'strategy' || !t.plan.strategyId || !sig) return Promise.resolve();
-    // A call stopped: the market rose, so the put is sold -- a BUY's leg; a put stopped, the call -- a SELL's.
-    const dir = t.plan.expect.optionSide === 'CE' ? 'long' : 'short';
+    const was = t.plan.expect.optionSide;
+    // The side sold again: a call is a SELL's leg, a put a BUY's.
+    const sells = t.by === 'stop' ? (was === 'CE' ? 'PE' : 'CE') : was;
     const r = {
-      id: sig.method, n: sig.n, name: sig.name, mode: sig.mode, tf: sig.tf, dir, state: 'TRADE', triggerTime: sig.triggerTime, plan: null,
+      id: sig.method, n: sig.n, name: sig.name, mode: sig.mode, tf: sig.tf, dir: sells === 'PE' ? 'long' : 'short',
+      state: 'TRADE', triggerTime: sig.triggerTime, plan: null,
     } as unknown as MethodRead;
-    const re = { of: t.plan.tradeId, n: (sig.reentry?.n ?? 0) + 1 };
+    const before = sig.reentry;
+    // Of one kind in a row: a change of kind starts the count again.
+    const n = before && (before.after ?? 'stop') === t.by ? before.n + 1 : 1;
+    const re = { of: t.plan.tradeId, n, after: t.by, chain: (before ? before.chain ?? before.n : 0) + 1 };
     return this.inTurn(sig.tf as Tf, (s) => (s.id === t.plan.strategyId ? () => this.takeSignal(s, r, null, re) : null));
   }
 
@@ -595,32 +601,33 @@ export class StrategyRunner {
   }
 
   /**
-   * `re`: a re-entry after an option stop (`onOptionStop`) -- the trade stopped and which in a row this is. It has no
+   * `re`: a re-entry after an option exit (`onOptionExit`) -- the trade closed, how, and which in a row this is. It has no
    * levels of its own on the perp (`r.plan` is null): it is held to everything a signal is but the no-entry window, the
    * perp's levels and the distances to them, and exits on the option's own stop and target and the strategy's exit time.
    */
-  private async takeSignal(s: Strategy, r: MethodRead, fill: SetupFill | null, re: { of: string; n: number } | null = null): Promise<void> {
+  private async takeSignal(s: Strategy, r: MethodRead, fill: SetupFill | null, re: { of: string; n: number; after: 'stop' | 'target'; chain: number } | null = null): Promise<void> {
     const now = this.now();
     if (!inSignalWindow(s, now)) return;              // outside its days or hours: not its signal
-    const again = re ? reentryOf(accountSetting(tradingService().settings, REENTRY_KEY, tradingService().accountId)) : null;
-    if (again && !again.on) return;                   // re-entry off for this account: nothing to write down
+    const setting = re ? reentryOf(accountSetting(tradingService().settings, REENTRY_KEY, tradingService().accountId)) : null;
+    const again = re && setting ? setting[re.after === 'stop' ? 'sl' : 'tgt'] : null;
+    /*
+     * Off for this account, outside its time range, or past its most in a row: nothing to write down. Every target the
+     * desk takes comes here, so a row for each one not followed would bury the history.
+     */
+    if (re && setting && again && (!again.on || !reentryOpenAt(again, istMinutes(now)) || re.n > again.max || re.chain > setting.sl.max + setting.tgt.max)) return;
     const rule = s.config.signal!;
     const plan = r.plan!;
     const dir: 1 | -1 = r.dir === 'long' ? 1 : -1;
     // A re-entry's own claim: one per stopped trade, beside its signal's (the trigger stays the key's fifth part).
-    const key = re ? `${signalKeyOf(r)}|re${re.n}|${re.of}` : signalKeyOf(r);
+    const key = re ? `${signalKeyOf(r)}|${re.after === 'stop' ? 'sl' : 'tg'}${re.n}|${re.of}` : signalKeyOf(r);
     if (!await this.store.claimSignal(s.id, key, { method: r.id, mode: r.mode, tf: r.tf, dir }, now)) return;
-    const said = `#${r.n} ${r.name} ${dir === 1 ? 'BUY' : 'SELL'}${re ? ` · re-entry ${re.n} after the option SL on ${re.of}` : ''}`;
+    const said = `#${r.n} ${r.name} ${dir === 1 ? 'BUY' : 'SELL'}${re && again ? ` · re-entry after ${re.after === 'stop' ? 'SL' : 'target'} ${re.n}/${again.max} (of ${re.of})` : ''}`;
     const finish = (status: Parameters<StrategyStore['finishSignal']>[2], detail: string, tradeId: string | null = null) =>
       this.store.finishSignal(s.id, key, status, `${said} | ${detail}`, tradeId);
-    if (re && again && re.n > again.max) {
-      await finish('skipped', `re-entry ${re.n} in a row -- this account re-enters at most ${again.max} in a row`);
-      return;
-    }
 
     // A no-entry window (owner, 9 Oct 2026): the signal is written down, not taken -- at the moment it would
     // have entered, the zone's fill for one that enters there. What is already open keeps its exits.
-    // Not a re-entry's (owner, 1 Nov 2026: "no-entry window restrict pana kudathu").
+    // Not a re-entry's (owner, 1 Nov 2026: "no-entry window restrict pana kudathu"): its own time range stands in for it.
     const blocked = re ? null : noEntryWindowAt(s.config, istMinutes(now));
     if (blocked) {
       await finish('skipped', `inside the no-entry window ${noEntryWords(blocked)} — no new entry until ${time12(blocked.to)}`);

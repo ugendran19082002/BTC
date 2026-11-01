@@ -759,6 +759,22 @@ export class StrategyStore {
     return (r.rowCount ?? 0) > 0;
   }
 
+  /**
+   * The re-entries these strategies sold (or, with live orders off, would have) since `since`, epoch ms: after an SL and
+   * after a target (runner.ts `onOptionExit`; the sixth part of the key, `sl1` / `tg1`). For the card.
+   */
+  async reentriesSince(strategyIds: readonly string[], since: number): Promise<{ sl: number; tgt: number }> {
+    if (!strategyIds.length) return { sl: 0, tgt: 0 };
+    const r = await one<{ sl: number; tgt: number }>(
+      `SELECT COUNT(*) FILTER (WHERE split_part(signal_key, '|', 6) ~ '^sl[0-9]+$')::int AS sl,
+              COUNT(*) FILTER (WHERE split_part(signal_key, '|', 6) ~ '^tg[0-9]+$')::int AS tgt
+         FROM strategy_signal_runs
+        WHERE strategy_id = ANY($1) AND at >= $2 AND status IN ('placed', 'would-place')`,
+      [[...strategyIds], since],
+    );
+    return { sl: r?.sl ?? 0, tgt: r?.tgt ?? 0 };
+  }
+
   /** Say how a claimed signal went. */
   async finishSignal(strategyId: string, key: string, status: SignalRunStatus, detail: string, tradeId: string | null = null): Promise<void> {
     await query(

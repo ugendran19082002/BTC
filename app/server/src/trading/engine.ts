@@ -122,8 +122,12 @@ export type TradeOrigin = 'manual' | 'strategy' | 'best-pick';
 
 export type TradeSignal = {
   method: string; n: number; name: string; mode: 'mtf' | 'single'; tf: string; dir: 1 | -1; triggerTime: number;
-  /** A re-entry after an option stop (1 Nov 2026): the trade stopped, and which re-entry in a row this is. Absent on the signal's own. */
-  reentry?: { of: string; n: number };
+  /**
+   * A re-entry after an option exit (1 Nov 2026): the trade closed, how (`after`), which of that kind in a row this is
+   * (`n`), and how many re-entries in all since the signal's own trade (`chain`; absent on the first shape, read as `n`).
+   * Absent on the signal's own.
+   */
+  reentry?: { of: string; n: number; after?: 'stop' | 'target'; chain?: number };
 };
 
 export type TradePlan = {

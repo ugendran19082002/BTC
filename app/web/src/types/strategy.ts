@@ -247,9 +247,16 @@ export type MomentumGuard = { on: boolean; pts: number };
 export const MOMENTUM_GUARD_DEFAULT_PTS = 250;
 export const MOMENTUM_GUARD_MIN_PTS = 50;
 export const MOMENTUM_GUARD_MAX_PTS = 2_000;
-/** Re-entry after an option SL, one account's (server `REENTRY_KEY`, 1 Nov 2026): the other side sold, up to `max` in a row, `size` times the lots. */
-export type Reentry = { on: boolean; max: number; size: number };
-export const REENTRY_DEFAULT: Readonly<Reentry> = { on: false, max: 2, size: 1 };
+/**
+ * Re-entry after an option exit, one account's (server `REENTRY_KEY`, 1 Nov 2026): after an SL the other side, after a
+ * target the same side -- each in its own IST time range, up to `max` in a row, `size` times the lots.
+ */
+export type ReentryRule = { on: boolean; from: string; to: string; max: number; size: number };
+export type Reentry = { sl: ReentryRule; tgt: ReentryRule };
+export const REENTRY_DEFAULT: Readonly<Reentry> = {
+  sl: { on: false, from: '07:00', to: '17:29', max: 2, size: 1 },
+  tgt: { on: false, from: '07:00', to: '10:00', max: 1, size: 1 },
+};
 export const REENTRY_MAX_IN_A_ROW = 5;
 export const REENTRY_MAX_SIZE = 7;
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
@@ -581,8 +588,8 @@ export type StrategyStatus = {
   signalZoneFreshS?: Record<SignalTf, number>;
   /** The momentum guard, this account's (30 Oct 2026), and the perp's rise over the hour now (null when unknown). Absent on an older server. */
   signalMomentumGuard?: MomentumGuard & { now: { perp: number; hourAgo: number; rise: number } | null };
-  /** Re-entry after an option SL, this account's (1 Nov 2026). Absent on an older server. */
-  signalReentry?: Reentry;
+  /** Re-entry after an option SL or target, this account's (1 Nov 2026), and how many of each this session. Absent on an older server. */
+  signalReentry?: Reentry & { today?: { sl: number; tgt: number } };
   /** The strike holding the most open trades now, and how many; null with none open. */
   busiestStrike?: { symbol: string; open: number } | null;
   /** The desk's limit on lots short at once (the order gate's), and the lots it holds short now. Absent on an older server. */

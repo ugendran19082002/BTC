@@ -742,9 +742,10 @@ export function SignalStrategiesCard() {
             <MomentumGuard guard={data.signalMomentumGuard} now={data.signalMomentumGuard.now} busy={busy === 'momentum-guard'}
                            onSave={(g) => act('momentum-guard', () => setMomentumGuard(g))} />
           )}
-          {/* The other side sold after an option SL (1 Nov 2026). Absent on a server from before it. */}
+          {/* Sold again after an option SL or target (1 Nov 2026). Absent on a server from before it. */}
           {data?.signalReentry && (
-            <Reentry reentry={data.signalReentry} busy={busy === 'reentry'} onSave={(r) => act('reentry', () => setReentry(r))} />
+            <Reentry reentry={data.signalReentry} today={data.signalReentry.today ?? null} busy={busy === 'reentry'}
+                     onSave={(r) => act('reentry', () => setReentry(r))} />
           )}
           {data && (
             <span className="desk-badge-pill"

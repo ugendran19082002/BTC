@@ -53,7 +53,7 @@ export const setMomentumGuard = (guard: MomentumGuard | null) =>
   post<{ ok: true; signalMomentumGuard: MomentumGuard }>(
     '/api/strategies/momentum-guard', accountScope() === null ? { guard } : { guard, accountId: accountScope() });
 
-/** Re-entry after an option SL, the shown account's: on or off, how many in a row, the size; null, back to the default (off). */
+/** Re-entry after an option SL or target, the shown account's: the two rules; null, back to the default (both off). */
 export const setReentry = (reentry: Reentry | null) =>
   post<{ ok: true; signalReentry: Reentry }>(
     '/api/strategies/reentry', accountScope() === null ? { reentry } : { reentry, accountId: accountScope() });
