@@ -1,7 +1,7 @@
 import { rows } from '../db/pool.js';
 import { flowSchema } from '../market/flow.js';
 import { optionSnapshotsSchema } from '../market/option-snapshots.js';
-import { marksFetchedBy, marksWanted, optionMarksSchema } from '../market/option-marks.js';
+import { forgetOwnMinutes, marksFetchedBy, marksWanted, optionMarksSchema } from '../market/option-marks.js';
 import { entrySchema } from '../entry/paper.js';
 import { freshInBackground } from '../entry/version.js';
 import { methodsSchema } from '../entry/catalogue.js';
@@ -1153,7 +1153,7 @@ type HeldDay = { at: number; cells: BtCell[]; tally: Tally[]; spans: Span[]; gra
 const held = new Map<string, HeldDay>();
 /** At most this many worked days are kept -- some sixty sets of settings over a fortnight; the longest unasked-for goes first. */
 const HELD_MAX = 800;
-export function clearSignalBacktestCache(): void { held.clear(); raw.clear(); ivHeld.clear(); levelHeld.clear(); baselineHeld.clear(); }
+export function clearSignalBacktestCache(): void { held.clear(); raw.clear(); ivHeld.clear(); levelHeld.clear(); baselineHeld.clear(); forgetOwnMinutes(); }
 /** The SL or the TGT outside the range asked for: nearer than a minimum, or further than a maximum. 0 is no bound. */
 function outOfRange(sig: BtSignal, target: number, p: Pick<BacktestParams, 'slMin' | 'slMax' | 'tgtMin' | 'tgtMax'>): boolean {
   const sl = Math.abs(sig.fillPrice - sig.stop), tgt = Math.abs(sig.fillPrice - target);

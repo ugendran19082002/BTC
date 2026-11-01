@@ -146,6 +146,16 @@ const MIGRATIONS: Migration[] = [
     id: 'market-017-drop-large-prints',
     up: 'DROP TABLE IF EXISTS public.large_prints;',
   },
+  {
+    /*
+     * Each minute's write deletes the minute that fell out of the window, so the table is as large as it will get and
+     * its dead rows only pile up: 261k of them beside 1.5M live on 1 Nov 2026, the last vacuum six days old, and a fifth
+     * of the table (300k) the default's trigger. Vacuumed at 2% the dead stay a few tens of thousands, and the space
+     * they held is used again instead of the file growing. Only autovacuum's trigger changes.
+     */
+    id: 'market-019-option-flow-vacuum-often',
+    up: 'ALTER TABLE option_flow_1m SET (autovacuum_vacuum_scale_factor = 0.02);',
+  },
 ];
 
 let ready: Promise<void> | null = null;

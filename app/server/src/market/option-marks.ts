@@ -61,12 +61,27 @@ export function optionMarksSchema(): Promise<void> {
 
 const codeOf = (day: string) => `${day.slice(8, 10)}${day.slice(5, 7)}${day.slice(2, 4)}`;
 
+/**
+ * The settled days the desk's own minutes were found to cover. A day's minute record is written only while the day
+ * runs, so once settled the answer cannot change -- and counting it walks every row of the day (~120k, half a second
+ * from disk): the fetch every five minutes asked it of every day since the report's first, 2,051 times in three days
+ * (slow log, 1 Nov 2026). Counted once, then remembered for the life of the process.
+ */
+const covered = new Set<string>();
+/** A test that empties the tables empties this too. */
+export function forgetOwnMinutes(): void { covered.clear(); }
+
 /** The contracts of one expiry day still to fetch: sellable at some reading, not asked for yet. Empty where the desk's own minutes cover the day. */
 export async function marksWanted(day: string, span: { from: number; to: number }): Promise<string[]> {
   await optionMarksSchema();
   const expiry = codeOf(day);
+  const key = `${expiry}:${span.from}:${span.to}`;
+  if (covered.has(key)) return [];
   const own = await one<{ n: number }>('SELECT COUNT(DISTINCT at)::int AS n FROM option_snapshots_1m WHERE expiry = $1 AND at >= $2 AND at < $3', [expiry, span.from, span.to]);
-  if ((own?.n ?? 0) >= OWN_MINUTES_ENOUGH * (span.to - span.from) / 60_000) return [];
+  if ((own?.n ?? 0) >= OWN_MINUTES_ENOUGH * (span.to - span.from) / 60_000) {
+    if (span.to <= Date.now()) covered.add(key);
+    return [];
+  }
   const want = await rows<{ symbol: string }>(
     `SELECT DISTINCT s.symbol FROM option_snapshots s
       WHERE s.expiry = $1 AND s.at >= $2 AND s.at <= $3 AND s.bid >= $4 AND s.spot IS NOT NULL

@@ -1,6 +1,6 @@
-import { after, beforeEach, test } from 'node:test';
+import { after, beforeEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchOptionMarks, marksFetchedBy, marksWanted, optionMarksSchema, storeMarks } from '../../src/market/option-marks.js';
+import { fetchOptionMarks, forgetOwnMinutes, marksFetchedBy, marksWanted, optionMarksSchema, storeMarks } from '../../src/market/option-marks.js';
 import { closePool, one, query, rows } from '../../src/db/pool.js';
 import { sessionOf } from '../../src/report/market-day.js';
 import type { Candle } from '../../src/market/delta.js';
@@ -25,6 +25,7 @@ const minutes = (n: number, open = 40): Candle[] => Array.from({ length: n }, (_
 beforeEach(async () => {
   await optionMarksSchema();
   await query('TRUNCATE option_snapshots, option_snapshots_1m, option_marks_1m, option_marks_fetched');
+  forgetOwnMinutes();
   await reading('option_snapshots', 0, `P-BTC-83200-${CODE}`, 'P', 83_200, 40);       // out of the money, worth selling
   await reading('option_snapshots', 5, `P-BTC-83200-${CODE}`, 'P', 83_200, 38);
   await reading('option_snapshots', 0, `C-BTC-85000-${CODE}`, 'C', 85_000, 44);       // the same on the call side
@@ -44,6 +45,30 @@ test('[critical] the contracts asked for: of that expiry, out of the money with 
   await query(`INSERT INTO option_snapshots_1m (at, symbol, expiry, cp, strike, spot, mark, bid, ask)
                SELECT $1::bigint + g * 60000, $2, $3, 'P', 83200, 84000, 41, 40, 42 FROM generate_series(0, 1339) g`, [span.from, `P-BTC-83200-${CODE}`, CODE]);
   assert.deepEqual(await marksWanted(DAY, span), []);
+});
+
+const ownMinutes = () => query(`INSERT INTO option_snapshots_1m (at, symbol, expiry, cp, strike, spot, mark, bid, ask)
+  SELECT $1::bigint + g * 60000, $2, $3, 'P', 83200, 84000, 41, 40, 42 FROM generate_series(0, 1339) g`, [span.from, `P-BTC-83200-${CODE}`, CODE]);
+
+test('[critical] a settled day the desk\'s own minutes cover is counted once, not on every run; a day still running is counted each time', async () => {
+  await ownMinutes();
+  assert.deepEqual(await marksWanted(DAY, span), []);
+  // The rows gone (only a restore or a test does this): the answer was remembered, so they are not counted again.
+  await query('TRUNCATE option_snapshots_1m');
+  assert.deepEqual(await marksWanted(DAY, span), [], 'remembered');
+  forgetOwnMinutes();
+  assert.deepEqual(await marksWanted(DAY, span), [`C-BTC-85000-${CODE}`, `P-BTC-83200-${CODE}`], 'forgotten: counted again');
+
+  // Still running: covered so far, but not remembered -- its record is still being written.
+  await ownMinutes();
+  mock.timers.enable({ apis: ['Date'], now: span.to - 1 });
+  try {
+    assert.deepEqual(await marksWanted(DAY, span), []);
+  } finally {
+    mock.timers.reset();
+  }
+  await query('TRUNCATE option_snapshots_1m');
+  assert.deepEqual(await marksWanted(DAY, span), [`C-BTC-85000-${CODE}`, `P-BTC-83200-${CODE}`], 'not remembered while it ran');
 });
 
 test('[critical] a run fetches each contract once, a minute a row, and never asks for it again', async () => {

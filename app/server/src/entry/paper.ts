@@ -196,6 +196,16 @@ const MIGRATIONS: Migration[] = [{
     CREATE INDEX IF NOT EXISTS entry_setups_by_trigger_at ON entry_setups (trigger_at);
     CREATE INDEX IF NOT EXISTS entry_setups_by_first_seen ON entry_setups (first_seen);
   `,
+}, {
+  /*
+   * The working set's read took 2.1 s on average, 598 times in three days (slow log, 1 Nov 2026), for 590 rows: a
+   * setup goes open -> filled -> graded, and each change leaves its old entry in `entry_setups_working` until a vacuum
+   * clears it. At the default (a fifth of 140k rows changed) the index held 17,221 entries for 294 open and filled
+   * setups, and the read fetched 6,946 pages for them. Vacuumed every thousand or so changes, it stays the size of
+   * the working set. Only autovacuum's trigger changes: no rewrite, and reads and writes go on during it.
+   */
+  id: 'entry-023-setups-vacuum-often',
+  up: `ALTER TABLE entry_setups SET (autovacuum_vacuum_scale_factor = 0.005, autovacuum_vacuum_threshold = 500);`,
 }];
 
 let ready: Promise<void> | null = null;
