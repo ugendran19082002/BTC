@@ -51,7 +51,7 @@ describe('Option history', () => {
     expect(q.to).toBe(expiryDayNow());
     expect((Date.parse(q.to) - Date.parse(q.from)) / 86_400_000).toBe(6);
     // As traded +₹2.55, with the rules −₹1.70: the change is −₹4.25.
-    expect(screen.getByText('Change').parentElement).toHaveTextContent('−₹4.25');
+    expect(screen.getByText('Change', { selector: 'span' }).parentElement).toHaveTextContent('−₹4.25');
     expect(screen.getByText(/Left out: 2 without recorded prices/)).toBeInTheDocument();
     const trades = screen.getByRole('table', { name: 'Trades' });
     expect(within(trades).getAllByRole('row')).toHaveLength(3);
@@ -63,7 +63,7 @@ describe('Option history', () => {
     try {
       render(<OptionHistory />);
       await screen.findByText('With these rules');
-      fireEvent.click(screen.getByRole('switch', { name: 'Skip perp SL' }));
+      fireEvent.click(screen.getByRole('switch', { name: /^Skip perp SL/ }));
       const sl = screen.getByLabelText('Option SL, per cent of the price sold');
       fireEvent.change(sl, { target: { value: '150' } });
       expect(getOptionReplay).toHaveBeenCalledTimes(1);
