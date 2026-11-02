@@ -63,6 +63,7 @@ const MethodReport = lazy(() => import('@/components/report/MethodReport').then(
 const SignalBacktest = lazy(() => import('@/components/report/SignalBacktest').then((m) => ({ default: m.SignalBacktest })));
 const MarketReport = lazy(() => import('@/components/report/MarketReport').then((m) => ({ default: m.MarketReport })));
 const SignalHistory = lazy(() => import('@/components/desk/entry/SignalHistory').then((m) => ({ default: m.SignalHistory })));
+const OptionHistory = lazy(() => import('@/components/report/OptionHistory').then((m) => ({ default: m.OptionHistory })));
 const LogsPanel = lazy(() => import('@/components/layout/LogsPanel').then((m) => ({ default: m.LogsPanel })));
 const AccountSummaryCard = lazy(() => import('@/components/accounts/AccountSummaryCard').then((m) => ({ default: m.AccountSummaryCard })));
 // The calendar library is a sixth of the first download and is needed only
@@ -878,6 +879,10 @@ export default function App() {
           </ErrorBoundary>
           <ErrorBoundary where="Signal history">
             <SignalHistory />
+          </ErrorBoundary>
+          {/* The options sold against those signals, their exits worked again under other rules (3 Nov 2026). For the account shown. */}
+          <ErrorBoundary where="Option history">
+            <OptionHistory key={`option-history-${shown}`} />
           </ErrorBoundary>
         </div>
       ) : tab === 'market' ? (
