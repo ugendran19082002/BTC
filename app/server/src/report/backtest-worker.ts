@@ -1,5 +1,6 @@
 import { parentPort } from 'node:worker_threads';
 import { clearSignalBacktestCache, liveCheckHere, portfolioBacktestHere, portfolioTradesHere, signalBacktestHere, signalBacktestTradesHere, volStudyHere, portfolioVolStudyHere, volStudyTradesHere, portfolioVolStudyTradesHere, winSweepHere, winSweepTradesHere, sessionStudyHere, portfolioSessionStudyHere, sessionStudyTradesHere, portfolioSessionStudyTradesHere, type Ask, type LiveCheckAsk, type PortfolioAsk, type TradePick, type VolStudyAsk, type PortfolioVolStudyAsk, type VolTradesPick, type WinSweepAsk, type WinSweepCellPick, type SessionStudyAsk, type PortfolioSessionStudyAsk, type SessionTradesPick } from './signal-backtest.js';
+import { clearOptionReplayCache, optionReplay, type OptionReplayAsk } from './option-replay.js';
 import { closePool } from '../db/pool.js';
 
 /**
@@ -14,6 +15,7 @@ export type BacktestAsk = { id: number; kind: 'run'; ask: Ask } | { id: number; 
   | { id: number; kind: 'trades'; ask: Ask; pick: TradePick } | { id: number; kind: 'portfolio-trades'; ask: PortfolioAsk; pick: TradePick }
   | { id: number; kind: 'session-study'; ask: SessionStudyAsk } | { id: number; kind: 'portfolio-session-study'; ask: PortfolioSessionStudyAsk }
   | { id: number; kind: 'session-trades'; ask: SessionStudyAsk; pick: SessionTradesPick } | { id: number; kind: 'portfolio-session-trades'; ask: PortfolioSessionStudyAsk; pick: SessionTradesPick }
+  | { id: number; kind: 'option-replay'; ask: OptionReplayAsk }
   | { id: number; kind: 'clear' } | { id: number; kind: 'close' };
 export type BacktestAnswer = { id: number; ok: true; result?: unknown } | { id: number; ok: false; error: string };
 
@@ -21,9 +23,9 @@ const port = parentPort;
 if (port) {
   port.on('message', (m: BacktestAsk) => {
     const answer = (a: BacktestAnswer) => port.postMessage(a);
-    if (m.kind === 'clear') { clearSignalBacktestCache(); answer({ id: m.id, ok: true }); return; }
+    if (m.kind === 'clear') { clearSignalBacktestCache(); clearOptionReplayCache(); answer({ id: m.id, ok: true }); return; }
     if (m.kind === 'close') { void closePool().then(() => answer({ id: m.id, ok: true }), () => answer({ id: m.id, ok: true })); return; }
-    (m.kind === 'portfolio' ? portfolioBacktestHere(m.ask) : m.kind === 'vol-study' ? volStudyHere(m.ask) : m.kind === 'portfolio-vol-study' ? portfolioVolStudyHere(m.ask) : m.kind === 'vol-trades' ? volStudyTradesHere(m.ask, m.pick) : m.kind === 'portfolio-vol-trades' ? portfolioVolStudyTradesHere(m.ask, m.pick) : m.kind === 'live' ? liveCheckHere(m.ask) : m.kind === 'win-sweep' ? winSweepHere(m.ask) : m.kind === 'win-sweep-trades' ? winSweepTradesHere(m.ask, m.at)
+    (m.kind === 'option-replay' ? optionReplay(m.ask) : m.kind === 'portfolio' ? portfolioBacktestHere(m.ask) : m.kind === 'vol-study' ? volStudyHere(m.ask) : m.kind === 'portfolio-vol-study' ? portfolioVolStudyHere(m.ask) : m.kind === 'vol-trades' ? volStudyTradesHere(m.ask, m.pick) : m.kind === 'portfolio-vol-trades' ? portfolioVolStudyTradesHere(m.ask, m.pick) : m.kind === 'live' ? liveCheckHere(m.ask) : m.kind === 'win-sweep' ? winSweepHere(m.ask) : m.kind === 'win-sweep-trades' ? winSweepTradesHere(m.ask, m.at)
       : m.kind === 'trades' ? signalBacktestTradesHere(m.ask, m.pick) : m.kind === 'portfolio-trades' ? portfolioTradesHere(m.ask, m.pick)
         : m.kind === 'session-study' ? sessionStudyHere(m.ask) : m.kind === 'portfolio-session-study' ? portfolioSessionStudyHere(m.ask)
           : m.kind === 'session-trades' ? sessionStudyTradesHere(m.ask, m.pick) : m.kind === 'portfolio-session-trades' ? portfolioSessionStudyTradesHere(m.ask, m.pick) : signalBacktestHere(m.ask)).then(

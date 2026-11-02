@@ -3,6 +3,7 @@ import {
   clearSignalBacktestCache as clearHere, liveCheckHere, portfolioBacktestHere, portfolioTradesHere, signalBacktestHere, signalBacktestTradesHere, volStudyHere, portfolioVolStudyHere, volStudyTradesHere, portfolioVolStudyTradesHere, winSweepHere, winSweepTradesHere, sessionStudyHere, portfolioSessionStudyHere, sessionStudyTradesHere, portfolioSessionStudyTradesHere,
   type Ask, type BacktestPortfolioResult, type BtDayTrades, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest, type TradePick, type VolStudy, type VolStudyAsk, type PortfolioVolStudyAsk, type VolTradesPick, type WinSweep, type WinSweepAsk, type WinSweepCellPick, type SessionStudy, type SessionStudyAsk, type PortfolioSessionStudyAsk, type SessionTradesPick,
 } from './signal-backtest.js';
+import { clearOptionReplayCache, optionReplay as optionReplayHere, type OptionReplay, type OptionReplayAsk } from './option-replay.js';
 import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
 /**
@@ -20,7 +21,8 @@ export const BACKTEST_TIMEOUT_MS = 120_000;
 /** What the thread is asked to work: a backtest, a portfolio, a live check, the volatility study, the win % sweep, or one day of a backtest or a portfolio. */
 type Work = { kind: 'run'; ask: Ask } | { kind: 'vol-study'; ask: VolStudyAsk } | { kind: 'portfolio-vol-study'; ask: PortfolioVolStudyAsk } | { kind: 'vol-trades'; ask: VolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio-vol-trades'; ask: PortfolioVolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'win-sweep'; ask: WinSweepAsk } | { kind: 'win-sweep-trades'; ask: WinSweepAsk; at: WinSweepCellPick } | { kind: 'trades'; ask: Ask; pick: TradePick } | { kind: 'portfolio-trades'; ask: PortfolioAsk; pick: TradePick }
   | { kind: 'session-study'; ask: SessionStudyAsk } | { kind: 'portfolio-session-study'; ask: PortfolioSessionStudyAsk }
-  | { kind: 'session-trades'; ask: SessionStudyAsk; pick: SessionTradesPick } | { kind: 'portfolio-session-trades'; ask: PortfolioSessionStudyAsk; pick: SessionTradesPick };
+  | { kind: 'session-trades'; ask: SessionStudyAsk; pick: SessionTradesPick } | { kind: 'portfolio-session-trades'; ask: PortfolioSessionStudyAsk; pick: SessionTradesPick }
+  | { kind: 'option-replay'; ask: OptionReplayAsk };
 /** After a thread fails to start, none is tried again for this long. */
 const GIVE_UP_MS = 10 * 60_000;
 
@@ -167,8 +169,12 @@ export const winSweepTrades = (o: WinSweepAsk, at: WinSweepCellPick): Promise<Bt
 /** The backtest of each strategy's own rules against what the desk did with the same signals (`liveCheckHere`). */
 export const liveCheck = (o: LiveCheckAsk): Promise<LiveCheck> => worked({ kind: 'live', ask: o }, () => liveCheckHere(o), BACKTEST_TIMEOUT_MS * 2);
 
+/** The desk's own trades, their exits worked again under other rules beside what they did (`optionReplay`). */
+export const optionReplay = (o: OptionReplayAsk): Promise<OptionReplay> => worked({ kind: 'option-replay', ask: o }, () => optionReplayHere(o));
+
 export async function clearSignalBacktestCache(): Promise<void> {
   clearHere();
+  clearOptionReplayCache();
   if (worker) await ask({ kind: 'clear' }, 5_000).catch(() => {});
 }
 

@@ -6,6 +6,10 @@ import { brokerAccounts } from '../../delta/accounts.js';
 import { istDate } from '../../strategy/schedule.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
+import { windowOf } from './market.routes.js';
+import { optionReplay } from '../../report/backtest-run.js';
+import { LIVE_RULES, REPLAY_MAX_DAYS, rulesProblem, type ReplayRules } from '../../report/option-replay.js';
+import { sessionDayOf } from '../../report/market-day.js';
 
 /**
  * The record as a calendar, and a day as a line.
@@ -60,8 +64,47 @@ const chosenOf = <T extends Parameters<typeof ofStrategies>[0][number]>(records:
 /** The desk's timeframes in their own order, the chain last: how the timeframe list is sorted. */
 const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', CHAIN_KEY];
 
+/** `?skipPerpSl=0|1` and the like: absent is the desk's own setting. */
+const flagOf = (v: unknown, dflt: boolean) => (v === '1' || v === 'true' ? true : v === '0' || v === 'false' ? false : dflt);
+/** `?sl=250&tgt=90`: per cents, absent the desk's own. */
+const pctOf = (v: unknown, dflt: number) => (v === undefined || v === '' ? dflt : Number(v) / 100);
+
+/** The option history's question, checked: expiry days (the last week's by default), hours, timeframes, methods and the rules. */
+export function replayAskOf(q: Record<string, unknown>, now = Date.now()): string | {
+  from: string; to: string; window: { from: number; to: number } | null; tfs: string[] | null; methods: string[] | null; rules: ReplayRules;
+} {
+  const today = sessionDayOf(now);
+  const from = q.from === undefined || q.from === '' ? sessionDayOf(now - 6 * 86_400_000) : String(q.from);
+  const to = q.to === undefined || q.to === '' ? today : String(q.to);
+  if (!DAY.test(from) || !DAY.test(to)) return 'Dates must be YYYY-MM-DD.';
+  if (from > to) return 'The start date must not be after the end date.';
+  if ((Date.parse(to) - Date.parse(from)) / 86_400_000 + 1 > REPLAY_MAX_DAYS) return `At most ${REPLAY_MAX_DAYS} days at a time.`;
+  const window = windowOf(q);
+  if (typeof window === 'string') return window;
+  const rules: ReplayRules = {
+    skipPerpSl: flagOf(q.skipPerpSl, LIVE_RULES.skipPerpSl), skipPerpTgt: flagOf(q.skipPerpTgt, LIVE_RULES.skipPerpTgt),
+    stopPct: pctOf(q.sl, LIVE_RULES.stopPct), targetPct: pctOf(q.tgt, LIVE_RULES.targetPct),
+  };
+  const bad = rulesProblem(rules);
+  if (bad) return bad;
+  return { from, to, window, tfs: timeframesOf(q), methods: methodsOf(q), rules };
+}
+
 export function registerReportRoutes(app: FastifyInstance) {
   const svc = tradingService();
+
+  /**
+   * The option history (3 Nov 2026): the signal options the desk really sold, each one's exit worked again on its
+   * own contract's recorded quotes under the rules asked for, beside what it really did (`optionReplay`).
+   * `?from&to` expiry days (the last week's by default, at most a month), `?fromTime&toTime` the hours entered,
+   * `?tf=` `?method=` `?account=` as the statistics', and the rules: `?skipPerpSl=1&skipPerpTgt=1&sl=250&tgt=90`
+   * -- each absent is as the desk runs today. Worked in the backtest's thread, never the desk's.
+   */
+  app.get('/api/report/option-replay', async (req, reply) => {
+    const a = replayAskOf((req.query ?? {}) as Record<string, unknown>);
+    if (typeof a === 'string') return refuse(reply, 400, { error: a });
+    return optionReplay({ ...a, account: accountOf(req.query), now: Date.now() });
+  });
 
   /** Every trading day in the range, with the running total. */
   app.get('/api/report/days', async (req, reply) => {
