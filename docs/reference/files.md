@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-576 files listed, 321 test files counted below, images and lockfiles left out.
+577 files listed, 321 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -437,6 +437,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [StrategyTag.tsx](../../app/web/src/components/mobile/StrategyTag.tsx) | Which strategy placed a trade, as a tag (owner, 8 Oct 2026: "strategy name tag -- orders history, trade history and positions, on the phone"): the strategy's name in a small coloured pill, the same... |
 | [Toasts.tsx](../../app/web/src/components/mobile/Toasts.tsx) | What just happened, said once, on whatever screen is open (owner, 6 Oct 2026): an order began waiting, an order filled, a position closed -- a card that slides down under the header and opens the t... |
 | [TradeDetail.tsx](../../app/web/src/components/mobile/TradeDetail.tsx) | One trade, start to end, read only (the phone's Level 2, 6 Oct 2026): what it is and what it made, then its whole journal as a line of steps -- signal, entry, fill, protection, exit, closed. |
+| [WonLost.tsx](../../app/web/src/components/mobile/WonLost.tsx) | A day's trades, won and lost (owner, 2 Nov 2026: "a tap on Won or Lost opens that list of trades -- strike, CE or PE, exit by SL or TGT, and each trade's loss -- the ledger day popup, filtered to w... |
 | [order-status.tsx](../../app/web/src/components/mobile/order-status.tsx) | An order's status as one word on a pill -- Home's latest order and the Orders list both say it. |
 | [parts.tsx](../../app/web/src/components/mobile/parts.tsx) | The phone's building blocks (6 Oct 2026): one way to show a figure, a row, a filter and a list item, so every screen reads the same. |
 | [phone-context.ts](../../app/web/src/components/mobile/phone-context.ts) | What every phone screen shares (6 Oct 2026): the desk's status and health, read once by the shell and handed down, the account being shown, the clock, and how to move -- so five screens do not poll... |
