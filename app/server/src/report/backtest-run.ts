@@ -170,7 +170,9 @@ export const winSweepTrades = (o: WinSweepAsk, at: WinSweepCellPick): Promise<Bt
 export const liveCheck = (o: LiveCheckAsk): Promise<LiveCheck> => worked({ kind: 'live', ask: o }, () => liveCheckHere(o), BACKTEST_TIMEOUT_MS * 2);
 
 /** The desk's own trades, their exits worked again under other rules beside what they did (`optionReplay`). */
-export const optionReplay = (o: OptionReplayAsk): Promise<OptionReplay> => worked({ kind: 'option-replay', ask: o }, () => optionReplayHere(o));
+export const optionReplay = (o: OptionReplayAsk): Promise<OptionReplay> =>
+  // Every signal is a board read for each fill as well: twice a backtest's time, the first time a month is asked.
+  worked({ kind: 'option-replay', ask: o }, () => optionReplayHere(o), BACKTEST_TIMEOUT_MS * (o.source === 'signals' ? 2 : 1));
 
 export async function clearSignalBacktestCache(): Promise<void> {
   clearHere();

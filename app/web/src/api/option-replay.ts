@@ -1,6 +1,6 @@
 import { json } from '@/api/client';
 import { withAccount } from '@/lib/account-scope';
-import type { OptionReplay, ReplayRules } from '@/types/option-replay';
+import type { OptionReplay, ReplayRules, ReplaySource } from '@/types/option-replay';
 
 /** What the option history asks: expiry days, the hours entered (null: all), timeframes (empty: all) and the rules. */
 export type OptionReplayQuery = {
@@ -10,6 +10,8 @@ export type OptionReplayQuery = {
   rules: ReplayRules;
   /** Every trade as one contract, so a day of big lots does not outweigh the rest; false, at the size traded. */
   oneContract: boolean;
+  /** The desk's real orders, or every signal of the signal history. */
+  source: ReplaySource;
 };
 
 /** The query string, in a fixed order -- so the same question is the same URL, and the screen's poll can tell. */
@@ -23,6 +25,7 @@ export function optionReplayUrl(q: OptionReplayQuery): string {
   p.set('sl', String(Math.round(q.rules.stopPct * 10_000) / 100));
   p.set('tgt', String(Math.round(q.rules.targetPct * 10_000) / 100));
   if (q.oneContract) p.set('size', 'one');
+  if (q.source === 'signals') p.set('source', 'signals');
   return withAccount(`/api/report/option-replay?${p.toString()}`);
 }
 

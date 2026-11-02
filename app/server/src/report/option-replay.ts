@@ -63,8 +63,21 @@ export type OptionReplayAsk = {
   rules: ReplayRules;
   /** Every trade counted as one contract, as traded and replayed alike -- so a day of big lots does not outweigh the rest. Absent: as traded. */
   oneContract?: boolean;
+  /** `orders` (the default): the desk's real orders. `signals`: every signal in the signal history (`SIGNAL_STRIKE`). */
+  source?: ReplaySource;
   now: number;
 };
+
+/**
+ * What is replayed (owner, 3 Nov 2026: "against the signal history every trade must come -- no max open, no settings --
+ * every entry"). `orders`: the options the desk really sold. `signals`: every signal of the signal history that filled,
+ * whatever the strategies did with it -- no max open, no method list, no SL distance, no no-entry window, no refusal --
+ * one contract of the option the strategies' strike rule picks (`SIGNAL_STRIKE`) at the first recorded quote after the
+ * fill, sold at its bid; beside it the desk's real order on the same signal where there was one.
+ */
+export type ReplaySource = 'orders' | 'signals';
+/** The strike a signal is sold at under `signals`: as the strategies pick it (3 Nov 2026) -- the nearest the money with a delta of at most 0.10 and a bid of at least $13. */
+export const SIGNAL_STRIKE = { deltaMax: 0.1, minBidUsd: 13 } as const;
 
 export type ReplayLeg = { exitAt: number | null; exit: number | null; netUsd: number };
 export type OptionReplayRow = {
@@ -74,17 +87,28 @@ export type OptionReplayRow = {
   enteredAt: number; entry: number; contracts: number;
   /** The signal's perp levels the replay read: null where the signal had none recorded. */
   perpSl: number | null; perpTgt: number | null;
-  actual: ReplayLeg & { why: ActualExit };
+  /** What the desk's real order did; null for a signal the desk did not trade (`signals` only). */
+  actual: (ReplayLeg & { why: ActualExit }) | null;
   replay: ReplayLeg & { why: ReplayExit };
 };
 export type ReplaySide = { trades: number; wins: number; losses: number; profitUsd: number; lossUsd: number; netUsd: number };
-export type ReplayGroup = { key: string; name: string; trades: number; actual: ReplaySide; replay: ReplaySide };
+/**
+ * `open`: trades of the group still open, not in its figures. A day of the range with no trade is a group of none.
+ * `traded`: those with a real order, the ones `actual` counts; of them, `better` the rules made more of and `worse` less.
+ */
+export type ReplayGroup = { key: string; name: string; trades: number; open: number; traded: number; better: number; worse: number; actual: ReplaySide; replay: ReplaySide };
 export type OptionReplay = {
-  from: string; to: string; rules: ReplayRules; oneContract: boolean;
-  actual: ReplaySide; replay: ReplaySide;
+  from: string; to: string; rules: ReplayRules; oneContract: boolean; source: ReplaySource;
+  /** `actual` is of the `traded` trades alone: all of them under `orders`, those the desk had an order on under `signals`. */
+  actual: ReplaySide; replay: ReplaySide; traded: number;
+  /** Of the replayed, how many the rules made more of than the real order did, and how many less. */
+  better: number; worse: number;
   exits: Record<ReplayExit, number>;
-  /** Trades left out: still open, or with no quote of their option after the entry to replay on. */
-  open: number; noPrices: number;
+  /**
+   * Left out: trades still open; trades with no quote of their option after the entry to replay on; and (`signals`)
+   * signals with no strike inside the rule at the fill -- nothing the strategies would have sold.
+   */
+  open: number; noPrices: number; noStrike: number;
   days: ReplayGroup[]; timeframes: ReplayGroup[]; methods: ReplayGroup[]; accounts: ReplayGroup[];
   /** Newest first, at most `REPLAY_ROWS_MAX`. */
   rows: OptionReplayRow[]; rowsCut: boolean;
@@ -191,7 +215,8 @@ const whyOf = (w: string | null | undefined): ActualExit =>
 function takenOf(r: TradeRow, day: string): Taken | null {
   const { plan, state } = r;
   const sig = plan.signal;
-  if (plan.action !== 'sell' || !sig?.method || !sig.tf || state.phase !== 'flat' || !plan.symbol) return null;
+  // Sold by its entry fill: journal rows before 5 Oct 2026 carry no `action` (162 of them on 3-4 Oct, left out until 3 Nov).
+  if (plan.action === 'buy' || !sig?.method || !sig.tf || state.phase !== 'flat' || !plan.symbol) return null;
   const fills = state.fills ?? [];
   const entries = fills.filter((f) => f.role === 'entry' && f.side === 'sell');
   if (entries.length === 0) return null;
@@ -220,8 +245,11 @@ function takenOf(r: TradeRow, day: string): Taken | null {
   };
 }
 
+/** A trade still open: counted beside the replay, under the same filters, never replayed -- it has no exit yet. */
+type OpenTrade = { account: number | null; tf: string; method: string; methodName: string; enteredAt: number };
+
 /** One expiry day, read once: its trades, their signals' perp levels, their options' quotes and the perp's minutes. */
-type DayData = { taken: Taken[]; open: number; levels: Map<string, { sl: number; tp: Record<string, number | null> }>; paths: Map<string, OptionPath>; perp: PerpPath };
+type DayData = { taken: Taken[]; open: OpenTrade[]; levels: Map<string, { sl: number; tp: Record<string, number | null> }>; paths: Map<string, OptionPath>; perp: PerpPath };
 
 const levelKey = (method: string, mode: string, tf: string, dir: number, trigger: number) => `${method}|${mode}|${tf}|${dir}|${trigger}`;
 
@@ -230,18 +258,23 @@ async function readDay(day: string): Promise<DayData> {
   // By when the row last changed -- the journal's own index: every trade entered in the day changed in it or after.
   const all = await rows<TradeRow>(
     `SELECT trade_id, broker_account_id, plan, state FROM trades
-      WHERE updated_at >= $1 AND updated_at < $2 AND plan ? 'signal' AND plan->>'action' = 'sell'`,
+      WHERE updated_at >= $1 AND updated_at < $2 AND plan ? 'signal' AND coalesce(plan->>'action', 'sell') = 'sell'`,
     [span.from, span.to + 7 * 86_400_000],
   );
   const taken: Taken[] = [];
-  let open = 0;
+  const open: OpenTrade[] = [];
   for (const r of all) {
     const t = takenOf(r, day);
-    if (t) taken.push(t);
-    else if (r.state.phase !== 'flat' && r.state.phase !== 'aborted' && (r.state.fills ?? []).some((f) => f.role === 'entry' && sessionDayOf(f.ts) === day)) open++;
+    if (t) { taken.push(t); continue; }
+    const sig = r.plan.signal;
+    const entry = (r.state.fills ?? []).filter((f) => f.role === 'entry' && f.side === 'sell');
+    if (r.plan.action === 'buy' || !sig?.method || !sig.tf || r.state.phase === 'flat' || r.state.phase === 'aborted' || entry.length === 0) continue;
+    const enteredAt = Math.min(...entry.map((f) => f.ts));
+    if (sessionDayOf(enteredAt) !== day) continue;
+    open.push({ account: r.broker_account_id === null ? null : Number(r.broker_account_id), tf: sig.mode === 'mtf' ? CHAIN_KEY : sig.tf, method: sig.method, methodName: sig.method, enteredAt });
   }
   const symbols = [...new Set(taken.map((t) => t.symbol))];
-  const [setups, minute, five, flow] = await Promise.all([
+  const [setups, paths, flow] = await Promise.all([
     taken.length === 0 ? Promise.resolve([]) : rows<{ method: string; mode: string; tf: string; dir: number; trigger_at: string; stop: number; tp1: number; tp2: number | null; tp3: number | null }>(
       `SELECT s.method, s.mode, s.tf, s.dir, s.trigger_at, s.stop, s.tp1, s.tp2, s.tp3
          FROM entry_setups s
@@ -249,20 +282,24 @@ async function readDay(day: string): Promise<DayData> {
            USING (method, mode, tf, dir, trigger_at)`,
       [taken.map((t) => t.method), taken.map((t) => t.mode), taken.map((t) => t.signalTf), taken.map((t) => t.dir), taken.map((t) => t.triggerTime)] as never,
     ),
-    symbols.length === 0 ? Promise.resolve([]) : rows<{ symbol: string; at: string; ask: number | null; mark: number | null }>(
-      'SELECT symbol, at, ask, mark FROM option_snapshots_1m WHERE symbol = ANY($1) AND at >= $2 AND at < $3 ORDER BY symbol, at',
-      [symbols, span.from, span.to] as never,
-    ),
-    symbols.length === 0 ? Promise.resolve([]) : rows<{ symbol: string; at: string; ask: number | null; mark: number | null }>(
-      'SELECT symbol, at, ask, mark FROM option_snapshots WHERE symbol = ANY($1) AND at >= $2 AND at < $3 ORDER BY symbol, at',
-      [symbols, span.from, span.to] as never,
-    ),
+    pathsOf(symbols, span),
     rows<{ at: string; high: number; low: number }>(
       'SELECT at, high, low FROM trade_flow_1m WHERE at >= $1 AND at < $2 AND high IS NOT NULL AND low IS NOT NULL ORDER BY at', [span.from, span.to]),
   ]);
 
   const levels = new Map(setups.map((s) => [levelKey(s.method, s.mode, s.tf, s.dir, Number(s.trigger_at)), { sl: s.stop, tp: { tp1: s.tp1, tp2: s.tp2, tp3: s.tp3 } }]));
-  // The minute record where it has the contract; the five-minute record fills only the minutes it has none of (before 13 Oct 2026, all of them).
+  const perp: PerpPath = { at: Float64Array.from(flow.map((f) => Number(f.at))), high: Float64Array.from(flow.map((f) => f.high)), low: Float64Array.from(flow.map((f) => f.low)) };
+  return { taken, open, levels, paths, perp };
+}
+
+/** Each contract's quotes over the day: the minute record where it has the contract; the five-minute record fills only the minutes it has none of (before 13 Oct 2026, all of them). */
+async function pathsOf(symbols: readonly string[], span: { from: number; to: number }): Promise<Map<string, OptionPath>> {
+  if (symbols.length === 0) return new Map();
+  type Quote = { symbol: string; at: string; ask: number | null; mark: number | null };
+  const [minute, five] = await Promise.all([
+    rows<Quote>('SELECT symbol, at, ask, mark FROM option_snapshots_1m WHERE symbol = ANY($1) AND at >= $2 AND at < $3 ORDER BY symbol, at', [symbols, span.from, span.to] as never),
+    rows<Quote>('SELECT symbol, at, ask, mark FROM option_snapshots WHERE symbol = ANY($1) AND at >= $2 AND at < $3 ORDER BY symbol, at', [symbols, span.from, span.to] as never),
+  ]);
   const merged = new Map<string, Map<number, number>>();
   for (const src of [five, minute]) {
     for (const q of src) {
@@ -278,8 +315,74 @@ async function readDay(day: string): Promise<DayData> {
     const ats = [...m.keys()].sort((a, b) => a - b);
     paths.set(symbol, { at: Float64Array.from(ats), ask: Float64Array.from(ats.map((a) => m.get(a)!)) });
   }
-  const perp: PerpPath = { at: Float64Array.from(flow.map((f) => Number(f.at))), high: Float64Array.from(flow.map((f) => f.high)), low: Float64Array.from(flow.map((f) => f.low)) };
-  return { taken, open, levels, paths, perp };
+  return paths;
+}
+
+/** One board reading, as the strike is picked from it. */
+export type BoardQuote = { at: number; symbol: string; cp: 'C' | 'P'; strike: number; bid: number | null; delta: number | null };
+
+/** The strike the strategies would sell from one reading of the board: the nearest the money inside `SIGNAL_STRIKE`. Null: none. Pure. */
+export function pickSignalStrike(board: readonly BoardQuote[], cp: 'C' | 'P'): BoardQuote | null {
+  let best: BoardQuote | null = null;
+  for (const q of board) {
+    if (q.cp !== cp || q.bid === null || q.delta === null || q.bid < SIGNAL_STRIKE.minBidUsd || Math.abs(q.delta) > SIGNAL_STRIKE.deltaMax) continue;
+    if (!best || Math.abs(q.delta) > Math.abs(best.delta!)) best = q;
+  }
+  return best;
+}
+
+/** A signal of the signal history, sold as `SIGNAL_STRIKE` picks: what the replay needs. */
+type SignalTrade = Taken & { perpSl: number; perpTgt: number };
+type SignalDay = { trades: SignalTrade[]; noStrike: number; paths: Map<string, OptionPath> };
+
+const expiryCodeOf = (day: string) => `${day.slice(8, 10)}${day.slice(5, 7)}${day.slice(2, 4)}`;
+
+/** Every signal of one expiry day that filled, each with the option the strategies would have sold at the first board after its fill. */
+async function readSignals(day: string): Promise<SignalDay> {
+  const span = sessionOf(day);
+  const setups = await rows<{ method: string; mode: string; tf: string; dir: number; trigger_at: string; filled_at: string; stop: number; tp1: number }>(
+    `SELECT method, mode, tf, dir, trigger_at, filled_at, stop, tp1 FROM entry_setups
+      WHERE trigger_at >= $1 AND trigger_at < $2 AND filled_at >= $3 AND filled_at < $2 AND NOT research`,
+    // By the trigger -- its own index -- from a day before: a signal can fill long after it was given.
+    [Math.floor(span.from / 1000) - 86_400, Math.floor(span.to / 1000), Math.floor(span.from / 1000)],
+  );
+  // The board a signal is sold from: the first minute after its fill, or the first five-minute reading where there is no minute one.
+  const minuteOf = (filled: number) => Math.floor((filled * 1000) / MIN) * MIN + MIN;
+  const fiveOf = (filled: number) => Math.floor((filled * 1000) / (5 * MIN)) * 5 * MIN + 5 * MIN;
+  const code = expiryCodeOf(day);
+  type Raw = { at: string; symbol: string; cp: 'C' | 'P'; strike: number; bid: number | null; delta: number | null };
+  const [minute, five] = setups.length === 0 ? [[], []] : await Promise.all([
+    rows<Raw>('SELECT at, symbol, cp, strike, bid, delta FROM option_snapshots_1m WHERE at = ANY($1) AND expiry = $2',
+      [[...new Set(setups.map((x) => minuteOf(Number(x.filled_at))))], code] as never),
+    rows<Raw>('SELECT at, symbol, cp, strike, bid, delta FROM option_snapshots WHERE at = ANY($1) AND expiry = $2',
+      [[...new Set(setups.map((x) => fiveOf(Number(x.filled_at))))], code] as never),
+  ]);
+  const boards = new Map<number, BoardQuote[]>();
+  for (const q of [...minute, ...five]) {
+    const at = Number(q.at);
+    let b = boards.get(at);
+    if (!b) boards.set(at, (b = []));
+    b.push({ at, symbol: q.symbol, cp: q.cp, strike: q.strike, bid: q.bid, delta: q.delta });
+  }
+  const trades: SignalTrade[] = [];
+  let noStrike = 0;
+  const closeAt = span.to - SETTLE_LAST_MIN;
+  for (const x of setups) {
+    const filled = Number(x.filled_at);
+    const dir: 1 | -1 = x.dir >= 0 ? 1 : -1;
+    const cp = dir === 1 ? 'P' : 'C';
+    const board = boards.get(minuteOf(filled)) ?? boards.get(fiveOf(filled)) ?? [];
+    const q = pickSignalStrike(board, cp);
+    if (!q || q.at >= closeAt) { noStrike++; continue; }
+    trades.push({
+      tradeId: levelKey(x.method, x.mode, x.tf, dir, Number(x.trigger_at)), day, account: null, strategyId: null, strategyName: null,
+      method: x.method, methodName: x.method, tf: x.mode === 'mtf' ? CHAIN_KEY : x.tf, side: cp === 'P' ? 'PE' : 'CE', symbol: q.symbol,
+      enteredAt: q.at, entry: q.bid!, contracts: 1, dir, closeAt, mode: x.mode, triggerTime: Number(x.trigger_at), signalTf: x.tf,
+      ownSl: null, ownTgt: null, actualExitAt: null, actualExit: null, actualNet: 0, actualWhy: 'other',
+      perpSl: x.stop, perpTgt: x.tp1,
+    });
+  }
+  return { trades, noStrike, paths: await pathsOf([...new Set(trades.map((t) => t.symbol))], span) };
 }
 
 /**
@@ -289,21 +392,25 @@ async function readDay(day: string): Promise<DayData> {
  */
 const HELD_DAYS = 45;
 const TODAY_FRESH_MS = 60_000;
-const held = new Map<string, { at: number; settled: boolean; data: Promise<DayData> }>();
+type Held<T> = Map<string, { at: number; settled: boolean; data: Promise<T> }>;
+const held: Held<DayData> = new Map();
+const heldSignals: Held<SignalDay> = new Map();
 
-function dayData(day: string, now: number): Promise<DayData> {
-  const h = held.get(day);
-  if (h && (h.settled || now - h.at < TODAY_FRESH_MS)) { held.delete(day); held.set(day, h); return h.data; }
+function kept<T>(store: Held<T>, day: string, now: number, read: (day: string) => Promise<T>): Promise<T> {
+  const h = store.get(day);
+  if (h && (h.settled || now - h.at < TODAY_FRESH_MS)) { store.delete(day); store.set(day, h); return h.data; }
   // Settled once its last trade could have been closed and journalled: ten minutes after 5:30 PM.
   const settled = now > sessionOf(day).to + 10 * MIN;
-  const data = readDay(day);
-  held.set(day, { at: now, settled, data });
-  data.catch(() => { if (held.get(day)?.data === data) held.delete(day); });
-  while (held.size > HELD_DAYS) held.delete(held.keys().next().value!);
+  const data = read(day);
+  store.set(day, { at: now, settled, data });
+  data.catch(() => { if (store.get(day)?.data === data) store.delete(day); });
+  while (store.size > HELD_DAYS) store.delete(store.keys().next().value!);
   return data;
 }
+const dayData = (day: string, now: number) => kept(held, day, now, readDay);
+const signalDay = (day: string, now: number) => kept(heldSignals, day, now, readSignals);
 
-export function clearOptionReplayCache(): void { held.clear(); }
+export function clearOptionReplayCache(): void { held.clear(); heldSignals.clear(); }
 
 async function methodNames(): Promise<Map<string, string>> {
   return new Map((await rows<{ id: string; n: number | null; name: string }>('SELECT id, n, name FROM entry_methods')).map((m) => [m.id, m.n === null ? m.name : `#${m.n} ${m.name}`]));
@@ -326,11 +433,22 @@ function count(s: ReplaySide, net: number): void {
 /** The contract minute a moment is at: 0 is 5:30 PM IST. */
 const contractMinute = (ms: number) => Math.floor((ms - sessionOf(sessionDayOf(ms)).from) / MIN);
 
+/** One trade to replay, whichever the source: where it was sold, the perp levels it reads, and the real order beside it. */
+type Item = Taken & { perpSl: number | null; perpTgt: number | null; real: { net: number; contracts: number; exitAt: number | null; exit: number | null; why: ActualExit } | null };
+
+/** Four days at a time: each is a handful of indexed reads, and the pool is shared with the rest of the thread. */
+async function byFours<T>(days: readonly string[], read: (day: string) => Promise<T>): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < days.length; i += 4) out.push(...await Promise.all(days.slice(i, i + 4).map(read)));
+  return out;
+}
+
 export async function optionReplay(o: OptionReplayAsk): Promise<OptionReplay> {
   const days = sessionDays(o.from, o.to);
-  const [data, names, accounts, targets] = await Promise.all([
-    // Four days at a time: each is a handful of indexed reads, and the pool is shared with the rest of the thread.
-    (async () => { const out: DayData[] = []; for (let i = 0; i < days.length; i += 4) out.push(...await Promise.all(days.slice(i, i + 4).map((d) => dayData(d, o.now)))); return out; })(),
+  const source: ReplaySource = o.source ?? 'orders';
+  const [data, signals, names, accounts, targets] = await Promise.all([
+    byFours(days, (d) => dayData(d, o.now)),
+    source === 'signals' ? byFours(days, (d) => signalDay(d, o.now)) : Promise.resolve(null),
     methodNames(), accountNames(), targetKeys(),
   ]);
   const tfs = o.tfs ? new Set(o.tfs) : null;
@@ -338,55 +456,101 @@ export async function optionReplay(o: OptionReplayAsk): Promise<OptionReplay> {
   const actual = emptySide(), replay = emptySide();
   const exits: Record<ReplayExit, number> = { 'option-sl': 0, 'option-tgt': 0, 'perp-sl': 0, 'perp-tgt': 0, close: 0 };
   const groups = { day: new Map<string, ReplayGroup>(), tf: new Map<string, ReplayGroup>(), method: new Map<string, ReplayGroup>(), account: new Map<string, ReplayGroup>() };
-  const into = (m: Map<string, ReplayGroup>, key: string, name: string, a: number, r: number) => {
+  const groupOf = (m: Map<string, ReplayGroup>, key: string, name: string) => {
     let g = m.get(key);
-    if (!g) m.set(key, (g = { key, name, trades: 0, actual: emptySide(), replay: emptySide() }));
-    g.trades++; count(g.actual, a); count(g.replay, r);
+    if (!g) m.set(key, (g = { key, name, trades: 0, open: 0, traded: 0, better: 0, worse: 0, actual: emptySide(), replay: emptySide() }));
+    return g;
+  };
+  // Every day asked for has its line, a day with no trade too: a date the list skipped read as one the screen had lost.
+  for (const d of days) groupOf(groups.day, d, d);
+  const accountName = (id: number | null) => (id === null ? 'No account' : accounts.get(String(id)) ?? `Account ${id}`);
+  /** Whether a trade is one the ask is about. A signal is no account's: under `signals` the account narrows only the real orders set beside them. */
+  const wanted = (t: { account: number | null; tf: string; method: string; enteredAt: number }, signal = false) => {
+    if (!signal && o.account !== null && t.account !== o.account) return false;
+    if (tfs && !tfs.has(t.tf)) return false;
+    if (methods && !methods.has(t.method)) return false;
+    if (o.window) { const m = contractMinute(t.enteredAt); if (m < o.window.from || m > o.window.to) return false; }
+    return true;
   };
   const out: OptionReplayRow[] = [];
-  let open = 0, noPrices = 0;
-  for (const d of data) {
-    for (const t of d.taken) {
-      if (o.account !== null && t.account !== o.account) continue;
-      if (tfs && !tfs.has(t.tf)) continue;
-      if (methods && !methods.has(t.method)) continue;
-      if (o.window) { const m = contractMinute(t.enteredAt); if (m < o.window.from || m > o.window.to) continue; }
-      const lv = d.levels.get(levelKey(t.method, t.mode, t.signalTf, t.dir, t.triggerTime));
-      const perpSl = t.ownSl ?? lv?.sl ?? null;
-      const perpTgt = t.ownTgt ?? lv?.tp[targets.get(t.strategyId ?? '') ?? 'tp1'] ?? lv?.tp.tp1 ?? null;
-      const path = d.paths.get(t.symbol);
-      const x = path ? replayExit({ ...t, perpSl, perpTgt }, o.rules, path, d.perp) : null;
+  let open = 0, noPrices = 0, noStrike = 0, traded = 0, better = 0, worse = 0;
+  for (const [k, d] of data.entries()) {
+    const realItem = (t: Taken): Item['real'] => ({ net: t.actualNet, contracts: t.contracts, exitAt: t.actualExitAt, exit: t.actualExit, why: t.actualWhy });
+    let items: Item[];
+    let paths = d.paths;
+    if (signals) {
+      const sd = signals[k]!;
+      noStrike += sd.noStrike;
+      paths = sd.paths;
+      // The desk's real order on the same signal -- the first entered, of the account shown when there is one.
+      const real = new Map<string, Taken>();
+      for (const t of [...d.taken].sort((a, b) => a.enteredAt - b.enteredAt)) {
+        if (o.account !== null && t.account !== o.account) continue;
+        const key = levelKey(t.method, t.mode, t.signalTf, t.dir, t.triggerTime);
+        if (!real.has(key)) real.set(key, t);
+      }
+      items = sd.trades.filter((t) => wanted(t, true)).map((t) => { const r = real.get(t.tradeId); return { ...t, real: r ? realItem(r) : null }; });
+    } else {
+      items = d.taken.filter((t) => wanted(t)).map((t) => {
+        const lv = d.levels.get(levelKey(t.method, t.mode, t.signalTf, t.dir, t.triggerTime));
+        return {
+          ...t, real: realItem(t),
+          perpSl: t.ownSl ?? lv?.sl ?? null,
+          perpTgt: t.ownTgt ?? lv?.tp[targets.get(t.strategyId ?? '') ?? 'tp1'] ?? lv?.tp.tp1 ?? null,
+        };
+      });
+    }
+    for (const t of items) {
+      const path = paths.get(t.symbol);
+      const x = path ? replayExit(t, o.rules, path, d.perp) : null;
       if (!x) { noPrices++; continue; }
       // Charges are a share of the premium, so one contract's share of the real trade is its net over its size.
-      const size = o.oneContract ? 1 : t.contracts;
+      const size = o.oneContract || signals ? 1 : t.contracts;
       const net = shortNetUsd(t.entry, x.price, size);
-      const actualNet = o.oneContract ? t.actualNet / t.contracts : t.actualNet;
-      count(actual, actualNet); count(replay, net); exits[x.why]++;
+      const actualNet = t.real ? (size === t.real.contracts ? t.real.net : (t.real.net / t.real.contracts) * size) : null;
+      count(replay, net); exits[x.why]++;
+      const verdict = actualNet === null ? 0 : net > actualNet + 1e-9 ? 1 : net < actualNet - 1e-9 ? -1 : 0;
+      if (actualNet !== null) { traded++; count(actual, actualNet); }
+      if (verdict > 0) better++; else if (verdict < 0) worse++;
       const methodName = names.get(t.method) ?? t.method;
-      into(groups.day, t.day, t.day, actualNet, net);
-      into(groups.tf, t.tf, t.tf === CHAIN_KEY ? 'Chain' : t.tf, actualNet, net);
-      into(groups.method, t.method, methodName, actualNet, net);
-      const acct = t.account === null ? 'none' : String(t.account);
-      into(groups.account, acct, accounts.get(acct) ?? (t.account === null ? 'No account' : `Account ${acct}`), actualNet, net);
+      const into = (m: Map<string, ReplayGroup>, key: string, name: string) => {
+        const g = groupOf(m, key, name);
+        g.trades++; count(g.replay, net);
+        if (actualNet !== null) { g.traded++; count(g.actual, actualNet); }
+        if (verdict > 0) g.better++; else if (verdict < 0) g.worse++;
+      };
+      into(groups.day, t.day, t.day);
+      into(groups.tf, t.tf, t.tf === CHAIN_KEY ? 'Chain' : t.tf);
+      into(groups.method, t.method, methodName);
+      if (!signals) into(groups.account, t.account === null ? 'none' : String(t.account), accountName(t.account));
       out.push({
         tradeId: t.tradeId, day: t.day, account: t.account, strategyId: t.strategyId, strategyName: t.strategyName,
         method: t.method, methodName, tf: t.tf, side: t.side, symbol: t.symbol, enteredAt: t.enteredAt, entry: t.entry, contracts: size,
-        perpSl, perpTgt,
-        actual: { exitAt: t.actualExitAt, exit: t.actualExit, netUsd: actualNet, why: t.actualWhy },
+        perpSl: t.perpSl, perpTgt: t.perpTgt,
+        actual: t.real && actualNet !== null ? { exitAt: t.real.exitAt, exit: t.real.exit, netUsd: actualNet, why: t.real.why } : null,
         replay: { exitAt: x.at, exit: x.price, netUsd: net, why: x.why },
       });
     }
-    // Open trades are counted when nothing narrows the list: which timeframe or method they are of is not looked at.
-    if (o.account === null && !tfs && !methods && !o.window) open += d.open;
+    // Still open is of the real orders; a signal is replayed whatever its order is doing.
+    for (const t of signals ? [] : d.open) {
+      if (!wanted(t)) continue;
+      open++;
+      groupOf(groups.day, sessionDayOf(t.enteredAt), sessionDayOf(t.enteredAt)).open++;
+      groupOf(groups.tf, t.tf, t.tf === CHAIN_KEY ? 'Chain' : t.tf).open++;
+      groupOf(groups.method, t.method, names.get(t.method) ?? t.method).open++;
+      if (!signals) groupOf(groups.account, t.account === null ? 'none' : String(t.account), accountName(t.account)).open++;
+    }
   }
   out.sort((a, b) => b.enteredAt - a.enteredAt);
   const tfRank = (k: string) => { const i = REPLAY_TFS.indexOf(k); return i < 0 ? REPLAY_TFS.length : i; };
-  const byChange = (a: ReplayGroup, b: ReplayGroup) => (b.replay.netUsd - b.actual.netUsd) - (a.replay.netUsd - a.actual.netUsd);
+  // Methods best first: by what they make under the rules, most first.
+  const byNet = (a: ReplayGroup, b: ReplayGroup) => b.replay.netUsd - a.replay.netUsd;
   return {
-    from: o.from, to: o.to, rules: o.rules, oneContract: o.oneContract ?? false, actual, replay, exits, open, noPrices,
+    from: o.from, to: o.to, rules: o.rules, oneContract: o.oneContract === true || source === 'signals', source,
+    actual, replay, traded, better, worse, exits, open, noPrices, noStrike,
     days: [...groups.day.values()].sort((a, b) => b.key.localeCompare(a.key)),
     timeframes: [...groups.tf.values()].sort((a, b) => tfRank(a.key) - tfRank(b.key)),
-    methods: [...groups.method.values()].sort(byChange),
+    methods: [...groups.method.values()].sort(byNet),
     accounts: [...groups.account.values()].sort((a, b) => a.key.localeCompare(b.key, 'en', { numeric: true })),
     rows: out.slice(0, REPLAY_ROWS_MAX), rowsCut: out.length > REPLAY_ROWS_MAX,
   };

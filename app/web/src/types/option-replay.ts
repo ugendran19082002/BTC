@@ -13,18 +13,23 @@ export type OptionReplayRow = {
   method: string; methodName: string; tf: string; side: 'CE' | 'PE'; symbol: string;
   enteredAt: number; entry: number; contracts: number;
   perpSl: number | null; perpTgt: number | null;
-  actual: ReplayLeg & { why: ActualExit };
+  /** The desk's real order; null for a signal the desk did not trade (`source: 'signals'`). */
+  actual: (ReplayLeg & { why: ActualExit }) | null;
   replay: ReplayLeg & { why: ReplayExit };
 };
 export type ReplaySide = { trades: number; wins: number; losses: number; profitUsd: number; lossUsd: number; netUsd: number };
-export type ReplayGroup = { key: string; name: string; trades: number; actual: ReplaySide; replay: ReplaySide };
+/** `traded`: those with a real order (what `actual` counts); `better` / `worse`: of them, the rules made more / less. `open`: still open, not counted. */
+export type ReplayGroup = { key: string; name: string; trades: number; open: number; traded: number; better: number; worse: number; actual: ReplaySide; replay: ReplaySide };
+/** `orders`: the desk's real orders. `signals`: every signal of the signal history, sold as the strategies pick a strike. */
+export type ReplaySource = 'orders' | 'signals';
 export type OptionReplay = {
   from: string; to: string; rules: ReplayRules;
   /** Every trade counted as one contract (`?size=one`); false, at the size traded. */
   oneContract: boolean;
-  actual: ReplaySide; replay: ReplaySide;
+  source: ReplaySource;
+  actual: ReplaySide; replay: ReplaySide; traded: number; better: number; worse: number;
   exits: Record<ReplayExit, number>;
-  open: number; noPrices: number;
+  open: number; noPrices: number; noStrike: number;
   days: ReplayGroup[]; timeframes: ReplayGroup[]; methods: ReplayGroup[]; accounts: ReplayGroup[];
   rows: OptionReplayRow[]; rowsCut: boolean;
 };
