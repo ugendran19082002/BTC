@@ -61,6 +61,8 @@ export type OptionReplayAsk = {
   /** One broker account's trades; null, every account's. */
   account: number | null;
   rules: ReplayRules;
+  /** Every trade counted as one contract, as traded and replayed alike -- so a day of big lots does not outweigh the rest. Absent: as traded. */
+  oneContract?: boolean;
   now: number;
 };
 
@@ -78,7 +80,7 @@ export type OptionReplayRow = {
 export type ReplaySide = { trades: number; wins: number; losses: number; profitUsd: number; lossUsd: number; netUsd: number };
 export type ReplayGroup = { key: string; name: string; trades: number; actual: ReplaySide; replay: ReplaySide };
 export type OptionReplay = {
-  from: string; to: string; rules: ReplayRules;
+  from: string; to: string; rules: ReplayRules; oneContract: boolean;
   actual: ReplaySide; replay: ReplaySide;
   exits: Record<ReplayExit, number>;
   /** Trades left out: still open, or with no quote of their option after the entry to replay on. */
@@ -355,19 +357,22 @@ export async function optionReplay(o: OptionReplayAsk): Promise<OptionReplay> {
       const path = d.paths.get(t.symbol);
       const x = path ? replayExit({ ...t, perpSl, perpTgt }, o.rules, path, d.perp) : null;
       if (!x) { noPrices++; continue; }
-      const net = shortNetUsd(t.entry, x.price, t.contracts);
-      count(actual, t.actualNet); count(replay, net); exits[x.why]++;
+      // Charges are a share of the premium, so one contract's share of the real trade is its net over its size.
+      const size = o.oneContract ? 1 : t.contracts;
+      const net = shortNetUsd(t.entry, x.price, size);
+      const actualNet = o.oneContract ? t.actualNet / t.contracts : t.actualNet;
+      count(actual, actualNet); count(replay, net); exits[x.why]++;
       const methodName = names.get(t.method) ?? t.method;
-      into(groups.day, t.day, t.day, t.actualNet, net);
-      into(groups.tf, t.tf, t.tf === CHAIN_KEY ? 'Chain' : t.tf, t.actualNet, net);
-      into(groups.method, t.method, methodName, t.actualNet, net);
+      into(groups.day, t.day, t.day, actualNet, net);
+      into(groups.tf, t.tf, t.tf === CHAIN_KEY ? 'Chain' : t.tf, actualNet, net);
+      into(groups.method, t.method, methodName, actualNet, net);
       const acct = t.account === null ? 'none' : String(t.account);
-      into(groups.account, acct, accounts.get(acct) ?? (t.account === null ? 'No account' : `Account ${acct}`), t.actualNet, net);
+      into(groups.account, acct, accounts.get(acct) ?? (t.account === null ? 'No account' : `Account ${acct}`), actualNet, net);
       out.push({
         tradeId: t.tradeId, day: t.day, account: t.account, strategyId: t.strategyId, strategyName: t.strategyName,
-        method: t.method, methodName, tf: t.tf, side: t.side, symbol: t.symbol, enteredAt: t.enteredAt, entry: t.entry, contracts: t.contracts,
+        method: t.method, methodName, tf: t.tf, side: t.side, symbol: t.symbol, enteredAt: t.enteredAt, entry: t.entry, contracts: size,
         perpSl, perpTgt,
-        actual: { exitAt: t.actualExitAt, exit: t.actualExit, netUsd: t.actualNet, why: t.actualWhy },
+        actual: { exitAt: t.actualExitAt, exit: t.actualExit, netUsd: actualNet, why: t.actualWhy },
         replay: { exitAt: x.at, exit: x.price, netUsd: net, why: x.why },
       });
     }
@@ -378,7 +383,7 @@ export async function optionReplay(o: OptionReplayAsk): Promise<OptionReplay> {
   const tfRank = (k: string) => { const i = REPLAY_TFS.indexOf(k); return i < 0 ? REPLAY_TFS.length : i; };
   const byChange = (a: ReplayGroup, b: ReplayGroup) => (b.replay.netUsd - b.actual.netUsd) - (a.replay.netUsd - a.actual.netUsd);
   return {
-    from: o.from, to: o.to, rules: o.rules, actual, replay, exits, open, noPrices,
+    from: o.from, to: o.to, rules: o.rules, oneContract: o.oneContract ?? false, actual, replay, exits, open, noPrices,
     days: [...groups.day.values()].sort((a, b) => b.key.localeCompare(a.key)),
     timeframes: [...groups.tf.values()].sort((a, b) => tfRank(a.key) - tfRank(b.key)),
     methods: [...groups.method.values()].sort(byChange),

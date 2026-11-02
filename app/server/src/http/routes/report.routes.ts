@@ -71,7 +71,7 @@ const pctOf = (v: unknown, dflt: number) => (v === undefined || v === '' ? dflt 
 
 /** The option history's question, checked: expiry days (the last week's by default), hours, timeframes, methods and the rules. */
 export function replayAskOf(q: Record<string, unknown>, now = Date.now()): string | {
-  from: string; to: string; window: { from: number; to: number } | null; tfs: string[] | null; methods: string[] | null; rules: ReplayRules;
+  from: string; to: string; window: { from: number; to: number } | null; tfs: string[] | null; methods: string[] | null; rules: ReplayRules; oneContract: boolean;
 } {
   const today = sessionDayOf(now);
   const from = q.from === undefined || q.from === '' ? sessionDayOf(now - 6 * 86_400_000) : String(q.from);
@@ -87,7 +87,8 @@ export function replayAskOf(q: Record<string, unknown>, now = Date.now()): strin
   };
   const bad = rulesProblem(rules);
   if (bad) return bad;
-  return { from, to, window, tfs: timeframesOf(q), methods: methodsOf(q), rules };
+  if (q.size !== undefined && q.size !== '' && q.size !== 'traded' && q.size !== 'one') return 'The size must be traded or one.';
+  return { from, to, window, tfs: timeframesOf(q), methods: methodsOf(q), rules, oneContract: q.size === 'one' };
 }
 
 export function registerReportRoutes(app: FastifyInstance) {
@@ -98,7 +99,8 @@ export function registerReportRoutes(app: FastifyInstance) {
    * own contract's recorded quotes under the rules asked for, beside what it really did (`optionReplay`).
    * `?from&to` expiry days (the last week's by default, at most a month), `?fromTime&toTime` the hours entered,
    * `?tf=` `?method=` `?account=` as the statistics', and the rules: `?skipPerpSl=1&skipPerpTgt=1&sl=250&tgt=90`
-   * -- each absent is as the desk runs today. Worked in the backtest's thread, never the desk's.
+   * -- each absent is as the desk runs today. `?size=one` counts every trade as one contract. Worked in the backtest's
+   * thread, never the desk's.
    */
   app.get('/api/report/option-replay', async (req, reply) => {
     const a = replayAskOf((req.query ?? {}) as Record<string, unknown>);
