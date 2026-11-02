@@ -209,7 +209,7 @@ function takenOf(r: TradeRow, day: string): Taken | null {
     method: sig.method, methodName: sig.method, tf: sig.mode === 'mtf' ? CHAIN_KEY : sig.tf, side, symbol: plan.symbol,
     enteredAt, entry, contracts,
     dir: (sig.dir ?? (side === 'PE' ? 1 : -1)) >= 0 ? 1 : -1, closeAt: Math.min(expiryMs, sessionOf(day).to) - SETTLE_LAST_MIN,
-    mode: sig.mode ?? 'tf', triggerTime: sig.triggerTime ?? 0, signalTf: sig.tf,
+    mode: sig.mode ?? 'single', triggerTime: sig.triggerTime ?? 0, signalTf: sig.tf,
     ownSl: plan.underlying?.stop ?? null, ownTgt: plan.underlying?.target ?? null,
     actualExitAt: exits.length ? Math.max(...exits.map((f) => f.ts)) : null,
     actualExit: exitSize > 0 ? exits.reduce((n, f) => n + f.price * f.size, 0) / exitSize : null,
