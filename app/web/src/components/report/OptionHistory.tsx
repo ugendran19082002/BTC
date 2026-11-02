@@ -12,7 +12,7 @@ import { useSynced } from '@/hooks/useSynced';
 import { contractLabel, inr, signedInr, usdToInr } from '@/lib/format';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { cn } from '@/lib/utils';
-import type { ActualExit, OptionReplay, OptionReplayRow, ReplayExit, ReplayGroup, ReplayRules, ReplaySide } from '@/types/option-replay';
+import type { ActualExit, OptionReplay, OptionReplayRow, ReplayExit, ReplayGroup, ReplayRules, ReplaySide, ReplaySource } from '@/types/option-replay';
 
 /**
  * The option history (owner, 3 Nov 2026: "in the Methods menu, like the signal history, an option history -- the
@@ -79,8 +79,27 @@ export const shows = (r: OptionReplayRow, show: Show): boolean =>
   show === 'all' ? true
     : show === 'profit' ? r.replay.netUsd > 0
       : show === 'loss' ? r.replay.netUsd < 0
-        : show === 'better' ? r.replay.netUsd > r.actual.netUsd + 1e-9
-          : r.replay.netUsd < r.actual.netUsd - 1e-9;
+        : r.actual === null ? false
+          : show === 'better' ? r.replay.netUsd > r.actual.netUsd + 1e-9
+            : r.replay.netUsd < r.actual.netUsd - 1e-9;
+
+/**
+ * How a group's list is ranked (owner, 3 Nov 2026: "worse / better repeat count; count-wise, rank-wise list, user
+ * friendly"): by what it makes under the rules, by the change from the real orders, by how many trades the rules made
+ * better or worse, by the trades -- each best first; the days also by date, newest first. The rank is the line's place.
+ */
+export type GroupSort = 'date' | 'net' | 'change' | 'better' | 'worse' | 'trades';
+const GROUP_SORTS: readonly { id: GroupSort; name: string }[] = [
+  { id: 'date', name: 'Date' }, { id: 'net', name: 'With rules' }, { id: 'change', name: 'Change' },
+  { id: 'better', name: 'Most better' }, { id: 'worse', name: 'Most worse' }, { id: 'trades', name: 'Most trades' },
+];
+const changeOf = (g: ReplayGroup) => g.replay.netUsd - g.actual.netUsd;
+/** The groups in rank order. A day with no trade is always last but by date. */
+export function rankGroups(groups: readonly ReplayGroup[], by: GroupSort): ReplayGroup[] {
+  if (by === 'date') return [...groups];
+  const val = (g: ReplayGroup) => (by === 'net' ? g.replay.netUsd : by === 'change' ? changeOf(g) : by === 'better' ? g.better : by === 'worse' ? g.worse : g.trades);
+  return [...groups].sort((a, b) => ((a.trades === 0) !== (b.trades === 0) ? (a.trades === 0 ? 1 : -1) : val(b) - val(a)));
+}
 
 type GroupTab = 'days' | 'timeframes' | 'methods' | 'accounts';
 const GROUP_TABS: readonly { id: GroupTab; name: string }[] = [
@@ -102,9 +121,9 @@ export function replayCsv(rows: readonly OptionReplayRow[]): string {
     { header: 'sold_at', value: (r) => r.entry },
     { header: 'perp_sl', value: (r) => r.perpSl },
     { header: 'perp_tgt', value: (r) => r.perpTgt },
-    { header: 'actual_exit', value: (r) => r.actual.exit },
-    { header: 'actual_why', value: (r) => r.actual.why },
-    { header: 'actual_net_usd', value: (r) => Math.round(r.actual.netUsd * 10_000) / 10_000 },
+    { header: 'actual_exit', value: (r) => r.actual?.exit ?? null },
+    { header: 'actual_why', value: (r) => r.actual?.why ?? 'not traded' },
+    { header: 'actual_net_usd', value: (r) => (r.actual ? Math.round(r.actual.netUsd * 10_000) / 10_000 : null) },
     { header: 'replay_exit', value: (r) => r.replay.exit },
     { header: 'replay_why', value: (r) => r.replay.why },
     { header: 'replay_net_usd', value: (r) => Math.round(r.replay.netUsd * 10_000) / 10_000 },
@@ -119,6 +138,9 @@ export function OptionHistory() {
   const [tab, setTab] = useSynced<GroupTab>('optionHistory.tab', 'days');
   const [show, setShow] = useSynced<Show>('optionHistory.show', 'all');
   const [oneContract, setOneContract] = useSynced<boolean>('optionHistory.oneContract', false);
+  const [source, setSource] = useSynced<ReplaySource>('optionHistory.source', 'orders');
+  const [sortBy, setSortBy] = useSynced<GroupSort>('optionHistory.sort', 'net');
+  const signals = source === 'signals';
   const { window: hours, whole, control: hoursControl } = useTimeWindow('optionHistory');
   const [day, setDay] = useState<string | null>(null);
   const [shown, setShown] = useState(PAGE);
@@ -137,11 +159,14 @@ export function OptionHistory() {
   const span: DateRangeValue = range ?? { from: dayBefore(today, 6), to: today };
   const spanProblem = daysIn(span) > MAX_DAYS ? `At most ${MAX_DAYS} days at a time: pick a shorter range.` : null;
   const asked: OptionReplayQuery = useMemo(() => ({
-    from: span.from, to: span.to, hours: whole ? null : hours, tfs: tfs ?? [], rules: rules ?? LIVE_RULES, oneContract: oneContract === true,
-  }), [span.from, span.to, whole, hours.from, hours.to, (tfs ?? []).join(','), JSON.stringify(rules), oneContract]); // eslint-disable-line react-hooks/exhaustive-deps
+    from: span.from, to: span.to, hours: whole ? null : hours, tfs: tfs ?? [], rules: rules ?? LIVE_RULES, oneContract: oneContract === true, source: signals ? 'signals' : 'orders',
+  }), [span.from, span.to, whole, hours.from, hours.to, (tfs ?? []).join(','), JSON.stringify(rules), oneContract, signals]); // eslint-disable-line react-hooks/exhaustive-deps
   const key = JSON.stringify(asked);
   const { data, error, loading, refresh } = usePoll(() => getOptionReplay(asked), 5 * 60_000, { deps: [key], enabled: spanProblem === null });
   useEffect(() => { setDay(null); setShown(PAGE); }, [key]);
+  // A day tapped whose trades the list cut: that day asked for on its own, with everything else the same.
+  const dayKey = day && data?.rowsCut ? JSON.stringify({ ...asked, from: day, to: day }) : null;
+  const { data: dayData } = usePoll(() => getOptionReplay({ ...asked, from: day!, to: day! }), 5 * 60_000, { deps: [dayKey], enabled: dayKey !== null });
 
   const toggleTf = (k: string) => {
     const now = tfs ?? [];
@@ -185,12 +210,28 @@ export function OptionHistory() {
           </div>
         </div>
         <div className="grid gap-1.5">
-          <span className="text-[13px] font-medium">Size</span>
-          <div role="group" aria-label="Size" className="flex flex-wrap gap-1.5">
-            {chip(!oneContract, 'As traded', () => setOneContract(false), 'Each trade at the contracts it really had')}
-            {chip(oneContract === true, '1 contract each', () => setOneContract(true), 'Every trade as one contract: a day of big lots does not outweigh the rest')}
+          <span className="text-[13px] font-medium">Trades</span>
+          <div role="group" aria-label="Trades" className="flex flex-wrap gap-1.5">
+            {chip(!signals, "Desk's orders", () => setSource('orders'), 'The options the desk really sold')}
+            {chip(signals, 'Every signal', () => setSource('signals'), 'Every signal of the signal history, sold as the strategies pick a strike')}
           </div>
+          {signals && (
+            <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+              Every signal of the signal history that filled -- no max open, no method list, no strategy skip or refusal. One
+              contract of the strike the strategies pick (nearest the money with delta ≤ 0.10, bid ≥ $13) at the first price
+              after the fill, sold at its bid; the desk&apos;s real order beside it where there was one.
+            </p>
+          )}
         </div>
+        {!signals && (
+          <div className="grid gap-1.5">
+            <span className="text-[13px] font-medium">Size</span>
+            <div role="group" aria-label="Size" className="flex flex-wrap gap-1.5">
+              {chip(!oneContract, 'As traded', () => setOneContract(false), 'Each trade at the contracts it really had')}
+              {chip(oneContract === true, '1 contract each', () => setOneContract(true), 'Every trade as one contract: a day of big lots does not outweigh the rest')}
+            </div>
+          </div>
+        )}
         {hoursControl}
       </section>
 
@@ -245,7 +286,7 @@ export function OptionHistory() {
     <section aria-label="Option history">
       <CollapsibleCard id="option-history" title="Option history" right={
         <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          {period}{data ? ` · ${data.replay.trades.toLocaleString('en-US')} trades` : ''}
+          {period}{data ? ` · ${data.replay.trades.toLocaleString('en-US')} ${data.source === 'signals' ? 'signals' : 'trades'}` : ''}
           <button type="button" aria-label="Refresh" onClick={() => void refresh()} className="grid h-8 w-8 place-items-center rounded-md border-0 bg-transparent text-muted-foreground">
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden />
           </button>
@@ -260,7 +301,8 @@ export function OptionHistory() {
         {!data && !error && spanProblem === null && <p className="mt-3 text-[13px] text-muted-foreground">Working the trades again…</p>}
         {data && (
           <Results
-            data={data} tab={tab ?? 'days'} onTab={setTab} show={show ?? 'all'} onShow={setShow}
+            data={data} dayData={dayData && dayData.from === day ? dayData : null} sortBy={sortBy ?? 'net'} onSort={setSortBy}
+            tab={tab === 'accounts' && data.source === 'signals' ? 'days' : tab ?? 'days'} onTab={setTab} show={show ?? 'all'} onShow={setShow}
             day={day} onDay={(d) => { setDay(d); setShown(PAGE); }} shown={shown} onMore={() => setShown((n) => n + PAGE)} stale={loading}
           />
         )}
@@ -269,15 +311,23 @@ export function OptionHistory() {
   );
 }
 
-function Results({ data, tab, onTab, show, onShow, day, onDay, shown, onMore, stale }: {
-  data: OptionReplay; tab: GroupTab; onTab: (t: GroupTab) => void; show: Show; onShow: (s: Show) => void;
+function Results({ data, dayData, sortBy, onSort, tab, onTab, show, onShow, day, onDay, shown, onMore, stale }: {
+  data: OptionReplay; dayData: OptionReplay | null; sortBy: GroupSort; onSort: (s: GroupSort) => void; tab: GroupTab; onTab: (t: GroupTab) => void; show: Show; onShow: (s: Show) => void;
   day: string | null; onDay: (d: string | null) => void; shown: number; onMore: () => void; stale: boolean;
 }) {
   const { actual: a, replay: r } = data;
   const change = r.netUsd - a.netUsd;
-  const groups = data[tab];
-  const rows = data.rows.filter((x) => (day === null || x.day === day) && shows(x, show));
-  const left = [data.noPrices > 0 && `${data.noPrices} without recorded prices`, data.open > 0 && `${data.open} still open`].filter(Boolean);
+  const signals = data.source === 'signals';
+  const sort = sortBy === 'date' && tab !== 'days' ? 'net' : sortBy;
+  const groups = rankGroups(data[tab], sort);
+  // A day tapped in a cut list: its own answer once it is here, the cut list's lines of it until then.
+  const pool = day && data.rowsCut && dayData ? dayData.rows : data.rows;
+  const rows = pool.filter((x) => (day === null || x.day === day) && shows(x, show));
+  const left = [
+    data.noPrices > 0 && `${data.noPrices.toLocaleString('en-US')} without recorded prices`,
+    data.noStrike > 0 && `${data.noStrike.toLocaleString('en-US')} signals with no strike inside the rule`,
+    data.open > 0 && `${data.open.toLocaleString('en-US')} still open`,
+  ].filter(Boolean);
 
   const side = (label: string, s: ReplaySide, strong: boolean) => (
     <div className={cn('grid min-w-0 gap-1 rounded-md border border-solid px-3 py-2', strong ? 'border-[var(--accent)]' : 'border-border')}>
@@ -295,7 +345,7 @@ function Results({ data, tab, onTab, show, onShow, day, onDay, shown, onMore, st
   return (
     <div className={cn('mt-3 grid min-w-0 gap-3', stale && 'opacity-70')} aria-busy={stale}>
       <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
-        {side('As traded', a, false)}
+        {side(signals ? `Desk's real orders · ${data.traded.toLocaleString('en-US')} of ${r.trades.toLocaleString('en-US')}` : 'As traded', a, false)}
         {side('With these rules', r, true)}
         <div className="grid min-w-0 content-start gap-1 rounded-md border border-solid border-border px-3 py-2">
           <span className="text-[10.5px] uppercase tracking-[0.6px] text-muted-foreground">Change</span>
@@ -303,6 +353,11 @@ function Results({ data, tab, onTab, show, onShow, day, onDay, shown, onMore, st
           <span className="text-[12px] tabular-nums text-muted-foreground">
             {r.lossUsd === a.lossUsd ? 'Loss the same' : `Loss ${inr(usdToInr(Math.abs(a.lossUsd - r.lossUsd)))} ${r.lossUsd < a.lossUsd ? 'smaller' : 'bigger'}`}
             {' · '}Profit {r.profitUsd === a.profitUsd ? 'the same' : `${inr(usdToInr(Math.abs(r.profitUsd - a.profitUsd)))} ${r.profitUsd > a.profitUsd ? 'bigger' : 'smaller'}`}
+          </span>
+          <span className="text-[12px] tabular-nums text-muted-foreground">
+            <span className="font-semibold text-[var(--up)]">{data.better.toLocaleString('en-US')}</span> trades better ·{' '}
+            <span className="font-semibold text-[var(--down)]">{data.worse.toLocaleString('en-US')}</span> worse
+            {signals ? ` · of the ${data.traded.toLocaleString('en-US')} the desk traded` : ''}
           </span>
         </div>
       </div>
@@ -318,7 +373,7 @@ function Results({ data, tab, onTab, show, onShow, day, onDay, shown, onMore, st
 
       <div className="min-w-0">
         <div role="tablist" aria-label="Group by" className="mb-2 flex flex-wrap gap-1.5">
-          {GROUP_TABS.map((t) => (
+          {GROUP_TABS.filter((t) => !(signals && t.id === 'accounts')).map((t) => (
             <button
               key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => onTab(t.id)}
               className={cn('h-9 rounded-md border border-solid px-3 font-[inherit] text-[13px]', tab === t.id ? 'border-[var(--accent)] font-semibold text-foreground' : 'border-border bg-transparent text-muted-foreground')}
@@ -327,7 +382,16 @@ function Results({ data, tab, onTab, show, onShow, day, onDay, shown, onMore, st
             </button>
           ))}
         </div>
-        <GroupTable groups={groups} tab={tab} day={day} onDay={onDay} />
+        <label className="mb-2 flex items-center gap-2 text-[13px] text-muted-foreground">
+          Rank by
+          <select
+            value={sort} onChange={(e) => onSort(e.target.value as GroupSort)} aria-label="Rank by"
+            className="h-9 min-w-0 rounded-md border border-solid border-border bg-background px-2 font-[inherit] text-[13px] text-foreground"
+          >
+            {GROUP_SORTS.filter((g) => g.id !== 'date' || tab === 'days').map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </label>
+        <GroupTable groups={groups} tab={tab} day={day} onDay={onDay} ranked={sort !== 'date'} />
       </div>
 
       <div className="min-w-0">
@@ -356,7 +420,11 @@ function Results({ data, tab, onTab, show, onShow, day, onDay, shown, onMore, st
             </button>
           </span>
         </div>
-        {data.rowsCut && <p className="mb-2 mt-0 text-[12px] text-muted-foreground">The list holds the newest {data.rows.length.toLocaleString('en-US')} trades; the totals above count every one. Pick a shorter range to see the rest.</p>}
+        {data.rowsCut && !(day && dayData) && (
+          <p className="mb-2 mt-0 text-[12px] text-muted-foreground">
+            The list holds the newest {data.rows.length.toLocaleString('en-US')} trades; the totals above count every one. Tap a day to list all of its trades.
+          </p>
+        )}
         <TradeTable rows={rows.slice(0, shown)} />
         {rows.length > shown && (
           <button type="button" onClick={onMore} className="mt-2 h-10 w-full rounded-md border border-solid border-border bg-transparent font-[inherit] text-[13px] text-foreground">
@@ -368,40 +436,60 @@ function Results({ data, tab, onTab, show, onShow, day, onDay, shown, onMore, st
   );
 }
 
-function GroupTable({ groups, tab, day, onDay }: { groups: readonly ReplayGroup[]; tab: GroupTab; day: string | null; onDay: (d: string | null) => void }) {
+function GroupTable({ groups, tab, day, onDay, ranked }: { groups: readonly ReplayGroup[]; tab: GroupTab; day: string | null; onDay: (d: string | null) => void; ranked: boolean }) {
   const head = (s: string, left = false) => <th className={cn('whitespace-nowrap px-2 py-1.5 text-[11px] font-medium text-muted-foreground', left ? 'text-left' : 'text-right')}>{s}</th>;
-  const total = groups.reduce((t, g) => ({ trades: t.trades + g.trades, a: t.a + g.actual.netUsd, r: t.r + g.replay.netUsd }), { trades: 0, a: 0, r: 0 });
+  const total = groups.reduce((t, g) => ({ trades: t.trades + g.trades, better: t.better + g.better, worse: t.worse + g.worse, a: t.a + g.actual.netUsd, r: t.r + g.replay.netUsd }), { trades: 0, better: 0, worse: 0, a: 0, r: 0 });
+  let rank = 0;
   return (
     <div className="max-h-[50vh] overflow-auto rounded-md border border-solid border-border">
-      <table aria-label={`By ${tab}`} className="w-full min-w-[560px] border-collapse text-[12.5px]">
+      <table aria-label={`By ${tab}`} className="w-full min-w-[720px] border-collapse text-[12.5px]">
         <thead className="sticky top-0 bg-[var(--panel)]">
-          <tr>{head(tab === 'days' ? 'Expiry day' : tab === 'timeframes' ? 'Timeframe' : tab === 'methods' ? 'Method' : 'Account', true)}{head('Trades')}{head('Win % traded → rules')}{head('As traded')}{head('With rules')}{head('Change')}</tr>
+          <tr>
+            {ranked && head('#')}{head(tab === 'days' ? 'Expiry day' : tab === 'timeframes' ? 'Timeframe' : tab === 'methods' ? 'Method' : 'Account', true)}
+            {head('Trades')}{head('Better')}{head('Worse')}{head('Win % traded → rules')}{head('As traded')}{head('With rules')}{head('Change')}
+          </tr>
         </thead>
         <tbody>
           {groups.map((g) => {
             const c = g.replay.netUsd - g.actual.netUsd;
             const pick = tab === 'days';
+            const none = g.trades === 0;
+            if (!none) rank++;
             return (
               <tr
                 key={g.key} onClick={pick ? () => onDay(day === g.key ? null : g.key) : undefined}
                 className={cn('border-t border-border', pick && 'cursor-pointer hover:bg-[var(--panel)]', pick && day === g.key && 'bg-[var(--panel)] font-semibold')}
                 aria-selected={pick ? day === g.key : undefined}
               >
+                {ranked && <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">{none ? '' : rank}</td>}
                 <td className="max-w-[16rem] truncate px-2 py-1 text-left" title={g.name}>{g.name}</td>
-                <td className="px-2 py-1 text-right tabular-nums">{g.trades.toLocaleString('en-US')}</td>
-                <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">{winText(g.actual)} → {winText(g.replay)}</td>
-                <td className={cn('px-2 py-1 text-right tabular-nums', toneOf(g.actual.netUsd))}>{rupees(g.actual.netUsd)}</td>
-                <td className={cn('px-2 py-1 text-right tabular-nums', toneOf(g.replay.netUsd))}>{rupees(g.replay.netUsd)}</td>
-                <td className={cn('px-2 py-1 text-right font-semibold tabular-nums', toneOf(c))}>{rupees(c)}</td>
+                {none ? (
+                  <td colSpan={7} className="px-2 py-1 text-left text-muted-foreground">
+                    No trades{g.open > 0 ? ` · ${g.open} still open` : ''}
+                  </td>
+                ) : (
+                  <>
+                    <td className="px-2 py-1 text-right tabular-nums">{g.trades.toLocaleString('en-US')}{g.open > 0 && <span className="text-muted-foreground"> +{g.open} open</span>}</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-[var(--up)]">{g.better.toLocaleString('en-US')}</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-[var(--down)]">{g.worse.toLocaleString('en-US')}</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">{winText(g.actual)} → {winText(g.replay)}</td>
+                    <td className={cn('px-2 py-1 text-right tabular-nums', toneOf(g.actual.netUsd))}>{g.traded ? rupees(g.actual.netUsd) : '—'}</td>
+                    <td className={cn('px-2 py-1 text-right tabular-nums', toneOf(g.replay.netUsd))}>{rupees(g.replay.netUsd)}</td>
+                    <td className={cn('px-2 py-1 text-right font-semibold tabular-nums', toneOf(c))}>{g.traded ? rupees(c) : '—'}</td>
+                  </>
+                )}
               </tr>
             );
           })}
-          {groups.length === 0 && <tr><td colSpan={6} className="px-2 py-3 text-center text-muted-foreground">No trades here.</td></tr>}
+          {groups.length === 0 && <tr><td colSpan={ranked ? 9 : 8} className="px-2 py-3 text-center text-muted-foreground">No trades here.</td></tr>}
         </tbody>
         <tfoot className="bg-[var(--panel)] font-semibold">
           <tr className="border-t border-border">
+            {ranked && <td />}
             <td className="px-2 py-1 text-left">Total</td>
             <td className="px-2 py-1 text-right tabular-nums">{total.trades.toLocaleString('en-US')}</td>
+            <td className="px-2 py-1 text-right tabular-nums text-[var(--up)]">{total.better.toLocaleString('en-US')}</td>
+            <td className="px-2 py-1 text-right tabular-nums text-[var(--down)]">{total.worse.toLocaleString('en-US')}</td>
             <td />
             <td className={cn('px-2 py-1 text-right tabular-nums', toneOf(total.a))}>{rupees(total.a)}</td>
             <td className={cn('px-2 py-1 text-right tabular-nums', toneOf(total.r))}>{rupees(total.r)}</td>
@@ -427,21 +515,21 @@ function TradeTable({ rows }: { rows: readonly OptionReplayRow[] }) {
         </thead>
         <tbody>
           {rows.map((x) => {
-            const c = x.replay.netUsd - x.actual.netUsd;
+            const c = x.actual ? x.replay.netUsd - x.actual.netUsd : null;
             return (
               <tr key={x.tradeId} className="border-t border-border">
                 <td className="whitespace-nowrap px-2 py-1 text-left tabular-nums">{when(x.enteredAt)}</td>
                 <td className="px-2 py-1 text-left">{x.tf === 'chain' ? 'Chain' : x.tf}</td>
                 <td className="max-w-[12rem] truncate px-2 py-1 text-left" title={x.strategyName ? `${x.methodName} · ${x.strategyName}` : x.methodName}>{x.methodName}</td>
                 <td className="whitespace-nowrap px-2 py-1 text-left">
-                  <span className={x.side === 'CE' ? 'text-[var(--down)]' : 'text-[var(--up)]'}>{x.side}</span> {contractLabel(x.symbol)}
+                  <span className={x.side === 'CE' ? 'text-[var(--down)]' : 'text-[var(--up)]'}>{contractLabel(x.symbol)}</span>
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums">{price(x.entry)}</td>
-                <td className="whitespace-nowrap px-2 py-1 text-left text-muted-foreground">{ACTUAL_EXIT_NAMES[x.actual.why]} · {price(x.actual.exit)}</td>
-                <td className={cn('px-2 py-1 text-right tabular-nums', toneOf(x.actual.netUsd))}>{rupees(x.actual.netUsd)}</td>
+                <td className="whitespace-nowrap px-2 py-1 text-left text-muted-foreground">{x.actual ? `${ACTUAL_EXIT_NAMES[x.actual.why]} · ${price(x.actual.exit)}` : 'Not traded'}</td>
+                <td className={cn('px-2 py-1 text-right tabular-nums', x.actual && toneOf(x.actual.netUsd))}>{x.actual ? rupees(x.actual.netUsd) : '—'}</td>
                 <td className="whitespace-nowrap px-2 py-1 text-left" title={`Out ${when(x.replay.exitAt)}`}>{REPLAY_EXIT_NAMES[x.replay.why]} · {price(x.replay.exit)}</td>
                 <td className={cn('px-2 py-1 text-right tabular-nums', toneOf(x.replay.netUsd))}>{rupees(x.replay.netUsd)}</td>
-                <td className={cn('px-2 py-1 text-right font-semibold tabular-nums', toneOf(c))}>{Math.abs(c) < 1e-9 ? '—' : rupees(c)}</td>
+                <td className={cn('px-2 py-1 text-right font-semibold tabular-nums', c !== null && toneOf(c))}>{c === null || Math.abs(c) < 1e-9 ? '—' : rupees(c)}</td>
               </tr>
             );
           })}
