@@ -52,9 +52,9 @@ test('the perp crossing the signal\'s SL buys back at the next quote, unless the
 
 test('the perp TGT, when it is not skipped; the minute the fill was in is not read', () => {
   const path = pathOf([10, 8, 7]);
-  // The minute the entry filled inside reached the TGT before the fill: not counted. The next one did not.
+  // The minute the entry filled inside reached the TGT before the fill: not counted. The third did: out at the quote after it.
   const perp = perpOf([[85_100, 84_500], [84_900, 84_500], [85_050, 84_600]], T0);
-  assert.deepEqual(replayExit(TRADE, rules({ skipPerpTgt: false }), path, perp), { at: T0 + 3 * MIN, price: 7, why: 'close' });
+  assert.deepEqual(replayExit(TRADE, rules({ skipPerpTgt: false }), path, perp), { at: T0 + 3 * MIN, price: 7, why: 'perp-tgt' });
   const later = perpOf([[85_100, 84_500], [85_050, 84_600], [84_900, 84_500]], T0);
   assert.deepEqual(replayExit(TRADE, rules({ skipPerpTgt: false }), path, later), { at: T0 + 2 * MIN, price: 8, why: 'perp-tgt' });
 });

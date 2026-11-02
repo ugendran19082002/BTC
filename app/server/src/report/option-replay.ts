@@ -124,7 +124,8 @@ export function replayExit(t: {
   perpSl: number | null; perpTgt: number | null;
 }, rules: ReplayRules, option: OptionPath, perp: PerpPath): { at: number; price: number; why: ReplayExit } | null {
   const stop = rules.stopPct > 0 ? t.entry * (1 + rules.stopPct) : Number.POSITIVE_INFINITY;
-  const target = rules.targetPct > 0 ? t.entry * (1 - rules.targetPct) : Number.NEGATIVE_INFINITY;
+  // Rounded past any tick: 10 × (1 − 0.9) is 0.9999999999999998 in floating point, and the limit is at 1.
+  const target = rules.targetPct > 0 ? Math.round(t.entry * (1 - rules.targetPct) * 1e6) / 1e6 : Number.NEGATIVE_INFINITY;
   const sl = rules.skipPerpSl ? null : t.perpSl;
   const tgt = rules.skipPerpTgt ? null : t.perpTgt;
   // The first perp minute wholly after the fill: the one it filled inside began before it.
