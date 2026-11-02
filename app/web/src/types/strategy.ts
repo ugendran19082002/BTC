@@ -539,6 +539,8 @@ export type SignalTrade = {
   status: Exclude<SignalRunStatus, 'claimed'>; detail: string; tradeId: string | null;
   /** Why not taken, as kinds read from `detail` (server: strategy/signal-reasons.ts); none when taken. An older server sends none. */
   reasons?: SignalReason[];
+  /** On its own signal or as a re-entry, read from `detail` (2 Nov 2026). An older server sends none: read here the same way. */
+  entry?: SignalEntry;
   /** The signal's own plan on the BTC perp. */
   levels: { entryLo: number; entryHi: number; stop: number; tp1: number; tp2: number | null; tp3: number | null } | null;
   /** What the paper log saw on the perp: open (waiting at the zone), filled, tp1, stop, timeout, expired. */
@@ -653,5 +655,12 @@ export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is 
 export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'own-max' | 'desk-max' | 'side-max' | 'strike-max' | 'no-entry' | 'late' | 'over'
   | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'other';
 
-/** A range's signals counted whole (server: strategy/signal-reasons.ts `signalCounts`); `placed`: the real orders of the taken. */
-export type SignalCounts = { all: number; taken: number; placed: number; notTaken: number; byReason: Partial<Record<SignalReason, number>> };
+/** How a signal row entered (server `signalEntryOf`, 2 Nov 2026): on its own signal, or a re-entry after an option SL or target. */
+export type SignalEntry = 'signal' | 'sl' | 'tgt';
+/**
+ * A range's signals counted whole (server: strategy/signal-reasons.ts `signalCounts`); `placed`: the real orders of the
+ * taken; `takenBy`: the taken by how they entered, absent from a server from before 2 Nov.
+ */
+export type SignalCounts = {
+  all: number; taken: number; placed: number; takenBy?: Record<SignalEntry, number>; notTaken: number; byReason: Partial<Record<SignalReason, number>>;
+};

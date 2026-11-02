@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SIGNAL_REASONS, signalCounts, signalReasons } from '../../src/strategy/signal-reasons.js';
+import { SIGNAL_REASONS, signalCounts, signalEntryOf, signalReasons } from '../../src/strategy/signal-reasons.js';
 
 /**
  * Why a signal was not taken, as keys (20 Oct 2026, owner: "Not taken: sub-tabs by reason"). The sentences are the
@@ -60,5 +60,23 @@ test('[critical] a range counted: taken and its real orders, not taken, and each
   assert.equal(c.byReason.premium, 2, 'the spread-and-premium refusal is under premium too');
   assert.equal(c.byReason.other, 1);
   assert.equal(Object.values(c.byReason).reduce((a, n) => a + (n ?? 0), 0), cases.flatMap((x) => x[2]).length);
-  assert.deepEqual(signalCounts([]), { all: 0, taken: 0, placed: 0, notTaken: 0, byReason: {} });
+  assert.deepEqual(signalCounts([]), { all: 0, taken: 0, placed: 0, takenBy: { signal: 0, sl: 0, tgt: 0 }, notTaken: 0, byReason: {} });
+});
+
+test('[critical] how a signal entered (2 Nov 2026): on its own signal, or a re-entry after an SL or a target -- read from its sentence, before the bar', () => {
+  assert.equal(signalEntryOf('#1 Breakout BUY | live orders off: would sell PE 81400 x1 @ 13'), 'signal');
+  assert.equal(signalEntryOf('#1 Breakout BUY · re-entry after SL 1 (of P-1) | live orders off: would sell PE 81400 x1 @ 13'), 'sl');
+  assert.equal(signalEntryOf('#1 Breakout SELL · re-entry after SL 2/2 (of P-1) · trade 2 of 2 | sell CE 86000 x1 @ 9'), 'sl', 'the first shape, n/max');
+  assert.equal(signalEntryOf('#1 Breakout BUY · re-entry after target 3 (of P-1) | sell PE 81400 x1 @ 13'), 'tgt');
+  assert.equal(signalEntryOf('#1 Breakout BUY | the note says re-entry after SL somewhere after the bar'), 'signal', 'only the name part counts');
+  assert.equal(signalEntryOf('sell PE 81400 x1 @ 13'), 'signal');
+  const c = signalCounts([
+    { status: 'placed', detail: '#1 Breakout BUY | sell PE 81400 x1 @ 13' },
+    { status: 'would-place', detail: '#1 Breakout BUY · re-entry after SL 1 (of a) | live orders off: would sell PE 81400' },
+    { status: 'placed', detail: '#1 Breakout BUY · re-entry after SL 1 (of a) · trade 2 of 2 | sell PE 81400 x1 @ 13' },
+    { status: 'placed', detail: '#1 Breakout BUY · re-entry after target 1 (of b) | sell PE 81400 x1 @ 13' },
+    { status: 'skipped', detail: '#1 Breakout BUY · re-entry after SL 1 (of c) | the momentum guard sells no call after a rise of 250 or more' },
+  ]);
+  assert.deepEqual([c.taken, c.takenBy], [4, { signal: 1, sl: 2, tgt: 1 }], 'a re-entry not taken is under Not taken, not here');
+  assert.equal(c.notTaken, 1);
 });

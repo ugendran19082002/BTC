@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from 'react';
 import { getActivity, getDaySignals, getStats, methodNames } from '@/api/phone';
 import type { EntryMethodInfo } from '@/api/entry';
-import type { SignalReason, SignalRun, SignalTrade, StrategyRun } from '@/types/strategy';
+import type { SignalEntry, SignalReason, SignalRun, SignalTrade, StrategyRun } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct } from '@/lib/format';
@@ -53,6 +53,22 @@ export const REASON_WORDS: Record<SignalReason, string> = {
   delta: 'Delta refused', other: 'Other',
 };
 type Why = SignalReason | 'any';
+/**
+ * Taken, by how it entered (owner, 2 Nov 2026: "taken click pana signal entry, reentry SL, reentry tgt tab varunum"): on
+ * its own signal, or a re-entry after an option SL or target. The server says it of each row and counts the day; one from
+ * before says neither, and the row's own sentence is read here as the server reads it.
+ */
+type EntryPick = SignalEntry | 'any';
+const ENTRIES: { key: SignalEntry; label: string; none: string }[] = [
+  { key: 'signal', label: 'Signal entry', none: 'No signal entry taken today.' },
+  { key: 'sl', label: 'Re-entry after SL', none: 'No re-entry after an SL taken today.' },
+  { key: 'tgt', label: 'Re-entry after target', none: 'No re-entry after a target taken today.' },
+];
+const entryOf = (r: SignalTrade): SignalEntry => {
+  if (r.entry) return r.entry;
+  const head = r.detail.includes(' | ') ? r.detail.slice(0, r.detail.indexOf(' | ')) : r.detail;
+  return / · re-entry after SL\b/.test(head) ? 'sl' : / · re-entry after target\b/.test(head) ? 'tgt' : 'signal';
+};
 /** Rows a tab shows at first, and each "Show more" adds. */
 const PAGE = 40;
 
@@ -67,8 +83,9 @@ export function StrategiesScreen() {
   useEffect(() => { methodNames().then(setNames).catch(() => setNames(new Map())); }, []);
   const [feed, setFeed] = usePersisted<Feed>('m-strategies-feed', 'all');
   const [whyPick, setWhyPick] = usePersisted<Why>('m-strategies-why', 'any');
+  const [entryPick, setEntryPick] = usePersisted<EntryPick>('m-strategies-entry', 'any');
   const [limit, setLimit] = useState(PAGE);
-  useEffect(() => { setLimit(PAGE); }, [feed, whyPick]);
+  useEffect(() => { setLimit(PAGE); }, [feed, whyPick, entryPick]);
 
   const a = act.data;
   const today = a?.today ?? day;
@@ -94,11 +111,19 @@ export function StrategiesScreen() {
     : [...notTaken.reduce((m, r) => { for (const k of reasonsOf(r)) m.set(k, (m.get(k) ?? 0) + 1); return m; }, new Map<SignalReason, number>())])
     .sort((x, y) => y[1] - x[1]);
   const why = whyPick !== 'any' && byWhy.some(([k]) => k === whyPick) ? whyPick : 'any';
+  // Taken by how it entered: the server's day counts, else the rows'.
+  const takenRows = (all ?? []).filter(taken);
+  const takenBy: Record<SignalEntry, number> = served?.takenBy
+    ?? takenRows.reduce((m, r) => ({ ...m, [entryOf(r)]: m[entryOf(r)] + 1 }), { signal: 0, sl: 0, tgt: 0 });
+  const entry = ENTRIES.some((e) => e.key === entryPick) ? entryPick : 'any';
   const inTab = tab === 'not' ? notTaken.filter((r) => why === 'any' || reasonsOf(r).includes(why))
-    : (all ?? []).filter((r) => (tab === 'all' ? true : taken(r)));
+    : tab === 'taken' ? takenRows.filter((r) => entry === 'any' || entryOf(r) === entry)
+      : all ?? [];
   const signals = inTab.slice(0, limit);
   // How many the tab holds over the day, against the rows here: more, and the screen says the list is the newest.
-  const tabN = tab === 'not' ? (why === 'any' ? notTakenN : byWhy.find(([k]) => k === why)?.[1] ?? 0) : count[tab];
+  const tabN = tab === 'not' ? (why === 'any' ? notTakenN : byWhy.find(([k]) => k === why)?.[1] ?? 0)
+    : tab === 'taken' && entry !== 'any' ? takenBy[entry] : count[tab];
+  const none = tab === 'taken' && entry !== 'any' ? ENTRIES.find((e) => e.key === entry)!.none : FEEDS.find((f) => f.key === tab)!.none;
   // Under Taken, how many were real orders; under Not taken, why -- each a count.
   const real = served ? served.placed : (all ?? []).filter((r) => r.status === 'placed').length;
   const tradesToday = runs.filter((r) => r.status === 'placed').length + real;
@@ -152,8 +177,14 @@ export function StrategiesScreen() {
             );
           })}
         </div>
+        {all && tab === 'taken' && (
+          <div role="group" aria-label="Taken, how it entered" className="-mx-1 mt-2 flex gap-1.5 overflow-x-auto px-1 pb-1">
+            <Chip on={entry === 'any'} onClick={() => setEntryPick('any')}>All taken {takenN}</Chip>
+            {ENTRIES.map((e) => <Chip key={e.key} on={entry === e.key} onClick={() => setEntryPick(e.key)}>{e.label} {takenBy[e.key]}</Chip>)}
+          </div>
+        )}
         {all && tab === 'taken' && takenN > 0 && (
-          <p className="m-0 mt-2 text-[12.5px] text-muted-foreground">{real} real order{real === 1 ? '' : 's'} · {takenN - real} paper (live orders off)</p>
+          <p className="m-0 mt-1 text-[12.5px] text-muted-foreground">{real} real order{real === 1 ? '' : 's'} · {takenN - real} paper (live orders off)</p>
         )}
         {all && tab === 'not' && byWhy.length > 0 && (
           <>
@@ -167,7 +198,7 @@ export function StrategiesScreen() {
             </p>
           </>
         )}
-        {!all ? <Loading error={daySignals.error} what="today's signals" /> : signals.length === 0 ? <Empty>{FEEDS.find((f) => f.key === tab)!.none}</Empty> : (
+        {!all ? <Loading error={daySignals.error} what="today's signals" /> : signals.length === 0 ? <Empty>{none}</Empty> : (
           <ul className="m-0 mt-1 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="Signals">
             {signals.map((r) => (
               <SignalRow key={r.id} r={r} method={methodOf(r.method)} strategy={nameOf(r.strategyId)} openTrade={p.openTrade} />

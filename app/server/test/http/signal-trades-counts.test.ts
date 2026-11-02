@@ -60,11 +60,14 @@ test('[critical] one account\'s morning is not lost behind another account\'s ne
   two = (await brokerAccounts().create({ name: 'Second', apiKey: 'cntKEYtwoKEYtwo2222', apiSecret: 'cntSECRETtwoSECRETtwoSECRETtwo2222' })).id;
   await query(`INSERT INTO strategies (id, name, enabled, config, created_at, updated_at, broker_account_id) VALUES
     ('cnt-one', 'One 5m', true, $1, 1, 1, $2), ('cnt-two', 'Two 5m', true, $1, 1, 1, $3)`, [config, one, two]);
-  // Account one: 30 signals at 07:30 IST, every third taken, the rest with their SL too near.
+  // Account one: 30 signals at 07:30 IST, every third taken -- three of them re-entries after an SL, two after a target
+  // (2 Nov 2026) -- the rest with their SL too near.
   await query(`INSERT INTO strategy_signal_runs (strategy_id, signal_key, method, mode, tf, dir, status, detail, at)
     SELECT 'cnt-one', 'breakout|single|5m|1|' || i, 'breakout', 'single', '5m', 1,
            CASE WHEN i % 3 = 0 THEN 'placed' ELSE 'skipped' END,
-           CASE WHEN i % 3 = 0 THEN 'sell PE 81400 x1 @ 13' ELSE 'SL too near: the perp entry 81645 to the SL 81705 is 61 pts' END,
+           CASE WHEN i % 9 = 0 THEN '#1 Breakout BUY · re-entry after SL 1 (of x) | sell PE 81400 x1 @ 13'
+                WHEN i % 15 = 0 THEN '#1 Breakout BUY · re-entry after target 1 (of y) | sell PE 81400 x1 @ 13'
+                WHEN i % 3 = 0 THEN 'sell PE 81400 x1 @ 13' ELSE 'SL too near: the perp entry 81645 to the SL 81705 is 61 pts' END,
            $1::bigint + i * 60000
       FROM generate_series(1, 30) i`, [DAY_START + 7.5 * 3_600_000]);
   // Account two: 2,100 newer signals from 13:30 IST, every one skipped at the desk's cap.
@@ -78,15 +81,18 @@ test('[critical] one account\'s morning is not lost behind another account\'s ne
   assert.equal(mine.status, 200, JSON.stringify(mine.body));
   assert.equal(mine.body.trades.length, 30, 'the account\'s own 30, not none of the newest 2,000');
   assert.ok(mine.body.trades.every((t: any) => t.strategyId === 'cnt-one'));
-  assert.deepEqual(mine.body.counts, { all: 30, taken: 10, placed: 10, notTaken: 20, byReason: { 'sl-min': 20 } });
+  assert.deepEqual(mine.body.counts, { all: 30, taken: 10, placed: 10, takenBy: { signal: 5, sl: 3, tgt: 2 }, notTaken: 20, byReason: { 'sl-min': 20 } });
+  // Each row says how it entered, as it is counted.
+  const by = (e: string) => mine.body.trades.filter((t: any) => t.status === 'placed' && t.entry === e).length;
+  assert.deepEqual([by('signal'), by('sl'), by('tgt')], [5, 3, 2]);
 
   const theirs = await get(`/api/strategies/signal-trades?from=${DAY}&to=${DAY}&account=${two}`);
   assert.equal(theirs.body.trades.length, 2_000, 'a page of the newest');
-  assert.deepEqual(theirs.body.counts, { all: 2_100, taken: 0, placed: 0, notTaken: 2_100, byReason: { 'desk-max': 2_100 } }, 'counted whole');
+  assert.deepEqual(theirs.body.counts, { all: 2_100, taken: 0, placed: 0, takenBy: { signal: 0, sl: 0, tgt: 0 }, notTaken: 2_100, byReason: { 'desk-max': 2_100 } }, 'counted whole');
 
   const every = await get(`/api/strategies/signal-trades?from=${DAY}&to=${DAY}`);
   assert.equal(every.body.trades.length, 2_000);
-  assert.deepEqual(every.body.counts, { all: 2_130, taken: 10, placed: 10, notTaken: 2_120, byReason: { 'sl-min': 20, 'desk-max': 2_100 } });
+  assert.deepEqual(every.body.counts, { all: 2_130, taken: 10, placed: 10, takenBy: { signal: 5, sl: 3, tgt: 2 }, notTaken: 2_120, byReason: { 'sl-min': 20, 'desk-max': 2_100 } });
 });
 
 test('no range is the latest page, with no counts: "the latest" has no whole to count', async () => {

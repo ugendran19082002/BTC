@@ -52,18 +52,36 @@ export function signalReasons(status: string, detail: string): SignalReason[] {
   return out.length ? out : ['other'];
 }
 
-/** A range's signals counted: all, taken (`placed`: real orders of them), not taken, and not taken by kind. */
-export type SignalCounts = { all: number; taken: number; placed: number; notTaken: number; byReason: Partial<Record<SignalReason, number>> };
+/**
+ * How a row came to enter (owner, 2 Nov 2026: "taken click pana signal entry, reentry SL, reentry tgt tab varunum"): on
+ * its own signal, or as a re-entry after an option SL or target -- read, as the reasons are, from its sentence, where the
+ * runner names it before the "|" ("#1 Breakout BUY · re-entry after SL 1 (of …) | …").
+ */
+export type SignalEntry = 'signal' | 'sl' | 'tgt';
+export function signalEntryOf(detail: string): SignalEntry {
+  const head = detail.includes(' | ') ? detail.slice(0, detail.indexOf(' | ')) : detail;
+  return / · re-entry after SL\b/.test(head) ? 'sl' : / · re-entry after target\b/.test(head) ? 'tgt' : 'signal';
+}
+
+/** A range's signals counted: all, taken (`placed`: real orders of them; `takenBy`: how each entered), not taken, and not taken by kind. */
+export type SignalCounts = {
+  all: number; taken: number; placed: number; takenBy: Record<SignalEntry, number>; notTaken: number; byReason: Partial<Record<SignalReason, number>>;
+};
 
 /**
  * Every signal of a range counted, not the page the list carries (29 Oct 2026, owner: "the phone's Not taken count is
  * wrong"). A signal with two kinds is under both, as on the screen.
  */
 export function signalCounts(lines: readonly { status: string; detail: string }[]): SignalCounts {
-  const out: SignalCounts = { all: lines.length, taken: 0, placed: 0, notTaken: 0, byReason: {} };
+  const out: SignalCounts = { all: lines.length, taken: 0, placed: 0, takenBy: { signal: 0, sl: 0, tgt: 0 }, notTaken: 0, byReason: {} };
   for (const l of lines) {
     const kinds = signalReasons(l.status, l.detail);
-    if (!kinds.length) { out.taken += 1; if (l.status === 'placed') out.placed += 1; continue; }
+    if (!kinds.length) {
+      out.taken += 1;
+      out.takenBy[signalEntryOf(l.detail)] += 1;
+      if (l.status === 'placed') out.placed += 1;
+      continue;
+    }
     out.notTaken += 1;
     for (const k of kinds) out.byReason[k] = (out.byReason[k] ?? 0) + 1;
   }

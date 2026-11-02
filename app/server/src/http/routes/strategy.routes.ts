@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { signalCounts, signalReasons } from '../../strategy/signal-reasons.js';
+import { signalCounts, signalEntryOf, signalReasons } from '../../strategy/signal-reasons.js';
 import { istDayRange } from '../../entry/catalogue.js';
 import { noteError } from '../../observability/errors.js';
 import { refuse } from '../refuse.js';
@@ -365,8 +365,9 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const trades = await strategyStore().signalTrades(2_000, undefined, range ?? undefined, ids);
     // The range counted whole, not the 2,000 the list carries: on 29 Oct the phone said Taken 28 at High for 286 taken.
     const counts = range ? signalCounts(await strategyStore().signalStatuses(range, ids)) : null;
-    // Each one not taken with the kinds of reason in its sentence (20 Oct 2026: the phone's Not taken, by reason).
-    return { from: from ?? null, to: to ?? null, counts, trades: trades.map((t) => ({ ...t, reasons: signalReasons(t.status, t.detail) })) };
+    // Each one not taken with the kinds of reason in its sentence (20 Oct 2026: the phone's Not taken, by reason); each
+    // with how it entered, on its signal or as a re-entry (2 Nov 2026: the phone's Taken, by entry).
+    return { from: from ?? null, to: to ?? null, counts, trades: trades.map((t) => ({ ...t, reasons: signalReasons(t.status, t.detail), entry: signalEntryOf(t.detail) })) };
   });
 
   /**

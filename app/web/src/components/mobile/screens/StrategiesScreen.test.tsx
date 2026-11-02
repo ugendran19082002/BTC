@@ -191,3 +191,52 @@ describe('StrategiesScreen: the limits on open trades, as bars', () => {
     expect(screen.queryByText('Open limits')).toBeNull();
   });
 });
+
+describe('StrategiesScreen: Taken, by how it entered', () => {
+  const chips = () => within(screen.getByRole('group', { name: 'Taken, how it entered' }));
+
+  it('[critical] under Taken: All taken, Signal entry, Re-entry after SL, Re-entry after target -- each with the day\'s count; a tap shows those alone, and is kept', async () => {
+    getDaySignals.mockResolvedValue({
+      trades: [
+        sig('placed', { reasons: [], entry: 'signal' }), sig('would-place', { reasons: [], entry: 'sl' }), sig('placed', { reasons: [], entry: 'sl' }),
+        sig('placed', { reasons: [], entry: 'tgt' }), sig('skipped', { reasons: ['premium'], entry: 'sl' }),
+      ],
+      counts: { all: 5, taken: 4, placed: 3, takenBy: { signal: 1, sl: 2, tgt: 1 }, notTaken: 1, byReason: { premium: 1 } },
+    });
+    const { unmount } = show();
+    await waitFor(() => expect(tabs().getByRole('button', { name: 'Taken 4' })).toBeInTheDocument());
+    expect(screen.queryByRole('group', { name: 'Taken, how it entered' })).toBeNull();
+    fireEvent.click(tabs().getByRole('button', { name: 'Taken 4' }));
+    expect(chips().getAllByRole('button').map((b) => b.textContent)).toEqual(['All taken 4', 'Signal entry 1', 'Re-entry after SL 2', 'Re-entry after target 1']);
+    expect(rows()).toHaveLength(4);
+
+    fireEvent.click(chips().getByRole('button', { name: 'Re-entry after SL 2' }));
+    expect(rows()).toHaveLength(2);
+    expect(chips().getByRole('button', { name: 'Re-entry after SL 2' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(chips().getByRole('button', { name: 'Re-entry after target 1' }));
+    expect(rows()).toHaveLength(1);
+    fireEvent.click(chips().getByRole('button', { name: 'Signal entry 1' }));
+    expect(rows()).toHaveLength(1);
+
+    // Kept: the screen opens again on Taken, on the same one.
+    unmount();
+    show();
+    await waitFor(() => expect(chips().getByRole('button', { name: 'Signal entry 1' })).toHaveAttribute('aria-pressed', 'true'));
+  });
+
+  it('a server from before 2 Nov sends neither the kind nor its counts: each row\'s own sentence says, and none of a kind says so', async () => {
+    getDaySignals.mockResolvedValue({
+      trades: [
+        sig('placed', { reasons: [], detail: '#1 Breakout BUY | sell PE 81400 x1 @ 13' }),
+        sig('placed', { reasons: [], detail: '#1 Breakout BUY · re-entry after SL 2/2 (of x) | sell PE 81400 x1 @ 13' }),
+      ],
+      counts: { all: 2, taken: 2, placed: 2, notTaken: 0, byReason: {} },
+    });
+    show();
+    await waitFor(() => expect(tabs().getByRole('button', { name: 'Taken 2' })).toBeInTheDocument());
+    fireEvent.click(tabs().getByRole('button', { name: 'Taken 2' }));
+    expect(chips().getAllByRole('button').map((b) => b.textContent)).toEqual(['All taken 2', 'Signal entry 1', 'Re-entry after SL 1', 'Re-entry after target 0']);
+    fireEvent.click(chips().getByRole('button', { name: 'Re-entry after target 0' }));
+    expect(screen.getByText('No re-entry after a target taken today.')).toBeInTheDocument();
+  });
+});

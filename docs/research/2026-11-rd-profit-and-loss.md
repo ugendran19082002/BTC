@@ -293,7 +293,7 @@ trades. Since 2 Nov the windows are the same on all four, so the window experime
 
 | Item | Kind | Evidence |
 |---|---|---|
-| Daily method update (win % now 60 / 65 / 70 / 75 by account, every 14 days, set 2 Nov) | setting | §4: under the live caps, daily beat every 14 days by ~5% in the fair half; win % 50–85 made the same money, higher win % lost less |
+| ~~Method update rhythm~~ — done 2 Nov: every 5 days, look-back 5, win % 60 / 65 / 70 / 75 by account | setting | Walk-forward under the live caps (update × look-back grid): 5 on 5 +₹1,425 (+6%) in the fair half against 14 on 14, every account, loss +20%; shorter look-backs (3–7) beat 14–28; win % 50–85 made the same money, higher lost less |
 | Target 95% + time stop 2 h (exit if the offer is over 150% of entry) | code + setting | §1: +12%, loss −10%, ✓ all under A6 |
 | Max SL distance filter (skip 250–400 pts, chain first) | study, then setting | §6: the weak band on real fills |
 | Re-entry on — Income first: SL → opposite all day max 2, target → same 07–10 max 2 | setting (UI pill) | §2 |
