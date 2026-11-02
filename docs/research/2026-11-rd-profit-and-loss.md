@@ -11,6 +11,10 @@ A result marked ✓ is no worse than the comparison in both halves and without 1
 
 ## The short version
 
+> **2 Nov evening: every setting changed below was put back to the morning's** (owner's call, after the before/after
+> backtest: +15% profit in the fair half, loss +67%, loss days 5 → 12). The findings stand as findings; none of them is
+> live now. Re-entry (switched on from the screen on 1 Nov) is the only change of these two days still running.
+
 - **Went live on 2 Nov 2026** (each validated, rehearsed on a copy of the database, applied in one guarded transaction,
   cross-checked): the A6 no-entry windows on all 4 accounts, tuned the same evening to A7 (§3); 3m and 5m perp SL minimum 150 on all accounts; all time (chain)
   perp SL minimum 100 on all accounts. Delta 0.12 from 07:00 and 0.09 from 11:00 went live at ~16:05 IST and was put back
