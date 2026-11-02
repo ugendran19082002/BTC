@@ -236,4 +236,3 @@ describe('Include, in the methods\' daily update (3 Nov 2026)', () => {
     expect(await screen.findByLabelText('In, included')).toHaveTextContent('Under the line but included: #9 Trap.');
   });
 });
-

@@ -453,4 +453,3 @@ test('[critical] the walk honours Include, as the daily update does', () => {
   assert.ok(w.days.every((d) => d.picked.includes('trap')), 'in every day\'s list');
   assert.equal(w.rule.included, 1);
 });
-
