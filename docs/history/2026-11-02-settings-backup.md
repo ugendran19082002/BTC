@@ -6,6 +6,9 @@ pani vachuko"). The full data — every strategy's whole config, every account s
 [2026-11-02-settings-backup.json](2026-11-02-settings-backup.json); this page is the readable summary. What was tried that
 day and why it was put back: [../research/2026-11-rd-profit-and-loss.md](../research/2026-11-rd-profit-and-loss.md).
 
+> Taken before Income was changed the same evening: Income's strategies are now copies of High's with the A7 windows
+> (see 2026-10.md). The Income rows below are Income as it was at 19:22.
+
 ## Accounts
 
 | | High (1) | Medium (2) | Low (3) | Income (4) |

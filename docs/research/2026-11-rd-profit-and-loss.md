@@ -281,6 +281,47 @@ PF 2.24) · Low 1,009, +₹1,626 (+1.61, PF 2.14) · Income 134, +₹297. Medium
 trades. Since 2 Nov the windows are the same on all four, so the window experiment is over; they still differ by win %
 (70 / 80).
 
+## 9. New ideas, 2 Nov evening (real fills, 9,456 trades, 1 Oct – 1 Nov)
+
+Each a filter or sizing applied to the real trades as they happened (the live caps 165/160/185/185 re-applied where it
+matters). Baseline: NET +₹7,081, lost −₹11,220, win 78.0%.
+
+| Idea | NET vs now | Loss | Checks | Verdict |
+|---|--:|--:|---|---|
+| **No CE sold after BTC rose 150+ in 60 min** (the momentum guard at 150, not 250) | **+1,213** | **−16%** | ✓ halves, ✓ w/o 13+30 | **keep** |
+| Same at 250 (the guard as built) | +616 | −10% | w/o 13+30 −22 | weaker |
+| Same for puts after a 150 fall | −374 | −2% | ✗ | waste (as the guard's study found) |
+| **+ daily loss limit ₹50 / 100 / 150 / 200 a day per account** | **+1,651 / 1,418 / 1,328 / 1,358** | **−31% / −25% / −23% / −21%** | ✓ all | **keep** |
+| **+ entries 07:00–10:00 at 2× (under the caps)** | **+4,620** | **±0%** | ✓ all, 25 of 31 days better | strong; needs a 2nd trade per signal in the morning |
+| Same, 2× only 07:00–09:00 | +3,571 | −5% | ✓ all | |
+| Pause a side 10–120 min after an SL on it | −110 to −351 | −1 to −7% | ✗ | waste |
+| At most 3–20 open on one strike | −1,262 to −5,427 | | ✗ | waste |
+| Skip wide spreads (>5–20% of mid) | −243 to −3,816 | | ✗ | waste |
+| At most 1–5 entries a strike in 5 min | −3,278 to −5,802 | | ✗ | waste |
+| Daily profit lock ₹200 / 400 | −2,305 / −1,659 | | ✗ | waste |
+| Skip premium / hours-left < $2–6 | +11 to −4,823 | | ✗ | waste |
+
+More ideas the same evening (real fills, or the current rules replayed on the real entries where a price path is needed):
+
+| Idea | NET vs now | Loss | Checks | Verdict |
+|---|--:|--:|---|---|
+| **Target steps as now to 12:00, then 95%** (replay) | **+619** | +1% | ✓ all | **keep** — a settings change (the exit steps) |
+| Target 80% to 10:00, 95% after (replay) | +608 | +1% | ✓ all | same idea |
+| **Skip strikes nearer than 748 pts to spot** | +140 | **−18%** | ✓ all | keep — mostly 13:00–15:00 entries (gamma); needs a minimum distance in the delta rule |
+| Skip strikes nearer than 900 pts | +5 | −33% | halves ±0 | |
+| Enter 1–5 min after the signal, at that bid (replay) | −914 to −1,584 | 0 to +5% | ✗ | waste: enter at once |
+| Target 95% to 12/13:00 then 80/85% (replay) | −528 to −1,700 | | ✗ | waste |
+| Re-entry only while BTC still moves its way (5–30 min, 0–100 pts) | −20 to −2,857 | less | ✗ | waste; on 2 Nov it cut the target re-entries' −₹271 only to −₹169 |
+| Skip a method whose real P&L over the last 3–10 days < 0 | −1,560 to −2,278 | −20% | ✗ | waste |
+| A strategy stops for the day after −₹5 / −₹10 | +259 / +253 | −19% / −15% | 2nd half ✗ | not yet |
+| Signal score, reward/risk, volZ, volumeZ, autocorr, efficiency, OI shift (fifths) | — | — | no band lost in both halves | waste |
+| Today's range / yesterday's 0.27–0.44 | +2,003 if skipped | −37% | 28 and 30 Oct only (−₹494 without the worst day) | rejected: luck |
+| Many same-side entries in the 10 min before (12+) | +₹2.06 a trade against +0.25–0.52 | | 2nd half only | an observation |
+
+The app's daily loss limit (`daily_loss_limit_usd@<acct>`, switched by `daily_loss_limit_on@<acct>`) refuses an order whose
+worst case to its stop would take the day's realised loss past the budget — a little earlier than the study's "no entry once
+the day's closed loss reaches it", so the real effect is at least as strong.
+
 ## Caveats
 
 - **One month of data.** Every number here is October 2026 — a month with two spikes that reversed (13 and 30 Oct). 30 Oct
