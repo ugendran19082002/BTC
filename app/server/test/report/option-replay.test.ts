@@ -148,6 +148,12 @@ test('a real trade replayed: as live it is held, with the perp SL it is out at t
   assert.equal(withSl.exits['perp-sl'], 1);
   assert.deepEqual(withSl.days.map((d) => [d.key, d.trades]), [[DAY, 1]]);
   assert.deepEqual(withSl.timeframes.map((d) => d.key), ['5m']);
+
+  // One contract each: the real trade's net is halved -- the charges are a share of the premium -- and the replay is of one.
+  const one = await ask({ skipPerpSl: false, targetPct: 0 }, { oneContract: true });
+  assert.ok(Math.abs(one.actual.netUsd - shortNetUsd(40, 4, 1)) < 1e-12);
+  assert.ok(Math.abs(one.replay.netUsd - shortNetUsd(40, r.replay.exit!, 1)) < 1e-12);
+  assert.equal(one.rows[0]!.contracts, 1);
 });
 
 test('the filters: a timeframe, a method and hours with none of it leave nothing', async () => {

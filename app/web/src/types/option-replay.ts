@@ -20,6 +20,8 @@ export type ReplaySide = { trades: number; wins: number; losses: number; profitU
 export type ReplayGroup = { key: string; name: string; trades: number; actual: ReplaySide; replay: ReplaySide };
 export type OptionReplay = {
   from: string; to: string; rules: ReplayRules;
+  /** Every trade counted as one contract (`?size=one`); false, at the size traded. */
+  oneContract: boolean;
   actual: ReplaySide; replay: ReplaySide;
   exits: Record<ReplayExit, number>;
   open: number; noPrices: number;

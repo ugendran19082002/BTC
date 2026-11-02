@@ -118,6 +118,7 @@ export function OptionHistory() {
   const [rules, setRules] = useSynced<ReplayRules>('optionHistory.rules', LIVE_RULES);
   const [tab, setTab] = useSynced<GroupTab>('optionHistory.tab', 'days');
   const [show, setShow] = useSynced<Show>('optionHistory.show', 'all');
+  const [oneContract, setOneContract] = useSynced<boolean>('optionHistory.oneContract', false);
   const { window: hours, whole, control: hoursControl } = useTimeWindow('optionHistory');
   const [day, setDay] = useState<string | null>(null);
   const [shown, setShown] = useState(PAGE);
@@ -136,8 +137,8 @@ export function OptionHistory() {
   const span: DateRangeValue = range ?? { from: dayBefore(today, 6), to: today };
   const spanProblem = daysIn(span) > MAX_DAYS ? `At most ${MAX_DAYS} days at a time: pick a shorter range.` : null;
   const asked: OptionReplayQuery = useMemo(() => ({
-    from: span.from, to: span.to, hours: whole ? null : hours, tfs: tfs ?? [], rules: rules ?? LIVE_RULES,
-  }), [span.from, span.to, whole, hours.from, hours.to, (tfs ?? []).join(','), JSON.stringify(rules)]); // eslint-disable-line react-hooks/exhaustive-deps
+    from: span.from, to: span.to, hours: whole ? null : hours, tfs: tfs ?? [], rules: rules ?? LIVE_RULES, oneContract: oneContract === true,
+  }), [span.from, span.to, whole, hours.from, hours.to, (tfs ?? []).join(','), JSON.stringify(rules), oneContract]); // eslint-disable-line react-hooks/exhaustive-deps
   const key = JSON.stringify(asked);
   const { data, error, loading, refresh } = usePoll(() => getOptionReplay(asked), 5 * 60_000, { deps: [key], enabled: spanProblem === null });
   useEffect(() => { setDay(null); setShown(PAGE); }, [key]);
@@ -181,6 +182,13 @@ export function OptionHistory() {
           <div role="group" aria-label="Timeframes" className="flex flex-wrap gap-1.5">
             {chip((tfs ?? []).length === 0, 'All', () => setTfs([]))}
             {TF_CHOICES.map((c) => chip((tfs ?? []).includes(c.key), c.name, () => toggleTf(c.key), c.key === 'chain' ? 'The timeframe chain (the "all time" strategies)' : undefined))}
+          </div>
+        </div>
+        <div className="grid gap-1.5">
+          <span className="text-[13px] font-medium">Size</span>
+          <div role="group" aria-label="Size" className="flex flex-wrap gap-1.5">
+            {chip(!oneContract, 'As traded', () => setOneContract(false), 'Each trade at the contracts it really had')}
+            {chip(oneContract === true, '1 contract each', () => setOneContract(true), 'Every trade as one contract: a day of big lots does not outweigh the rest')}
           </div>
         </div>
         {hoursControl}
