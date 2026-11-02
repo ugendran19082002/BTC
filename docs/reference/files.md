@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-578 files listed, 321 test files counted below, images and lockfiles left out.
+579 files listed, 321 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -816,6 +816,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [2026-11-perp-sl-min-by-cap.md](../research/2026-11-perp-sl-min-by-cap.md) | Perp SL minimum by timeframe, at each account cap (1 Oct – 1 Nov 2026) |
 | [2026-11-rd-profit-and-loss.md](../research/2026-11-rd-profit-and-loss.md) | R&D: more profit, less loss — exits, re-entry, windows, methods, delta (1 Oct – 1 Nov 2026) |
 | [btc-15m-movement-2y.md](../research/btc-15m-movement-2y.md) | BTC movement by 15-minute slot — 5:35 PM to 5:29 PM IST, last two years |
 | [entry-concepts.md](../research/entry-concepts.md) | Entry concepts — the owner's 130, deduplicated |

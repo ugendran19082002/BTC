@@ -244,6 +244,9 @@ distance, all timeframes: 0–100 +1.20 · 100–150 +1.29 · **150–200 +1.26*
 | 2h | **−1.49 (5)** / −0.44 (23) | 250 |
 | 4h | – | 300 |
 
+By account cap (100 to 350 open): [2026-11-perp-sl-min-by-cap.md](2026-11-perp-sl-min-by-cap.md) — at the live caps
+(155–170) lower minimums stop paying for 3m, since the extra trades take slots from better ones.
+
 ## 7. Delta
 
 Real-path replay (7,137 real entries under today's config) and the engine (live pick; win 65 daily):
