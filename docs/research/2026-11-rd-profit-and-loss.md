@@ -12,7 +12,7 @@ A result marked ✓ is no worse than the comparison in both halves and without 1
 ## The short version
 
 - **Went live on 2 Nov 2026** (each validated, rehearsed on a copy of the database, applied in one guarded transaction,
-  cross-checked): the A6 no-entry windows on all 4 accounts; 3m and 5m perp SL minimum 150 on all accounts; all time (chain)
+  cross-checked): the A6 no-entry windows on all 4 accounts, tuned the same evening to A7 (§3); 3m and 5m perp SL minimum 150 on all accounts; all time (chain)
   perp SL minimum 100 on all accounts. Delta 0.12 from 07:00 and 0.09 from 11:00 went live at ~16:05 IST and was put back
   to the old schedule the same evening at the owner's word (§7).
 - **Built, off until switched on:** re-entry after an option SL (the other side) and after an option target (the same
@@ -139,7 +139,8 @@ do not carry over), and day by day every proposal was better on fewer days than 
 is insurance against 2–3 bad afternoons a month (14, 19, 21, 26 Oct), not an edge. A6 keeps only the hours that lost on
 every reading.
 
-**A6, live on all 4 accounts since 2 Nov ~15:00 IST** (windows block from `from` up to, not including, `to`):
+**A6, live on all 4 accounts from 2 Nov ~15:00 IST, replaced the same evening by A7** (below). Windows block from `from`
+up to, not including, `to`:
 
 | Strategy | No entry |
 |---|---|
@@ -147,6 +148,32 @@ every reading.
 | 15m time, all time | 13:00–14:00, 15:59–17:29 |
 | 1h time | 12:00–13:00, 15:59–17:29 |
 | 30m, 2h, 4h time | 15:59–17:29 |
+
+### A7: A6 tuned to the half-hour (live on all 4 accounts since 2 Nov evening)
+
+Every half-hour from 10:00 to 15:59, for every timeframe, blocked on top of A6 or opened from it (144 tests), scored by the
+walk-forward engine (4 accounts) and High's real fills. Kept only the changes that gained on both, in both halves and
+without 13+30: 3m opens 11:30–12:00 and 13:00–13:30; 15m opens 13:00–13:30; 1h opens 12:00–12:30; 5m and 2h block
+14:00–14:30. Nothing else at 10:00, 12:00 or 15:00 helped; 30m and 4h want no window.
+
+| Strategy | A7 no entry |
+|---|---|
+| 3m time | 11:00–11:30, 13:30–14:00, 15:59–17:29 |
+| 5m time | 11:00–12:00, 13:00–14:30, 15:59–17:29 |
+| 15m time | 13:30–14:00, 15:59–17:29 |
+| all time | 13:00–14:00, 15:59–17:29 |
+| 1h time | 12:30–13:00, 15:59–17:29 |
+| 2h time | 14:00–14:30, 15:59–17:29 |
+| 30m, 4h time | 15:59–17:29 |
+
+| Windows | Engine vs A6 | Engine loss | Real (High) vs A6 | Real loss |
+|---|--:|--:|--:|--:|
+| **A7** | +1,181 (+2%) | +2.6% | +127 (~+4%) | −1.8% |
+| No windows (15:59 only) | +1,548 | +25.5% | −195 | +15.9% |
+| Low's old 11:00+ | −5,698 | −26% | −460 | −30.5% |
+
+Caution: chosen on the same month; on the real fills almost all of A7's gain is in 17 Oct – 1 Nov (1–16 Oct ≈ 0). The
+review should score each half-hour change on November's fills before trusting it further.
 
 ### Where the day ends (no entry from …)
 
