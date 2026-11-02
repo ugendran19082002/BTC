@@ -29,7 +29,11 @@ const rs = (usd: number | null | undefined) => (usd === null || usd === undefine
 /** A day counts as traded when it booked or was charged anything. */
 const traded = (r: DayRow | undefined): r is DayRow => !!r && (r.trades > 0 || r.netUsd !== 0);
 
-export function DayCalendar({ from, to, rows, today }: { from: string; to: string; rows: DayRow[]; today: string }) {
+export function DayCalendar({ from, to, rows, today, dayFooter }: {
+  from: string; to: string; rows: DayRow[]; today: string;
+  /** Under the open day's figures: its won and lost trades, a tap away (`WonLost`, 2 Nov 2026). */
+  dayFooter?: (day: string) => ReactNode;
+}) {
   // Only the days of the range asked for: a reading still on screen from the range before must not show through.
   const inRange = rows.filter((r) => r.day >= from && r.day <= to);
   const map = byDay(inRange);
@@ -134,6 +138,7 @@ export function DayCalendar({ from, to, rows, today }: { from: string; to: strin
             <Figure label="Charges" tone={row.chargesUsd ? 'down' : undefined}>{rs(-row.chargesUsd)}</Figure>
             <Figure label="Running total" tone={pnlTone(row.cumulativeUsd)}>{rs(row.cumulativeUsd)}</Figure>
           </dl>
+          {dayFooter?.(row.day)}
           {days.length > 1 && <p className="m-0 mt-1.5 text-[11.5px] text-muted-foreground">Tap a day for its figures.</p>}
         </div>
       ) : (

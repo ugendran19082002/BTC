@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { Chip, Empty, Loading, Pill, Stat, Stats, When } from '@/components/mobile/parts';
+import { outcomeOf, type Outcome } from '@/components/mobile/WonLost';
 
 /**
  * One ledger day's trades, from the bottom of the screen (owner, 30 Oct 2026: "the entries under a day, a tap opens a
@@ -32,12 +33,14 @@ const EXIT: Record<NonNullable<DayTrade['exitBy']>, { word: string; tone: 'up' |
 const money = (usd: number) => signedInr(usdToInr(usd));
 const PAGE = 40;
 
-export function LedgerDaySheet({ day, account, showAccount, onOpenTrade, onClose }: {
+export function LedgerDaySheet({ day, account, showAccount, onOpenTrade, onClose, result: opened = 'all' }: {
   day: string; account: number | null; showAccount: boolean; onOpenTrade: (tradeId: string) => void; onClose: () => void;
+  /** Opened from a Won or Lost line (`WonLost`): that side already chosen. */
+  result?: 'all' | Outcome;
 }) {
   const r = usePoll(() => getLedgerDay(day, account), 60_000, { deps: [day, account] });
   const [side, setSide] = useState<'all' | 'CE' | 'PE'>('all');
-  const [result, setResult] = useState<'all' | 'win' | 'loss'>('all');
+  const [result, setResult] = useState<'all' | Outcome>(opened);
   const [sortKey, setSortKey] = usePersisted<Sort>('m-ledger-day-sort', 'exit-new');
   const [limit, setLimit] = useState(PAGE);
   const sort = SORTS.find((s) => s.key === sortKey) ?? SORTS[0]!;
@@ -52,11 +55,13 @@ export function LedgerDaySheet({ day, account, showAccount, onOpenTrade, onClose
 
   const all = r.data?.trades ?? [];
   const shown = useMemo(() => all
-    .filter((t) => (side === 'all' || t.optionSide === side) && (result === 'all' || (result === 'win' ? t.netUsd > 0 : t.netUsd < 0)))
+    .filter((t) => (side === 'all' || t.optionSide === side) && (result === 'all' || outcomeOf(t) === result))
     .sort(sort.by), [all, side, result, sort]);
   const count = (f: (t: DayTrade) => boolean) => all.filter(f).length;
   const d = r.data?.desk;
   const name = day === todayIst(Date.now()) ? 'Today' : dayLabel(day);
+  // What the narrowed list adds up to: the figure on the Won or Lost line tapped, found again here.
+  const shownUsd = shown.reduce((n, t) => n + (t.open ? 0 : t.netUsd), 0);
 
   return (
     // Over the tab bar (z-20) and under a trade opened from it (TradeDetail, z-30): back from the trade is back to this list.
@@ -67,7 +72,9 @@ export function LedgerDaySheet({ day, account, showAccount, onOpenTrade, onClose
         <div className="px-4 pt-2">
           <div aria-hidden="true" className="mx-auto mb-2 h-1 w-10 rounded-full bg-[var(--line)]" />
           <div className="flex items-center justify-between gap-2">
-            <h2 id="ledger-day-title" className="m-0 min-w-0 truncate text-[17px] font-semibold">{name} · trades</h2>
+            <h2 id="ledger-day-title" className="m-0 min-w-0 truncate text-[17px] font-semibold">
+              {name} · {result === 'win' ? 'trades won' : result === 'loss' ? 'trades lost' : 'trades'}
+            </h2>
             <button type="button" aria-label="Close" onClick={onClose} className="-mr-2 grid h-11 w-11 shrink-0 place-items-center rounded-md border-0 bg-transparent text-muted-foreground">
               <X className="h-5 w-5" />
             </button>
@@ -113,6 +120,12 @@ export function LedgerDaySheet({ day, account, showAccount, onOpenTrade, onClose
                 </span>
               </div>
 
+              {(side !== 'all' || result !== 'all') && shown.length > 0 && (
+                <p className="m-0 mt-3 flex items-baseline justify-between gap-2 text-[13px]" aria-live="polite">
+                  <span className="text-muted-foreground">{shown.length} trade{shown.length === 1 ? '' : 's'}, after charges</span>
+                  <span className={cn('font-semibold tabular-nums', shownUsd > 0 ? 'text-[var(--up)]' : shownUsd < 0 ? 'text-[var(--down)]' : '')}>{money(shownUsd)}</span>
+                </p>
+              )}
               {shown.length === 0 ? <div className="mt-3"><Empty>{all.length ? 'None match.' : 'No trade this day.'}</Empty></div> : (
                 <ul className="m-0 mt-2 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="The day's trades">
                   {shown.slice(0, limit).map((t) => <TradeLine key={t.tradeId} t={t} day={day} showAccount={showAccount} onOpen={() => onOpenTrade(t.tradeId)} />)}

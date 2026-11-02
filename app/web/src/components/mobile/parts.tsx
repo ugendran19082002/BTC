@@ -40,11 +40,24 @@ export function Rows({ children }: { children: ReactNode }) {
   return <dl className="m-0 flex flex-col divide-y divide-[var(--line-soft)]">{children}</dl>;
 }
 
-/** A small tile: a label over a figure. */
-export function Stat({ label, children, tone }: { label: string; children: ReactNode; tone?: 'up' | 'down' | 'warn' | 'dim' }) {
+/**
+ * A small tile: a label over a figure. Given `onOpen`, the whole tile is one tap (a chevron by the label says so) --
+ * laid over it, since a button may not hold a `dt` and its `dd`.
+ */
+export function Stat({ label, children, tone, onOpen, openLabel }: {
+  label: string; children: ReactNode; tone?: 'up' | 'down' | 'warn' | 'dim';
+  onOpen?: () => void;
+  /** What the tap does, for a screen reader: "Booked: show today's trades". */
+  openLabel?: string;
+}) {
   return (
-    <div className="min-w-0 rounded-md bg-muted px-2.5 py-2">
-      <dt className="truncate text-[11.5px] text-muted-foreground">{label}</dt>
+    <div className={cn('min-w-0 rounded-md bg-muted px-2.5 py-2', onOpen && 'relative active:brightness-110')}>
+      {onOpen ? (
+        <dt className="flex min-w-0 items-center justify-between gap-1 text-[11.5px] text-muted-foreground">
+          <span className="truncate">{label}</span>
+          <ChevronRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+        </dt>
+      ) : <dt className="truncate text-[11.5px] text-muted-foreground">{label}</dt>}
       <dd className={cn(
         // 14px on the narrowest phones, so "+₹4,123" fits a third of 360px whole rather than as "+₹4,1…".
         'm-0 truncate text-[14px] font-semibold tabular-nums min-[390px]:text-[15px]',
@@ -53,6 +66,9 @@ export function Stat({ label, children, tone }: { label: string; children: React
       )}>
         {children}
       </dd>
+      {onOpen && (
+        <button type="button" onClick={onOpen} aria-label={openLabel ?? label} className="absolute inset-0 rounded-md border-0 bg-transparent p-0" />
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { json } from '@/api/client';
 import { getDaysFor, getStats, type StatsGroup } from '@/api/phone';
 import type { MtmReport } from '@/types/report';
@@ -14,6 +15,8 @@ import { pairsOfStats, splitPairs } from '@/lib/method-pairs';
 import { PairList } from '@/components/mobile/PairList';
 import { DayCalendar } from '@/components/mobile/DayCalendar';
 import { FilterBar, FilterPicker, METHODS, STRATEGIES, TIMEFRAMES, type FilterOption } from '@/components/mobile/FilterPicker';
+import { WonLost, type Outcome } from '@/components/mobile/WonLost';
+import { LedgerDaySheet } from '@/components/mobile/LedgerDaySheet';
 
 /**
  * P&L (6 Oct 2026): how the money went -- today live, or the last 7, 30 or 90 days -- as one figure and its line,
@@ -53,6 +56,8 @@ export function PnlScreen() {
   const [strategies, setStrategies] = usePersisted<string[]>('m-pnl-strategies', []);
   const [methods, setMethods] = usePersisted<string[]>('m-pnl-methods', []);
   const [timeframes, setTimeframes] = usePersisted<string[]>('m-pnl-timeframes', []);
+  // A day's won or lost trades, opened from its Won or Lost line (owner, 2 Nov 2026).
+  const [sheet, setSheet] = useState<{ day: string; result: 'all' | Outcome } | null>(null);
   const filter = { strategies, methods, timeframes };
   const asked = `${strategies.join(',')}|${methods.join(',')}|${timeframes.join(',')}`;
   const stats = usePoll(() => getStats(from, to, p.accountParam, filter), isToday ? 30_000 : 120_000, { deps: [from, to, p.accountParam, asked] });
@@ -163,7 +168,7 @@ export function PnlScreen() {
         <Stats cols={3}>
           {isToday ? (
             <>
-              <Stat label="Booked" tone={toneOf(t?.realisedUsd)}>{rs(t?.realisedUsd)}</Stat>
+              <Stat label="Booked" tone={toneOf(t?.realisedUsd)} onOpen={() => setSheet({ day: today, result: 'all' })} openLabel={`Booked ${rs(t?.realisedUsd)}: show today's trades`}>{rs(t?.realisedUsd)}</Stat>
               <Stat label="Open" tone={toneOf(t?.unrealisedUsd)}>{rs(t?.unrealisedUsd)}</Stat>
               <Stat label="Charges" tone={t?.chargesUsd ? 'down' : undefined}>{rs(t ? -t.chargesUsd : null)}</Stat>
             </>
@@ -185,7 +190,13 @@ export function PnlScreen() {
           <Stat label="Worst trade" tone={toneOf(o?.worstUsd)}>{rs(o?.worstUsd)}</Stat>
         </Stats>
         {!stats.data && stats.error && <Loading error={stats.error} what="the trades" />}
-        {!isToday && days.data && <DayCalendar from={from} to={to} rows={days.data.days} today={today} />}
+        {isToday && <WonLost day={today} account={p.accountParam} every={30_000} unfiltered={narrowed} onOpen={(result) => setSheet({ day: today, result })} />}
+        {!isToday && days.data && (
+          <DayCalendar
+            from={from} to={to} rows={days.data.days} today={today}
+            dayFooter={(day) => <WonLost day={day} account={p.accountParam} every={120_000} unfiltered={narrowed} onOpen={(result) => setSheet({ day, result })} />}
+          />
+        )}
         {!isToday && days.data && (
           <p className="m-0 mt-2 text-[12px] text-muted-foreground">
             {days.data.totals.tradingDays} days traded · {days.data.totals.winDays} up · {days.data.totals.lossDays} down
@@ -215,6 +226,13 @@ export function PnlScreen() {
       ) : stats.data ? (
         <Panel><Empty>{narrowed ? `No trade of ${whose.join(', ')} closed ${inRange}.` : `No trade closed ${inRange} yet.`}</Empty></Panel>
       ) : null}
+
+      {sheet && (
+        <LedgerDaySheet
+          key={`${sheet.day}:${sheet.result}`} day={sheet.day} result={sheet.result} account={p.accountParam}
+          showAccount={p.accountParam === null} onOpenTrade={p.openTrade} onClose={() => setSheet(null)}
+        />
+      )}
     </>
   );
 }

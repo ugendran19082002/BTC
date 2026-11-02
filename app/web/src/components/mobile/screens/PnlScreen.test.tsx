@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context';
 import type { Stats, StatsGroup } from '@/api/phone';
+import type { DayTrade } from '@/api/ledger';
+import { signedInr, usdToInr } from '@/lib/format';
 
 /**
  * P&L's two filters (owner, 8 Oct 2026: "strategy select option, multiple select dropdown, mobile user friendly",
@@ -13,6 +15,8 @@ import type { Stats, StatsGroup } from '@/api/phone';
 const getStats = vi.fn();
 const getDaysFor = vi.fn();
 vi.mock('@/api/phone', () => ({ getStats: (...a: unknown[]) => getStats(...a), getDaysFor: (...a: unknown[]) => getDaysFor(...a) }));
+const getLedgerDay = vi.fn();
+vi.mock('@/api/ledger', () => ({ getLedgerDay: (...a: unknown[]) => getLedgerDay(...a) }));
 vi.mock('@/api/client', () => ({ json: vi.fn().mockResolvedValue({ day: '2026-10-06', samples: [], stats: { nowUsd: null, min: null, max: null, maxDrawdown: null }, days: [] }) }));
 
 const { PnlScreen } = await import('@/components/mobile/screens/PnlScreen');
@@ -46,11 +50,25 @@ const show = () => render(
 const open = async () => fireEvent.click(await screen.findByRole('button', { name: /^Strategy filter:/ }));
 const tick = (name: RegExp, list = 'Strategies') => fireEvent.click(within(screen.getByRole('listbox', { name: list })).getByRole('option', { name }).querySelector('button')!);
 const only = (strategies: string[], methods: string[] = [], timeframes: string[] = []) => ({ strategies, methods, timeframes });
+/** A day's trades as `/api/ledger/day` gives them: two won, two lost after charges (one of them up before its charges), one still open. */
+const trade = (id: string, strike: number, netUsd: number, o: Partial<DayTrade> = {}): DayTrade => ({
+  tradeId: id, symbol: `P-BTC-${strike}-061026`, strike, optionSide: 'PE', action: 'sell', contracts: 10, entryAt: NOW - 3_600_000, exitAt: NOW - 600_000,
+  entryPrice: 40, exitPrice: 20, chargesUsd: 0.05, grossUsd: netUsd + 0.05, netUsd, exitBy: netUsd > 0 ? 'option-tgt' : 'option-sl',
+  open: false, spans: false, strategy: '15m time', account: null, orderIds: [], ...o,
+});
+const TRADES = [
+  trade('w1', 81_000, 2), trade('w2', 81_200, 0.5),
+  trade('l1', 82_000, -1.5), trade('l2', 82_200, -0.01, { grossUsd: 0.04 }),
+  trade('o1', 82_400, 0.3, { open: true, exitAt: null, exitPrice: null, exitBy: null }),
+];
+const DESK_DAY = { realisedUsd: 1.13, profitUsd: 2.68, lossUsd: 1.55, chargesUsd: 0.2, netUsd: 0.93, trades: 5, open: 1 };
+const inr = (usd: number) => signedInr(usdToInr(usd));
 const tile = (label: string) => screen.getByText(label, { selector: 'dt' }).nextSibling;
 
 beforeEach(() => {
   window.localStorage.clear();
   getStats.mockReset(); getDaysFor.mockReset();
+  getLedgerDay.mockReset().mockImplementation(async (day: string) => ({ day, account: null, desk: DESK_DAY, trades: TRADES }));
   getStats.mockImplementation(async (_from: string, _to: string, _account: number | null, f?: Filter) => statsFor(f));
   getDaysFor.mockResolvedValue({ mode: 'paper', from: '2026-09-30', to: '2026-10-06', days: [], totals: { realisedUsd: 0, chargesUsd: 0, netUsd: 0, tradingDays: 0, winDays: 0, lossDays: 0, best: null, worst: null } });
 });
@@ -169,5 +187,53 @@ describe('PnlScreen: the strategy, method and timeframe filters', () => {
     show();
     await screen.findByRole('button', { name: /^Method filter:/ });
     expect(screen.queryByRole('button', { name: /^Time frame filter:/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('PnlScreen: booked, won and lost, a tap from their trades', () => {
+  const sheetLines = () => within(screen.getByRole('list', { name: "The day's trades" })).getAllByRole('button');
+
+  it('[critical] today: Won and Lost count each closed trade after its charges, and a tap opens the day\'s trades on that side, adding up to the same', async () => {
+    show();
+    const box = within(await screen.findByRole('region', { name: 'Won and lost' }));
+    expect(getLedgerDay).toHaveBeenCalledWith('2026-10-06', null);
+    const won = await box.findByRole('button', { name: `Won: 2 trades, ${inr(2.5)}. Show them` });
+    // Up 0.04 before its charges, down 0.01 after: lost. The open one is in neither, and the line says so.
+    const lost = box.getByRole('button', { name: `Lost: 2 trades, ${inr(-1.51)}. Show them` });
+    expect(box.getByText(/1 still open, in neither/)).toBeInTheDocument();
+    expect(won).toBeEnabled();
+
+    fireEvent.click(lost);
+    const sheet = within(await screen.findByRole('dialog', { name: /^.+ · trades lost$/ }));
+    await waitFor(() => expect(sheetLines()).toHaveLength(2));
+    expect(sheetLines().map((b) => b.getAttribute('aria-label'))).toEqual(['82000 PE: open the trade', '82200 PE: open the trade']);
+    expect(sheet.getByText('2 trades, after charges').nextSibling).toHaveTextContent(inr(-1.51));
+    expect(within(sheet.getByRole('group', { name: 'Won or lost' })).getByRole('button', { name: 'Lost' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(sheet.getAllByRole('button', { name: 'Close' }).at(-1)!);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('[critical] a tap on Booked opens every one of today\'s trades', async () => {
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: /^Booked .*: show today's trades$/ }));
+    await screen.findByRole('dialog', { name: /^.+ · trades$/ });
+    await waitFor(() => expect(sheetLines()).toHaveLength(5));
+  });
+
+  it('[critical] over days, the day picked on the calendar has its own Won and Lost, opening that day\'s trades', async () => {
+    const row = (day: string, netUsd: number, cumulativeUsd: number) => ({ day, realisedUsd: netUsd + 0.2, profitUsd: 2.68, lossUsd: 1.55, chargesUsd: 0.2, netUsd, trades: 5, cumulativeUsd });
+    getDaysFor.mockResolvedValue({
+      mode: 'paper', from: '2026-09-30', to: '2026-10-06', days: [row('2026-10-02', 0.93, 0.93), row('2026-10-05', -0.4, 0.53)],
+      totals: { realisedUsd: 0.93, chargesUsd: 0.4, netUsd: 0.53, tradingDays: 2, winDays: 1, lossDays: 1, best: null, worst: null },
+    });
+    show();
+    fireEvent.click(await screen.findByRole('radio', { name: '7 days' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Fri, 2 Oct:/ }));
+    const won = await screen.findByRole('button', { name: `Won: 2 trades, ${inr(2.5)}. Show them` });
+    expect(getLedgerDay).toHaveBeenLastCalledWith('2026-10-02', null);
+    fireEvent.click(won);
+    await screen.findByRole('dialog', { name: /· trades won$/ });
+    await waitFor(() => expect(sheetLines()).toHaveLength(2));
+    expect(getLedgerDay).toHaveBeenLastCalledWith('2026-10-02', null);
   });
 });

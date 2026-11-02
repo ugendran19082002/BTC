@@ -75,3 +75,19 @@ describe('LedgerDaySheet', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe('LedgerDaySheet opened on one side', () => {
+  it('[critical] opened from a Lost line: the losers alone, what they add up to, and an open trade in neither side', async () => {
+    getLedgerDay.mockResolvedValue({ day: DAY, account: null, desk: DESK, trades: [...TRADES, trade('o', { open: true, exitAt: null, exitPrice: null, exitBy: null, netUsd: 0.5 })] });
+    render(<LedgerDaySheet day={DAY} account={null} showAccount={false} result="loss" onOpenTrade={onOpenTrade} onClose={onClose} />);
+    await screen.findByRole('dialog', { name: /· trades lost$/ });
+    expect(lines()).toHaveLength(1);
+    expect(screen.getByText('1 trade, after charges').nextSibling).toHaveTextContent(inr(-1.11));
+    fireEvent.click(screen.getByRole('button', { name: 'Lost' }));
+    expect(lines()).toHaveLength(4);
+    expect(screen.queryByText(/^\d+ trades?, after charges$/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Won' }));
+    expect(lines()).toHaveLength(2);
+    expect(screen.getByText('2 trades, after charges').nextSibling).toHaveTextContent(inr(0.558));
+  });
+});
