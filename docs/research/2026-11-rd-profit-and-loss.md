@@ -12,8 +12,9 @@ A result marked ✓ is no worse than the comparison in both halves and without 1
 ## The short version
 
 - **Went live on 2 Nov 2026** (each validated, rehearsed on a copy of the database, applied in one guarded transaction,
-  cross-checked): the A6 no-entry windows on all 4 accounts; 3m and 5m perp SL minimum 150 on all accounts; delta 0.12 from
-  07:00 and 0.09 from 11:00 on every strategy; all time (chain) perp SL minimum 100 on all accounts.
+  cross-checked): the A6 no-entry windows on all 4 accounts; 3m and 5m perp SL minimum 150 on all accounts; all time (chain)
+  perp SL minimum 100 on all accounts. Delta 0.12 from 07:00 and 0.09 from 11:00 went live at ~16:05 IST and was put back
+  to the old schedule the same evening at the owner's word (§7).
 - **Built, off until switched on:** re-entry after an option SL (the other side) and after an option target (the same
   side), each with its own time range (1 Nov 2026). Best: SL → opposite 07:00–17:29, max 2; target → same 07:00–10:00, max 2.
 - **Next, not yet done:** win 65% with a daily method update; target 95% + a 2-hour time stop (needs code); a "max SL
@@ -233,8 +234,10 @@ Real-path replay (7,137 real entries under today's config) and the engine (live 
 | Delta by volatility (IV or ATR, 4 sets) | – | | | **−7,847 to −12,141** |
 
 0.12 → 0.09 against current on real paths: better on 24 of 31 days, worse on 4; every account, both sides, 6 of 8
-timeframes better (2h and 4h level); the gain is at 07:00 (+264) and 09:00 (+274). **Live on all 32 strategies since
-2 Nov ~16:05 IST.** The 0.13 morning start is the engine's favourite but quadruples the real worst day (25 Oct); worth a
+timeframes better (2h and 4h level); the gain is at 07:00 (+264) and 09:00 (+274). It went live on all 32 strategies at
+~16:05 IST on 2 Nov and was **put back the same evening** (owner: "delta old keep panu"): in the walk-forward engine it
+was −₹168 with the loss +15%, all of it one day (15 Oct, −₹1,528; without it +₹1,360), while the real-path replay had it
++₹713 and better on 24 of 31 days. Live is the old schedule again: 0.11 → 0.09 at 11:00, 15m and 2h 0.12 → 0.10. The 0.13 morning start is the engine's favourite but quadruples the real worst day (25 Oct); worth a
 trial on one account only.
 
 ## 8. The accounts, before the windows were made the same
@@ -264,6 +267,6 @@ trades. Since 2 Nov the windows are the same on all four, so the window experime
 | Target 95% + time stop 2 h (exit if the offer is over 150% of entry) | code + setting | §1: +12%, loss −10%, ✓ all under A6 |
 | Max SL distance filter (skip 250–400 pts, chain first) | study, then setting | §6: the weak band on real fills |
 | Re-entry on — Income first: SL → opposite all day max 2, target → same 07–10 max 2 | setting (UI pill) | §2 |
-| Delta 0.13 from 07:00 on one account | setting, trial | §7: engine ✓, real worst day ×4 |
+| Delta 0.12 (or 0.13) from 07:00 on one account | setting, trial | §7: real +7% (0.12); engine ✓ for 0.13 but real worst day ×4 |
 | Momentum guard on High, Medium, Low (+250 / 1 h, calls only) | setting | earlier study: backtest +₹837, real +₹326 |
 | Daily loss limit ₹150–200 a day, every account | UI | earlier study: +₹600, loss −12% |
