@@ -50,7 +50,7 @@ export const REASON_WORDS: Record<SignalReason, string> = {
   'own-max': 'Strategy max open full', 'desk-max': 'Account max open full', 'side-max': 'CE / PE limit full', 'strike-max': 'Strike max open full',
   'no-entry': 'No-entry window', late: 'Fill too old', over: 'Over before entry', premium: 'Premium too low', spread: 'Spread too wide',
   'no-strike': 'No strike to sell', margin: 'Not enough margin', 'loss-limit': 'Daily loss limit', 'no-board': 'No option board',
-  delta: 'Delta refused', other: 'Other',
+  delta: 'Delta refused', 'stale-quote': 'Quote too old', momentum: 'Momentum guard', other: 'Other',
 };
 type Why = SignalReason | 'any';
 /**

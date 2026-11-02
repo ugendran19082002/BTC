@@ -240,3 +240,19 @@ describe('StrategiesScreen: Taken, by how it entered', () => {
     expect(screen.getByText('No re-entry after a target taken today.')).toBeInTheDocument();
   });
 });
+
+describe('StrategiesScreen: Not taken, the two kinds that were Other', () => {
+  it('[critical] a quote too old and the momentum guard are named, each with its count, not left under Other (2 Nov 2026)', async () => {
+    getDaySignals.mockResolvedValue({
+      trades: [sig('refused', { reasons: ['stale-quote'] }), sig('refused', { reasons: ['stale-quote'] }), sig('skipped', { reasons: ['momentum'] }), sig('failed', { reasons: ['other'] })],
+      counts: { all: 4, taken: 0, placed: 0, takenBy: { signal: 0, sl: 0, tgt: 0 }, notTaken: 4, byReason: { 'stale-quote': 2, momentum: 1, other: 1 } },
+    });
+    show();
+    await waitFor(() => expect(tabs().getByRole('button', { name: 'Not taken 4' })).toBeInTheDocument());
+    fireEvent.click(tabs().getByRole('button', { name: 'Not taken 4' }));
+    const why = within(screen.getByRole('group', { name: 'Not taken, why' }));
+    expect(why.getAllByRole('button').map((b) => b.textContent)).toEqual(['Any reason 4', 'Quote too old 2', 'Momentum guard 1', 'Other 1']);
+    fireEvent.click(why.getByRole('button', { name: 'Quote too old 2' }));
+    expect(rows()).toHaveLength(2);
+  });
+});

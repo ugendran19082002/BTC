@@ -32,6 +32,10 @@ const cases: [string, string, string[]][] = [
   ['refused', 'sell PE 81400 x1 @ 13 -- refused: could not set 10x leverage: Delta refused the request (market_disrupted_cancel_only_mode).', ['delta']],
   ['refused', 'PE: no strike out of the money with a delta at or under 0.1 · high volatility (ATM IV): Δ ≤ 0.08', ['no-strike']],
   ['refused', 'refused: PE 81400 has no offer to buy at', ['no-strike']],
+  // Other until 2 Nov 2026: the quote's age, and the momentum guard -- each as the desk wrote it that day.
+  ['refused', 'sell PE 77200 x1 @ 23 (delta 0.09) · perp filled 110250 · perp SL skipped · TGT skipped -- refused: Last quote is 3.9s old.', ['stale-quote']],
+  ['refused', 'sell CE 82400 x1 @ 13 (delta 0.1) · perp at 110250 · perp SL · TGT none (a re-entry: the option\'s own exits) -- refused: Last quote is 6.2s old.; Spread is 12.0%, limit is 10% for an order that crosses it.', ['stale-quote', 'spread']],
+  ['skipped', 'the perp is up 312 pts in the last hour (109800 to 110112) -- the momentum guard sells no call after a rise of 250 or more', ['momentum']],
   ['failed', 'something nobody wrote a kind for', ['other']],
 ];
 

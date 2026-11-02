@@ -653,7 +653,7 @@ export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is 
 
 /** The kinds of reason a signal was not taken (server: strategy/signal-reasons.ts `SIGNAL_REASONS`). */
 export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'own-max' | 'desk-max' | 'side-max' | 'strike-max' | 'no-entry' | 'late' | 'over'
-  | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'other';
+  | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'stale-quote' | 'momentum' | 'other';
 
 /** How a signal row entered (server `signalEntryOf`, 2 Nov 2026): on its own signal, or a re-entry after an option SL or target. */
 export type SignalEntry = 'signal' | 'sl' | 'tgt';

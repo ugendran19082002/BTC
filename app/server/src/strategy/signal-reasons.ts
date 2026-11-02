@@ -10,7 +10,7 @@
  */
 export const SIGNAL_REASONS = [
   'sl-min', 'sl-max', 'tgt-min', 'tgt-max', 'own-max', 'desk-max', 'side-max', 'strike-max', 'no-entry', 'late', 'over',
-  'premium', 'spread', 'no-strike', 'margin', 'loss-limit', 'no-board', 'delta', 'other',
+  'premium', 'spread', 'no-strike', 'margin', 'loss-limit', 'no-board', 'delta', 'stale-quote', 'momentum', 'other',
 ] as const;
 export type SignalReason = (typeof SIGNAL_REASONS)[number];
 
@@ -35,6 +35,9 @@ const KINDS: [SignalReason, RegExp][] = [
   ['no-strike', /no strike|nothing out of the money|rule failed|no wall within|nothing to sell|no [\d.]+ strike listed|not listed with a price|has no offer/i],
   ['no-board', /no live option board|not the daily contract/i],
   ['delta', /Delta refused|could not set .*leverage|Delta (did not|gave no) /i],
+  // Both were Other until 2 Nov 2026 (owner: "refused others varuthu yen"): 367 and 56 of that day's 423.
+  ['stale-quote', /^Last quote is [\d.]+s old/],
+  ['momentum', /the momentum guard sells no call/],
 ];
 
 /** The kinds of reason in a not-taken signal's sentence; none for one that was taken. */

@@ -348,11 +348,19 @@ test('20 an unreachable order API takes no new risk', async () => {
   assert.equal(res.state.position, 0);
 });
 
-test('21 a quote five seconds old is not a quote', async () => {
-  const r = rig({ quotes: [quote(CE, 100.5, 101, { ts: T0 - 5_000 })] });
+test('21 a quote over five seconds old is not a quote', async () => {
+  const r = rig({ quotes: [quote(CE, 100.5, 101, { ts: T0 - 5_001 })] });
   const res = await r.engine.open(planFor(ceProduct()));
   assert.equal(res.ok, false);
   assert.ok(!res.ok && failureCodes(res.precheck).includes('STALE_QUOTE'));
+});
+
+test('21b a quote four seconds old -- Delta\'s own lag at a busy candle close (2 Nov 2026) -- is sold on', async () => {
+  for (const age of [4_000, 5_000]) {
+    const r = rig({ quotes: [quote(CE, 100.5, 101, { ts: T0 - age })] });
+    const res = await r.engine.open(planFor(ceProduct(), { tradeId: `aged-${age}` }));
+    assert.equal(res.ok, true, `${age} ms: ${JSON.stringify(res)}`);
+  }
 });
 
 // ------------------------------------------------------ 22 & 23 book quality

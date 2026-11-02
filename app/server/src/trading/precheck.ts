@@ -112,7 +112,15 @@ function lossRefusal(worst: string, limitUsd: number, dayPnlUsd: number, places:
 }
 
 export const DEFAULT_LIMITS: RiskLimits = {
-  maxQuoteAgeMs: 3_000,
+  /*
+   * 5 s, not 3 (owner, 2 Nov 2026: "3S best or increase panalama", then "best pratice proceed"). Delta takes its option
+   * board every couple of seconds and it reaches the desk a second later: sampled that day, its own timestamp was 1.0 to
+   * 3.3 s behind on a quiet minute, about 4 at the busy candle closes -- the socket's board no fresher then -- and 3 s
+   * refused 89-367 entries a day on prices as new as Delta had (2 Nov: 367, median 3.9 s). At 5 s, 85-95% of those go;
+   * a feed truly behind is still refused (30 Oct, minutes old). It gates new sales alone -- an exit never asks it -- and
+   * an entry is a limit order, so a price two seconds older cannot sell below its limit.
+   */
+  maxQuoteAgeMs: 5_000,
   maxSpreadPct: 0.15,
   minBookCoverage: 0.5,
   maxShortContracts: 500,

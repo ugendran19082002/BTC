@@ -66,17 +66,17 @@ test('the socket\'s ticker keeps Delta\'s timestamp', () => {
  * ticker was 3 to 6 s old by its own time and 68 orders were refused as a stale quote, while the socket's board was
  * about a second behind. The REST answer alone, the board missing; the older of the two never.
  */
-test('[critical] an entry: REST 4 s old, the board 1 s -- judged on the board and sent; both old, still refused as stale', async () => {
+test('[critical] an entry: REST 6 s old, the board 1 s -- judged on the board and sent; both old, still refused as stale', async () => {
   const p = ceProduct();
   let boardAge: number | null = 1_000;
   const r = rig({ products: [p], quotes: [quote(p.symbol, 100.5, 101)],
     boardQuote: () => (boardAge === null ? null : { symbol: p.symbol, bid: 100.5, ask: 101, bidSize: 5, askSize: 5, mark: 100.8, ts: r.now() - boardAge }) });
-  r.ex.tick(quote(p.symbol, 100.5, 101, { ts: r.now() - 4_000 }));
+  r.ex.tick(quote(p.symbol, 100.5, 101, { ts: r.now() - 6_000 }));
   const fresh = await r.engine.previewOpen(planFor(p, { tradeId: 'x', lots: 1 }));
   assert.ok(fresh.ok, JSON.stringify(fresh));
-  boardAge = 5_000;
+  boardAge = 7_000;
   const stale = await r.engine.previewOpen(planFor(p, { tradeId: 'y', lots: 1 }));
-  assert.ok(!stale.ok && stale.failures.some((f) => f.code === 'STALE_QUOTE' && f.message === 'Last quote is 4.0s old.'), JSON.stringify(stale));
+  assert.ok(!stale.ok && stale.failures.some((f) => f.code === 'STALE_QUOTE' && f.message === 'Last quote is 6.0s old.'), JSON.stringify(stale));
   boardAge = null;
   const alone = await r.engine.previewOpen(planFor(p, { tradeId: 'z', lots: 1 }));
   assert.ok(!alone.ok && alone.failures.some((f) => f.code === 'STALE_QUOTE'), 'no board: the REST answer, as before');
