@@ -322,6 +322,75 @@ The app's daily loss limit (`daily_loss_limit_usd@<acct>`, switched by `daily_lo
 worst case to its stop would take the day's realised loss past the budget — a little earlier than the study's "no entry once
 the day's closed loss reaches it", so the real effect is at least as strong.
 
+### Option SL by side (replay of the real entries, 1 Oct – 1 Nov, and 2 Nov)
+
+Calls (CE) and puts (PE) behave differently: a call that goes against us rarely comes back, a put often does. One SL for
+both (250% now) is too wide for calls and too tight for puts. Current replay: NET +₹7,651, lost −₹13,513, worst day −₹2,052.
+
+| CE SL / PE SL | NET vs now | Loss | Win % | Worst day | Halves | w/o 13+30 | 2 Nov |
+|---|--:|--:|--:|--:|---|--:|--:|
+| 50% / 400% | +2,281 | −33% | 75.7 | −1,096 | +775 / +1,506 | +164 | −253 |
+| 75% / 400% | +2,008 | −27% | 78.3 | −1,241 | +890 / +1,119 | +324 | +175 |
+| **100% / 400%** | **+1,865** | **−22%** | 80.5 | −1,347 | +1,055 / +809 | +567 | **+199** |
+| 100% / 600% | +1,951 | −21% | 81.3 | −1,746 | +828 / +1,123 | +977 | |
+| **150% / 400%** | **+1,188** | **−13%** | 83.3 | −1,555 | +968 / +219 | +509 | **+237** |
+| 150% / 400% + target 95% after 12:00 | +1,943 | −13% | 83.3 | −1,543 | +1,191 / +752 | +1,152 | |
+| 150% / no PE SL | +3,153 | −24% | 85.9 | −909 | +3,055 / +98 | +1,113 | |
+| 250% / 400% | +1,016 | −4% | 87.8 | −2,279 | +842 / +174 | +1,217 | |
+| CE wider than PE (350% / 250%) | +1,050 | −2% | 88.7 | −3,164 | −853 / +1,903 | +769 | |
+| 25% / 400% | +1,310 | −41% | 67.1 | −996 | | −1,317 | |
+| any CE / PE 250–350% | +992 to +1,527 | | | | | ✗ | |
+
+Verdict: **CE 100–150%, PE 400%** — every check ✓ and both positive on 2 Nov; with the afternoon target 95% it is the
+best combination found (+₹1,943, loss −13%). CE 50–75% won more in October but lost on 2 Nov and makes many more stops
+(each a chase at the offer, which the replay does not charge). "No PE SL" is a one-half result and leaves a crash day
+open: keep a PE stop. Needs code: one `stopLossPct` per strategy today, no side split.
+
+### Option SL × target by timeframe (perp SL and perp target off, as live)
+
+Live already skips both perp exits (`skipPerpSl`, `skipPerpTgt` on all 32 strategies). Grid on the real entries: option SL
+50–1000% or none × 8 target rules (steps 80→90 now, fixed 70–95%, steps then 95% after 12:00, steps 85→95), per desk,
+side, timeframe, timeframe × side and method; chosen on October, checked on 2 Nov.
+
+- **No option SL wins every group** (desk +₹11.7k, loss −52%) only because October's spikes came back. If they had held,
+  13 Oct alone would have cost −₹14,682 with no SL, against −₹3,204 at 250% and −₹4,626 at 400%. Rejected, as in §1.
+- **With the SL capped at 400%, one wide SL for the desk fails** (400% + 95%: +₹3,803 but 1–16 Oct −341, worst day −4,144).
+- **Per timeframe, the bounded best:** 3m and 5m SL 400% + target 95% (+₹1.0k each, loss −30%); 30m and chain 400% + 95%
+  (+₹727, +₹575); 15m 250% + steps 85→95 (+₹279); 1h 100% + 95% (+₹297, but −54 on 2 Nov); 2h and 4h ≈ no gain.
+  Per timeframe × side: CE wants tight (50–150%) on 15m, 1h, 2h, 4h, and wide (400%) on 3m, 5m, chain; PE wants 400% almost everywhere.
+- **Out of sample (pick on one half, score the other) the fitted rules do not hold:**
+
+| Rule chosen (SL ≤ 400%) | fit 1–16 Oct → 17 Oct–1 Nov | fit 17 Oct–1 Nov → 1–16 Oct | fit Oct → 2 Nov |
+|---|--:|--:|--:|
+| One rule for the desk | +408 | −341 | +373 |
+| Per side | +1,022 | −341 | +344 |
+| Per timeframe | +1,302 | −196 | +261 |
+| Per timeframe × side | +1,572 | −139 | −111 |
+| Per method | +1,639 | +175 | 0 (no method on 2 Nov) |
+| **Fixed: CE 150% / PE 400%, 95% after 12:00 (not fitted)** | **+752** | **+1,188** | **+297** |
+
+Verdict: per-timeframe and per-method SL/target tuning is fitting noise; the simple side rule above is the one that holds.
+
+### Best methods per timeframe (option exits only, as live)
+
+The real entries (10,148, 1 Oct – 2 Nov) replayed with the current exits and with the side exits above, then grouped by
+timeframe × method. The wall methods (replenished-, pulled-, gamma-wall) and ib-fail, order-flow, options-flow, em-edge
+top most timeframes; nr7, pullback, vwap-reclaim (2h) and replenished-wall (1h) are the repeat losers. But choosing
+methods on that does not carry forward:
+
+| Method filter per timeframe | Result vs keeping all |
+|---|---|
+| Walk-forward: keep if the last 3/5/7/14 days' NET > 0 | −₹1.5k to −₹2.4k, both exits, both halves, 2 Nov |
+| Walk-forward: keep if win % ≥ 70 / ≥ 80 | −₹0.7k to −₹4.3k |
+| Walk-forward: skip unproven (needs 5+ trades and NET > 0) | −₹3.5k to −₹6.7k (loss −40 to −50%) |
+| Walk-forward: drop after one loss worse than −₹20 | −₹0.7k to +₹64 (noise) |
+| Fixed list chosen on one half (NET > 0 / NET ≥ −₹30), scored on the other and on 2 Nov | −₹28 to −₹3.1k, every case |
+| Wall methods only | −₹0.9k to −₹5.6k |
+
+Verdict: a method's recent P&L on a timeframe does not predict its next days; keep the methods as the auto pick gives
+them. (Only dropping is testable here: the real entries are already the auto pick's methods, and the room a dropped trade
+frees under the cap is not modelled.) The exits, not the method list, are where the money is.
+
 ## Caveats
 
 - **One month of data.** Every number here is October 2026 — a month with two spikes that reversed (13 and 30 Oct). 30 Oct
@@ -345,3 +414,4 @@ the day's closed loss reaches it", so the real effect is at least as strong.
 | Delta 0.12 (or 0.13) from 07:00 on one account | setting, trial | §7: real +7% (0.12); engine ✓ for 0.13 but real worst day ×4 |
 | Momentum guard on High, Medium, Low (+250 / 1 h, calls only) | setting | earlier study: backtest +₹837, real +₹326 |
 | Daily loss limit ₹150–200 a day, every account | UI | earlier study: +₹600, loss −12% |
+| Option SL by side: CE 100–150%, PE 400% (+ target 95% after 12:00) | code + setting | §9: +₹1.2–1.9k, loss −13 to −22%, ✓ all, ✓ 2 Nov |
