@@ -7,8 +7,9 @@
  * charges. Once a day at the strategy's time, over the last finished expiry days, the methods that won the share
  * asked for, on enough trades, become its list -- best net first. None passing leaves the list as it was: a
  * strategy is never emptied by a bad week. The methods excluded (`exclude`, while it is on) are never picked, and
- * are taken out of a list that is kept -- unless that would empty it. Only new signals read the list (`signalMatches`); a trade already
- * open keeps its exits whatever is picked.
+ * are taken out of a list that is kept -- unless that would empty it. The methods included (`include`, while it is on,
+ * 3 Nov 2026) are always in it, after the ones that passed, whatever they did. Only new signals read the list
+ * (`signalMatches`); a trade already open keeps its exits whatever is picked.
  *
  * Measured on 16 Oct 2026 over 8-15 Oct, each day picked only from the days before it: win 75% re-picked daily
  * made the most; every day beat once a week; every method, unfiltered, lost the most.
@@ -19,7 +20,7 @@ import { DEFAULT_PARAMS, type SignalBacktest } from '../report/signal-backtest.j
 import { signalBacktest } from '../report/backtest-run.js';
 import { sessionDayOf } from '../report/market-day.js';
 import { pickMethods } from './pick-methods.js';
-import { everyOf, excludedBy, tfLabel, validateConfig, type AutoMethods, type AutoMethodsRun, type MethodUpdate, type Strategy, type StrategyConfig } from './types.js';
+import { everyOf, excludedBy, includedBy, tfLabel, validateConfig, type AutoMethods, type AutoMethodsRun, type MethodUpdate, type Strategy, type StrategyConfig } from './types.js';
 
 const IST_MS = 5.5 * 3_600_000;
 const DAY_MS = 86_400_000;
@@ -99,9 +100,15 @@ export function lessExcluded(list: readonly string[], a: Pick<AutoMethods, 'excl
   return kept.length ? kept : [...list];
 }
 
+/** A list with the included methods added after it, each once: the last step of every list the update sets. */
+export function withIncluded(list: readonly string[], a: Pick<AutoMethods, 'include'> | null | undefined): string[] {
+  const have = new Set(list);
+  return [...list, ...includedBy(a).filter((m) => !have.has(m))];
+}
+
 /**
  * One pick for a strategy's rules as given (saved or on the form): the list it would set, and the record behind it.
- * Nothing passing keeps the list it has, said in `note`.
+ * Nothing passing keeps the list it has, said in `note`. The included methods are added either way.
  */
 export async function autoPick(config: StrategyConfig, a: AutoMethods, now: number, spot: number | null, record = methodRecord): Promise<AutoMethodsRun> {
   const { from, to } = autoWindow(now, a.days);
@@ -112,15 +119,20 @@ export async function autoPick(config: StrategyConfig, a: AutoMethods, now: numb
   const picked = passed.filter((m) => !out.has(m));
   // The excluded ones that would have come in: said, so a 90% method missing from the list is not a mystery.
   const excluded = out.size ? { excluded: passed.filter((m) => out.has(m)) } : {};
+  // And the included ones that did not pass: in the list all the same, said, so a 40% method in it is not one either.
+  const notPassed = includedBy(a).filter((m) => !passed.includes(m));
+  const included = notPassed.length ? { included: notPassed } : {};
   // Every method that traded, in brief: why each came, stayed or went -- for the preview and the log.
   const records = r.methods.filter((m) => m.trades > 0).map(({ method, trades, wins, net }) => ({ method, trades, wins, net }));
   if (!picked.length) {
-    const kept = lessExcluded(before, a);
-    const less = before.length - kept.length;
+    const less = lessExcluded(before, a);
+    const kept = withIncluded(less, a);
+    const lessN = before.length - less.length, addN = kept.length - less.length;
     const why = `No method ${out.size ? 'but an excluded one ' : ''}won ${a.winPct}% of ${plural(a.minTrades, 'trade')} or more`;
-    return { at: now, from, to, picked: kept, before, records, ...excluded, note: `${why}: the list was kept${less ? `, less the ${plural(less, 'excluded method')}` : ''}.` };
+    const changes = [lessN ? `less the ${plural(lessN, 'excluded method')}` : null, addN ? `with the ${plural(addN, 'included method')} added` : null].filter(Boolean).join(', ');
+    return { at: now, from, to, picked: kept, before, records, ...excluded, ...included, note: `${why}: the list was kept${changes ? `, ${changes}` : ''}.` };
   }
-  return { at: now, from, to, picked, before, records, ...excluded };
+  return { at: now, from, to, picked: withIncluded(picked, a), before, records, ...excluded, ...included };
 }
 
 export type AutoDeps = {
@@ -178,7 +190,7 @@ export async function runAutoMethods(now: number, d: AutoDeps, ask: AutoAsk = {}
       const why = e instanceof Error ? e.message : String(e);
       const { from, to } = autoWindow(now, a.days);
       const before = s.config.signal!.methods;
-      run = { at: now, from, to, picked: lessExcluded(before, a), before, note: `The record could not be had: ${why}. The list was kept.` };
+      run = { at: now, from, to, picked: withIncluded(lessExcluded(before, a), a), before, note: `The record could not be had: ${why}. The list was kept.` };
       d.warn(`methods' daily update for ${s.name}: ${why}`);
     }
     const fresh = await d.get(s.id);
@@ -195,21 +207,23 @@ export async function runAutoMethods(now: number, d: AutoDeps, ask: AutoAsk = {}
     if (!fresh) { await skipped('The strategy was deleted while its record was worked out: nothing was written.'); continue; }
     if (!rule?.autoMethods?.on) { await skipped('The daily update was switched off while its record was worked out: the list was left as it was.'); continue; }
     // The list as it stands now is the one replaced (a save from the form may have come in the meantime); kept, it
-    // stays -- less what is excluded now, unless that would empty it.
+    // stays -- less what is excluded now, unless that would empty it. Either way with what is included now.
     const before = rule.methods;
     const took = run.picked.filter((m) => !excludedBy(rule.autoMethods).has(m));
-    let after = run.note || !took.length ? lessExcluded(before, rule.autoMethods) : took;
+    const inUse = withIncluded(lessExcluded(before, rule.autoMethods), rule.autoMethods);
+    let after = run.note || !took.length ? inUse : withIncluded(took, rule.autoMethods);
     const { records = [], ...brief } = run;
     run = { ...brief, before, picked: after };
     /*
      * Only if better (owner, 26 Oct 2026): the new list against the one in use, on the same record -- each method's
      * money over the look-back, as the pick read it -- and taken only where it made more. A tie keeps the list in use.
+     * The list in use is weighed as it would stand, with what is included now: the included ones are in either list.
      */
     if (rule.autoMethods.onlyIfBetter && !run.note && [...after].sort().join() !== [...before].sort().join()) {
       const made = (list: readonly string[]) => records.filter((r) => list.includes(r.method)).reduce((n, r) => n + r.net, 0);
-      const now = made(before), next = made(after);
+      const now = made(inUse), next = made(after);
       if (!(next > now)) {
-        after = lessExcluded(before, rule.autoMethods);
+        after = inUse;
         run = { ...run, picked: after, note: `Kept: the list in use made ${usd(now)} over ${run.from} to ${run.to}, the new pick ${usd(next)} -- not better.` };
       }
     }
@@ -253,7 +267,7 @@ export type WalkDay = { day: string; holdout: boolean; picked: string[]; kept: b
 export type WalkLine = WalkScore & { days: number; upDays: number; downDays: number; worstDay: { day: string; net: number } | null };
 export type WalkForward = {
   from: string; to: string; holdoutFrom: string | null;
-  rule: { winPct: number; minTrades: number; days: number; excluded: number };
+  rule: { winPct: number; minTrades: number; days: number; excluded: number; included: number };
   days: WalkDay[];
   /** The days before the holdout, and the holdout: the rule, every method, and the list as it stands. */
   walk: { rule: WalkLine; all: WalkLine; current: WalkLine };
@@ -280,13 +294,13 @@ function lineOf(days: readonly WalkDay[], k: 'rule' | 'all' | 'current'): WalkLi
  * The walk itself, on records already had (pure, so it is tested by hand): `records` oldest first, one an expiry
  * day, from `days` before the first test day; the test days are `testFrom` on, the last `holdout` of them held out.
  */
-export function walkForward(records: readonly DayRecord[], a: Pick<AutoMethods, 'winPct' | 'minTrades' | 'days' | 'exclude'>, current: readonly string[], o: { testFrom: string; holdout: number }): WalkForward {
+export function walkForward(records: readonly DayRecord[], a: Pick<AutoMethods, 'winPct' | 'minTrades' | 'days' | 'exclude' | 'include'>, current: readonly string[], o: { testFrom: string; holdout: number }): WalkForward {
   const out = excludedBy(a);
   const sorted = [...records].sort((x, y) => (x.day < y.day ? -1 : 1));
   const tests = sorted.filter((r) => r.day >= o.testFrom);
   const holdN = Math.min(Math.max(0, Math.trunc(o.holdout)), tests.length);
   const holdoutFrom = holdN > 0 ? tests[tests.length - holdN]!.day : null;
-  let list = current.filter((m) => !out.has(m));
+  let list = withIncluded(current.filter((m) => !out.has(m)), a);
   const days: WalkDay[] = [];
   for (const t of tests) {
     // The evening before: the `days` expiry days before this one, and nothing of this one or after it.
@@ -299,7 +313,7 @@ export function walkForward(records: readonly DayRecord[], a: Pick<AutoMethods, 
     }
     const picked = pickMethods([...by.values()], a).filter((m) => !out.has(m));
     const kept = picked.length === 0;
-    if (!kept) list = picked;
+    if (!kept) list = withIncluded(picked, a);
     const chosen = new Set(list), now = new Set(current);
     days.push({
       day: t.day, holdout: holdoutFrom !== null && t.day >= holdoutFrom, picked: [...list], kept,
@@ -310,7 +324,7 @@ export function walkForward(records: readonly DayRecord[], a: Pick<AutoMethods, 
   const lines = (ds: readonly WalkDay[]) => ({ rule: lineOf(ds, 'rule'), all: lineOf(ds, 'all'), current: lineOf(ds, 'current') });
   return {
     from: tests[0]?.day ?? o.testFrom, to: tests[tests.length - 1]?.day ?? o.testFrom, holdoutFrom,
-    rule: { winPct: a.winPct, minTrades: a.minTrades, days: a.days, excluded: out.size },
+    rule: { winPct: a.winPct, minTrades: a.minTrades, days: a.days, excluded: out.size, included: includedBy(a).length },
     days, walk: lines(walkDays), holdout: holdDays.length ? lines(holdDays) : null,
   };
 }

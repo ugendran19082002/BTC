@@ -7,7 +7,7 @@ import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow, perpRiseNow } from '../../strategy/runner.js';
 import { autoAsked, autoPick, runAutoMethodsAlone, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoExclude, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -270,12 +270,13 @@ function cleanAuto(raw: unknown): Pick<SignalRule, 'autoMethods'> | Record<strin
   const a = raw as Partial<AutoMethods>;
   const num = (v: unknown) => (v === '' || v === null || v === undefined ? NaN : Number(v));
   const last = a.last && typeof a.last === 'object' ? a.last : null;
-  // The excluded methods as ids, each once; a malformed setting left for validation to say.
-  const ex = a.exclude;
-  const exclude = ex === undefined || ex === null ? null
-    : typeof ex === 'object' && !Array.isArray(ex) && Array.isArray(ex.methods)
-      ? { on: ex.on === true, methods: [...new Set(ex.methods.map(String))] }
-      : ex;
+  // The excluded methods -- and the included (3 Nov 2026) -- as ids, each once; a malformed setting left for validation to say.
+  const listOf = (x: unknown) => (x === undefined || x === null ? null
+    : typeof x === 'object' && !Array.isArray(x) && Array.isArray((x as AutoExclude).methods)
+      ? { on: (x as AutoExclude).on === true, methods: [...new Set((x as AutoExclude).methods.map(String))] }
+      : x);
+  const exclude = listOf(a.exclude);
+  const include = listOf(a.include);
   return {
     autoMethods: {
       on: a.on === true, at: String(a.at ?? ''), winPct: num(a.winPct), minTrades: num(a.minTrades), days: num(a.days),
@@ -283,11 +284,13 @@ function cleanAuto(raw: unknown): Pick<SignalRule, 'autoMethods'> | Record<strin
       ...(a.every !== undefined && a.every !== null && (a.every as unknown) !== '' ? { every: num(a.every) } : {}),
       ...(a.onlyIfBetter !== undefined && a.onlyIfBetter !== null ? { onlyIfBetter: a.onlyIfBetter } : {}),
       ...(exclude ? { exclude: exclude as AutoMethods['exclude'] } : {}),
+      ...(include ? { include: include as AutoMethods['include'] } : {}),
       ...(last ? { last: {
         at: Number(last.at), from: String(last.from ?? ''), to: String(last.to ?? ''),
         picked: Array.isArray(last.picked) ? last.picked.map(String) : [], before: Array.isArray(last.before) ? last.before.map(String) : [],
         ...(last.note ? { note: String(last.note) } : {}),
         ...(Array.isArray(last.excluded) && last.excluded.length ? { excluded: last.excluded.map(String) } : {}),
+        ...(Array.isArray(last.included) && last.included.length ? { included: last.included.map(String) } : {}),
       } } : {}),
     },
   };

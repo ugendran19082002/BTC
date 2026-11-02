@@ -3,7 +3,7 @@ import { NumberField } from '@/components/ui/number-field';
 import { dayLabel, moneyText } from '@/lib/market-report';
 import { time12 } from '@/lib/time';
 import { cn } from '@/lib/utils';
-import { DEFAULT_AUTO_METHODS, EXCLUDE_NONE, MAX_AUTO_DAYS, MAX_AUTO_EVERY, type AutoMethods, type AutoMethodsRun, type WalkForward } from '@/types/strategy';
+import { DEFAULT_AUTO_METHODS, EXCLUDE_NONE, INCLUDE_NONE, MAX_AUTO_DAYS, MAX_AUTO_EVERY, bothSides, bothWords, type AutoExclude, type AutoMethods, type AutoMethodsRun, type WalkForward } from '@/types/strategy';
 import { WalkForwardTest } from '@/components/strategy/WalkForwardTest';
 
 /**
@@ -17,6 +17,10 @@ import { WalkForwardTest } from '@/components/strategy/WalkForwardTest';
  * Exclude (owner, 18 Oct 2026: "an exclude option -- what I select there must not be chosen; on and off; on, at
  * least one picked; the methods list below, reused; the same filter and sort"): the methods ticked there are
  * never picked, on the same list as the strategy's own methods. Off keeps the ticks for the next time it is on.
+ *
+ * Include (owner, 3 Nov 2026: "auto methods kula ipa exclude iruku ana include ila -- atha implement panunum"):
+ * Exclude's other half, the same box -- the methods ticked there are always in the list, after the ones that passed,
+ * however they did; a method ticked on both sides while both are on is said, in the Include box, and refused.
  *
  * How often and only if better (owner, 26 Oct 2026: "daily, a week, or a custom update; the new list only if it is
  * better, else leave it"): every day, once a week or every N days, counted from the last pick; and, switched on, a
@@ -35,10 +39,11 @@ const when = (ms: number) => new Date(ms).toLocaleString('en-IN', { timeZone: 'A
 /** The rule in one sentence, as the desk will follow it. */
 export function autoWords(a: AutoMethods): string {
   const out = a.exclude?.on ? a.exclude.methods.length : 0;
+  const kept = a.include?.on ? a.include.methods.length : 0;
   const every = a.every && a.every > 1 ? a.every : 1;
   const often = every === 1 ? 'Every day' : every === 7 ? 'Once a week' : `Every ${every} days`;
   const better = a.onlyIfBetter ? ' The new list is taken only if it made more over those days than the one in use.' : '';
-  return `${often} at ${time12(a.at)} IST, keep the methods that won ${a.winPct}% or more of at least ${plural(a.minTrades, 'trade')} over the last ${plural(a.days, 'day')}${out ? `, never the ${plural(out, 'excluded method')}` : ''}. If none do, the list stays as it is.${better}`;
+  return `${often} at ${time12(a.at)} IST, keep the methods that won ${a.winPct}% or more of at least ${plural(a.minTrades, 'trade')} over the last ${plural(a.days, 'day')}${kept ? `, always the ${plural(kept, 'included method')}` : ''}${out ? `, never the ${plural(out, 'excluded method')}` : ''}. If none do, the list stays as it is${kept ? ', with the included added' : ''}.${better}`;
 }
 
 /** An on / off switch, a thumb's width to tap. */
@@ -54,7 +59,7 @@ function Toggle({ on, label, disabled, onClick }: { on: boolean; label: string; 
 }
 
 export function AutoMethodsFields({
-  value, onChange, onTake, pickNow, walkNow, nameOf, blocked, error, excludeList,
+  value, onChange, onTake, pickNow, walkNow, nameOf, blocked, error, excludeList, includeList,
 }: {
   value: AutoMethods | null | undefined;
   onChange: (a: AutoMethods) => void;
@@ -70,6 +75,8 @@ export function AutoMethodsFields({
   error?: string | null;
   /** The methods list to tick the excluded ones on (`MethodList`): the same list as the strategy's own. */
   excludeList?: (ids: string[], onChange: (ids: string[]) => void) => ReactNode;
+  /** And the included ones (3 Nov 2026). */
+  includeList?: (ids: string[], onChange: (ids: string[]) => void) => ReactNode;
 }) {
   const a = value ?? DEFAULT_AUTO_METHODS;
   const set = <K extends keyof AutoMethods>(k: K, v: AutoMethods[K]) => onChange({ ...a, [k]: v });
@@ -90,10 +97,13 @@ export function AutoMethodsFields({
   const dropped = run ? run.before.filter((m) => !run.picked.includes(m)) : [];
   const last = a.last ?? null;
   const ex = a.exclude ?? { on: false, methods: [] };
-  const setEx = (next: Partial<typeof ex>) => set('exclude', { ...ex, ...next });
-  // Said in the Exclude box, beside its list, not under the settings above.
+  const inc = a.include ?? { on: false, methods: [] };
+  const both = bothSides(a);
+  // Said in the Include and Exclude boxes, beside their lists, not under the settings above.
   const exNone = ex.on && ex.methods.length === 0;
-  const shownError = error && !(exNone && error === EXCLUDE_NONE) ? error : null;
+  const incNone = inc.on && inc.methods.length === 0;
+  const saidInBox = (e: string) => (exNone && e === EXCLUDE_NONE) || (incNone && e === INCLUDE_NONE) || (both.length > 0 && e === bothWords(both));
+  const shownError = error && !saidInBox(error) ? error : null;
 
   return (
     <section aria-label="Auto-update methods" className="mb-2 rounded-md border border-solid border-border p-2.5">
@@ -173,43 +183,13 @@ export function AutoMethodsFields({
         </div>
       )}
       {!blocked && a.on && (
-        <section aria-label="Exclude methods" className="mt-2.5 rounded-md border border-solid border-border p-2">
-          <div className="flex min-w-0 items-center justify-between gap-3">
-            <span className="min-w-0">
-              <span className="block text-[12.5px] font-medium text-foreground">Exclude methods</span>
-              <span className="block text-[11.5px] leading-snug text-muted-foreground">
-                {ex.on
-                  ? (ex.methods.length ? `${plural(ex.methods.length, 'method')} excluded · never picked, however they did.` : 'Tick the methods it must never pick.')
-                  : ex.methods.length
-                    ? `Off · every method can be picked. The ${ex.methods.length} ticked are kept for when it is on.`
-                    : 'Off · every method can be picked.'}
-              </span>
-            </span>
-            <Toggle on={ex.on} label="Exclude methods from the daily pick" onClick={() => setEx({ on: !ex.on })} />
-          </div>
-          {ex.on && (
-            <>
-              {/* The ones ticked, by name, wherever the filters below leave them: each taken out in one tap. */}
-              {ex.methods.length > 0 && (
-                <ul aria-label="Excluded" className="m-0 mt-1.5 flex list-none flex-wrap gap-1 p-0">
-                  {ex.methods.map((id) => (
-                    <li key={id}>
-                      <button type="button" aria-label={`Stop excluding ${nameOf(id)}`} onClick={() => setEx({ methods: ex.methods.filter((m) => m !== id) })}
-                              className="m-0 inline-flex h-7 max-w-[16rem] appearance-none items-center gap-1 rounded-full border border-solid border-border bg-muted px-2 font-[inherit] text-[11.5px] text-foreground">
-                        <span className="truncate">{nameOf(id)}</span><span aria-hidden className="text-muted-foreground">×</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {exNone && <p role="alert" className="m-0 mt-1.5 text-[11.5px] text-[var(--down)]">{EXCLUDE_NONE}</p>}
-              <div className="mt-1.5">{excludeList?.(ex.methods, (ids) => setEx({ methods: ids }))}</div>
-              <p className="m-0 mt-1 text-[10.5px] leading-snug text-[var(--dim)]">
-                Not picked on the day&apos;s run or by Pick now, and taken out of a list that is kept when nothing passes — unless that would leave it empty.
-              </p>
-            </>
-          )}
-        </section>
+        <MethodSet
+          kind="include" value={inc} onChange={(v) => set('include', v)} nameOf={nameOf} list={includeList}
+          clash={both.length ? bothWords(both.map(nameOf)) : null}
+        />
+      )}
+      {!blocked && a.on && (
+        <MethodSet kind="exclude" value={ex} onChange={(v) => set('exclude', v)} nameOf={nameOf} list={excludeList} clash={null} />
       )}
       {shownError && <p role="alert" className="m-0 mt-1.5 text-[11.5px] text-[var(--down)]">{shownError}</p>}
 
@@ -229,6 +209,11 @@ export function AutoMethodsFields({
           {run.excluded && run.excluded.length > 0 && (
             <p aria-label="Left out, excluded" className="m-0 mb-1 text-[11.5px] text-muted-foreground">
               Passed but excluded: {run.excluded.map(nameOf).join(', ')}.
+            </p>
+          )}
+          {run.included && run.included.length > 0 && (
+            <p aria-label="In, included" className="m-0 mb-1 text-[11.5px] text-muted-foreground">
+              Under the line but included: {run.included.map(nameOf).join(', ')}.
             </p>
           )}
           {run.note
@@ -273,6 +258,72 @@ export function AutoMethodsFields({
             ? <span className="text-[var(--warn)]">{last.note}</span>
             : `${plural(last.picked.length, 'method')} (was ${last.before.length}), from ${dayLabel(last.from)} – ${dayLabel(last.to)}.`}
         </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Include or Exclude (18 Oct, 3 Nov 2026): a switch, the methods ticked by name -- each out in one tap -- and the
+ * strategy's own methods list to tick them on. Off keeps the ticks for the next time it is on.
+ */
+const SET_WORDS = {
+  include: {
+    title: 'Include methods', switchLabel: 'Include methods in every daily pick', list: 'Included', stop: 'Stop including',
+    none: INCLUDE_NONE, done: 'included', on: 'always in the list, however they did.', tick: 'Tick the methods it must always keep.',
+    off: 'Off · only what passes is picked.',
+    note: 'In the list after the ones that pass, on the day\'s run and by Pick now — and added to a list that is kept when nothing passes. A method cannot be both included and excluded.',
+  },
+  exclude: {
+    title: 'Exclude methods', switchLabel: 'Exclude methods from the daily pick', list: 'Excluded', stop: 'Stop excluding',
+    none: EXCLUDE_NONE, done: 'excluded', on: 'never picked, however they did.', tick: 'Tick the methods it must never pick.',
+    off: 'Off · every method can be picked.',
+    note: 'Not picked on the day\'s run or by Pick now, and taken out of a list that is kept when nothing passes — unless that would leave it empty.',
+  },
+} as const;
+
+function MethodSet({ kind, value, onChange, nameOf, list, clash }: {
+  kind: keyof typeof SET_WORDS; value: AutoExclude; onChange: (v: AutoExclude) => void; nameOf: (id: string) => string;
+  list?: (ids: string[], onChange: (ids: string[]) => void) => ReactNode;
+  /** A method ticked here and on the other side, both on: said here, with what to do. */
+  clash: string | null;
+}) {
+  const w = SET_WORDS[kind];
+  const put = (next: Partial<AutoExclude>) => onChange({ ...value, ...next });
+  const n = value.methods.length;
+  return (
+    <section aria-label={w.title} className="mt-2.5 rounded-md border border-solid border-border p-2">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block text-[12.5px] font-medium text-foreground">{w.title}</span>
+          <span className="block text-[11.5px] leading-snug text-muted-foreground">
+            {value.on
+              ? (n ? `${plural(n, 'method')} ${w.done} · ${w.on}` : w.tick)
+              : n ? `${w.off} The ${n} ticked are kept for when it is on.` : w.off}
+          </span>
+        </span>
+        <Toggle on={value.on} label={w.switchLabel} onClick={() => put({ on: !value.on })} />
+      </div>
+      {value.on && (
+        <>
+          {/* The ones ticked, by name, wherever the filters below leave them: each taken out in one tap. */}
+          {n > 0 && (
+            <ul aria-label={w.list} className="m-0 mt-1.5 flex list-none flex-wrap gap-1 p-0">
+              {value.methods.map((id) => (
+                <li key={id}>
+                  <button type="button" aria-label={`${w.stop} ${nameOf(id)}`} onClick={() => put({ methods: value.methods.filter((m) => m !== id) })}
+                          className="m-0 inline-flex h-7 max-w-[16rem] appearance-none items-center gap-1 rounded-full border border-solid border-border bg-muted px-2 font-[inherit] text-[11.5px] text-foreground">
+                    <span className="truncate">{nameOf(id)}</span><span aria-hidden className="text-muted-foreground">×</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {n === 0 && <p role="alert" className="m-0 mt-1.5 text-[11.5px] text-[var(--down)]">{w.none}</p>}
+          {clash && <p role="alert" className="m-0 mt-1.5 text-[11.5px] text-[var(--down)]">{clash}</p>}
+          <div className="mt-1.5">{list?.(value.methods, (ids) => put({ methods: ids }))}</div>
+          <p className="m-0 mt-1 text-[10.5px] leading-snug text-[var(--dim)]">{w.note}</p>
+        </>
       )}
     </section>
   );

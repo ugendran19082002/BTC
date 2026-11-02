@@ -195,6 +195,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
   // The methods the daily update leaves out, while both are on: marked in the list, which the update replaces.
   const auto = rule.autoMethods;
   const excluded = new Set(auto?.on && auto.exclude?.on ? auto.exclude.methods : []);
+  const included = new Set(auto?.on && auto.include?.on ? auto.include.methods : []);
   // How many trades a record needs before "profitable" -- or a win rate -- means anything; kept in this browser.
   const [minTrades, setMinTrades] = usePersisted<number>('signal-rule:min-trades', MIN_TRADES_FOR_RECORD);
   const minT = Math.max(1, Math.trunc(minTrades) || 1);
@@ -360,7 +361,16 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
               recordOf={recordOf} byTf={byTf} netWords={netWords} minTrades={minT}
               overTfs={rule.mode === 'single' && tfs.length > 1 ? tfs.join(' + ') : null}
               keys={{ result: 'auto-exclude:result', win: 'auto-exclude:win-at-least', sort: 'auto-exclude:sort' }}
-              tagOf={(id) => (picked.has(id) ? 'in the list now' : null)}
+              tagOf={(id) => (picked.has(id) ? 'in the list now' : included.has(id) ? 'included' : null)}
+            />
+          )}
+          includeList={(ids, put) => (
+            <MethodList
+              name="include" methods={methods} value={ids} onChange={put}
+              recordOf={recordOf} byTf={byTf} netWords={netWords} minTrades={minT}
+              overTfs={rule.mode === 'single' && tfs.length > 1 ? tfs.join(' + ') : null}
+              keys={{ result: 'auto-include:result', win: 'auto-include:win-at-least', sort: 'auto-include:sort' }}
+              tagOf={(id) => (excluded.has(id) ? 'excluded' : picked.has(id) ? 'in the list now' : null)}
             />
           )}
         />
@@ -402,7 +412,7 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
           recordOf={recordOf} byTf={byTf} netWords={netWords} minTrades={minT}
           overTfs={rule.mode === 'single' && tfs.length > 1 ? tfs.join(' + ') : null}
           keys={{ result: 'signal-rule:result', win: 'signal-rule:win-at-least', sort: 'methods.sort' }}
-          tagOf={(id) => (excluded.has(id) ? 'excluded daily' : null)}
+          tagOf={(id) => (excluded.has(id) ? 'excluded daily' : included.has(id) ? 'included daily' : null)}
           onPickOnly={(ids) => pickOnly(ids, 'the list shown')}
           afterGroups={(
             <>

@@ -97,7 +97,7 @@ export function WalkForwardTest({ run, disabled, nameOf }: {
       {r && (
         <div role="status" aria-label="Walk-forward result" className="grid min-w-0 gap-2 rounded-md bg-muted p-2">
           <p className="m-0 text-[11.5px] text-muted-foreground">
-            {dayLabel(r.from)} – {dayLabel(r.to)} · win ≥{r.rule.winPct}% on {r.rule.minTrades}+ over {plural(r.rule.days, 'day')}{r.rule.excluded ? ` · ${r.rule.excluded} excluded` : ''}
+            {dayLabel(r.from)} – {dayLabel(r.to)} · win ≥{r.rule.winPct}% on {r.rule.minTrades}+ over {plural(r.rule.days, 'day')}{r.rule.included ? ` · ${r.rule.included} included` : ''}{r.rule.excluded ? ` · ${r.rule.excluded} excluded` : ''}
           </p>
           <Lines title="Walk-forward" lines={r.walk} aria="Walk-forward days" />
           {r.holdout

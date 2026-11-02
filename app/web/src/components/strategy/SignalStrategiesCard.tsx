@@ -166,6 +166,7 @@ function StrategyFacts({ s, volNow }: { s: Strategy; volNow?: { iv: VolLevelNow;
           <dt className={label}>Auto-update</dt>
           <dd className="m-0" aria-label={`auto-update of ${s.name}`}>
             win ≥ {auto.winPct}% of {auto.minTrades}+ trade{auto.minTrades === 1 ? '' : 's'} in {auto.days} days
+            {auto.include?.on && auto.include.methods.length ? ` · ${auto.include.methods.length} included` : ''}
             {auto.exclude?.on && auto.exclude.methods.length ? ` · ${auto.exclude.methods.length} excluded` : ''}
             {' '}· next {dayOrClock(nextAutoRun(auto.at, auto.last?.at))}
             {auto.minTrades < 3 && <span className="text-[var(--warn)]"> · {auto.minTrades} trade{auto.minTrades === 1 ? '' : 's'} can be luck: 5 is safer</span>}

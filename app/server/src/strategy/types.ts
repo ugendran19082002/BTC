@@ -615,6 +615,12 @@ export type AutoMethods = {
    */
   exclude?: AutoExclude | null;
   /**
+   * Methods always in the list, however they did (owner, 3 Nov 2026: "auto methods kula ipa exclude iruku ana include
+   * ila -- atha implement panunum"): Exclude's other half -- on and off, on at least one ticked, off keeping the ticks.
+   * Added to whatever the pick sets, a list kept when nothing passes included, and never also excluded while both are on.
+   */
+  include?: AutoInclude | null;
+  /**
    * How often, in days (owner, 26 Oct 2026: "daily, a week, or a custom update"): 1 every day, 7 once a week, up to
    * `MAX_AUTO_EVERY`; counted from the last pick, a "Pick now" included. Absent: every day, as before.
    */
@@ -632,9 +638,16 @@ export const MAX_AUTO_EVERY = 30;
 /** Days between picks: 1 where not set. */
 export const everyOf = (a: Pick<AutoMethods, 'every'> | null | undefined): number => (Number.isInteger(a?.every) && a!.every! > 1 ? a!.every! : 1);
 export type AutoExclude = { on: boolean; methods: string[] };
+export type AutoInclude = { on: boolean; methods: string[] };
 /** The methods a daily update leaves out: the excluded ones while Exclude is on, else none. */
 export const excludedBy = (a: Pick<AutoMethods, 'exclude'> | null | undefined): ReadonlySet<string> =>
   new Set(a?.exclude?.on ? a.exclude.methods : []);
+/**
+ * The methods a daily update always keeps: the included ones while Include is on, else none -- in the order ticked. One
+ * the desk no longer has (retired since it was ticked) is left out: added, it would make every day's list unsavable.
+ */
+export const includedBy = (a: Pick<AutoMethods, 'include'> | null | undefined): readonly string[] =>
+  (a?.include?.on ? a.include.methods.filter((m) => METHODS.some((x) => x.id === m)) : []);
 export type AutoMethodsRun = {
   at: number;
   /** The expiry days looked at. */
@@ -645,6 +658,8 @@ export type AutoMethodsRun = {
   note?: string | null;
   /** The excluded methods that passed the line and were left out, best net first. */
   excluded?: string[];
+  /** The included methods that did not pass the line and are in the list for being included (3 Nov 2026). */
+  included?: string[];
   /** Every method that traded, in brief: on a pick's answer and in the log, never kept in the config. */
   records?: MethodRecordLine[];
 };
@@ -683,18 +698,30 @@ export function autoMethodsProblems(a: unknown): string[] {
   if (!Number.isInteger(x.days) || x.days! < 1 || x.days! > MAX_AUTO_DAYS) bad.push(`The daily update looks back 1 to ${MAX_AUTO_DAYS} days.`);
   if (x.every !== undefined && (!Number.isInteger(x.every) || x.every < 1 || x.every > MAX_AUTO_EVERY)) bad.push(`The update runs every 1 to ${MAX_AUTO_EVERY} days.`);
   if (x.onlyIfBetter !== undefined && typeof x.onlyIfBetter !== 'boolean') bad.push('Say whether the new list is taken only when it is better.');
-  bad.push(...autoExcludeProblems(x.exclude));
+  const ex = autoListProblems(x.exclude, 'exclude');
+  const inc = autoListProblems(x.include, 'include');
+  bad.push(...ex, ...inc);
+  // Both on, a method in each: the pick could not both keep it and never pick it.
+  if (!ex.length && !inc.length) {
+    // The ticks as saved, a retired one too: the clash is in the setting, whatever the desk would read of it.
+    const out = excludedBy(x);
+    const both = (x.include?.on ? x.include.methods : []).filter((m) => out.has(m));
+    if (both.length) bad.push(`${both.length === 1 ? 'A method is' : `${both.length} methods are`} both included and excluded: ${both.join(', ')}. Untick ${both.length === 1 ? 'it' : 'each'} on one side.`);
+  }
   return bad;
 }
 export const EXCLUDE_NONE = 'Pick at least one method to exclude, or switch Exclude off.';
-function autoExcludeProblems(e: unknown): string[] {
+export const INCLUDE_NONE = 'Pick at least one method to include, or switch Include off.';
+/** Exclude's list or Include's: on or off, method ids each once, at least one while on. */
+function autoListProblems(e: unknown, kind: 'exclude' | 'include'): string[] {
+  const done = kind === 'exclude' ? 'excluded' : 'included';
   if (e === undefined || e === null) return [];
-  if (typeof e !== 'object' || Array.isArray(e)) return ['The daily update\'s excluded methods must be a setting.'];
+  if (typeof e !== 'object' || Array.isArray(e)) return [`The daily update's ${done} methods must be a setting.`];
   const x = e as Partial<AutoExclude>;
-  if (typeof x.on !== 'boolean') return ['Say whether the daily update excludes methods.'];
-  if (!Array.isArray(x.methods) || x.methods.some((m) => typeof m !== 'string' || !m)) return ['The excluded methods must be a list of method ids.'];
-  if (new Set(x.methods).size !== x.methods.length) return ['A method is excluded twice.'];
-  return x.on && x.methods.length === 0 ? [EXCLUDE_NONE] : [];
+  if (typeof x.on !== 'boolean') return [`Say whether the daily update ${kind}s methods.`];
+  if (!Array.isArray(x.methods) || x.methods.some((m) => typeof m !== 'string' || !m)) return [`The ${done} methods must be a list of method ids.`];
+  if (new Set(x.methods).size !== x.methods.length) return [`A method is ${done} twice.`];
+  return x.on && x.methods.length === 0 ? [kind === 'exclude' ? EXCLUDE_NONE : INCLUDE_NONE] : [];
 }
 export type SignalAction = 'sell' | 'buy';
 export const actionOf = (rule: Pick<SignalRule, 'action'> | null | undefined): SignalAction => (rule?.action === 'buy' ? 'buy' : 'sell');

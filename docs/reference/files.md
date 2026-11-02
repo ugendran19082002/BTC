@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-581 files listed, 321 test files counted below, images and lockfiles left out.
+585 files listed, 323 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 165 |
-| `app/web` | 156 |
+| `app/server` | 166 |
+| `app/web` | 157 |
 
 ## `(root)`
 
@@ -222,6 +222,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [backtest-worker.ts](../../app/server/src/report/backtest-worker.ts) | The signal backtest's own thread (13 Oct 2026). |
 | [market-day.ts](../../app/server/src/report/market-day.ts) | One expiry day of the BTC perp, measured and named (owner, 13 Oct 2026). |
 | [market-report.ts](../../app/server/src/report/market-report.ts) | The market report (owner, 13 Oct 2026): every expiry day from 1 Oct on -- what kind of day the BTC perp had (`market-day.ts`) -- and, against it, what the methods made on it. |
+| [option-replay.ts](../../app/server/src/report/option-replay.ts) | The option history (owner, 3 Nov 2026: "in the Methods menu, like the signal history, an option history -- the option taken against each signal; skip perp SL and skip perp TGT, the option's SL and... |
 | [signal-backtest.ts](../../app/server/src/report/signal-backtest.ts) | The signal history, traded as options on the prices the contracts really had (owner, 13 Oct 2026). |
 
 ## `app/server/src/strategy/`
@@ -322,6 +323,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [glance.ts](../../app/web/src/api/glance.ts) | The desk's health for the phone (6 Oct 2026): GET /api/desk/glance, judged at the server in observability/glance.ts. |
 | [ledger.ts](../../app/web/src/api/ledger.ts) | The ledger (server: ledger/ledger.ts, http/routes/ledger.routes.ts): each IST day as the desk booked it and as Delta's wallet has it, judged -- checked by itself at 11:59 PM, and by hand from here. |
 | [market-report.ts](../../app/web/src/api/market-report.ts) | -- |
+| [option-replay.ts](../../app/web/src/api/option-replay.ts) | -- |
 | [phone.ts](../../app/web/src/api/phone.ts) | The phone's reads beyond the glance (Level 2, 6 Oct 2026): one trade's journal, the strategies' activity, and the closed trades' statistics. |
 | [report.ts](../../app/web/src/api/report.ts) | The P&L screen's calls: the record as a calendar, one day's mark-to-market line, and the spreadsheet download. |
 | [session.ts](../../app/web/src/api/session.ts) | Sign-in and the account page. |
@@ -502,6 +504,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [MethodReport.tsx](../../app/web/src/components/report/MethodReport.tsx) | The Methods report (owner, 1 Oct 2026: "a tab of its own; two sections, 81 + 81: win rate, trades, win, loss, profit, loss, net"). |
 | [MethodsBoard.tsx](../../app/web/src/components/report/MethodsBoard.tsx) | Methods -- pick by win %, every strategy side by side (owner, 20 Oct 2026: "the strategies across, down the side the win %, total trades, profit, loss, loss trades, PF and the rest; a tap on any st... |
 | [MtmChart.tsx](../../app/web/src/components/report/MtmChart.tsx) | One day, minute by minute: what the day was worth at each reading, with every fall from a high shaded underneath. |
+| [OptionHistory.tsx](../../app/web/src/components/report/OptionHistory.tsx) | The option history (owner, 3 Nov 2026: "in the Methods menu, like the signal history, an option history -- the option taken against each signal; skip perp SL and skip perp TGT, the option's SL and... |
 | [PerformanceStats.tsx](../../app/web/src/components/report/PerformanceStats.tsx) | -- |
 | [PerpVsOptions.tsx](../../app/web/src/components/report/PerpVsOptions.tsx) | The perp and the options apart, on the same signals and days (18 Oct 2026, the R&D audit: "perp R and options P&L after fees, separately -- a good perp result must not be taken for a good options o... |
 | [PnlCalendar.tsx](../../app/web/src/components/report/PnlCalendar.tsx) | Professional Institutional P&L Calendar. |
@@ -694,6 +697,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [entry.ts](../../app/web/src/types/entry.ts) | The entry section's shapes, mirroring app/server/src/entry/types.ts: twelve entry methods, each read with the timeframe chain and without it. |
 | [errors.ts](../../app/web/src/types/errors.ts) | Mirrors app/server/src/observability/errors.ts |
 | [market-report.ts](../../app/web/src/types/market-report.ts) | The market report as `/api/market-report` gives it (server: `report/market-day.ts`, `report/market-report.ts`). |
+| [option-replay.ts](../../app/web/src/types/option-replay.ts) | The option history's answer (GET /api/report/option-replay): the signal options the desk really sold, each one's exit worked again on its own contract's recorded quotes under the rules asked for, b... |
 | [report.ts](../../app/web/src/types/report.ts) | Mirrors app/server/src/trading/pnl-history.ts. |
 | [signal-backtest.ts](../../app/web/src/types/signal-backtest.ts) | The signal history traded as options, as `/api/signal-backtest` gives it (server: `report/signal-backtest.ts`). |
 | [strategy.ts](../../app/web/src/types/strategy.ts) | The shapes the strategy API returns. |

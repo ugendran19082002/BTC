@@ -739,6 +739,11 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   assert.deepEqual([ex.body.picked, ex.body.excluded], [won.slice(1).length ? won.slice(1) : [], [top]]);
   const exNone = await post('/api/strategies/auto-methods/pick', { config: draft({}, { autoMethods: { ...auto, exclude: { on: true, methods: [] } } }) });
   assert.deepEqual([exNone.status, exNone.body.problems], [422, ['Pick at least one method to exclude, or switch Exclude off.']]);
+  // Include (3 Nov 2026): one that did not pass is in all the same, after the ones that did, and said
+  const lost = r.body.methods.find((m: any) => !won.includes(m.method))?.method ?? 'trap';
+  const inc = await post('/api/strategies/auto-methods/pick', { config: draft({}, { methods: [], autoMethods: { ...auto, include: { on: true, methods: [lost] } } }) });
+  assert.equal(inc.status, 200, JSON.stringify(inc.body).slice(0, 300));
+  assert.deepEqual([inc.body.picked, inc.body.included], [[...won, lost], [lost]]);
   // Walked forward (18 Oct 2026): the day after picked from the day before alone; the same record, day by day
   const walkAuto = { ...auto, days: 1 };
   const walk = await post('/api/strategies/auto-methods/walk-forward', { config: draft({}, { methods: [], autoMethods: walkAuto }), from: QUIET, to: QUIET, holdout: 0 });
@@ -775,6 +780,13 @@ test('[critical] a form\'s draft: every method\'s record as options under its ru
   const exRefused = await post('/api/strategies', { name: 'auto exclude', config: draft({}, { autoMethods: { ...auto, exclude: { on: true, methods: [] } } }) });
   assert.equal(exRefused.status, 422);
   assert.match(JSON.stringify(exRefused.body), /Pick at least one method to exclude/);
+  // Include saved the same way; a method on both sides while both are on is refused
+  const withInc = await post('/api/strategies', { name: 'auto include', config: draft({}, { autoMethods: { ...auto, include: { on: true, methods: ['trap', 'trap', 'bos'] } } }) });
+  assert.equal(withInc.status, 200, JSON.stringify(withInc.body).slice(0, 300));
+  assert.deepEqual(withInc.body.strategy.config.signal.autoMethods.include, { on: true, methods: ['trap', 'bos'] });
+  const both = await post('/api/strategies', { name: 'auto both', config: draft({}, { autoMethods: { ...auto, include: { on: true, methods: ['trap'] }, exclude: { on: true, methods: ['trap'] } } }) });
+  assert.equal(both.status, 422);
+  assert.match(JSON.stringify(both.body), /A method is both included and excluded: trap/);
 
   // Every methods change kept (16 Oct 2026): a save that changes the list is a 'manual' row; one that does not, none.
   const id = saved.body.strategy.id;

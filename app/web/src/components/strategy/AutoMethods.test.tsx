@@ -173,3 +173,67 @@ describe('how often, and only if better (26 Oct 2026)', () => {
     expect(screen.getByText(/On: the new list is taken only if its methods made more/)).toBeInTheDocument();
   });
 });
+
+/*
+ * Include (owner, 3 Nov 2026: "auto methods kula ipa exclude iruku ana include ila -- atha implement panunum"): the same
+ * box as Exclude, the other half -- the methods ticked there always in the list.
+ */
+function BothHarness({ start, pickNow }: { start: AutoMethods; pickNow?: (a: AutoMethods) => Promise<AutoMethodsRun> }) {
+  const [a, setA] = useState<AutoMethods | null>(start);
+  const stand = (prefix: string) => (ids: string[], put: (ids: string[]) => void) => (
+    <ul aria-label={`${prefix} stand-in list`}>
+      {Object.keys(names).map((id) => (
+        <li key={id}><input type="checkbox" aria-label={`${prefix} ${id}`} checked={ids.includes(id)} onChange={() => put(ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])} /></li>
+      ))}
+    </ul>
+  );
+  return (
+    <>
+      <AutoMethodsFields value={a} onChange={setA} onTake={() => {}} pickNow={pickNow} nameOf={(id) => names[id] ?? id} error={autoMethodsProblems(a)[0] ?? null}
+                         includeList={stand('include')} excludeList={stand('exclude')} />
+      <output aria-label="saved">{JSON.stringify(a)}</output>
+    </>
+  );
+}
+
+describe('Include, in the methods\' daily update (3 Nov 2026)', () => {
+  it('[critical] off to begin with; on, its own list to tick, at least one asked for -- the ticked always in, said in the rule', () => {
+    render(<BothHarness start={{ ...DEFAULT_AUTO_METHODS, on: true }} />);
+    const box = screen.getByRole('region', { name: 'Include methods' });
+    expect(box).toHaveTextContent('Off · only what passes is picked.');
+    expect(screen.queryByRole('list', { name: 'include stand-in list' })).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: 'Include methods in every daily pick' }));
+    expect(saved().include).toEqual({ on: true, methods: [] });
+    expect(within(box).getByRole('alert')).toHaveTextContent('Pick at least one method to include, or switch Include off.');
+    expect(screen.getAllByText('Pick at least one method to include, or switch Include off.')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'include trap' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'include bos' }));
+    expect(saved().include).toEqual({ on: true, methods: ['trap', 'bos'] });
+    expect(box).toHaveTextContent('2 methods included · always in the list, however they did.');
+    expect(autoWords(saved())).toMatch(/over the last 7 days, always the 2 included methods\. If none do, the list stays as it is, with the included added\./);
+    fireEvent.click(within(screen.getByRole('list', { name: 'Included' })).getByRole('button', { name: 'Stop including #9 Trap' }));
+    expect(saved().include!.methods).toEqual(['bos']);
+    // off keeps the ticks for next time
+    fireEvent.click(screen.getByRole('switch', { name: 'Include methods in every daily pick' }));
+    expect(saved().include).toEqual({ on: false, methods: ['bos'] });
+    expect(box).toHaveTextContent('Off · only what passes is picked. The 1 ticked are kept for when it is on.');
+  });
+
+  it('[critical] a method ticked on both sides, both on: said once, by name, in the Include box -- and the rule refuses it', () => {
+    render(<BothHarness start={{ ...DEFAULT_AUTO_METHODS, on: true, include: { on: true, methods: ['bos'] }, exclude: { on: true, methods: ['bos', 'trap'] } }} />);
+    const box = screen.getByRole('region', { name: 'Include methods' });
+    expect(within(box).getByRole('alert')).toHaveTextContent('A method is both included and excluded: #6 BOS. Untick it on one side.');
+    expect(screen.getAllByText(/both included and excluded:/)).toHaveLength(1);
+    expect(autoMethodsProblems(saved())).toEqual(['A method is both included and excluded: bos. Untick it on one side.']);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'exclude bos' }));
+    expect(screen.queryByText(/both included and excluded:/)).toBeNull();
+  });
+
+  it('Pick now says which are in only for being included', async () => {
+    const run: AutoMethodsRun = { at: 1, from: '2026-10-27', to: '2026-11-02', picked: ['breakout', 'trap'], before: ['bos'], included: ['trap'] };
+    render(<BothHarness start={{ ...DEFAULT_AUTO_METHODS, on: true, include: { on: true, methods: ['trap'] } }} pickNow={async () => run} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
+    expect(await screen.findByLabelText('In, included')).toHaveTextContent('Under the line but included: #9 Trap.');
+  });
+});
+

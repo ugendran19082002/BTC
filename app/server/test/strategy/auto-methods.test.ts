@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoDue, autoPick, autoWindow, lessExcluded, pickMethods, runAutoMethods, runAutoMethodsAlone, walkForward, type AutoDeps, type DayRecord } from '../../src/strategy/auto-methods.js';
+import { autoDue, autoPick, autoWindow, lessExcluded, pickMethods, runAutoMethods, runAutoMethodsAlone, walkForward, withIncluded, type AutoDeps, type DayRecord } from '../../src/strategy/auto-methods.js';
 import { DEFAULT_AUTO_METHODS, DEFAULT_CONFIG, autoMethodsProblems, validateConfig, type AutoMethods, type Strategy, type StrategyConfig } from '../../src/strategy/types.js';
 
 /**
@@ -380,3 +380,77 @@ test('how often and only-if-better are checked on save: 1 to 30 days, a yes or a
   assert.deepEqual(autoMethodsProblems({ ...base, every: 2.5 }), ['The update runs every 1 to 30 days.']);
   assert.deepEqual(autoMethodsProblems({ ...base, onlyIfBetter: 'yes' as unknown as boolean }), ['Say whether the new list is taken only when it is better.']);
 });
+
+/*
+ * Include (owner, 3 Nov 2026: "auto methods kula ipa exclude iruku ana include ila -- atha implement panunum"): the
+ * methods ticked there are always in the list, however they did -- Exclude's other half.
+ */
+test('[critical] included: always in, after the ones that passed -- and said which are in only for that; off adds nothing', async () => {
+  const recs = recordOf([
+    { method: 'good', trades: 4, wins: 3, net: 1 },     // passes
+    { method: 'trap', trades: 9, wins: 2, net: -1 },  // 22%: in only for being included
+    { method: 'best', trades: 10, wins: 10, net: 2 },   // passes, and included too: once, in its place
+  ]);
+  const now = IST('2026-11-03T21:00:00');
+  const a = { ...DEFAULT_AUTO_METHODS, on: true, include: { on: true, methods: ['trap', 'best'] } };
+  const run = await autoPick(signal(['old']), a, now, null, recs);
+  assert.deepEqual([run.picked, run.included, run.note], [['best', 'good', 'trap'], ['trap'], undefined]);
+  const off = await autoPick(signal(['old']), { ...a, include: { on: false, methods: ['trap'] } }, now, null, recs);
+  assert.deepEqual([off.picked, off.included], [['best', 'good'], undefined]);
+  assert.deepEqual(withIncluded(['bos', 'trap'], { include: { on: true, methods: ['trap', 'momentum'] } }), ['bos', 'trap', 'momentum']);
+  assert.deepEqual(withIncluded(['bos'], { include: { on: false, methods: ['momentum'] } }), ['bos']);
+  // a method retired since it was ticked is not added: the list it made could not be saved
+  assert.deepEqual(withIncluded(['bos'], { include: { on: true, methods: ['retired-long-ago', 'momentum'] } }), ['bos', 'momentum']);
+});
+
+test('[critical] included: nothing passes -- the list is kept, with the included added, and the note says so', async () => {
+  const now = IST('2026-11-03T21:00:00');
+  const recs = recordOf([{ method: 'poor', trades: 9, wins: 1, net: -1 }]);
+  const a = { ...DEFAULT_AUTO_METHODS, on: true, include: { on: true, methods: ['trap'] }, exclude: { on: true, methods: ['old'] } };
+  const run = await autoPick(signal(['old', 'keep']), a, now, null, recs);
+  assert.deepEqual(run.picked, ['keep', 'trap']);
+  assert.match(run.note ?? '', /: the list was kept, less the 1 excluded method, with the 1 included method added\.$/);
+});
+
+test('[critical] the run reads Include as saved now, and writes it whatever the pick or "only if better" says', async () => {
+  const now = IST('2026-11-03T21:00:10');
+  const go = async (auto: Partial<AutoMethods>, picked: string[], records: { method: string; trades: number; wins: number; net: number }[] = []) => {
+    const db = new Map([['s', strategy('s', signal(['bos'], auto))]]);
+    const d: AutoDeps = {
+      log: async () => {}, all: async () => [...db.values()], save: async (s) => { db.set(s.id, s); },
+      // Include ticked on the form while the record was worked out: the run reads it as saved now.
+      get: async (id) => {
+        const s = db.get(id)!;
+        return { ...s, config: { ...s.config, signal: { ...s.config.signal!, autoMethods: { ...s.config.signal!.autoMethods!, include: { on: true, methods: ['trap'] } } } } };
+      },
+      pick: async (_c, _a, at) => ({ at, from: '2026-10-27', to: '2026-11-02', picked, before: ['bos'], records }),
+      warn: (m) => assert.fail(m),
+    };
+    await runAutoMethods(now, d);
+    return db.get('s')!.config.signal!.methods;
+  };
+  assert.deepEqual(await go({}, ['momentum']), ['momentum', 'trap']);
+  // only if better, the new pick worse: the list in use stays -- with the included in it, weighed the same on both sides
+  assert.deepEqual(await go({ onlyIfBetter: true }, ['momentum'], [{ method: 'momentum', trades: 5, wins: 5, net: 0.1 }, { method: 'bos', trades: 5, wins: 4, net: 0.3 }, { method: 'trap', trades: 2, wins: 0, net: -0.5 }]),
+    ['bos', 'trap']);
+});
+
+test('[critical] Include on needs at least one method; a method both included and excluded while both are on is refused', () => {
+  const with_ = (include: unknown, exclude: unknown = null) => autoMethodsProblems({ ...DEFAULT_AUTO_METHODS, include, exclude });
+  assert.deepEqual(with_({ on: true, methods: [] }), ['Pick at least one method to include, or switch Include off.']);
+  assert.deepEqual(with_({ on: false, methods: [] }), []);
+  assert.deepEqual(with_({ on: true, methods: ['a'] }), []);
+  assert.equal(with_({ on: true, methods: ['a', 'a'] })[0], 'A method is included twice.');
+  assert.equal(with_({ on: 'yes', methods: ['a'] })[0], 'Say whether the daily update includes methods.');
+  assert.deepEqual(with_({ on: true, methods: ['a', 'b'] }, { on: true, methods: ['b'] }), ['A method is both included and excluded: b. Untick it on one side.']);
+  assert.deepEqual(with_({ on: true, methods: ['a', 'b'] }, { on: false, methods: ['b'] }), [], 'Exclude off: no clash');
+  assert.ok(validateConfig(signal(['a'], { include: { on: true, methods: [] } })).includes('Pick at least one method to include, or switch Include off.'));
+});
+
+test('[critical] the walk honours Include, as the daily update does', () => {
+  const days = DAYS.map((d) => ({ ...d, methods: d.methods.map((m) => ({ ...m, method: m.method === 'b' ? 'trap' : m.method })) }));
+  const w = walkForward(days, { ...RULE, include: { on: true, methods: ['trap'] } }, ['a'], { testFrom: '2026-10-02', holdout: 0 });
+  assert.ok(w.days.every((d) => d.picked.includes('trap')), 'in every day\'s list');
+  assert.equal(w.rule.included, 1);
+});
+

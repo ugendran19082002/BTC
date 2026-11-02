@@ -347,14 +347,20 @@ export function deltaByVolProblems(a: DeltaByVol | null | undefined): string[] {
  * `every`: days between picks, 1 a day (absent too), 7 a week, up to `MAX_AUTO_EVERY`, counted from the last pick.
  * `onlyIfBetter`: the new list taken only where it made more over the look-back than the list in use (26 Oct 2026).
  */
-export type AutoMethods = { on: boolean; at: string; winPct: number; minTrades: number; days: number; every?: number; onlyIfBetter?: boolean; exclude?: AutoExclude | null; last?: AutoMethodsRun | null };
+export type AutoMethods = {
+  on: boolean; at: string; winPct: number; minTrades: number; days: number; every?: number; onlyIfBetter?: boolean;
+  exclude?: AutoExclude | null; include?: AutoInclude | null; last?: AutoMethodsRun | null;
+};
 /** Methods the daily update never picks, however they did (18 Oct 2026); off keeps the ticks for next time. */
 export type AutoExclude = { on: boolean; methods: string[] };
+/** Methods the daily update always keeps, however they did (3 Nov 2026): Exclude's other half; off keeps the ticks. */
+export type AutoInclude = { on: boolean; methods: string[] };
 /**
  * One pick: the days looked at, the list set (best net first) and the one before; `note` when the list was kept;
- * `excluded`, the excluded methods that passed and were left out.
+ * `excluded`, the excluded methods that passed and were left out; `included`, the included ones that did not pass and
+ * are in all the same.
  */
-export type AutoMethodsRun = { at: number; from: string; to: string; picked: string[]; before: string[]; note?: string | null; excluded?: string[]; records?: MethodRecordLine[] };
+export type AutoMethodsRun = { at: number; from: string; to: string; picked: string[]; before: string[]; note?: string | null; excluded?: string[]; included?: string[]; records?: MethodRecordLine[] };
 /**
  * The daily-update rule walked forward (server `walkForward`, 18 Oct 2026): each test day traded with what the rule
  * picked from the days before it alone; the last days held out and reported apart; every method and the list as it
@@ -365,7 +371,8 @@ export type WalkLine = WalkScore & { days: number; upDays: number; downDays: num
 export type WalkDay = { day: string; holdout: boolean; picked: string[]; kept: boolean; rule: WalkScore; all: WalkScore; current: WalkScore };
 export type WalkForward = {
   from: string; to: string; holdoutFrom: string | null;
-  rule: { winPct: number; minTrades: number; days: number; excluded: number };
+  /** `included`: absent from a server from before 3 Nov 2026. */
+  rule: { winPct: number; minTrades: number; days: number; excluded: number; included?: number };
   days: WalkDay[];
   walk: { rule: WalkLine; all: WalkLine; current: WalkLine };
   holdout: { rule: WalkLine; all: WalkLine; current: WalkLine } | null;
@@ -398,9 +405,21 @@ export function autoMethodsProblems(a: AutoMethods | null | undefined): string[]
   if (!Number.isInteger(a.days) || a.days < 1 || a.days > MAX_AUTO_DAYS) bad.push(`The daily update looks back 1 to ${MAX_AUTO_DAYS} days.`);
   if (a.every !== undefined && (!Number.isInteger(a.every) || a.every < 1 || a.every > MAX_AUTO_EVERY)) bad.push(`The update runs every 1 to ${MAX_AUTO_EVERY} days.`);
   if (a.exclude?.on && !a.exclude.methods.length) bad.push(EXCLUDE_NONE);
+  if (a.include?.on && !a.include.methods.length) bad.push(INCLUDE_NONE);
+  const both = bothSides(a);
+  if (both.length) bad.push(bothWords(both));
   return bad;
 }
 export const EXCLUDE_NONE = 'Pick at least one method to exclude, or switch Exclude off.';
+export const INCLUDE_NONE = 'Pick at least one method to include, or switch Include off.';
+/** The methods ticked both to include and to exclude while both are on: a clash the save refuses. */
+export const bothSides = (a: Pick<AutoMethods, 'exclude' | 'include'>): string[] => {
+  const out = new Set(a.exclude?.on ? a.exclude.methods : []);
+  return (a.include?.on ? a.include.methods : []).filter((m) => out.has(m));
+};
+/** The server's words for that clash (`autoMethodsProblems`). */
+export const bothWords = (both: readonly string[]) =>
+  `${both.length === 1 ? 'A method is' : `${both.length} methods are`} both included and excluded: ${both.join(', ')}. Untick ${both.length === 1 ? 'it' : 'each'} on one side.`;
 export type SignalAction = 'sell' | 'buy';
 /** Where a rule with the chain keeps its distance filters (server: CHAIN_PTS). */
 export const CHAIN_PTS = 'chain' as const;
