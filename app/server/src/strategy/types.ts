@@ -933,32 +933,40 @@ export const momentumBlocks = (g: MomentumGuard, sells: 'CE' | 'PE' | null, rise
  *   tgt  after the option target, the SAME side again ("Target hit -> same side"). 07:00-10:00: +₹4,311, 98% won, no day
  *        lost; to 11:00 +₹1,049 more, all of it on 30 Oct; all day +₹5,986 with 480 stops and the loss fifteen-fold.
  *
- * `max` is how many of one kind in a row (a re-entry closed the same way again); a change of kind starts its count
- * again, and the whole chain stops at the two maxima added. Each sells the strategy's own lots (owner, the same day: "lot
- * size venaam, strategy-la lot size atha call panikanum"). A third in a row came twice in the month, so 2 is the most that
- * mattered. Kept as JSON, {"sl": {...}, "tgt": {...}}; off where unset or unreadable. The first shape, {"on", "max",
- * "size"} (built the same day), reads as the SL rule all day; a `size` kept from then is not read.
+ * No most in a row (owner, 2 Nov 2026: "same targetku max row venaa", then "REENTRY_MAX_IN_A_ROW venaa"; 1-5 a rule
+ * until then): a re-entry out the same way again is followed again, for as long as its rule's time range is open and the
+ * strategy's caps allow. Each sells the strategy's own lots (owner, 1 Nov: "lot size venaam, strategy-la lot size atha
+ * call panikanum").
+ *
+ * `entries` (owner, 2 Nov 2026: "oru SL adicha opposite side 2 entry edukunum, 2, 3, 4 editable") is how many trades one
+ * exit opens at once, each its own trade at the strategy's lots -- the exit of the signal's own trade only. Each of those
+ * is then followed one for one: were every re-entry to open `entries` again, two would be four would be eight, and with no
+ * most in a row nothing would stop it. So one signal is at most `entries` lines of re-entries side by side.
+ *
+ * Kept as JSON, {"sl": {...}, "tgt": {...}}; off where unset or unreadable. The first shape, {"on", "max", "size"} (built
+ * 1 Nov), reads as the SL rule all day; a `size` or a `max` kept from before is not read.
  */
 export const REENTRY_KEY = 'signal_reentry';
-export type ReentryRule = { on: boolean; from: string; to: string; max: number };
+export type ReentryRule = { on: boolean; from: string; to: string; entries: number };
 export type Reentry = { sl: ReentryRule; tgt: ReentryRule };
 export type ReentryKind = keyof Reentry;
 export const REENTRY_DEFAULT: Readonly<Reentry> = {
-  sl: { on: false, from: '07:00', to: '17:29', max: 2 },
-  tgt: { on: false, from: '07:00', to: '10:00', max: 1 },
+  sl: { on: false, from: '07:00', to: '17:29', entries: 1 },
+  tgt: { on: false, from: '07:00', to: '10:00', entries: 1 },
 };
-export const REENTRY_MAX_IN_A_ROW = 5;
-const reentryMaxOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= REENTRY_MAX_IN_A_ROW;
+/** The most trades one exit opens at once. */
+export const REENTRY_MAX_ENTRIES = 4;
+const reentryEntriesOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= REENTRY_MAX_ENTRIES;
 const objectOf = (x: unknown): Record<string, unknown> => (x && typeof x === 'object' && !Array.isArray(x) ? x as Record<string, unknown> : {});
 function ruleOf(v: Record<string, unknown>, d: ReentryRule): ReentryRule {
   const timesOk = isHhmm(v.from) && isHhmm(v.to) && v.from !== v.to;
   return {
     on: v.on === true,
     from: timesOk ? v.from as string : d.from, to: timesOk ? v.to as string : d.to,
-    max: reentryMaxOk(v.max) ? v.max : d.max,
+    entries: reentryEntriesOk(v.entries) ? v.entries : d.entries,
   };
 }
-/** The setting as stored: each rule on or off, its time range and how many in a row; the default for whatever is unset or unreadable. */
+/** The setting as stored: each rule on or off, its time range and how many trades an exit opens; the default for whatever is unset or unreadable. */
 export function reentryOf(raw: string | null | undefined): Reentry {
   let v: Record<string, unknown> = {};
   try { v = objectOf(raw ? JSON.parse(raw) : {}); } catch { /* the default */ }
@@ -967,19 +975,28 @@ export function reentryOf(raw: string | null | undefined): Reentry {
   return { sl: ruleOf(objectOf(v.sl), REENTRY_DEFAULT.sl), tgt: ruleOf(objectOf(v.tgt), REENTRY_DEFAULT.tgt) };
 }
 const KIND_WORDS: Record<ReentryKind, string> = { sl: 'After an SL', tgt: 'After a target' };
-/** Why a re-entry setting cannot be saved, in words; null when it can. `null` itself is "back to the default" (off), and can. */
+/**
+ * Why a re-entry setting cannot be saved, in words; null when it can. `null` itself is "back to the default" (off), and can.
+ * `entries` may be left out -- a page from before 2 Nov sends none, and the number saved stands (`reentryKeepingEntries`);
+ * a `max` such a page sends is not read.
+ */
 export function reentryProblem(v: unknown): string | null {
   if (v === null) return null;
-  if (!v || typeof v !== 'object' || Array.isArray(v) || !('sl' in v) || !('tgt' in v)) return 'Re-entry is {"sl": {...}, "tgt": {...}}, each {"on", "from", "to", "max"}.';
+  if (!v || typeof v !== 'object' || Array.isArray(v) || !('sl' in v) || !('tgt' in v)) return 'Re-entry is {"sl": {...}, "tgt": {...}}, each {"on", "from", "to", "entries"}.';
   for (const kind of ['sl', 'tgt'] as const) {
     const r = objectOf((v as Record<string, unknown>)[kind]);
     const said = KIND_WORDS[kind];
     if (typeof r.on !== 'boolean') return `${said}: say whether it is on, true or false.`;
     if (!isHhmm(r.from) || !isHhmm(r.to)) return `${said}: the time range is two IST times, HH:MM.`;
     if (r.from === r.to) return `${said}: the time range must not start and end at the same minute.`;
-    if (!reentryMaxOk(r.max)) return `${said}: re-entries in a row must be a whole number from 1 to ${REENTRY_MAX_IN_A_ROW}.`;
+    if (r.entries !== undefined && !reentryEntriesOk(r.entries)) return `${said}: trades at once must be a whole number from 1 to ${REENTRY_MAX_ENTRIES}.`;
   }
   return null;
+}
+/** A setting that passed `reentryProblem`, each rule with no `entries` of its own given the one saved. */
+export function reentryKeepingEntries(want: object, saved: Reentry): object {
+  const w = want as Record<ReentryKind, Record<string, unknown>>;
+  return { sl: { entries: saved.sl.entries, ...w.sl }, tgt: { entries: saved.tgt.entries, ...w.tgt } };
 }
 /** Whether a rule's time range holds this IST minute: from `from` (taken) up to `to` (not taken); it may run past midnight. */
 export const reentryOpenAt = (r: Pick<ReentryRule, 'from' | 'to'>, istMinute: number): boolean =>

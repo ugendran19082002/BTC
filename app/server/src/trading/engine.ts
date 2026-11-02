@@ -125,9 +125,10 @@ export type TradeSignal = {
   /**
    * A re-entry after an option exit (1 Nov 2026): the trade closed, how (`after`), which of that kind in a row this is
    * (`n`), and how many re-entries in all since the signal's own trade (`chain`; absent on the first shape, read as `n`).
+   * Which of the trades that exit opened it is, of how many (`entry` of `entries`, 2 Nov 2026; absent before, read as 1 of 1).
    * Absent on the signal's own.
    */
-  reentry?: { of: string; n: number; after?: 'stop' | 'target'; chain?: number };
+  reentry?: { of: string; n: number; after?: 'stop' | 'target'; chain?: number; entry?: number; entries?: number };
 };
 
 export type TradePlan = {

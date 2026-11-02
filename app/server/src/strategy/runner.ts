@@ -160,6 +160,8 @@ export async function perpRiseNow(at = Date.now()): Promise<{ perp: number; hour
 type SignalTurn = { tfSec: number; seq: number; run: () => Promise<void>; done: () => void; failed: (e: unknown) => void };
 /** One account's line of signals, and whether one of them is being traded right now. */
 type SignalLane = { waiting: SignalTurn[]; busy: boolean };
+/** A re-entry being taken: the trade's `reentry` (engine.ts), and which of the `entries` its exit opens this is. */
+type Reentered = { of: string; n: number; after: 'stop' | 'target'; chain: number; entry: number; entries: number };
 /** Whose line a desk's signals wait in: its account's -- one line for the desk that has no account. */
 const laneKeyOf = (desk: TradingService): number => desk.accountId ?? 0;
 /** The order of a line: the longer timeframe first; on the same one, the one that came first. */
@@ -453,7 +455,8 @@ export class StrategyRunner {
    * A signal strategy's trade closed by its option's stop or target (trading/option-exit.ts): with that kind of re-entry
    * on for its account (`REENTRY_KEY`), the same strategy sells again now -- after a stop the other side, the put for a
    * stopped call and the call for a stopped put; after a target the same side -- in turn with the signals, through the
-   * same queues and the same rules but the no-entry window.
+   * same queues and the same rules but the no-entry window. The exit of the signal's own trade opens the rule's `entries`
+   * trades one after another in its turn (2 Nov 2026); a re-entry's exit is followed by one, so they never multiply.
    */
   onOptionExit(t: OptionExit): Promise<void> {
     const sig = t.plan.signal;
@@ -469,7 +472,12 @@ export class StrategyRunner {
     // Of one kind in a row: a change of kind starts the count again.
     const n = before && (before.after ?? 'stop') === t.by ? before.n + 1 : 1;
     const re = { of: t.plan.tradeId, n, after: t.by, chain: (before ? before.chain ?? before.n : 0) + 1 };
-    return this.inTurn(sig.tf as Tf, (s) => (s.id === t.plan.strategyId ? () => this.takeSignal(s, r, null, re) : null));
+    return this.inTurn(sig.tf as Tf, (s) => (s.id === t.plan.strategyId ? async () => {
+      // Read at its turn, on its own account's desk, as `takeSignal` reads the rest of the setting.
+      const entries = before ? 1 : reentryOf(accountSetting(tradingService().settings, REENTRY_KEY, tradingService().accountId))[t.by === 'stop' ? 'sl' : 'tgt'].entries;
+      // One at a time: each sees the ones before it in the caps, as the signals of one queue do.
+      for (let entry = 1; entry <= entries; entry++) await this.takeSignal(s, r, null, { ...re, entry, entries });
+    } : null));
   }
 
   /*
@@ -601,27 +609,30 @@ export class StrategyRunner {
   }
 
   /**
-   * `re`: a re-entry after an option exit (`onOptionExit`) -- the trade closed, how, and which in a row this is. It has no
+   * `re`: a re-entry after an option exit (`onOptionExit`) -- the trade closed, how, which in a row this is, and which of
+   * the trades that exit opens. It has no
    * levels of its own on the perp (`r.plan` is null): it is held to everything a signal is but the no-entry window, the
    * perp's levels and the distances to them, and exits on the option's own stop and target and the strategy's exit time.
    */
-  private async takeSignal(s: Strategy, r: MethodRead, fill: SetupFill | null, re: { of: string; n: number; after: 'stop' | 'target'; chain: number } | null = null): Promise<void> {
+  private async takeSignal(s: Strategy, r: MethodRead, fill: SetupFill | null, re: Reentered | null = null): Promise<void> {
     const now = this.now();
     if (!inSignalWindow(s, now)) return;              // outside its days or hours: not its signal
     const setting = re ? reentryOf(accountSetting(tradingService().settings, REENTRY_KEY, tradingService().accountId)) : null;
     const again = re && setting ? setting[re.after === 'stop' ? 'sl' : 'tgt'] : null;
     /*
-     * Off for this account, outside its time range, or past its most in a row: nothing to write down. Every target the
-     * desk takes comes here, so a row for each one not followed would bury the history.
+     * Off for this account, or outside its time range: nothing to write down. Every target the desk takes comes here, so
+     * a row for each one not followed would bury the history. No most in a row (2 Nov 2026).
      */
-    if (re && setting && again && (!again.on || !reentryOpenAt(again, istMinutes(now)) || re.n > again.max || re.chain > setting.sl.max + setting.tgt.max)) return;
+    if (re && again && (!again.on || !reentryOpenAt(again, istMinutes(now)))) return;
     const rule = s.config.signal!;
     const plan = r.plan!;
     const dir: 1 | -1 = r.dir === 'long' ? 1 : -1;
-    // A re-entry's own claim: one per stopped trade, beside its signal's (the trigger stays the key's fifth part).
-    const key = re ? `${signalKeyOf(r)}|${re.after === 'stop' ? 'sl' : 'tg'}${re.n}|${re.of}` : signalKeyOf(r);
+    // A re-entry's own claim: one per stopped trade, beside its signal's (the trigger stays the key's fifth part) -- and
+    // one per trade of the several an exit opens, the first keeping the key it had when there was only ever one.
+    const key = re ? `${signalKeyOf(r)}|${re.after === 'stop' ? 'sl' : 'tg'}${re.n}|${re.of}${re.entry > 1 ? `#${re.entry}` : ''}` : signalKeyOf(r);
     if (!await this.store.claimSignal(s.id, key, { method: r.id, mode: r.mode, tf: r.tf, dir }, now)) return;
-    const said = `#${r.n} ${r.name} ${dir === 1 ? 'BUY' : 'SELL'}${re && again ? ` · re-entry after ${re.after === 'stop' ? 'SL' : 'target'} ${re.n}/${again.max} (of ${re.of})` : ''}`;
+    const which = re ? `${re.after === 'stop' ? 'SL' : 'target'} ${re.n} (of ${re.of})${re.entries > 1 ? ` · trade ${re.entry} of ${re.entries}` : ''}` : '';
+    const said = `#${r.n} ${r.name} ${dir === 1 ? 'BUY' : 'SELL'}${which ? ` · re-entry after ${which}` : ''}`;
     const finish = (status: Parameters<StrategyStore['finishSignal']>[2], detail: string, tradeId: string | null = null) =>
       this.store.finishSignal(s.id, key, status, `${said} | ${detail}`, tradeId);
 

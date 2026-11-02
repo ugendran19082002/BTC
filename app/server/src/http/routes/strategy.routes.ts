@@ -7,7 +7,7 @@ import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow, perpRiseNow } from '../../strategy/runner.js';
 import { autoAsked, autoPick, runAutoMethodsAlone, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, REENTRY_KEY, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting } from '../../db/settings.js';
@@ -1112,8 +1112,9 @@ export function registerStrategyRoutes(app: FastifyInstance) {
 
   /**
    * Re-entry after an option exit, this account's (owner, 1 Nov 2026): `{ reentry: { sl: rule, tgt: rule } }`, each rule
-   * `{ on, from, to, max }` -- its IST time range and up to `max` (1-5) in a row, each at the strategy's own lots; `null`
-   * is back to the default, both off. The runner reads it at each exit, so it counts from the next one.
+   * `{ on, from, to, entries }` -- its IST time range and how many trades (1-4) one exit opens, each at the strategy's own
+   * lots, with no most in a row (2 Nov 2026); `null` is back to the default, both off. The runner reads it at each exit, so
+   * it counts from the next one.
    */
   app.post('/api/strategies/reentry', async (req, reply) => {
     const { reentry, accountId } = (req.body ?? {}) as { reentry?: unknown; accountId?: unknown };
@@ -1121,8 +1122,10 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const want = reentry === undefined ? null : reentry;
     const problem = reentryProblem(want);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    // Kept as read back: the two rules and their four fields, nothing else that came with them.
-    await svc.settings.set(accountKey(REENTRY_KEY, account), want === null ? '' : JSON.stringify(reentryOf(JSON.stringify(want))));
+    // Kept as read back: the two rules and their own fields, nothing else that came with them -- and a page that sends
+    // no `entries` (one loaded before 2 Nov) leaves the number saved as it was, not back at one.
+    const whole = want === null ? null : reentryKeepingEntries(want, reentryOf(accountSetting(svc.settings, REENTRY_KEY, account)));
+    await svc.settings.set(accountKey(REENTRY_KEY, account), whole === null ? '' : JSON.stringify(reentryOf(JSON.stringify(whole))));
     return { ok: true, signalReentry: reentryOf(accountSetting(svc.settings, REENTRY_KEY, account)) };
   });
 

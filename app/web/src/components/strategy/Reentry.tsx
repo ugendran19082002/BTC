@@ -1,32 +1,39 @@
 import { useEffect, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { REENTRY_DEFAULT, REENTRY_MAX_IN_A_ROW, type Reentry as Setting, type ReentryRule } from '@/types/strategy';
+import { REENTRY_DEFAULT, REENTRY_MAX_ENTRIES, type Reentry as Setting, type ReentryRule } from '@/types/strategy';
 
 /**
  * Re-entry after an option exit (owner, 1 Nov 2026), this account's: a signal strategy's trade out on its option SL is
  * followed by a sale of the other side, one out on its target by the same side again -- by the same strategy, under all
  * its rules but the no-entry window, each in its own time range. One pill for both -- off, or which are on and when --
  * opening to the two rules side by side, with today's count.
+ *
+ * Each rule's "trades at once" (owner, 2 Nov 2026: "oru SL adicha opposite side 2 entry edukunum, 2, 3, 4 editable"): how
+ * many trades the exit of the signal's own trade opens, a tap from 1 to 4. No "max in a row" on either rule (owner, the
+ * same day: "REENTRY_MAX_IN_A_ROW venaa"): each re-entry is followed by one, while its time range is open.
  */
 
 type Kind = keyof Setting;
-type Draft = { on: boolean; from: string; to: string; max: string };
-const draftOf = (r: ReentryRule): Draft => ({ on: r.on, from: r.from, to: r.to, max: String(r.max) });
+type Draft = { on: boolean; from: string; to: string; entries: number };
+// `?? 1`: a server from before 2 Nov sends no `entries` (and a `max` that is not used).
+const draftOf = (r: ReentryRule): Draft => ({ on: r.on, from: r.from, to: r.to, entries: r.entries ?? 1 });
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
-const whole = (text: string, most: number) => {
-  const n = Number(text);
-  return text.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= most;
-};
 /** Why one rule cannot be saved; null when it can. */
 const problemOf = (d: Draft): string | null =>
   !HHMM.test(d.from) || !HHMM.test(d.to) ? 'the time range is two times'
-    : d.from === d.to ? 'the time range must not start and end at the same minute'
-      : !whole(d.max, REENTRY_MAX_IN_A_ROW) ? `in a row: a whole number from 1 to ${REENTRY_MAX_IN_A_ROW}` : null;
-const ruleOf = (d: Draft): ReentryRule => ({ on: d.on, from: d.from, to: d.to, max: Number(d.max) });
+    : d.from === d.to ? 'the time range must not start and end at the same minute' : null;
+const ruleOf = (d: Draft): ReentryRule => ({ on: d.on, from: d.from, to: d.to, entries: d.entries });
+const settingOf = (d: Record<Kind, Draft>): Setting => ({ sl: ruleOf(d.sl), tgt: ruleOf(d.tgt) });
+/** "×2" on the pill when an exit opens more than one. */
+const times = (r: ReentryRule) => ((r.entries ?? 1) > 1 ? ` ×${r.entries}` : '');
 /** "07:00" -> "7", "17:29" -> "17:29": for the pill. */
 const short = (hhmm: string) => { const [h, m] = hhmm.split(':'); return m === '00' ? String(Number(h)) : `${Number(h)}:${m}`; };
-const same = (a: ReentryRule, b: ReentryRule) => a.on === b.on && a.from === b.from && a.to === b.to && a.max === b.max;
+const same = (a: Setting, b: Setting) => (['sl', 'tgt'] as const).every((k) => {
+  const x = draftOf(a[k]), y = draftOf(b[k]);
+  return x.on === y.on && x.from === y.from && x.to === y.to && x.entries === y.entries;
+});
+const ENTRIES = Array.from({ length: REENTRY_MAX_ENTRIES }, (_, i) => i + 1);
 
 const KINDS: { kind: Kind; title: string; does: string; label: string }[] = [
   { kind: 'sl', title: 'After SL', does: 'sell the OPPOSITE side', label: 'After SL' },
@@ -45,16 +52,16 @@ export function Reentry({ reentry, today = null, busy, onSave }: {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ sl: draftOf(reentry.sl), tgt: draftOf(reentry.tgt) });
   useEffect(() => { if (!open) setDraft({ sl: draftOf(reentry.sl), tgt: draftOf(reentry.tgt) }); }, [open, reentry]);
-  const set = (kind: Kind, field: keyof Draft, value: string | boolean) => setDraft((d) => ({ ...d, [kind]: { ...d[kind], [field]: value } }));
+  const set = (kind: Kind, field: keyof Draft, value: string | boolean | number) => setDraft((d) => ({ ...d, [kind]: { ...d[kind], [field]: value } }));
   const problems = { sl: problemOf(draft.sl), tgt: problemOf(draft.tgt) };
   const valid = !problems.sl && !problems.tgt;
-  const edited = valid && (!same(ruleOf(draft.sl), reentry.sl) || !same(ruleOf(draft.tgt), reentry.tgt));
-  const isDefault = same(reentry.sl, REENTRY_DEFAULT.sl) && same(reentry.tgt, REENTRY_DEFAULT.tgt);
+  const edited = valid && !same(settingOf(draft), reentry);
+  const isDefault = same(reentry, REENTRY_DEFAULT);
   const save = async (r: Setting | null) => { if (await onSave(r)) setOpen(false); };
   const anyOn = reentry.sl.on || reentry.tgt.on;
   const pill = [
-    reentry.sl.on ? `SL→opp ${short(reentry.sl.from)}–${short(reentry.sl.to)}` : null,
-    reentry.tgt.on ? `TGT→same ${short(reentry.tgt.from)}–${short(reentry.tgt.to)}` : null,
+    reentry.sl.on ? `SL→opp${times(reentry.sl)} ${short(reentry.sl.from)}–${short(reentry.sl.to)}` : null,
+    reentry.tgt.on ? `TGT→same${times(reentry.tgt)} ${short(reentry.tgt.from)}–${short(reentry.tgt.to)}` : null,
   ].filter(Boolean).join(' · ');
   const field = 'm-0 h-7 rounded border border-solid border-border bg-[var(--bg)] px-1.5 font-[inherit] text-[12px] tabular-nums text-foreground';
 
@@ -83,16 +90,28 @@ export function Reentry({ reentry, today = null, busy, onSave }: {
               <input type="time" aria-label={`${label}: from`} value={draft[kind].from} disabled={busy} onChange={(e) => set(kind, 'from', e.target.value)} className={cn(field, 'w-[5.5rem]')} />
               <span>–</span>
               <input type="time" aria-label={`${label}: to`} value={draft[kind].to} disabled={busy} onChange={(e) => set(kind, 'to', e.target.value)} className={cn(field, 'w-[5.5rem]')} />
-              <span>Max in a row</span>
-              <input aria-label={`${label}: max in a row`} inputMode="numeric" value={draft[kind].max} disabled={busy}
-                     onChange={(e) => set(kind, 'max', e.target.value.replace(/[^0-9]/g, '').slice(0, 1))} className={cn(field, 'w-9 text-right')} />
+            </div>
+            <div className={cn('mt-1.5 flex items-center gap-2 text-[12px]', !draft[kind].on && 'opacity-60')}>
+              <span>Trades at once</span>
+              <div role="radiogroup" aria-label={`${label}: trades at once`} className="inline-flex overflow-hidden rounded border border-solid border-border">
+                {ENTRIES.map((n) => (
+                  <button key={n} type="button" role="radio" aria-checked={draft[kind].entries === n} disabled={busy} onClick={() => set(kind, 'entries', n)}
+                          className={cn('m-0 h-7 w-8 appearance-none border-0 font-[inherit] text-[12px] tabular-nums',
+                            n > 1 && 'border-l border-solid border-border',
+                            draft[kind].entries === n ? 'bg-primary font-semibold text-primary-foreground' : 'bg-[var(--bg)] text-foreground')}>
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
             {problems[kind] && <p role="alert" className="m-0 mt-1.5 text-[11.5px] text-[var(--down)]">{label}: {problems[kind]}.</p>}
           </fieldset>
         ))}
         <p className="m-0 text-[11.5px] leading-snug text-muted-foreground">
           Same rules and lot size as the strategy: delta, lots, min premium, SL, target, caps, momentum guard. The no-entry
-          window is ignored; each re-entry's own time range is used instead.
+          window is ignored; each re-entry's own time range is used instead. Trades at once: what the signal's own trade
+          opens when it exits; each of those is then followed by one, so they never multiply. No limit in a row: re-entries
+          go on while the time range is open and the caps allow.
         </p>
         {today && (
           <p aria-label="Today" className="m-0 mt-1.5 text-[11.5px] tabular-nums text-muted-foreground">
@@ -104,7 +123,7 @@ export function Reentry({ reentry, today = null, busy, onSave }: {
                   className="m-0 h-8 appearance-none rounded-md border border-solid border-border bg-transparent px-3 font-[inherit] text-[12px] text-muted-foreground disabled:opacity-50">
             Defaults
           </button>
-          <button type="button" disabled={busy || !edited} onClick={() => void save({ sl: ruleOf(draft.sl), tgt: ruleOf(draft.tgt) })}
+          <button type="button" disabled={busy || !edited} onClick={() => void save(settingOf(draft))}
                   className="m-0 h-8 appearance-none rounded-md border-0 bg-primary px-3 font-[inherit] text-[12px] font-semibold text-primary-foreground disabled:opacity-50">
             Save
           </button>
