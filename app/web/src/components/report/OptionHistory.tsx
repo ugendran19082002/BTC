@@ -11,6 +11,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { useSynced } from '@/hooks/useSynced';
 import { compactInr, contractLabel, inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { downloadHeatTable, type HeatCell } from '@/lib/heat-table-image';
 import type { ActualExit, OptionReplay, OptionReplayRow, ReplayExit, ReplayGroup, ReplayRules, ReplayShow, ReplaySide, ReplaySource } from '@/types/option-replay';
 
 /**
@@ -404,7 +405,7 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
         )}
         </div>
         {tab === 'grid'
-          ? <MethodGrid rows={groups} cells={data.grid ?? []} columns={data.timeframes} />
+          ? <MethodGrid rows={groups} cells={data.grid ?? []} columns={data.timeframes} caption={gridCaption(data)} />
           : <GroupTable groups={groups} tab={tab} day={day} onDay={onDay} ranked={sort !== 'date'} />}
       </div>
 
@@ -438,6 +439,15 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
   );
 }
 
+/** The range and the rules the grid was worked on, for its picture: "4 Oct – 3 Nov · 8,442 trades", "Option SL 250% · TGT 90%". */
+const gridCaption = (d: OptionReplay): string[] => [
+  `Expiry days ${d.from} – ${d.to}`,
+  [
+    `Option SL ${d.rules.stopPct > 0 ? `${d.rules.stopPct}%` : 'none'}`, `Option TGT ${d.rules.targetPct > 0 ? `${d.rules.targetPct}%` : 'none'}`,
+    d.rules.skipPerpSl ? 'perp SL skipped' : 'perp SL on', d.rules.skipPerpTgt ? 'perp TGT skipped' : 'perp TGT on',
+  ].join(' · '),
+];
+
 /** What a square of the grid shows. */
 type Measure = 'net' | 'win' | 'days';
 const MEASURES: readonly { id: Measure; name: string }[] = [{ id: 'net', name: 'Net ₹' }, { id: 'win', name: 'Win %' }, { id: 'days', name: 'Profit / loss days' }];
@@ -448,8 +458,13 @@ const MEASURES: readonly { id: Measure; name: string }[] = [{ id: 'net', name: '
  * total underneath. Each square green as far as it makes money under the rules and red as far as it loses, the
  * strongest the darkest; it says the net, the win % or its profit and loss days, and a tap gives all its figures.
  */
-export function MethodGrid({ rows, cells, columns }: { rows: readonly ReplayGroup[]; cells: readonly ReplayGroup[]; columns: readonly ReplayGroup[] }) {
+export function MethodGrid({ rows, cells, columns, caption = [] }: {
+  rows: readonly ReplayGroup[]; cells: readonly ReplayGroup[]; columns: readonly ReplayGroup[];
+  /** Said under the picture's title: the range and the rules it was worked on (3 Nov 2026). */
+  caption?: readonly string[];
+}) {
   const [measure, setMeasure] = useSynced<Measure>('optionHistory.measure', 'net');
+  const [saving, setSaving] = useState<'idle' | 'busy' | 'failed'>('idle');
   const [picked, setPicked] = useState<string | null>(null);
   const at = useMemo(() => new Map(cells.map((c) => [c.key, c])), [cells]);
   const tfs = columns.map((c) => c.key);
@@ -475,6 +490,25 @@ export function MethodGrid({ rows, cells, columns }: { rows: readonly ReplayGrou
       ) : <span className="text-[var(--dim)]">·</span>}
     </td>
   );
+  // The grid as a picture (owner, 3 Nov 2026: "image download vai click pana apidy image download aakunum"): every row,
+  // not only those in view, each square as it is shaded and says here.
+  const shadeOf = (usd: number) => (12 + 48 * Math.min(1, Math.abs(usd) / most)) / 100;
+  const cellOf = (g: ReplayGroup | undefined): HeatCell => (g ? { main: say(g), sub: g.trades.toLocaleString('en-US'), value: g.replay.netUsd, shade: shadeOf(g.replay.netUsd) } : null);
+  const saveImage = async () => {
+    setSaving('busy');
+    try {
+      const ok = await downloadHeatTable({
+        title: 'Option history · method × timeframe',
+        lines: [...caption, `Squares: ${MEASURES.find((m) => m.id === measure)!.name} · the small number is the trades · green makes money, red loses`],
+        columns: [...tfs.map(tfName), 'All'],
+        rows: rows.map((r, i) => ({ rank: String(i + 1), label: r.name, cells: [...tfs.map((k) => cellOf(at.get(`${r.key}|${k}`))), cellOf(r)] })),
+        footer: { label: 'Every method', cells: [...columns.map((c) => cellOf(c)), { main: '', value: 0, shade: 0 }] },
+      }, `option-history-method-timeframe-${measure}-${new Date().toISOString().slice(0, 10)}`);
+      setSaving(ok ? 'idle' : 'failed');
+    } catch {
+      setSaving('failed');
+    }
+  };
   const chosen = picked ? at.get(picked) ?? rows.find((r) => `${r.key}|total` === picked) ?? columns.find((c) => `total|${c.key}` === picked) : undefined;
   return (
     <div className="grid min-w-0 gap-2">
@@ -489,6 +523,14 @@ export function MethodGrid({ rows, cells, columns }: { rows: readonly ReplayGrou
           </button>
         ))}
         <span className="text-[11.5px]">· the small number is the trades</span>
+        <button
+          type="button" onClick={() => void saveImage()} disabled={saving === 'busy' || rows.length === 0}
+          title="Every row of the grid, as the squares show now, saved as a PNG"
+          className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-solid border-border bg-transparent px-2.5 font-[inherit] text-[12.5px] text-foreground disabled:opacity-50"
+        >
+          <Download className="h-3.5 w-3.5" aria-hidden="true" />{saving === 'busy' ? 'Saving…' : 'Download image'}
+        </button>
+        {saving === 'failed' && <span role="alert" className="text-[11.5px] text-[var(--down)]">The picture could not be made in this browser.</span>}
       </div>
       {chosen && (
         <p role="status" className="m-0 rounded-md border border-solid border-[var(--accent)] px-3 py-2 text-[12.5px] leading-snug">
