@@ -198,6 +198,35 @@ describe('Option history', () => {
     expect(within(lines[2]!).getAllByRole('button')[0]).toHaveTextContent('+1 / −4');
   });
 
+  it('[critical] the grid sorts on a heading -- most first, least first, back -- and hides and shows a timeframe', async () => {
+    render(<OptionHistory />);
+    await screen.findByText('With these rules');
+    const grid = () => screen.getByRole('table', { name: 'Method by timeframe' });
+    const names = () => within(grid()).getAllByRole('row').slice(1, -1).map((r) => within(r).getAllByRole('cell')[1]!.textContent);
+    expect(names()).toEqual(['#39 NR7', '#9 Pullback']);
+    // 1h: Pullback +₹1.70 there, NR7 has no square -- always last.
+    fireEvent.click(within(grid()).getByRole('button', { name: /^1h/ }));
+    expect(names()).toEqual(['#9 Pullback', '#39 NR7']);
+    expect(within(grid()).getAllByRole('columnheader')[3]).toHaveAttribute('aria-sort', 'descending');
+    fireEvent.click(within(grid()).getByRole('button', { name: /^1h/ }));
+    expect(within(grid()).getAllByRole('columnheader')[3]).toHaveAttribute('aria-sort', 'ascending');
+    expect(names()).toEqual(['#9 Pullback', '#39 NR7']);
+    fireEvent.click(within(grid()).getByRole('button', { name: /^1h/ }));
+    expect(within(grid()).getAllByRole('columnheader')[3]).toHaveAttribute('aria-sort', 'none');
+    // 5m, least first: Pullback −₹6.80 above NR7 +₹4.25.
+    fireEvent.click(within(grid()).getByRole('button', { name: /^5m/ }));
+    fireEvent.click(within(grid()).getByRole('button', { name: /^5m/ }));
+    expect(names()).toEqual(['#9 Pullback', '#39 NR7']);
+    // Hide 1h and All: their headings go; Reset view brings them back and the order with them.
+    const cols = screen.getByRole('group', { name: 'Columns' });
+    fireEvent.click(within(cols).getByRole('button', { name: '1h' }));
+    fireEvent.click(within(cols).getByRole('button', { name: 'All' }));
+    expect(within(grid()).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['#', 'Method', '5m']);
+    fireEvent.click(within(cols).getByRole('button', { name: 'Reset view' }));
+    expect(within(grid()).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['#', 'Method', '5m', '1h', 'All']);
+    expect(names()).toEqual(['#39 NR7', '#9 Pullback']);
+  });
+
   it('timeframes narrow it', async () => {
     render(<OptionHistory />);
     await screen.findByText('With these rules');
