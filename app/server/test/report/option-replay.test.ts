@@ -179,8 +179,9 @@ test('a real trade replayed: as live it is held, with the perp SL it is out at t
   // By the hour entered (9:30 AM IST: the 9 AM hour) and by method in it; the one day, made money on (out at 27.4 of 40).
   assert.deepEqual(withSl.hours.map((g) => [g.key, g.name, g.trades, g.daysUp, g.daysDown]), [['09', '9 AM', 2, 1, 0]]);
   assert.deepEqual(withSl.slots.map((g) => [g.key, g.name, g.trades, g.daysUp]), [['pullback|09', '#9 Pullback · 9 AM', 2, 1]]);
-  // An option SL of 1%: out at the first quote over 40.4 -- a loss -- so the day is one lost on.
-  assert.deepEqual((await ask({ stopPct: 0.01, targetPct: 0 })).hours.map((g) => [g.daysUp, g.daysDown]), [[0, 1]]);
+  assert.deepEqual(withSl.grid.map((g) => [g.key, g.name, g.trades]), [['pullback|5m', '#9 Pullback', 2]]);
+  // The day before, with no trade, is no hour's day at all.
+  assert.equal(withSl.hours.reduce((n, g) => n + g.daysUp + g.daysDown, 0), 1);
   // Out at 27.4 against the real 4: both trades the worse for it.
   assert.deepEqual([withSl.better, withSl.worse, withSl.methods[0]!.worse], [0, 2, 2]);
 

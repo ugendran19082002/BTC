@@ -9,7 +9,7 @@ import { useTimeWindow } from '@/components/report/TimeWindow';
 import { getOptionReplay, optionReplayCsvUrl, type OptionReplayQuery } from '@/api/option-replay';
 import { usePoll } from '@/hooks/usePoll';
 import { useSynced } from '@/hooks/useSynced';
-import { contractLabel, inr, signedInr, usdToInr } from '@/lib/format';
+import { compactInr, contractLabel, inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { ActualExit, OptionReplay, OptionReplayRow, ReplayExit, ReplayGroup, ReplayRules, ReplayShow, ReplaySide, ReplaySource } from '@/types/option-replay';
 
@@ -103,9 +103,10 @@ export function rankGroups(groups: readonly ReplayGroup[], by: GroupSort): Repla
   return [...groups].sort((a, b) => ((a.trades === 0) !== (b.trades === 0) ? (a.trades === 0 ? 1 : -1) : val(b) - val(a)));
 }
 
-type GroupTab = 'days' | 'hours' | 'slots' | 'timeframes' | 'methods' | 'accounts';
+type GroupTab = 'grid' | 'days' | 'hours' | 'slots' | 'timeframes' | 'methods' | 'accounts';
 /** Each list, and the line under its tabs saying what it is for. */
 const GROUP_TABS: readonly { id: GroupTab; name: string; what: string }[] = [
+  { id: 'grid', name: 'Method × timeframe', what: 'Every method on every timeframe: green makes money with these rules, red loses. Methods ranked; tap a square for its figures.' },
   { id: 'days', name: 'Days', what: 'Each expiry day. Tap one to see its trades.' },
   { id: 'hours', name: 'Hours', what: 'By the hour the trade was entered (IST), over every day chosen.' },
   { id: 'slots', name: 'Method × hour', what: 'Each method in each hour, over every day chosen: which lose again and again, which keep making money. Loss days and profit days count how often.' },
@@ -113,14 +114,15 @@ const GROUP_TABS: readonly { id: GroupTab; name: string; what: string }[] = [
   { id: 'timeframes', name: 'Timeframes', what: 'Each timeframe, the chain as Chain.' },
   { id: 'accounts', name: 'Accounts', what: 'Each broker account.' },
 ];
-const GROUP_HEAD: Record<GroupTab, string> = { days: 'Expiry day', hours: 'Hour', slots: 'Method · hour', methods: 'Method', timeframes: 'Timeframe', accounts: 'Account' };
+const GROUP_HEAD: Record<GroupTab, string> = { grid: 'Method', days: 'Expiry day', hours: 'Hour', slots: 'Method · hour', methods: 'Method', timeframes: 'Timeframe', accounts: 'Account' };
 
 export function OptionHistory() {
   // Null: the last seven expiry days, rolling -- so the card never opens on a stale week.
   const [range, setRange] = useSynced<DateRangeValue | null>('optionHistory.range', null);
   const [tfs, setTfs] = useSynced<string[]>('optionHistory.tfs', []);
   const [rules, setRules] = useSynced<ReplayRules>('optionHistory.rules', LIVE_RULES);
-  const [tab, setTab] = useSynced<GroupTab>('optionHistory.tab', 'days');
+  // The method × timeframe grid first: what the card is for (owner, 3 Nov 2026).
+  const [tab, setTab] = useSynced<GroupTab>('optionHistory.tab', 'grid');
   const [show, setShow] = useSynced<Show>('optionHistory.show', 'all');
   const [sortBy, setSortBy] = useSynced<GroupSort>('optionHistory.sort', 'net');
   /*
@@ -277,7 +279,7 @@ export function OptionHistory() {
         {data && (
           <Results
             data={data} sortBy={sortBy ?? 'net'} onSort={setSortBy} csvUrl={optionReplayCsvUrl(asked)}
-            tab={tab === 'accounts' && data.source === 'signals' ? 'days' : tab ?? 'days'} onTab={setTab} show={show ?? 'all'} onShow={(v) => { setShow(v); setOffset(0); }}
+            tab={(tab === 'accounts' && data.source === 'signals') || !GROUP_TABS.some((t) => t.id === tab) ? 'grid' : tab!} onTab={setTab} show={show ?? 'all'} onShow={(v) => { setShow(v); setOffset(0); }}
             day={day} onDay={(d) => { setDay(d); setOffset(0); }} onPage={setOffset} stale={loading}
           />
         )}
@@ -296,7 +298,8 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
   const sort = sortBy === 'date' && tab !== 'days' ? 'net' : sortBy;
   const [find, setFind] = useState('');
   const needle = find.trim().toLowerCase();
-  const groups = rankGroups(data[tab] ?? [], sort).filter((g) => needle === '' || g.name.toLowerCase().includes(needle));
+  // The grid's rows are the methods, ranked as the methods' list is.
+  const groups = rankGroups((tab === 'grid' ? data.methods : data[tab]) ?? [], sort).filter((g) => needle === '' || g.name.toLowerCase().includes(needle));
   // The server filters and pages the list (`list`): every trade is one page away, however many there are.
   const rows = data.rows;
   const { offset, limit } = data.list;
@@ -400,7 +403,9 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
           />
         )}
         </div>
-        <GroupTable groups={groups} tab={tab} day={day} onDay={onDay} ranked={sort !== 'date'} />
+        {tab === 'grid'
+          ? <MethodGrid rows={groups} cells={data.grid ?? []} columns={data.timeframes} />
+          : <GroupTable groups={groups} tab={tab} day={day} onDay={onDay} ranked={sort !== 'date'} />}
       </div>
 
       {/* The trades themselves only for a day tapped (owner, 3 Nov 2026: "not every date at once -- the date clicked"). */}
@@ -429,6 +434,102 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
           Tap a day in the Days list to see its trades.
         </p>
       )}
+    </div>
+  );
+}
+
+/** What a square of the grid shows. */
+type Measure = 'net' | 'win' | 'days';
+const MEASURES: readonly { id: Measure; name: string }[] = [{ id: 'net', name: 'Net ₹' }, { id: 'win', name: 'Win %' }, { id: 'days', name: 'Profit / loss days' }];
+
+/**
+ * Every method on every timeframe (owner, 3 Nov 2026: "an option on every signal -- on which timeframe which methods
+ * lose, which make money; user friendly"). A row a method, ranked as asked, its total last; a column a timeframe, its
+ * total underneath. Each square green as far as it makes money under the rules and red as far as it loses, the
+ * strongest the darkest; it says the net, the win % or its profit and loss days, and a tap gives all its figures.
+ */
+export function MethodGrid({ rows, cells, columns }: { rows: readonly ReplayGroup[]; cells: readonly ReplayGroup[]; columns: readonly ReplayGroup[] }) {
+  const [measure, setMeasure] = useSynced<Measure>('optionHistory.measure', 'net');
+  const [picked, setPicked] = useState<string | null>(null);
+  const at = useMemo(() => new Map(cells.map((c) => [c.key, c])), [cells]);
+  const tfs = columns.map((c) => c.key);
+  const most = Math.max(1e-9, ...cells.map((c) => Math.abs(c.replay.netUsd)));
+  const shade = (usd: number) => {
+    const p = Math.round(12 + 48 * Math.min(1, Math.abs(usd) / most));
+    return usd > 0 ? `color-mix(in srgb, var(--up) ${p}%, transparent)` : usd < 0 ? `color-mix(in srgb, var(--down) ${p}%, transparent)` : undefined;
+  };
+  const say = (g: ReplayGroup) => (measure === 'net' ? compactInr(usdToInr(g.replay.netUsd)) : measure === 'win' ? winText(g.replay) : `+${g.daysUp} / −${g.daysDown}`);
+  const tfName = (k: string) => (k === 'chain' ? 'Chain' : k);
+  const square = (g: ReplayGroup | undefined, key: string, total = false) => (
+    <td key={key} className={cn('border border-solid border-[var(--line-soft)] p-0 text-center', total && 'font-semibold')}>
+      {g ? (
+        <button
+          type="button" onClick={() => setPicked(picked === key ? null : key)} aria-pressed={picked === key}
+          title={`${g.trades} trades · won ${g.replay.wins}, lost ${g.replay.losses} · ${rupees(g.replay.netUsd)} · profit days ${g.daysUp}, loss days ${g.daysDown}`}
+          style={{ background: shade(g.replay.netUsd) }}
+          className={cn('block h-full min-h-[40px] w-full min-w-[64px] border-0 px-1.5 py-1 font-[inherit] text-[12px] tabular-nums text-foreground', picked === key && 'outline outline-2 outline-[var(--accent)]')}
+        >
+          <span className="block leading-tight">{say(g)}</span>
+          <span className="block text-[10.5px] leading-tight text-muted-foreground">{g.trades.toLocaleString('en-US')}</span>
+        </button>
+      ) : <span className="text-[var(--dim)]">·</span>}
+    </td>
+  );
+  const chosen = picked ? at.get(picked) ?? rows.find((r) => `${r.key}|total` === picked) ?? columns.find((c) => `total|${c.key}` === picked) : undefined;
+  return (
+    <div className="grid min-w-0 gap-2">
+      <div role="group" aria-label="Squares show" className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted-foreground">
+        Squares show
+        {MEASURES.map((m) => (
+          <button
+            key={m.id} type="button" aria-pressed={measure === m.id} onClick={() => setMeasure(m.id)}
+            className={cn('h-8 rounded-md border border-solid px-2.5 font-[inherit] text-[12.5px]', measure === m.id ? 'border-[var(--accent)] font-semibold text-foreground' : 'border-border bg-transparent text-muted-foreground')}
+          >
+            {m.name}
+          </button>
+        ))}
+        <span className="text-[11.5px]">· the small number is the trades</span>
+      </div>
+      {chosen && (
+        <p role="status" className="m-0 rounded-md border border-solid border-[var(--accent)] px-3 py-2 text-[12.5px] leading-snug">
+          <span className="font-semibold">{picked!.endsWith('|total') ? `${chosen.name} · every timeframe` : picked!.startsWith('total|') ? `${tfName(chosen.key)} · every method` : `${chosen.name} · ${tfName(picked!.split('|')[1]!)}`}</span>
+          {' — '}{chosen.trades.toLocaleString('en-US')} trades · won <span className="text-[var(--up)]">{chosen.replay.wins}</span>, lost <span className="text-[var(--down)]">{chosen.replay.losses}</span> ({winText(chosen.replay)})
+          {' · '}<span className={toneOf(chosen.replay.netUsd)}>{rupees(chosen.replay.netUsd)}</span> with these rules
+          {chosen.traded > 0 && <> against <span className={toneOf(chosen.actual.netUsd)}>{rupees(chosen.actual.netUsd)}</span> on the {chosen.traded.toLocaleString('en-US')} the desk traded</>}
+          {' · '}profit days <span className="text-[var(--up)]">{chosen.daysUp}</span>, loss days <span className="text-[var(--down)]">{chosen.daysDown}</span>
+        </p>
+      )}
+      <div className="max-h-[70vh] overflow-auto rounded-md border border-solid border-border">
+        <table aria-label="Method by timeframe" className="w-max min-w-full border-collapse text-[12.5px]">
+          <thead className="sticky top-0 z-[1] bg-[var(--panel)]">
+            <tr>
+              <th className="sticky left-0 z-[2] bg-[var(--panel)] px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground">#</th>
+              <th className="sticky left-[28px] z-[2] bg-[var(--panel)] px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground">Method</th>
+              {tfs.map((k) => <th key={k} className="px-2 py-1.5 text-center text-[11px] font-medium text-muted-foreground">{tfName(k)}</th>)}
+              <th className="px-2 py-1.5 text-center text-[11px] font-medium text-muted-foreground">All</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.key}>
+                <td className="sticky left-0 bg-[var(--panel)] px-2 py-1 text-right tabular-nums text-muted-foreground">{i + 1}</td>
+                <td className="sticky left-[28px] max-w-[14rem] truncate bg-[var(--panel)] px-2 py-1 text-left" title={r.name}>{r.name}</td>
+                {tfs.map((k) => square(at.get(`${r.key}|${k}`), `${r.key}|${k}`))}
+                {square(r, `${r.key}|total`, true)}
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={tfs.length + 3} className="px-2 py-3 text-center text-muted-foreground">No trades here.</td></tr>}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td className="sticky left-0 bg-[var(--panel)]" />
+              <td className="sticky left-[28px] bg-[var(--panel)] px-2 py-1 text-left font-semibold">Every method</td>
+              {columns.map((c) => square(c, `total|${c.key}`, true))}
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }

@@ -37,6 +37,8 @@ export type OptionReplay = {
   days: ReplayGroup[]; timeframes: ReplayGroup[]; methods: ReplayGroup[]; accounts: ReplayGroup[];
   /** By the IST hour entered, and by method in each hour. */
   hours: ReplayGroup[]; slots: ReplayGroup[];
+  /** By method on each timeframe, key `method|tf`. */
+  grid: ReplayGroup[];
   /** One page of the trades, newest first, and how many the list's filter holds in all. */
   rows: OptionReplayRow[]; rowsTotal: number; list: ReplayList;
 };

@@ -128,6 +128,11 @@ export type OptionReplay = {
    * again, which make money -- grouped by count, over all the days chosen").
    */
   hours: ReplayGroup[]; slots: ReplayGroup[];
+  /**
+   * By method on each timeframe, key `method|tf` (owner, 3 Nov 2026: "an option sold on every signal -- on which
+   * timeframe which methods lose and which make money"). Best first.
+   */
+  grid: ReplayGroup[];
   /** One page of the trades, newest first (`list`), and how many the list's filter holds in all. */
   rows: OptionReplayRow[]; rowsTotal: number; list: ReplayList;
 };
@@ -513,7 +518,7 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
   const exits: Record<ReplayExit, number> = { 'option-sl': 0, 'option-tgt': 0, 'perp-sl': 0, 'perp-tgt': 0, close: 0 };
   const groups = {
     day: new Map<string, ReplayGroup>(), tf: new Map<string, ReplayGroup>(), method: new Map<string, ReplayGroup>(), account: new Map<string, ReplayGroup>(),
-    hour: new Map<string, ReplayGroup>(), slot: new Map<string, ReplayGroup>(),
+    hour: new Map<string, ReplayGroup>(), slot: new Map<string, ReplayGroup>(), grid: new Map<string, ReplayGroup>(),
   };
   /** Each group's net under the rules by expiry day, for `daysUp` / `daysDown`. */
   const dayNets = new Map<ReplayGroup, Map<string, number>>();
@@ -590,6 +595,7 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
       const hour = hourKeyOf(t.enteredAt);
       into(groups.hour, hour, hourName(hour));
       into(groups.slot, `${t.method}|${hour}`, `${methodName} · ${hourName(hour)}`);
+      into(groups.grid, `${t.method}|${t.tf}`, methodName);
       out.push({
         tradeId: t.tradeId, day: t.day, account: t.account, strategyId: t.strategyId, strategyName: t.strategyName,
         method: t.method, methodName, tf: t.tf, side: t.side, symbol: t.symbol, enteredAt: t.enteredAt, entry: t.entry, contracts: size,
@@ -623,6 +629,7 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
     // The hours in the expiry day's order, from 5 PM; method by hour most loss days first.
     hours: [...groups.hour.values()].sort((a, b) => hourRank(a.key) - hourRank(b.key)),
     slots: [...groups.slot.values()].sort((a, b) => b.daysDown - a.daysDown || a.replay.netUsd - b.replay.netUsd),
+    grid: [...groups.grid.values()].sort(byNet),
     all: out,
   };
 }
