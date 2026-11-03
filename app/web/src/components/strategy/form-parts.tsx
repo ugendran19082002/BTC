@@ -3,7 +3,7 @@ import { ChevronDown, Loader2 } from 'lucide-react';
 import { SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import {
-  DAY_NAMES, DEFAULT_DELTA, DEFAULT_DISTANCE, DEFAULT_FIXED_DISTANCE_PCT, DEFAULT_MIN_OTM, DELTA_PRESETS, MAX_NO_ENTRY_WINDOWS, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL,
+  DAY_NAMES, DEFAULT_CONFIG, DEFAULT_DELTA, DEFAULT_DISTANCE, DEFAULT_FIXED_DISTANCE_PCT, DEFAULT_MIN_OTM, DELTA_PRESETS, MAX_NO_ENTRY_WINDOWS, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL,
   distanceNeeded, strikeLabel, type DeltaRule, type DistanceRule, type NoEntry, type NoEntryWindow, type StrategyConfig,
 } from '@/types/strategy';
 import { nextWindow, noEntryWords, pickerBounds, suggestedWindow } from '@/lib/strategy-no-entry';
@@ -703,8 +703,13 @@ export function EntryPriceFields({ c, set, err, allowSet = true }: {
                  onChange={(e) => set('entryLimit', num(e.target.value, 0))} />
         </Stack>
       )}
-      {c.entryPrice === 'offer' && (
-        <div className="mt-3 grid grid-cols-2 gap-2">
+      {/*
+        Max spread in every entry mode (owner, 3 Nov 2026: "spread strategy-la vachu irukala, anka irunthu call paniko,
+        hardcode pana vena"): the order's own check reads it -- an order sold into the bid is not sent past it -- as
+        well as the walk from the offer, which waits at the mid while the spread is wider.
+      */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {c.entryPrice === 'offer' && (
           <Stack label="Bid after" error={err('crossAfterSec')}
                  hint={c.crossAfterSec > 0 ? 'then sells at the bid' : '0 waits until filled'}>
             <Affix after="sec">
@@ -712,17 +717,16 @@ export function EntryPriceFields({ c, set, err, allowSet = true }: {
                      onChange={(e) => set('crossAfterSec', Math.floor(num(e.target.value, 0)))} />
             </Affix>
           </Stack>
-          {c.crossAfterSec > 0 && (
-            <Stack label="Max spread" error={err('maxCrossSpreadPct')} hint="wider than this waits at the mid">
-              <Affix after="%">
-                <Input value={String(Math.round((c.maxCrossSpreadPct ?? 0.15) * 100))} aria-label="max spread to sell at bid pct"
-                       inputMode="numeric" className="pr-7"
-                       onChange={(e) => set('maxCrossSpreadPct', Math.min(100, Math.max(1, num(e.target.value, 15))) / 100)} />
-              </Affix>
-            </Stack>
-          )}
-        </div>
-      )}
+        )}
+        <Stack label="Max spread" error={err('maxCrossSpreadPct')}
+               hint={c.entryPrice === 'offer' && c.crossAfterSec > 0 ? 'wider waits at the mid; never sold into a wider one' : 'never sold into a wider spread'}>
+          <Affix after="%">
+            <Input value={String(Math.round((c.maxCrossSpreadPct ?? DEFAULT_CONFIG.maxCrossSpreadPct) * 100))} aria-label="max spread to sell at bid pct"
+                   inputMode="numeric" className="pr-7"
+                   onChange={(e) => set('maxCrossSpreadPct', Math.min(100, Math.max(1, num(e.target.value, DEFAULT_CONFIG.maxCrossSpreadPct * 100))) / 100)} />
+          </Affix>
+        </Stack>
+      </div>
     </>
   );
 }

@@ -285,6 +285,8 @@ export type PlaceInput = {
   maxCrossSpreadPct?: number | null;
   /** A strategy's own premium floor, in place of the desk's. Never set from the ticket. */
   minPremiumUsd?: number;
+  /** A strategy's own widest spread to sell into, in place of the desk's (3 Nov 2026). Never set from the ticket. */
+  maxSpreadPct?: number;
   /** Exits on the BTC perpetual, for a signal strategy's trade (engine.ts `TradePlan.underlying`). Never set from the ticket. */
   underlying?: TradePlan['underlying'];
   /** The signal a signal strategy traded (engine.ts `TradePlan.signal`). Never set from the ticket. */
@@ -354,6 +356,7 @@ export function orderPlan(input: PlaceInput, tradeId: string): TradePlan {
         : basis !== null ? stopFor(basis, input) : (input.stopAt ?? 0) > 0 ? round1(input.stopAt!) : null,
     exitAsk: followingAsk(input, basis),
     ...(input.minPremiumUsd !== undefined ? { minPremiumUsd: input.minPremiumUsd } : {}),
+    ...(input.maxSpreadPct !== undefined ? { maxSpreadPct: input.maxSpreadPct } : {}),
     ...(input.underlying ? { underlying: input.underlying } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
     action: input.action === 'buy' ? 'buy' : 'sell',

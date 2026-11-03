@@ -235,6 +235,12 @@ export type TradePlan = {
    */
   minPremiumUsd?: number;
   /**
+   * The widest spread this trade may be sold into, when the strategy that placed it set its own Max spread
+   * (`StrategyConfig.maxCrossSpreadPct`, owner, 3 Nov 2026: "spread strategy-la vachu irukala, anka irunthu call
+   * paniko, hardcode pana vena"). Absent: the desk's (`DEFAULT_LIMITS.maxSpreadPct`). Only a strategy sets it.
+   */
+  maxSpreadPct?: number;
+  /**
    * Why the exits could not be anchored to the fill, when they could not.
    *
    * Set only where a fixed target or stop was overtaken by the entry itself.
@@ -1060,7 +1066,12 @@ export class TradeEngine {
       worstCaseLossUsd: worstCase,
       limits: add
         ? { ...this.limits, minPremiumUsd: add.minPremiumUsd }
-        : plan.minPremiumUsd !== undefined ? { ...this.limits, minPremiumUsd: plan.minPremiumUsd } : this.limits,
+        : {
+          ...this.limits,
+          // The strategy's own floor and spread, where it set them; the desk's otherwise.
+          ...(plan.minPremiumUsd !== undefined ? { minPremiumUsd: plan.minPremiumUsd } : {}),
+          ...(plan.maxSpreadPct !== undefined ? { maxSpreadPct: plan.maxSpreadPct } : {}),
+        },
     });
     /*
      * The account holds a bought position on this contract (it can, since 5 Oct 2026): Delta nets a contract's

@@ -885,6 +885,33 @@ test('[critical] a 300% stop on a rich strike is held inside the close-out inste
   await api('POST', '/api/strategies/sig-held/enabled', { enabled: false });
 });
 
+test('[critical] the order is checked against the strategy\'s own Max spread, not the desk\'s 15% (3 Nov 2026)', async () => {
+  await freshAccount();
+  const WIDE = 83_400;
+  const symbol = `P-BTC-${WIDE}-${EXPIRY}`;
+  paper().addProduct({ symbol, productId: 7030, underlying: 'BTC', optionSide: 'PE', strike: WIDE, expiryTs: EXPIRY_TS, tickSize: 0.1, lotSize: 1, contractValue: 0.001, state: 'live' });
+  // 18.2% wide: over the desk's 15%, under the strategy's 30%.
+  paper().setQuote({ symbol, bid: 10, ask: 12, bidSize: 5_000, askSize: 5_000, mark: 11, ts: Date.now() });
+  const wide: SignalBoard = { ...board, candidates: [{ cp: 'P', strike: WIDE, sellPrice: 10, pOtm: 0.9, moneyness: 'OTM', ask: 12, delta: -0.05 }] };
+  // Sold now, at the bid: an order that crosses the spread, so its spread is checked.
+  const cfg = { ...config, signal: { ...config.signal, maxOpen: 10 }, entryPrice: 'now', maxCrossSpreadPct: 0.3 };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig spread', config: cfg })).status, 200);
+  await api('POST', '/api/strategies/sig-spread/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  const r = new StrategyRunner(strategyStore(), () => clock, async () => wide);
+  const last = async () => (await runsOf('sig-spread')).at(-1)!;
+  clock = TEN;
+  await r.onSignal(signal());
+  assert.equal((await last()).status, 'would-place', (await last()).detail);
+
+  const s = (await strategyStore().get('sig-spread'))!;
+  assert.equal((await api('POST', '/api/strategies', { id: s.id, name: s.name, config: { ...s.config, maxCrossSpreadPct: 0.1 } })).status, 200);
+  await r.onSignal(signal());
+  assert.equal((await last()).status, 'refused');
+  assert.match((await last()).detail, /Spread is 18\.2%, limit is 10% for an order that crosses it\./);
+  await api('POST', '/api/strategies/sig-spread/enabled', { enabled: false });
+});
+
 // ------------------------------------------------------------ the SL-distance filter
 
 test('[critical] SL distance per timeframe: a signal whose SL is nearer than its timeframe\'s points is skipped, and the history says why', async () => {
