@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, RefreshCw } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, RefreshCw } from 'lucide-react';
 import { CollapsibleCard } from '@/components/ui/collapsible-card';
 import { DateRangePicker, describeRange, type DateRangeValue } from '@/components/ui/date-range-picker';
 import { Money } from '@/components/ui/money';
@@ -452,6 +452,25 @@ const gridCaption = (d: OptionReplay): string[] => [
 /** What a square of the grid shows. */
 type Measure = 'net' | 'win' | 'days';
 const MEASURES: readonly { id: Measure; name: string }[] = [{ id: 'net', name: 'Net ₹' }, { id: 'win', name: 'Win %' }, { id: 'days', name: 'Profit / loss days' }];
+/** A column the grid is sorted on -- a timeframe, `all`, or `name` -- and which way: `desc` the most first. Null: the Rank by order. */
+export type GridSort = { col: string; dir: 'desc' | 'asc' } | null;
+/** What a square is sorted by: the measure it shows -- net, win share, or profit days less loss days. */
+export const sortValue = (g: ReplayGroup, m: Measure): number =>
+  (m === 'net' ? g.replay.netUsd : m === 'win' ? (g.trades ? g.replay.wins / g.trades : 0) : g.daysUp - g.daysDown);
+/**
+ * The rows in a column's order (owner, 3 Nov 2026: "header sort, high profit, high low"): by the square of that column as
+ * the squares show it, a row with no square there always last; by the method's name, A to Z or back. Null: as given.
+ */
+export function sortGridRows(rows: readonly ReplayGroup[], cellOf: (row: ReplayGroup, col: string) => ReplayGroup | undefined, sort: GridSort, m: Measure): ReplayGroup[] {
+  if (!sort) return [...rows];
+  const sign = sort.dir === 'desc' ? -1 : 1;
+  if (sort.col === 'name') return [...rows].sort((a, b) => sign * -a.name.localeCompare(b.name, 'en', { numeric: true }));
+  return [...rows].sort((a, b) => {
+    const x = cellOf(a, sort.col), y = cellOf(b, sort.col);
+    if (!x || !y) return x ? -1 : y ? 1 : 0;
+    return sign * (sortValue(x, m) - sortValue(y, m));
+  });
+}
 
 /**
  * Every method on every timeframe (owner, 3 Nov 2026: "an option on every signal -- on which timeframe which methods
@@ -467,8 +486,22 @@ export function MethodGrid({ rows, cells, columns, caption = [] }: {
   const [measure, setMeasure] = useSynced<Measure>('optionHistory.measure', 'net');
   const [saving, setSaving] = useState<'idle' | 'busy' | 'failed'>('idle');
   const [picked, setPicked] = useState<string | null>(null);
+  // Sorted by a header, and the timeframes on view: the view's own, remembered; nothing asked of the server again.
+  const [sortStored, setSort] = useSynced<GridSort>('optionHistory.gridSort', null);
+  const [hiddenStored, setHidden] = useSynced<string[]>('optionHistory.gridHidden', []);
+  const hidden = Array.isArray(hiddenStored) ? hiddenStored : [];
   const at = useMemo(() => new Map(cells.map((c) => [c.key, c])), [cells]);
-  const tfs = columns.map((c) => c.key);
+  const allTfs = columns.map((c) => c.key);
+  const tfs = allTfs.filter((k) => !hidden.includes(k));
+  const showAll = !hidden.includes('all');
+  const shownColumns = columns.filter((c) => !hidden.includes(c.key));
+  const cellAt = (r: ReplayGroup, col: string) => (col === 'all' ? r : at.get(`${r.key}|${col}`));
+  // A sort on a column now hidden, or one an older build kept, reads as none.
+  const sort: GridSort = sortStored && (sortStored.col === 'name' || (sortStored.col === 'all' ? showAll : tfs.includes(sortStored.col))) ? sortStored : null;
+  const ordered = sortGridRows(rows, cellAt, sort, measure ?? 'net');
+  // A header's tap: the most first, then the least first, then back to the Rank by order.
+  const onHead = (col: string) => setSort(sort?.col !== col ? { col, dir: col === 'name' ? 'asc' : 'desc' } : sort.dir === (col === 'name' ? 'asc' : 'desc') ? { col, dir: col === 'name' ? 'desc' : 'asc' } : null);
+  const toggleCol = (k: string) => setHidden(hidden.includes(k) ? hidden.filter((x) => x !== k) : [...hidden, k]);
   const most = Math.max(1e-9, ...cells.map((c) => Math.abs(c.replay.netUsd)));
   const shade = (usd: number) => {
     const p = Math.round(12 + 48 * Math.min(1, Math.abs(usd) / most));
@@ -501,14 +534,28 @@ export function MethodGrid({ rows, cells, columns, caption = [] }: {
       const ok = await downloadHeatTable({
         title: 'Option history · method × timeframe',
         lines: [...caption, `Squares: ${MEASURES.find((m) => m.id === measure)!.name} · the small number is the trades · green makes money, red loses`],
-        columns: [...tfs.map(tfName), 'All'],
-        rows: rows.map((r, i) => ({ rank: String(i + 1), label: r.name, cells: [...tfs.map((k) => cellOf(at.get(`${r.key}|${k}`))), cellOf(r)] })),
-        footer: { label: 'Every method', cells: [...columns.map((c) => cellOf(c)), { main: '', value: 0, shade: 0 }] },
+        columns: [...tfs.map(tfName), ...(showAll ? ['All'] : [])],
+        rows: ordered.map((r, i) => ({ rank: String(i + 1), label: r.name, cells: [...tfs.map((k) => cellOf(at.get(`${r.key}|${k}`))), ...(showAll ? [cellOf(r)] : [])] })),
+        footer: { label: 'Every method', cells: [...shownColumns.map((c) => cellOf(c)), ...(showAll ? [{ main: '', value: 0, shade: 0 }] : [])] },
       }, `option-history-method-timeframe-${measure}-${new Date().toISOString().slice(0, 10)}`);
       setSaving(ok ? 'idle' : 'failed');
     } catch {
       setSaving('failed');
     }
+  };
+  const head = (col: string, label: string, extra = 'text-center') => {
+    const on = sort?.col === col;
+    const Icon = !on ? ArrowUpDown : sort!.dir === 'desc' ? ArrowDown : ArrowUp;
+    return (
+      <th key={col} aria-sort={on ? (sort!.dir === 'desc' ? 'descending' : 'ascending') : 'none'} className={cn('p-0 text-[11px] font-medium', extra)}>
+        <button
+          type="button" onClick={() => onHead(col)} title={`Sort by ${label}`}
+          className={cn('inline-flex w-full items-center gap-1 border-0 bg-transparent px-2 py-1.5 font-[inherit] text-[11px] uppercase', extra.includes('text-left') ? 'justify-start' : 'justify-center', on ? 'font-semibold text-foreground' : 'text-muted-foreground')}
+        >
+          {label}<Icon className={cn('h-3 w-3', !on && 'opacity-40')} aria-hidden="true" />
+        </button>
+      </th>
+    );
   };
   const chosen = picked ? at.get(picked) ?? rows.find((r) => `${r.key}|total` === picked) ?? columns.find((c) => `total|${c.key}` === picked) : undefined;
   return (
@@ -533,6 +580,29 @@ export function MethodGrid({ rows, cells, columns, caption = [] }: {
         </button>
         {saving === 'failed' && <span role="alert" className="text-[11.5px] text-[var(--down)]">The picture could not be made in this browser.</span>}
       </div>
+      <div role="group" aria-label="Columns" className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted-foreground">
+        Columns
+        {[...allTfs, 'all'].map((k) => {
+          const on = k === 'all' ? showAll : tfs.includes(k);
+          return (
+            <button
+              key={k} type="button" aria-pressed={on} onClick={() => toggleCol(k)} title={on ? `Hide ${k === 'all' ? 'All' : tfName(k)}` : `Show ${k === 'all' ? 'All' : tfName(k)}`}
+              className={cn('h-8 min-w-[40px] rounded-md border border-solid px-2 font-[inherit] text-[12.5px]', on ? 'border-[var(--accent)] font-semibold text-foreground' : 'border-border bg-transparent text-muted-foreground line-through')}
+            >
+              {k === 'all' ? 'All' : tfName(k)}
+            </button>
+          );
+        })}
+        {(hidden.length > 0 || sort) && (
+          <button
+            type="button" onClick={() => { setHidden([]); setSort(null); }}
+            className="min-h-[32px] border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]"
+          >
+            Reset view
+          </button>
+        )}
+        <span className="text-[11.5px]">· tap a heading to sort: most first, then least, then back</span>
+      </div>
       {chosen && (
         <p role="status" className="m-0 rounded-md border border-solid border-[var(--accent)] px-3 py-2 text-[12.5px] leading-snug">
           <span className="font-semibold">{picked!.endsWith('|total') ? `${chosen.name} · every timeframe` : picked!.startsWith('total|') ? `${tfName(chosen.key)} · every method` : `${chosen.name} · ${tfName(picked!.split('|')[1]!)}`}</span>
@@ -547,28 +617,28 @@ export function MethodGrid({ rows, cells, columns, caption = [] }: {
           <thead className="sticky top-0 z-[1] bg-[var(--panel)]">
             <tr>
               <th className="sticky left-0 z-[2] bg-[var(--panel)] px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground">#</th>
-              <th className="sticky left-[28px] z-[2] bg-[var(--panel)] px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground">Method</th>
-              {tfs.map((k) => <th key={k} className="px-2 py-1.5 text-center text-[11px] font-medium text-muted-foreground">{tfName(k)}</th>)}
-              <th className="px-2 py-1.5 text-center text-[11px] font-medium text-muted-foreground">All</th>
+              {head('name', 'Method', 'sticky left-[28px] z-[2] bg-[var(--panel)] text-left')}
+              {tfs.map((k) => head(k, tfName(k)))}
+              {showAll && head('all', 'All')}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
+            {ordered.map((r, i) => (
               <tr key={r.key}>
                 <td className="sticky left-0 bg-[var(--panel)] px-2 py-1 text-right tabular-nums text-muted-foreground">{i + 1}</td>
                 <td className="sticky left-[28px] max-w-[14rem] truncate bg-[var(--panel)] px-2 py-1 text-left" title={r.name}>{r.name}</td>
                 {tfs.map((k) => square(at.get(`${r.key}|${k}`), `${r.key}|${k}`))}
-                {square(r, `${r.key}|total`, true)}
+                {showAll && square(r, `${r.key}|total`, true)}
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={tfs.length + 3} className="px-2 py-3 text-center text-muted-foreground">No trades here.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={tfs.length + 2 + (showAll ? 1 : 0)} className="px-2 py-3 text-center text-muted-foreground">No trades here.</td></tr>}
           </tbody>
           <tfoot>
             <tr>
               <td className="sticky left-0 bg-[var(--panel)]" />
               <td className="sticky left-[28px] bg-[var(--panel)] px-2 py-1 text-left font-semibold">Every method</td>
-              {columns.map((c) => square(c, `total|${c.key}`, true))}
-              <td />
+              {shownColumns.map((c) => square(c, `total|${c.key}`, true))}
+              {showAll && <td />}
             </tr>
           </tfoot>
         </table>
