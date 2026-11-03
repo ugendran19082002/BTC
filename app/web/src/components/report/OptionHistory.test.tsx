@@ -30,8 +30,13 @@ const answer = (o: Partial<OptionReplay> = {}): OptionReplay => ({
   actual: side(0.03), replay: side(-0.02), traded: 1, better: 0, worse: 1, exits: { 'option-sl': 1, 'option-tgt': 0, 'perp-sl': 1, 'perp-tgt': 0, close: 0 },
   open: 0, noPrices: 2, noStrike: 4,
   days: [group('2026-11-03', 0, 0, 0, { open: 3, traded: 0, worse: 0 }), group('2026-10-20', 1, 0.04, 0.01), group('2026-10-19', 1, -0.01, -0.03)],
-  timeframes: [group('5m', 2, 0.03, -0.02)],
-  methods: [], accounts: [], hours: [group('13', 2, 0.03, -0.02, { name: '1 PM' })],
+  timeframes: [group('5m', 4, 0.03, -0.03), group('1h', 1, 0, 0.02)],
+  methods: [group('pullback', 3, 0, -0.06, { name: '#9 Pullback' }), group('nr7', 2, 0, 0.05, { name: '#39 NR7' })],
+  grid: [
+    group('pullback|5m', 2, 0, -0.08, { name: '#9 Pullback', daysUp: 1, daysDown: 4 }), group('pullback|1h', 1, 0, 0.02, { name: '#9 Pullback' }),
+    group('nr7|5m', 2, 0, 0.05, { name: '#39 NR7' }),
+  ],
+  accounts: [], hours: [group('13', 2, 0.03, -0.02, { name: '1 PM' })],
   slots: [
     group('pullback|13', 6, 0, -0.5, { name: '#7 Pullback · 1 PM', daysUp: 1, daysDown: 5 }),
     group('nr7|09', 4, 0, 0.4, { name: '#39 NR7 · 9 AM', daysUp: 4, daysDown: 0 }),
@@ -68,6 +73,7 @@ describe('Option history', () => {
     // As traded +₹2.55, with the rules −₹1.70: the change is −₹4.25.
     expect(screen.getByText('Change', { selector: 'span' }).parentElement).toHaveTextContent('−₹4.25');
     expect(screen.getByText(/Left out: 2 without recorded prices, 4 signals with no strike inside the rule/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Days' }));
     fireEvent.click(screen.getByRole('row', { name: /2026-10-20/ }));
     await waitFor(() => expect(lastAsk().list).toEqual({ day: '2026-10-20', show: 'all', offset: 0, limit: 200 }));
     const trades = within(screen.getByRole('table', { name: 'Trades' })).getAllByRole('row');
@@ -109,6 +115,7 @@ describe('Option history', () => {
   it('[critical] every day of the range has its line: one with no trade says so, and its open trades', async () => {
     render(<OptionHistory />);
     await screen.findByText('With these rules');
+    fireEvent.click(screen.getByRole('tab', { name: 'Days' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Rank by' }), { target: { value: 'date' } });
     expect(within(screen.getByRole('table', { name: 'By days' })).getByRole('row', { name: /2026-11-03/ })).toHaveTextContent('No trades · 3 still open');
   });
@@ -118,6 +125,7 @@ describe('Option history', () => {
     render(<OptionHistory />);
     await screen.findByText('With these rules');
     expect(screen.queryByText('1–200 of 450 trades')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Days' }));
     fireEvent.click(screen.getByRole('row', { name: /2026-10-20/ }));
     expect(await screen.findAllByText('1–200 of 450 trades')).toHaveLength(2);
     fireEvent.click(screen.getAllByRole('button', { name: 'Next' })[0]!);
@@ -147,6 +155,7 @@ describe('Option history', () => {
     expect(screen.getByRole('combobox', { name: 'Rank by' })).toHaveValue('worse');
     await waitFor(() => expect(lastAsk().list.show).toBe('worse'));
     // The day tapped: its own counts.
+    fireEvent.click(screen.getByRole('tab', { name: 'Days' }));
     fireEvent.click(screen.getByRole('row', { name: /2026-10-20/ }));
     await waitFor(() => expect(badges).toHaveTextContent('on 2026-10-20'));
     expect(within(badges).getByRole('button', { name: /^All/ })).toHaveTextContent('All1');
@@ -165,6 +174,28 @@ describe('Option history', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Find in the list' }), { target: { value: 'pullback' } });
     lines = within(screen.getByRole('table', { name: 'By slots' })).getAllByRole('row');
     expect(lines).toHaveLength(3); // the head, one line, the total
+  });
+
+  it('[critical] the method × timeframe grid first: methods ranked, a square a timeframe, coloured by money; a tap tells all', async () => {
+    render(<OptionHistory />);
+    await screen.findByText('With these rules');
+    expect(screen.getByRole('tab', { name: 'Method × timeframe' })).toHaveAttribute('aria-selected', 'true');
+    const grid = screen.getByRole('table', { name: 'Method by timeframe' });
+    const lines = within(grid).getAllByRole('row');
+    expect(within(lines[0]!).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['#', 'Method', '5m', '1h', 'All']);
+    // Ranked by what they make with the rules: NR7 (+₹4.25) over Pullback (−₹5.10).
+    expect(lines[1]).toHaveTextContent('1#39 NR7');
+    expect(lines[2]).toHaveTextContent('2#9 Pullback');
+    // NR7 never sold on 1h: no square.
+    expect(within(lines[1]!).getAllByRole('cell')[3]).toHaveTextContent('·');
+    const pull5m = within(lines[2]!).getAllByRole('button')[0]!;
+    expect(pull5m).toHaveTextContent('−6.8');
+    expect(pull5m.getAttribute('style')).toContain('var(--down)');
+    fireEvent.click(pull5m);
+    expect(screen.getByRole('status')).toHaveTextContent('#9 Pullback · 5m — 2 trades');
+    expect(screen.getByRole('status')).toHaveTextContent('loss days 4');
+    fireEvent.click(screen.getByRole('button', { name: 'Profit / loss days' }));
+    expect(within(lines[2]!).getAllByRole('button')[0]).toHaveTextContent('+1 / −4');
   });
 
   it('timeframes narrow it', async () => {
