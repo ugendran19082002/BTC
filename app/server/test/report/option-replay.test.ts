@@ -1,6 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LIVE_RULES, clearOptionReplayCache, optionReplay, pickSignalStrike, replayExit, rulesProblem, shortNetUsd, type BoardQuote, type OptionPath, type PerpPath, type ReplayRules } from '../../src/report/option-replay.js';
+import { LIVE_RULES, clearOptionReplayCache, onList, optionReplay, optionReplayCsv, pickSignalStrike, replayExit, rulesProblem, shortNetUsd, type BoardQuote, type OptionPath, type PerpPath, type ReplayRules } from '../../src/report/option-replay.js';
 import { replayAskOf } from '../../src/http/routes/report.routes.js';
 import { sessionDayOf, sessionOf } from '../../src/report/market-day.js';
 import { optionSnapshotsSchema } from '../../src/market/option-snapshots.js';
@@ -95,6 +95,10 @@ test('the rules and the question are checked, in words', () => {
   assert.match(replayAskOf({ from: '2026-10-05', to: '2026-10-01' }, now) as string, /start date/);
   assert.equal((replayAskOf({ source: 'signals' }, now) as { source: string }).source, 'signals');
   assert.match(replayAskOf({ source: 'all' }, now) as string, /source/);
+  assert.deepEqual((replayAskOf({ day: '2026-11-01', show: 'worse', offset: '200', limit: '200' }, now) as { list: object }).list, { day: '2026-11-01', show: 'worse', offset: 200, limit: 200 });
+  assert.match(replayAskOf({ day: '2026-09-01' }, now) as string, /day of the range/);
+  assert.match(replayAskOf({ show: 'best' }, now) as string, /Show must be/);
+  assert.match(replayAskOf({ limit: '5000' }, now) as string, /page holds/);
 });
 
 // ------------------------------------------------------------ one expiry day through the database
@@ -172,6 +176,11 @@ test('a real trade replayed: as live it is held, with the perp SL it is out at t
   assert.ok(Math.abs(withSl.replay.netUsd - 2 * shortNetUsd(40, r.replay.exit!, 2)) < 1e-12);
   assert.equal(withSl.exits['perp-sl'], 2);
   assert.deepEqual(withSl.timeframes.map((d) => d.key), ['5m']);
+  // By the hour entered (9:30 AM IST: the 9 AM hour) and by method in it; the one day, made money on (out at 27.4 of 40).
+  assert.deepEqual(withSl.hours.map((g) => [g.key, g.name, g.trades, g.daysUp, g.daysDown]), [['09', '9 AM', 2, 1, 0]]);
+  assert.deepEqual(withSl.slots.map((g) => [g.key, g.name, g.trades, g.daysUp]), [['pullback|09', '#9 Pullback · 9 AM', 2, 1]]);
+  // An option SL of 1%: out at the first quote over 40.4 -- a loss -- so the day is one lost on.
+  assert.deepEqual((await ask({ stopPct: 0.01, targetPct: 0 })).hours.map((g) => [g.daysUp, g.daysDown]), [[0, 1]]);
   // Out at 27.4 against the real 4: both trades the worse for it.
   assert.deepEqual([withSl.better, withSl.worse, withSl.methods[0]!.worse], [0, 2, 2]);
 
@@ -205,4 +214,22 @@ test('every signal: each filled one sold at the strategies\' strike, one contrac
   assert.deepEqual(x.accounts, []);
   // A method filter narrows the signals as it does the orders.
   assert.equal((await ask({}, { source: 'signals', methods: ['nr7'] })).replay.trades, 1);
+  // No account's rules: an account named does not narrow the signals, nor the orders set beside them.
+  const acct = await ask({ targetPct: 0 }, { source: 'signals', account: 99 });
+  assert.deepEqual([acct.replay.trades, acct.traded], [2, 1]);
+});
+
+test('the list: a page at a time, of a day or all, by profit / loss / better / worse; and every trade as a spreadsheet', async () => {
+  const page1 = await ask({ skipPerpSl: false, targetPct: 0 }, { list: { day: null, show: 'all', offset: 0, limit: 1 } });
+  const page2 = await ask({ skipPerpSl: false, targetPct: 0 }, { list: { day: null, show: 'all', offset: 1, limit: 1 } });
+  assert.deepEqual([page1.rowsTotal, page1.rows.length, page2.rows.length], [2, 1, 1]);
+  assert.notEqual(page1.rows[0]!.tradeId, page2.rows[0]!.tradeId);
+  assert.equal((await ask({ skipPerpSl: false, targetPct: 0 }, { list: { day: null, show: 'worse', offset: 0, limit: 10 } })).rowsTotal, 2);
+  assert.equal((await ask({ skipPerpSl: false, targetPct: 0 }, { list: { day: null, show: 'better', offset: 0, limit: 10 } })).rowsTotal, 0);
+  assert.equal((await ask({}, { list: { day: dayBefore(DAY), show: 'all', offset: 0, limit: 10 } })).rowsTotal, 0);
+  const r = page1.rows[0]!;
+  assert.equal(onList({ ...r, actual: null }, 'worse'), false, 'a signal not traded is neither better nor worse');
+  const csv = optionReplayCsv(page1.rows).split('\n');
+  assert.match(csv[0]!, /^expiry_day,entered_ist,account,/);
+  assert.match(csv[1]!, new RegExp(`^${DAY},.*,${SYMBOL},2,40,84400,85000,.*,option-tgt,.*,perp-sl,`));
 });

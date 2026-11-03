@@ -72,6 +72,10 @@ const price = (n: number | null) => (n === null ? '—' : n.toFixed(n >= 100 ? 0
 
 /** Which trades the list shows, by what they make under the rules set: all, those in profit, those in loss -- or those the rules made better or worse. */
 export type Show = ReplayShow;
+const BADGE_TONE: Record<Show, string> = {
+  all: 'bg-[var(--line)] text-foreground', profit: 'bg-[var(--up)] text-background', loss: 'bg-[var(--down)] text-background',
+  better: 'bg-[var(--up)] text-background', worse: 'bg-[var(--down)] text-background',
+};
 const SHOWS: readonly { id: Show; name: string }[] = [
   { id: 'all', name: 'All' }, { id: 'profit', name: 'Profit' }, { id: 'loss', name: 'Loss' }, { id: 'better', name: 'Better' }, { id: 'worse', name: 'Worse' },
 ];
@@ -80,23 +84,36 @@ const SHOWS: readonly { id: Show; name: string }[] = [
  * friendly"): by what it makes under the rules, by the change from the real orders, by how many trades the rules made
  * better or worse, by the trades -- each best first; the days also by date, newest first. The rank is the line's place.
  */
-export type GroupSort = 'date' | 'net' | 'change' | 'better' | 'worse' | 'trades';
+export type GroupSort = 'date' | 'net' | 'change' | 'wins' | 'losses' | 'daysUp' | 'daysDown' | 'better' | 'worse' | 'trades';
 const GROUP_SORTS: readonly { id: GroupSort; name: string }[] = [
   { id: 'date', name: 'Date' }, { id: 'net', name: 'With rules' }, { id: 'change', name: 'Change' },
+  { id: 'wins', name: 'Most in profit' }, { id: 'losses', name: 'Most in loss' },
+  { id: 'daysUp', name: 'Most profit days' }, { id: 'daysDown', name: 'Most loss days' },
   { id: 'better', name: 'Most better' }, { id: 'worse', name: 'Most worse' }, { id: 'trades', name: 'Most trades' },
 ];
+/** What a count badge ranks the groups by when it is tapped (owner, 3 Nov 2026: "overall worst / better counts like a notification; rank by it"). */
+export const SORT_OF_SHOW: Record<Show, GroupSort> = { all: 'trades', profit: 'wins', loss: 'losses', better: 'better', worse: 'worse' };
 const changeOf = (g: ReplayGroup) => g.replay.netUsd - g.actual.netUsd;
 /** The groups in rank order. A day with no trade is always last but by date. */
 export function rankGroups(groups: readonly ReplayGroup[], by: GroupSort): ReplayGroup[] {
   if (by === 'date') return [...groups];
-  const val = (g: ReplayGroup) => (by === 'net' ? g.replay.netUsd : by === 'change' ? changeOf(g) : by === 'better' ? g.better : by === 'worse' ? g.worse : g.trades);
+  const val = (g: ReplayGroup) => (by === 'net' ? g.replay.netUsd : by === 'change' ? changeOf(g) : by === 'wins' ? g.replay.wins : by === 'losses' ? g.replay.losses
+    : by === 'daysUp' ? g.daysUp : by === 'daysDown' ? g.daysDown
+    : by === 'better' ? g.better : by === 'worse' ? g.worse : g.trades);
   return [...groups].sort((a, b) => ((a.trades === 0) !== (b.trades === 0) ? (a.trades === 0 ? 1 : -1) : val(b) - val(a)));
 }
 
-type GroupTab = 'days' | 'timeframes' | 'methods' | 'accounts';
-const GROUP_TABS: readonly { id: GroupTab; name: string }[] = [
-  { id: 'days', name: 'Days' }, { id: 'timeframes', name: 'Timeframes' }, { id: 'methods', name: 'Methods' }, { id: 'accounts', name: 'Accounts' },
+type GroupTab = 'days' | 'hours' | 'slots' | 'timeframes' | 'methods' | 'accounts';
+/** Each list, and the line under its tabs saying what it is for. */
+const GROUP_TABS: readonly { id: GroupTab; name: string; what: string }[] = [
+  { id: 'days', name: 'Days', what: 'Each expiry day. Tap one to see its trades.' },
+  { id: 'hours', name: 'Hours', what: 'By the hour the trade was entered (IST), over every day chosen.' },
+  { id: 'slots', name: 'Method × hour', what: 'Each method in each hour, over every day chosen: which lose again and again, which keep making money. Loss days and profit days count how often.' },
+  { id: 'methods', name: 'Methods', what: 'Each method, over every day chosen.' },
+  { id: 'timeframes', name: 'Timeframes', what: 'Each timeframe, the chain as Chain.' },
+  { id: 'accounts', name: 'Accounts', what: 'Each broker account.' },
 ];
+const GROUP_HEAD: Record<GroupTab, string> = { days: 'Expiry day', hours: 'Hour', slots: 'Method · hour', methods: 'Method', timeframes: 'Timeframe', accounts: 'Account' };
 
 export function OptionHistory() {
   // Null: the last seven expiry days, rolling -- so the card never opens on a stale week.
@@ -134,7 +151,8 @@ export function OptionHistory() {
   const baseKey = JSON.stringify(base);
   // A new question starts the list again from its first page, of every day.
   useEffect(() => { setDay(null); setOffset(0); }, [baseKey]);
-  const asked: OptionReplayQuery = { ...base, list: { day, show: show ?? 'all', offset, limit: PAGE } };
+  // No day tapped, no trades listed: the answer's figures alone (one line, the least a page can be).
+  const asked: OptionReplayQuery = { ...base, list: { day, show: show ?? 'all', offset: day ? offset : 0, limit: day ? PAGE : 1 } };
   const key = JSON.stringify(asked);
   const { data, error, loading, refresh } = usePoll(() => getOptionReplay(asked), 5 * 60_000, { deps: [key], enabled: spanProblem === null });
 
@@ -276,11 +294,18 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
   const change = r.netUsd - a.netUsd;
   const signals = data.source === 'signals';
   const sort = sortBy === 'date' && tab !== 'days' ? 'net' : sortBy;
-  const groups = rankGroups(data[tab], sort);
+  const [find, setFind] = useState('');
+  const needle = find.trim().toLowerCase();
+  const groups = rankGroups(data[tab] ?? [], sort).filter((g) => needle === '' || g.name.toLowerCase().includes(needle));
   // The server filters and pages the list (`list`): every trade is one page away, however many there are.
   const rows = data.rows;
   const { offset, limit } = data.list;
   const page = (to: number) => onPage(Math.max(0, Math.min(to, Math.max(0, data.rowsTotal - 1))));
+  // The badges: of the day tapped, or of everything.
+  const scope = day ? data.days.find((g) => g.key === day) : null;
+  const counts: Record<Show, number> = scope
+    ? { all: scope.trades, profit: scope.replay.wins, loss: scope.replay.losses, better: scope.better, worse: scope.worse }
+    : { all: r.trades, profit: r.wins, loss: r.losses, better: data.better, worse: data.worse };
   const left = [
     data.noPrices > 0 && `${data.noPrices.toLocaleString('en-US')} without recorded prices`,
     data.noStrike > 0 && `${data.noStrike.toLocaleString('en-US')} signals with no strike inside the rule`,
@@ -330,6 +355,22 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
       </div>
 
       <div className="min-w-0">
+        {/* The counts, overall or of the day tapped, each a badge; a tap ranks the lists below by it and filters the day's trades. */}
+        <div role="group" aria-label="Show trades" className="mb-2 flex flex-wrap gap-1.5">
+          {SHOWS.map((x) => {
+            const n = counts[x.id];
+            return (
+              <button
+                key={x.id} type="button" aria-pressed={show === x.id} onClick={() => { onShow(x.id); onSort(SORT_OF_SHOW[x.id]); }}
+                className={cn('inline-flex h-9 items-center gap-1.5 rounded-md border border-solid px-3 font-[inherit] text-[13px]', show === x.id ? 'border-[var(--accent)] font-semibold text-foreground' : 'border-border bg-transparent text-muted-foreground')}
+              >
+                {x.name}
+                <span className={cn('min-w-[22px] rounded-full px-1.5 py-px text-center text-[11.5px] font-semibold tabular-nums', BADGE_TONE[x.id])}>{n.toLocaleString('en-US')}</span>
+              </button>
+            );
+          })}
+          <span className="self-center px-1 text-[12px] text-muted-foreground">{day ? `on ${day}` : 'overall'}</span>
+        </div>
         <div role="tablist" aria-label="Group by" className="mb-2 flex flex-wrap gap-1.5">
           {GROUP_TABS.filter((t) => !(signals && t.id === 'accounts')).map((t) => (
             <button
@@ -340,7 +381,9 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
             </button>
           ))}
         </div>
-        <label className="mb-2 flex items-center gap-2 text-[13px] text-muted-foreground">
+        <p className="mb-2 mt-0 text-[12px] leading-snug text-muted-foreground">{GROUP_TABS.find((t) => t.id === tab)?.what}</p>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
           Rank by
           <select
             value={sort} onChange={(e) => onSort(e.target.value as GroupSort)} aria-label="Rank by"
@@ -349,39 +392,43 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
             {GROUP_SORTS.filter((g) => g.id !== 'date' || tab === 'days').map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
         </label>
+        {tab !== 'days' && (
+          <input
+            type="search" value={find} onChange={(e) => setFind(e.target.value)} placeholder={tab === 'slots' ? 'Find a method or an hour' : 'Find'}
+            aria-label="Find in the list"
+            className="h-9 min-w-0 flex-1 rounded-md border border-solid border-border bg-background px-2 font-[inherit] text-[13px] text-foreground sm:max-w-[260px]"
+          />
+        )}
+        </div>
         <GroupTable groups={groups} tab={tab} day={day} onDay={onDay} ranked={sort !== 'date'} />
       </div>
 
-      <div className="min-w-0">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div role="group" aria-label="Show trades" className="flex flex-wrap gap-1.5">
-            {SHOWS.map((s) => (
-              <button
-                key={s.id} type="button" aria-pressed={show === s.id} onClick={() => onShow(s.id)}
-                className={cn('h-9 rounded-md border border-solid px-3 font-[inherit] text-[13px]', show === s.id ? 'border-[var(--accent)] font-semibold text-foreground' : 'border-border bg-transparent text-muted-foreground')}
-              >
-                {s.name}
-              </button>
-            ))}
-          </div>
-          <span className="flex items-center gap-2 text-[12px] text-muted-foreground">
-            {day && (
+      {/* The trades themselves only for a day tapped (owner, 3 Nov 2026: "not every date at once -- the date clicked"). */}
+      {day ? (
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[13px] font-medium">Trades of {day}{show !== 'all' ? ` · ${SHOWS.find((x) => x.id === show)!.name.toLowerCase()}` : ''}</span>
+            <span className="flex items-center gap-2 text-[12px] text-muted-foreground">
               <button type="button" onClick={() => onDay(null)} className="min-h-[36px] border-0 bg-transparent p-0 font-[inherit] text-[13px] text-[var(--accent)]">
-                {day} ✕
+                Close {day} ✕
               </button>
-            )}
-            <a
-              href={csvUrl} download title="Every trade this list holds, not only this page"
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-solid border-border bg-transparent px-2.5 text-[13px] text-foreground no-underline"
-            >
-              <Download className="h-3.5 w-3.5" aria-hidden /> CSV
-            </a>
-          </span>
+              <a
+                href={csvUrl} download title="Every trade of this day the list holds, not only this page"
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-solid border-border bg-transparent px-2.5 text-[13px] text-foreground no-underline"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden /> CSV
+              </a>
+            </span>
+          </div>
+          <Pager offset={offset} limit={limit} total={data.rowsTotal} onPage={page} />
+          <TradeTable rows={rows} />
+          {data.rowsTotal > limit && <div className="mt-2"><Pager offset={offset} limit={limit} total={data.rowsTotal} onPage={page} /></div>}
         </div>
-        <Pager offset={offset} limit={limit} total={data.rowsTotal} onPage={page} />
-        <TradeTable rows={rows} />
-        {data.rowsTotal > limit && <div className="mt-2"><Pager offset={offset} limit={limit} total={data.rowsTotal} onPage={page} /></div>}
-      </div>
+      ) : (
+        <p className="m-0 rounded-md border border-dashed border-border px-3 py-3 text-center text-[13px] text-muted-foreground">
+          Tap a day in the Days list to see its trades.
+        </p>
+      )}
     </div>
   );
 }
@@ -420,8 +467,8 @@ function GroupTable({ groups, tab, day, onDay, ranked }: { groups: readonly Repl
       <table aria-label={`By ${tab}`} className="w-full min-w-[720px] border-collapse text-[12.5px]">
         <thead className="sticky top-0 bg-[var(--panel)]">
           <tr>
-            {ranked && head('#')}{head(tab === 'days' ? 'Expiry day' : tab === 'timeframes' ? 'Timeframe' : tab === 'methods' ? 'Method' : 'Account', true)}
-            {head('Trades')}{head('Better')}{head('Worse')}{head('Win % traded → rules')}{head('As traded')}{head('With rules')}{head('Change')}
+            {ranked && head('#')}{head(GROUP_HEAD[tab], true)}
+            {head('Trades')}{tab !== 'days' && head('Profit days')}{tab !== 'days' && head('Loss days')}{head('Better')}{head('Worse')}{head('Win % traded → rules')}{head('As traded')}{head('With rules')}{head('Change')}
           </tr>
         </thead>
         <tbody>
@@ -439,12 +486,14 @@ function GroupTable({ groups, tab, day, onDay, ranked }: { groups: readonly Repl
                 {ranked && <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">{none ? '' : rank}</td>}
                 <td className="max-w-[16rem] truncate px-2 py-1 text-left" title={g.name}>{g.name}</td>
                 {none ? (
-                  <td colSpan={7} className="px-2 py-1 text-left text-muted-foreground">
+                  <td colSpan={tab === 'days' ? 7 : 9} className="px-2 py-1 text-left text-muted-foreground">
                     No trades{g.open > 0 ? ` · ${g.open} still open` : ''}
                   </td>
                 ) : (
                   <>
                     <td className="px-2 py-1 text-right tabular-nums">{g.trades.toLocaleString('en-US')}{g.open > 0 && <span className="text-muted-foreground"> +{g.open} open</span>}</td>
+                    {tab !== 'days' && <td className="px-2 py-1 text-right tabular-nums text-[var(--up)]">{g.daysUp}</td>}
+                    {tab !== 'days' && <td className="px-2 py-1 text-right tabular-nums text-[var(--down)]">{g.daysDown}</td>}
                     <td className="px-2 py-1 text-right tabular-nums text-[var(--up)]">{g.better.toLocaleString('en-US')}</td>
                     <td className="px-2 py-1 text-right tabular-nums text-[var(--down)]">{g.worse.toLocaleString('en-US')}</td>
                     <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">{winText(g.actual)} → {winText(g.replay)}</td>
@@ -456,13 +505,14 @@ function GroupTable({ groups, tab, day, onDay, ranked }: { groups: readonly Repl
               </tr>
             );
           })}
-          {groups.length === 0 && <tr><td colSpan={ranked ? 9 : 8} className="px-2 py-3 text-center text-muted-foreground">No trades here.</td></tr>}
+          {groups.length === 0 && <tr><td colSpan={(ranked ? 9 : 8) + (tab === 'days' ? 0 : 2)} className="px-2 py-3 text-center text-muted-foreground">No trades here.</td></tr>}
         </tbody>
         <tfoot className="bg-[var(--panel)] font-semibold">
           <tr className="border-t border-border">
             {ranked && <td />}
             <td className="px-2 py-1 text-left">Total</td>
             <td className="px-2 py-1 text-right tabular-nums">{total.trades.toLocaleString('en-US')}</td>
+            {tab !== 'days' && <><td /><td /></>}
             <td className="px-2 py-1 text-right tabular-nums text-[var(--up)]">{total.better.toLocaleString('en-US')}</td>
             <td className="px-2 py-1 text-right tabular-nums text-[var(--down)]">{total.worse.toLocaleString('en-US')}</td>
             <td />

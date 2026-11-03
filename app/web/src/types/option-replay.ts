@@ -19,7 +19,11 @@ export type OptionReplayRow = {
 };
 export type ReplaySide = { trades: number; wins: number; losses: number; profitUsd: number; lossUsd: number; netUsd: number };
 /** `traded`: those with a real order (what `actual` counts); `better` / `worse`: of them, the rules made more / less. `open`: still open, not counted. */
-export type ReplayGroup = { key: string; name: string; trades: number; open: number; traded: number; better: number; worse: number; actual: ReplaySide; replay: ReplaySide };
+export type ReplayGroup = {
+  key: string; name: string; trades: number; open: number; traded: number; better: number; worse: number; actual: ReplaySide; replay: ReplaySide;
+  /** Expiry days the group made money on under the rules, and lost on: how often it repeats. */
+  daysUp: number; daysDown: number;
+};
 /** `orders`: the desk's real orders. `signals`: every signal of the signal history, sold as the strategies pick a strike. */
 export type ReplaySource = 'orders' | 'signals';
 export type OptionReplay = {
@@ -31,6 +35,8 @@ export type OptionReplay = {
   exits: Record<ReplayExit, number>;
   open: number; noPrices: number; noStrike: number;
   days: ReplayGroup[]; timeframes: ReplayGroup[]; methods: ReplayGroup[]; accounts: ReplayGroup[];
+  /** By the IST hour entered, and by method in each hour. */
+  hours: ReplayGroup[]; slots: ReplayGroup[];
   /** One page of the trades, newest first, and how many the list's filter holds in all. */
   rows: OptionReplayRow[]; rowsTotal: number; list: ReplayList;
 };

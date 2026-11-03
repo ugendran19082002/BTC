@@ -105,7 +105,11 @@ export type ReplaySide = { trades: number; wins: number; losses: number; profitU
  * `open`: trades of the group still open, not in its figures. A day of the range with no trade is a group of none.
  * `traded`: those with a real order, the ones `actual` counts; of them, `better` the rules made more of and `worse` less.
  */
-export type ReplayGroup = { key: string; name: string; trades: number; open: number; traded: number; better: number; worse: number; actual: ReplaySide; replay: ReplaySide };
+export type ReplayGroup = {
+  key: string; name: string; trades: number; open: number; traded: number; better: number; worse: number; actual: ReplaySide; replay: ReplaySide;
+  /** The expiry days the group's trades made money on under the rules, and lost on: how often it repeats (owner, 3 Nov 2026). */
+  daysUp: number; daysDown: number;
+};
 export type OptionReplay = {
   from: string; to: string; rules: ReplayRules; oneContract: boolean; source: ReplaySource;
   /** `actual` is of the `traded` trades alone: all of them under `orders`, those the desk had an order on under `signals`. */
@@ -119,6 +123,11 @@ export type OptionReplay = {
    */
   open: number; noPrices: number; noStrike: number;
   days: ReplayGroup[]; timeframes: ReplayGroup[]; methods: ReplayGroup[]; accounts: ReplayGroup[];
+  /**
+   * By the IST hour entered, and by method in each hour (owner, 3 Nov 2026: "which methods, at which time, lose again and
+   * again, which make money -- grouped by count, over all the days chosen").
+   */
+  hours: ReplayGroup[]; slots: ReplayGroup[];
   /** One page of the trades, newest first (`list`), and how many the list's filter holds in all. */
   rows: OptionReplayRow[]; rowsTotal: number; list: ReplayList;
 };
@@ -439,6 +448,11 @@ function count(s: ReplaySide, net: number): void {
   s.trades++; s.netUsd += net;
   if (net > 0) { s.wins++; s.profitUsd += net; } else if (net < 0) { s.losses++; s.lossUsd -= net; }
 }
+/** The IST hour a moment is in, "00" to "23"; its name ("1 PM"); its place in the expiry day, which starts in the 5 PM hour. */
+const hourKeyOf = (ms: number) => String(new Date(ms + 5.5 * 3_600_000).getUTCHours()).padStart(2, '0');
+const hourName = (key: string) => { const h = Number(key); return `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}`; };
+const hourRank = (key: string) => (Number(key) - 17 + 24) % 24;
+
 /** The contract minute a moment is at: 0 is 5:30 PM IST. */
 const contractMinute = (ms: number) => Math.floor((ms - sessionOf(sessionDayOf(ms)).from) / MIN);
 
@@ -497,10 +511,15 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
   const methods = o.methods ? new Set(o.methods) : null;
   const actual = emptySide(), replay = emptySide();
   const exits: Record<ReplayExit, number> = { 'option-sl': 0, 'option-tgt': 0, 'perp-sl': 0, 'perp-tgt': 0, close: 0 };
-  const groups = { day: new Map<string, ReplayGroup>(), tf: new Map<string, ReplayGroup>(), method: new Map<string, ReplayGroup>(), account: new Map<string, ReplayGroup>() };
+  const groups = {
+    day: new Map<string, ReplayGroup>(), tf: new Map<string, ReplayGroup>(), method: new Map<string, ReplayGroup>(), account: new Map<string, ReplayGroup>(),
+    hour: new Map<string, ReplayGroup>(), slot: new Map<string, ReplayGroup>(),
+  };
+  /** Each group's net under the rules by expiry day, for `daysUp` / `daysDown`. */
+  const dayNets = new Map<ReplayGroup, Map<string, number>>();
   const groupOf = (m: Map<string, ReplayGroup>, key: string, name: string) => {
     let g = m.get(key);
-    if (!g) m.set(key, (g = { key, name, trades: 0, open: 0, traded: 0, better: 0, worse: 0, actual: emptySide(), replay: emptySide() }));
+    if (!g) m.set(key, (g = { key, name, trades: 0, open: 0, traded: 0, better: 0, worse: 0, actual: emptySide(), replay: emptySide(), daysUp: 0, daysDown: 0 }));
     return g;
   };
   // Every day asked for has its line, a day with no trade too: a date the list skipped read as one the screen had lost.
@@ -560,11 +579,17 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
         g.trades++; count(g.replay, net);
         if (actualNet !== null) { g.traded++; count(g.actual, actualNet); }
         if (verdict > 0) g.better++; else if (verdict < 0) g.worse++;
+        let nets = dayNets.get(g);
+        if (!nets) dayNets.set(g, (nets = new Map()));
+        nets.set(t.day, (nets.get(t.day) ?? 0) + net);
       };
       into(groups.day, t.day, t.day);
       into(groups.tf, t.tf, t.tf === CHAIN_KEY ? 'Chain' : t.tf);
       into(groups.method, t.method, methodName);
       if (!signals) into(groups.account, t.account === null ? 'none' : String(t.account), accountName(t.account));
+      const hour = hourKeyOf(t.enteredAt);
+      into(groups.hour, hour, hourName(hour));
+      into(groups.slot, `${t.method}|${hour}`, `${methodName} · ${hourName(hour)}`);
       out.push({
         tradeId: t.tradeId, day: t.day, account: t.account, strategyId: t.strategyId, strategyName: t.strategyName,
         method: t.method, methodName, tf: t.tf, side: t.side, symbol: t.symbol, enteredAt: t.enteredAt, entry: t.entry, contracts: size,
@@ -584,6 +609,7 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
     }
   }
   out.sort((a, b) => b.enteredAt - a.enteredAt);
+  for (const [g, nets] of dayNets) for (const n of nets.values()) { if (n > 0) g.daysUp++; else if (n < 0) g.daysDown++; }
   const tfRank = (k: string) => { const i = REPLAY_TFS.indexOf(k); return i < 0 ? REPLAY_TFS.length : i; };
   // Methods best first: by what they make under the rules, most first.
   const byNet = (a: ReplayGroup, b: ReplayGroup) => b.replay.netUsd - a.replay.netUsd;
@@ -594,6 +620,9 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
     timeframes: [...groups.tf.values()].sort((a, b) => tfRank(a.key) - tfRank(b.key)),
     methods: [...groups.method.values()].sort(byNet),
     accounts: [...groups.account.values()].sort((a, b) => a.key.localeCompare(b.key, 'en', { numeric: true })),
+    // The hours in the expiry day's order, from 5 PM; method by hour most loss days first.
+    hours: [...groups.hour.values()].sort((a, b) => hourRank(a.key) - hourRank(b.key)),
+    slots: [...groups.slot.values()].sort((a, b) => b.daysDown - a.daysDown || a.replay.netUsd - b.replay.netUsd),
     all: out,
   };
 }
