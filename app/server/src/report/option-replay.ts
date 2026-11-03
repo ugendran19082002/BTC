@@ -342,7 +342,7 @@ async function readSignals(day: string): Promise<SignalDay> {
   const span = sessionOf(day);
   const setups = await rows<{ method: string; mode: string; tf: string; dir: number; trigger_at: string; filled_at: string; stop: number; tp1: number }>(
     `SELECT method, mode, tf, dir, trigger_at, filled_at, stop, tp1 FROM entry_setups
-      WHERE trigger_at >= $1 AND trigger_at < $2 AND filled_at >= $3 AND filled_at < $2 AND NOT research`,
+      WHERE trigger_at >= $1 AND trigger_at < $2 AND filled_at >= $3 AND filled_at < $2`,
     // By the trigger -- its own index -- from a day before: a signal can fill long after it was given.
     [Math.floor(span.from / 1000) - 86_400, Math.floor(span.to / 1000), Math.floor(span.from / 1000)],
   );

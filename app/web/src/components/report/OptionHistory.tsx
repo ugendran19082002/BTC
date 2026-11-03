@@ -298,7 +298,11 @@ export function OptionHistory() {
         </p>
         {settings}
         {error && !data && <p role="alert" className="mt-3 text-[13px] text-[var(--down)]">Could not load the option history: {error.message}</p>}
-        {!data && !error && spanProblem === null && <p className="mt-3 text-[13px] text-muted-foreground">Working the trades again…</p>}
+        {!data && !error && spanProblem === null && (
+          <p className="mt-3 text-[13px] text-muted-foreground">
+            Working the trades again…{signals ? ' Every signal over a long range takes up to a minute the first time; each day is kept after that.' : ''}
+          </p>
+        )}
         {data && (
           <Results
             data={data} dayData={dayData && dayData.from === day ? dayData : null} sortBy={sortBy ?? 'net'} onSort={setSortBy}

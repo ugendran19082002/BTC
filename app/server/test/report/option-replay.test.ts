@@ -1,6 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LIVE_RULES, clearOptionReplayCache, optionReplay, replayExit, rulesProblem, shortNetUsd, type OptionPath, type PerpPath, type ReplayRules } from '../../src/report/option-replay.js';
+import { LIVE_RULES, clearOptionReplayCache, optionReplay, pickSignalStrike, replayExit, rulesProblem, shortNetUsd, type BoardQuote, type OptionPath, type PerpPath, type ReplayRules } from '../../src/report/option-replay.js';
 import { replayAskOf } from '../../src/http/routes/report.routes.js';
 import { sessionDayOf, sessionOf } from '../../src/report/market-day.js';
 import { optionSnapshotsSchema } from '../../src/market/option-snapshots.js';
@@ -69,6 +69,14 @@ test('net after the charges on both fills, the fee capped at 3.5% of the premium
   assert.ok(Math.abs(shortNetUsd(40, 4, 1) - (0.036 - 0.04 * 0.035 * 1.18 - 0.004 * 0.035 * 1.18)) < 1e-12);
 });
 
+test('a signal is sold at the strike nearest the money with a delta of at most 0.10 and a bid of at least $13', () => {
+  const q = (strike: number, delta: number, bid: number, cp: 'C' | 'P' = 'P'): BoardQuote => ({ at: T0, symbol: `${cp}-${strike}`, cp, strike, bid, delta });
+  const board = [q(84_400, -0.2, 90), q(84_000, -0.09, 39), q(83_800, -0.06, 20), q(83_600, -0.03, 9), q(85_600, 0.08, 30, 'C')];
+  assert.equal(pickSignalStrike(board, 'P')?.strike, 84_000);
+  assert.equal(pickSignalStrike(board, 'C')?.strike, 85_600);
+  assert.equal(pickSignalStrike([q(83_600, -0.03, 9)], 'P'), null, 'under $13: nothing the strategies would sell');
+});
+
 test('the rules and the question are checked, in words', () => {
   assert.equal(rulesProblem(LIVE_RULES), null);
   assert.match(rulesProblem(rules({ stopPct: 25 }))!, /option SL/);
@@ -85,10 +93,13 @@ test('the rules and the question are checked, in words', () => {
   assert.match(replayAskOf({ from: '2026-09-01', to: '2026-10-31' }, now) as string, /At most 31 days/);
   assert.match(replayAskOf({ tgt: '100' }, now) as string, /option TGT/);
   assert.match(replayAskOf({ from: '2026-10-05', to: '2026-10-01' }, now) as string, /start date/);
+  assert.equal((replayAskOf({ source: 'signals' }, now) as { source: string }).source, 'signals');
+  assert.match(replayAskOf({ source: 'all' }, now) as string, /source/);
 });
 
 // ------------------------------------------------------------ one expiry day through the database
 
+const dayBefore = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 const DAY = new Date(Date.parse(`${sessionDayOf(Date.now())}T00:00:00Z`) - 3 * 86_400_000).toISOString().slice(0, 10);
 const SPAN = sessionOf(DAY);
 const ENTRY_AT = SPAN.from + 16 * 60 * MIN; // 9:30 AM IST
@@ -110,8 +121,16 @@ before(async () => {
     await query(`INSERT INTO trade_flow_1m (at, buy_volume, sell_volume, buy_count, sell_count, large_buy_volume, large_sell_volume, high, low)
                  VALUES ($1, 1, 1, 1, 1, 0, 0, 84600, $2)`, [at, low]);
   }
-  await query(`INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, rr, graded_to)
-               VALUES ('pullback', 'single', '5m', 1, $1, $1, 84500, 84520, 84400, 85000, 1.5, $1)`, [TRIGGER]);
+  // Two signals that filled half a minute before the entry: the desk traded the first; the second (nr7) it did not.
+  for (const method of ['pullback', 'nr7']) {
+    await query(`INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, rr, graded_to, filled_at, fill_price)
+                 VALUES ($2, 'single', '5m', 1, $1, $1, 84500, 84520, 84400, 85000, 1.5, $1, $3, 84510)`, [TRIGGER, method, ENTRY_AT / 1000 - 30]);
+  }
+  // The board at the minute after the fills: the put at 84,000 is the nearest the money inside 0.10.
+  for (const [strike, delta, bid] of [[84_400, -0.2, 90], [84_000, -0.09, 39], [83_600, -0.04, 15]] as const) {
+    await query(`INSERT INTO option_snapshots_1m (at, symbol, expiry, cp, strike, bid, ask, mark, delta) VALUES ($1, $2, $3, 'P', $4, $5, $5, $5, $6)`,
+      [ENTRY_AT, SYMBOL.replace('84000', String(strike)), `${DAY.slice(8, 10)}${DAY.slice(5, 7)}${DAY.slice(2, 4)}`, strike, bid, delta]);
+  }
   const plan = {
     action: 'sell', origin: 'strategy', symbol: SYMBOL, strategyId: 's-5m', strategyName: '5m time',
     signal: { tf: '5m', dir: 1, mode: 'single', method: 'pullback', triggerTime: TRIGGER },
@@ -123,17 +142,23 @@ before(async () => {
   };
   await query(`INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at, broker_account_id) VALUES ('t1', $1, 'flat', 0, $2, $3, $4, NULL)`,
     [SYMBOL, JSON.stringify(plan), JSON.stringify(state), ENTRY_AT + 59 * MIN]);
+  // A row of the journal's older shape, before 5 Oct 2026: no \`action\` -- sold, by its entry fill. Another strategy's, on the same signal.
+  const { action: _, ...older } = plan;
+  await query(`INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at, broker_account_id) VALUES ('t0', $1, 'flat', 0, $2, $3, $4, NULL)`,
+    [SYMBOL, JSON.stringify({ ...older, strategyId: 's-old' }), JSON.stringify({ ...state, fills: [{ ...state.fills[0], ts: ENTRY_AT + 1_000 }, state.fills[1]] }), ENTRY_AT + 59 * MIN]);
   clearOptionReplayCache();
 });
 after(async () => { tradingService().stop(); await closePool(); });
 
 const ask = (r: Partial<ReplayRules>, more: Partial<Parameters<typeof optionReplay>[0]> = {}) =>
-  optionReplay({ from: DAY, to: DAY, window: null, tfs: null, methods: null, account: null, rules: rules(r), now: Date.now(), ...more });
+  optionReplay({ from: dayBefore(DAY), to: DAY, window: null, tfs: null, methods: null, account: null, rules: rules(r), now: Date.now(), ...more });
 
 test('a real trade replayed: as live it is held, with the perp SL it is out at the 21st minute', async () => {
   const live = await ask({ targetPct: 0 });
-  assert.equal(live.replay.trades, 1);
-  const [row] = live.rows;
+  assert.equal(live.replay.trades, 2, 'the older row as well');
+  // Every day asked for has its line: the day before, with no trade, too.
+  assert.deepEqual(live.days.map((d) => [d.key, d.trades]), [[DAY, 2], [dayBefore(DAY), 0]]);
+  const row = live.rows.find((r) => r.tradeId === 't1');
   assert.equal(row!.replay.why, 'close');
   assert.equal(row!.replay.exit, 4);
   assert.equal(row!.perpSl, 84_400, 'the signal\'s own SL, the desk having left it out');
@@ -141,26 +166,43 @@ test('a real trade replayed: as live it is held, with the perp SL it is out at t
   assert.ok(Math.abs(row!.actual.netUsd - shortNetUsd(40, 4, 2)) < 1e-12);
 
   const withSl = await ask({ skipPerpSl: false, targetPct: 0 });
-  const r = withSl.rows[0]!;
+  const r = withSl.rows.find((x) => x.tradeId === 't1')!;
   assert.equal(r.replay.why, 'perp-sl');
   assert.equal(r.replay.exit, 40 - (36 * 21) / 60);
-  assert.ok(Math.abs(withSl.replay.netUsd - shortNetUsd(40, r.replay.exit!, 2)) < 1e-12);
-  assert.equal(withSl.exits['perp-sl'], 1);
-  assert.deepEqual(withSl.days.map((d) => [d.key, d.trades]), [[DAY, 1]]);
+  assert.ok(Math.abs(withSl.replay.netUsd - 2 * shortNetUsd(40, r.replay.exit!, 2)) < 1e-12);
+  assert.equal(withSl.exits['perp-sl'], 2);
   assert.deepEqual(withSl.timeframes.map((d) => d.key), ['5m']);
+  // Out at 27.4 against the real 4: both trades the worse for it.
+  assert.deepEqual([withSl.better, withSl.worse, withSl.methods[0]!.worse], [0, 2, 2]);
 
   // One contract each: the real trade's net is halved -- the charges are a share of the premium -- and the replay is of one.
   const one = await ask({ skipPerpSl: false, targetPct: 0 }, { oneContract: true });
-  assert.ok(Math.abs(one.actual.netUsd - shortNetUsd(40, 4, 1)) < 1e-12);
-  assert.ok(Math.abs(one.replay.netUsd - shortNetUsd(40, r.replay.exit!, 1)) < 1e-12);
+  assert.ok(Math.abs(one.actual.netUsd - 2 * shortNetUsd(40, 4, 1)) < 1e-12);
+  assert.ok(Math.abs(one.replay.netUsd - 2 * shortNetUsd(40, r.replay.exit!, 1)) < 1e-12);
   assert.equal(one.rows[0]!.contracts, 1);
 });
 
 test('the filters: a timeframe, a method and hours with none of it leave nothing', async () => {
   assert.equal((await ask({}, { tfs: ['15m'] })).replay.trades, 0);
-  assert.equal((await ask({}, { tfs: ['5m'] })).replay.trades, 1);
+  assert.equal((await ask({}, { tfs: ['5m'] })).replay.trades, 2);
   assert.equal((await ask({}, { methods: ['nr7'] })).replay.trades, 0);
   // 9:30 AM is the 960th minute of the expiry day; 10:00 to 11:00 AM leaves it out.
   assert.equal((await ask({}, { window: { from: 990, to: 1050 } })).replay.trades, 0);
-  assert.equal((await ask({}, { window: { from: 900, to: 1000 } })).replay.trades, 1);
+  assert.equal((await ask({}, { window: { from: 900, to: 1000 } })).replay.trades, 2);
+});
+
+test('every signal: each filled one sold at the strategies\' strike, one contract, the desk\'s first order beside it', async () => {
+  const x = await ask({ targetPct: 0 }, { source: 'signals' });
+  assert.equal(x.source, 'signals');
+  assert.equal(x.replay.trades, 2);
+  assert.equal(x.traded, 1, 'the desk traded pullback, not nr7');
+  const byMethod = new Map(x.rows.map((r) => [r.method, r]));
+  const p = byMethod.get('pullback')!, n = byMethod.get('nr7')!;
+  assert.deepEqual([p.symbol, p.entry, p.contracts, p.enteredAt], [SYMBOL, 39, 1, ENTRY_AT]);
+  assert.equal(n.actual, null);
+  assert.ok(Math.abs(p.actual!.netUsd - shortNetUsd(40, 4, 1)) < 1e-12, 'the first order, at one contract');
+  assert.ok(Math.abs(x.actual.netUsd - p.actual!.netUsd) < 1e-12, 'the real side counts the traded signal alone');
+  assert.deepEqual(x.accounts, []);
+  // A method filter narrows the signals as it does the orders.
+  assert.equal((await ask({}, { source: 'signals', methods: ['nr7'] })).replay.trades, 1);
 });
