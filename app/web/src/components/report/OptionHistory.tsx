@@ -443,7 +443,8 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
 const gridCaption = (d: OptionReplay): string[] => [
   `Expiry days ${d.from} – ${d.to}`,
   [
-    `Option SL ${d.rules.stopPct > 0 ? `${d.rules.stopPct}%` : 'none'}`, `Option TGT ${d.rules.targetPct > 0 ? `${d.rules.targetPct}%` : 'none'}`,
+    // Kept as fractions (2.5 is 250%), as the form keeps them.
+    `Option SL ${d.rules.stopPct > 0 ? `${Math.round(d.rules.stopPct * 100)}%` : 'none'}`, `Option TGT ${d.rules.targetPct > 0 ? `${Math.round(d.rules.targetPct * 100)}%` : 'none'}`,
     d.rules.skipPerpSl ? 'perp SL skipped' : 'perp SL on', d.rules.skipPerpTgt ? 'perp TGT skipped' : 'perp TGT on',
   ].join(' · '),
 ];
