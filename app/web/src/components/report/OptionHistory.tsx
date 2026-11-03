@@ -6,13 +6,12 @@ import { Money } from '@/components/ui/money';
 import { NumberField } from '@/components/ui/number-field';
 import { Switch } from '@/components/ui/switch';
 import { useTimeWindow } from '@/components/report/TimeWindow';
-import { getOptionReplay, type OptionReplayQuery } from '@/api/option-replay';
+import { getOptionReplay, optionReplayCsvUrl, type OptionReplayQuery } from '@/api/option-replay';
 import { usePoll } from '@/hooks/usePoll';
 import { useSynced } from '@/hooks/useSynced';
 import { contractLabel, inr, signedInr, usdToInr } from '@/lib/format';
-import { downloadCsv, toCsv } from '@/lib/csv';
 import { cn } from '@/lib/utils';
-import type { ActualExit, OptionReplay, OptionReplayRow, ReplayExit, ReplayGroup, ReplayRules, ReplaySide, ReplaySource } from '@/types/option-replay';
+import type { ActualExit, OptionReplay, OptionReplayRow, ReplayExit, ReplayGroup, ReplayRules, ReplayShow, ReplaySide, ReplaySource } from '@/types/option-replay';
 
 /**
  * The option history (owner, 3 Nov 2026: "in the Methods menu, like the signal history, an option history -- the
@@ -37,7 +36,8 @@ const MAX_DAYS = 31;
 const MAX_SL_PCT = 2_000;
 const MAX_TGT_PCT = 99;
 const DEBOUNCE_MS = 500;
-const PAGE = 100;
+/** Trades on one page of the list; the server holds the rest (`?offset=`). */
+const PAGE = 200;
 
 export const REPLAY_EXIT_NAMES: Record<ReplayExit, string> = {
   'option-tgt': 'Option TGT', 'option-sl': 'Option SL', 'perp-sl': 'Perp SL', 'perp-tgt': 'Perp TGT', close: 'Held to 5:29 PM',
@@ -71,18 +71,10 @@ const when = (ms: number | null) => {
 const price = (n: number | null) => (n === null ? '—' : n.toFixed(n >= 100 ? 0 : 1));
 
 /** Which trades the list shows, by what they make under the rules set: all, those in profit, those in loss -- or those the rules made better or worse. */
-export type Show = 'all' | 'profit' | 'loss' | 'better' | 'worse';
+export type Show = ReplayShow;
 const SHOWS: readonly { id: Show; name: string }[] = [
   { id: 'all', name: 'All' }, { id: 'profit', name: 'Profit' }, { id: 'loss', name: 'Loss' }, { id: 'better', name: 'Better' }, { id: 'worse', name: 'Worse' },
 ];
-export const shows = (r: OptionReplayRow, show: Show): boolean =>
-  show === 'all' ? true
-    : show === 'profit' ? r.replay.netUsd > 0
-      : show === 'loss' ? r.replay.netUsd < 0
-        : r.actual === null ? false
-          : show === 'better' ? r.replay.netUsd > r.actual.netUsd + 1e-9
-            : r.replay.netUsd < r.actual.netUsd - 1e-9;
-
 /**
  * How a group's list is ranked (owner, 3 Nov 2026: "worse / better repeat count; count-wise, rank-wise list, user
  * friendly"): by what it makes under the rules, by the change from the real orders, by how many trades the rules made
@@ -106,30 +98,6 @@ const GROUP_TABS: readonly { id: GroupTab; name: string }[] = [
   { id: 'days', name: 'Days' }, { id: 'timeframes', name: 'Timeframes' }, { id: 'methods', name: 'Methods' }, { id: 'accounts', name: 'Accounts' },
 ];
 
-/** Every trade shown, as a spreadsheet: what it was, what it did, and what it would have done. */
-export function replayCsv(rows: readonly OptionReplayRow[]): string {
-  return toCsv(rows, [
-    { header: 'expiry_day', value: (r) => r.day },
-    { header: 'entered_ist', value: (r) => ist(r.enteredAt).toISOString().slice(0, 16).replace('T', ' ') },
-    { header: 'account', value: (r) => r.account },
-    { header: 'strategy', value: (r) => r.strategyName },
-    { header: 'timeframe', value: (r) => r.tf },
-    { header: 'method', value: (r) => r.methodName },
-    { header: 'side', value: (r) => r.side },
-    { header: 'symbol', value: (r) => r.symbol },
-    { header: 'contracts', value: (r) => r.contracts },
-    { header: 'sold_at', value: (r) => r.entry },
-    { header: 'perp_sl', value: (r) => r.perpSl },
-    { header: 'perp_tgt', value: (r) => r.perpTgt },
-    { header: 'actual_exit', value: (r) => r.actual?.exit ?? null },
-    { header: 'actual_why', value: (r) => r.actual?.why ?? 'not traded' },
-    { header: 'actual_net_usd', value: (r) => (r.actual ? Math.round(r.actual.netUsd * 10_000) / 10_000 : null) },
-    { header: 'replay_exit', value: (r) => r.replay.exit },
-    { header: 'replay_why', value: (r) => r.replay.why },
-    { header: 'replay_net_usd', value: (r) => Math.round(r.replay.netUsd * 10_000) / 10_000 },
-  ]);
-}
-
 export function OptionHistory() {
   // Null: the last seven expiry days, rolling -- so the card never opens on a stale week.
   const [range, setRange] = useSynced<DateRangeValue | null>('optionHistory.range', null);
@@ -137,13 +105,15 @@ export function OptionHistory() {
   const [rules, setRules] = useSynced<ReplayRules>('optionHistory.rules', LIVE_RULES);
   const [tab, setTab] = useSynced<GroupTab>('optionHistory.tab', 'days');
   const [show, setShow] = useSynced<Show>('optionHistory.show', 'all');
-  const [oneContract, setOneContract] = useSynced<boolean>('optionHistory.oneContract', false);
-  const [source, setSource] = useSynced<ReplaySource>('optionHistory.source', 'orders');
   const [sortBy, setSortBy] = useSynced<GroupSort>('optionHistory.sort', 'net');
-  const signals = source === 'signals';
+  /*
+   * Every signal of the signal history, always (owner, 3 Nov 2026: "not by the accounts' rules -- by the signal history,
+   * with only the option history's settings"; then "every signal based"). The desk's own orders are the server's other
+   * source (`?source=orders`), not offered here: they stand beside each signal instead.
+   */
   const { window: hours, whole, control: hoursControl } = useTimeWindow('optionHistory');
   const [day, setDay] = useState<string | null>(null);
-  const [shown, setShown] = useState(PAGE);
+  const [offset, setOffset] = useState(0);
 
   // The rules as typed, and the ones asked for half a second after the last change.
   const [draft, setDraft] = useState<ReplayRules>(rules ?? LIVE_RULES);
@@ -158,15 +128,16 @@ export function OptionHistory() {
   const today = expiryDayNow();
   const span: DateRangeValue = range ?? { from: dayBefore(today, 6), to: today };
   const spanProblem = daysIn(span) > MAX_DAYS ? `At most ${MAX_DAYS} days at a time: pick a shorter range.` : null;
-  const asked: OptionReplayQuery = useMemo(() => ({
-    from: span.from, to: span.to, hours: whole ? null : hours, tfs: tfs ?? [], rules: rules ?? LIVE_RULES, oneContract: oneContract === true, source: signals ? 'signals' : 'orders',
-  }), [span.from, span.to, whole, hours.from, hours.to, (tfs ?? []).join(','), JSON.stringify(rules), oneContract, signals]); // eslint-disable-line react-hooks/exhaustive-deps
+  const base = useMemo(() => ({
+    from: span.from, to: span.to, hours: whole ? null : hours, tfs: tfs ?? [], rules: rules ?? LIVE_RULES, oneContract: true, source: 'signals' as ReplaySource,
+  }), [span.from, span.to, whole, hours.from, hours.to, (tfs ?? []).join(','), JSON.stringify(rules)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const baseKey = JSON.stringify(base);
+  // A new question starts the list again from its first page, of every day.
+  useEffect(() => { setDay(null); setOffset(0); }, [baseKey]);
+  const asked: OptionReplayQuery = { ...base, list: { day, show: show ?? 'all', offset, limit: PAGE } };
   const key = JSON.stringify(asked);
   const { data, error, loading, refresh } = usePoll(() => getOptionReplay(asked), 5 * 60_000, { deps: [key], enabled: spanProblem === null });
-  useEffect(() => { setDay(null); setShown(PAGE); }, [key]);
-  // A day tapped whose trades the list cut: that day asked for on its own, with everything else the same.
-  const dayKey = day && data?.rowsCut ? JSON.stringify({ ...asked, from: day, to: day }) : null;
-  const { data: dayData } = usePoll(() => getOptionReplay({ ...asked, from: day!, to: day! }), 5 * 60_000, { deps: [dayKey], enabled: dayKey !== null });
+
 
   const toggleTf = (k: string) => {
     const now = tfs ?? [];
@@ -209,29 +180,11 @@ export function OptionHistory() {
             {TF_CHOICES.map((c) => chip((tfs ?? []).includes(c.key), c.name, () => toggleTf(c.key), c.key === 'chain' ? 'The timeframe chain (the "all time" strategies)' : undefined))}
           </div>
         </div>
-        <div className="grid gap-1.5">
-          <span className="text-[13px] font-medium">Trades</span>
-          <div role="group" aria-label="Trades" className="flex flex-wrap gap-1.5">
-            {chip(!signals, "Desk's orders", () => setSource('orders'), 'The options the desk really sold')}
-            {chip(signals, 'Every signal', () => setSource('signals'), 'Every signal of the signal history, sold as the strategies pick a strike')}
-          </div>
-          {signals && (
-            <p className="m-0 text-[12px] leading-snug text-muted-foreground">
-              Every signal of the signal history that filled -- no max open, no method list, no strategy skip or refusal. One
-              contract of the strike the strategies pick (nearest the money with delta ≤ 0.10, bid ≥ $13) at the first price
-              after the fill, sold at its bid; the desk&apos;s real order beside it where there was one.
-            </p>
-          )}
-        </div>
-        {!signals && (
-          <div className="grid gap-1.5">
-            <span className="text-[13px] font-medium">Size</span>
-            <div role="group" aria-label="Size" className="flex flex-wrap gap-1.5">
-              {chip(!oneContract, 'As traded', () => setOneContract(false), 'Each trade at the contracts it really had')}
-              {chip(oneContract === true, '1 contract each', () => setOneContract(true), 'Every trade as one contract: a day of big lots does not outweigh the rest')}
-            </div>
-          </div>
-        )}
+        <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+          Every signal of the signal history that filled -- no account&apos;s rules: no max open, no method list, no strategy
+          skip or refusal. One contract of the strike the strategies pick (nearest the money with delta ≤ 0.10, bid ≥ $13) at
+          the first price after the fill, sold at its bid; the desk&apos;s real order beside it where there was one.
+        </p>
         {hoursControl}
       </section>
 
@@ -300,14 +253,14 @@ export function OptionHistory() {
         {error && !data && <p role="alert" className="mt-3 text-[13px] text-[var(--down)]">Could not load the option history: {error.message}</p>}
         {!data && !error && spanProblem === null && (
           <p className="mt-3 text-[13px] text-muted-foreground">
-            Working the trades again…{signals ? ' Every signal over a long range takes up to a minute the first time; each day is kept after that.' : ''}
+            Working every signal again… A long range takes up to a minute the first time; each day is kept after that.
           </p>
         )}
         {data && (
           <Results
-            data={data} dayData={dayData && dayData.from === day ? dayData : null} sortBy={sortBy ?? 'net'} onSort={setSortBy}
-            tab={tab === 'accounts' && data.source === 'signals' ? 'days' : tab ?? 'days'} onTab={setTab} show={show ?? 'all'} onShow={setShow}
-            day={day} onDay={(d) => { setDay(d); setShown(PAGE); }} shown={shown} onMore={() => setShown((n) => n + PAGE)} stale={loading}
+            data={data} sortBy={sortBy ?? 'net'} onSort={setSortBy} csvUrl={optionReplayCsvUrl(asked)}
+            tab={tab === 'accounts' && data.source === 'signals' ? 'days' : tab ?? 'days'} onTab={setTab} show={show ?? 'all'} onShow={(v) => { setShow(v); setOffset(0); }}
+            day={day} onDay={(d) => { setDay(d); setOffset(0); }} onPage={setOffset} stale={loading}
           />
         )}
       </CollapsibleCard>
@@ -315,18 +268,19 @@ export function OptionHistory() {
   );
 }
 
-function Results({ data, dayData, sortBy, onSort, tab, onTab, show, onShow, day, onDay, shown, onMore, stale }: {
-  data: OptionReplay; dayData: OptionReplay | null; sortBy: GroupSort; onSort: (s: GroupSort) => void; tab: GroupTab; onTab: (t: GroupTab) => void; show: Show; onShow: (s: Show) => void;
-  day: string | null; onDay: (d: string | null) => void; shown: number; onMore: () => void; stale: boolean;
+function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, onDay, onPage, stale }: {
+  data: OptionReplay; sortBy: GroupSort; onSort: (s: GroupSort) => void; csvUrl: string; tab: GroupTab; onTab: (t: GroupTab) => void; show: Show; onShow: (s: Show) => void;
+  day: string | null; onDay: (d: string | null) => void; onPage: (offset: number) => void; stale: boolean;
 }) {
   const { actual: a, replay: r } = data;
   const change = r.netUsd - a.netUsd;
   const signals = data.source === 'signals';
   const sort = sortBy === 'date' && tab !== 'days' ? 'net' : sortBy;
   const groups = rankGroups(data[tab], sort);
-  // A day tapped in a cut list: its own answer once it is here, the cut list's lines of it until then.
-  const pool = day && data.rowsCut && dayData ? dayData.rows : data.rows;
-  const rows = pool.filter((x) => (day === null || x.day === day) && shows(x, show));
+  // The server filters and pages the list (`list`): every trade is one page away, however many there are.
+  const rows = data.rows;
+  const { offset, limit } = data.list;
+  const page = (to: number) => onPage(Math.max(0, Math.min(to, Math.max(0, data.rowsTotal - 1))));
   const left = [
     data.noPrices > 0 && `${data.noPrices.toLocaleString('en-US')} without recorded prices`,
     data.noStrike > 0 && `${data.noStrike.toLocaleString('en-US')} signals with no strike inside the rule`,
@@ -416,27 +370,44 @@ function Results({ data, dayData, sortBy, onSort, tab, onTab, show, onShow, day,
                 {day} ✕
               </button>
             )}
-            <button
-              type="button" onClick={() => downloadCsv(`option-history-${data.from}-to-${data.to}.csv`, replayCsv(rows))}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-solid border-border bg-transparent px-2.5 font-[inherit] text-[13px] text-foreground"
+            <a
+              href={csvUrl} download title="Every trade this list holds, not only this page"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-solid border-border bg-transparent px-2.5 text-[13px] text-foreground no-underline"
             >
               <Download className="h-3.5 w-3.5" aria-hidden /> CSV
-            </button>
+            </a>
           </span>
         </div>
-        {data.rowsCut && !(day && dayData) && (
-          <p className="mb-2 mt-0 text-[12px] text-muted-foreground">
-            The list holds the newest {data.rows.length.toLocaleString('en-US')} trades; the totals above count every one. Tap a day to list all of its trades.
-          </p>
-        )}
-        <TradeTable rows={rows.slice(0, shown)} />
-        {rows.length > shown && (
-          <button type="button" onClick={onMore} className="mt-2 h-10 w-full rounded-md border border-solid border-border bg-transparent font-[inherit] text-[13px] text-foreground">
-            Show more ({(rows.length - shown).toLocaleString('en-US')} left)
-          </button>
-        )}
+        <Pager offset={offset} limit={limit} total={data.rowsTotal} onPage={page} />
+        <TradeTable rows={rows} />
+        {data.rowsTotal > limit && <div className="mt-2"><Pager offset={offset} limit={limit} total={data.rowsTotal} onPage={page} /></div>}
       </div>
     </div>
+  );
+}
+
+/** Where the page is in the list, and the way to the next, the one before, the first and the last. */
+function Pager({ offset, limit, total, onPage }: { offset: number; limit: number; total: number; onPage: (offset: number) => void }) {
+  const btn = (label: string, to: number, off: boolean) => (
+    <button
+      type="button" disabled={off} onClick={() => onPage(to)}
+      className="h-9 min-w-[44px] rounded-md border border-solid border-border bg-transparent px-2.5 font-[inherit] text-[13px] text-foreground disabled:opacity-40"
+    >
+      {label}
+    </button>
+  );
+  const last = Math.max(0, Math.floor((total - 1) / limit) * limit);
+  return (
+    <nav aria-label="Pages" className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-muted-foreground">
+      <span className="tabular-nums">
+        {total === 0 ? 'No trades' : `${(offset + 1).toLocaleString('en-US')}–${Math.min(total, offset + limit).toLocaleString('en-US')} of ${total.toLocaleString('en-US')} trades`}
+      </span>
+      {total > limit && (
+        <span className="flex gap-1.5">
+          {btn('First', 0, offset === 0)}{btn('Previous', offset - limit, offset === 0)}{btn('Next', offset + limit, offset + limit >= total)}{btn('Last', last, offset >= last)}
+        </span>
+      )}
+    </nav>
   );
 }
 

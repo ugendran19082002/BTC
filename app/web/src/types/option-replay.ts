@@ -31,5 +31,9 @@ export type OptionReplay = {
   exits: Record<ReplayExit, number>;
   open: number; noPrices: number; noStrike: number;
   days: ReplayGroup[]; timeframes: ReplayGroup[]; methods: ReplayGroup[]; accounts: ReplayGroup[];
-  rows: OptionReplayRow[]; rowsCut: boolean;
+  /** One page of the trades, newest first, and how many the list's filter holds in all. */
+  rows: OptionReplayRow[]; rowsTotal: number; list: ReplayList;
 };
+export type ReplayShow = 'all' | 'profit' | 'loss' | 'better' | 'worse';
+/** Which page of the trades: one expiry day or all, filtered by `show`, from `offset`. */
+export type ReplayList = { day: string | null; show: ReplayShow; offset: number; limit: number };

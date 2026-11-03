@@ -8,7 +8,7 @@ import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
 import { windowOf } from './market.routes.js';
 import { optionReplay } from '../../report/backtest-run.js';
-import { LIVE_RULES, REPLAY_MAX_DAYS, rulesProblem, type ReplayRules, type ReplaySource } from '../../report/option-replay.js';
+import { LIVE_RULES, REPLAY_CSV_MAX, REPLAY_MAX_DAYS, REPLAY_PAGE_MAX, REPLAY_SHOWS, optionReplayCsv, rulesProblem, type ReplayList, type ReplayRules, type ReplaySource, type ReplayShow } from '../../report/option-replay.js';
 import { sessionDayOf } from '../../report/market-day.js';
 
 /**
@@ -72,7 +72,7 @@ const pctOf = (v: unknown, dflt: number) => (v === undefined || v === '' ? dflt 
 /** The option history's question, checked: expiry days (the last week's by default), hours, timeframes, methods and the rules. */
 export function replayAskOf(q: Record<string, unknown>, now = Date.now()): string | {
   from: string; to: string; window: { from: number; to: number } | null; tfs: string[] | null; methods: string[] | null; rules: ReplayRules; oneContract: boolean;
-  source: ReplaySource;
+  source: ReplaySource; list: ReplayList;
 } {
   const today = sessionDayOf(now);
   const from = q.from === undefined || q.from === '' ? sessionDayOf(now - 6 * 86_400_000) : String(q.from);
@@ -90,7 +90,19 @@ export function replayAskOf(q: Record<string, unknown>, now = Date.now()): strin
   if (bad) return bad;
   if (q.size !== undefined && q.size !== '' && q.size !== 'traded' && q.size !== 'one') return 'The size must be traded or one.';
   if (q.source !== undefined && q.source !== '' && q.source !== 'orders' && q.source !== 'signals') return 'The source must be orders or signals.';
-  return { from, to, window, tfs: timeframesOf(q), methods: methodsOf(q), rules, oneContract: q.size === 'one', source: q.source === 'signals' ? 'signals' : 'orders' };
+  // The list: `?day=` one expiry day of the range, `?show=` profit / loss / better / worse, `?offset=&limit=` the page.
+  const day = q.day === undefined || q.day === '' ? null : String(q.day);
+  if (day !== null && (!DAY.test(day) || day < from || day > to)) return 'The day listed must be a day of the range.';
+  const show = q.show === undefined || q.show === '' ? 'all' : String(q.show);
+  if (!REPLAY_SHOWS.includes(show as ReplayShow)) return `Show must be one of ${REPLAY_SHOWS.join(', ')}.`;
+  const offset = q.offset === undefined || q.offset === '' ? 0 : Number(q.offset);
+  const limit = q.limit === undefined || q.limit === '' ? 200 : Number(q.limit);
+  if (!Number.isInteger(offset) || offset < 0) return 'The offset must be a whole number, 0 or more.';
+  if (!Number.isInteger(limit) || limit < 1 || limit > REPLAY_PAGE_MAX) return `The page holds 1 to ${REPLAY_PAGE_MAX} trades.`;
+  return {
+    from, to, window, tfs: timeframesOf(q), methods: methodsOf(q), rules, oneContract: q.size === 'one',
+    source: q.source === 'signals' ? 'signals' : 'orders', list: { day, show: show as ReplayShow, offset, limit },
+  };
 }
 
 export function registerReportRoutes(app: FastifyInstance) {
@@ -109,6 +121,16 @@ export function registerReportRoutes(app: FastifyInstance) {
     const a = replayAskOf((req.query ?? {}) as Record<string, unknown>);
     if (typeof a === 'string') return refuse(reply, 400, { error: a });
     return optionReplay({ ...a, account: accountOf(req.query), now: Date.now() });
+  });
+
+  // The same, every trade the list's filter holds, as a spreadsheet -- the replay already worked is sliced, not worked again.
+  app.get('/api/report/option-replay.csv', async (req, reply) => {
+    const a = replayAskOf((req.query ?? {}) as Record<string, unknown>);
+    if (typeof a === 'string') return refuse(reply, 400, { error: a });
+    const r = await optionReplay({ ...a, list: { ...a.list, offset: 0, limit: REPLAY_CSV_MAX }, account: accountOf(req.query), now: Date.now() });
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="option-history-${a.source}-${a.from}-to-${a.to}.csv"`);
+    return optionReplayCsv(r.rows);
   });
 
   /** Every trading day in the range, with the running total. */

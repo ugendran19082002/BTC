@@ -46,8 +46,15 @@ export const REPLAY_TFS: readonly string[] = ['1m', '3m', '5m', '15m', '30m', '1
 
 /** At most this many expiry days in one ask: a month and a day, so "this month" always fits. */
 export const REPLAY_MAX_DAYS = 31;
-/** A list of trades longer than this is cut, newest kept: the days, timeframes and methods still count every one. */
-export const REPLAY_ROWS_MAX = 1_500;
+/** The most trades one page of the list holds; the spreadsheet takes them all (`REPLAY_CSV_MAX`). */
+export const REPLAY_PAGE_MAX = 1_000;
+export const REPLAY_CSV_MAX = 250_000;
+
+/** Which trades the list holds, by what they make under the rules: all, in profit, in loss, or better / worse than the real order. */
+export type ReplayShow = 'all' | 'profit' | 'loss' | 'better' | 'worse';
+export const REPLAY_SHOWS: readonly ReplayShow[] = ['all', 'profit', 'loss', 'better', 'worse'];
+/** One page of the list: of one expiry day or all, filtered by `show`, newest first from `offset`. */
+export type ReplayList = { day: string | null; show: ReplayShow; offset: number; limit: number };
 
 export type OptionReplayAsk = {
   /** Expiry days, YYYY-MM-DD, both included. */
@@ -65,6 +72,8 @@ export type OptionReplayAsk = {
   oneContract?: boolean;
   /** `orders` (the default): the desk's real orders. `signals`: every signal in the signal history (`SIGNAL_STRIKE`). */
   source?: ReplaySource;
+  /** Which page of the trades to hold. Absent: the first `REPLAY_PAGE_MAX / 5` of all of them. */
+  list?: ReplayList;
   now: number;
 };
 
@@ -110,8 +119,8 @@ export type OptionReplay = {
    */
   open: number; noPrices: number; noStrike: number;
   days: ReplayGroup[]; timeframes: ReplayGroup[]; methods: ReplayGroup[]; accounts: ReplayGroup[];
-  /** Newest first, at most `REPLAY_ROWS_MAX`. */
-  rows: OptionReplayRow[]; rowsCut: boolean;
+  /** One page of the trades, newest first (`list`), and how many the list's filter holds in all. */
+  rows: OptionReplayRow[]; rowsTotal: number; list: ReplayList;
 };
 
 // ------------------------------------------------------------------ the rules, checked
@@ -410,7 +419,7 @@ function kept<T>(store: Held<T>, day: string, now: number, read: (day: string) =
 const dayData = (day: string, now: number) => kept(held, day, now, readDay);
 const signalDay = (day: string, now: number) => kept(heldSignals, day, now, readSignals);
 
-export function clearOptionReplayCache(): void { held.clear(); heldSignals.clear(); }
+export function clearOptionReplayCache(): void { held.clear(); heldSignals.clear(); cores.clear(); }
 
 async function methodNames(): Promise<Map<string, string>> {
   return new Map((await rows<{ id: string; n: number | null; name: string }>('SELECT id, n, name FROM entry_methods')).map((m) => [m.id, m.n === null ? m.name : `#${m.n} ${m.name}`]));
@@ -443,7 +452,40 @@ async function byFours<T>(days: readonly string[], read: (day: string) => Promis
   return out;
 }
 
+/** Whether a trade is on a list filtered by `show`. A signal the desk did not trade is neither better nor worse. */
+export function onList(r: OptionReplayRow, show: ReplayShow): boolean {
+  if (show === 'all') return true;
+  if (show === 'profit') return r.replay.netUsd > 0;
+  if (show === 'loss') return r.replay.netUsd < 0;
+  if (!r.actual) return false;
+  return show === 'better' ? r.replay.netUsd > r.actual.netUsd + 1e-9 : r.replay.netUsd < r.actual.netUsd - 1e-9;
+}
+
+/**
+ * The last few answers, whole, a minute each: the list's next page, another filter, the spreadsheet -- each the same
+ * replay, sliced differently -- answer from here instead of working a month of signals again.
+ */
+type Core = Omit<OptionReplay, 'rows' | 'rowsTotal' | 'list'> & { all: OptionReplayRow[] };
+const cores = new Map<string, { at: number; core: Promise<Core> }>();
+const CORES_KEPT = 4;
+
 export async function optionReplay(o: OptionReplayAsk): Promise<OptionReplay> {
+  const key = JSON.stringify({ ...o, list: undefined, now: undefined });
+  let c = cores.get(key);
+  if (!c || o.now - c.at > TODAY_FRESH_MS) {
+    c = { at: o.now, core: replayCore(o) };
+    cores.delete(key); cores.set(key, c);
+    const mine = c;
+    mine.core.catch(() => { if (cores.get(key) === mine) cores.delete(key); });
+    while (cores.size > CORES_KEPT) cores.delete(cores.keys().next().value!);
+  }
+  const { all, ...core } = await c.core;
+  const list: ReplayList = o.list ?? { day: null, show: 'all', offset: 0, limit: REPLAY_PAGE_MAX / 5 };
+  const picked = all.filter((r) => (list.day === null || r.day === list.day) && onList(r, list.show));
+  return { ...core, rows: picked.slice(list.offset, list.offset + list.limit), rowsTotal: picked.length, list };
+}
+
+async function replayCore(o: OptionReplayAsk): Promise<Core> {
   const days = sessionDays(o.from, o.to);
   const source: ReplaySource = o.source ?? 'orders';
   const [data, signals, names, accounts, targets] = await Promise.all([
@@ -464,7 +506,7 @@ export async function optionReplay(o: OptionReplayAsk): Promise<OptionReplay> {
   // Every day asked for has its line, a day with no trade too: a date the list skipped read as one the screen had lost.
   for (const d of days) groupOf(groups.day, d, d);
   const accountName = (id: number | null) => (id === null ? 'No account' : accounts.get(String(id)) ?? `Account ${id}`);
-  /** Whether a trade is one the ask is about. A signal is no account's: under `signals` the account narrows only the real orders set beside them. */
+  /** Whether a trade is one the ask is about. A signal is no account's: under `signals` the account is not read. */
   const wanted = (t: { account: number | null; tf: string; method: string; enteredAt: number }, signal = false) => {
     if (!signal && o.account !== null && t.account !== o.account) return false;
     if (tfs && !tfs.has(t.tf)) return false;
@@ -482,10 +524,10 @@ export async function optionReplay(o: OptionReplayAsk): Promise<OptionReplay> {
       const sd = signals[k]!;
       noStrike += sd.noStrike;
       paths = sd.paths;
-      // The desk's real order on the same signal -- the first entered, of the account shown when there is one.
+      // The desk's real order on the same signal -- the first entered, whichever account (owner, 3 Nov 2026: "not by the
+      // accounts' rules; by the signal history, with only the option history's settings").
       const real = new Map<string, Taken>();
       for (const t of [...d.taken].sort((a, b) => a.enteredAt - b.enteredAt)) {
-        if (o.account !== null && t.account !== o.account) continue;
         const key = levelKey(t.method, t.mode, t.signalTf, t.dir, t.triggerTime);
         if (!real.has(key)) real.set(key, t);
       }
@@ -552,6 +594,19 @@ export async function optionReplay(o: OptionReplayAsk): Promise<OptionReplay> {
     timeframes: [...groups.tf.values()].sort((a, b) => tfRank(a.key) - tfRank(b.key)),
     methods: [...groups.method.values()].sort(byNet),
     accounts: [...groups.account.values()].sort((a, b) => a.key.localeCompare(b.key, 'en', { numeric: true })),
-    rows: out.slice(0, REPLAY_ROWS_MAX), rowsCut: out.length > REPLAY_ROWS_MAX,
+    all: out,
   };
+}
+
+const csvCell = (v: string | number | null) => (v === null ? '' : typeof v === 'number' ? String(Math.round(v * 1e6) / 1e6) : /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+const istStamp = (ms: number | null) => (ms === null ? null : new Date(ms + 5.5 * 3_600_000).toISOString().slice(0, 16).replace('T', ' '));
+
+/** The trades as a spreadsheet: what each was, what the desk's order did, and what it would have done. */
+export function optionReplayCsv(rows: readonly OptionReplayRow[]): string {
+  const head = ['expiry_day', 'entered_ist', 'account', 'strategy', 'timeframe', 'method', 'side', 'symbol', 'contracts', 'sold_at', 'perp_sl', 'perp_tgt',
+    'actual_exit_ist', 'actual_exit', 'actual_why', 'actual_net_usd', 'replay_exit_ist', 'replay_exit', 'replay_why', 'replay_net_usd'];
+  const lines = rows.map((r) => [r.day, istStamp(r.enteredAt), r.account, r.strategyName, r.tf, r.methodName, r.side, r.symbol, r.contracts, r.entry, r.perpSl, r.perpTgt,
+    istStamp(r.actual?.exitAt ?? null), r.actual?.exit ?? null, r.actual?.why ?? 'not traded', r.actual?.netUsd ?? null,
+    istStamp(r.replay.exitAt), r.replay.exit, r.replay.why, r.replay.netUsd].map(csvCell).join(','));
+  return [head.join(','), ...lines].join('\n') + '\n';
 }

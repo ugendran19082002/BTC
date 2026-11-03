@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { optionReplayUrl } from '@/api/option-replay';
+import { optionReplayCsvUrl, optionReplayUrl, type OptionReplayQuery } from '@/api/option-replay';
 import type { OptionReplay, OptionReplayRow, ReplayGroup, ReplaySide } from '@/types/option-replay';
 
 /**
- * The option history (owner, 3 Nov 2026): the options the desk really sold against each signal, their exits worked
- * again under the rules on the card -- skip perp SL and TGT, the option's SL and TGT -- for the expiry days, hours and
- * timeframes chosen, beside what really happened.
+ * The option history (owner, 3 Nov 2026): every signal of the signal history -- no account's rules, only the card's
+ * settings -- each sold as the strategies pick a strike, its exit worked under the rules on the card: skip perp SL and
+ * TGT, the option's SL and TGT, for the expiry days, hours and timeframes chosen; the desk's real order beside it where
+ * there was one. Every trade is listed, a page at a time from the server; the groups ranked.
  */
 
 const getOptionReplay = vi.fn();
@@ -14,26 +15,27 @@ vi.mock('@/api/option-replay', async (orig) => ({
   ...(await orig<typeof import('@/api/option-replay')>()),
   getOptionReplay: (...a: unknown[]) => getOptionReplay(...a),
 }));
-const { OptionHistory, LIVE_RULES, expiryDayNow, rulesProblem, shows, replayCsv, rankGroups } = await import('@/components/report/OptionHistory');
+const { OptionHistory, LIVE_RULES, expiryDayNow, rulesProblem, rankGroups } = await import('@/components/report/OptionHistory');
 
 const side = (netUsd: number, o: Partial<ReplaySide> = {}): ReplaySide => ({ trades: 2, wins: 1, losses: 1, profitUsd: Math.max(netUsd, 0) + 0.01, lossUsd: 0.01, netUsd, ...o });
-const row = (id: string, day: string, actual: number, replay: number): OptionReplayRow => ({
-  tradeId: id, day, account: 1, strategyId: 's', strategyName: '5m time', method: 'pullback', methodName: '#7 Pullback', tf: '5m', side: 'PE',
+const row = (id: string, day: string, actual: number | null, replay: number): OptionReplayRow => ({
+  tradeId: id, day, account: null, strategyId: null, strategyName: null, method: 'pullback', methodName: '#7 Pullback', tf: '5m', side: 'PE',
   symbol: 'P-BTC-84000-201026', enteredAt: Date.parse(`${day}T09:30:00+05:30`), entry: 40, contracts: 1, perpSl: 84_400, perpTgt: 85_000,
-  actual: { exitAt: null, exit: 4, netUsd: actual, why: 'option-tgt' }, replay: { exitAt: null, exit: 30, netUsd: replay, why: 'perp-sl' },
+  actual: actual === null ? null : { exitAt: null, exit: 4, netUsd: actual, why: 'option-tgt' }, replay: { exitAt: null, exit: 30, netUsd: replay, why: 'perp-sl' },
 });
 const group = (key: string, trades: number, actual: number, replay: number, o: Partial<ReplayGroup> = {}): ReplayGroup =>
   ({ key, name: key, trades, open: 0, traded: trades, better: 0, worse: trades, actual: side(actual), replay: side(replay), ...o });
 const answer = (o: Partial<OptionReplay> = {}): OptionReplay => ({
-  from: '2026-10-28', to: '2026-11-03', rules: LIVE_RULES, oneContract: false, source: 'orders',
-  actual: side(0.03), replay: side(-0.02), traded: 2, better: 0, worse: 2, exits: { 'option-sl': 1, 'option-tgt': 0, 'perp-sl': 1, 'perp-tgt': 0, close: 0 },
-  open: 0, noPrices: 2, noStrike: 0,
+  from: '2026-10-28', to: '2026-11-03', rules: LIVE_RULES, oneContract: true, source: 'signals',
+  actual: side(0.03), replay: side(-0.02), traded: 1, better: 0, worse: 1, exits: { 'option-sl': 1, 'option-tgt': 0, 'perp-sl': 1, 'perp-tgt': 0, close: 0 },
+  open: 0, noPrices: 2, noStrike: 4,
   days: [group('2026-11-03', 0, 0, 0, { open: 3, traded: 0, worse: 0 }), group('2026-10-20', 1, 0.04, 0.01), group('2026-10-19', 1, -0.01, -0.03)],
   timeframes: [group('5m', 2, 0.03, -0.02)],
   methods: [], accounts: [],
-  rows: [row('a', '2026-10-20', 0.04, 0.01), row('b', '2026-10-19', -0.01, -0.03)], rowsCut: false,
+  rows: [row('a', '2026-10-20', 0.04, 0.01), row('b', '2026-10-19', null, -0.03)], rowsTotal: 2, list: { day: null, show: 'all', offset: 0, limit: 200 },
   ...o,
 });
+const lastAsk = () => getOptionReplay.mock.lastCall![0] as OptionReplayQuery;
 
 beforeEach(() => {
   localStorage.clear();
@@ -42,22 +44,29 @@ beforeEach(() => {
 });
 
 describe('Option history', () => {
-  it('[critical] asks for the last seven expiry days as the desk runs, and sets what happened beside the replay', async () => {
+  it('[critical] every signal, the last seven expiry days as the desk runs; the real orders beside them', async () => {
     render(<OptionHistory />);
     expect(await screen.findByText('With these rules')).toBeInTheDocument();
-    const q = getOptionReplay.mock.calls[0]![0];
+    const q = lastAsk();
+    expect([q.source, q.oneContract]).toEqual(['signals', true]);
     expect(q.rules).toEqual(LIVE_RULES);
-    expect(q.tfs).toEqual([]);
-    expect(q.hours).toBeNull();
-    expect(q.oneContract).toBe(false);
+    expect([q.tfs, q.hours]).toEqual([[], null]);
+    expect(q.list).toEqual({ day: null, show: 'all', offset: 0, limit: 200 });
     expect(q.to).toBe(expiryDayNow());
     expect((Date.parse(q.to) - Date.parse(q.from)) / 86_400_000).toBe(6);
+    // Nothing on the card is an account's or the desk's: no source to choose, no size.
+    expect(screen.queryByRole('button', { name: "Desk's orders" })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Size' })).toBeNull();
+    expect(screen.getByText(/Desk's real orders · 1 of 2/)).toBeInTheDocument();
     // As traded +₹2.55, with the rules −₹1.70: the change is −₹4.25.
     expect(screen.getByText('Change', { selector: 'span' }).parentElement).toHaveTextContent('−₹4.25');
-    expect(screen.getByText(/Left out: 2 without recorded prices/)).toBeInTheDocument();
-    const trades = screen.getByRole('table', { name: 'Trades' });
-    expect(within(trades).getAllByRole('row')).toHaveLength(3);
-    expect(within(trades).getAllByRole('row')[1]).toHaveTextContent('Perp SL · 30');
+    expect(screen.getByText(/Left out: 2 without recorded prices, 4 signals with no strike inside the rule/)).toBeInTheDocument();
+    const trades = within(screen.getByRole('table', { name: 'Trades' })).getAllByRole('row');
+    expect(trades[1]).toHaveTextContent('Perp SL · 30');
+    expect(trades[2]).toHaveTextContent('Not traded');
+    // The option once, not "PE … PE".
+    expect(trades[1]!.textContent!.match(/PE/g)).toHaveLength(1);
+    expect(screen.queryByRole('tab', { name: 'Accounts' })).toBeNull();
   });
 
   it('[critical] the switches and the option SL and TGT are asked for again, half a second after the last change', async () => {
@@ -66,16 +75,14 @@ describe('Option history', () => {
       render(<OptionHistory />);
       await screen.findByText('With these rules');
       fireEvent.click(screen.getByRole('switch', { name: /^Skip perp SL/ }));
-      const sl = screen.getByLabelText('Option SL, per cent of the price sold');
-      fireEvent.change(sl, { target: { value: '150' } });
+      fireEvent.change(screen.getByLabelText('Option SL, per cent of the price sold'), { target: { value: '150' } });
       expect(getOptionReplay).toHaveBeenCalledTimes(1);
       await act(async () => { vi.advanceTimersByTime(600); });
       await waitFor(() => expect(getOptionReplay).toHaveBeenCalledTimes(2));
-      expect(getOptionReplay.mock.calls[1]![0].rules).toEqual({ ...LIVE_RULES, skipPerpSl: false, stopPct: 1.5 });
-      // Back as live in one tap.
+      expect(lastAsk().rules).toEqual({ ...LIVE_RULES, skipPerpSl: false, stopPct: 1.5 });
       fireEvent.click(screen.getByRole('button', { name: 'As live' }));
       await act(async () => { vi.advanceTimersByTime(600); });
-      await waitFor(() => expect(getOptionReplay.mock.lastCall![0].rules).toEqual(LIVE_RULES));
+      await waitFor(() => expect(lastAsk().rules).toEqual(LIVE_RULES));
     } finally {
       vi.useRealTimers();
     }
@@ -90,48 +97,38 @@ describe('Option history', () => {
     expect(getOptionReplay).toHaveBeenCalledTimes(1);
   });
 
-  it('timeframes, size, a day and profit / loss narrow it', async () => {
-    render(<OptionHistory />);
-    await screen.findByText('With these rules');
-    fireEvent.click(screen.getByRole('button', { name: 'Chain' }));
-    await waitFor(() => expect(getOptionReplay.mock.lastCall![0].tfs).toEqual(['chain']));
-    fireEvent.click(screen.getByRole('button', { name: '1 contract each' }));
-    await waitFor(() => expect(getOptionReplay.mock.lastCall![0].oneContract).toBe(true));
-    await screen.findByText('With these rules');
-    // A day tapped lists its trades alone; Loss leaves those the rules lose on.
-    fireEvent.click(screen.getByRole('row', { name: /2026-10-19/ }));
-    expect(within(screen.getByRole('table', { name: 'Trades' })).getAllByRole('row')).toHaveLength(2);
-    fireEvent.click(screen.getByRole('button', { name: '2026-10-19 ✕' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Profit' }));
-    expect(within(screen.getByRole('table', { name: 'Trades' })).getAllByRole('row')).toHaveLength(2);
-    expect(within(screen.getByRole('table', { name: 'Trades' })).getAllByRole('row')[1]).toHaveTextContent('+₹0.85');
-  });
-
   it('[critical] every day of the range has its line: one with no trade says so, and its open trades', async () => {
     render(<OptionHistory />);
     await screen.findByText('With these rules');
     fireEvent.change(screen.getByRole('combobox', { name: 'Rank by' }), { target: { value: 'date' } });
-    const days = screen.getByRole('table', { name: 'By days' });
-    expect(within(days).getByRole('row', { name: /2026-11-03/ })).toHaveTextContent('No trades · 3 still open');
-    // The option once, not "PE … PE".
-    const first = within(screen.getByRole('table', { name: 'Trades' })).getAllByRole('row')[1]!;
-    expect(first.textContent!.match(/PE/g)).toHaveLength(1);
+    expect(within(screen.getByRole('table', { name: 'By days' })).getByRole('row', { name: /2026-11-03/ })).toHaveTextContent('No trades · 3 still open');
   });
 
-  it('[critical] every signal: asked for as such, the real orders beside the signals, a signal not traded said so', async () => {
-    getOptionReplay.mockResolvedValue(answer({
-      source: 'signals', oneContract: true, traded: 1, noStrike: 4,
-      rows: [{ ...row('a', '2026-10-20', 0.04, 0.01) }, { ...row('b', '2026-10-19', 0, 0.02), actual: null }],
-    }));
+  it('[critical] the list: a day, profit / loss, and every page asked of the server', async () => {
+    getOptionReplay.mockResolvedValue(answer({ rowsTotal: 450 }));
     render(<OptionHistory />);
     await screen.findByText('With these rules');
-    fireEvent.click(screen.getByRole('button', { name: 'Every signal' }));
-    await waitFor(() => expect(getOptionReplay.mock.lastCall![0].source).toBe('signals'));
-    expect(screen.queryByRole('group', { name: 'Size' })).toBeNull();
-    expect(await screen.findByText(/Desk's real orders · 1 of 2/)).toBeInTheDocument();
-    expect(screen.getByText(/4 signals with no strike inside the rule/)).toBeInTheDocument();
-    expect(within(screen.getByRole('table', { name: 'Trades' })).getAllByRole('row')[2]).toHaveTextContent('Not traded');
-    expect(screen.queryByRole('tab', { name: 'Accounts' })).toBeNull();
+    expect(screen.getAllByText('1–200 of 450 trades')).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Next' })[0]!);
+    await waitFor(() => expect(lastAsk().list.offset).toBe(200));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Last' })[0]!);
+    await waitFor(() => expect(lastAsk().list.offset).toBe(400));
+    // A filter or a day starts the list again from its first page.
+    fireEvent.click(screen.getByRole('button', { name: 'Loss' }));
+    await waitFor(() => expect(lastAsk().list).toEqual({ day: null, show: 'loss', offset: 0, limit: 200 }));
+    fireEvent.click(screen.getByRole('row', { name: /2026-10-19/ }));
+    await waitFor(() => expect(lastAsk().list).toEqual({ day: '2026-10-19', show: 'loss', offset: 0, limit: 200 }));
+    // The spreadsheet is every trade the list holds, written by the server.
+    const csv = screen.getByRole('link', { name: 'CSV' }).getAttribute('href')!;
+    expect(csv).toContain('/api/report/option-replay.csv?');
+    expect(csv).toContain('day=2026-10-19&show=loss');
+  });
+
+  it('timeframes narrow it', async () => {
+    render(<OptionHistory />);
+    await screen.findByText('With these rules');
+    fireEvent.click(screen.getByRole('button', { name: 'Chain' }));
+    await waitFor(() => expect(lastAsk().tfs).toEqual(['chain']));
   });
 
   it('a refusal is said', async () => {
@@ -142,9 +139,14 @@ describe('Option history', () => {
 });
 
 describe('the parts', () => {
-  it('the URL carries the rules in per cents, the hours and the timeframes', () => {
-    expect(optionReplayUrl({ from: '2026-10-01', to: '2026-10-31', hours: { from: '07:00', to: '11:00' }, tfs: ['5m', 'chain'], rules: { skipPerpSl: false, skipPerpTgt: true, stopPct: 1.5, targetPct: 0.95 }, oneContract: true, source: 'signals' }))
-      .toBe('/api/report/option-replay?from=2026-10-01&to=2026-10-31&fromTime=07%3A00&toTime=11%3A00&tf=5m%2Cchain&skipPerpSl=0&skipPerpTgt=1&sl=150&tgt=95&size=one&source=signals');
+  it('the URL carries the rules in per cents, the hours, the timeframes, the source and the page', () => {
+    const q: OptionReplayQuery = {
+      from: '2026-10-01', to: '2026-10-31', hours: { from: '07:00', to: '11:00' }, tfs: ['5m', 'chain'],
+      rules: { skipPerpSl: false, skipPerpTgt: true, stopPct: 1.5, targetPct: 0.95 }, oneContract: true, source: 'signals',
+      list: { day: '2026-10-12', show: 'worse', offset: 400, limit: 200 },
+    };
+    expect(optionReplayUrl(q)).toBe('/api/report/option-replay?from=2026-10-01&to=2026-10-31&fromTime=07%3A00&toTime=11%3A00&tf=5m%2Cchain&skipPerpSl=0&skipPerpTgt=1&sl=150&tgt=95&size=one&source=signals&day=2026-10-12&show=worse&offset=400&limit=200');
+    expect(optionReplayCsvUrl(q)).toMatch(/^\/api\/report\/option-replay\.csv\?from=2026-10-01/);
   });
   it('ranked best first by what is asked, a day with no trade last', () => {
     const gs = [group('a', 0, 0, 0), group('b', 5, 1, 2, { better: 4, worse: 1 }), group('c', 9, 1, 5, { better: 1, worse: 8 })];
@@ -153,14 +155,9 @@ describe('the parts', () => {
     expect(rankGroups(gs, 'worse').map((g) => g.key)).toEqual(['c', 'b', 'a']);
     expect(rankGroups(gs, 'date').map((g) => g.key)).toEqual(['a', 'b', 'c']);
   });
-
-  it('the rules checked, the filters, the spreadsheet', () => {
+  it('the rules checked', () => {
     expect(rulesProblem(LIVE_RULES)).toBeNull();
     expect(rulesProblem({ ...LIVE_RULES, stopPct: 21 })).toMatch(/Option SL/);
-    const r = row('a', '2026-10-20', 0.04, 0.01);
-    expect([shows(r, 'profit'), shows(r, 'loss'), shows(r, 'better'), shows(r, 'worse')]).toEqual([true, false, false, true]);
-    expect(shows({ ...r, actual: null }, 'worse')).toBe(false);
-    expect(replayCsv([r]).split('\n')[1]).toContain('2026-10-20,2026-10-20 09:30,1,5m time,5m,#7 Pullback,PE,P-BTC-84000-201026,1,40,84400,85000,4,option-tgt,0.04,30,perp-sl,0.01');
   });
   it('the expiry day turns at 5:30 PM IST', () => {
     expect(expiryDayNow(Date.parse('2026-11-03T17:29:00+05:30'))).toBe('2026-11-03');

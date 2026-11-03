@@ -3,7 +3,7 @@ import { ChevronDown, Loader2 } from 'lucide-react';
 import { SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import {
-  DAY_NAMES, DEFAULT_CONFIG, DEFAULT_DELTA, DEFAULT_DISTANCE, DEFAULT_FIXED_DISTANCE_PCT, DEFAULT_MIN_OTM, DELTA_PRESETS, MAX_NO_ENTRY_WINDOWS, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL,
+  DAY_NAMES, DEFAULT_DELTA, DEFAULT_MAX_SPREAD_PCT, DEFAULT_DISTANCE, DEFAULT_FIXED_DISTANCE_PCT, DEFAULT_MIN_OTM, DELTA_PRESETS, MAX_NO_ENTRY_WINDOWS, MAX_STRIKE_STEP, PREMIUM_MODE_LABEL,
   distanceNeeded, strikeLabel, type DeltaRule, type DistanceRule, type NoEntry, type NoEntryWindow, type StrategyConfig,
 } from '@/types/strategy';
 import { nextWindow, noEntryWords, pickerBounds, suggestedWindow } from '@/lib/strategy-no-entry';
@@ -721,9 +721,9 @@ export function EntryPriceFields({ c, set, err, allowSet = true }: {
         <Stack label="Max spread" error={err('maxCrossSpreadPct')}
                hint={c.entryPrice === 'offer' && c.crossAfterSec > 0 ? 'wider waits at the mid; never sold into a wider one' : 'never sold into a wider spread'}>
           <Affix after="%">
-            <Input value={String(Math.round((c.maxCrossSpreadPct ?? DEFAULT_CONFIG.maxCrossSpreadPct) * 100))} aria-label="max spread to sell at bid pct"
+            <Input value={String(Math.round((c.maxCrossSpreadPct ?? DEFAULT_MAX_SPREAD_PCT) * 100))} aria-label="max spread to sell at bid pct"
                    inputMode="numeric" className="pr-7"
-                   onChange={(e) => set('maxCrossSpreadPct', Math.min(100, Math.max(1, num(e.target.value, DEFAULT_CONFIG.maxCrossSpreadPct * 100))) / 100)} />
+                   onChange={(e) => set('maxCrossSpreadPct', Math.min(100, Math.max(1, num(e.target.value, DEFAULT_MAX_SPREAD_PCT * 100))) / 100)} />
           </Affix>
         </Stack>
       </div>

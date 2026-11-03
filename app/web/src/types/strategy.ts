@@ -638,6 +638,8 @@ export type StrategyStatus = {
   signalTrades?: SignalTrade[];
 };
 
+/** A strategy's Max spread when it sets none: the widest spread its order is sold into (server: DEFAULT_CONFIG). */
+export const DEFAULT_MAX_SPREAD_PCT = 0.15;
 export const DEFAULT_CONFIG: StrategyConfig = {
   entryTime: '05:30',
   exitTime: '17:29',
@@ -647,7 +649,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   entryPrice: 'offer',
   entryLimit: null,
   crossAfterSec: 5,
-  maxCrossSpreadPct: 0.15,
+  maxCrossSpreadPct: DEFAULT_MAX_SPREAD_PCT,
   takeProfitPct: 0.95,
   stopLossPct: 0,
   targetMode: 'pct',

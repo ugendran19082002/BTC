@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-139 routes.
+140 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -125,6 +125,7 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/report/days.csv` | signed in | The P&L calendar as a spreadsheet that opens cleanly in Excel. |
 | GET | `/api/report/mtm` | signed in | One day, minute by minute. |
 | GET | `/api/report/option-replay` | signed in | The option history (3 Nov 2026): the signal options the desk really sold, each one's exit worked again on its own contract's recorded quotes under the rules asked for, beside what it really did (`o... |
+| GET | `/api/report/option-replay.csv` | signed in | The same, every trade the list's filter holds, as a spreadsheet -- the replay already worked is sliced, not worked again. |
 | GET | `/api/report/stats` | signed in | How the closed trades did in the range: win rate, profit factor, average win and loss -- overall, by strategy, by broker account and by method-and-timeframe pair, after charges (`tradeStats`). |
 
 ## [session.routes.ts](../../app/server/src/http/routes/session.routes.ts)
