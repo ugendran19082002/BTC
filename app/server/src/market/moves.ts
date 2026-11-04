@@ -519,8 +519,10 @@ async function fetchSeriesFresh(): Promise<[Timeframe, Candle[]][]> {
  */
 /**
  * BTC's close nearest `minutesAgo`, off the cached series: the 1-minute bars
- * for the last eight hours, the 5-minute ones beyond. Null before the first
- * read, or past what the cache holds.
+ * where they reach -- 220 of them are fetched, so the last 3 h 40 m -- and the
+ * 5-minute ones beyond (two days of them), a bar no more than two of its own
+ * lengths from the moment. Null before the first read, or past what the cache
+ * holds.
  */
 export function spotMinutesAgo(minutesAgo: number, nowMs = Date.now()): number | null {
   if (!seriesCache) return null;
@@ -532,6 +534,10 @@ export function spotMinutesAgo(minutesAgo: number, nowMs = Date.now()): number |
     return best && target - best.time <= MINUTES[tf] * 60 * 2 ? best.close : null;
   };
   return pick(minutesAgo <= 8 * 60 ? '1m' : '5m') ?? pick('5m') ?? pick('1h');
+}
+/** The series as a test gives it, in place of a fetch (4 Nov 2026: the price-change windows at the morning's start). */
+export function setSeriesForTest(data: [Timeframe, Candle[]][] | null, at = Date.now()): void {
+  seriesCache = data === null ? null : { at, askedAt: at, data };
 }
 
 /**

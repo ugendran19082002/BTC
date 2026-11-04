@@ -271,4 +271,3 @@ test('[critical] every signal taken as it filled, as the desk would: at most ope
     clearOptionReplayCache();
   }
 });
-

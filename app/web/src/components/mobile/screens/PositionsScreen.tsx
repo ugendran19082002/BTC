@@ -10,6 +10,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { pct, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Trade } from '@/types/trade';
+import { CloseAllNote } from '@/components/mobile/CloseAllNote';
 
 /**
  * Positions (6 Oct 2026): every open position's live risk. Read only: no button here could close, edit or add, and
@@ -154,6 +155,8 @@ export function PositionsScreen() {
             <dd className={cn(SMALL, 'mt-0.5')}>of the wallet</dd>
           </div>
         </dl>
+        {/* The same trades at the mark -- Home's figure -- and the cost of leaving between the two (4 Nov 2026). */}
+        {s && <CloseAllNote on="positions" open={s.open} />}
       </Panel>
 
       {s && items.length > 0 && (

@@ -211,11 +211,11 @@ export type TradeStatus = {
   marginUsedUsd?: number | null;
   /** Every open position added up. */
   unrealisedPnlUsd?: number;
-  /** Booked since 05:30 IST, in USD. */
+  /** Booked since 00:00 IST (`startOfDayIst`), in USD. */
   realisedTodayUsd?: number;
-  /** Losses booked since 05:30 IST, in USD. */
+  /** Losses booked since 00:00 IST, in USD. */
   lossTodayUsd?: number;
-  /** The day so far, since 05:30 IST: booked, still open, Delta's charges, and the net of all three. */
+  /** The day so far, since 00:00 IST (the market's "today" move is from 05:30, Delta's UTC day): booked, still open, Delta's charges, and the net of all three. */
   today?: { realisedUsd: number; unrealisedUsd: number; chargesUsd: number; netUsd: number; lossUsd?: number; profitUsd?: number };
   positions: ExchangePosition[];
   open: Trade[];

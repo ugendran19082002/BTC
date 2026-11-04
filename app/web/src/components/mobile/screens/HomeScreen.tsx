@@ -17,6 +17,7 @@ import { orderStatusWord } from '@/components/mobile/order-status';
 import { usePressure, usePressureWindow } from '@/components/mobile/usePressure';
 import { usePriceMoves } from '@/components/mobile/usePriceMoves';
 import { PressureStrip } from '@/components/mobile/PressureStrip';
+import { CloseAllNote } from '@/components/mobile/CloseAllNote';
 
 /**
  * Home (6 Oct 2026): everything in one screen a person needs to know the desk is fine -- today's money, the
@@ -105,6 +106,8 @@ export function HomeScreen() {
             <span className="text-[16px] font-semibold tabular-nums">{o?.winRate != null ? pct(o.winRate, 0) : '—'}</span>
           </span>
         </button>
+        {/* The same day if every position closed now -- the figure Positions shows (4 Nov 2026). */}
+        {s && <CloseAllNote on="home" open={s.open} dayNetUsd={net} />}
         {samples.length >= 2 ? (
           <div className="mt-2">
             <AreaChart values={samples.map((x) => x.netUsd)} label="Today's P&L, minute by minute" height={88} />
