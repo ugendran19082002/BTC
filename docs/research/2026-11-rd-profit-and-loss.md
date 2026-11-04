@@ -391,6 +391,29 @@ Verdict: a method's recent P&L on a timeframe does not predict its next days; ke
 them. (Only dropping is testable here: the real entries are already the auto pick's methods, and the room a dropped trade
 frees under the cap is not modelled.) The exits, not the method list, are where the money is.
 
+
+### No-entry windows, every signal (3 Nov 2026)
+
+Every signal entered 07:00 - 17:29, 4 Oct - 3 Nov, sold at the strategies' strike (delta <= 0.10, bid >= $13), today's
+exits, each timeframe's methods less its live Exclude; one contract each, no caps (Option history replay).
+
+| Windows | Net | Loss | Worst day | Loss days | 1st half | 2nd half |
+|---|---|---|---|---|---|---|
+| None | +₹41,188 | ₹24,922 | −₹1,151 | 5 | +21,099 | +20,088 |
+| High now (15:59+) | +₹41,017 | ₹24,836 | −₹1,151 | 5 | +21,001 | +20,016 |
+| Income now | +₹38,905 | ₹20,537 | −₹1,084 | 3 | +19,176 | +19,728 |
+| Medium now (11:00-11:59, 13:00+) | +₹35,574 | ₹15,832 | −₹1,041 | 2 | +17,191 | +18,382 |
+| Low now (11:00+) | +₹32,351 | ₹13,148 | −₹1,172 | 2 | +15,522 | +16,829 |
+| 13:00-14:00 only | +₹39,838 | ₹22,133 | −₹771 | 5 | | |
+| 14:00-14:30 only | +₹41,152 | ₹24,039 | −₹1,156 | 5 | | |
+
+- No window, single or paired (every 30-minute span, and every pair of them), adds profit in both halves: each costs some.
+- 15:59+ does nothing: the $13 premium floor already leaves ~180 signals a month after 16:00.
+- ₹ per signal falls through the day: 07:00 1.70, 09:00 1.50, 11:00 0.71, 13:00 0.39, 14:00 0.27, 15:00 0.07.
+- Losing half-hours picked on one half and applied to the other lose money against no window (−₹200 to −₹1,200).
+- Best trade-off found: 13:00-14:00 alone -- −₹1,350 a month for −₹2,789 of loss and the worst day −₹1,151 → −₹771.
+  Low's 11:00+ gives up ₹8.8k for ₹11.8k less loss but leaves the worst day as it was.
+
 ## Caveats
 
 - **One month of data.** Every number here is October 2026 — a month with two spikes that reversed (13 and 30 Oct). 30 Oct

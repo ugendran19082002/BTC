@@ -114,6 +114,26 @@ function sign(secret: string, method: string, ts: string, path: string, query: s
   return createHmac('sha256', secret).update(method + ts + path + query + body).digest('hex');
 }
 
+/**
+ * A login Delta has told to wait (4 Nov 2026). At 09:42 IST, ~320 stops filled in four minutes across the four accounts;
+ * the closes spent each login's quota, Delta answered 429 "5s until it resets" -- and every pass went on asking, a
+ * second at a time, for every open trade. Each refused call kept the window full: ~78,000 refusals in twenty minutes,
+ * no order, no target step, no new entry, and a restart only started it again. Now a 429 holds that login's calls
+ * until the time Delta named: refused here at once as `RateLimited`, as Delta would refuse them -- not sent, not counted
+ * -- so the window empties and the desk picks up by itself. Per login: one account's limit does not hold another's.
+ */
+const waitUntil = new Map<string, number>();
+/** A wait Delta names is kept within these: never under a second, never over a minute (a header misread is not an hour's silence). */
+export const RATE_LIMIT_WAIT_MIN_MS = 1_000;
+export const RATE_LIMIT_WAIT_MAX_MS = 60_000;
+/** How long a login has left to wait before its next call to Delta, in ms; 0 when it may call. */
+export function rateLimitWaitMs(creds: Creds | null | undefined, now = Date.now()): number {
+  const until = waitUntil.get(quotaKeyOf(creds));
+  return until !== undefined && until > now ? until - now : 0;
+}
+/** Forget every wait: for a test. */
+export function clearRateLimitWaits(): void { waitUntil.clear(); }
+
 export type SignedRequest = {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
@@ -138,12 +158,15 @@ export async function signedPage<T>(creds: Creds | null, req: SignedRequest): Pr
   const { method, path, query = '', body } = req;
   // An order, a cancel, an edit, a leverage: only from the one desk trading. A read changes nothing, and is let through.
   if (method !== 'GET' && !deskLockOk()) throw new NotTheDesk();
+  // Delta has told this login to wait: refused here, as Delta would refuse it, and nothing sent (`waitUntil`).
+  const quota = quotaKeyOf(creds);
+  const held = rateLimitWaitMs(creds);
+  if (held > 0) throw new RateLimited(held);
   const payload = body === undefined ? '' : JSON.stringify(body);
   const ts = Math.floor(Date.now() / 1000).toString();
 
   // Counted, never judged: how many, how long, how each ended (observability/desk-metrics.ts).
   const sentAt = performance.now();
-  const quota = quotaKeyOf(creds);
   const counted = (outcome: 'ok' | 'refused' | 'rate-limited' | 'failed') => noteDeltaCall({ method, path, ms: performance.now() - sentAt, outcome, quota });
 
   let res: Response;
@@ -173,8 +196,11 @@ export async function signedPage<T>(creds: Creds | null, req: SignedRequest): Pr
   // on it, and the header says exactly how long to wait.
   if (res.status === 429) {
     const reset = Number(res.headers.get('X-RATE-LIMIT-RESET') ?? 0);
+    const waitMs = Math.min(RATE_LIMIT_WAIT_MAX_MS, Math.max(RATE_LIMIT_WAIT_MIN_MS, Number.isFinite(reset) && reset > 0 ? reset : 5_000));
     counted('rate-limited');
-    throw new RateLimited(Number.isFinite(reset) && reset > 0 ? reset : 5_000);
+    // Until then this login asks nothing more: what is asked inside the wait is what kept the window full.
+    waitUntil.set(quota, Math.max(waitUntil.get(quota) ?? 0, Date.now() + waitMs));
+    throw new RateLimited(waitMs);
   }
 
   const parsed = (await res.json().catch(() => null)) as

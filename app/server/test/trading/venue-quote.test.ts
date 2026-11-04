@@ -4,6 +4,7 @@ import { createHmac } from 'node:crypto';
 import { DeltaExchange, QUOTE_SHARE_MS } from '../../src/trading/exchange/delta.js';
 import { venueAt } from '../../src/market/venue-time.js';
 import { cachedAsks, liveTickers } from '../../src/market/delta.js';
+import { clearRateLimitWaits } from '../../src/delta/signed.js';
 import { ceProduct, planFor, quote, rig } from './harness.js';
 
 /**
@@ -12,7 +13,8 @@ import { ceProduct, planFor, quote, rig } from './harness.js';
  */
 
 const real = globalThis.fetch;
-afterEach(() => { globalThis.fetch = real; });
+// A 429 answered here holds the test login for its second (signed.ts): each test starts with none held.
+afterEach(() => { globalThis.fetch = real; clearRateLimitWaits(); });
 type Seen = { url: string; headers: Record<string, string> };
 const answering = (result: unknown, seen: Seen[]) => {
   globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
