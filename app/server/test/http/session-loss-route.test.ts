@@ -76,6 +76,17 @@ test('[critical] a % is of max open × the margin one position takes -- never th
   assert.ok(Math.abs(b.totalUsd! - 200 * b.perPositionUsd) < 1e-9);
 });
 
+test('the margin model counts the contracts the account\'s strategies trade: 2-lot trades count twice', async () => {
+  const { query } = await import('../../src/db/pool.js');
+  const store = (tradingService() as unknown as { store: { recentAvgLots: (a: number) => Promise<number> } }).store;
+  assert.equal(await store.recentAvgLots(987654), 1, 'none yet: one');
+  for (const [id, n] of [['lots-a', 2], ['lots-b', 2], ['lots-c', 0]] as const) {
+    await query(`INSERT INTO trades (trade_id, symbol, phase, position, plan, state, updated_at, broker_account_id) VALUES ($1, 'P-X', 'flat', 0, $2, $3, $4, 987654)`,
+      [id, JSON.stringify({ signal: { tf: '5m' }, lots: n }), JSON.stringify({ entrySize: n, phase: 'flat' }), Date.now()]);
+  }
+  assert.equal(await store.recentAvgLots(987654), 2, 'the unfilled one is not counted');
+});
+
 test('a setting that will not read is refused in words, and nothing is kept', async () => {
   const before = (await api('GET', `/api/desk/session-loss?account=${main()}`)).body.setting;
   const r = await api('POST', `/api/desk/session-loss?account=${main()}`, { on: true, sessions: [{ from: '09:00', to: '08:00', limit: 100, unit: 'inr' }] });

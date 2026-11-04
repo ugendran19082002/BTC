@@ -431,6 +431,21 @@ export class PgTradeStore implements TradeStore {
     );
   }
 
+  /**
+   * The contracts an account's last signal trades were filled with, on average -- the lots its strategies trade, in the
+   * unit margin is priced by; 1 with none yet (session-loss.ts's margin model). A trade not filled is not counted.
+   */
+  async recentAvgLots(accountId: number | null = null, last = 100): Promise<number> {
+    const r = await rows<{ avg: number | null }>(
+      `SELECT avg(n) AS avg FROM (SELECT abs((state->>'entrySize')::float) AS n FROM trades
+        WHERE plan ? 'signal' AND (state->>'entrySize')::float <> 0 AND ($1::bigint IS NULL OR broker_account_id = $1)
+        ORDER BY updated_at DESC LIMIT $2) t`,
+      [accountId ?? this.scope, last],
+    );
+    const a = Number(r[0]?.avg);
+    return Number.isFinite(a) && a > 0 ? a : 1;
+  }
+
   /** An account's square-offs by its session loss limit on one IST day, oldest first. */
   async sessionLossHitsOn(day: string, accountId: number | null = null): Promise<SessionHit[]> {
     return (await this.sessionLossHits(accountId, 50)).filter((h) => h.day === day).reverse();

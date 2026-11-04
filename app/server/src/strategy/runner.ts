@@ -880,7 +880,7 @@ export class StrategyRunner {
     if (!res.ok) {
       const why = res.precheck ? failureText(res.precheck) : 'refused';
       await finish('refused', `${what} -- refused: ${why}`);
-      this.alert((ctx) => signalRefusedAlert(s.name, what, why, now, ctx));
+      if (refusalAlerts(res.precheck)) this.alert((ctx) => signalRefusedAlert(s.name, what, why, now, ctx));
       return;
     }
     await finish('placed', what, res.state.tradeId);
@@ -987,6 +987,14 @@ export function exitsNow(s: Strategy, nowMs: number) {
 }
 
 /** Append to the other leg's trade, through the engine and its gates. */
+
+/**
+ * Whether a refused signal is said on the phone. A day stopped by the session loss limit refuses every signal: its own
+ * alert said so once (trading/session-loss.ts), so no "SIGNAL NOT TAKEN" for each of them -- the history has every one.
+ */
+export function refusalAlerts(p: { ok: boolean; failures?: { code: string }[] } | null | undefined): boolean {
+  return !(p && !p.ok && (p.failures ?? []).some((f) => f.code === 'SESSION_LOSS_LIMIT'));
+}
 
 function failureText(p: { ok: boolean; failures?: { message: string }[] }): string {
   return p.failures?.map((f) => f.message).join('; ') ?? 'refused';

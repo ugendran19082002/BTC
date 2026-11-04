@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HOLD_MS, SESSION_LOSS_OFF, SessionLossGuard, parseSessionLoss, sessionAt, sessionLossProblems, type SessionHit, type SessionLoss } from '../../src/trading/session-loss.js';
+import { refusalAlerts } from '../../src/strategy/runner.js';
+import { BASELINE_LIVE_MS, HOLD_MS, SESSION_LOSS_OFF, SessionLossGuard, parseSessionLoss, sessionAt, sessionLossProblems, type SessionHit, type SessionLoss } from '../../src/trading/session-loss.js';
 import { precheck } from '../../src/trading/precheck.js';
 import { USDINR } from '../../src/domain/score.js';
 
@@ -156,6 +157,32 @@ test('[critical] a restart the same day stays stopped; the next day does not', a
   next.move(86_400_000);
   await next.guard.restore();
   assert.equal(next.guard.entryBlock(), null);
+});
+
+test('[critical] the session\'s starting figure: the live one when read at its start; the day\'s line after a restart', async () => {
+  // The line says $50 at 07:00; the live sum says $40 -- the same moment valued two ways.
+  const live = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 50 });
+  live.set('07:00', 850);                 // live net: $50 − ₹850 = $40
+  live.move(5_000);
+  await live.guard.tick();
+  assert.equal(live.asked.length, 0, 'read at the start: the line is not asked');
+  assert.equal(live.guard.status()!.lossInr, 0);
+  live.set('07:20', 850 + 425);           // $5 more lost since
+  await live.guard.tick();
+  assert.equal(Math.round(live.guard.status()!.lossInr!), 425);
+  // A restart at 07:20: past the first seconds, so the start is the line's.
+  const late = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 50 });
+  late.set('07:20', 425);
+  assert.ok(at('07:20') - at('07:00') > BASELINE_LIVE_MS);
+  await late.guard.tick();
+  assert.deepEqual(late.asked, [at('07:00')]);
+  assert.equal(Math.round(late.guard.status()!.lossInr!), 425);
+});
+
+test('a day stopped by the limit says each refused signal nowhere: its own alert said it once', () => {
+  assert.equal(refusalAlerts({ ok: false, failures: [{ code: 'SESSION_LOSS_LIMIT' }] }), false);
+  assert.equal(refusalAlerts({ ok: false, failures: [{ code: 'STALE_QUOTE' }] }), true);
+  assert.equal(refusalAlerts(null), true);
 });
 
 test('[critical] a new entry the day is stopped is refused by the order gate, in words', () => {

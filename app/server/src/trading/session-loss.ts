@@ -38,6 +38,11 @@ export const MAX_SESSION_LIMIT_PCT = 100;
 export const HOLD_MS = 15_000;
 /** How often an account's session is checked. */
 export const SESSION_LOSS_TICK_MS = 5_000;
+/**
+ * Read this soon after its start, a session's starting figure is the live one -- the same sum the loss is then read by,
+ * so the two never differ by how each values the open trades. Later (a restart mid-session), the day's line at the start.
+ */
+export const BASELINE_LIVE_MS = 30_000;
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
@@ -206,7 +211,8 @@ export class SessionLossGuard {
     if (this.hits.has(key)) return null;
     // The day's figure when the session began, read once a session; a restart reads it again off the day's line.
     if (this.baseline?.key !== key) {
-      this.baseline = { key, usd: (await this.d.netUsdAt(s.startMs)) ?? 0, limitInr: null };
+      const usd = now - s.startMs <= BASELINE_LIVE_MS ? await this.d.netUsd() : (await this.d.netUsdAt(s.startMs)) ?? 0;
+      this.baseline = { key, usd, limitInr: null };
       this.breachSince = null;
     }
     // The line in rupees, fixed for the session: the amount, or the per cent of the "At most open" margin as first read.
