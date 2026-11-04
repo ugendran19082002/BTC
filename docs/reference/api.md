@@ -9,7 +9,7 @@ also carry an `Origin` or `Referer` naming the desk's own host.
 
 What: the first sentence of the comment directly above the route. A dash means there is none.
 
-140 routes.
+142 routes.
 
 ## [accounts.routes.ts](../../app/server/src/http/routes/accounts.routes.ts)
 
@@ -55,6 +55,8 @@ What: the first sentence of the comment directly above the route. A dash means t
 | GET | `/api/changes` | signed in | What changed over 1m … 12h for BTC, one strike and its board, from the desk's own records. |
 | GET | `/api/desk/glance` | signed in | The desk's health for the phone, in one word -- ok, warn or down -- with the reasons and the readings behind them. |
 | GET | `/api/desk/metrics` | signed in | The desk's own gauges for the last five minutes: calls to Delta and how much of its quota they used, how long a pass over the open trades takes, how long the signal run holds the thread. |
+| GET | `/api/desk/session-loss` | signed in | The session loss limit of the account asked for (4 Nov 2026, trading/session-loss.ts): its sessions -- off with none until set -- the session now with its loss against its limit, whether new entrie... |
+| POST | `/api/desk/session-loss` | signed in | Change them: `{ on, sessions: [{ from: "07:00", to: "08:00", limitInr: 1000 }] }`, checked, then kept. |
 | GET | `/api/expiries` | signed in | The expiries Delta has listed, nearest first. |
 | GET | `/api/health` | none | The health probe. |
 | GET | `/api/perp` | signed in | -- |

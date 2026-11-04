@@ -594,6 +594,20 @@ export function registerDeskRoutes(app: FastifyInstance) {
     };
   });
 
+  /*
+   * The session loss limit of the account asked for (4 Nov 2026, trading/session-loss.ts): its sessions -- off with none
+   * until set -- the session now with its loss against its limit, whether new entries are stopped for the day, and its
+   * last square-offs. `?account=` as every desk route; with none, the default account's.
+   */
+  app.get('/api/desk/session-loss', async () => tradingService().sessionLossView());
+
+  // Change them: `{ on, sessions: [{ from: "07:00", to: "08:00", limitInr: 1000 }] }`, checked, then kept.
+  app.post('/api/desk/session-loss', async (req, reply) => {
+    const res = await tradingService().setSessionLoss(req.body ?? null);
+    if (!res.ok) return refuse(reply, 400, { error: res.reason });
+    return { ok: true, ...(await tradingService().sessionLossView()) };
+  });
+
   // Save one desk setting; the short cap may be lowered freely but never raised past what margin covers.
   app.post('/api/settings', async (req, reply) => {
     const { key, value } = (req.body ?? {}) as { key?: string; value?: string };

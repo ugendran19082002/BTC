@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-585 files listed, 324 test files counted below, images and lockfiles left out.
+588 files listed, 330 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 167 |
-| `app/web` | 157 |
+| `app/server` | 170 |
+| `app/web` | 160 |
 
 ## `(root)`
 
@@ -256,6 +256,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [pnl-history.ts](../../app/server/src/trading/pnl-history.ts) | The record as a calendar, and a day as a line. |
 | [precheck.ts](../../app/server/src/trading/precheck.ts) | The gates a trade passes before a single byte goes to the exchange. |
 | [service.ts](../../app/server/src/trading/service.ts) | The one live trading service. |
+| [session-loss.ts](../../app/server/src/trading/session-loss.ts) | A loss limit by the session, per account (owner, 4 Nov 2026: "a daily loss limit of another kind on the desk's open positions -- by the session, an hour at a time: 7:00 to 8:00 AM, say, ₹1,000 on a... |
 | [status.ts](../../app/server/src/trading/status.ts) | What a trade looks like in a list of orders. |
 | [stop-watch.ts](../../app/server/src/trading/stop-watch.ts) | The fast watch on a sold option's own stop (13 Oct 2026). |
 | [store.ts](../../app/server/src/trading/store.ts) | The trade journal. |
@@ -586,6 +587,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [OrdersPanel.tsx](../../app/web/src/components/trade/OrdersPanel.tsx) | Every order, looking back. |
 | [OriginTag.tsx](../../app/web/src/components/trade/OriginTag.tsx) | Who asked for this order. |
 | [PositionsCard.tsx](../../app/web/src/components/trade/PositionsCard.tsx) | What is on right now. |
+| [SessionLossLimit.tsx](../../app/web/src/components/trade/SessionLossLimit.tsx) | The session loss limit of the account shown (owner, 4 Nov 2026: "a loss limit by the session, an hour at a time -- 7:00 to 8:00 AM, ₹1,000 on an account; lost in that time, the whole account square... |
 | [SignalTag.tsx](../../app/web/src/components/trade/SignalTag.tsx) | A signal strategy's trade, said on its row: which method's signal, BUY or SELL, on which timeframe (or with the timeframe chain) -- and its real exits, the signal's SL and TGT on the BTC perp. |
 
 ## `app/web/src/components/ui/`
@@ -647,6 +649,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [exit-input.ts](../../app/web/src/lib/exit-input.ts) | How the ticket and Edit exits read one exit: |
 | [exit-rail.ts](../../app/web/src/lib/exit-rail.ts) | Where the price stands between a trade's target and its stop, as places along one line (owner's reference, 6 Oct 2026): the target at the left, the stop at the right, the entry between them in prop... |
 | [format.ts](../../app/web/src/lib/format.ts) | How numbers are written on this desk. |
+| [heat-table-image.ts](../../app/web/src/lib/heat-table-image.ts) | A heat table as a picture (owner, 3 Nov 2026: "image download vai click pana apidy image download aakunum" -- the Option history's method × timeframe grid, saved as an image). |
 | [held.ts](../../app/web/src/lib/held.ts) | The strikes you are currently short, keyed the way the board looks them up. |
 | [ist-moment.ts](../../app/web/src/lib/ist-moment.ts) | A date and time, always read as India time. |
 | [journal-steps.ts](../../app/web/src/lib/journal-steps.ts) | A trade's journal as a person reads it (the phone's trade detail, 6 Oct 2026): the signal that started it, then every step the desk and the exchange took, in order, each in a sentence -- signal, en... |

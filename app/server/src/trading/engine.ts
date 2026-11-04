@@ -389,6 +389,8 @@ export type EngineDeps = {
   limits?: RiskLimits;
   /** Master switch. Off means every open is refused before it is built. */
   tradingEnabled?: boolean;
+  /** Why a new entry must wait on this account, or null (a session squared off at its loss limit, session-loss.ts). */
+  entryBlock?: () => string | null;
   /** False while the price feed is down or resyncing. */
   feedHealthy?: () => boolean;
   /** Today's realised P&L, in USD. */
@@ -1059,6 +1061,7 @@ export class TradeEngine {
       quote,
       feedHealthy: this.feedHealthy(),
       tradingEnabled: this.d.tradingEnabled !== false,
+      entryBlock: this.d.entryBlock?.() ?? null,
       account: { availableUsd: balance },
       existingPosition: add ? 0 : alreadyHeld,
       totalShortContracts: totalShort,

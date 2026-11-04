@@ -25,7 +25,7 @@ import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { deskLog } from '../observability/desk-log.js';
-import { alertFor, bookWentFlat, daySummaryFor, slippageAlert } from '../notify/messages.js';
+import { alertFor, bookWentFlat, daySummaryFor, sessionLossAlert, slippageAlert } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import type { ExchangePort } from './exchange/port.js';
@@ -33,6 +33,7 @@ import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-wa
 import { notePass, quotaKeyOf, quotaUsedPctOf } from '../observability/desk-metrics.js';
 import { ENTRY_WATCH_MS, EntryWatch } from './entry-watch.js';
 import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
+import { SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
 /**
@@ -192,6 +193,8 @@ export class TradingService {
         return limits.maxShortContracts ?? self.maxShortContracts;
       } },
       tradingEnabled: true,
+      // A session squared off at its loss limit: no new entry on this account until it ends (session-loss.ts).
+      entryBlock: () => this.sessionGuard.entryBlock(),
       feedHealthy: () => this.feedOk,
       // Today's booked P&L on the account being traded: the daily-loss gate is that account's, not the day's across accounts.
       dayPnlUsd: () => this.store.realisedSince(startOfDayIst(), this.currentAccountId),
@@ -354,6 +357,11 @@ export class TradingService {
     // A sold option's own stop: the board in memory against every stop once a second, not once a pass.
     this.stopTimer ??= setInterval(() => { this.stopWatch.tick(); }, STOP_WATCH_MS);
     this.stopTimer.unref?.();
+    // The session loss limit (session-loss.ts): a day already stopped stays stopped across a restart; nothing read while
+    // it is off or outside every session.
+    await this.sessionGuard.restore().catch(() => {});
+    this.sessionTimer ??= setInterval(() => { void this.sessionGuard.tick().catch(() => {}); }, SESSION_LOSS_TICK_MS);
+    this.sessionTimer.unref?.();
     await this.store.pruneMtm(Date.now());
     return recovered;
   }
@@ -364,6 +372,7 @@ export class TradingService {
     if (this.watchTimer) { clearInterval(this.watchTimer); this.watchTimer = null; }
     if (this.entryTimer) { clearInterval(this.entryTimer); this.entryTimer = null; }
     if (this.stopTimer) { clearInterval(this.stopTimer); this.stopTimer = null; }
+    if (this.sessionTimer) { clearInterval(this.sessionTimer); this.sessionTimer = null; }
     if (this.stopPerpWatch) { this.stopPerpWatch(); this.stopPerpWatch = null; }
     if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
   }
@@ -372,7 +381,77 @@ export class TradingService {
   private watchTimer: NodeJS.Timeout | null = null;
   private entryTimer: NodeJS.Timeout | null = null;
   private stopTimer: NodeJS.Timeout | null = null;
+  private sessionTimer: NodeJS.Timeout | null = null;
   private stopPerpWatch: (() => void) | null = null;
+
+  /**
+   * The session loss limit on this account (session-loss.ts, 4 Nov 2026): its sessions read from the settings each
+   * look, the day's net valued on the live board, and at the limit the account squared off (`closeAll`).
+   */
+  readonly sessionGuard = new SessionLossGuard({
+    now: () => Date.now(),
+    rule: () => this.sessionLossSetting,
+    // The wallet -- what is free and what is held as margin -- for a limit in per cent of the account.
+    accountUsd: async () => { await this.balance(); return this.lastBalance === null ? null : this.lastBalance + (this.lastMarginUsedUsd ?? 0); },
+    netUsd: () => this.netTodayOnBoard(),
+    netUsdAt: (at) => this.store.mtmNetAt(istDate(at), at, this.currentAccountId),
+    squareOff: () => this.closeAll(),
+    record: (h) => this.store.addSessionLossHit(h, this.currentAccountId),
+    hitsOn: (day) => this.store.sessionLossHitsOn(day, this.currentAccountId),
+    said: (h) => this.sayHit(h),
+  });
+
+  /** This account's sessions as kept; off with none until they are set. */
+  get sessionLossSetting(): SessionLoss {
+    return parseSessionLoss(accountSetting(this.settings, SESSION_LOSS_KEY, this.currentAccountId));
+  }
+
+  /** Change this account's sessions. Checked first; nothing kept that will not read. */
+  async setSessionLoss(x: unknown): Promise<{ ok: true; sessionLoss: SessionLoss } | { ok: false; reason: string }> {
+    const bad = sessionLossProblems(x);
+    if (bad.length) return { ok: false, reason: bad.join(' ') };
+    const v = x as SessionLoss;
+    const kept: SessionLoss = { on: v.on, sessions: v.sessions.map((s) => ({ from: s.from, to: s.to, limit: s.limit, unit: s.unit })) };
+    await this.settings.set(accountKey(SESSION_LOSS_KEY, this.currentAccountId), JSON.stringify(kept));
+    return { ok: true, sessionLoss: this.sessionLossSetting };
+  }
+
+  /** The session limit now, and its last square-offs: what the card shows. */
+  async sessionLossView(): Promise<{ setting: SessionLoss; now: SessionLossNow; blocked: string | null; hits: SessionHit[] }> {
+    return {
+      setting: this.sessionLossSetting, now: this.sessionGuard.status(), blocked: this.sessionGuard.entryBlock(),
+      hits: await this.store.sessionLossHits(this.currentAccountId, 20),
+    };
+  }
+
+  /**
+   * "Net today" as the header has it -- booked, open, less charges (`todayFigures`) -- with the open trades valued on
+   * the live board in memory, not asked of Delta: read every few seconds while a session is on, it must cost nothing.
+   * A contract the board does not have is asked for as the screen asks.
+   */
+  private async netTodayOnBoard(now = Date.now()): Promise<number> {
+    const dayStart = startOfDayIst(now);
+    const booked = await this.store.realisedBreakdownSince(dayStart, this.currentAccountId);
+    let unrealisedUsd = 0;
+    for (const rec of await this.openTrades()) {
+      const q = cachedQuote(rec.state.symbol) ?? await this.quoteForDisplay(rec.state.symbol, now);
+      const mark = q?.mark ?? midOf(q?.bid ?? null, q?.ask ?? null);
+      unrealisedUsd += unrealisedPnlUsd({
+        entryPrice: rec.state.entryAvgPrice, markPrice: mark,
+        size: rec.state.position, contractValue: rec.state.contractValue, long: rec.state.position > 0,
+      }) ?? 0;
+    }
+    const chargesUsd = await this.store.chargesSince(dayStart, this.currentAccountId, this.currentSpot());
+    return booked.realisedUsd + unrealisedUsd - chargesUsd;
+  }
+
+  /** A square-off by the session limit, said: the log, the error page, the phone. */
+  private sayHit(h: SessionHit): void {
+    const message = `Session loss limit ${h.from}–${h.to}: lost ₹${Math.round(h.lossInr).toLocaleString('en-IN')} of ₹${Math.round(h.limitInr).toLocaleString('en-IN')} -- squared off (${h.closed} closed, ${h.cancelled} entries pulled${h.failed ? `, ${h.failed} failed` : ''}); no new entry today.`;
+    deskLog('warn', message, { sessionLoss: 'hit', accountId: this.currentAccountId, ...h });
+    noteError({ source: 'trading', level: 'warn', where: 'session-loss', message, context: { accountId: this.currentAccountId, ...h } });
+    if (this.notifier && this.alertsOn) this.notifier.notify(sessionLossAlert(h, this.alertContext()));
+  }
 
   /**
    * The urgent trades (`entry-watch.ts`): a working entry and a position

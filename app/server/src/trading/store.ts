@@ -5,6 +5,7 @@ import { query, rows, tx } from '../db/pool.js';
 import { tradeCharges } from './charges.js';
 import { recompute, realisedBreakdownSinceOf } from './machine.js';
 import type { TradeEvent, TradeState } from './types.js';
+import type { SessionHit } from './session-loss.js';
 
 /**
  * The trade journal.
@@ -129,6 +130,30 @@ const MIGRATIONS: Migration[] = [
       for (const r of pk.rows) await c.query(`ALTER TABLE mtm_samples DROP CONSTRAINT "${r.conname}"`);
       await c.query('CREATE UNIQUE INDEX IF NOT EXISTS mtm_samples_at_account ON mtm_samples (at, COALESCE(broker_account_id, 0));');
     },
+  },
+  {
+    /*
+     * Each time an account's session loss limit squared it off (4 Nov 2026, session-loss.ts): which session, its limit
+     * and what it had lost, and how the square-off went -- for the card that shows them and for the review.
+     */
+    id: 'trading-009-session-loss-hits',
+    up: `
+      CREATE TABLE IF NOT EXISTS session_loss_hits (
+        id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        broker_account_id BIGINT,
+        day               TEXT             NOT NULL,
+        session_from      TEXT             NOT NULL,
+        session_to        TEXT             NOT NULL,
+        limit_inr         DOUBLE PRECISION NOT NULL,
+        loss_inr          DOUBLE PRECISION NOT NULL,
+        at                BIGINT           NOT NULL,
+        closed            INTEGER          NOT NULL,
+        cancelled         INTEGER          NOT NULL,
+        failed            INTEGER          NOT NULL,
+        detail            TEXT             NOT NULL DEFAULT ''
+      );
+      CREATE INDEX IF NOT EXISTS session_loss_hits_by_account ON session_loss_hits (broker_account_id, at DESC);
+    `,
   },
 ];
 
@@ -385,6 +410,43 @@ export class PgTradeStore implements TradeStore {
        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
       [m.at, m.day, m.realisedUsd, m.unrealisedUsd, m.chargesUsd, m.netUsd, this.scope ?? accountId],
     );
+  }
+
+  /** The day's net as the line had it at or before `atMs` (the last reading then), in USD; null with none that day yet. */
+  async mtmNetAt(day: string, atMs: number, accountId: number | null = null): Promise<number | null> {
+    const found = await rows<{ net: number }>(
+      `SELECT net FROM mtm_samples WHERE day = $1 AND at <= $2 AND ($3::bigint IS NULL OR broker_account_id = $3)
+        ORDER BY at DESC LIMIT 1`,
+      [day, atMs, accountId ?? this.scope],
+    );
+    return found[0]?.net ?? null;
+  }
+
+  /** A session loss limit's square-off, written down (session-loss.ts). */
+  async addSessionLossHit(h: SessionHit, accountId: number | null = null): Promise<void> {
+    await query(
+      `INSERT INTO session_loss_hits (broker_account_id, day, session_from, session_to, limit_inr, loss_inr, at, closed, cancelled, failed, detail)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [this.scope ?? accountId, h.day, h.from, h.to, h.limitInr, h.lossInr, h.at, h.closed, h.cancelled, h.failed, h.detail],
+    );
+  }
+
+  /** An account's square-offs by its session loss limit on one IST day, oldest first. */
+  async sessionLossHitsOn(day: string, accountId: number | null = null): Promise<SessionHit[]> {
+    return (await this.sessionLossHits(accountId, 50)).filter((h) => h.day === day).reverse();
+  }
+
+  /** An account's last square-offs by its session loss limit, newest first. */
+  async sessionLossHits(accountId: number | null = null, limit = 20): Promise<SessionHit[]> {
+    const found = await rows<{ day: string; session_from: string; session_to: string; limit_inr: number; loss_inr: number; at: string; closed: number; cancelled: number; failed: number; detail: string }>(
+      `SELECT day, session_from, session_to, limit_inr, loss_inr, at, closed, cancelled, failed, detail FROM session_loss_hits
+        WHERE ($1::bigint IS NULL OR broker_account_id = $1) ORDER BY at DESC LIMIT $2`,
+      [accountId ?? this.scope, limit],
+    );
+    return found.map((r) => ({
+      day: r.day, from: r.session_from, to: r.session_to, limitInr: r.limit_inr, lossInr: r.loss_inr, at: Number(r.at),
+      closed: r.closed, cancelled: r.cancelled, failed: r.failed, detail: r.detail,
+    }));
   }
 
   /** The day's line, oldest first. */

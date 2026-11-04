@@ -20,6 +20,8 @@ export type PrecheckCode =
   | 'PREMIUM_TOO_LOW'
   | 'INSUFFICIENT_MARGIN' | 'DUPLICATE_POSITION' | 'MAX_POSITION' | 'DAILY_LOSS_LIMIT'
   | 'WRONG_EXIT_SIDE' | 'KILL_SWITCH'
+  /** The account's session loss limit was hit: squared off, and no new entry until the session ends (session-loss.ts). */
+  | 'SESSION_LOSS_LIMIT'
   | 'LEVERAGE_TOO_HIGH' | 'STOP_BEYOND_LIQUIDATION' | 'EXIT_WRONG_SIDE_OF_ENTRY' | 'STOP_INSIDE_SPREAD'
   /** This desk only sells options (21 Oct 2026): an order to buy one to hold. */
   | 'SELL_ONLY';
@@ -222,6 +224,8 @@ export type PrecheckInput = {
   /** False when the price feed is disconnected or the order API is down. */
   feedHealthy: boolean;
   tradingEnabled: boolean;
+  /** Why new entries on this account wait, or null: a session squared off at its loss limit (session-loss.ts). */
+  entryBlock?: string | null;
   account: { availableUsd: number };
   /** Signed contracts already held on this symbol. Short is negative. */
   existingPosition: number;
@@ -240,6 +244,7 @@ export function precheck(input: PrecheckInput): PrecheckResult {
   const { intent, product, quote, limits } = input;
 
   if (!input.tradingEnabled) add('KILL_SWITCH', 'Trading is switched off.');
+  if (input.entryBlock) add('SESSION_LOSS_LIMIT', input.entryBlock);
 
   // --- the contract is the one the signal meant -------------------------
   if (!product) {

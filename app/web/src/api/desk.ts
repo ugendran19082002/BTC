@@ -216,3 +216,22 @@ export const getPriceChange = (entryMs: number | null = null, expiryTs: number |
   const qs = q.toString();
   return json<PriceChangeResponse>(`/api/price-change${qs ? `?${qs}` : ''}`);
 };
+
+/**
+ * The session loss limit of the account shown (4 Nov 2026, server trading/session-loss.ts): sessions of the IST day,
+ * each with a limit in rupees or a per cent of the account; at it the account is squared off and stopped for the day.
+ * Off with no sessions until set.
+ */
+export type SessionRule = { from: string; to: string; limit: number; unit: 'inr' | 'pct' };
+export type SessionLossSetting = { on: boolean; sessions: SessionRule[] };
+export type SessionHit = { day: string; from: string; to: string; limitInr: number; lossInr: number; at: number; closed: number; cancelled: number; failed: number; detail: string };
+export type SessionLossView = {
+  setting: SessionLossSetting;
+  /** The session now: lost since it began against its limit in rupees; null outside every session or while off. */
+  now: { from: string; to: string; limit: number; unit: 'inr' | 'pct'; limitInr: number | null; lossInr: number | null; hit: boolean; breachSince: number | null } | null;
+  /** Why new entries are stopped today, or null. */
+  blocked: string | null;
+  hits: SessionHit[];
+};
+export const getSessionLoss = () => json<SessionLossView>(withAccount('/api/desk/session-loss'));
+export const saveSessionLoss = (setting: SessionLossSetting) => post<SessionLossView & { ok: true }>(withAccount('/api/desk/session-loss'), setting);

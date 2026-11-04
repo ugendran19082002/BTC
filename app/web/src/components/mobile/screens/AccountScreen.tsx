@@ -3,6 +3,7 @@ import { ago, pct, signedInr, inr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Bar, Empty, Panel, Rupees, Stat, Stats } from '@/components/mobile/parts';
+import { SessionLossLimit } from '@/components/trade/SessionLossLimit';
 
 /**
  * Account (6 Oct 2026): each broker account's money -- wallet, available, margin, open P&L, today -- and whether
@@ -32,6 +33,11 @@ export function AccountScreen() {
         <Money name={info?.name ?? 'This account'} walletUsd={s.walletUsd ?? null} availableUsd={s.balanceUsd} marginUsd={s.marginUsedUsd ?? null}
           openUsd={s.unrealisedPnlUsd ?? null} todayUsd={s.today?.netUsd ?? null} positions={s.open.length} chargesUsd={s.today?.chargesUsd ?? null} state={keyState(info)} />
       )}
+
+      {/* The session loss limit of the account shown (4 Nov 2026); on "all accounts", set on each account's own. */}
+      <Panel title="Session loss limit">
+        <SessionLossLimit several={p.shown === 'all'} />
+      </Panel>
 
       <Panel title="Status">
         <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">

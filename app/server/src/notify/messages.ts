@@ -618,6 +618,24 @@ export function ledgerAlert(o: { account: string; day: string; deskUsd: number; 
   };
 }
 
+/**
+ * An account squared off by its session loss limit (trading/session-loss.ts, 4 Nov 2026): which session, what it lost
+ * against its limit, what was closed, and that it takes no new entry for the rest of the day. Once a day.
+ */
+export function sessionLossAlert(h: { day: string; from: string; to: string; limitInr: number; lossInr: number; at: number; closed: number; cancelled: number; failed: number }, ctx: AlertContext): Alert {
+  const rs = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+  return {
+    key: `session-loss:${ctx.account ?? ''}:${h.day}:${h.from}`,
+    text: lines(
+      headline(ctx, '🛑', `SESSION LOSS LIMIT · ${escape(h.from)}–${escape(h.to)}`), '',
+      `Lost ${rs(h.lossInr)} this session, at its ${rs(h.limitInr)} limit: the account was squared off.`,
+      `${h.closed} position${h.closed === 1 ? '' : 's'} bought back, ${h.cancelled} working entr${h.cancelled === 1 ? 'y' : 'ies'} pulled${h.failed ? ` · <b>${h.failed} could not be closed -- check them on Delta</b>` : ''}.`,
+      'No new entry on this account for the rest of today. Tomorrow it trades as usual.', '',
+      `🕒 ${istTime(h.at)} IST · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`,
+    ),
+  };
+}
+
 /** The entry window closed with nothing tried: the desk or the price feed was down the whole time. */
 export function missedEntryAlert(
   strategy: string, entryTime: string, graceMin: number, at: number, ctx: AlertContext,

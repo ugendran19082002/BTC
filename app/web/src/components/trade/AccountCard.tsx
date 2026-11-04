@@ -6,6 +6,7 @@ import { KV } from '@/components/ui/kv';
 import { Money } from '@/components/ui/money';
 import { getSettings, setShortCap, type ShortCap } from '@/api/desk';
 import { LossBudget } from '@/components/trade/LossBudget';
+import { SessionLossLimit } from '@/components/trade/SessionLossLimit';
 import { inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -104,6 +105,10 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
         <PositionLimits status={status} heldShort={held} lossCell={<LossBudget status={status} dense />        } note={unrealised !== 0 && (
           <p className="m-0 mt-2 text-[11px] text-[var(--dim)]">₹ shown at ₹85 per $1.</p>
         )} />
+
+        {/* The session loss limit (4 Nov 2026): set and watched on an account's own tab. */}
+        <div className="my-0.5 h-px bg-border" />
+        <SessionLossLimit several={Boolean(combined)} />
       </div>
 
       {/* Each account's own part of the totals above: the sums are these rows added. */}
