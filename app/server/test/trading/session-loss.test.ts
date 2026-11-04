@@ -20,7 +20,7 @@ test('the setting checked in words; one that will not read is off', () => {
   assert.match(sessionLossProblems({ on: true, sessions: [S('07:00', '08:30', 1000), S('08:00', '09:00', 1)] }).join(), /overlap/);
   assert.match(sessionLossProblems({ on: true, sessions: [S('7:00', '08:00', 1000)] }).join(), /HH:MM/);
   assert.match(sessionLossProblems({ on: true, sessions: [S('07:00', '08:00', 0)] }).join(), /above 0/);
-  assert.match(sessionLossProblems({ on: true, sessions: [P('07:00', '08:00', 101)] }).join(), /100% of the account/);
+  assert.match(sessionLossProblems({ on: true, sessions: [P('07:00', '08:00', 101)] }).join(), /100% of the "At most open" margin/);
   assert.match(sessionLossProblems({ on: true, sessions: [{ from: '07:00', to: '08:00', limit: 5, unit: 'usd' }] }).join(), /₹ or %/);
   assert.deepEqual(sessionLossProblems({ on: true, sessions: [P('07:00', '08:00', 2.5)] }), []);
   assert.match(sessionLossProblems({ on: 'yes', sessions: [] }).join(), /on or off/);
@@ -39,7 +39,7 @@ test('the session a moment falls in: its start counted, its end not', () => {
 });
 
 /** A guard on a clock and a day's net the test moves by hand. */
-function rig(setting: SessionLoss, o: { baselineUsd?: number | null; written?: SessionHit[]; accountUsd?: number | null } = {}) {
+function rig(setting: SessionLoss, o: { baselineUsd?: number | null; written?: SessionHit[]; baseUsd?: number | null } = {}) {
   let now = at('07:00');
   let netUsd = 0;
   const squared: number[] = [];
@@ -49,7 +49,7 @@ function rig(setting: SessionLoss, o: { baselineUsd?: number | null; written?: S
   const guard = new SessionLossGuard({
     now: () => now,
     rule: () => setting,
-    accountUsd: async () => (o.accountUsd === undefined ? 1_000 : o.accountUsd),
+    pctBaseUsd: async () => (o.baseUsd === undefined ? 1_000 : o.baseUsd),
     netUsd: async () => netUsd,
     netUsdAt: async (t) => { asked.push(t); return o.baselineUsd === undefined ? 0 : o.baselineUsd; },
     squareOff: async () => { squared.push(now); return { closed: ['a', 'b'], cancelled: ['c'], failed: [] }; },
@@ -123,9 +123,9 @@ test('a profit booked before the session is not spent by it: the loss is from th
   assert.equal(r.squared.length, 0);
 });
 
-test('[critical] a limit in per cent: of the account as it stood when the session began, fixed for the session', async () => {
-  // 2% of a $1,000 wallet: ₹1,700 at ₹85.
-  const r = rig({ on: true, sessions: [P('07:00', '08:00', 2)] }, { accountUsd: 1_000 });
+test('[critical] a limit in per cent: of the max-open margin as it stood when the session began, fixed for the session', async () => {
+  // 2% of $1,000 (max open 200 × $5, say): ₹1,700 at ₹85.
+  const r = rig({ on: true, sessions: [P('07:00', '08:00', 2)] }, { baseUsd: 1_000 });
   r.set('07:10', 1_600);
   await r.guard.tick();
   assert.equal(r.guard.status()!.limitInr, 1_700);
@@ -136,8 +136,8 @@ test('[critical] a limit in per cent: of the account as it stood when the sessio
   const hit = await r.guard.tick();
   assert.ok(hit);
   assert.equal(hit.limitInr, 1_700);
-  // A wallet that cannot be read is no line yet: nothing squared off on a guess.
-  const blind = rig({ on: true, sessions: [P('07:00', '08:00', 2)] }, { accountUsd: null });
+  // No max open set (or no price to price the margin): no line yet, nothing squared off on a guess.
+  const blind = rig({ on: true, sessions: [P('07:00', '08:00', 2)] }, { baseUsd: null });
   blind.set('07:10', 999_999);
   await blind.guard.tick();
   blind.move(HOLD_MS * 2);

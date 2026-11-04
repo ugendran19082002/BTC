@@ -232,6 +232,8 @@ export type SessionLossView = {
   /** Why new entries are stopped today, or null. */
   blocked: string | null;
   hits: SessionHit[];
+  /** What a limit in % is of: max open × the margin one position takes (Delta's own when measured, else the desk's model). */
+  pctBase: { maxOpen: number; perPositionUsd: number | null; source: 'delta' | 'model' | null; totalUsd: number | null };
 };
 export const getSessionLoss = () => json<SessionLossView>(withAccount('/api/desk/session-loss'));
 export const saveSessionLoss = (setting: SessionLossSetting) => post<SessionLossView & { ok: true }>(withAccount('/api/desk/session-loss'), setting);

@@ -47,7 +47,11 @@ const main = () => brokerAccounts().default()!.id;
 
 test('[critical] untouched: off, no sessions, nothing stopped, nothing hit', async () => {
   const got = (await api('GET', '/api/desk/session-loss')).body;
-  assert.deepEqual(got, { setting: { on: false, sessions: [] }, now: null, blocked: null, hits: [] });
+  const { pctBase, ...rest } = got;
+  assert.deepEqual(rest, { setting: { on: false, sessions: [] }, now: null, blocked: null, hits: [] });
+  // What a % is of: no max open set on this account yet, so nothing to take a per cent of.
+  assert.equal(pctBase.maxOpen, 0);
+  assert.equal(pctBase.totalUsd, null);
 });
 
 test('[critical] set on an account: kept under its own key, read back in the order of the day', async () => {
@@ -61,6 +65,15 @@ test('[critical] set on an account: kept under its own key, read back in the ord
   // Off again, sessions kept.
   const off = await api('POST', `/api/desk/session-loss?account=${main()}`, { on: false, sessions });
   assert.equal(off.body.setting.on, false);
+});
+
+test('[critical] a % is of max open × the margin one position takes -- never the wallet', async () => {
+  await tradingService().settings.set(`signal_max_open@${main()}`, '200');
+  const svc = tradingService() as unknown as { sessionPctBase: () => Promise<{ maxOpen: number; perPositionUsd: number | null; totalUsd: number | null }> };
+  const b = await svc.sessionPctBase();
+  if (b.perPositionUsd === null) return; // no price yet on a paper desk: nothing to price the margin by
+  assert.equal(b.maxOpen, 200);
+  assert.ok(Math.abs(b.totalUsd! - 200 * b.perPositionUsd) < 1e-9);
 });
 
 test('a setting that will not read is refused in words, and nothing is kept', async () => {

@@ -18,8 +18,10 @@ import { istDate, startOfDayIst } from '../strategy/schedule.js';
  */
 
 /**
- * A session and its limit: rupees (`inr`), or a per cent of the account (`pct`) -- the wallet, read when the session
- * begins, so the line does not move as the session loses (owner, same day: "amount or %, either -- I choose").
+ * A session and its limit: rupees (`inr`), or a per cent (`pct`) of the money the account's "At most open" needs -- that
+ * setting (the cap over all its strategies, `signal_max_open`) times the margin one position takes, read when the
+ * session begins and fixed for it (owner, 4 Nov 2026: "not the wallet -- it may hold extra money; At most open 200 is
+ * about ₹8,000: the % of that").
  */
 export type SessionRule = { from: string; to: string; limit: number; unit: 'inr' | 'pct' };
 export type SessionLoss = { on: boolean; sessions: SessionRule[] };
@@ -63,7 +65,7 @@ export function sessionLossProblems(x: unknown): string[] {
     if (r.unit !== 'inr' && r.unit !== 'pct') bad.push(`Session ${n}: the limit is in ₹ or %.`);
     else if (typeof r.limit !== 'number' || !Number.isFinite(r.limit) || r.limit <= 0) bad.push(`Session ${n}: the limit must be above 0.`);
     else if (r.unit === 'inr' && r.limit > MAX_SESSION_LIMIT_INR) bad.push(`Session ${n}: at most ₹${MAX_SESSION_LIMIT_INR.toLocaleString('en-IN')}.`);
-    else if (r.unit === 'pct' && r.limit > MAX_SESSION_LIMIT_PCT) bad.push(`Session ${n}: at most ${MAX_SESSION_LIMIT_PCT}% of the account.`);
+    else if (r.unit === 'pct' && r.limit > MAX_SESSION_LIMIT_PCT) bad.push(`Session ${n}: at most ${MAX_SESSION_LIMIT_PCT}% of the "At most open" margin.`);
     ok.push({ from: minutesOf(r.from), to: minutesOf(r.to), n });
   });
   // Two sessions over the same minute could not say whose loss it was.
@@ -103,7 +105,7 @@ export type SessionHit = {
 /** What the screen is told: the setting, and the session now -- its loss against its limit, and whether it was hit. */
 export type SessionLossNow = {
   from: string; to: string; limit: number; unit: 'inr' | 'pct';
-  /** The limit in rupees: the amount, or the per cent of the account at the session's start; null until it is read. */
+  /** The limit in rupees: the amount, or the per cent of the "At most open" margin at the session's start; null until it is read. */
   limitInr: number | null;
   /** Lost since the session began, in rupees; null until it has been read. Negative is a gain. */
   lossInr: number | null;
@@ -120,8 +122,8 @@ const whyOf = (h: Pick<SessionHit, 'from' | 'to' | 'lossInr' | 'limitInr'>) =>
 export type SessionGuardDeps = {
   now: () => number;
   rule: () => SessionLoss;
-  /** The account's wallet in USD, for a limit in per cent; null when it cannot be read. */
-  accountUsd: () => Promise<number | null>;
+  /** What a limit in per cent is of, USD: "At most open" × the margin one position takes; null with none set. */
+  pctBaseUsd: () => Promise<number | null>;
   /** The account's day so far, USD: booked + open at the mark − charges ("Net today"). */
   netUsd: () => Promise<number>;
   /** The same figure as the day's line had it at or before `atMs`; null with no reading then (none taken yet: 0). */
@@ -207,16 +209,16 @@ export class SessionLossGuard {
       this.baseline = { key, usd: (await this.d.netUsdAt(s.startMs)) ?? 0, limitInr: null };
       this.breachSince = null;
     }
-    // The line in rupees, fixed for the session: the amount, or the per cent of the account as it stood when first read.
+    // The line in rupees, fixed for the session: the amount, or the per cent of the "At most open" margin as first read.
     if (this.baseline.limitInr === null) {
-      const acct = s.rule.unit === 'pct' ? await this.d.accountUsd().catch(() => null) : null;
-      this.baseline.limitInr = s.rule.unit === 'inr' ? s.rule.limit : acct !== null && acct > 0 ? (s.rule.limit / 100) * acct * USDINR : null;
+      const base = s.rule.unit === 'pct' ? await this.d.pctBaseUsd().catch(() => null) : null;
+      this.baseline.limitInr = s.rule.unit === 'inr' ? s.rule.limit : base !== null && base > 0 ? (s.rule.limit / 100) * base * USDINR : null;
     }
     const limitInr = this.baseline.limitInr;
     const lossInr = (this.baseline.usd - await this.d.netUsd()) * USDINR;
     this.last = { from: s.rule.from, to: s.rule.to, limit: s.rule.limit, unit: s.rule.unit, limitInr, lossInr, hit: false, breachSince: null };
     this.lastKey = key;
-    // A per cent of an account not yet read is no line yet: nothing squared off on a guess.
+    // A per cent of nothing yet (no "At most open" set, no price for the margin) is no line: nothing squared off on a guess.
     if (limitInr === null || lossInr < limitInr) { this.breachSince = null; return null; }
     this.breachSince ??= now;
     this.last.breachSince = this.breachSince;

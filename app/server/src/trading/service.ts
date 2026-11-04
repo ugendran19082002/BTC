@@ -33,6 +33,7 @@ import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-wa
 import { notePass, quotaKeyOf, quotaUsedPctOf } from '../observability/desk-metrics.js';
 import { ENTRY_WATCH_MS, EntryWatch } from './entry-watch.js';
 import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
+import { GLOBAL_MAX_OPEN_KEY, globalMaxOpenOf } from '../strategy/types.js';
 import { SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
@@ -391,8 +392,8 @@ export class TradingService {
   readonly sessionGuard = new SessionLossGuard({
     now: () => Date.now(),
     rule: () => this.sessionLossSetting,
-    // The wallet -- what is free and what is held as margin -- for a limit in per cent of the account.
-    accountUsd: async () => { await this.balance(); return this.lastBalance === null ? null : this.lastBalance + (this.lastMarginUsedUsd ?? 0); },
+    // What a limit in per cent is of: max open × the margin one position takes -- never the wallet, which may hold more.
+    pctBaseUsd: async () => (await this.sessionPctBase(true)).totalUsd,
     netUsd: () => this.netTodayOnBoard(),
     netUsdAt: (at) => this.store.mtmNetAt(istDate(at), at, this.currentAccountId),
     squareOff: () => this.closeAll(),
@@ -416,10 +417,33 @@ export class TradingService {
     return { ok: true, sessionLoss: this.sessionLossSetting };
   }
 
-  /** The session limit now, and its last square-offs: what the card shows. */
-  async sessionLossView(): Promise<{ setting: SessionLoss; now: SessionLossNow; blocked: string | null; hits: SessionHit[] }> {
+  /**
+   * What a session limit in per cent is of, now (owner, 4 Nov 2026: "max open 200 is about ₹8,000; the % of that, not the
+   * wallet -- it may hold extra money", then "'At most open', not max open"): this account's "At most open" -- the cap
+   * over all its strategies on the Strategy screen (`signal_max_open`), not a strategy's own -- times the margin one
+   * position takes.
+   * That margin is Delta's own -- its margin in use over the positions open -- while ten or more are open to measure it
+   * by; else the desk's model at its leverage (`fundsRequiredPerContract`, BTC at its last price). `fresh` reads Delta's
+   * wallet first (once a session); the card reads what the status last read. Null: no max open set, or nothing to price by.
+   */
+  async sessionPctBase(fresh = false): Promise<{ maxOpen: number; perPositionUsd: number | null; source: 'delta' | 'model' | null; totalUsd: number | null }> {
+    if (fresh) await this.balance().catch(() => null);
+    const maxOpen = globalMaxOpenOf(accountSetting(this.settings, GLOBAL_MAX_OPEN_KEY, this.currentAccountId));
+    const holding = (await this.openTrades()).filter((r) => r.state.position !== 0).length;
+    const measured = holding >= 10 && (this.lastMarginUsedUsd ?? 0) > 0 ? this.lastMarginUsedUsd! / holding : null;
+    const spot = this.currentSpot();
+    const model = spot && spot > 0 ? fundsRequiredPerContract({ spot, premium: 0, leverage: DEFAULT_LEVERAGE }) : null;
+    const perPositionUsd = measured ?? model;
     return {
-      setting: this.sessionLossSetting, now: this.sessionGuard.status(), blocked: this.sessionGuard.entryBlock(),
+      maxOpen, perPositionUsd, source: measured !== null ? 'delta' : model !== null ? 'model' : null,
+      totalUsd: maxOpen > 0 && perPositionUsd !== null ? maxOpen * perPositionUsd : null,
+    };
+  }
+
+  /** The session limit now, and its last square-offs: what the card shows. */
+  async sessionLossView(): Promise<{ setting: SessionLoss; now: SessionLossNow; blocked: string | null; hits: SessionHit[]; pctBase: Awaited<ReturnType<TradingService['sessionPctBase']>> }> {
+    return {
+      setting: this.sessionLossSetting, now: this.sessionGuard.status(), blocked: this.sessionGuard.entryBlock(), pctBase: await this.sessionPctBase(),
       hits: await this.store.sessionLossHits(this.currentAccountId, 20),
     };
   }

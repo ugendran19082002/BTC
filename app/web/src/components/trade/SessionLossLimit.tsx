@@ -20,7 +20,8 @@ const mins = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
 const pad = (n: number) => String(n).padStart(2, '0');
 const rupees = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const clock = (ms: number) => new Date(ms + 5.5 * 3_600_000).toISOString().slice(11, 16);
-const limitText = (r: Pick<SessionRule, 'limit' | 'unit'>) => (r.unit === 'inr' ? rupees(r.limit) : `${r.limit}% of the account`);
+const limitText = (r: Pick<SessionRule, 'limit' | 'unit'>) => (r.unit === 'inr' ? rupees(r.limit) : `${r.limit}% of the "At most open" margin`);
+const USDINR = 85;
 
 /** What is wrong with the sessions as typed, in words; empty when they can be kept (the server's own rules). */
 export function draftProblems(d: SessionLossSetting): string[] {
@@ -30,7 +31,7 @@ export function draftProblems(d: SessionLossSetting): string[] {
     if (!HHMM.test(s.from) || !HHMM.test(s.to)) bad.push(`Session ${n}: give both times.`);
     else if (mins(s.from) >= mins(s.to)) bad.push(`Session ${n}: it must end after it starts.`);
     if (!(s.limit > 0)) bad.push(`Session ${n}: the limit must be above 0.`);
-    else if (s.unit === 'pct' && s.limit > 100) bad.push(`Session ${n}: at most 100% of the account.`);
+    else if (s.unit === 'pct' && s.limit > 100) bad.push(`Session ${n}: at most 100% of the "At most open" margin.`);
   });
   const ok = d.sessions.filter((s) => HHMM.test(s.from) && HHMM.test(s.to)).map((s, i) => ({ a: mins(s.from), b: mins(s.to), i })).sort((x, y) => x.a - y.a);
   for (let k = 1; k < ok.length; k++) if (ok[k]!.a < ok[k - 1]!.b) bad.push(`Sessions ${ok[k - 1]!.i + 1} and ${ok[k]!.i + 1} overlap.`);
@@ -73,6 +74,10 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
     }
   };
   const now = data.now;
+  // What a % is of: "At most open" × the margin one position takes, in rupees -- never the wallet.
+  const base = data.pctBase;
+  const baseInr = base?.totalUsd != null ? base.totalUsd * USDINR : null;
+  const anyPct = draft.sessions.some((s) => s.unit === 'pct');
   const used = now && now.lossInr !== null && now.limitInr ? Math.max(0, Math.min(1, now.lossInr / now.limitInr)) : 0;
   const time = (i: number, end: 'from' | 'to', value: string) => (
     <input
@@ -131,6 +136,9 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
                 </button>
               ))}
             </div>
+            {s.unit === 'pct' && baseInr !== null && s.limit > 0 && (
+              <span className="text-[12px] tabular-nums text-muted-foreground">≈ {rupees((s.limit / 100) * baseInr)}</span>
+            )}
             <button
               type="button" aria-label={`Remove session ${i + 1}`} onClick={() => setDraft((d) => d && ({ ...d, sessions: d.sessions.filter((_, k) => k !== i) }))}
               className="h-9 w-9 rounded-md border-0 bg-transparent font-[inherit] text-[15px] text-muted-foreground"
@@ -162,6 +170,16 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
           </button>
         </div>
       </div>
+
+      {anyPct && (
+        <p className="m-0 text-[12px] leading-snug text-muted-foreground" aria-label="What a % is of">
+          {base && base.maxOpen > 0 && base.perPositionUsd !== null
+            ? <>% is of &ldquo;At most open&rdquo; <b className="text-foreground">{base.maxOpen}</b> × {rupees(base.perPositionUsd * USDINR)} margin a position ({base.source === 'delta' ? 'Delta\'s, measured' : 'the desk\'s model'}) = <b className="text-foreground">{rupees(baseInr!)}</b>, read when each session begins. Not the wallet.</>
+            : base && base.maxOpen === 0
+              ? <span className="text-[var(--down)]">% needs &ldquo;At most open&rdquo; set on this account (Strategy screen): with none, a % session has no limit.</span>
+              : 'Pricing the margin a position takes…'}
+        </p>
+      )}
 
       {(problems.length > 0 || refusal) && (
         <p role="alert" className="m-0 text-[12px] text-[var(--down)]">{refusal ?? problems.join(' ')}</p>

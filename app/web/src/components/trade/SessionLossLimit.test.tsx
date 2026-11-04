@@ -16,7 +16,10 @@ vi.mock('@/api/desk', async (orig) => ({
 }));
 const { SessionLossLimit, draftProblems, everyHour } = await import('@/components/trade/SessionLossLimit');
 
-const view = (o: Partial<SessionLossView> = {}): SessionLossView => ({ setting: { on: false, sessions: [] }, now: null, blocked: null, hits: [], ...o });
+const view = (o: Partial<SessionLossView> = {}): SessionLossView => ({
+  setting: { on: false, sessions: [] }, now: null, blocked: null, hits: [],
+  pctBase: { maxOpen: 200, perPositionUsd: 0.47, source: 'delta', totalUsd: 94 }, ...o,
+});
 
 beforeEach(() => {
   getSessionLoss.mockReset(); saveSessionLoss.mockReset();
@@ -58,6 +61,9 @@ describe('Session loss limit', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(saveSessionLoss).toHaveBeenCalled());
     expect(saveSessionLoss.mock.calls[0]![0].sessions).toEqual([{ from: '07:00', to: '08:00', limit: 2.5, unit: 'pct' }]);
+    // What it is of: "At most open" 200 × ₹40 a position = ₹7,990; 2.5% of it ≈ ₹200. Not the wallet.
+    expect(screen.getByLabelText('What a % is of')).toHaveTextContent('% is of “At most open” 200 × ₹40 margin a position (Delta\'s, measured) = ₹7,990');
+    expect(screen.getByText('≈ ₹200')).toBeInTheDocument();
   });
 
   it('a session that ends before it starts is said, and cannot be saved', async () => {
@@ -87,6 +93,12 @@ describe('Session loss limit', () => {
     expect(screen.getByRole('list', { name: 'Squared off by the session limit' })).toHaveTextContent('11-04 07:40 · 07:00–08:00 lost ₹1,234 of ₹1,000 · 12 closed');
   });
 
+  it('a % with no max open set on the account says so', async () => {
+    getSessionLoss.mockResolvedValue(view({ setting: { on: false, sessions: [{ from: '07:00', to: '08:00', limit: 1, unit: 'pct' }] }, pctBase: { maxOpen: 0, perPositionUsd: 0.4, source: 'model', totalUsd: null } }));
+    render(<SessionLossLimit />);
+    expect(await screen.findByText(/% needs “At most open” set on this account/)).toBeInTheDocument();
+  });
+
   it('on all accounts: set on each account\'s own tab, nothing read', () => {
     render(<SessionLossLimit several />);
     expect(screen.getByText(/set on each account's own tab/)).toBeInTheDocument();
@@ -99,6 +111,6 @@ describe('the parts', () => {
     expect(everyHour(7, 9, 500, 'pct')).toEqual([{ from: '07:00', to: '08:00', limit: 500, unit: 'pct' }, { from: '08:00', to: '09:00', limit: 500, unit: 'pct' }]);
     expect(draftProblems({ on: true, sessions: [] })).toEqual(['Add a session to switch it on.']);
     expect(draftProblems({ on: true, sessions: [{ from: '07:00', to: '08:30', limit: 1, unit: 'inr' }, { from: '08:00', to: '09:00', limit: 1, unit: 'inr' }] })).toEqual(['Sessions 1 and 2 overlap.']);
-    expect(draftProblems({ on: false, sessions: [{ from: '07:00', to: '08:00', limit: 150, unit: 'pct' }] })).toEqual(['Session 1: at most 100% of the account.']);
+    expect(draftProblems({ on: false, sessions: [{ from: '07:00', to: '08:00', limit: 150, unit: 'pct' }] })).toEqual(['Session 1: at most 100% of the "At most open" margin.']);
   });
 });
