@@ -90,7 +90,14 @@ test('the rules and the question are checked, in words', () => {
   assert.deepEqual(b.rules, { skipPerpSl: false, skipPerpTgt: true, stopPct: 1.5, targetPct: 0.95 });
   assert.deepEqual(b.tfs, ['5m', 'chain']);
   assert.deepEqual(b.window, { from: 13 * 60 + 30, to: 17 * 60 + 30 });
-  assert.match(replayAskOf({ from: '2026-09-01', to: '2026-10-31' }, now) as string, /At most 31 days/);
+  // Any range a year long (4 Nov 2026; 31 days until then); at most open and lots, 250 and 1 unless asked.
+  const two = replayAskOf({ from: '2026-09-01', to: '2026-10-31' }, now);
+  assert.ok(typeof two !== 'string', String(two));
+  assert.deepEqual([two.maxOpen, two.lots], [250, 1]);
+  assert.match(replayAskOf({ from: '2025-10-01', to: '2026-11-03' }, now) as string, /At most 366 days/);
+  assert.deepEqual([(replayAskOf({ maxOpen: '40', lots: '3' }, now) as { maxOpen: number }).maxOpen, (replayAskOf({ lots: '3' }, now) as { lots: number }).lots], [40, 3]);
+  assert.match(replayAskOf({ maxOpen: '0' }, now) as string, /At most open must be a whole number from 1 to 10,000/);
+  assert.match(replayAskOf({ lots: '1.5' }, now) as string, /Lots must be a whole number from 1 to 1,000/);
   assert.match(replayAskOf({ tgt: '100' }, now) as string, /option TGT/);
   assert.match(replayAskOf({ from: '2026-10-05', to: '2026-10-01' }, now) as string, /start date/);
   assert.equal((replayAskOf({ source: 'signals' }, now) as { source: string }).source, 'signals');
@@ -234,3 +241,34 @@ test('the list: a page at a time, of a day or all, by profit / loss / better / w
   assert.match(csv[0]!, /^expiry_day,entered_ist,account,/);
   assert.match(csv[1]!, new RegExp(`^${DAY},.*,${SYMBOL},2,40,84400,85000,.*,option-tgt,.*,perp-sl,`));
 });
+
+test('[critical] every signal taken as it filled, as the desk would: at most open held to -- one out frees its place -- and lots each', async () => {
+  // The two at 9:30 fill together: with room for one, the first is taken and the other counted full.
+  const one = await ask({ targetPct: 0 }, { source: 'signals', maxOpen: 1 });
+  assert.deepEqual([one.replay.trades, one.full, one.maxOpen], [1, 1, 1]);
+  const both = await ask({ targetPct: 0 }, { source: 'signals' });
+  assert.deepEqual([both.replay.trades, both.full, both.maxOpen, both.lots], [2, 0, 250, 1]);
+  // Lots: each signal sells that many, its net with it.
+  const three = await ask({ targetPct: 0 }, { source: 'signals', lots: 3 });
+  const p = three.rows.find((r) => r.method === 'pullback')!;
+  assert.equal(p.contracts, 3);
+  assert.ok(Math.abs(p.replay.netUsd - shortNetUsd(39, p.replay.exit!, 3)) < 1e-12);
+  // A third signal fills 40 minutes on: taken once the first is out (the perp SL at the 21st minute), not while it is held.
+  const later = ENTRY_AT + 40 * MIN;
+  const code = `${DAY.slice(8, 10)}${DAY.slice(5, 7)}${DAY.slice(2, 4)}`;
+  await query(`INSERT INTO entry_setups (method, mode, tf, dir, trigger_at, first_seen, entry_lo, entry_hi, stop, tp1, rr, graded_to, filled_at, fill_price)
+               VALUES ('pullback', 'single', '5m', 1, $1, $1, 84500, 84520, 84400, 85000, 1.5, $1, $2, 84510)`, [TRIGGER + 2_400, later / 1000 - 30]);
+  await query(`UPDATE option_snapshots_1m SET bid = 18, delta = -0.06, expiry = $3 WHERE symbol = $1 AND at = $2`, [SYMBOL, later - (later % MIN), code]);
+  try {
+    clearOptionReplayCache();
+    const freed = await ask({ skipPerpSl: false, targetPct: 0 }, { source: 'signals', maxOpen: 1 });
+    assert.deepEqual([freed.replay.trades, freed.full], [2, 1], 'the 9:30 pair: one taken, one full; the third after the first was out');
+    const held = await ask({ targetPct: 0 }, { source: 'signals', maxOpen: 1 });
+    assert.deepEqual([held.replay.trades, held.full], [1, 2], 'held to the close: no place for the third either');
+  } finally {
+    await query(`DELETE FROM entry_setups WHERE trigger_at = $1`, [TRIGGER + 2_400]);
+    await query(`UPDATE option_snapshots_1m SET bid = NULL, delta = NULL, expiry = $3 WHERE symbol = $1 AND at = $2`, [SYMBOL, later - (later % MIN), DAY]);
+    clearOptionReplayCache();
+  }
+});
+

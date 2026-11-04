@@ -2,6 +2,12 @@ import { json } from '@/api/client';
 import { withAccount } from '@/lib/account-scope';
 import type { OptionReplay, ReplayList, ReplayRules, ReplaySource } from '@/types/option-replay';
 
+/** The server's own when the page says nothing (`REPLAY_DEFAULT_MAX_OPEN`, `REPLAY_DEFAULT_LOTS`), and its most. */
+export const REPLAY_DEFAULT_MAX_OPEN = 250;
+export const REPLAY_DEFAULT_LOTS = 1;
+export const REPLAY_MAX_OPEN_MOST = 10_000;
+export const REPLAY_LOTS_MOST = 1_000;
+
 /** What the option history asks: expiry days, the hours entered (null: all), timeframes (empty: all) and the rules. */
 export type OptionReplayQuery = {
   from: string; to: string;
@@ -12,6 +18,8 @@ export type OptionReplayQuery = {
   oneContract: boolean;
   /** The desk's real orders, or every signal of the signal history. */
   source: ReplaySource;
+  /** At most this many open at once, and the lots each trade sells (4 Nov 2026): the server's 250 and 1 where not said. */
+  maxOpen: number; lots: number;
   /** The page of trades to hold. */
   list: ReplayList;
 };
@@ -28,6 +36,9 @@ export function optionReplayUrl(q: OptionReplayQuery): string {
   p.set('tgt', String(Math.round(q.rules.targetPct * 10_000) / 100));
   if (q.oneContract) p.set('size', 'one');
   if (q.source === 'signals') p.set('source', 'signals');
+  // Said only when not the server's own, so the same question is the same URL as before.
+  if (q.maxOpen !== REPLAY_DEFAULT_MAX_OPEN) p.set('maxOpen', String(q.maxOpen));
+  if (q.lots !== REPLAY_DEFAULT_LOTS) p.set('lots', String(q.lots));
   if (q.list.day) p.set('day', q.list.day);
   if (q.list.show !== 'all') p.set('show', q.list.show);
   if (q.list.offset > 0) p.set('offset', String(q.list.offset));

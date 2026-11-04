@@ -44,8 +44,20 @@ export type ActualExit = 'option-tgt' | 'option-sl' | 'desk' | 'other';
 export const CHAIN_KEY = 'chain';
 export const REPLAY_TFS: readonly string[] = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', CHAIN_KEY];
 
-/** At most this many expiry days in one ask: a month and a day, so "this month" always fits. */
-export const REPLAY_MAX_DAYS = 31;
+/**
+ * At most this many expiry days in one ask: a year (owner, 4 Nov 2026: "from to evlo kudahtulum varunum" -- 31 until
+ * then). A guard against a mistyped year, not a limit on looking back: the boards are kept 90 days, the signals for good.
+ */
+export const REPLAY_MAX_DAYS = 366;
+/**
+ * At most this many signal trades open at once, as the desk holds its own (owner, 4 Nov 2026: "at most open varunum,
+ * default 250"); each trade this many lots (default 1). Under `signals` only: the desk's orders were held to its caps
+ * when they were placed.
+ */
+export const REPLAY_DEFAULT_MAX_OPEN = 250;
+export const REPLAY_MAX_OPEN_MOST = 10_000;
+export const REPLAY_DEFAULT_LOTS = 1;
+export const REPLAY_LOTS_MOST = 1_000;
 /** The most trades one page of the list holds; the spreadsheet takes them all (`REPLAY_CSV_MAX`). */
 export const REPLAY_PAGE_MAX = 1_000;
 export const REPLAY_CSV_MAX = 250_000;
@@ -72,6 +84,10 @@ export type OptionReplayAsk = {
   oneContract?: boolean;
   /** `orders` (the default): the desk's real orders. `signals`: every signal in the signal history (`SIGNAL_STRIKE`). */
   source?: ReplaySource;
+  /** `signals`: at most this many open at once, taken in the order they filled (`REPLAY_DEFAULT_MAX_OPEN`). */
+  maxOpen?: number;
+  /** `signals`, and `oneContract`: the lots each trade sells (`REPLAY_DEFAULT_LOTS`). */
+  lots?: number;
   /** Which page of the trades to hold. Absent: the first `REPLAY_PAGE_MAX / 5` of all of them. */
   list?: ReplayList;
   now: number;
@@ -112,6 +128,8 @@ export type ReplayGroup = {
 };
 export type OptionReplay = {
   from: string; to: string; rules: ReplayRules; oneContract: boolean; source: ReplaySource;
+  /** The most open at once (`signals`; null under `orders`), and the lots each trade sold. */
+  maxOpen: number | null; lots: number;
   /** `actual` is of the `traded` trades alone: all of them under `orders`, those the desk had an order on under `signals`. */
   actual: ReplaySide; replay: ReplaySide; traded: number;
   /** Of the replayed, how many the rules made more of than the real order did, and how many less. */
@@ -119,9 +137,10 @@ export type OptionReplay = {
   exits: Record<ReplayExit, number>;
   /**
    * Left out: trades still open; trades with no quote of their option after the entry to replay on; and (`signals`)
-   * signals with no strike inside the rule at the fill -- nothing the strategies would have sold.
+   * signals with no strike inside the rule at the fill -- nothing the strategies would have sold; and (`signals`) those
+   * that filled while `maxOpen` were already open -- not taken, as the desk would not have taken them (`full`).
    */
-  open: number; noPrices: number; noStrike: number;
+  open: number; noPrices: number; noStrike: number; full: number;
   days: ReplayGroup[]; timeframes: ReplayGroup[]; methods: ReplayGroup[]; accounts: ReplayGroup[];
   /**
    * By the IST hour entered, and by method in each hour (owner, 3 Nov 2026: "which methods, at which time, lose again and
@@ -413,7 +432,8 @@ async function readSignals(day: string): Promise<SignalDay> {
  * turned -- is arithmetic only. The day in progress is read again after a minute. At most `HELD_DAYS`, the least
  * recently used let go first.
  */
-const HELD_DAYS = 45;
+// Every day a year's ask could hold is kept back to the boards' 90 days, and a few more (31 days' worth until 4 Nov 2026).
+const HELD_DAYS = 100;
 const TODAY_FRESH_MS = 60_000;
 type Held<T> = Map<string, { at: number; settled: boolean; data: Promise<T> }>;
 const held: Held<DayData> = new Map();
@@ -539,7 +559,17 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
     return true;
   };
   const out: OptionReplayRow[] = [];
-  let open = 0, noPrices = 0, noStrike = 0, traded = 0, better = 0, worse = 0;
+  let open = 0, noPrices = 0, noStrike = 0, full = 0, traded = 0, better = 0, worse = 0;
+  const maxOpen = signals ? o.maxOpen ?? REPLAY_DEFAULT_MAX_OPEN : null;
+  const lots = o.lots ?? REPLAY_DEFAULT_LOTS;
+  /*
+   * As the desk would have taken them (owner, 4 Nov 2026: "signal against elam option history trades correct real time
+   * maari edukunum"): every signal in the order it filled, each seeing the trades still open at that moment -- those
+   * whose replayed exit is past are gone -- and not taken while `maxOpen` are. The exit moments of those open, sorted.
+   */
+  const openUntil: number[] = [];
+  const release = (at: number) => { let n = 0; while (n < openUntil.length && openUntil[n]! <= at) n++; if (n) openUntil.splice(0, n); };
+  const hold = (until: number) => { let i = openUntil.length; while (i > 0 && openUntil[i - 1]! > until) i--; openUntil.splice(i, 0, until); };
   for (const [k, d] of data.entries()) {
     const realItem = (t: Taken): Item['real'] => ({ net: t.actualNet, contracts: t.contracts, exitAt: t.actualExitAt, exit: t.actualExit, why: t.actualWhy });
     let items: Item[];
@@ -555,7 +585,9 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
         const key = levelKey(t.method, t.mode, t.signalTf, t.dir, t.triggerTime);
         if (!real.has(key)) real.set(key, t);
       }
-      items = sd.trades.filter((t) => wanted(t, true)).map((t) => { const r = real.get(t.tradeId); return { ...t, real: r ? realItem(r) : null }; });
+      items = sd.trades.filter((t) => wanted(t, true)).map((t) => { const r = real.get(t.tradeId); return { ...t, real: r ? realItem(r) : null }; })
+        // In the order they filled: the open count each one sees is the one the desk would have seen.
+        .sort((a, b) => a.enteredAt - b.enteredAt || a.tradeId.localeCompare(b.tradeId));
     } else {
       items = d.taken.filter((t) => wanted(t)).map((t) => {
         const lv = d.levels.get(levelKey(t.method, t.mode, t.signalTf, t.dir, t.triggerTime));
@@ -570,8 +602,14 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
       const path = paths.get(t.symbol);
       const x = path ? replayExit(t, o.rules, path, d.perp) : null;
       if (!x) { noPrices++; continue; }
+      if (maxOpen !== null) {
+        release(t.enteredAt);
+        if (openUntil.length >= maxOpen) { full++; continue; }
+        // Held until its replayed exit -- one held to the close, its last minute.
+        hold(x.at);
+      }
       // Charges are a share of the premium, so one contract's share of the real trade is its net over its size.
-      const size = o.oneContract || signals ? 1 : t.contracts;
+      const size = o.oneContract || signals ? lots : t.contracts;
       const net = shortNetUsd(t.entry, x.price, size);
       const actualNet = t.real ? (size === t.real.contracts ? t.real.net : (t.real.net / t.real.contracts) * size) : null;
       count(replay, net); exits[x.why]++;
@@ -620,8 +658,8 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
   // Methods best first: by what they make under the rules, most first.
   const byNet = (a: ReplayGroup, b: ReplayGroup) => b.replay.netUsd - a.replay.netUsd;
   return {
-    from: o.from, to: o.to, rules: o.rules, oneContract: o.oneContract === true || source === 'signals', source,
-    actual, replay, traded, better, worse, exits, open, noPrices, noStrike,
+    from: o.from, to: o.to, rules: o.rules, oneContract: o.oneContract === true || source === 'signals', source, maxOpen, lots,
+    actual, replay, traded, better, worse, exits, open, noPrices, noStrike, full,
     days: [...groups.day.values()].sort((a, b) => b.key.localeCompare(a.key)),
     timeframes: [...groups.tf.values()].sort((a, b) => tfRank(a.key) - tfRank(b.key)),
     methods: [...groups.method.values()].sort(byNet),

@@ -6,7 +6,7 @@ import { Money } from '@/components/ui/money';
 import { NumberField } from '@/components/ui/number-field';
 import { Switch } from '@/components/ui/switch';
 import { useTimeWindow } from '@/components/report/TimeWindow';
-import { getOptionReplay, optionReplayCsvUrl, type OptionReplayQuery } from '@/api/option-replay';
+import { REPLAY_DEFAULT_LOTS, REPLAY_DEFAULT_MAX_OPEN, REPLAY_LOTS_MOST, REPLAY_MAX_OPEN_MOST, getOptionReplay, optionReplayCsvUrl, type OptionReplayQuery } from '@/api/option-replay';
 import { usePoll } from '@/hooks/usePoll';
 import { useSynced } from '@/hooks/useSynced';
 import { compactInr, contractLabel, inr, signedInr, usdToInr } from '@/lib/format';
@@ -33,7 +33,7 @@ export const TF_CHOICES: readonly { key: string; name: string }[] = [
   { key: '1h', name: '1h' }, { key: '2h', name: '2h' }, { key: '4h', name: '4h' }, { key: 'chain', name: 'Chain' },
 ];
 /** The server's limits (`REPLAY_MAX_DAYS`, `MAX_STOP_PCT`, `MAX_TARGET_PCT`), said before asking. */
-const MAX_DAYS = 31;
+const MAX_DAYS = 366;
 const MAX_SL_PCT = 2_000;
 const MAX_TGT_PCT = 99;
 const DEBOUNCE_MS = 500;
@@ -132,6 +132,23 @@ export function OptionHistory() {
    * source (`?source=orders`), not offered here: they stand beside each signal instead.
    */
   const { window: hours, whole, control: hoursControl } = useTimeWindow('optionHistory');
+  /*
+   * As the desk would have taken them (owner, 4 Nov 2026: "at most open varunum, default 250, and lot, default 1"; "signal
+   * against elam option history trades correct real time maari edukunum"): each signal in the order it filled, at most
+   * this many open at once, each this many lots. Asked half a second after the last change, as the rules are.
+   */
+  const [maxOpen, setMaxOpen] = useSynced<number>('optionHistory.maxOpen', REPLAY_DEFAULT_MAX_OPEN);
+  const [lots, setLots] = useSynced<number>('optionHistory.lots', REPLAY_DEFAULT_LOTS);
+  const [sizing, setSizing] = useState({ maxOpen: maxOpen ?? REPLAY_DEFAULT_MAX_OPEN, lots: lots ?? REPLAY_DEFAULT_LOTS });
+  useEffect(() => { setSizing({ maxOpen: maxOpen ?? REPLAY_DEFAULT_MAX_OPEN, lots: lots ?? REPLAY_DEFAULT_LOTS }); }, [maxOpen, lots]);
+  const sizingProblem = !Number.isInteger(sizing.maxOpen) || sizing.maxOpen < 1 || sizing.maxOpen > REPLAY_MAX_OPEN_MOST
+    ? `At most open must be a whole number from 1 to ${REPLAY_MAX_OPEN_MOST.toLocaleString('en-US')}.`
+    : !Number.isInteger(sizing.lots) || sizing.lots < 1 || sizing.lots > REPLAY_LOTS_MOST ? `Lots must be a whole number from 1 to ${REPLAY_LOTS_MOST.toLocaleString('en-US')}.` : null;
+  useEffect(() => {
+    if (sizingProblem || (sizing.maxOpen === maxOpen && sizing.lots === lots)) return;
+    const t = setTimeout(() => { setMaxOpen(sizing.maxOpen); setLots(sizing.lots); }, DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [sizing.maxOpen, sizing.lots, sizingProblem]); // eslint-disable-line react-hooks/exhaustive-deps
   const [day, setDay] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
 
@@ -147,10 +164,12 @@ export function OptionHistory() {
 
   const today = expiryDayNow();
   const span: DateRangeValue = range ?? { from: dayBefore(today, 6), to: today };
-  const spanProblem = daysIn(span) > MAX_DAYS ? `At most ${MAX_DAYS} days at a time: pick a shorter range.` : null;
+  const spanProblem = daysIn(span) > MAX_DAYS ? `At most ${MAX_DAYS} days -- a year -- at a time: pick a shorter range.` : null;
+  const shownMax = maxOpen ?? REPLAY_DEFAULT_MAX_OPEN, shownLots = lots ?? REPLAY_DEFAULT_LOTS;
   const base = useMemo(() => ({
     from: span.from, to: span.to, hours: whole ? null : hours, tfs: tfs ?? [], rules: rules ?? LIVE_RULES, oneContract: true, source: 'signals' as ReplaySource,
-  }), [span.from, span.to, whole, hours.from, hours.to, (tfs ?? []).join(','), JSON.stringify(rules)]); // eslint-disable-line react-hooks/exhaustive-deps
+    maxOpen: shownMax, lots: shownLots,
+  }), [span.from, span.to, whole, hours.from, hours.to, (tfs ?? []).join(','), JSON.stringify(rules), shownMax, shownLots]); // eslint-disable-line react-hooks/exhaustive-deps
   const baseKey = JSON.stringify(base);
   // A new question starts the list again from its first page, of every day.
   useEffect(() => { setDay(null); setOffset(0); }, [baseKey]);
@@ -201,10 +220,25 @@ export function OptionHistory() {
             {TF_CHOICES.map((c) => chip((tfs ?? []).includes(c.key), c.name, () => toggleTf(c.key), c.key === 'chain' ? 'The timeframe chain (the "all time" strategies)' : undefined))}
           </div>
         </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="grid min-w-0 gap-1 text-[12px] text-muted-foreground">
+            At most open
+            <NumberField label="At most open at once" decimals={0} invalid={sizingProblem?.startsWith('At most') ?? false}
+                         value={sizing.maxOpen} onChange={(n) => setSizing((x) => ({ ...x, maxOpen: n }))} />
+          </label>
+          <label className="grid min-w-0 gap-1 text-[12px] text-muted-foreground">
+            Lots each
+            <NumberField label="Lots each trade" decimals={0} invalid={sizingProblem?.startsWith('Lots') ?? false}
+                         value={sizing.lots} onChange={(n) => setSizing((x) => ({ ...x, lots: n }))} />
+          </label>
+        </div>
+        {sizingProblem && <p role="alert" className="m-0 text-[12px] text-[var(--down)]">{sizingProblem}</p>}
         <p className="m-0 text-[12px] leading-snug text-muted-foreground">
-          Every signal of the signal history that filled -- no account&apos;s rules: no max open, no method list, no strategy
-          skip or refusal. One contract of the strike the strategies pick (nearest the money with delta ≤ 0.10, bid ≥ $13) at
-          the first price after the fill, sold at its bid; the desk&apos;s real order beside it where there was one.
+          Every signal of the signal history that filled, taken as it filled, as the desk would: at most{' '}
+          {sizing.maxOpen.toLocaleString('en-US')} open at once -- one out frees its place -- {sizing.lots} lot{sizing.lots === 1 ? '' : 's'} each.
+          No account&apos;s other rules: no method list, no strategy skip or refusal. The strike the strategies pick (nearest the
+          money with delta ≤ 0.10, bid ≥ $13) at the first price after the fill, sold at its bid; the desk&apos;s real order
+          beside it where there was one.
         </p>
         {hoursControl}
       </section>
@@ -313,6 +347,7 @@ function Results({ data, sortBy, onSort, csvUrl, tab, onTab, show, onShow, day, 
   const left = [
     data.noPrices > 0 && `${data.noPrices.toLocaleString('en-US')} without recorded prices`,
     data.noStrike > 0 && `${data.noStrike.toLocaleString('en-US')} signals with no strike inside the rule`,
+    (data.full ?? 0) > 0 && `${data.full!.toLocaleString('en-US')} not taken, ${(data.maxOpen ?? 0).toLocaleString('en-US')} already open`,
     data.open > 0 && `${data.open.toLocaleString('en-US')} still open`,
   ].filter(Boolean);
 

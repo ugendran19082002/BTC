@@ -103,6 +103,36 @@ describe('Option history', () => {
     }
   });
 
+  it('[critical] at most open and lots each (4 Nov 2026): 250 and 1 to begin with, asked half a second after a change; nonsense said, not asked', async () => {
+    getOptionReplay.mockResolvedValue({ ...answer(), maxOpen: 250, lots: 1, full: 12 });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<OptionHistory />);
+      await screen.findByText('With these rules');
+      expect([lastAsk().maxOpen, lastAsk().lots]).toEqual([250, 1]);
+      expect(screen.getByText(/Left out: .*12 not taken, 250 already open/)).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('At most open at once'), { target: { value: '40' } });
+      fireEvent.change(screen.getByLabelText('Lots each trade'), { target: { value: '3' } });
+      await act(async () => { vi.advanceTimersByTime(600); });
+      await waitFor(() => expect([lastAsk().maxOpen, lastAsk().lots]).toEqual([40, 3]));
+      expect(screen.getByText(/at most 40 open at once -- one out frees its place -- 3 lots each/)).toBeInTheDocument();
+      const asked = getOptionReplay.mock.calls.length;
+      fireEvent.change(screen.getByLabelText('Lots each trade'), { target: { value: '0' } });
+      await act(async () => { vi.advanceTimersByTime(600); });
+      expect(screen.getByText('Lots must be a whole number from 1 to 1,000.')).toBeInTheDocument();
+      expect(getOptionReplay.mock.calls.length).toBe(asked);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('[critical] any range up to a year is asked for: two months is no longer refused', async () => {
+    localStorage.setItem('btc-desk:optionHistory.range', JSON.stringify({ from: '2026-09-01', to: '2026-10-31' }));
+    render(<OptionHistory />);
+    await waitFor(() => expect([lastAsk().from, lastAsk().to]).toEqual(['2026-09-01', '2026-10-31']));
+    expect(screen.queryByText(/days at a time/)).toBeNull();
+  });
+
   it('a rule that cannot be replayed says why and asks for nothing', async () => {
     render(<OptionHistory />);
     await screen.findByText('With these rules');
@@ -246,10 +276,13 @@ describe('the parts', () => {
     const q: OptionReplayQuery = {
       from: '2026-10-01', to: '2026-10-31', hours: { from: '07:00', to: '11:00' }, tfs: ['5m', 'chain'],
       rules: { skipPerpSl: false, skipPerpTgt: true, stopPct: 1.5, targetPct: 0.95 }, oneContract: true, source: 'signals',
+      maxOpen: 250, lots: 1,
       list: { day: '2026-10-12', show: 'worse', offset: 400, limit: 200 },
     };
     expect(optionReplayUrl(q)).toBe('/api/report/option-replay?from=2026-10-01&to=2026-10-31&fromTime=07%3A00&toTime=11%3A00&tf=5m%2Cchain&skipPerpSl=0&skipPerpTgt=1&sl=150&tgt=95&size=one&source=signals&day=2026-10-12&show=worse&offset=400&limit=200');
     expect(optionReplayCsvUrl(q)).toMatch(/^\/api\/report\/option-replay\.csv\?from=2026-10-01/);
+    // At most open and lots (4 Nov 2026): said only when not the server's own 250 and 1.
+    expect(optionReplayUrl({ ...q, maxOpen: 40, lots: 3 })).toMatch(/&source=signals&maxOpen=40&lots=3&day=/);
   });
   it('ranked best first by what is asked, a day with no trade last', () => {
     const gs = [group('a', 0, 0, 0), group('b', 5, 1, 2, { better: 4, worse: 1 }), group('c', 9, 1, 5, { better: 1, worse: 8 })];

@@ -8,7 +8,7 @@ import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
 import { windowOf } from './market.routes.js';
 import { optionReplay } from '../../report/backtest-run.js';
-import { LIVE_RULES, REPLAY_CSV_MAX, REPLAY_MAX_DAYS, REPLAY_PAGE_MAX, REPLAY_SHOWS, optionReplayCsv, rulesProblem, type ReplayList, type ReplayRules, type ReplaySource, type ReplayShow } from '../../report/option-replay.js';
+import { LIVE_RULES, REPLAY_CSV_MAX, REPLAY_DEFAULT_LOTS, REPLAY_DEFAULT_MAX_OPEN, REPLAY_LOTS_MOST, REPLAY_MAX_DAYS, REPLAY_MAX_OPEN_MOST, REPLAY_PAGE_MAX, REPLAY_SHOWS, optionReplayCsv, rulesProblem, type ReplayList, type ReplayRules, type ReplaySource, type ReplayShow } from '../../report/option-replay.js';
 import { sessionDayOf } from '../../report/market-day.js';
 
 /**
@@ -72,14 +72,14 @@ const pctOf = (v: unknown, dflt: number) => (v === undefined || v === '' ? dflt 
 /** The option history's question, checked: expiry days (the last week's by default), hours, timeframes, methods and the rules. */
 export function replayAskOf(q: Record<string, unknown>, now = Date.now()): string | {
   from: string; to: string; window: { from: number; to: number } | null; tfs: string[] | null; methods: string[] | null; rules: ReplayRules; oneContract: boolean;
-  source: ReplaySource; list: ReplayList;
+  source: ReplaySource; list: ReplayList; maxOpen: number; lots: number;
 } {
   const today = sessionDayOf(now);
   const from = q.from === undefined || q.from === '' ? sessionDayOf(now - 6 * 86_400_000) : String(q.from);
   const to = q.to === undefined || q.to === '' ? today : String(q.to);
   if (!DAY.test(from) || !DAY.test(to)) return 'Dates must be YYYY-MM-DD.';
   if (from > to) return 'The start date must not be after the end date.';
-  if ((Date.parse(to) - Date.parse(from)) / 86_400_000 + 1 > REPLAY_MAX_DAYS) return `At most ${REPLAY_MAX_DAYS} days at a time.`;
+  if ((Date.parse(to) - Date.parse(from)) / 86_400_000 + 1 > REPLAY_MAX_DAYS) return `At most ${REPLAY_MAX_DAYS} days -- a year -- at a time.`;
   const window = windowOf(q);
   if (typeof window === 'string') return window;
   const rules: ReplayRules = {
@@ -90,6 +90,12 @@ export function replayAskOf(q: Record<string, unknown>, now = Date.now()): strin
   if (bad) return bad;
   if (q.size !== undefined && q.size !== '' && q.size !== 'traded' && q.size !== 'one') return 'The size must be traded or one.';
   if (q.source !== undefined && q.source !== '' && q.source !== 'orders' && q.source !== 'signals') return 'The source must be orders or signals.';
+  // `?maxOpen=` the most open at once, `?lots=` the lots a trade (4 Nov 2026): absent, 250 and 1.
+  const whole = (v: unknown, dflt: number) => (v === undefined || v === '' ? dflt : Number(v));
+  const maxOpen = whole(q.maxOpen, REPLAY_DEFAULT_MAX_OPEN);
+  const lots = whole(q.lots, REPLAY_DEFAULT_LOTS);
+  if (!Number.isInteger(maxOpen) || maxOpen < 1 || maxOpen > REPLAY_MAX_OPEN_MOST) return `At most open must be a whole number from 1 to ${REPLAY_MAX_OPEN_MOST.toLocaleString('en-US')}.`;
+  if (!Number.isInteger(lots) || lots < 1 || lots > REPLAY_LOTS_MOST) return `Lots must be a whole number from 1 to ${REPLAY_LOTS_MOST.toLocaleString('en-US')}.`;
   // The list: `?day=` one expiry day of the range, `?show=` profit / loss / better / worse, `?offset=&limit=` the page.
   const day = q.day === undefined || q.day === '' ? null : String(q.day);
   if (day !== null && (!DAY.test(day) || day < from || day > to)) return 'The day listed must be a day of the range.';
@@ -101,7 +107,7 @@ export function replayAskOf(q: Record<string, unknown>, now = Date.now()): strin
   if (!Number.isInteger(limit) || limit < 1 || limit > REPLAY_PAGE_MAX) return `The page holds 1 to ${REPLAY_PAGE_MAX} trades.`;
   return {
     from, to, window, tfs: timeframesOf(q), methods: methodsOf(q), rules, oneContract: q.size === 'one',
-    source: q.source === 'signals' ? 'signals' : 'orders', list: { day, show: show as ReplayShow, offset, limit },
+    source: q.source === 'signals' ? 'signals' : 'orders', list: { day, show: show as ReplayShow, offset, limit }, maxOpen, lots,
   };
 }
 
@@ -111,10 +117,11 @@ export function registerReportRoutes(app: FastifyInstance) {
   /**
    * The option history (3 Nov 2026): the signal options the desk really sold, each one's exit worked again on its
    * own contract's recorded quotes under the rules asked for, beside what it really did (`optionReplay`).
-   * `?from&to` expiry days (the last week's by default, at most a month), `?fromTime&toTime` the hours entered,
+   * `?from&to` expiry days (the last week's by default, at most a year), `?fromTime&toTime` the hours entered,
    * `?tf=` `?method=` `?account=` as the statistics', and the rules: `?skipPerpSl=1&skipPerpTgt=1&sl=250&tgt=90`
    * -- each absent is as the desk runs today. `?size=one` counts every trade as one contract; `?source=signals` replays
-   * every signal of the signal history, not only the desk's orders (`ReplaySource`). Worked in the backtest's
+   * every signal of the signal history, not only the desk's orders (`ReplaySource`), taken as they filled with at most
+   * `?maxOpen=` (250) open at once, each `?lots=` (1) lots (4 Nov 2026). Worked in the backtest's
    * thread, never the desk's.
    */
   app.get('/api/report/option-replay', async (req, reply) => {

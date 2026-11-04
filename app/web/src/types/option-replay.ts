@@ -31,9 +31,13 @@ export type OptionReplay = {
   /** Every trade counted as one contract (`?size=one`); false, at the size traded. */
   oneContract: boolean;
   source: ReplaySource;
+  /** At most open at once (`signals`; null under `orders`) and the lots each trade sold (4 Nov 2026). Absent from an older server. */
+  maxOpen?: number | null; lots?: number;
   actual: ReplaySide; replay: ReplaySide; traded: number; better: number; worse: number;
   exits: Record<ReplayExit, number>;
   open: number; noPrices: number; noStrike: number;
+  /** Signals that filled while `maxOpen` were already open: not taken, as the desk would not have. Absent from an older server. */
+  full?: number;
   days: ReplayGroup[]; timeframes: ReplayGroup[]; methods: ReplayGroup[]; accounts: ReplayGroup[];
   /** By the IST hour entered, and by method in each hour. */
   hours: ReplayGroup[]; slots: ReplayGroup[];
