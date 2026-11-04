@@ -54,6 +54,67 @@ test('the socket takes the snapshot and the stream, and does not count a print t
   assert.equal(s.health().prints, 3);
 });
 
+/*
+ * A reconnect's snapshot in one go (4 Nov 2026): taken a print at a time, newest first, each one re-sorted the whole hour's
+ * tape -- 36.8 s with the loop stopped at 13:31, 15:22 and 17:32 that day, the stop watch stood down for up to 57 s -- and
+ * each old perp print woke the SL and TGT watch.
+ */
+const trade = (symbol: string, at: number, price: string, size = 1, buy = true) =>
+  ({ symbol, price, size, timestamp: at * 1000, buyer_role: buy ? 'taker' : 'maker', seller_role: buy ? 'maker' : 'taker' });
+
+test('[critical] a snapshot, newest first, lands in order among the tape; what the stream already gave is not taken twice, however far back', () => {
+  let told = 0;
+  const s = new FlowSocket({ now: () => T0, onPerp: () => { told++; } });
+  // The stream: the perp every second for ten minutes -- 600 prints, more than the 400 a single print is checked against.
+  for (let i = 600; i >= 1; i--) s.receive(JSON.stringify({ type: 'all_trades', ...trade('BTCUSD', T0 - i * 1_000, '81000') }));
+  told = 0;
+  // The snapshot repeats one of the first of those (599 s back) and brings two new ones, newest first.
+  s.receive(JSON.stringify({ type: 'all_trades_snapshot', symbol: 'BTCUSD', trades: [
+    trade('', T0 - 500, '81005'), trade('', T0 - 599_000, '81000'), trade('', T0 - 700_000, '80990'),
+  ].map(({ symbol: _, ...t }) => t) }));
+  const at = s.printsSince(0).map((p) => p.at);
+  assert.equal(at.length, 602, 'two new, the repeat left out');
+  assert.deepEqual(at, [...at].sort((a, b) => a - b), 'in order');
+  assert.equal(s.lastPerpPrint()?.price, 81005);
+  assert.equal(told, 1, 'the perp listeners told once, for the newer last print');
+  // A snapshot of nothing newer: the tape grows, nobody is woken.
+  s.receive(JSON.stringify({ type: 'all_trades_snapshot', symbol: 'BTCUSD', trades: [{ ...trade('', T0 - 800_000, '80980') }].map(({ symbol: _, ...t }) => t) }));
+  assert.equal(told, 1);
+  assert.equal(s.printsSince(0)[0]!.price, 80980, 'the oldest first');
+});
+
+test('[critical] an option\'s snapshot is checked against its own prints: the same print on another contract is another print', () => {
+  const s = new FlowSocket({ now: () => T0 });
+  const A = 'C-BTC-82000-200926', B = 'P-BTC-80000-200926';
+  s.receive(JSON.stringify({ type: 'all_trades', ...trade(A, T0 - 5_000, '120') }));
+  s.receive(JSON.stringify({ type: 'all_trades_snapshot', symbol: B, trades: [{ ...trade(B, T0 - 5_000, '120') }].map(({ symbol: _, ...t }) => t) }));
+  s.receive(JSON.stringify({ type: 'all_trades_snapshot', symbol: A, trades: [{ ...trade(A, T0 - 5_000, '120') }].map(({ symbol: _, ...t }) => t) }));
+  assert.deepEqual(s.printsSince(0).map((p) => p.symbol).sort(), [A, B]);
+});
+
+test('a print late on the wire goes into its place', () => {
+  const s = new FlowSocket({ now: () => T0 });
+  for (const ago of [3_000, 1_000, 2_000]) s.receive(JSON.stringify({ type: 'all_trades', ...trade('BTCUSD', T0 - ago, String(81_000 + ago)) }));
+  assert.deepEqual(s.printsSince(0).map((p) => p.at), [T0 - 3_000, T0 - 2_000, T0 - 1_000]);
+  assert.equal(s.lastPerpPrint()?.at, T0 - 1_000, 'the last perp print stays the newest');
+});
+
+test('[critical] a reconnect on a full hour\'s tape takes well under a second, not half a minute', () => {
+  const s = new FlowSocket({ now: () => T0 });
+  for (let i = 0; i < 60_000; i++) s.receive(JSON.stringify({ type: 'all_trades', ...trade('BTCUSD', T0 - 3_600_000 + i * 60, String(81_000 + (i % 50)), 1 + (i % 7), i % 2 === 0) }));
+  const snaps = [JSON.stringify({ type: 'all_trades_snapshot', symbol: 'BTCUSD', trades: Array.from({ length: 500 }, (_, i) => ({ price: '81010', size: 1, timestamp: (T0 - 1_000 - i * 700) * 1000, buyer_role: 'taker', seller_role: 'maker' })) })];
+  for (let k = 0; k < 120; k++) {
+    snaps.push(JSON.stringify({ type: 'all_trades_snapshot', symbol: `C-BTC-${80_000 + k * 200}-200926`,
+      trades: Array.from({ length: 50 }, (_, i) => ({ price: String(100 + (i % 9)), size: 1, timestamp: (T0 - 1_000 - i * 30_000) * 1000, buyer_role: 'taker', seller_role: 'maker' })) }));
+  }
+  const t0 = performance.now();
+  for (const m of snaps) s.receive(m);
+  const ms = performance.now() - t0;
+  // 36.8 s before; ~0.4 s on the desk's host. Five seconds is room for a slow test machine, and still a fault caught.
+  assert.ok(ms < 5_000, `${Math.round(ms)} ms`);
+  assert.equal(s.printsSince(0).length, 60_000 + 500 + 120 * 50);
+});
+
 // ------------------------------------------------------------- the minutes
 
 test('[critical] a minute sums each side, counts prints, and flags the large ones', () => {

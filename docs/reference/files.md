@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-588 files listed, 330 test files counted below, images and lockfiles left out.
+591 files listed, 333 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 170 |
-| `app/web` | 160 |
+| `app/server` | 171 |
+| `app/web` | 162 |
 
 ## `(root)`
 
@@ -424,6 +424,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [CloseAllNote.tsx](../../app/web/src/components/mobile/CloseAllNote.tsx) | Why Home's "Today's P&L" and Positions' "Total P&L" are two numbers (owner, 4 Nov 2026: "morning start aakum pothu home pnl amount and position pnl match aakutha ilaya doubt iruku"; then "user frie... |
 | [DateRangeSheet.tsx](../../app/web/src/components/mobile/DateRangeSheet.tsx) | A From and a To date, from the bottom of the screen (the phone's P&L, owner, 6 Oct 2026). |
 | [DateTimeRangeSheet.tsx](../../app/web/src/components/mobile/DateTimeRangeSheet.tsx) | A From and a To -- each a date and a time, IST -- from the bottom of the screen (trade history, owner, 19 Oct 2026: "a custom date and time range, user friendly"). |
 | [DayCalendar.tsx](../../app/web/src/components/mobile/DayCalendar.tsx) | The days of the P&L range as a calendar, for a thumb (owner, 6 Oct 2026): under each month's name what the month made and how many days went up and down; a row of weekday letters; then a square a d... |
@@ -640,6 +641,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [backtest-no-entry.ts](../../app/web/src/lib/backtest-no-entry.ts) | The backtest's no-entry windows (owner, 15 Oct 2026: "no-entry window in the backtest's settings, as the strategy form has"): the form's own rules, held to the backtest's hours rather than a strate... |
 | [backtest-strike-blocks.ts](../../app/web/src/lib/backtest-strike-blocks.ts) | The backtest's strike rule by time of day (owner, 18 Oct 2026: "the strategy form's strike blocks, in the backtest and the portfolio"): the form's own blocks and rules, held to the backtest's hours. |
 | [backtest-tsl.ts](../../app/web/src/lib/backtest-tsl.ts) | A trailing SL on the backtest's option stop (owner, 18 Oct 2026: "TSL in the backtest -- points and per cent; as the price moves from the entry, the SL moves"): every `move` the premium falls from... |
+| [close-cost.ts](../../app/web/src/lib/close-cost.ts) | Home's "Today's P&L" and Positions' "Total P&L", side by side (owner, 4 Nov 2026: "morning start aakum pothu home pnl amount and position pnl match aakutha ilaya doubt iruku"). |
 | [csv.ts](../../app/web/src/lib/csv.ts) | A CSV that opens cleanly in Excel. |
 | [custom-range.ts](../../app/web/src/lib/custom-range.ts) | A custom range of IST days for the phone's P&L (owner, 6 Oct 2026): quick picks, and the rules a range must keep -- the same the server holds it to (`report.routes.ts` `rangeOf`: from not after to,... |
 | [date-time-range.ts](../../app/web/src/lib/date-time-range.ts) | A range of IST moments, From a date and a time To a date and a time (owner, 19 Oct 2026: "trade history -- a custom date and time range, user friendly"). |
@@ -825,6 +827,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
+| [2026-11-04-rd-strike-premium-guard-methods.md](../research/2026-11-04-rd-strike-premium-guard-methods.md) | R&D 4 Nov 2026: perp SL minimum, CE / PE share, minimum premium, delta, momentum guard, methods |
 | [2026-11-perp-sl-min-by-cap.md](../research/2026-11-perp-sl-min-by-cap.md) | Perp SL minimum by timeframe, at each account cap (1 Oct – 1 Nov 2026) |
 | [2026-11-rd-profit-and-loss.md](../research/2026-11-rd-profit-and-loss.md) | R&D: more profit, less loss — exits, re-entry, windows, methods, delta (1 Oct – 1 Nov 2026) |
 | [btc-15m-movement-2y.md](../research/btc-15m-movement-2y.md) | BTC movement by 15-minute slot — 5:35 PM to 5:29 PM IST, last two years |

@@ -108,6 +108,15 @@ export function perpTickerOf(m: Record<string, unknown>, at: number): PerpTicker
   };
 }
 
+/** One print, as a key: the same instant, contract, price, size and side is the same print. */
+const printKey = (p: Print) => `${p.at}|${p.symbol ?? ''}|${p.price}|${p.size}|${p.side}`;
+/** Where a print at `at` goes in a tape in order: after every print at or before it. */
+function firstAfter(prints: readonly Print[], at: number): number {
+  let lo = 0, hi = prints.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (prints[mid]!.at <= at) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
 export class FlowSocket {
   private prints: Print[] = [];
   /** The perpetual's newest print: the last traded price. */
@@ -213,9 +222,11 @@ export class FlowSocket {
       }
       case 'all_trades_snapshot': {
         // The recent tape, on subscribe: whatever printed while the socket was
-        // away. Delta sends it newest first.
+        // away. Delta sends it newest first. Taken in one go (`addMany`).
         const list = Array.isArray(m.trades) ? m.trades as Record<string, unknown>[] : [];
-        for (const t of list) { const p = printOf({ ...t, symbol: m.symbol }); if (p) this.add(p); }
+        const prints: Print[] = [];
+        for (const t of list) { const p = printOf({ ...t, symbol: m.symbol }); if (p) prints.push(p); }
+        this.addMany(prints);
         return;
       }
       case 'v2/ticker': {
@@ -235,11 +246,55 @@ export class FlowSocket {
       const q = this.prints[i]!;
       if (q.at === p.at && q.price === p.price && q.size === p.size && q.side === p.side && q.symbol === p.symbol) return;
     }
-    this.prints.push(p);
+    const last = this.prints[this.prints.length - 1];
+    if (!last || p.at >= last.at) this.prints.push(p);
+    // A print late on the wire goes into its place: the tape is kept in order without sorting all of it again.
+    else this.prints.splice(firstAfter(this.prints, p.at), 0, p);
     if (!p.symbol && (!this.lastPerp || p.at >= this.lastPerp.at)) this.lastPerp = p;
     // A print of the perp, as it arrives: whoever acts on the price is told now, not on its next timer.
     if (!p.symbol) { try { this.o.onPerp?.(); } catch { /* a listener must not stop the tape */ } }
-    if (this.prints.length > 1 && p.at < this.prints[this.prints.length - 2]!.at) this.prints.sort((a, b) => a.at - b.at);
+  }
+
+  /**
+   * A subscribe's snapshot, in one go (4 Nov 2026). Taken a print at a time, newest first, each print was older than
+   * the one before it and the whole hour's tape was sorted again for it: at a reconnect, ~6,500 prints on 120 option
+   * contracts and the perp, ~60,000 held -- 36.8 s with the desk's loop stopped (measured; live at 13:31, 15:22 and
+   * 17:32 that day, the ticker board read stale and the stop watch stood down for up to 57 s). And each old perp print
+   * woke the SL and TGT watch. Now: what the tape already holds is left out -- the same instant, contract, price, size and
+   * side, against every print from the snapshot's oldest on -- the rest sorted among themselves and merged into the part
+   * of the tape they reach (the tape is in order already: no sort of all of it), and whoever acts on the perp told once,
+   * and only if its last print is newer. The same reconnect: 0.36 s in all, 43 ms the longest message.
+   */
+  private addMany(prints: readonly Print[]): void {
+    if (!prints.length) return;
+    let from = Infinity;
+    for (const p of prints) if (p.at < from) from = p.at;
+    // A snapshot repeats its own contracts' prints only: the others in the same minutes are not looked at.
+    const symbols = new Set(prints.map((p) => p.symbol ?? ''));
+    const held = new Set<string>();
+    for (let i = this.prints.length - 1; i >= 0 && this.prints[i]!.at >= from; i--) {
+      const q = this.prints[i]!;
+      if (symbols.has(q.symbol ?? '')) held.add(printKey(q));
+    }
+    const perpBefore = this.lastPerp;
+    const fresh: Print[] = [];
+    for (const p of prints) {
+      const k = printKey(p);
+      if (held.has(k)) continue;
+      held.add(k);
+      fresh.push(p);
+      if (!p.symbol && (!this.lastPerp || p.at >= this.lastPerp.at)) this.lastPerp = p;
+    }
+    if (!fresh.length) return;
+    fresh.sort((a, b) => a.at - b.at);
+    // The two in order, merged from where the fresh ones begin; a print already held goes first at the same instant.
+    const tail = this.prints.splice(firstAfter(this.prints, fresh[0]!.at));
+    let i = 0, j = 0;
+    while (i < tail.length || j < fresh.length) {
+      if (j >= fresh.length || (i < tail.length && tail[i]!.at <= fresh[j]!.at)) this.prints.push(tail[i++]!);
+      else this.prints.push(fresh[j++]!);
+    }
+    if (this.lastPerp !== perpBefore) { try { this.o.onPerp?.(); } catch { /* a listener must not stop the tape */ } }
   }
 
   private watch(): void {
