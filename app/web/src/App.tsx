@@ -44,6 +44,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Download } from 'lucide-react';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { Button } from '@/components/ui/button';
+import { dayIfClosedUsd } from '@/lib/close-cost';
 
 /*
  * Everything off the Live screen is loaded when it is first opened. The Live
@@ -546,7 +547,8 @@ export default function App() {
     return by;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [headerDay, tradingKey, tradingAccount?.id]);
-  const todayNetUsd = headerDay ? (headerDay.today?.netUsd ?? (headerDay.realisedTodayUsd ?? 0) + (headerDay.unrealisedPnlUsd ?? 0)) : null;
+  // If everything closed now, as the header's figure (5 Nov 2026).
+  const todayNetUsd = headerDay ? dayIfClosedUsd(headerDay.today?.netUsd ?? (headerDay.realisedTodayUsd ?? 0) + (headerDay.unrealisedPnlUsd ?? 0), headerDay.open) : null;
   const todayInr = todayNetUsd === null ? null : pnlTone(todayNetUsd) ? signedInr(usdToInr(todayNetUsd)) : '₹0';
   useEffect(() => {
     document.title = tabTitle({ signedIn: signedIn === true, spot: liveSpot, dayMoveUsd: sinceOpenUsd, todayInr });

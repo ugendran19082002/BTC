@@ -75,7 +75,7 @@ describe('the money, in both currencies', () => {
       today: { realisedUsd: 4.25, unrealisedUsd: 0, chargesUsd: 0.25, netUsd: 4 },
     })} />);
     expect(row('Charges today').getByText('−₹21.25').className).toContain('--down');
-    expect(row('Net today').getByText('+₹340').className).toContain('--up');
+    expect(row('Net today, if all closed now').getByText('+₹340').className).toContain('--up');
   });
 
   it('shows loss today when losses were booked today', () => {

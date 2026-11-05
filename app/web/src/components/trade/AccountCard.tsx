@@ -9,6 +9,7 @@ import { LossBudget } from '@/components/trade/LossBudget';
 import { SessionLossLimit } from '@/components/trade/SessionLossLimit';
 import { inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { accountDayIfClosedUsd, dayIfClosedUsd } from '@/lib/close-cost';
 
 /**
  * The money, in plain words: what there is altogether, what is free, what is
@@ -93,8 +94,12 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
           </Tile>
         </div>
         <dl className="m-0">
-          <KV label={<span className="font-semibold text-foreground">Net today</span>}>
-            <Money value={today.netUsd} signed strong />
+          {/* If everything closed now, as the header and Positions (5 Nov 2026); the mark's figure and the gap beside it. */}
+          <KV label="Exit cost" hint="Buying every open position back at the ask instead of the mark, and the charges to close.">
+            <Money value={dayIfClosedUsd(today.netUsd, status.open) - today.netUsd} signed />
+          </KV>
+          <KV label={<span className="font-semibold text-foreground">Net today, if all closed now</span>} hint={`At mark, as Delta shows it: ${signedInr(usdToInr(today.netUsd))}.`}>
+            <Money value={dayIfClosedUsd(today.netUsd, status.open)} signed strong />
           </KV>
         </dl>
 
@@ -123,7 +128,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
             </tr>
           </thead>
           <tbody>
-            {combined.accounts.map((a) => (
+            {combined.accounts.map((a) => { const net = accountDayIfClosedUsd(a.netTodayUsd, status.open, a.id); return (
               <tr key={a.id} className="border-0 border-t border-solid border-[var(--line)]">
                 <td className="py-1 text-left font-[inherit]">
                   <span className="font-semibold text-foreground">{a.name}</span>
@@ -131,9 +136,9 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
                 </td>
                 <td className="py-1 text-right tabular-nums">{(a.totalUsd ?? a.availableUsd) === null ? '—' : inr(usdToInr((a.totalUsd ?? a.availableUsd)!))}</td>
                 <td className={cn('py-1 text-right tabular-nums', a.openPnlUsd > 0 ? 'text-[var(--up)]' : a.openPnlUsd < 0 ? 'text-[var(--down)]' : '')}>{signedInr(usdToInr(a.openPnlUsd))}</td>
-                <td className={cn('py-1 text-right font-semibold tabular-nums', a.netTodayUsd > 0 ? 'text-[var(--up)]' : a.netTodayUsd < 0 ? 'text-[var(--down)]' : '')}>{signedInr(usdToInr(a.netTodayUsd))}</td>
+                <td className={cn('py-1 text-right font-semibold tabular-nums', net > 0 ? 'text-[var(--up)]' : net < 0 ? 'text-[var(--down)]' : '')}>{signedInr(usdToInr(net))}</td>
               </tr>
-            ))}
+            ); })}
           </tbody>
         </table>
       )}

@@ -5,14 +5,14 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-592 files listed, 336 test files counted below, images and lockfiles left out.
+591 files listed, 335 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
 | `app/server` | 174 |
-| `app/web` | 162 |
+| `app/web` | 161 |
 
 ## `(root)`
 
@@ -425,7 +425,6 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 
 | File | What it is |
 |---|---|
-| [CloseAllNote.tsx](../../app/web/src/components/mobile/CloseAllNote.tsx) | Why Home's "Today's P&L" and Positions' "Total P&L" are two numbers (owner, 4 Nov 2026: "morning start aakum pothu home pnl amount and position pnl match aakutha ilaya doubt iruku"; then "user frie... |
 | [DateRangeSheet.tsx](../../app/web/src/components/mobile/DateRangeSheet.tsx) | A From and a To date, from the bottom of the screen (the phone's P&L, owner, 6 Oct 2026). |
 | [DateTimeRangeSheet.tsx](../../app/web/src/components/mobile/DateTimeRangeSheet.tsx) | A From and a To -- each a date and a time, IST -- from the bottom of the screen (trade history, owner, 19 Oct 2026: "a custom date and time range, user friendly"). |
 | [DayCalendar.tsx](../../app/web/src/components/mobile/DayCalendar.tsx) | The days of the P&L range as a calendar, for a thumb (owner, 6 Oct 2026): under each month's name what the month made and how many days went up and down; a row of weekday letters; then a square a d... |

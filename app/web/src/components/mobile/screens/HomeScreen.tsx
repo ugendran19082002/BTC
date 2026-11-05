@@ -17,7 +17,7 @@ import { orderStatusWord } from '@/components/mobile/order-status';
 import { usePressure, usePressureWindow } from '@/components/mobile/usePressure';
 import { usePriceMoves } from '@/components/mobile/usePriceMoves';
 import { PressureStrip } from '@/components/mobile/PressureStrip';
-import { CloseAllNote } from '@/components/mobile/CloseAllNote';
+import { dayIfClosedUsd } from '@/lib/close-cost';
 
 /**
  * Home (6 Oct 2026): everything in one screen a person needs to know the desk is fine -- today's money, the
@@ -34,7 +34,9 @@ export function HomeScreen() {
     60_000, { deps: [p.accountParam] },
   );
   const alerts = phoneAlerts(s, p.glance, p.perp);
-  const net = s ? (s.today?.netUsd ?? (s.realisedTodayUsd ?? 0) + (s.unrealisedPnlUsd ?? 0)) : null;
+  const atMark = s ? (s.today?.netUsd ?? (s.realisedTodayUsd ?? 0) + (s.unrealisedPnlUsd ?? 0)) : null;
+  // The day if everything closed now, the way Positions totals (5 Nov 2026); the line under it stays at the mark.
+  const net = s && atMark !== null ? dayIfClosedUsd(atMark, s.open) : null;
   const budget = s ? lossBudget(s) : null;
   const latest = orders.data?.trades.slice().sort((a, b) => b.openedAt - a.openedAt)[0] ?? null;
   const o = stats.data?.overall;
@@ -98,6 +100,7 @@ export function HomeScreen() {
           <span className="min-w-0">
             <span className="block text-[13px] text-muted-foreground">Today's P&amp;L</span>
             {s ? <Rupees usd={net} signed size="xl" /> : <span className="text-[28px] text-muted-foreground">…</span>}
+            <span className="block text-[11.5px] text-muted-foreground">if all closed now</span>
           </span>
           <span className="grid shrink-0 grid-cols-2 gap-x-4 text-right">
             <span className="text-[11.5px] text-muted-foreground">Trades</span>
@@ -106,13 +109,11 @@ export function HomeScreen() {
             <span className="text-[16px] font-semibold tabular-nums">{o?.winRate != null ? pct(o.winRate, 0) : '—'}</span>
           </span>
         </button>
-        {/* The same day if every position closed now -- the figure Positions shows (4 Nov 2026). */}
-        {s && <CloseAllNote on="home" open={s.open} dayNetUsd={net} />}
         {samples.length >= 2 ? (
           <div className="mt-2">
             <AreaChart values={samples.map((x) => x.netUsd)} label="Today's P&L, minute by minute" height={88} />
             <div className="mt-1 flex justify-between text-[11px] tabular-nums text-[var(--time)]">
-              <span>{clock(samples[0]!.at)}</span><span>{clock(samples[samples.length - 1]!.at)}</span>
+              <span>{clock(samples[0]!.at)}</span><span className="text-muted-foreground">at mark</span><span>{clock(samples[samples.length - 1]!.at)}</span>
             </div>
           </div>
         ) : null}

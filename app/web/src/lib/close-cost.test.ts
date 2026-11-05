@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atMarkUsd, closeAll, closeCostUsd } from '@/lib/close-cost';
+import { accountDayIfClosedUsd, atMarkUsd, closeAll, closeCostUsd, dayIfClosedUsd } from '@/lib/close-cost';
 
 /**
  * Home's day at the mark against Positions' "if closed now" (4 Nov 2026). The figures of 07:10 IST that morning, account 1,
@@ -36,5 +36,24 @@ describe('close cost', () => {
     expect(all.closedUsd).toBeCloseTo(-0.0053 + 0.006, 12);
     expect(all.costUsd).toBeCloseTo(all.atMarkUsd - all.closedUsd, 12);
     expect(closeAll([])).toEqual({ atMarkUsd: 0, closedUsd: 0, costUsd: 0, priced: 0 });
+  });
+
+  it('[critical] the day if closed now is the day at the mark less the exit cost -- with nothing booked, exactly Positions\' total (5 Nov 2026)', () => {
+    const a = trade({ unrealised: -0.0005, paid: 0.0016, toClose: 0.0017, ifClosed: -0.0053 });
+    const b = trade({ unrealised: 0.01, paid: 0.002, toClose: 0.001, ifClosed: 0.006 });
+    const all = closeAll([a, b]);
+    expect(dayIfClosedUsd(all.atMarkUsd, [a, b])).toBeCloseTo(all.closedUsd, 12);
+    // 0.003 booked earlier today is in both, never in the gap.
+    expect(dayIfClosedUsd(0.003 + all.atMarkUsd, [a, b])).toBeCloseTo(0.003 + all.closedUsd, 12);
+    // Nothing open: the day as it is.
+    expect(dayIfClosedUsd(0.003, [])).toBe(0.003);
+  });
+
+  it('[critical] one account\'s day takes only its own open trades\' exit cost', () => {
+    const a = { ...trade({ unrealised: -0.0005, paid: 0.0016, toClose: 0.0017, ifClosed: -0.0053 }), account: { id: 1, name: 'High' } };
+    const b = { ...trade({ unrealised: 0.01, paid: 0.002, toClose: 0.001, ifClosed: 0.006 }), account: { id: 2, name: 'Medium' } };
+    expect(accountDayIfClosedUsd(0.01, [a, b], 1)).toBeCloseTo(0.01 - closeAll([a]).costUsd, 12);
+    expect(accountDayIfClosedUsd(0.01, [a, b], 2)).toBeCloseTo(0.01 - closeAll([b]).costUsd, 12);
+    expect(accountDayIfClosedUsd(0.01, [a, b], 3)).toBe(0.01);
   });
 });
