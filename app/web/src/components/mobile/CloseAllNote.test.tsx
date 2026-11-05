@@ -14,7 +14,7 @@ const open = (unrealised: number, paid: number, ifClosed: number) => ({
   charges: { entryUsd: paid, exitUsd: 0, paidUsd: paid, toCloseUsd: 0.001 },
 }) as unknown as Trade;
 const OPEN = [open(-0.0005, 0.0016, -0.0053), open(0.01, 0.002, 0.006)];
-const money = (usd: number) => signedInr(usdToInr(usd));
+const money = (usd: number) => signedInr(Math.round(usdToInr(usd)!));
 
 describe('CloseAllNote', () => {
   it('[critical] Home: the day closed now is the day at the mark less the cost of leaving -- the number Positions totals', () => {
@@ -23,8 +23,8 @@ describe('CloseAllNote', () => {
     render(<CloseAllNote on="home" open={OPEN} dayNetUsd={day} />);
     const cost = (-0.0021 + 0.008) - (-0.0053 + 0.006);
     const line = screen.getByLabelText('If every position closed now');
-    expect(within(line).getByText('If all closed now').nextSibling).toHaveTextContent(money(day - cost));
-    expect(within(line).getByText('Spread + charges to close').nextSibling).toHaveTextContent(money(-cost));
+    expect(within(line).getByText('If you close all now').nextSibling).toHaveTextContent(money(day - cost));
+    expect(within(line).getByText('Exit cost (spread + charges)').nextSibling).toHaveTextContent(money(-cost));
     // With nothing booked today, closing all now is exactly Positions' total.
     expect(day - 0.003 - cost).toBeCloseTo(-0.0053 + 0.006, 12);
   });
@@ -32,8 +32,8 @@ describe('CloseAllNote', () => {
   it('[critical] Positions: the same trades at the mark, Home\'s way, and what closing pays beyond it', () => {
     render(<CloseAllNote on="positions" open={OPEN} />);
     const line = screen.getByLabelText('At the mark');
-    expect(within(line).getByText('At the mark, as Home counts').nextSibling).toHaveTextContent(money(-0.0021 + 0.008));
-    expect(within(line).getByText('Spread + charges to close').nextSibling).toHaveTextContent(money(-((-0.0021 + 0.008) - (-0.0053 + 0.006))));
+    expect(within(line).getByText("At mark (Home's P&L)").nextSibling).toHaveTextContent(money(-0.0021 + 0.008));
+    expect(within(line).getByText('Exit cost (spread + charges)').nextSibling).toHaveTextContent(money(-((-0.0021 + 0.008) - (-0.0053 + 0.006))));
   });
 
   it('nothing open, or nothing priced yet: nothing said', () => {
