@@ -52,6 +52,8 @@ export type StatsGroup = {
 };
 export type Stats = {
   mode: 'live' | 'paper'; from: string; to: string; overall: StatsGroup;
+  /** More trades in the range than the server reads at once (100,000): the figures are of the newest (4 Nov 2026). */
+  truncated?: boolean;
   byStrategy: StatsGroup[]; byAccount: StatsGroup[];
   /** CE / PE, sold / bought, and a signal trade's entry method. Absent from an older server. */
   byOption?: StatsGroup[]; byAction?: StatsGroup[]; byMethod?: StatsGroup[];

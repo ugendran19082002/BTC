@@ -5,13 +5,13 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-591 files listed, 333 test files counted below, images and lockfiles left out.
+592 files listed, 336 test files counted below, images and lockfiles left out.
 
 ## Test files
 
 | Area | Test files |
 |---|---:|
-| `app/server` | 171 |
+| `app/server` | 174 |
 | `app/web` | 162 |
 
 ## `(root)`
@@ -157,7 +157,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [errors.routes.ts](../../app/server/src/http/routes/errors.routes.ts) | The error log, readable and writable from the browser. |
 | [ledger.routes.ts](../../app/server/src/http/routes/ledger.routes.ts) | The ledger's routes (ledger/ledger.ts): the days as the desk booked them and as Delta's wallet has them, and a check made by hand. |
 | [market.routes.ts](../../app/server/src/http/routes/market.routes.ts) | The market report (13 Oct 2026): every expiry day -- 5:30 PM IST to 5:30 PM IST -- with the kind of day the BTC perp had, and what the signal history and the real orders made on it. |
-| [report.routes.ts](../../app/server/src/http/routes/report.routes.ts) | The record as a calendar, and a day as a line. |
+| [report.routes.ts](../../app/server/src/http/routes/report.routes.ts) | The trades of a report's range: saved from two days before it to two after -- a trade opened the evening before and closed inside it is inside it, and it is fills that decide, not rows -- every one... |
 | [session.routes.ts](../../app/server/src/http/routes/session.routes.ts) | Sign-in, two-step setup, and the account page. |
 | [strategy.routes.ts](../../app/server/src/http/routes/strategy.routes.ts) | The strategy desk: what is saved, what is armed, and when it next runs. |
 | [stream.routes.ts](../../app/server/src/http/routes/stream.routes.ts) | `GET /api/stream` -- the status, the price and "the board changed", pushed. |
@@ -224,6 +224,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 | [market-report.ts](../../app/server/src/report/market-report.ts) | The market report (owner, 13 Oct 2026): every expiry day from 1 Oct on -- what kind of day the BTC perp had (`market-day.ts`) -- and, against it, what the methods made on it. |
 | [option-replay.ts](../../app/server/src/report/option-replay.ts) | The option history (owner, 3 Nov 2026: "in the Methods menu, like the signal history, an option history -- the option taken against each signal; skip perp SL and skip perp TGT, the option's SL and... |
 | [signal-backtest.ts](../../app/server/src/report/signal-backtest.ts) | The signal history, traded as options on the prices the contracts really had (owner, 13 Oct 2026). |
+| [trades-range.ts](../../app/server/src/report/trades-range.ts) | The journal's trades over a range of days, for the reports -- every one of them, and quickly (owner, 4 Nov 2026: "fix all, best practice"). |
 
 ## `app/server/src/strategy/`
 

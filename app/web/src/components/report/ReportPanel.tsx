@@ -129,6 +129,10 @@ export function ReportPanel() {
 
         {!validRange && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">The start date must not be after the end date.</p>}
         {days.error && <p className="m-0 mt-2 text-[12px] text-[var(--down)]">{days.error.message}</p>}
+        {/* A range past what the server reads at once (4 Nov 2026): said, never shown as the whole of it. */}
+        {days.data?.truncated && (
+          <p role="alert" className="m-0 mt-2 text-[12px] text-[var(--warn)]">More than 100,000 trades in this range: these figures are of the newest. Pick a shorter range for all of them.</p>
+        )}
 
         {days.data && rows.length === 0 && (
           <div className="pnl-info-banner mt-2">

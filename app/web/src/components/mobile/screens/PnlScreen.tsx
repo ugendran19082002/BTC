@@ -157,6 +157,10 @@ export function PnlScreen() {
         {isToday && s && !budget && s.limits?.dailyLossOn === false && (
           <div className="mt-3 flex justify-between gap-2 text-[13px]"><span className="text-muted-foreground">Daily loss limit</span><span className="font-semibold text-[var(--warn)]">Off</span></div>
         )}
+        {/* A range past what the server reads at once: said, never shown as the whole of it (4 Nov 2026). */}
+        {(days.data?.truncated || stats.data?.truncated) && (
+          <p role="alert" className="m-0 mt-2 text-[12px] text-[var(--warn)]">More than 100,000 trades in this range: these figures are of the newest. Pick a shorter range for all of them.</p>
+        )}
         {isToday && narrowed && (
           <p className="m-0 mt-2 text-[12px] text-muted-foreground">
             This figure and its line are the whole account&apos;s: open positions are not split by strategy, method or time frame. The trades, the win rate and the pairs below are of {whose.join(', ')}.

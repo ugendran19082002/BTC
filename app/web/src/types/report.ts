@@ -19,6 +19,8 @@ export type DaysReport = {
   mode: 'live' | 'paper';
   from: string;
   to: string;
+  /** More trades in the range than the server reads at once (100,000): the figures are of the newest (4 Nov 2026). */
+  truncated?: boolean;
   days: DayRow[];
   totals: {
     realisedUsd: number;

@@ -237,3 +237,20 @@ describe('PnlScreen: booked, won and lost, a tap from their trades', () => {
     expect(getLedgerDay).toHaveBeenLastCalledWith('2026-10-02', null);
   });
 });
+
+describe('PnlScreen: a range past what the server reads at once', () => {
+  it('[critical] said in words, never shown as the whole range (4 Nov 2026)', async () => {
+    getDaysFor.mockResolvedValue({ mode: 'paper', from: '2026-09-30', to: '2026-10-06', days: [], truncated: true,
+      totals: { realisedUsd: 0, chargesUsd: 0, netUsd: 0, tradingDays: 0, winDays: 0, lossDays: 0, best: null, worst: null } });
+    show();
+    fireEvent.click(await screen.findByRole('radio', { name: '7 days' }));
+    expect(await screen.findByText(/More than 100,000 trades in this range: these figures are of the newest/)).toBeInTheDocument();
+  });
+
+  it('a range read whole says nothing of it', async () => {
+    show();
+    fireEvent.click(await screen.findByRole('radio', { name: '7 days' }));
+    await waitFor(() => expect(getDaysFor).toHaveBeenCalled());
+    expect(screen.queryByText(/More than 100,000 trades/)).toBeNull();
+  });
+});

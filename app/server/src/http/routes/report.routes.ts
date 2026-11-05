@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { journal, tradingService } from '../../trading/service.js';
+import { tradesSavedBetween } from '../../report/trades-range.js';
 import { CHAIN_KEY, daysCsv, combineMtm, daysReport, mtmStats, ofMethods, ofStrategies, ofTimeframes, tradeStats, type TradeStatsGroup } from '../../trading/pnl-history.js';
 import { strategyStore } from './strategy.routes.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { istDate } from '../../strategy/schedule.js';
 import { refuse } from '../refuse.js';
+import { ttlCache } from '../ttl-cache.js';
 import { accountOf } from '../account-query.js';
 import { windowOf } from './market.routes.js';
 import { optionReplay } from '../../report/backtest-run.js';
@@ -29,8 +31,24 @@ import { sessionDayOf } from '../../report/market-day.js';
  * of them together is all of them at once.
  */
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-/** The reports read each trade's state and plan, never its journal: not fetched (10 Oct 2026, half a 30-day report's time). */
-const NO_EVENTS = { events: false } as const;
+/**
+ * The trades of a report's range: saved from two days before it to two after -- a trade opened the evening before and
+ * closed inside it is inside it, and it is fills that decide, not rows -- every one of them, of the account named or all
+ * (`tradesSavedBetween`; at most 5,000, newest first, until 4 Nov 2026, so a week lost its older half).
+ */
+/**
+ * The P&L days and the trade statistics, each answer kept ten seconds and worked once for every request asking the same
+ * at the same time (4 Nov 2026). Under a heavy mix -- twenty at once, every screen's question -- each phone and tab
+ * worked the thirty days' 17,000 trades again for itself, on the thread the desk trades on: the loop held up to 0.44 s,
+ * a health check waited 1.6 s. The screens poll every 30 to 120 s; ten seconds is never a stale figure on them. The
+ * key is the whole request, the account named in it included -- every reader of the desk reads every account.
+ */
+export const REPORT_HOLD_MS = 10_000;
+// The clock read each time, not taken once: a test's clock reaches it.
+const reportHeld = ttlCache<unknown>(REPORT_HOLD_MS, () => Date.now());
+
+const savedAround = (r: { from: string; to: string }, q: unknown) =>
+  tradesSavedBetween(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, accountOf(q as Record<string, unknown>));
 const ninetyDaysAgo = (now: number) => istDate(now - 90 * 86_400_000);
 
 /** A range, checked. Defaults to the last ninety days ending today. */
@@ -147,21 +165,18 @@ export function registerReportRoutes(app: FastifyInstance) {
     // From a day before the range: a trade opened the evening before and
     // closed inside it is inside it, and it is fills that decide, not rows.
     // From the whole journal, by the account named (none: every account's): an account with no desk still has its record.
-    const records = chosenOf(
-      await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query), NO_EVENTS),
-      req.query,
-    );
-    return { mode: svc.mode, ...daysReport(records, { ...r, spot: svc.spot }) };
+    return reportHeld(req.url, async () => {
+      const range = await savedAround(r, req.query);
+      const records = chosenOf(range.records, req.query);
+      return { mode: svc.mode, ...daysReport(records, { ...r, spot: svc.spot }), truncated: range.truncated };
+    });
   });
 
   // The P&L calendar as a spreadsheet that opens cleanly in Excel.
   app.get('/api/report/days.csv', async (req, reply) => {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
-    const records = chosenOf(
-      await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query), NO_EVENTS),
-      req.query,
-    );
+    const records = chosenOf((await savedAround(r, req.query)).records, req.query);
     reply.header('Content-Type', 'text/csv; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="pnl-${r.from}-to-${r.to}.csv"`);
     return daysCsv(daysReport(records, { ...r, spot: svc.spot }));
@@ -185,54 +200,60 @@ export function registerReportRoutes(app: FastifyInstance) {
   app.get('/api/report/stats', async (req, reply) => {
     const r = rangeOf((req.query ?? {}) as { from?: unknown; to?: unknown });
     if (typeof r === 'string') return refuse(reply, 400, { error: r });
-    const every = await journal().between(Date.parse(r.from) - 2 * 86_400_000, Date.parse(r.to) + 2 * 86_400_000, 5_000, accountOf(req.query), NO_EVENTS);
-    const asked = strategiesOf(req.query);
-    const askedMethods = methodsOf(req.query);
-    const askedTfs = timeframesOf(req.query);
-    const records = chosenOf(every, req.query);
-    const stats = tradeStats(records, { ...r, spot: svc.spot });
-    // A deleted strategy keeps the name its trades were placed under.
-    const strategyNames = new Map<string, string>();
-    for (const rec of every) if (rec.plan.strategyId && rec.plan.strategyName) strategyNames.set(rec.plan.strategyId, rec.plan.strategyName);
-    for (const x of await strategyStore().all().catch(() => [])) strategyNames.set(x.id, x.name);
-    const methodNames = new Map<string, string>();
-    for (const rec of every) if (rec.plan.signal) methodNames.set(rec.plan.signal.method, `#${rec.plan.signal.n} ${rec.plan.signal.name}`);
-    const accountNames = new Map<string, string>();
-    try { for (const a of brokerAccounts().list()) accountNames.set(String(a.id), a.name); } catch { /* none set up */ }
-    const named = (g: TradeStatsGroup, name: string) => ({ ...g, name });
-    const strategyName = (key: string) => (key === 'manual' ? 'By hand' : strategyNames.get(key) ?? key);
-    // Each list from the trades the other choice leaves, and not narrowed by its own.
-    const choices = (groups: readonly TradeStatsGroup[], chosen: readonly string[] | null, name: (key: string) => string) => [
-      ...groups.map((g) => ({ key: g.key, name: name(g.key), trades: g.trades, netUsd: g.netUsd })),
-      ...(chosen ?? []).filter((k) => !groups.some((g) => g.key === k)).map((k) => ({ key: k, name: name(k), trades: 0, netUsd: 0 })),
-    ];
-    // With nothing chosen every list is of every trade, which `stats` already is.
-    const any = asked !== null || askedMethods !== null || askedTfs !== null;
-    const leaving = (but: 'strategy' | 'method' | 'tf') => (any ? tradeStats(chosenOf(every, req.query, but), { ...r, spot: svc.spot }) : stats);
-    const strategies = choices(leaving('strategy').byStrategy, asked, strategyName);
-    const methods = choices(leaving('method').byMethod, askedMethods, (key) => methodNames.get(key) ?? key);
-    const place = (key: string) => { const i = TF_ORDER.indexOf(key); return i === -1 ? TF_ORDER.length : i; };
-    const timeframes = choices(leaving('tf').byTimeframe, askedTfs, (key) => (key === CHAIN_KEY ? 'With timeframe chain' : key))
-      .sort((a, b) => place(a.key) - place(b.key) || a.key.localeCompare(b.key));
-    return {
-      mode: svc.mode,
-      from: stats.from,
-      to: stats.to,
-      overall: stats.overall,
-      strategies,
-      methods,
-      timeframes,
-      byStrategy: stats.byStrategy.map((g) => named(g, strategyName(g.key))),
-      byAccount: stats.byAccount.map((g) => named(g, g.key === 'none' ? 'No account' : accountNames.get(g.key) ?? `Account ${g.key}`)),
-      byOption: stats.byOption.map((g) => named(g, g.key)),
-      byAction: stats.byAction.map((g) => named(g, g.key === 'buy' ? 'Bought' : 'Sold')),
-      byMethod: stats.byMethod.map((g) => named(g, methodNames.get(g.key) ?? g.key)),
-      // A method on a timeframe: the method's name, and the timeframe said the way the trade lists say it.
-      byPair: stats.byPair.map((g) => {
-        const [method = g.key, mode, tf = ''] = g.key.split('|');
-        return { ...named(g, methodNames.get(method) ?? method), tf: mode === 'mtf' ? `${tf} + TF chain` : tf };
-      }),
-    };
+    // One answer for ten seconds, and one working at a time for the same question (`REPORT_HOLD_MS`).
+    return reportHeld(req.url, async () => {
+      const range = await savedAround(r, req.query);
+      const every = range.records;
+      const asked = strategiesOf(req.query);
+      const askedMethods = methodsOf(req.query);
+      const askedTfs = timeframesOf(req.query);
+      const records = chosenOf(every, req.query);
+      const stats = tradeStats(records, { ...r, spot: svc.spot });
+      // A deleted strategy keeps the name its trades were placed under.
+      const strategyNames = new Map<string, string>();
+      for (const rec of every) if (rec.plan.strategyId && rec.plan.strategyName) strategyNames.set(rec.plan.strategyId, rec.plan.strategyName);
+      for (const x of await strategyStore().all().catch(() => [])) strategyNames.set(x.id, x.name);
+      const methodNames = new Map<string, string>();
+      for (const rec of every) if (rec.plan.signal) methodNames.set(rec.plan.signal.method, `#${rec.plan.signal.n} ${rec.plan.signal.name}`);
+      const accountNames = new Map<string, string>();
+      try { for (const a of brokerAccounts().list()) accountNames.set(String(a.id), a.name); } catch { /* none set up */ }
+      const named = (g: TradeStatsGroup, name: string) => ({ ...g, name });
+      const strategyName = (key: string) => (key === 'manual' ? 'By hand' : strategyNames.get(key) ?? key);
+      // Each list from the trades the other choice leaves, and not narrowed by its own.
+      const choices = (groups: readonly TradeStatsGroup[], chosen: readonly string[] | null, name: (key: string) => string) => [
+        ...groups.map((g) => ({ key: g.key, name: name(g.key), trades: g.trades, netUsd: g.netUsd })),
+        ...(chosen ?? []).filter((k) => !groups.some((g) => g.key === k)).map((k) => ({ key: k, name: name(k), trades: 0, netUsd: 0 })),
+      ];
+      // With nothing chosen every list is of every trade, which `stats` already is.
+      const any = asked !== null || askedMethods !== null || askedTfs !== null;
+      const leaving = (but: 'strategy' | 'method' | 'tf') => (any ? tradeStats(chosenOf(every, req.query, but), { ...r, spot: svc.spot }) : stats);
+      const strategies = choices(leaving('strategy').byStrategy, asked, strategyName);
+      const methods = choices(leaving('method').byMethod, askedMethods, (key) => methodNames.get(key) ?? key);
+      const place = (key: string) => { const i = TF_ORDER.indexOf(key); return i === -1 ? TF_ORDER.length : i; };
+      const timeframes = choices(leaving('tf').byTimeframe, askedTfs, (key) => (key === CHAIN_KEY ? 'With timeframe chain' : key))
+        .sort((a, b) => place(a.key) - place(b.key) || a.key.localeCompare(b.key));
+      return {
+        mode: svc.mode,
+        from: stats.from,
+        to: stats.to,
+        // More than `RANGE_MAX` trades saved in the range: the figures are of the newest that many (4 Nov 2026).
+        truncated: range.truncated,
+        overall: stats.overall,
+        strategies,
+        methods,
+        timeframes,
+        byStrategy: stats.byStrategy.map((g) => named(g, strategyName(g.key))),
+        byAccount: stats.byAccount.map((g) => named(g, g.key === 'none' ? 'No account' : accountNames.get(g.key) ?? `Account ${g.key}`)),
+        byOption: stats.byOption.map((g) => named(g, g.key)),
+        byAction: stats.byAction.map((g) => named(g, g.key === 'buy' ? 'Bought' : 'Sold')),
+        byMethod: stats.byMethod.map((g) => named(g, methodNames.get(g.key) ?? g.key)),
+        // A method on a timeframe: the method's name, and the timeframe said the way the trade lists say it.
+        byPair: stats.byPair.map((g) => {
+          const [method = g.key, mode, tf = ''] = g.key.split('|');
+          return { ...named(g, methodNames.get(method) ?? method), tf: mode === 'mtf' ? `${tf} + TF chain` : tf };
+        }),
+      };
+    });
   });
 
   /** One day, minute by minute. Today unless asked otherwise. */
