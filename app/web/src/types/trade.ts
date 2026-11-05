@@ -215,7 +215,7 @@ export type TradeStatus = {
   realisedTodayUsd?: number;
   /** Losses booked since 00:00 IST, in USD. */
   lossTodayUsd?: number;
-  /** The day so far, since 00:00 IST (the market's "today" move is from 05:30, Delta's UTC day): booked, still open, Delta's charges, and the net of all three. */
+  /** The day so far, since 00:00 IST (the market's "today" move is from 05:30, Delta's UTC day): booked, still open, Delta's charges, and the net of all three -- if everything closed now: open at the ask, the charges to close in `chargesUsd` (5 Nov 2026). */
   today?: { realisedUsd: number; unrealisedUsd: number; chargesUsd: number; netUsd: number; lossUsd?: number; profitUsd?: number };
   positions: ExchangePosition[];
   open: Trade[];

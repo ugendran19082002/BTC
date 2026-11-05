@@ -6,7 +6,6 @@ import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct, signedInr, usdToInr } from '@/lib/format';
 import { lossBudget } from '@/lib/position-risk';
-import { dayIfClosedUsd } from '@/lib/close-cost';
 import { cn } from '@/lib/utils';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { AreaChart, Empty, Loading, LossMeter, Panel, Rupees, Stat, Stats } from '@/components/mobile/parts';
@@ -70,8 +69,8 @@ export function PnlScreen() {
 
   const s = p.status;
   const t = s?.today;
-  // Today: if everything closed now, the way Positions totals (5 Nov 2026) -- it said so and showed the mark. The line stays at the mark.
-  const net = isToday ? (s ? dayIfClosedUsd(t?.netUsd ?? (s.realisedTodayUsd ?? 0) + (s.unrealisedPnlUsd ?? 0), s.open) : null) : days.data?.totals.netUsd ?? null;
+  // Today: if everything closed now -- the server prices open trades at the ask, with the charges to close (5 Nov 2026).
+  const net = isToday ? (s ? (t?.netUsd ?? (s.realisedTodayUsd ?? 0) + (s.unrealisedPnlUsd ?? 0)) : null) : days.data?.totals.netUsd ?? null;
   const samples = mtm.data?.samples ?? [];
   const line = isToday ? samples.map((x) => x.netUsd) : (days.data?.days ?? []).map((d) => d.cumulativeUsd);
   const budget = isToday && s ? lossBudget(s) : null;
@@ -128,7 +127,7 @@ export function PnlScreen() {
             <AreaChart values={line} label={isToday ? 'Net today, minute by minute' : 'Running total, day by day'} />
             <div className="mt-1 flex justify-between text-[11px] tabular-nums text-[var(--time)]">
               {isToday
-                ? <><span>{clock(samples[0]!.at)}</span><span className="text-muted-foreground">at mark</span><span>{clock(samples[samples.length - 1]!.at)}</span></>
+                ? <><span>{clock(samples[0]!.at)}</span><span>{clock(samples[samples.length - 1]!.at)}</span></>
                 : <><span>{days.data!.days[0]!.day}</span><span>{days.data!.days[days.data!.days.length - 1]!.day}</span></>}
             </div>
           </div>

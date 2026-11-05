@@ -1,7 +1,6 @@
 import type { BrokerAccount } from '@/api/accounts';
 import { ago, pct, signedInr, inr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { accountDayIfClosedUsd, dayIfClosedUsd } from '@/lib/close-cost';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Bar, Empty, Panel, Rupees, Stat, Stats } from '@/components/mobile/parts';
 import { SessionLossLimit } from '@/components/trade/SessionLossLimit';
@@ -28,11 +27,11 @@ export function AccountScreen() {
         parts.map((a) => (
           <Money key={a.id} name={a.name} walletUsd={a.totalUsd} availableUsd={a.availableUsd}
             marginUsd={a.totalUsd !== null && a.availableUsd !== null ? Math.max(0, a.totalUsd - a.availableUsd) : null}
-            openUsd={a.openPnlUsd} todayUsd={accountDayIfClosedUsd(a.netTodayUsd, s.open, a.id)} positions={a.positions} state={keyState(p.accounts.find((x) => x.id === a.id) ?? null)} />
+            openUsd={a.openPnlUsd} todayUsd={a.netTodayUsd} positions={a.positions} state={keyState(p.accounts.find((x) => x.id === a.id) ?? null)} />
         ))
       ) : (
         <Money name={info?.name ?? 'This account'} walletUsd={s.walletUsd ?? null} availableUsd={s.balanceUsd} marginUsd={s.marginUsedUsd ?? null}
-          openUsd={s.unrealisedPnlUsd ?? null} todayUsd={s.today ? dayIfClosedUsd(s.today.netUsd, s.open) : null} positions={s.open.length} chargesUsd={s.today?.chargesUsd ?? null} state={keyState(info)} />
+          openUsd={s.unrealisedPnlUsd ?? null} todayUsd={s.today?.netUsd ?? null} positions={s.open.length} chargesUsd={s.today?.chargesUsd ?? null} state={keyState(info)} />
       )}
 
       {/* The session loss limit of the account shown (4 Nov 2026); on "all accounts", set on each account's own. */}

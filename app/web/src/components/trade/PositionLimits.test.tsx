@@ -7,6 +7,8 @@ const setShortCap = vi.fn();
 vi.mock('@/api/desk', () => ({
   getSettings: () => Promise.resolve({ settings: {}, shortCap: { inForce: 159, ceiling: 3000, chosen: 159 } }),
   setShortCap: (...a: unknown[]) => setShortCap(...a),
+  // The Account card's session loss limit (4 Nov 2026) reads its own setting: left waiting, it is not what is tested here.
+  getSessionLoss: () => new Promise(() => {}),
 }));
 
 const status = (): TradeStatus => ({

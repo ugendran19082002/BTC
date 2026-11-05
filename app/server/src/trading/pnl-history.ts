@@ -295,7 +295,10 @@ export type MtmSample = {
   realisedUsd: number;
   unrealisedUsd: number;
   chargesUsd: number;
-  /** `realised + unrealised − charges`: what the day is worth right now. */
+  /**
+   * `realised + unrealised − charges`: what the day would be if everything closed now. Open trades at the ask (a long at
+   * the bid), and `charges` holds the charges to close them -- from 5 Nov 2026; at the mark, without them, before.
+   */
   netUsd: number;
 };
 

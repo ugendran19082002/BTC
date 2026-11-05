@@ -7,7 +7,8 @@ import { istDate, startOfDayIst } from '../strategy/schedule.js';
  * in that time, square the whole account off. Set for each hour; default off, on every account").
  *
  * A session is a stretch of the IST day, `from` to `to` (the end not included), with a limit in rupees. What it has lost
- * is the account's day -- booked, open at the mark, less charges, as the header's "Net today" (`todayFigures`) -- now,
+ * is the account's day -- booked, open as if closed now (bought back at the ask, 5 Nov 2026), less charges paid and to
+ * close, as the header's "Net today" (`todayFigures`) -- now,
  * against the same figure when the session began (the day's line, `mtm_samples`, at or before its start). A position
  * entered before the session that goes bad inside it is the session's loss; a profit booked before it is not spent by it.
  *

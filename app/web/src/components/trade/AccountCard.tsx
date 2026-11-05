@@ -9,7 +9,6 @@ import { LossBudget } from '@/components/trade/LossBudget';
 import { SessionLossLimit } from '@/components/trade/SessionLossLimit';
 import { inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { accountDayIfClosedUsd, dayIfClosedUsd } from '@/lib/close-cost';
 
 /**
  * The money, in plain words: what there is altogether, what is free, what is
@@ -80,7 +79,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
 
         {/* The day in four, two by two -- always all four, so the layout does not jump as figures appear. */}
         <div className="grid grid-cols-2 gap-2">
-          <Tile label="Open P&L" hint="Profit or loss on open positions at Delta's price. Not yours until you close.">
+          <Tile label="Open P&L" hint="Profit or loss on open positions if bought back now, at the ask. Not yours until you close.">
             <Money value={status.unrealisedPnlUsd ?? null} signed />
           </Tile>
           <Tile label="Booked today" hint="Trades closed since 05:30 IST.">
@@ -89,17 +88,14 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
           <Tile label="Loss today" hint="Total losses from trades closed since 05:30 IST.">
             <Money value={lossToday > 0 ? -lossToday : 0} signed />
           </Tile>
-          <Tile label="Charges today" hint="Delta's fee plus 18% GST on every fill today.">
+          <Tile label="Charges today" hint="Delta's fee plus 18% GST on every fill today, and on the fills to close what is open.">
             <Money value={today.chargesUsd > 0 ? -today.chargesUsd : 0} signed />
           </Tile>
         </div>
         <dl className="m-0">
-          {/* If everything closed now, as the header and Positions (5 Nov 2026); the mark's figure and the gap beside it. */}
-          <KV label="Exit cost" hint="Buying every open position back at the ask instead of the mark, and the charges to close.">
-            <Money value={dayIfClosedUsd(today.netUsd, status.open) - today.netUsd} signed />
-          </KV>
-          <KV label={<span className="font-semibold text-foreground">Net today, if all closed now</span>} hint={`At mark, as Delta shows it: ${signedInr(usdToInr(today.netUsd))}.`}>
-            <Money value={dayIfClosedUsd(today.netUsd, status.open)} signed strong />
+          {/* If everything closed now, as the header and Positions: open trades at the ask, the charges to close (5 Nov 2026). */}
+          <KV label={<span className="font-semibold text-foreground">Net today, if all closed now</span>}>
+            <Money value={today.netUsd} signed strong />
           </KV>
         </dl>
 
@@ -128,7 +124,7 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
             </tr>
           </thead>
           <tbody>
-            {combined.accounts.map((a) => { const net = accountDayIfClosedUsd(a.netTodayUsd, status.open, a.id); return (
+            {combined.accounts.map((a) => { const net = a.netTodayUsd; return (
               <tr key={a.id} className="border-0 border-t border-solid border-[var(--line)]">
                 <td className="py-1 text-left font-[inherit]">
                   <span className="font-semibold text-foreground">{a.name}</span>

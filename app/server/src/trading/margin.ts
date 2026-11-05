@@ -66,6 +66,16 @@ export const premiumUsd = (quoted: number, contracts: number, contractValue = CO
  * and it is tested against the decay percentage shown beside it, which must
  * always agree with it about which way the trade is going.
  */
+/**
+ * The price a position closes at now: a short bought back at the ask, a long sold at the bid; the mark only when that
+ * side is not quoted (owner, 5 Nov 2026: "market price enkayum use pana kudathu ... ask and bid"). Every open figure --
+ * a trade's open P&L, the day's, the session loss limit's -- is priced so, as Positions' "if closed now" always was.
+ */
+export function closePriceOf(position: number, quote: { bid?: number | null; ask?: number | null } | null | undefined, mark: number | null): number | null {
+  const side = position > 0 ? quote?.bid : quote?.ask;
+  return side !== null && side !== undefined && Number.isFinite(side) && side > 0 ? side : mark;
+}
+
 export function unrealisedPnlUsd(i: {
   /** The price the position was opened at. */
   entryPrice: number | null;

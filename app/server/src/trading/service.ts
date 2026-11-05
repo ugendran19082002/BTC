@@ -16,7 +16,8 @@ import { DEFAULT_LEVERAGE, exitPriceProblem, orderPlan, protectionFor, type Exit
 export { stopFor, stopPriceFor, targetFor, targetPriceFor } from './order-plan.js';
 import { isDone, isLong } from './machine.js';
 import { announceOptionExit, optionExitOf } from './option-exit.js';
-import { unrealisedPnlUsd } from './margin.js';
+import { closePriceOf, unrealisedPnlUsd } from './margin.js';
+import { fillChargesUsd } from './charges.js';
 import { midOf } from './money.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
@@ -452,24 +453,31 @@ export class TradingService {
   }
 
   /**
-   * "Net today" as the header has it -- booked, open, less charges (`todayFigures`) -- with the open trades valued on
+   * "Net today" as the header has it -- booked, open, less charges (`todayFigures`) -- with the open trades priced on
    * the live board in memory, not asked of Delta: read every few seconds while a session is on, it must cost nothing.
    * A contract the board does not have is asked for as the screen asks.
    */
   private async netTodayOnBoard(now = Date.now()): Promise<number> {
     const dayStart = startOfDayIst(now);
     const booked = await this.store.realisedBreakdownSince(dayStart, this.currentAccountId);
-    let unrealisedUsd = 0;
+    let unrealisedUsd = 0, toCloseUsd = 0;
     for (const rec of await this.openTrades()) {
       const q = cachedQuote(rec.state.symbol) ?? await this.quoteForDisplay(rec.state.symbol, now);
-      const mark = q?.mark ?? midOf(q?.bid ?? null, q?.ask ?? null);
+      const px = closePriceOf(rec.state.position, q, q?.mark ?? midOf(q?.bid ?? null, q?.ask ?? null));
       unrealisedUsd += unrealisedPnlUsd({
-        entryPrice: rec.state.entryAvgPrice, markPrice: mark,
+        entryPrice: rec.state.entryAvgPrice, markPrice: px,
         size: rec.state.position, contractValue: rec.state.contractValue, long: rec.state.position > 0,
       }) ?? 0;
+      toCloseUsd += this.toCloseUsd(rec, px);
     }
-    const chargesUsd = await this.store.chargesSince(dayStart, this.currentAccountId, this.currentSpot());
+    const chargesUsd = await this.store.chargesSince(dayStart, this.currentAccountId, this.currentSpot()) + toCloseUsd;
     return booked.realisedUsd + unrealisedUsd - chargesUsd;
+  }
+
+  /** What closing an open trade at `price` would pay Delta: its fee and GST on that fill (`fillChargesUsd`). */
+  private toCloseUsd(rec: TradeRecord, price: number | null): number {
+    if (price === null || rec.state.position === 0) return 0;
+    return fillChargesUsd({ price, contracts: rec.state.position, contractValue: rec.state.contractValue, spot: this.currentSpot() }).totalUsd;
   }
 
   /** A square-off by the session limit, said: the log, the error page, the phone. */
@@ -559,21 +567,24 @@ export class TradingService {
     const lossUsd = breakdown.lossUsd;
     const profitUsd = breakdown.profitUsd;
     const positions = await this.positionsForDisplay(now);
-    let unrealisedUsd = 0;
+    let unrealisedUsd = 0, toCloseUsd = 0;
     // The caller's own list when it has just read one (the status, the sampler): the same trades, not read twice.
     for (const rec of open ?? await this.openTrades()) {
       const live = positions.find((p) => p.symbol === rec.state.symbol) ?? null;
       const quote = await this.quoteForDisplay(rec.state.symbol, now);
-      const mark = live?.markPrice ?? quote?.mark ?? midOf(quote?.bid ?? null, quote?.ask ?? null);
+      // If closed now (5 Nov 2026): bought back at the ask, a long sold at the bid; the mark only with that side unquoted.
+      const px = closePriceOf(rec.state.position, quote, live?.markPrice ?? quote?.mark ?? midOf(quote?.bid ?? null, quote?.ask ?? null));
       unrealisedUsd += unrealisedPnlUsd({
         // This trade's own contracts, never Delta's row for the symbol: two trades may hold one contract
         // (decision 0011), and each counted both -- "Net today" disagreed with the Open P&L above it (2 Oct 2026).
-        entryPrice: rec.state.entryAvgPrice, markPrice: mark,
+        entryPrice: rec.state.entryAvgPrice, markPrice: px,
         size: rec.state.position, contractValue: rec.state.contractValue, long: rec.state.position > 0,
       }) ?? 0;
+      toCloseUsd += this.toCloseUsd(rec, px);
     }
     // Off the day's states the journal holds between writes (`chargesSince`): no trade is read again to add its fees.
-    const chargesUsd = await this.store.chargesSince(dayStart, this.currentAccountId, this.currentSpot());
+    // And the charges closing what is open would pay: the day is what closing everything now would leave (5 Nov 2026).
+    const chargesUsd = await this.store.chargesSince(dayStart, this.currentAccountId, this.currentSpot()) + toCloseUsd;
     return { realisedUsd, lossUsd, profitUsd, unrealisedUsd, chargesUsd, netUsd: realisedUsd + unrealisedUsd - chargesUsd };
   }
 

@@ -4,7 +4,7 @@ import { ExitAskError, stopFor, targetFor, tradingService, journal, setDeskMode,
 import { lotsToContracts } from '../../trading/money.js';
 import { DEFAULT_LIMITS, precheck } from '../../trading/precheck.js';
 import {
-  clampLeverage, fundsRequiredPerContract, liquidationPrice, maxLotsAt, premiumUsd, unrealisedPnlUsd,
+  clampLeverage, closePriceOf, fundsRequiredPerContract, liquidationPrice, maxLotsAt, premiumUsd, unrealisedPnlUsd,
 } from '../../trading/margin.js';
 import { crossesSpread, worstCaseLoss, type TradeRecord } from '../../trading/engine.js';
 import { fillChargesUsd, tradeCharges } from '../../trading/charges.js';
@@ -201,9 +201,16 @@ export const tradeView = (
    * ticket, so there is a second source to hand.
    */
   const mark = live?.markPrice ?? quote?.mark ?? midOf(quote?.bid ?? null, quote?.ask ?? null);
+  /*
+   * The price a close would actually trade at: a bought position is sold at the bid, a short bought back at the
+   * ask; the mark only when that side is not quoted (`closePriceOf`). One price for the open P&L, "to close" and "if
+   * closed now" alike -- the charge is capped at 3.5% of the premium, so pricing one at the mark and the other at the
+   * book made the two figures beside each other disagree (5 Oct 2026); the open P&L joined them on 5 Nov 2026.
+   */
+  const closePx = closePriceOf(r.state.position, quote, mark);
   const pnl = unrealisedPnlUsd({
     entryPrice: entry,
-    markPrice: mark,
+    markPrice: closePx,
     // This trade's own contracts, never Delta's row for the symbol: two
     // strategies may hold one contract (decision 0011), and each card would
     // otherwise show the P&L of both.
@@ -211,14 +218,6 @@ export const tradeView = (
     long: r.state.position > 0,
     contractValue,
   });
-  /*
-   * The price a close would actually trade at: a bought position is sold at the bid, a short bought back at the
-   * ask; the mark only when that side is not quoted. One price for "to close" and "if closed now" alike -- the
-   * charge is capped at 3.5% of the premium, so pricing one at the mark and the other at the book made the two
-   * figures beside each other disagree (5 Oct 2026).
-   */
-  const side = r.state.position > 0 ? quote?.bid : quote?.ask;
-  const closePx = side !== null && side !== undefined && side > 0 ? side : mark;
   // Delta's charges on every fill so far, and what closing the rest would add. Same formula as the statement;
   // see trading/charges.ts.
   const charges = tradeCharges(r.state, { spot });

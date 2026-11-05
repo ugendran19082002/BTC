@@ -4,22 +4,22 @@ import { pnlTone, signedInr, usdToInr } from '@/lib/format';
 import { Money } from '@/components/ui/money';
 import { KV } from '@/components/ui/kv';
 import { cn } from '@/lib/utils';
-import { accountDayIfClosedUsd, dayIfClosedUsd } from '@/lib/close-cost';
 
 /**
  * Today's P&L, always in the header.
  *
  * The one number people open the desk to see. It is the net if everything
  * closed now: booked trades, plus open positions bought back at the ask, minus
- * Delta's charges (fee + 18% GST) on every fill and on the fills to close
- * (5 Nov 2026, as Positions totals). Tap it for the breakdown.
+ * Delta's charges (fee + 18% GST) on every fill and on the fills to close --
+ * priced so by the server since 5 Nov 2026, as Positions totals. Tap it for the
+ * breakdown.
  */
 export function TodayPnl({ status }: { status: TradeStatus | null }) {
   if (!status) return null;
   const booked = status.realisedTodayUsd ?? 0;
   const open = status.unrealisedPnlUsd ?? 0;
   const today = status.today ?? { realisedUsd: booked, unrealisedUsd: open, chargesUsd: 0, netUsd: booked + open };
-  const net = dayIfClosedUsd(today.netUsd, status.open);
+  const net = today.netUsd;
   const tone = pnlTone(net);
 
   return (
@@ -41,18 +41,11 @@ export function TodayPnl({ status }: { status: TradeStatus | null }) {
             <KV label="Booked" hint="Profit or loss on trades closed today.">
               <Money value={today.realisedUsd} signed />
             </KV>
-            <KV label="Open positions" hint="What open positions are up or down at Delta's price right now.">
+            <KV label="Open positions" hint="Open positions if bought back now, at the ask.">
               <Money value={today.unrealisedUsd} signed />
             </KV>
-            <KV label="Charges" hint="Delta's trading fee plus 18% GST, on every fill today.">
+            <KV label="Charges" hint="Delta's trading fee plus 18% GST, on every fill today and on the fills to close what is open.">
               <Money value={-today.chargesUsd} signed />
-            </KV>
-            <div className="my-0.5 h-px bg-border" />
-            <KV label="At mark" hint="Booked, open and charges added: the day as Delta shows it.">
-              <Money value={today.netUsd} signed />
-            </KV>
-            <KV label="Exit cost" hint="Buying every open position back at the ask instead of the mark, and the charges to close.">
-              <Money value={net - today.netUsd} signed />
             </KV>
             <div className="my-0.5 h-px bg-border" />
             <KV label={<span className="font-semibold text-foreground">Net, if all closed now</span>}>
@@ -64,7 +57,7 @@ export function TodayPnl({ status }: { status: TradeStatus | null }) {
                 <div className="my-0.5 h-px bg-border" />
                 {status.combined.accounts.map((a) => (
                   <KV key={a.id} label={a.name}>
-                    <Money value={accountDayIfClosedUsd(a.netTodayUsd, status.open, a.id)} signed />
+                    <Money value={a.netTodayUsd} signed />
                   </KV>
                 ))}
               </>

@@ -51,7 +51,20 @@ test('[critical] the P&L is this trade\'s own contracts, not Delta\'s row for th
   const alone = tradeView(rec, [{ symbol: CE, size: -100, entryPrice: 20 } as never], 0.001, quote(CE, 9, 11, { mark: 10 }), 80_000);
   const shared = tradeView(rec, [{ symbol: CE, size: -200, entryPrice: 20 } as never], 0.001, quote(CE, 9, 11, { mark: 10 }), 80_000);
   assert.equal(shared.live.unrealisedPnl, alone.live.unrealisedPnl, 'another strategy\'s 100 on the same strike is not this card\'s');
-  assert.equal(alone.live.unrealisedPnl, (20 - 10) * 100 * 0.001);
+  // At the ask, 11, not the mark, 10 (5 Nov 2026).
+  assert.equal(alone.live.unrealisedPnl, (20 - 11) * 100 * 0.001);
+});
+
+test('[critical] the open P&L is at the price a close trades at: a short at the ask, whatever the mark (5 Nov 2026)', async () => {
+  const rec = await shortAt(20);
+  const q = quote(CE, 9, 11, { mark: 10 });
+  const v = tradeView(rec, [{ symbol: CE, size: -100, entryPrice: 20, markPrice: 10 } as never], 0.001, q, 80_000);
+  const otherMark = tradeView(rec, [{ symbol: CE, size: -100, entryPrice: 20, markPrice: 6 } as never], 0.001, { ...q, mark: 6 }, 80_000);
+  assert.equal(v.live.unrealisedPnl, (20 - 11) * 100 * 0.001);
+  assert.equal(otherMark.live.unrealisedPnl, v.live.unrealisedPnl, 'the mark moving does not move it');
+  // No offer on the book: the mark, rather than a blank.
+  const noAsk = tradeView(rec, [], 0.001, quote(CE, 9, 0, { mark: 10, ask: null as unknown as number }), 80_000);
+  assert.equal(noAsk.live.unrealisedPnl, (20 - 10) * 100 * 0.001);
 });
 
 test('[critical] two trades on one contract: each card shows its own target and stop -- a trade with no stop shows none', async () => {

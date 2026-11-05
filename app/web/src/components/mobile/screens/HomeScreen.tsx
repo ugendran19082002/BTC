@@ -17,7 +17,6 @@ import { orderStatusWord } from '@/components/mobile/order-status';
 import { usePressure, usePressureWindow } from '@/components/mobile/usePressure';
 import { usePriceMoves } from '@/components/mobile/usePriceMoves';
 import { PressureStrip } from '@/components/mobile/PressureStrip';
-import { dayIfClosedUsd } from '@/lib/close-cost';
 
 /**
  * Home (6 Oct 2026): everything in one screen a person needs to know the desk is fine -- today's money, the
@@ -34,9 +33,8 @@ export function HomeScreen() {
     60_000, { deps: [p.accountParam] },
   );
   const alerts = phoneAlerts(s, p.glance, p.perp);
-  const atMark = s ? (s.today?.netUsd ?? (s.realisedTodayUsd ?? 0) + (s.unrealisedPnlUsd ?? 0)) : null;
-  // The day if everything closed now, the way Positions totals (5 Nov 2026); the line under it stays at the mark.
-  const net = s && atMark !== null ? dayIfClosedUsd(atMark, s.open) : null;
+  // If everything closed now: the server prices open trades at the ask, with the charges to close (5 Nov 2026).
+  const net = s ? (s.today?.netUsd ?? (s.realisedTodayUsd ?? 0) + (s.unrealisedPnlUsd ?? 0)) : null;
   const budget = s ? lossBudget(s) : null;
   const latest = orders.data?.trades.slice().sort((a, b) => b.openedAt - a.openedAt)[0] ?? null;
   const o = stats.data?.overall;
@@ -113,7 +111,7 @@ export function HomeScreen() {
           <div className="mt-2">
             <AreaChart values={samples.map((x) => x.netUsd)} label="Today's P&L, minute by minute" height={88} />
             <div className="mt-1 flex justify-between text-[11px] tabular-nums text-[var(--time)]">
-              <span>{clock(samples[0]!.at)}</span><span className="text-muted-foreground">at mark</span><span>{clock(samples[samples.length - 1]!.at)}</span>
+              <span>{clock(samples[0]!.at)}</span><span>{clock(samples[samples.length - 1]!.at)}</span>
             </div>
           </div>
         ) : null}
