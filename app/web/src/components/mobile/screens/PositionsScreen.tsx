@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ArrowUpDown, ChevronDown } from 'lucide-react';
 import { usePhone } from '@/components/mobile/phone-context';
 import { PositionCard } from '@/components/mobile/PositionCard';
+import { SessionLossCard } from '@/components/mobile/SessionLossCard';
 import { Bar, Empty, Panel } from '@/components/mobile/parts';
 import { positionRisk } from '@/lib/position-risk';
 import { MARGIN_WARN } from '@/lib/phone-alerts';
@@ -155,6 +156,9 @@ export function PositionsScreen() {
           </div>
         </dl>
       </Panel>
+
+      {/* The session loss limit, to read: each account's session, its money so far and what is left (6 Nov 2026). */}
+      <SessionLossCard />
 
       {s && items.length > 0 && (
         <>

@@ -262,11 +262,11 @@ export const REENTRY_DEFAULT: Readonly<Reentry> = {
 export const REENTRY_MAX_ENTRIES = 4;
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
 /** "At most open at once" is typed, 1 to this (server: MAX_SIGNAL_OPEN). */
-export const MAX_SIGNAL_OPEN = 100;
+export const MAX_SIGNAL_OPEN = 200;
 /** The most the desk-wide cap may be set to; 0 takes it off (server: MAX_GLOBAL_OPEN). */
 export const MAX_GLOBAL_OPEN = 500;
 /** The quick picks beside it. */
-export const MAX_OPEN_PRESETS = [1, 5, 10, 25, 50, 75, 100] as const;
+export const MAX_OPEN_PRESETS = [1, 5, 10, 25, 50, 75, 100, 150, 200] as const;
 export type SignalTarget = 'tp1' | 'tp2' | 'tp3';
 export type SignalRule = {
   /** The perp's own SL and TGT left out (18 Oct 2026): not closed when the perp reaches them; the option's own stop and target close it. Absent: both used. */

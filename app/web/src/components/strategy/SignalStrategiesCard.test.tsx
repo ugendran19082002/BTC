@@ -468,15 +468,15 @@ describe('lots and "at most open", changed on the card itself', () => {
     expect(sent().config.lots).toBe(5);
   });
 
-  it('[critical] 0 lots, 0 or 101 open, or blank: said in the form\'s own words, put back, and not sent', async () => {
+  it('[critical] 0 lots, 0 or 201 open, or blank: said in the form\'s own words, put back, and not sent', async () => {
     getStrategies.mockResolvedValue(status(two()));
     render(<SignalStrategiesCard />);
     await screen.findByText('A');
     type(lots('A'), '0');
     expect(screen.getByRole('alert')).toHaveTextContent('Lots must be a whole number, at least 1.');
     expect(lots('A')).toHaveValue('3');
-    type(most('A'), '101');
-    expect(screen.getByRole('alert')).toHaveTextContent('At most 1 to 100 of its trades open at once.');
+    type(most('A'), '201');
+    expect(screen.getByRole('alert')).toHaveTextContent('At most 1 to 200 of its trades open at once.');
     expect(most('A')).toHaveValue('5');
     type(most('A'), '0');
     type(lots('A'), '');

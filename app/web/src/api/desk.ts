@@ -236,4 +236,6 @@ export type SessionLossView = {
   pctBase: { maxOpen: number; perPositionUsd: number | null; source: 'delta' | 'model' | null; totalUsd: number | null };
 };
 export const getSessionLoss = () => json<SessionLossView>(withAccount('/api/desk/session-loss'));
+/** One account's, by its id: the phone's Positions shows each account's on "All accounts" (6 Nov 2026). */
+export const getSessionLossOf = (account: number) => json<SessionLossView>(`/api/desk/session-loss?account=${account}`);
 export const saveSessionLoss = (setting: SessionLossSetting) => post<SessionLossView & { ok: true }>(withAccount('/api/desk/session-loss'), setting);

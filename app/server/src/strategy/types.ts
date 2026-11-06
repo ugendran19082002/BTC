@@ -768,8 +768,8 @@ function ptsFor(mode: SignalRule['mode'], by: PtsBy | undefined, tf: string): nu
 export const entersOn = (rule: Pick<SignalRule, 'enterOn'>): SignalEntry => rule.enterOn ?? 'zone';
 export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h';
 export const SIGNAL_TFS: readonly SignalTf[] = ['3m', '5m', '15m', '30m', '1h', '2h', '4h'];
-/** "At most open at once" is typed, 1 to this. */
-export const MAX_SIGNAL_OPEN = 100;
+/** "At most open at once" is typed, 1 to this (100 until 6 Nov 2026; owner: "change 1 to 200"). */
+export const MAX_SIGNAL_OPEN = 200;
 
 /**
  * The desk-wide cap on open trades (4 Oct 2026): the setting `signal_max_open`.

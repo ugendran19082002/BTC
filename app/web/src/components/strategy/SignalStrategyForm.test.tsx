@@ -335,13 +335,13 @@ describe('the SL and TGT on the BTC perp, from the live signal', () => {
     expect(saved().config.signal).toMatchObject({ target: 'tp2', maxOpen: 25 });
   });
 
-  it('[critical] at most open: 0 or 101 is refused in words', () => {
+  it('[critical] at most open: 0 or 201 is refused in words', () => {
     show(signalStrategy());
     tab('Entry & exit');
-    fireEvent.change(screen.getByLabelText('max open'), { target: { value: '101' } });
-    expect(screen.getByText('At most 1 to 100 of its trades open at once.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('max open'), { target: { value: '201' } });
+    expect(screen.getByText('At most 1 to 200 of its trades open at once.')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('max open'), { target: { value: '0' } });
-    expect(screen.getByText('At most 1 to 100 of its trades open at once.')).toBeInTheDocument();
+    expect(screen.getByText('At most 1 to 200 of its trades open at once.')).toBeInTheDocument();
   });
 });
 
