@@ -368,6 +368,70 @@ level with 250% since 20 Oct (+₹70) only by excluding 13 Oct, with a worst day
 1 Nov write-up found. The SL change that held up there is by side (CE 100–150%, PE 400%), which needs code.
 Not modelled: a wider stop holds a position longer (fewer new entries under the cap) and makes fewer SL re-entries.
 
+Correction, same day: the 1 Oct figures overstate the cost of a wider stop. 13 Oct's −₹19,102 is real orders as traded, and
+all of it came outside 07:00–17:00 (301 orders, −₹19,143, many of 10–16 contracts; 07:00–17:00 made +₹41). The desk no
+longer enters at night, and every order is now 1 lot. Read the 20 Oct period and 4 Nov for this choice; a rerun at
+07:00–17:00 and 1 contract would settle it.
+
+## 10. Perp SL minimum: the wider search, A to K (6 Nov)
+
+Owner: "cap 250 A to D mela kandupudi, cap 200 A to D mela kandupudi". Every signal 1 Oct – 5 Nov (49,429 after High's
+Exclude lists, 07:00–17:00) at the live rule (delta 0.12, $11), one account, 1 contract, CE/PE 80% each, 100 per strategy;
+15 values 0–500 per timeframe, coordinate search from four starts. Absolute rupees are optimistic (every method, no session
+limit, no re-entry); trust the ranking. Scripts `minsl-search.mjs`, `minsl-eval.mjs`, `minsl-report.py` (session scratchpad).
+
+| Set at cap 250 | 3m / 5m / 15m / 30m / 1h / 2h / 4h / chain | Net 36 d | Loss | Worst day | Win % | Net 20 Oct on |
+|---|---|--:|--:|--:|--:|--:|
+| Before | 200 / 200 / 150 / 200 / 250 / 250 / 300 / 150 | +₹14,469 | −₹13,550 | −₹1,423 | 87.4 | +₹7,563 |
+| High now, old C | 200 / 300 / 0 / 100 / 0 / 50 / 300 / 50 | +₹17,237 | −₹15,363 | −₹1,109 | 87.9 | +₹9,348 |
+| Medium now, old 200 B/C | 500 / 50 / 100 / 100 / 200 / 200 / 50 / 300 | +₹17,236 | −₹15,283 | −₹1,052 | 88.0 | +₹9,234 |
+| Income now, old B | 200 / 250 / 100 / 150 / 400 / 0 / 50 / 150 | +₹14,883 | −₹13,421 | −₹1,332 | 87.6 | +₹7,984 |
+| Low now, old A | 50 / 100 / 250 / 300 / 100 / 400 / 400 / 100 | +₹15,436 | −₹22,462 | −₹2,056 | 85.9 | +₹9,760 |
+| Old D | 500 / 300 / 300 / 200 / 400 / 500 / 500 / 50 | +₹13,822 | −₹8,870 | −₹683 | 89.2 | +₹7,212 |
+| New A, most net | 450 / 0 / 25 / 50 / 75 / 0 / 300 / 400 | +₹18,445 | −₹15,995 | −₹1,102 | 88.3 | +₹9,677 |
+| New B, loss no more than Before | 450 / 300 / 25 / 75 / 75 / 0 / 25 / 0 | +₹17,316 | −₹13,400 | −₹911 | 88.7 | +₹8,551 |
+| New C, worst day no worse | 450 / 25 / 25 / 50 / 75 / 250 / 50 / 400 | +₹18,479 | −₹15,777 | −₹1,101 | 88.3 | +₹9,718 |
+| New E, steadiest block | 500 / 75 / 25 / 50 / 75 / 250 / 25 / 500 | +₹17,925 | −₹14,877 | −₹1,031 | 88.5 | +₹9,162 |
+| New F, net without best and worst day | 300 / 0 / 75 / 125 / 125 / 125 / 300 / 25 | +₹18,031 | −₹18,988 | −₹1,517 | 87.4 | +₹10,437 |
+| New G, net per worst day | 500 / 300 / 25 / 200 / 0 / 350 / 350 / 450 | +₹14,870 | −₹8,365 | −₹626 | 89.8 | +₹6,891 |
+| New H, 3 values | 250 / 250 / 25 / 25 / 125 / 125 / 125 / 25 | +₹17,245 | −₹15,381 | −₹1,309 | 88.1 | +₹8,867 |
+
+| Set at cap 200 | 3m / 5m / 15m / 30m / 1h / 2h / 4h / chain | Net 36 d | Loss | Worst day | Win % | Net 20 Oct on |
+|---|---|--:|--:|--:|--:|--:|
+| Before | as above | +₹11,852 | −₹12,905 | −₹1,450 | 86.8 | +₹6,236 |
+| Old B/C | 500 / 50 / 100 / 100 / 200 / 200 / 50 / 300 | +₹14,592 | −₹14,157 | −₹1,011 | 87.7 | +₹8,184 |
+| New A | 500 / 0 / 25 / 0 / 200 / 125 / 25 / 400 | +₹15,331 | −₹14,543 | −₹1,045 | 87.9 | +₹8,587 |
+| New B | 450 / 300 / 25 / 125 / 75 / 125 / 400 / 0 | +₹14,800 | −₹12,016 | −₹759 | 88.3 | +₹7,797 |
+| New C | 500 / 0 / 25 / 50 / 200 / 125 / 300 / 500 | +₹15,340 | −₹14,436 | −₹1,072 | 88.0 | +₹8,537 |
+| New F | 500 / 0 / 25 / 75 / 50 / 250 / 300 / 500 | +₹15,377 | −₹14,447 | −₹1,069 | 88.0 | +₹8,563 |
+| New G | 500 / 300 / 25 / 200 / 0 / 400 / 25 / 450 | +₹13,699 | −₹8,173 | −₹612 | 89.5 | +₹6,575 |
+
+Out of sample, each aim against Before (four blocks: fit three, play the fourth / forward: fit to 19 Oct, play 20 Oct on):
+
+| Aim | Cap 250 | Cap 200 |
+|---|--:|--:|
+| A most net | +₹3,041 / +₹1,966 | +₹2,287 / +₹107 |
+| B loss no more | +₹1,698 / +₹562 | +₹891 / +₹107 |
+| C worst day no worse | +₹2,667 / +₹1,533 | +₹1,290 / +₹107 |
+| D net per ₹ lost | −₹925 / −₹2,339 | −₹1,449 / −₹2,142 |
+| E steadiest | +₹2,918 / +₹1,454 | +₹1,236 / +₹1,887 |
+| F without best and worst day | +₹2,105 / +₹2,000 | +₹823 / +₹492 |
+| G net per worst day | +₹16 / −₹1,711 | +₹1,391 / −₹571 |
+| H 3 values | +₹2,204 / +₹288 | +₹1,846 / +₹634 |
+| I CE and PE apart (needs code) | +₹1,206 / −₹125 | +₹1,418 / −₹243 |
+| J morning and afternoon apart (needs code) | +₹1,030 / +₹391 | −₹200 / +₹442 |
+| K with a maximum distance (needs code) | +₹2,166 / +₹584 | +₹1,866 / +₹107 |
+
+On the days the old sets were not fitted on (1–19 Oct, cap 250, against Before): C +₹984, Medium's B/C +₹1,097, B −₹6,
+D −₹296, **A −₹1,229**. Old A's 20 Oct gain is fit: it has the deepest loss and worst day of all.
+
+Read: new C's +₹1,242 over old C is in sample, and its honest gain over Before (+₹2,667) is about what old C already shows
+(+₹2,768). So old C and Medium's B/C stand. The clear improvements are on Income's B and Low's A. New B against old B: net
++₹2,433, the same loss, worst day −₹911 against −₹1,332. New C against old A: net +₹3,043, loss ₹6,685 less, worst day −₹1,101
+against −₹2,056, and level since 20 Oct (+₹9,718 / +₹9,760). Aim A is the best on both honest tests at cap 250. The three ideas look best fitted (I: +₹19,803,
+worst −₹795) and fall behind plain aims out of sample: not worth building. A common shape: 3m high (450–500), 15m and 30m low
+(25–75), 1h low. Every 3m band makes money with no cap; 3m at 450–500 frees room under the cap for better trades.
+
 ## Open for the 9–10 Nov review
 
 - Caps 250 / 200 as the §1 minimums assume.
