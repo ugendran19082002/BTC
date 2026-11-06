@@ -51,7 +51,8 @@ export class RequestTimedOut extends Error {
  * ordinary refusal means stop, this one means wait. The header says how long.
  */
 export class RateLimited extends Error {
-  constructor(readonly retryAfterMs: number) {
+  /** `held`: refused here, inside a wait Delta already named; nothing was sent (`waitUntil`). */
+  constructor(readonly retryAfterMs: number, readonly held = false) {
     super(`Delta rate limit reached; ${Math.ceil(retryAfterMs / 1000)}s until it resets.`);
     this.name = 'RateLimited';
   }
@@ -161,7 +162,7 @@ export async function signedPage<T>(creds: Creds | null, req: SignedRequest): Pr
   // Delta has told this login to wait: refused here, as Delta would refuse it, and nothing sent (`waitUntil`).
   const quota = quotaKeyOf(creds);
   const held = rateLimitWaitMs(creds);
-  if (held > 0) throw new RateLimited(held);
+  if (held > 0) throw new RateLimited(held, true);
   const payload = body === undefined ? '' : JSON.stringify(body);
   const ts = Math.floor(Date.now() / 1000).toString();
 

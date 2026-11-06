@@ -1,4 +1,5 @@
-import { DeltaRefused, RateLimited, RequestTimedOut, signed, signedPage, UnreadableReply, type Creds } from '../../delta/signed.js';
+import { DeltaRefused, RateLimited, rateLimitWaitMs, RequestTimedOut, signed, signedPage, UnreadableReply, type Creds } from '../../delta/signed.js';
+import { QUOTA_LADDER, quotaKeyOf, quotaUsedPctOf } from '../../observability/desk-metrics.js';
 import { stopFillLimit } from '../money.js';
 import type {
   ExchangeOrder, ExchangePosition, OrderStatus, PlaceOrderRequest, ProductSpec, Quote,
@@ -304,6 +305,20 @@ export function orderBody(req: PlaceOrderRequest): Record<string, unknown> {
  */
 export const QUOTE_SHARE_MS = 750;
 
+/**
+ * How long one read of the account's whole open book answers every trade's target and stop (6 Nov 2026). Each trade asked
+ * after its two orders on its own, every pass: at 3 units a lookup and 66 units a second to a login, 250 trades take
+ * about 25 s to go round, and the quota ran 75-86% all day, with ~254,000 refusals between 09:39 and 13:05. The book is
+ * 5 pages at 3 units whatever the trades, so this is ~11% of the quota, and every trade is seen every 2 s. It widens as the
+ * login's quota fills, so reads step back before the stops and targets of `QUOTA_LADDER`.
+ */
+export const BOOK_SHARE_MS = 2_000;
+export const BOOK_SHARE_BUSY_MS = 3_000;
+export const BOOK_SHARE_FULL_MS = 5_000;
+export const BOOK_SHARE_FULL_PCT = 70;
+export const bookShareMs = (usedPct: number): number =>
+  (usedPct >= BOOK_SHARE_FULL_PCT ? BOOK_SHARE_FULL_MS : usedPct >= QUOTA_LADDER.others ? BOOK_SHARE_BUSY_MS : BOOK_SHARE_MS);
+
 const OPTION_SIDE = (contractType: string) =>
   contractType.startsWith('call') ? ('CE' as const) : ('PE' as const);
 
@@ -353,6 +368,10 @@ export class DeltaExchange implements ExchangePort {
   private products = new Map<string, ProductSpec>();
   /** Per contract, the ticker read in flight or just answered; `at` is when it settled (in flight: never stale). */
   private quotes = new Map<string, { at: number; q: Promise<Quote | null> }>();
+  /** The whole book, read in flight or just answered, by client id; `at` is when it settled (in flight: never stale). Null: it could not be read. */
+  private book: { at: number; shareMs: number; rows: Promise<ReadonlyMap<string, ExchangeOrder> | null> } | null = null;
+  /** Orders this desk edited or cancelled since that read began: what the book says of them is out of date. */
+  private readonly wroteSinceBook = new Set<string>();
 
   constructor(private readonly creds: Creds | null) {}
 
@@ -399,20 +418,24 @@ export class DeltaExchange implements ExchangePort {
           continue;
         }
         if (isRead && retryableRead(e)) readFailed();
-        if (!(e instanceof DeltaRefused && isExpectedRefusal(req, e, reqIn.quietRefusal))) {
+        // A read refused inside a wait was never sent: the 429 that began the wait is the thing to record (6 Nov 2026,
+        // ~254,000 rows of the same wait). A write refused is still said: something the desk meant to do did not happen.
+        const heldRead = isRead && e instanceof RateLimited && e.held;
+        if (!heldRead && !(e instanceof DeltaRefused && isExpectedRefusal(req, e, reqIn.quietRefusal))) {
           noteError({
             source: 'exchange',
             // A read that failed on Delta's side twice is still Delta's trouble,
             // and the poll asks again within a second: worth seeing, not an alarm.
             // A restriction is the venue's state, said once on its own line (`noteRestricted`).
             level: (isRead && retryableRead(e)) || isRestriction(e) ? 'warn' : 'error',
-            message: (e as Error).message,
+            // The wait's length in the context, not the message: a message is the error's identity, and "5s" and "4s" were two.
+            message: e instanceof RateLimited ? 'Delta rate limit reached.' : (e as Error).message,
             code: e instanceof DeltaRefused ? e.code : (e as Error).name,
             stack: (e as Error).stack ?? null,
             where: `${req.method} ${req.path}`,
             // the body can carry a size and a price, both of which help; the
             // signing headers never reach here, and redact() catches the rest
-            context: { body: req.body ?? null, attempts: attempt },
+            context: { body: req.body ?? null, attempts: attempt, ...(e instanceof RateLimited ? { waitMs: e.retryAfterMs } : {}) },
           });
         }
         // Being asked to wait is not an outage, but for anything that takes risk
@@ -550,6 +573,7 @@ export class DeltaExchange implements ExchangePort {
   }
 
   async cancelOrder(order: { orderId: string; productId: number }): Promise<void> {
+    this.wroteSinceBook.add(order.orderId);
     await this.call({
       method: 'DELETE',
       path: '/v2/orders',
@@ -561,7 +585,7 @@ export class DeltaExchange implements ExchangePort {
       // caller goes and checks.
       if (e instanceof DeltaRefused && ORDER_GONE.test(e.code)) return;
       throw e;
-    });
+    }).finally(() => { this.wroteSinceBook.add(order.orderId); });
   }
 
   /**
@@ -589,6 +613,7 @@ export class DeltaExchange implements ExchangePort {
     if (changes.size !== undefined) body.size = changes.size;
     if (changes.limitPrice !== undefined) body.limit_price = String(changes.limitPrice);
     if (changes.stopPrice !== undefined) body.stop_price = String(changes.stopPrice);
+    this.wroteSinceBook.add(order.orderId);
     try {
       const edited = toOrder(await signed<DeltaOrder>(this.creds, {
         method: 'PUT', path: '/v2/orders', body, timeoutMs: 10_000,
@@ -606,6 +631,8 @@ export class DeltaExchange implements ExchangePort {
       if (e instanceof DeltaRefused && GONE_CODES.has(e.code)) throw new OrderGone(order.orderId);
       if (e instanceof DeltaRefused) throw new OrderRejected(e.message);
       throw e;
+    } finally {
+      this.wroteSinceBook.add(order.orderId);
     }
   }
 
@@ -679,7 +706,40 @@ export class DeltaExchange implements ExchangePort {
   /** When each client id last missed the deep search, so a missing order cannot spend the quota every second. */
   private readonly deepMiss = new Map<string, number>();
 
+  /** The whole book, one read shared by every trade that asks (`BOOK_SHARE_MS`). Null when it could not be read. */
+  private sharedBook(): Promise<ReadonlyMap<string, ExchangeOrder> | null> {
+    const held = this.book;
+    if (held && Date.now() - held.at < held.shareMs) return held.rows;
+    this.wroteSinceBook.clear();
+    const rows = this.getOpenOrders().then(
+      (orders) => new Map(orders.flatMap((o) => (o.clientOrderId ? [[o.clientOrderId, o] as const] : []))),
+      () => null,
+    );
+    const entry = { at: Infinity, shareMs: BOOK_SHARE_MS, rows };
+    this.book = entry;
+    void rows.finally(() => { entry.shareMs = bookShareMs(quotaUsedPctOf(quotaKeyOf(this.creds))); entry.at = Date.now(); });
+    return rows;
+  }
+
+  /**
+   * A trade's target or stop as a poll reads it (6 Nov 2026): off the shared book while it rests there. Anything else asks
+   * on its own -- not on the book means it filled, was cancelled or is newer than the read, and an order this desk just
+   * edited or cancelled reads differently now -- so a lookup is spent only on an order that changed.
+   */
+  async getRestingOrder(clientOrderId: string, symbol?: string): Promise<ExchangeOrder | null> {
+    const resting = (await this.sharedBook())?.get(clientOrderId);
+    if (resting && !this.wroteSinceBook.has(resting.orderId)) return resting;
+    return this.getOrderByClientId(clientOrderId, symbol);
+  }
+
+  /** Inside a wait Delta named nothing can be asked: answered as the searches below would be, without trying each. */
+  private refuseIfHeld(): void {
+    const waitMs = rateLimitWaitMs(this.creds);
+    if (waitMs > 0) throw new ExchangeUnavailable(new RateLimited(waitMs).message);
+  }
+
   async getOrderByClientId(clientOrderId: string, symbol?: string): Promise<ExchangeOrder | null> {
+    this.refuseIfHeld();
     const cid = encodeURIComponent(clientOrderId);
     /*
      * Delta's own lookup by client id (`GET /v2/orders/client_order_id/{id}`, in its docs): one call, open or
@@ -688,6 +748,8 @@ export class DeltaExchange implements ExchangePort {
      */
     const direct = await this.call<DeltaOrder>({ method: 'GET', path: `/v2/orders/client_order_id/${cid}` }).catch(() => null);
     if (direct && !Array.isArray(direct) && direct.client_order_id === clientOrderId) return toOrder(direct);
+    // That lookup may be the one Delta answered with a wait: a refusal then is no reason to search (6 Nov 2026).
+    this.refuseIfHeld();
 
     /*
      * The open book, searched here: `client_order_id` is not a filter Delta documents for this endpoint, so the

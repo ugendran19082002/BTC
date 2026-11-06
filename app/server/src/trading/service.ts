@@ -50,6 +50,15 @@ import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
  */
 
 const POLL_MS = 1_000;
+/**
+ * The most trades a pass reads a second, past the point a pass fits its second (6 Nov 2026). A poll is a row out of the
+ * journal, and it was Delta's two lookups that spaced them: read off one shared book (`getRestingOrder`), 250 trades on each
+ * of four accounts would be a thousand rows a second on the thread and the eight connections everything else uses. So
+ * 20 ms apart: ~5 s round at 250 trades, on a pass that took ~25 s. Stops do not wait for it: `stopWatch` has its own tick.
+ */
+const PASS_PACE_ABOVE = 50;
+const PASS_PACE_MS = 20;
+export const passPaceMs = (trades: number): number => (trades > PASS_PACE_ABOVE ? PASS_PACE_MS : 0);
 /** How often the day's P&L is written down. A minute draws a day in 720 points. */
 const MTM_SAMPLE_MS = 60_000;
 /** Long enough that a one-second poll is one call; short enough to feel live. */
@@ -621,8 +630,13 @@ export class TradingService {
       this.underlyingWatch.note(watchedOf(open));
       this.entryWatch.note(open);
       this.stopWatch.note(stopWatchedOf(open));
+      const paceMs = passPaceMs(open.length);
       for (const rec of open) {
+        const pollAt = performance.now();
         await this.engine.poll(rec.state.tradeId).catch(() => {});
+        // Only what the poll did not take already: a poll that went to Delta has been its own pause.
+        const rest = paceMs - (performance.now() - pollAt);
+        if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));
       }
       // A finished trade whose other exit could not be confirmed off the book is
       // not polled any more; this is what keeps trying it.

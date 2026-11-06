@@ -43,6 +43,12 @@ export interface ExchangePort {
    */
   getOrderByClientId(clientOrderId: string, symbol?: string): Promise<ExchangeOrder | null>;
   /**
+   * The same answer for a poll, which reads every trade's target and stop every pass: where a venue has it, a resting
+   * order may come off a whole-book read a moment old, never an order the desk has just written. Not for reading back
+   * after a write. Without it, `getOrderByClientId`.
+   */
+  getRestingOrder?(clientOrderId: string, symbol?: string): Promise<ExchangeOrder | null>;
+  /**
    * By the exchange's own id, from the acknowledgement. The lookup that cannot
    * be foiled by a client-id filter: once the venue has said "order 1535451705",
    * that number finds it open or closed.

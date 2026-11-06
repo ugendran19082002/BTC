@@ -1508,7 +1508,14 @@ export class TradeEngine {
       ['stop_loss', rec.state.protection.stopLoss],
     ] as const;
     const found = await this.within(
-      Promise.all(legs.map(([, cid]) => (cid ? this.exchange.getOrderByClientId(cid, rec.plan.symbol).catch(() => null) : null))),
+      // The entry on its own: its fill is what puts the stop on, and it is asked after only while it can change.
+      Promise.all(legs.map(([role, cid]) => {
+        if (!cid) return null;
+        const read = role !== 'entry' && this.exchange.getRestingOrder
+          ? this.exchange.getRestingOrder(cid, rec.plan.symbol)
+          : this.exchange.getOrderByClientId(cid, rec.plan.symbol);
+        return read.catch(() => null);
+      })),
       this.d.lookupBudgetMs ?? LOOKUP_BUDGET_MS,
       // Not answered in time: as a lookup that could not be asked. The exits below are judged all the same.
       legs.map(() => null),
@@ -1653,7 +1660,12 @@ export class TradeEngine {
       rec = await this.underlyingExit(rec);
     }
     if (rec.state.position !== 0 && rec.state.phase !== 'exit_pending') {
-      rec = await this.stopIfReached(rec, undefined, 'loop');
+      // On the board while it is fresh, as the stop watch judges: free, where a ticker is 3 units a contract (6 Nov 2026).
+      let board: Quote | null = null;
+      // A board that cannot be read is no reason to skip a stop: Delta is asked, as with none.
+      try { board = this.d.boardQuote?.(rec.plan.symbol) ?? null; } catch { board = null; }
+      const fromBoard = board !== null && this.now() - board.ts <= BOARD_QUOTE_FRESH_MS;
+      rec = await this.stopIfReached(rec, fromBoard ? board : undefined, 'loop', fromBoard ? 'board' : 'rest');
     }
     // A bought position is not this desk's (it only sells): said once, and left to be closed by hand (`notOurs`).
     if (rec.state.position > 0 && rec.state.phase !== 'exit_pending') rec = await this.notOurs(rec);
