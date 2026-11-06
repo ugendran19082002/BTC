@@ -336,6 +336,36 @@ so each hit 15 s after its save:
 Nothing was open, so nothing was closed. The setting stays on: one day-long session, about ₹750–800 a day per account at
 cap 160, rising with the cap. A limit switched on mid-session counts from the session's start.
 
+## 9. Option SL 250% / 300% / 350% / 400% (6 Nov)
+
+Owner: "SL % 250 vs 300 vs 350 vs 400 compare all account settings in Oct to now and 20 Oct to now". Every real order
+1 Oct – 5 Nov on all four accounts (14,744; each account's own settings as they were) replayed on its real option quotes
+with only the option SL changed; the rest as live (perp SL/TGT skipped, 90% target). Calibrated: at 250% the replay gives
++₹1,053 against the real +₹868 (1 Oct) and +₹7,969 against +₹8,465 (20 Oct). Script `slpct-dump.mts`, report
+`slpct-report.py` (session scratchpad).
+
+| Net, all 4 accounts | 250% (live) | 300% | 350% | 400% |
+|---|--:|--:|--:|--:|
+| 1 Oct – 5 Nov | **+₹1,053** | −₹4,982 | −₹10,167 | −₹10,694 |
+| 20 Oct – 5 Nov | +₹7,969 | +₹6,590 | **+₹8,039** | +₹7,530 |
+| Worst day (20 Oct) | **−₹7,288** | −₹9,063 | −₹10,316 | −₹11,925 |
+| Win % (20 Oct) | 85.7 | 86.8 | 88.8 | 89.5 |
+| 13 Oct against 250% | – | −₹5,288 | −₹12,586 | −₹14,320 |
+| 4 Nov against 250% | – | −₹1,775 | −₹3,028 | −₹4,638 |
+
+| Net 20 Oct – 5 Nov | 250% | 300% | 350% | 400% |
+|---|--:|--:|--:|--:|
+| High | +₹3,746 | +₹3,431 | +₹4,042 | +₹4,026 |
+| Medium | +₹2,767 | +₹2,459 | +₹2,969 | +₹2,902 |
+| Low | +₹1,284 | +₹923 | +₹1,451 | +₹1,301 |
+| Income | **+₹172** | −₹223 | −₹423 | −₹698 |
+
+Wider wins on quiet days (30 Oct +₹1.4–2.1k, 2 Nov, 28 Oct, 15 Oct) and gives it all back and more on a spike day: 13 Oct
+alone is −₹5.3k to −₹14.3k, 4 Nov −₹1.8k to −₹4.6k. Win % rises with the stop, the loss per stop grows faster. 350% is
+level with 250% since 20 Oct (+₹70) only by excluding 13 Oct, with a worst day 42% deeper. **Keep 250%**, as §1 of the
+1 Nov write-up found. The SL change that held up there is by side (CE 100–150%, PE 400%), which needs code.
+Not modelled: a wider stop holds a position longer (fewer new entries under the cap) and makes fewer SL re-entries.
+
 ## Open for the 9–10 Nov review
 
 - Caps 250 / 200 as the §1 minimums assume.
