@@ -5,7 +5,7 @@
 Every source, config and script file in the repository, with the first sentence of its own header
 comment. A dash means the file has no header comment -- the fix is to write one, not to edit this page.
 
-592 files listed, 336 test files counted below, images and lockfiles left out.
+593 files listed, 336 test files counted below, images and lockfiles left out.
 
 ## Test files
 
@@ -829,6 +829,7 @@ comment. A dash means the file has no header comment -- the fix is to write one,
 |---|---|
 | [2026-11-04-rd-strike-premium-guard-methods.md](../research/2026-11-04-rd-strike-premium-guard-methods.md) | R&D 4 Nov 2026: perp SL minimum, CE / PE share, minimum premium, delta, momentum guard, methods |
 | [2026-11-06-perp-sl-min-by-date.md](../research/2026-11-06-perp-sl-min-by-date.md) | Perp SL minimum sets by date, cap 250, 1 Oct – 5 Nov 2026 |
+| [2026-11-07-perp-sl-min-a-to-z.md](../research/2026-11-07-perp-sl-min-a-to-z.md) | Perp SL minimum, A to Z, cap 250 and cap 300 (7 Nov 2026) |
 | [2026-11-perp-sl-min-by-cap.md](../research/2026-11-perp-sl-min-by-cap.md) | Perp SL minimum by timeframe, at each account cap (1 Oct – 1 Nov 2026) |
 | [2026-11-rd-profit-and-loss.md](../research/2026-11-rd-profit-and-loss.md) | R&D: more profit, less loss — exits, re-entry, windows, methods, delta (1 Oct – 1 Nov 2026) |
 | [btc-15m-movement-2y.md](../research/btc-15m-movement-2y.md) | BTC movement by 15-minute slot — 5:35 PM to 5:29 PM IST, last two years |
