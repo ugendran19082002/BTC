@@ -62,3 +62,6 @@ app/web/.harness/
 
 # Account exports: never in git.
 Delta-TransactionLog-*.csv
+
+# The docs stay on this machine, never pushed (owner, 7 Nov 2026).
+docs/
