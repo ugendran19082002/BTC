@@ -31,12 +31,23 @@ export function quickPicks(today: string): QuickPick[] {
   ];
 }
 
-/** What is wrong with the range, in words, or null. */
-export function rangeProblem(r: { from: string; to: string }, today: string): string | null {
+/** What is wrong with the range, in words, or null. `maxDays`: a screen whose server holds less than a year (the ledger, 92). */
+export function rangeProblem(r: { from: string; to: string }, today: string, maxDays = 366): string | null {
   const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(ms(d));
   if (!ok(r.from) || !ok(r.to)) return 'Pick both dates.';
   if (r.from > r.to) return 'The From date must be on or before the To date.';
   if (r.to > today) return 'The To date cannot be after today.';
-  if (daysIn(r) > 366) return 'At most a year at a time.';
+  if (daysIn(r) > maxDays) return maxDays >= 366 ? 'At most a year at a time.' : `At most ${maxDays} days at a time.`;
   return null;
+}
+
+/**
+ * "Since start" (owner, 8 Nov 2026: "from the start of trading to today, dynamic"): the first trading day to today,
+ * worked out again each day, so tomorrow it ends tomorrow. Longer than `maxDays`, it is the last `maxDays` and says so
+ * (`clipped`): the screen's limit, not a gap in the record.
+ */
+export function sinceStart(firstDay: string, today: string, maxDays = 366): DateRangeValue & { clipped: boolean } {
+  const floor = shiftDay(today, -(maxDays - 1));
+  const from = firstDay > today ? today : firstDay;
+  return from < floor ? { from: floor, to: today, clipped: true } : { from, to: today, clipped: false };
 }

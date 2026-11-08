@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { describeRange, type DateRangeValue } from '@/components/ui/date-range-picker';
-import { daysIn, quickPicks, rangeProblem, shiftDay } from '@/lib/custom-range';
+import { daysIn, quickPicks, rangeProblem, shiftDay, sinceStart } from '@/lib/custom-range';
 import { cn } from '@/lib/utils';
 import { Chip } from '@/components/mobile/parts';
 
@@ -9,17 +9,28 @@ import { Chip } from '@/components/mobile/parts';
  * A From and a To date, from the bottom of the screen (the phone's P&L, owner, 6 Oct 2026). Quick picks for the
  * ranges asked for most; the phone's own date picker for anything else -- the one a thumb already knows. The range
  * is checked as it is typed, with the reason in words, and Show is the only way out that changes anything.
+ *
+ * `firstDay` (the ledger, 8 Nov 2026): a "Since start" pick first -- the first trading day to today, kept moving with
+ * today after Show (`onApply`'s `sinceStart`); a date typed by hand, or another pick, makes it a fixed range again.
+ * `maxDays`: the screen's own limit, checked here rather than refused by the server.
  */
-export function DateRangeSheet({ value, today, onApply, onClose }: {
+export function DateRangeSheet({ value, today, onApply, onClose, firstDay, sinceStart: startOn = false, maxDays = 366 }: {
   value: DateRangeValue;
   today: string;
-  onApply: (v: DateRangeValue) => void;
+  onApply: (v: DateRangeValue, o: { sinceStart: boolean }) => void;
   onClose: () => void;
+  firstDay?: string | null;
+  /** The range open now is "Since start". */
+  sinceStart?: boolean;
+  maxDays?: number;
 }) {
   const [draft, setDraft] = useState<DateRangeValue>(value);
-  const problem = rangeProblem(draft, today);
+  const start = firstDay ? sinceStart(firstDay, today, maxDays) : null;
+  const [fromStart, setFromStart] = useState(startOn && start !== null);
+  const problem = rangeProblem(draft, today, maxDays);
   const first = useRef<HTMLInputElement>(null);
-  const earliest = shiftDay(today, -365);
+  const earliest = shiftDay(today, -Math.min(365, maxDays - 1));
+  const pickFixed = (r: DateRangeValue) => { setFromStart(false); setDraft(r); };
 
   useEffect(() => {
     first.current?.focus({ preventScroll: true });

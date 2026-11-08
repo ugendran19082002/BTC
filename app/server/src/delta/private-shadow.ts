@@ -302,12 +302,27 @@ class AccountShadow {
         }
       }
     }
-    // Forget what is old: both maps, and what was judged of them.
+    // Forget what is old -- an order at a time, both sides together, once the later of the two is old. Forgetting
+    // each side by its own age dropped the socket's (heard first) with its verdict while the journal's was still
+    // held, and the leftover was then judged a miss: 8 Nov's ~640 "missed live" were all on the socket.
     for (const m of [this.ws, this.rest] as Map<string, Side>[]) {
-      for (const [orderId, s] of m) {
-        if (now - s.lastAt > KEEP_ORDERS_MS) { m.delete(orderId); this.judged.delete(orderId); this.sized.delete(orderId); this.sized.delete(`ch|${orderId}`); }
+      for (const orderId of m.keys()) {
+        if (now - this.lastHeard(orderId) > KEEP_ORDERS_MS) this.forget(orderId);
       }
     }
+  }
+
+  /** When either side last heard of an order. */
+  private lastHeard(orderId: string): number {
+    return Math.max(this.ws.get(orderId)?.lastAt ?? -Infinity, this.rest.get(orderId)?.lastAt ?? -Infinity);
+  }
+
+  private forget(orderId: string): void {
+    this.ws.delete(orderId);
+    this.rest.delete(orderId);
+    this.judged.delete(orderId);
+    this.sized.delete(orderId);
+    this.sized.delete(`ch|${orderId}`);
   }
 
   private async onLive(downSince: number | null): Promise<void> {

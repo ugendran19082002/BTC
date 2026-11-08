@@ -220,6 +220,19 @@ test('the check is refused in words: a day to come, a bad date, too far back, an
   assert.match(r.body.error, /At most 92 days/);
 });
 
+test('[critical] the first trading day, for "Since start": each account\'s own, every account\'s earliest, whatever the range asked', async () => {
+  const d40 = istDate(NOW - 40 * DAY_MS), d30 = istDate(NOW - 30 * DAY_MS);
+  await trade(d40, 4, one);
+  await trade(d30, 4, two);
+  const of = async (q: string) => (await call('GET', `/api/ledger?from=${YESTERDAY}&to=${YESTERDAY}${q}`)).body;
+  assert.equal((await of(`&account=${one}`)).firstDay, d40);
+  assert.equal((await of(`&account=${two}`)).firstDay, d30);
+  const all = await of('');
+  assert.equal(all.firstDay, d40);
+  assert.equal(all.maxDays, 92);
+  assert.equal((await of('&account=424242')).firstDay, null, 'an account that never traded has no first day');
+});
+
 test('the phone hears of a mismatch: both nets, the difference and where it lies', () => {
   const a = ledgerAlert({ account: 'High', day: '2026-10-28', deskUsd: 6.24, deltaUsd: 6.08, detail: 'Charges agree: the difference is in what the trades booked.' });
   assert.equal(a.key, 'ledger:High:2026-10-28');

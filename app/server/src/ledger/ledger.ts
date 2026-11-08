@@ -98,6 +98,19 @@ export const dayBounds = (day: string) => { const from = Date.parse(`${day}T00:0
 const ZERO: DeskDay = { realisedUsd: 0, profitUsd: 0, lossUsd: 0, chargesUsd: 0, netUsd: 0, trades: 0, open: 0 };
 
 /**
+ * The IST day the account first traded -- every account's earliest without one -- or null before any trade: the phone's
+ * "Since start" range (owner, 8 Nov 2026), which runs from here to today and moves with it. A trade's `updated_at` is
+ * at or after its first fill, so this is the first day a trade was last touched: the first trading day, read off the
+ * account index alone (well under a millisecond).
+ */
+export async function firstTradeDay(accountId: number | null): Promise<string | null> {
+  const r = accountId === null
+    ? await one<{ at: string | null }>('SELECT MIN(updated_at)::text AS at FROM trades')
+    : await one<{ at: string | null }>('SELECT MIN(updated_at)::text AS at FROM trades WHERE broker_account_id = $1', [accountId]);
+  return r?.at ? istDate(Number(r.at)) : null;
+}
+
+/**
  * One account's days as the desk booked them, from `from` to `to` (IST dates, both in): one read of the journal for
  * the range -- every trade, no page -- and the P&L calendar's own sums.
  */

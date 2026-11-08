@@ -178,6 +178,34 @@ test('a socket fill the journal never gets is the socket\'s alone after five min
   h.shadow.stop();
 });
 
+test('[critical] an order is forgotten whole: a side heard minutes before the other is never judged a miss when it ages out', async () => {
+  // 8 Nov: the socket was first on every order, by over a minute on a quarter of them; each side was forgotten by its
+  // own age, so the socket's went first and the journal's leftover was called "missed live" (and the reverse "socket only").
+  const h = harness();
+  h.shadow.start();
+  await h.shadow.tick();
+  h.goLive();
+  h.fill('f-a', '1201', 1);                            // socket first, journal 3 min later
+  await h.shadow.flushed();
+  await h.pass(180_000);
+  await journalFill(3, '1201', 1, h.now());
+  await journalFill(3, '1202', 2, h.now());            // journal first, socket 30 s later (inside the grace)
+  await h.pass(30_000);
+  h.fill('f-b', '1202', 2);
+  await h.shadow.flushed();
+  await h.pass(SOCKET_GRACE_MS);
+  assert.equal(h.m().compare.matched, 2);
+
+  // Past two hours of each order's first side, then past its second, judging every 20 s: once, and nothing more.
+  for (let i = 0; i < (2 * 3_600_000 + 10 * 60_000) / 20_000; i++) await h.pass(20_000);
+  const c = h.m().compare;
+  assert.equal(c.matched, 2);
+  assert.equal(c.restOnly, 0, 'the journal side of an order the socket heard first is not a miss');
+  assert.equal(c.socketOnly, 0, 'the socket side of an order the journal recorded first is not the socket\'s alone');
+  assert.deepEqual(c.discrepancies, []);
+  h.shadow.stop();
+});
+
 test('[critical] partial fills are summed per order; a size the two disagree on is flagged once both are quiet', async () => {
   const h = harness();
   h.shadow.start();

@@ -3,7 +3,7 @@ import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
 import { istDate } from '../../strategy/schedule.js';
 import {
-  LEDGER_MAX_DAYS, TOLERANCE_USD, currentSync, deskDays, ledgerAccounts, ledgerBusy, ledgerRows, lastAutoCheck, startSync,
+  LEDGER_MAX_DAYS, TOLERANCE_USD, currentSync, deskDays, firstTradeDay, ledgerAccounts, ledgerBusy, ledgerRows, lastAutoCheck, startSync,
   type DeskDay, type LedgerRow, type LedgerStatus,
 } from '../../ledger/ledger.js';
 import type { WalletDay } from '../../ledger/wallet.js';
@@ -91,6 +91,7 @@ export function registerLedgerRoutes(app: FastifyInstance) {
    * The ledger for a range of IST days (`from`, `to`; the last seven without them; at most 92): each day the desk's
    * profit, loss, charges and net worked out now, and the check kept for it -- Delta's side, the verdict, when and how
    * it was made. `?account=<id>`: one broker account; without it every account's, each one's verdict beside the sum.
+   * `firstDay`: the day that account (every account) first traded, whatever the range -- the phone's "Since start".
    */
   app.get('/api/ledger', async (req, reply) => {
     const q = (req.query ?? {}) as { from?: string; to?: string };
@@ -101,7 +102,9 @@ export function registerLedgerRoutes(app: FastifyInstance) {
     if ((Date.parse(to) - Date.parse(from)) / DAY_MS + 1 > LEDGER_MAX_DAYS) return refuse(reply, 400, { error: `At most ${LEDGER_MAX_DAYS} days at a time.` });
     const account = accountOf(req.query);
     const accounts = ledgerAccounts();
-    const [desk, kept, lastAutoAt, sync] = await Promise.all([deskDays(account, from, to), ledgerRows(account, from, to), lastAutoCheck(account), currentSync()]);
+    const [desk, kept, lastAutoAt, sync, firstDay] = await Promise.all([
+      deskDays(account, from, to), ledgerRows(account, from, to), lastAutoCheck(account), currentSync(), firstTradeDay(account),
+    ]);
     const days = [...new Set([...desk.keys(), ...kept.map((r) => r.day)])].sort().reverse().map((day) => {
       const d = desk.get(day) ?? ZERO;
       const rs = kept.filter((r) => r.day === day);
@@ -110,7 +113,7 @@ export function registerLedgerRoutes(app: FastifyInstance) {
     const sumDesk = (k: keyof DeskDay) => days.reduce((n, d) => n + d.desk[k], 0);
     const judged = days.filter((d) => d.delta !== null && d.status !== 'paper' && d.status !== 'unread');
     return {
-      from, to, account, accounts, busy: ledgerBusy() || sync?.status === 'running', sync, lastAutoAt, toleranceUsd: TOLERANCE_USD, days,
+      from, to, account, accounts, busy: ledgerBusy() || sync?.status === 'running', sync, lastAutoAt, toleranceUsd: TOLERANCE_USD, firstDay, maxDays: LEDGER_MAX_DAYS, days,
       totals: {
         desk: { realisedUsd: sumDesk('realisedUsd'), profitUsd: sumDesk('profitUsd'), lossUsd: sumDesk('lossUsd'), chargesUsd: sumDesk('chargesUsd'), netUsd: sumDesk('netUsd'), trades: sumDesk('trades') },
         delta: judged.length ? sumWallet(judged.map((d) => d.delta!)) : null,
