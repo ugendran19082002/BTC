@@ -533,6 +533,16 @@ export type StrategyGroup = {
   updatedAt: number;
   /** Its place among its account's groups, set by hand; null: where it was made. */
   position?: number | null;
+  /** Its own settings (8 Nov 2026), each null where it takes its account's. Absent on a server from before them. */
+  own?: GroupOwn;
+  /** What its own limits count now: its strategies' open trades, all and by side. */
+  openNow?: { all: number; CE: number; PE: number };
+};
+
+/** A group's own values of the account's seven settings; null where it takes the account's (server `group-limits.ts`). */
+export type GroupOwn = {
+  maxOpen: number | null; ce: number | null; pe: number | null; strikeMax: number | null; strikeFull: 'next' | 'skip' | null;
+  zoneFresh: Record<SignalTf, number> | null; momentum: MomentumGuard | null; reentry: Reentry | null;
 };
 
 export type StrategyRun = {

@@ -1,4 +1,4 @@
-import type { Strategy, StrategyGroup } from '@/types/strategy';
+import type { GroupOwn, Strategy, StrategyGroup } from '@/types/strategy';
 
 /**
  * The strategies listed by group (owner, 10 Oct 2026: "the strategies are listed by group now, each group's inside it").
@@ -119,4 +119,22 @@ export function groupNameProblem(name: string): string | null {
   if (!name.trim()) return 'Give the group a name.';
   if (name.trim().length > 40) return 'A group name is at most 40 characters.';
   return null;
+}
+
+/**
+ * A group's own settings in short words (8 Nov 2026), for its header on the desk and its line on the phone: only those it
+ * sets itself; none, an empty list -- it takes its account's.
+ */
+export function groupOwnWords(own: GroupOwn | null | undefined): string[] {
+  if (!own) return [];
+  const w: string[] = [];
+  if (own.maxOpen !== null) w.push(`At most ${own.maxOpen}`);
+  if (own.ce !== null) w.push(`CE ${own.ce}%`);
+  if (own.pe !== null) w.push(`PE ${own.pe}%`);
+  if (own.strikeMax !== null) w.push(`Strike ${own.strikeMax}%`);
+  if (own.strikeFull !== null) w.push(own.strikeFull === 'skip' ? 'Full: skip' : 'Full: next strike');
+  if (own.zoneFresh !== null) w.push('Fill window');
+  if (own.momentum !== null) w.push(own.momentum.on ? `Momentum +${own.momentum.pts}` : 'Momentum off');
+  if (own.reentry !== null) w.push(own.reentry.sl.on || own.reentry.tgt.on ? `Re-entry ${[own.reentry.sl.on && 'SL', own.reentry.tgt.on && 'TGT'].filter(Boolean).join(' + ')}` : 'Re-entry off');
+  return w;
 }

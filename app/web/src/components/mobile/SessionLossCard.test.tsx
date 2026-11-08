@@ -75,6 +75,29 @@ describe('SessionLossCard', () => {
     expect(await screen.findByLabelText('Medium session')).toHaveTextContent('−₹100');
   });
 
+  it('[critical] "All accounts": two to a row, each a small tile -- name, money, the bar, what is left of the limit', async () => {
+    getSessionLossOf.mockImplementation((id: number) => Promise.resolve(view({ now: { ...view().now!, lossInr: id === 1 ? -283 : 606 } })));
+    const { container } = show('all');
+    const high = await screen.findByLabelText('High session');
+    expect(high).toHaveTextContent('High+₹283₹1,212 left of ₹1,212');
+    expect(await screen.findByLabelText('Medium session')).toHaveTextContent('Medium−₹606₹606 left of ₹1,212');
+    expect(container.querySelector('.grid-cols-2')).not.toBeNull();
+    expect(screen.getAllByRole('meter')).toHaveLength(2);
+  });
+
+  it('"All accounts": an account stopped for the day, or off, is a tile too -- said in a word', async () => {
+    getSessionLossOf.mockImplementation((id: number) => Promise.resolve(id === 1 ? view({ blocked: 'The 07:00–17:29 session lost ₹1,250.' }) : view({ setting: { ...SETTING, on: false }, now: null })));
+    show('all');
+    expect(await screen.findByRole('alert')).toHaveTextContent('HighStopped for today');
+    expect(await screen.findByLabelText('Medium session')).toHaveTextContent('MediumOff');
+  });
+
+  it('[critical] an answer of another shape is "could not read", never a throw that blanks the screen', async () => {
+    getSessionLossOf.mockResolvedValue({ ok: true } as never);
+    show(1);
+    expect(await screen.findByText('could not read')).toBeInTheDocument();
+  });
+
   it('the next session: later today, else tomorrow\'s first', () => {
     const v = { setting: { on: true, sessions: [{ from: '13:00', to: '14:00', limit: 1, unit: 'inr' as const }, { from: '07:00', to: '08:00', limit: 1, unit: 'inr' as const }] } };
     expect(nextSession(v, NOW)).toBe('next 13:00');

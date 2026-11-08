@@ -35,7 +35,7 @@ import { notePass, quotaKeyOf, quotaUsedPctOf } from '../observability/desk-metr
 import { ENTRY_WATCH_MS, EntryWatch } from './entry-watch.js';
 import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
 import { GLOBAL_MAX_OPEN_KEY, globalMaxOpenOf } from '../strategy/types.js';
-import { SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
+import { SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
 /**
@@ -406,7 +406,19 @@ export class TradingService {
     pctBaseUsd: async () => (await this.sessionPctBase(true)).totalUsd,
     netUsd: () => this.netTodayOnBoard(),
     netUsdAt: (at) => this.store.mtmNetAt(istDate(at), at, this.currentAccountId),
-    squareOff: () => this.closeAll(),
+    squareOff: (only) => this.closeAll(only),
+    // The session's limit kept beside the setting, so a restart in the session reads it back (gap #2, 7 Nov 2026).
+    fixedLimit: {
+      get: async (key) => {
+        try { const v = JSON.parse(accountSetting(this.settings, SESSION_FIXED_KEY, this.currentAccountId) ?? 'null') as { key?: string; limitInr?: number } | null; return v?.key === key && Number.isFinite(v.limitInr) ? v.limitInr! : null; } catch { return null; }
+      },
+      set: async (key, limitInr) => { await this.settings.set(accountKey(SESSION_FIXED_KEY, this.currentAccountId), JSON.stringify({ key, limitInr })); },
+    },
+    retried: (left, tries) => noteError({
+      source: 'trading', level: 'warn', where: 'session-loss/square-off',
+      message: left > 0 ? 'Session square-off: positions still open, trying again.' : 'Session square-off: the account is flat.',
+      context: { accountId: this.currentAccountId, left, tries },
+    }),
     record: (h) => this.store.addSessionLossHit(h, this.currentAccountId),
     hitsOn: (day) => this.store.sessionLossHitsOn(day, this.currentAccountId),
     said: (h) => this.sayHit(h),
@@ -434,7 +446,8 @@ export class TradingService {
    * position takes.
    * That margin is Delta's own -- its margin in use over the positions open -- while ten or more are open to measure it
    * by; else the desk's model at its leverage (`fundsRequiredPerContract`, BTC at its last price) times the lots the
-   * account's recent signal trades were placed with. `fresh` reads Delta's
+   * account's enabled signal strategies are set to (7 Nov 2026; until then the lots of its recent trades, which kept a
+   * move to 2 lots at the 1-lot limit until 100 trades had gone at 2), or with none set, those of its recent trades. `fresh` reads Delta's
    * wallet first (once a session); the card reads what the status last read. Null: no max open set, or nothing to price by.
    */
   async sessionPctBase(fresh = false): Promise<{ maxOpen: number; perPositionUsd: number | null; source: 'delta' | 'model' | null; totalUsd: number | null }> {
@@ -444,7 +457,8 @@ export class TradingService {
     const measured = holding >= 10 && (this.lastMarginUsedUsd ?? 0) > 0 ? this.lastMarginUsedUsd! / holding : null;
     const spot = this.currentSpot();
     // The model is a contract's margin: times the lots this account's strategies trade, so 2-lot strategies count twice.
-    const lots = measured === null ? await this.store.recentAvgLots(this.currentAccountId).catch(() => 1) : 1;
+    const lots = measured !== null ? 1
+      : (await this.store.configuredLots(this.currentAccountId).catch(() => null)) ?? await this.store.recentAvgLots(this.currentAccountId).catch(() => 1);
     const model = spot && spot > 0 ? fundsRequiredPerContract({ spot, premium: 0, leverage: DEFAULT_LEVERAGE }) * lots : null;
     const perPositionUsd = measured ?? model;
     return {
@@ -623,8 +637,11 @@ export class TradingService {
     this.stepping = true;
     const began = performance.now();
     let polled = 0;
+    // Where the pass's time goes (8 Nov 2026, desk-metrics `PassParts`): measured only, nothing here changes what it does.
+    const parts = { account: this.currentAccountId, openMs: 0, pollsMs: 0, slowestPollMs: 0, leftoversMs: 0, orphansMs: 0 };
     try {
       const open = await this.store.open();
+      parts.openMs = performance.now() - began;
       polled = open.length;
       // What was just read is what the fast watch looks at until the next pass.
       this.underlyingWatch.note(watchedOf(open));
@@ -634,16 +651,23 @@ export class TradingService {
       for (const rec of open) {
         const pollAt = performance.now();
         await this.engine.poll(rec.state.tradeId).catch(() => {});
+        const took = performance.now() - pollAt;
+        parts.pollsMs += took;
+        parts.slowestPollMs = Math.max(parts.slowestPollMs, took);
         // Only what the poll did not take already: a poll that went to Delta has been its own pause.
-        const rest = paceMs - (performance.now() - pollAt);
+        const rest = paceMs - took;
         if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));
       }
       // A finished trade whose other exit could not be confirmed off the book is
       // not polled any more; this is what keeps trying it.
+      const leftoversAt = performance.now();
       await this.engine.sweepLeftovers().catch(() => {});
+      parts.leftoversMs = performance.now() - leftoversAt;
       // And the exits nobody wants any more -- left behind by a closed trade, or replaced beside the one in use --
       // taken off Delta's book once a minute (`sweepOrphans`).
+      const orphansAt = performance.now();
       const swept = await this.engine.sweepOrphans().catch(() => [] as string[]);
+      parts.orphansMs = performance.now() - orphansAt;
       if (swept.length > 0) {
         noteError({
           source: 'trading', level: 'warn', where: 'service/sweepOrphans',
@@ -657,7 +681,7 @@ export class TradingService {
     } finally {
       this.stepping = false;
       // How long the pass took, for the gauge: a pass over a second makes the next one late.
-      notePass(performance.now() - began, polled);
+      notePass(performance.now() - began, polled, Date.now(), parts);
     }
   }
 
@@ -760,13 +784,15 @@ export class TradingService {
    * Orders are pulled before positions are bought back, so a target sitting on
    * the book cannot fill halfway through and leave the size wrong.
    */
-  async closeAll(): Promise<{
+  async closeAll(only?: readonly string[]): Promise<{
     cancelled: string[];
     closed: string[];
     failed: { tradeId: string; reason: string }[];
   }> {
     const out = { cancelled: [] as string[], closed: [] as string[], failed: [] as { tradeId: string; reason: string }[] };
-    const open = await this.openTrades();
+    // `only`: the trades a session square-off could not close, tried again; none of the others.
+    const keep = only ? new Set(only) : null;
+    const open = (await this.openTrades()).filter((r) => !keep || keep.has(r.state.tradeId));
 
     for (const rec of open.filter((r) => r.state.position === 0)) {
       try {

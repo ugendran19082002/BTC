@@ -2,6 +2,13 @@ import { json, post } from '@/api/client';
 import type { MethodUpdate, MethodUpdateSource, MomentumGuard, Reentry, SignalTf, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
 import { accountScope, withAccount } from '@/lib/account-scope';
 
+/**
+ * Where one of the account settings is saved: a group's own (8 Nov 2026), or the account being shown -- else the one the
+ * desk is trading on. For a group, null is "back to the account's".
+ */
+const scoped = <T extends object>(body: T, groupId?: string) =>
+  (groupId ? { ...body, groupId } : accountScope() === null ? body : { ...body, accountId: accountScope() });
+
 /** The strategies of the broker account being shown (lib/account-scope.ts); with none chosen, every account's. */
 export const getStrategies = () => json<StrategyStatus>(withAccount('/api/strategies'));
 
@@ -25,42 +32,36 @@ export const setScheduler = (on: boolean) =>
  * The desk-wide "at most open at once": one number over every strategy, counted
  * against every open position and working order. 0 takes the cap off.
  */
-export const setSignalMaxOpen = (max: number) =>
-  // One account's cap: the one being shown, else the one the desk is trading on.
-  post<{ ok: true; signalMaxOpen: number }>('/api/strategies/max-open', accountScope() === null ? { max } : { max, accountId: accountScope() });
+export const setSignalMaxOpen = (max: number | null, groupId?: string) =>
+  // One account's cap: the one being shown, else the one the desk is trading on; or a group's own.
+  post<{ ok: true; signalMaxOpen: number | null }>('/api/strategies/max-open', scoped({ max }, groupId));
 
 /**
  * One side's own limit under "at most open": per cent of it, for calls or for puts -- each on its own, the other not
  * touched. One account's, as the cap is.
  */
 /** The most open on one strike, the shown account's: per cent of "at most open", 1 to 100; null back to the default. */
-export const setStrikeMax = (pct: number | null) =>
-  post<{ ok: true; signalStrikeMaxPct: number }>(
-    '/api/strategies/strike-max', accountScope() === null ? { pct } : { pct, accountId: accountScope() });
+export const setStrikeMax = (pct: number | null, groupId?: string) =>
+  post<{ ok: true; signalStrikeMaxPct: number }>('/api/strategies/strike-max', scoped({ pct }, groupId));
 
 /** What a signal does at a full strike, the shown account's: the next strike out, or skip. */
-export const setStrikeFull = (mode: 'next' | 'skip') =>
-  post<{ ok: true; signalStrikeFull: 'next' | 'skip' }>(
-    '/api/strategies/strike-full', accountScope() === null ? { mode } : { mode, accountId: accountScope() });
+export const setStrikeFull = (mode: 'next' | 'skip' | null, groupId?: string) =>
+  post<{ ok: true; signalStrikeFull: 'next' | 'skip' }>('/api/strategies/strike-full', scoped({ mode }, groupId));
 
 /** The fill window, the shown account's: seconds by time frame, only those not at their default; null, all back to it. */
-export const setZoneFresh = (seconds: Partial<Record<SignalTf, number>> | null) =>
-  post<{ ok: true; signalZoneFreshS: Record<SignalTf, number> }>(
-    '/api/strategies/zone-fresh', accountScope() === null ? { seconds } : { seconds, accountId: accountScope() });
+export const setZoneFresh = (seconds: Partial<Record<SignalTf, number>> | null, groupId?: string) =>
+  post<{ ok: true; signalZoneFreshS: Record<SignalTf, number> }>('/api/strategies/zone-fresh', scoped({ seconds }, groupId));
 
 /** The momentum guard, the shown account's: on or off and its points; null, back to the default (off). */
-export const setMomentumGuard = (guard: MomentumGuard | null) =>
-  post<{ ok: true; signalMomentumGuard: MomentumGuard }>(
-    '/api/strategies/momentum-guard', accountScope() === null ? { guard } : { guard, accountId: accountScope() });
+export const setMomentumGuard = (guard: MomentumGuard | null, groupId?: string) =>
+  post<{ ok: true; signalMomentumGuard: MomentumGuard }>('/api/strategies/momentum-guard', scoped({ guard }, groupId));
 
 /** Re-entry after an option SL or target, the shown account's: the two rules; null, back to the default (both off). */
-export const setReentry = (reentry: Reentry | null) =>
-  post<{ ok: true; signalReentry: Reentry }>(
-    '/api/strategies/reentry', accountScope() === null ? { reentry } : { reentry, accountId: accountScope() });
+export const setReentry = (reentry: Reentry | null, groupId?: string) =>
+  post<{ ok: true; signalReentry: Reentry }>('/api/strategies/reentry', scoped({ reentry }, groupId));
 
-export const setSideMax = (side: 'CE' | 'PE', pct: number) =>
-  post<{ ok: true; signalSideMaxPct: { CE: number; PE: number } }>(
-    '/api/strategies/side-max', accountScope() === null ? { side, pct } : { side, pct, accountId: accountScope() });
+export const setSideMax = (side: 'CE' | 'PE', pct: number | null, groupId?: string) =>
+  post<{ ok: true; signalSideMaxPct: { CE: number; PE: number } }>('/api/strategies/side-max', scoped({ side, pct }, groupId));
 
 /**
  * Copy one, settings and all, as a new draft.

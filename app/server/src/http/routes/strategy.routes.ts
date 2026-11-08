@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { signalCounts, signalEntryOf, signalReasons } from '../../strategy/signal-reasons.js';
 import { istDayRange } from '../../entry/catalogue.js';
 import { noteError } from '../../observability/errors.js';
@@ -10,7 +10,8 @@ import { autoAsked, autoPick, runAutoMethodsAlone, type AutoAsk, type AutoDeps }
 import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoExclude, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
-import { accountKey, accountSetting } from '../../db/settings.js';
+import { accountKey, accountSetting, groupKey } from '../../db/settings.js';
+import { GROUP_SETTING_KEYS, groupOwnOf } from '../../strategy/group-limits.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { config, STARTED_AT } from '../../config.js';
 import { sessionDayOf, sessionOf } from '../../report/market-day.js';
@@ -383,8 +384,25 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (id === null) return null;
     try { return brokerAccounts().get(id)?.name ?? null; } catch { return null; }
   };
-  /** A group as every answer gives it: with its account's name. */
-  const named = (g: StrategyGroup) => ({ ...g, accountName: accountNameOf(g.accountId) });
+  /** A group as every answer gives it: with its account's name, and its own settings (none of its own: null each). */
+  const named = (g: StrategyGroup) => ({ ...g, accountName: accountNameOf(g.accountId), own: groupOwnOf(svc.settings, g.id) });
+  /**
+   * Where one of the account settings is saved (8 Nov 2026): a group's own (`groupId`) -- `<key>@g:<id>`, on the group's
+   * account -- or the account's, as before. A group that is not there is refused, nothing saved.
+   */
+  async function settingScope(body: { groupId?: unknown; accountId?: unknown }, reply: FastifyReply):
+    Promise<{ account: number | null; group: StrategyGroup | null; key: (k: string) => string } | { refused: { error: string; problems: string[] } }> {
+    if (body.groupId !== undefined && body.groupId !== null && body.groupId !== '') {
+      const group = await strategyStore().group(String(body.groupId));
+      // The answer to send, not sent here: a route returns it (`refuse` marks the reply, it does not send it).
+      if (!group) return { refused: refuse(reply, 404, { error: 'No such group.', problems: ['No such group.'] }) };
+      return { account: group.accountId ?? svc.accountId, group, key: (k) => groupKey(k, group.id) };
+    }
+    const account = accountOf({ account: body.accountId === undefined || body.accountId === null ? undefined : String(body.accountId) }) ?? svc.accountId;
+    return { account, group: null, key: (k) => accountKey(k, account) };
+  }
+  /** What a save into a group answers besides its own field: the group's own settings, read back. */
+  const groupAnswer = (g: StrategyGroup | null) => (g ? { group: named(g) } : {});
   const belongs = (x: { accountId?: number | null }, account: number | null) =>
     account === null || (x.accountId ?? null) === null || x.accountId === account;
   async function ofAccount(account: number | null): Promise<Set<string> | null> {
@@ -548,7 +566,12 @@ export function registerStrategyRoutes(app: FastifyInstance) {
        * The groups (10 Oct 2026): the account's, or every account's on "All accounts", each with its account's name.
        * A strategy says its own (`groupId`); one in none is listed apart.
        */
-      groups: (await s.groups()).filter((g) => belongs(g, account)).map(named),
+      groups: (await s.groups()).filter((g) => belongs(g, account)).map((g) => {
+        // And what its own limits count now (8 Nov 2026): its strategies' open trades, positions and working orders.
+        const ids = new Set(shown.filter((x) => x.groupId === g.id).map((x) => x.id));
+        const theirs = elsewhere ? [] : openTrades.filter((t) => t.plan.strategyId !== undefined && ids.has(t.plan.strategyId));
+        return { ...named(g), openNow: { all: theirs.length, CE: theirs.filter((t) => t.plan.optionSide === 'CE').length, PE: theirs.filter((t) => t.plan.optionSide === 'PE').length } };
+      }),
       runs: kept(await s.runs(mine ? 200 : 40)).slice(0, 40),
       // Each signal a signal strategy saw, and what became of it.
       signalRuns: !journal ? [] : kept(await s.signalRuns(mine ? 300 : 60)).slice(0, 60),
@@ -941,6 +964,11 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       return refuse(reply, 409, { error: taken, problems: [taken] });
     }
     const group = await s.saveGroup({ id: await freshGroupId(name), name, accountId: acct.accountId });
+    // Its own settings come along (8 Nov 2026): a clone is the same group, switched off.
+    for (const k of Object.values(GROUP_SETTING_KEYS)) {
+      const v = svc.settings.get(groupKey(k, from.id));
+      if (v !== null && v !== '') await svc.settings.set(groupKey(k, group.id), v);
+    }
     const copies: Strategy[] = [];
     for (const x of (await s.all()).filter((y) => y.groupId === from.id)) {
       const copyName = sameAccount ? `${x.name} copy` : x.name;
@@ -968,11 +996,15 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const withStrategies = (req.query as { strategies?: string }).strategies === 'delete';
     const s = strategyStore();
     if (!(await s.group(id))) { reply.code(404); return { error: 'no such group' }; }
-    if (!withStrategies) return { ok: true, ungrouped: await s.removeGroup(id), deleted: 0 };
+    // Its own settings go with it (8 Nov 2026): a group made later under the same id starts with its account's.
+    const forget = () => Promise.all(Object.values(GROUP_SETTING_KEYS).map((k) => svc.settings.set(groupKey(k, id), '')));
+    if (!withStrategies) { const ungrouped = await s.removeGroup(id); await forget(); return { ok: true, ungrouped, deleted: 0 }; }
     const members = (await s.all()).filter((x) => x.groupId === id);
     const on = members.filter((x) => x.enabled).length;
     if (on > 0) return refuse(reply, 409, { error: ON_FIRST(on), problems: [ON_FIRST(on)] });
-    return { ok: true, ungrouped: 0, deleted: await s.removeMany(members.map((x) => x.id), id) };
+    const deleted = await s.removeMany(members.map((x) => x.id), id);
+    await forget();
+    return { ok: true, ungrouped: 0, deleted };
   });
 
   // Remove several strategies together -- those in no group, say. All of them or none; each switched off.
@@ -1051,37 +1083,56 @@ export function registerStrategyRoutes(app: FastifyInstance) {
 
   // The desk-wide "at most open at once": one number over every strategy; 0 takes the cap off.
   app.post('/api/strategies/max-open', async (req, reply) => {
-    const { max, accountId } = (req.body ?? {}) as { max?: unknown; accountId?: unknown };
-    // The cap is one account's (5 Oct 2026): the account named -- the screen's tab -- else the one the desk is on.
-    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
-    // Held to what that account's strategies, switched on, allow between them: a cap above that can never bind.
-    const its = (await strategyStore().all()).filter((x) => belongs(x, account));
-    const problem = globalMaxOpenProblem(max, signalEntriesAllowed(its));
+    const body = (req.body ?? {}) as { max?: unknown; accountId?: unknown; groupId?: unknown };
+    const { max } = body;
+    // The cap is one account's (5 Oct 2026): the account named -- the screen's tab -- else the one the desk is on. Or a
+    // group's own (8 Nov 2026): under its account's, over its own strategies; null is back to the account's.
+    const scope = await settingScope(body, reply);
+    if ('refused' in scope) return scope.refused;
+    const { account, group } = scope;
+    if (group && max === null) {
+      await svc.settings.set(scope.key(GLOBAL_MAX_OPEN_KEY), '');
+      return { ok: true, signalMaxOpen: null, ...groupAnswer(group) };
+    }
+    // Held to what those strategies, switched on, allow between them: a cap above that can never bind.
+    const its = (await strategyStore().all()).filter((x) => (group ? x.groupId === group.id : belongs(x, account)));
+    let problem = globalMaxOpenProblem(max, signalEntriesAllowed(its));
+    if (!problem && group) {
+      const ceiling = globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, account));
+      if (max === 0) problem = 'A group\'s own at most open is 1 or more: clear it to take the account\'s.';
+      else if (ceiling > 0 && (max as number) > ceiling) problem = `The account allows ${ceiling} at once: a group's own limit above it changes nothing. Enter ${ceiling} or less.`;
+    }
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    await svc.settings.set(accountKey(GLOBAL_MAX_OPEN_KEY, account), String(max));
-    return { ok: true, signalMaxOpen: max as number };
+    await svc.settings.set(scope.key(GLOBAL_MAX_OPEN_KEY), String(max));
+    return { ok: true, signalMaxOpen: max as number, ...groupAnswer(group) };
   });
 
   // The most open on one strike, this account's: per cent of "at most open", 1 to 100; null is back to the default (10).
   app.post('/api/strategies/strike-max', async (req, reply) => {
-    const { pct, accountId } = (req.body ?? {}) as { pct?: unknown; accountId?: unknown };
-    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const body = (req.body ?? {}) as { pct?: unknown; accountId?: unknown; groupId?: unknown };
+    const { pct } = body;
+    const scope = await settingScope(body, reply);
+    if ('refused' in scope) return scope.refused;
+    const { account, group } = scope;
     const most = pct === undefined ? null : pct;
     const problem = strikeMaxProblem(most);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    await svc.settings.set(accountKey(STRIKE_MAX_KEY, account), most === null ? '' : String(most));
-    return { ok: true, signalStrikeMaxPct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, account)) };
+    await svc.settings.set(scope.key(STRIKE_MAX_KEY), most === null ? '' : String(most));
+    return { ok: true, signalStrikeMaxPct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, account)), ...groupAnswer(group) };
   });
 
   // What a signal does at a full strike, this account's: 'next' (the next strike out) or 'skip'; null is back to the default.
   app.post('/api/strategies/strike-full', async (req, reply) => {
-    const { mode, accountId } = (req.body ?? {}) as { mode?: unknown; accountId?: unknown };
-    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const body = (req.body ?? {}) as { mode?: unknown; accountId?: unknown; groupId?: unknown };
+    const { mode } = body;
+    const scope = await settingScope(body, reply);
+    if ('refused' in scope) return scope.refused;
+    const { account, group } = scope;
     const want = mode === undefined ? null : mode;
     const problem = strikeFullProblem(want);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    await svc.settings.set(accountKey(STRIKE_FULL_KEY, account), want === null ? '' : String(want));
-    return { ok: true, signalStrikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, account)) };
+    await svc.settings.set(scope.key(STRIKE_FULL_KEY), want === null ? '' : String(want));
+    return { ok: true, signalStrikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, account)), ...groupAnswer(group) };
   });
 
   /**
@@ -1090,13 +1141,16 @@ export function registerStrategyRoutes(app: FastifyInstance) {
    * each signal, so it counts from the next one.
    */
   app.post('/api/strategies/zone-fresh', async (req, reply) => {
-    const { seconds, accountId } = (req.body ?? {}) as { seconds?: unknown; accountId?: unknown };
-    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const body = (req.body ?? {}) as { seconds?: unknown; accountId?: unknown; groupId?: unknown };
+    const { seconds } = body;
+    const scope = await settingScope(body, reply);
+    if ('refused' in scope) return scope.refused;
+    const { account, group } = scope;
     const want = seconds === undefined ? null : seconds;
     const problem = zoneFreshProblem(want);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    await svc.settings.set(accountKey(ZONE_FRESH_KEY, account), want === null ? '' : JSON.stringify(want));
-    return { ok: true, signalZoneFreshS: zoneFreshOf(accountSetting(svc.settings, ZONE_FRESH_KEY, account)) };
+    await svc.settings.set(scope.key(ZONE_FRESH_KEY), want === null ? '' : JSON.stringify(want));
+    return { ok: true, signalZoneFreshS: zoneFreshOf(accountSetting(svc.settings, ZONE_FRESH_KEY, account)), ...groupAnswer(group) };
   });
 
   /**
@@ -1104,14 +1158,17 @@ export function registerStrategyRoutes(app: FastifyInstance) {
    * 2000; `null` is back to the default, off. The runner reads it at each signal, so it counts from the next one.
    */
   app.post('/api/strategies/momentum-guard', async (req, reply) => {
-    const { guard, accountId } = (req.body ?? {}) as { guard?: unknown; accountId?: unknown };
-    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const body = (req.body ?? {}) as { guard?: unknown; accountId?: unknown; groupId?: unknown };
+    const { guard } = body;
+    const scope = await settingScope(body, reply);
+    if ('refused' in scope) return scope.refused;
+    const { account, group } = scope;
     const want = guard === undefined ? null : guard;
     const problem = momentumGuardProblem(want);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
     const { on, pts } = (want ?? {}) as { on?: boolean; pts?: number };
-    await svc.settings.set(accountKey(MOMENTUM_GUARD_KEY, account), want === null ? '' : JSON.stringify({ on, pts }));
-    return { ok: true, signalMomentumGuard: momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account)) };
+    await svc.settings.set(scope.key(MOMENTUM_GUARD_KEY), want === null ? '' : JSON.stringify({ on, pts }));
+    return { ok: true, signalMomentumGuard: momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account)), ...groupAnswer(group) };
   });
 
   /**
@@ -1121,34 +1178,41 @@ export function registerStrategyRoutes(app: FastifyInstance) {
    * it counts from the next one.
    */
   app.post('/api/strategies/reentry', async (req, reply) => {
-    const { reentry, accountId } = (req.body ?? {}) as { reentry?: unknown; accountId?: unknown };
-    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const body = (req.body ?? {}) as { reentry?: unknown; accountId?: unknown; groupId?: unknown };
+    const { reentry } = body;
+    const scope = await settingScope(body, reply);
+    if ('refused' in scope) return scope.refused;
+    const { account, group } = scope;
     const want = reentry === undefined ? null : reentry;
     const problem = reentryProblem(want);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
     // Kept as read back: the two rules and their own fields, nothing else that came with them -- and a page that sends
     // no `entries` (one loaded before 2 Nov) leaves the number saved as it was, not back at one.
-    const whole = want === null ? null : reentryKeepingEntries(want, reentryOf(accountSetting(svc.settings, REENTRY_KEY, account)));
-    await svc.settings.set(accountKey(REENTRY_KEY, account), whole === null ? '' : JSON.stringify(reentryOf(JSON.stringify(whole))));
-    return { ok: true, signalReentry: reentryOf(accountSetting(svc.settings, REENTRY_KEY, account)) };
+    const whole = want === null ? null : reentryKeepingEntries(want, reentryOf((group ? svc.settings.get(scope.key(REENTRY_KEY)) || null : null) ?? accountSetting(svc.settings, REENTRY_KEY, account)));
+    await svc.settings.set(scope.key(REENTRY_KEY), whole === null ? '' : JSON.stringify(reentryOf(JSON.stringify(whole))));
+    return { ok: true, signalReentry: reentryOf(accountSetting(svc.settings, REENTRY_KEY, account)), ...groupAnswer(group) };
   });
 
   // One side's own limit under the cap: per cent of "at most open" for calls, or for puts; null is back to the default.
   app.post('/api/strategies/side-max', async (req, reply) => {
-    const { side, pct, accountId } = (req.body ?? {}) as { side?: unknown; pct?: unknown; accountId?: unknown };
+    const body = (req.body ?? {}) as { side?: unknown; pct?: unknown; accountId?: unknown; groupId?: unknown };
+    const { side, pct } = body;
     if (side !== 'CE' && side !== 'PE') return refuse(reply, 422, { error: 'side must be CE or PE', problems: ['side must be CE or PE'] });
-    const account = accountOf({ account: accountId === undefined || accountId === null ? undefined : String(accountId) }) ?? svc.accountId;
+    const scope = await settingScope(body, reply);
+    if ('refused' in scope) return scope.refused;
+    const { account, group } = scope;
     const most = pct === undefined ? null : pct;
     const problem = sideMaxProblem(most);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
     // Stored empty for "the default": read back as that (`sideMaxOf`), on this account alone.
-    await svc.settings.set(accountKey(SIDE_MAX_KEYS[side], account), most === null ? '' : String(most));
+    await svc.settings.set(scope.key(SIDE_MAX_KEYS[side]), most === null ? '' : String(most));
     return {
       ok: true,
       signalSideMaxPct: {
         CE: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, account)),
         PE: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, account)),
       },
+      ...groupAnswer(group),
     };
   });
 

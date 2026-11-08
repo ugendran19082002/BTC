@@ -65,7 +65,22 @@ export type Config = {
    * sent as before, without the link, rather than with one that goes nowhere.
    */
   deskUrl: string | null;
+  /**
+   * Delta's private socket (8 Nov 2026, `delta/private-shadow.ts`): `shadow` listens to each trading account's own
+   * orders and fills and compares them with what the REST path wrote, and does nothing else -- no order, no state of a
+   * trade. `off` opens no socket. Unset, `shadow`, `on`, `1`, `true` or `yes` is `shadow` (8 Nov 2026: the owner's
+   * own word for it was `on`); anything else is `off`.
+   */
+  privateWs: 'off' | 'shadow';
 };
+
+const PRIVATE_WS_ON = ['shadow', 'on', '1', 'true', 'yes'];
+
+/** `shadow` unset or switched on; `off` for anything else -- a misspelt value opens nothing rather than guessing. */
+export function privateWsOf(v: string | undefined): Config['privateWs'] {
+  const raw = v?.trim().toLowerCase();
+  return !raw || PRIVATE_WS_ON.includes(raw) ? 'shadow' : 'off';
+}
 
 /** An http(s) origin with no trailing slash, or null. */
 export function deskUrlOf(v: string | undefined): string | null {
@@ -97,6 +112,7 @@ export const config: Config = {
   databaseUrl: process.env.DATABASE_URL?.trim() || null,
   buildTag: process.env.BUILD_TAG?.trim() || null,
   deskUrl: deskUrlOf(process.env.DESK_URL),
+  privateWs: privateWsOf(process.env.DELTA_PRIVATE_WS),
 };
 
 /** When this process started, for the build line on the screen. */

@@ -7,7 +7,8 @@ import { isPassedOver } from '../trading/contract-restrictions.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
-import { accountSetting } from '../db/settings.js';
+import { accountSetting, groupSetting } from '../db/settings.js';
+import { groupBlock, groupLimitsOf, groupOwnOf } from './group-limits.js';
 import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
@@ -168,12 +169,17 @@ const laneKeyOf = (desk: TradingService): number => desk.accountId ?? 0;
 export const goesBefore = (a: Pick<SignalTurn, 'tfSec' | 'seq'>, b: Pick<SignalTurn, 'tfSec' | 'seq'>): boolean =>
   a.tfSec !== b.tfSec ? a.tfSec > b.tfSec : a.seq < b.seq;
 
+/** How long a read of the groups' strategies answers: a strategy moved between groups counts in its new one after this. */
+const GROUP_MEMBERS_MS = 5_000;
+
 export class StrategyRunner {
   private timer: NodeJS.Timeout | null = null;
   private ticking = false;
   /** Strategy and day pairs already told about a missed entry, so it is said once. */
   private readonly missedAlerted = new Set<string>();
   private readonly exitStepper: StrategyExitStepper;
+  /** Each group's name and strategies, read at most every `GROUP_MEMBERS_MS`: a group's limits count its own trades. */
+  private members: { at: number; byGroup: Map<string, { name: string; ids: Set<string> }> } | null = null;
 
   constructor(
     private readonly store: StrategyStore,
@@ -474,7 +480,7 @@ export class StrategyRunner {
     const re = { of: t.plan.tradeId, n, after: t.by, chain: (before ? before.chain ?? before.n : 0) + 1 };
     return this.inTurn(sig.tf as Tf, (s) => (s.id === t.plan.strategyId ? async () => {
       // Read at its turn, on its own account's desk, as `takeSignal` reads the rest of the setting.
-      const entries = before ? 1 : reentryOf(accountSetting(tradingService().settings, REENTRY_KEY, tradingService().accountId))[t.by === 'stop' ? 'sl' : 'tgt'].entries;
+      const entries = before ? 1 : reentryOf(groupSetting(tradingService().settings, REENTRY_KEY, tradingService().accountId, s.groupId))[t.by === 'stop' ? 'sl' : 'tgt'].entries;
       // One at a time: each sees the ones before it in the caps, as the signals of one queue do.
       for (let entry = 1; entry <= entries; entry++) await this.takeSignal(s, r, null, { ...re, entry, entries });
     } : null));
@@ -608,6 +614,18 @@ export class StrategyRunner {
     if (chosen) await tradingService().warmEntry(`${chosen.cp}-BTC-${chosen.strike}-${snap.expiry}`);
   }
 
+  /** A group's name and its strategies' ids (`members`). One no longer there is a group of none: nothing of its own counts. */
+  private async groupMembers(groupId: string): Promise<{ name: string; ids: Set<string> }> {
+    const now = this.now();
+    if (!this.members || now - this.members.at > GROUP_MEMBERS_MS) {
+      const [all, groups] = await Promise.all([this.store.all(), this.store.groups()]);
+      const byGroup = new Map(groups.map((g) => [g.id, { name: g.name, ids: new Set<string>() }]));
+      for (const x of all) if (x.groupId) byGroup.get(x.groupId)?.ids.add(x.id);
+      this.members = { at: now, byGroup };
+    }
+    return this.members.byGroup.get(groupId) ?? { name: groupId, ids: new Set() };
+  }
+
   /**
    * `re`: a re-entry after an option exit (`onOptionExit`) -- the trade closed, how, which in a row this is, and which of
    * the trades that exit opens. It has no
@@ -617,7 +635,8 @@ export class StrategyRunner {
   private async takeSignal(s: Strategy, r: MethodRead, fill: SetupFill | null, re: Reentered | null = null): Promise<void> {
     const now = this.now();
     if (!inSignalWindow(s, now)) return;              // outside its days or hours: not its signal
-    const setting = re ? reentryOf(accountSetting(tradingService().settings, REENTRY_KEY, tradingService().accountId)) : null;
+    // Its group's own where the group has one, else its account's (8 Nov 2026), as every account setting below.
+    const setting = re ? reentryOf(groupSetting(tradingService().settings, REENTRY_KEY, tradingService().accountId, s.groupId)) : null;
     const again = re && setting ? setting[re.after === 'stop' ? 'sl' : 'tgt'] : null;
     /*
      * Off for this account, or outside its time range: nothing to write down. Every target the desk takes comes here, so
@@ -653,7 +672,7 @@ export class StrategyRunner {
       }
       const ago = now - fill.filledAt * 1_000;
       const svc = tradingService();
-      const fresh = zoneFreshFor(accountSetting(svc.settings, ZONE_FRESH_KEY, svc.accountId), r.tf);
+      const fresh = zoneFreshFor(groupSetting(svc.settings, ZONE_FRESH_KEY, svc.accountId, s.groupId), r.tf);
       if (ago > fresh) {
         await finish('skipped', `the perp filled at ${Math.round(fill.fillPrice)} ${Math.round(ago / 1_000)}s ago -- too late to enter (a ${r.tf} signal within ${Math.round(fresh / 1_000)}s)`);
         return;
@@ -686,7 +705,7 @@ export class StrategyRunner {
      * while the perp has risen its points or more over the last hour -- a rally that fast tends to run on through the
      * calls' stops (13 Oct; 8 AM on 30 Oct, when every call sold stopped out). Puts, and what is already open, go on.
      */
-    const guard = momentumGuardOf(accountSetting(tradingService().settings, MOMENTUM_GUARD_KEY, tradingService().accountId));
+    const guard = momentumGuardOf(groupSetting(tradingService().settings, MOMENTUM_GUARD_KEY, tradingService().accountId, s.groupId));
     const sells = actionOf(rule) === 'sell' ? legOfSignal(dir, 'sell') : null;
     if (guard.on && sells === 'CE' && perpNow !== null) {
       const before = await this.perpHourAgo(now);
@@ -785,6 +804,19 @@ export class StrategyRunner {
         return;
       }
     }
+    /*
+     * The group's own limits, under the account's (owner, 8 Nov 2026; `group-limits.ts`): its own at most open and each
+     * side's, counted over its own strategies' trades only. A group that sets none of them is held to the account's alone.
+     */
+    const accountStrikePct = strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, svc.accountId));
+    const groupLimits = s.groupId ? groupLimitsOf(groupOwnOf(svc.settings, s.groupId), { cap, sidePct, strikePct: accountStrikePct }) : null;
+    let ours: typeof openNow = [];
+    if (groupLimits) {
+      const members = await this.groupMembers(s.groupId!);
+      ours = openNow.filter((t) => t.plan.strategyId !== undefined && members.ids.has(t.plan.strategyId));
+      const why = groupBlock(groupLimits, ours.map((t) => ({ optionSide: t.plan.optionSide })), legOfSignal(dir, actionOf(rule)), members.name);
+      if (why) { await finish('skipped', why); return; }
+    }
 
     const snap = await this.signalBoard().catch(() => null);
     if (!snap || !snap.live) { await finish('skipped', 'no live option board'); return; }
@@ -820,23 +852,39 @@ export class StrategyRunner {
      */
     let forwarded = '';
     // A per cent of the account's "at most open" (`cap`, above), as each side's is.
-    const strikePct = strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, svc.accountId));
+    const strikePct = accountStrikePct;
     const strikeCap = strikeCapOf(cap, strikePct);
-    if (strikeCap !== null) {
-      const onIt = (c: Pick<Candidate, 'cp' | 'strike'>) => openNow.filter((t) => t.plan.symbol === `${c.cp}-BTC-${c.strike}-${snap.expiry}`).length;
+    // And the group's own, of the group's at most open, over the group's own trades (8 Nov 2026).
+    const groupStrikeCap = groupLimits?.strikeCap ?? null;
+    if (strikeCap !== null || groupStrikeCap !== null) {
+      const sym = (c: Pick<Candidate, 'cp' | 'strike'>) => `${c.cp}-BTC-${c.strike}-${snap.expiry}`;
+      const onIt = (c: Pick<Candidate, 'cp' | 'strike'>) => openNow.filter((t) => t.plan.symbol === sym(c)).length;
+      const ourOnIt = (c: Pick<Candidate, 'cp' | 'strike'>) => ours.filter((t) => t.plan.symbol === sym(c)).length;
+      // Why a strike is full, by the account's limit or the group's, and how full; null while it has room under both.
+      const fullBy = (c: Pick<Candidate, 'cp' | 'strike'>): { why: string; count: string } | null => {
+        const held = onIt(c);
+        if (strikeCap !== null && held >= strikeCap) {
+          return { why: `the desk already has ${held} open on ${leg} ${c.strike} -- at most ${strikeCap} on one strike (${strikePct}% of the ${cap})`, count: `${held} of ${strikeCap}` };
+        }
+        const mine = groupStrikeCap !== null ? ourOnIt(c) : 0;
+        if (groupStrikeCap !== null && mine >= groupStrikeCap) {
+          return { why: `the group already has ${mine} open on ${leg} ${c.strike} -- at most ${groupStrikeCap} on one strike (${groupLimits!.strikePct}% of the group's ${groupLimits!.cap})`, count: `${mine} of ${groupStrikeCap} in the group` };
+        }
+        return null;
+      };
       const full = chosen;
-      const held = onIt(full);
-      if (held >= strikeCap) {
-        const atMost = `the desk already has ${held} open on ${leg} ${full.strike} -- at most ${strikeCap} on one strike (${strikePct}% of the ${cap})`;
-        if (strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, svc.accountId)) === 'skip') {
+      const isFull = fullBy(full);
+      if (isFull !== null) {
+        const atMost = isFull.why;
+        if (strikeFullOf(groupSetting(svc.settings, STRIKE_FULL_KEY, svc.accountId, s.groupId)) === 'skip') {
           await finish('skipped', `${atMost}${block}`);
           return;
         }
-        const out = board.filter((c) => c.cp === full.cp && (full.cp === 'C' ? c.strike > full.strike : c.strike < full.strike) && onIt(c) < strikeCap);
+        const out = board.filter((c) => c.cp === full.cp && (full.cp === 'C' ? c.strike > full.strike : c.strike < full.strike) && fullBy(c) === null);
         sel = pickFrom(out);
         chosen = sel.legs[0];
         if (!chosen) { await finish('skipped', `${atMost}, and no strike further out passes the strategy's rule (${describeSelection(sel)})${block}`); return; }
-        forwarded = ` · ${leg} ${full.strike} full (${held} of ${strikeCap}): the next strike out`;
+        forwarded = ` · ${leg} ${full.strike} full (${isFull.count}): the next strike out`;
       }
     }
 

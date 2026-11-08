@@ -54,7 +54,13 @@ export const quotaKeyOf = (creds: { key: string } | null | undefined): string =>
  * step at 85% (`TARGET_STEP_QUOTA_PCT`); a stop at its level at 90% and a stop in a run at 95% (`stop-watch.ts`).
  */
 export const QUOTA_LADDER = { others: 50, target: 85, stop: 90, stopRun: 95 } as const;
-type Pass = { at: number; ms: number; trades: number };
+/**
+ * Where a pass spent its time (8 Nov 2026), so "a pass took 13 s" says what of it: reading the open trades, their polls
+ * one after another (and the slowest single poll), and the two sweeps after them. `account`: whose desk -- each
+ * account's desk runs a pass of its own.
+ */
+export type PassParts = { account: number | null; openMs: number; pollsMs: number; slowestPollMs: number; leftoversMs: number; orphansMs: number };
+type Pass = { at: number; ms: number; trades: number; parts?: PassParts };
 type Run = {
   at: number; readMs: number; calcMs: number; early: boolean; afterCloseMs: number | null;
   /** Where the methods were worked (22 Oct 2026): their own thread, or this one -- the thread the stops are watched on. */
@@ -85,10 +91,13 @@ export function noteDeltaCall(c: { method: string; path: string; ms: number; out
   } catch { /* a gauge never stops a call */ }
 }
 
-/** One pass over the open trades: how long it took and how many it polled. */
-export function notePass(ms: number, trades: number, now = Date.now()): void {
-  try { passes.push({ at: now, ms, trades }); if (passes.length > 1_024) passes = keep(passes, now); } catch { /* as above */ }
+/** One pass over the open trades: how long it took, how many it polled, and where the time went. */
+export function notePass(ms: number, trades: number, now = Date.now(), parts?: PassParts): void {
+  try { passes.push({ at: now, ms, trades, ...(parts ? { parts } : {}) }); if (passes.length > 1_024) passes = keep(passes, now); } catch { /* as above */ }
 }
+
+/** The passes at or after `since`, oldest first: for the minute's line in the server log (minute-log.ts). */
+export const passesSince = (since: number): readonly Pass[] => passes.filter((p) => p.at >= since);
 
 /** One signal run: reading the market, then every method on it. The second holds the thread. */
 export function noteSignalRun(readMs: number, calcMs: number, o: { early?: boolean; afterCloseMs?: number; where?: 'thread' | 'here'; mainMs?: number } = {}, now = Date.now()): void {

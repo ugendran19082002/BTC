@@ -133,6 +133,19 @@ describe('StrategiesScreen: each strategy, by group', () => {
     expect(within(screen.getByRole('region', { name: 'not in a group' })).getByText('C')).toBeInTheDocument();
   });
 
+  it('[critical] a group\'s own limits, read only, under its name; one with none of its own says nothing (8 Nov 2026)', async () => {
+    getDaySignals.mockResolvedValue({ trades: [] });
+    const s = (id: string, groupId: string) => ({ id, name: id.toUpperCase(), enabled: true, groupId, config: { trigger: 'signal' }, status: 'taking signals' });
+    const none = { maxOpen: null, ce: null, pe: null, strikeMax: null, strikeFull: null, zoneFresh: null, momentum: null, reentry: null };
+    activity = { ...ONE, strategies: [s('a', 'g-own'), s('b', 'g-plain')], groups: [
+      { id: 'g-own', name: 'Scalps', accountId: 1, accountName: 'Acct 1', createdAt: 0, updatedAt: 0, own: { ...none, maxOpen: 150, pe: 40 }, openNow: { all: 12, CE: 5, PE: 7 } },
+      { id: 'g-plain', name: 'Swing', accountId: 1, accountName: 'Acct 1', createdAt: 0, updatedAt: 0, own: none, openNow: { all: 3, CE: 1, PE: 2 } },
+    ] };
+    show();
+    expect(await screen.findByLabelText('own limits of Scalps')).toHaveTextContent('Own limits: At most 150 · PE 40% · 12 of 150 open');
+    expect(screen.queryByLabelText('own limits of Swing')).toBeNull();
+  });
+
   it('a server from before groups: the one list, no headings', async () => {
     getDaySignals.mockResolvedValue({ trades: [] });
     show();

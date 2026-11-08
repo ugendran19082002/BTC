@@ -367,6 +367,7 @@ async function migrateEverything(): Promise<void> {
   await methodsSchema();
   await (await import('../notify/telegram-log.js')).telegramLogSchema();
   await (await import('../ledger/ledger.js')).ledgerSchema();
+  await (await import('../delta/private-shadow.js')).privateShadowSchema();
 }
 
 type Col = { table_name: string; column_name: string; data_type: string; udt_name: string; is_nullable: string; column_default: string | null; is_identity: string };
@@ -475,6 +476,7 @@ export const ENV_NOTES: Record<string, string> = {
   CHAIN_DB: 'Path to `chain.db`, the harvester\'s read-only dataset. Default: `chain.db` at the repository root. Compose sets `/srv/data/chain.db`.',
   DELTA_API_KEY: 'Seeds the first broker account. Read once, at the first start with no account saved; afterwards the accounts live in `broker_accounts`, sealed, and are kept under Logs -> Accounts. Optional.',
   DELTA_API_SECRET: 'The secret for `DELTA_API_KEY`; read with it, once.',
+  DELTA_PRIVATE_WS: '`shadow` or `on` (the default, unset; also `1`, `true`, `yes`) opens Delta\'s private socket for each trading account and compares its orders and fills with what the REST path wrote, acting on nothing (`delta/private-shadow.ts`); `off` (or any other value) opens nothing. Optional.',
   DELTA_LIVE_TRADING: '`0` or `false` forces paper and locks the mode switch. Anything else, or unset, allows live, and live is the starting mode once credentials exist (`config.ts`).',
   DESK_USER: 'Seeds the first sign-in user. Read once; afterwards the user lives in `auth_user`.',
   DESK_PASSWORD_HASH: 'Seeds the first user\'s password (scrypt hash from `npx tsx hash-password.mjs`). Never the password itself.',

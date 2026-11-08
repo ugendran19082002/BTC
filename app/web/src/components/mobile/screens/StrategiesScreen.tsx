@@ -7,7 +7,7 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { clock, pct } from '@/lib/format';
 import { daysAgoIst, todayIst } from '@/lib/report';
 import { cn } from '@/lib/utils';
-import { accountTag, groupSections, onCount } from '@/lib/strategy-groups';
+import { accountTag, groupOwnWords, groupSections, onCount } from '@/lib/strategy-groups';
 import { OpenLimits } from '@/components/mobile/OpenLimits';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Chip, Empty, ListButton, Loading, Panel, Pill, Rupees, Stat, Stats, When } from '@/components/mobile/parts';
@@ -260,6 +260,13 @@ export function StrategiesScreen() {
                     {n.of === 0 ? 'empty' : `${n.on} of ${n.of} on`}
                   </span>
                 </h3>
+              )}
+              {/* Its own limits, read only (8 Nov 2026): set on the desk; none of its own, nothing said -- the account's. */}
+              {sec.group && groupOwnWords(sec.group.own).length > 0 && (
+                <p aria-label={`own limits of ${sec.group.name}`} className="m-0 mt-1 text-[12px] leading-snug text-[var(--accent)]">
+                  Own limits: {groupOwnWords(sec.group.own).join(' · ')}
+                  {sec.group.own?.maxOpen != null && sec.group.openNow ? <span className="text-muted-foreground"> · {sec.group.openNow.all} of {sec.group.own.maxOpen} open</span> : null}
+                </p>
               )}
               <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0">
                 {sec.strategies.map((s) => (

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { accountTag, groupNameProblem, onCount } from '@/lib/strategy-groups';
 import { ReorderList } from '@/components/strategy/ReorderList';
+import { GroupLimits, type AccountLimits } from '@/components/strategy/GroupLimits';
 import type { Strategy, StrategyGroup } from '@/types/strategy';
 import { cn } from '@/lib/utils';
 
@@ -23,7 +24,7 @@ import { cn } from '@/lib/utils';
  * one short row each, dragged by its grip or moved with up and down buttons (`ReorderList`), then Save; the group
  * itself moves up or down among its account's at once. The order is the screens' only: the runner's is its own.
  */
-export function StrategyGroupSection({ group, strategies, showAccount, busy, act, canMake, onNew, onCopyIn, onMoveGroup, children }: {
+export function StrategyGroupSection({ group, strategies, showAccount, busy, act, canMake, onNew, onCopyIn, onMoveGroup, limits, children }: {
   group: StrategyGroup;
   strategies: readonly Strategy[];
   /** On "All accounts": say whose group it is. */
@@ -37,6 +38,8 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
   onCopyIn?: () => void;
   /** Moves the group one place among its account's (-1 up, +1 down); absent where it cannot move that way. */
   onMoveGroup?: { up?: () => void; down?: () => void };
+  /** The account's settings, for the group's own limits (8 Nov 2026); absent on a server from before them. */
+  limits?: { account: AccountLimits; onInvalid: (message: string) => void };
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useFold(`strategy-group-${group.id}`);
@@ -173,6 +176,9 @@ export function StrategyGroupSection({ group, strategies, showAccount, busy, act
           </Button>
         </div>
       </div>
+
+      {/* Its own at most open, CE / PE, strike, fill window, momentum guard and re-entry: under its account's. */}
+      {limits && group.own && <GroupLimits group={group} account={limits.account} busy={busy} act={act} onInvalid={limits.onInvalid} />}
 
       {cloning && (
         <div role="group" aria-label={`clone ${group.name}`} className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-[var(--line)] px-2.5 py-2 text-[12px]">

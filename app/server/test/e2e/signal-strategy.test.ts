@@ -1798,3 +1798,45 @@ test('[critical] the most on one strike (22 Oct 2026, owner\'s list #1): a per c
   await api('POST', '/api/strategies/max-open', { max: 0 });
   await api('POST', '/api/strategies/sig-strike/enabled', { enabled: false });
 });
+
+test('[critical] a group\'s own at most open: its strategies held to it over their own trades; a strategy outside it trades on (8 Nov 2026)', async () => {
+  await freshDesk();
+  const restoreStrikes = extraStrikes(10);
+  try {
+    await api('POST', '/api/strategies/max-open', { max: 0 });
+    const acct = tradingService().accountId;
+    const made = await api('POST', '/api/strategy-groups', { name: 'Grp lim', ...(acct === null ? {} : { accountId: acct }) });
+    assert.equal(made.status, 200, JSON.stringify(made.body));
+    const g = made.body.group.id as string;
+    const each = { ...config, signal: { ...config.signal, maxOpen: 10 }, liveOrders: true };
+    for (const [name, groupId] of [['Sig grp a', g], ['Sig grp b', g], ['Sig grp c', null]] as const) {
+      const r = await api('POST', '/api/strategies', { name, config: each, ...(groupId ? { groupId } : {}) });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      await api('POST', `/api/strategies/${name.toLowerCase().replace(/ /g, '-')}/enabled`, { enabled: true });
+    }
+    await tradingService().settings.set('scheduler_enabled', '1');
+    clock = TEN;
+    const own = await api('POST', '/api/strategies/max-open', { max: 1, groupId: g });
+    assert.deepEqual([own.status, own.body.group.own.maxOpen], [200, 1]);
+
+    quoteBoard();
+    await runner.onSignal(signal());
+    const last = async (id: string) => (await runsOf(id)).at(-1)!;
+    const [a, b, c] = [await last('sig-grp-a'), await last('sig-grp-b'), await last('sig-grp-c')];
+    assert.equal(a.status, 'placed', a.detail);
+    assert.equal(b.status, 'skipped', b.detail);
+    assert.equal(b.detail.split(' | ')[1], 'the group Grp lim already has 1 open -- at most 1 at once in the group');
+    assert.equal(c.status, 'placed', `outside the group: not held by it -- ${c.detail}`);
+    const listed = (await api('GET', '/api/strategies')).body.groups.find((x: { id: string }) => x.id === g);
+    assert.deepEqual(listed.openNow, { all: 1, CE: 0, PE: 1 }, 'the group counts its own: the long signal sold a put');
+
+    // Back to the account's: the group's second strategy takes the next signal.
+    await api('POST', '/api/strategies/max-open', { max: null, groupId: g });
+    quoteBoard();
+    await runner.onSignal(signal());
+    assert.equal((await last('sig-grp-b')).status, 'placed', (await last('sig-grp-b')).detail);
+  } finally {
+    restoreStrikes();
+    for (const id of ['sig-grp-a', 'sig-grp-b', 'sig-grp-c']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+  }
+});

@@ -16,6 +16,7 @@ import { StrikeMax } from '@/components/strategy/StrikeMax';
 import { ZoneFresh } from '@/components/strategy/ZoneFresh';
 import { MomentumGuard } from '@/components/strategy/MomentumGuard';
 import { Reentry } from '@/components/strategy/Reentry';
+import type { AccountLimits } from '@/components/strategy/GroupLimits';
 import { refreshGroupIndex } from '@/hooks/useGroupOf';
 import { defaultGroupFor, groupNameProblem, groupSections, moved, moveTargets } from '@/lib/strategy-groups';
 import { describeStrike, signalTargetLabel } from '@/lib/strategy-preview';
@@ -485,6 +486,17 @@ export function SignalStrategiesCard() {
    * from before groups sends none, and the list is the one list it always was.
    */
   const groups = data?.groups ?? [];
+  /*
+   * The account's seven, for each group's own (8 Nov 2026): what a group takes where it sets nothing of its own. On "All
+   * accounts" there is no one account's to show beside a group, so a group's limits are set on its account's tab.
+   */
+  const accountLimits: AccountLimits | null = data && accountScope() !== null && data.signalMaxOpen !== undefined && data.signalSideMaxPct
+    && data.signalStrikeMaxPct !== undefined && data.signalZoneFreshS && data.signalMomentumGuard && data.signalReentry
+    ? {
+      maxOpen: data.signalMaxOpen, side: data.signalSideMaxPct, strikePct: data.signalStrikeMaxPct, strikeFull: data.signalStrikeFull ?? 'next',
+      zoneFresh: data.signalZoneFreshS, momentum: { on: data.signalMomentumGuard.on, pts: data.signalMomentumGuard.pts },
+      momentumNow: data.signalMomentumGuard.now, reentry: { sl: data.signalReentry.sl, tgt: data.signalReentry.tgt },
+    } : null;
   const sections = groupSections(mine, groups);
   /** Up (-1) or down (+1) among its account's groups, in the order shown, saved at once. */
   const moveGroup = (g: StrategyGroup, by: -1 | 1) => {
@@ -922,6 +934,7 @@ export function SignalStrategiesCard() {
                   onNew={() => { setEditing(null); setFormGroup(sec.group); setFormOpen(true); }}
                   onCopyIn={() => setCopying({ into: sec.group, pick: [] })}
                   onMoveGroup={{ up: moveGroup(sec.group, -1), down: moveGroup(sec.group, 1) }}
+                  limits={accountLimits ? { account: accountLimits, onInvalid: setFailed } : undefined}
                 >
                   {sec.strategies.map((s) => card(s))}
                 </StrategyGroupSection>

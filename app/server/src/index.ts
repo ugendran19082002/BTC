@@ -41,6 +41,7 @@ import { ledgerSchema, ledgerTick, resumeSync } from './ledger/ledger.js';
 import { pruneSignals, recordSignals, signalsSchema } from './entry/signals.js';
 import { methodsSchema } from './entry/catalogue.js';
 import { readEntryContext } from './entry/read.js';
+import { privateShadowSchema, startPrivateShadow } from './delta/private-shadow.js';
 
 /**
  * Start the desk.
@@ -99,6 +100,7 @@ await telegramLogSchema();
 await ledgerSchema();
 await signalsSchema();
 await methodsSchema();
+await privateShadowSchema();
 const strategies = await initStrategyStore();
 
 // One sign-in service for the process: the gate and the routes share the pool.
@@ -118,6 +120,23 @@ startMinuteLog({ log: (msg, fields) => app.log.info(fields, msg) });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 
 app.log.info(`chain snapshots loaded: ${loadDays().length}`);
+/*
+ * Delta's private socket, in shadow (8 Nov 2026, delta/private-shadow.ts): each trading account's orders and fills
+ * heard as they happen and compared with what the REST path wrote. It acts on nothing -- every order, stop and target
+ * is still the REST path's. After the desk lock, so a standby in a hand-over does not hear the same fills twice.
+ * `DELTA_PRIVATE_WS=off` opens nothing.
+ */
+startPrivateShadow(config.privateWs, {
+  accounts: () => {
+    const all = brokerAccounts();
+    return all.list().filter((a) => deskOpen(a.id)).flatMap((a) => {
+      const creds = all.credsOf(a.id);
+      return creds ? [{ id: a.id, creds }] : [];
+    });
+  },
+  log: (line) => app.log.info({ privateSocket: true }, line),
+});
+if (config.privateWs === 'off') app.log.info('private socket: off (DELTA_PRIVATE_WS=off)');
 {
   const accounts = brokerAccounts();
   // Every active account trades, each on a desk of its own; the default is only which comes first.

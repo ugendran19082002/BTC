@@ -435,6 +435,20 @@ export class PgTradeStore implements TradeStore {
    * The contracts an account's last signal trades were filled with, on average -- the lots its strategies trade, in the
    * unit margin is priced by; 1 with none yet (session-loss.ts's margin model). A trade not filled is not counted.
    */
+  /**
+   * The lots the account's enabled signal strategies are set to, on average; null with none (7 Nov 2026). What the session
+   * limit prices a position by: a move from 1 lot to 2 counts from its first morning, not after 100 trades at 2.
+   */
+  async configuredLots(accountId: number | null = null): Promise<number | null> {
+    const r = await rows<{ avg: number | null }>(
+      `SELECT avg((config->>'lots')::float) AS avg FROM strategies
+        WHERE enabled AND config->>'trigger' = 'signal' AND (config->>'lots')::float > 0 AND ($1::bigint IS NULL OR broker_account_id = $1)`,
+      [accountId ?? this.scope],
+    );
+    const a = Number(r[0]?.avg);
+    return Number.isFinite(a) && a > 0 ? a : null;
+  }
+
   async recentAvgLots(accountId: number | null = null, last = 100): Promise<number> {
     const r = await rows<{ avg: number | null }>(
       `SELECT avg(n) AS avg FROM (SELECT abs((state->>'entrySize')::float) AS n FROM trades

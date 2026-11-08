@@ -4,6 +4,7 @@ import { readMarket } from '../../market/moves.js';
 import { liveSpot, candles, tickerFeedHealth } from '../../market/delta.js';
 import { ttlCache, ttlCacheStale } from '../ttl-cache.js';
 import { deskMetrics } from '../../observability/desk-metrics.js';
+import { privateShadowMetrics } from '../../delta/private-shadow.js';
 import { priceChangeNow } from '../../market/price-change.js';
 import { scoreLegs, pickSells, bias, verdict, USDINR } from '../../domain/score.js';
 import { recommend, type PickMode } from '../../domain/recommend.js';
@@ -166,8 +167,10 @@ export function registerDeskRoutes(app: FastifyInstance) {
   /**
    * The desk's own gauges for the last five minutes: calls to Delta and how much of its quota they used,
    * how long a pass over the open trades takes, how long the signal run holds the thread. Read-only.
+   * `privateSocket`: Delta's private socket in shadow, per account -- what it heard and how it compares with the
+   * REST path (delta/private-shadow.ts).
    */
-  app.get('/api/desk/metrics', async () => deskMetrics());
+  app.get('/api/desk/metrics', async () => ({ ...deskMetrics(), privateSocket: privateShadowMetrics() }));
 
   /*
    * The desk's health for the phone, in one word -- ok, warn or down -- with the reasons and the readings behind them.

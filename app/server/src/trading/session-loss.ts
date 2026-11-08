@@ -29,6 +29,8 @@ export type SessionLoss = { on: boolean; sessions: SessionRule[] };
 
 /** Where an account's sessions are kept (`accountKey`): no row, or one that will not read, is off with none. */
 export const SESSION_LOSS_KEY = 'session_loss_limit';
+/** Where a session's limit in rupees is kept once worked out (`accountKey`): a restart in the session reads it back. */
+export const SESSION_FIXED_KEY = 'session_loss_fixed';
 export const SESSION_LOSS_OFF: SessionLoss = { on: false, sessions: [] };
 /** At most this many sessions: an hour each is 24. */
 export const MAX_SESSIONS = 24;
@@ -39,6 +41,12 @@ export const MAX_SESSION_LIMIT_PCT = 100;
 export const HOLD_MS = 15_000;
 /** How often an account's session is checked. */
 export const SESSION_LOSS_TICK_MS = 5_000;
+/**
+ * A square-off that left positions open is tried again this often, only on the trades it could not close, until the
+ * account is flat or the day is over (7 Nov 2026). Not every tick: a close refused for Delta's rate limit wants the window
+ * to empty, and asking again at once keeps it full.
+ */
+export const SQUARE_OFF_RETRY_MS = 15_000;
 /**
  * Read this soon after its start, a session's starting figure is the live one -- the same sum the loss is then read by,
  * so the two never differ by how each values the open trades. Later (a restart mid-session), the day's line at the start.
@@ -134,7 +142,12 @@ export type SessionGuardDeps = {
   netUsd: () => Promise<number>;
   /** The same figure as the day's line had it at or before `atMs`; null with no reading then (none taken yet: 0). */
   netUsdAt: (atMs: number) => Promise<number | null>;
-  squareOff: () => Promise<{ closed: string[]; cancelled: string[]; failed: { tradeId: string; reason: string }[] }>;
+  /** Every open trade on the account bought back and every working entry pulled; with `only`, just those trades. */
+  squareOff: (only?: readonly string[]) => Promise<{ closed: string[]; cancelled: string[]; failed: { tradeId: string; reason: string }[] }>;
+  /** Where the session's limit in rupees is kept once worked out, by session and rule; none kept: null. */
+  fixedLimit?: { get: (key: string) => Promise<number | null>; set: (key: string, limitInr: number) => Promise<void> };
+  /** Said after each retry of a square-off: how many trades are still open, and how many tries so far. */
+  retried?: (left: number, tries: number) => void;
   record: (hit: SessionHit) => Promise<void>;
   /** The square-offs written down for a day (`record`): what a restart reads to stay stopped. */
   hitsOn: (day: string) => Promise<SessionHit[]>;
@@ -147,7 +160,9 @@ export type SessionGuardDeps = {
  * says why a new entry must wait, while a hit session lasts.
  */
 export class SessionLossGuard {
-  private baseline: { key: string; usd: number; limitInr: number | null } | null = null;
+  private baseline: { key: string; usd: number; limitInr: number | null; limitFor: string } | null = null;
+  /** A square-off that left trades open: those trades, tried again from `nextAt` (`SQUARE_OFF_RETRY_MS`). Null ids: all. */
+  private owed: { ids: string[] | null; nextAt: number; tries: number } | null = null;
   private breachSince: number | null = null;
   /** The sessions hit, by day and start: each squared off once. */
   private readonly hits = new Set<string>();
@@ -168,6 +183,9 @@ export class SessionLossGuard {
     const first = [...today].sort((a, b) => a.at - b.at)[0]!;
     this.lockedUntil = startOfDayIst(now) + 86_400_000;
     this.lockedWhy = whyOf(first);
+    // A square-off that left trades open before the restart: tried again, on every trade the desk still holds (no new
+    // entry has been taken since the hit, so those are the ones it was closing).
+    if (today.some((h) => h.failed > 0)) this.owed = { ids: null, nextAt: now, tries: 0 };
   }
 
   /** Why a new entry must wait, or null: a session was squared off today, and today is not over. */
@@ -205,21 +223,33 @@ export class SessionLossGuard {
     const cfg = this.d.rule();
     const s = cfg.on ? sessionAt(cfg.sessions, now) : null;
     if (!s) { this.breachSince = null; this.last = null; return null; }
-    // Stopped for the day already: nothing more to read until tomorrow.
+    // Stopped for the day: what a square-off could not close is tried again, then nothing more to read until tomorrow.
+    if (now >= this.lockedUntil) this.owed = null;
+    if (this.owed && now >= this.owed.nextAt) await this.retrySquareOff(now);
     if (now < this.lockedUntil) return null;
     const day = istDate(now);
     const key = `${day}|${s.rule.from}`;
     if (this.hits.has(key)) return null;
     // The day's figure when the session began, read once a session; a restart reads it again off the day's line.
+    // The rule the line is for: a limit changed in the session is worked out again; the same rule keeps its line.
+    const limitFor = `${s.rule.unit}:${s.rule.limit}`;
     if (this.baseline?.key !== key) {
       const usd = now - s.startMs <= BASELINE_LIVE_MS ? await this.d.netUsd() : (await this.d.netUsdAt(s.startMs)) ?? 0;
-      this.baseline = { key, usd, limitInr: null };
+      this.baseline = { key, usd, limitInr: null, limitFor };
       this.breachSince = null;
     }
-    // The line in rupees, fixed for the session: the amount, or the per cent of the "At most open" margin as first read.
+    if (this.baseline.limitFor !== limitFor) this.baseline = { ...this.baseline, limitInr: null, limitFor };
+    // The line in rupees, fixed for the session: the amount, or the per cent of the "At most open" margin as first read --
+    // kept (`fixedLimit`), so a restart in the session reads the same line back rather than the base as it is by then.
     if (this.baseline.limitInr === null) {
-      const base = s.rule.unit === 'pct' ? await this.d.pctBaseUsd().catch(() => null) : null;
-      this.baseline.limitInr = s.rule.unit === 'inr' ? s.rule.limit : base !== null && base > 0 ? (s.rule.limit / 100) * base * USDINR : null;
+      const kept = `${key}|${limitFor}`;
+      const before = s.rule.unit === 'pct' ? await this.d.fixedLimit?.get(kept).catch(() => null) ?? null : null;
+      if (before !== null) this.baseline.limitInr = before;
+      else {
+        const base = s.rule.unit === 'pct' ? await this.d.pctBaseUsd().catch(() => null) : null;
+        this.baseline.limitInr = s.rule.unit === 'inr' ? s.rule.limit : base !== null && base > 0 ? (s.rule.limit / 100) * base * USDINR : null;
+        if (s.rule.unit === 'pct' && this.baseline.limitInr !== null) await this.d.fixedLimit?.set(kept, this.baseline.limitInr).catch(() => {});
+      }
     }
     const limitInr = this.baseline.limitInr;
     const lossInr = (this.baseline.usd - await this.d.netUsd()) * USDINR;
@@ -244,6 +274,19 @@ export class SessionLossGuard {
     };
     await this.d.record(hit).catch(() => {});
     this.d.said(hit);
+    // A close that did not go through is tried again (`SQUARE_OFF_RETRY_MS`): only those trades -- a trade opened by hand
+    // after the hit is not this square-off's -- and all of them when the square-off itself could not run.
+    if (done.failed.length) this.owed = { ids: done.failed.some((f) => f.tradeId === '*') ? null : done.failed.map((f) => f.tradeId), nextAt: now + SQUARE_OFF_RETRY_MS, tries: 0 };
     return hit;
+  }
+
+  private async retrySquareOff(now: number): Promise<void> {
+    const owed = this.owed!;
+    const done = await this.d.squareOff(owed.ids ?? undefined).catch((e: Error) => ({ closed: [], cancelled: [], failed: [{ tradeId: '*', reason: e.message }] }));
+    const tries = owed.tries + 1;
+    this.owed = done.failed.length
+      ? { ids: done.failed.some((f) => f.tradeId === '*') ? owed.ids : done.failed.map((f) => f.tradeId), nextAt: now + SQUARE_OFF_RETRY_MS, tries }
+      : null;
+    try { this.d.retried?.(done.failed.length, tries); } catch { /* said or not, the retry stands */ }
   }
 }

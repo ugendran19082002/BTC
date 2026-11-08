@@ -1,5 +1,5 @@
 import { monitorEventLoopDelay } from 'node:perf_hooks';
-import { deskMetrics, signalRunsSince } from './desk-metrics.js';
+import { deskMetrics, passesSince, signalRunsSince, type PassParts } from './desk-metrics.js';
 
 /**
  * The thread, a minute at a time, in the server log (22 Oct 2026, owner: "every minute the event loop's delay and the
@@ -28,7 +28,50 @@ export type MinuteLine = {
   stalls: { at: number; ms: number }[];
   signal: { readMs: number; calcMs: number; mainMs: number; where: 'thread' | 'here'; afterCloseMs: number | null } | null;
   quotaPct: { login: string; usedPct: number }[];
+  /**
+   * Each account's passes over its open trades in the minute (8 Nov 2026): how many, the median and the slowest, and
+   * what the slowest spent its time on (`PassParts`) -- what the parallel-poll work is to be decided on.
+   */
+  passes: PassMinute[];
 };
+
+export type PassMinute = {
+  account: number | null;
+  count: number;
+  p50Ms: number;
+  maxMs: number;
+  /** The slowest pass: how many trades it polled, and where its time went. */
+  slowest: { trades: number; parts: PassParts | null };
+};
+
+const r0 = (ms: number) => Math.round(ms);
+const secs = (ms: number) => (ms >= 1_000 ? `${(ms / 1_000).toFixed(1)} s` : `${r0(ms)} ms`);
+
+/** The minute's passes, account by account. */
+export function passMinutes(passes: readonly { ms: number; trades: number; parts?: PassParts }[]): PassMinute[] {
+  const by = new Map<number | null, { ms: number; trades: number; parts?: PassParts }[]>();
+  for (const p of passes) {
+    const k = p.parts?.account ?? null;
+    by.set(k, [...(by.get(k) ?? []), p]);
+  }
+  return [...by.entries()].sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0)).map(([account, ps]) => {
+    const ms = ps.map((p) => p.ms).sort((a, b) => a - b);
+    const slowest = ps.reduce((m, p) => (p.ms > m.ms ? p : m), ps[0]!);
+    const parts = slowest.parts
+      ? { ...slowest.parts, openMs: r0(slowest.parts.openMs), pollsMs: r0(slowest.parts.pollsMs), slowestPollMs: r0(slowest.parts.slowestPollMs), leftoversMs: r0(slowest.parts.leftoversMs), orphansMs: r0(slowest.parts.orphansMs) }
+      : null;
+    return { account, count: ps.length, p50Ms: r0(ms[Math.floor(ms.length / 2)]!), maxMs: r0(ms[ms.length - 1]!), slowest: { trades: slowest.trades, parts } };
+  });
+}
+
+/** One account's passes in words: "account 2: 41 passes, median 380 ms, slowest 2.4 s over 31 trades (polls 2.1 s, ...)". */
+export function passWords(p: PassMinute): string {
+  const s = p.slowest.parts;
+  const where = s
+    ? ` (read ${secs(s.openMs)}, polls ${secs(s.pollsMs)}, slowest poll ${secs(s.slowestPollMs)}, leftovers ${secs(s.leftoversMs)}, orphans ${secs(s.orphansMs)})`
+    : '';
+  return `account ${p.account ?? '-'}: ${p.count} pass${p.count === 1 ? '' : 'es'}, median ${secs(p.p50Ms)}, slowest ${secs(p.maxMs)} over ${p.slowest.trades} trade${p.slowest.trades === 1 ? '' : 's'}${where}`;
+}
 
 const ms1 = (ns: number) => Math.round(ns / 1e5) / 10;
 
@@ -64,6 +107,7 @@ export function startMinuteLog(o: {
       stalls,
       signal: run ? { readMs: Math.round(run.readMs), calcMs: Math.round(run.calcMs), mainMs: Math.round(run.mainMs), where: run.where, afterCloseMs: run.afterCloseMs } : null,
       quotaPct: (() => { try { return deskMetrics(now()).delta.logins.map((l) => ({ login: l.quota, usedPct: l.usedPct })); } catch { return []; } })(),
+      passes: (() => { try { return passMinutes(passesSince(from)); } catch { return []; } })(),
     };
     h.reset();
     stalls = [];
@@ -80,7 +124,10 @@ export function startMinuteLog(o: {
       const sig = l.signal
         ? `; signals read ${l.signal.readMs} ms, worked ${l.signal.calcMs} ms ${l.signal.where === 'thread' ? `in their own thread (${l.signal.mainMs} ms on this one)` : 'on this thread'}`
         : '';
-      o.log(`minute ${clock(l.from).slice(0, 5)}: loop p99 ${l.loop.p99Ms} ms, worst ${l.loop.maxMs} ms${held}${sig}`, { minute: l });
+      // Only the passes that had trades in them: a flat account's empty passes say nothing.
+      const busy = l.passes.filter((p) => p.slowest.trades > 0);
+      const passes = busy.length ? `; passes ${busy.map(passWords).join('; ')}` : '';
+      o.log(`minute ${clock(l.from).slice(0, 5)}: loop p99 ${l.loop.p99Ms} ms, worst ${l.loop.maxMs} ms${held}${sig}${passes}`, { minute: l });
     } catch { /* a log line is never worth a failure */ }
   };
 

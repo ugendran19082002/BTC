@@ -119,6 +119,19 @@ export class SettingsCache implements Settings {
 export const accountKey = (key: string, accountId: number | null): string => (accountId === null ? key : `${key}@${accountId}`);
 export const accountSetting = (s: Settings, key: string, accountId: number | null): string | null =>
   (accountId === null ? null : s.get(accountKey(key, accountId))) ?? s.get(key);
+/**
+ * A strategy group's own value of an account setting (8 Nov 2026): `<key>@g:<group id>`. Empty or absent is none of its
+ * own -- the group takes its account's -- so a group nobody has set up trades exactly as before.
+ */
+export const groupKey = (key: string, groupId: string): string => `${key}@g:${groupId}`;
+export const groupOwn = (s: Settings, key: string, groupId: string | null | undefined): string | null => {
+  if (!groupId) return null;
+  const v = s.get(groupKey(key, groupId));
+  return v === null || v === '' ? null : v;
+};
+/** The value a strategy works by: its group's own where it has one, else its account's. */
+export const groupSetting = (s: Settings, key: string, accountId: number | null, groupId: string | null | undefined): string | null =>
+  groupOwn(s, key, groupId) ?? accountSetting(s, key, accountId);
 
 /** For tests: the same contract, nothing behind it. */
 export class MemorySettings implements Settings {

@@ -87,6 +87,33 @@ test('the margin model counts the contracts the account\'s strategies trade: 2-l
   assert.equal(await store.recentAvgLots(987654), 2, 'the unfilled one is not counted');
 });
 
+test('[critical] the margin model takes the lots the account\'s strategies are set to, not those of past trades (7 Nov 2026)', async () => {
+  const { query } = await import('../../src/db/pool.js');
+  const { fundsRequiredPerContract } = await import('../../src/trading/margin.js');
+  const { DEFAULT_LEVERAGE } = await import('../../src/trading/order-plan.js');
+  const svc = tradingService() as unknown as {
+    store: { configuredLots: (a: number) => Promise<number | null> };
+    currentSpot: () => number | null; currentAccountId: number | null;
+    sessionPctBase: () => Promise<{ maxOpen: number; perPositionUsd: number | null; source: string | null }>;
+  };
+  const acct = 987655;
+  assert.equal(await svc.store.configuredLots(acct), null, 'no strategies: none');
+  const add = (id: string, lots: number, enabled: boolean, trigger = 'signal') => query(
+    `INSERT INTO strategies (id, name, enabled, config, created_at, updated_at, broker_account_id) VALUES ($1, $1, $2, $3, 0, 0, $4)`,
+    [id, enabled, JSON.stringify({ trigger, lots }), acct]);
+  await add('lots2-a', 2, true); await add('lots2-b', 2, true);
+  await add('lots2-off', 9, false); await add('lots2-time', 9, true, 'time');
+  assert.equal(await svc.store.configuredLots(acct), 2, 'enabled signal strategies only');
+  // The desk on that account, priced at a known BTC: 2-lot strategies with no 2-lot trade yet price a position at 2 lots.
+  const realSpot = svc.currentSpot, realAcct = svc.currentAccountId;
+  svc.currentSpot = () => 80_000; svc.currentAccountId = acct;
+  try {
+    const b = await svc.sessionPctBase();
+    assert.equal(b.source, 'model');
+    assert.ok(Math.abs(b.perPositionUsd! - 2 * fundsRequiredPerContract({ spot: 80_000, premium: 0, leverage: DEFAULT_LEVERAGE })) < 1e-9);
+  } finally { svc.currentSpot = realSpot; svc.currentAccountId = realAcct; }
+});
+
 test('a setting that will not read is refused in words, and nothing is kept', async () => {
   const before = (await api('GET', `/api/desk/session-loss?account=${main()}`)).body.setting;
   const r = await api('POST', `/api/desk/session-loss?account=${main()}`, { on: true, sessions: [{ from: '09:00', to: '08:00', limit: 100, unit: 'inr' }] });
