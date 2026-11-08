@@ -32,6 +32,10 @@ export type Ledger = {
   /** The sync running now, or the newest one; absent from an older server. */
   sync?: LedgerSync | null;
   toleranceUsd: number; days: LedgerDay[];
+  /** The day this account (every account) first traded, or null before any: "Since start". Absent from an older server. */
+  firstDay?: string | null;
+  /** The most days one read may cover (`LEDGER_MAX_DAYS`). */
+  maxDays?: number;
   totals: { desk: Omit<DeskDay, 'open'>; delta: WalletDay | null; days: number; checked: number; matched: number; mismatched: number };
 };
 

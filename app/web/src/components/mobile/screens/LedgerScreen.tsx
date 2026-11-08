@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
 import { getLedger, syncLedger, syncLedgerRange, type LedgerDay, type LedgerStatus, type LedgerSync } from '@/api/ledger';
 import { usePoll } from '@/hooks/usePoll';
@@ -6,9 +6,12 @@ import { usePersisted } from '@/hooks/usePersisted';
 import { signedInr, stamp, usdToInr } from '@/lib/format';
 import { dayLabel } from '@/lib/market-report';
 import { daysAgoIst, todayIst } from '@/lib/report';
+import { daysIn, rangeProblem, sinceStart } from '@/lib/custom-range';
 import { cn } from '@/lib/utils';
+import { describeRange, type DateRangeValue } from '@/components/ui/date-range-picker';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Empty, Loading, Panel, Pill, Rupees, Segmented, Stat, Stats } from '@/components/mobile/parts';
+import { DateRangeSheet } from '@/components/mobile/DateRangeSheet';
 import { LedgerDaySheet } from '@/components/mobile/LedgerDaySheet';
 
 /**
@@ -20,10 +23,19 @@ import { LedgerDaySheet } from '@/components/mobile/LedgerDaySheet';
  * Everything in rupees, the desk's rate; a check reads nothing but Delta's wallet, so this view-only phone may ask.
  */
 
-type RangeKey = '7' | '30' | '90';
+type RangeKey = '7' | '30' | '90' | 'custom';
 const RANGES: { key: RangeKey; label: string; spoken: string; days: number }[] = [
   { key: '7', label: '7D', spoken: '7 days', days: 7 }, { key: '30', label: '30D', spoken: '30 days', days: 30 }, { key: '90', label: '90D', spoken: '90 days', days: 90 },
+  { key: 'custom', label: 'Custom', spoken: 'Custom range', days: 0 },
 ];
+/** The server's own limit (`LEDGER_MAX_DAYS`), said by it too; here so a custom range is checked before it is asked for. */
+const LEDGER_MAX_DAYS = 92;
+/**
+ * The custom range, remembered (owner, 8 Nov 2026: "custom date on the ledger, and in it from the start of trading to
+ * today, dynamic"). `sinceStart`: worked out again on every read -- the account's first trading day to today -- so it
+ * never goes stale; `from` then only remembers the last first day seen, for the first read before the server says.
+ */
+type LedgerCustom = { from: string; to: string; sinceStart?: boolean };
 
 /** The verdict in a word and a colour. `off` is the difference, said in rupees. */
 const VERDICT: Record<LedgerStatus, { word: (offUsd: number | null) => string; tone: 'up' | 'down' | 'warn' | 'dim' }> = {
@@ -40,9 +52,22 @@ const money = (usd: number | null | undefined) => (usd === null || usd === undef
 export function LedgerScreen() {
   const p = usePhoneData();
   const [rangeKey, setRangeKey] = usePersisted<RangeKey>('m-ledger-range', '7');
-  const range = RANGES.find((r) => r.key === rangeKey) ?? RANGES[0]!;
   const today = todayIst(p.now);
-  const from = daysAgoIst(range.days - 1, p.now);
+  const [custom, setCustom] = usePersisted<LedgerCustom>('m-ledger-custom', { from: daysAgoIst(6, p.now), to: today });
+  const [picking, setPicking] = useState(false);
+  // The first trading day of the account shown, as the server last said (`firstDay`): "Since start" begins there.
+  const [firstDay, setFirstDay] = useState<string | null>(null);
+  const started = custom.sinceStart ? sinceStart(firstDay ?? custom.from, today, LEDGER_MAX_DAYS) : null;
+  const chosen: DateRangeValue = started ?? { from: custom.from, to: custom.to };
+  // A remembered range that no longer holds (too long, a bad value) is the last 7 days again, rather than a refusal.
+  const customOk = rangeProblem(chosen, today, LEDGER_MAX_DAYS) === null;
+  const range = RANGES.find((r) => r.key === rangeKey && (r.key !== 'custom' || customOk)) ?? RANGES[0]!;
+  const isCustom = range.key === 'custom';
+  const from = isCustom ? chosen.from : daysAgoIst(range.days - 1, p.now);
+  const to = isCustom ? chosen.to : today;
+  const dayCount = daysIn({ from, to });
+  // Said above the totals: "Last 7 days", "Since start · 8 Sept – today", "1–5 Nov".
+  const rangeWords = !isCustom ? `Last ${range.days} days` : started ? `Since start · ${describeRange({ from, to }, today)}` : describeRange({ from, to }, today);
   /*
    * The sync is the server's (30 Oct 2026, owner: "the loading state after a refresh, an old click still working; no
    * duplicate sync"): which button turns, how far it has got and which day it is reading are all read off the job it
@@ -57,7 +82,15 @@ export function LedgerScreen() {
   const [tradesOf, setTradesOf] = useState<string | null>(null);
   const [polled, setPolled] = useState<LedgerSync | null>(null);
   const running = polled?.status === 'running' || asking !== null;
-  const led = usePoll(() => getLedger(from, today, p.accountParam).then((x) => { setPolled(x.sync ?? null); return x; }), running ? 3_000 : 60_000, { deps: [from, today, p.accountParam] });
+  const led = usePoll(() => getLedger(from, to, p.accountParam).then((x) => {
+    setPolled(x.sync ?? null);
+    if (x.firstDay !== undefined) setFirstDay(x.firstDay);
+    return x;
+  }), running ? 3_000 : 60_000, { deps: [from, to, p.accountParam] });
+  // Since start, remembered with the first day last seen, so the next visit asks for the right range straight away.
+  useEffect(() => {
+    if (custom.sinceStart && firstDay && firstDay !== custom.from) setCustom({ ...custom, from: firstDay, to: today });
+  }, [custom, firstDay, today, setCustom]);
   const job = led.data?.sync ?? null;
   const jobRunning = job?.status === 'running';
   const busy = jobRunning || asking !== null;
@@ -71,7 +104,7 @@ export function LedgerScreen() {
     setProblem(null);
     setNote(null);
     try {
-      const res = what === 'range' ? await syncLedgerRange(from, today, p.accountParam) : await syncLedger(what === 'today' ? null : what, p.accountParam);
+      const res = what === 'range' ? await syncLedgerRange(from, to, p.accountParam) : await syncLedger(what === 'today' ? null : what, p.accountParam);
       if (res.already) setNote(`A sync was already running (${res.sync.total === 1 ? dayLabel(res.sync.days[0]!) : `${res.sync.total} days`}): following it, nothing new started.`);
       setPolled(res.sync);
       await led.refresh();
@@ -87,7 +120,15 @@ export function LedgerScreen() {
   const others = t?.delta ? t.delta.othersUsd + t.delta.fundingUsd : null;
   return (
     <>
-      <Segmented label="Range" value={range.key} options={RANGES} onChange={setRangeKey} />
+      <Segmented label="Range" value={range.key} options={RANGES} onChange={(k) => (k === 'custom' ? setPicking(true) : setRangeKey(k))} />
+      {picking && (
+        <DateRangeSheet
+          value={customOk ? chosen : { from, to }} today={today}
+          firstDay={firstDay} sinceStart={isCustom && !!custom.sinceStart} maxDays={LEDGER_MAX_DAYS}
+          onApply={(v, o) => { setCustom({ ...v, ...(o.sinceStart ? { sinceStart: true } : {}) }); setRangeKey('custom'); setPicking(false); }}
+          onClose={() => setPicking(false)}
+        />
+      )}
 
       {!r ? <Panel><Loading error={led.error} what="the ledger" /></Panel> : (
         <>
@@ -95,7 +136,14 @@ export function LedgerScreen() {
             <section aria-label="Ledger totals">
               <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2">
                 <span className="text-[13px] text-muted-foreground">Net after charges · desk</span>
-                <span className="text-[11.5px] text-muted-foreground">Last {range.days} days{p.accountParam === null ? ' · every account' : ''}</span>
+                <span className="flex items-baseline gap-2 text-[11.5px] text-muted-foreground">
+                  <span>{rangeWords}{p.accountParam === null ? ' · every account' : ''}</span>
+                  {isCustom && (
+                    <button type="button" onClick={() => setPicking(true)} className="border-0 bg-transparent p-0 font-[inherit] text-[12px] text-[var(--accent)]">
+                      Change
+                    </button>
+                  )}
+                </span>
               </div>
               <Rupees usd={t!.desk.netUsd} signed size="xl" />
               <p className="m-0 mb-2 text-[12.5px] tabular-nums text-muted-foreground">
@@ -128,11 +176,11 @@ export function LedgerScreen() {
                 </button>
                 <button
                   type="button" disabled={busy || r.accounts.length === 0} onClick={() => void start('range')} aria-busy={jobIsRange || asking === 'range'}
-                  aria-label={jobIsRange ? `Checking ${job.done} of ${job.total} days` : `Sync all ${range.days} days with Delta`}
+                  aria-label={jobIsRange ? `Checking ${job.done} of ${job.total} days` : `Sync all ${dayCount} days with Delta`}
                   className="flex h-11 min-w-0 items-center justify-center gap-1 rounded-lg border border-solid border-[var(--up)] bg-transparent px-1.5 font-[inherit] text-[13px] font-semibold text-[var(--up)] disabled:opacity-50 min-[360px]:gap-1.5 min-[360px]:px-2 min-[360px]:text-[14px]"
                 >
                   <RefreshCw aria-hidden="true" className={cn('h-4 w-4 shrink-0', (jobIsRange || asking === 'range') && 'animate-spin')} />
-                  <span className="truncate tabular-nums">{jobIsRange ? `${job.done} of ${job.total}…` : asking === 'range' ? 'Starting…' : `Sync ${range.days} days`}</span>
+                  <span className="truncate tabular-nums">{jobIsRange ? `${job.done} of ${job.total}…` : asking === 'range' ? 'Starting…' : `Sync ${dayCount} day${dayCount === 1 ? '' : 's'}`}</span>
                 </button>
               </div>
               {job && <SyncStatus job={job} />}

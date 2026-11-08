@@ -168,4 +168,59 @@ describe('LedgerScreen', () => {
     fireEvent.click(within(screen.getByRole('dialog', { name: /trades/ })).getAllByRole('button', { name: 'Close' })[0]!);
     expect(screen.queryByRole('dialog', { name: /trades/ })).not.toBeInTheDocument();
   });
+
+  // Owner, 8 Nov 2026: "custom date on the ledger, and in it from the start of trading to today, dynamic".
+  it('[critical] Custom: any From and To; Since start runs from the first trading day to today, and Sync takes its days', async () => {
+    getLedger.mockResolvedValue(LEDGER({ firstDay: '2026-09-08' }));
+    show();
+    await screen.findByRole('region', { name: 'Ledger totals' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Custom range' }));
+    const sheet = within(screen.getByRole('dialog', { name: 'Custom range' }));
+    fireEvent.click(sheet.getByRole('button', { name: 'Since start' }));
+    expect(sheet.getByRole('status')).toHaveTextContent('Since start · 8 Sept – 29 Oct · 52 days');
+    expect(sheet.getByRole('status')).toHaveTextContent('Moves with today');
+    fireEvent.click(sheet.getByRole('button', { name: 'Show' }));
+
+    await waitFor(() => expect(getLedger).toHaveBeenLastCalledWith('2026-09-08', '2026-10-29', null));
+    expect(screen.getByRole('radio', { name: 'Custom range' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText(/^Since start · 8 Sept – 29 Oct/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sync all 52 days with Delta' }));
+    await waitFor(() => expect(syncLedgerRange).toHaveBeenCalledWith('2026-09-08', '2026-10-29', null));
+
+    // A fixed range typed by hand: no longer Since start.
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    const again = within(screen.getByRole('dialog', { name: 'Custom range' }));
+    expect(again.getByRole('button', { name: 'Since start' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.change(again.getByLabelText('From'), { target: { value: '2026-10-20' } });
+    expect(again.getByRole('button', { name: 'Since start' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(again.getByRole('button', { name: 'Show' }));
+    await waitFor(() => expect(getLedger).toHaveBeenLastCalledWith('2026-10-20', '2026-10-29', null));
+  });
+
+  it('[critical] Since start is dynamic: chosen days ago, it ends today and begins on the account\'s own first day', async () => {
+    window.localStorage.setItem('btc-desk:m-ledger-range', JSON.stringify('custom'));
+    window.localStorage.setItem('btc-desk:m-ledger-custom', JSON.stringify({ from: '2026-09-08', to: '2026-10-20', sinceStart: true }));
+    getLedger.mockResolvedValue(LEDGER({ firstDay: '2026-10-05' }));
+    show();
+    await waitFor(() => expect(getLedger).toHaveBeenCalledWith('2026-09-08', '2026-10-29', null), { timeout: 2_000 });
+    // The server's first day for this account replaces the one remembered; the end is today, not the day it was chosen.
+    await waitFor(() => expect(getLedger).toHaveBeenLastCalledWith('2026-10-05', '2026-10-29', null));
+    expect(JSON.parse(window.localStorage.getItem('btc-desk:m-ledger-custom')!)).toMatchObject({ from: '2026-10-05', sinceStart: true });
+  });
+
+  it('a custom range over the ledger\'s 92 days is stopped in the sheet, in words; Since start longer than that is the last 92, said', async () => {
+    getLedger.mockResolvedValue(LEDGER({ firstDay: '2026-05-01' }));
+    show();
+    await screen.findByRole('region', { name: 'Ledger totals' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Custom range' }));
+    const sheet = within(screen.getByRole('dialog', { name: 'Custom range' }));
+    fireEvent.change(sheet.getByLabelText('From'), { target: { value: '2026-07-01' } });
+    expect(sheet.getByRole('alert')).toHaveTextContent('At most 92 days at a time.');
+    expect(sheet.getByRole('button', { name: 'Show' })).toBeDisabled();
+    fireEvent.click(sheet.getByRole('button', { name: 'Since start' }));
+    expect(sheet.getByRole('status')).toHaveTextContent('92 days');
+    expect(sheet.getByRole('status')).toHaveTextContent('Trading began 1 May; this shows at most the last 92 days.');
+    fireEvent.click(sheet.getByRole('button', { name: 'Show' }));
+    await waitFor(() => expect(getLedger).toHaveBeenLastCalledWith('2026-07-30', '2026-10-29', null));
+  });
 });

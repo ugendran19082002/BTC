@@ -58,8 +58,11 @@ export function DateRangeSheet({ value, today, onApply, onClose, firstDay, since
         </div>
 
         <div role="group" aria-label="Quick picks" className="-mx-4 mt-2 flex gap-2 overflow-x-auto px-4 pb-1">
+          {start && (
+            <Chip on={fromStart} onClick={() => { setFromStart(true); setDraft({ from: start.from, to: start.to }); }}>Since start</Chip>
+          )}
           {quickPicks(today).map((q) => (
-            <Chip key={q.label} on={draft.from === q.range.from && draft.to === q.range.to} onClick={() => setDraft(q.range)}>{q.label}</Chip>
+            <Chip key={q.label} on={!fromStart && draft.from === q.range.from && draft.to === q.range.to} onClick={() => pickFixed(q.range)}>{q.label}</Chip>
           ))}
         </div>
 
@@ -67,17 +70,24 @@ export function DateRangeSheet({ value, today, onApply, onClose, firstDay, since
           <label className="flex min-w-0 flex-col gap-1.5">
             <span className="text-[13px] font-medium text-[var(--time)]">From</span>
             <input ref={first} type="date" className={field} value={draft.from} min={earliest} max={today}
-              onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} />
+              onChange={(e) => pickFixed({ ...draft, from: e.target.value })} />
           </label>
           <label className="flex min-w-0 flex-col gap-1.5">
             <span className="text-[13px] font-medium text-[var(--time)]">To</span>
             <input type="date" className={field} value={draft.to} min={earliest} max={today}
-              onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))} />
+              onChange={(e) => pickFixed({ ...draft, to: e.target.value })} />
           </label>
         </div>
 
         <p role={problem ? 'alert' : 'status'} className={cn('m-0 mt-3 min-h-[20px] text-[13.5px]', problem ? 'text-[var(--down)]' : 'text-[var(--time)]')}>
-          {problem ?? `${describeRange(draft, today)} · ${daysIn(draft)} day${daysIn(draft) === 1 ? '' : 's'}`}
+          {problem ?? `${fromStart ? 'Since start · ' : ''}${describeRange(draft, today)} · ${daysIn(draft)} day${daysIn(draft) === 1 ? '' : 's'}`}
+          {!problem && fromStart && start && (
+            <span className="block text-[12.5px] text-muted-foreground">
+              {start.clipped
+                ? `Trading began ${describeRange({ from: firstDay!, to: firstDay! }, today)}; this shows at most the last ${maxDays} days. Moves with today.`
+                : 'Moves with today: tomorrow it ends tomorrow.'}
+            </span>
+          )}
         </p>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -85,7 +95,7 @@ export function DateRangeSheet({ value, today, onApply, onClose, firstDay, since
             Cancel
           </button>
           <button
-            type="button" disabled={problem !== null} onClick={() => onApply(draft)}
+            type="button" disabled={problem !== null} onClick={() => onApply(draft, { sinceStart: fromStart })}
             className="h-12 rounded-lg border-0 bg-[var(--up)] font-[inherit] text-[15px] font-semibold text-[var(--bg)] disabled:opacity-40"
           >
             Show
