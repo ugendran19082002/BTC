@@ -230,7 +230,7 @@ test('[critical] the first trading day, for "Since start": each account\'s own, 
   const all = await of('');
   assert.equal(all.firstDay, d40);
   assert.equal(all.maxDays, 92);
-  assert.equal((await of('&account=424242')).firstDay, null, 'an account that never traded has no first day');
+  assert.equal(await L.firstTradeDay(424242), null, 'an account that never traded has no first day');
 });
 
 test('the phone hears of a mismatch: both nets, the difference and where it lies', () => {
