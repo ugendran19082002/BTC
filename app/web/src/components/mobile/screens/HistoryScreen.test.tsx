@@ -161,11 +161,11 @@ describe('HistoryScreen', () => {
     fireEvent.click(lost());
     expect(rows()).toHaveLength(4);
     expect(screen.queryByRole('group', { name: 'Filters on' })).not.toBeInTheDocument();
-    // the other filters narrow both sides: 5m holds a, c and d, all won
+    // the other filters narrow both sides: 5m holds a and d (c is the chain's), both won
     openFilters();
     fireEvent.click(within(filters()).getByRole('button', { name: /^5m/ }));
     fireEvent.click(within(filters()).getByRole('button', { name: /^Show/ }));
-    expect(won()).toHaveAccessibleName(`Won: 3 trades, ${inr(6)}. Show only these`);
+    expect(won()).toHaveAccessibleName(`Won: 2 trades, ${inr(5)}. Show only these`);
     expect(lost()).toHaveAccessibleName('Lost: none');
   });
 

@@ -485,7 +485,11 @@ export default function App() {
 
   // The positions arrive every second as a new list; the board only needs to
   // hear about them when a held strike, its size or its P&L actually changes.
-  const heldKey = useMemo(() => JSON.stringify([...heldLegs(trade?.open)]), [trade?.open]);
+  // Every trading account's (owner, 9 Nov 2026: "the count on the strike is one account's, not the four"): it read
+  // the default account's status alone. With several trading, the header's sum of every desk (`mergedDay`, each
+  // account's open trades in one list); nothing until that is known -- one account's count on a strike is a wrong count.
+  const heldOpen = tradingList.length > 1 ? mergedDay?.open : trade?.open;
+  const heldKey = useMemo(() => JSON.stringify([...heldLegs(heldOpen)]), [heldOpen]);
   const held = useMemo(() => new Map(JSON.parse(heldKey) as [string, HeldLeg][]), [heldKey]);
   const sides = useMemo(
     () => (data?.recommendation.ok ? data.recommendation.sides : []),
