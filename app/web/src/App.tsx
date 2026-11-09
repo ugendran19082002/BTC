@@ -16,7 +16,7 @@ import { AlarmBanner } from '@/components/trade/ModeBanner';
 import { ModeSwitch } from '@/components/trade/ModeSwitch';
 import { AlertSwitch } from '@/components/trade/AlertSwitch';
 import { getStatusOfAccounts, getTradeStatus } from '@/api/trade';
-import { heldLegs, type HeldLeg } from '@/lib/held';
+import { heldLegs, heldOpenOf, type HeldLeg } from '@/lib/held';
 import { getErrors } from '@/api/errors';
 import { getAccounts } from '@/api/accounts';
 import { AccountTabs, shownAccount, type AccountChoice } from '@/components/accounts/AccountTabs';
@@ -485,10 +485,9 @@ export default function App() {
 
   // The positions arrive every second as a new list; the board only needs to
   // hear about them when a held strike, its size or its P&L actually changes.
-  // Every trading account's (owner, 9 Nov 2026: "the count on the strike is one account's, not the four"): it read
-  // the default account's status alone. With several trading, the header's sum of every desk (`mergedDay`, each
-  // account's open trades in one list); nothing until that is known -- one account's count on a strike is a wrong count.
-  const heldOpen = tradingList.length > 1 ? mergedDay?.open : trade?.open;
+  // Every trading account's (`heldOpenOf`): it read the default account's status alone. With several trading, the
+  // header's sum of every desk, `mergedDay`.
+  const heldOpen = heldOpenOf(tradingList.length, mergedDay, trade);
   const heldKey = useMemo(() => JSON.stringify([...heldLegs(heldOpen)]), [heldOpen]);
   const held = useMemo(() => new Map(JSON.parse(heldKey) as [string, HeldLeg][]), [heldKey]);
   const sides = useMemo(

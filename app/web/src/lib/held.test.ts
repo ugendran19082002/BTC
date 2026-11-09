@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { heldKey, heldLegs } from '@/lib/held';
+import { heldKey, heldLegs, heldOpenOf } from '@/lib/held';
 import type { Trade } from '@/types/trade';
 
 const t = (over: Partial<Trade> = {}): Trade => ({
@@ -10,6 +10,26 @@ const t = (over: Partial<Trade> = {}): Trade => ({
   live: { markPrice: 14, unrealisedPnl: 0.002, decayed: 0.1, liquidationPrice: null },
   ...over,
 }) as Trade;
+
+describe('whose positions the board counts', () => {
+  // owner, 9 Nov 2026: "the count on the strike is one account's, not the four"
+  const own = { open: [t({ position: -1 })] };
+  const merged = { open: [t({ position: -1 }), t({ position: -2 }), t({ position: -1 }), t({ symbol: 'P-BTC-79600-090926', position: -4 })] };
+
+  it('[critical] several accounts trading: every account\'s positions on a strike, added', () => {
+    const held = heldLegs(heldOpenOf(4, merged, own));
+    expect(held.get('C-79600')!.size).toBe(4);
+    expect(held.get('P-79600')!.size).toBe(4);
+  });
+
+  it('[critical] several trading and the sum not known yet: no count at all, not one account\'s', () => {
+    expect(heldLegs(heldOpenOf(4, null, own)).size).toBe(0);
+  });
+
+  it('one account trading: its own', () => {
+    expect(heldLegs(heldOpenOf(1, merged, own)).get('C-79600')!.size).toBe(1);
+  });
+});
 
 describe('the strikes you are short', () => {
   it('keys a position the way the board looks it up', () => {

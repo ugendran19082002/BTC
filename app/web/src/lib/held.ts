@@ -23,6 +23,15 @@ export type HeldLeg = {
 export const heldKey = (cp: 'C' | 'P', strike: number) => `${cp}-${strike}`;
 
 /**
+ * Whose positions the board marks (owner, 9 Nov 2026: "the count on the strike is one account's, not the four"):
+ * with several accounts trading, every one's -- the merged status, each account's open trades in one list -- and
+ * nothing while that is not known yet, because one account's count on a strike is a wrong count. With one, its own.
+ */
+export const heldOpenOf = (
+  tradingAccounts: number, merged: { open: Trade[] } | null | undefined, own: { open: Trade[] } | null | undefined,
+): Trade[] | undefined => (tradingAccounts > 1 ? merged?.open : own?.open);
+
+/**
  * A symbol looks like `C-BTC-79600-090926`. Parsed rather than carried
  * separately so the board reads the same field the exchange keys on, and a
  * symbol it cannot parse is skipped rather than guessed at.
