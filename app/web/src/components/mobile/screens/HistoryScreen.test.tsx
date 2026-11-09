@@ -142,6 +142,33 @@ describe('HistoryScreen', () => {
     expect(tile('Worst')).toHaveTextContent(inr(-1));
   });
 
+  it('[critical] Won and Lost under the summary, as on P&L: a tap shows only that side, both keep their counts, a tap again shows all', async () => {
+    show();
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    const box = () => within(screen.getByRole('region', { name: 'Won and lost' }));
+    const won = () => box().getByRole('button', { name: /^Won: / });
+    const lost = () => box().getByRole('button', { name: /^Lost: / });
+    expect(won()).toHaveAccessibleName(`Won: 3 trades, ${inr(6)}. Show only these`);
+    expect(lost()).toHaveAccessibleName(`Lost: 1 trade, ${inr(-1)}. Show only these`);
+    expect(won()).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(won());
+    expect(rows()).toHaveLength(3);
+    expect(won()).toHaveAttribute('aria-pressed', 'true');
+    expect(lost()).toHaveAccessibleName(`Lost: 1 trade, ${inr(-1)}. Show only these`);   // the other side still counted
+    expect(within(screen.getByRole('group', { name: 'Filters on' })).getByRole('button', { name: 'Take off Won' })).toBeInTheDocument();
+    fireEvent.click(lost());
+    expect(rows()).toHaveLength(1);
+    fireEvent.click(lost());
+    expect(rows()).toHaveLength(4);
+    expect(screen.queryByRole('group', { name: 'Filters on' })).not.toBeInTheDocument();
+    // the other filters narrow both sides: 5m holds a, c and d, all won
+    openFilters();
+    fireEvent.click(within(filters()).getByRole('button', { name: /^5m/ }));
+    fireEvent.click(within(filters()).getByRole('button', { name: /^Show/ }));
+    expect(won()).toHaveAccessibleName(`Won: 3 trades, ${inr(6)}. Show only these`);
+    expect(lost()).toHaveAccessibleName('Lost: none');
+  });
+
   it('[critical] the filters in one sheet: each choice its count, at once, said over the list a tap to take off, counted on the button, remembered; Clear all', async () => {
     const { unmount } = show();
     await waitFor(() => expect(rows()).toHaveLength(4));

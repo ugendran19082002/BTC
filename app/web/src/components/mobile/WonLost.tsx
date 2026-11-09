@@ -31,38 +31,55 @@ export function WonLost({ day, account, every, onOpen, unfiltered = false }: {
   }
   const won = r.data.trades.filter((t) => outcomeOf(t) === 'win');
   const lost = r.data.trades.filter((t) => outcomeOf(t) === 'loss');
-  const wonUsd = won.reduce((n, t) => n + t.netUsd, 0);
-  const lostUsd = lost.reduce((n, t) => n + t.netUsd, 0);
-  const scale = wonUsd - lostUsd;
   const open = r.data.trades.filter((t) => t.open).length;
+  return (
+    <WonLostView
+      won={{ n: won.length, usd: won.reduce((n, t) => n + t.netUsd, 0) }}
+      lost={{ n: lost.length, usd: lost.reduce((n, t) => n + t.netUsd, 0) }}
+      onOpen={onOpen}
+      note={`Each trade after its charges${open ? ` · ${open} still open, in neither` : ''}${unfiltered ? ' · every trade of the day, whatever the filters' : ''}. Tap one to see its trades.`}
+    />
+  );
+}
 
+/**
+ * The Won and Lost card itself, from counts already made: a bar of how the swing split, a button each side, a line
+ * under them. `picked` makes the two a toggle (History, 9 Nov 2026: the list shown only the won, or only the lost,
+ * a tap again for all); without it each opens its trades elsewhere.
+ */
+export function WonLostView({ won, lost, onOpen, note, picked }: {
+  won: { n: number; usd: number }; lost: { n: number; usd: number }; onOpen: (o: Outcome) => void; note: string;
+  picked?: Outcome | null;
+}) {
+  const scale = won.usd - lost.usd;
+  const toggle = picked !== undefined;
   return (
     <section aria-label="Won and lost" className="mt-3">
-      {/* How much of the day's swing the winners made and the losers gave back; the words below carry it, not the colour. */}
+      {/* How much of the swing the winners made and the losers gave back; the words below carry it, not the colour. */}
       {scale > 0 && (
         <div aria-hidden="true" className="mb-2 flex h-2 overflow-hidden rounded-full bg-muted">
-          <span className="bg-[var(--up)]" style={{ width: `${(wonUsd / scale) * 100}%` }} />
-          <span className="bg-[var(--down)]" style={{ width: `${(-lostUsd / scale) * 100}%` }} />
+          <span className="bg-[var(--up)]" style={{ width: `${(won.usd / scale) * 100}%` }} />
+          <span className="bg-[var(--down)]" style={{ width: `${(-lost.usd / scale) * 100}%` }} />
         </div>
       )}
       <div className="grid grid-cols-2 gap-2">
-        <Side word="Won" tone="up" n={won.length} usd={wonUsd} onOpen={() => onOpen('win')} />
-        <Side word="Lost" tone="down" n={lost.length} usd={lostUsd} onOpen={() => onOpen('loss')} />
+        <Side word="Won" tone="up" n={won.n} usd={won.usd} onOpen={() => onOpen('win')} pressed={toggle ? picked === 'win' : undefined} />
+        <Side word="Lost" tone="down" n={lost.n} usd={lost.usd} onOpen={() => onOpen('loss')} pressed={toggle ? picked === 'loss' : undefined} />
       </div>
-      <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
-        Each trade after its charges{open ? ` · ${open} still open, in neither` : ''}{unfiltered ? ' · every trade of the day, whatever the filters' : ''}. Tap one to see its trades.
-      </p>
+      <p className="m-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">{note}</p>
     </section>
   );
 }
 
-function Side({ word, tone, n, usd, onOpen }: { word: string; tone: 'up' | 'down'; n: number; usd: number; onOpen: () => void }) {
+function Side({ word, tone, n, usd, onOpen, pressed }: { word: string; tone: 'up' | 'down'; n: number; usd: number; onOpen: () => void; pressed?: boolean }) {
   const trades = `${n} trade${n === 1 ? '' : 's'}`;
+  const verb = pressed === undefined ? 'Show them' : pressed ? 'Showing only these; show all' : 'Show only these';
   return (
     <button
-      type="button" onClick={onOpen} disabled={n === 0}
-      aria-label={n ? `${word}: ${trades}, ${money(usd)}. Show them` : `${word}: none`}
-      className="flex min-h-[56px] min-w-0 items-center justify-between gap-1 rounded-lg border border-solid border-border bg-transparent px-2.5 py-2 text-left font-[inherit] text-foreground active:bg-muted disabled:opacity-60"
+      type="button" onClick={onOpen} disabled={n === 0 && !pressed} aria-pressed={pressed}
+      aria-label={n ? `${word}: ${trades}, ${money(usd)}. ${verb}` : `${word}: none`}
+      className={cn('flex min-h-[56px] min-w-0 items-center justify-between gap-1 rounded-lg border border-solid px-2.5 py-2 text-left font-[inherit] text-foreground active:bg-muted disabled:opacity-60',
+        pressed ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)]' : 'border-border bg-transparent')}
     >
       <span className="grid min-w-0 gap-0.5">
         <span className="truncate text-[12px] text-muted-foreground">{word} · {trades}</span>

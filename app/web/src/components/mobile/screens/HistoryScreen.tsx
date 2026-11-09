@@ -14,6 +14,7 @@ import { usePhoneData } from '@/components/mobile/phone-context';
 import { Chip, Empty, ListButton, Loading, Panel, Pill, Rupees, Segmented, Stat, Stats, When } from '@/components/mobile/parts';
 import { StrategyTag, placedBy } from '@/components/mobile/StrategyTag';
 import { GroupTag } from '@/components/strategy/GroupTag';
+import { WonLostView } from '@/components/mobile/WonLost';
 
 /**
  * Trade history (6 Oct 2026): the closed trades, not the orders -- what each made after charges. Separate from Orders,
@@ -119,14 +120,14 @@ export function HistoryScreen() {
   const tfPicked = tfs.filter((k) => tfCounts.some(([x]) => x === k));
   // A strategy remembered that has no trade in this range is no choice at all.
   const strategy = f.strategy !== 'all' && strategies.includes(f.strategy) ? f.strategy : 'all';
-  const shown = inRange.filter((o) =>
+  // Every filter but Won / Lost: what the Won and Lost card splits, so each side keeps its count while the other is shown.
+  const unsplit = inRange.filter((o) =>
     (tfPicked.length === 0 || tfPicked.includes(tfOf(o) ?? ''))
-    && (f.result === 'all' || (f.result === 'win' ? netOf(o) > 0 : netOf(o) < 0))
     && (f.opt === 'all' || o.optionSide === f.opt)
     && (f.act === 'all' || (f.act === 'buy') === isLongTrade(o))
     && (strategy === 'all' || placedBy(o.plan).label === strategy)
-    && (f.exit === 'all' || o.exitBy === f.exit))
-    .sort(sort.by);
+    && (f.exit === 'all' || o.exitBy === f.exit));
+  const shown = unsplit.filter((o) => f.result === 'all' || (f.result === 'win' ? netOf(o) > 0 : netOf(o) < 0)).sort(sort.by);
   const total = shown.reduce((n, o) => n + netOf(o), 0);
   // Forty rows at a time (10 Oct 2026): thirty days is a thousand-odd trades, drawn at once on a phone. The count and the total above are of all.
   const [limit, setLimit] = useState(PAGE);
@@ -169,7 +170,10 @@ export function HistoryScreen() {
           onClose={() => setPicking(false)} />
       )}
 
-      {orders.data && <Summary trades={shown} words={rangeWords} filtered={chosen.length > 0} />}
+      {orders.data && (
+        <Summary trades={shown} words={rangeWords} filtered={chosen.length > 0} split={unsplit} result={f.result}
+          onResult={(r) => set({ result: f.result === r ? 'all' : r })} />
+      )}
 
       {/* One row: Filters and Sort, each a thumb's height and half the width. */}
       <div className="grid grid-cols-2 gap-2">
@@ -251,8 +255,16 @@ const PAGE = 40;
 /**
  * What the trades shown made, on top: the net after charges, how many and how many won, the average win and loss, the
  * best and the worst. Of the trades the filters leave, said so when they leave fewer than the range holds.
+ *
+ * Under them Won and Lost (owner, 9 Nov 2026: the P&L screen's card, on History too): the trades every other filter
+ * leaves, split by what each made after charges; a tap shows only that side, a tap again all -- the Won / Lost filter.
  */
-function Summary({ trades, words, filtered }: { trades: readonly ClosedTrade[]; words: string; filtered: boolean }) {
+function Summary({ trades, words, filtered, split, result, onResult }: {
+  trades: readonly ClosedTrade[]; words: string; filtered: boolean;
+  split: readonly ClosedTrade[]; result: Result; onResult: (r: Exclude<Result, 'all'>) => void;
+}) {
+  const side = (test: (n: number) => boolean) => { const xs = split.map(netOf).filter(test); return { n: xs.length, usd: xs.reduce((a, n) => a + n, 0) }; };
+  const wonSide = side((n) => n > 0), lostSide = side((n) => n < 0);
   const nets = trades.map(netOf);
   const net = nets.reduce((a, n) => a + n, 0);
   const won = nets.filter((n) => n > 0), lost = nets.filter((n) => n < 0);
@@ -277,6 +289,12 @@ function Summary({ trades, words, filtered }: { trades: readonly ClosedTrade[]; 
           <Stat label="Best" tone={tone(best)}>{money(best)}</Stat>
           <Stat label="Worst" tone={tone(worst)}>{money(worst)}</Stat>
         </Stats>
+        {split.length > 0 && (
+          <WonLostView won={wonSide} lost={lostSide} onOpen={onResult} picked={result === 'all' ? null : result}
+            note={result === 'all'
+              ? 'Each trade after its charges. Tap one to show only those.'
+              : `Showing only the ${result === 'win' ? 'won' : 'lost'}. Tap it again for all.`} />
+        )}
       </section>
     </Panel>
   );
