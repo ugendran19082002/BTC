@@ -59,6 +59,80 @@ export function autoWindow(now: number, days: number): { from: string; to: strin
   return { from: iso(live - days * DAY_MS), to: iso(live - DAY_MS) };
 }
 
+/*
+ * SKIPPED DAYS (owner, 9 Nov 2026: "beside Pick now, skip Nov 4 and so on -- many dates chosen, saved on the DB side;
+ * the pick runs skipping them"). Expiry days no pick reads: a day like 4 Nov, whose spike says nothing of a method.
+ * One list for the desk (a market day is the same day on every account), in the settings, read by every pick -- the
+ * day's own, Pick now, the form's preview. A skipped day is left out and the look-back reaches one day further back
+ * instead, so "14 days" is still 14 days of record.
+ */
+export const SKIP_DAYS_KEY = 'auto_methods_skip_days';
+export const MAX_SKIP_DAYS = 60;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isDay = (d: unknown): d is string => typeof d === 'string' && DAY_RE.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+
+/** The stored list, as days: valid ones only, each once, newest first. Anything unreadable is no list. */
+export function skipDaysOf(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? [...new Set(v.filter(isDay))].sort().reverse() : [];
+  } catch { return []; }
+}
+
+/** Why a list cannot be saved, in words; null when it can. Days to come have no record to skip. */
+export function skipDaysProblem(v: unknown, today: string): string | null {
+  if (!Array.isArray(v)) return 'The days to skip are a list of dates, YYYY-MM-DD.';
+  if (!v.every(isDay)) return 'Every day to skip is a date, YYYY-MM-DD.';
+  if (v.some((d) => d > today)) return 'A day still to come has no record to skip.';
+  if (new Set(v).size > MAX_SKIP_DAYS) return `At most ${MAX_SKIP_DAYS} days can be skipped.`;
+  return null;
+}
+
+/** The last `days` finished expiry days at `now` that are not skipped, oldest first. */
+export function autoDays(now: number, days: number, skip: readonly string[] = []): string[] {
+  const out = new Set(skip);
+  const live = Date.parse(`${sessionDayOf(now)}T00:00:00Z`);
+  const got: string[] = [];
+  for (let back = 1; got.length < days && back <= days + out.size; back++) {
+    const d = new Date(live - back * DAY_MS).toISOString().slice(0, 10);
+    if (!out.has(d)) got.push(d);
+  }
+  return got.reverse();
+}
+
+/** Days, oldest first, as runs of consecutive ones: one record each. */
+export function spans(days: readonly string[]): { from: string; to: string }[] {
+  const out: { from: string; to: string }[] = [];
+  for (const d of days) {
+    const last = out.at(-1);
+    if (last && Date.parse(`${d}T00:00:00Z`) - Date.parse(`${last.to}T00:00:00Z`) === DAY_MS) last.to = d;
+    else out.push({ from: d, to: d });
+  }
+  return out;
+}
+
+/** One record over several runs of days: each method's trades, wins and money added up, best net first. */
+export function mergeRecords(parts: readonly MethodRecordResult[]): MethodRecordResult {
+  const by = new Map<string, MethodRec>();
+  for (const p of parts) {
+    for (const m of p.methods) {
+      let r = by.get(m.method);
+      if (!r) by.set(m.method, (r = { method: m.method, trades: 0, wins: 0, net: 0, byTf: [] }));
+      r.trades += m.trades; r.wins += m.wins; r.net += m.net;
+      for (const t of m.byTf) {
+        const x = r.byTf.find((y) => y.tf === t.tf);
+        if (x) { x.trades += t.trades; x.wins += t.wins; x.net += t.net; } else r.byTf.push({ ...t });
+      }
+    }
+  }
+  return {
+    from: parts[0]?.from ?? '', to: parts.at(-1)?.to ?? '', priced: parts.at(-1)?.priced as MethodRecordResult['priced'],
+    signals: parts.reduce((n, p) => n + p.signals, 0), trades: parts.reduce((n, p) => n + p.trades, 0),
+    methods: [...by.values()].sort((a, b) => b.net - a.net),
+  };
+}
+
 export { pickMethods };
 
 /** Today's run time, epoch ms: the IST date of `now` at `at`. */
@@ -110,10 +184,17 @@ export function withIncluded(list: readonly string[], a: Pick<AutoMethods, 'incl
  * One pick for a strategy's rules as given (saved or on the form): the list it would set, and the record behind it.
  * Nothing passing keeps the list it has, said in `note`. The included methods are added either way.
  */
-export async function autoPick(config: StrategyConfig, a: AutoMethods, now: number, spot: number | null, record = methodRecord): Promise<AutoMethodsRun> {
-  const { from, to } = autoWindow(now, a.days);
+export async function autoPick(config: StrategyConfig, a: AutoMethods, now: number, spot: number | null, record = methodRecord, skip: readonly string[] = []): Promise<AutoMethodsRun> {
+  // Without a skipped day in reach, the one window it always read; with one, the days around it, a record a run.
+  const days = autoDays(now, a.days, skip);
+  const { from, to } = days.length ? { from: days[0]!, to: days.at(-1)! } : autoWindow(now, a.days);
+  const runs = spans(days);
+  const left = skip.filter((d) => d >= from && d <= to).sort();
+  const skipped = left.length ? { skipped: left } : {};
   const before = config.signal?.methods ?? [];
-  const r = await record(config, { from, to, now, spot });
+  const r = runs.length > 1
+    ? mergeRecords(await runs.reduce(async (acc, w) => [...await acc, await record(config, { ...w, now, spot })], Promise.resolve([] as MethodRecordResult[])))
+    : await record(config, { from, to, now, spot });
   const out = excludedBy(a);
   const passed = pickMethods(r.methods, a);
   const picked = passed.filter((m) => !out.has(m));
@@ -130,10 +211,15 @@ export async function autoPick(config: StrategyConfig, a: AutoMethods, now: numb
     const lessN = before.length - less.length, addN = kept.length - less.length;
     const why = `No method ${out.size ? 'but an excluded one ' : ''}won ${a.winPct}% of ${plural(a.minTrades, 'trade')} or more`;
     const changes = [lessN ? `less the ${plural(lessN, 'excluded method')}` : null, addN ? `with the ${plural(addN, 'included method')} added` : null].filter(Boolean).join(', ');
-    return { at: now, from, to, picked: kept, before, records, ...excluded, ...included, note: `${why}: the list was kept${changes ? `, ${changes}` : ''}.` };
+    return { at: now, from, to, ...skipped, picked: kept, before, records, ...excluded, ...included, note: `${why}: the list was kept${changes ? `, ${changes}` : ''}.` };
   }
-  return { at: now, from, to, picked: withIncluded(picked, a), before, records, ...excluded, ...included };
+  return { at: now, from, to, ...skipped, picked: withIncluded(picked, a), before, records, ...excluded, ...included };
 }
+
+/** The skipped days a run left out, said in the log beside its own note. */
+const skippedWords = (run: Pick<AutoMethodsRun, 'skipped'>) =>
+  (run.skipped?.length ? `Skipped ${run.skipped.length === 1 ? 'day' : 'days'}: ${run.skipped.join(', ')}.` : null);
+const noteWith = (run: Pick<AutoMethodsRun, 'skipped' | 'note'>) => [run.note, skippedWords(run)].filter(Boolean).join(' ') || null;
 
 export type AutoDeps = {
   all: () => Promise<Strategy[]>;
@@ -202,7 +288,7 @@ export async function runAutoMethods(now: number, d: AutoDeps, ask: AutoAsk = {}
     const skipped = (note: string) => d.log({
       at: now, strategyId: s.id, strategyName: (fresh ?? s).name, accountId: (fresh ?? s).accountId ?? null, source: 'daily',
       tf: tfLabel(s.config.signal!), rule: { winPct: a.winPct, minTrades: a.minTrades, days: a.days }, from: run.from, to: run.to,
-      before: asked, after: asked, records: worked, note,
+      before: asked, after: asked, records: worked, note: [note, skippedWords(run)].filter(Boolean).join(' '),
     }).catch((e: Error) => d.warn(`methods' daily update for ${s.name}: not logged: ${e.message}`));
     if (!fresh) { await skipped('The strategy was deleted while its record was worked out: nothing was written.'); continue; }
     if (!rule?.autoMethods?.on) { await skipped('The daily update was switched off while its record was worked out: the list was left as it was.'); continue; }
@@ -241,7 +327,7 @@ export async function runAutoMethods(now: number, d: AutoDeps, ask: AutoAsk = {}
       rule: { winPct: a.winPct, minTrades: a.minTrades, days: a.days }, from: run.from, to: run.to, before, after,
       // the records of every method that traded: the ones picked, dropped, and the ones that missed the line
       records,
-      note: run.note ?? null,
+      note: noteWith(run),
     }).catch((e: Error) => d.warn(`methods' daily update for ${s.name}: not logged: ${e.message}`));
   }
   return done;

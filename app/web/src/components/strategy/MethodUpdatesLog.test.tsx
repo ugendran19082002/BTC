@@ -9,6 +9,8 @@ vi.mock('@/api/strategy', () => ({
   getMethodUpdates: (...a: unknown[]) => getMethodUpdates(...a),
   getMethodPicks: (...a: unknown[]) => getMethodPicks(...a),
   runMethodPicks: (...a: unknown[]) => runMethodPicks(...a),
+  getSkipDays: async () => ({ days: [] }),
+  saveSkipDays: async (days: string[]) => ({ days }),
 }));
 vi.mock('@/api/entry', () => ({
   getEntryMethods: async () => ({ methods: [{ id: 'breakout', n: 1, name: 'Breakout' }, { id: 'bos', n: 6, name: 'BOS' }, { id: 'trap', n: 9, name: 'Trap' }] }),

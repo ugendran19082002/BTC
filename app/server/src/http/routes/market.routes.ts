@@ -12,7 +12,7 @@ import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
-import { WALK_MAX_DAYS, WALK_MAX_HOLDOUT, autoPick, autoWindow, methodRecord, walkForwardOf } from '../../strategy/auto-methods.js';
+import { SKIP_DAYS_KEY, WALK_MAX_DAYS, WALK_MAX_HOLDOUT, autoPick, autoWindow, methodRecord, skipDaysOf, walkForwardOf } from '../../strategy/auto-methods.js';
 import { METHODS } from '../../entry/methods.js';
 
 /**
@@ -766,7 +766,8 @@ export function registerMarketRoutes(app: FastifyInstance) {
     // An empty list is what this is for: checked with every method, as the record is worked out.
     const problems = validateConfig({ ...asked, signal: { ...asked.signal, methods: METHODS.map((m) => m.id) } });
     if (problems.length) return refuse(reply, 422, { error: problems.join(' '), problems });
-    return autoPick(asked, auto!, Date.now(), tradingService().spot);
+    // The desk's skipped days left out, as every pick does (9 Nov 2026).
+    return autoPick(asked, auto!, Date.now(), tradingService().spot, methodRecord, skipDaysOf(tradingService().settings.get(SKIP_DAYS_KEY)));
   });
 
   /**

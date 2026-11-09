@@ -6,7 +6,7 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow, perpRiseNow } from '../../strategy/runner.js';
-import { autoAsked, autoPick, runAutoMethodsAlone, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
+import { SKIP_DAYS_KEY, autoAsked, autoPick, methodRecord, runAutoMethodsAlone, skipDaysOf, skipDaysProblem, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
 import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoExclude, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
@@ -47,7 +47,8 @@ export const autoMethodsDeps = (): AutoDeps => {
   const s = strategyStore();
   return {
     all: () => s.all(), get: (id) => s.get(id), save: (x) => s.save(x),
-    pick: (c, a, now) => autoPick(c, a, now, tradingService().spot),
+    // Every pick leaves out the desk's skipped days (9 Nov 2026), read as it starts.
+    pick: (c, a, now) => autoPick(c, a, now, tradingService().spot, methodRecord, skipDaysOf(tradingService().settings.get(SKIP_DAYS_KEY))),
     log: (u) => s.logMethodUpdate(u),
     warn: (message) => noteError({ source: 'server', level: 'warn', where: 'auto-methods', message }),
   };
@@ -682,6 +683,20 @@ export function registerStrategyRoutes(app: FastifyInstance) {
         noteError({ source: 'server', level: 'warn', where: 'auto-methods', message: `pick now: ${e.message}` });
       });
     return reply.code(202).send(pickNow);
+  });
+
+  /**
+   * The days every pick skips (owner, 9 Nov 2026: "beside Pick now, skip Nov 4 and so on, many dates, saved in the DB"):
+   * one list for the desk, newest first. `PUT { days }` replaces it -- an empty list skips nothing.
+   */
+  app.get('/api/strategies/auto-methods/skip-days', async () => ({ days: skipDaysOf(svc.settings.get(SKIP_DAYS_KEY)) }));
+  app.put('/api/strategies/auto-methods/skip-days', async (req, reply) => {
+    const days = ((req.body ?? {}) as { days?: unknown }).days;
+    const problem = skipDaysProblem(days, sessionDayOf(Date.now()));
+    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+    const clean = skipDaysOf(JSON.stringify(days));
+    await svc.settings.set(SKIP_DAYS_KEY, clean.length ? JSON.stringify(clean) : '');
+    return { days: clean };
   });
 
   /** The last pick asked for now, and how many strategies one would take (`?account=`): for the Pick now button. */

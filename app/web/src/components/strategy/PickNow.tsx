@@ -3,6 +3,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 import { getMethodPicks, runMethodPicks } from '@/api/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { cn } from '@/lib/utils';
+import { SkipDays } from '@/components/strategy/SkipDays';
 
 /**
  * Pick now (owner, 25 Oct 2026: "a Pick now button: whatever is there now, the strategies pick now and update"): the
@@ -74,11 +75,14 @@ export function PickNow({ strategy, account = null, onDone }: {
           </span>
         )}
       </div>
+      {/* Beside the button (9 Nov 2026): the days every pick leaves out, saved on the server. */}
+      {!asking && <SkipDays />}
       {asking && (
         <div role="alertdialog" aria-label="Pick the methods now" className="grid gap-2 rounded-md border border-solid border-[var(--accent)] bg-muted p-2.5 text-[12.5px] leading-snug">
           <p className="m-0">
             Pick the methods now for <b>{whom}</b>? Each list is replaced by its rule&apos;s pick from the finished expiry days,
             and new signals read it at once; trades already open keep their exits. Today&apos;s expiry counts once it settles at 5:30 PM IST.
+            The skip days are left out, and the look-back reaches back a day further for each.
             The day&apos;s own run still comes at its time.
           </p>
           <div className="flex flex-wrap gap-1.5">

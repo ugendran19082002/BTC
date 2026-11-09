@@ -652,6 +652,8 @@ export type AutoMethodsRun = {
   at: number;
   /** The expiry days looked at. */
   from: string; to: string;
+  /** Days between `from` and `to` left out of the record (the desk's skip list, 9 Nov 2026); absent when none. */
+  skipped?: string[];
   /** The list it set, best net first; and the list before it. */
   picked: string[]; before: string[];
   /** Nothing passed, or the record could not be had: the list was left as it was, and why. */

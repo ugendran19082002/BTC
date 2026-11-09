@@ -175,3 +175,12 @@ export const runMethodPicks = (o: { strategyId?: string | null; account?: number
 
 /** The last pick asked for now, and how many strategies one would take -- of every account, or the one given. */
 export const getMethodPicks = (account: number | null = null) => json<{ last: PickNowRun | null; strategies: number }>(pickUrl(account));
+
+/**
+ * The days every pick skips (owner, 9 Nov 2026: "beside Pick now, skip Nov 4 and so on, many dates, saved on the DB side"):
+ * one list for the desk, newest first, read by the day's run, Pick now and the form's preview alike.
+ */
+const SKIP_URL = '/api/strategies/auto-methods/skip-days';
+export const getSkipDays = () => json<{ days: string[] }>(SKIP_URL);
+export const saveSkipDays = (days: string[]) =>
+  json<{ days: string[] }>(SKIP_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days }) });

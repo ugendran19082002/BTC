@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoDue, autoPick, autoWindow, lessExcluded, pickMethods, runAutoMethods, runAutoMethodsAlone, walkForward, withIncluded, type AutoDeps, type DayRecord } from '../../src/strategy/auto-methods.js';
+import { autoDays, autoDue, autoPick, autoWindow, lessExcluded, mergeRecords, skipDaysOf, skipDaysProblem, spans, pickMethods, runAutoMethods, runAutoMethodsAlone, walkForward, withIncluded, type AutoDeps, type DayRecord } from '../../src/strategy/auto-methods.js';
 import { DEFAULT_AUTO_METHODS, DEFAULT_CONFIG, autoMethodsProblems, validateConfig, type AutoMethods, type Strategy, type StrategyConfig } from '../../src/strategy/types.js';
 
 /**
@@ -452,4 +452,69 @@ test('[critical] the walk honours Include, as the daily update does', () => {
   const w = walkForward(days, { ...RULE, include: { on: true, methods: ['trap'] } }, ['a'], { testFrom: '2026-10-02', holdout: 0 });
   assert.ok(w.days.every((d) => d.picked.includes('trap')), 'in every day\'s list');
   assert.equal(w.rule.included, 1);
+});
+
+// Skipped days (owner, 9 Nov 2026: "beside Pick now, skip Nov 4 and so on -- many dates, saved on the DB side; the pick
+// runs skipping them").
+test('[critical] skipped days: left out of the look-back, which reaches back as far again -- 14 days are still 14', () => {
+  const now = IST('2026-11-09T21:00:00'); // the 9 Nov expiry has settled
+  const plain = autoDays(now, 7);
+  assert.deepEqual(plain, ['2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09']);
+  assert.deepEqual({ from: plain[0], to: plain.at(-1) }, autoWindow(now, 7), 'without a skip, the window it always read');
+  const skipping = autoDays(now, 7, ['2026-11-04', '2026-11-07', '2026-10-01']);
+  assert.deepEqual(skipping, ['2026-11-01', '2026-11-02', '2026-11-03', '2026-11-05', '2026-11-06', '2026-11-08', '2026-11-09']);
+  assert.deepEqual(spans(skipping), [{ from: '2026-11-01', to: '2026-11-03' }, { from: '2026-11-05', to: '2026-11-06' }, { from: '2026-11-08', to: '2026-11-09' }]);
+});
+
+test('[critical] a pick with skipped days reads one record a run of days, adds them up, and says what it skipped', async () => {
+  const now = IST('2026-11-09T21:00:00');
+  const asked: { from: string; to: string }[] = [];
+  const record = async (_c: StrategyConfig, o: { from: string; to: string }) => {
+    asked.push({ from: o.from, to: o.to });
+    // 'spiky' only won outside 4 Nov: one win a run; 'steady' the same.
+    return { from: o.from, to: o.to, priced: null as never, signals: 1, trades: 2,
+      methods: [{ method: 'steady', trades: 1, wins: 1, net: 0.1, byTf: [{ tf: '15m', trades: 1, wins: 1, net: 0.1 }] }, { method: 'spiky', trades: 1, wins: 1, net: 0.2, byTf: [] }] };
+  };
+  const a: AutoMethods = { ...DEFAULT_AUTO_METHODS, on: true, winPct: 75, minTrades: 2, days: 7 };
+  const run = await autoPick(signal(['old']), a, now, null, record, ['2026-11-04']);
+  assert.deepEqual(asked, [{ from: '2026-11-02', to: '2026-11-03' }, { from: '2026-11-05', to: '2026-11-09' }], 'the skipped day is never read');
+  assert.deepEqual([run.from, run.to, run.skipped], ['2026-11-02', '2026-11-09', ['2026-11-04']]);
+  assert.deepEqual(run.records, [{ method: 'spiky', trades: 2, wins: 2, net: 0.4 }, { method: 'steady', trades: 2, wins: 2, net: 0.2 }], 'added up over the runs');
+  assert.deepEqual(run.picked, ['spiky', 'steady']);
+
+  asked.length = 0;
+  const plain = await autoPick(signal(['old']), a, now, null, record);
+  assert.deepEqual(asked, [{ from: '2026-11-03', to: '2026-11-09' }], 'nothing skipped: one record, as before');
+  assert.equal(plain.skipped, undefined);
+  const far = await autoPick(signal(['old']), a, now, null, record, ['2026-09-01']);
+  assert.equal(far.skipped, undefined, 'a skipped day out of reach changes nothing');
+  assert.equal(mergeRecords([]).methods.length, 0);
+});
+
+test('the log says the days a pick skipped; the list is still set (a skip is not a "kept")', async () => {
+  const now = IST('2026-11-09T21:00:10');
+  const db = new Map<string, Strategy>([['s', strategy('s', signal(['bos']))]]);
+  const logged: Parameters<AutoDeps['log']>[0][] = [];
+  const d: AutoDeps = {
+    log: async (u) => { logged.push(u); }, all: async () => [...db.values()], get: async (id) => db.get(id) ?? null, save: async (x) => { db.set(x.id, x); },
+    pick: async (_c, _a, at) => ({ at, from: '2026-10-26', to: '2026-11-09', skipped: ['2026-11-04'], picked: ['breakout'], before: ['bos'], records: [{ method: 'breakout', trades: 5, wins: 5, net: 1 }] }),
+    warn: () => assert.fail('no warning expected'),
+  };
+  assert.deepEqual(await runAutoMethods(now, d), ['s']);
+  assert.deepEqual(db.get('s')!.config.signal!.methods, ['breakout']);
+  assert.equal(logged[0]!.note, 'Skipped day: 2026-11-04.');
+  assert.deepEqual(db.get('s')!.config.signal!.autoMethods!.last!.skipped, ['2026-11-04']);
+});
+
+test('the skip list as stored: valid days once, newest first; refused in words when it cannot be saved', () => {
+  assert.deepEqual(skipDaysOf(JSON.stringify(['2026-11-04', 'bad', '2026-10-13', '2026-11-04'])), ['2026-11-04', '2026-10-13']);
+  assert.deepEqual(skipDaysOf('not json'), []);
+  assert.deepEqual(skipDaysOf(''), []);
+  assert.equal(skipDaysProblem(['2026-11-04'], '2026-11-09'), null);
+  assert.equal(skipDaysProblem([], '2026-11-09'), null, 'an empty list skips nothing');
+  assert.match(skipDaysProblem('2026-11-04', '2026-11-09')!, /list of dates/);
+  assert.match(skipDaysProblem(['04-11-2026'], '2026-11-09')!, /YYYY-MM-DD/);
+  assert.match(skipDaysProblem(['2026-11-10'], '2026-11-09')!, /still to come/);
+  const many = Array.from({ length: 61 }, (_, i) => new Date(Date.UTC(2026, 8, 1) + i * 86_400_000).toISOString().slice(0, 10));
+  assert.match(skipDaysProblem(many, '2026-11-09')!, /At most 60/);
 });

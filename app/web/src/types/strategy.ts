@@ -360,7 +360,8 @@ export type AutoInclude = { on: boolean; methods: string[] };
  * `excluded`, the excluded methods that passed and were left out; `included`, the included ones that did not pass and
  * are in all the same.
  */
-export type AutoMethodsRun = { at: number; from: string; to: string; picked: string[]; before: string[]; note?: string | null; excluded?: string[]; included?: string[]; records?: MethodRecordLine[] };
+/** `skipped`: days inside `from`–`to` the pick left out (the desk's skip list, 9 Nov 2026); absent when none. */
+export type AutoMethodsRun = { at: number; from: string; to: string; skipped?: string[]; picked: string[]; before: string[]; note?: string | null; excluded?: string[]; included?: string[]; records?: MethodRecordLine[] };
 /**
  * The daily-update rule walked forward (server `walkForward`, 18 Oct 2026): each test day traded with what the rule
  * picked from the days before it alone; the last days held out and reported apart; every method and the list as it
