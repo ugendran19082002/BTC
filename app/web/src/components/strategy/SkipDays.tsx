@@ -21,13 +21,15 @@ const toDate = (iso: string) => new Date(`${iso}T12:00:00Z`);
 const fromDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const sameList = (a: readonly string[], b: readonly string[]) => [...a].sort().join() === [...b].sort().join();
 
-export function SkipDays() {
+/** `onDays`: told the list as it is read and after each save -- Pick now says it in its question (9 Nov 2026). */
+export function SkipDays({ onDays }: { onDays?: (days: string[]) => void } = {}) {
   const [days, setDays] = useState<string[] | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const today = istToday();
+  useEffect(() => { if (days) onDays?.(days); }, [days, onDays]);
 
   useEffect(() => {
     let live = true;

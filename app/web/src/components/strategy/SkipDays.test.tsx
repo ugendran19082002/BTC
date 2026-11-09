@@ -70,4 +70,39 @@ describe('SkipDays', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('At most 60 days can be skipped.');
     expect(screen.getByText('4 Nov')).toBeInTheDocument();
   });
+
+  it('[critical] after a save and a refresh: the days come back from the server, marked, and can be changed and saved again', async () => {
+    let stored = ['2026-11-04'];
+    getSkipDays.mockImplementation(async () => ({ days: stored }));
+    saveSkipDays.mockImplementation(async (days: string[]) => { stored = [...days].sort().reverse(); return { days: stored }; });
+    const first = render(<SkipDays />);
+    let cal = await open();
+    fireEvent.click(day(6));
+    fireEvent.click(cal.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(stored).toEqual(['2026-11-06', '2026-11-04']));
+    first.unmount();
+
+    // A refresh: a new mount reads the server again.
+    render(<SkipDays />);
+    expect(await screen.findByText('6 Nov')).toBeInTheDocument();
+    expect(screen.getByText('4 Nov')).toBeInTheDocument();
+    cal = await open();
+    expect(day(6)).toHaveAttribute('aria-selected', 'true');
+    expect(day(4)).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(day(4));
+    fireEvent.click(day(2));
+    fireEvent.click(cal.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(stored).toEqual(['2026-11-06', '2026-11-02']));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByText('2 Nov')).toBeInTheDocument();
+    expect(screen.queryByText('4 Nov')).not.toBeInTheDocument();
+  });
+
+  it('tells its list to the one who asks: as read, and after a save', async () => {
+    const onDays = vi.fn();
+    render(<SkipDays onDays={onDays} />);
+    await waitFor(() => expect(onDays).toHaveBeenLastCalledWith(['2026-11-04', '2026-10-13']));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop skipping 13 Oct' }));
+    await waitFor(() => expect(onDays).toHaveBeenLastCalledWith(['2026-11-04']));
+  });
 });

@@ -12,6 +12,8 @@ import { SkipDays } from '@/components/strategy/SkipDays';
  * the server answers at once and this asks every two seconds until it is done, then `onDone` refreshes the log.
  */
 const istTime = (ms: number) => new Date(ms).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' });
+const DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const dayWords = (d: string) => DAY.format(new Date(`${d}T00:00:00Z`));
 const strategies = (n: number) => `${n} ${n === 1 ? 'strategy' : 'strategies'}`;
 
 export function PickNow({ strategy, account = null, onDone }: {
@@ -20,6 +22,8 @@ export function PickNow({ strategy, account = null, onDone }: {
   const [asking, setAsking] = useState(false);
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
+  // The days the pick will skip, as the row below last said: shown in the question, where the row is not.
+  const [skip, setSkip] = useState<string[] | null>(null);
   // Started here: until the server's answer says it is done, asked often.
   const [mine, setMine] = useState<number | null>(null);
   const { data, refresh } = usePoll(() => getMethodPicks(account?.id ?? null), mine !== null ? 2_000 : 60_000, { deps: [mine, account?.id] });
@@ -76,15 +80,21 @@ export function PickNow({ strategy, account = null, onDone }: {
         )}
       </div>
       {/* Beside the button (9 Nov 2026): the days every pick leaves out, saved on the server. */}
-      {!asking && <SkipDays />}
+      {!asking && <SkipDays onDays={setSkip} />}
       {asking && (
         <div role="alertdialog" aria-label="Pick the methods now" className="grid gap-2 rounded-md border border-solid border-[var(--accent)] bg-muted p-2.5 text-[12.5px] leading-snug">
           <p className="m-0">
             Pick the methods now for <b>{whom}</b>? Each list is replaced by its rule&apos;s pick from the finished expiry days,
             and new signals read it at once; trades already open keep their exits. Today&apos;s expiry counts once it settles at 5:30 PM IST.
-            The skip days are left out, and the look-back reaches back a day further for each.
             The day&apos;s own run still comes at its time.
           </p>
+          {skip !== null && (
+            <p className="m-0">
+              {skip.length === 0
+                ? 'No day is skipped: every finished day in the look-back counts.'
+                : <>Skipping <b>{skip.length} {skip.length === 1 ? 'day' : 'days'}</b>: {skip.map(dayWords).join(', ')}. They are left out, and the look-back reaches back a day further for each.</>}
+            </p>
+          )}
           <div className="flex flex-wrap gap-1.5">
             <button type="button" onClick={() => void start()} className={cn(btn, 'border-primary bg-primary font-semibold text-primary-foreground')}>
               Pick now for {whom}

@@ -5,11 +5,12 @@ import type { MethodUpdate } from '@/types/strategy';
 const getMethodUpdates = vi.fn();
 const getMethodPicks = vi.fn();
 const runMethodPicks = vi.fn();
+const getSkipDays = vi.fn(async (..._a: unknown[]) => ({ days: [] as string[] }));
 vi.mock('@/api/strategy', () => ({
   getMethodUpdates: (...a: unknown[]) => getMethodUpdates(...a),
   getMethodPicks: (...a: unknown[]) => getMethodPicks(...a),
   runMethodPicks: (...a: unknown[]) => runMethodPicks(...a),
-  getSkipDays: async () => ({ days: [] }),
+  getSkipDays: (...a: unknown[]) => getSkipDays(...a),
   saveSkipDays: async (days: string[]) => ({ days }),
 }));
 vi.mock('@/api/entry', () => ({
@@ -202,6 +203,22 @@ describe('the calendar and Pick now (25 Oct 2026)', () => {
     render(<MethodUpdatesLog compact now={NOW} />);
     await screen.findByRole('tab', { name: 'Summary' });
     expect(screen.queryByRole('button', { name: 'Pick now' })).toBeNull();
+  });
+
+  it('[critical] Pick now\'s question names the days it will skip, or that none is (9 Nov 2026)', async () => {
+    getMethodUpdates.mockResolvedValue({ updates: THREE });
+    getMethodPicks.mockResolvedValue({ last: null, strategies: 3 });
+    getSkipDays.mockResolvedValueOnce({ days: ['2026-11-04', '2026-10-15', '2026-10-01'] });
+    const { unmount } = render(<MethodUpdatesLog now={NOW} />);
+    expect(await screen.findByText('4 Nov')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
+    expect(screen.getByRole('alertdialog', { name: 'Pick the methods now' })).toHaveTextContent('Skipping 3 days: 4 Nov, 15 Oct, 1 Oct. They are left out');
+    unmount();
+    getSkipDays.mockResolvedValueOnce({ days: [] });
+    render(<MethodUpdatesLog now={NOW} />);
+    expect(await screen.findByText('none, every day counts')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Pick now' }));
+    expect(screen.getByRole('alertdialog', { name: 'Pick the methods now' })).toHaveTextContent('No day is skipped');
   });
 
   it('[critical] every account is a chip, changes or none -- and Pick now picks the account chosen (25 Oct 2026)', async () => {
