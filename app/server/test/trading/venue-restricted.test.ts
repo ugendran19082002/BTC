@@ -186,7 +186,7 @@ test('[critical] the strike picker passes over a contract on reduce-only, and on
 });
 
 /* A contract full of the account's orders (19 Oct 2026, 13:32 IST: 61 trades open on C-BTC-83400-191026, "max_orders_count_exceeded"). */
-test('[critical] a contract full of the account\'s orders: the sale refused as the order\'s, the contract passed over for a while -- protection never so', async () => {
+test('[critical] a contract full of the account\'s orders: the sale refused as the order\'s, the contract passed over for a while', async () => {
   const { isContractFull, FULL_HOLD_MS } = await import('../../src/trading/contract-restrictions.js');
   clearReduceOnly();
   answers(() => ({ status: 400, body: { success: false, error: { code: 'max_orders_count_exceeded' } } }));
@@ -197,8 +197,48 @@ test('[critical] a contract full of the account\'s orders: the sale refused as t
   assert.equal(isContractFull(sym, Date.now() + FULL_HOLD_MS + 1), false, 'held a while: the cap frees as its trades close');
   const c = (strike: number) => ({ cp: 'C' as const, strike, sellPrice: 12, pOtm: 0.9, moneyness: 1.02, ask: 13, oi: 10, emBuffer: 1, delta: 0.08 });
   assert.deepEqual(sellable('191026', [c(83_400), c(83_600)]).map((x) => x.strike), [83_600], 'the next strike out');
-  // a stop or a target refused so is not noted: it is not a strike to pass over, and it is still an error
+});
+
+/* 10 Nov 2026: 309 stops and targets refused "max_orders_count_exceeded" on four of High's strikes while entries kept going in. */
+test('[critical] a trade\'s stop or target refused for a full contract: still refused as the order\'s, and the contract passed over -- no new sale onto a strike with no room for its exits', async () => {
+  const { isContractFull } = await import('../../src/trading/contract-restrictions.js');
   clearReduceOnly();
-  await assert.rejects(ex.placeOrder(order({ symbol: sym, reduceOnly: true, side: 'buy' })), OrderRejected);
-  assert.equal(isContractFull(sym), false);
+  answers(() => ({ status: 400, body: { success: false, error: { code: 'max_orders_count_exceeded' } } }));
+  const ex = new DeltaExchange(creds);
+  const sym = 'P-BTC-73600-101126';
+  await assert.rejects(ex.placeOrder(order({ symbol: sym, reduceOnly: true, side: 'buy', role: 'stop_loss' })), (e: unknown) => e instanceof OrderRejected && !(e instanceof VenueRestricted));
+  assert.equal(isContractFull(sym), true);
+  const p = (strike: number) => ({ cp: 'P' as const, strike, sellPrice: 12, pOtm: 0.9, moneyness: 0.98, ask: 13, oi: 10, emBuffer: 1, delta: -0.08 });
+  assert.deepEqual(sellable('101126', [p(73_600), p(73_400)]).map((x) => x.strike), [73_400], 'the next strike out');
+});
+
+test('[critical] the most on one strike is held under what Delta lets a contract carry, whatever the per cent says', async () => {
+  const { strikeLimitOf, CONTRACT_TRADES_MAX, DELTA_ORDERS_PER_CONTRACT } = await import('../../src/trading/contract-restrictions.js');
+  assert.equal(DELTA_ORDERS_PER_CONTRACT, 100);
+  assert.equal(CONTRACT_TRADES_MAX, 48, 'two exits a trade, four orders spare');
+  assert.deepEqual(strikeLimitOf(45), { most: 45, byDelta: false }, '15% of 300: the per cent');
+  assert.deepEqual(strikeLimitOf(60), { most: 48, byDelta: true }, '20% of 300 was 60: Delta\'s ceiling');
+  assert.deepEqual(strikeLimitOf(null), { most: 48, byDelta: true }, '100%, or no "at most open": still the ceiling');
+});
+
+/* 10 Nov 2026: with room at Delta for one more order on the contract, the target went first and took it -- the trade rested with no stop. */
+test('[critical] the stop goes on before the target; with room for one, the stop has it and the trade is not left without one', async () => {
+  const r = rig();
+  const p = plan();
+  const roles: string[] = [];
+  const place = r.ex.placeOrder.bind(r.ex);
+  let room = 1; // one reduce-only order more fits on the contract
+  r.ex.placeOrder = async (req) => {
+    if (req.reduceOnly) {
+      roles.push(req.role);
+      if (room-- <= 0) throw new OrderRejected('Delta refused the request (max_orders_count_exceeded).');
+    }
+    return place(req);
+  };
+  await r.engine.open(p);
+  const s = await r.engine.poll(p.tradeId);
+  assert.deepEqual(roles.slice(0, 2), ['stop_loss', 'take_profit'], 'the stop asked for first');
+  assert.ok(s?.protection.stopLoss, 'the stop rests');
+  assert.equal(s?.protection.takeProfit, null, 'the target waits for room');
+  assert.notEqual(s?.phase, 'unprotected', 'a stop on the book: not an unprotected position');
 });

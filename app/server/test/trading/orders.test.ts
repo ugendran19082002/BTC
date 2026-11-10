@@ -889,7 +889,8 @@ test('65b [critical] a target Delta did not answer does not hold the stop back: 
   };
   const s = await r.engine.poll(plan.tradeId);
 
-  assert.deepEqual(sent.filter((x) => x !== 'entry'), ['take_profit', 'stop_loss'], 'both legs tried in the one pass');
+  // The stop first since 10 Nov 2026 (room for one more order on a contract: the stop has it).
+  assert.deepEqual(sent.filter((x) => x !== 'entry'), ['stop_loss', 'take_profit'], 'both legs tried in the one pass');
   assert.ok(s?.protection.stopLoss, 'the stop is on, whatever became of the target');
   assert.equal(s?.protection.takeProfit, null);
   const book = (await r.ex.getOpenOrders(CE)).filter((o) => o.reduceOnly);

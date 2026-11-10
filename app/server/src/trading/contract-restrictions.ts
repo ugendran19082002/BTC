@@ -33,6 +33,27 @@ export function reduceOnlyContracts(now = Date.now()): { symbol: string; until: 
  * target and a stop resting). Passed over as a reduce-only one is, for less long: the cap frees as its trades close.
  */
 export const FULL_HOLD_MS = 30 * 60_000;
+/*
+ * Delta's own most of an account's open orders on one contract (10 Nov 2026, the error log: 309 refusals
+ * "max_orders_count_exceeded" from 08:25 IST, High holding 50 protected trades on each of four strikes -- 100 orders --
+ * and the 51st to 53rd sold with neither a stop nor a target behind them, the strike limit then at 20% of 300 = 60).
+ * Every trade rests two orders there, its target and its stop.
+ */
+export const DELTA_ORDERS_PER_CONTRACT = 100;
+/**
+ * The most of one account's trades a contract may hold, whatever the strike limit's per cent says: both exits of each
+ * resting, and four orders spare -- two entries working at once, and a close, which is an order too.
+ */
+export const CONTRACT_TRADES_MAX = Math.floor(DELTA_ORDERS_PER_CONTRACT / 2) - 2;
+/**
+ * The strike limit in force: the per cent's number (`pctCap`, null where the per cent sets none), held under
+ * `CONTRACT_TRADES_MAX`; `byDelta` when it is Delta's ceiling, not the per cent, that sets it.
+ */
+export function strikeLimitOf(pctCap: number | null): { most: number; byDelta: boolean } {
+  return pctCap !== null && pctCap <= CONTRACT_TRADES_MAX
+    ? { most: pctCap, byDelta: false }
+    : { most: CONTRACT_TRADES_MAX, byDelta: true };
+}
 const fullUntil = new Map<string, number>();
 /** Note `symbol` as full of orders from `now`. True the first time (or once a hold has run out): the time to say so. */
 export function noteContractFull(symbol: string, now = Date.now()): boolean {

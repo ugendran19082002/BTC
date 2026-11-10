@@ -2012,25 +2012,11 @@ export class TradeEngine {
      * 2.00 offer against a 1.00 target on two legs. A target is the price you
      * will pay; if nobody sells there, the position stays on.
      */
-    // A target the exchange kept cancelling is held off the book for a while (`noteTargetChurn`): left as it is.
-    const holdTarget = targetHoldOf(rec).until > this.now();
-    const tp = holdTarget ? rec.state.protection.takeProfit : await settle(
-      'take_profit',
-      rec.plan.takeProfitPrice,
-      (o) => o.type === 'limit',
-      (o) => o.limitPrice,
-      'limitPrice',
-      (cid, price) => this.exchange.placeOrder({
-        clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
-        side: 'buy', type: 'limit', size, limitPrice: price,
-        reduceOnly: true, role: 'take_profit',
-      }).then(() => {}),
-    );
-    // A fill came in: the size and the legs here were worked for the position before it. Nothing more is placed; the
-    // other exit goes, as the poll takes it off after any exit's fill, before it can reopen the position (0006).
-    if (filledMeanwhile) return rec.state.exitWinner ? this.cancelSiblings(rec) : rec;
-
     /*
+     * The stop first, then the target (10 Nov 2026): with room at Delta for one more order on the contract and not two
+     * (`DELTA_ORDERS_PER_CONTRACT`), whichever went first took it -- the target, as this stood -- and the trade rested
+     * with a target and no stop. Each leg is settled on its own, so the order changes nothing else.
+     *
      * The stop stays a trigger at the exchange, because its whole value is that
      * it works when this process does not -- but at the backstop, not at the
      * stop itself: Delta triggers it on the mark, and the mark spikes on thin
@@ -2051,6 +2037,24 @@ export class TradeEngine {
         side: 'buy', type: 'stop_limit', size, stopPrice: price,
         limitPrice: stopFillLimit('buy', price, tick), reduceOnly: true, role: 'stop_loss',
         triggerOn: backstopTriggerFor(rec.state.entryAvgPrice),
+      }).then(() => {}),
+    );
+    // A fill came in: the size and the legs here were worked for the position before it. Nothing more is placed; the
+    // other exit goes, as the poll takes it off after any exit's fill, before it can reopen the position (0006).
+    if (filledMeanwhile) return rec.state.exitWinner ? this.cancelSiblings(rec) : rec;
+
+    // A target the exchange kept cancelling is held off the book for a while (`noteTargetChurn`): left as it is.
+    const holdTarget = targetHoldOf(rec).until > this.now();
+    const tp = holdTarget ? rec.state.protection.takeProfit : await settle(
+      'take_profit',
+      rec.plan.takeProfitPrice,
+      (o) => o.type === 'limit',
+      (o) => o.limitPrice,
+      'limitPrice',
+      (cid, price) => this.exchange.placeOrder({
+        clientOrderId: cid, symbol: rec.plan.symbol, productId: product?.productId ?? 0,
+        side: 'buy', type: 'limit', size, limitPrice: price,
+        reduceOnly: true, role: 'take_profit',
       }).then(() => {}),
     );
     if (filledMeanwhile) return rec.state.exitWinner ? this.cancelSiblings(rec) : rec;

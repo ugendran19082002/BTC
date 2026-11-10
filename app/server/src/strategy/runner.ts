@@ -3,7 +3,7 @@ import { scoreLegs } from '../domain/score.js';
 import { wallWithinEm } from '../http/routes/desk.routes.js';
 import { runAsDesk, tradingService, tradingServiceFor, type TradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
-import { isPassedOver } from '../trading/contract-restrictions.js';
+import { DELTA_ORDERS_PER_CONTRACT, isPassedOver, strikeLimitOf } from '../trading/contract-restrictions.js';
 import { StrategyStore } from './store.js';
 import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMinutes, istWeekday, openedAtOf } from './schedule.js';
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
@@ -853,18 +853,27 @@ export class StrategyRunner {
     let forwarded = '';
     // A per cent of the account's "at most open" (`cap`, above), as each side's is.
     const strikePct = accountStrikePct;
-    const strikeCap = strikeCapOf(cap, strikePct);
+    /*
+     * Held under what Delta lets one contract carry (10 Nov 2026; `CONTRACT_TRADES_MAX`): at 20% of 300 the limit was
+     * 60, Delta stopped taking the account's orders on a strike at 100 -- 50 trades' targets and stops -- and the trades
+     * past it were sold with no exits behind them. Whatever the per cent, 100% and none included.
+     */
+    const strikeLimit = strikeLimitOf(strikeCapOf(cap, strikePct));
+    const strikeCap = strikeLimit.most;
+    const strikeWhy = strikeLimit.byDelta
+      ? `Delta holds ${DELTA_ORDERS_PER_CONTRACT} of an account's orders on a contract, a target and a stop for each trade`
+      : `${strikePct}% of the ${cap}`;
     // And the group's own, of the group's at most open, over the group's own trades (8 Nov 2026).
     const groupStrikeCap = groupLimits?.strikeCap ?? null;
-    if (strikeCap !== null || groupStrikeCap !== null) {
+    {
       const sym = (c: Pick<Candidate, 'cp' | 'strike'>) => `${c.cp}-BTC-${c.strike}-${snap.expiry}`;
       const onIt = (c: Pick<Candidate, 'cp' | 'strike'>) => openNow.filter((t) => t.plan.symbol === sym(c)).length;
       const ourOnIt = (c: Pick<Candidate, 'cp' | 'strike'>) => ours.filter((t) => t.plan.symbol === sym(c)).length;
       // Why a strike is full, by the account's limit or the group's, and how full; null while it has room under both.
       const fullBy = (c: Pick<Candidate, 'cp' | 'strike'>): { why: string; count: string } | null => {
         const held = onIt(c);
-        if (strikeCap !== null && held >= strikeCap) {
-          return { why: `the desk already has ${held} open on ${leg} ${c.strike} -- at most ${strikeCap} on one strike (${strikePct}% of the ${cap})`, count: `${held} of ${strikeCap}` };
+        if (held >= strikeCap) {
+          return { why: `the desk already has ${held} open on ${leg} ${c.strike} -- at most ${strikeCap} on one strike (${strikeWhy})`, count: `${held} of ${strikeCap}` };
         }
         const mine = groupStrikeCap !== null ? ourOnIt(c) : 0;
         if (groupStrikeCap !== null && mine >= groupStrikeCap) {

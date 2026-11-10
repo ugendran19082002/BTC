@@ -549,6 +549,23 @@ export class DeltaExchange implements ExchangePort {
         }
         throw new OrderRejected(e.message);
       }
+      /*
+       * A trade's own exit refused so (10 Nov 2026: 309 stops and targets refused on four of High's strikes, 13 trades
+       * left with nothing resting behind them). Still the error it is -- the trade is unprotected, and its alarm says so
+       * -- but the contract is passed over too, so no new sale piles onto a strike that has no room for its exits: that
+       * was what kept refusing them, the entries going in while the exits behind them could not. Said once a contract,
+       * in words, with what the desk does about it.
+       */
+      if (e instanceof DeltaRefused && e.code === 'max_orders_count_exceeded' && req.reduceOnly) {
+        noteContractFull(req.symbol);
+        const leg = req.role === 'stop_loss' ? 'stop' : req.role === 'take_profit' ? 'target' : 'close';
+        noteError({
+          source: 'exchange', where: 'POST /v2/orders', code: e.code,
+          message: `Delta holds as many of the account's orders on ${req.symbol} as it allows: a trade's ${leg} was refused. No new trade is sold on it for ${FULL_HOLD_MS / 60_000} min; the desk's own stop watch still judges the trade's stop, and its exits go on again as soon as the contract has room.`,
+          context: { sent: body },
+        });
+        throw new OrderRejected(e.message);
+      }
       noteError({
         source: 'exchange',
         ...(isRestriction(e) ? { level: 'warn' as const } : {}),
