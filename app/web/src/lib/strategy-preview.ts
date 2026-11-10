@@ -1,5 +1,5 @@
 import { elseOtmOf, strikeLabel, type StrategyConfig } from '@/types/strategy';
-import { ruleTfWords, slFilters, tgtFilters } from '@/types/strategy';
+import { ptsKeysOf, ruleTfWords, slFilters, tgtFilters } from '@/types/strategy';
 import { time12, wrapsMidnight } from '@/lib/time';
 import { exitRules, exitWords, type ExitRule } from '@/lib/strategy-exits';
 import { blocksWords } from '@/lib/strategy-blocks';
@@ -126,7 +126,10 @@ export function describeStrategy(c: StrategyConfig): string {
     const span = (x: { pts: number; max: number }) => (x.pts > 0 && x.max > 0 ? `${x.pts} to ${x.max}` : x.pts > 0 ? `${x.pts}+` : `up to ${x.max}`);
     const side = (name: string, xs: { tf: string; pts: number; max: number }[]) =>
       (xs.length ? `the ${name} ${xs.map((x, i) => `${span(x)} ${i === 0 ? 'pts from the entry' : ''}${x.tf === 'chain' ? '' : `${i === 0 ? ' ' : ''}on ${x.tf}`}`.trim()).join(', ')}` : null);
-    const sides = [side('SL', slFilters(r)), side('TGT', tgtFilters(r))].filter(Boolean);
+    // And the minimum score (10 Nov 2026), where set: "a score of 30+ on 5m, 40+ on 15m"; with the chain, "a score of 30+".
+    const scored = ptsKeysOf(r).map((tf) => ({ tf, v: r.minScore?.[tf] ?? 0 })).filter((x) => x.v > 0);
+    const score = scored.length ? `a score of ${scored.map((x) => `${x.v}+${x.tf === 'chain' ? '' : ` on ${x.tf}`}`).join(', ')}` : null;
+    const sides = [side('SL', slFilters(r)), side('TGT', tgtFilters(r)), score].filter(Boolean);
     const far = sides.length ? ` (only with ${sides.join('; ')})` : '';
     const way = r.mode === 'mtf' ? `with the timeframe chain${far}` : `without the chain, ${ruleTfWords(r)}${far}`;
     return `From ${time12(c.entryTime)} to ${time12(c.exitTime)} IST on ${describeDays(c.weekdays)}, takes the TRADE signals of `

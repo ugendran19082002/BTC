@@ -297,6 +297,11 @@ export type SignalRule = {
   maxSlPts?: PtsBy;
   maxTgtPts?: PtsBy;
   /**
+   * The least setup score a signal needs to be taken (10 Nov 2026), per timeframe -- the one under `chain` with the chain --
+   * as the SL minimum is. 0-100, the signal engine's setup quality (not a probability). Absent or 0: off.
+   */
+  minScore?: PtsBy;
+  /**
    * What is done with the option: `sell` (a BUY signal sells the put, a SELL the call -- every strategy before the
    * choice) or `buy` (a BUY signal buys the call, a SELL the put). Absent reads as `sell`. With live orders on a
    * `buy` strategy buys at the offer and sells to close, its own target and stop judged by the desk on the bid.
@@ -432,6 +437,8 @@ export const ptsWhere = (key: string): string => (key === CHAIN_PTS ? 'with the 
 export const ptsKeysOf = (rule: Pick<SignalRule, 'mode' | 'tf' | 'tfs'>): PtsKey[] => (rule.mode === 'single' ? (rule.tfs ?? [rule.tf]) : [CHAIN_PTS]);
 /** The most an SL-distance filter may ask for (server: MAX_SL_PTS). */
 export const MAX_SL_PTS = 100_000;
+/** The setup score's scale (server: MAX_SCORE): a minimum score is from 0 (off) to this. */
+export const MAX_SCORE = 100;
 
 /** A timeframe's distance filter: `pts` the least (0: none), `max` the most (0: none). */
 export type DistanceFilter = { tf: PtsKey; pts: number; max: number };
@@ -684,7 +691,7 @@ export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is the only stop: set one, or keep the perp SL.';
 
 /** The kinds of reason a signal was not taken (server: strategy/signal-reasons.ts `SIGNAL_REASONS`). */
-export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'own-max' | 'desk-max' | 'side-max' | 'strike-max' | 'no-entry' | 'late' | 'over'
+export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'score-min' | 'own-max' | 'desk-max' | 'side-max' | 'strike-max' | 'no-entry' | 'late' | 'over'
   | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'stale-quote' | 'momentum' | 'other';
 
 /** How a signal row entered (server `signalEntryOf`, 2 Nov 2026): on its own signal, or a re-entry after an option SL or target. */

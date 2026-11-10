@@ -1086,6 +1086,55 @@ describe('by delta too (18 Oct 2026): "keep it at least this far out of the mone
   });
 });
 
+describe('the minimum score: one number from 0 to 100 for each timeframe picked (10 Nov 2026)', () => {
+  const single = (over: Partial<SignalRule> = {}) => signalStrategy({ mode: 'single', tf: '5m', tfs: ['5m', '15m'], ...over });
+  const group = () => screen.getByRole('group', { name: 'Minimum score by timeframe' });
+
+  it('[critical] a field per timeframe picked, 0 -- off -- until typed; with the chain, the chain\'s own field instead', () => {
+    show(single());
+    for (const tf of ['5m', '15m']) {
+      expect(within(group()).getByLabelText(`${tf} minimum score`)).toHaveValue('0');
+      expect(within(group()).getByLabelText(`${tf} score filter`)).toHaveTextContent('off');
+    }
+    expect(within(group()).queryByLabelText('1h minimum score')).not.toBeInTheDocument();
+    expect(within(group()).getByText(/It is a quality reading, not a chance of winning/)).toBeInTheDocument();
+    radio('signal way', 'With the timeframe chain');
+    expect(screen.queryByRole('group', { name: 'Minimum score by timeframe' })).not.toBeInTheDocument();
+    const chain = within(screen.getByRole('group', { name: 'Minimum score with the chain' }));
+    expect(chain.queryByLabelText('5m minimum score')).not.toBeInTheDocument();
+    expect(chain.getByLabelText('chain minimum score')).toHaveValue('0');
+  });
+
+  it('[critical] typed, it is said and saved per timeframe; over 100 is refused in the server\'s words; the summary says it', async () => {
+    show(single());
+    fireEvent.change(screen.getByLabelText('5m minimum score'), { target: { value: '30' } });
+    expect(screen.getByLabelText('5m score filter')).toHaveTextContent('30+');
+    expect(screen.getByLabelText('15m score filter')).toHaveTextContent('off');
+    expect(screen.getByText(/only with a score of 30\+ on 5m\)/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('15m minimum score'), { target: { value: '101' } });
+    expect(await screen.findByText('The minimum score for 15m must be a whole number from 0 to 100.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('15m minimum score'), { target: { value: '40' } });
+    await waitFor(() => expect(screen.queryByText(/must be a whole number from 0 to 100/)).toBeNull());
+
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.minScore).toMatchObject({ '5m': 30, '15m': 40 });
+  });
+
+  it('[critical] with the chain: its own number is set and saved under the chain, a timeframe\'s carried over is not shown', async () => {
+    show(signalStrategy({ mode: 'mtf', tf: '5m', tfs: ['5m'], minScore: { '5m': 70 } }));
+    const chain = within(screen.getByRole('group', { name: 'Minimum score with the chain' }));
+    expect(chain.getByLabelText('chain minimum score')).toHaveValue('0');
+    fireEvent.change(chain.getByLabelText('chain minimum score'), { target: { value: '25' } });
+    expect(chain.getByLabelText('chain score filter')).toHaveTextContent('25+');
+    expect(screen.getByText(/with the timeframe chain \(only with a score of 25\+\)/)).toBeInTheDocument();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveStrategy).toHaveBeenCalled());
+    expect(saved().config.signal!.minScore).toMatchObject({ chain: 25 });
+  });
+});
+
 describe('the SL and TGT distance filters: two numbers of points for each timeframe picked', () => {
   const single = (over: Partial<SignalRule> = {}) => signalStrategy({ mode: 'single', tf: '5m', tfs: ['5m', '15m'], ...over });
   const group = () => screen.getByRole('group', { name: 'SL and TGT distance by timeframe' });

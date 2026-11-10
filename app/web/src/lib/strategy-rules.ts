@@ -1,4 +1,4 @@
-import { CHAIN_PTS, SKIP_SL_NEEDS_STOP, autoMethodsProblems, deltaByVolProblems, slByVolProblems, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, deltaProblem, distanceProblem, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
+import { CHAIN_PTS, SKIP_SL_NEEDS_STOP, autoMethodsProblems, deltaByVolProblems, slByVolProblems, MAX_SCORE, MAX_SIGNAL_OPEN, MAX_SL_PTS, MAX_STRIKE_STEP, SIGNAL_TFS, deltaProblem, distanceProblem, ptsWhere, type PtsKey, type SignalTf, type StrategyConfig } from '@/types/strategy';
 import { isHhmm, minutesForward, minutesOf, minutesToSettlement, time12 } from '@/lib/time';
 import { exitRuleProblems, exitRules, minOtmProblems, premiumFallbackProblem } from '@/lib/strategy-exits';
 import { strikeBlockProblems } from '@/lib/strategy-blocks';
@@ -23,7 +23,7 @@ export type FormField =
   | 'name' | 'entryTime' | 'exitTime' | 'weekdays' | 'graceMin' | 'noEntry'
   | 'legs' | 'strikeRule' | 'strikeStep' | 'premium' | 'premiumFallback' | 'premiumMinOtm' | 'delta' | 'distance' | 'strikeBlocks' | 'minPremium' | 'lots'
   | 'entryLimit' | 'crossAfterSec' | 'maxCrossSpreadPct' | 'takeProfitPct' | 'stopLossPct'
-  | 'signalMode' | 'signalTf' | 'signalSlPts' | 'signalMethods' | 'signalTarget' | 'maxOpen' | 'autoMethods' | 'deltaByVol' | 'slByVol' | 'skipPerp';
+  | 'signalMode' | 'signalTf' | 'signalSlPts' | 'signalScore' | 'signalMethods' | 'signalTarget' | 'maxOpen' | 'autoMethods' | 'deltaByVol' | 'slByVol' | 'skipPerp';
 
 export type Problem = { field: FormField; tab: FormTab; message: string };
 
@@ -31,7 +31,7 @@ const TAB: Record<FormField, FormTab> = {
   name: 'when', entryTime: 'when', exitTime: 'when', weekdays: 'when', graceMin: 'when', noEntry: 'when',
   legs: 'sell', strikeRule: 'sell', strikeStep: 'sell', premium: 'sell', premiumFallback: 'sell', premiumMinOtm: 'sell', delta: 'sell', distance: 'sell', strikeBlocks: 'sell', minPremium: 'sell', lots: 'sell',
   entryLimit: 'trade', crossAfterSec: 'trade', maxCrossSpreadPct: 'trade', takeProfitPct: 'trade', stopLossPct: 'trade',
-  signalMode: 'signal', signalTf: 'signal', signalSlPts: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade', autoMethods: 'signal', deltaByVol: 'sell', slByVol: 'trade', skipPerp: 'trade',
+  signalMode: 'signal', signalTf: 'signal', signalSlPts: 'signal', signalScore: 'signal', signalMethods: 'signal', signalTarget: 'trade', maxOpen: 'trade', autoMethods: 'signal', deltaByVol: 'sell', slByVol: 'trade', skipPerp: 'trade',
 };
 
 export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
@@ -134,6 +134,11 @@ export function strategyProblems(c: StrategyConfig, name: string): Problem[] {
             say('signalSlPts', `The ${name} maximum ${ptsWhere(tf)} (${most}) is under its minimum (${least}): no signal could pass both.`);
           }
         }
+      }
+      // The minimum score (10 Nov 2026) -- the server's words (`minScoreProblems`): whole numbers from 0 to 100.
+      for (const [tf, v] of Object.entries(r.minScore ?? {})) {
+        if (tf !== CHAIN_PTS && !SIGNAL_TFS.includes(tf as SignalTf)) say('signalScore', `No such timeframe for a minimum score: ${tf}.`);
+        else if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > MAX_SCORE) say('signalScore', `The minimum score ${ptsWhere(tf)} must be a whole number from 0 to ${MAX_SCORE}.`);
       }
       if (!Array.isArray(r.methods) || r.methods.length === 0) say('signalMethods', 'Pick at least one method whose signals to take.');
       // The methods' daily update -- the server's words.

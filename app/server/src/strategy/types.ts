@@ -515,6 +515,15 @@ export type SignalRule = {
   maxSlPts?: PtsBy;
   maxTgtPts?: PtsBy;
   /**
+   * The least setup score a signal needs to be taken (owner, 10 Nov 2026: "score enable 0 to 100, each timeframe, like
+   * the perp SL min"): per timeframe without the chain, the one number under `chain` with it -- as `minSlPts`. The
+   * score is the signal engine's setup quality, 0-100 (entry/engine.ts `scoreOf`; never above 85 today, its footprint
+   * and probability parts are not filled), not a probability. A signal scoring under the number is skipped and written
+   * down with both numbers. Absent or 0 for a timeframe: off -- every strategy saved before it. A re-entry after an
+   * option exit is not held to it, as it is not to the distance filters: it has no signal of its own.
+   */
+  minScore?: PtsBy;
+  /**
    * What is done with the option (owner, 5 Oct 2026): `sell` -- a BUY signal sells the put, a SELL the call,
    * what every signal strategy did before this -- or `buy` -- a BUY signal buys the call, a SELL the put.
    * Absent reads as `sell`.
@@ -737,6 +746,8 @@ export type PtsKey = SignalTf | typeof CHAIN_PTS;
 export type PtsBy = Partial<Record<PtsKey, number>>;
 /** The most an SL-distance filter may ask for: beyond this is a typo, not a filter. */
 export const MAX_SL_PTS = 100_000;
+/** The setup score's scale: a minimum score is from 0 (off) to this. */
+export const MAX_SCORE = 100;
 
 /** "for 15m", "with the chain": which of a rule's distance filters a message is about. */
 export const ptsWhere = (key: string): string => (key === CHAIN_PTS ? 'with the chain' : `for ${key}`);
@@ -754,6 +765,11 @@ export function minTgtPtsFor(rule: Pick<SignalRule, 'mode' | 'minTgtPts'>, tf: s
 /** The most SL distance a rule allows a signal on this timeframe; 0 is no maximum. */
 export function maxSlPtsFor(rule: Pick<SignalRule, 'mode' | 'maxSlPts'>, tf: string): number {
   return ptsFor(rule.mode, rule.maxSlPts, tf);
+}
+
+/** The least setup score a rule asks of a signal on this timeframe; 0 is no filter. */
+export function minScoreFor(rule: Pick<SignalRule, 'mode' | 'minScore'>, tf: string): number {
+  return ptsFor(rule.mode, rule.minScore, tf);
 }
 
 /** The most TGT distance a rule allows a signal on this timeframe; 0 is no maximum. */
@@ -1600,6 +1616,8 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
       }
     }
   }
+  // The minimum score (10 Nov 2026): per timeframe, or under `chain`, a whole number from 0 (off) to 100.
+  bad.push(...minScoreProblems(r.minScore));
   // A maximum under its own minimum takes no signal at all: said, rather than saved as a strategy that never trades.
   for (const [lo, hi, name] of [[r.minSlPts, r.maxSlPts, 'SL'], [r.minTgtPts, r.maxTgtPts, 'TGT']] as const) {
     if (!lo || !hi || typeof lo !== 'object' || typeof hi !== 'object') continue;
@@ -1609,6 +1627,18 @@ export function signalRuleProblems(r: Partial<SignalRule> | undefined): string[]
         bad.push(`The ${name} maximum ${ptsWhere(tf)} (${most}) is under its minimum (${least}): no signal could pass both.`);
       }
     }
+  }
+  return bad;
+}
+
+/** A rule's minimum score: per timeframe (or `chain`), each a whole number from 0 to `MAX_SCORE`. The form says the same words. */
+export function minScoreProblems(by: unknown): string[] {
+  if (by === undefined || by === null) return [];
+  if (typeof by !== 'object' || Array.isArray(by)) return ['The minimum score must be given per timeframe.'];
+  const bad: string[] = [];
+  for (const [tf, v] of Object.entries(by)) {
+    if (tf !== CHAIN_PTS && !SIGNAL_TFS.includes(tf as SignalTf)) bad.push(`No such timeframe for a minimum score: ${tf}.`);
+    else if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > MAX_SCORE) bad.push(`The minimum score ${ptsWhere(tf)} must be a whole number from 0 to ${MAX_SCORE}.`);
   }
   return bad;
 }

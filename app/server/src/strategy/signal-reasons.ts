@@ -9,7 +9,7 @@
  * -- refused: ..." -- so only what follows "refused:" is read for it: the SL and TGT there are the order's, not a reason.
  */
 export const SIGNAL_REASONS = [
-  'sl-min', 'sl-max', 'tgt-min', 'tgt-max', 'own-max', 'desk-max', 'side-max', 'strike-max', 'no-entry', 'late', 'over',
+  'sl-min', 'sl-max', 'tgt-min', 'tgt-max', 'score-min', 'own-max', 'desk-max', 'side-max', 'strike-max', 'no-entry', 'late', 'over',
   'premium', 'spread', 'no-strike', 'margin', 'loss-limit', 'no-board', 'delta', 'stale-quote', 'momentum', 'other',
 ] as const;
 export type SignalReason = (typeof SIGNAL_REASONS)[number];
@@ -20,6 +20,8 @@ const KINDS: [SignalReason, RegExp][] = [
   ['sl-max', /\bSL too far\b/],
   ['tgt-min', /\bTGT too near\b/],
   ['tgt-max', /\bTGT too far\b/],
+  // The strategy's minimum setup score (10 Nov 2026).
+  ['score-min', /^score too low\b/],
   ['no-entry', /no-entry window/i],
   ['late', /too late to enter/i],
   ['over', /over before it could be entered|in the same moment/i],

@@ -9,7 +9,7 @@ import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMin
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting, groupSetting } from '../db/settings.js';
 import { groupBlock, groupLimitsOf, groupOwnOf } from './group-limits.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import type { OptionExit } from '../trading/option-exit.js';
@@ -452,6 +452,8 @@ export class StrategyRunner {
       id: f.method, n: m?.n ?? 0, name: m?.name ?? f.method, mode: f.mode, tf: f.tf,
       dir: f.dir === 1 ? 'long' : 'short', state: 'TRADE', triggerTime: f.triggerAt,
       plan: { entryLo: f.entryLo, entryHi: f.entryHi, stop: f.stop, tp1: f.tp1, tp2: f.tp2, tp3: f.tp3 },
+      // Its setup score as written (10 Nov 2026), for a strategy's minimum score.
+      score: f.score ?? null,
     } as unknown as MethodRead;
     return this.inTurn(f.tf, (s) => (entersOn(s.config.signal!) === 'zone' && signalMatches(s.config.signal!, r)
       ? () => this.takeSignal(s, r, f) : null));
@@ -751,6 +753,21 @@ export class StrategyRunner {
       };
       const why = [near('SL', plan.stop, needSl), far('SL', plan.stop, mostSl), near('TGT', tgt, needTgt), far('TGT', tgt, mostTgt)].filter(Boolean);
       if (why.length) { await finish('skipped', why.join('; ')); return; }
+    }
+
+    /*
+     * The minimum score (owner, 10 Nov 2026): a signal whose setup score is under the rule's number for its timeframe --
+     * the chain's own with the chain -- is not taken, and the row says both numbers. One with no score to read is not
+     * taken either while the filter is on: the filter asks for a score, and none is not one. A re-entry is not held to it.
+     */
+    const needScore = re ? 0 : minScoreFor(rule, r.tf);
+    if (needScore > 0) {
+      const score = typeof r.score === 'number' && Number.isFinite(r.score) ? r.score : null;
+      if (score === null || score < needScore) {
+        const kind = rule.mode === 'single' ? r.tf : 'timeframe-chain';
+        await finish('skipped', `score too low: ${score === null ? 'this signal has no score' : `this signal scores ${Math.round(score)}`} — this strategy takes ${kind} signals only at a score of ${needScore} or more`);
+        return;
+      }
     }
 
     const svc = tradingService();

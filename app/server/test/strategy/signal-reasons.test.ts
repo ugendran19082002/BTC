@@ -13,6 +13,9 @@ const cases: [string, string, string[]][] = [
   ['skipped', 'SL too far: the perp entry 81645 to the SL 82705 is 1061 pts — this strategy takes timeframe-chain signals only at 900 pts or less', ['sl-max']],
   ['skipped', 'TGT too far: the perp entry 81645 to the TGT 80000 is 1645 pts — this strategy takes 1h signals only at 1200 pts or less', ['tgt-max']],
   ['skipped', 'inside the no-entry window 4:00 PM – 5:25 PM — no new entry until 5:25 PM', ['no-entry']],
+  // The minimum score (10 Nov 2026), with a score and without one; a method named for a score is not one.
+  ['skipped', 'score too low: this signal scores 19 — this strategy takes 5m signals only at a score of 20 or more', ['score-min']],
+  ['skipped', 'score too low: this signal has no score — this strategy takes timeframe-chain signals only at a score of 30 or more', ['score-min']],
   ['skipped', 'the desk already has 200 open (positions and working orders, all strategies) -- at most 200 at once across all', ['desk-max']],
   ['skipped', 'the desk already has 160 PE open -- at most 160 PE at once (80% of the 200)', ['side-max']],
   ['skipped', 'the desk already has 10 open on PE 83000 -- at most 10 on one strike (10% of the 100)', ['strike-max']],

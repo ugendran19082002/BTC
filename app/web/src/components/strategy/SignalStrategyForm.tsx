@@ -114,7 +114,7 @@ export function SignalStrategyForm({ editing, open, onOpenChange, onSaved, balan
             <SignalRuleEditor
               rule={rule}
               onChange={(r) => set('signal', r)}
-              errors={{ mode: err('signalMode'), tf: err('signalTf'), methods: err('signalMethods'), slPts: err('signalSlPts'), auto: err('autoMethods') }}
+              errors={{ mode: err('signalMode'), tf: err('signalTf'), methods: err('signalMethods'), slPts: err('signalSlPts'), score: err('signalScore'), auto: err('autoMethods') }}
               copyFrom={copyFrom}
               optionRecord={optionRecord}
               savedBacktests={savedBacktests}

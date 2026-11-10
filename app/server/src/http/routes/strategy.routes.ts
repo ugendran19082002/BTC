@@ -241,6 +241,7 @@ function cleanSignal(raw: unknown): SignalRule {
     ...cleanPts('minTgtPts', r.minTgtPts),
     ...cleanPts('maxSlPts', r.maxSlPts),
     ...cleanPts('maxTgtPts', r.maxTgtPts),
+    ...cleanPts('minScore', r.minScore),
     ...cleanAuto(r.autoMethods),
     ...cleanDeltaByVol(r.deltaByVol),
     ...cleanSlByVol(r.slByVol),
@@ -299,12 +300,12 @@ function cleanAuto(raw: unknown): Pick<SignalRule, 'autoMethods'> | Record<strin
 }
 
 /**
- * A distance filter (the least or the most, SL or TGT), per timeframe: each number as sent, a blank or
+ * A distance filter (the least or the most, SL or TGT) -- or the minimum score, kept the same way -- per timeframe: each number as sent, a blank or
  * zero left out -- off is no entry -- and the key itself only when one is set,
  * so a strategy that never used it is stored as before. Not a map: left for
  * validation to say.
  */
-function cleanPts<K extends 'minSlPts' | 'minTgtPts' | 'maxSlPts' | 'maxTgtPts'>(key: K, raw: unknown): Partial<Pick<SignalRule, K>> {
+function cleanPts<K extends 'minSlPts' | 'minTgtPts' | 'maxSlPts' | 'maxTgtPts' | 'minScore'>(key: K, raw: unknown): Partial<Pick<SignalRule, K>> {
   if (raw === undefined || raw === null) return {};
   if (typeof raw !== 'object' || Array.isArray(raw)) return { [key]: raw } as Partial<Pick<SignalRule, K>>;
   const kept = Object.entries(raw as Record<string, unknown>)

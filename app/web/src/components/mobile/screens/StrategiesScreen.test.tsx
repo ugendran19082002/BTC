@@ -36,6 +36,18 @@ const rows = () => within(screen.getByRole('list', { name: 'Signals' })).getAllB
 beforeEach(() => { window.localStorage.clear(); getDaySignals.mockReset(); id = 0; activity = ONE; });
 
 describe('StrategiesScreen: the day\'s signals in three tabs', () => {
+  it('[critical] a signal skipped for its score (10 Nov 2026) has its own reason chip, and a tap shows it alone', async () => {
+    getDaySignals.mockResolvedValue({ trades: [sig('placed', { reasons: [] }), sig('skipped', { reasons: ['score-min'] }), sig('skipped', { reasons: ['score-min'] }), sig('skipped', { reasons: ['sl-min'] })] });
+    show();
+    await waitFor(() => expect(tabs().getByRole('button', { name: 'Not taken 3' })).toBeInTheDocument());
+    fireEvent.click(tabs().getByRole('button', { name: 'Not taken 3' }));
+    const why = () => within(screen.getByRole('group', { name: 'Not taken, why' }));
+    expect(why().getAllByRole('button').map((b) => b.textContent)).toEqual(['Any reason 3', 'Score under min 2', 'Perp SL under min 1']);
+    fireEvent.click(why().getByRole('button', { name: 'Score under min 2' }));
+    expect(rows()).toHaveLength(2);
+    expect(screen.getByText(/2 not taken for: Score under min\./)).toBeInTheDocument();
+  });
+
   it('[critical] All, Taken and Not taken, each with its count; a tap shows only those, with the real orders and the reasons said', async () => {
     getDaySignals.mockResolvedValue({ trades: [sig('placed', { reasons: [] }), sig('would-place'), sig('would-place'), sig('skipped', { reasons: ['sl-min', 'tgt-min'] }), sig('skipped', { reasons: ['sl-min'] }), sig('refused', { reasons: ['premium'] }), sig('failed')] });
     show();

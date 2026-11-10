@@ -102,7 +102,7 @@ const sourceWords = (s: Strategy) => {
 export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], optionRecord, savedBacktests = [], pickNow, walkNow }: {
   rule: SignalRule;
   onChange: (r: SignalRule) => void;
-  errors: { mode?: string | null; tf?: string | null; methods?: string | null; slPts?: string | null; auto?: string | null };
+  errors: { mode?: string | null; tf?: string | null; methods?: string | null; slPts?: string | null; score?: string | null; auto?: string | null };
   /** The methods' daily update, now, on the form's draft with this rule (`pickMethodsNow`). Absent: no "Pick now". */
   pickNow?: (rule: SignalRule) => Promise<AutoMethodsRun>;
   /** The draft's rule walked forward with a holdout (`walkMethodsForward`). Absent: no "Test this rule". */
@@ -341,6 +341,37 @@ export function SignalRuleEditor({ rule, onChange, errors, copyFrom = [], option
                 The TGT is the one the trade exits at — TGT1, or the one picked on Entry &amp; exit (TGT1 where the signal has no TGT2 / TGT3).
               </p>
               {errors.slPts && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.slPts}</p>}
+            </div>
+      )}
+
+      {/*
+            The minimum score (owner, 10 Nov 2026: "score enable 0 to 100, each timeframe, like the perp SL min"): one
+            number per timeframe picked -- the chain's own with the chain -- as the SL minimum above. 0 is off, and every
+            strategy starts there.
+          */}
+      {ptsKeys.length > 0 && (
+            <div role="group" aria-label={rule.mode === 'single' ? 'Minimum score by timeframe' : 'Minimum score with the chain'} className="rounded-lg border border-solid border-border px-2.5 py-2">
+              <div className="text-[12.5px] font-medium text-foreground">Take a signal only if its score is high enough</div>
+              <p className="m-0 mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
+                Each signal comes with a setup score from 0 to 100 (structure, liquidity, momentum, flow, CVD, options; no signal
+                scores above 85 today). It is a quality reading, not a chance of winning. {rule.mode === 'single' ? 'For each timeframe' : 'For signals with the chain'}:
+                a signal scoring under the number is skipped, with its score in the trade history. 0 is off.
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
+                {ptsKeys.map((tf) => {
+                  const v = rule.minScore?.[tf] ?? 0;
+                  return (
+                    <div key={tf} className="flex items-center gap-1.5 text-[12px]">
+                      <span className={cn('flex-none font-medium text-foreground', tf === CHAIN_PTS ? 'w-12' : 'w-8')}>{tf === CHAIN_PTS ? 'Chain' : tf}</span>
+                      <span className="text-muted-foreground">≥</span>
+                      <NumberField label={`${tf} minimum score`} value={v} decimals={0} className="w-20"
+                                   onChange={(n) => onChange({ ...rule, minScore: { ...(rule.minScore ?? {}), [tf]: n } })} />
+                      <span className="text-[11px] text-[var(--dim)]" aria-label={`${tf} score filter`}>{v > 0 ? `${v}+` : 'off'}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {errors.score && <p role="alert" className="m-0 mt-1 text-[11.5px] text-[var(--down)]">{errors.score}</p>}
             </div>
       )}
 

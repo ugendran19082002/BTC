@@ -28,6 +28,7 @@ const { initStrategyStore, strategyStore } = await import('../../src/http/routes
 const { StrategyRunner, signalKeyOf } = await import('../../src/strategy/runner.js');
 const { exitMomentFor, istDate } = await import('../../src/strategy/schedule.js');
 const { SELL_ONLY_RULE } = await import('../../src/strategy/types.js');
+const { signalReasons } = await import('../../src/strategy/signal-reasons.js');
 type MethodRead = import('../../src/entry/types.js').MethodRead;
 type SignalBoard = import('../../src/strategy/runner.js').SignalBoard;
 
@@ -463,7 +464,8 @@ test('[critical] enter at the zone (the default): nothing at the signal; the opt
 
   // the paper log writes the signal, then the real grader sees the perp trade into the zone
   const { recordSetups, saveGraded, onSetupFilled, workingRows } = await import('../../src/entry/paper.js');
-  const off = onSetupFilled((f) => { void runner.onSetupFilled(f); });
+  const seen: import('../../src/entry/paper.js').SetupFill[] = [];
+  const off = onSetupFilled((f) => { seen.push(f); void runner.onSetupFilled(f); });
   await recordSetups([s], Date.now());
   const row = (await workingRows()).find((x) => x.tf === '15m' && x.triggerAt === s.triggerTime)!;
   // Filled now by the runner's clock (10:00 IST), not the machine's: before 10:00 the machine's own time read as a fill hours old.
@@ -474,6 +476,8 @@ test('[critical] enter at the zone (the default): nothing at the signal; the opt
   assert.equal(t!.plan.optionSide, 'PE');
   assert.deepEqual(t!.plan.underlying, { dir: 1, stop: 84_600, target: 85_900, source: 'BTC perp', entry: 84_990 }, 'TGT2, and the perp entry the fill');
   assert.match(run!.detail, /perp filled 84990 · perp SL 84600 · TGT 85900/);
+  // The fill brings the score the signal was written with (10 Nov 2026), for a strategy's minimum score.
+  assert.equal(seen.at(-1)?.score, 70, 'the grader\'s fill carries the signal\'s score');
   off();
 });
 
@@ -1070,6 +1074,78 @@ test('[critical] at the zone, the distance is measured from the fill -- and with
   assert.match(farChain.detail, /TGT too far: the perp entry 84975 to the TGT 85500 is 525 pts — this strategy takes timeframe-chain signals only at 500 pts or less$/);
   assert.equal((await runsOf('chain-in-range')).at(-1)!.status, 'would-place', 'inside every one of its four numbers: taken');
   for (const id of ['sig-sl-zone', 'sig-sl-chain', 'chain-sl-near', 'chain-tgt-far', 'chain-in-range']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+});
+
+// ------------------------------------------------------------ the minimum score
+
+test('[critical] minimum score per timeframe (10 Nov 2026): off at 0 and for every strategy saved before it; a signal scoring under its timeframe\'s number is skipped and said; the zone fill and the chain read it too', async () => {
+  await freshAccount();
+  const scored = { ...config, signal: { ...config.signal, tfs: ['5m', '15m'], maxOpen: 10, minScore: { '5m': 50, '15m': 0, '1h': '' } } };
+  // Not a whole number from 0 to 100: refused, in the form's words.
+  for (const [v, words] of [[101, 'The minimum score for 5m must be a whole number from 0 to 100.'], [-1, 'The minimum score for 5m must be a whole number from 0 to 100.'], [42.5, 'The minimum score for 5m must be a whole number from 0 to 100.']] as const) {
+    const bad = await api('POST', '/api/strategies', { name: 'Sig score', config: { ...scored, signal: { ...scored.signal, minScore: { '5m': v } } } });
+    assert.equal(bad.status, 422, JSON.stringify(bad.body));
+    assert.ok(bad.body.problems.includes(words), bad.body.problems.join(' '));
+  }
+  const noTf = await api('POST', '/api/strategies', { name: 'Sig score', config: { ...scored, signal: { ...scored.signal, minScore: { '7m': 40 } } } });
+  assert.ok(noTf.body.problems.includes('No such timeframe for a minimum score: 7m.'), JSON.stringify(noTf.body));
+
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig score', config: scored })).status, 200);
+  const row = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-score'");
+  assert.deepEqual(row!.config.signal.minScore, { '5m': 50 }, 'each timeframe\'s number kept; a blank or zero is no entry: off');
+  const plain = await one<{ config: Record<string, any> }>("SELECT config FROM strategies WHERE id = 'sig-blocks'");
+  assert.equal('minScore' in plain!.config.signal, false, 'a strategy that never used it is stored as before');
+
+  for (const sym of [`P-BTC-${PUT}-${EXPIRY}`, `C-BTC-${CALL}-${EXPIRY}`]) {
+    paper().setQuote({ symbol: sym, bid: 18, ask: 18.5, bidSize: 5_000, askSize: 5_000, mark: 18.2, ts: Date.now() });
+  }
+  await api('POST', '/api/strategies/sig-score/enabled', { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const last = async () => (await runsOf('sig-score')).at(-1)!;
+
+  await runner.onSignal(signal({ score: 49 }));                 // 5m: 49 against 50 -- not taken
+  const skipped = await last();
+  assert.equal(skipped.status, 'skipped', skipped.detail);
+  assert.equal(skipped.detail, '#1 Breakout BUY | score too low: this signal scores 49 — this strategy takes 5m signals only at a score of 50 or more');
+  assert.equal(skipped.trade_id, null);
+  assert.deepEqual(signalReasons(skipped.status, skipped.detail), ['score-min'], 'counted under its own kind on the Not taken tab');
+
+  await runner.onSignal(signal({ score: 50 }));                 // equal is enough
+  assert.equal((await last()).status, 'would-place', (await last()).detail);
+  await runner.onSignal(signal({ tf: '15m', score: 5 }));       // 15m at 0: off, whatever the score
+  assert.equal((await last()).status, 'would-place', (await last()).detail);
+  await runner.onSignal(signal({ score: null }));               // the filter on and no score to read: not taken
+  assert.match((await last()).detail, /score too low: this signal has no score — this strategy takes 5m signals only at a score of 50 or more$/);
+
+  // At the zone the fill brings the score it was written with; one without (a grader from before) is not taken while the filter is on.
+  const zone = { ...config, signal: { mode: 'single', tf: '15m', tfs: ['15m'], methods: ['breakout'], target: 'tp1', maxOpen: 10, enterOn: 'zone', minScore: { '15m': 60 } } };
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig score zone', config: zone })).status, 200);
+  await api('POST', '/api/strategies/sig-score-zone/enabled', { enabled: true });
+  const fill = (score: number | undefined, triggerAt: number) => ({
+    method: 'breakout', mode: 'single' as const, tf: '15m' as const, dir: 1 as const, triggerAt,
+    entryLo: 84_950, entryHi: 85_000, stop: 84_600, tp1: 85_500, tp2: null, tp3: null,
+    status: 'filled' as const, filledAt: Math.floor(clock / 1000), fillPrice: 84_990, ...(score === undefined ? {} : { score }),
+  });
+  const zoneLast = async () => (await runsOf('sig-score-zone')).at(-1)!;
+  await runner.onSetupFilled(fill(59, 1_790_901_000));
+  assert.match((await zoneLast()).detail, /score too low: this signal scores 59 — this strategy takes 15m signals only at a score of 60 or more$/);
+  await runner.onSetupFilled(fill(60, 1_790_901_900));
+  assert.equal((await zoneLast()).status, 'would-place', (await zoneLast()).detail);
+  await runner.onSetupFilled(fill(undefined, 1_790_902_800));
+  assert.match((await zoneLast()).detail, /this signal has no score/);
+
+  // With the chain the number is the chain's own; a timeframe's is not read.
+  const withChain = (over: object) => ({ ...config, signal: { mode: 'mtf', tf: '5m', methods: ['breakout'], target: 'tp1', maxOpen: 10, enterOn: 'signal', ...over } });
+  assert.equal((await api('POST', '/api/strategies', { name: 'Chain score', config: withChain({ minScore: { '5m': 99, chain: 80 } }) })).status, 200);
+  assert.deepEqual((await strategyStore().get('chain-score'))!.config.signal!.minScore, { '5m': 99, chain: 80 });
+  await api('POST', '/api/strategies/chain-score/enabled', { enabled: true });
+  await runner.onSignal(signal({ mode: 'mtf', tf: '5m', score: 79 }));
+  assert.match((await runsOf('chain-score')).at(-1)!.detail, /score too low: this signal scores 79 — this strategy takes timeframe-chain signals only at a score of 80 or more$/);
+  await runner.onSignal(signal({ mode: 'mtf', tf: '5m', score: 85 }));
+  assert.equal((await runsOf('chain-score')).at(-1)!.status, 'would-place', 'the chain\'s 80 read, not the 5m\'s 99');
+
+  for (const id of ['sig-score', 'sig-score-zone', 'chain-score']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
 });
 
 test('[critical] TGT distance per timeframe: a signal whose target is nearer than its points is skipped, said in the history -- measured to the target the trade exits at', async () => {
