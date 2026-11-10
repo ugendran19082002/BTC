@@ -70,7 +70,7 @@ export type Rig = {
   setFeed(healthy: boolean): void;
   setDayPnl(usd: number): void;
   setSpot(usd: number | null): void;
-  alarms: { tradeId: string; message: string }[];
+  alarms: { tradeId: string; message: string; kind?: string }[];
   /** Everything `onEvent` was told, in order. */
   events: { event: TradeEvent; before: TradeState; after: TradeState }[];
   /** Every failure the engine noted and carried on past -- what reaches the error log. */
@@ -126,7 +126,7 @@ export function rig(opts: {
     feedHealthy: () => feed,
     dayPnlUsd: () => pnl,
     spot: () => spot,
-    onAlarm: (t, message) => alarms.push({ tradeId: t.tradeId, message }),
+    onAlarm: (t, message, _plan, kind) => alarms.push({ tradeId: t.tradeId, message, kind }),
     candles: opts.candles,
     underlying: opts.underlying,
     underlyingRange: opts.underlyingRange,

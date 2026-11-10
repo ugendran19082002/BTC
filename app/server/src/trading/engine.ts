@@ -118,6 +118,9 @@ export function chaseFloor(bid: number, ask: number | null, maxSpreadPct: number
   return (ask - bid) / mid <= maxSpreadPct ? null : mid;
 }
 
+/** What an alarm is (`EngineDeps.onAlarm`): an exit filled far from its level, the trade's own alarm, or a notice. */
+export type AlarmKind = 'slippage' | 'state' | 'notice';
+
 export type TradeOrigin = 'manual' | 'strategy' | 'best-pick';
 
 export type TradeSignal = {
@@ -403,8 +406,13 @@ export type EngineDeps = {
    * The plan travels with it because the handler has to name the contract, and
    * looking it up again from the store would be a second read of a record the
    * caller is already holding.
+   *
+   * `kind` (10 Nov 2026): every alarm reached the phone as "EXIT MISSED ITS PRICE ... the order was filled", the one
+   * message written for an exit filled far from its level -- so a trade with no stop arrived twice, once as NO
+   * STOP-LOSS and once as a fill that never happened. `slippage`: that exit. `state`: the trade's own alarm, which its
+   * event's problem alert already says (NO STOP-LOSS). Anything else is a notice of its own.
    */
-  onAlarm?: (trade: TradeState, message: string, plan: TradePlan) => void;
+  onAlarm?: (trade: TradeState, message: string, plan: TradePlan, kind?: AlarmKind) => void;
   /** Pause before a confirming read (`syncPosition`). Tests pass one that does not wait. */
   wait?: (ms: number) => Promise<void>;
   /** How long a poll waits for the exchange to answer its order lookups (`LOOKUP_BUDGET_MS`); a test sets it short. */
@@ -964,7 +972,7 @@ export class TradeEngine {
     const before = rec.state.alarm;
     rec.state = state;
     await this.d.store.save(rec);
-    if (state.alarm && state.alarm !== before) this.d.onAlarm?.(state, state.alarm, rec.plan);
+    if (state.alarm && state.alarm !== before) this.d.onAlarm?.(state, state.alarm, rec.plan, 'state');
     // Only after the save. The journal is the record; nothing that merely
     // reports on it may stand between an event and the disk, and a listener
     // that throws is its own bug -- it does not get to become the trade's.
@@ -1248,6 +1256,7 @@ export class TradeEngine {
             `${role === 'stop_loss' ? 'Stop' : 'Target'} asked ${wanted}, filled ${price.toFixed(1)}`
             + ` — ${slip.points > 0 ? '+' : ''}${slip.points} points against it (${slip.pct}%).`,
             rec.plan,
+            'slippage',
           );
         }
       }

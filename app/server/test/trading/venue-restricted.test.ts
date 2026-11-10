@@ -242,3 +242,20 @@ test('[critical] the stop goes on before the target; with room for one, the stop
   assert.equal(s?.protection.takeProfit, null, 'the target waits for room');
   assert.notEqual(s?.phase, 'unprotected', 'a stop on the book: not an unprotected position');
 });
+
+/* 10 Nov 2026: a trade with no stop reached the phone twice -- NO STOP-LOSS, and "EXIT MISSED ITS PRICE ... the order was filled". */
+test('[critical] a stop refused raises the trade\'s own alarm as a state alarm -- said by NO STOP-LOSS, never dressed as a fill', async () => {
+  const r = rig();
+  const p = plan();
+  const place = r.ex.placeOrder.bind(r.ex);
+  r.ex.placeOrder = async (req) => {
+    if (req.role === 'stop_loss') throw new OrderRejected('Delta refused the request (max_orders_count_exceeded).');
+    return place(req);
+  };
+  await r.engine.open(p);
+  const s = await r.engine.poll(p.tradeId);
+  assert.equal(s?.phase, 'unprotected');
+  const mine = r.alarms.filter((a) => a.tradeId === p.tradeId && /POSITION UNPROTECTED/.test(a.message));
+  assert.ok(mine.length > 0, 'the alarm raised');
+  assert.ok(mine.every((a) => a.kind === 'state'), 'as the trade\'s own state, not slippage');
+});

@@ -26,7 +26,7 @@ import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { deskLog } from '../observability/desk-log.js';
-import { alertFor, bookWentFlat, daySummaryFor, sessionLossAlert, slippageAlert } from '../notify/messages.js';
+import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, sessionLossAlert, slippageAlert } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import type { ExchangePort } from './exchange/port.js';
@@ -243,7 +243,7 @@ export class TradingService {
        * it), the error log so it survives a restart and can be read after the
        * fact, and the phone, which is what "where the alerts already go" meant.
        */
-      onAlarm: (t, message, plan) => {
+      onAlarm: (t, message, plan, kind = 'notice') => {
         this.alarms.unshift({ tradeId: t.tradeId, message, at: Date.now() });
         this.alarms.length = Math.min(this.alarms.length, 50);
 
@@ -259,7 +259,11 @@ export class TradingService {
         // notifications follow.
         try {
           if (!this.notifier || !this.alertsOn) return;
-          this.notifier.notify(slippageAlert(this.alertContext(), t, plan, message, Date.now()));
+          // The trade's own alarm is said by its event's problem alert (NO STOP-LOSS): not a second time, and not as a
+          // fill. Only an exit that filled far from its level is "EXIT MISSED ITS PRICE" (10 Nov 2026).
+          if (kind === 'state') return;
+          const alert = kind === 'slippage' ? slippageAlert : deskAlarmAlert;
+          this.notifier.notify(alert(this.alertContext(), t, plan, message, Date.now()));
         } catch { /* an alert is never worth a trade */ }
       },
       // The mode is read at the moment of the fill, not captured, so a paper

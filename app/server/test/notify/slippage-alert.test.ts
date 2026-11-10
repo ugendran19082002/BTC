@@ -71,3 +71,13 @@ describe('the alert it now becomes', () => {
     assert.notEqual(paper.text, slippageAlert({ mode: 'live' }, state, plan, 'x', 1).text);
   });
 });
+
+test('[critical] a desk notice is said as what it is -- not "EXIT MISSED ITS PRICE", not "the order was filled" (10 Nov 2026)', async () => {
+  const { deskAlarmAlert } = await import('../../src/notify/messages.js');
+  const a = deskAlarmAlert({ mode: 'live' }, state, plan, 'Could not confirm the target cancelled at Delta', Date.now());
+  assert.match(a.text, /DESK ALERT/);
+  assert.match(a.text, /Could not confirm the target cancelled/);
+  assert.doesNotMatch(a.text, /EXIT MISSED|order was filled/);
+  assert.equal(a.key, `${state.tradeId}:problem:alarm`);
+  assert.equal(a.repeatAfterMs, PROBLEM_REPEAT_MS);
+});

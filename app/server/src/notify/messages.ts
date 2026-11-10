@@ -84,6 +84,25 @@ export function slippageAlert(
   };
 }
 
+/**
+ * Anything else the desk raised about a trade (10 Nov 2026): a target held off the book, a cancel Delta did not
+ * confirm, a close that left contracts on. Said in its own words -- it went out as "EXIT MISSED ITS PRICE ... the
+ * order was filled" until then, about fills that never happened. Once, then a reminder, as the other problems.
+ */
+export function deskAlarmAlert(
+  ctx: AlertContext,
+  trade: TradeState,
+  plan: TradePlan,
+  message: string,
+  at: number,
+): Alert {
+  return {
+    key: `${trade.tradeId}:problem:alarm`,
+    repeatAfterMs: PROBLEM_REPEAT_MS,
+    text: problemText(ctx, '⚠️', `DESK ALERT · ${contract(plan)}`, [escape(message)], at, plan),
+  };
+}
+
 type FillEvent = Extract<TradeEvent, { t: 'fill' }>;
 
 export function alertFor(

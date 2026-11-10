@@ -488,6 +488,7 @@ export default function App() {
   // Every trading account's (`heldOpenOf`): it read the default account's status alone. With several trading, the
   // header's sum of every desk, `mergedDay`.
   const heldOpen = heldOpenOf(tradingList.length, mergedDay, trade);
+  const alarmStatus = tradingList.length > 1 ? mergedDay ?? trade : trade;
   const heldKey = useMemo(() => JSON.stringify([...heldLegs(heldOpen)]), [heldOpen]);
   const held = useMemo(() => new Map(JSON.parse(heldKey) as [string, HeldLeg][]), [heldKey]);
   const sides = useMemo(
@@ -605,9 +606,12 @@ export default function App() {
         </div>
       </header>
 
-      {trade && trade.open.some((t) => t.alarm) && (
+      {/* Every trading account's positions with nothing behind them (10 Nov 2026: it said High's 13 and not Income's
+          one -- the default account's status alone). The merged status of every desk, each line naming its account;
+          the default's own while that is still being read, since a partial alarm is better than none. */}
+      {alarmStatus && alarmStatus.open.some((t) => t.alarm) && (
         <div style={{ margin: '0 0 10px' }}>
-          <AlarmBanner status={trade} />
+          <AlarmBanner status={alarmStatus} />
         </div>
       )}
 

@@ -240,6 +240,15 @@ describe('a position with no stop behind it', () => {
     expect(screen.getByText(/C-BTC-80000-080926/)).toBeInTheDocument();
   });
 
+  it('[critical] every account\'s positions with no stop, each line naming its account (10 Nov 2026: Income\'s one was missing)', () => {
+    const high = { ...naked, tradeId: 'h1', account: { id: 1, name: 'High' } };
+    const income = { ...naked, tradeId: 'i1', symbol: 'P-BTC-73800-101126', account: { id: 4, name: 'Income' } };
+    render(<AlarmBanner status={{ open: [high, income, trade()] } as TradeStatus} />);
+    expect(screen.getByText('2 positions have no stop-loss')).toBeInTheDocument();
+    expect(screen.getByText(/High ·/)).toBeInTheDocument();
+    expect(screen.getByText(/Income ·/).parentElement).toHaveTextContent('P-BTC-73800-101126');
+  });
+
   it('says nothing at all when every position is covered', () => {
     const { container } = render(<AlarmBanner status={{ open: [trade()] } as TradeStatus} />);
     expect(container).toBeEmptyDOMElement();

@@ -20,6 +20,7 @@ export function AlarmBanner({ status, onDismiss }: { status: TradeStatus | null;
         </p>
         {naked.map((t) => (
           <p key={t.tradeId} className="m-0 mt-0.5 text-[11.5px] text-muted-foreground">
+            {t.account ? <span className="font-medium text-foreground">{t.account.name} · </span> : null}
             {t.symbol} — {t.alarm} <span className="text-[var(--dim)]">({clock(t.updatedAt)})</span>
           </p>
         ))}
