@@ -6,8 +6,9 @@ import { SettingsCache } from '../../src/db/settings.js';
 import { PgTradeStore } from '../../src/trading/store.js';
 import {
   PrivateShadow, privateShadowMetrics, privateShadowSchema, REST_GRACE_MS, SETTLE_MS, SOCKET_GRACE_MS, startPrivateShadow,
-  type RestFill,
+  stopPrivateShadow, type RestFill,
 } from '../../src/delta/private-shadow.js';
+import type { SocketOrderEvent } from '../../src/delta/private-events.js';
 import { WATCHDOG_MS, type SocketLike } from '../../src/delta/private-socket.js';
 
 /**
@@ -47,7 +48,10 @@ async function journalFill(accountId: number, orderId: string, size: number, at:
 }
 
 
-function harness(o: { accounts?: number[]; reader?: (from: number, to: number) => Promise<RestFill[]>; busy?: () => number } = {}) {
+function harness(o: {
+  accounts?: number[]; reader?: (from: number, to: number) => Promise<RestFill[]>; busy?: () => number;
+  onEvent?: (accountId: number, e: SocketOrderEvent) => void;
+} = {}) {
   let t = 1_794_000_000_000;
   const sockets = new Map<number, (SocketLike & { sent: string[] })[]>();
   const logs: string[] = [];
@@ -59,6 +63,7 @@ function harness(o: { accounts?: number[]; reader?: (from: number, to: number) =
     now: () => t,
     manualTimers: true,
     ...(o.busy ? { busyPct: o.busy } : {}),
+    ...(o.onEvent ? { onEvent: o.onEvent } : {}),
     reader: async (_c, from, to) => { readerCalls.push({ from, to }); return o.reader ? o.reader(from, to) : []; },
     connect: (id) => {
       const ws: SocketLike & { sent: string[] } = {
@@ -379,5 +384,83 @@ test('[critical] the shadow can never act: nothing from trading/, and its one RE
     assert.equal(/\bsigned\(/.test(src), false, `${f} calls signed()`);
     for (const call of src.match(/signedPage<[^>]*>\([^)]*\)/g) ?? []) assert.match(call, /method: 'GET'/, `${f}: ${call}`);
     assert.equal(/method: '(POST|PUT|DELETE)'/.test(src), false, `${f} writes to Delta`);
+  }
+});
+
+// ------------------------------------------------------------------ wake (11 Nov 2026)
+
+const order = (orderId: string, state: string, unfilled: number, over: Record<string, unknown> = {}) => ({
+  type: 'orders', action: 'update', order_id: orderId, client_order_id: `cid-${orderId}`, symbol: 'C-BTC-99000-091126', side: 'buy',
+  size: 1, unfilled_size: unfilled, state, timestamp: 1_794_000_000_000_000, ...over,
+});
+
+test('[critical] wake: each new fill is told once, the moment it is heard -- before it is written; a repeat is not told again', async () => {
+  const told: { accountId: number; e: SocketOrderEvent }[] = [];
+  const h = harness({ accounts: [3, 4], onEvent: (accountId, e) => told.push({ accountId, e }) });
+  h.shadow.start();
+  h.goLive(3); h.goLive(4);
+  h.say({ type: 'v2/user_trades', sy: 'C-BTC-99000-091126', f: 'f-1', R: 'normal', o: '501', S: 'sell', s: 1, p: '17.5', po: -1, r: 'maker', c: '91126179400000000E0', t: h.now() * 1_000 }, 4);
+  assert.equal(told.length, 1, 'told before the row is written (nothing awaited yet)');
+  assert.deepEqual(told[0], { accountId: 4, e: { kind: 'fill', symbol: 'C-BTC-99000-091126', orderId: '501', clientOrderId: '91126179400000000E0', heardAt: h.now() } });
+  h.say({ type: 'v2/user_trades', sy: 'C-BTC-99000-091126', f: 'f-1', R: 'normal', o: '501', S: 'sell', s: 1, p: '17.5', po: -1, r: 'maker', c: '91126179400000000E0', t: h.now() * 1_000 }, 4);
+  await h.shadow.flushed();
+  assert.equal(told.length, 1, 'the same fill again is not news');
+  assert.equal(h.m(4).counts.told, 1);
+  h.shadow.stop();
+});
+
+test('[critical] wake: an order Delta cancelled is told once; one opened, edited or filled is not', async () => {
+  const told: SocketOrderEvent[] = [];
+  const h = harness({ onEvent: (_a, e) => told.push(e) });
+  h.shadow.start();
+  h.goLive();
+  h.say(order('700', 'open', 1, { action: 'create', seq_no: 1 }));
+  h.say(order('700', 'open', 1, { seq_no: 2, limit_price: '9' }));
+  h.say(order('701', 'closed', 0, { action: 'create', seq_no: 3 }));
+  assert.equal(told.length, 0);
+  h.say(order('700', 'cancelled', 1, { seq_no: 4 }));
+  h.say(order('700', 'cancelled', 1, { seq_no: 5 }));
+  assert.deepEqual(told.map((e) => [e.kind, e.orderId, e.clientOrderId]), [['cancelled', '700', 'cid-700']]);
+  h.shadow.stop();
+});
+
+test('a listener that throws stops nothing: the fill is still kept and counted', async () => {
+  const h = harness({ onEvent: () => { throw new Error('listener'); } });
+  h.shadow.start();
+  h.goLive();
+  h.fill('f-9', '509', 1);
+  await h.shadow.flushed();
+  assert.equal(h.m().counts.fills, 1);
+  assert.equal(h.m().counts.listenerFailed, 1);
+  assert.equal((await rows('SELECT * FROM private_ws_fills')).length, 1);
+  h.shadow.stop();
+});
+
+test('[critical] only DELTA_PRIVATE_WS=wake passes the listener on: in shadow a fill is heard and kept, and nobody is told', async () => {
+  for (const mode of ['shadow', 'wake'] as const) {
+    await query('DELETE FROM private_ws_fills');
+    const told: SocketOrderEvent[] = [];
+    let ws!: { onopen: ((e: unknown) => void) | null; onmessage: ((e: { data: string }) => void) | null };
+    const started = startPrivateShadow(mode, {
+      accounts: () => [{ id: 3, creds: credsOf(3) }],
+      log: () => {},
+      manualTimers: true,
+      reader: async () => [],
+      connect: () => {
+        const s = { send: () => {}, close: () => {}, onopen: null, onmessage: null, onclose: null, onerror: null };
+        ws = s;
+        return s;
+      },
+      onEvent: (_a, e) => told.push(e),
+    });
+    assert.ok(started);
+    ws.onopen!({});
+    ws.onmessage!({ data: JSON.stringify({ type: 'key-auth', success: true, status_code: 200, status: 'authenticated' }) });
+    ws.onmessage!({ data: JSON.stringify({ type: 'v2/user_trades', sy: 'C-BTC-99000-091126', f: `f-${mode}`, R: 'normal', o: '600', S: 'sell', s: 1, p: '17.5', po: -1, r: 'maker', c: null, t: Date.now() * 1_000 }) });
+    await started.flushed();
+    assert.equal(told.length, mode === 'wake' ? 1 : 0, mode);
+    assert.equal(privateShadowMetrics().mode, mode);
+    assert.equal((await rows('SELECT * FROM private_ws_fills')).length, 1, `${mode}: kept either way`);
+    stopPrivateShadow();
   }
 });

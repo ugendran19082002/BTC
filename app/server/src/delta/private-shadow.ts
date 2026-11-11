@@ -2,7 +2,7 @@ import { migrate, type Migration } from '../db/migrate.js';
 import { one, query, rows } from '../db/pool.js';
 import { quotaKeyOf, quotaUsedPctOf } from '../observability/desk-metrics.js';
 import { signedPage, type Creds } from './signed.js';
-import { fillOf, orderOf, OrderProgressBook, SeenIds, SeqTracker, type WsFill } from './private-events.js';
+import { fillOf, orderOf, OrderProgressBook, SeenIds, SeqTracker, type SocketOrderEvent, type WsFill } from './private-events.js';
 import { PrivateSocket, type PrivateSocketHealth, type SocketLike } from './private-socket.js';
 
 /**
@@ -28,6 +28,11 @@ import { PrivateSocket, type PrivateSocketHealth, type SocketLike } from './priv
  * its one REST call is a GET (a test reads this file and holds it to both). The desk lock still decides which
  * process trades; this starts only once the lock is held (index.ts), so a standby during a hand-over does not count
  * fills twice.
+ *
+ * What it may do (11 Nov 2026, `DELTA_PRIVATE_WS=wake`): tell a listener, the moment it is heard, of each new fill and
+ * each order Delta cancelled (`onEvent`). It still decides nothing -- the listener (index.ts) hands the trade's id to
+ * its desk, whose own poll reads Delta over REST and acts as it always has (`trading/fill-wake.ts`). A listener that
+ * throws is the listener's problem: the shadow carries on.
  *
  * Fills are kept in `private_ws_fills`, one row per Delta `fill_id` -- the key is what makes a fill delivered twice,
  * or again after a restart, count once. Order updates are counted, not kept.
@@ -130,6 +135,8 @@ class AccountShadow {
   readonly counts = {
     fills: 0, orderUpdates: 0, duplicates: 0, outOfOrder: 0, gaps: 0, missingBySeq: 0, seqResets: 0,
     staleOrderUpdates: 0, partialFills: 0, unreadable: 0, persistFailed: 0,
+    /** Events handed to the listener (`onEvent`), and how many of those it threw on. */
+    told: 0, listenerFailed: 0,
   };
   /** Fills the socket heard and the journal recorded, by Delta's order id. */
   private readonly ws = new Map<string, Side>();
@@ -167,6 +174,7 @@ class AccountShadow {
     private readonly d: {
       now: () => number; log: (line: string) => void; reader: RestFillReader;
       connect?: () => SocketLike; manualTimers?: boolean; busyPct?: () => number;
+      onEvent?: (e: SocketOrderEvent) => void;
     },
   ) {
     this.socket = new PrivateSocket({
@@ -198,6 +206,8 @@ class AccountShadow {
       if (!f) { this.counts.unreadable++; return; }
       this.sequence(`fills|${f.symbol}`, f.seq);
       if (!this.seen.add(f.fillId)) { this.counts.duplicates++; return; }
+      // Told before it is written: what follows a fill should not wait for the database.
+      this.tell({ kind: 'fill', symbol: f.symbol, orderId: f.orderId, clientOrderId: f.clientOrderId, heardAt: at });
       const w = this.persist(f, at).then((inserted) => {
         // Already kept before this process started: a duplicate across a restart.
         if (inserted === false) { this.counts.duplicates++; return; }
@@ -218,7 +228,19 @@ class AccountShadow {
       if (verdict === 'stale') { this.counts.staleOrderUpdates++; return; }
       if (verdict === 'new' && o.filled === 0) this.fullHistory.add(o.orderId);
       if (verdict !== 'unchanged' && this.book.get(o.orderId)?.status === 'partial') this.counts.partialFills++;
+      // Cancelled, once: an order that is gone may have been a trade's stop or target, and its desk should know now.
+      const status = this.book.get(o.orderId)?.status;
+      if ((verdict === 'new' || verdict === 'progress') && (status === 'cancelled' || status === 'partial-cancelled')) {
+        this.tell({ kind: 'cancelled', symbol: o.symbol, orderId: o.orderId, clientOrderId: o.clientOrderId, heardAt: at });
+      }
     }
+  }
+
+  /** What was heard, to the listener -- whose failure never reaches the socket. */
+  private tell(e: SocketOrderEvent): void {
+    if (!this.d.onEvent) return;
+    this.counts.told++;
+    try { this.d.onEvent(e); } catch { this.counts.listenerFailed++; }
   }
 
   private sequence(key: string, seq: number | null): void {
@@ -433,6 +455,8 @@ export class PrivateShadow {
     connect?: (accountId: number) => SocketLike;
     manualTimers?: boolean;
     busyPct?: () => number;
+    /** Each new fill and each cancelled order, as heard, with the account it is on (`AccountShadow.tell`). */
+    onEvent?: (accountId: number, e: SocketOrderEvent) => void;
   }) {
     this.startedAt = this.now();
   }
@@ -471,6 +495,7 @@ export class PrivateShadow {
         ...(this.o.connect ? { connect: () => this.o.connect!(w.id) } : {}),
         ...(this.o.manualTimers ? { manualTimers: true } : {}),
         ...(this.o.busyPct ? { busyPct: this.o.busyPct } : {}),
+        ...(this.o.onEvent ? { onEvent: (e: SocketOrderEvent) => this.o.onEvent!(w.id, e) } : {}),
       });
       this.accounts.set(w.id, a);
       a.socket.start();
@@ -566,15 +591,21 @@ export class PrivateShadow {
 }
 
 let shadow: PrivateShadow | null = null;
-let shadowMode: 'off' | 'shadow' = 'off';
+let shadowMode: 'off' | 'shadow' | 'wake' = 'off';
 
-/** Start the shadow, once (index.ts, after the desk lock). Off: nothing opens. */
-export function startPrivateShadow(mode: 'off' | 'shadow', o: ConstructorParameters<typeof PrivateShadow>[0]): PrivateShadow | null {
+/**
+ * Start the shadow, once (index.ts, after the desk lock). Off: nothing opens. `wake` is the same shadow with a listener
+ * (`onEvent`), which only `wake` passes on: in `shadow` a listener given is not used.
+ */
+export function startPrivateShadow(mode: 'off' | 'shadow' | 'wake', o: ConstructorParameters<typeof PrivateShadow>[0]): PrivateShadow | null {
   shadowMode = mode;
   if (mode === 'off' || shadow) return shadow;
-  shadow = new PrivateShadow(o);
+  const { onEvent, ...rest } = o;
+  shadow = new PrivateShadow(mode === 'wake' && onEvent ? { ...rest, onEvent } : rest);
   shadow.start();
-  o.log('private socket: shadow mode -- each trading account\'s orders and fills are heard and compared with the REST path; nothing is acted on');
+  o.log(mode === 'wake'
+    ? 'private socket: wake mode -- each trading account\'s orders and fills are heard and compared with the REST path, and a fill or a cancel on a trade\'s own order wakes that trade\'s poll at once; REST is still the record'
+    : 'private socket: shadow mode -- each trading account\'s orders and fills are heard and compared with the REST path; nothing is acted on');
   return shadow;
 }
 

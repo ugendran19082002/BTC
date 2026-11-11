@@ -70,15 +70,24 @@ export type Config = {
    * orders and fills and compares them with what the REST path wrote, and does nothing else -- no order, no state of a
    * trade. `off` opens no socket. Unset, `shadow`, `on`, `1`, `true` or `yes` is `shadow` (8 Nov 2026: the owner's
    * own word for it was `on`); anything else is `off`.
+   *
+   * `wake` (11 Nov 2026, `trading/fill-wake.ts`) is the shadow and one thing more: a fill the socket hears on one of
+   * the desk's own orders, or one of its stops or targets Delta cancels, wakes that trade's own poll at once instead of
+   * leaving it for its turn in the loop -- up to 15 minutes with 300 open. The poll is the loop's own, so REST is still
+   * what every state is written from, and the socket never writes a trade. Asked for by name only: `on` stays `shadow`.
    */
-  privateWs: 'off' | 'shadow';
+  privateWs: 'off' | 'shadow' | 'wake';
 };
 
 const PRIVATE_WS_ON = ['shadow', 'on', '1', 'true', 'yes'];
 
-/** `shadow` unset or switched on; `off` for anything else -- a misspelt value opens nothing rather than guessing. */
+/**
+ * `shadow` unset or switched on; `wake` only by that name; `off` for anything else -- a misspelt value opens nothing
+ * rather than guessing.
+ */
 export function privateWsOf(v: string | undefined): Config['privateWs'] {
   const raw = v?.trim().toLowerCase();
+  if (raw === 'wake') return 'wake';
   return !raw || PRIVATE_WS_ON.includes(raw) ? 'shadow' : 'off';
 }
 

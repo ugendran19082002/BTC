@@ -12,7 +12,7 @@ import { DEFAULT_WALL_WITHIN_EM, optionStructure } from '../../domain/structure.
 import { forecast, reloadHorizons } from '../../domain/forecast.js';
 import { reloadCalibration } from '../../domain/calibration.js';
 import { loadDays, reloadDays } from '../../backtest/backtest.js';
-import { tradingService, LOSS_LIMIT_KEY, LOSS_LIMIT_ON_KEY, SHORT_CAP_KEY } from '../../trading/service.js';
+import { tradingService, tradingServices, LOSS_LIMIT_KEY, LOSS_LIMIT_ON_KEY, SHORT_CAP_KEY } from '../../trading/service.js';
 import { appliedMigrations } from '../../db/migrate.js';
 import { lastOptionSnapshot } from '../../market/option-snapshots.js';
 import { flowFeedHealth, flowSummary, liveBook, livePerp, oiPulse, optionFlowSummary, perpOiChange } from '../../market/flow.js';
@@ -170,7 +170,12 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * `privateSocket`: Delta's private socket in shadow, per account -- what it heard and how it compares with the
    * REST path (delta/private-shadow.ts).
    */
-  app.get('/api/desk/metrics', async () => ({ ...deskMetrics(), privateSocket: privateShadowMetrics() }));
+  app.get('/api/desk/metrics', async () => ({
+    ...deskMetrics(),
+    privateSocket: privateShadowMetrics(),
+    // Each desk's wakes off the private socket (trading/fill-wake.ts): all zero unless DELTA_PRIVATE_WS=wake.
+    fillWake: tradingServices().map((d) => ({ accountId: d.accountId, ...d.fillWake.metrics() })),
+  }));
 
   /*
    * The desk's health for the phone, in one word -- ok, warn or down -- with the reasons and the readings behind them.

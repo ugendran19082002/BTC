@@ -4,7 +4,7 @@ import { authFromEnv } from './auth/service.js';
 import { loadDays } from './backtest/backtest.js';
 import { brokerAccounts, envKeyLeft } from './delta/accounts.js';
 import { refreshBrokerAccounts } from './http/routes/accounts.routes.js';
-import { deskOpen, initTradingService } from './trading/service.js';
+import { deskOpen, initTradingService, tradingServiceFor } from './trading/service.js';
 import { onOptionExit } from './trading/option-exit.js';
 import { autoMethodsDeps, initStrategyStore } from './http/routes/strategy.routes.js';
 import { StrategyRunner } from './strategy/runner.js';
@@ -124,7 +124,9 @@ app.log.info(`chain snapshots loaded: ${loadDays().length}`);
  * Delta's private socket, in shadow (8 Nov 2026, delta/private-shadow.ts): each trading account's orders and fills
  * heard as they happen and compared with what the REST path wrote. It acts on nothing -- every order, stop and target
  * is still the REST path's. After the desk lock, so a standby in a hand-over does not hear the same fills twice.
- * `DELTA_PRIVATE_WS=off` opens nothing.
+ * `DELTA_PRIVATE_WS=off` opens nothing. `DELTA_PRIVATE_WS=wake` (11 Nov 2026): each fill and each cancel it hears is
+ * handed to that account's desk, which polls the trade the order is for at once (trading/fill-wake.ts) -- the poll
+ * reads Delta over REST and acts as the loop's would. The listener is passed on only in `wake`.
  */
 startPrivateShadow(config.privateWs, {
   accounts: () => {
@@ -135,6 +137,7 @@ startPrivateShadow(config.privateWs, {
     });
   },
   log: (line) => app.log.info({ privateSocket: true }, line),
+  onEvent: (accountId, e) => { if (deskOpen(accountId)) tradingServiceFor(accountId)?.hearOrder(e); },
 });
 if (config.privateWs === 'off') app.log.info('private socket: off (DELTA_PRIVATE_WS=off)');
 {

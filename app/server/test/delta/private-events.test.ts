@@ -130,3 +130,10 @@ test('[critical] DELTA_PRIVATE_WS: unset, shadow or on is shadow; off, or anythi
   assert.equal(privateWsOf('shadwo'), 'off');
   assert.equal(privateWsOf('primary'), 'off', 'there is no primary mode yet');
 });
+
+test('[critical] DELTA_PRIVATE_WS=wake only by that name: `on` stays shadow, and a near miss opens nothing', () => {
+  assert.equal(privateWsOf('wake'), 'wake');
+  assert.equal(privateWsOf(' WAKE '), 'wake');
+  assert.equal(privateWsOf('on'), 'shadow', 'what the server has today does not start acting on a deploy');
+  for (const miss of ['wakeup', 'wak', 'awake', 'wake=1']) assert.equal(privateWsOf(miss), 'off', miss);
+});

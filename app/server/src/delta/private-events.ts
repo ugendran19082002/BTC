@@ -37,6 +37,21 @@ export type WsFill = {
   seq: number | null;
 };
 
+/**
+ * What the socket heard that the desk may want to look at at once (11 Nov 2026, `DELTA_PRIVATE_WS=wake`): a fill, or an
+ * order Delta has cancelled. Only what names the order -- whose it is, and what follows, is for the listener to decide.
+ */
+export type SocketOrderEvent = {
+  kind: 'fill' | 'cancelled';
+  symbol: string;
+  /** Delta's own id for the order. */
+  orderId: string;
+  /** The id the desk gave the order -- what says which trade it is. Null for an order placed outside the desk. */
+  clientOrderId: string | null;
+  /** When this process heard it, epoch ms. */
+  heardAt: number;
+};
+
 export type WsOrderState = 'open' | 'pending' | 'closed' | 'cancelled';
 
 export type WsOrder = {

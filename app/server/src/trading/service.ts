@@ -33,6 +33,7 @@ import type { ExchangePort } from './exchange/port.js';
 import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-watch.js';
 import { notePass, quotaKeyOf, quotaUsedPctOf } from '../observability/desk-metrics.js';
 import { ENTRY_WATCH_MS, EntryWatch } from './entry-watch.js';
+import { FILL_WAKE_MS, FillWake, type HeardOrder } from './fill-wake.js';
 import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
 import { GLOBAL_MAX_OPEN_KEY, globalMaxOpenOf } from '../strategy/types.js';
 import { SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
@@ -61,6 +62,10 @@ const PASS_PACE_MS = 20;
 export const passPaceMs = (trades: number): number => (trades > PASS_PACE_ABOVE ? PASS_PACE_MS : 0);
 /** How often the day's P&L is written down. A minute draws a day in 720 points. */
 const MTM_SAMPLE_MS = 60_000;
+/** At most this often the stop watch reads the open trades again after one was protected or closed outside the loop. */
+export const WATCH_REREAD_MS = 3_000;
+/** How often the fill wake says how it stands, while anything was heard. */
+const WAKE_SUMMARY_MS = 15 * 60_000;
 /** Long enough that a one-second poll is one call; short enough to feel live. */
 /*
  * The display caches, sized for a status that is refreshed in the background
@@ -369,9 +374,13 @@ export class TradingService {
     // The trades that cannot wait for the loop: a working entry, a position without its target yet.
     this.entryTimer ??= setInterval(() => { this.entryWatch.tick(); }, ENTRY_WATCH_MS);
     this.entryTimer.unref?.();
-    // A sold option's own stop: the board in memory against every stop once a second, not once a pass.
-    this.stopTimer ??= setInterval(() => { this.stopWatch.tick(); }, STOP_WATCH_MS);
+    // A sold option's own stop: the board in memory against every stop once a second, not once a pass -- over the
+    // trades read again since one was protected or closed outside the loop.
+    this.stopTimer ??= setInterval(() => { this.stopWatch.tick(); void this.rereadWatches(); }, STOP_WATCH_MS);
     this.stopTimer.unref?.();
+    // A fill heard on the private socket: its trade polled now (`fill-wake.ts`). Idle unless the socket is in `wake`.
+    this.wakeTimer ??= setInterval(() => { this.fillWake.tick(); this.sayWakes(); }, FILL_WAKE_MS);
+    this.wakeTimer.unref?.();
     // The session loss limit (session-loss.ts): a day already stopped stays stopped across a restart; nothing read while
     // it is off or outside every session.
     await this.sessionGuard.restore().catch(() => {});
@@ -387,6 +396,7 @@ export class TradingService {
     if (this.watchTimer) { clearInterval(this.watchTimer); this.watchTimer = null; }
     if (this.entryTimer) { clearInterval(this.entryTimer); this.entryTimer = null; }
     if (this.stopTimer) { clearInterval(this.stopTimer); this.stopTimer = null; }
+    if (this.wakeTimer) { clearInterval(this.wakeTimer); this.wakeTimer = null; }
     if (this.sessionTimer) { clearInterval(this.sessionTimer); this.sessionTimer = null; }
     if (this.stopPerpWatch) { this.stopPerpWatch(); this.stopPerpWatch = null; }
     if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
@@ -396,6 +406,7 @@ export class TradingService {
   private watchTimer: NodeJS.Timeout | null = null;
   private entryTimer: NodeJS.Timeout | null = null;
   private stopTimer: NodeJS.Timeout | null = null;
+  private wakeTimer: NodeJS.Timeout | null = null;
   private sessionTimer: NodeJS.Timeout | null = null;
   private stopPerpWatch: (() => void) | null = null;
 
@@ -524,8 +535,73 @@ export class TradingService {
   readonly entryWatch = new EntryWatch({
     poll: (tradeId) => this.engine.poll(tradeId),
     quotaUsedPct: () => this.quotaUsedPct(),
-    onSettled: () => this.underlyingWatch.stale(),
+    onSettled: () => this.watchesStale(),
   });
+
+  /**
+   * A fill heard on Delta's private socket wakes its trade's poll at once (`fill-wake.ts`, `DELTA_PRIVATE_WS=wake`,
+   * 11 Nov 2026): the stop and target go on behind a filled entry, and the stop behind a filled target comes off,
+   * without waiting up to a whole pass for the trade's turn. The poll is the loop's own; REST is still the record.
+   */
+  readonly fillWake = new FillWake({
+    poll: (tradeId) => this.engine.poll(tradeId),
+    quotaUsedPct: () => this.quotaUsedPct(),
+    onSettled: () => this.watchesStale(),
+  });
+
+  /**
+   * What the private socket heard on this account (index.ts, `wake` only): handed to the wake while this desk is
+   * running and live. On paper the venue is the simulator, and the socket's orders are none of its trades.
+   */
+  hearOrder(e: HeardOrder): boolean {
+    if (this.currentMode !== 'live' || !this.wakeTimer) return false;
+    return this.fillWake.hear(e);
+  }
+
+  /**
+   * A trade protected, or closed, outside the loop -- by the entry watch or a wake: the perp watch reads the open trades
+   * again now, and the option stop watch at its next look (`rereadWatches`). Until 11 Nov 2026 the stop watch had only
+   * the loop's read, so with 300 open a new trade's stop was judged by the desk only up to fifteen minutes after its
+   * entry (the stop at Delta, further out, rested all the while).
+   */
+  private watchesStale(): void {
+    this.underlyingWatch.stale();
+    this.watchesOwed = true;
+  }
+  private watchesOwed = false;
+  private watchesReading = false;
+  private watchesReadAt = Number.NEGATIVE_INFINITY;
+
+  /** The stop watch's trades read again, when owed: at most every `WATCH_REREAD_MS`, one read at a time. Never throws. */
+  private async rereadWatches(now = Date.now()): Promise<void> {
+    if (!this.watchesOwed || this.watchesReading || now - this.watchesReadAt < WATCH_REREAD_MS) return;
+    this.watchesOwed = false;
+    this.watchesReading = true;
+    this.watchesReadAt = now;
+    try {
+      this.stopWatch.note(stopWatchedOf(await this.store.open()));
+    } catch {
+      this.watchesOwed = true;                      // the loop's read still comes; this tries again first
+    } finally {
+      this.watchesReading = false;
+    }
+  }
+
+  /** The wakes, said in the log every `WAKE_SUMMARY_MS` while anything was heard (and the metrics route has them always). */
+  private sayWakes(now = Date.now()): void {
+    if (now - this.wakesSaidAt < WAKE_SUMMARY_MS) return;
+    const m = this.fillWake.metrics();
+    if (m.counts.heard === this.wakesSaidHeard) return;
+    this.wakesSaidAt = now;
+    this.wakesSaidHeard = m.counts.heard;
+    const c = m.counts, t = m.heardToSettledMs;
+    deskLog('info', `fill wake, account ${this.currentAccountId ?? '-'}: ${c.heard} heard (${c.notOurs} not the desk's), ${c.polls} polls, `
+      + `${c.settled} settled (${c.firstPoll} on the first poll, heard to done ${t.p50 ?? '-'} ms median, ${t.p95 ?? '-'} ms p95), `
+      + `${c.retries} retries, ${c.unconfirmed} left to the loop, ${c.stale} stale, ${c.quotaWaits} quota waits, ${c.failed} failed`,
+    { fillWake: m, accountId: this.currentAccountId });
+  }
+  private wakesSaidAt = 0;
+  private wakesSaidHeard = 0;
 
   /**
    * The fast watch on the sold options' own stops (`stop-watch.ts`): the offers the desk holds in memory against
