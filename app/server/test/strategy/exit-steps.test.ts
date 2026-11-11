@@ -323,6 +323,39 @@ describe('StrategyExitStepper', () => {
     ]);
   });
 
+  test('[critical] the live schedule (11 Nov 2026): option SL 250% until 14:00, then 275% -- open trades moved once, at 14:00, held inside the close-out', async () => {
+    // As all 32 strategies run it: 07:00-17:29, the hourly target ladder, and a stop step at 14:00.
+    const live = strat({
+      entryTime: '07:00', exitTime: '17:29', takeProfitPct: 0.8, stopLossPct: 2.5,
+      targetSteps: [{ at: '08:00', value: 0.82 }, { at: '09:00', value: 0.84 }, { at: '10:00', value: 0.86 }, { at: '11:00', value: 0.88 },
+        { at: '12:00', value: 0.9 }, { at: '13:00', value: 0.9 }, { at: '14:00', value: 0.9 }, { at: '15:00', value: 0.9 }],
+      stopSteps: [{ at: '14:00', value: 2.75 }],
+    });
+    assert.deepEqual(validateConfig(live.config), [], 'the schedule saves');
+    const { stop } = exitRules(live.config);
+    assert.equal(exitValueAt(stop, '07:00', minutesOf('13:59')).value, 2.5, 'before 14:00: 250%');
+    assert.equal(exitValueAt(stop, '07:00', minutesOf('14:00')).value, 2.75, 'from 14:00: 275%');
+    assert.equal(exitValueAt(stop, '07:00', minutesOf('16:30')).value, 2.75, 'a trade entered after 14:00 starts at 275%');
+
+    const d = fakeDesk([{}, { tradeId: 'T1', entryAvgPrice: 70 }]);
+    const s = new StrategyExitStepper(d.deps);
+    for (const t of ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '13:59']) { d.clock.t = ist(t); await s.consider(live); }
+    assert.equal(d.moves.some((m) => 'stopLossPct' in m.ask), false, 'no stop moved before 14:00');
+    d.clock.t = ist('14:00');
+    assert.deepEqual((await s.consider(live)).sort(), ['T0', 'T1'], 'every open trade at 14:00');
+    const at14 = d.moves.slice(-2);
+    for (const m of at14) assert.equal(m.ask.stopLossPct, 2.75);
+    for (const m of at14) assert.equal(m.ask.stopLossPoints, 0);
+    d.clock.t = ist('14:00') + 20_000;
+    assert.deepEqual(await s.consider(live), [], 'once: the next tick leaves it');
+
+    // The move keeps the hold inside the close-out (TradingService.updateExits passes stopMaxPoints on): 275% of a $30
+    // premium is 112.5; of a $70 one it is past the close-out, and the stop sits at the hold, 165 over the entry.
+    assert.equal(stopFor(30, { stopLossPct: 2.75, stopMaxPoints: 165 }), 112.5);
+    assert.equal(stopFor(70, { stopLossPct: 2.75, stopMaxPoints: 165 }), 235);
+    assert.equal(stopFor(70, { stopLossPct: 2.5, stopMaxPoints: 165 }), 235, 'at 250% a $70 premium was already at the hold');
+  });
+
   test('a desk that was down across two steps catches up in one move, to the step in force', async () => {
     const d = fakeDesk();
     const s = new StrategyExitStepper(d.deps);
