@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, RefreshCw } from 'lucide-react';
-import { getLedger, syncLedger, syncLedgerRange, type LedgerDay, type LedgerStatus, type LedgerSync } from '@/api/ledger';
+import { ChevronDown, RefreshCw, X } from 'lucide-react';
+import { cancelLedgerSync, getLedger, syncLedger, syncLedgerRange, type LedgerDay, type LedgerStatus, type LedgerSync } from '@/api/ledger';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { signedInr, stamp, usdToInr } from '@/lib/format';
@@ -81,6 +81,8 @@ export function LedgerScreen() {
   // The day whose trades are open in the sheet (30 Oct 2026, owner: "the entries under a day, a tap opens a popup").
   const [tradesOf, setTradesOf] = useState<string | null>(null);
   const [polled, setPolled] = useState<LedgerSync | null>(null);
+  // The X tapped and the server not yet answered: one tap is one stop.
+  const [stopping, setStopping] = useState(false);
   const running = polled?.status === 'running' || asking !== null;
   const led = usePoll(() => getLedger(from, to, p.accountParam).then((x) => {
     setPolled(x.sync ?? null);
@@ -112,6 +114,29 @@ export function LedgerScreen() {
       setProblem((e as Error).message);
     } finally {
       setAsking(null);
+    }
+  };
+
+  /*
+   * The X beside the loading (12 Nov 2026, owner: "a tap by mistake -- cancel, and that request stops; best practice"):
+   * the server stops the job itself, so it stops for every phone and after a refresh, not only on this screen. By the
+   * id shown, so a stale screen never stops a newer job. No "are you sure": stopping loses nothing -- the days already
+   * checked stay checked, and Sync starts it again.
+   */
+  const cancel = async (id: number) => {
+    if (stopping) return;
+    setStopping(true);
+    setProblem(null);
+    setNote(null);
+    try {
+      const res = await cancelLedgerSync(id);
+      if (!res.cancelled) setNote('It had already finished: nothing to stop.');
+      setPolled(res.sync);
+      await led.refresh();
+    } catch (e) {
+      setProblem((e as Error).message);
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -183,7 +208,7 @@ export function LedgerScreen() {
                   <span className="truncate tabular-nums">{jobIsRange ? `${job.done} of ${job.total}…` : asking === 'range' ? 'Starting…' : `Sync ${dayCount} day${dayCount === 1 ? '' : 's'}`}</span>
                 </button>
               </div>
-              {job && <SyncStatus job={job} />}
+              {job && <SyncStatus job={job} stopping={stopping} onCancel={() => void cancel(job.id)} />}
               {note && <p role="status" className="m-0 text-[12.5px] text-[var(--warn)]">{note}</p>}
               {r.accounts.length === 0 && <p className="m-0 text-[12.5px] text-[var(--warn)]">No broker account is switched on: there is no Delta wallet to check against.</p>}
               {problem && <p role="alert" className="m-0 text-[12.5px] text-[var(--down)]">{problem}</p>}
@@ -218,24 +243,37 @@ export function LedgerScreen() {
 }
 
 /**
- * The sync, as the server keeps it: running -- how far, the day it is reading, a bar -- or how the last one ended, with
- * why when it did not finish. The same after a refresh as before it.
+ * The sync, as the server keeps it: running -- how far, the day it is reading, a bar, and an X to stop it -- or how the
+ * last one ended, with why when it did not finish. The same after a refresh as before it.
  */
-function SyncStatus({ job }: { job: LedgerSync }) {
+function SyncStatus({ job, stopping, onCancel }: { job: LedgerSync; stopping: boolean; onCancel: () => void }) {
   const what = job.total === 1 ? dayLabel(job.days[0]!) : `${job.total} days`;
   if (job.status === 'running') {
     const share = job.total ? job.done / job.total : 0;
     return (
       <div role="status" aria-label="Sync with Delta, running">
-        <p className="m-0 mb-1 flex flex-wrap justify-between gap-x-2 text-[12.5px]">
-          <span className="text-muted-foreground">Checking {what} with Delta{job.total > 1 && job.day ? ` · now ${dayLabel(job.day)}` : ''}</span>
-          {job.total > 1 && <span className="font-medium tabular-nums">{job.done} of {job.total}</span>}
-        </p>
+        <div className="mb-1 flex min-w-0 items-center justify-between gap-x-2 text-[12.5px]">
+          <span className="min-w-0 text-muted-foreground">
+            {stopping ? 'Stopping…' : <>Checking {what} with Delta{job.total > 1 && job.day ? ` · now ${dayLabel(job.day)}` : ''}</>}
+          </span>
+          <span className="flex shrink-0 items-center gap-1">
+            {job.total > 1 && <span className="font-medium tabular-nums">{job.done} of {job.total}</span>}
+            {/* A 44px target in a 28px circle: the row keeps its height, a thumb still finds it. */}
+            <button
+              type="button" onClick={onCancel} disabled={stopping} aria-label={stopping ? 'Stopping the sync' : 'Cancel sync'} title="Cancel sync"
+              className="-my-2 -mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full border-0 bg-transparent p-0 font-[inherit] text-muted-foreground hover:text-[var(--down)] focus-visible:text-[var(--down)] disabled:opacity-50"
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
+                <X aria-hidden="true" className="h-4 w-4" />
+              </span>
+            </button>
+          </span>
+        </div>
         <div className="h-2 overflow-hidden rounded-full bg-muted" role="presentation">
           <div className={cn('h-full rounded-full bg-[var(--up)] transition-[width]', job.total === 1 && 'animate-pulse')} style={{ width: `${job.total === 1 ? 100 : Math.round(share * 100)}%` }} />
         </div>
         <p className="m-0 mt-1 text-[11.5px] text-muted-foreground">
-          Kept by the desk: it carries on if you leave or refresh this screen{job.resumed ? ', and it carried on after the desk restarted' : ''}. It waits whenever Delta is busy with the desk&apos;s orders.
+          Kept by the desk: it carries on if you leave or refresh this screen{job.resumed ? ', and it carried on after the desk restarted' : ''}. It waits whenever Delta is busy with the desk&apos;s orders. ✕ stops it.
         </p>
       </div>
     );
@@ -244,7 +282,11 @@ function SyncStatus({ job }: { job: LedgerSync }) {
     <p role="status" aria-label="Sync with Delta, last" className={cn('m-0 text-[12.5px]', job.status === 'failed' ? 'text-[var(--down)]' : 'text-muted-foreground')}>
       {job.status === 'failed'
         ? <>The last sync ({what}) stopped after {job.done} of {job.total}: {job.error ?? 'it did not finish'}.</>
-        : <>Last sync: {what}, finished <span className="tabular-nums text-[var(--time)]">{stamp(job.finishedAt ?? job.startedAt)}</span>.</>}
+        : job.status === 'cancelled'
+          ? (job.total === 1
+            ? <>Sync of {what} cancelled.</>
+            : <>Sync of {what} cancelled after {job.done} of {job.total} days: those days are kept.</>)
+          : <>Last sync: {what}, finished <span className="tabular-nums text-[var(--time)]">{stamp(job.finishedAt ?? job.startedAt)}</span>.</>}
     </p>
   );
 }

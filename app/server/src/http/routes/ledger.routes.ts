@@ -3,7 +3,7 @@ import { refuse } from '../refuse.js';
 import { accountOf } from '../account-query.js';
 import { istDate } from '../../strategy/schedule.js';
 import {
-  LEDGER_MAX_DAYS, TOLERANCE_USD, currentSync, deskDays, firstTradeDay, ledgerAccounts, ledgerBusy, ledgerRows, lastAutoCheck, startSync,
+  LEDGER_MAX_DAYS, TOLERANCE_USD, cancelSync, currentSync, deskDays, firstTradeDay, ledgerAccounts, ledgerBusy, ledgerRows, lastAutoCheck, startSync,
   type DeskDay, type LedgerRow, type LedgerStatus,
 } from '../../ledger/ledger.js';
 import type { WalletDay } from '../../ledger/wallet.js';
@@ -177,5 +177,18 @@ export function registerLedgerRoutes(app: FastifyInstance) {
     const started = await startSync(days, accountId);
     reply.code(started.already ? 200 : 202);
     return started;
+  });
+
+  /**
+   * Stop the sync running now (12 Nov 2026, owner: "a cancel X beside the loading -- a tap by mistake, cancel, and that
+   * request stops"): `id`, the job the screen shows, so an older screen never stops a newer job. Answered with the job
+   * as it now stands; `cancelled` false when it had already finished -- nothing to stop, and that is not an error.
+   * The days already checked stay checked; the day being read is left as it was.
+   */
+  app.post('/api/ledger/sync/cancel', async (req, reply) => {
+    const raw = ((req.body ?? {}) as { id?: unknown }).id;
+    const id = raw === undefined || raw === null || raw === '' ? null : Number(raw);
+    if (id !== null && (!Number.isSafeInteger(id) || id <= 0)) return refuse(reply, 400, { error: 'The sync id must be a whole number.' });
+    return cancelSync(id);
   });
 }

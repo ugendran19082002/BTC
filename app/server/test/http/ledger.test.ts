@@ -296,6 +296,79 @@ test('[critical] a range synced as one job: answered at once, read newest first,
   }
 });
 
+test('[critical] a sync cancelled by hand (the X, 12 Nov 2026): stops before the next read, keeps the days done and nothing of the day being read; a stale id stops nothing; a stop made by another process holds', async () => {
+  await query('DELETE FROM ledger_days');
+  const startOf = (d: string) => Date.parse(`${d}T00:00:00+05:30`);
+  const from = istDate(NOW - 2 * DAY_MS), mid = istDate(NOW - DAY_MS), to = istDate(NOW);
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  let reached: () => void = () => {};
+  const atMid = new Promise<void>((r) => { reached = r; });
+  const reads: string[] = [];
+  let stopSeen: boolean | null = null;
+  // Today read at once; the middle day's first account held, as a slow Delta page is, while the X is tapped.
+  L.setWalletReader(async (id, f, _t, stop) => {
+    reads.push(`${istDate(f)}|${id}`);
+    if (f === startOf(mid)) { reached(); await gate; stopSeen = stop?.() ?? null; }
+    return { entries: [], complete: true };
+  });
+  const s = await call('POST', '/api/ledger/sync', { from, to });
+  assert.equal(s.status, 202, JSON.stringify(s.body));
+  const id = s.body.sync.id as number;
+  await atMid;
+
+  // A screen showing an older job: its X stops nothing.
+  const stale = await call('POST', '/api/ledger/sync/cancel', { id: id + 1000 });
+  assert.equal(stale.status, 200);
+  assert.deepEqual([stale.body.cancelled, stale.body.sync.id, stale.body.sync.status], [false, id, 'running']);
+
+  const c = await call('POST', '/api/ledger/sync/cancel', { id });
+  assert.equal(c.status, 200, JSON.stringify(c.body));
+  assert.deepEqual([c.body.cancelled, c.body.sync.id, c.body.sync.status, c.body.sync.done, c.body.sync.day, c.body.sync.error], [true, id, 'cancelled', 1, null, null]);
+  assert.ok(c.body.sync.finishedAt > 0);
+  // Seen at once -- before the page in flight has even answered -- by a refresh or another phone.
+  const seen = (await call('GET', `/api/ledger?from=${from}&to=${to}`)).body;
+  assert.deepEqual([seen.sync.id, seen.sync.status], [id, 'cancelled']);
+
+  release();
+  await L.syncRunning();
+  assert.equal(stopSeen, true, 'the read in flight is told to stop');
+  assert.deepEqual(reads.map((r) => r.split('|')[0]), [to, to, mid], 'no other account, no other day read after the X');
+  const kept = await L.ledgerRows(null, from, to);
+  assert.deepEqual(kept.map((r) => r.day), [to, to], 'today kept for both accounts; nothing of the day being read');
+  const last = await L.currentSync();
+  assert.deepEqual([last!.id, last!.status, last!.done, last!.error], [id, 'cancelled', 1, null], 'the job never wrote itself back to done or failed');
+  assert.equal(Number((await query("SELECT count(*) AS n FROM ledger_syncs WHERE status = 'running'")).rows[0].n), 0);
+
+  // Tapped again, or by a second phone after it stopped: nothing to stop, not an error.
+  const twice = await call('POST', '/api/ledger/sync/cancel', { id });
+  assert.deepEqual([twice.status, twice.body.cancelled, twice.body.sync.status], [200, false, 'cancelled']);
+  for (const bad of ['x', -1, 1.5]) assert.equal((await call('POST', '/api/ledger/sync/cancel', { id: bad })).status, 400, String(bad));
+
+  // Syncing again after the X starts afresh.
+  L.setWalletReader(async () => ({ entries: [], complete: true }));
+  const again = await synced({ day: from });
+  assert.equal(again.rows.length, 2);
+  assert.equal((await L.currentSync())!.status, 'done');
+
+  // Stopped from another process -- the new API in a deploy, writing the database only: this one stops at its next
+  // write, and never turns the job back to done.
+  let release2: () => void = () => {};
+  const gate2 = new Promise<void>((r) => { release2 = r; });
+  const reads2: string[] = [];
+  L.setWalletReader(async (_id, f) => { reads2.push(istDate(f)); if (f === startOf(to)) await gate2; return { entries: [], complete: true }; });
+  const s2 = await call('POST', '/api/ledger/sync', { from: mid, to });
+  assert.equal(s2.status, 202, JSON.stringify(s2.body));
+  await new Promise((r) => setTimeout(r, 20));
+  await query(`UPDATE ledger_syncs SET status = 'cancelled', day = NULL, finished_at = $2 WHERE id = $1`, [s2.body.sync.id, Date.now()]);
+  release2();
+  await L.syncRunning();
+  assert.ok(!reads2.includes(mid), 'the next day is not read');
+  const last2 = await L.currentSync();
+  assert.deepEqual([last2!.id, last2!.status, last2!.done], [s2.body.sync.id, 'cancelled', 0]);
+  L.setWalletReader(async () => ({ entries: [], complete: true }));
+});
+
 test('[critical] a day\'s trades, each on its line -- strike, side, in and out, charges, net -- adding up to the ledger row; a trade over midnight on both days, said', async () => {
   const row = (await call('GET', `/api/ledger?from=${YESTERDAY}&to=${YESTERDAY}&account=${one}`)).body.days[0];
   const r = await call('GET', `/api/ledger/day?day=${YESTERDAY}&account=${one}`);

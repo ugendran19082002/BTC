@@ -21,11 +21,11 @@ export type LedgerDay = {
 };
 /**
  * A sync asked for by hand, as the server keeps it (`ledger_syncs`): its days newest first, how many done, the one being
- * read; running, done, or failed with why. One runs at a time, whoever asked.
+ * read; running, done, failed with why, or cancelled by hand. One runs at a time, whoever asked.
  */
 export type LedgerSync = {
   id: number; accountId: number | null; days: string[]; total: number; done: number; day: string | null;
-  status: 'running' | 'done' | 'failed'; error: string | null; resumed: number; startedAt: number; finishedAt: number | null;
+  status: 'running' | 'done' | 'failed' | 'cancelled'; error: string | null; resumed: number; startedAt: number; finishedAt: number | null;
 };
 export type Ledger = {
   from: string; to: string; account: number | null; accounts: { id: number; name: string }[]; busy: boolean; lastAutoAt: number | null;
@@ -52,6 +52,13 @@ export const syncLedger = (day: string | null, account: number | null) =>
 /** Sync every day from `from` to `to` (30 Oct 2026, owner: "7 days chosen, sync all seven"): one job, newest day first. */
 export const syncLedgerRange = (from: string, to: string, account: number | null) =>
   post<SyncStarted>('/api/ledger/sync', { from, to, ...(account === null ? {} : { accountId: account }) });
+
+/**
+ * Stop the sync `id` (12 Nov 2026, owner: "a cancel X beside the loading"): the server stops it before its next wallet
+ * read and keeps the days already checked. `cancelled` false: it had already finished -- the newest job is given.
+ */
+export const cancelLedgerSync = (id: number) =>
+  post<{ sync: LedgerSync | null; cancelled: boolean }>('/api/ledger/sync/cancel', { id });
 
 /** One trade of a ledger day (server: ledger/day-trades.ts): the whole trade's figures, in dollars. */
 export type DayTrade = {

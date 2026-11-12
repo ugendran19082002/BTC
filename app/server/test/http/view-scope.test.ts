@@ -120,7 +120,7 @@ test('[critical] a view session is refused every write but sign-in, sign-out and
   }))).filter((r) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.method));
   assert.ok(writes.length > 30, `the sweep found the app's write routes (${writes.length})`);
   for (const w of writes) {
-    if (['/api/login', '/api/login/code', '/api/logout', '/api/errors', '/api/ledger/sync'].includes(w.url)) continue;
+    if (['/api/login', '/api/login/code', '/api/logout', '/api/errors', '/api/ledger/sync', '/api/ledger/sync/cancel'].includes(w.url)) continue;
     const r = await app.inject({ method: w.method as 'POST', url: pathOf(w.url), payload: {}, headers: jar(token) });
     if (w.stage === 'setup' || w.stage === 'totp') {
       // A step of signing in (two-step setup): a signed-in session is the wrong stage for it, view or not.
@@ -176,6 +176,8 @@ test('the rule itself: writes refused but the four, the security page hidden, ev
   assert.equal(viewRefuses('POST', '/api/logout'), false);
   // A ledger check reads Delta's wallet and keeps what it found: no order, no setting (29 Oct 2026).
   assert.equal(viewRefuses('POST', '/api/ledger/sync'), false);
+  // And stopping it (12 Nov 2026): a phone that can start a sync can stop its own mistake.
+  assert.equal(viewRefuses('POST', '/api/ledger/sync/cancel'), false);
   assert.equal(viewRefuses('GET', '/api/security'), true);
   assert.equal(viewRefuses('GET', '/api/trade/status'), false);
 });

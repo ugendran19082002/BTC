@@ -144,19 +144,26 @@ export function walletDayOf(entries: readonly WalletEntry[], complete = true, re
   return day;
 }
 
+/** A ledger sync stopped by hand (`cancelSync`): thrown between pages, never kept as a failure. */
+export class SyncCancelled extends Error {
+  constructor() { super('The sync was cancelled.'); this.name = 'SyncCancelled'; }
+}
+
 /** The most pages one day is read in: a hundred entries a page, so twenty thousand -- five times a busy day's. */
 const MAX_PAGES = 200;
 
 /**
  * Every wallet entry of one account from `fromMs` up to (not incl.) `toMs`: Delta's times in microseconds, its cursor
- * followed to the last page. A page Delta refuses or does not answer throws, as every signed read does.
+ * followed to the last page. A page Delta refuses or does not answer throws, as every signed read does. `stop` (a sync
+ * cancelled by hand) is asked before each page: true throws `SyncCancelled`, and the page in flight is the last one.
  */
-export async function readWallet(creds: Creds, fromMs: number, toMs: number): Promise<{ entries: WalletEntry[]; complete: boolean; read: WalletRead }> {
+export async function readWallet(creds: Creds, fromMs: number, toMs: number, stop?: () => boolean): Promise<{ entries: WalletEntry[]; complete: boolean; read: WalletRead }> {
   type Row = { id: number | string; amount: string | number; balance: string | number; transaction_type: string; asset_symbol?: string | number | null; created_at: unknown };
   const out: WalletEntry[] = [];
   const read: WalletRead = { pages: 0, rows: 0, kept: 0, outside: 0, unparsed: 0, firstAt: null, lastAt: null };
   let after: string | null = null;
   for (let page = 0; page < MAX_PAGES; page++) {
+    if (stop?.()) throw new SyncCancelled();
     const query: string = `?start_time=${Math.floor(fromMs) * 1_000}&end_time=${Math.floor(toMs) * 1_000 - 1}&page_size=100${after ? `&after=${encodeURIComponent(after)}` : ''}`;
     const r = await signedPage<Row[]>(creds, { method: 'GET', path: '/v2/wallet/transactions', query });
     read.pages += 1;

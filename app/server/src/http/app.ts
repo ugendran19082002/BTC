@@ -90,8 +90,9 @@ const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * And a ledger check (29 Oct 2026, owner: "the ledger -- synced by hand on the phone"): it reads Delta's wallet with the
  * account's own key and keeps what it found in `ledger_days`, the same thing the desk does by itself at 11:59 PM. No
  * order, no setting, nothing a lost phone could use against the account.
+ * Stopping that check (12 Nov 2026) is allowed with it: a phone that can start a sync can stop its own mistake.
  */
-const VIEW_WRITES = new Set(['/api/login', '/api/login/code', '/api/logout', '/api/errors', '/api/ledger/sync']);
+const VIEW_WRITES = new Set(['/api/login', '/api/login/code', '/api/logout', '/api/errors', '/api/ledger/sync', '/api/ledger/sync/cancel']);
 /** Reads a view session is not given: the account's security page -- the devices, their addresses, the security log. */
 const VIEW_HIDDEN = new Set(['/api/security']);
 const VIEW_ONLY = { error: 'This device is signed in view only: it can read the desk, not change it.', viewOnly: true };

@@ -1,4 +1,4 @@
-import { one, query, rows } from '../db/pool.js';
+import { one, query, rows, type Param } from '../db/pool.js';
 import { migrate, type Migration } from '../db/migrate.js';
 import { brokerAccounts } from '../delta/accounts.js';
 import { journal, tradingService } from '../trading/service.js';
@@ -7,7 +7,9 @@ import { istDate, istMinutes } from '../strategy/schedule.js';
 import { deskMetrics } from '../observability/desk-metrics.js';
 import { noteError } from '../observability/errors.js';
 import { ledgerAlert } from '../notify/messages.js';
-import { readWallet, walletDayOf, type WalletDay, type WalletEntry, type WalletRead } from './wallet.js';
+import { SyncCancelled, readWallet, walletDayOf, type WalletDay, type WalletEntry, type WalletRead } from './wallet.js';
+
+export { SyncCancelled };
 
 /**
  * The ledger (owner, 29 Oct 2026: "a ledger on the phone, day by day -- profit, loss, charges, others; my system's
@@ -65,6 +67,16 @@ const MIGRATIONS: Migration[] = [{
     );
     CREATE UNIQUE INDEX IF NOT EXISTS ledger_syncs_one_running ON ledger_syncs ((true)) WHERE status = 'running';
     CREATE INDEX IF NOT EXISTS ledger_syncs_by_time ON ledger_syncs (started_at DESC);
+  `,
+}, {
+  /*
+   * A sync stopped by hand (12 Nov 2026, owner: "a cancel X beside the loading -- a tap by mistake, cancel, and that
+   * request stops; best practice"): its own status, apart from a failure, so the screen says it was stopped, not broken.
+   */
+  id: 'ledger-003-sync-cancelled',
+  up: `
+    ALTER TABLE ledger_syncs DROP CONSTRAINT IF EXISTS ledger_syncs_status_check;
+    ALTER TABLE ledger_syncs ADD CONSTRAINT ledger_syncs_status_check CHECK (status IN ('running', 'done', 'failed', 'cancelled'));
   `,
 }];
 
@@ -199,12 +211,12 @@ export function ledgerAccounts(): { id: number; name: string }[] {
   try { return brokerAccounts().list().filter((a) => a.active && a.readable).map((a) => ({ id: a.id, name: a.name })); } catch { return []; }
 }
 
-/** Read by the tests in place of Delta. */
-export type WalletReader = (accountId: number, fromMs: number, toMs: number) => Promise<{ entries: WalletEntry[]; complete: boolean; read?: WalletRead }>;
-const deltaWallet: WalletReader = async (accountId, fromMs, toMs) => {
+/** Read by the tests in place of Delta. `stop`: asked before each page -- true ends the read with `SyncCancelled`. */
+export type WalletReader = (accountId: number, fromMs: number, toMs: number, stop?: () => boolean) => Promise<{ entries: WalletEntry[]; complete: boolean; read?: WalletRead }>;
+const deltaWallet: WalletReader = async (accountId, fromMs, toMs, stop) => {
   const creds = brokerAccounts().credsOf(accountId);
   if (!creds) throw new Error('This account\'s key cannot be opened.');
-  return readWallet(creds, fromMs, toMs);
+  return readWallet(creds, fromMs, toMs, stop);
 };
 let reader: WalletReader = deltaWallet;
 /** For the tests: Delta's wallet as they write it. Null puts Delta back. */
@@ -214,8 +226,12 @@ let onPaper = deskOnPaper;
 /** For the tests, whose desk is held on paper: whether the day was traded on paper. Null asks the desk again. */
 export const setLedgerPaper = (f: (() => boolean) | null) => { onPaper = f ?? deskOnPaper; };
 
-/** Check one account's day now: the desk's figures, Delta's wallet, judged and kept. Never throws: a failure is a row. */
-export async function checkDay(accountId: number, day: string, how: 'auto' | 'manual', now = Date.now()): Promise<LedgerRow> {
+/**
+ * Check one account's day now: the desk's figures, Delta's wallet, judged and kept. Never throws: a failure is a row --
+ * but for a sync stopped by hand (`stop`), which throws `SyncCancelled` and keeps nothing, so a half-read wallet never
+ * replaces the check kept before it.
+ */
+export async function checkDay(accountId: number, day: string, how: 'auto' | 'manual', now = Date.now(), stop?: () => boolean): Promise<LedgerRow> {
   const desk = (await deskDays(accountId, day, day)).get(day) ?? ZERO;
   const paper = onPaper();
   let delta: WalletDay | null = null;
@@ -223,12 +239,14 @@ export async function checkDay(accountId: number, day: string, how: 'auto' | 'ma
   if (!paper) {
     const { from, to } = dayBounds(day);
     try {
-      const w = await reader(accountId, from, Math.min(to, now + 1));
+      const w = await reader(accountId, from, Math.min(to, now + 1), stop);
       delta = walletDayOf(w.entries, w.complete, w.read);
     } catch (e) {
+      if (e instanceof SyncCancelled) throw e;
       unread = `Delta's wallet could not be read: ${(e as Error).message}`;
     }
   }
+  if (stop?.()) throw new SyncCancelled();
   const j = judge(desk, delta, { paper, unread });
   const row: LedgerRow = { accountId, day, desk, delta, ...j, how, checkedAt: now };
   await save(row);
@@ -239,12 +257,18 @@ let running: Promise<LedgerRow[]> | null = null;
 /** Whether a check is being made now: one at a time, by hand or by itself. */
 export const ledgerBusy = () => running !== null;
 
-/** Check a day for the accounts asked (every one, with none), one after another. One run at a time; a second waits for the first. */
-export function checkDays(day: string, accountIds: readonly number[] | null, how: 'auto' | 'manual'): Promise<LedgerRow[]> {
+/**
+ * Check a day for the accounts asked (every one, with none), one after another. One run at a time; a second waits for
+ * the first. `stop` (a sync's cancel): asked before each account and each wallet page; true throws `SyncCancelled`.
+ */
+export function checkDays(day: string, accountIds: readonly number[] | null, how: 'auto' | 'manual', stop?: () => boolean): Promise<LedgerRow[]> {
   const run = async () => {
     const ids = accountIds ?? ledgerAccounts().map((a) => a.id);
     const out: LedgerRow[] = [];
-    for (const id of ids) out.push(await checkDay(id, day, how));
+    for (const id of ids) {
+      if (stop?.()) throw new SyncCancelled();
+      out.push(await checkDay(id, day, how, Date.now(), stop));
+    }
     return out;
   };
   const next = (running ?? Promise.resolve([])).then(run, run).finally(() => { if (running === next) running = null; });
@@ -261,7 +285,7 @@ export function checkDays(day: string, accountIds: readonly number[] | null, how
  */
 export type LedgerSync = {
   id: number; accountId: number | null; days: string[]; total: number; done: number; day: string | null;
-  status: 'running' | 'done' | 'failed'; error: string | null; resumed: number; startedAt: number; finishedAt: number | null;
+  status: 'running' | 'done' | 'failed' | 'cancelled'; error: string | null; resumed: number; startedAt: number; finishedAt: number | null;
 };
 type SyncRow = { id: string; account_id: string | null; days: string[]; done: number; day: string | null; status: LedgerSync['status']; error: string | null; resumed: number; started_at: string; finished_at: string | null };
 const syncOf = (r: SyncRow): LedgerSync => ({
@@ -309,23 +333,40 @@ let inProcess: Promise<void> | null = null;
 /** For the tests: the job this process is running, to wait for. */
 export const syncRunning = () => inProcess;
 
+/** The syncs this process has been told to stop (`cancelSync`): read before each day, account and wallet page. */
+const cancelAsked = new Set<number>();
+
+/**
+ * Every write a running job makes is held to `status = 'running'`, so a job stopped by hand -- here or by another
+ * process, the new API while the old one hands over in a deploy -- is never written back to running, done or failed.
+ * A write that finds the job no longer running stops it: that is how a stop made elsewhere reaches this process.
+ */
 function runSync(job: LedgerSync): Promise<void> {
+  const stop = () => cancelAsked.has(job.id);
+  const step = async (sql: string, params: readonly Param[]) => {
+    const r = await query(`${sql} AND status = 'running'`, params);
+    if (r.rowCount === 0) { cancelAsked.add(job.id); throw new SyncCancelled(); }
+  };
   const run = async () => {
     const accounts = ledgerAccounts().map((a) => a.id);
     const ids = job.accountId === null ? null : accounts.includes(job.accountId) ? [job.accountId] : [];
     try {
       for (let i = job.done; i < job.days.length; i++) {
+        if (stop()) throw new SyncCancelled();
         const day = job.days[i]!;
-        await query(`UPDATE ledger_syncs SET day = $2 WHERE id = $1`, [job.id, day]);
-        for (let waited = 0; deskMetrics().delta.usedPct > QUIET_PCT && waited < 60_000; waited += quotaWaitMs) await new Promise((r) => setTimeout(r, quotaWaitMs));
-        if (ids === null || ids.length) await checkDays(day, ids, 'manual');
-        await query(`UPDATE ledger_syncs SET done = $2 WHERE id = $1`, [job.id, i + 1]);
+        await step(`UPDATE ledger_syncs SET day = $2 WHERE id = $1`, [job.id, day]);
+        for (let waited = 0; !stop() && deskMetrics().delta.usedPct > QUIET_PCT && waited < 60_000; waited += quotaWaitMs) await new Promise((r) => setTimeout(r, quotaWaitMs));
+        if (ids === null || ids.length) await checkDays(day, ids, 'manual', stop);
+        await step(`UPDATE ledger_syncs SET done = $2 WHERE id = $1`, [job.id, i + 1]);
       }
-      await query(`UPDATE ledger_syncs SET status = 'done', day = NULL, finished_at = $2 WHERE id = $1`, [job.id, Date.now()]);
+      await step(`UPDATE ledger_syncs SET status = 'done', day = NULL, finished_at = $2 WHERE id = $1`, [job.id, Date.now()]);
     } catch (e) {
+      if (e instanceof SyncCancelled) return;          // stopped by hand: `cancelSync` has already written it so
       const message = (e as Error).message;
       noteError({ source: 'server', level: 'warn', where: 'ledger', message: `ledger sync not finished: ${message}` });
-      await query(`UPDATE ledger_syncs SET status = 'failed', error = $2, finished_at = $3 WHERE id = $1`, [job.id, message.slice(0, 300), Date.now()]).catch(() => {});
+      await query(`UPDATE ledger_syncs SET status = 'failed', error = $2, finished_at = $3 WHERE id = $1 AND status = 'running'`, [job.id, message.slice(0, 300), Date.now()]).catch(() => {});
+    } finally {
+      cancelAsked.delete(job.id);
     }
   };
   const next = (inProcess ?? Promise.resolve()).then(run, run).finally(() => { if (inProcess === next) inProcess = null; });
@@ -350,6 +391,27 @@ export async function resumeSync(): Promise<LedgerSync | null> {
   await query(`UPDATE ledger_syncs SET resumed = resumed + 1 WHERE id = $1`, [job.id]);
   void runSync({ ...job, resumed: job.resumed + 1 });
   return job;
+}
+
+/**
+ * Stop the sync running now (12 Nov 2026, owner: "a cancel X beside the loading -- a tap by mistake, cancel, and that
+ * request stops"). By its `id`, so a screen that was showing an older job never stops a newer one started elsewhere;
+ * null stops whichever is running. Written to the database first -- so the screen, a refresh and another phone see it
+ * at once -- and then the job stops before its next wallet page, account or day: at most the one page Delta is
+ * answering finishes, and nothing of the day it was reading is kept. Every day already checked stays checked; syncing
+ * again starts afresh. `cancelled` false: nothing of that id was running (it had finished) -- the newest job is given.
+ */
+export async function cancelSync(id: number | null, now = Date.now()): Promise<{ sync: LedgerSync | null; cancelled: boolean }> {
+  await ledgerSchema();
+  const r = await one<SyncRow>(
+    `UPDATE ledger_syncs SET status = 'cancelled', day = NULL, error = NULL, finished_at = $2
+     WHERE status = 'running' AND ($1::bigint IS NULL OR id = $1::bigint) RETURNING ${SYNC_COLS}`,
+    [id, now],
+  );
+  if (!r) return { sync: await currentSync(), cancelled: false };
+  const sync = syncOf(r);
+  cancelAsked.add(sync.id);
+  return { sync, cancelled: true };
 }
 
 /** Delta's quota this busy, the catching-up waits: an order matters more than yesterday's ledger. */

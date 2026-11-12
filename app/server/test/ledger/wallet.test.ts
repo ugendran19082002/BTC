@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketOf, distinctEntries, signsOf, timeOf, walletDayOf, type WalletEntry } from '../../src/ledger/wallet.js';
+import { SyncCancelled, bucketOf, distinctEntries, readWallet, signsOf, timeOf, walletDayOf, type WalletEntry } from '../../src/ledger/wallet.js';
 
 /**
  * A day of Delta's wallet summed (29 Oct 2026, the ledger): by what each entry is, its sign read off Delta's own
@@ -84,4 +84,32 @@ test('[critical] each entry once by the whole entry, never the id alone: Delta\'
   assert.equal(distinctEntries(rows).length, 2_179);
   // An overlap between two pages: the same entry twice is once.
   assert.equal(distinctEntries([...rows.slice(0, 100), ...rows.slice(95, 200)]).length, 200);
+});
+
+test('[critical] a sync cancelled by hand stops the wallet read between Delta pages: the page in flight is the last one asked (12 Nov 2026)', async () => {
+  const realFetch = globalThis.fetch;
+  let asked = 0;
+  // Two pages of one entry each, a cursor on the first: what Delta answers for a busy day.
+  globalThis.fetch = (async () => {
+    asked += 1;
+    const row = { id: asked, amount: '0.1', balance: '100', transaction_type: 'cashflow', asset_symbol: 'USD', created_at: (AT + asked * 1_000) * 1_000 };
+    return new Response(JSON.stringify({ success: true, result: [row], meta: { after: asked === 1 ? 'next' : null } }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const creds = { key: 'wallet-stop', secret: 's' };
+    const whole = await readWallet(creds, AT, AT + 3_600_000);
+    assert.deepEqual([asked, whole.entries.length, whole.complete], [2, 2, true], 'not stopped: every page');
+
+    asked = 0;
+    let stop = false;
+    globalThis.fetch = ((orig) => (async (...a: Parameters<typeof fetch>) => { const r = await orig(...a); stop = true; return r; }) as typeof fetch)(globalThis.fetch);
+    await assert.rejects(readWallet(creds, AT, AT + 3_600_000, () => stop), (e) => e instanceof SyncCancelled);
+    assert.equal(asked, 1, 'the second page is never asked for');
+
+    asked = 0;
+    await assert.rejects(readWallet(creds, AT, AT + 3_600_000, () => true), (e) => e instanceof SyncCancelled);
+    assert.equal(asked, 0, 'stopped before it began: nothing sent to Delta');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
