@@ -1582,6 +1582,15 @@ export class TradeEngine {
         if (floor !== null) {
           want = Math.max(want, Number.isFinite(floor) ? priceFor('sell', floor, tick) : entry.limitPrice);
         }
+        /*
+         * Never under the premium floor the gate held it to -- the strategy's own, else the desk's, as `runPrecheck`
+         * takes it -- whatever the bid does; the add's walk keeps its own floor the same way (`stepAdd`). 12 Nov 2026
+         * audit: the gate saw only the first price (11 on a 8 / 10 book), and the walk then sold 54 entries at
+         * 6.90-9.00 under a $10 floor. A book that never comes up to the floor leaves the order resting there until
+         * its window ends, as any unfilled entry.
+         */
+        const premiumFloor = rec.plan.minPremiumUsd ?? this.limits.minPremiumUsd;
+        if (Number.isFinite(premiumFloor) && premiumFloor > 0) want = Math.max(want, priceFor('sell', premiumFloor, tick));
         if (want < entry.limitPrice) {
           // Moved, not replaced: the order never leaves the book, so there is
           // no moment where the entry is neither working nor filled.
