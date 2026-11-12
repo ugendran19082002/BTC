@@ -12,7 +12,11 @@ const getLedger = vi.fn();
 const syncLedger = vi.fn();
 const syncLedgerRange = vi.fn();
 const getLedgerDay = vi.fn();
-vi.mock('@/api/ledger', () => ({ getLedger: (...a: unknown[]) => getLedger(...a), syncLedger: (...a: unknown[]) => syncLedger(...a), syncLedgerRange: (...a: unknown[]) => syncLedgerRange(...a), getLedgerDay: (...a: unknown[]) => getLedgerDay(...a) }));
+const cancelLedgerSync = vi.fn();
+vi.mock('@/api/ledger', () => ({
+  getLedger: (...a: unknown[]) => getLedger(...a), syncLedger: (...a: unknown[]) => syncLedger(...a), syncLedgerRange: (...a: unknown[]) => syncLedgerRange(...a),
+  getLedgerDay: (...a: unknown[]) => getLedgerDay(...a), cancelLedgerSync: (...a: unknown[]) => cancelLedgerSync(...a),
+}));
 const { LedgerScreen } = await import('@/components/mobile/screens/LedgerScreen');
 
 const inr = (usd: number) => signedInr(usdToInr(usd));
@@ -56,6 +60,7 @@ beforeEach(() => {
   syncLedger.mockReset().mockResolvedValue({ sync: job({ days: ['2026-10-29'] }), already: false });
   syncLedgerRange.mockReset().mockResolvedValue({ sync: job(), already: false });
   getLedgerDay.mockReset().mockResolvedValue({ day: '2026-10-28', account: null, desk: day('2026-10-28').desk, trades: [] });
+  cancelLedgerSync.mockReset().mockResolvedValue({ sync: job({ done: 2, day: null, status: 'cancelled', finishedAt: NOW }), cancelled: true });
 });
 
 describe('LedgerScreen', () => {
@@ -131,6 +136,48 @@ describe('LedgerScreen', () => {
     getLedger.mockResolvedValue(LEDGER({ sync: job({ done: 7, day: null, status: 'done', finishedAt: NOW }) }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Sync today' })).toBeEnabled(), { timeout: 5_000 });
     expect(screen.getByRole('status', { name: 'Sync with Delta, last' })).toHaveTextContent(/Last sync: 7 days, finished/);
+  });
+
+  it('[critical] the X beside a running sync stops it on the server, by its id, once: the buttons come back, and how far it got is said', async () => {
+    getLedger.mockResolvedValue(LEDGER({ sync: job({ done: 2, day: '2026-10-27' }) }));
+    let answer: (v: unknown) => void = () => {};
+    cancelLedgerSync.mockImplementation(() => new Promise((r) => { answer = r; }));
+    show();
+    await screen.findByRole('list', { name: 'Ledger days' });
+    const x = screen.getByRole('button', { name: 'Cancel sync' });
+    fireEvent.click(x);
+    // Asked once, by the id shown; while the server answers, a second tap does nothing.
+    const held = await screen.findByRole('button', { name: 'Stopping the sync' });
+    expect(held).toBeDisabled();
+    fireEvent.click(held);
+    expect(cancelLedgerSync).toHaveBeenCalledTimes(1);
+    expect(cancelLedgerSync).toHaveBeenCalledWith(7);
+    expect(screen.getByRole('status', { name: 'Sync with Delta, running' })).toHaveTextContent('Stopping…');
+    getLedger.mockResolvedValue(LEDGER({ sync: job({ done: 2, day: null, status: 'cancelled', finishedAt: NOW }) }));
+    answer({ sync: job({ done: 2, day: null, status: 'cancelled', finishedAt: NOW }), cancelled: true });
+    expect(await screen.findByRole('status', { name: 'Sync with Delta, last' })).toHaveTextContent('Sync of 7 days cancelled after 2 of 7 days: those days are kept.');
+    expect(screen.queryByRole('button', { name: 'Cancel sync' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Sync today' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Sync all 7 days with Delta' })).toBeEnabled();
+  });
+
+  it('the X on a sync that had already finished says so; a stop the server refuses is said, and the sync still shows running', async () => {
+    getLedger.mockResolvedValue(LEDGER({ sync: job({ days: ['2026-10-29'] }) }));
+    cancelLedgerSync.mockResolvedValue({ sync: job({ days: ['2026-10-29'], done: 1, day: null, status: 'done', finishedAt: NOW }), cancelled: false });
+    const { unmount } = show();
+    await screen.findByRole('list', { name: 'Ledger days' });
+    getLedger.mockResolvedValue(LEDGER({ sync: job({ days: ['2026-10-29'], done: 1, day: null, status: 'done', finishedAt: NOW }) }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel sync' }));
+    expect(await screen.findByText('It had already finished: nothing to stop.')).toBeInTheDocument();
+    unmount();
+    getLedger.mockResolvedValue(LEDGER({ sync: job({ days: ['2026-10-29'] }) }));
+    cancelLedgerSync.mockRejectedValue(new Error('The desk did not answer.'));
+    show();
+    await screen.findByRole('list', { name: 'Ledger days' });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel sync' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The desk did not answer.');
+    expect(screen.getByRole('button', { name: 'Cancel sync' })).toBeEnabled();
+    getLedger.mockResolvedValue(LEDGER({ sync: job({ days: ['2026-10-29'], done: 0, day: null, status: 'cancelled', finishedAt: NOW }) }));
   });
 
   it('[critical] a tap while a sync runs starts nothing new: it is handed the one running, and says so', async () => {
