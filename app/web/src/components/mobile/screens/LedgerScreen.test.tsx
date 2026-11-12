@@ -177,7 +177,6 @@ describe('LedgerScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel sync' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('The desk did not answer.');
     expect(screen.getByRole('button', { name: 'Cancel sync' })).toBeEnabled();
-    getLedger.mockResolvedValue(LEDGER({ sync: job({ days: ['2026-10-29'], done: 0, day: null, status: 'cancelled', finishedAt: NOW }) }));
   });
 
   it('[critical] a tap while a sync runs starts nothing new: it is handed the one running, and says so', async () => {
