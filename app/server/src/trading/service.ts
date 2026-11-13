@@ -34,6 +34,7 @@ import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-wa
 import { notePass, quotaKeyOf, quotaUsedPctOf } from '../observability/desk-metrics.js';
 import { ENTRY_WATCH_MS, EntryWatch } from './entry-watch.js';
 import { FILL_WAKE_MS, FillWake, type HeardOrder } from './fill-wake.js';
+import { LEG_AUDIT_MS, LegAudit } from './leg-audit.js';
 import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
 import { GLOBAL_MAX_OPEN_KEY, globalMaxOpenOf } from '../strategy/types.js';
 import { SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
@@ -381,6 +382,10 @@ export class TradingService {
     // A fill heard on the private socket: its trade polled now (`fill-wake.ts`). Idle unless the socket is in `wake`.
     this.wakeTimer ??= setInterval(() => { this.fillWake.tick(); this.sayWakes(); }, FILL_WAKE_MS);
     this.wakeTimer.unref?.();
+    // Every open short's stop and target against the book Delta last listed (`leg-audit.ts`): a trade whose order is
+    // not there is polled now, not when the pass comes round to it. Live only: paper's book is the simulator's own.
+    this.auditTimer ??= setInterval(() => { if (this.currentMode === 'live') void this.legAudit.look(); }, LEG_AUDIT_MS);
+    this.auditTimer.unref?.();
     // The session loss limit (session-loss.ts): a day already stopped stays stopped across a restart; nothing read while
     // it is off or outside every session.
     await this.sessionGuard.restore().catch(() => {});
@@ -397,6 +402,7 @@ export class TradingService {
     if (this.entryTimer) { clearInterval(this.entryTimer); this.entryTimer = null; }
     if (this.stopTimer) { clearInterval(this.stopTimer); this.stopTimer = null; }
     if (this.wakeTimer) { clearInterval(this.wakeTimer); this.wakeTimer = null; }
+    if (this.auditTimer) { clearInterval(this.auditTimer); this.auditTimer = null; }
     if (this.sessionTimer) { clearInterval(this.sessionTimer); this.sessionTimer = null; }
     if (this.stopPerpWatch) { this.stopPerpWatch(); this.stopPerpWatch = null; }
     if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
@@ -407,6 +413,7 @@ export class TradingService {
   private entryTimer: NodeJS.Timeout | null = null;
   private stopTimer: NodeJS.Timeout | null = null;
   private wakeTimer: NodeJS.Timeout | null = null;
+  private auditTimer: NodeJS.Timeout | null = null;
   private sessionTimer: NodeJS.Timeout | null = null;
   private stopPerpWatch: (() => void) | null = null;
 
@@ -547,6 +554,18 @@ export class TradingService {
     poll: (tradeId) => this.engine.poll(tradeId),
     quotaUsedPct: () => this.quotaUsedPct(),
     onSettled: () => this.watchesStale(),
+  });
+
+  /**
+   * The book Delta last listed against every open short's stop and target, every `LEG_AUDIT_MS` (`leg-audit.ts`,
+   * 13 Nov 2026): a trade whose order is not on it is woken through the fill wake -- the same poll a cancel heard on the
+   * socket gets, paced the same way -- and that poll puts back what is missing. Nothing read beyond the shared book.
+   */
+  readonly legAudit = new LegAudit({
+    book: () => (this.exchange.getRestingBook ? this.exchange.getRestingBook() : Promise.resolve(null)),
+    open: () => this.openTrades(),
+    wake: (tradeId) => { this.fillWake.nudge(tradeId); },
+    quotaUsedPct: () => this.quotaUsedPct(),
   });
 
   /**

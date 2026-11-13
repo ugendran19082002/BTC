@@ -18,7 +18,7 @@ export type PrecheckCode =
   | 'SPREAD_TOO_WIDE' | 'THIN_BOOK'
   | 'MIN_SIZE' | 'LOT_SIZE'
   | 'PREMIUM_TOO_LOW'
-  | 'INSUFFICIENT_MARGIN' | 'DUPLICATE_POSITION' | 'MAX_POSITION' | 'DAILY_LOSS_LIMIT'
+  | 'INSUFFICIENT_MARGIN' | 'BALANCE_UNREAD' | 'DUPLICATE_POSITION' | 'MAX_POSITION' | 'DAILY_LOSS_LIMIT'
   | 'WRONG_EXIT_SIDE' | 'KILL_SWITCH'
   /** The account's session loss limit was hit: squared off, and no new entry until the session ends (session-loss.ts). */
   | 'SESSION_LOSS_LIMIT'
@@ -226,7 +226,8 @@ export type PrecheckInput = {
   tradingEnabled: boolean;
   /** Why new entries on this account wait, or null: a session squared off at its loss limit (session-loss.ts). */
   entryBlock?: string | null;
-  account: { availableUsd: number };
+  /** The free balance; null when Delta would not say and nothing recent is held (`balanceForGate`). */
+  account: { availableUsd: number | null };
   /** Signed contracts already held on this symbol. Short is negative. */
   existingPosition: number;
   /** Signed contracts short across every symbol, as a positive number. */
@@ -400,7 +401,10 @@ export function precheck(input: PrecheckInput): PrecheckResult {
     // how a desk decides it can afford ten times the position it can survive.
     // The fee is part of what has to be there, so it is part of the check.
     const marginNeeded = marginInputs ? fundsRequiredPerContract(marginInputs) * intent.size : null;
-    if (marginNeeded !== null && marginNeeded > input.account.availableUsd) {
+    if (input.account.availableUsd === null) {
+      // Not "have $0.00" (12 Nov 2026): a balance Delta would not say is unknown, and an entry is not sold on unknown.
+      add('BALANCE_UNREAD', `Delta did not say the balance just now${marginNeeded !== null ? ` (needs $${marginNeeded.toFixed(2)} at ${leverage}x)` : ''}: asked again at the next signal.`);
+    } else if (marginNeeded !== null && marginNeeded > input.account.availableUsd) {
       add(
         'INSUFFICIENT_MARGIN',
         `Needs $${marginNeeded.toFixed(2)} at ${leverage}x, have $${input.account.availableUsd.toFixed(2)}.`,

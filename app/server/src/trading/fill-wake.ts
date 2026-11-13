@@ -108,6 +108,8 @@ export class FillWake {
     overflow: 0,
     /** Polls that threw. */
     failed: 0,
+    /** Trades woken by the desk itself, not the socket: a stop or target the book read lacks (`nudge`, `leg-audit.ts`). */
+    nudged: 0,
   };
 
   constructor(private readonly d: FillWakeDeps) {
@@ -142,6 +144,25 @@ export class FillWake {
       this.counts.overflow++;
     }
     this.waiting.set(tradeId, { tradeId, orders: new Set(e.kind === 'fill' ? [e.orderId] : []), heardAt: e.heardAt, dueAt: at, tries: 0 });
+    return true;
+  }
+
+  /**
+   * A trade woken by the desk, not the socket (13 Nov 2026): its stop or target is not on the book Delta last listed
+   * (`leg-audit.ts`). Answered as a cancel heard is -- one poll, which reads the order and puts back what is missing --
+   * and paced the same way. Merged into a wake already waiting. True when a poll is now due.
+   */
+  nudge(tradeId: string): boolean {
+    this.counts.nudged++;
+    const at = this.now();
+    const had = this.waiting.get(tradeId);
+    if (had) { had.dueAt = Math.min(had.dueAt, at); return true; }
+    if (this.waiting.size >= FILL_WAKE_MAX) {
+      const oldest = this.waiting.keys().next().value as string;
+      this.waiting.delete(oldest);
+      this.counts.overflow++;
+    }
+    this.waiting.set(tradeId, { tradeId, orders: new Set(), heardAt: at, dueAt: at, tries: 0 });
     return true;
   }
 

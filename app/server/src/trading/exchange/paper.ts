@@ -369,6 +369,12 @@ export class PaperExchange implements ExchangePort {
       .map((o) => ({ ...o }));
   }
 
+  /** The resting orders by client id, as Delta's shared read would list them (`leg-audit.ts`). */
+  async getRestingBook(): Promise<ReadonlyMap<string, ExchangeOrder> | null> {
+    const open = await this.getOpenOrders();
+    return new Map(open.flatMap((o) => (o.clientOrderId ? [[o.clientOrderId, o] as const] : [])));
+  }
+
   async getOpenOrders(symbol?: string): Promise<ExchangeOrder[]> {
     this.guard();
     return [...this.orders.values()]

@@ -49,6 +49,11 @@ export interface ExchangePort {
    */
   getRestingOrder?(clientOrderId: string, symbol?: string): Promise<ExchangeOrder | null>;
   /**
+   * The account's resting orders by client id, off the same shared read (13 Nov 2026, `leg-audit.ts`): null when it
+   * could not be read whole. Optional: a venue without it is not audited.
+   */
+  getRestingBook?(): Promise<ReadonlyMap<string, ExchangeOrder> | null>;
+  /**
    * By the exchange's own id, from the acknowledgement. The lookup that cannot
    * be foiled by a client-id filter: once the venue has said "order 1535451705",
    * that number finds it open or closed.

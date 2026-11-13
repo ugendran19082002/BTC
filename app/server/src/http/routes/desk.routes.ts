@@ -175,6 +175,7 @@ export function registerDeskRoutes(app: FastifyInstance) {
     privateSocket: privateShadowMetrics(),
     // Each desk's wakes off the private socket (trading/fill-wake.ts): all zero unless DELTA_PRIVATE_WS=wake.
     fillWake: tradingServices().map((d) => ({ accountId: d.accountId, ...d.fillWake.metrics() })),
+    legAudit: tradingServices().map((d) => ({ accountId: d.accountId, ...d.legAudit.metrics() })),
   }));
 
   /*

@@ -2464,8 +2464,10 @@ export function liveWhy(detail: string): string {
     [/over before it could be entered|in the same moment/i, 'over before it could be entered'],
     [/at most \d+ (CE|PE)|already has \d+ (CE|PE)/i, 'the account\'s CE / PE limit'],
     [/at most|already has|open trades/i, 'a limit on open trades'],
-    [/Needs \$|margin/i, 'not enough margin'],
+    // The premium floor's own sentence says "margin" too: read for its "pays" first (12 Nov 2026, 5,660 mislabelled).
     [/pays|premium/i, 'the premium floor'],
+    [/did not say the balance/i, 'the balance could not be read'],
+    [/Needs \$|margin/i, 'not enough margin'],
     [/Would take total short/i, 'the short limit'],
     [/no-entry|no entry/i, 'its no-entry window'],
     [/nothing out of the money|no strike/i, 'no strike the rule could sell'],

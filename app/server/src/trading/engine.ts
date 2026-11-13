@@ -545,6 +545,8 @@ const LOOKUP_BUDGET_MS = 3_000;
  * because the feed stalled rather than because the price moved.
  */
 const MARK_STALE_MS = 15_000;
+/** How long the last balance Delta answered stands in for one it refuses (`balanceForGate`). */
+export const BALANCE_HOLD_MS = 5 * 60_000;
 /** A target the look-up cannot find anywhere is put back only after it has been missing this long (`protect`). */
 export const TARGET_NOWHERE_MS = 60_000;
 /**
@@ -993,6 +995,25 @@ export class TradeEngine {
     return rec;
   }
 
+  /** The last balance Delta answered, and when: what a gate falls back on while a read is refused (`balanceForGate`). */
+  private lastBalance: { usd: number; at: number } | null = null;
+
+  /**
+   * The free balance for the gate (13 Nov 2026). A read Delta refused -- the rate limit, a 502 -- was taken as $0, and
+   * every entry asked in that minute was refused "Needs $0.37, have $0.00" on four accounts whose wallets were full
+   * (12 Nov, 13:45). A balance read moments ago is still the balance: it is answered for up to `BALANCE_HOLD_MS`.
+   * None at all -- a desk just started, Delta down since -- is null, and the gate says the balance could not be read,
+   * which is not "not enough margin".
+   */
+  private async balanceForGate(): Promise<number | null> {
+    try {
+      const usd = await this.exchange.getBalanceUsd();
+      if (Number.isFinite(usd)) { this.lastBalance = { usd, at: this.now() }; return usd; }
+    } catch { /* fall back below */ }
+    const held = this.lastBalance;
+    return held && this.now() - held.at <= BALANCE_HOLD_MS ? held.usd : null;
+  }
+
   // ------------------------------------------------------------ prechecks
   async runPrecheck(
     plan: TradePlan,
@@ -1002,7 +1023,7 @@ export class TradeEngine {
   ): Promise<PrecheckResult> {
     const [asked, balance, positions, spot] = await Promise.all([
       this.exchange.getQuote(plan.symbol).catch(() => null),
-      this.exchange.getBalanceUsd().catch(() => 0),
+      this.balanceForGate(),
       this.exchange.getPositions().catch(() => []),
       this.d.spot ? Promise.resolve(this.d.spot()) : Promise.resolve(null),
     ]);

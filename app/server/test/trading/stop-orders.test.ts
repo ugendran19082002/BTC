@@ -1,6 +1,6 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { orderBody } from '../../src/trading/exchange/delta.js';
+import { orderBody, clearSharedQuotes } from '../../src/trading/exchange/delta.js';
 import { stopFillLimit } from '../../src/trading/money.js';
 import { PaperExchange } from '../../src/trading/exchange/paper.js';
 import { rig, ceProduct, planFor, quote } from './harness.js';
@@ -137,7 +137,7 @@ test('[critical] the engine places the stop as a stop limit, and moving it moves
 // ------------------------------------- when Delta cannot price a market order
 
 const realFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = realFetch; });
+afterEach(() => { clearSharedQuotes(); globalThis.fetch = realFetch; });
 
 const { DeltaExchange } = await import('../../src/trading/exchange/delta.js');
 

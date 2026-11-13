@@ -364,10 +364,16 @@ function isExpectedRefusal(
   return false;
 }
 
+/**
+ * Per contract, the ticker read in flight or just answered, for every desk in the process (`getQuote`); `at` is when it
+ * settled (in flight: never stale), `key` whose login read it (`quotaKeyOf`).
+ */
+const sharedQuotes = new Map<string, { at: number; key: string; q: Promise<Quote | null> }>();
+/** For the tests: the shared quotes forgotten, as at start. */
+export const clearSharedQuotes = (): void => { sharedQuotes.clear(); };
+
 export class DeltaExchange implements ExchangePort {
   private products = new Map<string, ProductSpec>();
-  /** Per contract, the ticker read in flight or just answered; `at` is when it settled (in flight: never stale). */
-  private quotes = new Map<string, { at: number; q: Promise<Quote | null> }>();
   /** The whole book, read in flight or just answered, by client id; `at` is when it settled (in flight: never stale). Null: it could not be read. */
   private book: { at: number; shareMs: number; rows: Promise<ReadonlyMap<string, ExchangeOrder> | null> } | null = null;
   /** Orders this desk edited or cancelled since that read began: what the book says of them is out of date. */
@@ -749,6 +755,11 @@ export class DeltaExchange implements ExchangePort {
     return this.getOrderByClientId(clientOrderId, symbol);
   }
 
+  /** The whole book by client id, off the shared read (`sharedBook`): what `leg-audit.ts` holds the trades against. */
+  getRestingBook(): Promise<ReadonlyMap<string, ExchangeOrder> | null> {
+    return this.sharedBook();
+  }
+
   /** Inside a wait Delta named nothing can be asked: answered as the searches below would be, without trying each. */
   private refuseIfHeld(): void {
     const waitMs = rateLimitWaitMs(this.creds);
@@ -944,13 +955,22 @@ export class DeltaExchange implements ExchangePort {
     return spec;
   }
 
-  /** The ticker is public, but it is fetched here so the port has one home. One read per contract at a time, shared. */
-  getQuote(symbol: string): Promise<Quote | null> {
-    const held = this.quotes.get(symbol);
-    if (held && Date.now() - held.at < QUOTE_SHARE_MS) return held.q;
-    const entry = { at: Infinity, q: this.readQuote(symbol) };
-    this.quotes.set(symbol, entry);
-    // A refusal is shared as well: the next ask in the window would only be refused again.
+  /**
+   * The ticker is public, but it is fetched here so the port has one home. One read per contract at a time, shared by
+   * every account's desk in this process (`sharedQuotes`, 13 Nov 2026): the four desks each read the same contracts'
+   * tickers, signed, on their own logins -- price reads were two thirds of the day's rate-limit refusals. A quote one
+   * desk read is the same quote for another; a refusal is shared only with its own login, whose next ask in the window
+   * would only be refused again, and another login reads for itself.
+   */
+  async getQuote(symbol: string): Promise<Quote | null> {
+    const key = quotaKeyOf(this.creds);
+    const held = sharedQuotes.get(symbol);
+    if (held && Date.now() - held.at < QUOTE_SHARE_MS) {
+      const q = await held.q;
+      if (q !== null || held.key === key) return q;
+    }
+    const entry = { at: Infinity, key, q: this.readQuote(symbol) };
+    sharedQuotes.set(symbol, entry);
     void entry.q.finally(() => { entry.at = Date.now(); });
     return entry.q;
   }
