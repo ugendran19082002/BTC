@@ -87,7 +87,7 @@ export function GroupLimits({ group, account, busy, act, onInvalid }: {
           </Own>
           <Own own={own.momentum !== null} label="Momentum guard" busy={busy === key('momentum')} onReset={() => save('momentum', () => setMomentumGuard(null, group.id))}>
             <MomentumGuard guard={own.momentum ?? account.momentum} now={account.momentumNow} busy={busy === key('momentum')}
-                           onSave={(g) => save('momentum', () => setMomentumGuard(g ?? { on: false, pts: (own.momentum ?? account.momentum).pts }, group.id))} />
+                           onSave={(g) => save('momentum', () => setMomentumGuard(g ?? { ...(own.momentum ?? account.momentum), on: false }, group.id))} />
           </Own>
           <Own own={own.reentry !== null} label="Re-entry" busy={busy === key('reentry')} onReset={() => save('reentry', () => setReentry(null, group.id))}>
             <Reentry reentry={own.reentry ?? account.reentry} busy={busy === key('reentry')} onSave={(r) => save('reentry', () => setReentry(r ?? OFF, group.id))} />

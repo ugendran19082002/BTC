@@ -242,11 +242,23 @@ export type SignalTf = '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h';
 export const ZONE_FRESH_DEFAULT_S: Readonly<Record<SignalTf, number>> = { '3m': 90, '5m': 90, '15m': 150, '30m': 210, '1h': 300, '2h': 450, '4h': 600 };
 export const ZONE_FRESH_MIN_S = 10;
 export const ZONE_FRESH_MAX_S = 1_800;
-/** The momentum guard, one account's (server `MOMENTUM_GUARD_KEY`, 30 Oct 2026): no call sold after the perp rose `pts` in the hour. */
-export type MomentumGuard = { on: boolean; pts: number };
+/**
+ * The momentum guard, one account's (server `MOMENTUM_GUARD_KEY`, 30 Oct 2026): no call sold after the perp rose `pts` in
+ * the hour -- or, with `unit` 'pct' (14 Nov 2026), `pct` per cent of its price. Absent `unit` (an older server) is points.
+ */
+export type MomentumUnit = 'pts' | 'pct';
+export type MomentumGuard = { on: boolean; pts: number; unit?: MomentumUnit; pct?: number };
 export const MOMENTUM_GUARD_DEFAULT_PTS = 250;
 export const MOMENTUM_GUARD_MIN_PTS = 50;
 export const MOMENTUM_GUARD_MAX_PTS = 2_000;
+export const MOMENTUM_GUARD_DEFAULT_PCT = 0.25;
+export const MOMENTUM_GUARD_MIN_PCT = 0.05;
+export const MOMENTUM_GUARD_MAX_PCT = 2;
+/** The rise in points that holds a call back at this price: the points, or the per cent of it. Null: a per cent, no price. */
+export const momentumPtsAt = (g: MomentumGuard, price: number | null): number | null =>
+  g.unit === 'pct' ? (price !== null && price > 0 ? (price * (g.pct ?? MOMENTUM_GUARD_DEFAULT_PCT)) / 100 : null) : g.pts;
+/** "+200", "+0.25%": the guard's level as the pill and the group summary say it. */
+export const momentumLabel = (g: MomentumGuard): string => (g.unit === 'pct' ? `+${g.pct ?? MOMENTUM_GUARD_DEFAULT_PCT}%` : `+${g.pts}`);
 /**
  * Re-entry after an option exit, one account's (server `REENTRY_KEY`, 1 Nov 2026): after an SL the other side, after a
  * target the same side -- each in its own IST time range, at the strategy's own lots. `entries` trades at once from the

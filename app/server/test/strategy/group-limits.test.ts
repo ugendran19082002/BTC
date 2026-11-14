@@ -27,13 +27,13 @@ test('[critical] a group\'s own settings read: each parsed as the account\'s are
     [groupKey('signal_momentum_guard', 'g')]: JSON.stringify({ on: true, pts: 200 }),
   });
   const own = groupOwnOf(s, 'g');
-  assert.deepEqual([own.maxOpen, own.ce, own.pe, own.strikeMax, own.strikeFull, own.momentum], [150, 70, null, null, 'skip', { on: true, pts: 200 }]);
+  assert.deepEqual([own.maxOpen, own.ce, own.pe, own.strikeMax, own.strikeFull, own.momentum], [150, 70, null, null, 'skip', { on: true, pts: 200, unit: 'pts', pct: 0.25 }]);
   assert.deepEqual(groupOwnOf(s, null), NO_GROUP_OWN);
   assert.equal(groupOwnOf(new MemorySettings({ [groupKey('signal_max_open', 'g')]: 'lots' }), 'g').maxOpen, null);
 });
 
 test('[critical] a group that sets none of the counted limits counts nothing of its own: its account\'s alone stand', () => {
-  const own = { ...NO_GROUP_OWN, strikeFull: 'skip' as const, momentum: { on: true, pts: 200 } };
+  const own = { ...NO_GROUP_OWN, strikeFull: 'skip' as const, momentum: { on: true, pts: 200, unit: 'pts' as const, pct: 0.25 } };
   assert.equal(countsOwn(own), false);
   assert.equal(groupLimitsOf(own, ACCOUNT), null);
 });

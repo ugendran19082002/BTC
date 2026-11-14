@@ -1,4 +1,4 @@
-import type { GroupOwn, Strategy, StrategyGroup } from '@/types/strategy';
+import { momentumLabel, type GroupOwn, type Strategy, type StrategyGroup } from '@/types/strategy';
 
 /**
  * The strategies listed by group (owner, 10 Oct 2026: "the strategies are listed by group now, each group's inside it").
@@ -134,7 +134,7 @@ export function groupOwnWords(own: GroupOwn | null | undefined): string[] {
   if (own.strikeMax !== null) w.push(`Strike ${own.strikeMax}%`);
   if (own.strikeFull !== null) w.push(own.strikeFull === 'skip' ? 'Full: skip' : 'Full: next strike');
   if (own.zoneFresh !== null) w.push('Fill window');
-  if (own.momentum !== null) w.push(own.momentum.on ? `Momentum +${own.momentum.pts}` : 'Momentum off');
+  if (own.momentum !== null) w.push(own.momentum.on ? `Momentum ${momentumLabel(own.momentum)}` : 'Momentum off');
   if (own.reentry !== null) w.push(own.reentry.sl.on || own.reentry.tgt.on ? `Re-entry ${[own.reentry.sl.on && 'SL', own.reentry.tgt.on && 'TGT'].filter(Boolean).join(' + ')}` : 'Re-entry off');
   return w;
 }

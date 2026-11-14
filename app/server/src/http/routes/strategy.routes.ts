@@ -1171,7 +1171,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
 
   /**
    * The momentum guard, this account's (owner, 30 Oct 2026): `{ guard: { on: true, pts: 250 } }`, whole points from 50 to
-   * 2000; `null` is back to the default, off. The runner reads it at each signal, so it counts from the next one.
+   * 2000, or `{ guard: { on: true, unit: 'pct', pct: 0.25 } }`, a per cent of the perp's price (14 Nov 2026); `null` is
+   * back to the default, off. The runner reads it at each signal, so it counts from the next one.
    */
   app.post('/api/strategies/momentum-guard', async (req, reply) => {
     const body = (req.body ?? {}) as { guard?: unknown; accountId?: unknown; groupId?: unknown };
@@ -1182,8 +1183,11 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const want = guard === undefined ? null : guard;
     const problem = momentumGuardProblem(want);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    const { on, pts } = (want ?? {}) as { on?: boolean; pts?: number };
-    await svc.settings.set(scope.key(MOMENTUM_GUARD_KEY), want === null ? '' : JSON.stringify({ on, pts }));
+    // Both numbers are kept whichever is in force: what was saved before stands for the one not sent.
+    const was = momentumGuardOf(svc.settings.get(scope.key(MOMENTUM_GUARD_KEY)) || accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account));
+    const { on, pts, unit, pct } = (want ?? {}) as { on?: boolean; pts?: number; unit?: 'pts' | 'pct'; pct?: number };
+    await svc.settings.set(scope.key(MOMENTUM_GUARD_KEY), want === null ? ''
+      : JSON.stringify({ on, pts: pts ?? was.pts, unit: unit ?? 'pts', pct: pct ?? was.pct }));
     return { ok: true, signalMomentumGuard: momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account)), ...groupAnswer(group) };
   });
 

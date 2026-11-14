@@ -937,35 +937,76 @@ export function zoneFreshProblem(v: unknown): string | null {
  * against its average price in the minute an hour before. Puts are never held back by it, nor is anything already open.
  * The study: CE sells it would have refused won 55% against 71% for all of them; 13 Oct's spike was most of what it saved.
  * Blocking puts on a fall as well cost money every way it was tested, so there is no setting for it.
- * Kept as JSON, {"on": true, "pts": 250}; off where unset or unreadable. Read by the runner at each signal.
+ * Kept as JSON, {"on": true, "pts": 250} or {"on": true, "unit": "pct", "pct": 0.25, "pts": 250}; off where unset or
+ * unreadable. Read by the runner at each signal.
  */
 export const MOMENTUM_GUARD_KEY = 'signal_momentum_guard';
-export type MomentumGuard = { on: boolean; pts: number };
-export const MOMENTUM_GUARD_DEFAULT: Readonly<MomentumGuard> = { on: false, pts: 250 };
+/**
+ * The rise is points (`pts`, as it began) or a per cent of the perp's price (`pct`; owner, 14 Nov 2026: "0.25% of price",
+ * after the study of 1 Oct - 11 Nov: 200 points was best only because BTC sat near 80,000, where it is 0.25% -- at 67,500
+ * the same 200 is 0.30% and too loose, at 1,00,000 it is 0.20% and too tight; 0.25% was the best of 0.20-0.35% and of
+ * fixed 150-300). Saved before the choice existed means points. Both numbers are kept, so switching back loses neither.
+ */
+export type MomentumUnit = 'pts' | 'pct';
+export type MomentumGuard = { on: boolean; pts: number; unit: MomentumUnit; pct: number };
+export const MOMENTUM_GUARD_DEFAULT: Readonly<MomentumGuard> = { on: false, pts: 250, unit: 'pts', pct: 0.25 };
 export const MOMENTUM_GUARD_MIN_PTS = 50;
 export const MOMENTUM_GUARD_MAX_PTS = 2_000;
+export const MOMENTUM_GUARD_MIN_PCT = 0.05;
+export const MOMENTUM_GUARD_MAX_PCT = 2;
 const guardPtsOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= MOMENTUM_GUARD_MIN_PTS && n <= MOMENTUM_GUARD_MAX_PTS;
-/** The setting as stored: on or off and its points, the default for whatever is unset or unreadable. */
+/** A per cent of at most two decimals, 0.05 to 2. */
+const guardPctOk = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
+  && n >= MOMENTUM_GUARD_MIN_PCT && n <= MOMENTUM_GUARD_MAX_PCT && Math.abs(n * 100 - Math.round(n * 100)) < 1e-9;
+/** The setting as stored: on or off, its unit and both numbers, the default for whatever is unset or unreadable. */
 export function momentumGuardOf(raw: string | null | undefined): MomentumGuard {
   let v: Record<string, unknown> = {};
   try { const x = raw ? JSON.parse(raw) : {}; if (x && typeof x === 'object' && !Array.isArray(x)) v = x; } catch { /* the default */ }
-  return { on: v.on === true, pts: guardPtsOk(v.pts) ? v.pts : MOMENTUM_GUARD_DEFAULT.pts };
+  return {
+    on: v.on === true,
+    pts: guardPtsOk(v.pts) ? v.pts : MOMENTUM_GUARD_DEFAULT.pts,
+    unit: v.unit === 'pct' ? 'pct' : 'pts',
+    pct: guardPctOk(v.pct) ? v.pct : MOMENTUM_GUARD_DEFAULT.pct,
+  };
 }
 /** Why a momentum guard cannot be saved, in words; null when it can. `null` itself is "back to the default" (off), and can. */
 export function momentumGuardProblem(v: unknown): string | null {
   if (v === null) return null;
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return 'The momentum guard is {"on": true, "pts": 250}.';
-  const { on, pts } = v as Record<string, unknown>;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return 'The momentum guard is {"on": true, "pts": 250} or {"on": true, "unit": "pct", "pct": 0.25}.';
+  const { on, pts, unit, pct } = v as Record<string, unknown>;
   if (typeof on !== 'boolean') return 'Say whether the momentum guard is on: true or false.';
+  if (unit !== undefined && unit !== 'pts' && unit !== 'pct') return 'The momentum guard\'s unit is "pts" or "pct".';
+  if (unit === 'pct') {
+    if (!guardPctOk(pct)) return `The momentum guard's rise must be a per cent from ${MOMENTUM_GUARD_MIN_PCT} to ${MOMENTUM_GUARD_MAX_PCT}, two decimals at most.`;
+    if (pts !== undefined && !guardPtsOk(pts)) return `The momentum guard's rise must be whole points from ${MOMENTUM_GUARD_MIN_PTS} to ${MOMENTUM_GUARD_MAX_PTS}.`;
+    return null;
+  }
   if (!guardPtsOk(pts)) return `The momentum guard's rise must be whole points from ${MOMENTUM_GUARD_MIN_PTS} to ${MOMENTUM_GUARD_MAX_PTS}.`;
+  if (pct !== undefined && !guardPctOk(pct)) return `The momentum guard's rise must be a per cent from ${MOMENTUM_GUARD_MIN_PCT} to ${MOMENTUM_GUARD_MAX_PCT}, two decimals at most.`;
   return null;
 }
 /**
- * Whether the guard holds this signal back: a call to be sold, the guard on, and the perp up its points or more in the
- * hour. A rise that cannot be read (no price now, or none an hour ago) holds nothing back.
+ * The rise, in points, that holds a call back at this perp price: the points, or the per cent of the price. Null: a per
+ * cent with no price to take it of -- nothing is held back then, as with a rise that cannot be read.
  */
-export const momentumBlocks = (g: MomentumGuard, sells: 'CE' | 'PE' | null, rise: number | null): boolean =>
-  g.on && sells === 'CE' && rise !== null && rise >= g.pts;
+export const momentumPtsAt = (g: Pick<MomentumGuard, 'pts' | 'unit' | 'pct'>, price: number | null): number | null =>
+  g.unit === 'pct' ? (price !== null && Number.isFinite(price) && price > 0 ? (price * g.pct) / 100 : null) : g.pts;
+/** The guard in words, as the skip reason says it: "200" (points, worded as before), "0.25% (169 pts at 67567)". */
+export const momentumWords = (g: Pick<MomentumGuard, 'pts' | 'unit' | 'pct'>, price: number | null): string => {
+  if (g.unit !== 'pct') return `${g.pts}`;
+  const at = momentumPtsAt(g, price);
+  return at === null ? `${g.pct}%` : `${g.pct}% (${Math.round(at)} pts at ${Math.round(price!)})`;
+};
+/**
+ * Whether the guard holds this signal back: a call to be sold, the guard on, and the perp up its points -- or its per cent
+ * of `price`, the perp now -- or more in the hour. A rise that cannot be read (no price now, or none an hour ago) holds
+ * nothing back.
+ */
+export const momentumBlocks = (g: MomentumGuard, sells: 'CE' | 'PE' | null, rise: number | null, price: number | null = null): boolean => {
+  if (!g.on || sells !== 'CE' || rise === null) return false;
+  const at = momentumPtsAt(g, price);
+  return at !== null && rise >= at;
+};
 
 /**
  * Re-entry after an option exit, one account's (owner, 1 Nov 2026). A signal strategy's trade closed by its option's own

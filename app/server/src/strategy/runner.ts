@@ -9,7 +9,7 @@ import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMin
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting, groupSetting } from '../db/settings.js';
 import { groupBlock, groupLimitsOf, groupOwnOf } from './group-limits.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, momentumWords, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import type { OptionExit } from '../trading/option-exit.js';
@@ -704,7 +704,8 @@ export class StrategyRunner {
 
     /*
      * The momentum guard (owner, 30 Oct 2026; `MOMENTUM_GUARD_KEY`, the account's, off unless set): a call is not sold
-     * while the perp has risen its points or more over the last hour -- a rally that fast tends to run on through the
+     * while the perp has risen its points (or its per cent of the price, 14 Nov 2026) or more over the last hour -- a rally
+     * that fast tends to run on through the
      * calls' stops (13 Oct; 8 AM on 30 Oct, when every call sold stopped out). Puts, and what is already open, go on.
      */
     const guard = momentumGuardOf(groupSetting(tradingService().settings, MOMENTUM_GUARD_KEY, tradingService().accountId, s.groupId));
@@ -712,8 +713,8 @@ export class StrategyRunner {
     if (guard.on && sells === 'CE' && perpNow !== null) {
       const before = await this.perpHourAgo(now);
       const rise = before === null ? null : perpNow - before;
-      if (momentumBlocks(guard, sells, rise)) {
-        await finish('skipped', `the perp is up ${Math.round(rise!)} pts in the last hour (${Math.round(before!)} to ${Math.round(perpNow)}) -- the momentum guard sells no call after a rise of ${guard.pts} or more`);
+      if (momentumBlocks(guard, sells, rise, perpNow)) {
+        await finish('skipped', `the perp is up ${Math.round(rise!)} pts in the last hour (${Math.round(before!)} to ${Math.round(perpNow)}) -- the momentum guard sells no call after a rise of ${momentumWords(guard, perpNow)} or more`);
         return;
       }
     }
