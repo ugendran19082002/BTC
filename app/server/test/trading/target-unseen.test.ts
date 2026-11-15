@@ -191,3 +191,39 @@ test('[critical] a step that moves nothing -- 90% to 90% -- asks Delta nothing; 
   assert.ok(calls.includes('editOrder') || calls.includes('placeOrder'), 'a new level is sent');
   assert.equal((await targets(r))[0]!.limitPrice, r.store.peek('T')!.plan.takeProfitPrice);
 });
+
+/**
+ * 15 Nov 2026, 14:02: P-BTC-63400-151126's T0 had gone missing from one read hours before and been found again on the
+ * next -- found by the read, so "missing since" was never cleared. The 2 PM step's read missed it once more, the look-up
+ * answered "nowhere", and the four-hour-old time said "missing a minute and more": T1 went on beside the resting T0, and
+ * Delta cancelled two sibling targets on the contract for want of reduce-only room.
+ */
+test('[critical] a target missed once and then seen on the book starts its minute afresh when it is missed again: no T1 beside it', async () => {
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 15, 15.5)] });
+  const rec = await sold(r);
+  const byId = r.ex.getOrderByClientId.bind(r.ex);
+  let nowhere = true;
+  r.ex.getOrderByClientId = async (...a: Parameters<typeof byId>) => (nowhere && a[0] === rec.state.protection.takeProfit ? null : byId(...a));
+  const move = (pct: number) => r.engine.updateProtection('T', protectionFor(15, { takeProfitPct: pct }), { takeProfitPct: pct });
+  // Missed by the read and nowhere by id: nothing beside it.
+  missTarget(r, 1);
+  await move(0.85);
+  assert.equal((await targets(r)).length, 1);
+  // The next reads show it: moved in place, as any other.
+  nowhere = false;
+  r.advance(1_250);
+  await move(0.88);
+  assert.equal((await targets(r)).length, 1);
+  // Hours on, missed and nowhere once more.
+  r.advance(4 * 60 * 60_000);
+  nowhere = true;
+  missTarget(r, 1);
+  await move(0.9);
+  assert.equal((await targets(r)).length, 1, 'one buy-back for the one contract, not T1 beside T0');
+  // And it is put right on a read that shows it.
+  nowhere = false;
+  for (let i = 0; i < 6; i++) { r.advance(6_000); await r.engine.poll('T'); }
+  const on = await targets(r);
+  assert.equal(on.length, 1);
+  assert.equal(on[0]!.limitPrice, r.store.peek('T')!.plan.takeProfitPrice);
+});

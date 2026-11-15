@@ -158,3 +158,31 @@ test('[critical] while the target is held the desk does not read Delta\'s book f
   assert.equal(bookReads, 0, 'held is not missing: no book read a second');
   assert.ok(r.store.peek(id)!.state.protection.stopLoss, 'the stop stays');
 });
+
+/**
+ * 15 Nov 2026, 14:01-14:03: one sweep worked through 153 orders off a book read at its start, a minute and more of
+ * cancels and look-ups, and "took off" exits whose trades had closed seconds before on their own -- a filled target,
+ * a stop the trade had just cancelled -- counting each as left behind. 207 of the day's 370 were those.
+ */
+test('[critical] an exit whose trade moved on after the book was read is left for the next sweep, and taken then if still resting', async () => {
+  const { r, id } = await shortAt(1_700_000_000_006);
+  age(r);
+  const rec = r.store.peek(id)!;
+  const read = r.ex.getOpenOrders.bind(r.ex);
+  let once = true;
+  // The book is read; while the sweep works, the trade closes on its own.
+  r.ex.getOpenOrders = async (s?: string) => {
+    const book = await read(s);
+    if (once) {
+      once = false;
+      r.advance(5_000);
+      const now = r.store.peek(id)!;
+      await r.store.save({ ...now, state: { ...now.state, phase: 'flat' }, events: [...now.events, { t: 'reconciled', position: 0, at: r.now(), note: 'closed' }] });
+    }
+    return book;
+  };
+  assert.deepEqual(await r.engine.sweepOrphans(), [], 'not judged off a read older than the trade\'s close');
+  assert.equal((await read(CE)).length, 2, 'nothing cancelled');
+  r.advance(ORPHAN_SWEEP_MS);
+  assert.deepEqual((await r.engine.sweepOrphans()).sort(), [rec.state.protection.stopLoss, rec.state.protection.takeProfit].sort(), 'still resting a minute on: taken off');
+});

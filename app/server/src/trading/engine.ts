@@ -1713,6 +1713,7 @@ export class TradeEngine {
       rec = await this.cancelSiblings(rec, true);
       rec = await this.commit(rec, { t: 'reconciled', position: 0, at: this.now(), note: 'closed' });
       this.stopSince.delete(rec.state.tradeId);
+      this.targetNowhere.delete(rec.state.tradeId);
     }
 
     return rec.state;
@@ -1898,6 +1899,13 @@ export class TradeEngine {
        * again -- while a stop goes on as before: two stops are safer than none.
        */
       const recorded = role === 'take_profit' ? rec.state.protection.takeProfit : rec.state.protection.stopLoss;
+      /*
+       * Found on the book read: "missing since" is over (15 Nov 2026, 14:02). It was cleared only when the look-up by
+       * id found the target, never when the read itself showed it, so one miss at 09:50 left its time behind; the next
+       * miss, four hours on, read as "missing four hours" and T1 went on beside a resting T0 at once -- and Delta
+       * cancelled two sibling targets on the 63,400 PE for want of room (`no_position_left_for_reduce_only`).
+       */
+      if (role === 'take_profit' && recorded && live.some((o) => o.clientOrderId === recorded)) this.targetNowhere.delete(rec.state.tradeId);
       if (recorded && ownsClientId(rec.state.tradeId, recorded) && !live.some((o) => o.clientOrderId === recorded)) {
         const seen = await this.exchange.getOrderByClientId(recorded, rec.plan.symbol).then((o) => o, () => undefined);
         if (seen === undefined && role === 'take_profit') {
@@ -2442,6 +2450,8 @@ export class TradeEngine {
     const now = this.now();
     if (now - this.orphansSweptAt < ORPHAN_SWEEP_MS) return [];
     this.orphansSweptAt = now;
+    // When the book was asked for: what it shows is as of then, however long the sweep below takes to work through it.
+    const readAt = this.now();
     const book = await this.exchange.getOpenOrders().catch(() => null);
     // Not read whole is not read: nothing is judged left behind off part of the book.
     if (book === null) return [];
@@ -2459,6 +2469,14 @@ export class TradeEngine {
         // Still the trade's own exit: wanted.
         const { protection } = rec.state;
         if (!isDone(rec.state) && (o.clientOrderId === protection.takeProfit || o.clientOrderId === protection.stopLoss)) return;
+        /*
+         * The trade has moved on since the book was read: the read is older than what the trade knows (15 Nov 2026).
+         * At 14:01-14:03 one sweep of 153 orders took a minute and more to work through a book read at its start, and
+         * "took off" targets that had filled and stops their trades had cancelled seconds before -- 207 of the day's
+         * 370, every one counted, journaled and sent to Telegram as left behind. Left for the next sweep, on a fresh
+         * read: an exit really left behind is still resting then, and goes.
+         */
+        if ((rec.events.at(-1)?.at ?? 0) > readAt) return;
         if (!(await this.cancelAndVerify(o))) return;
         swept.push(o.clientOrderId!);
         // A note, not `sibling_cancelled`: that clears the trade's own exit from its state, and this was another order.
