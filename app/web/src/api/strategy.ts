@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { MethodUpdate, MethodUpdateSource, MomentumGuard, Reentry, SignalTf, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
+import type { MethodUpdate, MethodUpdateSource, CapSwap, MomentumGuard, Reentry, SignalTf, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
 import { accountScope, withAccount } from '@/lib/account-scope';
 
 /**
@@ -59,6 +59,10 @@ export const setMomentumGuard = (guard: MomentumGuard | null, groupId?: string) 
 /** Re-entry after an option SL or target, the shown account's: the two rules; null, back to the default (both off). */
 export const setReentry = (reentry: Reentry | null, groupId?: string) =>
   post<{ ok: true; signalReentry: Reentry }>('/api/strategies/reentry', scoped({ reentry }, groupId));
+
+/** Swap at full cap, the shown account's: on or off, the % kept, buy-backs a minute; null, back to the default (off). */
+export const setCapSwap = (swap: CapSwap | null, groupId?: string) =>
+  post<{ ok: true; signalCapSwap: CapSwap }>('/api/strategies/cap-swap', scoped({ swap }, groupId));
 
 export const setSideMax = (side: 'CE' | 'PE', pct: number | null, groupId?: string) =>
   post<{ ok: true; signalSideMaxPct: { CE: number; PE: number } }>('/api/strategies/side-max', scoped({ side, pct }, groupId));

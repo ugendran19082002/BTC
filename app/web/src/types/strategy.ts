@@ -260,6 +260,15 @@ export const momentumPtsAt = (g: MomentumGuard, price: number | null): number | 
 /** "+200", "+0.25%": the guard's level as the pill and the group summary say it. */
 export const momentumLabel = (g: MomentumGuard): string => (g.unit === 'pct' ? `+${g.pct ?? MOMENTUM_GUARD_DEFAULT_PCT}%` : `+${g.pts}`);
 /**
+ * Swap at full cap, one account's (server `CAP_SWAP_KEY`, 16 Nov 2026): when the account -- or a side -- is full, the open sale
+ * that has kept `pct`% or more of its premium is bought back and the new signal sold in its place, at most `perMin` a minute.
+ */
+export type CapSwap = { on: boolean; pct: number; perMin: number };
+export const CAP_SWAP_DEFAULT: Readonly<CapSwap> = { on: false, pct: 70, perMin: 20 };
+export const CAP_SWAP_MIN_PCT = 50;
+export const CAP_SWAP_MAX_PCT = 95;
+export const CAP_SWAP_MAX_PER_MIN = 120;
+/**
  * Re-entry after an option exit, one account's (server `REENTRY_KEY`, 1 Nov 2026): after an SL the other side, after a
  * target the same side -- each in its own IST time range, at the strategy's own lots. `entries` trades at once from the
  * exit of the signal's own trade, each re-entry after it followed by one; no most in a row (2 Nov 2026).
@@ -642,6 +651,8 @@ export type StrategyStatus = {
   signalMomentumGuard?: MomentumGuard & { now: { perp: number; hourAgo: number; rise: number } | null };
   /** Re-entry after an option SL or target, this account's (1 Nov 2026), and how many of each this session. Absent on an older server. */
   signalReentry?: Reentry & { today?: { sl: number; tgt: number } };
+  /** Swap at full cap, this account's (16 Nov 2026). Absent on an older server. */
+  signalCapSwap?: CapSwap;
   /** The strike holding the most open trades now, and how many; null with none open. */
   busiestStrike?: { symbol: string; open: number } | null;
   /** The desk's limit on lots short at once (the order gate's), and the lots it holds short now. Absent on an older server. */
