@@ -82,12 +82,15 @@ export function CapSwap({ swap, busy, onSave }: {
               {q}%
             </button>
           ))}
-          <input
-            aria-label="Premium kept, per cent" inputMode="numeric" value={pctText} disabled={busy}
-            onChange={(e) => setPctText(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
-            className={cn('m-0 h-7 w-12 rounded border border-solid border-border bg-[var(--bg)] px-1.5 text-right font-[inherit] text-[12px] tabular-nums text-foreground', pctProblemOf(pctText) && 'border-[var(--down)]')}
-          />
-          <span className="text-[12px]">%</span>
+          {/* The box and its sign kept together on one line. */}
+          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+            <input
+              aria-label="Premium kept, per cent" inputMode="numeric" value={pctText} disabled={busy}
+              onChange={(e) => setPctText(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
+              className={cn('m-0 h-7 w-10 rounded border border-solid border-border bg-[var(--bg)] px-1.5 text-right font-[inherit] text-[12px] tabular-nums text-foreground', pctProblemOf(pctText) && 'border-[var(--down)]')}
+            />
+            <span className="text-[12px]">%</span>
+          </span>
         </div>
         <p aria-label="Example" className="m-0 mb-2.5 text-[11.5px] tabular-nums text-muted-foreground">
           {exampleAt !== null ? `e.g. sold at 20 → swapped once it can be bought back at ${exampleAt} or less` : ' '}
