@@ -550,6 +550,11 @@ export const BALANCE_HOLD_MS = 5 * 60_000;
 /** A target the look-up cannot find anywhere is put back only after it has been missing this long (`protect`). */
 export const TARGET_NOWHERE_MS = 60_000;
 /**
+ * An unfilled entry the look-up cannot find anywhere is given up only after its window has ended and it has been
+ * missing this long, read after read (`entryLost`).
+ */
+export const ENTRY_NOWHERE_MS = 120_000;
+/**
  * The board's quote is taken for the fast watch's look while this fresh, by Delta's own time (22 Oct 2026). The socket
  * delivers it about a second after Delta takes it; Delta's own REST answer was 0.8-2.7 s old asked past its CDN, and a
  * request to Delta besides. Older than this -- the socket quiet, the poll the feed -- the quote is asked of Delta.
@@ -827,6 +832,8 @@ export class TradeEngine {
   private readonly stopSince = new Map<string, number>();
   /** Since when each trade's recorded target has been found nowhere (`TARGET_NOWHERE_MS`). In memory: a restart looks again. */
   private readonly targetNowhere = new Map<string, number>();
+  /** Since when each unfilled entry has been found nowhere (`ENTRY_NOWHERE_MS`). In memory: a restart looks again. */
+  private readonly entryNowhere = new Map<string, number>();
   /** When each trade's offer and mark were first seen through its stop together (`STOP_CONFIRM_FAST_MS`). In memory, like `stopSince`. */
   private readonly bothSince = new Map<string, number>();
   /** Trades whose close has been given up on at the market, so that is said once. */
@@ -1537,19 +1544,21 @@ export class TradeEngine {
       ['take_profit', rec.state.protection.takeProfit],
       ['stop_loss', rec.state.protection.stopLoss],
     ] as const;
-    const found = await this.within(
+    const answered = await this.within<(ExchangeOrder | null | undefined)[] | null>(
       // The entry on its own: its fill is what puts the stop on, and it is asked after only while it can change.
       Promise.all(legs.map(([role, cid]) => {
         if (!cid) return null;
         const read = role !== 'entry' && this.exchange.getRestingOrder
           ? this.exchange.getRestingOrder(cid, rec.plan.symbol)
           : this.exchange.getOrderByClientId(cid, rec.plan.symbol);
-        return read.catch(() => null);
+        // A read that failed is `undefined`: "could not ask", never "nowhere" (`entryLost`).
+        return read.catch(() => undefined);
       })),
       this.d.lookupBudgetMs ?? LOOKUP_BUDGET_MS,
-      // Not answered in time: as a lookup that could not be asked. The exits below are judged all the same.
-      legs.map(() => null),
+      null,
     );
+    // Not answered in time: as a lookup that could not be asked. The exits below are judged all the same.
+    const found = answered ?? legs.map(() => undefined);
     for (const [i, [role]] of legs.entries()) {
       const o = found[i];
       if (o) rec = await this.absorb(rec, o, role);
@@ -1578,6 +1587,13 @@ export class TradeEngine {
       }
     }
     const entry = found[0];
+    // Seen: whatever it says is the record's. Asked and found nowhere: counted toward giving it up (`entryLost`).
+    if (entry || entryDone) this.entryNowhere.delete(tradeId);
+    else if (entry === null) {
+      const lost = await this.entryLost(rec);
+      // Given up: nothing more to do. A fill found on the way is an open trade, and the rest of the poll protects it.
+      if (lost) { rec = lost; if (isDone(rec.state)) return rec.state; }
+    }
 
     // More of the same contract, working to add to the position.
     if (rec.state.adding) rec = await this.stepAdd(rec);
@@ -3160,6 +3176,41 @@ export class TradeEngine {
       rec = await this.commit(rec, { t: 'aborted', reason: 'entry never reached the exchange', at: this.now() });
     }
     return rec;
+  }
+
+  /**
+   * An entry Delta acknowledged, then no longer shows anywhere: not resting, not by its own id, not in the contract's
+   * history (16 Nov 2026, 09:30 IST: P-BTC-63000-161126, account 1). Delta took it off unfilled -- its lookup by client
+   * id answers "not found" for some cancelled orders, and a busy strike pushes it past the newest two hundred. The poll
+   * only acted on an entry it could see, so its window never closed: the trade read "entry pending" for eight hours,
+   * every pass of the account waiting a second or more on its three look-ups.
+   *
+   * Given up only once its window has ended and it has been nowhere for `ENTRY_NOWHERE_MS`, read after read -- a read
+   * that could not be asked does not count -- and only after the contract's fills since it went have been read and
+   * found to hold none of it. Unfilled only: a part-filled entry is an open trade, and its exits are the record's.
+   * Returns null while it is still to be waited for.
+   */
+  private async entryLost(rec: TradeRecord): Promise<TradeRecord | null> {
+    const id = rec.state.tradeId;
+    if (rec.state.phase !== 'entry_pending' || rec.state.entrySize > 0) return null;
+    const since = this.entryNowhere.get(id) ?? this.now();
+    this.entryNowhere.set(id, since);
+    const sentAt = rec.events.find((e) => e.t === 'entry_submitted')?.at ?? since;
+    if (this.now() < sentAt + Math.max(0, rec.plan.entry.timeoutMs) || this.now() - since < ENTRY_NOWHERE_MS) return null;
+    // A fill the look-ups missed would be a position: the fills are read first, and a read that fails waits.
+    if (this.exchange.getFills) {
+      const fills = await this.exchange.getFills(rec.plan.symbol, sentAt - 60_000).catch(() => null);
+      if (fills === null) return null;
+    }
+    const after = await this.recoverFromFills(rec);
+    this.entryNowhere.delete(id);
+    if (after.state.entrySize > 0) return after;
+    this.entryDeadline.delete(id);
+    return await this.commit(after, {
+      t: 'aborted',
+      reason: 'entry not found on Delta after its window -- taken off unfilled; no position taken',
+      at: this.now(),
+    });
   }
 
   /**
