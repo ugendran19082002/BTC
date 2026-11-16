@@ -10,12 +10,12 @@ import { groupOwnWords } from '@/lib/strategy-groups';
  * the group alone; back to the account's in one tap.
  */
 const setSignalMaxOpen = vi.fn(), setSideMax = vi.fn(), setStrikeMax = vi.fn(), setStrikeFull = vi.fn();
-const setZoneFresh = vi.fn(), setMomentumGuard = vi.fn(), setReentry = vi.fn();
+const setZoneFresh = vi.fn(), setMomentumGuard = vi.fn(), setReentry = vi.fn(), setCapSwap = vi.fn();
 vi.mock('@/api/strategy', () => ({
   setSignalMaxOpen: (...a: unknown[]) => setSignalMaxOpen(...a), setSideMax: (...a: unknown[]) => setSideMax(...a),
   setStrikeMax: (...a: unknown[]) => setStrikeMax(...a), setStrikeFull: (...a: unknown[]) => setStrikeFull(...a),
   setZoneFresh: (...a: unknown[]) => setZoneFresh(...a), setMomentumGuard: (...a: unknown[]) => setMomentumGuard(...a),
-  setReentry: (...a: unknown[]) => setReentry(...a),
+  setReentry: (...a: unknown[]) => setReentry(...a), setCapSwap: (...a: unknown[]) => setCapSwap(...a),
 }));
 
 const NONE: GroupOwn = { maxOpen: null, ce: null, pe: null, strikeMax: null, strikeFull: null, zoneFresh: null, momentum: null, reentry: null };
@@ -30,7 +30,7 @@ const act = vi.fn(async (_k: string, fn: () => Promise<unknown>) => { await fn()
 const onInvalid = vi.fn();
 const show = (g: StrategyGroup) => render(<GroupLimits group={g} account={ACCOUNT} busy={null} act={act} onInvalid={onInvalid} />);
 
-beforeEach(() => { for (const f of [setSignalMaxOpen, setSideMax, setStrikeMax, setStrikeFull, setZoneFresh, setMomentumGuard, setReentry, act, onInvalid]) f.mockClear(); });
+beforeEach(() => { for (const f of [setSignalMaxOpen, setSideMax, setStrikeMax, setStrikeFull, setZoneFresh, setMomentumGuard, setReentry, setCapSwap, act, onInvalid]) f.mockClear(); });
 
 describe('GroupLimits', () => {
   it('[critical] none of its own: "all the account\'s"; its own: said in short words, with what it holds of its own limit', () => {
@@ -82,5 +82,27 @@ describe('GroupLimits', () => {
     expect(groupOwnWords(null)).toEqual([]);
     expect(groupOwnWords({ ...NONE, strikeMax: 5, strikeFull: 'skip', reentry: { ...REENTRY_DEFAULT, sl: { ...REENTRY_DEFAULT.sl, on: true } } }))
       .toEqual(['Strike 5%', 'Full: skip', 'Re-entry SL']);
+  });
+
+  it('[critical] the account\'s momentum guard in per cent reads as the account row has it, not as points (16 Nov 2026)', () => {
+    render(<GroupLimits group={group()} account={{ ...ACCOUNT, momentum: { on: true, pts: 200, unit: 'pct', pct: 0.25 } }} busy={null} act={act} onInvalid={onInvalid} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Limits of Scalps' }));
+    const pill = screen.getByRole('button', { name: /Momentum guard/ });
+    expect(pill).toHaveTextContent('+0.25%/1h');
+    expect(pill).not.toHaveTextContent('+200/1h');
+  });
+
+  it('[critical] swap at full cap is shown in the group\'s limits as the account\'s, and saved as the account\'s (16 Nov 2026)', async () => {
+    const { rerender } = render(<GroupLimits group={group()} account={ACCOUNT} busy={null} act={act} onInvalid={onInvalid} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Limits of Scalps' }));
+    expect(screen.queryByRole('button', { name: /Swap at full cap/ })).toBeNull();
+    rerender(<GroupLimits group={group()} account={{ ...ACCOUNT, capSwap: { on: true, pct: 70, perMin: 20 } }} busy={null} act={act} onInvalid={onInvalid} />);
+    expect(screen.getByRole('button', { name: /Swap at full cap/ })).toHaveTextContent('on · 70% kept · max 20/min');
+    expect(screen.getByLabelText("Swap at full cap: the account's")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Swap at full cap/ }));
+    fireEvent.click(screen.getByRole('button', { name: '75%' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(setCapSwap).toHaveBeenCalledWith({ on: true, pct: 75, perMin: 20 }));
+    expect(setCapSwap.mock.calls[0]).toHaveLength(1);
   });
 });
