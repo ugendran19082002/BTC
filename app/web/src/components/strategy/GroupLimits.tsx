@@ -1,20 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Loader2, RotateCcw, SlidersHorizontal } from 'lucide-react';
-import { setMomentumGuard, setReentry, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setZoneFresh } from '@/api/strategy';
+import { setCapSwap, setMomentumGuard, setReentry, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setZoneFresh } from '@/api/strategy';
 import { Button } from '@/components/ui/button';
 import { SideMax } from '@/components/strategy/SideMax';
 import { StrikeMax } from '@/components/strategy/StrikeMax';
 import { ZoneFresh } from '@/components/strategy/ZoneFresh';
 import { MomentumGuard } from '@/components/strategy/MomentumGuard';
 import { Reentry } from '@/components/strategy/Reentry';
+import { CapSwap } from '@/components/strategy/CapSwap';
 import { groupOwnWords } from '@/lib/strategy-groups';
-import { REENTRY_DEFAULT, type GroupOwn, type MomentumGuard as Guard, type Reentry as ReentrySetting, type SignalTf, type StrategyGroup } from '@/types/strategy';
+import { REENTRY_DEFAULT, type CapSwap as Swap, type GroupOwn, type MomentumGuard as Guard, type Reentry as ReentrySetting, type SignalTf, type StrategyGroup } from '@/types/strategy';
 import { cn } from '@/lib/utils';
 
 /** The account's seven, as the Signal Strategies row has them: what a group takes where it sets nothing of its own. */
 export type AccountLimits = {
   maxOpen: number; side: { CE: number; PE: number }; strikePct: number; strikeFull: 'next' | 'skip';
   zoneFresh: Record<SignalTf, number>; momentum: Guard; momentumNow: Parameters<typeof MomentumGuard>[0]['now']; reentry: ReentrySetting;
+  /** Swap at full cap (16 Nov 2026): the account's only -- it works on the account's cap -- so a group shows it, never sets its own. */
+  capSwap?: Swap;
 };
 
 /**
@@ -92,6 +95,14 @@ export function GroupLimits({ group, account, busy, act, onInvalid }: {
           <Own own={own.reentry !== null} label="Re-entry" busy={busy === key('reentry')} onReset={() => save('reentry', () => setReentry(null, group.id))}>
             <Reentry reentry={own.reentry ?? account.reentry} busy={busy === key('reentry')} onSave={(r) => save('reentry', () => setReentry(r ?? OFF, group.id))} />
           </Own>
+          {/* The account's swap, shown here too; saved as the account's, as it is the account's cap it makes room in. */}
+          {account.capSwap && (
+            <span className="inline-flex items-center gap-1">
+              <CapSwap swap={account.capSwap} busy={busy === key('capswap')} onSave={(w) => save('capswap', () => setCapSwap(w))} />
+              <span aria-label="Swap at full cap: the account's" title="The account's setting: it makes room under the account's cap, for every group"
+                    className="text-[10.5px] text-muted-foreground">account&apos;s</span>
+            </span>
+          )}
           {words.length > 0 && (
             <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[12px]" disabled={busy === key('all')}
                     title="Every limit of this group back to the account's" onClick={() => void allBack()}>

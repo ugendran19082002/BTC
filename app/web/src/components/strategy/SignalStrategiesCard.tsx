@@ -495,8 +495,11 @@ export function SignalStrategiesCard() {
     && data.signalStrikeMaxPct !== undefined && data.signalZoneFreshS && data.signalMomentumGuard && data.signalReentry
     ? {
       maxOpen: data.signalMaxOpen, side: data.signalSideMaxPct, strikePct: data.signalStrikeMaxPct, strikeFull: data.signalStrikeFull ?? 'next',
-      zoneFresh: data.signalZoneFreshS, momentum: { on: data.signalMomentumGuard.on, pts: data.signalMomentumGuard.pts },
+      // The whole guard, its unit and per cent with it: points alone read "+200" where the account's is 0.25% (16 Nov 2026).
+      zoneFresh: data.signalZoneFreshS,
+      momentum: { on: data.signalMomentumGuard.on, pts: data.signalMomentumGuard.pts, unit: data.signalMomentumGuard.unit, pct: data.signalMomentumGuard.pct },
       momentumNow: data.signalMomentumGuard.now, reentry: { sl: data.signalReentry.sl, tgt: data.signalReentry.tgt },
+      ...(data.signalCapSwap ? { capSwap: data.signalCapSwap } : {}),
     } : null;
   const sections = groupSections(mine, groups);
   /** Up (-1) or down (+1) among its account's groups, in the order shown, saved at once. */
