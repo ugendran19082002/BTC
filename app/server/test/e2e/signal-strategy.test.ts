@@ -1974,3 +1974,168 @@ test('[critical] at the cap with "make room" on: the sale that has kept 70% is b
     await api('POST', '/api/strategies/sig-swap/enabled', { enabled: false });
   }
 });
+
+/**
+ * The swap, held to everything else (owner, 16 Nov 2026: "2 lot exit ku 2 lot entry edukuma, strategy form condition follow
+ * pannuma"). One strategy per case, on a fresh desk, with "at most open" and "make room" set for the case.
+ */
+async function swapCase(name: string, own: Record<string, unknown>, cap: number, swap: { on: boolean; pct: number; perMin: number }) {
+  await freshDesk();
+  const id = name.toLowerCase().replace(/ /g, '-');
+  const r = await api('POST', '/api/strategies', { name, config: { ...config, signal: { ...config.signal, maxOpen: 10 }, liveOrders: true, ...own } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  await api('POST', `/api/strategies/${id}/enabled`, { enabled: true });
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  assert.equal((await api('POST', '/api/strategies/max-open', { max: cap })).status, 200);
+  assert.equal((await api('POST', '/api/strategies/cap-swap', { swap })).status, 200);
+  const last = async () => (await runsOf(id)).at(-1)!;
+  const trade = (tid: string | null) => one<{ position: number; symbol: string; plan: any; state: any }>('SELECT position, symbol, plan, state FROM trades WHERE trade_id = $1', [tid]);
+  const filled = async (tid: string | null, size: number) => until(() => trade(tid), (t) => t?.position === -size, `${tid} filled ${size}`);
+  const keep = (symbol: string, soldAt: number, kept: number) =>
+    paper().setQuote({ symbol, bid: soldAt * (1 - kept) - 0.2, ask: soldAt * (1 - kept), bidSize: 5_000, askSize: 5_000, mark: soldAt * (1 - kept), ts: Date.now() });
+  const done = async () => {
+    await api('POST', '/api/strategies/cap-swap', { swap: null });
+    await api('POST', '/api/strategies/max-open', { max: null });
+    await api('POST', '/api/strategies/side-max', { side: 'CE', pct: null });
+    await api('POST', '/api/strategies/side-max', { side: 'PE', pct: null });
+    await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
+  };
+  return { id, last, trade, filled, keep, done };
+}
+const SHORT = { dir: 'short' as const, plan: { entryLo: 85_000, entryHi: 85_050, stop: 85_400, tp1: 84_500, tp2: null, tp3: null, tpWhy: [], rr: 1.25 } };
+
+test('[critical] swap, 2 lots: both lots of the old sale are bought back, and the new signal is sold at the strategy\'s 2 lots', async () => {
+  const restoreStrikes = extraStrikes(3);
+  const c = await swapCase('Sig swap two', { lots: 2 }, 1, { on: true, pct: 70, perMin: 20 });
+  try {
+    quoteBoard();
+    await runner.onSignal(signal());
+    const first = await c.last();
+    assert.equal(first.status, 'placed', first.detail);
+    const sold = await c.filled(first.trade_id, 2);
+    quoteBoard();
+    c.keep(sold!.symbol, sold!.state.entryAvgPrice, 0.75);
+    await runner.onSignal(signal());
+    const next = await c.last();
+    assert.equal(next.status, 'placed', next.detail);
+    assert.match(next.detail, /x2 @ .* made room: bought back .* \(75% kept\)/, 'sold at 2 lots, room made');
+    await until(() => c.trade(first.trade_id), (t) => t?.position === 0, 'both lots of the old sale bought back');
+    const fresh = await c.trade(next.trade_id);
+    assert.equal(fresh!.plan.lots, 2, 'the new sale is the strategy\'s 2 lots');
+  } finally { restoreStrikes(); await c.done(); }
+});
+
+test('[critical] swap follows the strategy\'s own rules: inside its no-entry window, or below its premium floor, nothing is bought back', async () => {
+  const restoreStrikes = extraStrikes(3);
+  // A no-entry window from 10:05: the first sale goes at 10:00, the next signal comes at 10:10.
+  const c = await swapCase('Sig swap rules', { noEntry: { on: true, windows: [{ from: '10:05', to: '10:30' }] } }, 1, { on: true, pct: 70, perMin: 20 });
+  try {
+    quoteBoard();
+    await runner.onSignal(signal());
+    const first = await c.last();
+    assert.equal(first.status, 'placed', first.detail);
+    const sold = await c.filled(first.trade_id, 1);
+    quoteBoard();
+    c.keep(sold!.symbol, sold!.state.entryAvgPrice, 0.9);
+    clock = TEN + 10 * 60_000;
+    await runner.onSignal(signal());
+    const held = await c.last();
+    assert.equal(held.status, 'skipped', held.detail);
+    assert.match(held.detail, /inside the no-entry window/);
+    assert.equal((await c.trade(first.trade_id))!.position, -1, 'no-entry window: the open sale is left alone');
+
+    // Out of the window, but the premium floor of the strategy (25) is over every bid on the board: refused, nothing bought back.
+    clock = TEN + 40 * 60_000;
+    const row = await one<{ config: any }>('SELECT config FROM strategies WHERE id = $1', [c.id]);
+    assert.equal((await api('POST', '/api/strategies', { id: c.id, name: 'Sig swap rules', config: { ...row!.config, minPremiumUsd: 25 } })).status, 200);
+    quoteBoard();
+    c.keep(sold!.symbol, sold!.state.entryAvgPrice, 0.9);
+    await runner.onSignal(signal());
+    const floor = await c.last();
+    assert.notEqual(floor.status, 'placed', floor.detail);
+    assert.doesNotMatch(floor.detail, /made room/);
+    assert.equal((await c.trade(first.trade_id))!.position, -1, 'a signal its own rules refuse never costs a trade');
+  } finally { restoreStrikes(); clock = TEN; await c.done(); }
+});
+
+test('[critical] swap at most N a minute: the next signal past the limit is skipped, the sale left alone', async () => {
+  const restoreStrikes = extraStrikes(4);
+  const c = await swapCase('Sig swap rate', {}, 2, { on: true, pct: 70, perMin: 1 });
+  // A minute of its own: the runner keeps the swaps it made, and the cases before made theirs at 10:00.
+  clock = TEN + 3 * 3_600_000;
+  try {
+    const sold: { tid: string; symbol: string; at: number }[] = [];
+    for (let i = 0; i < 2; i++) {
+      quoteBoard();
+      await runner.onSignal(signal());
+      const r = await c.last();
+      assert.equal(r.status, 'placed', r.detail);
+      const t = await c.filled(r.trade_id, 1);
+      sold.push({ tid: r.trade_id!, symbol: t!.symbol, at: t!.state.entryAvgPrice });
+    }
+    quoteBoard();
+    for (const s of sold) c.keep(s.symbol, s.at, 0.8);
+    await runner.onSignal(signal());
+    assert.match((await c.last()).detail, /made room: bought back/, 'the first swap of the minute');
+    quoteBoard();
+    for (const s of sold) c.keep(s.symbol, s.at, 0.8);
+    await runner.onSignal(signal());
+    const second = await c.last();
+    assert.equal(second.status, 'skipped', second.detail);
+    assert.match(second.detail, /1 sales already bought back this minute to make room/);
+    // A minute on, it may again.
+    clock += 61_000;
+    quoteBoard();
+    for (const s of sold) c.keep(s.symbol, s.at, 0.8);
+    await runner.onSignal(signal());
+    assert.match((await c.last()).detail, /made room: bought back/, 'the next minute');
+  } finally { restoreStrikes(); clock = TEN; await c.done(); }
+});
+
+test('[critical] swap at a side\'s own limit: only a sale on that side is bought back, though the other side has kept more', async () => {
+  const restoreStrikes = extraStrikes(3);
+  const c = await swapCase('Sig swap side', {}, 2, { on: true, pct: 70, perMin: 20 });
+  try {
+    assert.equal((await api('POST', '/api/strategies/side-max', { side: 'CE', pct: 50 })).status, 200);
+    assert.equal((await api('POST', '/api/strategies/side-max', { side: 'PE', pct: 50 })).status, 200);
+    quoteBoard();
+    await runner.onSignal(signal());                 // BUY: sells a put
+    const put = await c.last();
+    assert.equal(put.status, 'placed', put.detail);
+    const p = await c.filled(put.trade_id, 1);
+    quoteBoard();
+    await runner.onSignal(signal(SHORT));            // SELL: sells a call
+    const call = await c.last();
+    assert.equal(call.status, 'placed', call.detail);
+    const k = await c.filled(call.trade_id, 1);
+    quoteBoard();
+    c.keep(p!.symbol, p!.state.entryAvgPrice, 0.9);  // the put has kept the most
+    c.keep(k!.symbol, k!.state.entryAvgPrice, 0.75);
+    await runner.onSignal(signal(SHORT));            // another call: the CE side is full
+    const swapped = await c.last();
+    assert.equal(swapped.status, 'placed', swapped.detail);
+    assert.match(swapped.detail, new RegExp(`made room: bought back ${k!.symbol} .*\\(75% kept\\)`));
+    await until(() => c.trade(call.trade_id), (t) => t?.position === 0, 'the call bought back');
+    assert.equal((await c.trade(put.trade_id))!.position, -1, 'the put, on the other side, left alone');
+  } finally { restoreStrikes(); await c.done(); }
+});
+
+test('swap with live orders off: skipped as ever, nothing bought back', async () => {
+  const restoreStrikes = extraStrikes(3);
+  const c = await swapCase('Sig swap paper', {}, 1, { on: true, pct: 70, perMin: 20 });
+  try {
+    quoteBoard();
+    await runner.onSignal(signal());
+    const first = await c.last();
+    const sold = await c.filled(first.trade_id, 1);
+    const row = await one<{ config: any }>('SELECT config FROM strategies WHERE id = $1', [c.id]);
+    assert.equal((await api('POST', '/api/strategies', { id: c.id, name: 'Sig swap paper', config: { ...row!.config, liveOrders: false } })).status, 200);
+    quoteBoard();
+    c.keep(sold!.symbol, sold!.state.entryAvgPrice, 0.9);
+    await runner.onSignal(signal());
+    const held = await c.last();
+    assert.equal(held.status, 'skipped', held.detail);
+    assert.equal((await c.trade(first.trade_id))!.position, -1);
+  } finally { restoreStrikes(); await c.done(); }
+});
