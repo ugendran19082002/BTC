@@ -1916,3 +1916,61 @@ test('[critical] a group\'s own at most open: its strategies held to it over the
     for (const id of ['sig-grp-a', 'sig-grp-b', 'sig-grp-c']) await api('POST', `/api/strategies/${id}/enabled`, { enabled: false });
   }
 });
+
+// ------------------------------------------------------------ making room at the cap (16 Nov 2026)
+
+test('[critical] at the cap with "make room" on: the sale that has kept 70% is bought back and the signal sold in its place -- below 70%, skipped as ever', async () => {
+  await freshDesk();
+  const restoreStrikes = extraStrikes(3);
+  try {
+    const each = { ...config, signal: { ...config.signal, maxOpen: 10 }, liveOrders: true };
+    assert.equal((await api('POST', '/api/strategies', { name: 'Sig swap', config: each })).status, 200);
+    await api('POST', '/api/strategies/sig-swap/enabled', { enabled: true });
+    await tradingService().settings.set('scheduler_enabled', '1');
+    clock = TEN;
+    assert.equal((await api('POST', '/api/strategies/max-open', { max: 1 })).status, 200);
+    const bad = await api('POST', '/api/strategies/cap-swap', { swap: { on: true, pct: 99 } });
+    assert.equal(bad.status, 422);
+    const saved = await api('POST', '/api/strategies/cap-swap', { swap: { on: true, pct: 70, perMin: 20 } });
+    assert.deepEqual([saved.status, saved.body.signalCapSwap], [200, { on: true, pct: 70, perMin: 20 }]);
+    assert.deepEqual((await api('GET', '/api/strategies')).body.signalCapSwap, { on: true, pct: 70, perMin: 20 });
+
+    // One sale fills the only place, and is sold at 18.
+    quoteBoard();
+    await runner.onSignal(signal());
+    const first = (await runsOf('sig-swap')).at(-1)!;
+    assert.equal(first.status, 'placed', first.detail);
+    const sold = await until(
+      () => one<{ position: number; symbol: string; state: any }>('SELECT position, symbol, state FROM trades WHERE trade_id = $1', [first.trade_id]),
+      (t) => t?.position === -1, 'the first sale filled');
+    const soldAt = sold!.state.entryAvgPrice as number;
+
+    // It has kept only 42%: the next signal is skipped as ever, and the sale is left alone.
+    quoteBoard();
+    paper().setQuote({ symbol: sold!.symbol, bid: 10, ask: 10.5, bidSize: 5_000, askSize: 5_000, mark: 10.2, ts: Date.now() });
+    await runner.onSignal(signal());
+    const held = (await runsOf('sig-swap')).at(-1)!;
+    assert.equal(held.status, 'skipped', held.detail);
+    // With a cap of one, the put side's own limit is full too: only a put may make room.
+    assert.match(held.detail, /at most 1 at once across all; the desk already has 1 PE open -- at most 1 PE at once \(100% of the 1\) -- no open PE sale has kept 70% of its premium to make room/);
+    assert.equal((await one<{ position: number }>('SELECT position FROM trades WHERE trade_id = $1', [first.trade_id]))!.position, -1, 'not bought back');
+
+    // Now it has kept 75% (an ask of 4.5 against 18): it is bought back, and the signal is sold in its place.
+    quoteBoard();
+    paper().setQuote({ symbol: sold!.symbol, bid: 4, ask: soldAt * 0.25, bidSize: 5_000, askSize: 5_000, mark: 4.2, ts: Date.now() });
+    await runner.onSignal(signal());
+    const swapped = (await runsOf('sig-swap')).at(-1)!;
+    assert.equal(swapped.status, 'placed', swapped.detail);
+    assert.match(swapped.detail, new RegExp(`made room: bought back ${sold!.symbol} sold @ ${soldAt} \\(75% kept\\)`));
+    assert.notEqual(swapped.trade_id, first.trade_id);
+    const out = await until(
+      () => one<{ position: number; phase: string; state: any }>('SELECT position, phase, state FROM trades WHERE trade_id = $1', [first.trade_id]),
+      (t) => t?.position === 0, 'the sale bought back');
+    assert.match(JSON.stringify(out!.state), /make room at the cap/, 'the close says why');
+  } finally {
+    restoreStrikes();
+    await api('POST', '/api/strategies/cap-swap', { swap: null });
+    await api('POST', '/api/strategies/max-open', { max: null });
+    await api('POST', '/api/strategies/sig-swap/enabled', { enabled: false });
+  }
+});

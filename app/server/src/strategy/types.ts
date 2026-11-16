@@ -1009,6 +1009,63 @@ export const momentumBlocks = (g: MomentumGuard, sells: 'CE' | 'PE' | null, rise
 };
 
 /**
+ * Make room at the cap, one account's (owner, 16 Nov 2026: "Max-open swap @70 update"). A signal that the account's "at
+ * most open" -- or its side's share of it -- would skip buys back the account's open sale that has kept the most of its
+ * premium, when that is `pct` or more of it (1 - the ask to buy it back / the price it was sold at), and is entered in its
+ * place: one out, one in, the count unchanged. At the side's own limit only a sale on that side makes room. At most
+ * `perMin` such buy-backs a minute. Off unless set.
+ *
+ * Why (docs/research/2026-11-16-held-swap.md; real entries 1 Oct-16 Nov replayed on the option's ask, charges in): at 70%
+ * +₹7,461 over the period, +₹7,189 the last 20 days, +₹2,327 on 16 Nov; better on 18 days, worse on 3. The sale bought
+ * back would nearly always have reached its target -- it gives up the last ₹1 of it -- and the place earns a fresh premium.
+ */
+export const CAP_SWAP_KEY = 'signal_cap_swap';
+export type CapSwap = { on: boolean; pct: number; perMin: number };
+export const CAP_SWAP_DEFAULT: Readonly<CapSwap> = { on: false, pct: 70, perMin: 20 };
+export const CAP_SWAP_MIN_PCT = 50;
+export const CAP_SWAP_MAX_PCT = 95;
+export const CAP_SWAP_MAX_PER_MIN = 120;
+const swapPctOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= CAP_SWAP_MIN_PCT && n <= CAP_SWAP_MAX_PCT;
+const swapPerMinOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= CAP_SWAP_MAX_PER_MIN;
+/** The setting as stored: the default for whatever is unset or unreadable. */
+export function capSwapOf(raw: string | null | undefined): CapSwap {
+  let v: Record<string, unknown> = {};
+  try { const x = raw ? JSON.parse(raw) : {}; if (x && typeof x === 'object' && !Array.isArray(x)) v = x; } catch { /* the default */ }
+  return {
+    on: v.on === true,
+    pct: swapPctOk(v.pct) ? v.pct : CAP_SWAP_DEFAULT.pct,
+    perMin: swapPerMinOk(v.perMin) ? v.perMin : CAP_SWAP_DEFAULT.perMin,
+  };
+}
+/** Why it cannot be saved, in words; null when it can. `null` itself is "back to the default" (off), and can. */
+export function capSwapProblem(v: unknown): string | null {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return 'Making room at the cap is {"on": true, "pct": 70, "perMin": 20}.';
+  const { on, pct, perMin } = v as Record<string, unknown>;
+  if (typeof on !== 'boolean') return 'Say whether making room at the cap is on: true or false.';
+  if (pct !== undefined && !swapPctOk(pct)) return `The share of its premium a sale must have kept must be a whole per cent from ${CAP_SWAP_MIN_PCT} to ${CAP_SWAP_MAX_PCT}.`;
+  if (perMin !== undefined && !swapPerMinOk(perMin)) return `At most this many buy-backs a minute: a whole number from 1 to ${CAP_SWAP_MAX_PER_MIN}.`;
+  return null;
+}
+/** One open sale as the swap weighs it: what it was sold at, and the ask to buy it back now (null: no price to judge it by). */
+export type SwapCandidate = { tradeId: string; side: 'CE' | 'PE'; soldAt: number; askNow: number | null };
+/**
+ * The sale to buy back to make room: of those on `side` (any side when null), the one that has kept the most of its
+ * premium, if that is `pct` per cent or more. None priced, or none far enough: null.
+ */
+export function pickCapSwap(cands: readonly SwapCandidate[], side: 'CE' | 'PE' | null, pct: number): { tradeId: string; kept: number } | null {
+  let best: { tradeId: string; kept: number } | null = null;
+  for (const c of cands) {
+    if (side !== null && c.side !== side) continue;
+    if (c.askNow === null || !Number.isFinite(c.askNow) || !(c.soldAt > 0)) continue;
+    const kept = 1 - c.askNow / c.soldAt;
+    if (kept * 100 + 1e-9 < pct) continue;
+    if (best === null || kept > best.kept) best = { tradeId: c.tradeId, kept };
+  }
+  return best;
+}
+
+/**
  * Re-entry after an option exit, one account's (owner, 1 Nov 2026). A signal strategy's trade closed by its option's own
  * stop or target is followed at once by another sale by the same strategy, through every rule its signals pass but the
  * no-entry window -- each rule's own time range stands in for it:

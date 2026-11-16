@@ -7,7 +7,7 @@ import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow, perpRiseNow } from '../../strategy/runner.js';
 import { SKIP_DAYS_KEY, autoAsked, autoPick, methodRecord, runAutoMethodsAlone, skipDaysOf, skipDaysProblem, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoExclude, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, CAP_SWAP_KEY, capSwapOf, capSwapProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoExclude, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting, groupKey } from '../../db/settings.js';
@@ -489,6 +489,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       signalZoneFreshS: zoneFreshOf(accountSetting(svc.settings, ZONE_FRESH_KEY, account ?? svc.accountId)),
       // The momentum guard (30 Oct 2026): on or off, its points, and the perp's rise over the hour now -- what the next call meets.
       signalMomentumGuard: { ...momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account ?? svc.accountId)), now: await perpRiseNow(now).catch(() => null) },
+      // Making room at the cap (16 Nov 2026): on or off, the share of its premium a sale must have kept, buy-backs a minute.
+      signalCapSwap: capSwapOf(accountSetting(svc.settings, CAP_SWAP_KEY, account ?? svc.accountId)),
       // Re-entry after an option SL or target (1 Nov 2026): the two rules, and how many of each this session so far.
       signalReentry: { ...reentryOf(accountSetting(svc.settings, REENTRY_KEY, account ?? svc.accountId)), today: await s.reentriesSince(shown.map((x) => x.id), dayFrom).catch(() => ({ sl: 0, tgt: 0 })) },
       busiestStrike: elsewhere ? null : busiestOf(openTrades),
@@ -1189,6 +1191,25 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     await svc.settings.set(scope.key(MOMENTUM_GUARD_KEY), want === null ? ''
       : JSON.stringify({ on, pts: pts ?? was.pts, unit: unit ?? 'pts', pct: pct ?? was.pct }));
     return { ok: true, signalMomentumGuard: momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account)), ...groupAnswer(group) };
+  });
+
+  /**
+   * Making room at the cap, this account's (owner, 16 Nov 2026; `CAP_SWAP_KEY`): `{ swap: { on: true, pct: 70, perMin: 20 } }`
+   * -- a whole per cent from 50 to 95, and 1 to 120 buy-backs a minute; `null` is back to the default, off. The runner reads
+   * it at each signal, so it counts from the next one.
+   */
+  app.post('/api/strategies/cap-swap', async (req, reply) => {
+    const body = (req.body ?? {}) as { swap?: unknown; accountId?: unknown; groupId?: unknown };
+    const scope = await settingScope(body, reply);
+    if ('refused' in scope) return scope.refused;
+    const { account, group } = scope;
+    const want = body.swap === undefined ? null : body.swap;
+    const problem = capSwapProblem(want);
+    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+    const was = capSwapOf(svc.settings.get(scope.key(CAP_SWAP_KEY)) || accountSetting(svc.settings, CAP_SWAP_KEY, account));
+    const { on, pct, perMin } = (want ?? {}) as { on?: boolean; pct?: number; perMin?: number };
+    await svc.settings.set(scope.key(CAP_SWAP_KEY), want === null ? '' : JSON.stringify({ on, pct: pct ?? was.pct, perMin: perMin ?? was.perMin }));
+    return { ok: true, signalCapSwap: capSwapOf(accountSetting(svc.settings, CAP_SWAP_KEY, account)), ...groupAnswer(group) };
   });
 
   /**

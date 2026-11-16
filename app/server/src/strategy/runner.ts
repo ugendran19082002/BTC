@@ -9,7 +9,7 @@ import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMin
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting, groupSetting } from '../db/settings.js';
 import { groupBlock, groupLimitsOf, groupOwnOf } from './group-limits.js';
-import { DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, momentumWords, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { CAP_SWAP_KEY, capSwapOf, pickCapSwap, type CapSwap, type SwapCandidate, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, momentumWords, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import type { OptionExit } from '../trading/option-exit.js';
@@ -19,7 +19,8 @@ import { perpAtMinutes } from '../market/perp-minute.js';
 import { missedEntryAlert, runAlertFor, signalRefusedAlert, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyExitStepper, TARGET_STEP_QUOTA_PCT } from './exit-steps.js';
 import { DEFAULT_LEVERAGE, stopHeldWords, stopRoomInside } from '../trading/order-plan.js';
-import { liquidationRoom } from '../trading/margin.js';
+import { closePriceOf, liquidationRoom } from '../trading/margin.js';
+import { cachedQuote } from '../market/delta.js';
 import { volLevelNow, type VolBy, type VolLevel } from '../report/signal-backtest.js';
 
 /** A level in the words the desk's history says it in. */
@@ -65,6 +66,8 @@ const BY_WORDS: Record<VolBy, string> = { atr: 'ATR 2h', iv: 'ATM IV' };
 
 /** Often enough that the grace window has many chances; rarely enough to be dull. */
 const TICK_MS = 20_000;
+/** How old the board's price of an open sale may be for it to be weighed for a buy-back at the cap (`makeRoom`). */
+const CAP_SWAP_QUOTE_FRESH_MS = 30_000;
 /**
  * A fill the graders report this long after it printed is not entered: the candle grader can report one a
  * minute or more late, when the tape was down, and a late option entry is a different trade.
@@ -798,9 +801,17 @@ export class StrategyRunner {
      */
     // The trading account's own cap (kept per account; an account with none of its own takes the desk-wide one).
     const cap = globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, svc.accountId));
+    /*
+     * At the cap, or the side's limit, with "make room" on (`CAP_SWAP_KEY`, 16 Nov 2026): not skipped yet. What is full is
+     * written down, every other rule is held to as ever, and only when the order is about to go is an open sale bought
+     * back to make its place (`makeRoom`) -- so a signal that fails later on (no strike, a gate) never costs a trade.
+     */
+    const swap = capSwapOf(accountSetting(svc.settings, CAP_SWAP_KEY, svc.accountId));
+    let full: { why: string; side: 'CE' | 'PE' | null } | null = null;
     if (cap > 0 && openNow.length >= cap) {
-      await finish('skipped', `the desk already has ${openNow.length} open (positions and working orders, all strategies) -- at most ${cap} at once across all`);
-      return;
+      const why = `the desk already has ${openNow.length} open (positions and working orders, all strategies) -- at most ${cap} at once across all`;
+      if (!swap.on || re) { await finish('skipped', why); return; }
+      full = { why, side: null };
     }
     /*
      * Each side's own limit under the cap (owner, 12 Oct 2026: "CE max 80%, PE max 80%, each on its own"; 80 and 80
@@ -818,8 +829,10 @@ export class StrategyRunner {
       const most = sides[side];
       const held = openNow.filter((t) => t.plan.optionSide === side).length;
       if (held >= most) {
-        await finish('skipped', `the desk already has ${held} ${side} open -- at most ${most} ${side} at once (${sidePct[side]}% of the ${cap})`);
-        return;
+        const why = `the desk already has ${held} ${side} open -- at most ${most} ${side} at once (${sidePct[side]}% of the ${cap})`;
+        if (!swap.on || re) { await finish('skipped', why); return; }
+        // Only a sale on this side makes room on it -- and one there makes room under the cap as well.
+        full = { why: full ? `${full.why}; ${why}` : why, side };
       }
     }
     /*
@@ -943,6 +956,8 @@ export class StrategyRunner {
     // This desk only sells options (owner, 21 Oct 2026): a strategy saved to buy is refused on save, and here too.
     if (action === 'buy') { await finish('refused', 'this desk only sells options: a strategy that buys is not traded'); return; }
 
+    // Live orders off: nothing is bought back to make room for an order that is not sent.
+    if (full && !s.config.liveOrders) { await finish('skipped', `${full.why}${block}`); return; }
     if (!s.config.liveOrders) {
       const p = await svc.wouldPlace(args);
       // A gate's refusal names the strike it turned down and, where the rule failed, that it was the else strike:
@@ -951,15 +966,84 @@ export class StrategyRunner {
       await finish(p.ok ? 'would-place' : 'refused', p.ok ? `live orders off: would ${what}` : `refused: ${turnedDown} — ${failureText(p)}${block}`);
       return;
     }
+    let placed = what;
+    if (full) {
+      // The gates first, without sending: a sale is bought back only for an order they would take.
+      const p = await svc.wouldPlace(args);
+      if (!p.ok) { await finish('refused', `${what} -- refused: ${failureText(p)} (at the cap: nothing bought back)`); return; }
+      const room = await this.makeRoom(openNow, full.side, swap);
+      if (!room.ok) { await finish('skipped', `${full.why} -- ${room.why}${block}`); return; }
+      placed = `${what} · made room: ${room.words}`;
+    }
     const res = await svc.place(args);
     if (!res.ok) {
       const why = res.precheck ? failureText(res.precheck) : 'refused';
-      await finish('refused', `${what} -- refused: ${why}`);
-      if (refusalAlerts(res.precheck)) this.alert((ctx) => signalRefusedAlert(s.name, what, why, now, ctx));
+      await finish('refused', `${placed} -- refused: ${why}`);
+      if (refusalAlerts(res.precheck)) this.alert((ctx) => signalRefusedAlert(s.name, placed, why, now, ctx));
       return;
     }
-    await finish('placed', what, res.state.tradeId);
-    this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'placed', detail: what, failedLegs: [], at: now }, ctx));
+    await finish('placed', placed, res.state.tradeId);
+    this.alert((ctx) => runAlertFor({ strategy: s.name, status: 'placed', detail: placed, failedLegs: [], at: now }, ctx));
+  }
+
+  /** Buy-backs made to make room at the cap, by account: when, for the per-minute limit (`CAP_SWAP_KEY`). */
+  private readonly swapTimes = new Map<string, number[]>();
+  /** Sales being bought back to make room, so two signals in one moment do not both count on the same one. */
+  private readonly swapping = new Set<string>();
+
+  /**
+   * Buy back the account's open sale that has kept the most of its premium -- `swap.pct` per cent or more, on `side` where
+   * the side's own limit is what is full -- to make a place for a signal at the cap (`CAP_SWAP_KEY`). Priced at the ask
+   * (`closePriceOf`), on the board in memory: free, where asking Delta for a few hundred open sales would not be. A sale
+   * already closing, part-filled, or with no fresh price is not weighed. Done: the close is sent and the trade is closing.
+   */
+  private async makeRoom(
+    openNow: readonly { plan: { symbol: string; optionSide: 'CE' | 'PE' }; state: { tradeId: string; phase: string; position: number; entryAvgPrice: number | null; entrySize: number; requestedSize: number; closing?: unknown } }[],
+    side: 'CE' | 'PE' | null,
+    swap: CapSwap,
+  ): Promise<{ ok: true; words: string } | { ok: false; why: string }> {
+    const svc = tradingService();
+    const key = String(svc.accountId ?? 'desk');
+    const now = this.now();
+    const recent = (this.swapTimes.get(key) ?? []).filter((t) => now - t < 60_000);
+    this.swapTimes.set(key, recent);
+    if (recent.length >= swap.perMin) return { ok: false, why: `${swap.perMin} sales already bought back this minute to make room` };
+    const live = svc.mode === 'live';
+    const priced = new Map<string, number | null>();
+    const askOf = async (symbol: string, position: number): Promise<number | null> => {
+      if (!priced.has(symbol)) {
+        let q: { bid?: number | null; ask?: number | null; ts?: number } | null = cachedQuote(symbol);
+        if (q && q.ts !== undefined && now - q.ts > CAP_SWAP_QUOTE_FRESH_MS) q = null;
+        // Off the live desk the board is not kept: the exchange's own answer, which costs nothing there.
+        if (!q && !live) q = await svc.quote(symbol).catch(() => null);
+        priced.set(symbol, closePriceOf(position, q, null));
+      }
+      return priced.get(symbol)!;
+    };
+    const cands: SwapCandidate[] = [];
+    for (const t of openNow) {
+      const st = t.state;
+      if (st.position >= 0 || st.entrySize < st.requestedSize || st.closing || this.swapping.has(st.tradeId)) continue;
+      if (st.phase !== 'protected' && st.phase !== 'position_open' && st.phase !== 'unprotected') continue;
+      if (st.entryAvgPrice === null || !(st.entryAvgPrice > 0)) continue;
+      if (side !== null && t.plan.optionSide !== side) continue;
+      cands.push({ tradeId: st.tradeId, side: t.plan.optionSide, soldAt: st.entryAvgPrice, askNow: await askOf(t.plan.symbol, st.position) });
+    }
+    const pick = pickCapSwap(cands, side, swap.pct);
+    if (!pick) return { ok: false, why: `no open ${side ? `${side} ` : ''}sale has kept ${swap.pct}% of its premium to make room` };
+    const t = openNow.find((x) => x.state.tradeId === pick.tradeId)!;
+    const keptPct = Math.round(pick.kept * 100);
+    this.swapping.add(pick.tradeId);
+    try {
+      const after = await svc.close(pick.tradeId, undefined, `bought back at ${keptPct}% kept to make room at the cap for a new signal`).catch(() => null);
+      if (!after || (after.position !== 0 && after.phase !== 'exit_pending')) {
+        return { ok: false, why: `the buy-back of ${t.plan.symbol} to make room did not go (${after?.note ?? 'no answer'})` };
+      }
+      recent.push(now);
+      return { ok: true, words: `bought back ${t.plan.symbol} sold @ ${t.state.entryAvgPrice} (${keptPct}% kept)` };
+    } finally {
+      this.swapping.delete(pick.tradeId);
+    }
   }
 
   private async claimAndFinish(s: Strategy, day: string, status: 'refused' | 'skipped', detail: string): Promise<void> {
