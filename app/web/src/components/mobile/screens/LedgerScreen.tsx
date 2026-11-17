@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, RefreshCw, X } from 'lucide-react';
-import { cancelLedgerSync, getLedger, syncLedger, syncLedgerRange, type LedgerDay, type LedgerStatus, type LedgerSync } from '@/api/ledger';
+import { cancelLedgerSync, getLedger, syncLedger, syncLedgerRange, type LedgerDay, type LedgerStatus, type LedgerSync, type WalletDay } from '@/api/ledger';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
 import { signedInr, stamp, usdToInr } from '@/lib/format';
@@ -143,6 +143,8 @@ export function LedgerScreen() {
   const r = led.data;
   const t = r?.totals;
   const others = t?.delta ? t.delta.othersUsd + t.delta.fundingUsd : null;
+  // Delta's own figures where it has them (17 Nov 2026: "profit, loss, charges from Delta's side"); the desk's, said so, where not.
+  const tf = t ? figuresOf(t.desk, t.delta) : null;
   return (
     <>
       <Segmented label="Range" value={range.key} options={RANGES} onChange={(k) => (k === 'custom' ? setPicking(true) : setRangeKey(k))} />
@@ -160,7 +162,7 @@ export function LedgerScreen() {
           <Panel>
             <section aria-label="Ledger totals">
               <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2">
-                <span className="text-[13px] text-muted-foreground">Net after charges · desk</span>
+                <span className="text-[13px] text-muted-foreground">Net after charges · {tf!.from === 'delta' ? 'Delta' : 'desk'}</span>
                 <span className="flex items-baseline gap-2 text-[11.5px] text-muted-foreground">
                   <span>{rangeWords}{p.accountParam === null ? ' · every account' : ''}</span>
                   {isCustom && (
@@ -170,14 +172,15 @@ export function LedgerScreen() {
                   )}
                 </span>
               </div>
-              <Rupees usd={t!.desk.netUsd} signed size="xl" />
+              <Rupees usd={tf!.netUsd} signed size="xl" />
               <p className="m-0 mb-2 text-[12.5px] tabular-nums text-muted-foreground">
                 {t!.desk.trades.toLocaleString('en-IN')} trade{t!.desk.trades === 1 ? '' : 's'} · {t!.days} day{t!.days === 1 ? '' : 's'}
+                {tf!.from === 'delta' && t!.checked < t!.days && <> · Delta for {t!.checked} of {t!.days} days</>}
               </p>
               <Stats>
-                <Stat label="Profit" tone={t!.desk.profitUsd > 0 ? 'up' : undefined}>{money(t!.desk.profitUsd)}</Stat>
-                <Stat label="Loss" tone={t!.desk.lossUsd > 0 ? 'down' : undefined}>{money(-t!.desk.lossUsd)}</Stat>
-                <Stat label="Charges" tone={t!.desk.chargesUsd > 0 ? 'down' : undefined}>{money(-t!.desk.chargesUsd)}</Stat>
+                <Stat label="Profit" tone={tf!.profitUsd > 0 ? 'up' : undefined}>{money(tf!.profitUsd)}</Stat>
+                <Stat label="Loss" tone={tf!.lossUsd > 0 ? 'down' : undefined}>{money(-tf!.lossUsd)}</Stat>
+                <Stat label="Charges" tone={tf!.chargesUsd > 0 ? 'down' : undefined}>{money(-tf!.chargesUsd)}</Stat>
                 <Stat label="Others · Delta">{money(others)}</Stat>
               </Stats>
               <Reconciled checked={t!.checked} matched={t!.matched} mismatched={t!.mismatched} days={t!.days} />
@@ -312,6 +315,20 @@ function Reconciled({ checked, matched, mismatched, days }: { checked: number; m
   );
 }
 
+/**
+ * The figures a day (or the range) is shown by (owner, 17 Nov 2026: "profit, loss, charges from Delta's side, not the
+ * desk's"): Delta's own -- its wallet's trading entries that paid, those that cost, its commission, its net -- where the
+ * day has been read with them apart; the desk's where it has not (not checked yet, or read before they were kept), and said so.
+ * Charges are money paid, a positive number, as the desk keeps them.
+ */
+export function figuresOf(desk: { profitUsd: number; lossUsd: number; chargesUsd: number; netUsd: number }, delta: WalletDay | null | undefined):
+  { from: 'delta' | 'desk'; profitUsd: number; lossUsd: number; chargesUsd: number; netUsd: number } {
+  if (delta && delta.profitUsd !== undefined && delta.lossUsd !== undefined) {
+    return { from: 'delta', profitUsd: delta.profitUsd, lossUsd: delta.lossUsd, chargesUsd: -delta.chargesUsd, netUsd: delta.netUsd };
+  }
+  return { from: 'desk', profitUsd: desk.profitUsd, lossUsd: desk.lossUsd, chargesUsd: desk.chargesUsd, netUsd: desk.netUsd };
+}
+
 /** One day: its figures at a glance, and opened, the desk and Delta side by side. */
 function DayItem({ d, today, open, onToggle, syncing, busy, onSync, onTrades }: {
   d: LedgerDay; today: string; open: boolean; onToggle: () => void; syncing: boolean; busy: boolean; onSync: () => void; onTrades: () => void;
@@ -319,6 +336,7 @@ function DayItem({ d, today, open, onToggle, syncing, busy, onSync, onTrades }: 
   const v = VERDICT[d.status];
   const name = d.day === today ? 'Today' : dayLabel(d.day);
   const others = d.delta ? d.delta.othersUsd + d.delta.fundingUsd : null;
+  const f = figuresOf(d.desk, d.delta);
   return (
     <li className="py-2.5">
       <button
@@ -333,19 +351,21 @@ function DayItem({ d, today, open, onToggle, syncing, busy, onSync, onTrades }: 
               : <Pill tone={v.tone}>{v.word(d.diffUsd)}</Pill>}
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
-            <Rupees usd={d.desk.netUsd} signed size="sm" />
+            <Rupees usd={f.netUsd} signed size="sm" />
             <ChevronDown aria-hidden="true" className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
           </span>
         </span>
         {/* Four across from 360px; two by two under it, where four left "−₹78.2…" (29 Oct 2026, checked at 320px). */}
         <span className="mt-1.5 grid grid-cols-2 gap-1 text-[11.5px] tabular-nums min-[360px]:grid-cols-4">
-          <Mini label="Profit" value={money(d.desk.profitUsd)} tone={d.desk.profitUsd > 0 ? 'up' : undefined} />
-          <Mini label="Loss" value={money(-d.desk.lossUsd)} tone={d.desk.lossUsd > 0 ? 'down' : undefined} />
-          <Mini label="Charges" value={money(-d.desk.chargesUsd)} tone={d.desk.chargesUsd > 0 ? 'down' : undefined} />
+          <Mini label="Profit" value={money(f.profitUsd)} tone={f.profitUsd > 0 ? 'up' : undefined} />
+          <Mini label="Loss" value={money(-f.lossUsd)} tone={f.lossUsd > 0 ? 'down' : undefined} />
+          <Mini label="Charges" value={money(-f.chargesUsd)} tone={f.chargesUsd > 0 ? 'down' : undefined} />
           <Mini label="Others" value={money(others)} />
         </span>
         <span className="mt-1 block text-[12px] leading-snug text-muted-foreground">
-          {d.delta ? <>Delta {money(d.delta.netUsd)}</> : d.status === 'paper' ? 'Paper day: nothing on Delta' : 'Delta not checked'}
+          {f.from === 'delta'
+            ? <>From Delta · desk {money(d.desk.netUsd)}</>
+            : d.delta ? <>Desk&apos;s figures · Delta {money(d.delta.netUsd)} (sync to split it)</> : d.status === 'paper' ? 'Paper day: nothing on Delta' : 'Desk\'s figures · Delta not checked'}
           {' · '}{d.desk.trades} trade{d.desk.trades === 1 ? '' : 's'}
           {d.changed && <span className="text-[var(--warn)]"> · changed since checked</span>}
         </span>
@@ -391,6 +411,8 @@ function DayDetail({ d, syncing, busy, onSync, onTrades }: { d: LedgerDay; synci
         <span className="text-right">Desk</span>
         <span className="text-right">Delta</span>
       </div>
+      {line('Profit', d.desk.profitUsd, w && w.profitUsd !== undefined ? w.profitUsd : null)}
+      {line('Loss', -d.desk.lossUsd, w && w.lossUsd !== undefined ? -w.lossUsd : null)}
       {line('Booked P&L', d.desk.realisedUsd, w ? w.tradingUsd : null)}
       {line('Charges', -d.desk.chargesUsd, w ? w.chargesUsd : null)}
       {w && w.fundingUsd !== 0 && line('Funding', null, w.fundingUsd)}

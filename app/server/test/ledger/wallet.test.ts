@@ -113,3 +113,21 @@ test('[critical] a sync cancelled by hand stops the wallet read between Delta pa
     globalThis.fetch = realFetch;
   }
 });
+
+test('[critical] Delta\'s own profit and loss (17 Nov 2026): the trading entries that paid, and the ones that cost, apart -- profit − loss is the trading figure', () => {
+  // Three exits: two paid (+0.40, +0.25), one cost (−0.30); each with its commission, signed off the balance.
+  const day = [
+    e('deposit', 100, 1_100),
+    e('cashflow', 0.40, 1_100.40), e('commission', 0.02, 1_100.38),
+    e('cashflow', -0.30, 1_100.08), e('commission', 0.02, 1_100.06),
+    e('cashflow', 0.25, 1_100.31), e('commission', 0.02, 1_100.29),
+  ];
+  const d = walletDayOf(day);
+  near(d.profitUsd!, 0.65, 'profit: the two that paid');
+  near(d.lossUsd!, 0.30, 'loss, a positive number: the one that cost');
+  near(d.tradingUsd, d.profitUsd! - d.lossUsd!, 'profit − loss = trading');
+  near(d.chargesUsd, -0.06, 'charges as before');
+  near(d.netUsd, 0.29, 'net as before');
+  const none = walletDayOf([]);
+  assert.deepEqual([none.profitUsd, none.lossUsd], [0, 0]);
+});

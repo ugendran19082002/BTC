@@ -84,7 +84,8 @@ describe('LedgerScreen', () => {
     const row = (name: RegExp) => days().getByRole('button', { name });
     expect(within(row(/^Today/)).getByText('Not checked yet')).toBeInTheDocument();
     expect(within(row(/^Wed 28 Oct/)).getByText(`Off by ${inr(0.16).replace(/^[+−-]/, '')}`)).toBeInTheDocument();
-    expect(within(row(/^Wed 28 Oct/)).getByText(/Delta/)).toHaveTextContent(`Delta ${inr(5.92)} · 214 trades`);
+    // Read before Delta's profit and loss were kept apart: the desk's figures, said so, and Delta's net beside them.
+    expect(within(row(/^Wed 28 Oct/)).getByText(/Delta/)).toHaveTextContent(`Desk's figures · Delta ${inr(5.92)} (sync to split it) · 214 trades`);
     expect(within(row(/^Tue 27 Oct/)).getByText('✓ Matches Delta')).toBeInTheDocument();
     expect(within(row(/^Tue 27 Oct/)).getByText(/changed since checked/)).toBeInTheDocument();
     expect(within(row(/^Today/)).getByText('Profit').nextSibling).toHaveTextContent(inr(9.5));
@@ -268,5 +269,31 @@ describe('LedgerScreen', () => {
     expect(sheet.getByRole('status')).toHaveTextContent('Trading began 1 May; this shows at most the last 92 days.');
     fireEvent.click(sheet.getByRole('button', { name: 'Show' }));
     await waitFor(() => expect(getLedger).toHaveBeenLastCalledWith('2026-07-30', '2026-10-29', null));
+  });
+
+  it('[critical] a day read with Delta\'s profit and loss apart shows Delta\'s own figures -- profit, loss, charges, net -- not the desk\'s (17 Nov 2026)', async () => {
+    const split = wallet({ netUsd: 8.0, tradingUsd: 9.2, profitUsd: 12.0, lossUsd: 2.8, chargesUsd: -1.2 });
+    getLedger.mockResolvedValue(LEDGER({
+      days: [day('2026-10-28', { delta: split, status: 'mismatch', diffUsd: 1.92 })],
+      totals: { desk: { realisedUsd: 7, profitUsd: 9.5, lossUsd: 2.5, chargesUsd: 0.92, netUsd: 6.08, trades: 214 }, delta: split, days: 1, checked: 1, matched: 0, mismatched: 1 },
+    }));
+    show();
+    await screen.findByRole('list', { name: 'Ledger days' });
+    const row = within(days().getByRole('button', { name: /^Wed 28 Oct/ }));
+    expect(row.getByText('Profit').nextSibling).toHaveTextContent(inr(12.0));
+    expect(row.getByText('Loss').nextSibling).toHaveTextContent(inr(-2.8));
+    expect(row.getByText('Charges').nextSibling).toHaveTextContent(inr(-1.2));
+    expect(row.getByText(/From Delta/)).toHaveTextContent(`From Delta · desk ${inr(6.08)} · 214 trades`);
+    // The totals, from Delta too.
+    const box = within(screen.getByRole('region', { name: 'Ledger totals' }));
+    expect(box.getByText('Net after charges · Delta')).toBeInTheDocument();
+    expect(box.getByText('Profit').nextSibling).toHaveTextContent(inr(12.0));
+    expect(box.getByText('Charges').nextSibling).toHaveTextContent(inr(-1.2));
+    // Opened: profit and loss, desk beside Delta.
+    fireEvent.click(days().getByRole('button', { name: /^Wed 28 Oct: open the day/ }));
+    const detail = within(screen.getByLabelText('The day, desk and Delta'));
+    const cells = (label: string) => [...detail.getByText(label).parentElement!.children].map((c) => c.textContent);
+    expect(cells('Profit')).toEqual(['Profit', inr(9.5), inr(12.0)]);
+    expect(cells('Loss')).toEqual(['Loss', inr(-2.5), inr(-2.8)]);
   });
 });

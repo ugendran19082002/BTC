@@ -11,6 +11,8 @@ export type DeskDay = { realisedUsd: number; profitUsd: number; lossUsd: number;
 /** Delta's wallet for the day, in dollars. `chargesUsd` is negative for money paid; `netUsd` = trading + charges + funding. */
 export type WalletDay = {
   netUsd: number; tradingUsd: number; chargesUsd: number; fundingUsd: number; othersUsd: number; transfersUsd: number;
+  /** Delta's own trading entries apart (17 Nov 2026): what paid, and what cost (positive). Absent on a day read before they were kept. */
+  profitUsd?: number; lossUsd?: number;
   openingUsd: number | null; closingUsd: number | null; entries: number; byType: Record<string, { n: number; usd: number }>;
   unknownTypes: string[]; otherAssets: number; complete: boolean;
 };

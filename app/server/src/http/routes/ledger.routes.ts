@@ -45,8 +45,11 @@ function sumWallet(xs: readonly WalletDay[]): WalletDay | null {
   const byType: WalletDay['byType'] = {};
   for (const x of xs) for (const [t, v] of Object.entries(x.byType)) { const m = byType[t] ?? (byType[t] = { n: 0, usd: 0 }); m.n += v.n; m.usd += v.usd; }
   const add = (k: 'netUsd' | 'tradingUsd' | 'chargesUsd' | 'fundingUsd' | 'othersUsd' | 'transfersUsd') => xs.reduce((n, x) => n + x[k], 0);
+  // Delta's profit and loss apart, only where every day has them: a day read before they were kept leaves both out.
+  const split = xs.every((x) => x.profitUsd !== undefined && x.lossUsd !== undefined);
   return {
     netUsd: add('netUsd'), tradingUsd: add('tradingUsd'), chargesUsd: add('chargesUsd'), fundingUsd: add('fundingUsd'), othersUsd: add('othersUsd'), transfersUsd: add('transfersUsd'),
+    ...(split ? { profitUsd: xs.reduce((n, x) => n + x.profitUsd!, 0), lossUsd: xs.reduce((n, x) => n + x.lossUsd!, 0) } : {}),
     openingUsd: xs.every((x) => x.openingUsd !== null) ? xs.reduce((n, x) => n + x.openingUsd!, 0) : null,
     closingUsd: xs.every((x) => x.closingUsd !== null) ? xs.reduce((n, x) => n + x.closingUsd!, 0) : null,
     entries: xs.reduce((n, x) => n + x.entries, 0), byType, unknownTypes: [...new Set(xs.flatMap((x) => x.unknownTypes))].sort(),

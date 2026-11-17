@@ -73,6 +73,14 @@ export type WalletDay = {
   /** trading + charges + funding: the day's money from trading, the figure the desk's own net is checked against. */
   netUsd: number;
   tradingUsd: number;
+  /**
+   * The trading entries apart (owner, 17 Nov 2026: "the ledger's profit, loss and charges from Delta's side, not the
+   * desk's"): what the ones that paid came to, and what the ones that cost came to, as a positive number --
+   * `tradingUsd` = profit − loss. Delta writes one entry a fill, so a trade's exit is its own entry. Absent on a day read
+   * before they were kept.
+   */
+  profitUsd?: number;
+  lossUsd?: number;
   /** Charges as Delta booked them, a negative number for money paid. */
   chargesUsd: number;
   fundingUsd: number;
@@ -119,7 +127,7 @@ export function walletDayOf(entries: readonly WalletEntry[], complete = true, re
   const usd = entries.filter((e) => USD.has(e.asset));
   const signs = signsOf(usd);
   const day: WalletDay = {
-    netUsd: 0, tradingUsd: 0, chargesUsd: 0, fundingUsd: 0, othersUsd: 0, transfersUsd: 0,
+    netUsd: 0, tradingUsd: 0, profitUsd: 0, lossUsd: 0, chargesUsd: 0, fundingUsd: 0, othersUsd: 0, transfersUsd: 0,
     openingUsd: null, closingUsd: null, entries: usd.length, byType: {}, unknownTypes: [], otherAssets: entries.length - usd.length, complete,
     ...(read ? { read } : {}),
   };
@@ -130,6 +138,7 @@ export function walletDayOf(entries: readonly WalletEntry[], complete = true, re
     if (!known) unknown.add(e.type);
     const key = `${bucket === 'trading' ? 'tradingUsd' : bucket === 'charges' ? 'chargesUsd' : bucket === 'funding' ? 'fundingUsd' : bucket === 'transfers' ? 'transfersUsd' : 'othersUsd'}` as const;
     day[key] += amount;
+    if (bucket === 'trading') { if (amount > 0) day.profitUsd! += amount; else day.lossUsd! -= amount; }
     const t = day.byType[e.type] ?? (day.byType[e.type] = { n: 0, usd: 0 });
     t.n += 1; t.usd += amount;
   }
