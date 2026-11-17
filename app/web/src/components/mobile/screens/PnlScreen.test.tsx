@@ -253,4 +253,30 @@ describe('PnlScreen: a range past what the server reads at once', () => {
     await waitFor(() => expect(getDaysFor).toHaveBeenCalled());
     expect(screen.queryByText(/More than 100,000 trades/)).toBeNull();
   });
+
+  it('[critical] by time frame, CE and PE apart (17 Nov 2026): each time frame its net, and under it CE and PE -- profit, loss, charges, net', async () => {
+    getStats.mockResolvedValue({ ...statsFor(), byTimeframeSide: [
+      { key: '3m|CE', tf: '3m', side: 'CE', trades: 10, wins: 8, profitUsd: 4, lossUsd: 1.5, chargesUsd: 0.5, netUsd: 2 },
+      { key: '3m|PE', tf: '3m', side: 'PE', trades: 6, wins: 6, profitUsd: 3, lossUsd: 0, chargesUsd: 0.25, netUsd: 2.75 },
+      { key: 'chain|CE', tf: 'chain', side: 'CE', trades: 2, wins: 0, profitUsd: 0, lossUsd: 1, chargesUsd: 0.1, netUsd: -1.1 },
+    ] });
+    show();
+    const list = within(await screen.findByRole('list', { name: 'By time frame, CE and PE' }));
+    const tf3 = within(list.getByRole('listitem', { name: '3m' }));
+    expect(tf3.getByText('16 trades')).toBeInTheDocument();
+    const ce = within(tf3.getByLabelText('3m CE'));
+    const fig = (w: typeof ce, label: string) => w.getByText(label).nextSibling;
+    expect(fig(ce, 'Profit')).toHaveTextContent(signedInr(usdToInr(4)));
+    expect(fig(ce, 'Loss')).toHaveTextContent(signedInr(usdToInr(-1.5)));
+    expect(fig(ce, 'Charges')).toHaveTextContent(signedInr(usdToInr(-0.5)));
+    expect(fig(ce, 'Net')).toHaveTextContent(signedInr(usdToInr(2)));
+    expect(fig(within(tf3.getByLabelText('3m PE')), 'Net')).toHaveTextContent(signedInr(usdToInr(2.75)));
+    expect(list.getByRole('listitem', { name: 'TF chain' })).toHaveTextContent('TF chain');
+  });
+
+  it('a server from before it sends none: the panel is not there', async () => {
+    show();
+    await screen.findByRole('button', { name: /^Strategy filter:/ });
+    expect(screen.queryByRole('list', { name: 'By time frame, CE and PE' })).toBeNull();
+  });
 });

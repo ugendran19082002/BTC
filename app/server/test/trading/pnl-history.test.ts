@@ -317,3 +317,24 @@ test('[critical] all accounts\' lines as one: added up minute by minute, each at
   assert.deepEqual(combineMtm([a, []]), a);
   assert.deepEqual(combineMtm([]), []);
 });
+
+test('[critical] each timeframe\'s calls and puts apart (17 Nov 2026): profit, loss, charges, net -- in the timeframes\' order', () => {
+  const sig = (tf: string, mode: 'mtf' | 'single' = 'single') => ({ method: 'breakout', n: 1, name: 'Breakout', mode, tf, dir: 1 as const, triggerTime: 0 });
+  const on = (id: string, tf: string, side: 'CE' | 'PE', exit: number, mode: 'mtf' | 'single' = 'single') => {
+    const rec = record(id, [fill('entry', 100, 15, T(11, 7)), fill(exit < 15 ? 'take_profit' : 'stop_loss', 100, exit, T(11, 9))]);
+    return { ...rec, state: { ...rec.state, optionSide: side }, plan: { ...rec.plan, signal: sig(tf, mode) } };
+  };
+  const hand = record('hand', [fill('entry', 100, 15, T(11, 7)), fill('take_profit', 100, 5, T(11, 9))]);
+  const recs = [on('a', '15m', 'CE', 5), on('b', '15m', 'CE', 22), on('c', '15m', 'PE', 5), on('d', '3m', 'PE', 5), on('e', '5m', 'CE', 5, 'mtf'), hand];
+  const r = tradeStats(recs, { from: '2026-09-11', to: '2026-09-11', spot: 80_000 });
+  assert.deepEqual(r.byTimeframeSide.map((g) => g.key), ['3m|PE', '15m|CE', '15m|PE', 'chain|CE'], 'the desk\'s order, calls before puts; the hand trade in none');
+  const g = r.byTimeframeSide.find((x) => x.key === '15m|CE')!;
+  // a: sold 100 @ 15, bought back @ 5 -> booked +1.00; b: bought back @ 22 -> booked -0.70 (100 x 0.001).
+  assert.equal(g.trades, 2); assert.equal(g.wins, 1);
+  assert.ok(Math.abs(g.profitUsd - 1.0) < 1e-9, `profit ${g.profitUsd}`);
+  assert.ok(Math.abs(g.lossUsd - 0.7) < 1e-9, `loss ${g.lossUsd}`);
+  const each = recs.slice(0, 2).map((x) => closedNet(x, 80_000)!);
+  assert.ok(Math.abs(g.chargesUsd - (each[0]!.chargesUsd + each[1]!.chargesUsd)) < 1e-9, 'the two trades\' charges');
+  assert.ok(Math.abs(g.netUsd - (g.profitUsd - g.lossUsd - g.chargesUsd)) < 1e-9, 'net = profit - loss - charges');
+  assert.ok(Math.abs(each[0]!.netUsd - (each[0]!.bookedUsd - each[0]!.chargesUsd)) < 1e-9, 'a trade\'s net as before');
+});

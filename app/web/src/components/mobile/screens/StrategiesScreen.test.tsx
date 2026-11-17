@@ -232,7 +232,7 @@ describe('StrategiesScreen: Taken, by how it entered', () => {
     await waitFor(() => expect(tabs().getByRole('button', { name: 'Taken 4' })).toBeInTheDocument());
     expect(screen.queryByRole('group', { name: 'Taken, how it entered' })).toBeNull();
     fireEvent.click(tabs().getByRole('button', { name: 'Taken 4' }));
-    expect(chips().getAllByRole('button').map((b) => b.textContent)).toEqual(['All taken 4', 'Signal entry 1', 'Re-entry after SL 2', 'Re-entry after target 1']);
+    expect(chips().getAllByRole('button').map((b) => b.textContent)).toEqual(['All taken 4', 'Signal entry 1', 'Swap entry 0', 'Re-entry after SL 2', 'Re-entry after target 1']);
     expect(rows()).toHaveLength(4);
 
     fireEvent.click(chips().getByRole('button', { name: 'Re-entry after SL 2' }));
@@ -249,6 +249,35 @@ describe('StrategiesScreen: Taken, by how it entered', () => {
     await waitFor(() => expect(chips().getByRole('button', { name: 'Signal entry 1' })).toHaveAttribute('aria-pressed', 'true'));
   });
 
+  it('[critical] Swap entry (17 Nov 2026): the signals sold at a full cap by buying back an open sale, with the day\'s count and their list', async () => {
+    const swapDetail = '#54 Liquidity replenishment SELL | sell CE 66000 x2 @ 14 · made room: bought back C-BTC-65800-171126 sold @ 41.5 (78% kept)';
+    getDaySignals.mockResolvedValue({
+      trades: [
+        sig('placed', { reasons: [], entry: 'swap', detail: swapDetail }), sig('placed', { reasons: [], entry: 'swap', detail: swapDetail }),
+        sig('placed', { reasons: [], entry: 'signal' }),
+      ],
+      counts: { all: 3, taken: 3, placed: 3, takenBy: { signal: 1, swap: 2, sl: 0, tgt: 0 }, notTaken: 0, byReason: {} },
+    });
+    show();
+    await waitFor(() => expect(tabs().getByRole('button', { name: 'Taken 3' })).toBeInTheDocument());
+    fireEvent.click(tabs().getByRole('button', { name: 'Taken 3' }));
+    expect(chips().getAllByRole('button').map((b) => b.textContent)).toEqual(['All taken 3', 'Signal entry 1', 'Swap entry 2', 'Re-entry after SL 0', 'Re-entry after target 0']);
+    fireEvent.click(chips().getByRole('button', { name: 'Swap entry 2' }));
+    expect(rows()).toHaveLength(2);
+    expect(rows()[0]).toHaveTextContent(/made room: bought back C-BTC-65800-171126/);
+  });
+
+  it('a swap row from a server that does not yet say its kind is read from its own sentence', async () => {
+    getDaySignals.mockResolvedValue({
+      trades: [sig('placed', { reasons: [], detail: '#54 X SELL | sell CE 66000 x2 @ 14 · made room: bought back C-1 sold @ 40 (75% kept)' })],
+      counts: { all: 1, taken: 1, placed: 1, notTaken: 0, byReason: {} },
+    });
+    show();
+    await waitFor(() => expect(tabs().getByRole('button', { name: 'Taken 1' })).toBeInTheDocument());
+    fireEvent.click(tabs().getByRole('button', { name: 'Taken 1' }));
+    expect(chips().getByRole('button', { name: 'Swap entry 1' })).toBeInTheDocument();
+  });
+
   it('a server from before 2 Nov sends neither the kind nor its counts: each row\'s own sentence says, and none of a kind says so', async () => {
     getDaySignals.mockResolvedValue({
       trades: [
@@ -260,7 +289,7 @@ describe('StrategiesScreen: Taken, by how it entered', () => {
     show();
     await waitFor(() => expect(tabs().getByRole('button', { name: 'Taken 2' })).toBeInTheDocument());
     fireEvent.click(tabs().getByRole('button', { name: 'Taken 2' }));
-    expect(chips().getAllByRole('button').map((b) => b.textContent)).toEqual(['All taken 2', 'Signal entry 1', 'Re-entry after SL 1', 'Re-entry after target 0']);
+    expect(chips().getAllByRole('button').map((b) => b.textContent)).toEqual(['All taken 2', 'Signal entry 1', 'Swap entry 0', 'Re-entry after SL 1', 'Re-entry after target 0']);
     fireEvent.click(chips().getByRole('button', { name: 'Re-entry after target 0' }));
     expect(screen.getByText('No re-entry after a target taken today.')).toBeInTheDocument();
   });

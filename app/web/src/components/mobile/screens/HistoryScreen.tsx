@@ -62,6 +62,30 @@ const EXITS: { key: ExitKind; word: string; tone: 'up' | 'down' | 'dim' }[] = [
 const exitOf = (o: ClosedTrade) => EXITS.find((x) => x.key === o.exitBy) ?? null;
 
 /**
+ * The exit as a per cent of the sale (owner, 17 Nov 2026: "show badge SL % & profit % in exit %, small, mobile friendly"):
+ * a stop by how far the buy-back rose over the price sold at -- 15 in, 84 out: "+460%" -- and a target by how much of the
+ * premium it kept -- 15 in, 0.75 out: "95%". Any other close by whichever it was: kept when it came back cheaper, risen
+ * when dearer. A bought trade the other way round. Null without both prices.
+ */
+export function exitPct(o: Pick<ClosedTrade, 'entryAvgPrice' | 'exitAvgPrice'> & Parameters<typeof isLongTrade>[0], kind: ExitKind | null): string | null {
+  const e = o.entryAvgPrice, x = o.exitAvgPrice;
+  if (e === null || x === null || !(e > 0) || !Number.isFinite(x)) return null;
+  const long = isLongTrade(o);
+  const against = long ? (e - x) / e : (x - e) / e;    // how far the price moved against the trade (+), or for it (−)
+  const pct = (f: number) => `${Math.round(Math.abs(f) * 100)}%`;
+  // A stop: the move, signed -- "+460%" up through it, "−20%" where the perp's stop closed it cheaper than sold.
+  if (kind === 'option-sl' || kind === 'perp-sl') return `${against >= 0 ? '+' : '−'}${pct(against)}`;
+  // A target, or any close that came back cheaper: the share of the premium kept; one that came back dearer, its rise.
+  return against <= 0 ? pct(against) : `+${pct(against)}`;
+}
+/** The same, in a sentence, for the badge's title. */
+const exitPctWords = (o: ClosedTrade): string | null => {
+  const e = o.entryAvgPrice, x = o.exitAvgPrice;
+  if (e === null || x === null || !(e > 0)) return null;
+  return `In ${e} → out ${x}: ${x > e ? `${(x / e).toFixed(1)}× the price in` : `${Math.round((1 - x / e) * 100)}% of the price kept`}`;
+};
+
+/**
  * The order of the list (owner, 29 Oct 2026: "trade history -- a sort; in and out both on the row"): by when it
  * closed, the newest first as it always was, or the oldest; by when it was entered; by what it made, most first or
  * the worst first; by how long it was held. The ones by time are listed under their days.
@@ -447,7 +471,7 @@ const ClosedRow = memo(function ClosedRow({ o, today, openTrade, showAccount }: 
       {/* Wraps rather than cuts (29 Oct 2026: at 320px the strategy and the signal were each an ellipsis). */}
       {/* How it closed leads the line, where the contract above keeps its room; a tag shortens only past a whole line. */}
       <span className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-        {exit && <Pill tone={exit.tone}>{exit.word}</Pill>}
+        {exit && <Pill tone={exit.tone}><span title={exitPctWords(o) ?? undefined}>{exit.word}{exitPct(o, exit.key) ? ` ${exitPct(o, exit.key)}` : ''}</span></Pill>}
         {/* Here a name longer than the line wraps onto a second one; elsewhere the tag keeps its one line. */}
         <StrategyTag plan={o.plan} className="max-w-full shrink-0 [&>span]:whitespace-normal [&>span]:break-words" />
         <GroupTag strategyId={o.plan?.strategyId} className="max-w-full shrink-0" />

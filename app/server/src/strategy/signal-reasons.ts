@@ -59,13 +59,16 @@ export function signalReasons(status: string, detail: string): SignalReason[] {
 
 /**
  * How a row came to enter (owner, 2 Nov 2026: "taken click pana signal entry, reentry SL, reentry tgt tab varunum"): on
- * its own signal, or as a re-entry after an option SL or target -- read, as the reasons are, from its sentence, where the
+ * its own signal, as a swap at a full cap (17 Nov 2026), or as a re-entry after an option SL or target -- read, as the reasons are, from its sentence, where the
  * runner names it before the "|" ("#1 Breakout BUY · re-entry after SL 1 (of …) | …").
  */
-export type SignalEntry = 'signal' | 'sl' | 'tgt';
+export type SignalEntry = 'signal' | 'swap' | 'sl' | 'tgt';
 export function signalEntryOf(detail: string): SignalEntry {
   const head = detail.includes(' | ') ? detail.slice(0, detail.indexOf(' | ')) : detail;
-  return / · re-entry after SL\b/.test(head) ? 'sl' : / · re-entry after target\b/.test(head) ? 'tgt' : 'signal';
+  if (/ · re-entry after SL\b/.test(head)) return 'sl';
+  if (/ · re-entry after target\b/.test(head)) return 'tgt';
+  // Sold at a full cap by buying back an open sale (owner, 17 Nov 2026: "swap entry tab"): the runner says so after the "|".
+  return / · made room: bought back /.test(detail) ? 'swap' : 'signal';
 }
 
 /** A range's signals counted: all, taken (`placed`: real orders of them; `takenBy`: how each entered), not taken, and not taken by kind. */
@@ -78,7 +81,7 @@ export type SignalCounts = {
  * wrong"). A signal with two kinds is under both, as on the screen.
  */
 export function signalCounts(lines: readonly { status: string; detail: string }[]): SignalCounts {
-  const out: SignalCounts = { all: lines.length, taken: 0, placed: 0, takenBy: { signal: 0, sl: 0, tgt: 0 }, notTaken: 0, byReason: {} };
+  const out: SignalCounts = { all: lines.length, taken: 0, placed: 0, takenBy: { signal: 0, swap: 0, sl: 0, tgt: 0 }, notTaken: 0, byReason: {} };
   for (const l of lines) {
     const kinds = signalReasons(l.status, l.detail);
     if (!kinds.length) {

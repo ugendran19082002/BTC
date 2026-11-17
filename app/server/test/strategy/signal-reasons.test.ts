@@ -67,7 +67,7 @@ test('[critical] a range counted: taken and its real orders, not taken, and each
   assert.equal(c.byReason.premium, 2, 'the spread-and-premium refusal is under premium too');
   assert.equal(c.byReason.other, 1);
   assert.equal(Object.values(c.byReason).reduce((a, n) => a + (n ?? 0), 0), cases.flatMap((x) => x[2]).length);
-  assert.deepEqual(signalCounts([]), { all: 0, taken: 0, placed: 0, takenBy: { signal: 0, sl: 0, tgt: 0 }, notTaken: 0, byReason: {} });
+  assert.deepEqual(signalCounts([]), { all: 0, taken: 0, placed: 0, takenBy: { signal: 0, swap: 0, sl: 0, tgt: 0 }, notTaken: 0, byReason: {} });
 });
 
 test('[critical] how a signal entered (2 Nov 2026): on its own signal, or a re-entry after an SL or a target -- read from its sentence, before the bar', () => {
@@ -84,6 +84,19 @@ test('[critical] how a signal entered (2 Nov 2026): on its own signal, or a re-e
     { status: 'placed', detail: '#1 Breakout BUY · re-entry after target 1 (of b) | sell PE 81400 x1 @ 13' },
     { status: 'skipped', detail: '#1 Breakout BUY · re-entry after SL 1 (of c) | the momentum guard sells no call after a rise of 250 or more' },
   ]);
-  assert.deepEqual([c.taken, c.takenBy], [4, { signal: 1, sl: 2, tgt: 1 }], 'a re-entry not taken is under Not taken, not here');
+  assert.deepEqual([c.taken, c.takenBy], [4, { signal: 1, swap: 0, sl: 2, tgt: 1 }], 'a re-entry not taken is under Not taken, not here');
   assert.equal(c.notTaken, 1);
+});
+
+test('[critical] a swap entry (17 Nov 2026): taken at a full cap by buying back an open sale -- its own kind, counted apart', () => {
+  const swap = '#54 Liquidity replenishment SELL | sell CE 66000 x2 @ 14 · perp at 65120 · perp SL skipped · TGT skipped · made room: bought back C-BTC-65800-171126 sold @ 41.5 (78% kept)';
+  assert.equal(signalEntryOf(swap), 'swap');
+  assert.equal(signalEntryOf('#1 Breakout BUY · re-entry after SL 1 (of P-1) | sell PE 81400 x1 @ 13 · made room: bought back X sold @ 9 (80% kept)'), 'sl', 'a re-entry stays a re-entry');
+  const c = signalCounts([
+    { status: 'placed', detail: swap },
+    { status: 'placed', detail: '#1 Breakout BUY | sell PE 81400 x1 @ 13' },
+    { status: 'skipped', detail: '#1 Breakout BUY | the desk already has 300 open (positions and working orders, all strategies) -- at most 300 at once across all -- no open sale has kept 70% of its premium to make room' },
+  ]);
+  assert.deepEqual(c.takenBy, { signal: 1, swap: 1, sl: 0, tgt: 0 });
+  assert.equal(c.notTaken, 1, 'a cap with nothing to swap stays not taken');
 });

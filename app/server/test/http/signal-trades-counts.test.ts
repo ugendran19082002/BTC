@@ -81,18 +81,18 @@ test('[critical] one account\'s morning is not lost behind another account\'s ne
   assert.equal(mine.status, 200, JSON.stringify(mine.body));
   assert.equal(mine.body.trades.length, 30, 'the account\'s own 30, not none of the newest 2,000');
   assert.ok(mine.body.trades.every((t: any) => t.strategyId === 'cnt-one'));
-  assert.deepEqual(mine.body.counts, { all: 30, taken: 10, placed: 10, takenBy: { signal: 5, sl: 3, tgt: 2 }, notTaken: 20, byReason: { 'sl-min': 20 } });
+  assert.deepEqual(mine.body.counts, { all: 30, taken: 10, placed: 10, takenBy: { signal: 5, swap: 0, sl: 3, tgt: 2 }, notTaken: 20, byReason: { 'sl-min': 20 } });
   // Each row says how it entered, as it is counted.
   const by = (e: string) => mine.body.trades.filter((t: any) => t.status === 'placed' && t.entry === e).length;
   assert.deepEqual([by('signal'), by('sl'), by('tgt')], [5, 3, 2]);
 
   const theirs = await get(`/api/strategies/signal-trades?from=${DAY}&to=${DAY}&account=${two}`);
   assert.equal(theirs.body.trades.length, 2_000, 'a page of the newest');
-  assert.deepEqual(theirs.body.counts, { all: 2_100, taken: 0, placed: 0, takenBy: { signal: 0, sl: 0, tgt: 0 }, notTaken: 2_100, byReason: { 'desk-max': 2_100 } }, 'counted whole');
+  assert.deepEqual(theirs.body.counts, { all: 2_100, taken: 0, placed: 0, takenBy: { signal: 0, swap: 0, sl: 0, tgt: 0 }, notTaken: 2_100, byReason: { 'desk-max': 2_100 } }, 'counted whole');
 
   const every = await get(`/api/strategies/signal-trades?from=${DAY}&to=${DAY}`);
   assert.equal(every.body.trades.length, 2_000);
-  assert.deepEqual(every.body.counts, { all: 2_130, taken: 10, placed: 10, takenBy: { signal: 5, sl: 3, tgt: 2 }, notTaken: 2_120, byReason: { 'sl-min': 20, 'desk-max': 2_100 } });
+  assert.deepEqual(every.body.counts, { all: 2_130, taken: 10, placed: 10, takenBy: { signal: 5, swap: 0, sl: 3, tgt: 2 }, notTaken: 2_120, byReason: { 'sl-min': 20, 'desk-max': 2_100 } });
 });
 
 test('no range is the latest page, with no counts: "the latest" has no whole to count', async () => {

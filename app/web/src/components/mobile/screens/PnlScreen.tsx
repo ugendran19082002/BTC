@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { json } from '@/api/client';
-import { getDaysFor, getStats, type StatsGroup } from '@/api/phone';
+import { getDaysFor, getStats, type StatsGroup, type TimeframeSide } from '@/api/phone';
 import type { MtmReport } from '@/types/report';
 import { usePoll } from '@/hooks/usePoll';
 import { usePersisted } from '@/hooks/usePersisted';
@@ -224,6 +224,7 @@ export function PnlScreen() {
             // A server from before the pairs: the methods alone, as this screen showed them.
             <Breakdown title="By entry method" groups={stats.data.byMethod ?? []} limit={8} />
           ) : null}
+          {stats.data.byTimeframeSide && stats.data.byTimeframeSide.length > 0 && <TimeframeSides rows={stats.data.byTimeframeSide} />}
           <Breakdown title="CE or PE" groups={stats.data.byOption ?? []} />
           <Breakdown title="Sold or bought" groups={stats.data.byAction ?? []} />
           {p.shown === 'all' && p.trading.length > 1 && <Breakdown title="By account" groups={stats.data.byAccount} />}
@@ -264,6 +265,58 @@ function Mark({ label, usd, when, small = false }: {
 }
 
 /** One way of splitting the trades: a row each, the best first, with its count, win rate and net. */
+/**
+ * Each timeframe, its calls and its puts apart (owner, 17 Nov 2026: "time frame wise CE & PE profit loss charges net, user
+ * friendly, mobile friendly"): the timeframe and its net on a line, under it a row for CE and a row for PE -- profit, loss,
+ * charges, net -- four small figures that fit a phone of 320px, two by two under 360px.
+ */
+function TimeframeSides({ rows }: { rows: TimeframeSide[] }) {
+  const tfs = [...new Set(rows.map((r) => r.tf))];
+  const rs = (usd: number) => signedInr(usdToInr(usd));
+  return (
+    <Panel title="By time frame · CE & PE" right={<span className="text-[11.5px] text-muted-foreground">after charges</span>}>
+      <ul className="m-0 list-none divide-y divide-[var(--line-soft)] p-0" aria-label="By time frame, CE and PE">
+        {tfs.map((tf) => {
+          const mine = rows.filter((r) => r.tf === tf);
+          const net = mine.reduce((n, r) => n + r.netUsd, 0);
+          const trades = mine.reduce((n, r) => n + r.trades, 0);
+          return (
+            <li key={tf} className="py-2.5" aria-label={tf === 'chain' ? 'TF chain' : tf}>
+              <span className="flex items-baseline justify-between gap-2">
+                <span className="text-[14.5px] font-semibold">{tf === 'chain' ? 'TF chain' : tf}
+                  <span className="ml-1.5 text-[12px] font-normal text-muted-foreground">{trades} trade{trades === 1 ? '' : 's'}</span>
+                </span>
+                <Rupees usd={net} signed size="sm" />
+              </span>
+              {mine.map((r) => (
+                <span key={r.side} className="mt-1.5 grid grid-cols-[2.4rem_minmax(0,1fr)] items-start gap-1.5">
+                  <span className={cn('mt-1 text-[12px] font-bold', r.side === 'CE' ? 'text-[var(--down)]' : 'text-[var(--up)]')} title={`${r.trades} trades · win ${r.trades ? Math.round((100 * r.wins) / r.trades) : 0}%`}>{r.side}</span>
+                  <span className="grid grid-cols-2 gap-1 text-[11.5px] tabular-nums min-[360px]:grid-cols-4" aria-label={`${tf} ${r.side}`}>
+                    <Fig label="Profit" value={rs(r.profitUsd)} tone={r.profitUsd > 0 ? 'up' : undefined} />
+                    <Fig label="Loss" value={rs(-r.lossUsd)} tone={r.lossUsd > 0 ? 'down' : undefined} />
+                    <Fig label="Charges" value={rs(-r.chargesUsd)} tone={r.chargesUsd > 0 ? 'down' : undefined} />
+                    <Fig label="Net" value={rs(r.netUsd)} tone={r.netUsd > 0 ? 'up' : r.netUsd < 0 ? 'down' : undefined} strong />
+                  </span>
+                </span>
+              ))}
+            </li>
+          );
+        })}
+      </ul>
+    </Panel>
+  );
+}
+
+/** A small figure: its label over its value, as the ledger's day shows them. */
+function Fig({ label, value, tone, strong }: { label: string; value: string; tone?: 'up' | 'down'; strong?: boolean }) {
+  return (
+    <span className="min-w-0 rounded-md bg-muted px-1.5 py-1">
+      <span className="block text-[10.5px] text-muted-foreground">{label}</span>
+      <span className={cn('block truncate', strong && 'font-semibold', tone === 'up' ? 'text-[var(--up)]' : tone === 'down' ? 'text-[var(--down)]' : '')}>{value}</span>
+    </span>
+  );
+}
+
 function Breakdown({ title, groups, limit }: { title: string; groups: StatsGroup[]; limit?: number }) {
   if (groups.length === 0) return null;
   const cut = limit !== undefined && groups.length > limit;

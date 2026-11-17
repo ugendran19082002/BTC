@@ -718,7 +718,7 @@ export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'score-
   | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'stale-quote' | 'momentum' | 'other';
 
 /** How a signal row entered (server `signalEntryOf`, 2 Nov 2026): on its own signal, or a re-entry after an option SL or target. */
-export type SignalEntry = 'signal' | 'sl' | 'tgt';
+export type SignalEntry = 'signal' | 'swap' | 'sl' | 'tgt';
 /**
  * A range's signals counted whole (server: strategy/signal-reasons.ts `signalCounts`); `placed`: the real orders of the
  * taken; `takenBy`: the taken by how they entered, absent from a server from before 2 Nov.

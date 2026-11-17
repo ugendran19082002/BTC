@@ -218,9 +218,20 @@ describe('HistoryScreen', () => {
     show();
     await waitFor(() => expect(rows()).toHaveLength(4));
     const row = (id: string) => rows().find((r) => r.textContent!.includes(`S ${id}`))!;
-    expect(within(row('d')).getByText('TGT')).toBeInTheDocument();
-    expect(within(row('b')).getByText('Perp SL')).toBeInTheDocument();
+    // With the exit's per cent (17 Nov 2026): 50 in, 40 out -- the target kept 20%; the perp's stop closed it 20% cheaper.
+    expect(within(row('d')).getByText('TGT 20%')).toBeInTheDocument();
+    expect(within(row('b')).getByText('Perp SL −20%')).toBeInTheDocument();
     expect(within(row('a')).queryByText(/TGT|SL/)).toBeNull();
+  });
+
+  it('[critical] the exit badge says the exit as a per cent of the sale (17 Nov 2026): an SL by how far it rose, a target by what it kept', async () => {
+    const { exitPct } = await import('@/components/mobile/screens/HistoryScreen');
+    const sold = (e: number, x: number) => ({ entryAvgPrice: e, exitAvgPrice: x, fills: [{ role: 'entry', side: 'sell', size: 1, price: e, ts: 0 }] }) as never;
+    expect(exitPct(sold(15, 84), 'option-sl')).toBe('+460%');
+    expect(exitPct(sold(15, 0.75), 'option-tgt')).toBe('95%');
+    expect(exitPct(sold(20, 2), 'window-end')).toBe('90%');
+    expect(exitPct(sold(20, 30), 'manual')).toBe('+50%');
+    expect(exitPct({ entryAvgPrice: null, exitAvgPrice: 3, fills: [] } as never, 'option-tgt')).toBeNull();
   });
 
   it('[critical] a backwards range is said and cannot be shown; Cancel keeps what was there', async () => {

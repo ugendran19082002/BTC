@@ -61,13 +61,16 @@ type Why = SignalReason | 'any';
 type EntryPick = SignalEntry | 'any';
 const ENTRIES: { key: SignalEntry; label: string; none: string }[] = [
   { key: 'signal', label: 'Signal entry', none: 'No signal entry taken today.' },
+  // Sold at a full cap by buying back an open sale that had kept 70% (17 Nov 2026: "swap entry add tab and list").
+  { key: 'swap', label: 'Swap entry', none: 'No swap entry today: the cap was not full, or no open sale had kept enough to make room.' },
   { key: 'sl', label: 'Re-entry after SL', none: 'No re-entry after an SL taken today.' },
   { key: 'tgt', label: 'Re-entry after target', none: 'No re-entry after a target taken today.' },
 ];
 const entryOf = (r: SignalTrade): SignalEntry => {
   if (r.entry) return r.entry;
   const head = r.detail.includes(' | ') ? r.detail.slice(0, r.detail.indexOf(' | ')) : r.detail;
-  return / · re-entry after SL\b/.test(head) ? 'sl' : / · re-entry after target\b/.test(head) ? 'tgt' : 'signal';
+  return / · re-entry after SL\b/.test(head) ? 'sl' : / · re-entry after target\b/.test(head) ? 'tgt'
+    : / · made room: bought back /.test(r.detail) ? 'swap' : 'signal';
 };
 /** Rows a tab shows at first, and each "Show more" adds. */
 const PAGE = 40;
@@ -113,8 +116,9 @@ export function StrategiesScreen() {
   const why = whyPick !== 'any' && byWhy.some(([k]) => k === whyPick) ? whyPick : 'any';
   // Taken by how it entered: the server's day counts, else the rows'.
   const takenRows = (all ?? []).filter(taken);
-  const takenBy: Record<SignalEntry, number> = served?.takenBy
-    ?? takenRows.reduce((m, r) => ({ ...m, [entryOf(r)]: m[entryOf(r)] + 1 }), { signal: 0, sl: 0, tgt: 0 });
+  // A server from before the swap kind counts none of it: 0, not blank.
+  const takenBy: Record<SignalEntry, number> = served?.takenBy ? { ...served.takenBy, swap: served.takenBy.swap ?? 0 }
+    : takenRows.reduce((m, r) => ({ ...m, [entryOf(r)]: m[entryOf(r)] + 1 }), { signal: 0, swap: 0, sl: 0, tgt: 0 });
   const entry = ENTRIES.some((e) => e.key === entryPick) ? entryPick : 'any';
   const inTab = tab === 'not' ? notTaken.filter((r) => why === 'any' || reasonsOf(r).includes(why))
     : tab === 'taken' ? takenRows.filter((r) => entry === 'any' || entryOf(r) === entry)

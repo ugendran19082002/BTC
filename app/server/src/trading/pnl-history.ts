@@ -178,26 +178,45 @@ export type TradeStats = {
   byPair: TradeStatsGroup[];
   /** The timeframe a signal trade was read on (`timeframeKeyOf`): `15m`, or `chain` with the timeframe chain. Signal trades only. */
   byTimeframe: TradeStatsGroup[];
+  /**
+   * Each timeframe, its calls and its puts apart (owner, 17 Nov 2026: "time frame wise CE & PE profit loss charges net"):
+   * what the winning exits booked, what the losing ones lost, the charges, the net -- the ledger's four, per pairing.
+   * Signal trades only, in the timeframes' own order.
+   */
+  byTimeframeSide: TimeframeSideGroup[];
 };
+
+export type TimeframeSideGroup = {
+  /** `15m|CE`. */
+  key: string; tf: string; side: 'CE' | 'PE';
+  trades: number; wins: number;
+  /** Booked by the trades that made money, and lost by those that did not (a positive number), before charges. */
+  profitUsd: number; lossUsd: number; chargesUsd: number;
+  /** profit − loss − charges. */
+  netUsd: number;
+};
+/** The timeframes in the order the desk lists them; one not here after them, by name. */
+export const TF_ORDER = ['3m', '5m', '15m', '30m', '1h', '2h', '4h', 'chain'];
 
 /** `breakout|single|15m`; `breakout|mtf|5m` for the read with the timeframe chain, which is its own pairing. */
 export const pairKey = (s: { method: string; mode: 'mtf' | 'single'; tf: string }) => `${s.method}|${s.mode}|${s.tf}`;
 
 /** One closed trade's day and money, or null for a trade still open (or never filled). */
-export function closedNet(rec: TradeRecord, spot: number | null): { day: string; netUsd: number; at: number } | null {
+export function closedNet(rec: TradeRecord, spot: number | null): { day: string; netUsd: number; at: number; bookedUsd: number; chargesUsd: number } | null {
   const s = recompute(rec.state);
   const exits = s.fills.filter((f) => isExit(f.role));
   if (s.position !== 0 || exits.length === 0 || s.entryAvgPrice === null) return null;
   const cv = s.contractValue ?? 0.001;
   const long = isLong(s);
   const entryAvg = s.entryAvgPrice;
-  let net = 0;
+  let booked = 0, charges = 0;
   for (const f of s.fills) {
-    net -= fillChargesUsd({ price: f.price, contracts: f.size, contractValue: cv, spot }).totalUsd;
-    if (isExit(f.role)) net += (long ? f.price - entryAvg : entryAvg - f.price) * f.size * cv;
+    charges += fillChargesUsd({ price: f.price, contracts: f.size, contractValue: cv, spot }).totalUsd;
+    if (isExit(f.role)) booked += (long ? f.price - entryAvg : entryAvg - f.price) * f.size * cv;
   }
   const closedAt = Math.max(...exits.map((f) => f.ts));
-  return { day: istDate(closedAt), netUsd: net, at: closedAt };
+  // What the exits booked and what the fills cost, apart (17 Nov 2026, the phone's time frame × CE / PE breakdown).
+  return { day: istDate(closedAt), netUsd: booked - charges, at: closedAt, bookedUsd: booked, chargesUsd: charges };
 }
 
 function groupOf(key: string, nets: readonly number[]): TradeStatsGroup {
@@ -265,6 +284,7 @@ export function tradeStats(
   const byMethod = new Map<string, number[]>();
   const byPair = new Map<string, number[]>();
   const byTimeframe = new Map<string, number[]>();
+  const tfSide = new Map<string, TimeframeSideGroup>();
   const push = (m: Map<string, number[]>, k: string, n: number) => { const a = m.get(k); if (a) a.push(n); else m.set(k, [n]); };
   for (const rec of records) {
     const c = closedNet(rec, o.spot);
@@ -278,14 +298,22 @@ export function tradeStats(
       push(byMethod, rec.plan.signal.method, c.netUsd);
       push(byPair, pairKey(rec.plan.signal), c.netUsd);
       push(byTimeframe, timeframeKeyOf(rec)!, c.netUsd);
+      const tf = timeframeKeyOf(rec)!, side = rec.state.optionSide === 'CE' ? 'CE' as const : 'PE' as const, key = `${tf}|${side}`;
+      const g = tfSide.get(key) ?? { key, tf, side, trades: 0, wins: 0, profitUsd: 0, lossUsd: 0, chargesUsd: 0, netUsd: 0 };
+      g.trades += 1; g.wins += c.netUsd > 0 ? 1 : 0;
+      if (c.bookedUsd >= 0) g.profitUsd += c.bookedUsd; else g.lossUsd -= c.bookedUsd;
+      g.chargesUsd += c.chargesUsd; g.netUsd += c.netUsd;
+      tfSide.set(key, g);
     }
   }
+  const tfRank = (tf: string) => { const i = TF_ORDER.indexOf(tf); return i < 0 ? TF_ORDER.length : i; };
   const groups = (m: Map<string, number[]>) => [...m.entries()].map(([k, v]) => groupOf(k, v)).sort((a, b) => b.netUsd - a.netUsd);
   return {
     from: o.from, to: o.to, overall: groupOf('all', all),
     byStrategy: groups(byStrategy), byAccount: groups(byAccount),
     byOption: groups(byOption), byAction: groups(byAction), byMethod: groups(byMethod),
     byPair: groups(byPair), byTimeframe: groups(byTimeframe),
+    byTimeframeSide: [...tfSide.values()].sort((a, b) => tfRank(a.tf) - tfRank(b.tf) || a.tf.localeCompare(b.tf) || (a.side === 'CE' ? -1 : 1)),
   };
 }
 

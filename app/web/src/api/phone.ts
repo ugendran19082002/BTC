@@ -50,6 +50,8 @@ export type StatsGroup = {
   grossProfitUsd: number; grossLossUsd: number; profitFactor: number | null;
   avgWinUsd: number | null; avgLossUsd: number | null; netUsd: number; bestUsd: number | null; worstUsd: number | null;
 };
+/** One timeframe's calls, or its puts, over the range (server `TimeframeSideGroup`). `tf` is `15m`, or `chain` for the timeframe chain. */
+export type TimeframeSide = { key: string; tf: string; side: 'CE' | 'PE'; trades: number; wins: number; profitUsd: number; lossUsd: number; chargesUsd: number; netUsd: number };
 export type Stats = {
   mode: 'live' | 'paper'; from: string; to: string; overall: StatsGroup;
   /** More trades in the range than the server reads at once (100,000): the figures are of the newest (4 Nov 2026). */
@@ -59,6 +61,8 @@ export type Stats = {
   byOption?: StatsGroup[]; byAction?: StatsGroup[]; byMethod?: StatsGroup[];
   /** A signal trade's entry method on the timeframe it was read on (`15m`, `5m + TF chain`), best first. Absent from an older server. */
   byPair?: (StatsGroup & { tf: string })[];
+  /** Each timeframe's calls and puts apart: profit, loss (positive), charges, net (17 Nov 2026). Absent from an older server. */
+  byTimeframeSide?: TimeframeSide[];
   /**
    * The strategies there are to choose from (8 Oct 2026): every one with a trade closed in the range, whatever was
    * asked for, and any asked for that has none. `manual` is the trades nobody scheduled. Absent from an older

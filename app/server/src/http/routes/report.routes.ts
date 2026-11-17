@@ -252,6 +252,8 @@ export function registerReportRoutes(app: FastifyInstance) {
           const [method = g.key, mode, tf = ''] = g.key.split('|');
           return { ...named(g, methodNames.get(method) ?? method), tf: mode === 'mtf' ? `${tf} + TF chain` : tf };
         }),
+        // Each timeframe's calls and puts apart: profit, loss, charges, net (17 Nov 2026).
+        byTimeframeSide: stats.byTimeframeSide,
       };
     });
   });
