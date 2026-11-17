@@ -1538,7 +1538,9 @@ export class TradeEngine {
      * and asking anyway was one lookup per open trade every pass (14 Oct 2026, 59 trades open) -- a third of the
      * desk's order reads. A part-filled entry is still asked: the rest of it may yet fill.
      */
-    const entryDone = rec.state.requestedSize > 0 && rec.state.entrySize >= rec.state.requestedSize;
+    const entryDone = (rec.state.requestedSize > 0 && rec.state.entrySize >= rec.state.requestedSize)
+      // Its rest already cancelled (a timeout, a withdrawal, or Delta's own cancel below): it can change no more either.
+      || rec.events.some((e) => e.t === 'entry_cancelled');
     const legs = [
       ['entry', entryDone ? null : entryId],
       ['take_profit', rec.state.protection.takeProfit],
@@ -1587,6 +1589,19 @@ export class TradeEngine {
       }
     }
     const entry = found[0];
+    /*
+     * An entry Delta itself has cancelled or rejected (17 Nov 2026, 11:05 and 12:35 IST: four "entry pending" for hours,
+     * the order read back as no longer working). The poll ended an entry only on its own deadline -- which cancels an
+     * entry it reads as still resting -- or when it could not be found at all (`entryLost`), so one found ended by Delta
+     * was asked after every pass, for ever. Whatever filled is on the record already (`absorb`, above): nothing filled is
+     * a trade that never opened; a part is an open trade, protected by the rest of this poll.
+     */
+    if (entry && !entryDone && (entry.status === 'cancelled' || entry.status === 'rejected')) {
+      this.entryDeadline.delete(tradeId);
+      this.entryNowhere.delete(tradeId);
+      rec = await this.commit(rec, { t: 'entry_cancelled', remaining: Math.max(0, entry.size - entry.filledSize), at: this.now() });
+      if (isDone(rec.state)) return rec.state;
+    }
     // Seen: whatever it says is the record's. Asked and found nowhere: counted toward giving it up (`entryLost`).
     if (entry || entryDone) this.entryNowhere.delete(tradeId);
     else if (entry === null) {
