@@ -7,6 +7,9 @@
 
 name: btc-desk
 
+# Sized 18 Nov 2026 for the Mumbai host (4 x EPYC 9355P, 15 GB, SSD) that runs only this desk:
+# db 3 CPU / 7 GB (4 GB buffers: the whole 4.2 GB database in memory), api 4 CPU / 4 GB (3 GB heap).
+
 services:
   # The desk's database: trades, strategies, settings, sign-in, the error log,
   # open-interest and order-flow history -- one PostgreSQL, one schema
@@ -31,17 +34,31 @@ services:
       - postgres
       - -c
       # The whole database fits in memory with room to grow.
-      - shared_buffers=512MB
+      - shared_buffers=4GB
       - -c
-      - effective_cache_size=1GB
+      - effective_cache_size=10GB
       - -c
       # The history's sorts and joins spilled to disk at the 4 MB default (16 temp files, 122 MB).
-      - work_mem=16MB
+      - work_mem=32MB
       - -c
-      - maintenance_work_mem=128MB
+      - maintenance_work_mem=512MB
       - -c
       # SSD-backed: an index scan is not eight times dearer than a sequential one.
       - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - max_worker_processes=8
+      - -c
+      - max_parallel_workers=4
+      - -c
+      - max_parallel_workers_per_gather=2
+      - -c
+      - max_parallel_maintenance_workers=2
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - wal_buffers=64MB
       - -c
       - max_connections=40
       - -c
@@ -54,7 +71,7 @@ services:
       - pg_stat_statements.track=top
     # Parallel queries share memory through /dev/shm, and Docker gives a container
     # 64 MB of it: with 16 MB a sort, a parallel join can ask for more and fail.
-    shm_size: 256mb
+    shm_size: 1gb
     volumes:
       - pgdata:/var/lib/postgresql/data
     expose:
@@ -71,8 +88,8 @@ services:
       resources:
         limits:
           # Two, so a backup or a report cannot take the only one from the trading reads.
-          cpus: "2.0"
-          memory: 1536M
+          cpus: "3.0"
+          memory: 7G
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
@@ -102,7 +119,7 @@ services:
       DATABASE_URL: postgres://desk:${POSTGRES_PASSWORD}@db:5432/btc_desk
       # Room for the heap to grow before V8 starts collecting hard. The desk
       # rests near 100 MB; this is headroom, not a need.
-      NODE_OPTIONS: --max-old-space-size=1536
+      NODE_OPTIONS: --max-old-space-size=3072
       # The server log on disk too, one file a day, on a volume of its own: Docker's
       # own log goes with the container at every rebuild (docs/history/2026-10.md, 21 Oct).
       LOG_DIR: /srv/logs
@@ -134,8 +151,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "3.0"
-          memory: 2G
+          cpus: "4.0"
+          memory: 4G
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
