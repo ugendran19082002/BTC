@@ -168,18 +168,19 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
-  # Database console. OPT-IN: `docker compose --profile admin up -d adminer`,
-  # and `stop adminer` when done -- it is open while someone is using it, not
-  # permanently. See docs/guides/database-console.md.
+  # Database console. ALWAYS ON since 18 Nov 2026 (the owner's choice: an
+  # opt-in console that was stopped answered a bare 504 whenever it was
+  # wanted). A plain `up -d` -- and so every deploy -- keeps it running, and it
+  # comes back after a reboot. To close it for a while: `stop adminer`.
+  # See docs/guides/database-console.md.
   #
   # Locks in series: basic auth at the edge (adminer.thannigo.in), a rate limit
   # on the login, then a database password. The login form
   # is pinned to this compose network's `db` (no other host can be named), and
   # the account to use day to day is `desk_ro`, which cannot write.
   adminer:
-    profiles: ["admin"]
     image: adminer:6.0.1-standalone
-    restart: "no"
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
