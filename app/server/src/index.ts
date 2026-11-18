@@ -25,7 +25,7 @@ import { capturePerpSnapshot, flowSchema, flushTradeFlow, onPerpPrint, perpMinut
 import { gradeLive, LIVE_GRADE_MS } from './entry/live-grade.js';
 import { deskMetrics, noteSignalRun } from './observability/desk-metrics.js';
 import { fetchOptionMarks } from './market/option-marks.js';
-import { signalBacktest, useBacktestThread } from './report/backtest-run.js';
+import { signalBacktest, useBacktestThread, warmReportCaches } from './report/backtest-run.js';
 import { DEFAULT_PARAMS, volNowHeld } from './report/signal-backtest.js';
 import { sessionDayOf, sessionDays, sessionOf } from './report/market-day.js';
 import { REPORT_FIRST_DAY } from './report/market-report.js';
@@ -270,6 +270,15 @@ setTimeout(() => {
   signalBacktest({ from: earliest > REPORT_FIRST_DAY ? earliest : REPORT_FIRST_DAY, to, now, params: DEFAULT_PARAMS, tfs: null, methods: null })
     .catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'signal-backtest', message: `the backtest's first answer was not got ready: ${e.message}` }));
 }, 3 * 60_000).unref();
+/*
+ * Then the Methods screen's and the Market report's days (19 Nov 2026), in the same thread a minute later: every day's
+ * trades and boards since the report's first day, and the market report's day cells -- what each of their asks is
+ * worked from, whatever the filters. The first open after a deploy was 12.8 s (Methods) and 5 s (Market report) cold.
+ */
+setTimeout(() => {
+  warmReportCaches(REPORT_FIRST_DAY, sessionDayOf(Date.now()))
+    .catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'signal-backtest', message: `the report caches were not read ahead: ${e.message}` }));
+}, 4 * 60_000).unref();
 /*
  * The reads a first page after a deploy waited on, made before anyone asks (17 Oct 2026): the entry record (a
  * scan of every graded setup) and how volatile it is now (five expiry days of ATM IV), each seconds cold. Then the

@@ -4,6 +4,7 @@ import {
   type Ask, type BacktestPortfolioResult, type BtDayTrades, type LiveCheck, type LiveCheckAsk, type PortfolioAsk, type SignalBacktest, type TradePick, type VolStudy, type VolStudyAsk, type PortfolioVolStudyAsk, type VolTradesPick, type WinSweep, type WinSweepAsk, type WinSweepCellPick, type SessionStudy, type SessionStudyAsk, type PortfolioSessionStudyAsk, type SessionTradesPick,
 } from './signal-backtest.js';
 import { clearOptionReplayCache, optionReplay as optionReplayHere, type OptionReplay, type OptionReplayAsk } from './option-replay.js';
+import { clearMarketReportCache, marketBreakdown as marketBreakdownHere, marketReport as marketReportHere, type MarketBreakdownAsk, type MarketReportAsk } from './market-report.js';
 import type { BacktestAnswer, BacktestAsk } from './backtest-worker.js';
 
 /**
@@ -22,7 +23,8 @@ export const BACKTEST_TIMEOUT_MS = 120_000;
 type Work = { kind: 'run'; ask: Ask } | { kind: 'vol-study'; ask: VolStudyAsk } | { kind: 'portfolio-vol-study'; ask: PortfolioVolStudyAsk } | { kind: 'vol-trades'; ask: VolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio-vol-trades'; ask: PortfolioVolStudyAsk; pick: VolTradesPick } | { kind: 'portfolio'; ask: PortfolioAsk } | { kind: 'live'; ask: LiveCheckAsk } | { kind: 'win-sweep'; ask: WinSweepAsk } | { kind: 'win-sweep-trades'; ask: WinSweepAsk; at: WinSweepCellPick } | { kind: 'trades'; ask: Ask; pick: TradePick } | { kind: 'portfolio-trades'; ask: PortfolioAsk; pick: TradePick }
   | { kind: 'session-study'; ask: SessionStudyAsk } | { kind: 'portfolio-session-study'; ask: PortfolioSessionStudyAsk }
   | { kind: 'session-trades'; ask: SessionStudyAsk; pick: SessionTradesPick } | { kind: 'portfolio-session-trades'; ask: PortfolioSessionStudyAsk; pick: SessionTradesPick }
-  | { kind: 'option-replay'; ask: OptionReplayAsk };
+  | { kind: 'option-replay'; ask: OptionReplayAsk }
+  | { kind: 'market-report'; ask: MarketReportAsk } | { kind: 'market-breakdown'; ask: MarketBreakdownAsk };
 /** After a thread fails to start, none is tried again for this long. */
 const GIVE_UP_MS = 10 * 60_000;
 
@@ -70,7 +72,7 @@ function thread(): Worker {
   return w;
 }
 
-function ask(m: Work | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<BacktestAnswer> {
+function ask(m: Work | { kind: 'warm'; from: string; to: string; now: number } | { kind: 'clear' } | { kind: 'close' }, timeoutMs = BACKTEST_TIMEOUT_MS): Promise<BacktestAnswer> {
   return new Promise((done, fail) => {
     const id = ++seq;
     const w = thread();
@@ -174,9 +176,32 @@ export const optionReplay = (o: OptionReplayAsk): Promise<OptionReplay> =>
   // Every signal is a board read for each fill as well: twice a backtest's time, the first time a month is asked.
   worked({ kind: 'option-replay', ask: o }, () => optionReplayHere(o), BACKTEST_TIMEOUT_MS * (o.source === 'signals' ? 2 : 1));
 
+/**
+ * The market report and one day of it (19 Nov 2026). Worked in the desk's own thread they held it for up to 1.5 s at a
+ * time -- every stall of 0.3-1.5 s in the minute log that night ended as a `/api/market-report` answered -- while that
+ * thread watches every open trade's stop. Its caches of days read now live in the backtest thread, beside the backtest's.
+ */
+export const marketReport = (o: MarketReportAsk): Promise<Awaited<ReturnType<typeof marketReportHere>>> =>
+  worked({ kind: 'market-report', ask: o }, () => marketReportHere(o));
+export const marketBreakdown = (o: MarketBreakdownAsk): Promise<Awaited<ReturnType<typeof marketBreakdownHere>>> =>
+  worked({ kind: 'market-breakdown', ask: o }, () => marketBreakdownHere(o));
+
+/**
+ * Fill the report caches in the backtest thread, ahead of the first screen (`warmOptionReplayDays`, the market report's
+ * days): their days are read cold after every start otherwise. Only ever in the thread -- never worked in the desk's own,
+ * which is what this is for; with no thread it does nothing. Resolves with the number of days read.
+ */
+export async function warmReportCaches(from: string, to: string): Promise<number> {
+  if (!wanted || Date.now() - gaveUpAt < GIVE_UP_MS) return 0;
+  const a = await ask({ kind: 'warm', from, to, now: Date.now() }, BACKTEST_TIMEOUT_MS * 3);
+  if (!a.ok) throw new Error(a.error);
+  return (a.result as { days: number }).days;
+}
+
 export async function clearSignalBacktestCache(): Promise<void> {
   clearHere();
   clearOptionReplayCache();
+  clearMarketReportCache();
   if (worker) await ask({ kind: 'clear' }, 5_000).catch(() => {});
 }
 

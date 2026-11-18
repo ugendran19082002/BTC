@@ -206,6 +206,15 @@ const MIGRATIONS: Migration[] = [{
    */
   id: 'entry-023-setups-vacuum-often',
   up: `ALTER TABLE entry_setups SET (autovacuum_vacuum_scale_factor = 0.005, autovacuum_vacuum_threshold = 500);`,
+}, {
+  /*
+   * Read by fill time (19 Nov 2026): the backtest asks for a day's fills ~550 times an hour and the market report for a
+   * range of days, both `filled_at >= $1 AND filled_at < $2`. With no index on it the planner walked the whole table
+   * (219k rows, 44 ms a read); `first_seen >= $3` is too wide to narrow it. Partial: an unfilled setup is never asked
+   * for by fill. On the live desk it was built CONCURRENTLY by hand first, so this finds it there and does nothing.
+   */
+  id: 'entry-024-setups-by-filled-at',
+  up: `CREATE INDEX IF NOT EXISTS entry_setups_by_filled_at ON entry_setups (filled_at) WHERE filled_at IS NOT NULL;`,
 }];
 
 let ready: Promise<void> | null = null;

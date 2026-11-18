@@ -387,14 +387,26 @@ async function readAll(o: { from: string; to: string; now: number; spot: number 
   return { days, signal: kept(signal, o, false), real: kept(real, o, true), every: { signal, real }, names: await namesOf() };
 }
 
+/** What the screen asks of `marketReport` / `marketBreakdown`: plain data, so it crosses to the backtest thread as it is. */
+export type MarketReportAsk = { from: string; to: string; now: number; spot: number | null } & ReportFilters;
+export type MarketBreakdownAsk = MarketReportAsk & { day: string };
+
+/** Each day's total in one pass over the cells: a filter a day was days x cells (190 days of minute cells). */
+function totalsByDay(cells: readonly Cell[]): Map<string, Tot> {
+  const out = new Map<string, Tot>();
+  for (const c of cells) out.set(c.day, addTot(out.get(c.day) ?? zeroTot(), c.tot));
+  return out;
+}
+
 /** The whole range: each expiry day with its kind and both records' totals. */
-export async function marketReport(o: { from: string; to: string; now: number; spot: number | null } & ReportFilters): Promise<MarketReport> {
+export async function marketReport(o: MarketReportAsk): Promise<MarketReport> {
   const r = await readAll(o);
+  const signalByDay = totalsByDay(r.signal), realByDay = totalsByDay(r.real);
   return {
     from: o.from, to: o.to,
     days: r.days.map((d) => ({
       ...d, family: d.pattern ? familyOf(d.pattern) : null,
-      signal: totalOf(r.signal.filter((c) => c.day === d.day)), real: totalOf(r.real.filter((c) => c.day === d.day)),
+      signal: signalByDay.get(d.day) ?? zeroTot(), real: realByDay.get(d.day) ?? zeroTot(),
     })),
     total: { signal: totalOf(r.signal), real: totalOf(r.real) },
     catalogue: PATTERNS,
@@ -402,7 +414,7 @@ export async function marketReport(o: { from: string; to: string; now: number; s
 }
 
 /** One expiry day opened: both records by pair, timeframe, method and strategy. */
-export async function marketBreakdown(o: { from: string; to: string; now: number; spot: number | null; day: string } & ReportFilters): Promise<{ day: string; signal: Side; real: Side }> {
+export async function marketBreakdown(o: MarketBreakdownAsk): Promise<{ day: string; signal: Side; real: Side }> {
   const r = await readAll(o);
   return {
     day: o.day,

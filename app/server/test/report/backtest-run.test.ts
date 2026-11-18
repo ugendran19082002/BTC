@@ -1,7 +1,9 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isMainThread } from 'node:worker_threads';
-import { signalBacktest, clearSignalBacktestCache, stopBacktestThread, useBacktestThread } from '../../src/report/backtest-run.js';
+import { signalBacktest, clearSignalBacktestCache, marketBreakdown, marketReport, stopBacktestThread, useBacktestThread, warmReportCaches } from '../../src/report/backtest-run.js';
+import { marketBreakdown as marketBreakdownHere, marketReport as marketReportHere } from '../../src/report/market-report.js';
+import { initTradingService } from '../../src/trading/service.js';
 import { DEFAULT_PARAMS, signalBacktestHere } from '../../src/report/signal-backtest.js';
 import { sessionDayOf, sessionOf } from '../../src/report/market-day.js';
 import { optionMarksSchema } from '../../src/market/option-marks.js';
@@ -92,6 +94,22 @@ test('[critical] a backtest that cannot be meant is refused in the thread\'s own
   useBacktestThread();
   await assert.rejects(() => signalBacktest({ ...ASK, params: null as never }), /Cannot read|null|undefined/);
   assert.equal((await signalBacktest(ASK)).signals, 4, 'the next one is answered');
+});
+
+test('[critical] the market report worked in the backtest thread gives what working it here gives; the report caches are read ahead there (19 Nov 2026)', async () => {
+  // Worked in the desk's own thread it held that thread up to 1.5 s at a time (the minute log's stalls, 19 Nov 2026).
+  await initTradingService();  // the journal the report's real orders and the replay's days are read from
+  useBacktestThread();
+  const ask = { from: DAY, to: DAY, now: Date.now(), spot: null, account: null, tfs: null, methods: null, strategies: null, window: null };
+  const plain = (x: unknown) => JSON.parse(JSON.stringify(x));
+  const here = await marketReportHere(ask);
+  assert.equal(here.total.signal.n, 4, 'the day\'s four graded signals are in the report');
+  assert.deepEqual(plain(await marketReport(ask)), plain(here));
+  assert.deepEqual(plain(await marketBreakdown({ ...ask, day: DAY })), plain(await marketBreakdownHere({ ...ask, day: DAY })));
+  // A window of the day, through the thread too: the filters cross as they are.
+  const morning = { ...ask, window: { from: 0, to: 300 } };
+  assert.deepEqual(plain(await marketReport(morning)), plain(await marketReportHere(morning)));
+  assert.equal(await warmReportCaches(DAY, DAY), 1, 'one day read ahead, in the thread');
 });
 
 test('[critical] where no thread can be started the backtest is worked here, and the trouble is said once', async () => {

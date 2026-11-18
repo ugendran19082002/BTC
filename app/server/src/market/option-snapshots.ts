@@ -91,6 +91,19 @@ const MIGRATIONS: Migration[] = [
       CREATE TABLE IF NOT EXISTS option_snapshots_1m (LIKE option_snapshots INCLUDING ALL);
     `,
   },
+  {
+    /*
+     * One expiry's board over a span (19 Nov 2026): the backtest and the option marks ask `expiry = $1 AND at BETWEEN`,
+     * and with only (at, symbol) and (symbol, at) the read walked every expiry's rows in the span and threw most away
+     * (80k of 165k for one day of the minute table). (expiry, at) reads only that expiry's, and answers COUNT(DISTINCT at)
+     * from the index alone (65 -> 7 ms). On the live desk both were built CONCURRENTLY by hand first, so this is a no-op there.
+     */
+    id: 'market-020-snapshots-by-expiry',
+    up: `
+      CREATE INDEX IF NOT EXISTS option_snapshots_by_expiry ON option_snapshots (expiry, at);
+      CREATE INDEX IF NOT EXISTS option_snapshots_1m_by_expiry ON option_snapshots_1m (expiry, at);
+    `,
+  },
 ];
 
 let ready: Promise<void> | null = null;

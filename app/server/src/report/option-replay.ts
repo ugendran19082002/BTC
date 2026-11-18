@@ -295,14 +295,57 @@ type DayData = { taken: Taken[]; open: OpenTrade[]; levels: Map<string, { sl: nu
 
 const levelKey = (method: string, mode: string, tf: string, dir: number, trigger: number) => `${method}|${mode}|${tf}|${dir}|${trigger}`;
 
+/** How far after its day a trade's row can last have changed and still be read for it. */
+const TRADES_AFTER_MS = 7 * 86_400_000;
+const TRADES_SQL = `SELECT trade_id, broker_account_id, plan, state, updated_at FROM trades
+      WHERE updated_at >= $1 AND updated_at < $2 AND plan ? 'signal' AND coalesce(plan->>'action', 'sell') = 'sell'`;
+
+/** The expiry day of a row's first sell entry: the only day `readDay` can use it for. Null: no sell entry, used for none. */
+function entryDayOf(r: TradeRow): string | null {
+  let first = Infinity;
+  for (const f of r.state.fills ?? []) if (f.role === 'entry' && f.side === 'sell' && f.ts < first) first = f.ts;
+  return first === Infinity ? null : sessionDayOf(first);
+}
+
+/**
+ * Trade rows read ahead for several days in one query (19 Nov 2026). Day by day, each read took its day plus the seven
+ * after it, so a 40-day ask read and decoded every row about eight times (~9,000 rows of JSON a day, 0.5 s each to hand
+ * over). A block of `AHEAD_DAYS` is one read of its days plus seven, each row kept only for the day it was entered and
+ * only if it changed inside that day's own window -- exactly the rows `readDay` would have read for it, used the same way.
+ */
+const AHEAD_DAYS = 7;
+const ahead = new Map<string, Promise<TradeRow[]>>();
+function readTradesAhead(days: readonly string[]): void {
+  for (let i = 0; i < days.length; i += AHEAD_DAYS) {
+    const block = days.slice(i, i + AHEAD_DAYS).filter((d) => !ahead.has(d));
+    if (block.length < 2) continue;  // one day: its own read is the same read
+    const from = sessionOf(block[0]!).from, to = sessionOf(block[block.length - 1]!).to + TRADES_AFTER_MS;
+    const grouped = rows<TradeRow & { updated_at: string }>(TRADES_SQL, [from, to]).then((all) => {
+      const by = new Map<string, TradeRow[]>();
+      for (const r of all) {
+        const day = entryDayOf(r);
+        if (day === null || !block.includes(day) || Number(r.updated_at) >= sessionOf(day).to + TRADES_AFTER_MS) continue;
+        let list = by.get(day);
+        if (!list) by.set(day, (list = []));
+        list.push(r);
+      }
+      return by;
+    });
+    for (const d of block) {
+      const mine = grouped.then((by) => by.get(d) ?? []);
+      mine.catch(() => {});
+      ahead.set(d, mine);
+    }
+  }
+}
+
 async function readDay(day: string): Promise<DayData> {
   const span = sessionOf(day);
-  // By when the row last changed -- the journal's own index: every trade entered in the day changed in it or after.
-  const all = await rows<TradeRow>(
-    `SELECT trade_id, broker_account_id, plan, state FROM trades
-      WHERE updated_at >= $1 AND updated_at < $2 AND plan ? 'signal' AND coalesce(plan->>'action', 'sell') = 'sell'`,
-    [span.from, span.to + 7 * 86_400_000],
-  );
+  // Read ahead with its neighbours when it was asked for with them; else by itself, by when the row last changed --
+  // the journal's own index: every trade entered in the day changed in it or after.
+  const early = ahead.get(day);
+  ahead.delete(day);
+  const all = early ? await early : await rows<TradeRow>(TRADES_SQL, [span.from, span.to + TRADES_AFTER_MS]);
   const taken: Taken[] = [];
   const open: OpenTrade[] = [];
   for (const r of all) {
@@ -451,6 +494,28 @@ function kept<T>(store: Held<T>, day: string, now: number, read: (day: string) =
   return data;
 }
 const dayData = (day: string, now: number) => kept(held, day, now, readDay);
+
+/** Whether a day must be read again (not held, or the day in progress held for over a minute). */
+const toRead = (store: Held<unknown>, day: string, now: number) => { const h = store.get(day); return !(h && (h.settled || now - h.at < TODAY_FRESH_MS)); };
+
+/** Several days' data: the ones to read are read ahead in blocks (`readTradesAhead`), then each is worked as before. */
+async function daysData(days: readonly string[], now: number): Promise<DayData[]> {
+  const need = days.filter((d) => toRead(held, d, now));
+  readTradesAhead(need);
+  try { return await byFours(days, (d) => dayData(d, now)); } finally { for (const d of need) ahead.delete(d); }
+}
+
+/**
+ * Read every day from `from` to `to` into the caches, ahead of anyone asking (19 Nov 2026): the caches are the process's,
+ * so the first Methods screen after each restart or deploy was every day read cold -- 12.8 s that night, 0.9 s the next
+ * time. Called once in the backtest thread a little after the server starts; the replay itself is worked when asked.
+ */
+export async function warmOptionReplayDays(from: string, to: string, now: number): Promise<number> {
+  const days = sessionDays(from, to).slice(-HELD_DAYS);
+  await daysData(days, now);
+  await byFours(days, (d) => signalDay(d, now));
+  return days.length;
+}
 const signalDay = (day: string, now: number) => kept(heldSignals, day, now, readSignals);
 
 export function clearOptionReplayCache(): void { held.clear(); heldSignals.clear(); cores.clear(); }
@@ -528,7 +593,7 @@ async function replayCore(o: OptionReplayAsk): Promise<Core> {
   const days = sessionDays(o.from, o.to);
   const source: ReplaySource = o.source ?? 'orders';
   const [data, signals, names, accounts, targets] = await Promise.all([
-    byFours(days, (d) => dayData(d, o.now)),
+    daysData(days, o.now),
     source === 'signals' ? byFours(days, (d) => signalDay(d, o.now)) : Promise.resolve(null),
     methodNames(), accountNames(), targetKeys(),
   ]);
