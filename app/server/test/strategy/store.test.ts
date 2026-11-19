@@ -107,6 +107,69 @@ test('enabling something that does not exist says so rather than creating it', a
   assert.equal(await s.get('ghost'), null);
 });
 
+/* ------------------------------------------------- the runner's copy (19 Nov 2026) --- */
+
+test('recent() gives what all() gives', async () => {
+  const s = await fresh();
+  assert.deepEqual(await s.recent(), await s.all());
+});
+
+test('[critical] a strategy switched off through the store is off at the next recent(), not seconds later', async () => {
+  const s = await fresh();
+  assert.equal((await s.recent()).find((x) => x.id === 'double')!.enabled, true);
+  await s.setEnabled('double', false);
+  assert.equal((await s.recent()).find((x) => x.id === 'double')!.enabled, false, 'the second read in inTurn exists for exactly this');
+});
+
+test('every write through the store is seen at once: save, remove, group moves, order', async () => {
+  const s = await fresh();
+  await s.recent();
+  await s.save({ id: 'mine', name: 'Mine', enabled: true, config: DEFAULT_CONFIG });
+  assert.ok((await s.recent()).some((x) => x.id === 'mine'), 'save');
+  await s.saveGroup({ id: 'g1', name: 'G', accountId: null });
+  await s.setGroup('mine', 'g1');
+  assert.equal((await s.recent()).find((x) => x.id === 'mine')!.groupId, 'g1', 'setGroup');
+  await s.setOrder('strategies', ['mine']);
+  assert.equal((await s.recent()).find((x) => x.id === 'mine')!.position, 0, 'setOrder');
+  await s.removeGroup('g1');
+  assert.equal((await s.recent()).find((x) => x.id === 'mine')!.groupId, null, 'removeGroup');
+  await s.remove('mine');
+  assert.equal((await s.recent()).some((x) => x.id === 'mine'), false, 'remove');
+  await s.copyIn({ newGroup: { id: 'g2', name: 'G2', accountId: null }, groupId: 'g2', accountId: null, copies: [{ id: 'cp', name: 'Copy', config: DEFAULT_CONFIG }] });
+  assert.ok((await s.recent()).some((x) => x.id === 'cp'), 'copyIn');
+  await s.setGroupMany(['baseline'], 'g2');
+  assert.equal((await s.recent()).find((x) => x.id === 'baseline')!.groupId, 'g2', 'setGroupMany');
+  await s.removeMany(['cp'], 'g2');
+  assert.equal((await s.recent()).some((x) => x.id === 'cp'), false, 'removeMany');
+});
+
+test('an edit made outside the store is reused for a few seconds, and all() always reads afresh', async () => {
+  const s = await fresh();
+  await s.recent();
+  await query("UPDATE strategies SET name = 'by hand' WHERE id = 'double'");
+  assert.notEqual((await s.recent()).find((x) => x.id === 'double')!.name, 'by hand', 'within STRATEGIES_RECENT_MS the copy stands');
+  assert.equal((await s.all()).find((x) => x.id === 'double')!.name, 'by hand', 'the screens read the table itself');
+});
+
+test('what one caller changes in its copy never reaches the next', async () => {
+  const s = await fresh();
+  const a = await s.recent();
+  a.find((x) => x.id === 'double')!.enabled = false;
+  a.find((x) => x.id === 'double')!.config.lots = 999;
+  const b = await s.recent();
+  assert.equal(b.find((x) => x.id === 'double')!.enabled, true);
+  assert.notEqual(b.find((x) => x.id === 'double')!.config.lots, 999);
+});
+
+test('[critical] a read that began before a write ended is never kept', async () => {
+  const s = await fresh();
+  // The read starts, a switch-off lands while it is on its way, and only then does the read come back.
+  const reading = s.recent();
+  await s.setEnabled('double', false);
+  await reading;
+  assert.equal((await s.recent()).find((x) => x.id === 'double')!.enabled, false);
+});
+
 /* --------------------------------------------------------------- claims --- */
 
 test('[critical] a day can only be claimed once', async () => {
@@ -189,3 +252,11 @@ test('no days at all is refused, because it can never run', () => {
     .some((m) => /at least one day/.test(m)));
 });
 
+
+/* ------------------------------------------------------------- indexes (19 Nov 2026) --- */
+
+test('the signal journal keeps one index on its time, not two', async () => {
+  await fresh();
+  const xs = await rows<{ indexname: string }>("SELECT indexname FROM pg_indexes WHERE tablename = 'strategy_signal_runs' AND indexdef ~ '\\(at( DESC)?\\)'");
+  assert.deepEqual(xs.map((x) => x.indexname), ['strategy_signal_runs_by_time'], 'strategy-015 drops the duplicate strategy-014 made');
+});

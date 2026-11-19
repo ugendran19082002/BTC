@@ -235,7 +235,7 @@ export class StrategyRunner {
     this.ticking = true;
     try {
       if (!this.armed()) return;
-      for (const s of await this.store.all()) {
+      for (const s of await this.store.recent()) {
         // Each strategy on its own account's desk (5 Oct 2026: every active account trades at once). One whose
         // account is switched off has no desk: nothing is entered for it, and it holds nothing to exit.
         const desk = tradingServiceFor(s.accountId);
@@ -518,7 +518,8 @@ export class StrategyRunner {
    * for each to have had its turn. `workOf` is what one strategy does about it -- null for "not mine".
    *
    * The strategies are read twice, on purpose: now, to know whose lines it joins; and again at its turn, so
-   * a strategy switched off -- or the desk disarmed -- while it waited is not traded.
+   * a strategy switched off -- or the desk disarmed -- while it waited is not traded. Both through `recent()`
+   * (19 Nov 2026): a copy reused for a few seconds, which every change to a strategy forgets at once.
    */
   private async inTurn(tf: Tf, workOf: (s: Strategy) => (() => Promise<void>) | null): Promise<void> {
     const seq = this.arrived++;
@@ -529,7 +530,7 @@ export class StrategyRunner {
     try {
       if (!this.armed()) return;
       const accounts = new Set<number>();
-      for (const s of await this.store.all()) {
+      for (const s of await this.store.recent()) {
         // On its own account's desk; none, when that account is switched off.
         const desk = tradingServiceFor(s.accountId);
         if (mine(s, desk) && workOf(s)) accounts.add(laneKeyOf(desk));
@@ -537,7 +538,7 @@ export class StrategyRunner {
       for (const account of accounts) {
         const run = async () => {
           if (!this.armed()) return;
-          for (const s of await this.store.all()) {
+          for (const s of await this.store.recent()) {
             const desk = tradingServiceFor(s.accountId);
             if (!mine(s, desk) || laneKeyOf(desk) !== account) continue;
             const work = workOf(s);
@@ -623,7 +624,7 @@ export class StrategyRunner {
   private async groupMembers(groupId: string): Promise<{ name: string; ids: Set<string> }> {
     const now = this.now();
     if (!this.members || now - this.members.at > GROUP_MEMBERS_MS) {
-      const [all, groups] = await Promise.all([this.store.all(), this.store.groups()]);
+      const [all, groups] = await Promise.all([this.store.recent(), this.store.groups()]);
       const byGroup = new Map(groups.map((g) => [g.id, { name: g.name, ids: new Set<string>() }]));
       for (const x of all) if (x.groupId) byGroup.get(x.groupId)?.ids.add(x.id);
       this.members = { at: now, byGroup };

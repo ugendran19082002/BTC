@@ -26,6 +26,9 @@ export const RETIRED_KEYS = [
   'probGate', 'doubleWhenOneSided', 'minSellScore', 'maxShockScore', 'addToOpposite', 'rebalance',
 ] as const;
 
+/** How long the strategy runner may reuse its read of the strategies (`StrategyStore.recent`): writes forget it at once. */
+export const STRATEGIES_RECENT_MS = 5_000;
+
 const MIGRATIONS: Migration[] = [
   {
     id: 'strategy-001-tables',
@@ -357,6 +360,16 @@ const MIGRATIONS: Migration[] = [
     id: 'strategy-014-signal-runs-at',
     up: 'CREATE INDEX IF NOT EXISTS strategy_signal_runs_at ON strategy_signal_runs (at)',
   },
+  {
+    /*
+     * strategy-014's index again, by another name (19 Nov 2026): `strategy_signal_runs_by_time` (strategy-006) is
+     * already on `at`, descending, and a b-tree reads either way. On the live desk the planner used that one 3,011
+     * times and this one never, while every signal written kept both up to date. 014 stays as shipped; this undoes it.
+     * A plain DROP, in the migration's transaction: 4 MB, gone at once, at a deploy (no signal is written then).
+     */
+    id: 'strategy-015-drop-duplicate-signal-runs-at',
+    up: 'DROP INDEX IF EXISTS strategy_signal_runs_at',
+  },
 ];
 
 /** A config without the settings the desk no longer has. */
@@ -505,6 +518,11 @@ export class StrategyStore {
   /** Ids applied when the store was opened. For the boot log. */
   applied: string[] = [];
 
+  /** The runner's copy of the strategies (`recent`), as JSON, and when it was read. Null: read them again. */
+  private held: { at: number; json: string } | null = null;
+  /** Bumped by every write (`changing`): a read that began before a write finished is never kept. */
+  private generation = 0;
+
   private constructor() {}
 
   /** The store, migrated. */
@@ -530,6 +548,39 @@ export class StrategyStore {
 
   async all(): Promise<Strategy[]> {
     return (await rows<StrategyRow>('SELECT * FROM strategies ORDER BY created_at, id')).map(this.hydrate);
+  }
+
+  /**
+   * The strategies, as `all()` gives them, read again at most every `STRATEGIES_RECENT_MS` (19 Nov 2026): for the
+   * strategy runner. It reads them for each signal -- once to pick the accounts, then again at each account's turn --
+   * and every 20 s besides: about five reads a second in a busy session, 129,600 between midnight and 7:30 AM that day,
+   * the largest share of the database's time (2.3 ms each, the whole table with its configs). The screens keep `all()`.
+   *
+   * Every write through this store forgets the copy, before and after (`changing`), so a strategy switched off on the
+   * screen is off for the very next signal -- the second read in `inTurn` keeps its meaning. Only an edit made outside
+   * the desk (SQL by hand) waits, at most `STRATEGIES_RECENT_MS`. Each call gets its own copy: nothing one caller
+   * changes reaches another, as with a fresh read. Kept as JSON -- a strategy is plain JSON, its config straight from a
+   * jsonb column -- because parsing it again is the cheapest copy: 0.5 ms for the live 32 (236 KB), structuredClone 0.9.
+   * Timed by the wall clock, never the runner's (a test's is frozen).
+   */
+  async recent(): Promise<Strategy[]> {
+    const now = Date.now();
+    const h = this.held;
+    if (h && now >= h.at && now - h.at < STRATEGIES_RECENT_MS) return JSON.parse(h.json) as Strategy[];
+    const generation = this.generation;
+    const list = await this.all();
+    if (generation === this.generation) this.held = { at: now, json: JSON.stringify(list) };
+    return list;
+  }
+
+  /** A write to the strategies table: the runner's copy is forgotten as it starts and again once it is done (`recent`). */
+  private async changing<T>(write: () => Promise<T>): Promise<T> {
+    this.held = null; this.generation += 1;
+    try {
+      return await write();
+    } finally {
+      this.held = null; this.generation += 1;
+    }
   }
 
   async get(id: string): Promise<Strategy | null> {
@@ -559,16 +610,18 @@ export class StrategyStore {
    * `groupId` likewise: the group a new one is made in. A saved one keeps its group -- it is moved by `setGroup`.
    */
   async save(s: { id: string; name: string; enabled: boolean; config: StrategyConfig; accountId?: number | null; groupId?: string | null }): Promise<Strategy> {
-    const now = Date.now();
-    await query(
-      `INSERT INTO strategies (id, name, enabled, config, created_at, updated_at, broker_account_id, group_id)
-       VALUES ($1, $2, $3, $4, $5, $5, $6, $7)
-       ON CONFLICT (id) DO UPDATE SET
-         name = EXCLUDED.name, enabled = EXCLUDED.enabled,
-         config = EXCLUDED.config, updated_at = EXCLUDED.updated_at`,
-      [s.id, s.name, s.enabled, JSON.stringify(s.config), now, s.accountId ?? null, s.groupId ?? null],
-    );
-    return (await this.get(s.id))!;
+    return this.changing(async () => {
+      const now = Date.now();
+      await query(
+        `INSERT INTO strategies (id, name, enabled, config, created_at, updated_at, broker_account_id, group_id)
+         VALUES ($1, $2, $3, $4, $5, $5, $6, $7)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name, enabled = EXCLUDED.enabled,
+           config = EXCLUDED.config, updated_at = EXCLUDED.updated_at`,
+        [s.id, s.name, s.enabled, JSON.stringify(s.config), now, s.accountId ?? null, s.groupId ?? null],
+      );
+      return (await this.get(s.id))!;
+    });
   }
 
   // ------------------------------------------------------------ groups (10 Oct 2026)
@@ -605,11 +658,11 @@ export class StrategyStore {
 
   /** The group goes; its strategies stay, as they are, in no group. One transaction: never a strategy pointing at nothing. */
   async removeGroup(id: string): Promise<number> {
-    return tx(async (c) => {
+    return this.changing(() => tx(async (c) => {
       const moved = await c.query('UPDATE strategies SET group_id = NULL WHERE group_id = $1', [id]);
       await c.query('DELETE FROM strategy_groups WHERE id = $1', [id]);
       return moved.rowCount ?? 0;
-    });
+    }));
   }
 
   /**
@@ -622,7 +675,7 @@ export class StrategyStore {
     copies: { id: string; name: string; config: StrategyConfig }[];
   }): Promise<string[]> {
     const now = Date.now();
-    await tx(async (c) => {
+    await this.changing(() => tx(async (c) => {
       if (o.newGroup) {
         await c.query('INSERT INTO strategy_groups (id, name, broker_account_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)',
           [o.newGroup.id, o.newGroup.name.trim(), o.newGroup.accountId, now]);
@@ -634,7 +687,7 @@ export class StrategyStore {
           [x.id, x.name, JSON.stringify(x.config), now, o.accountId, o.groupId],
         );
       }
-    });
+    }));
     return o.copies.map((x) => x.id);
   }
 
@@ -643,20 +696,20 @@ export class StrategyStore {
    * so a group is never left half-emptied. Their runs and trades stay, as for one removed alone (`remove`).
    */
   async removeMany(ids: string[], groupId: string | null = null): Promise<number> {
-    return tx(async (c) => {
+    return this.changing(() => tx(async (c) => {
       const gone = ids.length ? await c.query('DELETE FROM strategies WHERE id = ANY($1::text[])', [ids]) : { rowCount: 0 };
       if (groupId) {
         await c.query('UPDATE strategies SET group_id = NULL WHERE group_id = $1', [groupId]);
         await c.query('DELETE FROM strategy_groups WHERE id = $1', [groupId]);
       }
       return gone.rowCount ?? 0;
-    });
+    }));
   }
 
   /** Several strategies put in one group, at its end, together. The caller has checked they are its account's. */
   async setGroupMany(ids: string[], groupId: string): Promise<number> {
     if (ids.length === 0) return 0;
-    const r = await query('UPDATE strategies SET group_id = $1, position = NULL, updated_at = $2 WHERE id = ANY($3::text[])', [groupId, Date.now(), ids]);
+    const r = await this.changing(() => query('UPDATE strategies SET group_id = $1, position = NULL, updated_at = $2 WHERE id = ANY($3::text[])', [groupId, Date.now(), ids]));
     return r.rowCount ?? 0;
   }
 
@@ -665,14 +718,15 @@ export class StrategyStore {
    * The caller has checked the list is the whole of them.
    */
   async setOrder(table: 'strategies' | 'strategy_groups', ids: string[]): Promise<void> {
-    await tx(async (c) => {
+    const write = () => tx(async (c) => {
       for (const [i, id] of ids.entries()) await c.query(`UPDATE ${table} SET position = $1 WHERE id = $2`, [i, id]);
     });
+    await (table === 'strategies' ? this.changing(write) : write());
   }
 
   /** Put a strategy in a group, or in none -- at its end. Its switch, settings and account are not touched. */
   async setGroup(strategyId: string, groupId: string | null): Promise<Strategy | null> {
-    const r = await query('UPDATE strategies SET group_id = $1, position = NULL, updated_at = $2 WHERE id = $3', [groupId, Date.now(), strategyId]);
+    const r = await this.changing(() => query('UPDATE strategies SET group_id = $1, position = NULL, updated_at = $2 WHERE id = $3', [groupId, Date.now(), strategyId]));
     return (r.rowCount ?? 0) > 0 ? this.get(strategyId) : null;
   }
 
@@ -684,11 +738,11 @@ export class StrategyStore {
   async remove(id: string): Promise<void> {
     // The runs stay. A deleted strategy's history is still what happened, and
     // the orders it placed are in the trade journal under their own ids.
-    await query('DELETE FROM strategies WHERE id = $1', [id]);
+    await this.changing(() => query('DELETE FROM strategies WHERE id = $1', [id]));
   }
 
   async setEnabled(id: string, on: boolean): Promise<Strategy | null> {
-    const r = await query('UPDATE strategies SET enabled = $1, updated_at = $2 WHERE id = $3', [on, Date.now(), id]);
+    const r = await this.changing(() => query('UPDATE strategies SET enabled = $1, updated_at = $2 WHERE id = $3', [on, Date.now(), id]));
     return (r.rowCount ?? 0) > 0 ? this.get(id) : null;
   }
 
