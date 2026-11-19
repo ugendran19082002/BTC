@@ -4,7 +4,7 @@ import { sideCaps, strikeCapOf, strikeWords } from '@/lib/side-max';
 import { cn } from '@/lib/utils';
 import type { StrategyStatus } from '@/types/strategy';
 import { usePhoneData } from '@/components/mobile/phone-context';
-import { Panel } from '@/components/mobile/parts';
+import { Loading, Panel } from '@/components/mobile/parts';
 
 /**
  * The limits on open trades, on the phone (owner, 12 Oct 2026: "show it on the phone -- user friendly, mobile
@@ -86,6 +86,15 @@ export function OpenLimits({ shown }: { /** The chosen account's read, already o
   const blocks = every
     ? (each.data ?? []).filter((x) => x.d.openBySide && x.d.signalSideMaxPct)
     : shown && shown.openBySide && shown.signalSideMaxPct ? [{ id: p.accountParam!, name: '', d: shown }] : [];
+  // Each account's limits still being read: the panel and the room they take (about 205 px an account), not nothing
+  // and then 900 px pushed in at the top of the screen (19 Nov 2026: everything under it jumped off the screen).
+  if (every && each.data === null && accounts.length > 0) {
+    return (
+      <Panel title="Open limits">
+        <div style={{ minHeight: accounts.length * 205 }}><Loading error={each.error} what="the open limits" /></div>
+      </Panel>
+    );
+  }
   if (blocks.length === 0) return null;
   return (
     <Panel title="Open limits">

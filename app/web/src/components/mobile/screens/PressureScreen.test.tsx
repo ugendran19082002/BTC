@@ -50,7 +50,9 @@ beforeEach(() => {
 describe('PressureScreen', () => {
   it('[critical] each side of the option tape: bought against sold, its delta, its book, its busiest strikes, and what it reads as', async () => {
     render(<PressureScreen />);
-    const ce = (await screen.findByText('CE flow')).closest('h2')!.parentElement!.parentElement!;
+    // The two cards hold their room under these titles while the tape is read (19 Nov 2026): wait for the tape itself.
+    await screen.findByText('Overall option flow');
+    const ce = screen.getByText('CE flow').closest('h2')!.parentElement!.parentElement!;
     expect(ce).toHaveTextContent('CALL');
     expect(ce).toHaveTextContent('SELL PRESSURE');
     expect(ce).toHaveTextContent('Buy 1,606.5K');

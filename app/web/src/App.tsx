@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, memo, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import {
   Activity, AlertTriangle, BarChart3, Bot, Briefcase, ListChecks, ListOrdered, RefreshCw, Smartphone, CalendarRange, FlaskConical,
@@ -51,20 +51,36 @@ import { Button } from '@/components/ui/button';
  * show that -- the order ticket, the other tabs and their libraries follow on
  * demand and are cached from then on.
  */
+/*
+ * The heavier screens' chunks, by name (19 Nov 2026): fetched when the desk is idle after sign-in (`usePrefetchScreens`),
+ * so a tab opens without waiting for its download, and each memoised: they take no props that change, and the desk
+ * re-renders on every price frame, which re-drew the whole P&L dashboard with it (scrolling it ran at 10-12 frames a
+ * second). Their own polls and state still redraw them. Not the strategies screen: it reads the clock as it draws.
+ */
+const screenChunks = {
+  OrdersPanel: () => import('@/components/trade/OrdersPanel'),
+  ReportPanel: () => import('@/components/report/ReportPanel'),
+  MethodReport: () => import('@/components/report/MethodReport'),
+  SignalBacktest: () => import('@/components/report/SignalBacktest'),
+  MarketReport: () => import('@/components/report/MarketReport'),
+  SignalHistory: () => import('@/components/desk/entry/SignalHistory'),
+  OptionHistory: () => import('@/components/report/OptionHistory'),
+  LogsPanel: () => import('@/components/layout/LogsPanel'),
+};
 const Overview = lazy(() => import('@/components/overview/Overview').then((m) => ({ default: m.Overview })));
 const OrderTicket = lazy(() => import('@/components/trade/OrderTicket').then((m) => ({ default: m.OrderTicket })));
 const StrikeAnalysis = lazy(() => import('@/components/desk/StrikeAnalysis').then((m) => ({ default: m.StrikeAnalysis })));
 const PositionsCard = lazy(() => import('@/components/trade/PositionsCard').then((m) => ({ default: m.PositionsCard })));
 const AccountCard = lazy(() => import('@/components/trade/AccountCard').then((m) => ({ default: m.AccountCard })));
-const OrdersPanel = lazy(() => import('@/components/trade/OrdersPanel').then((m) => ({ default: m.OrdersPanel })));
+const OrdersPanel = memo(lazy(() => screenChunks.OrdersPanel().then((m) => ({ default: m.OrdersPanel }))));
 const SignalStrategiesCard = lazy(() => import('@/components/strategy/SignalStrategiesCard').then((m) => ({ default: m.SignalStrategiesCard })));
-const ReportPanel = lazy(() => import('@/components/report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
-const MethodReport = lazy(() => import('@/components/report/MethodReport').then((m) => ({ default: m.MethodReport })));
-const SignalBacktest = lazy(() => import('@/components/report/SignalBacktest').then((m) => ({ default: m.SignalBacktest })));
-const MarketReport = lazy(() => import('@/components/report/MarketReport').then((m) => ({ default: m.MarketReport })));
-const SignalHistory = lazy(() => import('@/components/desk/entry/SignalHistory').then((m) => ({ default: m.SignalHistory })));
-const OptionHistory = lazy(() => import('@/components/report/OptionHistory').then((m) => ({ default: m.OptionHistory })));
-const LogsPanel = lazy(() => import('@/components/layout/LogsPanel').then((m) => ({ default: m.LogsPanel })));
+const ReportPanel = memo(lazy(() => screenChunks.ReportPanel().then((m) => ({ default: m.ReportPanel }))));
+const MethodReport = memo(lazy(() => screenChunks.MethodReport().then((m) => ({ default: m.MethodReport }))));
+const SignalBacktest = memo(lazy(() => screenChunks.SignalBacktest().then((m) => ({ default: m.SignalBacktest }))));
+const MarketReport = memo(lazy(() => screenChunks.MarketReport().then((m) => ({ default: m.MarketReport }))));
+const SignalHistory = memo(lazy(() => screenChunks.SignalHistory().then((m) => ({ default: m.SignalHistory }))));
+const OptionHistory = memo(lazy(() => screenChunks.OptionHistory().then((m) => ({ default: m.OptionHistory }))));
+const LogsPanel = memo(lazy(() => screenChunks.LogsPanel().then((m) => ({ default: m.LogsPanel }))));
 const AccountSummaryCard = lazy(() => import('@/components/accounts/AccountSummaryCard').then((m) => ({ default: m.AccountSummaryCard })));
 // The calendar library is a sixth of the first download and is needed only
 // once somebody chooses a past date.
@@ -132,11 +148,25 @@ function loadCachedExpiries(): ExpiryOption[] {
 
 const Loading = () => <div className="spinner">Loading…</div>;
 
+/** The screens' chunks fetched once the desk is signed in and idle (or two seconds on): a tab tapped later opens at once. */
+function usePrefetchScreens(enabled: boolean): void {
+  useEffect(() => {
+    if (!enabled) return;
+    const go = () => { for (const f of Object.values(screenChunks)) void f().catch(() => undefined); };
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback) { const id = w.requestIdleCallback(go, { timeout: 2_000 }); return () => w.cancelIdleCallback?.(id); }
+    const id = setTimeout(go, 2_000);
+    return () => clearTimeout(id);
+  }, [enabled]);
+}
+
 export default function App() {
   // A new key with the new first screen, so a browser that remembered Live as the old default opens on Strategy
   // once; after that it opens where it was left, as before.
   const [storedTab, setTab] = usePersisted<Tab>('screen', FIRST_TAB);
   const tab = asTab(storedTab);
+  // A tab opened in a transition keeps the screen on show until the next one is ready, never a blank "Loading" between.
+  const openTab = useCallback((t: Tab) => { startTransition(() => setTab(t)); }, [setTab]);
   // A ticket is a seed plus an open flag: the sheet animates closed with its contents still on screen.
   const [ticket, setTicket] = useState<TicketSeed | null>(null);
   const [ticketOpen, setTicketOpen] = useState(false);
@@ -314,6 +344,7 @@ export default function App() {
    * earlier.
    */
   const stream = useStream(signedIn === true);
+  usePrefetchScreens(signedIn === true);
   const polls = signedIn === true && !stream.live;
   // The default account's desk: what the stream carries, and what the header shows.
   const { data: polledTrade, updatedAt: polledTradeAt, refresh: refreshTrade } = usePoll(() => getTradeStatus(), 1_000, { enabled: polls });
@@ -616,34 +647,34 @@ export default function App() {
       )}
 
       <nav className="tabs" aria-label="Screens">
-        <button className={tab === 'strategy' ? 'on' : ''} onClick={() => setTab('strategy')}>
+        <button className={tab === 'strategy' ? 'on' : ''} onClick={() => openTab('strategy')}>
           <Bot aria-hidden /> <span>Strategy</span>
         </button>
-        <button className={tab === 'desk' ? 'on' : ''} onClick={() => setTab('desk')}>
+        <button className={tab === 'desk' ? 'on' : ''} onClick={() => openTab('desk')}>
           <Activity aria-hidden /> <span>Live</span>
         </button>
-        <button className={tab === 'trade' ? 'on' : ''} onClick={() => setTab('trade')}>
+        <button className={tab === 'trade' ? 'on' : ''} onClick={() => openTab('trade')}>
           <Briefcase aria-hidden /> <span>Positions</span>
           {/* What is open on the whole desk -- every trading account's, as the header's Today is. */}
           {headerDay && headerDay.open.length > 0 && <span className="pip">{headerDay.open.length}</span>}
         </button>
-        <button className={tab === 'orders' ? 'on' : ''} onClick={() => setTab('orders')}>
+        <button className={tab === 'orders' ? 'on' : ''} onClick={() => openTab('orders')}>
           <ListOrdered aria-hidden /> <span>Orders</span>
         </button>
-        <button className={tab === 'pnl' ? 'on' : ''} onClick={() => setTab('pnl')}>
+        <button className={tab === 'pnl' ? 'on' : ''} onClick={() => openTab('pnl')}>
           <BarChart3 aria-hidden /> <span>P&L</span>
         </button>
-        <button className={tab === 'methods' ? 'on' : ''} onClick={() => setTab('methods')}>
+        <button className={tab === 'methods' ? 'on' : ''} onClick={() => openTab('methods')}>
           <ListChecks aria-hidden /> <span>Methods</span>
         </button>
         {/* Menus of their own (owner, 13 Oct 2026): they were under Methods for an hour, a long scroll from the top. */}
-        <button className={tab === 'market' ? 'on' : ''} onClick={() => setTab('market')}>
+        <button className={tab === 'market' ? 'on' : ''} onClick={() => openTab('market')}>
           <CalendarRange aria-hidden /> <span>Market report</span>
         </button>
-        <button className={tab === 'backtest' ? 'on' : ''} onClick={() => setTab('backtest')}>
+        <button className={tab === 'backtest' ? 'on' : ''} onClick={() => openTab('backtest')}>
           <FlaskConical aria-hidden /> <span>Backtest</span>
         </button>
-        <button className={tab === 'errors' ? 'on' : ''} onClick={() => setTab('errors')}>
+        <button className={tab === 'errors' ? 'on' : ''} onClick={() => openTab('errors')}>
           <AlertTriangle aria-hidden /> <span>Logs</span>
           {errors && errors.summary.unresolved > 0 && (
             <span className="pip pip-bad">{errors.summary.unresolved}</span>

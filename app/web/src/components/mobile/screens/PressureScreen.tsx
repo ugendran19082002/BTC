@@ -59,10 +59,16 @@ export function PressureScreen() {
           )}
       </Panel>
 
-      {f && (
+      {f ? (
         <>
           <FlowCard name="CE flow" side="CALL" flow={f.ce} leg={atmLeg(data.legs, 'C', snap.atm)} />
           <FlowCard name="PE flow" side="PUT" flow={f.pe} leg={atmLeg(data.legs, 'P', snap.atm)} />
+        </>
+      ) : !x.perpRead && (
+        // The two flow cards' room while the tape is read, so "Big move catch" does not jump down 700 px (19 Nov 2026).
+        <>
+          <Panel title="CE flow"><div className="min-h-[250px]" aria-hidden="true" /></Panel>
+          <Panel title="PE flow"><div className="min-h-[250px]" aria-hidden="true" /></Panel>
         </>
       )}
 

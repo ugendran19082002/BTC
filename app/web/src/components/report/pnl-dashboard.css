@@ -31,7 +31,7 @@
   background: color-mix(in srgb, var(--bg) 75%, transparent);
   border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
   border-radius: 10px;
-  backdrop-filter: blur(8px);
+  /* no backdrop blur (19 Nov 2026): over the plain page it changed nothing seen, and was re-rastered every frame of a scroll */
   min-height: 82px;
   overflow: hidden;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -158,7 +158,7 @@
   border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
   border-radius: 10px;
   padding: 16px 18px;
-  backdrop-filter: blur(8px);
+  /* no backdrop blur (19 Nov 2026): over the plain page it changed nothing seen, and was re-rastered every frame of a scroll */
   position: relative;
 }
 
@@ -600,7 +600,7 @@
   border-radius: 8px;
   padding: 10px 12px;
   flex: none;
-  backdrop-filter: blur(6px);
+  /* no backdrop blur (19 Nov 2026): over the plain page it changed nothing seen, and was re-rastered every frame of a scroll */
   transition: border-color 0.2s ease;
 }
 
@@ -833,7 +833,7 @@
   border-radius: 8px;
   padding: 12px 14px;
   margin-top: 14px;
-  backdrop-filter: blur(8px);
+  /* no backdrop blur (19 Nov 2026): over the plain page it changed nothing seen, and was re-rastered every frame of a scroll */
 }
 
 .pnl-inspector-head {
