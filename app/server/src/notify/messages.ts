@@ -671,6 +671,77 @@ export function missedEntryAlert(
   };
 }
 
+// ---------------------------------------------------- desk health (19 Nov 2026)
+
+/** "2 min 10 s", "45 s", "1 h 05 min": how long something lasted, for a person. */
+const lasted = (ms: number) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ${pad(s % 60)} s`;
+  return `${Math.floor(s / 3600)} h ${pad(Math.floor((s % 3600) / 60))} min`;
+};
+
+/**
+ * The trading thread was held (observability/health-watch.ts): every hold of `FREEZE_ALERT_MS` or more since the last
+ * such message, at most one message in ten minutes. Said once the thread is free again -- a thread that is held cannot
+ * speak -- and while it was held nothing new was sent from it; a process held past the desk lock sends nothing at all.
+ */
+export function freezeAlert(holds: readonly { at: number; ms: number }[], at: number): Alert {
+  const worst = holds.reduce((m, h) => Math.max(m, h.ms), 0);
+  return {
+    key: 'health:freeze',
+    text: lines(
+      `🧊 <b>TRADING THREAD HELD · ${(worst / 1000).toFixed(1)} s</b>`, '',
+      holds.length === 1
+        ? `It stopped for ${(worst / 1000).toFixed(1)} s at ${istTime(holds[0]!.at)} IST, and is running again.`
+        : `It stopped ${holds.length} times (${holds.slice(0, 6).map((h) => `${istTime(h.at)} ${(h.ms / 1000).toFixed(1)} s`).join(', ')}${holds.length > 6 ? ', ...' : ''}), and is running again.`,
+      'Stops and targets wait while it is held. The minute lines in the server log say what it was doing.', '',
+      `🕒 ${istTime(at)} IST`,
+    ),
+  };
+}
+
+/**
+ * A feed went quiet, or an account's private socket stopped (observability/health-watch.ts), and -- under the same key,
+ * so the two read as a pair -- when it came back. `what`: the feed in words ("Option tickers", "Private socket · High").
+ */
+export function feedAlert(o: { key: string; what: string; down: boolean; since: number; lastAt: number | null; at: number; effect: string }): Alert {
+  return {
+    key: `health:${o.key}`,
+    text: o.down
+      ? lines(
+        `📡 <b>FEED DOWN · ${escape(o.what)}</b>`, '',
+        o.lastAt === null ? 'Nothing heard from Delta since the desk started.' : `Nothing heard from Delta for ${lasted(o.at - o.lastAt)} (last at ${istTime(o.lastAt)} IST).`,
+        escape(o.effect), '',
+        `🕒 ${istTime(o.at)} IST`,
+      )
+      : lines(
+        `✅ <b>FEED BACK · ${escape(o.what)}</b>`, '',
+        `Down for ${lasted(o.at - o.since)}; heard again at ${istTime(o.at)} IST.`,
+      ),
+  };
+}
+
+/**
+ * The desk's open position on a contract is not what Delta holds (trading/position-check.ts), the same on two reads a
+ * minute apart -- or, with `rows` empty, that it agrees again. Per account, under one key, so a fix replaces the alarm.
+ */
+export function positionCheckAlert(o: { account: string; rows: readonly { symbol: string; desk: number; delta: number }[]; at: number }): Alert {
+  const n = (x: number) => (x > 0 ? `+${x}` : `${x}`);
+  return {
+    key: `positions:${o.account}`,
+    text: o.rows.length
+      ? lines(
+        `⚠️ <b>POSITIONS OFF · ${escape(o.account)}</b>`, '',
+        ...o.rows.slice(0, 15).map((r) => `${escape(r.symbol)}: desk ${n(r.desk)} · Delta ${n(r.delta)}`),
+        o.rows.length > 15 ? `... and ${o.rows.length - 15} more` : null, '',
+        'The same on two reads a minute apart. A position opened by hand in Delta\'s app shows here too; anything else, check the trade on the desk and on Delta.', '',
+        `🕒 ${istTime(o.at)} IST`,
+      )
+      : lines(`✅ <b>POSITIONS AGREE · ${escape(o.account)}</b>`, '', `Desk and Delta hold the same again, at ${istTime(o.at)} IST.`),
+  };
+}
+
 // -------------------------------------------------------------- formatting
 
 /** Prices -- the option's and the perp's -- always to two decimals (owner, 2 Oct 2026): 90.00, 100.50, 84,612.37. */

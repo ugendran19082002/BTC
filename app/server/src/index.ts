@@ -4,24 +4,24 @@ import { authFromEnv } from './auth/service.js';
 import { loadDays } from './backtest/backtest.js';
 import { brokerAccounts, envKeyLeft } from './delta/accounts.js';
 import { refreshBrokerAccounts } from './http/routes/accounts.routes.js';
-import { deskOpen, initTradingService, tradingServiceFor } from './trading/service.js';
+import { deskOpen, initTradingService, tradingServiceFor, tradingServices } from './trading/service.js';
 import { onOptionExit } from './trading/option-exit.js';
 import { autoMethodsDeps, initStrategyStore } from './http/routes/strategy.routes.js';
 import { StrategyRunner } from './strategy/runner.js';
 import { runAutoMethodsAlone } from './strategy/auto-methods.js';
-import { liveTickers, startTickerPoller, startTickerSocket } from './market/delta.js';
+import { liveTickers, startTickerPoller, startTickerSocket, tickerFeedHealth } from './market/delta.js';
 import { liveChain } from './market/chain.js';
 import { readMarket } from './market/moves.js';
 import { marketSchema } from './market/oi-history.js';
 import { errorLog } from './observability/errors.js';
 import { uiSettings } from './ui/settings.js';
 import { deskLog, hasDeskLog, setDeskLog } from './observability/desk-log.js';
-import { takeDeskLock } from './db/desk-lock.js';
+import { deskLockOk, takeDeskLock } from './db/desk-lock.js';
 import { captureOptionSnapshots, optionSnapshotsSchema } from './market/option-snapshots.js';
 import { captureBoard, chainFeaturesSchema } from './market/chain-features.js';
 import { wallWithinEm } from './http/routes/desk.routes.js';
 import { captureIndex, indexSchema } from './market/index-1m.js';
-import { capturePerpSnapshot, flowSchema, flushTradeFlow, onPerpPrint, perpMinuteFromTape, perpTape, startFlowSocket } from './market/flow.js';
+import { capturePerpSnapshot, flowFeedHealth, flowSchema, flushTradeFlow, onPerpPrint, perpMinuteFromTape, perpTape, startFlowSocket } from './market/flow.js';
 import { gradeLive, LIVE_GRADE_MS } from './entry/live-grade.js';
 import { deskMetrics, noteSignalRun } from './observability/desk-metrics.js';
 import { fetchOptionMarks } from './market/option-marks.js';
@@ -41,7 +41,9 @@ import { ledgerSchema, ledgerTick, resumeSync } from './ledger/ledger.js';
 import { pruneSignals, recordSignals, signalsSchema } from './entry/signals.js';
 import { methodsSchema } from './entry/catalogue.js';
 import { readEntryContext } from './entry/read.js';
-import { privateShadowSchema, startPrivateShadow } from './delta/private-shadow.js';
+import { privateShadowMetrics, privateShadowSchema, startPrivateShadow } from './delta/private-shadow.js';
+import { startHealthWatch } from './observability/health-watch.js';
+import { startPositionCheck } from './trading/position-check.js';
 
 /**
  * Start the desk.
@@ -140,6 +142,40 @@ startPrivateShadow(config.privateWs, {
   onEvent: (accountId, e) => { if (deskOpen(accountId)) tradingServiceFor(accountId)?.hearOrder(e); },
 });
 if (config.privateWs === 'off') app.log.info('private socket: off (DELTA_PRIVATE_WS=off)');
+/*
+ * The desk's health on Telegram (19 Nov 2026, observability/health-watch.ts): the thread held two seconds or more, the
+ * option tickers or the trade flow silent two minutes, an account's private socket down two minutes -- and each back.
+ * From what is measured already: nothing asked of Delta, nothing read from the database.
+ */
+const accountName = (id: number) => brokerAccounts().get(id)?.name ?? `Account ${id}`;
+startHealthWatch({
+  probes: {
+    ticker: () => tickerFeedHealth(),
+    flow: () => flowFeedHealth(),
+    privateSockets: () => privateShadowMetrics().accounts.map((a) => ({
+      accountId: a.accountId, name: accountName(a.accountId), live: a.live, lastMessageAt: a.socket.lastMessageAt,
+    })),
+    inCharge: deskLockOk,
+  },
+  notify: (a) => desk.notifier?.notify(a),
+});
+/*
+ * Each account's open positions against Delta's, contract by contract, every quarter hour (19 Nov 2026,
+ * trading/position-check.ts): one GET an account, skipped past half its quota; told only of a difference still there
+ * a minute later. The stops and targets are audited apart, every few seconds (trading/leg-audit.ts).
+ */
+startPositionCheck({
+  desks: () => tradingServices().map((d) => ({
+    accountId: d.accountId,
+    name: d.accountId === null ? 'Desk' : accountName(d.accountId),
+    live: d.mode === 'live',
+    open: () => d.store.open(),
+    positions: () => d.positions(),
+    quotaUsedPct: () => d.quotaUsedPct(),
+  })),
+  inCharge: deskLockOk,
+  notify: (a) => desk.notifier?.notify(a),
+});
 {
   const accounts = brokerAccounts();
   // Every active account trades, each on a desk of its own; the default is only which comes first.
