@@ -554,6 +554,8 @@ export const TARGET_NOWHERE_MS = 60_000;
  * missing this long, read after read (`entryLost`).
  */
 export const ENTRY_NOWHERE_MS = 120_000;
+/** How long an entry Delta shows "closed" with no fill price is left before the contract's fills decide it (20 Nov 2026). */
+export const ENTRY_UNPRICED_MS = 30_000;
 /**
  * The board's quote is taken for the fast watch's look while this fresh, by Delta's own time (22 Oct 2026). The socket
  * delivers it about a second after Delta takes it; Delta's own REST answer was 0.8-2.7 s old asked past its CDN, and a
@@ -834,6 +836,8 @@ export class TradeEngine {
   private readonly targetNowhere = new Map<string, number>();
   /** Since when each unfilled entry has been found nowhere (`ENTRY_NOWHERE_MS`). In memory: a restart looks again. */
   private readonly entryNowhere = new Map<string, number>();
+  /** Since when each entry has read "closed" with nothing priced (`ENTRY_UNPRICED_MS`). In memory: a restart looks again. */
+  private readonly entryUnpricedSince = new Map<string, number>();
   /** When each trade's offer and mark were first seen through its stop together (`STOP_CONFIRM_FAST_MS`). In memory, like `stopSince`. */
   private readonly bothSince = new Map<string, number>();
   /** Trades whose close has been given up on at the market, so that is said once. */
@@ -1602,6 +1606,16 @@ export class TradeEngine {
       rec = await this.commit(rec, { t: 'entry_cancelled', remaining: Math.max(0, entry.size - entry.filledSize), at: this.now() });
       if (isDone(rec.state)) return rec.state;
     }
+    /*
+     * "Closed" with nothing priced (20 Nov 2026, 12:35-14:27 IST: 22 entries over the four accounts read back as closed,
+     * unfilled 0, no average fill price -- and Delta held no position from any of them). Read as filled, it was never
+     * absorbed (`absorb` takes no fill without a price), and, seen, never "nowhere" either: "entry pending" until the
+     * contract expired, each holding a place under "at most open". The contract's fills decide it (`entryUnpriced`).
+     */
+    if (entry && !entryDone && entry.status === 'filled' && entry.averageFillPrice === null && rec.state.entrySize === 0) {
+      const decided = await this.entryUnpriced(rec, entry);
+      if (decided) { rec = decided; if (isDone(rec.state)) return rec.state; }
+    } else this.entryUnpricedSince.delete(tradeId);
     // Seen: whatever it says is the record's. Asked and found nowhere: counted toward giving it up (`entryLost`).
     if (entry || entryDone) this.entryNowhere.delete(tradeId);
     else if (entry === null) {
@@ -3194,6 +3208,33 @@ export class TradeEngine {
   }
 
   /**
+   * An entry Delta reads back as closed, nothing left unfilled, and no fill price (`pollInner`, 20 Nov 2026). Left for
+   * `ENTRY_UNPRICED_MS`, then the contract's fills since it was sent decide: this order's own fills are its fill, priced
+   * as Delta filled it; none -- the fills read -- and Delta took it off unfilled (`entry_cancelled`). A read that fails
+   * decides nothing. Returns null while it is still to be waited for.
+   */
+  private async entryUnpriced(rec: TradeRecord, entry: ExchangeOrder): Promise<TradeRecord | null> {
+    const id = rec.state.tradeId;
+    if (rec.state.phase !== 'entry_pending' || rec.state.entrySize > 0) return null;
+    const since = this.entryUnpricedSince.get(id) ?? this.now();
+    this.entryUnpricedSince.set(id, since);
+    if (this.now() - since < ENTRY_UNPRICED_MS || !this.exchange.getFills) return null;
+    const sentAt = rec.events.find((e) => e.t === 'entry_submitted')?.at ?? since;
+    const fills = await this.exchange.getFills(rec.plan.symbol, sentAt - 60_000).catch(() => null);
+    if (fills === null) return null;
+    this.entryUnpricedSince.delete(id);
+    const mine = fills.filter((f) => f.orderId === entry.orderId && f.size > 0);
+    const size = mine.reduce((n, f) => n + f.size, 0);
+    if (size > 0) {
+      const price = mine.reduce((n, f) => n + f.price * f.size, 0) / size;
+      return this.absorb(rec, { ...entry, filledSize: Math.min(size, entry.size), averageFillPrice: price }, 'entry');
+    }
+    this.entryDeadline.delete(id);
+    this.entryNowhere.delete(id);
+    return this.commit(rec, { t: 'entry_cancelled', remaining: entry.size, at: this.now() });
+  }
+
+  /**
    * An entry Delta acknowledged, then no longer shows anywhere: not resting, not by its own id, not in the contract's
    * history (16 Nov 2026, 09:30 IST: P-BTC-63000-161126, account 1). Delta took it off unfilled -- its lookup by client
    * id answers "not found" for some cancelled orders, and a busy strike pushes it past the newest two hundred. The poll
@@ -3211,7 +3252,17 @@ export class TradeEngine {
     const since = this.entryNowhere.get(id) ?? this.now();
     this.entryNowhere.set(id, since);
     const sentAt = rec.events.find((e) => e.t === 'entry_submitted')?.at ?? since;
-    if (this.now() < sentAt + Math.max(0, rec.plan.entry.timeoutMs) || this.now() - since < ENTRY_NOWHERE_MS) return null;
+    if (this.now() - since < ENTRY_NOWHERE_MS) return null;
+    /*
+     * Inside its window too (20 Nov 2026): a signal's entry rests until the strategy's entry window closes -- 17:29 --
+     * so one Delta had taken off at 12:35 held its place under "at most open" for five hours. Given up early only when
+     * the account's whole resting book has been read and it is not on it: an order still resting is always there.
+     */
+    const windowOver = this.now() >= sentAt + Math.max(0, rec.plan.entry.timeoutMs);
+    if (!windowOver) {
+      const book = this.exchange.getRestingBook ? await this.exchange.getRestingBook().catch(() => null) : null;
+      if (book === null || book.has(rec.state.entryOrderId ?? clientId(id, 'entry'))) return null;
+    }
     // A fill the look-ups missed would be a position: the fills are read first, and a read that fails waits.
     if (this.exchange.getFills) {
       const fills = await this.exchange.getFills(rec.plan.symbol, sentAt - 60_000).catch(() => null);
@@ -3223,7 +3274,9 @@ export class TradeEngine {
     this.entryDeadline.delete(id);
     return await this.commit(after, {
       t: 'aborted',
-      reason: 'entry not found on Delta after its window -- taken off unfilled; no position taken',
+      reason: windowOver
+        ? 'entry not found on Delta after its window -- taken off unfilled; no position taken'
+        : 'entry not found on Delta nor on its book for two minutes -- taken off unfilled; no position taken',
       at: this.now(),
     });
   }

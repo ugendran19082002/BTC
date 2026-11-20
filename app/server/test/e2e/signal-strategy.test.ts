@@ -1995,6 +1995,71 @@ test('swap on every signal is set per account: a group\'s own is refused, and it
   assert.match(r.body.error, /per account, not per group/);
 });
 
+test('[critical] with the account\'s Delta quota at 70% or more, no swap is made: at the cap the signal is skipped, under it sold as ever -- nothing bought back (20 Nov 2026)', async () => {
+  const { SWAP_QUOTA_PCT } = await import('../../src/strategy/runner.js');
+  await freshDesk();
+  const restoreStrikes = extraStrikes(4);
+  const svc = tradingService() as unknown as { quotaUsedPct: () => number };
+  const realQuota = svc.quotaUsedPct;
+  try {
+    const each = { ...config, signal: { ...config.signal, maxOpen: 10 }, liveOrders: true };
+    assert.equal((await api('POST', '/api/strategies', { name: 'Sig quota', config: each })).status, 200);
+    await api('POST', '/api/strategies/sig-quota/enabled', { enabled: true });
+    await tradingService().settings.set('scheduler_enabled', '1');
+    clock = TEN;
+    assert.equal((await api('POST', '/api/strategies/max-open', { max: 10 })).status, 200);
+    await api('POST', '/api/strategies/signal-swap', { swap: { on: true, pct: 90, perMin: 20 } });
+
+    quoteBoard();
+    await runner.onSignal(signal());
+    const first = (await runsOf('sig-quota')).at(-1)!;
+    assert.equal(first.status, 'placed', first.detail);
+    const sold = await until(
+      () => one<{ position: number; symbol: string; state: any }>('SELECT position, symbol, state FROM trades WHERE trade_id = $1', [first.trade_id]),
+      (t) => t?.position === -1, 'the first sale filled');
+    const soldAt = sold!.state.entryAvgPrice as number;
+
+    // Kept 95%, far past 90 -- but the login is busy: sold as ever, and the sale is left alone.
+    svc.quotaUsedPct = () => SWAP_QUOTA_PCT + 5;
+    quoteBoard();
+    paper().setQuote({ symbol: sold!.symbol, bid: soldAt * 0.04, ask: soldAt * 0.05, bidSize: 5_000, askSize: 5_000, mark: soldAt * 0.045, ts: Date.now() });
+    await runner.onSignal(signal());
+    const second = (await runsOf('sig-quota')).at(-1)!;
+    assert.equal(second.status, 'placed', second.detail);
+    assert.match(second.detail, /not swapped: Delta's quota for this account is at 75%/);
+    assert.equal((await one<{ position: number }>('SELECT position FROM trades WHERE trade_id = $1', [first.trade_id]))!.position, -1, 'not bought back');
+
+    // At the cap, the same: the signal skipped with the reason, nothing bought back.
+    await api('POST', '/api/strategies/signal-swap', { swap: null });
+    assert.equal((await api('POST', '/api/strategies/max-open', { max: 2 })).status, 200);
+    await api('POST', '/api/strategies/cap-swap', { swap: { on: true, pct: 70, perMin: 20 } });
+    await until(() => one<{ position: number }>('SELECT position FROM trades WHERE trade_id = $1', [second.trade_id]), (t) => t?.position === -1, 'the second sale filled');
+    quoteBoard();
+    paper().setQuote({ symbol: sold!.symbol, bid: soldAt * 0.04, ask: soldAt * 0.05, bidSize: 5_000, askSize: 5_000, mark: soldAt * 0.045, ts: Date.now() });
+    await runner.onSignal(signal());
+    const third = (await runsOf('sig-quota')).at(-1)!;
+    assert.equal(third.status, 'skipped', third.detail);
+    assert.match(third.detail, /quota for this account is at 75% \(no swap at 70% or more\): nothing bought back to make room/);
+    assert.equal((await one<{ position: number }>('SELECT position FROM trades WHERE trade_id = $1', [first.trade_id]))!.position, -1, 'not bought back at the cap either');
+
+    // The login quiet again: the swap is made as ever.
+    svc.quotaUsedPct = () => 10;
+    quoteBoard();
+    paper().setQuote({ symbol: sold!.symbol, bid: soldAt * 0.04, ask: soldAt * 0.05, bidSize: 5_000, askSize: 5_000, mark: soldAt * 0.045, ts: Date.now() });
+    await runner.onSignal(signal());
+    const fourth = (await runsOf('sig-quota')).at(-1)!;
+    assert.equal(fourth.status, 'placed', fourth.detail);
+    assert.match(fourth.detail, /made room: bought back/);
+  } finally {
+    svc.quotaUsedPct = realQuota;
+    restoreStrikes();
+    await api('POST', '/api/strategies/signal-swap', { swap: null });
+    await api('POST', '/api/strategies/cap-swap', { swap: null });
+    await api('POST', '/api/strategies/max-open', { max: null });
+    await api('POST', '/api/strategies/sig-quota/enabled', { enabled: false });
+  }
+});
+
 // ------------------------------------------------------------ making room at the cap (16 Nov 2026)
 
 test('[critical] at the cap with "make room" on: the sale that has kept 70% is bought back and the signal sold in its place -- below 70%, skipped as ever', async () => {

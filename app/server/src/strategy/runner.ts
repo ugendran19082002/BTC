@@ -66,6 +66,13 @@ const BY_WORDS: Record<VolBy, string> = { atr: 'ATR 2h', iv: 'ATM IV' };
 
 /** Often enough that the grace window has many chances; rarely enough to be dull. */
 const TICK_MS = 20_000;
+/**
+ * A swap is optional work (20 Nov 2026): 1,275 of them between 10:18 and 14:25, each a buy-back and a sale, came in
+ * bursts at the half-hour signals and took the logins to 86-97% of Delta's five-minute quota -- 105 refusals, a stop's
+ * cancel among them, an entry's fill heard seven minutes late. At or past this share of its login's quota an account
+ * makes no swap: at the cap the signal is skipped, as with no sale far enough; under it, sold as ever.
+ */
+export const SWAP_QUOTA_PCT = 70;
 /** How old the board's price of an open sale may be for it to be weighed for a buy-back at the cap (`makeRoom`). */
 const CAP_SWAP_QUOTE_FRESH_MS = 30_000;
 /**
@@ -985,6 +992,7 @@ export class StrategyRunner {
        * None found, or the buy-back not gone through: the signal is sold as ever -- this never costs a signal its entry.
        */
       const pick = await this.swapPick(openNow, null, everySwap, this.signalSwapTimes);
+      if (!pick.ok && pick.why === 'quota') placed = `${what} · not swapped: Delta's quota for this account is at ${pick.usedPct}%`;
       if (pick.ok) {
         const p = await svc.wouldPlace(args);
         if (!p.ok) { await finish('refused', `${what} -- refused: ${failureText(p)} (nothing bought back)`); return; }
@@ -1021,7 +1029,12 @@ export class StrategyRunner {
   ): Promise<{ ok: true; words: string } | { ok: false; why: string }> {
     const pick = await this.swapPick(openNow, side, swap, this.swapTimes);
     if (!pick.ok) {
-      return { ok: false, why: pick.why === 'per-minute' ? `${swap.perMin} sales already bought back this minute to make room` : `no open ${side ? `${side} ` : ''}sale has kept ${swap.pct}% of its premium to make room` };
+      return {
+        ok: false,
+        why: pick.why === 'per-minute' ? `${swap.perMin} sales already bought back this minute to make room`
+          : pick.why === 'quota' ? `Delta's quota for this account is at ${pick.usedPct}% (no swap at ${SWAP_QUOTA_PCT}% or more): nothing bought back to make room`
+          : `no open ${side ? `${side} ` : ''}sale has kept ${swap.pct}% of its premium to make room`,
+      };
     }
     const out = await this.buyBack(openNow, pick, this.swapTimes, 'to make room at the cap for a new signal');
     return out.ok ? out : { ok: false, why: `the buy-back of ${out.symbol} to make room did not go (${out.note})` };
@@ -1040,13 +1053,15 @@ export class StrategyRunner {
     side: 'CE' | 'PE' | null,
     swap: CapSwap,
     times: Map<string, number[]>,
-  ): Promise<{ ok: true; tradeId: string; kept: number } | { ok: false; why: 'per-minute' | 'none' }> {
+  ): Promise<{ ok: true; tradeId: string; kept: number } | { ok: false; why: 'per-minute' | 'none' } | { ok: false; why: 'quota'; usedPct: number }> {
     const svc = tradingService();
     const key = String(svc.accountId ?? 'desk');
     const now = this.now();
     const recent = (times.get(key) ?? []).filter((t) => now - t < 60_000);
     times.set(key, recent);
     if (recent.length >= swap.perMin) return { ok: false, why: 'per-minute' };
+    const used = svc.quotaUsedPct();
+    if (used >= SWAP_QUOTA_PCT) return { ok: false, why: 'quota', usedPct: Math.round(used) };
     const live = svc.mode === 'live';
     const priced = new Map<string, number | null>();
     const askOf = async (symbol: string, position: number): Promise<number | null> => {
