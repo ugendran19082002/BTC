@@ -1917,6 +1917,84 @@ test('[critical] a group\'s own at most open: its strategies held to it over the
   }
 });
 
+// ------------------------------------------------------------ swap on every signal (20 Nov 2026)
+
+test('[critical] swap on every signal: under the cap, a sale that has kept 90% is bought back and the signal sold -- under 90%, the signal is sold as ever and nothing bought back', async () => {
+  await freshDesk();
+  const restoreStrikes = extraStrikes(4);
+  try {
+    const each = { ...config, signal: { ...config.signal, maxOpen: 10 }, liveOrders: true };
+    assert.equal((await api('POST', '/api/strategies', { name: 'Sig every', config: each })).status, 200);
+    await api('POST', '/api/strategies/sig-every/enabled', { enabled: true });
+    await tradingService().settings.set('scheduler_enabled', '1');
+    clock = TEN;
+    assert.equal((await api('POST', '/api/strategies/max-open', { max: 10 })).status, 200);
+    // Off unless set.
+    assert.deepEqual((await api('GET', '/api/strategies')).body.signalSwap, { on: false, pct: 90, perMin: 20 });
+    assert.equal((await api('POST', '/api/strategies/signal-swap', { swap: { on: true, pct: 100 } })).status, 422);
+    const saved = await api('POST', '/api/strategies/signal-swap', { swap: { on: true, pct: 90, perMin: 20 } });
+    assert.deepEqual([saved.status, saved.body.signalSwap], [200, { on: true, pct: 90, perMin: 20 }]);
+    assert.deepEqual((await api('GET', '/api/strategies')).body.signalSwap, { on: true, pct: 90, perMin: 20 });
+
+    // The first sale: nothing open to swap, sold as ever.
+    quoteBoard();
+    await runner.onSignal(signal());
+    const first = (await runsOf('sig-every')).at(-1)!;
+    assert.equal(first.status, 'placed', first.detail);
+    assert.doesNotMatch(first.detail, /swapped/);
+    const sold = await until(
+      () => one<{ position: number; symbol: string; state: any }>('SELECT position, symbol, state FROM trades WHERE trade_id = $1', [first.trade_id]),
+      (t) => t?.position === -1, 'the first sale filled');
+    const soldAt = sold!.state.entryAvgPrice as number;
+
+    // It has kept 85% (under 90): the next signal is sold as ever -- two open now -- and the first is left alone.
+    quoteBoard();
+    paper().setQuote({ symbol: sold!.symbol, bid: soldAt * 0.14, ask: soldAt * 0.15, bidSize: 5_000, askSize: 5_000, mark: soldAt * 0.145, ts: Date.now() });
+    await runner.onSignal(signal());
+    const second = (await runsOf('sig-every')).at(-1)!;
+    assert.equal(second.status, 'placed', second.detail);
+    assert.doesNotMatch(second.detail, /swapped/, 'nothing at 90%: sold directly');
+    assert.equal((await one<{ position: number }>('SELECT position FROM trades WHERE trade_id = $1', [first.trade_id]))!.position, -1, 'not bought back');
+    await until(() => one<{ position: number }>('SELECT position FROM trades WHERE trade_id = $1', [second.trade_id]), (t) => t?.position === -1, 'the second sale filled');
+
+    // Now the first has kept 92%: the next signal buys it back first, then is sold -- one out, one in.
+    quoteBoard();
+    paper().setQuote({ symbol: sold!.symbol, bid: soldAt * 0.07, ask: soldAt * 0.08, bidSize: 5_000, askSize: 5_000, mark: soldAt * 0.075, ts: Date.now() });
+    await runner.onSignal(signal());
+    const third = (await runsOf('sig-every')).at(-1)!;
+    assert.equal(third.status, 'placed', third.detail);
+    assert.match(third.detail, new RegExp(`swapped: bought back ${sold!.symbol} sold @ ${soldAt} \\(92% kept\\)`));
+    const out = await until(
+      () => one<{ position: number; state: any }>('SELECT position, state FROM trades WHERE trade_id = $1', [first.trade_id]),
+      (t) => t?.position === 0, 'the 92% sale bought back');
+    assert.match(JSON.stringify(out!.state), /swap on every signal/, 'the close says why');
+    assert.equal((await one<{ position: number }>('SELECT position FROM trades WHERE trade_id = $1', [second.trade_id]))!.position, -1, 'the 85% one stays');
+
+    // Switched off: a sale far past 90% stays, and the signal is sold as ever.
+    assert.deepEqual((await api('POST', '/api/strategies/signal-swap', { swap: null })).body.signalSwap, { on: false, pct: 90, perMin: 20 });
+    quoteBoard();
+    paper().setQuote({ symbol: sold!.symbol, bid: 0.1, ask: 0.2, bidSize: 5_000, askSize: 5_000, mark: 0.15, ts: Date.now() });
+    await runner.onSignal(signal());
+    const fourth = (await runsOf('sig-every')).at(-1)!;
+    assert.equal(fourth.status, 'placed', fourth.detail);
+    assert.doesNotMatch(fourth.detail, /swapped/);
+    assert.equal((await one<{ position: number }>('SELECT position FROM trades WHERE trade_id = $1', [second.trade_id]))!.position, -1, 'off: nothing bought back');
+  } finally {
+    restoreStrikes();
+    await api('POST', '/api/strategies/signal-swap', { swap: null });
+    await api('POST', '/api/strategies/max-open', { max: null });
+    await api('POST', '/api/strategies/sig-every/enabled', { enabled: false });
+  }
+});
+
+test('swap on every signal is set per account: a group\'s own is refused, and it never touches another account', async () => {
+  const g = await api('POST', '/api/strategy-groups', { name: 'Every swap group' });
+  const gid = g.body.group?.id ?? g.body.id;
+  const r = await api('POST', '/api/strategies/signal-swap', { swap: { on: true }, groupId: gid });
+  assert.equal(r.status, 422);
+  assert.match(r.body.error, /per account, not per group/);
+});
+
 // ------------------------------------------------------------ making room at the cap (16 Nov 2026)
 
 test('[critical] at the cap with "make room" on: the sale that has kept 70% is bought back and the signal sold in its place -- below 70%, skipped as ever', async () => {

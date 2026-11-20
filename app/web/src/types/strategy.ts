@@ -269,6 +269,15 @@ export const CAP_SWAP_MIN_PCT = 50;
 export const CAP_SWAP_MAX_PCT = 95;
 export const CAP_SWAP_MAX_PER_MIN = 120;
 /**
+ * Swap on every signal, one account's (server `SIGNAL_SWAP_KEY`, 20 Nov 2026): under the cap, a new signal first buys back
+ * the open sale that has kept the most of its premium -- this % or more -- then is sold; none that far, sold as ever. Off
+ * unless set. At the cap, "Swap at full cap" is the rule.
+ */
+export type SignalSwap = CapSwap;
+export const SIGNAL_SWAP_DEFAULT: Readonly<SignalSwap> = { on: false, pct: 90, perMin: 20 };
+export const SIGNAL_SWAP_MIN_PCT = 50;
+export const SIGNAL_SWAP_MAX_PCT = 99;
+/**
  * Re-entry after an option exit, one account's (server `REENTRY_KEY`, 1 Nov 2026): after an SL the other side, after a
  * target the same side -- each in its own IST time range, at the strategy's own lots. `entries` trades at once from the
  * exit of the signal's own trade, each re-entry after it followed by one; no most in a row (2 Nov 2026).
@@ -653,6 +662,8 @@ export type StrategyStatus = {
   signalReentry?: Reentry & { today?: { sl: number; tgt: number } };
   /** Swap at full cap, this account's (16 Nov 2026). Absent on an older server. */
   signalCapSwap?: CapSwap;
+  /** Swap on every signal, this account's (20 Nov 2026); absent from an older server. */
+  signalSwap?: SignalSwap;
   /** The strike holding the most open trades now, and how many; null with none open. */
   busiestStrike?: { symbol: string; open: number } | null;
   /** The desk's limit on lots short at once (the order gate's), and the lots it holds short now. Absent on an older server. */

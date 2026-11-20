@@ -2,7 +2,7 @@ import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setCapSwap, setMomentumGuard, setReentry, setScheduler, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setStrategyEnabled, setZoneFresh, takeIntoGroup } from '@/api/strategy';
+import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setCapSwap, setSignalSwap, setMomentumGuard, setReentry, setScheduler, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setStrategyEnabled, setZoneFresh, takeIntoGroup } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus, type VolLevelNow } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { SideMax } from '@/components/strategy/SideMax';
 import { StrikeMax } from '@/components/strategy/StrikeMax';
 import { ZoneFresh } from '@/components/strategy/ZoneFresh';
 import { MomentumGuard } from '@/components/strategy/MomentumGuard';
-import { CapSwap } from '@/components/strategy/CapSwap';
+import { CapSwap, SignalSwap } from '@/components/strategy/CapSwap';
 import { Reentry } from '@/components/strategy/Reentry';
 import type { AccountLimits } from '@/components/strategy/GroupLimits';
 import { refreshGroupIndex } from '@/hooks/useGroupOf';
@@ -768,6 +768,10 @@ export function SignalStrategiesCard() {
           {/* Swap at full cap: a trade that has kept its % bought back to make room for a new signal (16 Nov 2026). Absent on a server from before it. */}
           {data?.signalCapSwap && (
             <CapSwap swap={data.signalCapSwap} busy={busy === 'cap-swap'} onSave={(w) => act('cap-swap', () => setCapSwap(w))} />
+          )}
+          {/* Swap on every signal, this account's: a trade that has kept its % bought back before each new signal (20 Nov 2026). */}
+          {data?.signalSwap && accountScope() !== null && (
+            <SignalSwap swap={data.signalSwap} busy={busy === 'signal-swap'} onSave={(w) => act('signal-swap', () => setSignalSwap(w))} />
           )}
           {data && (
             <span className="desk-badge-pill"

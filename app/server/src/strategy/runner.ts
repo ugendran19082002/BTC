@@ -9,7 +9,7 @@ import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMin
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting, groupSetting } from '../db/settings.js';
 import { groupBlock, groupLimitsOf, groupOwnOf } from './group-limits.js';
-import { CAP_SWAP_KEY, capSwapOf, pickCapSwap, type CapSwap, type SwapCandidate, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, momentumWords, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { CAP_SWAP_KEY, capSwapOf, pickCapSwap, SIGNAL_SWAP_KEY, signalSwapOf, type CapSwap, type SwapCandidate, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, momentumWords, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import type { OptionExit } from '../trading/option-exit.js';
@@ -808,6 +808,8 @@ export class StrategyRunner {
      * back to make its place (`makeRoom`) -- so a signal that fails later on (no strike, a gate) never costs a trade.
      */
     const swap = capSwapOf(accountSetting(svc.settings, CAP_SWAP_KEY, svc.accountId));
+    // Swap on every signal (`SIGNAL_SWAP_KEY`, 20 Nov 2026): under the cap, a sale near its target makes way for the signal.
+    const everySwap = signalSwapOf(accountSetting(svc.settings, SIGNAL_SWAP_KEY, svc.accountId));
     let full: { why: string; side: 'CE' | 'PE' | null } | null = null;
     if (cap > 0 && openNow.length >= cap) {
       const why = `the desk already has ${openNow.length} open (positions and working orders, all strategies) -- at most ${cap} at once across all`;
@@ -975,6 +977,20 @@ export class StrategyRunner {
       const room = await this.makeRoom(openNow, full.side, swap);
       if (!room.ok) { await finish('skipped', `${full.why} -- ${room.why}${block}`); return; }
       placed = `${what} · made room: ${room.words}`;
+    } else if (everySwap.on && !re) {
+      /*
+       * Under the cap with "swap on every signal" on: the sale that has kept the most -- `everySwap.pct` or more -- is
+       * looked for on the prices the desk already holds (nothing asked of Delta); found, the gates are asked first, as at
+       * the cap, so nothing is bought back for an order they would refuse; then it is bought back and the signal sold.
+       * None found, or the buy-back not gone through: the signal is sold as ever -- this never costs a signal its entry.
+       */
+      const pick = await this.swapPick(openNow, null, everySwap, this.signalSwapTimes);
+      if (pick.ok) {
+        const p = await svc.wouldPlace(args);
+        if (!p.ok) { await finish('refused', `${what} -- refused: ${failureText(p)} (nothing bought back)`); return; }
+        const out = await this.buyBack(openNow, pick, this.signalSwapTimes, 'for a new signal (swap on every signal)');
+        placed = out.ok ? `${what} · swapped: ${out.words}` : `${what} · not swapped: ${out.why}`;
+      }
     }
     const res = await svc.place(args);
     if (!res.ok) {
@@ -999,16 +1015,38 @@ export class StrategyRunner {
    * already closing, part-filled, or with no fresh price is not weighed. Done: the close is sent and the trade is closing.
    */
   private async makeRoom(
-    openNow: readonly { plan: { symbol: string; optionSide: 'CE' | 'PE' }; state: { tradeId: string; phase: string; position: number; entryAvgPrice: number | null; entrySize: number; requestedSize: number; closing?: unknown } }[],
+    openNow: readonly SwapTrade[],
     side: 'CE' | 'PE' | null,
     swap: CapSwap,
   ): Promise<{ ok: true; words: string } | { ok: false; why: string }> {
+    const pick = await this.swapPick(openNow, side, swap, this.swapTimes);
+    if (!pick.ok) {
+      return { ok: false, why: pick.why === 'per-minute' ? `${swap.perMin} sales already bought back this minute to make room` : `no open ${side ? `${side} ` : ''}sale has kept ${swap.pct}% of its premium to make room` };
+    }
+    const out = await this.buyBack(openNow, pick, this.swapTimes, 'to make room at the cap for a new signal');
+    return out.ok ? out : { ok: false, why: `the buy-back of ${out.symbol} to make room did not go (${out.note})` };
+  }
+
+  /** Buy-backs made by "swap on every signal", by account: when, for its own per-minute limit (`SIGNAL_SWAP_KEY`). */
+  private readonly signalSwapTimes = new Map<string, number[]>();
+
+  /**
+   * The open sale to buy back, if any: of those on `side` (either when null), fully filled, not closing and not already
+   * being bought back, the one that has kept the most of its premium -- `swap.pct` per cent or more -- priced at the ask on
+   * the board the desk holds (`CAP_SWAP_QUOTE_FRESH_MS` fresh). Held to `swap.perMin` a minute, counted in `times`.
+   */
+  private async swapPick(
+    openNow: readonly SwapTrade[],
+    side: 'CE' | 'PE' | null,
+    swap: CapSwap,
+    times: Map<string, number[]>,
+  ): Promise<{ ok: true; tradeId: string; kept: number } | { ok: false; why: 'per-minute' | 'none' }> {
     const svc = tradingService();
     const key = String(svc.accountId ?? 'desk');
     const now = this.now();
-    const recent = (this.swapTimes.get(key) ?? []).filter((t) => now - t < 60_000);
-    this.swapTimes.set(key, recent);
-    if (recent.length >= swap.perMin) return { ok: false, why: `${swap.perMin} sales already bought back this minute to make room` };
+    const recent = (times.get(key) ?? []).filter((t) => now - t < 60_000);
+    times.set(key, recent);
+    if (recent.length >= swap.perMin) return { ok: false, why: 'per-minute' };
     const live = svc.mode === 'live';
     const priced = new Map<string, number | null>();
     const askOf = async (symbol: string, position: number): Promise<number | null> => {
@@ -1031,16 +1069,28 @@ export class StrategyRunner {
       cands.push({ tradeId: st.tradeId, side: t.plan.optionSide, soldAt: st.entryAvgPrice, askNow: await askOf(t.plan.symbol, st.position) });
     }
     const pick = pickCapSwap(cands, side, swap.pct);
-    if (!pick) return { ok: false, why: `no open ${side ? `${side} ` : ''}sale has kept ${swap.pct}% of its premium to make room` };
+    return pick ? { ok: true, ...pick } : { ok: false, why: 'none' };
+  }
+
+  /** Buy the picked sale back, under its own trade's lock (`svc.close`), saying why; counted in `times` once it has gone. */
+  private async buyBack(
+    openNow: readonly SwapTrade[],
+    pick: { tradeId: string; kept: number },
+    times: Map<string, number[]>,
+    why: string,
+  ): Promise<{ ok: true; words: string } | { ok: false; why: string; symbol: string; note: string }> {
+    const svc = tradingService();
     const t = openNow.find((x) => x.state.tradeId === pick.tradeId)!;
     const keptPct = Math.round(pick.kept * 100);
     this.swapping.add(pick.tradeId);
     try {
-      const after = await svc.close(pick.tradeId, undefined, `bought back at ${keptPct}% kept to make room at the cap for a new signal`).catch(() => null);
+      const after = await svc.close(pick.tradeId, undefined, `bought back at ${keptPct}% kept ${why}`).catch(() => null);
       if (!after || (after.position !== 0 && after.phase !== 'exit_pending')) {
-        return { ok: false, why: `the buy-back of ${t.plan.symbol} to make room did not go (${after?.note ?? 'no answer'})` };
+        const note = after?.note ?? 'no answer';
+        return { ok: false, why: `the buy-back of ${t.plan.symbol} did not go (${note})`, symbol: t.plan.symbol, note };
       }
-      recent.push(now);
+      const key = String(svc.accountId ?? 'desk');
+      times.set(key, [...(times.get(key) ?? []), this.now()]);
       return { ok: true, words: `bought back ${t.plan.symbol} sold @ ${t.state.entryAvgPrice} (${keptPct}% kept)` };
     } finally {
       this.swapping.delete(pick.tradeId);
@@ -1055,6 +1105,9 @@ export class StrategyRunner {
   }
 }
 
+
+/** An open trade as the swaps weigh it (`makeRoom`, `swapPick`). */
+type SwapTrade = { plan: { symbol: string; optionSide: 'CE' | 'PE' }; state: { tradeId: string; phase: string; position: number; entryAvgPrice: number | null; entrySize: number; requestedSize: number; closing?: unknown } };
 
 /** Place one leg through the same service the order ticket uses. */
 async function svcPlace(

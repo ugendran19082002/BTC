@@ -1066,6 +1066,41 @@ export function pickCapSwap(cands: readonly SwapCandidate[], side: 'CE' | 'PE' |
 }
 
 /**
+ * Swap on every signal, one account's (owner, 20 Nov 2026: "max open full aana mattum illama, every new signal swap
+ * nadakra maari ... tgt 80, 90% editable ... irundha tgt exit panni new signal, else direct new signal"; default off).
+ * A signal about to be sold while the account is under its cap first buys back the account's open sale that has kept
+ * the most of its premium -- `pct` per cent or more, on either side -- and is then sold: one out, one in, the count
+ * unchanged. None that far: the signal is sold as ever. At the cap, Cap swap (`CAP_SWAP_KEY`) is the rule, as before.
+ * At most `perMin` such buy-backs a minute. Not studied before it was built (the owner's call): off unless set.
+ */
+export const SIGNAL_SWAP_KEY = 'signal_every_swap';
+export type SignalSwap = CapSwap;
+export const SIGNAL_SWAP_DEFAULT: Readonly<SignalSwap> = { on: false, pct: 90, perMin: 20 };
+export const SIGNAL_SWAP_MIN_PCT = 50;
+export const SIGNAL_SWAP_MAX_PCT = 99;
+const signalPctOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= SIGNAL_SWAP_MIN_PCT && n <= SIGNAL_SWAP_MAX_PCT;
+/** The setting as stored: the default for whatever is unset or unreadable. */
+export function signalSwapOf(raw: string | null | undefined): SignalSwap {
+  let v: Record<string, unknown> = {};
+  try { const x = raw ? JSON.parse(raw) : {}; if (x && typeof x === 'object' && !Array.isArray(x)) v = x; } catch { /* the default */ }
+  return {
+    on: v.on === true,
+    pct: signalPctOk(v.pct) ? v.pct : SIGNAL_SWAP_DEFAULT.pct,
+    perMin: swapPerMinOk(v.perMin) ? v.perMin : SIGNAL_SWAP_DEFAULT.perMin,
+  };
+}
+/** Why it cannot be saved, in words; null when it can. `null` itself is "back to the default" (off), and can. */
+export function signalSwapProblem(v: unknown): string | null {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return 'Swap on every signal is {"on": true, "pct": 90, "perMin": 20}.';
+  const { on, pct, perMin } = v as Record<string, unknown>;
+  if (typeof on !== 'boolean') return 'Say whether swap on every signal is on: true or false.';
+  if (pct !== undefined && !signalPctOk(pct)) return `The share of its premium a sale must have kept must be a whole per cent from ${SIGNAL_SWAP_MIN_PCT} to ${SIGNAL_SWAP_MAX_PCT}.`;
+  if (perMin !== undefined && !swapPerMinOk(perMin)) return `At most this many buy-backs a minute: a whole number from 1 to ${CAP_SWAP_MAX_PER_MIN}.`;
+  return null;
+}
+
+/**
  * Re-entry after an option exit, one account's (owner, 1 Nov 2026). A signal strategy's trade closed by its option's own
  * stop or target is followed at once by another sale by the same strategy, through every rule its signals pass but the
  * no-entry window -- each rule's own time range stands in for it:

@@ -1,5 +1,5 @@
 import { json, post } from '@/api/client';
-import type { MethodUpdate, MethodUpdateSource, CapSwap, MomentumGuard, Reentry, SignalTf, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
+import type { MethodUpdate, MethodUpdateSource, CapSwap, SignalSwap, MomentumGuard, Reentry, SignalTf, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
 import { accountScope, withAccount } from '@/lib/account-scope';
 import { offerSessionRecompute, type RecomputeOffer } from '@/lib/session-recompute-offer';
 
@@ -68,6 +68,9 @@ export const setReentry = (reentry: Reentry | null, groupId?: string) =>
 /** Swap at full cap, the shown account's: on or off, the % kept, buy-backs a minute; null, back to the default (off). */
 export const setCapSwap = (swap: CapSwap | null, groupId?: string) =>
   post<{ ok: true; signalCapSwap: CapSwap }>('/api/strategies/cap-swap', scoped({ swap }, groupId));
+/** Swap on every signal, this account's (20 Nov 2026): per account only; null is back to the default, off. */
+export const setSignalSwap = (swap: SignalSwap | null) =>
+  post<{ ok: true; signalSwap: SignalSwap }>('/api/strategies/signal-swap', scoped({ swap }));
 
 export const setSideMax = (side: 'CE' | 'PE', pct: number | null, groupId?: string) =>
   post<{ ok: true; signalSideMaxPct: { CE: number; PE: number } }>('/api/strategies/side-max', scoped({ side, pct }, groupId));
