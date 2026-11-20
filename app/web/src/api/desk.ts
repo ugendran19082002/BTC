@@ -239,3 +239,15 @@ export const getSessionLoss = () => json<SessionLossView>(withAccount('/api/desk
 /** One account's, by its id: the phone's Positions shows each account's on "All accounts" (6 Nov 2026). */
 export const getSessionLossOf = (account: number) => json<SessionLossView>(`/api/desk/session-loss?account=${account}`);
 export const saveSessionLoss = (setting: SessionLossSetting) => post<SessionLossView & { ok: true }>(withAccount('/api/desk/session-loss'), setting);
+/**
+ * The session's limit worked out again, by hand (20 Nov 2026): with lots changed after the session began, the limit is
+ * still the one worked out at its start. `GET` what it would become -- or why it will not -- for the confirm box; `POST`
+ * makes it so. `account`: one account's (the strategy screen's offer after a lot change), else the account shown.
+ */
+export type SessionRecompute =
+  | { ok: true; from: string; to: string; limit: number; beforeInr: number | null; afterInr: number; lossInr: number }
+  | { ok: false; reason: string };
+const recomputeUrl = (account?: number | null) => (account == null ? withAccount('/api/desk/session-loss/recompute') : `/api/desk/session-loss/recompute?account=${account}`);
+export const previewSessionRecompute = (account?: number | null) => json<SessionRecompute>(recomputeUrl(account));
+export const recomputeSessionLimit = (account?: number | null) =>
+  post<Extract<SessionRecompute, { ok: true }> & SessionLossView>(recomputeUrl(account), {});

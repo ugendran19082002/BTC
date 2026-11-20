@@ -26,7 +26,7 @@ import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { deskLog } from '../observability/desk-log.js';
-import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, sessionLossAlert, slippageAlert } from '../notify/messages.js';
+import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, sessionLossAlert, sessionRecomputeAlert, slippageAlert } from '../notify/messages.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import type { ExchangePort } from './exchange/port.js';
@@ -37,7 +37,7 @@ import { FILL_WAKE_MS, FillWake, type HeardOrder } from './fill-wake.js';
 import { LEG_AUDIT_MS, LegAudit } from './leg-audit.js';
 import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
 import { GLOBAL_MAX_OPEN_KEY, globalMaxOpenOf } from '../strategy/types.js';
-import { SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
+import { SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type RecomputeAnswer, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 
 /**
@@ -426,6 +426,9 @@ export class TradingService {
     rule: () => this.sessionLossSetting,
     // What a limit in per cent is of: max open × the margin one position takes -- never the wallet, which may hold more.
     pctBaseUsd: async () => (await this.sessionPctBase(true)).totalUsd,
+    // Worked out again by hand: as a session's start would, from the lots the strategies trade now (20 Nov 2026).
+    pctModelUsd: async () => (await this.sessionPctBase(false, true)).totalUsd,
+    recomputed: (r) => this.sayRecompute(r),
     netUsd: () => this.netTodayOnBoard(),
     netUsdAt: (at) => this.store.mtmNetAt(istDate(at), at, this.currentAccountId),
     squareOff: (only) => this.closeAll(only),
@@ -472,10 +475,11 @@ export class TradingService {
    * move to 2 lots at the 1-lot limit until 100 trades had gone at 2), or with none set, those of its recent trades. `fresh` reads Delta's
    * wallet first (once a session); the card reads what the status last read. Null: no max open set, or nothing to price by.
    */
-  async sessionPctBase(fresh = false): Promise<{ maxOpen: number; perPositionUsd: number | null; source: 'delta' | 'model' | null; totalUsd: number | null }> {
+  /** `modelOnly` (20 Nov 2026): the desk's model × the lots configured, never Delta's measured margin -- a session start's figure. */
+  async sessionPctBase(fresh = false, modelOnly = false): Promise<{ maxOpen: number; perPositionUsd: number | null; source: 'delta' | 'model' | null; totalUsd: number | null }> {
     if (fresh) await this.balance().catch(() => null);
     const maxOpen = globalMaxOpenOf(accountSetting(this.settings, GLOBAL_MAX_OPEN_KEY, this.currentAccountId));
-    const holding = (await this.openTrades()).filter((r) => r.state.position !== 0).length;
+    const holding = modelOnly ? 0 : (await this.openTrades()).filter((r) => r.state.position !== 0).length;
     const measured = holding >= 10 && (this.lastMarginUsedUsd ?? 0) > 0 ? this.lastMarginUsedUsd! / holding : null;
     const spot = this.currentSpot();
     // The model is a contract's margin: times the lots this account's strategies trade, so 2-lot strategies count twice.
@@ -526,6 +530,19 @@ export class TradingService {
   }
 
   /** A square-off by the session limit, said: the log, the error page, the phone. */
+  private sayRecompute(r: Extract<RecomputeAnswer, { ok: true }>): void {
+    const at = Date.now();
+    const rs = (n: number | null) => (n === null ? 'none' : `₹${Math.round(n).toLocaleString('en-IN')}`);
+    const message = `Session loss limit ${r.from}–${r.to} worked out again by hand: ${rs(r.beforeInr)} -> ${rs(r.afterInr)} (${r.limit}% with the lots traded now; lost so far ${rs(Math.max(0, r.lossInr))}).`;
+    deskLog('info', message, { sessionLoss: 'recomputed', accountId: this.currentAccountId, ...r });
+    if (this.notifier && this.alertsOn) this.notifier.notify(sessionRecomputeAlert({ ...r, at }, this.alertContext()));
+  }
+
+  /** The session's limit as `recompute` would make it now (`apply` false), or made so (`apply` true): see `SessionLossGuard`. */
+  sessionLossRecompute(apply: boolean): Promise<RecomputeAnswer> {
+    return apply ? this.sessionGuard.recompute() : this.sessionGuard.recomputePreview();
+  }
+
   private sayHit(h: SessionHit): void {
     const message = `Session loss limit ${h.from}–${h.to}: lost ₹${Math.round(h.lossInr).toLocaleString('en-IN')} of ₹${Math.round(h.limitInr).toLocaleString('en-IN')} -- squared off (${h.closed} closed, ${h.cancelled} entries pulled${h.failed ? `, ${h.failed} failed` : ''}); no new entry today.`;
     deskLog('warn', message, { sessionLoss: 'hit', accountId: this.currentAccountId, ...h });

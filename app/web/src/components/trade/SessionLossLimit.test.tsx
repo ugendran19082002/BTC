@@ -9,10 +9,14 @@ import type { SessionLossView } from '@/api/desk';
 
 const getSessionLoss = vi.fn();
 const saveSessionLoss = vi.fn();
+const previewSessionRecompute = vi.fn();
+const recomputeSessionLimit = vi.fn();
 vi.mock('@/api/desk', async (orig) => ({
   ...(await orig<typeof import('@/api/desk')>()),
   getSessionLoss: (...a: unknown[]) => getSessionLoss(...a),
   saveSessionLoss: (...a: unknown[]) => saveSessionLoss(...a),
+  previewSessionRecompute: (...a: unknown[]) => previewSessionRecompute(...a),
+  recomputeSessionLimit: (...a: unknown[]) => recomputeSessionLimit(...a),
 }));
 const { SessionLossLimit, draftProblems, everyHour } = await import('@/components/trade/SessionLossLimit');
 
@@ -22,7 +26,7 @@ const view = (o: Partial<SessionLossView> = {}): SessionLossView => ({
 });
 
 beforeEach(() => {
-  getSessionLoss.mockReset(); saveSessionLoss.mockReset();
+  getSessionLoss.mockReset(); saveSessionLoss.mockReset(); previewSessionRecompute.mockReset(); recomputeSessionLimit.mockReset();
   getSessionLoss.mockResolvedValue(view());
   saveSessionLoss.mockImplementation(async (setting) => ({ ok: true, ...view({ setting }) }));
 });
@@ -112,5 +116,58 @@ describe('the parts', () => {
     expect(draftProblems({ on: true, sessions: [] })).toEqual(['Add a session to switch it on.']);
     expect(draftProblems({ on: true, sessions: [{ from: '07:00', to: '08:30', limit: 1, unit: 'inr' }, { from: '08:00', to: '09:00', limit: 1, unit: 'inr' }] })).toEqual(['Sessions 1 and 2 overlap.']);
     expect(draftProblems({ on: false, sessions: [{ from: '07:00', to: '08:00', limit: 150, unit: 'pct' }] })).toEqual(['Session 1: at most 100% of the "At most open" margin.']);
+  });
+
+  describe('Recompute limit (20 Nov 2026)', () => {
+    const running = (unit: 'pct' | 'inr' = 'pct') => view({
+      setting: { on: true, sessions: [{ from: '07:00', to: '15:00', limit: unit === 'pct' ? 18 : 1000, unit }] },
+      now: { from: '07:00', to: '15:00', limit: unit === 'pct' ? 18 : 1000, unit, limitInr: 1430, lossInr: 124, hit: false, breachSince: null },
+    });
+
+    it('[critical] shown in a % session; asks first, with now and new, and changes nothing until confirmed', async () => {
+      getSessionLoss.mockResolvedValue(running());
+      previewSessionRecompute.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 18, beforeInr: 1430, afterInr: 2860, lossInr: 124 });
+      recomputeSessionLimit.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 18, beforeInr: 1430, afterInr: 2860, lossInr: 124, ...running() });
+      render(<SessionLossLimit />);
+      fireEvent.click(await screen.findByRole('button', { name: '↻ Recompute limit' }));
+      const box = await screen.findByRole('alertdialog', { name: 'Recompute the session limit' });
+      expect(within(box).getByText(/₹1,430/)).toBeInTheDocument();
+      expect(within(box).getByText(/₹2,860/)).toBeInTheDocument();
+      expect(recomputeSessionLimit).not.toHaveBeenCalled();
+      fireEvent.click(within(box).getByRole('button', { name: 'Recompute' }));
+      await waitFor(() => expect(recomputeSessionLimit).toHaveBeenCalledTimes(1));
+      expect(await screen.findByRole('status')).toHaveTextContent('₹1,430 → ₹2,860');
+    });
+
+    it('cancel leaves it as it was', async () => {
+      getSessionLoss.mockResolvedValue(running());
+      previewSessionRecompute.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 18, beforeInr: 1430, afterInr: 2860, lossInr: 124 });
+      render(<SessionLossLimit />);
+      fireEvent.click(await screen.findByRole('button', { name: '↻ Recompute limit' }));
+      fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(recomputeSessionLimit).not.toHaveBeenCalled();
+    });
+
+    it('[critical] a refusal is said in words, with no button to press past it', async () => {
+      getSessionLoss.mockResolvedValue(running());
+      previewSessionRecompute.mockResolvedValue({ ok: false, reason: 'The session has lost ₹3,000 already, at or over the new limit of ₹2,860: working it out again would square the account off at once.' });
+      render(<SessionLossLimit />);
+      fireEvent.click(await screen.findByRole('button', { name: '↻ Recompute limit' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(/square the account off at once/);
+      expect(screen.queryByRole('button', { name: 'Recompute' })).toBeNull();
+    });
+
+    it('not offered for a rupee limit (lots do not change it), nor with no session running', async () => {
+      getSessionLoss.mockResolvedValue(running('inr'));
+      const { unmount } = render(<SessionLossLimit />);
+      await screen.findByRole('switch', { name: /^Session loss limit/ });
+      expect(screen.queryByRole('button', { name: '↻ Recompute limit' })).toBeNull();
+      unmount();
+      getSessionLoss.mockResolvedValue(view({ setting: { on: true, sessions: [{ from: '07:00', to: '15:00', limit: 18, unit: 'pct' }] } }));
+      render(<SessionLossLimit />);
+      await screen.findByRole('switch', { name: /^Session loss limit/ });
+      expect(screen.queryByRole('button', { name: '↻ Recompute limit' })).toBeNull();
+    });
   });
 });

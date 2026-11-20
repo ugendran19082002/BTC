@@ -629,6 +629,20 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     }
     // A saved strategy keeps the account it was made for (the store never rewrites it).
     const strategy = await s.save({ id, name, enabled, config, accountId, groupId });
+    /*
+     * Lots changed while a session runs (owner, 20 Nov 2026: Low went to 2 lots at 07:05 and kept its 1-lot session
+     * limit): what the session's limit would be with them, for the screen to offer -- worked out again only if asked.
+     */
+    let sessionRecompute: { accountId: number | null; accountName: string | null; beforeInr: number | null; afterInr: number; from: string; to: string } | null = null;
+    if (existing && existing.config.lots !== config.lots) {
+      const desk = tradingServiceFor(strategy.accountId);
+      const r = await desk?.sessionLossRecompute(false).catch(() => null);
+      if (r?.ok && (r.beforeInr === null || Math.abs(r.afterInr - r.beforeInr) >= 1)) {
+        let accountName: string | null = null;
+        try { accountName = strategy.accountId == null ? null : brokerAccounts().get(strategy.accountId)?.name ?? null; } catch { accountName = null; }
+        sessionRecompute = { accountId: strategy.accountId ?? null, accountName, beforeInr: r.beforeInr, afterInr: r.afterInr, from: r.from, to: r.to };
+      }
+    }
     // A change to a signal strategy's methods made on the form, kept beside the daily updates (16 Oct 2026).
     const was = existing?.config.trigger === 'signal' ? existing.config.signal?.methods ?? [] : null;
     const now = config.trigger === 'signal' ? config.signal?.methods ?? [] : null;
@@ -644,7 +658,7 @@ export function registerStrategyRoutes(app: FastifyInstance) {
         note: took ? 'Picked now on the form and saved.' : null,
       }).catch((e: Error) => noteError({ source: 'server', level: 'warn', where: 'method-updates', message: `a methods change not logged: ${e.message}` }));
     }
-    return { ok: true, strategy };
+    return { ok: true, strategy, ...(sessionRecompute ? { sessionRecompute } : {}) };
   });
 
   /**

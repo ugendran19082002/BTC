@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSessionLoss, saveSessionLoss, type SessionLossSetting, type SessionRule } from '@/api/desk';
+import { getSessionLoss, previewSessionRecompute, recomputeSessionLimit, saveSessionLoss, type SessionLossSetting, type SessionRecompute, type SessionRule } from '@/api/desk';
 import { usePoll } from '@/hooks/usePoll';
 import { Switch } from '@/components/ui/switch';
 import { NumberField } from '@/components/ui/number-field';
@@ -51,6 +51,10 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
   const [draft, setDraft] = useState<SessionLossSetting | null>(null);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  // Working the session's limit out again (20 Nov 2026): what it would become, shown to confirm; then done, or refused.
+  const [offer, setOffer] = useState<SessionRecompute | null>(null);
+  const [recomputing, setRecomputing] = useState(false);
+  const [recomputed, setRecomputed] = useState<string | null>(null);
   useEffect(() => { if (kept && !draft) setDraft(kept); }, [kept]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (several) {
@@ -74,6 +78,23 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
     }
   };
   const now = data.now;
+  const askRecompute = async () => {
+    setRecomputing(true); setRecomputed(null);
+    try { setOffer(await previewSessionRecompute()); } catch (e) { setOffer({ ok: false, reason: (e as Error).message }); } finally { setRecomputing(false); }
+  };
+  const doRecompute = async () => {
+    setRecomputing(true);
+    try {
+      const r = await recomputeSessionLimit();
+      setOffer(null);
+      setRecomputed(`Limit worked out again: ${r.beforeInr === null ? '' : `${rupees(r.beforeInr)} → `}${rupees(r.afterInr)} for the rest of the session.`);
+      await refresh();
+    } catch (e) {
+      setOffer({ ok: false, reason: (e as Error).message });
+    } finally {
+      setRecomputing(false);
+    }
+  };
   // What a % is of: "At most open" × the margin one position takes, in rupees -- never the wallet.
   const base = data.pctBase;
   const baseInr = base?.totalUsd != null ? base.totalUsd * USDINR : null;
@@ -114,6 +135,38 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
           <div className="h-1.5 overflow-hidden rounded-full bg-[var(--line)]">
             <div className={cn('h-full', used >= 0.8 ? 'bg-[var(--down)]' : 'bg-[var(--accent)]')} style={{ width: `${used * 100}%` }} />
           </div>
+          {now.unit === 'pct' && !offer && (
+            <button
+              type="button" disabled={recomputing} onClick={() => void askRecompute()}
+              title="Work this session's limit out again with the lots the strategies trade now: after a lot change in the session"
+              className="h-9 justify-self-start rounded-md border border-solid border-border bg-transparent px-2.5 font-[inherit] text-[13px] text-foreground disabled:opacity-40"
+            >
+              {recomputing ? 'Working it out…' : '↻ Recompute limit'}
+            </button>
+          )}
+          {offer && offer.ok && (
+            <div role="alertdialog" aria-label="Recompute the session limit" className="grid gap-2 rounded-md border border-solid border-[var(--accent)] bg-muted p-2.5 text-[12.5px] leading-snug">
+              <span className="font-semibold">Recompute this session&apos;s limit?</span>
+              <span className="grid grid-cols-[auto_1fr] gap-x-3 tabular-nums">
+                <span className="text-muted-foreground">Now</span><span>{offer.beforeInr === null ? '—' : rupees(offer.beforeInr)} (worked out at {offer.from})</span>
+                <span className="text-muted-foreground">New</span><b>{rupees(offer.afterInr)} ({offer.limit}% with the lots traded now)</b>
+              </span>
+              <span className="text-muted-foreground">Lost so far {rupees(Math.max(0, offer.lossInr))}. Kept until {offer.to}.</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setOffer(null)} className="h-9 rounded-md border border-solid border-border bg-transparent font-[inherit] text-[13px] text-foreground">Cancel</button>
+                <button type="button" disabled={recomputing} onClick={() => void doRecompute()} className="h-9 rounded-md border-0 bg-foreground font-[inherit] text-[13px] font-semibold text-background disabled:opacity-40">
+                  {recomputing ? 'Recomputing…' : 'Recompute'}
+                </button>
+              </div>
+            </div>
+          )}
+          {offer && !offer.ok && (
+            <p role="alert" className="m-0 flex items-start justify-between gap-2 text-[12px] text-[var(--down)]">
+              <span>Not recomputed: {offer.reason}</span>
+              <button type="button" aria-label="Close" onClick={() => setOffer(null)} className="border-0 bg-transparent p-0 font-[inherit] text-[13px] text-muted-foreground">✕</button>
+            </p>
+          )}
+          {recomputed && <p role="status" className="m-0 text-[12px] text-[var(--up)]">{recomputed}</p>}
         </div>
       )}
 

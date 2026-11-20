@@ -129,3 +129,51 @@ test('a square-off written down is read back for the card', async () => {
   assert.equal(hits.length, 1);
   assert.deepEqual([hits[0].from, hits[0].lossInr, hits[0].closed], ['07:00', 1234.5, 12]);
 });
+
+/* ---------------------------------------------- worked out again by hand (20 Nov 2026) --- */
+
+test('[critical] recompute with no session running: the preview says why, and the change is refused (409), nothing kept', async () => {
+  await api('POST', `/api/desk/session-loss?account=${main()}`, { on: false, sessions: [] });
+  const p = await api('GET', `/api/desk/session-loss/recompute?account=${main()}`);
+  assert.equal(p.status, 200);
+  assert.equal(p.body.ok, false);
+  assert.match(p.body.reason, /No session is running/);
+  const r = await api('POST', `/api/desk/session-loss/recompute?account=${main()}`);
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /No session is running/);
+});
+
+test('recompute that goes through answers with the before and after, and the card as it now stands', async () => {
+  const svc = tradingService() as unknown as { sessionLossRecompute: (apply: boolean) => Promise<unknown> };
+  const real = svc.sessionLossRecompute;
+  const asked: boolean[] = [];
+  svc.sessionLossRecompute = async (apply) => { asked.push(apply); return { ok: true, from: '07:00', to: '15:00', limit: 18, beforeInr: 1430, afterInr: 2860, lossInr: 124 }; };
+  try {
+    const r = await api('POST', `/api/desk/session-loss/recompute?account=${main()}`);
+    assert.equal(r.status, 200);
+    assert.deepEqual([r.body.ok, r.body.beforeInr, r.body.afterInr], [true, 1430, 2860]);
+    assert.ok('setting' in r.body && 'pctBase' in r.body, 'with the card, to draw it at once');
+    assert.deepEqual(asked, [true]);
+  } finally { svc.sessionLossRecompute = real; }
+});
+
+test('[critical] a lot change saved while a session runs comes back with the limit it would have; other saves do not', async () => {
+  const { DEFAULT_CONFIG } = await import('../../src/strategy/types.js');
+  const svc = tradingService() as unknown as { sessionLossRecompute: (apply: boolean) => Promise<unknown> };
+  const real = svc.sessionLossRecompute;
+  const asked: boolean[] = [];
+  svc.sessionLossRecompute = async (apply) => { asked.push(apply); return { ok: true, from: '07:00', to: '15:00', limit: 18, beforeInr: 1430, afterInr: 2860, lossInr: 0 }; };
+  try {
+    const config = { ...DEFAULT_CONFIG, lots: 1 };
+    const made = await api('POST', '/api/strategies', { name: 'Recompute offer', config, accountId: main() });
+    assert.equal(made.status, 200);
+    assert.equal(made.body.sessionRecompute, undefined, 'a new strategy is not a lot change');
+    const id = made.body.strategy.id;
+    const same = await api('POST', '/api/strategies', { id, name: 'Recompute offer', config: { ...config, graceMin: 7 } });
+    assert.equal(same.body.sessionRecompute, undefined, 'another setting saved: nothing offered');
+    const two = await api('POST', '/api/strategies', { id, name: 'Recompute offer', config: { ...config, lots: 2 } });
+    assert.equal(two.status, 200);
+    assert.deepEqual(two.body.sessionRecompute, { accountId: main(), accountName: brokerAccounts().get(main())!.name, beforeInr: 1430, afterInr: 2860, from: '07:00', to: '15:00' });
+    assert.ok(asked.every((a) => a === false), 'only asked what it would be: nothing worked out until the owner says so');
+  } finally { svc.sessionLossRecompute = real; }
+});

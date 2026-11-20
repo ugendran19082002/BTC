@@ -28,6 +28,7 @@ import { blockNow, hoursLabel, istMinuteOf, pickWords } from '@/lib/strategy-blo
 import { globalMaxOpenProblem, marginPerLotUsd, roomLeft, signalTotals, usageNow, usageOf, type Usage } from '@/lib/strategy-totals';
 import { inr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { SessionRecomputeOffer } from '@/components/strategy/SessionRecomputeOffer';
 
 /**
  * The signal strategies, on the Live screen beside the methods that make the
@@ -819,6 +820,8 @@ export function SignalStrategiesCard() {
           )}
         </div>
       </div>
+      {/* After a lot change saved while a session runs: the offer to work its limit out again (20 Nov 2026). */}
+      <div className="mb-2 empty:hidden"><SessionRecomputeOffer /></div>
 
       {!canMakeForAccount() && (
         <p role="note" className="m-0 mb-2 text-[12px] text-muted-foreground">

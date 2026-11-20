@@ -617,6 +617,18 @@ export function registerDeskRoutes(app: FastifyInstance) {
     return { ok: true, ...(await tradingService().sessionLossView()) };
   });
 
+  /*
+   * The session's limit worked out again by hand (20 Nov 2026, `SessionLossGuard.recompute`): `GET` says what it would
+   * become, or why not, changing nothing -- the screen's confirm box; `POST` makes it so. Refused (409) with the reason:
+   * no session now, stopped for today, a limit in rupees, nothing to work it out from, or a loss already at the new limit.
+   */
+  app.get('/api/desk/session-loss/recompute', async () => tradingService().sessionLossRecompute(false));
+  app.post('/api/desk/session-loss/recompute', async (_req, reply) => {
+    const r = await tradingService().sessionLossRecompute(true);
+    if (!r.ok) return refuse(reply, 409, { error: r.reason });
+    return { ...r, ...(await tradingService().sessionLossView()) };
+  });
+
   // Save one desk setting; the short cap may be lowered freely but never raised past what margin covers.
   app.post('/api/settings', async (req, reply) => {
     const { key, value } = (req.body ?? {}) as { key?: string; value?: string };

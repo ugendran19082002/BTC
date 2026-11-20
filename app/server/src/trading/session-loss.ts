@@ -129,6 +129,16 @@ export type SessionLossNow = {
   breachSince: number | null;
 } | null;
 
+/**
+ * Working the session's limit out again, by hand (owner, 20 Nov 2026: Low's lots went from 1 to 2 at 07:05, five minutes
+ * into the 07:00 session, and its limit stayed the 1-lot figure -- ₹1,430 against Medium's ₹2,860 -- until the rule was
+ * changed 18% → 19% → 18% to make the guard work it out again; "a recompute button, so I update it myself"). What it would
+ * become, or why it will not: `ok` with the limit before and after and the loss so far, else the reason in words.
+ */
+export type RecomputeAnswer =
+  | { ok: true; from: string; to: string; limit: number; beforeInr: number | null; afterInr: number; lossInr: number }
+  | { ok: false; reason: string };
+
 /** What a new entry is told, the day a session's limit stopped the account. */
 const whyOf = (h: Pick<SessionHit, 'from' | 'to' | 'lossInr' | 'limitInr'>) =>
   `The ${h.from}–${h.to} session lost ₹${Math.round(h.lossInr).toLocaleString('en-IN')}, at its ₹${Math.round(h.limitInr).toLocaleString('en-IN')} limit: the account was squared off and takes no new entry today.`;
@@ -153,6 +163,14 @@ export type SessionGuardDeps = {
   hitsOn: (day: string) => Promise<SessionHit[]>;
   /** Said once a hit: the phone, the log. */
   said: (hit: SessionHit) => void;
+  /**
+   * What a per cent is of, worked out as at a session's start: "At most open" × the desk's model of a position's margin
+   * × the lots the account's strategies trade now -- never Delta's measured margin of the positions held, so a limit
+   * worked out again in the session is the one the next session's start would give (`recompute`). Null: none set.
+   */
+  pctModelUsd?: () => Promise<number | null>;
+  /** Said once a limit is worked out again by hand: the phone, the log. */
+  recomputed?: (r: Extract<RecomputeAnswer, { ok: true }>) => void;
 };
 
 /**
@@ -206,6 +224,58 @@ export class SessionLossGuard {
       limitInr: read?.limitInr ?? (s.rule.unit === 'inr' ? s.rule.limit : null),
       lossInr: read?.lossInr ?? null, hit: this.hits.has(key), breachSince: read ? this.breachSince : null,
     };
+  }
+
+  /** What `recompute` would make the session's limit now -- nothing changed. */
+  recomputePreview(now = this.d.now()): Promise<RecomputeAnswer> {
+    return this.alone(() => this.recomputeNow(now, false));
+  }
+
+  /**
+   * Work the session's limit out again now, from the lots the strategies trade now (`pctModelUsd`), and keep it for the
+   * rest of the session -- across a restart too (`fixedLimit`). Refused, with the reason: outside a session; on a day
+   * already squared off (a recompute never opens an account the limit stopped); for a limit in rupees (lots do not
+   * change it); with nothing to work it out from; before the session's first reading; and when the loss so far is
+   * already at or over the new limit -- that would square the account off the moment it was pressed.
+   */
+  recompute(now = this.d.now()): Promise<RecomputeAnswer> {
+    return this.alone(() => this.recomputeNow(now, true));
+  }
+
+  /** One at a time with the guard's own tick: the tick is skipped while this runs, and this waits out a tick (3 s at most). */
+  private async alone<T>(f: () => Promise<T>): Promise<T> {
+    for (let i = 0; this.ticking && i < 60; i++) await new Promise((r) => setTimeout(r, 50));
+    if (this.ticking) throw new Error('The session guard is busy: try again in a moment.');
+    this.ticking = true;
+    try { return await f(); } finally { this.ticking = false; }
+  }
+
+  private async recomputeNow(now: number, apply: boolean): Promise<RecomputeAnswer> {
+    const cfg = this.d.rule();
+    const s = cfg.on ? sessionAt(cfg.sessions, now) : null;
+    if (!s) return { ok: false, reason: 'No session is running now: the next one works its limit out when it begins.' };
+    if (now < this.lockedUntil) return { ok: false, reason: `Stopped for today: ${this.lockedWhy}` };
+    if (s.rule.unit !== 'pct') return { ok: false, reason: 'This session\'s limit is an amount in rupees: lots do not change it.' };
+    const key = `${istDate(now)}|${s.rule.from}`;
+    if (this.hits.has(key)) return { ok: false, reason: 'This session was squared off: the account takes no new entry today.' };
+    if (this.baseline?.key !== key) return { ok: false, reason: 'The session is still being read: try again in a few seconds.' };
+    const base = await this.d.pctModelUsd?.().catch(() => null) ?? null;
+    if (base === null || !(base > 0)) return { ok: false, reason: 'Nothing to work it out from: set "At most open" on this account, or wait for a price.' };
+    const afterInr = (s.rule.limit / 100) * base * USDINR;
+    const lossInr = (this.baseline.usd - await this.d.netUsd()) * USDINR;
+    const beforeInr = this.baseline.limitInr;
+    if (lossInr >= afterInr) {
+      return { ok: false, reason: `The session has lost ₹${Math.round(lossInr).toLocaleString('en-IN')} already, at or over the new limit of ₹${Math.round(afterInr).toLocaleString('en-IN')}: working it out again would square the account off at once.` };
+    }
+    const answer = { ok: true as const, from: s.rule.from, to: s.rule.to, limit: s.rule.limit, beforeInr, afterInr, lossInr };
+    if (!apply) return answer;
+    const limitFor = `${s.rule.unit}:${s.rule.limit}`;
+    this.baseline = { ...this.baseline, limitInr: afterInr, limitFor };
+    await this.d.fixedLimit?.set(`${key}|${limitFor}`, afterInr).catch(() => {});
+    this.breachSince = null;
+    if (this.last && this.lastKey === key) this.last = { ...this.last, limitInr: afterInr, lossInr, breachSince: null };
+    try { this.d.recomputed?.(answer); } catch { /* a message is never worth the change */ }
+    return answer;
   }
 
   async tick(): Promise<SessionHit | null> {

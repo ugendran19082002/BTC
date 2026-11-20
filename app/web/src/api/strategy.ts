@@ -1,6 +1,7 @@
 import { json, post } from '@/api/client';
 import type { MethodUpdate, MethodUpdateSource, CapSwap, MomentumGuard, Reentry, SignalTf, SignalTrade, Strategy, StrategyConfig, StrategyGroup, StrategyStatus } from '@/types/strategy';
 import { accountScope, withAccount } from '@/lib/account-scope';
+import { offerSessionRecompute, type RecomputeOffer } from '@/lib/session-recompute-offer';
 
 /**
  * Where one of the account settings is saved: a group's own (8 Nov 2026), or the account being shown -- else the one the
@@ -16,9 +17,13 @@ export const getStrategies = () => json<StrategyStatus>(withAccount('/api/strate
  * Save a strategy. The server validates and answers with what it stored, so
  * the screen shows the desk's answer rather than the number that was typed.
  */
-export const saveStrategy = (s: { id?: string; name: string; config: StrategyConfig; groupId?: string | null }) =>
+export const saveStrategy = async (s: { id?: string; name: string; config: StrategyConfig; groupId?: string | null }) => {
   // A new strategy is made for the account being shown; a saved one keeps its own (the server never moves it).
-  post<{ ok: true; strategy: Strategy }>('/api/strategies', accountScope() === null ? s : { ...s, accountId: accountScope() });
+  const r = await post<{ ok: true; strategy: Strategy; sessionRecompute?: RecomputeOffer }>('/api/strategies', accountScope() === null ? s : { ...s, accountId: accountScope() });
+  // Lots changed while a session runs: the offer to work its limit out again (20 Nov 2026), shown on the strategy screen.
+  if (r.sessionRecompute) offerSessionRecompute(r.sessionRecompute);
+  return r;
+};
 
 /** Arm or disarm one. Refused with a reason if its settings do not validate. */
 export const setStrategyEnabled = (id: string, enabled: boolean) =>

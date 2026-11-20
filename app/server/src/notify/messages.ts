@@ -655,6 +655,23 @@ export function sessionLossAlert(h: { day: string; from: string; to: string; lim
   };
 }
 
+/**
+ * A session's limit worked out again by hand (trading/session-loss.ts `recompute`, 20 Nov 2026): from what to what, and
+ * the loss so far -- so a limit that moved is never a surprise on the phone.
+ */
+export function sessionRecomputeAlert(r: { from: string; to: string; limit: number; beforeInr: number | null; afterInr: number; lossInr: number; at: number }, ctx: AlertContext): Alert {
+  const rs = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+  return {
+    key: `session-recompute:${ctx.account ?? ''}:${r.from}:${r.at}`,
+    text: lines(
+      headline(ctx, '↻', `SESSION LIMIT WORKED OUT AGAIN · ${escape(r.from)}–${escape(r.to)}`), '',
+      `${r.limit}% of the "At most open" margin, with the lots the strategies trade now: ${r.beforeInr === null ? 'none' : rs(r.beforeInr)} → <b>${rs(r.afterInr)}</b>.`,
+      `Lost so far this session: ${rs(Math.max(0, r.lossInr))}. Kept for the rest of the session.`, '',
+      `🕒 ${istTime(r.at)} IST · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`,
+    ),
+  };
+}
+
 /** The entry window closed with nothing tried: the desk or the price feed was down the whole time. */
 export function missedEntryAlert(
   strategy: string, entryTime: string, graceMin: number, at: number, ctx: AlertContext,

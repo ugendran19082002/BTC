@@ -127,6 +127,19 @@ export function HomeScreen() {
         )}
       </Panel>
 
+      {/* Under Today's P&L: Margin used and Available, then the positions (owner, 20 Nov 2026). */}
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" onClick={() => p.go({ tab: 'more', sub: 'account' })} className="rounded-lg border border-border bg-background px-3.5 py-3 text-left font-[inherit] text-foreground">
+          <span className="block text-[12px] text-muted-foreground">Margin used</span>
+          <span className="block text-[18px] font-semibold tabular-nums">{marginShare !== null ? pct(marginShare, 0) : '—'}</span>
+          {marginShare !== null && <span className="mt-1.5 block"><Bar value={marginShare} tone={marginShare >= 0.9 ? 'down' : marginShare >= 0.7 ? 'warn' : 'up'} label="Margin used" /></span>}
+        </button>
+        <button type="button" onClick={() => p.go({ tab: 'more', sub: 'account' })} className="rounded-lg border border-border bg-background px-3.5 py-3 text-left font-[inherit] text-foreground">
+          <span className="block text-[12px] text-muted-foreground">Available</span>
+          {s?.balanceUsd != null ? <Rupees usd={s.balanceUsd} size="md" /> : <span className="block text-[18px] font-semibold">—</span>}
+        </button>
+      </div>
+
       <Panel title={s ? `Positions · ${running} running${waitingN ? ` · ${waitingN} waiting` : ''}` : 'Positions'} right={s && s.open.length > 0 ? <button type="button" onClick={() => p.go({ tab: 'positions' })} className="-my-[13px] inline-flex min-h-[44px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">Risk →</button> : undefined}>
         {s && s.open.length > 0 && <SideTabs n={sideN} value={side} onChange={setSidePick} />}
         {!s ? <Empty>Reading positions…</Empty> : s.open.length === 0 ? <Empty>No open positions, no order waiting.</Empty> : (
@@ -178,18 +191,6 @@ export function HomeScreen() {
           </ul>
         )}
       </Panel>
-
-      <div className="grid grid-cols-2 gap-3">
-        <button type="button" onClick={() => p.go({ tab: 'more', sub: 'account' })} className="rounded-lg border border-border bg-background px-3.5 py-3 text-left font-[inherit] text-foreground">
-          <span className="block text-[12px] text-muted-foreground">Margin used</span>
-          <span className="block text-[18px] font-semibold tabular-nums">{marginShare !== null ? pct(marginShare, 0) : '—'}</span>
-          {marginShare !== null && <span className="mt-1.5 block"><Bar value={marginShare} tone={marginShare >= 0.9 ? 'down' : marginShare >= 0.7 ? 'warn' : 'up'} label="Margin used" /></span>}
-        </button>
-        <button type="button" onClick={() => p.go({ tab: 'more', sub: 'account' })} className="rounded-lg border border-border bg-background px-3.5 py-3 text-left font-[inherit] text-foreground">
-          <span className="block text-[12px] text-muted-foreground">Available</span>
-          {s?.balanceUsd != null ? <Rupees usd={s.balanceUsd} size="md" /> : <span className="block text-[18px] font-semibold">—</span>}
-        </button>
-      </div>
 
       <Panel title="Latest order" right={<button type="button" onClick={() => p.go({ tab: 'orders' })} className="-my-[13px] inline-flex min-h-[44px] min-w-[44px] items-center justify-end border-0 bg-transparent p-0 font-[inherit] text-[12.5px] text-[var(--accent)]">All →</button>}>
         {!latest ? <Empty>{orders.data ? 'No order today.' : 'Reading orders…'}</Empty> : (
