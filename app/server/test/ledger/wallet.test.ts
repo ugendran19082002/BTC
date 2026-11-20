@@ -36,8 +36,12 @@ test('[critical] a day by what each entry is: trading, charges, funding apart fr
   assert.equal(d.entries, 7, 'the INR entry is not counted');
   assert.equal(d.otherAssets, 1);
   assert.deepEqual(d.unknownTypes, ['a_type_added_later']);
-  assert.deepEqual(d.byType.commission, { n: 2, usd: d.byType.commission!.usd });
+  assert.deepEqual(d.byType.commission, { n: 2, usd: d.byType.commission!.usd, inUsd: 0, outUsd: d.byType.commission!.outUsd });
   near(d.byType.commission!.usd, -0.10, 'by type');
+  // Kept apart since 20 Nov 2026: what came in and what went out (ledger/flows.ts).
+  near(d.byType.commission!.outUsd!, 0.10, 'paid out, as a positive number');
+  near(d.byType.deposit!.inUsd!, 100, 'the deposit, in');
+  near(d.byType.deposit!.outUsd!, 0, 'nothing out');
   assert.equal(d.complete, true);
 });
 

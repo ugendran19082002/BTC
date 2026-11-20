@@ -8,6 +8,7 @@ import {
 } from '../../ledger/ledger.js';
 import type { WalletDay } from '../../ledger/wallet.js';
 import { dayTrades } from '../../ledger/day-trades.js';
+import { ledgerFlows } from '../../ledger/flows.js';
 
 /**
  * The ledger's routes (ledger/ledger.ts): the days as the desk booked them and as Delta's wallet has them, and a check
@@ -126,6 +127,21 @@ export function registerLedgerRoutes(app: FastifyInstance) {
         mismatched: days.filter((d) => d.status === 'mismatch').length,
       },
     };
+  });
+
+  /**
+   * Money in and out (20 Nov 2026, `ledger/flows.ts`): deposits and money moved in, withdrawals and money moved out --
+   * since the first ledger day and over `from`..`to` (the last seven days without them) -- the wallet as last read, and
+   * what the money has made against it. `?account=<id>`; without it, every account's. Read from the days kept: nothing
+   * asked of Delta.
+   */
+  app.get('/api/ledger/flows', async (req, reply) => {
+    const q = (req.query ?? {}) as { from?: string; to?: string };
+    const today = istDate(Date.now());
+    const to = q.to ?? today, from = q.from ?? shift(to, -6);
+    if (!DAY.test(from) || !DAY.test(to) || Number.isNaN(Date.parse(from)) || Number.isNaN(Date.parse(to))) return refuse(reply, 400, { error: 'Dates must be YYYY-MM-DD.' });
+    if (from > to) return refuse(reply, 400, { error: 'The start date must not be after the end date.' });
+    return ledgerFlows(accountOf(req.query), from, to);
   });
 
   /**

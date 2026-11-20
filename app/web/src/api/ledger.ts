@@ -41,6 +41,21 @@ export type Ledger = {
   totals: { desk: Omit<DeskDay, 'open'>; delta: WalletDay | null; days: number; checked: number; matched: number; mismatched: number };
 };
 
+/**
+ * Money in and out of the account (server: ledger/flows.ts, 20 Nov 2026): deposits and money moved in, withdrawals and
+ * money moved out -- since the first ledger day and over the range shown -- the wallet as last read, and what the money
+ * has made against it. Dollars; null where nothing is known.
+ */
+export type MoneyFlows = { inUsd: number; outUsd: number; netUsd: number; moves: number; firstMoveDay: string | null; lastMoveDay: string | null };
+export type LedgerFlows = {
+  account: number | null; from: string; to: string; since: string | null; daysRead: number;
+  allTime: MoneyFlows; range: MoneyFlows;
+  wallet: { balanceUsd: number | null; asOf: string | null; accounts: number };
+  profitUsd: number | null;
+};
+export const getLedgerFlows = (from: string, to: string, account: number | null) =>
+  json<LedgerFlows>(`/api/ledger/flows?from=${from}&to=${to}${account === null ? '' : `&account=${account}`}`);
+
 export const getLedger = (from: string, to: string, account: number | null) =>
   json<Ledger>(`/api/ledger?from=${from}&to=${to}${account === null ? '' : `&account=${account}`}`);
 

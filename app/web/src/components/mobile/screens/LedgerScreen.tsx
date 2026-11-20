@@ -13,6 +13,7 @@ import { usePhoneData } from '@/components/mobile/phone-context';
 import { Empty, Loading, Panel, Pill, Rupees, Segmented, Stat, Stats } from '@/components/mobile/parts';
 import { DateRangeSheet } from '@/components/mobile/DateRangeSheet';
 import { LedgerDaySheet } from '@/components/mobile/LedgerDaySheet';
+import { LedgerFlows } from '@/components/mobile/LedgerFlows';
 
 /**
  * The ledger (owner, 29 Oct 2026: "a ledger on the phone, day by day -- profit, loss, charges, others; my system's
@@ -186,6 +187,9 @@ export function LedgerScreen() {
               <Reconciled checked={t!.checked} matched={t!.matched} mismatched={t!.mismatched} days={t!.days} />
             </section>
           </Panel>
+
+          {/* Money in and out: invested, withdrawn, the wallet and what it made (owner, 20 Nov 2026). */}
+          <LedgerFlows from={from} to={to} account={p.accountParam} rangeWords={rangeWords} />
 
           <Panel>
             <section aria-label="Sync with Delta" className="grid gap-2">

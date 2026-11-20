@@ -90,8 +90,12 @@ export type WalletDay = {
   openingUsd: number | null;
   closingUsd: number | null;
   entries: number;
-  /** Each type: how many, and what they came to -- so a figure that does not match can be traced to its kind. */
-  byType: Record<string, { n: number; usd: number }>;
+  /**
+   * Each type: how many, and what they came to -- so a figure that does not match can be traced to its kind -- and, kept
+   * since 20 Nov 2026, what came in and what went out apart (a deposit and a withdrawal on one day net to their
+   * difference in `usd`; the ledger's money in and out wants both, `ledger/flows.ts`). Absent on a day read before.
+   */
+  byType: Record<string, { n: number; usd: number; inUsd?: number; outUsd?: number }>;
   /** Types not in the list above, counted with the others. */
   unknownTypes: string[];
   /** Entries in another asset, left out of every figure. */
@@ -139,8 +143,9 @@ export function walletDayOf(entries: readonly WalletEntry[], complete = true, re
     const key = `${bucket === 'trading' ? 'tradingUsd' : bucket === 'charges' ? 'chargesUsd' : bucket === 'funding' ? 'fundingUsd' : bucket === 'transfers' ? 'transfersUsd' : 'othersUsd'}` as const;
     day[key] += amount;
     if (bucket === 'trading') { if (amount > 0) day.profitUsd! += amount; else day.lossUsd! -= amount; }
-    const t = day.byType[e.type] ?? (day.byType[e.type] = { n: 0, usd: 0 });
+    const t = day.byType[e.type] ?? (day.byType[e.type] = { n: 0, usd: 0, inUsd: 0, outUsd: 0 });
     t.n += 1; t.usd += amount;
+    if (amount > 0) t.inUsd! += amount; else t.outUsd! -= amount;
   }
   day.netUsd = day.tradingUsd + day.chargesUsd + day.fundingUsd;
   day.unknownTypes = [...unknown].sort();

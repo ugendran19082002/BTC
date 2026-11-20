@@ -233,6 +233,42 @@ test('[critical] the first trading day, for "Since start": each account\'s own, 
   assert.equal(await L.firstTradeDay(424242), null, 'an account that never traded has no first day');
 });
 
+test('[critical] money in and out (20 Nov 2026): since the first day and over the range, the wallet as last read, and what the money made -- read from the days kept', async () => {
+  const { query } = await import('../../src/db/pool.js');
+  const put = (account: number, day: string, byType: object, closingUsd: number) => query(
+    `INSERT INTO ledger_days (broker_account_id, day, desk, delta, status, diff_usd, detail, how, checked_at) VALUES ($1, $2, '{}', $3, 'match', 0, '', 'manual', 0)
+     ON CONFLICT (broker_account_id, day) DO UPDATE SET delta = EXCLUDED.delta`,
+    [account, day, JSON.stringify({ byType, closingUsd })]);
+  // Accounts of their own, so no other case's days are in the sums (an id no account has is read as "every account").
+  const A = (await brokerAccounts().create({ name: 'Flows A', apiKey: 'flwKEYaaaKEYaaa3333', apiSecret: 'flwSECRETaaaSECRETaaaSECRETaaa3333' })).id;
+  const B = (await brokerAccounts().create({ name: 'Flows B', apiKey: 'flwKEYbbbKEYbbb4444', apiSecret: 'flwSECRETbbbSECRETbbbSECRETbbb4444' })).id;
+  try {
+    await put(A, '2026-09-01', { deposit: { n: 1, usd: 500 }, cashflow: { n: 9, usd: 12 } }, 512);
+    await put(A, '2026-11-05', { withdrawal: { n: 1, usd: -100 } }, 450);
+    await put(A, '2026-11-19', { sub_account_transfer: { n: 2, usd: 50, inUsd: 80, outUsd: 30 } }, 520);
+    await put(B, '2026-11-19', { sub_account_transfer: { n: 1, usd: 30 } }, 130);
+
+    const a = (await call('GET', `/api/ledger/flows?account=${A}&from=2026-11-01&to=2026-11-19`));
+    assert.equal(a.status, 200);
+    const f = a.body;
+    assert.equal(f.since, '2026-09-01');
+    assert.deepEqual([f.allTime.inUsd, f.allTime.outUsd, f.allTime.netUsd], [580, 130, 450], 'in: 500 + 80; out: 100 + 30');
+    assert.deepEqual([f.range.inUsd, f.range.outUsd], [80, 130], 'the range: November only');
+    assert.deepEqual([f.wallet.balanceUsd, f.wallet.asOf], [520, '2026-11-19'], 'the last day read');
+    assert.equal(f.profitUsd, 70, 'the wallet 520 less 450 put in');
+
+    const both = (await call('GET', '/api/ledger/flows?from=2026-11-19&to=2026-11-19')).body;
+    assert.ok(both.allTime.inUsd >= 610, 'every account: the 30 into the second one counted too');
+    assert.equal((await call('GET', '/api/ledger/flows?from=2026-11-19&to=2026-11-01')).status, 400);
+    assert.equal((await call('GET', '/api/ledger/flows?from=19-11-2026')).status, 400);
+  } finally {
+    // Gone again, so the cases after this one see the accounts they made, and no others.
+    await query('DELETE FROM ledger_days WHERE broker_account_id = ANY($1::bigint[])', [[A, B]]);
+    await brokerAccounts().remove(A);
+    await brokerAccounts().remove(B);
+  }
+});
+
 test('the phone hears of a mismatch: both nets, the difference and where it lies', () => {
   const a = ledgerAlert({ account: 'High', day: '2026-10-28', deskUsd: 6.24, deltaUsd: 6.08, detail: 'Charges agree: the difference is in what the trades booked.' });
   assert.equal(a.key, 'ledger:High:2026-10-28');
