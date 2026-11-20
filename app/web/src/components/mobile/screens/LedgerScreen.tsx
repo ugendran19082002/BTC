@@ -178,18 +178,17 @@ export function LedgerScreen() {
                 {t!.desk.trades.toLocaleString('en-IN')} trade{t!.desk.trades === 1 ? '' : 's'} · {t!.days} day{t!.days === 1 ? '' : 's'}
                 {tf!.from === 'delta' && t!.checked < t!.days && <> · Delta for {t!.checked} of {t!.days} days</>}
               </p>
-              <Stats>
+              <Stats cols={4}>
                 <Stat label="Profit" tone={tf!.profitUsd > 0 ? 'up' : undefined}>{money(tf!.profitUsd)}</Stat>
                 <Stat label="Loss" tone={tf!.lossUsd > 0 ? 'down' : undefined}>{money(-tf!.lossUsd)}</Stat>
                 <Stat label="Charges" tone={tf!.chargesUsd > 0 ? 'down' : undefined}>{money(-tf!.chargesUsd)}</Stat>
                 <Stat label="Others · Delta">{money(others)}</Stat>
               </Stats>
-              <Reconciled checked={t!.checked} matched={t!.matched} mismatched={t!.mismatched} days={t!.days} />
+              {/* Money in and out in the same card (owner, 20 Nov 2026: "net after charges card + money in & out merge, mobile responsive"). */}
+              <LedgerFlows bare from={from} to={to} account={p.accountParam} rangeWords={rangeWords} accounts={r.accounts} />
+              <div className="mt-2.5"><Reconciled checked={t!.checked} matched={t!.matched} mismatched={t!.mismatched} days={t!.days} /></div>
             </section>
           </Panel>
-
-          {/* Money in and out: invested, withdrawn, the wallet and what it made (owner, 20 Nov 2026). */}
-          <LedgerFlows from={from} to={to} account={p.accountParam} rangeWords={rangeWords} />
 
           <Panel>
             <section aria-label="Sync with Delta" className="grid gap-2">

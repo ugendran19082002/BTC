@@ -73,8 +73,9 @@ export function Stat({ label, children, tone, onOpen, openLabel }: {
   );
 }
 
-export function Stats({ children, cols = 2 }: { children: ReactNode; cols?: 2 | 3 }) {
-  return <dl className={cn('m-0 grid gap-2', cols === 3 ? 'grid-cols-3' : 'grid-cols-2')}>{children}</dl>;
+/** `cols` 4 (20 Nov 2026): two across on a phone, four across from 460px -- a wide phone, a tablet -- so a card stays short. */
+export function Stats({ children, cols = 2 }: { children: ReactNode; cols?: 2 | 3 | 4 }) {
+  return <dl className={cn('m-0 grid gap-2', cols === 3 ? 'grid-cols-3' : cols === 4 ? 'grid-cols-2 min-[460px]:grid-cols-4' : 'grid-cols-2')}>{children}</dl>;
 }
 
 /** A status word in a coloured pill. */

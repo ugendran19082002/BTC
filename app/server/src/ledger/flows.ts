@@ -62,6 +62,28 @@ export function flowsOf(days: readonly FlowDay[]): Flows {
   return out;
 }
 
+/**
+ * Each day's money in and out, by kind, newest first (owner, 20 Nov 2026: "invested click panna, withdraw click panna,
+ * popup, date wise record"): one record a day, an account and a kind -- a deposit, a withdrawal, money moved in or out --
+ * with what came in, what went out and how many entries made it. A kind both ways in one day is two records when the day
+ * kept both; a day read before 20 Nov kept only its net, one record by its sign.
+ */
+export type FlowRecord = { day: string; account: number; type: string; inUsd: number; outUsd: number; n: number };
+export function recordsOf(days: readonly FlowDay[]): FlowRecord[] {
+  const out: FlowRecord[] = [];
+  for (const d of days) {
+    for (const type of MONEY_TYPES) {
+      const t = d.byType?.[type];
+      if (!t || !(t.n > 0)) continue;
+      const inUsd = typeof t.inUsd === 'number' ? t.inUsd : Math.max(0, t.usd);
+      const outUsd = typeof t.outUsd === 'number' ? t.outUsd : Math.max(0, -t.usd);
+      if (inUsd > 0) out.push({ day: d.day, account: d.account, type, inUsd, outUsd: 0, n: t.n });
+      if (outUsd > 0) out.push({ day: d.day, account: d.account, type, inUsd: 0, outUsd, n: t.n });
+    }
+  }
+  return out.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : a.account - b.account || (a.type < b.type ? -1 : 1)));
+}
+
 /** The wallet as the latest day read left it, per account, summed: and that day (the earliest of them, every account). */
 export function walletOf(days: readonly FlowDay[]): { balanceUsd: number | null; asOf: string | null; accounts: number } {
   const latest = new Map<number, FlowDay>();
@@ -101,6 +123,8 @@ export async function ledgerFlows(account: number | null, from: string, to: stri
   return {
     account, from, to, since, daysRead: days.length,
     allTime, range,
+    /** Every day's money in and out, by kind, newest first: what the Invested and Withdrawn tiles open to. */
+    records: recordsOf(days),
     wallet,
     /** The wallet less what was put in net: what the money has made, as the wallet stood on `wallet.asOf`. */
     profitUsd: wallet.balanceUsd === null ? null : wallet.balanceUsd - allTime.netUsd,

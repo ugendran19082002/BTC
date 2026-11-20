@@ -1,4 +1,6 @@
+import { useState, type ReactNode } from 'react';
 import { getLedgerFlows } from '@/api/ledger';
+import { FlowsSheet } from '@/components/mobile/FlowsSheet';
 import { usePoll } from '@/hooks/usePoll';
 import { signedInr, usdToInr } from '@/lib/format';
 import { dayLabel } from '@/lib/market-report';
@@ -12,25 +14,36 @@ import { Loading, Panel, Rupees, Stat, Stats } from '@/components/mobile/parts';
  */
 const rupees = (usd: number | null | undefined) => (usd === null || usd === undefined ? '—' : `₹${Math.round(Math.abs(usdToInr(usd) ?? 0)).toLocaleString('en-IN')}`);
 
-export function LedgerFlows({ from, to, account, rangeWords }: { from: string; to: string; account: number | null; rangeWords: string }) {
+export function LedgerFlows({ from, to, account, rangeWords, accounts = [], bare = false }: {
+  from: string; to: string; account: number | null; rangeWords: string; accounts?: readonly { id: number; name: string }[];
+  /** Inside another card (the Ledger's totals, 20 Nov 2026: "merge, mobile responsive"): its own heading as a divider, no panel of its own. */
+  bare?: boolean;
+}) {
+  // The tile tapped: its money date by date, in a sheet (20 Nov 2026).
+  const [open, setOpen] = useState<'in' | 'out' | null>(null);
   const { data: f, error } = usePoll(() => getLedgerFlows(from, to, account), 120_000, { deps: [from, to, account] });
-  if (!f) return <Panel title="Money in & out"><Loading error={error} what="money in and out" /></Panel>;
+  const wrap = (body: ReactNode) => (bare ? <>{body}</> : <Panel title="Money in & out">{body}</Panel>);
+  if (!f) return wrap(<Loading error={error} what="money in and out" />);
   const a = f.allTime;
   const nothing = a.moves === 0;
-  return (
-    <Panel title="Money in & out">
-      <section aria-label="Money in and out" className="grid gap-2.5">
-        <p className="m-0 text-[12px] text-muted-foreground">
-          {/* From the first money in: an account's own start, not the ledger's first day. */}
-          Since {a.firstMoveDay ? dayLabel(a.firstMoveDay) : f.since ? dayLabel(f.since) : 'the first ledger day'}{account === null ? ' · every account' : ''}
-        </p>
+  // From the first money in: an account's own start, not the ledger's first day.
+  const since = `Since ${a.firstMoveDay ? dayLabel(a.firstMoveDay) : f.since ? dayLabel(f.since) : 'the first ledger day'}${account === null ? ' · every account' : ''}`;
+  return wrap(
+    <>
+      <section aria-label="Money in and out" className={bare ? 'mt-3 grid gap-2.5 border-0 border-t border-solid border-[var(--line-soft)] pt-3' : 'grid gap-2.5'}>
+        {bare ? (
+          <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2">
+            <span className="text-[13px] font-semibold">Money in &amp; out</span>
+            <span className="text-[11.5px] text-muted-foreground">{since}</span>
+          </div>
+        ) : <p className="m-0 text-[12px] text-muted-foreground">{since}</p>}
         {nothing ? (
           <p className="m-0 text-[13px] text-muted-foreground">No money put in or taken out in the days the ledger has read.</p>
         ) : (
           <>
-            <Stats>
-              <Stat label="Invested" tone="up">{rupees(a.inUsd)}</Stat>
-              <Stat label="Withdrawn" tone={a.outUsd > 0 ? 'down' : 'dim'}>{rupees(a.outUsd)}</Stat>
+            <Stats cols={4}>
+              <Stat label="Invested" tone="up" onOpen={() => setOpen('in')} openLabel="Invested: show it date wise">{rupees(a.inUsd)}</Stat>
+              <Stat label="Withdrawn" tone={a.outUsd > 0 ? 'down' : 'dim'} onOpen={() => setOpen('out')} openLabel="Withdrawn: show it date wise">{rupees(a.outUsd)}</Stat>
               <Stat label="Net invested">{a.netUsd < 0 ? `−${rupees(a.netUsd)}` : rupees(a.netUsd)}</Stat>
               <Stat label={f.wallet.asOf ? `Wallet · ${dayLabel(f.wallet.asOf)}` : 'Wallet'}>{rupees(f.wallet.balanceUsd)}</Stat>
             </Stats>
@@ -52,6 +65,12 @@ export function LedgerFlows({ from, to, account, rangeWords }: { from: string; t
           </span>
         </div>
       </section>
-    </Panel>
+      {open && (
+        <FlowsSheet
+          dir={open} records={f.records ?? []} showAccount={account === null}
+          accounts={new Map(accounts.map((x) => [x.id, x.name]))} onClose={() => setOpen(null)}
+        />
+      )}
+    </>,
   );
 }

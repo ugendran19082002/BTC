@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { flowsOf, walletOf, MONEY_TYPES, type FlowDay } from '../../src/ledger/flows.js';
+import { flowsOf, recordsOf, walletOf, MONEY_TYPES, type FlowDay } from '../../src/ledger/flows.js';
 
 /** Money in and out of an account (owner, 20 Nov 2026: "total withdraw, total investment"), from the ledger days kept. */
 
@@ -58,4 +58,26 @@ test('[critical] the wallet: each account\'s latest day read, summed, as of the 
 test('only money types count: Delta\'s deposit and withdrawal names, and transfers between accounts', () => {
   for (const t of ['deposit', 'withdrawal', 'sub_account_transfer']) assert.ok(MONEY_TYPES.includes(t), t);
   for (const t of ['cashflow', 'commission', 'settlement', 'funding', 'liquidation_fee']) assert.ok(!MONEY_TYPES.includes(t), t);
+});
+
+test('[critical] the date-wise records: one a day, an account and a kind, newest first; in and out apart; trading left out', () => {
+  const r = recordsOf([
+    day(1, '2026-11-01', { deposit: { n: 2, usd: 500 }, cashflow: { n: 40, usd: 30 } }),
+    day(2, '2026-11-05', { withdrawal: { n: 1, usd: -200 } }),
+    day(1, '2026-11-20', { sub_account_transfer: { n: 3, usd: 50, inUsd: 80, outUsd: 30 } }),
+    day(1, '2026-11-10', { sub_account_transfer: { n: 1, usd: -46.56 } }),
+  ]);
+  assert.deepEqual(r.map((x) => [x.day, x.account, x.type, x.inUsd, x.outUsd]), [
+    ['2026-11-20', 1, 'sub_account_transfer', 80, 0],
+    ['2026-11-20', 1, 'sub_account_transfer', 0, 30],
+    ['2026-11-10', 1, 'sub_account_transfer', 0, 46.56],
+    ['2026-11-05', 2, 'withdrawal', 0, 200],
+    ['2026-11-01', 1, 'deposit', 500, 0],
+  ]);
+  assert.equal(r.at(-1)!.n, 2, 'how many entries made the day\'s record');
+  // The records add up to the totals.
+  const f = flowsOf([day(1, '2026-11-01', { deposit: { n: 2, usd: 500 } }), day(2, '2026-11-05', { withdrawal: { n: 1, usd: -200 } })]);
+  const rs = recordsOf([day(1, '2026-11-01', { deposit: { n: 2, usd: 500 } }), day(2, '2026-11-05', { withdrawal: { n: 1, usd: -200 } })]);
+  near(rs.reduce((n, x) => n + x.inUsd, 0), f.inUsd, 'records in = total in');
+  near(rs.reduce((n, x) => n + x.outUsd, 0), f.outUsd, 'records out = total out');
 });

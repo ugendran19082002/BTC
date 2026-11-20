@@ -46,10 +46,13 @@ export type Ledger = {
  * money moved out -- since the first ledger day and over the range shown -- the wallet as last read, and what the money
  * has made against it. Dollars; null where nothing is known.
  */
+export type FlowRecord = { day: string; account: number; type: string; inUsd: number; outUsd: number; n: number };
 export type MoneyFlows = { inUsd: number; outUsd: number; netUsd: number; moves: number; firstMoveDay: string | null; lastMoveDay: string | null };
 export type LedgerFlows = {
   account: number | null; from: string; to: string; since: string | null; daysRead: number;
   allTime: MoneyFlows; range: MoneyFlows;
+  /** Each day's money in and out by kind, newest first (20 Nov 2026): what the Invested and Withdrawn tiles open to. */
+  records?: FlowRecord[];
   wallet: { balanceUsd: number | null; asOf: string | null; accounts: number };
   profitUsd: number | null;
 };

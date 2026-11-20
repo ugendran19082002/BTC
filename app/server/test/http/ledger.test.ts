@@ -256,6 +256,11 @@ test('[critical] money in and out (20 Nov 2026): since the first day and over th
     assert.deepEqual([f.range.inUsd, f.range.outUsd], [80, 130], 'the range: November only');
     assert.deepEqual([f.wallet.balanceUsd, f.wallet.asOf], [520, '2026-11-19'], 'the last day read');
     assert.equal(f.profitUsd, 70, 'the wallet 520 less 450 put in');
+    // The records the tiles open to: newest first, in and out apart.
+    assert.deepEqual(f.records.map((x: { day: string; type: string; inUsd: number; outUsd: number }) => [x.day, x.type, x.inUsd, x.outUsd]), [
+      ['2026-11-19', 'sub_account_transfer', 80, 0], ['2026-11-19', 'sub_account_transfer', 0, 30],
+      ['2026-11-05', 'withdrawal', 0, 100], ['2026-09-01', 'deposit', 500, 0],
+    ]);
 
     const both = (await call('GET', '/api/ledger/flows?from=2026-11-19&to=2026-11-19')).body;
     assert.ok(both.allTime.inUsd >= 610, 'every account: the 30 into the second one counted too');
