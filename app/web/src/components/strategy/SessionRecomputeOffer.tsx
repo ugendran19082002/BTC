@@ -14,6 +14,8 @@ export function SessionRecomputeOffer() {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
   if (!offer && !said) return null;
+  // Only a raise is offered here (the server sends no other since 21 Nov 2026): anything else is the card's own act.
+  if (offer && offer.beforeInr !== null && offer.afterInr <= offer.beforeInr && !said) return null;
   const who = offer?.accountName ?? 'this account';
   const take = async () => {
     if (!offer) return;

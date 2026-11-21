@@ -54,4 +54,9 @@ describe('Session limit offer after a lot change', () => {
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Recompute now' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Low: not recomputed. Stopped for today.');
   });
+  it('[critical] only a raise is offered: an offer to lower is not shown', () => {
+    render(<SessionRecomputeOffer />);
+    act(() => offerSessionRecompute({ ...OFFER, beforeInr: 3856, afterInr: 3158 }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
 });

@@ -170,4 +170,34 @@ describe('the parts', () => {
       expect(screen.queryByRole('button', { name: '↻ Recompute limit' })).toBeNull();
     });
   });
+  describe('a lower line (21 Nov 2026)', () => {
+    const running = () => view({
+      setting: { on: true, sessions: [{ from: '07:00', to: '15:00', limit: 19, unit: 'pct' }] },
+      now: { from: '07:00', to: '15:00', limit: 19, unit: 'pct', limitInr: 3856, lossInr: 2944, hit: false, breachSince: null },
+    });
+
+    it('[critical] in red, said plainly, its own button -- and the server is asked to lower only from that button', async () => {
+      getSessionLoss.mockResolvedValue(running());
+      previewSessionRecompute.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 19, beforeInr: 3856, afterInr: 3158, lossInr: 2944, lowers: true });
+      recomputeSessionLimit.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 19, beforeInr: 3856, afterInr: 3158, lossInr: 2944, lowers: true, ...running() });
+      render(<SessionLossLimit />);
+      fireEvent.click(await screen.findByRole('button', { name: '↻ Recompute limit' }));
+      const box = await screen.findByRole('alertdialog', { name: 'Recompute the session limit' });
+      expect(box).toHaveTextContent('This LOWERS the session limit');
+      expect(within(box).getByRole('alert')).toHaveTextContent('squared off sooner: at ₹3,158 lost instead of ₹3,856');
+      expect(within(box).queryByRole('button', { name: 'Recompute' })).toBeNull();
+      fireEvent.click(within(box).getByRole('button', { name: 'Lower it to ₹3,158' }));
+      await waitFor(() => expect(recomputeSessionLimit).toHaveBeenCalledWith(undefined, { lower: true }));
+    });
+
+    it('a raise asks for no lowering', async () => {
+      getSessionLoss.mockResolvedValue(running());
+      previewSessionRecompute.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 19, beforeInr: 3158, afterInr: 3856, lossInr: 100, lowers: false });
+      recomputeSessionLimit.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 19, beforeInr: 3158, afterInr: 3856, lossInr: 100, lowers: false, ...running() });
+      render(<SessionLossLimit />);
+      fireEvent.click(await screen.findByRole('button', { name: '↻ Recompute limit' }));
+      fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Recompute' }));
+      await waitFor(() => expect(recomputeSessionLimit).toHaveBeenCalledWith(undefined, { lower: false }));
+    });
+  });
 });

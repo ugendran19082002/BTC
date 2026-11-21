@@ -136,7 +136,8 @@ export type SessionLossNow = {
  * become, or why it will not: `ok` with the limit before and after and the loss so far, else the reason in words.
  */
 export type RecomputeAnswer =
-  | { ok: true; from: string; to: string; limit: number; beforeInr: number | null; afterInr: number; lossInr: number }
+  /** `lowers`: the new line is under the one in force -- made so only when asked for in so many words (`lower`). */
+  | { ok: true; from: string; to: string; limit: number; beforeInr: number | null; afterInr: number; lossInr: number; lowers: boolean }
   | { ok: false; reason: string };
 
 /** What a new entry is told, the day a session's limit stopped the account. */
@@ -228,7 +229,7 @@ export class SessionLossGuard {
 
   /** What `recompute` would make the session's limit now -- nothing changed. */
   recomputePreview(now = this.d.now()): Promise<RecomputeAnswer> {
-    return this.alone(() => this.recomputeNow(now, false));
+    return this.alone(() => this.recomputeNow(now, false, false));
   }
 
   /**
@@ -238,8 +239,8 @@ export class SessionLossGuard {
    * change it); with nothing to work it out from; before the session's first reading; and when the loss so far is
    * already at or over the new limit -- that would square the account off the moment it was pressed.
    */
-  recompute(now = this.d.now()): Promise<RecomputeAnswer> {
-    return this.alone(() => this.recomputeNow(now, true));
+  recompute(now = this.d.now(), o: { lower?: boolean } = {}): Promise<RecomputeAnswer> {
+    return this.alone(() => this.recomputeNow(now, true, o.lower === true));
   }
 
   /** One at a time with the guard's own tick: the tick is skipped while this runs, and this waits out a tick (3 s at most). */
@@ -250,7 +251,7 @@ export class SessionLossGuard {
     try { return await f(); } finally { this.ticking = false; }
   }
 
-  private async recomputeNow(now: number, apply: boolean): Promise<RecomputeAnswer> {
+  private async recomputeNow(now: number, apply: boolean, lower: boolean): Promise<RecomputeAnswer> {
     const cfg = this.d.rule();
     const s = cfg.on ? sessionAt(cfg.sessions, now) : null;
     if (!s) return { ok: false, reason: 'No session is running now: the next one works its limit out when it begins.' };
@@ -264,11 +265,24 @@ export class SessionLossGuard {
     const afterInr = (s.rule.limit / 100) * base * USDINR;
     const lossInr = (this.baseline.usd - await this.d.netUsd()) * USDINR;
     const beforeInr = this.baseline.limitInr;
+    // Nothing to change: said, rather than a press that moves the line by a rupee (21 Nov 2026: pressed four times).
+    if (beforeInr !== null && Math.abs(afterInr - beforeInr) < 1) {
+      return { ok: false, reason: `Already ₹${Math.round(afterInr).toLocaleString('en-IN')}: with the lots traded now it works out the same.` };
+    }
     if (lossInr >= afterInr) {
       return { ok: false, reason: `The session has lost ₹${Math.round(lossInr).toLocaleString('en-IN')} already, at or over the new limit of ₹${Math.round(afterInr).toLocaleString('en-IN')}: working it out again would square the account off at once.` };
     }
-    const answer = { ok: true as const, from: s.rule.from, to: s.rule.to, limit: s.rule.limit, beforeInr, afterInr, lossInr };
+    const lowers = beforeInr !== null && afterInr < beforeInr;
+    const answer = { ok: true as const, from: s.rule.from, to: s.rule.to, limit: s.rule.limit, beforeInr, afterInr, lossInr, lowers };
     if (!apply) return answer;
+    /*
+     * A lower line only when asked for in so many words (21 Nov 2026: a recompute took High from ₹3,856 to ₹3,158 behind a
+     * "Now / New" box, and the account was squared off at ₹3,212 eight minutes on). A plain recompute that would lower it
+     * is refused, with both figures; the screen then offers "Lower it" apart.
+     */
+    if (lowers && !lower) {
+      return { ok: false, reason: `This would LOWER the limit from ₹${Math.round(beforeInr!).toLocaleString('en-IN')} to ₹${Math.round(afterInr).toLocaleString('en-IN')}: press "Lower it" to do that.` };
+    }
     const limitFor = `${s.rule.unit}:${s.rule.limit}`;
     this.baseline = { ...this.baseline, limitInr: afterInr, limitFor };
     await this.d.fixedLimit?.set(`${key}|${limitFor}`, afterInr).catch(() => {});
@@ -316,7 +330,11 @@ export class SessionLossGuard {
       const before = s.rule.unit === 'pct' ? await this.d.fixedLimit?.get(kept).catch(() => null) ?? null : null;
       if (before !== null) this.baseline.limitInr = before;
       else {
-        const base = s.rule.unit === 'pct' ? await this.d.pctBaseUsd().catch(() => null) : null;
+        // One way, wherever the line is worked out -- the session's start, a rule changed in it, a recompute (21 Nov 2026):
+        // the model of a position's margin × the lots set (`pctModelUsd`). Delta's measured margin made a rule changed at
+        // 09:46 read ₹3,856 and the recompute right after ₹3,158 -- the same rule, two lines -- and High was squared off at
+        // the lower one. Where the model is not given (a test), the base as before.
+        const base = s.rule.unit === 'pct' ? await (this.d.pctModelUsd ?? this.d.pctBaseUsd)().catch(() => null) : null;
         this.baseline.limitInr = s.rule.unit === 'inr' ? s.rule.limit : base !== null && base > 0 ? (s.rule.limit / 100) * base * USDINR : null;
         if (s.rule.unit === 'pct' && this.baseline.limitInr !== null) await this.d.fixedLimit?.set(kept, this.baseline.limitInr).catch(() => {});
       }

@@ -177,3 +177,17 @@ test('[critical] a lot change saved while a session runs comes back with the lim
     assert.ok(asked.every((a) => a === false), 'only asked what it would be: nothing worked out until the owner says so');
   } finally { svc.sessionLossRecompute = real; }
 });
+
+test('[critical] POST { lower: true } is passed through as asked; a plain POST asks for no lowering', async () => {
+  const svc = tradingService() as unknown as { sessionLossRecompute: (apply: boolean, o?: { lower?: boolean }) => Promise<unknown> };
+  const real = svc.sessionLossRecompute;
+  const asked: (boolean | undefined)[] = [];
+  svc.sessionLossRecompute = async (_apply, o) => { asked.push(o?.lower); return { ok: false, reason: 'This would LOWER the limit from ₹3,856 to ₹3,158: press "Lower it" to do that.' }; };
+  try {
+    const plain = await api('POST', `/api/desk/session-loss/recompute?account=${main()}`, {});
+    assert.equal(plain.status, 409);
+    assert.match(plain.body.error, /would LOWER/);
+    await api('POST', `/api/desk/session-loss/recompute?account=${main()}`, { lower: true });
+    assert.deepEqual(asked, [false, true]);
+  } finally { svc.sessionLossRecompute = real; }
+});

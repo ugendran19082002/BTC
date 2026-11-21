@@ -638,7 +638,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     if (existing && existing.config.lots !== config.lots) {
       const desk = tradingServiceFor(strategy.accountId);
       const r = await desk?.sessionLossRecompute(false).catch(() => null);
-      if (r?.ok && (r.beforeInr === null || Math.abs(r.afterInr - r.beforeInr) >= 1)) {
+      // Offered only to raise it (21 Nov 2026): a lower line is the owner's own act, on the card, never a prompt.
+      if (r?.ok && (r.beforeInr === null || r.afterInr - r.beforeInr >= 1)) {
         let accountName: string | null = null;
         try { accountName = strategy.accountId == null ? null : brokerAccounts().get(strategy.accountId)?.name ?? null; } catch { accountName = null; }
         sessionRecompute = { accountId: strategy.accountId ?? null, accountName, beforeInr: r.beforeInr, afterInr: r.afterInr, from: r.from, to: r.to };

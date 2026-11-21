@@ -226,6 +226,37 @@ function problemAlertFor(
   return null;
 }
 
+/**
+ * Several trades left without a stop in the same few seconds, said once (21 Nov 2026, 09:01:35-58 IST: seventeen
+ * "NO STOP-LOSS" messages in 23 seconds, one a trade, as Delta pulled the stops of two puts at once): how many, on which
+ * contracts and how much short, and why -- the words of the first. Each trade still has its own repeat guard (the batch,
+ * `no-stop-batch.ts`); this is only how they are put to the phone together.
+ */
+export function noStopBatchAlert(
+  ctx: AlertContext,
+  items: readonly { plan: TradePlan; held: number; short: boolean; alarm: string }[],
+  at: number,
+): Alert {
+  const by = new Map<string, { n: number; held: number; short: boolean }>();
+  for (const x of items) {
+    const k = contract(x.plan);
+    const g = by.get(k) ?? { n: 0, held: 0, short: x.short };
+    g.n += 1; g.held += x.held;
+    by.set(k, g);
+  }
+  return {
+    key: `no-stop-batch:${ctx.account ?? ''}:${at}`,
+    repeatAfterMs: PROBLEM_REPEAT_MS,
+    text: lines(
+      headline(ctx, '🚨', `NO STOP-LOSS · ${items.length} trades`), '',
+      ...[...by].map(([k, g]) => `<b>${escape(k)}</b>: ${g.n} trade${g.n === 1 ? '' : 's'}, ${g.short ? 'short' : 'long'} <b>${qty(g.held)}</b>`),
+      '', `<i>${escape(items[0]!.alarm)}</i>`,
+      'Nothing protecting them. The desk keeps retrying, and closes at the market what it cannot protect — check Delta now.', '',
+      `🕒 ${istTime(at)} IST · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`,
+    ),
+  };
+}
+
 const problemText = (ctx: AlertContext, icon: string, title: string, body: string[], at: number, plan: TradePlan) =>
   lines(headline(ctx, icon, title), '', ...body, footer(at, plan, ctx));
 

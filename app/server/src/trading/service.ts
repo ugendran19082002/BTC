@@ -26,7 +26,8 @@ import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { deskLog } from '../observability/desk-log.js';
-import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, sessionLossAlert, sessionRecomputeAlert, slippageAlert } from '../notify/messages.js';
+import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, noStopBatchAlert, sessionLossAlert, sessionRecomputeAlert, slippageAlert } from '../notify/messages.js';
+import { NoStopBatch } from '../notify/no-stop-batch.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
 import type { ExchangePort } from './exchange/port.js';
@@ -39,6 +40,7 @@ import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
 import { GLOBAL_MAX_OPEN_KEY, globalMaxOpenOf } from '../strategy/types.js';
 import { SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type RecomputeAnswer, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
+import type { TradePlan } from './engine.js';
 
 /**
  * The one live trading service.
@@ -285,7 +287,11 @@ export class TradingService {
         }
         if (!this.notifier || !this.alertsOn) return;
         const alert = alertFor(event, before, after, plan, this.alertContext());
-        if (alert) this.notifier.notify(alert);
+        // "NO STOP-LOSS": held a moment, so several at once are one message (21 Nov 2026, `no-stop-batch.ts`).
+        if (alert && alert.key.endsWith(':problem:no-stop')) {
+          const held = Math.abs(after.position);
+          this.noStops.add({ tradeId: after.tradeId, alert, plan, held, short: after.position < 0, alarm: after.alarm ?? '' });
+        } else if (alert) this.notifier.notify(alert);
         // Only a closing event can end the day, so only then is the book read.
         // The journal is already written, so the store sees this trade closed.
         if (before.position !== 0 && after.position === 0) {
@@ -496,7 +502,8 @@ export class TradingService {
   /** The session limit now, and its last square-offs: what the card shows. */
   async sessionLossView(): Promise<{ setting: SessionLoss; now: SessionLossNow; blocked: string | null; hits: SessionHit[]; pctBase: Awaited<ReturnType<TradingService['sessionPctBase']>> }> {
     return {
-      setting: this.sessionLossSetting, now: this.sessionGuard.status(), blocked: this.sessionGuard.entryBlock(), pctBase: await this.sessionPctBase(),
+      // The base as the line is worked out (21 Nov 2026: the model × the lots set), so the card's "≈ ₹" is the line to be.
+      setting: this.sessionLossSetting, now: this.sessionGuard.status(), blocked: this.sessionGuard.entryBlock(), pctBase: await this.sessionPctBase(false, true),
       hits: await this.store.sessionLossHits(this.currentAccountId, 20),
     };
   }
@@ -530,6 +537,12 @@ export class TradingService {
   }
 
   /** A square-off by the session limit, said: the log, the error page, the phone. */
+  /** "NO STOP-LOSS" for several trades in the same few seconds, as one message (`no-stop-batch.ts`, 21 Nov 2026). */
+  private readonly noStops = new NoStopBatch<TradePlan>({
+    notify: (a) => { if (this.notifier && this.alertsOn) this.notifier.notify(a); },
+    many: (items, at) => noStopBatchAlert(this.alertContext(), items, at),
+  });
+
   private sayRecompute(r: Extract<RecomputeAnswer, { ok: true }>): void {
     const at = Date.now();
     const rs = (n: number | null) => (n === null ? 'none' : `₹${Math.round(n).toLocaleString('en-IN')}`);
@@ -539,8 +552,8 @@ export class TradingService {
   }
 
   /** The session's limit as `recompute` would make it now (`apply` false), or made so (`apply` true): see `SessionLossGuard`. */
-  sessionLossRecompute(apply: boolean): Promise<RecomputeAnswer> {
-    return apply ? this.sessionGuard.recompute() : this.sessionGuard.recomputePreview();
+  sessionLossRecompute(apply: boolean, o: { lower?: boolean } = {}): Promise<RecomputeAnswer> {
+    return apply ? this.sessionGuard.recompute(undefined, o) : this.sessionGuard.recomputePreview();
   }
 
   private sayHit(h: SessionHit): void {

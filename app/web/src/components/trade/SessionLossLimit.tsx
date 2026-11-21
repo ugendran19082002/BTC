@@ -82,10 +82,10 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
     setRecomputing(true); setRecomputed(null);
     try { setOffer(await previewSessionRecompute()); } catch (e) { setOffer({ ok: false, reason: (e as Error).message }); } finally { setRecomputing(false); }
   };
-  const doRecompute = async () => {
+  const doRecompute = async (lower = false) => {
     setRecomputing(true);
     try {
-      const r = await recomputeSessionLimit();
+      const r = await recomputeSessionLimit(undefined, { lower });
       setOffer(null);
       setRecomputed(`Limit worked out again: ${r.beforeInr === null ? '' : `${rupees(r.beforeInr)} → `}${rupees(r.afterInr)} for the rest of the session.`);
       await refresh();
@@ -145,8 +145,14 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
             </button>
           )}
           {offer && offer.ok && (
-            <div role="alertdialog" aria-label="Recompute the session limit" className="grid gap-2 rounded-md border border-solid border-[var(--accent)] bg-muted p-2.5 text-[12.5px] leading-snug">
-              <span className="font-semibold">Recompute this session&apos;s limit?</span>
+            // A lower line in red, its own button, Cancel first (21 Nov 2026: High went ₹3,856 → ₹3,158 behind a plain box).
+            <div role="alertdialog" aria-label="Recompute the session limit" className={cn('grid gap-2 rounded-md border border-solid bg-muted p-2.5 text-[12.5px] leading-snug', offer.lowers ? 'border-[var(--down)]' : 'border-[var(--accent)]')}>
+              <span className="font-semibold">{offer.lowers ? 'This LOWERS the session limit' : 'Recompute this session\'s limit?'}</span>
+              {offer.lowers && (
+                <span role="alert" className="text-[var(--down)]">
+                  The account is squared off sooner: at {rupees(offer.afterInr)} lost instead of {rupees(offer.beforeInr ?? 0)}.
+                </span>
+              )}
               <span className="grid grid-cols-[auto_1fr] gap-x-3 tabular-nums">
                 <span className="text-muted-foreground">Now</span><span>{offer.beforeInr === null ? '—' : rupees(offer.beforeInr)} (worked out at {offer.from})</span>
                 <span className="text-muted-foreground">New</span><b>{rupees(offer.afterInr)} ({offer.limit}% with the lots traded now)</b>
@@ -154,8 +160,11 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
               <span className="text-muted-foreground">Lost so far {rupees(Math.max(0, offer.lossInr))}. Kept until {offer.to}.</span>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setOffer(null)} className="h-9 rounded-md border border-solid border-border bg-transparent font-[inherit] text-[13px] text-foreground">Cancel</button>
-                <button type="button" disabled={recomputing} onClick={() => void doRecompute()} className="h-9 rounded-md border-0 bg-foreground font-[inherit] text-[13px] font-semibold text-background disabled:opacity-40">
-                  {recomputing ? 'Recomputing…' : 'Recompute'}
+                <button
+                  type="button" disabled={recomputing} onClick={() => void doRecompute(offer.lowers === true)}
+                  className={cn('h-9 rounded-md border-0 font-[inherit] text-[13px] font-semibold disabled:opacity-40', offer.lowers ? 'bg-[var(--down)] text-[var(--bg)]' : 'bg-foreground text-background')}
+                >
+                  {recomputing ? 'Recomputing…' : offer.lowers ? `Lower it to ${rupees(offer.afterInr)}` : 'Recompute'}
                 </button>
               </div>
             </div>

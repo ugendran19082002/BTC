@@ -245,9 +245,10 @@ export const saveSessionLoss = (setting: SessionLossSetting) => post<SessionLoss
  * makes it so. `account`: one account's (the strategy screen's offer after a lot change), else the account shown.
  */
 export type SessionRecompute =
-  | { ok: true; from: string; to: string; limit: number; beforeInr: number | null; afterInr: number; lossInr: number }
+  | { ok: true; from: string; to: string; limit: number; beforeInr: number | null; afterInr: number; lossInr: number; lowers?: boolean }
   | { ok: false; reason: string };
 const recomputeUrl = (account?: number | null) => (account == null ? withAccount('/api/desk/session-loss/recompute') : `/api/desk/session-loss/recompute?account=${account}`);
 export const previewSessionRecompute = (account?: number | null) => json<SessionRecompute>(recomputeUrl(account));
-export const recomputeSessionLimit = (account?: number | null) =>
-  post<Extract<SessionRecompute, { ok: true }> & SessionLossView>(recomputeUrl(account), {});
+/** `lower`: a line under the one in force, asked for in so many words (21 Nov 2026); without it the server refuses one. */
+export const recomputeSessionLimit = (account?: number | null, o: { lower?: boolean } = {}) =>
+  post<Extract<SessionRecompute, { ok: true }> & SessionLossView>(recomputeUrl(account), o.lower ? { lower: true } : {});

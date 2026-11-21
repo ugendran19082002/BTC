@@ -623,8 +623,10 @@ export function registerDeskRoutes(app: FastifyInstance) {
    * no session now, stopped for today, a limit in rupees, nothing to work it out from, or a loss already at the new limit.
    */
   app.get('/api/desk/session-loss/recompute', async () => tradingService().sessionLossRecompute(false));
-  app.post('/api/desk/session-loss/recompute', async (_req, reply) => {
-    const r = await tradingService().sessionLossRecompute(true);
+  app.post('/api/desk/session-loss/recompute', async (req, reply) => {
+    // `{ lower: true }`: a line lower than the one in force, asked for in so many words (21 Nov 2026).
+    const lower = ((req.body ?? {}) as { lower?: unknown }).lower === true;
+    const r = await tradingService().sessionLossRecompute(true, { lower });
     if (!r.ok) return refuse(reply, 409, { error: r.reason });
     return { ...r, ...(await tradingService().sessionLossView()) };
   });

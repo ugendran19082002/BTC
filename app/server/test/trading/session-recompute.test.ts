@@ -141,3 +141,45 @@ test('refused outside a session, for a rupee limit, before the session is read, 
   none.lots(null);
   assert.match(((await none.guard.recompute()) as { reason: string }).reason, /At most open/);
 });
+
+/* ---------------------------------------------- 21 Nov 2026: one formula, never lowered unasked --- */
+
+test('[critical] a recompute that would LOWER the line is refused unless asked for in so many words; asked, it is made', async () => {
+  const r = rig();
+  r.lots(2);
+  r.set('07:00', 0); await r.guard.tick();
+  assert.equal(Math.round(r.guard.status()!.limitInr!), Math.round(TWO_LOTS));
+  r.lots(1);
+  r.set('07:30', 100);
+  const p = await r.guard.recomputePreview();
+  assert.ok(p.ok && p.lowers, 'the preview says it lowers');
+  const plain = await r.guard.recompute();
+  assert.equal(plain.ok, false);
+  assert.match((plain as { reason: string }).reason, /would LOWER the limit from ₹3,060 to ₹1,530/);
+  assert.equal(Math.round(r.guard.status()!.limitInr!), Math.round(TWO_LOTS), 'nothing changed');
+  const asked = await r.guard.recompute(undefined, { lower: true });
+  assert.ok(asked.ok && asked.lowers);
+  assert.equal(Math.round(r.guard.status()!.limitInr!), Math.round(ONE_LOT));
+});
+
+test('nothing to change: said, not a press that moves the line by a rupee', async () => {
+  const r = rig();
+  r.set('07:00', 0); await r.guard.tick();
+  const a = await r.guard.recompute();
+  assert.equal(a.ok, false);
+  assert.match((a as { reason: string }).reason, /^Already ₹1,530/);
+  assert.equal(r.told.length, 0);
+});
+
+test('[critical] one formula: the session\'s start and a rule changed in it are worked out as a recompute is -- the model × the lots set', async () => {
+  // The model says two lots ($200); the other base would say $100. Both the start and a rule change follow the model.
+  const setting: SessionLoss = { on: true, sessions: [{ from: '07:00', to: '15:00', limit: 18, unit: 'pct' }] };
+  const r = rig(setting);
+  r.lots(2);
+  r.set('07:00', 0); await r.guard.tick();
+  assert.equal(Math.round(r.guard.status()!.limitInr!), Math.round(TWO_LOTS), 'the start: the model');
+  setting.sessions[0]!.limit = 19;
+  r.set('09:46', 0); await r.guard.tick();
+  assert.equal(Math.round(r.guard.status()!.limitInr!), Math.round(0.19 * 200 * USDINR), 'a rule changed in the session: the model too');
+  assert.match(((await r.guard.recompute()) as { reason: string }).reason, /^Already/, 'and a recompute right after agrees -- no ₹3,856 then ₹3,158');
+});
