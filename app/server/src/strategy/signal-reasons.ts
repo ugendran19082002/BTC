@@ -63,7 +63,7 @@ export function signalReasons(status: string, detail: string): SignalReason[] {
 
 /**
  * How a row came to enter (owner, 2 Nov 2026: "taken click pana signal entry, reentry SL, reentry tgt tab varunum"): on
- * its own signal, as a swap at a full cap (17 Nov 2026), or as a re-entry after an option SL or target -- read, as the reasons are, from its sentence, where the
+ * its own signal, as a swap -- at a full cap (17 Nov 2026) or on every signal (20 Nov 2026) --, or as a re-entry after an option SL or target -- read, as the reasons are, from its sentence, where the
  * runner names it before the "|" ("#1 Breakout BUY · re-entry after SL 1 (of …) | …").
  */
 export type SignalEntry = 'signal' | 'swap' | 'sl' | 'tgt';
@@ -71,8 +71,10 @@ export function signalEntryOf(detail: string): SignalEntry {
   const head = detail.includes(' | ') ? detail.slice(0, detail.indexOf(' | ')) : detail;
   if (/ · re-entry after SL\b/.test(head)) return 'sl';
   if (/ · re-entry after target\b/.test(head)) return 'tgt';
-  // Sold at a full cap by buying back an open sale (owner, 17 Nov 2026: "swap entry tab"): the runner says so after the "|".
-  return / · made room: bought back /.test(detail) ? 'swap' : 'signal';
+  // Sold by buying back an open sale (owner, 17 Nov 2026: "swap entry tab"): at a full cap ("made room"), or -- since 21 Nov
+  // 2026, owner: "every-signal swaps land under Signal entry" -- under it with swap on every signal ("swapped"). The runner
+  // says so after the "|"; "not swapped: ..." is a signal sold as ever, nothing bought back.
+  return / · (?:made room|swapped): bought back /.test(detail) ? 'swap' : 'signal';
 }
 
 /** A range's signals counted: all, taken (`placed`: real orders of them; `takenBy`: how each entered), not taken, and not taken by kind. */

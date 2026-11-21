@@ -502,6 +502,7 @@ export function SignalStrategiesCard() {
       momentum: (({ now: _now, ivNow: _iv, ...g }) => g)(data.signalMomentumGuard),
       momentumNow: data.signalMomentumGuard.now, ivNow: data.signalMomentumGuard.ivNow ?? null, reentry: { sl: data.signalReentry.sl, tgt: data.signalReentry.tgt },
       ...(data.signalCapSwap ? { capSwap: data.signalCapSwap } : {}),
+      ...(data.signalSwap ? { signalSwap: data.signalSwap } : {}),
     } : null;
   const sections = groupSections(mine, groups);
   /** Up (-1) or down (+1) among its account's groups, in the order shown, saved at once. */

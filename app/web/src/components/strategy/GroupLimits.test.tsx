@@ -10,12 +10,12 @@ import { groupOwnWords } from '@/lib/strategy-groups';
  * the group alone; back to the account's in one tap.
  */
 const setSignalMaxOpen = vi.fn(), setSideMax = vi.fn(), setStrikeMax = vi.fn(), setStrikeFull = vi.fn();
-const setZoneFresh = vi.fn(), setMomentumGuard = vi.fn(), setReentry = vi.fn(), setCapSwap = vi.fn();
+const setZoneFresh = vi.fn(), setMomentumGuard = vi.fn(), setReentry = vi.fn(), setCapSwap = vi.fn(), setSignalSwap = vi.fn();
 vi.mock('@/api/strategy', () => ({
   setSignalMaxOpen: (...a: unknown[]) => setSignalMaxOpen(...a), setSideMax: (...a: unknown[]) => setSideMax(...a),
   setStrikeMax: (...a: unknown[]) => setStrikeMax(...a), setStrikeFull: (...a: unknown[]) => setStrikeFull(...a),
   setZoneFresh: (...a: unknown[]) => setZoneFresh(...a), setMomentumGuard: (...a: unknown[]) => setMomentumGuard(...a),
-  setReentry: (...a: unknown[]) => setReentry(...a), setCapSwap: (...a: unknown[]) => setCapSwap(...a),
+  setReentry: (...a: unknown[]) => setReentry(...a), setCapSwap: (...a: unknown[]) => setCapSwap(...a), setSignalSwap: (...a: unknown[]) => setSignalSwap(...a),
 }));
 
 const NONE: GroupOwn = { maxOpen: null, ce: null, pe: null, strikeMax: null, strikeFull: null, zoneFresh: null, momentum: null, reentry: null };
@@ -30,7 +30,7 @@ const act = vi.fn(async (_k: string, fn: () => Promise<unknown>) => { await fn()
 const onInvalid = vi.fn();
 const show = (g: StrategyGroup) => render(<GroupLimits group={g} account={ACCOUNT} busy={null} act={act} onInvalid={onInvalid} />);
 
-beforeEach(() => { for (const f of [setSignalMaxOpen, setSideMax, setStrikeMax, setStrikeFull, setZoneFresh, setMomentumGuard, setReentry, setCapSwap, act, onInvalid]) f.mockClear(); });
+beforeEach(() => { for (const f of [setSignalMaxOpen, setSideMax, setStrikeMax, setStrikeFull, setZoneFresh, setMomentumGuard, setReentry, setCapSwap, setSignalSwap, act, onInvalid]) f.mockClear(); });
 
 describe('GroupLimits', () => {
   it('[critical] none of its own: "all the account\'s"; its own: said in short words, with what it holds of its own limit', () => {
@@ -104,5 +104,19 @@ describe('GroupLimits', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(setCapSwap).toHaveBeenCalledWith({ on: true, pct: 75, perMin: 20 }));
     expect(setCapSwap.mock.calls[0]).toHaveLength(1);
+  });
+
+  it('[critical] swap on every signal is shown in the group\'s limits as the account\'s too (21 Nov 2026), and saved as the account\'s', async () => {
+    const { rerender } = render(<GroupLimits group={group()} account={ACCOUNT} busy={null} act={act} onInvalid={onInvalid} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Limits of Scalps' }));
+    expect(screen.queryByRole('button', { name: /Swap on every signal/ })).toBeNull();
+    rerender(<GroupLimits group={group()} account={{ ...ACCOUNT, signalSwap: { on: true, pct: 80, perMin: 100 } }} busy={null} act={act} onInvalid={onInvalid} />);
+    expect(screen.getByRole('button', { name: /Swap on every signal/ })).toHaveTextContent('on · 80% kept · max 100/min');
+    expect(screen.getByLabelText("Swap on every signal: the account's")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Swap on every signal/ }));
+    fireEvent.click(screen.getByRole('button', { name: '85%' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(setSignalSwap).toHaveBeenCalledWith({ on: true, pct: 85, perMin: 100 }));
+    expect(setSignalSwap.mock.calls[0]).toHaveLength(1);
   });
 });

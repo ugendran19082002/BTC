@@ -88,6 +88,20 @@ test('[critical] how a signal entered (2 Nov 2026): on its own signal, or a re-e
   assert.equal(c.notTaken, 1);
 });
 
+test('[critical] swap on every signal (21 Nov 2026): a signal sold after buying back an open sale is a swap entry too -- "not swapped" is a signal entry', () => {
+  const every = '#3 Retest SELL | sell CE 92000 x2 @ 12 · perp at 91200 · swapped: bought back C-BTC-91500-221126 sold @ 30 (84% kept)';
+  assert.equal(signalEntryOf(every), 'swap');
+  assert.equal(signalEntryOf('#3 Retest SELL | sell CE 92000 x2 @ 12 · not swapped: Delta\'s quota for this account is at 72%'), 'signal');
+  assert.equal(signalEntryOf('#3 Retest SELL | sell CE 92000 x2 @ 12 · not swapped: the buy-back of C-1 did not go (no answer)'), 'signal');
+  assert.equal(signalEntryOf('#1 Breakout BUY · re-entry after SL 1 (of P-1) | sell PE 81400 x1 @ 13 · swapped: bought back X sold @ 9 (85% kept)'), 'sl', 'a re-entry stays a re-entry');
+  const c = signalCounts([
+    { status: 'placed', detail: every },
+    { status: 'placed', detail: '#54 X SELL | sell CE 66000 x2 @ 14 · made room: bought back C-1 sold @ 40 (75% kept)' },
+    { status: 'placed', detail: '#1 Breakout BUY | sell PE 81400 x1 @ 13' },
+  ]);
+  assert.deepEqual(c.takenBy, { signal: 1, swap: 2, sl: 0, tgt: 0 }, 'both kinds of swap counted as Swap entry');
+});
+
 test('[critical] a swap entry (17 Nov 2026): taken at a full cap by buying back an open sale -- its own kind, counted apart', () => {
   const swap = '#54 Liquidity replenishment SELL | sell CE 66000 x2 @ 14 · perp at 65120 · perp SL skipped · TGT skipped · made room: bought back C-BTC-65800-171126 sold @ 41.5 (78% kept)';
   assert.equal(signalEntryOf(swap), 'swap');

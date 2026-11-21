@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Loader2, RotateCcw, SlidersHorizontal } from 'lucide-react';
-import { setCapSwap, setMomentumGuard, setReentry, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setZoneFresh } from '@/api/strategy';
+import { setCapSwap, setSignalSwap, setMomentumGuard, setReentry, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setZoneFresh } from '@/api/strategy';
 import { Button } from '@/components/ui/button';
 import { SideMax } from '@/components/strategy/SideMax';
 import { StrikeMax } from '@/components/strategy/StrikeMax';
 import { ZoneFresh } from '@/components/strategy/ZoneFresh';
 import { MomentumGuard } from '@/components/strategy/MomentumGuard';
 import { Reentry } from '@/components/strategy/Reentry';
-import { CapSwap } from '@/components/strategy/CapSwap';
+import { CapSwap, SignalSwap } from '@/components/strategy/CapSwap';
 import { groupOwnWords } from '@/lib/strategy-groups';
 import { REENTRY_DEFAULT, guardsOff, type CapSwap as Swap, type GroupOwn, type MomentumGuard as Guard, type Reentry as ReentrySetting, type SignalTf, type StrategyGroup } from '@/types/strategy';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,8 @@ export type AccountLimits = {
   ivNow?: Parameters<typeof MomentumGuard>[0]['ivNow'];
   /** Swap at full cap (16 Nov 2026): the account's only -- it works on the account's cap -- so a group shows it, never sets its own. */
   capSwap?: Swap;
+  /** Swap on every signal (20 Nov 2026): the account's only too -- it buys back the account's sales, any group's -- shown, saved as the account's. */
+  signalSwap?: Swap;
 };
 
 /**
@@ -103,6 +105,14 @@ export function GroupLimits({ group, account, busy, act, onInvalid }: {
             <span className="inline-flex items-center gap-1">
               <CapSwap swap={account.capSwap} busy={busy === key('capswap')} onSave={(w) => save('capswap', () => setCapSwap(w))} />
               <span aria-label="Swap at full cap: the account's" title="The account's setting: it makes room under the account's cap, for every group"
+                    className="text-[10.5px] text-muted-foreground">account&apos;s</span>
+            </span>
+          )}
+          {/* And swap on every signal (21 Nov 2026, owner: "signal swap not in the group"): the account's too, saved as the account's. */}
+          {account.signalSwap && (
+            <span className="inline-flex items-center gap-1">
+              <SignalSwap swap={account.signalSwap} busy={busy === key('signalswap')} onSave={(w) => save('signalswap', () => setSignalSwap(w))} />
+              <span aria-label="Swap on every signal: the account's" title="The account's setting: it buys back the account's open sales, whichever group sold them"
                     className="text-[10.5px] text-muted-foreground">account&apos;s</span>
             </span>
           )}

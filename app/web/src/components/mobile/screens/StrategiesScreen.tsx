@@ -63,8 +63,9 @@ type Why = SignalReason | 'any';
 type EntryPick = SignalEntry | 'any';
 const ENTRIES: { key: SignalEntry; label: string; none: string }[] = [
   { key: 'signal', label: 'Signal entry', none: 'No signal entry taken today.' },
-  // Sold at a full cap by buying back an open sale that had kept 70% (17 Nov 2026: "swap entry add tab and list").
-  { key: 'swap', label: 'Swap entry', none: 'No swap entry today: the cap was not full, or no open sale had kept enough to make room.' },
+  // Sold by buying back an open sale that had kept enough (17 Nov 2026: "swap entry add tab and list"): at a full cap, or
+  // with swap on every signal (21 Nov 2026: those were counted as signal entries).
+  { key: 'swap', label: 'Swap entry', none: 'No swap entry today: no open sale had kept enough to be bought back for a new one.' },
   { key: 'sl', label: 'Re-entry after SL', none: 'No re-entry after an SL taken today.' },
   { key: 'tgt', label: 'Re-entry after target', none: 'No re-entry after a target taken today.' },
 ];
@@ -72,7 +73,7 @@ const entryOf = (r: SignalTrade): SignalEntry => {
   if (r.entry) return r.entry;
   const head = r.detail.includes(' | ') ? r.detail.slice(0, r.detail.indexOf(' | ')) : r.detail;
   return / · re-entry after SL\b/.test(head) ? 'sl' : / · re-entry after target\b/.test(head) ? 'tgt'
-    : / · made room: bought back /.test(r.detail) ? 'swap' : 'signal';
+    : / · (?:made room|swapped): bought back /.test(r.detail) ? 'swap' : 'signal';
 };
 /** Rows a tab shows at first, and each "Show more" adds. */
 const PAGE = 40;

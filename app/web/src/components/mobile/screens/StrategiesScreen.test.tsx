@@ -278,6 +278,21 @@ describe('StrategiesScreen: Taken, by how it entered', () => {
     expect(chips().getByRole('button', { name: 'Swap entry 1' })).toBeInTheDocument();
   });
 
+  it('[critical] a swap on every signal (21 Nov 2026) read from its own sentence is a Swap entry too; "not swapped" is a Signal entry', async () => {
+    getDaySignals.mockResolvedValue({
+      trades: [
+        sig('placed', { reasons: [], detail: '#3 Retest SELL | sell CE 92000 x2 @ 12 · swapped: bought back C-1 sold @ 30 (84% kept)' }),
+        sig('placed', { reasons: [], detail: '#3 Retest SELL | sell CE 92000 x2 @ 12 · not swapped: Delta\'s quota for this account is at 72%' }),
+      ],
+      counts: { all: 2, taken: 2, placed: 2, notTaken: 0, byReason: {} },
+    });
+    show();
+    await waitFor(() => expect(tabs().getByRole('button', { name: 'Taken 2' })).toBeInTheDocument());
+    fireEvent.click(tabs().getByRole('button', { name: 'Taken 2' }));
+    expect(chips().getByRole('button', { name: 'Swap entry 1' })).toBeInTheDocument();
+    expect(chips().getByRole('button', { name: 'Signal entry 1' })).toBeInTheDocument();
+  });
+
   it('a server from before 2 Nov sends neither the kind nor its counts: each row\'s own sentence says, and none of a kind says so', async () => {
     getDaySignals.mockResolvedValue({
       trades: [
