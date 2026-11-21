@@ -435,6 +435,9 @@ test('[critical] a signal entered at once is held to the same: the perp already 
   }
 });
 
+/** The entry guards of 21 Nov 2026, as they read where none was set: calls only, the 15 minutes, IV and bid off. */
+const GUARDS_OFF = { sides: 'ce', q15: { on: false, pct: 0.4 }, iv: { on: false, pts: 5 }, bid: { on: false, min: 500 } } as const;
+
 test('[critical] the momentum guard (30 Oct 2026): off until set; on, no call is sold after the perp rose its points in the hour -- puts go on; nonsense is refused', async () => {
   const id = await make('Momentum', main, { enterOn: 'signal' });
   const last = async () => (await runsOf(id)).at(-1)!;
@@ -447,11 +450,11 @@ test('[critical] the momentum guard (30 Oct 2026): off until set; on, no call is
     perp = 85_010;                                             // up 310 in the hour
     await guarded.onSignal(await sellCall());
     assert.equal((await last()).status, 'would-place', 'off until set: ' + (await last()).detail);
-    assert.deepEqual((await api('GET', `/api/strategies?account=${main}`)).body.signalMomentumGuard, { on: false, pts: 250, unit: 'pts', pct: 0.25, now: null }, 'off, and no fresh print to read a rise from');
+    assert.deepEqual((await api('GET', `/api/strategies?account=${main}`)).body.signalMomentumGuard, { on: false, pts: 250, unit: 'pts', pct: 0.25, ...GUARDS_OFF, now: null, ivNow: null }, 'off, and no fresh print to read a rise from');
 
     const set = await api('POST', '/api/strategies/momentum-guard', { guard: { on: true, pts: 250 }, accountId: main });
     assert.equal(set.status, 200, JSON.stringify(set.body));
-    assert.deepEqual(set.body.signalMomentumGuard, { on: true, pts: 250, unit: 'pts', pct: 0.25 });
+    assert.deepEqual(set.body.signalMomentumGuard, { on: true, pts: 250, unit: 'pts', pct: 0.25, ...GUARDS_OFF });
     assert.equal((await api('GET', `/api/strategies?account=${main}`)).body.signalMomentumGuard.on, true, 'and the card reads it back');
     await guarded.onSignal(await sellCall());
     assert.equal((await last()).status, 'skipped');
@@ -476,7 +479,7 @@ test('[critical] the momentum guard (30 Oct 2026): off until set; on, no call is
     // A per cent of the price (14 Nov 2026): 0.25% of 85,010 is 212.5 -- the same 310 rise is held back, a 200 rise is not.
     const pct = await api('POST', '/api/strategies/momentum-guard', { guard: { on: true, unit: 'pct', pct: 0.25 }, accountId: main });
     assert.equal(pct.status, 200, JSON.stringify(pct.body));
-    assert.deepEqual(pct.body.signalMomentumGuard, { on: true, pts: 250, unit: 'pct', pct: 0.25 }, 'the points kept from before');
+    assert.deepEqual(pct.body.signalMomentumGuard, { on: true, pts: 250, unit: 'pct', pct: 0.25, ...GUARDS_OFF }, 'the points kept from before');
     hourAgo = 84_700;
     await guarded.onSignal(await sellCall());
     assert.equal((await last()).status, 'skipped');
@@ -488,10 +491,97 @@ test('[critical] the momentum guard (30 Oct 2026): off until set; on, no call is
     const r = await api('POST', '/api/strategies/momentum-guard', { guard: { on: true, unit: 'pct', pct: 0.001 }, accountId: main });
     assert.equal(r.status, 422);
     assert.match(r.body.error, /per cent from 0.05 to 2/);
-    assert.deepEqual((await api('POST', '/api/strategies/momentum-guard', { guard: null, accountId: main })).body.signalMomentumGuard, { on: false, pts: 250, unit: 'pts', pct: 0.25 });
+    assert.deepEqual((await api('POST', '/api/strategies/momentum-guard', { guard: null, accountId: main })).body.signalMomentumGuard, { on: false, pts: 250, unit: 'pts', pct: 0.25, ...GUARDS_OFF });
   } finally {
     perp = null;
     await api('POST', '/api/strategies/momentum-guard', { guard: null, accountId: main });
+    await off(id);
+  }
+});
+
+test('[critical] the entry guards (21 Nov 2026): a put after a fall, the last 15 minutes, an IV spike and a thin bid -- each its own switch, each its own words; the phone\'s save keeps the rest', async () => {
+  const id = await make('Entry guards', main, { enterOn: 'signal' });
+  const last = async () => (await runsOf(id)).at(-1)!;
+  // The perp an hour and 15 minutes ago, and ATM IV now and an hour ago, as the guards read them.
+  let hourAgo: number | null = 85_000, quarterAgo: number | null = 85_000, ivNow: number | null = 0.40, ivHourAgo: number | null = 0.40;
+  let bidSize: number | null = 5_000;
+  const thinBoard = (): SignalBoard => ({ ...board, candidates: board.candidates.map((c) => ({ ...c, bidSize })) });
+  const guarded = new StrategyRunner(strategyStore(), () => clock, async () => thinBoard(), () => perp, undefined,
+    async (_at, minutes = 60) => (minutes === 15 ? quarterAgo : hourAgo), async (at) => (at < clock ? ivHourAgo : ivNow));
+  // Each signal's zone at the perp now, its stop 400 away and its target 500: only the guards can hold it back.
+  const sellCall = () => logged(signal('15m', { dir: 'short', plan: { entryLo: perp!, entryHi: perp! + 50, stop: perp! + 400, tp1: perp! - 500, tp2: null, tp3: null, tpWhy: [], rr: 1.25 } }));
+  const sellPut = () => logged(signal('15m', { dir: 'long', plan: { entryLo: perp! - 50, entryHi: perp!, stop: perp! - 400, tp1: perp! + 500, tp2: null, tp3: null, tpWhy: [], rr: 1.25 } }));
+  const save = (guard: unknown) => api('POST', '/api/strategies/momentum-guard', { guard, accountId: main });
+  try {
+    // Momentum on both sides at 0.8%: down 700 in the hour, over 0.8% of 84,300 (674 pts) -- the put is held back.
+    perp = 84_300;
+    assert.equal((await save({ on: true, unit: 'pct', pct: 0.8, sides: 'ce' })).status, 200);
+    await guarded.onSignal(await sellPut());
+    assert.equal((await last()).status, 'would-place', 'calls only: the put is sold after a fall -- ' + (await last()).detail);
+    const both = await save({ on: true, unit: 'pct', pct: 0.8, sides: 'both' });
+    assert.equal(both.status, 200, JSON.stringify(both.body));
+    assert.equal(both.body.signalMomentumGuard.sides, 'both');
+    await guarded.onSignal(await sellPut());
+    assert.equal((await last()).status, 'skipped');
+    assert.match((await last()).detail, /the perp is down 700 pts in the last hour \(85000 to 84300\) -- the momentum guard sells no put after a fall of 0\.8% \(674 pts at 84300\) or more$/);
+    await guarded.onSignal(await sellCall());
+    assert.equal((await last()).status, 'would-place', 'a call after a fall is sold: ' + (await last()).detail);
+
+    // The last 15 minutes: an hour flat, 15 minutes up 0.5%.
+    perp = 85_425; hourAgo = 85_425; quarterAgo = 85_000;
+    await guarded.onSignal(await sellCall());
+    assert.equal((await last()).status, 'would-place', '15 minutes off: ' + (await last()).detail);
+    assert.equal((await save({ on: true, unit: 'pct', pct: 0.8, sides: 'both', q15: { on: true, pct: 0.4 } })).status, 200);
+    await guarded.onSignal(await sellCall());
+    assert.equal((await last()).status, 'skipped');
+    assert.match((await last()).detail, /the perp is up 0\.50% in the last 15 minutes \(85000 to 85425\) -- the momentum guard sells no call after a 15-minute rise of 0\.4% or more$/);
+    quarterAgo = null;
+    await guarded.onSignal(await sellCall());
+    assert.equal((await last()).status, 'would-place', 'no price 15 minutes ago: ' + (await last()).detail);
+
+    // IV spike, with the momentum guard off: both sides held back after +6 pts, sold at +4.
+    hourAgo = 85_425; quarterAgo = 85_425; ivNow = 0.46;
+    assert.equal((await save({ on: false, unit: 'pct', pct: 0.8, iv: { on: true, pts: 5 } })).status, 200);
+    for (const sell of [sellCall, sellPut]) {
+      await guarded.onSignal(await sell());
+      assert.equal((await last()).status, 'skipped');
+      assert.match((await last()).detail, /ATM IV is up 6\.0 pts in the last hour \(40\.0% to 46\.0%\) -- the IV spike guard sells nothing after a rise of 5 pts or more$/);
+    }
+    ivNow = 0.44;
+    await guarded.onSignal(await sellPut());
+    assert.equal((await last()).status, 'would-place', '+4 pts: ' + (await last()).detail);
+    ivNow = null;
+    await guarded.onSignal(await sellPut());
+    assert.equal((await last()).status, 'would-place', 'IV not read: ' + (await last()).detail);
+
+    // Thin bid on the strike picked: 120 bid is under 500; 500 is enough; a size not read holds nothing back.
+    ivNow = 0.40;
+    assert.equal((await save({ on: false, unit: 'pct', pct: 0.8, iv: { on: false }, bid: { on: true, min: 500 } })).status, 200);
+    bidSize = 120;
+    await guarded.onSignal(await sellPut());
+    assert.equal((await last()).status, 'skipped');
+    assert.match((await last()).detail, new RegExp(`only 120 contracts bid on PE ${PUT} -- the thin-bid guard sells only where 500 or more are bid`));
+    for (const ok of [500, null]) {
+      bidSize = ok;
+      await guarded.onSignal(await sellPut());
+      assert.equal((await last()).status, 'would-place', `bid ${ok}: ` + (await last()).detail);
+    }
+
+    // The phone's save (on and points only) keeps the rest as saved; the card reads each guard back, with IV now.
+    const phone = await save({ on: true, pts: 300 });
+    assert.equal(phone.status, 200);
+    assert.deepEqual(phone.body.signalMomentumGuard, { on: true, pts: 300, unit: 'pts', pct: 0.8, sides: 'both', q15: { on: true, pct: 0.4 }, iv: { on: false, pts: 5 }, bid: { on: true, min: 500 } });
+    const card = (await api('GET', `/api/strategies?account=${main}`)).body.signalMomentumGuard;
+    assert.equal(card.bid.on, true);
+    assert.ok('ivNow' in card, 'IV now is on the card (null where the board kept none)');
+    for (const [bad, said] of [[{ on: true, pts: 250, sides: 'pe' }, /"ce" \(calls only\) or "both"/], [{ on: true, pts: 250, iv: { on: true, pts: 99 } }, /vol points from 1 to 30/], [{ on: true, pts: 250, bid: { on: true, min: 0 } }, /whole contracts/]] as const) {
+      const r = await save(bad);
+      assert.equal(r.status, 422, JSON.stringify(bad));
+      assert.match(r.body.error, said);
+    }
+  } finally {
+    perp = null;
+    await save(null);
     await off(id);
   }
 });

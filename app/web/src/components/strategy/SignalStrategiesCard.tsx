@@ -498,8 +498,9 @@ export function SignalStrategiesCard() {
       maxOpen: data.signalMaxOpen, side: data.signalSideMaxPct, strikePct: data.signalStrikeMaxPct, strikeFull: data.signalStrikeFull ?? 'next',
       // The whole guard, its unit and per cent with it: points alone read "+200" where the account's is 0.25% (16 Nov 2026).
       zoneFresh: data.signalZoneFreshS,
-      momentum: { on: data.signalMomentumGuard.on, pts: data.signalMomentumGuard.pts, unit: data.signalMomentumGuard.unit, pct: data.signalMomentumGuard.pct },
-      momentumNow: data.signalMomentumGuard.now, reentry: { sl: data.signalReentry.sl, tgt: data.signalReentry.tgt },
+      // And every entry guard beside it (21 Nov 2026), not only the momentum one.
+      momentum: (({ now: _now, ivNow: _iv, ...g }) => g)(data.signalMomentumGuard),
+      momentumNow: data.signalMomentumGuard.now, ivNow: data.signalMomentumGuard.ivNow ?? null, reentry: { sl: data.signalReentry.sl, tgt: data.signalReentry.tgt },
       ...(data.signalCapSwap ? { capSwap: data.signalCapSwap } : {}),
     } : null;
   const sections = groupSections(mine, groups);
@@ -755,9 +756,9 @@ export function SignalStrategiesCard() {
           {data?.signalZoneFreshS && (
             <ZoneFresh seconds={data.signalZoneFreshS} busy={busy === 'zone-fresh'} onSave={(ch) => act('zone-fresh', () => setZoneFresh(ch))} />
           )}
-          {/* No call sold after the perp rose its points in the hour (30 Oct 2026). Absent on a server from before it. */}
+          {/* The entry guards: momentum (30 Oct 2026), IV spike and thin bid (21 Nov 2026). Absent on a server from before them. */}
           {data?.signalMomentumGuard && (
-            <MomentumGuard guard={data.signalMomentumGuard} now={data.signalMomentumGuard.now} busy={busy === 'momentum-guard'}
+            <MomentumGuard guard={data.signalMomentumGuard} now={data.signalMomentumGuard.now} ivNow={data.signalMomentumGuard.ivNow} busy={busy === 'momentum-guard'}
                            onSave={(g) => act('momentum-guard', () => setMomentumGuard(g))} />
           )}
           {/* Sold again after an option SL or target (1 Nov 2026). Absent on a server from before it. */}

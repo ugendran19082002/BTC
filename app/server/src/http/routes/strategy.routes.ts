@@ -6,8 +6,9 @@ import { refuse } from '../refuse.js';
 import { StrategyStore } from '../../strategy/store.js';
 import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/schedule.js';
 import { inSignalWindow, perpRiseNow } from '../../strategy/runner.js';
+import { atmIvNow } from '../../market/atm-iv.js';
 import { SKIP_DAYS_KEY, autoAsked, autoPick, methodRecord, runAutoMethodsAlone, skipDaysOf, skipDaysProblem, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardProblem, CAP_SWAP_KEY, capSwapOf, capSwapProblem, SIGNAL_SWAP_KEY, signalSwapOf, signalSwapProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoExclude, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardMerged, momentumGuardProblem, CAP_SWAP_KEY, capSwapOf, capSwapProblem, SIGNAL_SWAP_KEY, signalSwapOf, signalSwapProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoExclude, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting, groupKey } from '../../db/settings.js';
@@ -487,8 +488,15 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       signalStrikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, account ?? svc.accountId)),
       // How late a zone fill may still be entered, seconds by time frame (28 Oct 2026): the account's, the default where unset.
       signalZoneFreshS: zoneFreshOf(accountSetting(svc.settings, ZONE_FRESH_KEY, account ?? svc.accountId)),
-      // The momentum guard (30 Oct 2026): on or off, its points, and the perp's rise over the hour now -- what the next call meets.
-      signalMomentumGuard: { ...momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account ?? svc.accountId)), now: await perpRiseNow(now).catch(() => null) },
+      // The entry guards (30 Oct, 21 Nov 2026): each on or off with its numbers, the perp's move over the hour and the last 15
+      // minutes now, and ATM IV now and an hour ago -- what the next signal meets.
+      signalMomentumGuard: await (async () => {
+        const [rise, iv] = await Promise.all([perpRiseNow(now).catch(() => null), atmIvNow(now).catch(() => null)]);
+        return {
+          ...momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account ?? svc.accountId)), now: rise,
+          ivNow: iv && iv.now !== null && iv.hourAgo !== null ? { iv: iv.now, hourAgo: iv.hourAgo } : null,
+        };
+      })(),
       // Making room at the cap (16 Nov 2026): on or off, the share of its premium a sale must have kept, buy-backs a minute.
       signalCapSwap: capSwapOf(accountSetting(svc.settings, CAP_SWAP_KEY, account ?? svc.accountId)),
       signalSwap: signalSwapOf(accountSetting(svc.settings, SIGNAL_SWAP_KEY, account ?? svc.accountId)),
@@ -1190,7 +1198,9 @@ export function registerStrategyRoutes(app: FastifyInstance) {
   /**
    * The momentum guard, this account's (owner, 30 Oct 2026): `{ guard: { on: true, pts: 250 } }`, whole points from 50 to
    * 2000, or `{ guard: { on: true, unit: 'pct', pct: 0.25 } }`, a per cent of the perp's price (14 Nov 2026); `null` is
-   * back to the default, off. The runner reads it at each signal, so it counts from the next one.
+   * back to the default, off. The runner reads it at each signal, so it counts from the next one. Since 21 Nov 2026 it may
+   * also say `sides: 'ce' | 'both'`, `q15: { on, pct }` (the last 15 minutes), `iv: { on, pts }` (the IV spike guard) and
+   * `bid: { on, min }` (the thin-bid guard); whatever it leaves out is kept as saved.
    */
   app.post('/api/strategies/momentum-guard', async (req, reply) => {
     const body = (req.body ?? {}) as { guard?: unknown; accountId?: unknown; groupId?: unknown };
@@ -1201,11 +1211,11 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     const want = guard === undefined ? null : guard;
     const problem = momentumGuardProblem(want);
     if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    // Both numbers are kept whichever is in force: what was saved before stands for the one not sent.
+    // Both numbers are kept whichever is in force, and each guard the screen did not send (21 Nov 2026) stays as it was:
+    // what was saved before stands for what is not sent.
     const was = momentumGuardOf(svc.settings.get(scope.key(MOMENTUM_GUARD_KEY)) || accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account));
-    const { on, pts, unit, pct } = (want ?? {}) as { on?: boolean; pts?: number; unit?: 'pts' | 'pct'; pct?: number };
     await svc.settings.set(scope.key(MOMENTUM_GUARD_KEY), want === null ? ''
-      : JSON.stringify({ on, pts: pts ?? was.pts, unit: unit ?? 'pts', pct: pct ?? was.pct }));
+      : JSON.stringify(momentumGuardMerged(want as Record<string, unknown>, was)));
     return { ok: true, signalMomentumGuard: momentumGuardOf(accountSetting(svc.settings, MOMENTUM_GUARD_KEY, account)), ...groupAnswer(group) };
   });
 

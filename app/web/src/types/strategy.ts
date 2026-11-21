@@ -247,18 +247,69 @@ export const ZONE_FRESH_MAX_S = 1_800;
  * the hour -- or, with `unit` 'pct' (14 Nov 2026), `pct` per cent of its price. Absent `unit` (an older server) is points.
  */
 export type MomentumUnit = 'pts' | 'pct';
-export type MomentumGuard = { on: boolean; pts: number; unit?: MomentumUnit; pct?: number };
+/**
+ * The entry guards kept beside it (server `MomentumGuard`, 21 Nov 2026), each with its own switch: `sides` -- calls only,
+ * or a put after a fall too; `q15` -- the perp's move over the last 15 minutes, a per cent; `iv` -- ATM IV up `pts` vol
+ * points in the hour holds back a sale on either side; `bid` -- the strike picked with fewer than `min` contracts bid is
+ * not sold. Absent on an older server: calls only, the rest off.
+ */
+export type MomentumSides = 'ce' | 'both';
+export type MomentumGuard = {
+  on: boolean; pts: number; unit?: MomentumUnit; pct?: number;
+  sides?: MomentumSides; q15?: { on: boolean; pct: number }; iv?: { on: boolean; pts: number }; bid?: { on: boolean; min: number };
+};
 export const MOMENTUM_GUARD_DEFAULT_PTS = 250;
 export const MOMENTUM_GUARD_MIN_PTS = 50;
 export const MOMENTUM_GUARD_MAX_PTS = 2_000;
 export const MOMENTUM_GUARD_DEFAULT_PCT = 0.25;
 export const MOMENTUM_GUARD_MIN_PCT = 0.05;
 export const MOMENTUM_GUARD_MAX_PCT = 2;
+export const Q15_GUARD_DEFAULT_PCT = 0.4;
+export const IV_GUARD_DEFAULT_PTS = 5;
+export const IV_GUARD_MIN_PTS = 1;
+export const IV_GUARD_MAX_PTS = 30;
+export const BID_GUARD_DEFAULT = 500;
+export const BID_GUARD_MIN = 1;
+export const BID_GUARD_MAX = 100_000;
+/** Each guard as it reads with whatever an older server left out filled in: calls only, the rest off at their defaults. */
+export const fullGuard = (g: MomentumGuard): Required<MomentumGuard> => ({
+  on: g.on, pts: g.pts, unit: g.unit ?? 'pts', pct: g.pct ?? MOMENTUM_GUARD_DEFAULT_PCT, sides: g.sides ?? 'ce',
+  q15: g.q15 ?? { on: false, pct: Q15_GUARD_DEFAULT_PCT }, iv: g.iv ?? { on: false, pts: IV_GUARD_DEFAULT_PTS },
+  bid: g.bid ?? { on: false, min: BID_GUARD_DEFAULT },
+});
+/** Every guard off, each keeping its numbers: what a group's "Defaults" saves. */
+export const guardsOff = (g: MomentumGuard): Required<MomentumGuard> => {
+  const f = fullGuard(g);
+  return { ...f, on: false, q15: { ...f.q15, on: false }, iv: { ...f.iv, on: false }, bid: { ...f.bid, on: false } };
+};
+/**
+ * The 30-day study's best (21 Nov 2026, docs/research/2026-11-21-entry-guard-study.md): IV +5 pts/1h, momentum 1h 0.8% or
+ * 15m 0.4% on both sides, and no sale into fewer than 500 bid -- +₹33,304 on the replay, worst day −₹11,840 to −₹1,404.
+ */
+export const ENTRY_GUARDS_TESTED: Readonly<Required<MomentumGuard>> = {
+  on: true, pts: MOMENTUM_GUARD_DEFAULT_PTS, unit: 'pct', pct: 0.8, sides: 'both',
+  q15: { on: true, pct: 0.4 }, iv: { on: true, pts: 5 }, bid: { on: true, min: 500 },
+};
+/** Whether any of the guards is on. */
+export const anyGuardOn = (g: MomentumGuard): boolean => g.on || g.iv?.on === true || g.bid?.on === true;
 /** The rise in points that holds a call back at this price: the points, or the per cent of it. Null: a per cent, no price. */
 export const momentumPtsAt = (g: MomentumGuard, price: number | null): number | null =>
   g.unit === 'pct' ? (price !== null && price > 0 ? (price * (g.pct ?? MOMENTUM_GUARD_DEFAULT_PCT)) / 100 : null) : g.pts;
 /** "+200", "+0.25%": the guard's level as the pill and the group summary say it. */
 export const momentumLabel = (g: MomentumGuard): string => (g.unit === 'pct' ? `+${g.pct ?? MOMENTUM_GUARD_DEFAULT_PCT}%` : `+${g.pts}`);
+/** "Momentum ±0.8% · 15m 0.4% · IV +5 · Bid 500": the guards that are on, as the pill and a group's summary say them; "off" for none. */
+export const guardsLabel = (g: MomentumGuard): string => {
+  const f = fullGuard(g);
+  const out: string[] = [];
+  if (f.on) {
+    const lvl = momentumLabel(f);
+    out.push(`Momentum ${f.sides === 'both' ? lvl.replace(/^\+/, '±') : lvl}`);
+    if (f.q15.on) out.push(`15m ${f.sides === 'both' ? '±' : '+'}${f.q15.pct}%`);
+  }
+  if (f.iv.on) out.push(`IV +${f.iv.pts}`);
+  if (f.bid.on) out.push(`Bid ${f.bid.min.toLocaleString('en-IN')}`);
+  return out.length ? out.join(' · ') : 'off';
+};
 /**
  * Swap at full cap, one account's (server `CAP_SWAP_KEY`, 16 Nov 2026): when the account -- or a side -- is full, the open sale
  * that has kept `pct`% or more of its premium is bought back and the new signal sold in its place, at most `perMin` a minute.
@@ -657,7 +708,11 @@ export type StrategyStatus = {
   /** The fill window, this account's (28 Oct 2026): how late a zone fill may still be entered, seconds by time frame. Absent on an older server. */
   signalZoneFreshS?: Record<SignalTf, number>;
   /** The momentum guard, this account's (30 Oct 2026), and the perp's rise over the hour now (null when unknown). Absent on an older server. */
-  signalMomentumGuard?: MomentumGuard & { now: { perp: number; hourAgo: number; rise: number } | null };
+  signalMomentumGuard?: MomentumGuard & {
+    now: { perp: number; hourAgo: number; rise: number; quarterAgo?: number | null } | null;
+    /** ATM IV now and an hour ago, fractions (21 Nov 2026); null when the board kept none, absent on an older server. */
+    ivNow?: { iv: number; hourAgo: number } | null;
+  };
   /** Re-entry after an option SL or target, this account's (1 Nov 2026), and how many of each this session. Absent on an older server. */
   signalReentry?: Reentry & { today?: { sl: number; tgt: number } };
   /** Swap at full cap, this account's (16 Nov 2026). Absent on an older server. */
@@ -726,7 +781,7 @@ export const SKIP_SL_NEEDS_STOP = 'With the perp SL skipped, the option stop is 
 
 /** The kinds of reason a signal was not taken (server: strategy/signal-reasons.ts `SIGNAL_REASONS`). */
 export type SignalReason = 'sl-min' | 'sl-max' | 'tgt-min' | 'tgt-max' | 'score-min' | 'own-max' | 'desk-max' | 'side-max' | 'strike-max' | 'no-entry' | 'late' | 'over'
-  | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'stale-quote' | 'momentum' | 'other';
+  | 'premium' | 'spread' | 'no-strike' | 'margin' | 'loss-limit' | 'no-board' | 'delta' | 'stale-quote' | 'momentum' | 'iv-spike' | 'thin-bid' | 'other';
 
 /** How a signal row entered (server `signalEntryOf`, 2 Nov 2026): on its own signal, or a re-entry after an option SL or target. */
 export type SignalEntry = 'signal' | 'swap' | 'sl' | 'tgt';

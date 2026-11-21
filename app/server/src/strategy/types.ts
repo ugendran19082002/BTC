@@ -934,9 +934,10 @@ export function zoneFreshProblem(v: unknown): string | null {
 /**
  * The momentum guard, one account's (owner, 30 Oct 2026, after the October study: "Momentum 1h >= +250, CE mattum, default
  * off"): no new call is sold while the perp has risen this many points or more over the last hour -- the perp's last trade
- * against its average price in the minute an hour before. Puts are never held back by it, nor is anything already open.
+ * against its average price in the minute an hour before. Nothing already open is touched.
  * The study: CE sells it would have refused won 55% against 71% for all of them; 13 Oct's spike was most of what it saved.
- * Blocking puts on a fall as well cost money every way it was tested, so there is no setting for it.
+ * Blocking puts on a fall as well cost money in October, so it began as calls only; puts are a choice since 21 Nov 2026
+ * (`MomentumSides`), as are the 15-minute move, the IV spike guard and the thin-bid guard kept beside it.
  * Kept as JSON, {"on": true, "pts": 250} or {"on": true, "unit": "pct", "pct": 0.25, "pts": 250}; off where unset or
  * unreadable. Read by the runner at each signal.
  */
@@ -948,34 +949,91 @@ export const MOMENTUM_GUARD_KEY = 'signal_momentum_guard';
  * fixed 150-300). Saved before the choice existed means points. Both numbers are kept, so switching back loses neither.
  */
 export type MomentumUnit = 'pts' | 'pct';
-export type MomentumGuard = { on: boolean; pts: number; unit: MomentumUnit; pct: number };
-export const MOMENTUM_GUARD_DEFAULT: Readonly<MomentumGuard> = { on: false, pts: 250, unit: 'pts', pct: 0.25 };
+/**
+ * Which sales the momentum guard holds back (owner, 21 Nov 2026, after the 30-day guard study on today's settings): calls
+ * after a rise only (`ce`, as it began), or both -- a call after a rise, a put after a fall (`both`). Blocking puts lost
+ * money in the October tests, at the old settings; on 23 Oct - 21 Nov, with the accounts as they are now, 1h 0.8% on both
+ * sides made +₹12,857 against +₹3,016 for calls only (docs/research/2026-11-21-entry-guard-study.md).
+ */
+export type MomentumSides = 'ce' | 'both';
+/**
+ * The entry guards, one account's (or group's), kept under `MOMENTUM_GUARD_KEY`; each has its own switch, so they are
+ * turned on one at a time:
+ * - momentum (`on`, `unit`/`pts`/`pct`, `sides`): the perp's move over the last hour, against the side sold;
+ * - `q15`: the same over the last 15 minutes, a per cent of the price -- part of the momentum guard, used only while it is on;
+ * - `iv`: the at-the-money IV up `pts` vol points or more over the last hour -- no new sale on either side;
+ * - `bid`: the strike to be sold has fewer than `min` contracts bid -- that signal is not sold.
+ * Saved before 21 Nov 2026 means calls only, and the three new ones off.
+ */
+export type MomentumGuard = {
+  on: boolean; pts: number; unit: MomentumUnit; pct: number;
+  sides: MomentumSides;
+  q15: { on: boolean; pct: number };
+  iv: { on: boolean; pts: number };
+  bid: { on: boolean; min: number };
+};
+export const MOMENTUM_GUARD_DEFAULT: Readonly<MomentumGuard> = {
+  on: false, pts: 250, unit: 'pts', pct: 0.25, sides: 'ce',
+  q15: { on: false, pct: 0.4 }, iv: { on: false, pts: 5 }, bid: { on: false, min: 500 },
+};
+/** The study's best (21 Nov 2026): IV +5 pts/1h, momentum 1h 0.8% or 15m 0.4% on both sides, and no sale into fewer than 500 bid. */
+export const ENTRY_GUARDS_TESTED: Readonly<MomentumGuard> = {
+  on: true, pts: 250, unit: 'pct', pct: 0.8, sides: 'both',
+  q15: { on: true, pct: 0.4 }, iv: { on: true, pts: 5 }, bid: { on: true, min: 500 },
+};
 export const MOMENTUM_GUARD_MIN_PTS = 50;
 export const MOMENTUM_GUARD_MAX_PTS = 2_000;
 export const MOMENTUM_GUARD_MIN_PCT = 0.05;
 export const MOMENTUM_GUARD_MAX_PCT = 2;
+/** The IV spike guard's rise, vol points (IV 40% to 45% is 5), one decimal at most. */
+export const IV_GUARD_MIN_PTS = 1;
+export const IV_GUARD_MAX_PTS = 30;
+/** The thin-bid guard's least bid size, whole contracts. */
+export const BID_GUARD_MIN = 1;
+export const BID_GUARD_MAX = 100_000;
 const guardPtsOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= MOMENTUM_GUARD_MIN_PTS && n <= MOMENTUM_GUARD_MAX_PTS;
 /** A per cent of at most two decimals, 0.05 to 2. */
 const guardPctOk = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
   && n >= MOMENTUM_GUARD_MIN_PCT && n <= MOMENTUM_GUARD_MAX_PCT && Math.abs(n * 100 - Math.round(n * 100)) < 1e-9;
-/** The setting as stored: on or off, its unit and both numbers, the default for whatever is unset or unreadable. */
+const ivPtsOk = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
+  && n >= IV_GUARD_MIN_PTS && n <= IV_GUARD_MAX_PTS && Math.abs(n * 10 - Math.round(n * 10)) < 1e-9;
+const bidMinOk = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= BID_GUARD_MIN && n <= BID_GUARD_MAX;
+const objOf = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
+/** The setting as stored: each guard on or off and its numbers, the default for whatever is unset or unreadable. */
 export function momentumGuardOf(raw: string | null | undefined): MomentumGuard {
   let v: Record<string, unknown> = {};
-  try { const x = raw ? JSON.parse(raw) : {}; if (x && typeof x === 'object' && !Array.isArray(x)) v = x; } catch { /* the default */ }
+  try { v = objOf(raw ? JSON.parse(raw) : {}); } catch { /* the default */ }
+  const q15 = objOf(v.q15), iv = objOf(v.iv), bid = objOf(v.bid);
+  const d = MOMENTUM_GUARD_DEFAULT;
   return {
     on: v.on === true,
-    pts: guardPtsOk(v.pts) ? v.pts : MOMENTUM_GUARD_DEFAULT.pts,
+    pts: guardPtsOk(v.pts) ? v.pts : d.pts,
     unit: v.unit === 'pct' ? 'pct' : 'pts',
-    pct: guardPctOk(v.pct) ? v.pct : MOMENTUM_GUARD_DEFAULT.pct,
+    pct: guardPctOk(v.pct) ? v.pct : d.pct,
+    sides: v.sides === 'both' ? 'both' : 'ce',
+    q15: { on: q15.on === true, pct: guardPctOk(q15.pct) ? q15.pct : d.q15.pct },
+    iv: { on: iv.on === true, pts: ivPtsOk(iv.pts) ? iv.pts : d.iv.pts },
+    bid: { on: bid.on === true, min: bidMinOk(bid.min) ? bid.min : d.bid.min },
   };
 }
 /** Why a momentum guard cannot be saved, in words; null when it can. `null` itself is "back to the default" (off), and can. */
 export function momentumGuardProblem(v: unknown): string | null {
   if (v === null) return null;
   if (!v || typeof v !== 'object' || Array.isArray(v)) return 'The momentum guard is {"on": true, "pts": 250} or {"on": true, "unit": "pct", "pct": 0.25}.';
-  const { on, pts, unit, pct } = v as Record<string, unknown>;
+  const { on, pts, unit, pct, sides, q15, iv, bid } = v as Record<string, unknown>;
   if (typeof on !== 'boolean') return 'Say whether the momentum guard is on: true or false.';
   if (unit !== undefined && unit !== 'pts' && unit !== 'pct') return 'The momentum guard\'s unit is "pts" or "pct".';
+  if (sides !== undefined && sides !== 'ce' && sides !== 'both') return 'The momentum guard\'s sides are "ce" (calls only) or "both".';
+  const part = (x: unknown, name: string, key: string, ok: (n: unknown) => boolean, words: string): string | null => {
+    if (x === undefined) return null;
+    const o = x as Record<string, unknown>;
+    if (!x || typeof x !== 'object' || Array.isArray(x) || typeof o.on !== 'boolean') return `The ${name} is {"on": true or false, "${key}": …}.`;
+    return o[key] === undefined || ok(o[key]) ? null : `The ${name}'s ${words}.`;
+  };
+  const extra = part(q15, '15-minute momentum guard', 'pct', guardPctOk, `rise must be a per cent from ${MOMENTUM_GUARD_MIN_PCT} to ${MOMENTUM_GUARD_MAX_PCT}, two decimals at most`)
+    ?? part(iv, 'IV spike guard', 'pts', ivPtsOk, `rise must be vol points from ${IV_GUARD_MIN_PTS} to ${IV_GUARD_MAX_PTS}, one decimal at most`)
+    ?? part(bid, 'thin-bid guard', 'min', bidMinOk, `bid size must be whole contracts from ${BID_GUARD_MIN} to ${BID_GUARD_MAX.toLocaleString('en-IN')}`);
+  if (extra) return extra;
   if (unit === 'pct') {
     if (!guardPctOk(pct)) return `The momentum guard's rise must be a per cent from ${MOMENTUM_GUARD_MIN_PCT} to ${MOMENTUM_GUARD_MAX_PCT}, two decimals at most.`;
     if (pts !== undefined && !guardPtsOk(pts)) return `The momentum guard's rise must be whole points from ${MOMENTUM_GUARD_MIN_PTS} to ${MOMENTUM_GUARD_MAX_PTS}.`;
@@ -985,6 +1043,26 @@ export function momentumGuardProblem(v: unknown): string | null {
   if (pct !== undefined && !guardPctOk(pct)) return `The momentum guard's rise must be a per cent from ${MOMENTUM_GUARD_MIN_PCT} to ${MOMENTUM_GUARD_MAX_PCT}, two decimals at most.`;
   return null;
 }
+/**
+ * What is saved for a guard sent to the route: what was sent, and -- for whatever it does not say -- what was saved
+ * before, so a screen that knows only some of the guards (the phone, an old tab) never turns the others off.
+ */
+export function momentumGuardMerged(want: Record<string, unknown>, was: MomentumGuard): MomentumGuard {
+  const q15 = objOf(want.q15), iv = objOf(want.iv), bid = objOf(want.bid);
+  return {
+    on: want.on === true,
+    pts: (want.pts as number | undefined) ?? was.pts,
+    unit: want.unit === 'pct' ? 'pct' : 'pts',
+    pct: (want.pct as number | undefined) ?? was.pct,
+    sides: want.sides === 'both' || want.sides === 'ce' ? want.sides : was.sides,
+    q15: want.q15 === undefined ? was.q15 : { on: q15.on === true, pct: (q15.pct as number | undefined) ?? was.q15.pct },
+    iv: want.iv === undefined ? was.iv : { on: iv.on === true, pts: (iv.pts as number | undefined) ?? was.iv.pts },
+    bid: want.bid === undefined ? was.bid : { on: bid.on === true, min: (bid.min as number | undefined) ?? was.bid.min },
+  };
+}
+/** Whether any of the entry guards is on. */
+export const anyEntryGuardOn = (g: Pick<MomentumGuard, 'on'> & Partial<Pick<MomentumGuard, 'iv' | 'bid'>>): boolean =>
+  g.on || g.iv?.on === true || g.bid?.on === true;
 /**
  * The rise, in points, that holds a call back at this perp price: the points, or the per cent of the price. Null: a per
  * cent with no price to take it of -- nothing is held back then, as with a rise that cannot be read.
@@ -997,16 +1075,69 @@ export const momentumWords = (g: Pick<MomentumGuard, 'pts' | 'unit' | 'pct'>, pr
   const at = momentumPtsAt(g, price);
   return at === null ? `${g.pct}%` : `${g.pct}% (${Math.round(at)} pts at ${Math.round(price!)})`;
 };
+/** Whether the guard looks at this side: calls always, puts only on both sides. */
+const guardsSide = (g: Partial<Pick<MomentumGuard, 'sides'>>, sells: 'CE' | 'PE' | null): boolean =>
+  sells === 'CE' || (sells === 'PE' && g.sides === 'both');
 /**
- * Whether the guard holds this signal back: a call to be sold, the guard on, and the perp up its points -- or its per cent
- * of `price`, the perp now -- or more in the hour. A rise that cannot be read (no price now, or none an hour ago) holds
- * nothing back.
+ * Whether the hour's move holds this signal back: the guard on, a side it looks at, and the perp moved its points -- or its
+ * per cent of `price`, the perp now -- or more against it: up for a call, down for a put. A move that cannot be read (no
+ * price now, or none an hour ago) holds nothing back.
  */
-export const momentumBlocks = (g: MomentumGuard, sells: 'CE' | 'PE' | null, rise: number | null, price: number | null = null): boolean => {
-  if (!g.on || sells !== 'CE' || rise === null) return false;
+export const momentumBlocks = (g: Pick<MomentumGuard, 'on' | 'pts' | 'unit' | 'pct'> & Partial<Pick<MomentumGuard, 'sides'>>, sells: 'CE' | 'PE' | null, rise: number | null, price: number | null = null): boolean => {
+  if (!g.on || !guardsSide(g, sells) || rise === null) return false;
   const at = momentumPtsAt(g, price);
-  return at !== null && rise >= at;
+  return at !== null && (sells === 'CE' ? rise >= at : -rise >= at);
 };
+/** What the market-wide guards read at a signal: the perp now, an hour and 15 minutes before, and ATM IV now and an hour before. */
+export type GuardMarket = {
+  perp: number | null; hourAgo: number | null; quarterAgo: number | null;
+  /** ATM IV as a fraction (0.42 is 42%). */
+  ivNow: number | null; ivHourAgo: number | null;
+};
+const n0 = (x: number) => Math.round(x).toString();
+const pct2 = (x: number) => `${Math.abs(x).toFixed(2)}%`;
+/**
+ * Why the market-wide guards hold a sale back -- the momentum guard's hour and 15 minutes, and the IV spike guard -- in the
+ * sentence the signal's row keeps; null when none does. Pure: the same reading gives the same answer, in the runner and in
+ * its tests. Each sentence names its guard, which is how the screen sorts it (`signal-reasons.ts`).
+ */
+export function marketGuardWhy(g: MomentumGuard, sells: 'CE' | 'PE' | null, m: GuardMarket): string | null {
+  if (sells === null) return null;
+  if (g.on && guardsSide(g, sells) && m.perp !== null) {
+    const p = m.perp;
+    if (m.hourAgo !== null) {
+      const rise = p - m.hourAgo;
+      if (momentumBlocks(g, sells, rise, p)) {
+        return sells === 'CE'
+          ? `the perp is up ${n0(rise)} pts in the last hour (${n0(m.hourAgo)} to ${n0(p)}) -- the momentum guard sells no call after a rise of ${momentumWords(g, p)} or more`
+          : `the perp is down ${n0(-rise)} pts in the last hour (${n0(m.hourAgo)} to ${n0(p)}) -- the momentum guard sells no put after a fall of ${momentumWords(g, p)} or more`;
+      }
+    }
+    if (g.q15.on && m.quarterAgo !== null && m.quarterAgo > 0) {
+      const mv = ((p - m.quarterAgo) / m.quarterAgo) * 100;
+      if (sells === 'CE' ? mv >= g.q15.pct : -mv >= g.q15.pct) {
+        return sells === 'CE'
+          ? `the perp is up ${pct2(mv)} in the last 15 minutes (${n0(m.quarterAgo)} to ${n0(p)}) -- the momentum guard sells no call after a 15-minute rise of ${g.q15.pct}% or more`
+          : `the perp is down ${pct2(mv)} in the last 15 minutes (${n0(m.quarterAgo)} to ${n0(p)}) -- the momentum guard sells no put after a 15-minute fall of ${g.q15.pct}% or more`;
+      }
+    }
+  }
+  if (g.iv.on && m.ivNow !== null && m.ivHourAgo !== null) {
+    const up = (m.ivNow - m.ivHourAgo) * 100;
+    // A hair under the line, as stored floats go, is the line: 5.0 pts is 0.05 to the fraction's last digit.
+    if (up >= g.iv.pts - 1e-9) {
+      return `ATM IV is up ${up.toFixed(1)} pts in the last hour (${(m.ivHourAgo * 100).toFixed(1)}% to ${(m.ivNow * 100).toFixed(1)}%) -- the IV spike guard sells nothing after a rise of ${g.iv.pts} pts or more`;
+    }
+  }
+  return null;
+}
+/** Why the thin-bid guard holds back the strike picked; null when it does not -- or when its bid size cannot be read. */
+export function bidGuardWhy(g: Pick<MomentumGuard, 'bid'>, leg: 'CE' | 'PE', strike: number, bidSize: number | null | undefined): string | null {
+  if (!g.bid.on || bidSize === null || bidSize === undefined || !Number.isFinite(bidSize)) return null;
+  return bidSize < g.bid.min
+    ? `only ${Math.round(bidSize).toLocaleString('en-IN')} contracts bid on ${leg} ${strike} -- the thin-bid guard sells only where ${g.bid.min.toLocaleString('en-IN')} or more are bid`
+    : null;
+}
 
 /**
  * Make room at the cap, one account's (owner, 16 Nov 2026: "Max-open swap @70 update"). A signal that the account's "at

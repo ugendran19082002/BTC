@@ -78,7 +78,7 @@ test('[critical] each of the seven saved for a group lands under the group\'s ke
   const own = (await groupOf(g)).own;
   assert.equal(own.ce, 60);
   assert.equal(own.pe, null, 'the other side: still the account\'s');
-  assert.deepEqual([own.strikeMax, own.strikeFull, own.zoneFresh['5m'], own.momentum, own.reentry.sl.entries], [5, 'skip', 120, { on: true, pts: 250, unit: 'pts', pct: 0.25 }, 2]);
+  assert.deepEqual([own.strikeMax, own.strikeFull, own.zoneFresh['5m'], own.momentum, own.reentry.sl.entries], [5, 'skip', 120, { on: true, pts: 250, unit: 'pts', pct: 0.25, sides: 'ce', q15: { on: false, pct: 0.4 }, iv: { on: false, pts: 5 }, bid: { on: false, min: 500 } }, 2]);
   for (const k of ['signal_ce_max_pct', 'signal_strike_max_pct', 'signal_strike_full', 'signal_zone_fresh_s', 'signal_momentum_guard', 'signal_reentry']) {
     assert.notEqual(tradingService().settings.get(`${k}@g:${g}`), null, `${k} kept for the group`);
     assert.equal(tradingService().settings.get(`${k}@${main()}`) ?? null, null, `${k}: the account's not touched`);

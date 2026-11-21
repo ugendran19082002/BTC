@@ -9,13 +9,14 @@ import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMin
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting, groupSetting } from '../db/settings.js';
 import { groupBlock, groupLimitsOf, groupOwnOf } from './group-limits.js';
-import { CAP_SWAP_KEY, capSwapOf, pickCapSwap, SIGNAL_SWAP_KEY, signalSwapOf, type CapSwap, type SwapCandidate, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, momentumBlocks, momentumGuardOf, momentumWords, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { CAP_SWAP_KEY, capSwapOf, pickCapSwap, SIGNAL_SWAP_KEY, signalSwapOf, type CapSwap, type SwapCandidate, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, marketGuardWhy, bidGuardWhy, momentumGuardOf, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import type { OptionExit } from '../trading/option-exit.js';
 import { METHODS } from '../entry/methods.js';
 import { lastPerp } from '../market/flow.js';
 import { perpAtMinutes } from '../market/perp-minute.js';
+import { atmIvAt } from '../market/atm-iv.js';
 import { missedEntryAlert, runAlertFor, signalRefusedAlert, type Alert, type AlertContext } from '../notify/messages.js';
 import { StrategyExitStepper, TARGET_STEP_QUOTA_PCT } from './exit-steps.js';
 import { DEFAULT_LEVERAGE, stopHeldWords, stopRoomInside } from '../trading/order-plan.js';
@@ -126,7 +127,7 @@ async function liveSignalBoard(): Promise<SignalBoard | null> {
     live: snap.live, isDaily: snap.isDaily, expiry: snap.expiry, expiryTs: snap.expiryTs, spot: snap.spot,
     candidates: scoreLegs(snap).map((l) => ({
       cp: l.cp, strike: l.strike, sellPrice: l.sellPrice, pOtm: l.pOtm,
-      moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer, delta: l.delta,
+      moneyness: l.moneyness, ask: l.ask, oi: l.oi, emBuffer: l.emBuffer, delta: l.delta, bidSize: l.bidSize,
     })),
   };
 }
@@ -155,16 +156,26 @@ function perpNow(): number | null {
   return l && Date.now() - l.at <= 15_000 ? l.price : null;
 }
 
-/** The perp's price an hour before `at`: its average in that minute, else its mark then (`perpAtMinutes`); null if neither was kept. */
-async function perpHourBefore(at: number): Promise<number | null> {
-  const minute = Math.floor((at - 3_600_000) / 60_000) * 60_000;
+/**
+ * The perp's price `minutes` before `at` (an hour unless said): its average in that minute, else its mark then
+ * (`perpAtMinutes`); null if neither was kept.
+ */
+async function perpHourBefore(at: number, minutes = 60): Promise<number | null> {
+  const minute = Math.floor((at - minutes * 60_000) / 60_000) * 60_000;
   return (await perpAtMinutes([minute]).catch(() => new Map<number, number>())).get(minute) ?? null;
 }
-/** The perp now, an hour ago, and the rise between: what the momentum guard reads, for the strategies card. Null when either is unknown. */
-export async function perpRiseNow(at = Date.now()): Promise<{ perp: number; hourAgo: number; rise: number } | null> {
+/**
+ * The perp now, an hour ago, and the rise between: what the momentum guard reads, for the strategies card -- and 15
+ * minutes ago (21 Nov 2026), null when not kept. Null when the perp now or an hour ago is unknown.
+ */
+export async function perpRiseNow(at = Date.now()): Promise<{ perp: number; hourAgo: number; rise: number; quarterAgo: number | null } | null> {
   const perp = perpNow();
-  const hourAgo = perp === null ? null : await perpHourBefore(at);
-  return perp === null || hourAgo === null ? null : { perp, hourAgo, rise: perp - hourAgo };
+  if (perp === null) return null;
+  // Both minutes in one read: the card asks often.
+  const m60 = Math.floor((at - 3_600_000) / 60_000) * 60_000, m15 = Math.floor((at - 900_000) / 60_000) * 60_000;
+  const got = await perpAtMinutes([m60, m15]).catch(() => new Map<number, number>());
+  const hourAgo = got.get(m60) ?? null;
+  return hourAgo === null ? null : { perp, hourAgo, rise: perp - hourAgo, quarterAgo: got.get(m15) ?? null };
 }
 
 /** One signal's turn in one account's line. */
@@ -200,8 +211,10 @@ export class StrategyRunner {
     private readonly perp: () => number | null = perpNow,
     /** How volatile it is now, for a strategy that sets its delta by it: the backtest's own reading, or a test's. */
     private readonly volLevel: (by: VolBy, at: number) => Promise<VolLevel | null> = volLevelNow,
-    /** The perp an hour before a moment, for the momentum guard: the desk's minutes, or a test's. */
-    private readonly perpHourAgo: (at: number) => Promise<number | null> = perpHourBefore,
+    /** The perp an hour (or `minutes`) before a moment, for the momentum guard: the desk's minutes, or a test's. */
+    private readonly perpHourAgo: (at: number, minutes?: number) => Promise<number | null> = perpHourBefore,
+    /** ATM IV at a moment, for the IV spike guard: the desk's one-minute board, or a test's. */
+    private readonly atmIv: (at: number) => Promise<number | null> = atmIvAt,
   ) {
     /*
      * Time-based exits: at each step's time, the target or stop of every open
@@ -714,20 +727,29 @@ export class StrategyRunner {
     }
 
     /*
-     * The momentum guard (owner, 30 Oct 2026; `MOMENTUM_GUARD_KEY`, the account's, off unless set): a call is not sold
-     * while the perp has risen its points (or its per cent of the price, 14 Nov 2026) or more over the last hour -- a rally
-     * that fast tends to run on through the
-     * calls' stops (13 Oct; 8 AM on 30 Oct, when every call sold stopped out). Puts, and what is already open, go on.
+     * The entry guards (`MOMENTUM_GUARD_KEY`, the account's or its group's, each off unless set; `marketGuardWhy`):
+     * - momentum (owner, 30 Oct 2026): no call sold while the perp has risen its points -- or its per cent of the price
+     *   (14 Nov) -- or more over the last hour; a rally that fast tends to run on through the calls' stops (13 Oct; 8 AM on
+     *   30 Oct, when every call sold stopped out). Since 21 Nov it may hold puts back after a fall too, and read the last
+     *   15 minutes as well;
+     * - IV spike (21 Nov 2026): no sale on either side while ATM IV has risen its vol points or more over the hour.
+     * The 30-day study on today's settings (docs/research/2026-11-21-entry-guard-study.md) chose them. What is already
+     * open goes on; a move or an IV that cannot be read holds nothing back. The thin-bid guard waits for the strike, below.
      */
     const guard = momentumGuardOf(groupSetting(tradingService().settings, MOMENTUM_GUARD_KEY, tradingService().accountId, s.groupId));
     const sells = actionOf(rule) === 'sell' ? legOfSignal(dir, 'sell') : null;
-    if (guard.on && sells === 'CE' && perpNow !== null) {
-      const before = await this.perpHourAgo(now);
-      const rise = before === null ? null : perpNow - before;
-      if (momentumBlocks(guard, sells, rise, perpNow)) {
-        await finish('skipped', `the perp is up ${Math.round(rise!)} pts in the last hour (${Math.round(before!)} to ${Math.round(perpNow)}) -- the momentum guard sells no call after a rise of ${momentumWords(guard, perpNow)} or more`);
-        return;
-      }
+    const guardsSide = sells === 'CE' || (sells === 'PE' && guard.sides === 'both');
+    const wantPerp = guard.on && guardsSide && perpNow !== null;
+    const wantIv = guard.iv.on && sells !== null;
+    if (wantPerp || wantIv) {
+      const [hourAgo, quarterAgo, ivNow, ivHourAgo] = await Promise.all([
+        wantPerp ? this.perpHourAgo(now) : null,
+        wantPerp && guard.q15.on ? this.perpHourAgo(now, 15) : null,
+        wantIv ? this.atmIv(now).catch(() => null) : null,
+        wantIv ? this.atmIv(now - 3_600_000).catch(() => null) : null,
+      ]);
+      const why = marketGuardWhy(guard, sells, { perp: perpNow, hourAgo, quarterAgo, ivNow, ivHourAgo });
+      if (why) { await finish('skipped', why); return; }
     }
 
     /*
@@ -936,6 +958,16 @@ export class StrategyRunner {
         if (!chosen) { await finish('skipped', `${atMost}, and no strike further out passes the strategy's rule (${describeSelection(sel)})${block}`); return; }
         forwarded = ` · ${leg} ${full.strike} full (${isFull.count}): the next strike out`;
       }
+    }
+
+    /*
+     * The thin-bid guard (owner, 21 Nov 2026; `bidGuardWhy`): the strike to be sold -- after any forward past a full one --
+     * with fewer contracts bid than the guard's number is not sold: a book that thin is the one a stop slips through. Read
+     * off the same board the strike was picked from; a size that cannot be read holds nothing back.
+     */
+    if (sells !== null) {
+      const bidWhy = bidGuardWhy(guard, leg, chosen.strike, board.find((c) => c.cp === chosen!.cp && c.strike === chosen!.strike)?.bidSize);
+      if (bidWhy) { await finish('skipped', `${bidWhy}${forwarded}${block}`); return; }
     }
 
     const target = re ? null : (rule.target === 'tp3' ? plan.tp3 : rule.target === 'tp2' ? plan.tp2 : null) ?? plan.tp1;

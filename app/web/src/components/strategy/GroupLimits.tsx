@@ -9,13 +9,15 @@ import { MomentumGuard } from '@/components/strategy/MomentumGuard';
 import { Reentry } from '@/components/strategy/Reentry';
 import { CapSwap } from '@/components/strategy/CapSwap';
 import { groupOwnWords } from '@/lib/strategy-groups';
-import { REENTRY_DEFAULT, type CapSwap as Swap, type GroupOwn, type MomentumGuard as Guard, type Reentry as ReentrySetting, type SignalTf, type StrategyGroup } from '@/types/strategy';
+import { REENTRY_DEFAULT, guardsOff, type CapSwap as Swap, type GroupOwn, type MomentumGuard as Guard, type Reentry as ReentrySetting, type SignalTf, type StrategyGroup } from '@/types/strategy';
 import { cn } from '@/lib/utils';
 
 /** The account's seven, as the Signal Strategies row has them: what a group takes where it sets nothing of its own. */
 export type AccountLimits = {
   maxOpen: number; side: { CE: number; PE: number }; strikePct: number; strikeFull: 'next' | 'skip';
   zoneFresh: Record<SignalTf, number>; momentum: Guard; momentumNow: Parameters<typeof MomentumGuard>[0]['now']; reentry: ReentrySetting;
+  /** ATM IV now and an hour ago, for the IV spike guard (21 Nov 2026). */
+  ivNow?: Parameters<typeof MomentumGuard>[0]['ivNow'];
   /** Swap at full cap (16 Nov 2026): the account's only -- it works on the account's cap -- so a group shows it, never sets its own. */
   capSwap?: Swap;
 };
@@ -88,9 +90,10 @@ export function GroupLimits({ group, account, busy, act, onInvalid }: {
           <Own own={own.zoneFresh !== null} label="Fill window" busy={busy === key('zone')} onReset={() => save('zone', () => setZoneFresh(null, group.id))}>
             <ZoneFresh seconds={own.zoneFresh ?? account.zoneFresh} busy={busy === key('zone')} onSave={(ch) => save('zone', () => setZoneFresh(ch ?? {}, group.id))} />
           </Own>
-          <Own own={own.momentum !== null} label="Momentum guard" busy={busy === key('momentum')} onReset={() => save('momentum', () => setMomentumGuard(null, group.id))}>
-            <MomentumGuard guard={own.momentum ?? account.momentum} now={account.momentumNow} busy={busy === key('momentum')}
-                           onSave={(g) => save('momentum', () => setMomentumGuard(g ?? { ...(own.momentum ?? account.momentum), on: false }, group.id))} />
+          <Own own={own.momentum !== null} label="Entry guards" busy={busy === key('momentum')} onReset={() => save('momentum', () => setMomentumGuard(null, group.id))}>
+            {/* "All off" for a group is every guard off, its own: null would hand it back to the account's. */}
+            <MomentumGuard guard={own.momentum ?? account.momentum} now={account.momentumNow} ivNow={account.ivNow} busy={busy === key('momentum')}
+                           onSave={(g) => save('momentum', () => setMomentumGuard(g ?? guardsOff(own.momentum ?? account.momentum), group.id))} />
           </Own>
           <Own own={own.reentry !== null} label="Re-entry" busy={busy === key('reentry')} onReset={() => save('reentry', () => setReentry(null, group.id))}>
             <Reentry reentry={own.reentry ?? account.reentry} busy={busy === key('reentry')} onSave={(r) => save('reentry', () => setReentry(r ?? OFF, group.id))} />

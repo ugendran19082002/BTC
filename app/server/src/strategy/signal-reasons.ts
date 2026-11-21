@@ -10,7 +10,7 @@
  */
 export const SIGNAL_REASONS = [
   'sl-min', 'sl-max', 'tgt-min', 'tgt-max', 'score-min', 'own-max', 'desk-max', 'side-max', 'strike-max', 'no-entry', 'late', 'over',
-  'premium', 'spread', 'no-strike', 'margin', 'loss-limit', 'no-board', 'delta', 'stale-quote', 'momentum', 'other',
+  'premium', 'spread', 'no-strike', 'margin', 'loss-limit', 'no-board', 'delta', 'stale-quote', 'momentum', 'iv-spike', 'thin-bid', 'other',
 ] as const;
 export type SignalReason = (typeof SIGNAL_REASONS)[number];
 
@@ -39,7 +39,11 @@ const KINDS: [SignalReason, RegExp][] = [
   ['delta', /Delta refused|could not set .*leverage|Delta (did not|gave no) /i],
   // Both were Other until 2 Nov 2026 (owner: "refused others varuthu yen"): 367 and 56 of that day's 423.
   ['stale-quote', /^Last quote is [\d.]+s old/],
-  ['momentum', /the momentum guard sells no call/],
+  // A call after a rise, or (21 Nov 2026) a put after a fall, over the hour or the last 15 minutes.
+  ['momentum', /the momentum guard sells no (call|put)/],
+  // The entry guards of 21 Nov 2026, each its own tab: ATM IV up over the hour, and the strike's bid too thin.
+  ['iv-spike', /the IV spike guard sells nothing/],
+  ['thin-bid', /the thin-bid guard sells only where/],
 ];
 
 /** The kinds of reason in a not-taken signal's sentence; none for one that was taken. */

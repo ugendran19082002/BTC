@@ -48,7 +48,7 @@ describe('GroupLimits', () => {
     const panel = screen.getByRole('group', { name: 'limits of Scalps' });
     expect(within(panel).getByRole('button', { name: "At most open: back to the account's" })).toHaveTextContent('own');
     expect(within(panel).getByRole('button', { name: "CE and PE max: back to the account's" })).toBeInTheDocument();
-    for (const l of ['Strike max', 'Fill window', 'Momentum guard', 'Re-entry']) expect(within(panel).getByLabelText(`${l}: the account's`)).toBeInTheDocument();
+    for (const l of ['Strike max', 'Fill window', 'Entry guards', 'Re-entry']) expect(within(panel).getByLabelText(`${l}: the account's`)).toBeInTheDocument();
     expect(within(panel).getByLabelText('At most open at once, this group')).toHaveValue('150');
   });
 
@@ -87,9 +87,9 @@ describe('GroupLimits', () => {
   it('[critical] the account\'s momentum guard in per cent reads as the account row has it, not as points (16 Nov 2026)', () => {
     render(<GroupLimits group={group()} account={{ ...ACCOUNT, momentum: { on: true, pts: 200, unit: 'pct', pct: 0.25 } }} busy={null} act={act} onInvalid={onInvalid} />);
     fireEvent.click(screen.getByRole('button', { name: 'Limits of Scalps' }));
-    const pill = screen.getByRole('button', { name: /Momentum guard/ });
-    expect(pill).toHaveTextContent('+0.25%/1h');
-    expect(pill).not.toHaveTextContent('+200/1h');
+    const pill = screen.getByRole('button', { name: /Entry guards/ });
+    expect(pill).toHaveTextContent('Momentum +0.25%');
+    expect(pill).not.toHaveTextContent('+200');
   });
 
   it('[critical] swap at full cap is shown in the group\'s limits as the account\'s, and saved as the account\'s (16 Nov 2026)', async () => {

@@ -38,6 +38,8 @@ export type Candidate = {
   emBuffer?: number | null;
   /** The option's delta, negative for a put. Read only by the delta rule; null where the board could not work it out. */
   delta?: number | null;
+  /** Contracts bid at the top of the book. Read only by the thin-bid guard (`bidGuardWhy`). */
+  bidSize?: number | null;
 };
 
 export type Chosen = {

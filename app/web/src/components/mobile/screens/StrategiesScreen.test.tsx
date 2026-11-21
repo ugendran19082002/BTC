@@ -310,3 +310,22 @@ describe('StrategiesScreen: Not taken, the two kinds that were Other', () => {
     expect(rows()).toHaveLength(2);
   });
 });
+
+describe('StrategiesScreen: Not taken, the entry guards of 21 Nov 2026', () => {
+  it('[critical] the IV spike guard and the thin-bid guard each have their own tab with its count, beside the momentum guard\'s', async () => {
+    getDaySignals.mockResolvedValue({
+      trades: [sig('skipped', { reasons: ['iv-spike'] }), sig('skipped', { reasons: ['iv-spike'] }), sig('skipped', { reasons: ['iv-spike'] }),
+        sig('skipped', { reasons: ['thin-bid'] }), sig('skipped', { reasons: ['momentum'] })],
+      counts: { all: 5, taken: 0, placed: 0, takenBy: { signal: 0, sl: 0, tgt: 0 }, notTaken: 5, byReason: { 'iv-spike': 3, 'thin-bid': 1, momentum: 1 } },
+    });
+    show();
+    await waitFor(() => expect(tabs().getByRole('button', { name: 'Not taken 5' })).toBeInTheDocument());
+    fireEvent.click(tabs().getByRole('button', { name: 'Not taken 5' }));
+    const why = within(screen.getByRole('group', { name: 'Not taken, why' }));
+    expect(why.getAllByRole('button').map((b) => b.textContent)).toEqual(['Any reason 5', 'IV spike guard 3', 'Thin-bid guard 1', 'Momentum guard 1']);
+    fireEvent.click(why.getByRole('button', { name: 'IV spike guard 3' }));
+    expect(rows()).toHaveLength(3);
+    fireEvent.click(why.getByRole('button', { name: 'Thin-bid guard 1' }));
+    expect(rows()).toHaveLength(1);
+  });
+});
