@@ -176,16 +176,27 @@ describe('the parts', () => {
       now: { from: '07:00', to: '15:00', limit: 19, unit: 'pct', limitInr: 3856, lossInr: 2944, hit: false, breachSince: null },
     });
 
-    it('[critical] a recompute that would lower it is said in red -- no button to do it, nothing sent', async () => {
+    it('[critical] a lowering the server allows: in red, its own "Lower it" button, Cancel first', async () => {
       getSessionLoss.mockResolvedValue(running());
-      previewSessionRecompute.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 19, beforeInr: 3856, afterInr: 3158, lossInr: 2944, lowers: true });
+      previewSessionRecompute.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 19, beforeInr: 3856, afterInr: 3158, lossInr: 1200, lowers: true });
+      recomputeSessionLimit.mockResolvedValue({ ok: true, from: '07:00', to: '15:00', limit: 19, beforeInr: 3856, afterInr: 3158, lossInr: 1200, lowers: true, ...running() });
       render(<SessionLossLimit />);
       fireEvent.click(await screen.findByRole('button', { name: '↻ Recompute limit' }));
-      const said = await screen.findByRole('alert');
-      expect(said).toHaveTextContent('Not changed: during the 07:00–15:00 session the limit can only go up');
-      expect(said).toHaveTextContent('₹3,158, under the ₹3,856');
-      expect(screen.queryByRole('alertdialog')).toBeNull();
-      expect(screen.queryByRole('button', { name: /Lower it|Recompute$/ })).toBeNull();
+      const box = await screen.findByRole('alertdialog', { name: 'Lower the session limit' });
+      expect(box).toHaveTextContent('This LOWERS the session limit');
+      expect(box).toHaveTextContent('squared off if it reaches ₹3,158');
+      expect(within(box).queryByRole('button', { name: 'Recompute' })).toBeNull();
+      fireEvent.click(within(box).getByRole('button', { name: 'Lower it to ₹3,158' }));
+      await waitFor(() => expect(recomputeSessionLimit).toHaveBeenCalledTimes(1));
+    });
+
+    it('[critical] a lowering too close to the loss: the server\'s words, no button to do it', async () => {
+      getSessionLoss.mockResolvedValue(running());
+      previewSessionRecompute.mockResolvedValue({ ok: false, reason: 'Not lowered: the 07:00–15:00 session has lost ₹3,000, and ₹3,158 would leave less than ₹250 of room.' });
+      render(<SessionLossLimit />);
+      fireEvent.click(await screen.findByRole('button', { name: '↻ Recompute limit' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('less than ₹250 of room');
+      expect(screen.queryByRole('button', { name: /Lower it/ })).toBeNull();
       expect(recomputeSessionLimit).not.toHaveBeenCalled();
     });
 

@@ -42,6 +42,12 @@ export const HOLD_MS = 15_000;
 /** How often an account's session is checked. */
 export const SESSION_LOSS_TICK_MS = 5_000;
 /**
+ * How far over the loss so far a lowered line must stay, in a running session (owner, 21 Nov 2026: "18% to 17%: if the
+ * loss is under 17%'s line, allow; else after the session" -- with this room, so the next burst of stops does not square
+ * the account off seconds after the save: High's loss rose ₹268 in eight minutes that morning).
+ */
+export const LOWER_CUSHION_INR = 250;
+/**
  * A square-off that left positions open is tried again this often, only on the trades it could not close, until the
  * account is flat or the day is over (7 Nov 2026). Not every tick: a close refused for Delta's rate limit wants the window
  * to empty, and asking again at once keeps it full.
@@ -174,6 +180,15 @@ export type SessionGuardDeps = {
   recomputed?: (r: Extract<RecomputeAnswer, { ok: true }>) => void;
 };
 
+/** Why a lower line may not be had now, in words; null when it may (`LOWER_CUSHION_INR`). A loss not read: not allowed. */
+function lowerProblem(from: string, to: string, beforeInr: number, afterInr: number, lossInr: number): string | null {
+  const rs = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+  if (!Number.isFinite(lossInr)) return `The session's loss is not read yet, so the limit cannot be lowered now (it is ${rs(beforeInr)}). Try again in a few seconds, or lower it after ${to}.`;
+  if (lossInr + LOWER_CUSHION_INR <= afterInr) return null;
+  const least = Math.max(0, lossInr) + LOWER_CUSHION_INR;
+  return `Not lowered: the ${from}–${to} session has lost ${rs(Math.max(0, lossInr))}, and ${rs(afterInr)} would leave less than ${rs(LOWER_CUSHION_INR)} of room. In this session the limit can go down to ${rs(least)} at the lowest (it is ${rs(beforeInr)}); lower it further after ${to}.`;
+}
+
 /**
  * One account's session guard. `tick` reads the session now and squares the account off at its limit; `entryBlock`
  * says why a new entry must wait, while a hit session lasts.
@@ -252,6 +267,7 @@ export class SessionLossGuard {
   async wouldLower(next: SessionLoss, now = this.d.now()): Promise<string | null> {
     const cur = this.status(now);
     if (!cur || cur.hit || cur.limitInr === null || now < this.lockedUntil) return null;
+    const key = `${istDate(now)}|${cur.from}`;
     const s = next.on ? sessionAt(next.sessions, now) : null;
     if (!s) return null;
     let afterInr: number | null;
@@ -261,8 +277,9 @@ export class SessionLossGuard {
       afterInr = base !== null && base > 0 ? (s.rule.limit / 100) * base * USDINR : null;
     }
     if (afterInr === null || afterInr >= cur.limitInr - 1) return null;
-    const rs = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
-    return `During the ${cur.from}–${cur.to} session the limit can only go up: it is ${rs(cur.limitInr)} now, and this would make it ${rs(afterInr)}. Raise it, or lower it after ${cur.to}.`;
+    // Lower: allowed while the loss so far stays `LOWER_CUSHION_INR` under the new line -- read now, not off the last look.
+    const lossInr = this.baseline?.key === key ? (this.baseline.usd - await this.d.netUsd().catch(() => NaN)) * USDINR : NaN;
+    return lowerProblem(cur.from, cur.to, cur.limitInr, afterInr, lossInr);
   }
 
   /** One at a time with the guard's own tick: the tick is skipped while this runs, and this waits out a tick (3 s at most). */
@@ -296,15 +313,15 @@ export class SessionLossGuard {
     }
     const lowers = beforeInr !== null && afterInr < beforeInr;
     const answer = { ok: true as const, from: s.rule.from, to: s.rule.to, limit: s.rule.limit, beforeInr, afterInr, lossInr, lowers };
-    if (!apply) return answer;
     /*
-     * Never lower in the session (21 Nov 2026: a recompute took High from ₹3,856 to ₹3,158 and the account was squared
-     * off at ₹3,212 eight minutes on; then the owner: "only allow raising"). A recompute that would lower it is refused,
-     * with both figures.
+     * Lower only with room (21 Nov 2026: a recompute took High from ₹3,856 to ₹3,158 and the account was squared off at
+     * ₹3,212 eight minutes on): the loss so far must stay `LOWER_CUSHION_INR` under the new line, preview and act alike.
      */
     if (lowers) {
-      return { ok: false, reason: `During the ${s.rule.from}–${s.rule.to} session the limit can only go up: with the lots traded now it would be ₹${Math.round(afterInr).toLocaleString('en-IN')}, under the ₹${Math.round(beforeInr!).toLocaleString('en-IN')} it is.` };
+      const problem = lowerProblem(s.rule.from, s.rule.to, beforeInr!, afterInr, lossInr);
+      if (problem) return { ok: false, reason: problem };
     }
+    if (!apply) return answer;
     const limitFor = `${s.rule.unit}:${s.rule.limit}`;
     this.baseline = { ...this.baseline, limitInr: afterInr, limitFor };
     await this.d.fixedLimit?.set(`${key}|${limitFor}`, afterInr).catch(() => {});

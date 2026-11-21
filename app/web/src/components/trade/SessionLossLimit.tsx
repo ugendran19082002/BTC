@@ -145,14 +145,21 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
             </button>
           )}
           {offer && offer.ok && offer.lowers && (
-            // In a session the line only goes up (owner, 21 Nov 2026): a lower one is said, never offered.
-            <p role="alert" className="m-0 flex items-start justify-between gap-2 rounded-md border border-solid border-[var(--down)] p-2 text-[12px] leading-snug text-[var(--down)]">
-              <span>
-                Not changed: during the {offer.from}–{offer.to} session the limit can only go up. With the lots traded now it
-                would be {rupees(offer.afterInr)}, under the {rupees(offer.beforeInr ?? 0)} it is.
+            // A lower line, allowed only with room under it (the server's rule, 21 Nov 2026): in red, its own button, Cancel first.
+            <div role="alertdialog" aria-label="Lower the session limit" className="grid gap-2 rounded-md border border-solid border-[var(--down)] bg-muted p-2.5 text-[12.5px] leading-snug">
+              <span className="font-semibold text-[var(--down)]">This LOWERS the session limit</span>
+              <span className="grid grid-cols-[auto_1fr] gap-x-3 tabular-nums">
+                <span className="text-muted-foreground">Now</span><span>{rupees(offer.beforeInr ?? 0)}</span>
+                <span className="text-muted-foreground">New</span><b>{rupees(offer.afterInr)}</b>
               </span>
-              <button type="button" aria-label="Close" onClick={() => setOffer(null)} className="border-0 bg-transparent p-0 font-[inherit] text-[13px] text-muted-foreground">✕</button>
-            </p>
+              <span className="text-muted-foreground">Lost so far {rupees(Math.max(0, offer.lossInr))}: squared off if it reaches {rupees(offer.afterInr)}.</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setOffer(null)} className="h-9 rounded-md border border-solid border-border bg-transparent font-[inherit] text-[13px] text-foreground">Cancel</button>
+                <button type="button" disabled={recomputing} onClick={() => void doRecompute()} className="h-9 rounded-md border-0 bg-[var(--down)] font-[inherit] text-[13px] font-semibold text-[var(--bg)] disabled:opacity-40">
+                  {recomputing ? 'Lowering…' : `Lower it to ${rupees(offer.afterInr)}`}
+                </button>
+              </div>
+            </div>
           )}
           {offer && offer.ok && !offer.lowers && (
             <div role="alertdialog" aria-label="Recompute the session limit" className="grid gap-2 rounded-md border border-solid border-[var(--accent)] bg-muted p-2.5 text-[12.5px] leading-snug">

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HOLD_MS, SessionLossGuard, type RecomputeAnswer, type SessionHit, type SessionLoss } from '../../src/trading/session-loss.js';
+import { HOLD_MS, LOWER_CUSHION_INR, SessionLossGuard, type RecomputeAnswer, type SessionHit, type SessionLoss } from '../../src/trading/session-loss.js';
 import { USDINR } from '../../src/domain/score.js';
 
 /**
@@ -144,43 +144,57 @@ test('refused outside a session, for a rupee limit, before the session is read, 
 
 /* ---------------------------------------------- 21 Nov 2026: one formula, never lowered unasked --- */
 
-test('[critical] in a session a recompute never lowers the line: refused with both figures, nothing changed', async () => {
+test('[critical] in a session a recompute lowers the line only with room: the loss ₹250 under the new line, else refused with the figures', async () => {
   const r = rig();
   r.lots(2);
   r.set('07:00', 0); await r.guard.tick();
-  r.lots(1);
-  r.set('07:30', 100);
-  const p = await r.guard.recomputePreview();
-  assert.ok(p.ok && p.lowers, 'the preview says it would lower');
-  const a = await r.guard.recompute();
-  assert.equal(a.ok, false);
-  assert.match((a as { reason: string }).reason, /can only go up: with the lots traded now it would be ₹1,530, under the ₹3,060 it is/);
+  r.lots(1);                                                            // 2 lots → 1: ₹3,060 → ₹1,530
+  r.set('07:30', 1_400);                                                // ₹130 under the new line: too close
+  const close = await r.guard.recomputePreview();
+  assert.equal(close.ok, false);
+  assert.match((close as { reason: string }).reason, /has lost ₹1,400, and ₹1,530 would leave less than ₹250 of room. In this session the limit can go down to ₹1,650 at the lowest \(it is ₹3,060\); lower it further after 15:00/);
+  assert.equal((await r.guard.recompute()).ok, false);
   assert.equal(Math.round(r.guard.status()!.limitInr!), Math.round(TWO_LOTS), 'nothing changed');
-  assert.equal(r.told.length, 0);
+  r.set('07:40', 100);                                                  // well under: allowed
+  const p = await r.guard.recomputePreview();
+  assert.ok(p.ok && p.lowers);
+  const a = await r.guard.recompute();
+  assert.ok(a.ok && a.lowers);
+  assert.equal(Math.round(r.guard.status()!.limitInr!), Math.round(ONE_LOT));
+  assert.equal(LOWER_CUSHION_INR, 250);
 });
 
 /* ------------------------------------- a setting saved in the session: only up (owner, 21 Nov 2026) --- */
 
 const rule = (limit: number, unit: 'pct' | 'inr' = 'pct', on = true): SessionLoss => ({ on, sessions: [{ from: '07:00', to: '15:00', limit, unit }] });
 
-test('[critical] in a session, a lower % is refused in words; a higher one goes', async () => {
+test('[critical] in a session, a lower % goes while the loss stays ₹250 under its line; closer than that it is refused in words; up always goes', async () => {
   const r = rig(rule(18));
-  r.set('07:00', 0); await r.guard.tick();
+  r.set('07:00', 0); await r.guard.tick();                             // 18%: ₹1,530
   r.set('09:00', 500);
+  assert.equal(await r.guard.wouldLower(rule(15)), null, '15%: ₹1,275, the loss ₹775 under it -- allowed');
+  r.set('09:10', 1_100);
   const no = await r.guard.wouldLower(rule(15));
-  assert.match(no!, /During the 07:00–15:00 session the limit can only go up: it is ₹1,530 now, and this would make it ₹1,275. Raise it, or lower it after 15:00./);
-  assert.equal(await r.guard.wouldLower(rule(20)), null, 'up: fine');
+  assert.match(no!, /Not lowered: the 07:00–15:00 session has lost ₹1,100, and ₹1,275 would leave less than ₹250 of room. In this session the limit can go down to ₹1,350 at the lowest \(it is ₹1,530\); lower it further after 15:00./);
+  assert.equal(await r.guard.wouldLower(rule(20)), null, 'up: always');
   assert.equal(await r.guard.wouldLower(rule(18)), null, 'the same: fine');
 });
 
-test('[critical] a rupee limit under the line is refused the same; switching it off, or no session at this hour, lowers nothing', async () => {
+test('[critical] a rupee limit is held the same; switching it off, or no session at this hour, lowers nothing', async () => {
   const r = rig(rule(18));
   r.set('07:00', 0); await r.guard.tick();
-  r.set('09:00', 0);
-  assert.match((await r.guard.wouldLower(rule(1_000, 'inr')))!, /can only go up/);
-  assert.equal(await r.guard.wouldLower(rule(5_000, 'inr')), null);
+  r.set('09:00', 900);
+  assert.match((await r.guard.wouldLower(rule(1_000, 'inr')))!, /less than ₹250 of room/);
+  assert.equal(await r.guard.wouldLower(rule(1_200, 'inr')), null, '₹300 of room: allowed');
   assert.equal(await r.guard.wouldLower(rule(10, 'pct', false)), null, 'off: no square-off can come of it');
   assert.equal(await r.guard.wouldLower({ on: true, sessions: [{ from: '15:00', to: '16:00', limit: 1, unit: 'pct' }] }), null, 'no session now in it');
+});
+
+test('a loss that cannot be read: not lowered now, said so', async () => {
+  const r = rig(rule(18));
+  r.set('07:00', 0); await r.guard.tick();
+  (r.guard as unknown as { d: { netUsd: () => Promise<number> } }).d.netUsd = async () => { throw new Error('board down'); };
+  assert.match((await r.guard.wouldLower(rule(15)))!, /loss is not read yet/);
 });
 
 test('[critical] outside the session, or once it was squared off, anything can be saved -- tomorrow\'s % may be lowered', async () => {
