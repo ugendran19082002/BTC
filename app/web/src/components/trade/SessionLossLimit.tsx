@@ -82,10 +82,10 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
     setRecomputing(true); setRecomputed(null);
     try { setOffer(await previewSessionRecompute()); } catch (e) { setOffer({ ok: false, reason: (e as Error).message }); } finally { setRecomputing(false); }
   };
-  const doRecompute = async (lower = false) => {
+  const doRecompute = async () => {
     setRecomputing(true);
     try {
-      const r = await recomputeSessionLimit(undefined, { lower });
+      const r = await recomputeSessionLimit();
       setOffer(null);
       setRecomputed(`Limit worked out again: ${r.beforeInr === null ? '' : `${rupees(r.beforeInr)} → `}${rupees(r.afterInr)} for the rest of the session.`);
       await refresh();
@@ -144,15 +144,19 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
               {recomputing ? 'Working it out…' : '↻ Recompute limit'}
             </button>
           )}
-          {offer && offer.ok && (
-            // A lower line in red, its own button, Cancel first (21 Nov 2026: High went ₹3,856 → ₹3,158 behind a plain box).
-            <div role="alertdialog" aria-label="Recompute the session limit" className={cn('grid gap-2 rounded-md border border-solid bg-muted p-2.5 text-[12.5px] leading-snug', offer.lowers ? 'border-[var(--down)]' : 'border-[var(--accent)]')}>
-              <span className="font-semibold">{offer.lowers ? 'This LOWERS the session limit' : 'Recompute this session\'s limit?'}</span>
-              {offer.lowers && (
-                <span role="alert" className="text-[var(--down)]">
-                  The account is squared off sooner: at {rupees(offer.afterInr)} lost instead of {rupees(offer.beforeInr ?? 0)}.
-                </span>
-              )}
+          {offer && offer.ok && offer.lowers && (
+            // In a session the line only goes up (owner, 21 Nov 2026): a lower one is said, never offered.
+            <p role="alert" className="m-0 flex items-start justify-between gap-2 rounded-md border border-solid border-[var(--down)] p-2 text-[12px] leading-snug text-[var(--down)]">
+              <span>
+                Not changed: during the {offer.from}–{offer.to} session the limit can only go up. With the lots traded now it
+                would be {rupees(offer.afterInr)}, under the {rupees(offer.beforeInr ?? 0)} it is.
+              </span>
+              <button type="button" aria-label="Close" onClick={() => setOffer(null)} className="border-0 bg-transparent p-0 font-[inherit] text-[13px] text-muted-foreground">✕</button>
+            </p>
+          )}
+          {offer && offer.ok && !offer.lowers && (
+            <div role="alertdialog" aria-label="Recompute the session limit" className="grid gap-2 rounded-md border border-solid border-[var(--accent)] bg-muted p-2.5 text-[12.5px] leading-snug">
+              <span className="font-semibold">Recompute this session&apos;s limit?</span>
               <span className="grid grid-cols-[auto_1fr] gap-x-3 tabular-nums">
                 <span className="text-muted-foreground">Now</span><span>{offer.beforeInr === null ? '—' : rupees(offer.beforeInr)} (worked out at {offer.from})</span>
                 <span className="text-muted-foreground">New</span><b>{rupees(offer.afterInr)} ({offer.limit}% with the lots traded now)</b>
@@ -160,11 +164,8 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
               <span className="text-muted-foreground">Lost so far {rupees(Math.max(0, offer.lossInr))}. Kept until {offer.to}.</span>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setOffer(null)} className="h-9 rounded-md border border-solid border-border bg-transparent font-[inherit] text-[13px] text-foreground">Cancel</button>
-                <button
-                  type="button" disabled={recomputing} onClick={() => void doRecompute(offer.lowers === true)}
-                  className={cn('h-9 rounded-md border-0 font-[inherit] text-[13px] font-semibold disabled:opacity-40', offer.lowers ? 'bg-[var(--down)] text-[var(--bg)]' : 'bg-foreground text-background')}
-                >
-                  {recomputing ? 'Recomputing…' : offer.lowers ? `Lower it to ${rupees(offer.afterInr)}` : 'Recompute'}
+                <button type="button" disabled={recomputing} onClick={() => void doRecompute()} className="h-9 rounded-md border-0 bg-foreground font-[inherit] text-[13px] font-semibold text-background disabled:opacity-40">
+                  {recomputing ? 'Recomputing…' : 'Recompute'}
                 </button>
               </div>
             </div>

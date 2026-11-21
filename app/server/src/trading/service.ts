@@ -466,6 +466,9 @@ export class TradingService {
     if (bad.length) return { ok: false, reason: bad.join(' ') };
     const v = x as SessionLoss;
     const kept: SessionLoss = { on: v.on, sessions: v.sessions.map((s) => ({ from: s.from, to: s.to, limit: s.limit, unit: s.unit })) };
+    // In a session the line only goes up (owner, 21 Nov 2026): a save that would lower it is refused, in words.
+    const lowers = await this.sessionGuard.wouldLower(kept).catch(() => null);
+    if (lowers) return { ok: false, reason: lowers };
     await this.settings.set(accountKey(SESSION_LOSS_KEY, this.currentAccountId), JSON.stringify(kept));
     return { ok: true, sessionLoss: this.sessionLossSetting };
   }
@@ -552,8 +555,8 @@ export class TradingService {
   }
 
   /** The session's limit as `recompute` would make it now (`apply` false), or made so (`apply` true): see `SessionLossGuard`. */
-  sessionLossRecompute(apply: boolean, o: { lower?: boolean } = {}): Promise<RecomputeAnswer> {
-    return apply ? this.sessionGuard.recompute(undefined, o) : this.sessionGuard.recomputePreview();
+  sessionLossRecompute(apply: boolean): Promise<RecomputeAnswer> {
+    return apply ? this.sessionGuard.recompute() : this.sessionGuard.recomputePreview();
   }
 
   private sayHit(h: SessionHit): void {

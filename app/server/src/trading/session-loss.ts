@@ -136,7 +136,7 @@ export type SessionLossNow = {
  * become, or why it will not: `ok` with the limit before and after and the loss so far, else the reason in words.
  */
 export type RecomputeAnswer =
-  /** `lowers`: the new line is under the one in force -- made so only when asked for in so many words (`lower`). */
+  /** `lowers`: the new line is under the one in force -- never made in the session (`recompute`); said, for the screen. */
   | { ok: true; from: string; to: string; limit: number; beforeInr: number | null; afterInr: number; lossInr: number; lowers: boolean }
   | { ok: false; reason: string };
 
@@ -229,7 +229,7 @@ export class SessionLossGuard {
 
   /** What `recompute` would make the session's limit now -- nothing changed. */
   recomputePreview(now = this.d.now()): Promise<RecomputeAnswer> {
-    return this.alone(() => this.recomputeNow(now, false, false));
+    return this.alone(() => this.recomputeNow(now, false));
   }
 
   /**
@@ -239,8 +239,30 @@ export class SessionLossGuard {
    * change it); with nothing to work it out from; before the session's first reading; and when the loss so far is
    * already at or over the new limit -- that would square the account off the moment it was pressed.
    */
-  recompute(now = this.d.now(), o: { lower?: boolean } = {}): Promise<RecomputeAnswer> {
-    return this.alone(() => this.recomputeNow(now, true, o.lower === true));
+  recompute(now = this.d.now()): Promise<RecomputeAnswer> {
+    return this.alone(() => this.recomputeNow(now, true));
+  }
+
+  /**
+   * Whether a setting about to be saved would lower the running session's line, and why in words; null when it would
+   * not (owner, 21 Nov 2026: "lowering % allow pannatha, highering % mattum allow"). In a session the line only goes up:
+   * a lower one could square the account off fifteen seconds after a save. Not in a session, the session already squared
+   * off, or the line not read yet: nothing to lower. Off, or no session at this hour in the new setting, lowers nothing.
+   */
+  async wouldLower(next: SessionLoss, now = this.d.now()): Promise<string | null> {
+    const cur = this.status(now);
+    if (!cur || cur.hit || cur.limitInr === null || now < this.lockedUntil) return null;
+    const s = next.on ? sessionAt(next.sessions, now) : null;
+    if (!s) return null;
+    let afterInr: number | null;
+    if (s.rule.unit === 'inr') afterInr = s.rule.limit;
+    else {
+      const base = await (this.d.pctModelUsd ?? this.d.pctBaseUsd)().catch(() => null);
+      afterInr = base !== null && base > 0 ? (s.rule.limit / 100) * base * USDINR : null;
+    }
+    if (afterInr === null || afterInr >= cur.limitInr - 1) return null;
+    const rs = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+    return `During the ${cur.from}–${cur.to} session the limit can only go up: it is ${rs(cur.limitInr)} now, and this would make it ${rs(afterInr)}. Raise it, or lower it after ${cur.to}.`;
   }
 
   /** One at a time with the guard's own tick: the tick is skipped while this runs, and this waits out a tick (3 s at most). */
@@ -251,7 +273,7 @@ export class SessionLossGuard {
     try { return await f(); } finally { this.ticking = false; }
   }
 
-  private async recomputeNow(now: number, apply: boolean, lower: boolean): Promise<RecomputeAnswer> {
+  private async recomputeNow(now: number, apply: boolean): Promise<RecomputeAnswer> {
     const cfg = this.d.rule();
     const s = cfg.on ? sessionAt(cfg.sessions, now) : null;
     if (!s) return { ok: false, reason: 'No session is running now: the next one works its limit out when it begins.' };
@@ -276,12 +298,12 @@ export class SessionLossGuard {
     const answer = { ok: true as const, from: s.rule.from, to: s.rule.to, limit: s.rule.limit, beforeInr, afterInr, lossInr, lowers };
     if (!apply) return answer;
     /*
-     * A lower line only when asked for in so many words (21 Nov 2026: a recompute took High from ₹3,856 to ₹3,158 behind a
-     * "Now / New" box, and the account was squared off at ₹3,212 eight minutes on). A plain recompute that would lower it
-     * is refused, with both figures; the screen then offers "Lower it" apart.
+     * Never lower in the session (21 Nov 2026: a recompute took High from ₹3,856 to ₹3,158 and the account was squared
+     * off at ₹3,212 eight minutes on; then the owner: "only allow raising"). A recompute that would lower it is refused,
+     * with both figures.
      */
-    if (lowers && !lower) {
-      return { ok: false, reason: `This would LOWER the limit from ₹${Math.round(beforeInr!).toLocaleString('en-IN')} to ₹${Math.round(afterInr).toLocaleString('en-IN')}: press "Lower it" to do that.` };
+    if (lowers) {
+      return { ok: false, reason: `During the ${s.rule.from}–${s.rule.to} session the limit can only go up: with the lots traded now it would be ₹${Math.round(afterInr).toLocaleString('en-IN')}, under the ₹${Math.round(beforeInr!).toLocaleString('en-IN')} it is.` };
     }
     const limitFor = `${s.rule.unit}:${s.rule.limit}`;
     this.baseline = { ...this.baseline, limitInr: afterInr, limitFor };

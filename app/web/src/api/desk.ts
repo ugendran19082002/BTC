@@ -249,6 +249,6 @@ export type SessionRecompute =
   | { ok: false; reason: string };
 const recomputeUrl = (account?: number | null) => (account == null ? withAccount('/api/desk/session-loss/recompute') : `/api/desk/session-loss/recompute?account=${account}`);
 export const previewSessionRecompute = (account?: number | null) => json<SessionRecompute>(recomputeUrl(account));
-/** `lower`: a line under the one in force, asked for in so many words (21 Nov 2026); without it the server refuses one. */
-export const recomputeSessionLimit = (account?: number | null, o: { lower?: boolean } = {}) =>
-  post<Extract<SessionRecompute, { ok: true }> & SessionLossView>(recomputeUrl(account), o.lower ? { lower: true } : {});
+/** Never lower in a session (21 Nov 2026): one that would is refused by the server, in words. */
+export const recomputeSessionLimit = (account?: number | null) =>
+  post<Extract<SessionRecompute, { ok: true }> & SessionLossView>(recomputeUrl(account), {});
