@@ -16,8 +16,11 @@ import { cn } from '@/lib/utils';
 const MOVES = [0.6, 0.8, 1.0];
 const WINDOWS = [10, 15];
 const NEARS = [1.0, 1.5, 2.0];
-/** The hours watched (22 Nov 2026, round 4): from 12:00 lost no day against now; all day earned the most. */
-const FROMS: (string | null)[] = [null, '12:00', '13:00'];
+/**
+ * The hours watched (22 Nov 2026, the 45-day study §12): from 09:00 earned the most with no day worse than now (+₹18.9k);
+ * from 12:00 the cautious one (+₹14.9k, none worse); all day caught one more morning run and two false alarms.
+ */
+const FROMS: (string | null)[] = [null, '09:00', '12:00', '13:00'];
 const TOS: (string | null)[] = [null, '16:30'];
 /** The setting with its hours always said (null for none), so a kept setting from before them compares as unchanged. */
 const norm = (x: MoveExitSetting): MoveExitSetting => ({ on: x.on, pct: x.pct, minutes: x.minutes, nearPct: x.nearPct, from: x.from ?? null, to: x.to ?? null });

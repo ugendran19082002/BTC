@@ -172,8 +172,16 @@ test('[critical] the desk closes them the session square-off\'s way, each with i
  */
 const istAt = (hhmm: string, day = '2026-11-22') => Date.parse(`${day}T${hhmm}:00+05:30`);
 
-test('[critical] offered from 12:00 when switched on; off until then', () => {
-  assert.deepEqual(MOVE_EXIT_DEFAULT, { on: false, pct: 0.8, minutes: 10, nearPct: 1.5, from: '12:00', to: null });
+test('[critical] offered from 09:00 when switched on (the 45-day study\'s best, no day worse); off until then', () => {
+  assert.deepEqual(MOVE_EXIT_DEFAULT, { on: false, pct: 0.8, minutes: 10, nearPct: 1.5, from: '09:00', to: null });
+});
+
+test('[critical] from 09:00: the 09:00-10:00 run is watched, the 08:00-09:00 hour is not', () => {
+  const s = { from: '09:00', to: null };
+  assert.equal(inMoveHours(s, istAt('08:59')), false);
+  assert.equal(inMoveHours(s, istAt('09:00')), true);
+  assert.equal(inMoveHours(s, istAt('17:29')), true);
+  assert.equal(inMoveHours(s, istAt('20:00', '2026-11-21')), false, 'not the evening before');
 });
 
 test('[critical] from 12:00: watching 12:00 to the expiry -- not the morning, not the evening or night before', () => {

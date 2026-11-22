@@ -31,11 +31,12 @@ import type { TradeRecord } from './engine.js';
 export type MoveExit = { on: boolean; pct: number; minutes: number; nearPct: number; from?: string | null; to?: string | null };
 export const MOVE_EXIT_KEY = 'signal_move_exit';
 /**
- * What the study chose, offered when it is switched on: 0.8% in 10 minutes, strikes within 1.5%, from 12:00 -- round 4
- * (docs/research/2026-11-22-sl-jump-study.md §8): +₹14.9k over 30 days with no day worse than now (all day: +₹17.9k,
- * one day worse). Off until then.
+ * What the study chose, offered when it is switched on: 0.8% in 10 minutes, strikes within 1.5%, from 09:00 -- the
+ * 45-day grid and hour steps (docs/research/2026-11-22-sl-jump-study.md §12): +₹18.9k with no day worse than now. It keeps
+ * a 09:00-10:00 run (4 Nov) and drops two 08:00-09:00 false alarms; three events set that hour, so from 12:00 (+₹14.9k,
+ * none worse) is the cautious choice on the card. Off until then.
  */
-export const MOVE_EXIT_DEFAULT: MoveExit = { on: false, pct: 0.8, minutes: 10, nearPct: 1.5, from: '12:00', to: null };
+export const MOVE_EXIT_DEFAULT: MoveExit = { on: false, pct: 0.8, minutes: 10, nearPct: 1.5, from: '09:00', to: null };
 /** The desk's day starts at the expiry before: 17:30 IST. A clock time is placed in the day by minutes since then. */
 export const DAY_OPEN_MIN = 17 * 60 + 30;
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;

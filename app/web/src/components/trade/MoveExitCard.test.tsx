@@ -75,6 +75,17 @@ describe('BTC-move exit', () => {
     await waitFor(() => expect(saveMoveExit).toHaveBeenCalledWith({ on: true, pct: 0.8, minutes: 10, nearPct: 1.5, from: '13:00', to: null }));
   });
 
+  it('[critical] from 09:00 is a choice, in a tap, saved as such', async () => {
+    render(<MoveExitCard />);
+    fireEvent.click(await screen.findByRole('switch', { name: /^BTC-move exit/ }));
+    const from = screen.getByRole('group', { name: 'From' });
+    expect(within(from).getAllByRole('button').map((b) => b.textContent)).toEqual(['All day', '09:00', '12:00', '13:00']);
+    fireEvent.click(within(from).getByRole('button', { name: '09:00' }));
+    expect(screen.getByText(/^From 09:00 to the 17:30 expiry: when BTC moves/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveMoveExit).toHaveBeenCalledWith({ on: true, pct: 0.8, minutes: 10, nearPct: 1.5, from: '09:00', to: null }));
+  });
+
   it('a setting kept before the hours existed reads as all day, and as unchanged', async () => {
     getMoveExit.mockResolvedValue({ setting: { on: true, pct: 0.8, minutes: 10, nearPct: 1.5 } });
     render(<MoveExitCard />);
