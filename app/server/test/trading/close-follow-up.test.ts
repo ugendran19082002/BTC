@@ -74,7 +74,7 @@ test('[critical] it stops after its tries and says so once, rather than buying i
  * it came 22 and 33 s late: bought back at 118 and 129. A close is now urgent from the moment it is sent, and the
  * watch that polls urgent trades four times a second looks at it first, up to the stops' share of the quota.
  */
-const { EntryWatch, ENTRY_WATCH_MS, ENTRY_WATCH_QUOTA_PCT, CLOSE_WATCH_QUOTA_PCT, isUrgent } = await import('../../src/trading/entry-watch.js');
+const { EntryWatch, ENTRY_WATCH_MS, ENTRY_WATCH_QUOTA_PCT, CLOSE_WATCH_QUOTA_PCT, CLOSE_WATCH_PER_LOOK, isUrgent } = await import('../../src/trading/entry-watch.js');
 
 const settle = async (done: () => boolean) => { for (let i = 0; i < 200 && !done(); i++) await new Promise((r) => setTimeout(r, 1)); };
 
@@ -108,9 +108,11 @@ test('[critical] a close sent is followed up by the urgent watch, not the loop: 
 test('[critical] the closes first, and on past the entries\' share of the quota -- none at all past the stops\'', () => {
   const polled: string[] = [];
   let used = 0;
-  const w = new EntryWatch({ poll: async (id) => { polled.push(id); return { phase: id.startsWith('close') ? 'exit_pending' : 'entry_pending', position: -1, closing: id.startsWith('close') ? {} : undefined }; }, quotaUsedPct: () => used });
-  w.add('entry-1'); w.add('entry-2'); w.add('close-1', true);
-  assert.deepEqual(w.tick(), ['close-1', 'entry-1'], 'the close first');
+  const now = 1_000_000;
+  const w = new EntryWatch({ poll: async (id) => { polled.push(id); return { phase: id.startsWith('close') ? 'exit_pending' : 'entry_pending', position: -1, closing: id.startsWith('close') ? {} : undefined }; }, quotaUsedPct: () => used, now: () => now });
+  // A close sent two seconds ago: due its follow-up (22 Nov 2026: a close is looked at once it is due, with places of its own).
+  w.add('entry-1'); w.add('entry-2'); w.add('close-1', true, now - 2_000);
+  assert.deepEqual(w.tick(), ['close-1', 'entry-1', 'entry-2'], 'the close first, and the entries their own two');
   used = ENTRY_WATCH_QUOTA_PCT;
   assert.deepEqual(w.tick().filter((id) => id.startsWith('entry')), [], 'entries wait at their share');
   used = CLOSE_WATCH_QUOTA_PCT;
@@ -120,4 +122,80 @@ test('[critical] the closes first, and on past the entries\' share of the quota 
   assert.equal(isUrgent(st({})), true);
   assert.equal(isUrgent(st({ position: 0 })), false);
   assert.equal(isUrgent(st({ closing: null })), false);
+});
+
+
+/*
+ * Closes due their follow-up, looked at on time (22 Nov 2026). At 14:05 IST dozens of stops closed at once into calls
+ * running up; the two places a look were shared by every close, due or not, and a close owed its market follow-up at
+ * 1.5 s waited 12 s -- the 60,400 CE judged at an offer of 103 bought back at 218.
+ */
+function closeWatch(o: { quota?: number } = {}) {
+  let now = 5_000_000;
+  const polled: string[] = [];
+  const working = new Set<string>();
+  const sentAt = new Map<string, number>();
+  const w = new EntryWatch({
+    poll: async (id) => {
+      polled.push(id);
+      // A close still working, re-sent at the market by its follow-up: sent again now.
+      if (working.has(id)) { sentAt.set(id, now); return { phase: 'exit_pending', position: -1, closing: { submittedAt: now } }; }
+      return { phase: 'done', position: 0 };
+    },
+    quotaUsedPct: () => o.quota ?? 0,
+    now: () => now,
+  });
+  return { w, polled, working, sentAt, at: () => now, move: (ms: number) => { now += ms; } };
+}
+
+test('[critical] a close is not looked at before its follow-up is due, and is looked at the moment it is', async () => {
+  const c = closeWatch();
+  c.w.add('close-a', true, c.at());
+  assert.deepEqual(c.w.tick(), [], 'sent just now: nothing owed yet');
+  c.move(CLOSE_FOLLOW_UP_MS - 1);
+  assert.deepEqual(c.w.tick(), []);
+  c.move(1);
+  assert.deepEqual(c.w.tick(), ['close-a'], 'due: looked at');
+});
+
+test('[critical] thirty stops closing at once: every follow-up within about a second of its due moment, oldest first', async () => {
+  const c = closeWatch();
+  const sent = c.at();
+  for (let i = 0; i < 30; i++) c.w.add(`close-${String(i).padStart(2, '0')}`, true, sent + i * 10);
+  c.move(CLOSE_FOLLOW_UP_MS + 300);
+  const seenAt = new Map<string, number>();
+  for (let t = 0; t < 12 && seenAt.size < 30; t++) {
+    for (const id of c.w.tick()) seenAt.set(id, c.at());
+    await new Promise((r) => setImmediate(r));
+    c.move(ENTRY_WATCH_MS);
+  }
+  assert.equal(seenAt.size, 30, 'all thirty looked at');
+  const lateMs = Math.max(...[...seenAt.values()]) - (sent + 290 + CLOSE_FOLLOW_UP_MS);
+  assert.ok(lateMs <= 1_250, `the last within ~1 s of due, not 12 (late ${lateMs} ms)`);
+  assert.deepEqual([...seenAt.keys()].slice(0, CLOSE_WATCH_PER_LOOK), ['close-00', 'close-01', 'close-02', 'close-03', 'close-04', 'close-05'], 'oldest first');
+});
+
+test('[critical] a close still working after its look is due again at its new follow-up -- not looked at every beat', async () => {
+  const c = closeWatch();
+  c.working.add('close-w');
+  c.w.add('close-w', true, c.at());
+  c.move(CLOSE_FOLLOW_UP_MS);
+  assert.deepEqual(c.w.tick(), ['close-w']);
+  await new Promise((r) => setImmediate(r));
+  c.move(ENTRY_WATCH_MS);
+  assert.deepEqual(c.w.tick(), [], 'sent again at the market: owed its next look 1.5 s on');
+  c.move(CLOSE_FOLLOW_UP_MS);
+  assert.deepEqual(c.w.tick(), ['close-w']);
+});
+
+test('[critical] the closes\' own places never take the entries\' two; past the stops\' share of the quota, nothing', async () => {
+  const c = closeWatch();
+  for (let i = 0; i < 10; i++) c.w.add(`close-${i}`, true, c.at() - 5_000);
+  c.w.add('entry-x'); c.w.add('entry-y');
+  const first = c.w.tick();
+  assert.equal(first.filter((id) => id.startsWith('close')).length, CLOSE_WATCH_PER_LOOK);
+  assert.deepEqual(first.filter((id) => id.startsWith('entry')), ['entry-x', 'entry-y']);
+  const busy = closeWatch({ quota: CLOSE_WATCH_QUOTA_PCT });
+  busy.w.add('close-q', true, busy.at() - 5_000);
+  assert.deepEqual(busy.w.tick(), []);
 });

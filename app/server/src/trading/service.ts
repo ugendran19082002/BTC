@@ -297,7 +297,8 @@ export class TradingService {
       // fill can never reach the phone dressed as a live one.
       onEvent: async (event, before, after, plan) => {
         // A close sent -- by the stop watch, the perp's watch, the clock or a hand -- is followed up off the loop (25 Oct 2026).
-        if (event.t === 'exit_submitted' && after.position !== 0) this.entryWatch.add(after.tradeId, true);
+        // Due its follow-up `CLOSE_FOLLOW_UP_MS` after it was sent (22 Nov 2026, `CLOSE_WATCH_PER_LOOK`).
+        if (event.t === 'exit_submitted' && after.position !== 0) this.entryWatch.add(after.tradeId, true, after.closing?.submittedAt ?? event.at);
         // A signal strategy's trade out on its option's stop or target: the runner may sell again (1 Nov 2026, `REENTRY_KEY`).
         if (before.position !== 0 && after.position === 0 && plan.origin === 'strategy' && plan.signal) {
           const rec = after.exitWinner === 'stop_loss' ? null : await this.store.get(after.tradeId);
