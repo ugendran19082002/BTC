@@ -1,5 +1,5 @@
 import { CheckCircle2, XCircle } from 'lucide-react';
-import { railOf } from '@/lib/exit-rail';
+import { markerPctOf, markerPctWords, railOf, type MarkerMode } from '@/lib/exit-rail';
 import { pct } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -10,8 +10,12 @@ import { cn } from '@/lib/utils';
  * is reached. One for the BTC perp, where a signal trade's real exits are; one for the option, when it has its own.
  *
  * The movement is the point, so it is animated -- and not for a person who has asked their phone for less motion.
+ *
+ * With `marker` (owner, 22 Nov 2026: "live progress round la % vachu"), the moving dot becomes a small pill carrying a live %:
+ * + toward the target, − toward the stop -- the premium kept on the option, how far along on the perp (`markerPctOf`).
+ * Near an end it stays inside the card, so a phone never scrolls sideways for it.
  */
-export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, live = false }: {
+export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, live = false, marker }: {
   /** What this line is of: "BTC perp", "Option". */
   title: string;
   entry: number | null;
@@ -24,9 +28,13 @@ export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, l
   nowLabel: string;
   /** The price is arriving as it prints: the marker pulses. */
   live?: boolean;
+  /** The live % on the marker: `kept` (premium kept, the option) or `progress` (how far along, the perp); absent, a plain dot. */
+  marker?: MarkerMode;
 }) {
   const r = railOf({ entry, target, stop, current });
   if (!r) return null;
+  const mp = marker ? markerPctOf(marker, { entry, target, stop, current }) : null;
+  const mpWords = mp === null ? null : markerPctWords(mp);
   const pts = (n: number) => (n >= 100 ? Math.round(n).toLocaleString('en-US') : n.toFixed(n >= 10 ? 1 : 2));
   const gap = (g: { points: number; pct: number | null } | null) => (g ? `${pts(g.points)}${g.pct !== null ? ` (${pct(g.pct, g.pct < 0.1 ? 1 : 0)})` : ''}` : null);
   const fillFrom = r.entryAt !== null && r.currentAt !== null ? Math.min(r.entryAt, r.currentAt) : null;
@@ -34,6 +42,7 @@ export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, l
   const tone = r.hit === 'stop' || r.side === 'stop' ? 'down' : r.hit === 'target' || r.side === 'target' ? 'up' : null;
   const said = [
     `${title}: ${current !== null ? `${nowLabel} ${fmt(current)}` : 'no price'}`,
+    mpWords ? `${mpWords} ${marker === 'kept' ? 'of the premium kept' : marker === 'progress' ? 'of the way' : ''}`.trim() : null,
     r.hit ? `${r.hit === 'target' ? 'target' : 'stop'} reached` : null,
     !r.hit && r.toTarget && target !== null ? `${pts(r.toTarget.points)} to the target ${fmt(target)}` : null,
     !r.hit && r.toStop && stop !== null ? `${pts(r.toStop.points)} from the stop ${fmt(stop)}` : null,
@@ -59,7 +68,7 @@ export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, l
         {r.stopAt !== null && stop !== null && <Tag at={r.stopAt} name="SL" value={fmt(stop)} tone="down" />}
       </div>
 
-      <div className="relative h-4" aria-hidden="true">
+      <div className={cn('relative', mpWords ? 'h-5' : 'h-4')} aria-hidden="true">
         <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-[color-mix(in_srgb,var(--up)_35%,transparent)] via-[var(--panel-3)] to-[color-mix(in_srgb,var(--down)_35%,transparent)]" />
         {fillFrom !== null && fillTo !== null && tone && (
           <div
@@ -70,7 +79,24 @@ export function ExitRail({ title, entry, target, stop, current, fmt, nowLabel, l
         {r.targetAt !== null && <Dot at={r.targetAt} className="bg-[var(--up)]" />}
         {r.entryAt !== null && <Dot at={r.entryAt} className="border-2 border-[var(--buy)] bg-[var(--bg)]" />}
         {r.stopAt !== null && <Dot at={r.stopAt} className="bg-[var(--down)]" />}
-        {r.currentAt !== null && (
+        {r.currentAt !== null && mpWords !== null && (() => {
+          // A pill with the % in it, sliding with the price; at an end it hangs inward so it never leaves the card.
+          const edge = r.currentAt <= 9 ? 'left' : r.currentAt >= 91 ? 'right' : 'centre';
+          const bg = tone === 'down' ? 'bg-[var(--down)]' : tone === 'up' ? 'bg-[var(--up)]' : 'bg-foreground';
+          return (
+            <span
+              data-testid="rail-marker"
+              className={cn('absolute top-1/2 z-[1] -translate-y-1/2 transition-[left] duration-700 ease-out motion-reduce:transition-none', edge === 'centre' ? '-translate-x-1/2' : edge === 'right' ? '-translate-x-full' : '')}
+              style={{ left: `${edge === 'left' ? Math.max(0, r.currentAt - 2) : edge === 'right' ? Math.min(100, r.currentAt + 2) : r.currentAt}%` }}
+            >
+              {live && !r.hit && <span className={cn('absolute inset-0 animate-ping rounded-full opacity-50 motion-reduce:hidden', bg)} />}
+              <span className={cn('relative block min-w-[38px] rounded-full border-2 border-[var(--bg)] px-1.5 text-center text-[10.5px] font-bold leading-[16px] tabular-nums shadow', bg, tone ? 'text-white' : 'text-[var(--bg)]')}>
+                {mpWords}
+              </span>
+            </span>
+          );
+        })()}
+        {r.currentAt !== null && mpWords === null && (
           <span
             className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-700 ease-out motion-reduce:transition-none"
             style={{ left: `${r.currentAt}%` }}

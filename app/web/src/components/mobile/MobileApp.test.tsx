@@ -347,7 +347,7 @@ describe('Positions: the SL / TGT line (owner, 6 Oct 2026)', () => {
     window.history.replaceState(null, '', '/m?tab=positions');
     render(<MobileApp />);
     // entry 62,050, the perp at 62,010 (the glance's mark): 40 points toward a target 1,010 away, 390 from the stop
-    const perp = await screen.findByRole('img', { name: /^BTC perp: last 62,010, 1,010 to the target 61,000, 390 from the stop 62,400$/ });
+    const perp = await screen.findByRole('img', { name: /^BTC perp: last 62,010, \+4% of the way, 1,010 to the target 61,000, 390 from the stop 62,400$/ });
     expect(perp).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /^Option:/ })).toBeNull();
     expect(screen.queryByText('No stop behind this position.')).toBeNull();
@@ -360,8 +360,21 @@ describe('Positions: the SL / TGT line (owner, 6 Oct 2026)', () => {
     render(<MobileApp />);
     expect(await screen.findByRole('img', { name: /^BTC perp:/ })).toBeInTheDocument();
     // sold at 10, bought back at the offer 8.5: target 1, stop 25
-    expect(screen.getByRole('img', { name: 'Option: ask 8.50, 7.50 to the target 1.00, 16.5 from the stop 25.00' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Option: ask 8.50, +15% of the premium kept, 7.50 to the target 1.00, 16.5 from the stop 25.00' })).toBeInTheDocument();
     expect(screen.getByText('TGT leaves')).toBeInTheDocument();
+  });
+
+  it('[critical] the price line: entry, the ask to buy back, the mark -- and the bid after it (22 Nov 2026), for a sale', async () => {
+    signedIn();
+    getTradeStatus.mockResolvedValue(status([trade({ plan: { ...trade().plan!, underlying } })]));
+    window.history.replaceState(null, '', '/m?tab=positions');
+    render(<MobileApp />);
+    await screen.findByRole('img', { name: /^BTC perp:/ });
+    const terms = [...document.querySelectorAll('dl dt')].map((d) => d.textContent);
+    const at = terms.indexOf('Entry');
+    expect(terms.slice(at, at + 4)).toEqual(['Entry', 'Ask', 'Mark', 'Bid']);
+    const bid = [...document.querySelectorAll('dl dt')].find((d) => d.textContent === 'Bid')!;
+    expect(bid.nextElementSibling).toHaveTextContent('7.50');
   });
 
   it('a trade with neither says so', async () => {

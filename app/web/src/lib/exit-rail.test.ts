@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { railOf } from '@/lib/exit-rail';
+import { markerPctOf, markerPctWords, railOf } from '@/lib/exit-rail';
 
 describe('railOf: the price between its target and its stop', () => {
   // A sold option, as in the owner's reference: in at 45.2, target 30, stop 62.
@@ -60,5 +60,39 @@ describe('railOf: the price between its target and its stop', () => {
   it('keeps the entry clear of the ends when one level is far nearer than the other', () => {
     expect(railOf({ entry: 31, target: 30, stop: 90, current: 31 })!.entryAt).toBe(28);
     expect(railOf({ entry: 89, target: 30, stop: 90, current: 89 })!.entryAt).toBe(72);
+  });
+});
+
+/** The live % on the marker (22 Nov 2026): + toward the target, − toward the stop. */
+describe('markerPctOf', () => {
+  // The owner's card: a PE sold at 80, target 4 (95% kept), stop 214 (+167%... the rail's own levels).
+  const sale = { entry: 80, target: 4, stop: 214 };
+
+  it('[critical] the option, premium kept: a sale at 80 is +8.75% at 73, +95% at its target, −18% at 94.4, and its stop is the stop\'s share', () => {
+    expect(markerPctWords(markerPctOf('kept', { ...sale, current: 73 })!)).toBe('+9%');
+    expect(markerPctOf('kept', { ...sale, current: 4 })).toBeCloseTo(0.95, 9);
+    expect(markerPctWords(markerPctOf('kept', { ...sale, current: 94.4 })!)).toBe('−18%');
+    expect(markerPctWords(markerPctOf('kept', { entry: 76, target: 3.8, stop: 266, current: 266 })!)).toBe('−250%');
+    expect(markerPctWords(markerPctOf('kept', { ...sale, current: 80 })!)).toBe('0%');
+    // An option bought: profit is the price above the entry.
+    expect(markerPctWords(markerPctOf('kept', { entry: 20, target: 30, stop: 15, current: 25 })!)).toBe('+25%');
+    expect(markerPctWords(markerPctOf('kept', { entry: 20, target: null, stop: 15, current: 18 })!)).toBe('−10%');
+  });
+
+  it('[critical] the perp, how far along: +100% at the target, −100% at the stop, either way round', () => {
+    const long = { entry: 60_000, target: 60_500, stop: 59_600 };
+    expect(markerPctWords(markerPctOf('progress', { ...long, current: 60_250 })!)).toBe('+50%');
+    expect(markerPctWords(markerPctOf('progress', { ...long, current: 59_800 })!)).toBe('−50%');
+    expect(markerPctWords(markerPctOf('progress', { ...long, current: 60_500 })!)).toBe('+100%');
+    const short = { entry: 60_000, target: 59_000, stop: 60_400 };
+    expect(markerPctWords(markerPctOf('progress', { ...short, current: 59_750 })!)).toBe('+25%');
+    expect(markerPctWords(markerPctOf('progress', { ...short, current: 60_400 })!)).toBe('−100%');
+  });
+
+  it('nothing to say without an entry, a price or a direction', () => {
+    expect(markerPctOf('kept', { ...sale, current: null })).toBeNull();
+    expect(markerPctOf('kept', { entry: null, target: 4, stop: 214, current: 50 })).toBeNull();
+    expect(markerPctOf('kept', { entry: 80, target: null, stop: null, current: 50 })).toBeNull();
+    expect(markerPctOf('progress', { entry: 80, target: null, stop: null, current: 50 })).toBeNull();
   });
 });

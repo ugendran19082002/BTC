@@ -93,3 +93,34 @@ export function railOf(i: RailInput): Rail | null {
     toStop: hit === 'stop' ? { points: 0, pct: 0 } : gap(i.stop),
   };
 }
+
+/**
+ * The live % the moving marker carries (owner, 22 Nov 2026: "live progress round la % -- SL pona minus, profit pona plus"),
+ * a fraction, + toward the target and − toward the stop; null where it cannot be said.
+ * - `kept` (the option): the premium kept -- for a sale (target under the entry) 1 − price / entry, for a buy price / entry − 1.
+ *   The desk's own words: a 95% target is +95% at the target, a +250% stop is −250% at the stop, a swap at 80% kept is +80%.
+ * - `progress` (the perp, which has no premium): how far along from the entry to the level, +100% at the target, −100% at the stop.
+ */
+export type MarkerMode = 'kept' | 'progress';
+export function markerPctOf(mode: MarkerMode, i: RailInput): number | null {
+  if (!ok(i.entry) || !ok(i.current) || !(i.entry !== 0)) return null;
+  const e = i.entry, c = i.current;
+  if (mode === 'kept') {
+    // Which way profit runs: the target's side of the entry, else the side opposite the stop.
+    const sale = ok(i.target) && i.target !== e ? i.target < e : ok(i.stop) && i.stop !== e ? i.stop > e : null;
+    if (sale === null || !(e > 0)) return null;
+    return sale ? 1 - c / e : c / e - 1;
+  }
+  const toT = ok(i.target) && i.target !== e ? (c - e) / (i.target - e) : null;
+  const toS = ok(i.stop) && i.stop !== e ? (c - e) / (i.stop - e) : null;
+  if (toS !== null && toS > 0) return -toS;
+  if (toT !== null && toT > 0) return toT;
+  if (toT !== null) return toT;
+  if (toS !== null) return -toS;
+  return null;
+}
+/** "+74%", "−18%", "0%": a marker's % in words. */
+export const markerPctWords = (f: number): string => {
+  const n = Math.round(f * 100);
+  return n > 0 ? `+${n}%` : n < 0 ? `−${Math.abs(n)}%` : '0%';
+};

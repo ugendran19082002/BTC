@@ -69,25 +69,27 @@ export function PositionCard({ trade, alarms, perpMark, perpLive = false, now, s
       {/* Who placed it: the strategy as a tag, first, then the signal and the account. */}
       <PlacedLine plan={trade.plan} rest={[signal, showAccount && trade.account ? trade.account.name : null]} className="mt-0.5" />
 
-      {/* Entry, what leaving costs now, and the mark: one line, where three boxes made the card a screen tall. */}
+      {/* Entry, what leaving costs now, the mark -- and the book's other side after it (owner, 22 Nov 2026: "bid price next to
+          the mark"): for a sale the bid, for a buy the ask. One line, where boxes made the card a screen tall. */}
       <dl className="m-0 mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px] tabular-nums">
         <Inline k="Entry" v={price(entry)} />
         <Inline k={r.long ? 'Bid' : 'Ask'} v={price(r.exitPx)} strong />
         <Inline k="Mark" v={price(trade.live?.markPrice)} />
+        <Inline k={r.long ? 'Ask' : 'Bid'} v={price(r.long ? trade.live?.ask : trade.live?.bid)} />
       </dl>
 
       <div className="mt-2.5 flex flex-col gap-2.5">
         {hasPerpRail && (
           <ExitRail
             title="BTC perp" entry={r.perp!.entry} target={r.perp!.target} stop={r.perp!.stop} current={perpMark}
-            fmt={whole} nowLabel="last" live={perpLive}
+            fmt={whole} nowLabel="last" live={perpLive} marker="progress"
           />
         )}
         {(r.stop || r.target) && (
           <div>
             <ExitRail
               title="Option" entry={entry} target={r.target?.level ?? null} stop={r.stop?.level ?? null} current={r.exitPx}
-              fmt={(n) => price(n)} nowLabel={r.long ? 'bid' : 'ask'}
+              fmt={(n) => price(n)} nowLabel={r.long ? 'bid' : 'ask'} marker="kept"
             />
             {(r.target?.moneyUsd != null || r.stop?.moneyUsd != null) && (
               <div className="flex justify-between gap-2 text-[11.5px] tabular-nums text-muted-foreground">
