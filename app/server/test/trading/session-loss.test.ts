@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { refusalAlerts } from '../../src/strategy/runner.js';
-import { BASELINE_LIVE_MS, HOLD_MS, SESSION_LOSS_OFF, SessionLossGuard, parseSessionLoss, sessionAt, sessionLossProblems, type SessionHit, type SessionLoss } from '../../src/trading/session-loss.js';
+import { BASELINE_LIVE_MS, FAST_HOLD_MS, FAST_OVER_PCT, HOLD_MS, SESSION_LOSS_OFF, SessionLossGuard, parseSessionLoss, sessionAt, sessionLossProblems, type SessionHit, type SessionLoss } from '../../src/trading/session-loss.js';
 import { precheck } from '../../src/trading/precheck.js';
 import { USDINR } from '../../src/domain/score.js';
 
@@ -71,8 +71,8 @@ test('[critical] at the limit, held for its seconds: squared off once, and no ne
   assert.equal(await r.guard.tick(), null);
   assert.deepEqual(r.asked, [at('07:00')], 'the day\'s figure read as at the session\'s start');
   assert.equal(Math.round(r.guard.status()!.lossInr!), 400);
-  // At the limit: held first, so a flicker is not a square-off.
-  r.set('07:20', 1_050);
+  // Just over the limit: held first, so a flicker is not a square-off (far over it, the hold is short: below).
+  r.set('07:20', 1_020);
   assert.equal(await r.guard.tick(), null);
   assert.ok(r.guard.status()!.breachSince);
   r.move(HOLD_MS - 1_000);
@@ -196,4 +196,60 @@ test('[critical] a new entry the day is stopped is refused by the order gate, in
   assert.ok(!r.ok && r.failures.some((f) => f.code === 'SESSION_LOSS_LIMIT' && f.message.includes('07:00–08:00')));
   const free = precheck({ ...base, entryBlock: null } as never);
   assert.ok(free.ok || !free.failures.some((f) => f.code === 'SESSION_LOSS_LIMIT'));
+});
+
+
+/*
+ * Far over the line, the hold is short (22 Nov 2026). On 21 Nov Medium was ₹254 over its ₹3,898 line (6.5%) when its
+ * 15 s were up: a fast fall spends the hold. Seen at or over the line by `FAST_OVER_PCT` on two reads in a row, the
+ * account is squared off then; just over it, the whole hold still stands.
+ */
+test('[critical] far over the line on two reads in a row: squared off at the second, not after the whole hold', async () => {
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 20 });
+  r.set('07:10', 100);
+  await r.guard.tick();
+  r.set('07:20', 1_000 * (1 + FAST_OVER_PCT / 100) + 10);
+  assert.equal(await r.guard.tick(), null, 'one read is not enough, however far over');
+  r.move(5_000);
+  const hit = await r.guard.tick();
+  assert.ok(hit, 'the next read, 5 s on: squared off');
+  assert.equal(r.squared.length, 1);
+});
+
+test('[critical] just over the line, the whole hold: a flick of the ask is not a square-off', async () => {
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 20 });
+  r.set('07:10', 100);
+  await r.guard.tick();
+  r.set('07:20', 1_000 * (1 + FAST_OVER_PCT / 100) - 10);
+  await r.guard.tick();
+  for (let t = 5_000; t < HOLD_MS; t += 5_000) { r.move(5_000); assert.equal(await r.guard.tick(), null); }
+  r.move(HOLD_MS - Math.floor((HOLD_MS - 1) / 5_000) * 5_000);
+  assert.ok(await r.guard.tick(), 'squared off once the hold is up');
+});
+
+test('[critical] far over for one read, then back under: nothing squared off -- a spike seen once is not a loss', async () => {
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 20 });
+  r.set('07:10', 100);
+  await r.guard.tick();
+  r.set('07:20', 2_000);
+  assert.equal(await r.guard.tick(), null);
+  r.move(5_000);
+  r.set('07:20', 900);
+  r.move(5_000);
+  assert.equal(await r.guard.tick(), null);
+  assert.equal(r.guard.status()!.breachSince, null);
+  assert.equal(r.squared.length, 0);
+});
+
+test('far over, then only just over by the next read: the whole hold, from when it first went over', async () => {
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 20 });
+  r.set('07:10', 100);
+  await r.guard.tick();
+  r.set('07:20', 1_500);
+  await r.guard.tick();
+  r.move(5_000);
+  r.set('07:20', 1_010);
+  r.move(5_000);
+  assert.equal(await r.guard.tick(), null, 'just over now: the full hold applies');
+  assert.ok(FAST_HOLD_MS < 5_000 && FAST_HOLD_MS > 0);
 });

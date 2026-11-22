@@ -129,7 +129,11 @@ export const RATE_LIMIT_WAIT_MIN_MS = 1_000;
 export const RATE_LIMIT_WAIT_MAX_MS = 60_000;
 /** How long a login has left to wait before its next call to Delta, in ms; 0 when it may call. */
 export function rateLimitWaitMs(creds: Creds | null | undefined, now = Date.now()): number {
-  const until = waitUntil.get(quotaKeyOf(creds));
+  return rateLimitWaitMsOf(quotaKeyOf(creds), now);
+}
+/** The same by the login's quota key (`quotaKeyOf`): for a desk that keeps the key, not the credentials. */
+export function rateLimitWaitMsOf(quota: string, now = Date.now()): number {
+  const until = waitUntil.get(quota);
   return until !== undefined && until > now ? until - now : 0;
 }
 /** Forget every wait: for a test. */

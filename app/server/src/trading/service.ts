@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from '../config.js';
-import type { Creds } from '../delta/signed.js';
+import { rateLimitWaitMsOf, type Creds } from '../delta/signed.js';
 import { brokerAccounts, initBrokerAccounts } from '../delta/accounts.js';
 import { TradeEngine, type AddRequest, type TradeRecord } from './engine.js';
 import { PgTradeStore } from './store.js';
@@ -93,6 +93,24 @@ export const LOSS_LIMIT_KEY = 'daily_loss_limit_usd';
 export const LOSS_LIMIT_ON_KEY = 'daily_loss_limit_on';
 /** The most a loss budget may be set to: a typo guard, nothing more. */
 export const MAX_LOSS_LIMIT_USD = 1_000_000;
+
+/**
+ * The session square-off's hands (22 Nov 2026): this many trades closed at once, each on a different contract. 21 Nov's
+ * square-offs held 11-13 contracts an account; three hands take ~5 minutes to under 2 without two closes ever meeting
+ * on one contract.
+ */
+export const SQUARE_OFF_HANDS = 3;
+/**
+ * The extra hands work only while the account's login is under this share of its Delta quota: over it, one hand, one
+ * trade at a time, as before. A close is ~25 units whatever the pace; the hands only spend them sooner, so they step
+ * back well before the stop watch's line (`QUOTA_LADDER`).
+ */
+export const SQUARE_OFF_PARALLEL_QUOTA_PCT = 60;
+/** How long a hand waits before looking again: for room in the quota, or for a contract another hand holds. */
+export const SQUARE_OFF_IDLE_MS = 100;
+/** At most this long waited at a time inside a wait Delta named (429), before looking again. */
+export const SQUARE_OFF_RATE_WAIT_MAX_MS = 5_000;
+const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** What the screen is told about the day's loss budget on one account. */
 export type LossLimit = { on: boolean; inForceUsd: number; defaultUsd: number; chosenUsd: number | null };
 export type DeskMode = 'live' | 'paper';
@@ -943,11 +961,7 @@ export class TradingService {
       }
     }
 
-    // The positions to buy back; worst first, ranked again before each close off the quotes in memory (no call to Delta).
-    const left = open.filter((r) => r.state.position !== 0);
-    while (left.length) {
-      const i = order === 'worst-first' ? Math.max(0, worstIndex(left, (r) => this.openLossUsd(r))) : 0;
-      const rec = left.splice(i, 1)[0]!;
+    const closeOne = async (rec: TradeRecord) => {
       try {
         const after = await this.engine.closeNow(rec.state.tradeId, why);
         if (after && after.position !== 0) {
@@ -958,9 +972,57 @@ export class TradingService {
       } catch (e) {
         out.failed.push({ tradeId: rec.state.tradeId, reason: (e as Error).message });
       }
+    };
+    const left = open.filter((r) => r.state.position !== 0);
+    // Close all by hand: one at a time, in the trades' own order, as it always was.
+    if (order !== 'worst-first') {
+      for (const rec of left) await closeOne(rec);
+      return out;
+    }
+
+    /*
+     * The session square-off (22 Nov 2026, owner: "A + B + C build panu"). On 21 Nov each account's 257-308 trades took
+     * five to six minutes one at a time (~1.1 s each: ~0.6 s taking the target and stop off and checking, ~0.5 s to the
+     * fill), on 11-13 contracts.
+     *  - Worst first: before each close, the trade losing most now among those free to go (`worst-first.ts`).
+     *  - A few hands (`SQUARE_OFF_HANDS`), each on a different contract, never two on one: a trade's share of a contract
+     *    is Delta's net less its siblings' (`syncPosition`), and a sibling's close in flight would make that read wrong.
+     *    The extra hands work only while the login is under `SQUARE_OFF_PARALLEL_QUOTA_PCT` of its quota; over it, the
+     *    first hand goes on alone, one at a time, as before.
+     *  - Delta's named wait (429) is waited out here, not spent failing trade after trade inside it.
+     *  - The account's time steps stand aside meanwhile (`isSquaringOff`): no target is moved on a trade about to close.
+     * Each trade is still closed the same way (`closeNow`): its exits off, checked, then bought back.
+     */
+    this.squaringOff++;
+    try {
+      const busy = new Set<string>();
+      const lossOf = (r: TradeRecord) => this.openLossUsd(r);
+      const hand = async (n: number) => {
+        while (left.length) {
+          const wait = this.rateLimitWaitMs();
+          if (wait > 0) { await pause(Math.min(wait, SQUARE_OFF_RATE_WAIT_MAX_MS)); continue; }
+          if (n > 0 && this.quotaUsedPct() >= SQUARE_OFF_PARALLEL_QUOTA_PCT) { await pause(SQUARE_OFF_IDLE_MS); continue; }
+          const free = left.filter((r) => !busy.has(r.state.symbol));
+          if (!free.length) { await pause(SQUARE_OFF_IDLE_MS); continue; }
+          const rec = free[Math.max(0, worstIndex(free, lossOf))]!;
+          left.splice(left.indexOf(rec), 1);
+          busy.add(rec.state.symbol);
+          try { await closeOne(rec); } finally { busy.delete(rec.state.symbol); }
+        }
+      };
+      await Promise.all(Array.from({ length: SQUARE_OFF_HANDS }, (_, n) => hand(n)));
+    } finally {
+      this.squaringOff--;
     }
     return out;
   }
+
+  /** A session square-off running on this account: its time steps stand aside (`StrategyExitStepper`, `paused`). */
+  private squaringOff = 0;
+  isSquaringOff(): boolean { return this.squaringOff > 0; }
+
+  /** How long Delta has told this account's login to wait, in ms; 0 when it may call (`rateLimitWaitMs`). */
+  private rateLimitWaitMs(): number { return rateLimitWaitMsOf(this.quotaKey); }
 
   /** A contract's quote as the board holds it, for ranking a square-off: memory only, never a call. A test replaces it. */
   squareOffQuote: (symbol: string) => { bid: number | null; ask: number | null; mark: number | null } | null = (symbol) => cachedQuote(symbol);

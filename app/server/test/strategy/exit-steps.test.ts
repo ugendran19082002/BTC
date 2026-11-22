@@ -281,6 +281,19 @@ describe('StrategyExitStepper', () => {
     assert.deepEqual(await s.consider(morning()), [], 'and once only');
   });
 
+  test('[critical] a session square-off on the account (22 Nov 2026): no step at all meanwhile -- stop or target -- and all of it owed after', async () => {
+    const d = fakeDesk([{}, {}]);
+    let squaring = true;
+    const s = new StrategyExitStepper({ ...d.deps, paused: () => squaring });
+    const both = morning({ stopMode: 'points', stopLossPoints: 10, stopSteps: [{ at: '07:30', value: 20 }] });
+    d.clock.t = ist('07:30');
+    assert.deepEqual(await s.consider(both), [], 'squaring off: nothing moved');
+    assert.equal(d.moves.length, 0);
+    squaring = false;
+    d.clock.t += 20_000;
+    assert.deepEqual(await s.consider(both), ['T0', 'T1'], 'after it: what was owed moves');
+  });
+
   test('[critical] a stop\'s step goes on while the quota is kept for stops -- the target\'s waits, and is still owed', async () => {
     const d = fakeDesk();
     const recorded: string[] = [];

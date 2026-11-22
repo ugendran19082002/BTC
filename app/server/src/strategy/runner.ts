@@ -228,6 +228,8 @@ export class StrategyRunner {
       note: (tradeId, note) => tradingService().noteExitStep(tradeId, note),
       // The stop first, the target second (21 Oct 2026): a target's step waits while Delta's quota is kept for stops.
       stopsFirst: (s) => (tradingServiceFor(s.accountId ?? null)?.quotaUsedPct() ?? 0) >= TARGET_STEP_QUOTA_PCT,
+      // A session square-off on the account: its steps stand aside until it is done (22 Nov 2026).
+      paused: (s) => tradingServiceFor(s.accountId ?? null)?.isSquaringOff() ?? false,
       // Not told on Telegram (owner, 14 Oct 2026: "dynamic tgt telegram alert vena, romba varuthu"): a step moves
       // every open trade at once -- 55 messages at 11:30 that morning -- and each move is on the trade's timeline.
       now: this.now,

@@ -50,6 +50,12 @@ export type ExitStepperDeps = {
    * is the stop. Asked for each strategy, whose account's own quota is the one that counts. Absent: never.
    */
   stopsFirst?: (s: Strategy) => boolean;
+  /**
+   * A session square-off running on the strategy's account (22 Nov 2026): no step at all meanwhile -- every trade is
+   * being bought back, and a target moved on one about to close only spends the quota the closes need. What is owed is
+   * not marked, so a trade still open after it moves at the next tick. Absent: never.
+   */
+  paused?: (s: Strategy) => boolean;
   now: () => number;
 };
 
@@ -82,6 +88,7 @@ export class StrategyExitStepper {
   async consider(s: Strategy): Promise<string[]> {
     // A bought option's exits are one level each, judged by the desk (and steps are refused for it on save).
     if (!s.enabled || s.config.signal?.action === 'buy') return [];
+    if (this.d.paused?.(s)) return [];
     const { target, stop } = exitRules(s.config);
     if (!target.steps.length && !stop.steps.length) return [];
 

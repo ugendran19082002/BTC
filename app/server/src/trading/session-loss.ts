@@ -39,6 +39,16 @@ export const MAX_SESSION_LIMIT_INR = 10_000_000;
 export const MAX_SESSION_LIMIT_PCT = 100;
 /** How long the loss must stay at or over the limit before the account is squared off. */
 export const HOLD_MS = 15_000;
+/**
+ * Far over the line, the hold is short (owner, 22 Nov 2026: "A + B + C build panu"). On 21 Nov Medium was ₹254 over
+ * its ₹3,898 line (6.5%) by the time its 15 s were up, and Low ₹172 over (4.4%): a fast fall spends the hold. A loss at
+ * or over the line by `FAST_OVER_PCT` of it, seen so on two reads in a row (the guard looks every 5 s,
+ * `SESSION_LOSS_TICK_MS`), is squared off then. Just over the line, the whole hold still applies -- the flick of a cheap
+ * option's ask that the hold is for.
+ */
+export const FAST_OVER_PCT = 3;
+/** At least this long over the line, far over it, before the square-off: more than one read, less than two ticks. */
+export const FAST_HOLD_MS = 4_000;
 /** How often an account's session is checked. */
 export const SESSION_LOSS_TICK_MS = 5_000;
 /**
@@ -386,7 +396,9 @@ export class SessionLossGuard {
     if (limitInr === null || lossInr < limitInr) { this.breachSince = null; return null; }
     this.breachSince ??= now;
     this.last.breachSince = this.breachSince;
-    if (now - this.breachSince < HOLD_MS) return null;
+    const heldMs = now - this.breachSince;
+    const farOver = lossInr >= limitInr * (1 + FAST_OVER_PCT / 100);
+    if (heldMs < HOLD_MS && !(farOver && heldMs >= FAST_HOLD_MS)) return null;
 
     // Hit: no new entry for the rest of the day, then everything on the account bought back.
     this.hits.add(key);
