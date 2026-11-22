@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  MOVE_EXIT_DEFAULT, MoveExitWatch, moveExitProblems, moveExitWhy, movePicks, parseMoveExit, type MoveExit, type MovePick,
+  MOVE_EXIT_DEFAULT, MoveExitWatch, inMoveHours, moveExitProblems, moveExitWhy, movePicks, parseMoveExit, type MoveExit, type MovePick,
 } from '../../src/trading/move-exit.js';
 
 /**
@@ -25,7 +25,7 @@ test('[critical] off by default; the setting is checked; anything that will not 
   assert.equal(MOVE_EXIT_DEFAULT.on, false);
   assert.deepEqual(parseMoveExit(null), MOVE_EXIT_DEFAULT);
   assert.deepEqual(parseMoveExit('not json'), MOVE_EXIT_DEFAULT);
-  assert.deepEqual(parseMoveExit(JSON.stringify(ON)), ON);
+  assert.deepEqual(parseMoveExit(JSON.stringify(ON)), { ...ON, from: null, to: null }, 'kept before the hours existed: all day');
   assert.deepEqual(moveExitProblems(ON), []);
   assert.match(moveExitProblems({ ...ON, pct: 9 }).join(' '), /BTC move is 0.2% to 5%/);
   assert.match(moveExitProblems({ ...ON, minutes: 2.5 }).join(' '), /whole minutes/);
@@ -155,8 +155,52 @@ test('[critical] the desk closes them the session square-off\'s way, each with i
     // The setting: refused in words when it will not read; kept and read back when it will.
     assert.match((await svc.setMoveExit({ ...ON, pct: 7 }) as { reason: string }).reason, /0.2% to 5%/);
     const saved = await svc.setMoveExit({ on: true, pct: 1.0, minutes: 15, nearPct: 1.5 });
-    assert.deepEqual(saved, { ok: true, moveExit: { on: true, pct: 1.0, minutes: 15, nearPct: 1.5 } });
-    assert.deepEqual(svc.moveExitSetting, { on: true, pct: 1.0, minutes: 15, nearPct: 1.5 });
+    assert.deepEqual(saved, { ok: true, moveExit: { on: true, pct: 1.0, minutes: 15, nearPct: 1.5, from: null, to: null } });
+    assert.deepEqual(svc.moveExitSetting, { on: true, pct: 1.0, minutes: 15, nearPct: 1.5, from: null, to: null });
+    // The hours kept as given (22 Nov 2026).
+    await svc.setMoveExit({ on: true, pct: 0.8, minutes: 10, nearPct: 1.5, from: '12:00', to: '16:30' });
+    assert.deepEqual(svc.moveExitSetting, { on: true, pct: 0.8, minutes: 10, nearPct: 1.5, from: '12:00', to: '16:30' });
     await svc.setMoveExit({ ...MOVE_EXIT_DEFAULT });
   } finally { await closePool(); }
+});
+
+
+/*
+ * The hours it watches (owner, 22 Nov 2026: "from 12:00 time setting build panu"). Round 4 of the study: from 12:00,
+ * +₹14.9k over 30 days with no day worse than now. The desk's day runs 17:30 to the 17:30 expiry, so "from 12:00" is
+ * 12:00-17:30 on the day -- never the evening or the night before.
+ */
+const istAt = (hhmm: string, day = '2026-11-22') => Date.parse(`${day}T${hhmm}:00+05:30`);
+
+test('[critical] offered from 12:00 when switched on; off until then', () => {
+  assert.deepEqual(MOVE_EXIT_DEFAULT, { on: false, pct: 0.8, minutes: 10, nearPct: 1.5, from: '12:00', to: null });
+});
+
+test('[critical] from 12:00: watching 12:00 to the expiry -- not the morning, not the evening or night before', () => {
+  const s = { from: '12:00', to: null };
+  assert.equal(inMoveHours(s, istAt('11:59')), false);
+  assert.equal(inMoveHours(s, istAt('12:00')), true);
+  assert.equal(inMoveHours(s, istAt('17:29')), true);
+  assert.equal(inMoveHours(s, istAt('18:00', '2026-11-21')), false, 'the evening before is the start of the day');
+  assert.equal(inMoveHours(s, istAt('02:00')), false);
+  assert.equal(inMoveHours({ from: '12:00', to: '16:30' }, istAt('16:29')), true);
+  assert.equal(inMoveHours({ from: '12:00', to: '16:30' }, istAt('16:30')), false, 'until is not included');
+  assert.equal(inMoveHours({ from: null, to: null }, istAt('18:00', '2026-11-21')), true, 'all day');
+});
+
+test('[critical] outside its hours nothing is named, however far BTC has run', () => {
+  const sale = { state: { tradeId: 'c', position: -2, closing: null, fills: [{ role: 'entry', side: 'sell', size: 2, price: 20, ts: istAt('09:00'), orderId: 'x' }] }, plan: { tradeId: 'c', origin: 'strategy', optionSide: 'CE', expect: { underlying: 'BTC', optionSide: 'CE', strike: 60_400, expiryTs: 0 } } };
+  const px = () => 59_726;
+  const s = { ...ON, from: '12:00', to: null };
+  assert.deepEqual(movePicks([sale as any], s, istAt('11:30'), 60_300, px), [], 'the morning');
+  assert.equal(movePicks([sale as any], s, istAt('12:30'), 60_300, px).length, 1, 'from 12:00');
+});
+
+test('hours checked: a time, or none; from before until in the 17:30 day', () => {
+  assert.deepEqual(moveExitProblems({ ...ON, from: '12:00', to: null }), []);
+  assert.deepEqual(moveExitProblems({ ...ON, from: '12:00', to: '16:30' }), []);
+  assert.deepEqual(moveExitProblems({ ...ON, from: '20:00', to: '02:00' }), [], 'an evening to the night after is in order in the 17:30 day');
+  assert.match(moveExitProblems({ ...ON, from: '12' }).join(' '), /From is a time/);
+  assert.match(moveExitProblems({ ...ON, to: '25:00' }).join(' '), /Until is a time/);
+  assert.match(moveExitProblems({ ...ON, from: '16:30', to: '12:00' }).join(' '), /From must come before until/);
 });

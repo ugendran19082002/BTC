@@ -22,11 +22,34 @@ import type { TradeRecord } from './engine.js';
  * sampled here every few seconds -- and never asks Delta anything until it closes.
  */
 
-/** The setting, kept per account (`MOVE_EXIT_KEY`): off, or the move, its window and how near a strike must be. */
-export type MoveExit = { on: boolean; pct: number; minutes: number; nearPct: number };
+/**
+ * The setting, kept per account (`MOVE_EXIT_KEY`): off, or the move, its window and how near a strike must be -- and the
+ * hours it watches (owner, 22 Nov 2026: "from 12:00 time setting build panu"). `from` / `to`: "HH:MM" IST within the
+ * desk's day, which runs 17:30 to the 17:30 expiry; null or absent: from the day's start / to the expiry. A setting kept
+ * before the hours existed has neither, and watches all day as it did.
+ */
+export type MoveExit = { on: boolean; pct: number; minutes: number; nearPct: number; from?: string | null; to?: string | null };
 export const MOVE_EXIT_KEY = 'signal_move_exit';
-/** What the study chose (0.8% in 10 minutes, strikes within 1.5%), offered when it is switched on. Off until then. */
-export const MOVE_EXIT_DEFAULT: MoveExit = { on: false, pct: 0.8, minutes: 10, nearPct: 1.5 };
+/**
+ * What the study chose, offered when it is switched on: 0.8% in 10 minutes, strikes within 1.5%, from 12:00 -- round 4
+ * (docs/research/2026-11-22-sl-jump-study.md §8): +₹14.9k over 30 days with no day worse than now (all day: +₹17.9k,
+ * one day worse). Off until then.
+ */
+export const MOVE_EXIT_DEFAULT: MoveExit = { on: false, pct: 0.8, minutes: 10, nearPct: 1.5, from: '12:00', to: null };
+/** The desk's day starts at the expiry before: 17:30 IST. A clock time is placed in the day by minutes since then. */
+export const DAY_OPEN_MIN = 17 * 60 + 30;
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+/** Minutes since the day opened (17:30 IST) of a clock time, 0-1439. */
+const sinceOpen = (m: number) => (m - DAY_OPEN_MIN + 1440) % 1440;
+const IST_MS = 19_800_000;
+/** Whether a moment falls in the hours the setting watches: from `from` (inclusive) to `to` (exclusive), in the 17:30 day. */
+export function inMoveHours(s: Pick<MoveExit, 'from' | 'to'>, ms: number): boolean {
+  const at = sinceOpen(Math.floor(((ms + IST_MS) % 86_400_000) / 60_000));
+  if (s.from && at < sinceOpen(minutesOf(s.from))) return false;
+  if (s.to && at >= sinceOpen(minutesOf(s.to))) return false;
+  return true;
+}
 /** The ranges a setting may take: typo guards. */
 export const MOVE_PCT_MIN = 0.2, MOVE_PCT_MAX = 5;
 export const MOVE_MINUTES_MIN = 1, MOVE_MINUTES_MAX = 60;
@@ -48,6 +71,13 @@ export function moveExitProblems(x: unknown): string[] {
   if (!num(v.pct, MOVE_PCT_MIN, MOVE_PCT_MAX)) bad.push(`The BTC move is ${MOVE_PCT_MIN}% to ${MOVE_PCT_MAX}%.`);
   if (!num(v.minutes, MOVE_MINUTES_MIN, MOVE_MINUTES_MAX) || !Number.isInteger(v.minutes)) bad.push(`The window is ${MOVE_MINUTES_MIN} to ${MOVE_MINUTES_MAX} whole minutes.`);
   if (!num(v.nearPct, MOVE_NEAR_MIN, MOVE_NEAR_MAX)) bad.push(`How near a strike must be is ${MOVE_NEAR_MIN}% to ${MOVE_NEAR_MAX}% of BTC.`);
+  const time = (t: unknown) => t === undefined || t === null || (typeof t === 'string' && HHMM.test(t));
+  if (!time(v.from)) bad.push('From is a time, HH:MM (IST), or all day.');
+  if (!time(v.to)) bad.push('Until is a time, HH:MM (IST), or the expiry.');
+  if (typeof v.from === 'string' && typeof v.to === 'string' && HHMM.test(v.from) && HHMM.test(v.to)
+    && sinceOpen(minutesOf(v.from)) >= sinceOpen(minutesOf(v.to))) {
+    bad.push(`From must come before until in the desk's day (17:30 to 17:30): ${v.from} – ${v.to}.`);
+  }
   return bad;
 }
 
@@ -56,7 +86,8 @@ export function parseMoveExit(raw: string | null | undefined): MoveExit {
   if (!raw) return MOVE_EXIT_DEFAULT;
   try {
     const v = JSON.parse(raw) as MoveExit;
-    return moveExitProblems(v).length ? MOVE_EXIT_DEFAULT : { on: v.on, pct: v.pct, minutes: v.minutes, nearPct: v.nearPct };
+    return moveExitProblems(v).length ? MOVE_EXIT_DEFAULT
+      : { on: v.on, pct: v.pct, minutes: v.minutes, nearPct: v.nearPct, from: v.from ?? null, to: v.to ?? null };
   } catch {
     return MOVE_EXIT_DEFAULT;
   }
@@ -77,7 +108,7 @@ export function movePicks(
   nowPx: number,
   pxAt: (ms: number) => number | null,
 ): MovePick[] {
-  if (!s.on || !(nowPx > 0)) return [];
+  if (!s.on || !(nowPx > 0) || !inMoveHours(s, now)) return [];
   const out: MovePick[] = [];
   for (const t of trades) {
     const { state, plan } = t;

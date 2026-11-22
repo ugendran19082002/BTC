@@ -10,7 +10,7 @@ vi.mock('@/api/desk', async (orig) => ({
   saveMoveExit: (...a: unknown[]) => saveMoveExit(...a),
 }));
 const { MoveExitCard } = await import('@/components/trade/MoveExitCard');
-const OFF = { on: false, pct: 0.8, minutes: 10, nearPct: 1.5 };
+const OFF = { on: false, pct: 0.8, minutes: 10, nearPct: 1.5, from: '12:00', to: null };
 
 beforeEach(() => {
   getMoveExit.mockReset(); saveMoveExit.mockReset();
@@ -36,9 +36,9 @@ describe('BTC-move exit', () => {
     expect(within(screen.getByRole('group', { name: 'Strikes near' })).getByRole('button', { name: '1.5%' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(within(screen.getByRole('group', { name: 'BTC move' })).getByRole('button', { name: '1%' }));
     fireEvent.click(within(screen.getByRole('group', { name: 'Within' })).getByRole('button', { name: '15 min' }));
-    expect(screen.getByText(/When BTC moves 1% against a sale within 15 min .* the sales with a strike within 1.5% of BTC are bought back at once, worst first\./)).toBeInTheDocument();
+    expect(screen.getByText(/From 12:00 to the 17:30 expiry: when BTC moves 1% against a sale within 15 min .* the sales with a strike within 1.5% of BTC are bought back at once, worst first\./)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(saveMoveExit).toHaveBeenCalledWith({ on: true, pct: 1, minutes: 15, nearPct: 1.5 }));
+    await waitFor(() => expect(saveMoveExit).toHaveBeenCalledWith({ on: true, pct: 1, minutes: 15, nearPct: 1.5, from: '12:00', to: null }));
   });
 
   it('cancel puts it back as kept; a refusal is said', async () => {
@@ -55,5 +55,31 @@ describe('BTC-move exit', () => {
     render(<MoveExitCard several />);
     expect(screen.getByText('BTC-move exit: set on each account\'s own tab.')).toBeInTheDocument();
     expect(getMoveExit).not.toHaveBeenCalled();
+  });
+
+  it('[critical] the hours: from 12:00 offered; all day or 13:00, and until 16:30, a tap each; saved with the rest', async () => {
+    render(<MoveExitCard />);
+    fireEvent.click(await screen.findByRole('switch', { name: /^BTC-move exit/ }));
+    const from = screen.getByRole('group', { name: 'From' });
+    expect(within(from).getByRole('button', { name: '12:00' })).toHaveAttribute('aria-pressed', 'true');
+    const until = screen.getByRole('group', { name: 'Until' });
+    expect(within(until).getByRole('button', { name: 'Expiry 17:30' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(until).getByRole('button', { name: '16:30' }));
+    expect(screen.getByText(/^From 12:00 to 16:30: when BTC moves/)).toBeInTheDocument();
+    fireEvent.click(within(from).getByRole('button', { name: 'All day' }));
+    expect(screen.getByText(/^From the day's start to 16:30: when BTC moves/)).toBeInTheDocument();
+    fireEvent.click(within(until).getByRole('button', { name: 'Expiry 17:30' }));
+    expect(screen.getByText(/^All day: when BTC moves/)).toBeInTheDocument();
+    fireEvent.click(within(from).getByRole('button', { name: '13:00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveMoveExit).toHaveBeenCalledWith({ on: true, pct: 0.8, minutes: 10, nearPct: 1.5, from: '13:00', to: null }));
+  });
+
+  it('a setting kept before the hours existed reads as all day, and as unchanged', async () => {
+    getMoveExit.mockResolvedValue({ setting: { on: true, pct: 0.8, minutes: 10, nearPct: 1.5 } });
+    render(<MoveExitCard />);
+    const from = await screen.findByRole('group', { name: 'From' });
+    expect(within(from).getByRole('button', { name: 'All day' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
   });
 });

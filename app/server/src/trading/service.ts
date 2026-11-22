@@ -476,7 +476,8 @@ export class TradingService {
     const bad = moveExitProblems(x);
     if (bad.length) return { ok: false, reason: bad.join(' ') };
     const v = x as MoveExit;
-    const kept: MoveExit = { on: v.on, pct: v.pct, minutes: v.minutes, nearPct: v.nearPct };
+    // The hours it watches (22 Nov 2026): kept as given, null for all day / to the expiry.
+    const kept: MoveExit = { on: v.on, pct: v.pct, minutes: v.minutes, nearPct: v.nearPct, from: v.from ?? null, to: v.to ?? null };
     await this.settings.set(accountKey(MOVE_EXIT_KEY, this.currentAccountId), JSON.stringify(kept));
     return { ok: true, moveExit: this.moveExitSetting };
   }
@@ -485,7 +486,8 @@ export class TradingService {
   private sayMoveExit(r: { picks: MovePick[]; closed: number; failed: number; s: MoveExit; at: number }): void {
     const sides = [...new Set(r.picks.map((p) => p.side))].join(' and ');
     const move = r.picks[0]!.movePct;
-    const message = `BTC-move exit: BTC ${move >= 0 ? '+' : ''}${move.toFixed(2)}% in ${r.s.minutes} min -- ${r.closed} of ${r.picks.length} ${sides} sales within ${r.s.nearPct}% of BTC bought back${r.failed ? `, ${r.failed} failed` : ''}.`;
+    const hours = r.s.from || r.s.to ? ` (watching ${r.s.from ?? 'all night'} – ${r.s.to ?? '17:30'})` : '';
+    const message = `BTC-move exit: BTC ${move >= 0 ? '+' : ''}${move.toFixed(2)}% in ${r.s.minutes} min -- ${r.closed} of ${r.picks.length} ${sides} sales within ${r.s.nearPct}% of BTC bought back${r.failed ? `, ${r.failed} failed` : ''}${hours}.`;
     deskLog('warn', message, { moveExit: 'closed', accountId: this.currentAccountId, picks: r.picks, closed: r.closed, failed: r.failed, setting: r.s });
     noteError({ source: 'trading', level: 'warn', where: 'move-exit', message, context: { accountId: this.currentAccountId, closed: r.closed, failed: r.failed, setting: r.s } });
     if (this.notifier && this.alertsOn) this.notifier.notify(moveExitAlert(r, this.alertContext()));

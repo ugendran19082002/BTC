@@ -243,7 +243,8 @@ export const getSessionLossOf = (account: number) => json<SessionLossView>(`/api
 export const saveSessionLoss = (setting: SessionLossSetting) => post<SessionLossView & { ok: true }>(withAccount('/api/desk/session-loss'), setting);
 
 /** The BTC-move exit (22 Nov 2026, server trading/move-exit.ts): a sale near the market bought back when BTC runs against it. */
-export type MoveExitSetting = { on: boolean; pct: number; minutes: number; nearPct: number };
+/** `from` / `to`: the hours watched, "HH:MM" IST in the desk's 17:30-17:30 day; null: all day / to the expiry. */
+export type MoveExitSetting = { on: boolean; pct: number; minutes: number; nearPct: number; from?: string | null; to?: string | null };
 export const getMoveExit = () => json<{ setting: MoveExitSetting }>(withAccount('/api/desk/move-exit'));
 export const saveMoveExit = (setting: MoveExitSetting) => post<{ ok: true; setting: MoveExitSetting }>(withAccount('/api/desk/move-exit'), setting);
 /**

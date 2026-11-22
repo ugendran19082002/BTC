@@ -16,16 +16,23 @@ import { cn } from '@/lib/utils';
 const MOVES = [0.6, 0.8, 1.0];
 const WINDOWS = [10, 15];
 const NEARS = [1.0, 1.5, 2.0];
-const same = (a: MoveExitSetting, b: MoveExitSetting) => JSON.stringify(a) === JSON.stringify(b);
+/** The hours watched (22 Nov 2026, round 4): from 12:00 lost no day against now; all day earned the most. */
+const FROMS: (string | null)[] = [null, '12:00', '13:00'];
+const TOS: (string | null)[] = [null, '16:30'];
+/** The setting with its hours always said (null for none), so a kept setting from before them compares as unchanged. */
+const norm = (x: MoveExitSetting): MoveExitSetting => ({ on: x.on, pct: x.pct, minutes: x.minutes, nearPct: x.nearPct, from: x.from ?? null, to: x.to ?? null });
+const same = (a: MoveExitSetting, b: MoveExitSetting) => JSON.stringify(norm(a)) === JSON.stringify(norm(b));
+/** "From 12:00 to the 17:30 expiry" / "All day": the hours watched, in words. */
+const hoursWords = (x: MoveExitSetting) => (!x.from && !x.to ? 'All day' : `From ${x.from ?? 'the day\'s start'} to ${x.to ?? 'the 17:30 expiry'}`);
 
-function Chips<T extends number>({ label, value, choices, word, onPick }: { label: string; value: T; choices: readonly T[]; word: (c: T) => string; onPick: (c: T) => void }) {
+function Chips<T extends number | string | null>({ label, value, choices, word, onPick }: { label: string; value: T; choices: readonly T[]; word: (c: T) => string; onPick: (c: T) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="min-w-[96px] text-[13px]">{label}</span>
       <div role="group" aria-label={label} className="flex overflow-hidden rounded-md border border-solid border-border">
         {choices.map((c) => (
           <button
-            key={c} type="button" aria-pressed={value === c} onClick={() => onPick(c)}
+            key={String(c)} type="button" aria-pressed={value === c} onClick={() => onPick(c)}
             className={cn('h-9 min-w-[52px] border-0 px-2 font-[inherit] text-[13px]', value === c ? 'bg-[var(--accent-fill)] font-semibold text-foreground' : 'bg-transparent text-muted-foreground')}
           >
             {word(c)}
@@ -67,7 +74,7 @@ export function MoveExitCard({ several = false }: { several?: boolean }) {
       <Switch
         label="BTC-move exit" checked={draft.on} onCheckedChange={(v) => set({ on: v })}
         description={draft.on
-          ? `When BTC moves ${draft.pct}% against a sale within ${draft.minutes} min (a call as BTC rises, a put as it falls), the sales with a strike within ${draft.nearPct}% of BTC are bought back at once, worst first. Sales further out keep their own stops and targets.`
+          ? `${hoursWords(draft)}: when BTC moves ${draft.pct}% against a sale within ${draft.minutes} min (a call as BTC rises, a put as it falls), the sales with a strike within ${draft.nearPct}% of BTC are bought back at once, worst first. Sales further out keep their own stops and targets.`
           : 'Off: sales are left to their own stops and targets.'}
       />
       {draft.on && (
@@ -75,6 +82,8 @@ export function MoveExitCard({ several = false }: { several?: boolean }) {
           <Chips label="BTC move" value={draft.pct} choices={MOVES} word={(c) => `${c}%`} onPick={(c) => set({ pct: c })} />
           <Chips label="Within" value={draft.minutes} choices={WINDOWS} word={(c) => `${c} min`} onPick={(c) => set({ minutes: c })} />
           <Chips label="Strikes near" value={draft.nearPct} choices={NEARS} word={(c) => `${c}%`} onPick={(c) => set({ nearPct: c })} />
+          <Chips label="From" value={draft.from ?? null} choices={FROMS} word={(c) => c ?? 'All day'} onPick={(c) => set({ from: c })} />
+          <Chips label="Until" value={draft.to ?? null} choices={TOS} word={(c) => c ?? 'Expiry 17:30'} onPick={(c) => set({ to: c })} />
         </div>
       )}
       {refusal && <p role="alert" className="m-0 text-[12px] text-[var(--down)]">{refusal}</p>}
