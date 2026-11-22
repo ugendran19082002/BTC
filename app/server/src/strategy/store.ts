@@ -455,7 +455,7 @@ type SignalTradeRow = SignalRunRow & {
   tp1: number | null; tp2: number | null; tp3: number | null;
   fill_price: number | null; filled_at: string | number | null; exit_price: number | null; exit_at: string | number | null;
 };
-export type ExitBy = 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'swap-cap' | 'swap-every' | 'session' | 'square-off' | 'manual';
+export type ExitBy = 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'swap-cap' | 'swap-every' | 'session' | 'btc-move' | 'square-off' | 'manual';
 
 /** Which exit closed a trade, from the desk's close reason and which order filled the close. */
 export function exitByOf(reason: string | null, winner: string | null): ExitBy {
@@ -472,6 +472,8 @@ export function exitByOf(reason: string | null, winner: string | null): ExitBy {
   if (reason && /^bought back at .*make room at the cap/i.test(reason)) return 'swap-cap';
   if (reason && /^bought back at .*swap on every signal/i.test(reason)) return 'swap-every';
   if (reason && /^session limit square off/i.test(reason)) return 'session';
+  // The BTC-move exit (22 Nov 2026, trading/move-exit.ts): "btc move exit: BTC +0.84% in 10 min against the 60400 CE, …".
+  if (reason && /^btc move exit/i.test(reason)) return 'btc-move';
   if (reason && /^square off$/i.test(reason)) return 'square-off';
   return 'manual';
 }

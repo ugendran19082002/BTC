@@ -82,7 +82,7 @@ const TABS: {
 const EXIT_WORDS = {
   'perp-sl': 'perp SL hit', 'perp-tgt': 'perp TGT hit', 'option-tgt': 'target hit', 'option-sl': 'stop hit',
   'window-end': 'closed at exit time', 'swap-cap': 'swapped out (cap full)', 'swap-every': 'swapped out (new signal)',
-  session: 'session limit square-off', 'square-off': 'closed by Close all', manual: 'closed manually',
+  session: 'session limit square-off', 'btc-move': 'BTC-move exit', 'square-off': 'closed by Close all', manual: 'closed manually',
 } as const;
 
 /**

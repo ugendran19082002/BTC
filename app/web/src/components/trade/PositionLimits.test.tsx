@@ -9,6 +9,8 @@ vi.mock('@/api/desk', () => ({
   setShortCap: (...a: unknown[]) => setShortCap(...a),
   // The Account card's session loss limit (4 Nov 2026) reads its own setting: left waiting, it is not what is tested here.
   getSessionLoss: () => new Promise(() => {}),
+  getMoveExit: () => new Promise(() => {}),
+  saveMoveExit: async () => ({ ok: true }),
 }));
 
 const status = (): TradeStatus => ({

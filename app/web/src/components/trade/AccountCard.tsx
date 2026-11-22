@@ -7,6 +7,7 @@ import { Money } from '@/components/ui/money';
 import { getSettings, setShortCap, type ShortCap } from '@/api/desk';
 import { LossBudget } from '@/components/trade/LossBudget';
 import { SessionLossLimit } from '@/components/trade/SessionLossLimit';
+import { MoveExitCard } from '@/components/trade/MoveExitCard';
 import { inr, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -110,6 +111,9 @@ export function AccountCard({ status }: { status: TradeStatus | null }) {
         {/* The session loss limit (4 Nov 2026): set and watched on an account's own tab. */}
         <div className="my-0.5 h-px bg-border" />
         <SessionLossLimit several={Boolean(combined)} />
+        {/* The BTC-move exit (22 Nov 2026): on an account's own tab, beside its session limit. */}
+        <div className="my-0.5 h-px bg-border" />
+        <MoveExitCard several={Boolean(combined)} />
       </div>
 
       {/* Each account's own part of the totals above: the sums are these rows added. */}

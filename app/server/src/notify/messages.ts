@@ -739,6 +739,26 @@ export function sessionTrimAlert(t: { from: string; to: string; limitInr: number
 }
 
 /**
+ * The BTC-move exit (trading/move-exit.ts, 22 Nov 2026): BTC ran against the sales near the market, and they were bought
+ * back before their option stops -- said once a look that closed any.
+ */
+export function moveExitAlert(r: { picks: { side: 'CE' | 'PE'; strike: number; movePct: number }[]; closed: number; failed: number; s: { pct: number; minutes: number; nearPct: number }; at: number }, ctx: AlertContext): Alert {
+  const move = r.picks[0]?.movePct ?? 0;
+  const sides = [...new Set(r.picks.map((p) => p.side))].join(' and ');
+  const strikes = [...new Set(r.picks.map((p) => p.strike))].sort((a, b) => a - b);
+  return {
+    key: `move-exit:${ctx.account ?? ''}:${Math.floor(r.at / 60_000)}`,
+    text: lines(
+      headline(ctx, '⚡', `BTC-MOVE EXIT · ${escape(sides)}`), '',
+      `BTC ${move >= 0 ? '+' : ''}${move.toFixed(2)}% in ${r.s.minutes} min (rule: ${r.s.pct}%), against the sales near it.`,
+      `${r.closed} of ${r.picks.length} bought back${r.failed ? ` · <b>${r.failed} could not be closed</b>` : ''} -- strikes ${escape(strikes.slice(0, 8).join(', '))}${strikes.length > 8 ? ' …' : ''} (within ${r.s.nearPct}% of BTC).`,
+      'Sales further out are left to their own stops and targets.', '',
+      `🕒 ${istTime(r.at)} IST · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`,
+    ),
+  };
+}
+
+/**
  * A session's limit worked out again by hand (trading/session-loss.ts `recompute`, 20 Nov 2026): from what to what, and
  * the loss so far -- so a limit that moved is never a surprise on the phone.
  */

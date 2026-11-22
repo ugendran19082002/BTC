@@ -618,6 +618,17 @@ export function registerDeskRoutes(app: FastifyInstance) {
   });
 
   /*
+   * The BTC-move exit of the account asked for (22 Nov 2026, trading/move-exit.ts): off until set. `POST` with
+   * `{ on, pct, minutes, nearPct }`, checked, then kept; refused (400) with the reason.
+   */
+  app.get('/api/desk/move-exit', async () => ({ setting: tradingService().moveExitSetting }));
+  app.post('/api/desk/move-exit', async (req, reply) => {
+    const res = await tradingService().setMoveExit(req.body ?? null);
+    if (!res.ok) return refuse(reply, 400, { error: res.reason });
+    return { ok: true, setting: res.moveExit };
+  });
+
+  /*
    * The session's limit worked out again by hand (20 Nov 2026, `SessionLossGuard.recompute`): `GET` says what it would
    * become, or why not, changing nothing -- the screen's confirm box; `POST` makes it so. Refused (409) with the reason:
    * no session now, stopped for today, a limit in rupees, nothing to work it out from, or a loss already at the new limit.

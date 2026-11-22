@@ -24,10 +24,12 @@ import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { cachedAsks, cachedQuote, candles } from '../market/delta.js';
 import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
+import { perpAtMinutes } from '../market/perp-minute.js';
+import { MOVE_EXIT_KEY, MOVE_EXIT_TICK_MS, MoveExitWatch, moveExitProblems, parseMoveExit, type MoveExit, type MovePick } from './move-exit.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { deskLog } from '../observability/desk-log.js';
-import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, noStopBatchAlert, sessionLossAlert, sessionPauseAlert, sessionRecomputeAlert, sessionTrimAlert, sessionWarnAlert, slippageAlert } from '../notify/messages.js';
+import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, noStopBatchAlert, moveExitAlert, sessionLossAlert, sessionPauseAlert, sessionRecomputeAlert, sessionTrimAlert, sessionWarnAlert, slippageAlert } from '../notify/messages.js';
 import { NoStopBatch } from '../notify/no-stop-batch.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
@@ -417,6 +419,9 @@ export class TradingService {
     await this.sessionGuard.restore().catch(() => {});
     this.sessionTimer ??= setInterval(() => { void this.sessionGuard.tick().catch(() => {}); }, SESSION_LOSS_TICK_MS);
     this.sessionTimer.unref?.();
+    // The BTC-move exit (move-exit.ts, 22 Nov 2026): looked at every few seconds, memory only; nothing done while it is off.
+    this.moveTimer ??= setInterval(() => { void this.moveExit.tick(); }, MOVE_EXIT_TICK_MS);
+    this.moveTimer.unref?.();
     await this.store.pruneMtm(Date.now());
     return recovered;
   }
@@ -430,6 +435,7 @@ export class TradingService {
     if (this.wakeTimer) { clearInterval(this.wakeTimer); this.wakeTimer = null; }
     if (this.auditTimer) { clearInterval(this.auditTimer); this.auditTimer = null; }
     if (this.sessionTimer) { clearInterval(this.sessionTimer); this.sessionTimer = null; }
+    if (this.moveTimer) { clearInterval(this.moveTimer); this.moveTimer = null; }
     if (this.stopPerpWatch) { this.stopPerpWatch(); this.stopPerpWatch = null; }
     if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
   }
@@ -441,6 +447,49 @@ export class TradingService {
   private wakeTimer: NodeJS.Timeout | null = null;
   private auditTimer: NodeJS.Timeout | null = null;
   private sessionTimer: NodeJS.Timeout | null = null;
+  private moveTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * The BTC-move exit (move-exit.ts, owner 22 Nov 2026): a sale near the market bought back when BTC runs against it, the
+   * session square-off's way -- worst first, a few hands, never two on one contract, the quota gate. Off until set.
+   */
+  readonly moveExit = new MoveExitWatch({
+    setting: () => this.moveExitSetting,
+    openTrades: () => this.openTrades(),
+    perpNow: () => lastPerp(),
+    perpAtMinute: async (minute) => (await perpAtMinutes([minute])).get(minute) ?? null,
+    close: async (picks, why) => {
+      const byId = new Map(picks.map((p) => [p.tradeId, p] as const));
+      const done = await this.closeAll(picks.map((p) => p.tradeId), (id) => why(byId.get(id)!), 'worst-first');
+      return { closed: done.closed, failed: done.failed };
+    },
+    said: (r) => this.sayMoveExit(r),
+  });
+
+  /** This account's BTC-move exit as kept; off until it is set. */
+  get moveExitSetting(): MoveExit {
+    return parseMoveExit(accountSetting(this.settings, MOVE_EXIT_KEY, this.currentAccountId));
+  }
+
+  /** Change this account's BTC-move exit. Checked first; nothing kept that will not read. */
+  async setMoveExit(x: unknown): Promise<{ ok: true; moveExit: MoveExit } | { ok: false; reason: string }> {
+    const bad = moveExitProblems(x);
+    if (bad.length) return { ok: false, reason: bad.join(' ') };
+    const v = x as MoveExit;
+    const kept: MoveExit = { on: v.on, pct: v.pct, minutes: v.minutes, nearPct: v.nearPct };
+    await this.settings.set(accountKey(MOVE_EXIT_KEY, this.currentAccountId), JSON.stringify(kept));
+    return { ok: true, moveExit: this.moveExitSetting };
+  }
+
+  /** A BTC-move exit, said: the log, the error page, the phone. */
+  private sayMoveExit(r: { picks: MovePick[]; closed: number; failed: number; s: MoveExit; at: number }): void {
+    const sides = [...new Set(r.picks.map((p) => p.side))].join(' and ');
+    const move = r.picks[0]!.movePct;
+    const message = `BTC-move exit: BTC ${move >= 0 ? '+' : ''}${move.toFixed(2)}% in ${r.s.minutes} min -- ${r.closed} of ${r.picks.length} ${sides} sales within ${r.s.nearPct}% of BTC bought back${r.failed ? `, ${r.failed} failed` : ''}.`;
+    deskLog('warn', message, { moveExit: 'closed', accountId: this.currentAccountId, picks: r.picks, closed: r.closed, failed: r.failed, setting: r.s });
+    noteError({ source: 'trading', level: 'warn', where: 'move-exit', message, context: { accountId: this.currentAccountId, closed: r.closed, failed: r.failed, setting: r.s } });
+    if (this.notifier && this.alertsOn) this.notifier.notify(moveExitAlert(r, this.alertContext()));
+  }
   private stopPerpWatch: (() => void) | null = null;
 
   /**
@@ -1000,7 +1049,7 @@ export class TradingService {
    * `most` (the early square-off, 22 Nov 2026): close at most this many positions, the worst first, and pull no working
    * entry -- only a session square-off's order takes it.
    */
-  async closeAll(only?: readonly string[], why = 'square off', order: 'as-opened' | 'worst-first' = 'as-opened', most?: number): Promise<{
+  async closeAll(only?: readonly string[], why: string | ((tradeId: string) => string) = 'square off', order: 'as-opened' | 'worst-first' = 'as-opened', most?: number): Promise<{
     cancelled: string[];
     closed: string[];
     failed: { tradeId: string; reason: string }[];
@@ -1024,7 +1073,8 @@ export class TradingService {
 
     const closeOne = async (rec: TradeRecord): Promise<TradeState | null> => {
       try {
-        const after = await this.engine.closeNow(rec.state.tradeId, why);
+        // Each trade's own words where they differ (the BTC-move exit names its strike and the move, 22 Nov 2026).
+        const after = await this.engine.closeNow(rec.state.tradeId, typeof why === 'function' ? why(rec.state.tradeId) : why);
         if (after && after.position !== 0) {
           out.failed.push({ tradeId: rec.state.tradeId, reason: `still holding ${after.position}` });
         } else {
@@ -1097,7 +1147,7 @@ export class TradingService {
     if (fills.length) {
       const r = fillReport(fills, Date.now() - began);
       out.report = r.words;
-      deskLog('info', `Session square-off fills: ${r.words}`, { sessionLoss: 'fills', accountId: this.currentAccountId, ...r.stats, rows: fills });
+      deskLog('info', `${typeof why === 'function' ? 'BTC-move exit' : 'Session square-off'} fills: ${r.words}`, { sessionLoss: 'fills', accountId: this.currentAccountId, ...r.stats, rows: fills });
     }
     return out;
   }

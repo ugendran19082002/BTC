@@ -241,6 +241,11 @@ export const getSessionLoss = () => json<SessionLossView>(withAccount('/api/desk
 /** One account's, by its id: the phone's Positions shows each account's on "All accounts" (6 Nov 2026). */
 export const getSessionLossOf = (account: number) => json<SessionLossView>(`/api/desk/session-loss?account=${account}`);
 export const saveSessionLoss = (setting: SessionLossSetting) => post<SessionLossView & { ok: true }>(withAccount('/api/desk/session-loss'), setting);
+
+/** The BTC-move exit (22 Nov 2026, server trading/move-exit.ts): a sale near the market bought back when BTC runs against it. */
+export type MoveExitSetting = { on: boolean; pct: number; minutes: number; nearPct: number };
+export const getMoveExit = () => json<{ setting: MoveExitSetting }>(withAccount('/api/desk/move-exit'));
+export const saveMoveExit = (setting: MoveExitSetting) => post<{ ok: true; setting: MoveExitSetting }>(withAccount('/api/desk/move-exit'), setting);
 /**
  * The session's limit worked out again, by hand (20 Nov 2026): with lots changed after the session began, the limit is
  * still the one worked out at its start. `GET` what it would become -- or why it will not -- for the confirm box; `POST`

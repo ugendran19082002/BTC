@@ -60,6 +60,7 @@ const EXITS: { key: ExitKind; word: string; tone: 'up' | 'down' | 'dim' }[] = [
   { key: 'option-tgt', word: 'TGT', tone: 'up' }, { key: 'option-sl', word: 'SL', tone: 'down' },
   { key: 'swap-every', word: 'Swap', tone: 'up' }, { key: 'swap-cap', word: 'Swap (cap)', tone: 'up' },
   { key: 'session', word: 'Session limit', tone: 'down' },
+  { key: 'btc-move', word: 'BTC move', tone: 'down' },
   { key: 'perp-tgt', word: 'Perp TGT', tone: 'up' }, { key: 'perp-sl', word: 'Perp SL', tone: 'down' },
   { key: 'window-end', word: 'Time exit', tone: 'dim' }, { key: 'square-off', word: 'Close all', tone: 'dim' },
   { key: 'manual', word: 'By hand', tone: 'dim' },

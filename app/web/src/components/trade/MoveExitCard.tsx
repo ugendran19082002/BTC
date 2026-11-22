@@ -1,0 +1,93 @@
+import { useEffect, useState } from 'react';
+import { getMoveExit, saveMoveExit, type MoveExitSetting } from '@/api/desk';
+import { usePoll } from '@/hooks/usePoll';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
+
+/**
+ * The BTC-move exit of the account shown (owner, 22 Nov 2026: "build panu best practice"): a sale whose strike is near
+ * BTC is bought back when BTC runs against it -- a call as BTC rises, a put as it falls -- before its option stop. Off by
+ * default. The numbers are chosen in a tap each and kept with Save, as the session limit's are.
+ *
+ * The study behind the numbers offered (docs/research/2026-11-22-sl-jump-study.md): 0.8% in 10 minutes, strikes within
+ * 1.5% of BTC -- +₹17.9k over 30 days, loss days 3 → 1; or 1.0% in 15 minutes for the more cautious, no day worse.
+ */
+
+const MOVES = [0.6, 0.8, 1.0];
+const WINDOWS = [10, 15];
+const NEARS = [1.0, 1.5, 2.0];
+const same = (a: MoveExitSetting, b: MoveExitSetting) => JSON.stringify(a) === JSON.stringify(b);
+
+function Chips<T extends number>({ label, value, choices, word, onPick }: { label: string; value: T; choices: readonly T[]; word: (c: T) => string; onPick: (c: T) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="min-w-[96px] text-[13px]">{label}</span>
+      <div role="group" aria-label={label} className="flex overflow-hidden rounded-md border border-solid border-border">
+        {choices.map((c) => (
+          <button
+            key={c} type="button" aria-pressed={value === c} onClick={() => onPick(c)}
+            className={cn('h-9 min-w-[52px] border-0 px-2 font-[inherit] text-[13px]', value === c ? 'bg-[var(--accent-fill)] font-semibold text-foreground' : 'bg-transparent text-muted-foreground')}
+          >
+            {word(c)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function MoveExitCard({ several = false }: { several?: boolean }) {
+  const { data, error, refresh } = usePoll(getMoveExit, 30_000, { enabled: !several });
+  const kept = data?.setting ?? null;
+  const [draft, setDraft] = useState<MoveExitSetting | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  useEffect(() => { if (kept && !draft) setDraft(kept); }, [kept]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (several) return <p className="m-0 text-[12px] text-muted-foreground">BTC-move exit: set on each account&apos;s own tab.</p>;
+  if (!data || !draft) return <p className="m-0 text-[12px] text-muted-foreground">{error ? `BTC-move exit: ${error.message}` : 'Reading the BTC-move exit…'}</p>;
+
+  const changed = !same(draft, data.setting);
+  const set = (patch: Partial<MoveExitSetting>) => setDraft((d) => d && ({ ...d, ...patch }));
+  const save = async () => {
+    setBusy(true); setRefusal(null);
+    try {
+      const r = await saveMoveExit(draft);
+      setDraft(r.setting);
+      await refresh();
+    } catch (e) {
+      setRefusal((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-label="BTC-move exit" className="grid min-w-0 gap-2">
+      <Switch
+        label="BTC-move exit" checked={draft.on} onCheckedChange={(v) => set({ on: v })}
+        description={draft.on
+          ? `When BTC moves ${draft.pct}% against a sale within ${draft.minutes} min (a call as BTC rises, a put as it falls), the sales with a strike within ${draft.nearPct}% of BTC are bought back at once, worst first. Sales further out keep their own stops and targets.`
+          : 'Off: sales are left to their own stops and targets.'}
+      />
+      {draft.on && (
+        <div className="grid gap-1.5">
+          <Chips label="BTC move" value={draft.pct} choices={MOVES} word={(c) => `${c}%`} onPick={(c) => set({ pct: c })} />
+          <Chips label="Within" value={draft.minutes} choices={WINDOWS} word={(c) => `${c} min`} onPick={(c) => set({ minutes: c })} />
+          <Chips label="Strikes near" value={draft.nearPct} choices={NEARS} word={(c) => `${c}%`} onPick={(c) => set({ nearPct: c })} />
+        </div>
+      )}
+      {refusal && <p role="alert" className="m-0 text-[12px] text-[var(--down)]">{refusal}</p>}
+      {changed && (
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" disabled={busy} onClick={() => void save()} className="h-10 rounded-md border-0 bg-foreground font-[inherit] text-[14px] font-semibold text-background disabled:opacity-40">
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" onClick={() => { setDraft(data.setting); setRefusal(null); }} className="h-10 rounded-md border border-solid border-border bg-transparent font-[inherit] text-[14px] text-foreground">
+            Cancel
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}

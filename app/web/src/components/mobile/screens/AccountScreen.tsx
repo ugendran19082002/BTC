@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { usePhoneData } from '@/components/mobile/phone-context';
 import { Bar, Empty, Panel, Rupees, Stat, Stats } from '@/components/mobile/parts';
 import { SessionLossLimit } from '@/components/trade/SessionLossLimit';
+import { MoveExitCard } from '@/components/trade/MoveExitCard';
 
 /**
  * Account (6 Oct 2026): each broker account's money -- wallet, available, margin, open P&L, today -- and whether
@@ -37,6 +38,11 @@ export function AccountScreen() {
       {/* The session loss limit of the account shown (4 Nov 2026); on "all accounts", set on each account's own. */}
       <Panel title="Session loss limit">
         <SessionLossLimit several={p.shown === 'all'} />
+      </Panel>
+
+      {/* The BTC-move exit (22 Nov 2026): sales near BTC bought back when it runs against them; off by default. */}
+      <Panel title="BTC-move exit">
+        <MoveExitCard several={p.shown === 'all'} />
       </Panel>
 
       <Panel title="Status">
