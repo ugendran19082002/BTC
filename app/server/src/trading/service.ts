@@ -19,7 +19,7 @@ import { announceOptionExit, optionExitOf } from './option-exit.js';
 import { closePriceOf, unrealisedPnlUsd } from './margin.js';
 import { fillChargesUsd } from './charges.js';
 import { midOf } from './money.js';
-import { worstIndex } from './worst-first.js';
+import { fillReport, worstIndex, type SquareOffFill } from './worst-first.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { cachedAsks, cachedQuote, candles } from '../market/delta.js';
@@ -27,7 +27,7 @@ import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { deskLog } from '../observability/desk-log.js';
-import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, noStopBatchAlert, sessionLossAlert, sessionRecomputeAlert, slippageAlert } from '../notify/messages.js';
+import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, noStopBatchAlert, sessionLossAlert, sessionPauseAlert, sessionRecomputeAlert, sessionWarnAlert, slippageAlert } from '../notify/messages.js';
 import { NoStopBatch } from '../notify/no-stop-batch.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
@@ -39,7 +39,7 @@ import { FILL_WAKE_MS, FillWake, type HeardOrder } from './fill-wake.js';
 import { LEG_AUDIT_MS, LegAudit } from './leg-audit.js';
 import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
 import { GLOBAL_MAX_OPEN_KEY, globalMaxOpenOf } from '../strategy/types.js';
-import { SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, parseSessionLoss, sessionLossProblems, type RecomputeAnswer, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
+import { PAUSE_RESUME_GAP_PCT, SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, type SessionNear, parseSessionLoss, sessionLossProblems, type RecomputeAnswer, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 import type { TradePlan } from './engine.js';
 
@@ -474,7 +474,41 @@ export class TradingService {
     record: (h) => this.store.addSessionLossHit(h, this.currentAccountId),
     hitsOn: (day) => this.store.sessionLossHitsOn(day, this.currentAccountId),
     said: (h) => this.sayHit(h),
+    // The board's age over the positions held, for the short hold far over the line (22 Nov 2026): memory only.
+    quoteAgeMs: () => this.oldestQuoteAgeMs(),
+    warned: (w) => this.sayNear('warn', w),
+    entriesPaused: (p) => this.sayNear(p.on ? 'pause' : 'resume', p, p.first),
   });
+
+  /** The oldest board quote among the open positions, in ms; null when one has none (`cachedQuote`, never a call). */
+  private async oldestQuoteAgeMs(now = Date.now()): Promise<number | null> {
+    let oldest = 0;
+    for (const rec of await this.openTrades()) {
+      if (rec.state.position === 0) continue;
+      const q = cachedQuote(rec.state.symbol);
+      if (!q || !(q.ts > 0)) return null;
+      oldest = Math.max(oldest, now - q.ts);
+    }
+    return oldest;
+  }
+
+  /**
+   * Near a session's limit, said (22 Nov 2026): at `WARN_AT_PCT` once a session, on the phone and in the log; new entries
+   * held (`pauseAt`) -- the first time a session on the phone, every time in the log -- and let go, in the log.
+   */
+  private sayNear(kind: 'warn' | 'pause' | 'resume', n: SessionNear, first = true): void {
+    const rs = (x: number) => `₹${Math.round(x).toLocaleString('en-IN')}`;
+    const pauseAt = this.sessionLossSetting.pauseAt ?? null;
+    const message = kind === 'warn'
+      ? `Session ${n.from}–${n.to}: lost ${rs(n.lossInr)} of its ${rs(n.limitInr)} limit (${Math.floor(n.pct)}%).`
+      : kind === 'pause'
+        ? `Session ${n.from}–${n.to}: new entries paused at ${Math.floor(n.pct)}% of the limit (${rs(n.lossInr)} of ${rs(n.limitInr)}).`
+        : `Session ${n.from}–${n.to}: new entries back on, the loss at ${Math.floor(n.pct)}% of the limit.`;
+    deskLog('warn', message, { sessionLoss: kind, accountId: this.currentAccountId, ...n });
+    if (!this.notifier || !this.alertsOn) return;
+    if (kind === 'warn') this.notifier.notify(sessionWarnAlert(n, this.alertContext()));
+    else if (kind === 'pause' && first && pauseAt !== null) this.notifier.notify(sessionPauseAlert(n, pauseAt, pauseAt - PAUSE_RESUME_GAP_PCT, this.alertContext()));
+  }
 
   /** This account's sessions as kept; off with none until they are set. */
   get sessionLossSetting(): SessionLoss {
@@ -486,7 +520,11 @@ export class TradingService {
     const bad = sessionLossProblems(x);
     if (bad.length) return { ok: false, reason: bad.join(' ') };
     const v = x as SessionLoss;
-    const kept: SessionLoss = { on: v.on, sessions: v.sessions.map((s) => ({ from: s.from, to: s.to, limit: s.limit, unit: s.unit })) };
+    const kept: SessionLoss = {
+      on: v.on, sessions: v.sessions.map((s) => ({ from: s.from, to: s.to, limit: s.limit, unit: s.unit })),
+      // The near-limit pause (22 Nov 2026): kept only as a number; null or absent is off.
+      ...(typeof v.pauseAt === 'number' ? { pauseAt: v.pauseAt } : {}),
+    };
     // In a session the line only goes up (owner, 21 Nov 2026): a save that would lower it is refused, in words.
     const lowers = await this.sessionGuard.wouldLower(kept).catch(() => null);
     if (lowers) return { ok: false, reason: lowers };
@@ -946,8 +984,10 @@ export class TradingService {
     cancelled: string[];
     closed: string[];
     failed: { tradeId: string; reason: string }[];
+    /** The session square-off's fills against the ask at each close, and how long it took, in words (`fillReport`). */
+    report?: string;
   }> {
-    const out = { cancelled: [] as string[], closed: [] as string[], failed: [] as { tradeId: string; reason: string }[] };
+    const out: { cancelled: string[]; closed: string[]; failed: { tradeId: string; reason: string }[]; report?: string } = { cancelled: [], closed: [], failed: [] };
     // `only`: the trades a session square-off could not close, tried again; none of the others.
     const keep = only ? new Set(only) : null;
     const open = (await this.openTrades()).filter((r) => !keep || keep.has(r.state.tradeId));
@@ -961,7 +1001,7 @@ export class TradingService {
       }
     }
 
-    const closeOne = async (rec: TradeRecord) => {
+    const closeOne = async (rec: TradeRecord): Promise<TradeState | null> => {
       try {
         const after = await this.engine.closeNow(rec.state.tradeId, why);
         if (after && after.position !== 0) {
@@ -969,8 +1009,10 @@ export class TradingService {
         } else {
           out.closed.push(rec.state.tradeId);
         }
+        return after;
       } catch (e) {
         out.failed.push({ tradeId: rec.state.tradeId, reason: (e as Error).message });
+        return null;
       }
     };
     const left = open.filter((r) => r.state.position !== 0);
@@ -994,6 +1036,9 @@ export class TradingService {
      * Each trade is still closed the same way (`closeNow`): its exits off, checked, then bought back.
      */
     this.squaringOff++;
+    const began = Date.now();
+    // Each close's fill against the ask the board held as it began (22 Nov 2026): whether a contract's book was walked.
+    const fills: SquareOffFill[] = [];
     try {
       const busy = new Set<string>();
       const lossOf = (r: TradeRecord) => this.openLossUsd(r);
@@ -1007,12 +1052,27 @@ export class TradingService {
           const rec = free[Math.max(0, worstIndex(free, lossOf))]!;
           left.splice(left.indexOf(rec), 1);
           busy.add(rec.state.symbol);
-          try { await closeOne(rec); } finally { busy.delete(rec.state.symbol); }
+          const askAt = this.squareOffQuote(rec.state.symbol)?.ask ?? null;
+          const startedAt = Date.now();
+          try {
+            const after = await closeOne(rec);
+            const mine = (after?.fills ?? []).filter((f) => f.side === 'buy' && f.ts >= startedAt - 1_000 && f.role !== 'entry');
+            const size = mine.reduce((n, f) => n + f.size, 0);
+            fills.push({
+              tradeId: rec.state.tradeId, symbol: rec.state.symbol, askAt, size,
+              fillAvg: size > 0 ? mine.reduce((n, f) => n + f.price * f.size, 0) / size : null, ms: Date.now() - startedAt,
+            });
+          } finally { busy.delete(rec.state.symbol); }
         }
       };
       await Promise.all(Array.from({ length: SQUARE_OFF_HANDS }, (_, n) => hand(n)));
     } finally {
       this.squaringOff--;
+    }
+    if (fills.length) {
+      const r = fillReport(fills, Date.now() - began);
+      out.report = r.words;
+      deskLog('info', `Session square-off fills: ${r.words}`, { sessionLoss: 'fills', accountId: this.currentAccountId, ...r.stats, rows: fills });
     }
     return out;
   }

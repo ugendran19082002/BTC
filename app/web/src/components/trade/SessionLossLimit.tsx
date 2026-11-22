@@ -45,6 +45,11 @@ export const everyHour = (from: number, to: number, limit: number, unit: Session
 
 const same = (a: SessionLossSetting, b: SessionLossSetting) => JSON.stringify(a) === JSON.stringify(b);
 
+/** The near-limit pause's choices, % of a session's limit (the server takes 50-99); null is off. */
+const PAUSE_CHOICES: (number | null)[] = [null, 85, 90, 95];
+/** Entries held at `pauseAt` come back this many points under it (`PAUSE_RESUME_GAP_PCT` on the server). */
+const PAUSE_RESUME_GAP = 5;
+
 export function SessionLossLimit({ several = false }: { several?: boolean }) {
   const { data, error, refresh } = usePoll(getSessionLoss, 10_000, { enabled: !several });
   const kept = data?.setting ?? null;
@@ -100,6 +105,10 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
   const baseInr = base?.totalUsd != null ? base.totalUsd * USDINR : null;
   const anyPct = draft.sessions.some((s) => s.unit === 'pct');
   const used = now && now.lossInr !== null && now.limitInr ? Math.max(0, Math.min(1, now.lossInr / now.limitInr)) : 0;
+  // New entries held near the limit (the server's `pauseAt`): not a day stopped -- the session goes on, its bar with it.
+  const paused = !!now?.entriesPaused;
+  const stopped = !!data.blocked && !paused;
+  const pauseAt = typeof draft.pauseAt === 'number' ? draft.pauseAt : null;
   const time = (i: number, end: 'from' | 'to', value: string) => (
     <input
       type="time" value={value} aria-label={`Session ${i + 1} ${end === 'from' ? 'from' : 'to'}`}
@@ -117,12 +126,17 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
           : 'Off: no session limit on this account.'}
       />
 
-      {data.blocked && (
+      {stopped && (
         <p role="alert" className="m-0 rounded-md border border-solid border-[var(--down)] px-2.5 py-1.5 text-[12.5px] text-[var(--down)]">
           Stopped for today. {data.blocked}
         </p>
       )}
-      {now && !data.blocked && (
+      {paused && data.blocked && (
+        <p role="status" className="m-0 rounded-md border border-solid border-[var(--warn)] px-2.5 py-1.5 text-[12.5px] text-[var(--warn)]">
+          New entries paused. {data.blocked}
+        </p>
+      )}
+      {now && !stopped && (
         <div className="grid gap-1" aria-label="This session">
           <div className="flex justify-between text-[12px] tabular-nums">
             <span>Now {now.from}–{now.to}</span>
@@ -241,6 +255,32 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
         </div>
       </div>
 
+      <div className="grid gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[13px]">Pause new entries near the limit</span>
+          <div role="group" aria-label="Pause new entries near the limit" className="flex overflow-hidden rounded-md border border-solid border-border">
+            {PAUSE_CHOICES.map((c) => (
+              <button
+                key={c ?? 'off'} type="button" aria-pressed={pauseAt === c}
+                onClick={() => setDraft((d) => {
+                  if (!d) return d;
+                  const { pauseAt: _drop, ...rest } = d;
+                  return c === null ? rest : { ...rest, pauseAt: c };
+                })}
+                className={cn('h-9 min-w-[44px] border-0 px-2 font-[inherit] text-[13px]', pauseAt === c ? 'bg-[var(--accent-fill)] font-semibold text-foreground' : 'bg-transparent text-muted-foreground')}
+              >
+                {c === null ? 'Off' : `${c}%`}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+          {pauseAt === null
+            ? 'Off: entries go on right up to the limit.'
+            : `At ${pauseAt}% of a session's limit no new entry is taken; open positions are kept. Entries come back under ${pauseAt - PAUSE_RESUME_GAP}%.`}
+        </p>
+      </div>
+
       {anyPct && (
         <p className="m-0 text-[12px] leading-snug text-muted-foreground" aria-label="What a % is of">
           {base && base.maxOpen > 0 && base.perPositionUsd !== null
@@ -277,6 +317,7 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
             <li key={`${h.day}-${h.from}-${h.at}`}>
               {h.day.slice(5)} {clock(h.at)} · {h.from}–{h.to} lost {rupees(h.lossInr)} of {rupees(h.limitInr)} · {h.closed} closed
               {h.failed ? <span className="text-[var(--down)]"> · {h.failed} failed</span> : null}
+              {h.detail ? <div className="break-words text-[11px] leading-snug">{h.detail}</div> : null}
             </li>
           ))}
         </ul>

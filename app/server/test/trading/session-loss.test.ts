@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { refusalAlerts } from '../../src/strategy/runner.js';
-import { BASELINE_LIVE_MS, FAST_HOLD_MS, FAST_OVER_PCT, HOLD_MS, SESSION_LOSS_OFF, SessionLossGuard, parseSessionLoss, sessionAt, sessionLossProblems, type SessionHit, type SessionLoss } from '../../src/trading/session-loss.js';
+import { BASELINE_LIVE_MS, FAST_HOLD_MS, FAST_OVER_PCT, FAST_QUOTE_MAX_AGE_MS, HOLD_MS, PAUSE_RESUME_GAP_PCT, WARN_AT_PCT, type SessionGuardDeps, type SessionNear, SESSION_LOSS_OFF, SessionLossGuard, parseSessionLoss, sessionAt, sessionLossProblems, type SessionHit, type SessionLoss } from '../../src/trading/session-loss.js';
 import { precheck } from '../../src/trading/precheck.js';
 import { USDINR } from '../../src/domain/score.js';
 
@@ -40,7 +40,7 @@ test('the session a moment falls in: its start counted, its end not', () => {
 });
 
 /** A guard on a clock and a day's net the test moves by hand. */
-function rig(setting: SessionLoss, o: { baselineUsd?: number | null; written?: SessionHit[]; baseUsd?: number | null } = {}) {
+function rig(setting: SessionLoss, o: { baselineUsd?: number | null; written?: SessionHit[]; baseUsd?: number | null; extra?: Partial<SessionGuardDeps>; report?: string } = {}) {
   let now = at('07:00');
   let netUsd = 0;
   const squared: number[] = [];
@@ -53,10 +53,11 @@ function rig(setting: SessionLoss, o: { baselineUsd?: number | null; written?: S
     pctBaseUsd: async () => (o.baseUsd === undefined ? 1_000 : o.baseUsd),
     netUsd: async () => netUsd,
     netUsdAt: async (t) => { asked.push(t); return o.baselineUsd === undefined ? 0 : o.baselineUsd; },
-    squareOff: async () => { squared.push(now); return { closed: ['a', 'b'], cancelled: ['c'], failed: [] }; },
+    squareOff: async () => { squared.push(now); return { closed: ['a', 'b'], cancelled: ['c'], failed: [], ...(o.report ? { report: o.report } : {}) }; },
     record: async (h) => { written.push(h); },
     hitsOn: async (day) => written.filter((h) => h.day === day),
     said: (h) => { said.push(h); },
+    ...o.extra,
   });
   return {
     guard, squared, written, said, asked,
@@ -252,4 +253,129 @@ test('far over, then only just over by the next read: the whole hold, from when 
   r.move(5_000);
   assert.equal(await r.guard.tick(), null, 'just over now: the full hold applies');
   assert.ok(FAST_HOLD_MS < 5_000 && FAST_HOLD_MS > 0);
+});
+
+
+/* 1. The short hold far over the line only on a fresh board (22 Nov 2026): a stale quote can read the loss far over. */
+test('[critical] far over the line on a stale board: the whole hold, not the short one', async () => {
+  let age: number | null = FAST_QUOTE_MAX_AGE_MS + 20_000;
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 20, extra: { quoteAgeMs: async () => age } });
+  r.set('07:10', 100);
+  await r.guard.tick();
+  r.set('07:20', 1_500);
+  await r.guard.tick();
+  r.move(5_000);
+  assert.equal(await r.guard.tick(), null, 'a quote 30 s old: no short hold');
+  age = null;
+  r.move(5_000);
+  assert.equal(await r.guard.tick(), null, 'a position with no quote at all: no short hold');
+  age = 2_000;
+  r.move(1_000);
+  assert.ok(await r.guard.tick(), 'the board fresh again: squared off');
+});
+
+test('the whole hold squares off whatever the board\'s age: freshness only gates the short one', async () => {
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 20, extra: { quoteAgeMs: async () => 60_000 } });
+  r.set('07:10', 100);
+  await r.guard.tick();
+  r.set('07:20', 1_500);
+  await r.guard.tick();
+  r.move(HOLD_MS);
+  assert.ok(await r.guard.tick());
+});
+
+/* 3. Said once a session at 80% of the limit (22 Nov 2026). */
+test('[critical] the loss at 80% of the limit is said once a session -- not under it, not again', async () => {
+  const warned: SessionNear[] = [];
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000), S('09:00', '10:00', 1000)] }, { baselineUsd: 20, extra: { warned: (w) => { warned.push(w); } } });
+  r.set('07:10', 790);
+  await r.guard.tick();
+  assert.equal(warned.length, 0);
+  r.set('07:11', WARN_AT_PCT * 10);
+  await r.guard.tick();
+  assert.equal(warned.length, 1);
+  assert.equal(Math.round(warned[0]!.pct), 80);
+  r.set('07:12', 700);
+  await r.guard.tick();
+  r.set('07:13', 850);
+  await r.guard.tick();
+  assert.equal(warned.length, 1, 'once a session');
+  r.set('09:10', 820);
+  await r.guard.tick();
+  assert.equal(warned.length, 2, 'the next session its own');
+  assert.equal(r.squared.length, 0, 'a warning closes nothing');
+});
+
+/* 4. New entries held near the limit (`pauseAt`, 22 Nov 2026): default off; positions kept. */
+test('[critical] pauseAt 90: entries held at 90%, kept held to 85%, let go under it -- nothing closed', async () => {
+  const told: (SessionNear & { on: boolean; first: boolean })[] = [];
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)], pauseAt: 90 }, { baselineUsd: 20, extra: { entriesPaused: (p) => { told.push(p); } } });
+  r.set('07:10', 890);
+  await r.guard.tick();
+  assert.equal(r.guard.entryBlock(), null);
+  r.set('07:11', 900);
+  await r.guard.tick();
+  assert.match(r.guard.entryBlock()!, /Near the 07:00–08:00 session's loss limit: lost ₹900 of ₹1,000 \(90% or more\) -- no new entry until the loss is back under 85%\./);
+  assert.equal(r.guard.status()!.entriesPaused, true);
+  r.set('07:12', 860);
+  await r.guard.tick();
+  assert.ok(r.guard.entryBlock(), 'still held at 86%');
+  r.set('07:13', (90 - PAUSE_RESUME_GAP_PCT) * 10 - 1);
+  await r.guard.tick();
+  assert.equal(r.guard.entryBlock(), null, 'let go under 85%');
+  assert.equal(r.guard.status()!.entriesPaused, undefined);
+  r.set('07:14', 950);
+  await r.guard.tick();
+  assert.ok(r.guard.entryBlock(), 'held again');
+  assert.deepEqual(told.map((t) => [t.on, t.first]), [[true, true], [false, false], [true, false]], 'the first hold said as the first');
+  assert.equal(r.squared.length, 0, 'a pause closes nothing');
+});
+
+test('[critical] pauseAt off (the default): entries go on right up to the limit', async () => {
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 20 });
+  r.set('07:10', 990);
+  await r.guard.tick();
+  assert.equal(r.guard.entryBlock(), null);
+  assert.equal(r.guard.status()!.entriesPaused, undefined);
+});
+
+test('[critical] at the limit the day is stopped as before, pause or not: the square-off\'s words win', async () => {
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)], pauseAt: 90 }, { baselineUsd: 20 });
+  r.set('07:10', 950);
+  await r.guard.tick();
+  assert.match(r.guard.entryBlock()!, /Near the/);
+  r.set('07:20', 1_100);
+  await r.guard.tick();
+  r.move(HOLD_MS);
+  assert.ok(await r.guard.tick());
+  assert.match(r.guard.entryBlock()!, /no new entry today/);
+});
+
+test('a pause ends with its session: the next session starts free', async () => {
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000), S('09:00', '10:00', 1000)], pauseAt: 90 }, { baselineUsd: 20 });
+  r.set('07:10', 950);
+  await r.guard.tick();
+  assert.ok(r.guard.entryBlock());
+  r.set('08:30', 950);
+  await r.guard.tick();
+  assert.equal(r.guard.entryBlock(), null, 'between sessions');
+});
+
+test('pauseAt: 50 to 99, or off; anything else refused; kept by the parse', () => {
+  const base = { on: true, sessions: [S('07:00', '08:00', 1000)] };
+  assert.deepEqual(sessionLossProblems({ ...base, pauseAt: 90 }), []);
+  assert.deepEqual(sessionLossProblems({ ...base, pauseAt: null }), []);
+  for (const bad of [40, 100, 'x', Number.NaN]) assert.match(sessionLossProblems({ ...base, pauseAt: bad }).join(' '), /Pause new entries at 50% to 99%/);
+  assert.equal(parseSessionLoss(JSON.stringify({ ...base, pauseAt: 85 })).pauseAt, 85);
+  assert.equal(parseSessionLoss(JSON.stringify(base)).pauseAt, undefined);
+});
+
+/* 2. The square-off's report on the hit (22 Nov 2026). */
+test('the square-off\'s report goes on the hit\'s record', async () => {
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000)] }, { baselineUsd: 20, report: 'Square-off 52s, 2 closes · fills vs the ask at each close: avg +0.8%' });
+  r.set('07:10', 1_100);
+  await r.guard.tick();
+  r.move(HOLD_MS);
+  const hit = await r.guard.tick();
+  assert.equal(hit!.detail, 'Square-off 52s, 2 closes · fills vs the ask at each close: avg +0.8%');
 });

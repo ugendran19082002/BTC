@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { worstFirst, worstIndex } from '../../src/trading/worst-first.js';
+import { fillReport, worstFirst, worstIndex } from '../../src/trading/worst-first.js';
 
 /**
  * The session square-off closes the trade losing most first (owner, 22 Nov 2026: "option 2 build panu"). On 21 Nov four
@@ -39,7 +39,7 @@ async function desk(trades: { id: string; symbol: string; entry: number; positio
   const svc = new TradingService({ settings: await new SettingsCache().load(), store: new MemoryTradeStore() as never, notifier: null });
   const closed: { id: string; why: string }[] = [];
   const recs = trades.map((t) => ({ state: { tradeId: t.id, symbol: t.symbol, position: t.position, entryAvgPrice: t.entry, contractValue: 0.001 } }));
-  const inside = svc as unknown as { openTrades: () => Promise<unknown[]>; engine: { closeNow: (id: string, why: string) => Promise<{ position: number }>; cancelEntry: (id: string) => Promise<void> } };
+  const inside = svc as unknown as { openTrades: () => Promise<unknown[]>; engine: { closeNow: (id: string, why: string) => Promise<{ position: number; fills: unknown[] }>; cancelEntry: (id: string) => Promise<void> } };
   inside.openTrades = async () => recs;
   const symbolOf = new Map(trades.map((t) => [t.id, t.symbol]));
   const live = { now: 0, most: 0, sameContract: 0, steppingWhileOpen: [] as boolean[] };
@@ -55,9 +55,12 @@ async function desk(trades: { id: string; symbol: string; entry: number; positio
       onContract.set(sym, onContract.get(sym)! - 1);
       live.now--;
       closed.push({ id, why });
+      // Filled at the ask it was closed on, 2% over it for the 58,200 PE (a book walked); then the contract moves.
+      const ask = quotes[sym]?.ask ?? 0;
+      const price = sym === 'P-BTC-58200-221126' ? ask * 1.02 : ask;
       // A contract moves while the square-off runs: after the first close, the 60,000 CE runs up.
       if (closed.length === 1) quotes['C-BTC-60000-221126'] = { bid: 30, ask: 31 };
-      return { position: 0 };
+      return { position: 0, fills: ask > 0 ? [{ orderId: `x-${id}`, role: 'exit', side: 'buy', size: 2, price, ts: Date.now() }] : [] };
     },
     cancelEntry: async () => {},
   };
@@ -168,5 +171,36 @@ test('[critical] the account\'s time steps stand aside while a session square-of
     await byHand.svc.closeAll();
     assert.ok(byHand.live.steppingWhileOpen.every((x) => !x), 'Close all by hand leaves the steps alone, as before');
     assert.equal(byHand.live.most, 1, 'and goes one at a time');
+  } finally { await closePool(); }
+});
+
+
+/*
+ * Each close of a session square-off against the ask the board held as it began (22 Nov 2026, owner: "slippage
+ * measure"): whether the closes walked a contract's book up. Words on the square-off's record, numbers in the log.
+ */
+test('[critical] the fill report: average, 90% and worst over the ask, how long it took, closes not priced counted', () => {
+  const rows = [
+    { tradeId: 'a', symbol: 'P-1', askAt: 10, fillAvg: 10, size: 2, ms: 900 },
+    { tradeId: 'b', symbol: 'P-2', askAt: 20, fillAvg: 20.4, size: 2, ms: 900 },
+    { tradeId: 'c', symbol: 'P-3', askAt: 5, fillAvg: 5.5, size: 2, ms: 900 },
+    { tradeId: 'd', symbol: 'P-4', askAt: null, fillAvg: 3, size: 2, ms: 900 },
+  ];
+  const r = fillReport(rows, 112_000);
+  assert.equal(r.stats.priced, 3);
+  assert.equal(r.stats.avgOverPct, 4);
+  assert.deepEqual(r.stats.worst, { symbol: 'P-3', overPct: 10 });
+  assert.equal(r.words, 'Square-off 1m 52s, 4 closes · fills vs the ask at each close: avg +4%, 90% within +10%, worst +10% (P-3) · 1 not priced');
+  assert.equal(fillReport([{ tradeId: 'x', symbol: 'P', askAt: null, fillAvg: null, size: 0, ms: 1 }], 4_000).words, 'Square-off 4s, 1 close · no fill read against an ask · 1 not priced');
+});
+
+test('[critical] a session square-off returns its report; Close all by hand does not', async () => {
+  const { closePool } = await import('../../src/db/pool.js');
+  try {
+    const { svc } = await desk(BOOK, QUOTES(), { quotaPct: 70 });
+    const out = await svc.closeAll(undefined, 'session limit square off', 'worst-first');
+    assert.match(out.report!, /^Square-off \d+s, 5 closes · fills vs the ask at each close: avg \+0\.4%, 90% within \+2%, worst \+2% \(P-BTC-58200-221126\)$/);
+    const byHand = await desk(BOOK, QUOTES());
+    assert.equal((await byHand.svc.closeAll()).report, undefined);
   } finally { await closePool(); }
 });

@@ -687,6 +687,40 @@ export function sessionLossAlert(h: { day: string; from: string; to: string; lim
 }
 
 /**
+ * A session's loss at `WARN_AT_PCT` of its limit (trading/session-loss.ts, 22 Nov 2026): said once a session, before the
+ * square-off rather than after it, so there is time to look.
+ */
+export function sessionWarnAlert(w: { from: string; to: string; limitInr: number; lossInr: number; pct: number; at: number }, ctx: AlertContext): Alert {
+  const rs = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+  return {
+    key: `session-warn:${ctx.account ?? ''}:${w.from}:${istDateKey(w.at)}`,
+    text: lines(
+      headline(ctx, '⚠️', `SESSION LOSS AT ${Math.floor(w.pct)}% · ${escape(w.from)}–${escape(w.to)}`), '',
+      `Lost ${rs(w.lossInr)} of this session's ${rs(w.limitInr)} limit.`,
+      `At ${rs(w.limitInr)} the account is squared off and takes no new entry today.`, '',
+      `🕒 ${istTime(w.at)} IST · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`,
+    ),
+  };
+}
+
+/**
+ * New entries held near a session's limit (trading/session-loss.ts `pauseAt`, 22 Nov 2026): said the first time in a
+ * session. The positions held are left as they are.
+ */
+export function sessionPauseAlert(p: { from: string; to: string; limitInr: number; lossInr: number; pct: number; at: number }, pauseAt: number, resumeAt: number, ctx: AlertContext): Alert {
+  const rs = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+  return {
+    key: `session-pause:${ctx.account ?? ''}:${p.from}:${istDateKey(p.at)}`,
+    text: lines(
+      headline(ctx, '⏸', `NEW ENTRIES PAUSED · ${escape(p.from)}–${escape(p.to)}`), '',
+      `Lost ${rs(p.lossInr)} of this session's ${rs(p.limitInr)} limit (${Math.floor(p.pct)}%, paused at ${pauseAt}%).`,
+      `No new entry until the loss is back under ${resumeAt}%. Open positions are left as they are.`, '',
+      `🕒 ${istTime(p.at)} IST · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`,
+    ),
+  };
+}
+
+/**
  * A session's limit worked out again by hand (trading/session-loss.ts `recompute`, 20 Nov 2026): from what to what, and
  * the loss so far -- so a limit that moved is never a surprise on the phone.
  */

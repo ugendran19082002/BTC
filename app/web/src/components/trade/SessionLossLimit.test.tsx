@@ -97,6 +97,51 @@ describe('Session loss limit', () => {
     expect(screen.getByRole('list', { name: 'Squared off by the session limit' })).toHaveTextContent('11-04 07:40 · 07:00–08:00 lost ₹1,234 of ₹1,000 · 12 closed');
   });
 
+  it('[critical] pause new entries near the limit: off by default, chosen in one tap, saved with the sessions', async () => {
+    getSessionLoss.mockResolvedValue(view({ setting: { on: true, sessions: [{ from: '07:00', to: '17:00', limit: 19, unit: 'pct' }] } }));
+    render(<SessionLossLimit />);
+    const group = await screen.findByRole('group', { name: 'Pause new entries near the limit' });
+    expect(within(group).getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Off: entries go on right up to the limit.')).toBeInTheDocument();
+    fireEvent.click(within(group).getByRole('button', { name: '90%' }));
+    expect(screen.getByText(/At 90% of a session's limit no new entry is taken; open positions are kept\. Entries come back under 85%\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveSessionLoss).toHaveBeenCalled());
+    expect(saveSessionLoss.mock.calls[0]![0]).toEqual({ on: true, sessions: [{ from: '07:00', to: '17:00', limit: 19, unit: 'pct' }], pauseAt: 90 });
+  });
+
+  it('back to Off: nothing to save when it was off', async () => {
+    getSessionLoss.mockResolvedValue(view({ setting: { on: true, sessions: [{ from: '07:00', to: '17:00', limit: 19, unit: 'pct' }] } }));
+    render(<SessionLossLimit />);
+    const group = await screen.findByRole('group', { name: 'Pause new entries near the limit' });
+    fireEvent.click(within(group).getByRole('button', { name: '95%' }));
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    fireEvent.click(within(group).getByRole('button', { name: 'Off' }));
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  });
+
+  it('[critical] entries paused near the limit: said as a pause, not a day stopped -- the session bar stays', async () => {
+    getSessionLoss.mockResolvedValue(view({
+      setting: { on: true, sessions: [{ from: '07:00', to: '17:00', limit: 1000, unit: 'inr' }], pauseAt: 90 },
+      now: { from: '07:00', to: '17:00', limit: 1000, unit: 'inr', limitInr: 1000, lossInr: 920, hit: false, breachSince: null, entriesPaused: true },
+      blocked: 'Near the 07:00–17:00 session\'s loss limit: lost ₹920 of ₹1,000 (90% or more) -- no new entry until the loss is back under 85%.',
+    }));
+    render(<SessionLossLimit />);
+    expect(await screen.findByText(/New entries paused\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Stopped for today/)).toBeNull();
+    expect(screen.getByLabelText('This session')).toHaveTextContent(/lost ₹920 of ₹1,000/);
+  });
+
+  it('a square-off\'s report is shown under it: its time and its fills against the ask', async () => {
+    getSessionLoss.mockResolvedValue(view({
+      setting: { on: true, sessions: [{ from: '07:00', to: '08:00', limit: 1000, unit: 'inr' }] },
+      blocked: 'The 07:00–08:00 session lost ₹1,050: squared off.',
+      hits: [{ day: '2026-11-22', from: '07:00', to: '08:00', limitInr: 1000, lossInr: 1050, at: Date.parse('2026-11-22T07:40:00+05:30'), closed: 40, cancelled: 0, failed: 0, detail: 'Square-off 52s, 40 closes · fills vs the ask at each close: avg +0.8%, 90% within +2.1%, worst +6.0% (P-BTC-58200-221126)' }],
+    }));
+    render(<SessionLossLimit />);
+    expect(await screen.findByText(/Square-off 52s, 40 closes · fills vs the ask/)).toBeInTheDocument();
+  });
+
   it('a % with no max open set on the account says so', async () => {
     getSessionLoss.mockResolvedValue(view({ setting: { on: false, sessions: [{ from: '07:00', to: '08:00', limit: 1, unit: 'pct' }] }, pctBase: { maxOpen: 0, perPositionUsd: 0.4, source: 'model', totalUsd: null } }));
     render(<SessionLossLimit />);

@@ -223,12 +223,13 @@ export const getPriceChange = (entryMs: number | null = null, expiryTs: number |
  * Off with no sessions until set.
  */
 export type SessionRule = { from: string; to: string; limit: number; unit: 'inr' | 'pct' };
-export type SessionLossSetting = { on: boolean; sessions: SessionRule[] };
+/** `pauseAt`: new entries held once the session's loss reaches this % of its limit; absent or null: off (22 Nov 2026). */
+export type SessionLossSetting = { on: boolean; sessions: SessionRule[]; pauseAt?: number | null };
 export type SessionHit = { day: string; from: string; to: string; limitInr: number; lossInr: number; at: number; closed: number; cancelled: number; failed: number; detail: string };
 export type SessionLossView = {
   setting: SessionLossSetting;
   /** The session now: lost since it began against its limit in rupees; null outside every session or while off. */
-  now: { from: string; to: string; limit: number; unit: 'inr' | 'pct'; limitInr: number | null; lossInr: number | null; hit: boolean; breachSince: number | null } | null;
+  now: { from: string; to: string; limit: number; unit: 'inr' | 'pct'; limitInr: number | null; lossInr: number | null; hit: boolean; breachSince: number | null; entriesPaused?: boolean } | null;
   /** Why new entries are stopped today, or null. */
   blocked: string | null;
   hits: SessionHit[];

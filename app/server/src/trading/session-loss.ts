@@ -25,7 +25,12 @@ import { istDate, startOfDayIst } from '../strategy/schedule.js';
  * about ₹8,000: the % of that").
  */
 export type SessionRule = { from: string; to: string; limit: number; unit: 'inr' | 'pct' };
-export type SessionLoss = { on: boolean; sessions: SessionRule[] };
+/**
+ * `pauseAt` (owner, 22 Nov 2026, "1 2 3 4 build panu"): new entries held once the session's loss reaches this per cent of
+ * its limit -- the positions held are left as they are -- and let go again once it is back `PAUSE_RESUME_GAP_PCT` under
+ * it. Absent or null: off, the default.
+ */
+export type SessionLoss = { on: boolean; sessions: SessionRule[]; pauseAt?: number | null };
 
 /** Where an account's sessions are kept (`accountKey`): no row, or one that will not read, is off with none. */
 export const SESSION_LOSS_KEY = 'session_loss_limit';
@@ -37,6 +42,24 @@ export const MAX_SESSIONS = 24;
 /** The most a session's limit may be, in rupees or per cent: typo guards. */
 export const MAX_SESSION_LIMIT_INR = 10_000_000;
 export const MAX_SESSION_LIMIT_PCT = 100;
+/** The near-limit pause's range, per cent of the limit (`SessionLoss.pauseAt`). */
+export const PAUSE_AT_MIN = 50;
+export const PAUSE_AT_MAX = 99;
+/**
+ * Paused at `pauseAt`, entries come back only once the loss is this many points of the limit under it -- 90% pauses,
+ * 85% lets go -- so a loss sitting on the line does not pause and free entries every five seconds.
+ */
+export const PAUSE_RESUME_GAP_PCT = 5;
+/**
+ * Said once a session, on the phone, when its loss first reaches this share of its limit (owner, 22 Nov 2026): time to
+ * look before the square-off, not after it.
+ */
+export const WARN_AT_PCT = 80;
+/**
+ * The short hold far over the line only on a fresh board (22 Nov 2026): every open position's quote no older than this.
+ * A quote gone stale can read the loss far over the line when it is not; then the whole hold stands.
+ */
+export const FAST_QUOTE_MAX_AGE_MS = 10_000;
 /** How long the loss must stay at or over the limit before the account is squared off. */
 export const HOLD_MS = 15_000;
 /**
@@ -83,6 +106,11 @@ export function sessionLossProblems(x: unknown): string[] {
   if (typeof v.on !== 'boolean') bad.push('The switch is on or off.');
   if (!Array.isArray(v.sessions)) return [...bad, 'The sessions are a list.'];
   if (v.sessions.length > MAX_SESSIONS) bad.push(`At most ${MAX_SESSIONS} sessions.`);
+  const pauseAt = (x as { pauseAt?: unknown }).pauseAt;
+  if (pauseAt !== undefined && pauseAt !== null
+    && (typeof pauseAt !== 'number' || !Number.isFinite(pauseAt) || pauseAt < PAUSE_AT_MIN || pauseAt > PAUSE_AT_MAX)) {
+    bad.push(`Pause new entries at ${PAUSE_AT_MIN}% to ${PAUSE_AT_MAX}% of the limit, or off.`);
+  }
   const ok: { from: number; to: number; n: number }[] = [];
   v.sessions.forEach((s, i) => {
     const n = i + 1;
@@ -112,7 +140,11 @@ export function parseSessionLoss(raw: string | null | undefined): SessionLoss {
   try {
     const v = JSON.parse(raw) as SessionLoss;
     if (sessionLossProblems(v).length) return SESSION_LOSS_OFF;
-    return { on: v.on, sessions: [...v.sessions].sort((a, b) => minutesOf(a.from) - minutesOf(b.from)).map((s) => ({ from: s.from, to: s.to, limit: s.limit, unit: s.unit })) };
+    return {
+      on: v.on,
+      sessions: [...v.sessions].sort((a, b) => minutesOf(a.from) - minutesOf(b.from)).map((s) => ({ from: s.from, to: s.to, limit: s.limit, unit: s.unit })),
+      ...(typeof v.pauseAt === 'number' ? { pauseAt: v.pauseAt } : {}),
+    };
   } catch {
     return SESSION_LOSS_OFF;
   }
@@ -143,7 +175,12 @@ export type SessionLossNow = {
   hit: boolean;
   /** The loss at or over the limit since this moment, waiting `HOLD_MS` before the square-off. */
   breachSince: number | null;
+  /** New entries held near the limit (`SessionLoss.pauseAt`); absent: not held. */
+  entriesPaused?: boolean;
 } | null;
+
+/** Said once a session at `WARN_AT_PCT` of its limit, and when new entries are held near it (`pauseAt`). */
+export type SessionNear = { from: string; to: string; limitInr: number; lossInr: number; pct: number; at: number };
 
 /**
  * Working the session's limit out again, by hand (owner, 20 Nov 2026: Low's lots went from 1 to 2 at 07:05, five minutes
@@ -170,7 +207,7 @@ export type SessionGuardDeps = {
   /** The same figure as the day's line had it at or before `atMs`; null with no reading then (none taken yet: 0). */
   netUsdAt: (atMs: number) => Promise<number | null>;
   /** Every open trade on the account bought back and every working entry pulled; with `only`, just those trades. */
-  squareOff: (only?: readonly string[]) => Promise<{ closed: string[]; cancelled: string[]; failed: { tradeId: string; reason: string }[] }>;
+  squareOff: (only?: readonly string[]) => Promise<{ closed: string[]; cancelled: string[]; failed: { tradeId: string; reason: string }[]; report?: string }>;
   /** Where the session's limit in rupees is kept once worked out, by session and rule; none kept: null. */
   fixedLimit?: { get: (key: string) => Promise<number | null>; set: (key: string, limitInr: number) => Promise<void> };
   /** Said after each retry of a square-off: how many trades are still open, and how many tries so far. */
@@ -188,6 +225,18 @@ export type SessionGuardDeps = {
   pctModelUsd?: () => Promise<number | null>;
   /** Said once a limit is worked out again by hand: the phone, the log. */
   recomputed?: (r: Extract<RecomputeAnswer, { ok: true }>) => void;
+  /**
+   * The oldest quote among the account's open positions, in ms (22 Nov 2026): the short hold far over the line is had only
+   * while it is at most `FAST_QUOTE_MAX_AGE_MS`. Null: a position with no quote at all. Absent (a test): taken as fresh.
+   */
+  quoteAgeMs?: () => Promise<number | null>;
+  /** Said once a session, when its loss first reaches `WARN_AT_PCT` of its limit: the phone, the log. */
+  warned?: (w: SessionNear) => void;
+  /**
+   * New entries held near the limit (`pauseAt`, `on`) or let go (`on: false`); `first`: the first hold this session --
+   * the one said on the phone. Every change goes to the log.
+   */
+  entriesPaused?: (p: SessionNear & { on: boolean; first: boolean }) => void;
 };
 
 /** Why a lower line may not be had now, in words; null when it may (`LOWER_CUSHION_INR`). A loss not read: not allowed. */
@@ -214,6 +263,12 @@ export class SessionLossGuard {
   private lockedWhy = '';
   private last: SessionLossNow = null;
   private lastKey = '';
+  /** The sessions warned at `WARN_AT_PCT`, by day and start: each once. */
+  private readonly warnedKeys = new Set<string>();
+  /** New entries held near the limit in this session (`pauseAt`): the session's key and the words said for it. */
+  private nearPause: { key: string; why: string } | null = null;
+  /** The sessions whose pause was said on the phone: each once, however often it pauses and lets go. */
+  private readonly pauseSaid = new Set<string>();
   private ticking = false;
 
   constructor(private readonly d: SessionGuardDeps) {}
@@ -234,7 +289,12 @@ export class SessionLossGuard {
 
   /** Why a new entry must wait, or null: a session was squared off today, and today is not over. */
   entryBlock(now = this.d.now()): string | null {
-    return now < this.lockedUntil ? this.lockedWhy : null;
+    if (now < this.lockedUntil) return this.lockedWhy;
+    // Held near the limit, in the session it was held in (`pauseAt`): read off the guard's last look, every 5 s.
+    const cfg = this.d.rule();
+    const s = cfg.on ? sessionAt(cfg.sessions, now) : null;
+    if (this.nearPause && s && this.nearPause.key === `${istDate(now)}|${s.rule.from}` && typeof cfg.pauseAt === 'number') return this.nearPause.why;
+    return null;
   }
 
   /** The session now, for the screen. */
@@ -249,6 +309,7 @@ export class SessionLossGuard {
       from: s.rule.from, to: s.rule.to, limit: s.rule.limit, unit: s.rule.unit,
       limitInr: read?.limitInr ?? (s.rule.unit === 'inr' ? s.rule.limit : null),
       lossInr: read?.lossInr ?? null, hit: this.hits.has(key), breachSince: read ? this.breachSince : null,
+      ...(this.nearPause?.key === key && typeof cfg.pauseAt === 'number' ? { entriesPaused: true } : {}),
     };
   }
 
@@ -355,7 +416,7 @@ export class SessionLossGuard {
     const now = this.d.now();
     const cfg = this.d.rule();
     const s = cfg.on ? sessionAt(cfg.sessions, now) : null;
-    if (!s) { this.breachSince = null; this.last = null; return null; }
+    if (!s) { this.breachSince = null; this.last = null; this.nearPause = null; return null; }
     // Stopped for the day: what a square-off could not close is tried again, then nothing more to read until tomorrow.
     if (now >= this.lockedUntil) this.owed = null;
     if (this.owed && now >= this.owed.nextAt) await this.retrySquareOff(now);
@@ -392,13 +453,14 @@ export class SessionLossGuard {
     const lossInr = (this.baseline.usd - await this.d.netUsd()) * USDINR;
     this.last = { from: s.rule.from, to: s.rule.to, limit: s.rule.limit, unit: s.rule.unit, limitInr, lossInr, hit: false, breachSince: null };
     this.lastKey = key;
+    if (limitInr !== null && limitInr > 0) this.near(cfg, s.rule, key, limitInr, lossInr, now);
     // A per cent of nothing yet (no "At most open" set, no price for the margin) is no line: nothing squared off on a guess.
     if (limitInr === null || lossInr < limitInr) { this.breachSince = null; return null; }
     this.breachSince ??= now;
     this.last.breachSince = this.breachSince;
     const heldMs = now - this.breachSince;
     const farOver = lossInr >= limitInr * (1 + FAST_OVER_PCT / 100);
-    if (heldMs < HOLD_MS && !(farOver && heldMs >= FAST_HOLD_MS)) return null;
+    if (heldMs < HOLD_MS && !(farOver && heldMs >= FAST_HOLD_MS && await this.boardFresh())) return null;
 
     // Hit: no new entry for the rest of the day, then everything on the account bought back.
     this.hits.add(key);
@@ -409,7 +471,11 @@ export class SessionLossGuard {
     const hit: SessionHit = {
       day, from: s.rule.from, to: s.rule.to, limitInr: Math.round(limitInr * 100) / 100, lossInr: Math.round(lossInr * 100) / 100, at: now,
       closed: done.closed.length, cancelled: done.cancelled.length, failed: done.failed.length,
-      detail: done.failed.length ? done.failed.slice(0, 10).map((f) => `${f.tradeId}: ${f.reason}`).join('; ') : '',
+      // What could not be closed first; then how the square-off went -- its time and its fills against the ask (22 Nov 2026).
+      detail: [
+        done.failed.length ? done.failed.slice(0, 10).map((f) => `${f.tradeId}: ${f.reason}`).join('; ') : null,
+        'report' in done && done.report ? done.report : null,
+      ].filter(Boolean).join(' · '),
     };
     await this.d.record(hit).catch(() => {});
     this.d.said(hit);
@@ -417,6 +483,42 @@ export class SessionLossGuard {
     // after the hit is not this square-off's -- and all of them when the square-off itself could not run.
     if (done.failed.length) this.owed = { ids: done.failed.some((f) => f.tradeId === '*') ? null : done.failed.map((f) => f.tradeId), nextAt: now + SQUARE_OFF_RETRY_MS, tries: 0 };
     return hit;
+  }
+
+  /** Every open position's quote fresh enough for the short hold (`FAST_QUOTE_MAX_AGE_MS`); no reader given: fresh. */
+  private async boardFresh(): Promise<boolean> {
+    if (!this.d.quoteAgeMs) return true;
+    const age = await this.d.quoteAgeMs().catch(() => null);
+    return age !== null && age <= FAST_QUOTE_MAX_AGE_MS;
+  }
+
+  /**
+   * Near the line (22 Nov 2026): said once a session at `WARN_AT_PCT`; and, with `pauseAt` set, new entries held at it and
+   * let go `PAUSE_RESUME_GAP_PCT` under it. Nothing here closes anything.
+   */
+  private near(cfg: SessionLoss, rule: SessionRule, key: string, limitInr: number, lossInr: number, now: number): void {
+    const pct = (lossInr / limitInr) * 100;
+    const at = { from: rule.from, to: rule.to, limitInr, lossInr, pct, at: now };
+    if (pct >= WARN_AT_PCT && !this.warnedKeys.has(key)) {
+      this.warnedKeys.add(key);
+      try { this.d.warned?.(at); } catch { /* a message is never worth the guard */ }
+    }
+    const pauseAt = typeof cfg.pauseAt === 'number' ? cfg.pauseAt : null;
+    if (this.nearPause && (pauseAt === null || this.nearPause.key !== key)) this.nearPause = null;
+    if (pauseAt === null) return;
+    if (!this.nearPause && pct >= pauseAt) {
+      const rs = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+      this.nearPause = {
+        key,
+        why: `Near the ${rule.from}–${rule.to} session's loss limit: lost ${rs(lossInr)} of ${rs(limitInr)} (${pauseAt}% or more) -- no new entry until the loss is back under ${pauseAt - PAUSE_RESUME_GAP_PCT}%.`,
+      };
+      const first = !this.pauseSaid.has(key);
+      this.pauseSaid.add(key);
+      try { this.d.entriesPaused?.({ ...at, on: true, first }); } catch { /* as above */ }
+    } else if (this.nearPause && pct < pauseAt - PAUSE_RESUME_GAP_PCT) {
+      this.nearPause = null;
+      try { this.d.entriesPaused?.({ ...at, on: false, first: false }); } catch { /* as above */ }
+    }
   }
 
   private async retrySquareOff(now: number): Promise<void> {
