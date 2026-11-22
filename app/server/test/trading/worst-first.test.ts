@@ -204,3 +204,31 @@ test('[critical] a session square-off returns its report; Close all by hand does
     assert.equal((await byHand.svc.closeAll()).report, undefined);
   } finally { await closePool(); }
 });
+
+/* The early square-off's closes (22 Nov 2026): the worst share only, no working entry pulled, never two on one contract. */
+test('[critical] the early square-off closes only the worst share, pulls no entry, and says it as the session limit\'s', async () => {
+  const { closePool } = await import('../../src/db/pool.js');
+  const { exitByOf } = await import('../../src/strategy/store.js');
+  try {
+    const { svc, closed } = await desk(MANY, MANY_QUOTES());
+    let cancels = 0;
+    (svc as unknown as { engine: { cancelEntry: () => Promise<void> } }).engine.cancelEntry = async () => { cancels++; };
+    const out = await svc.trimWorst(20);
+    assert.equal(out.held, 12);
+    assert.equal(out.closed.length, 3, 'the worst 20% of 12, rounded up');
+    assert.equal(cancels, 0);
+    // The worst: the dearest contract (P-BTC-58600, ask 13 on 8) first.
+    assert.ok(closed.slice(0, 1).every((c) => c.id === 't3' || c.id === 't7' || c.id === 't11'));
+    assert.equal(closed[0]!.why, 'session limit square off (early: the worst 20%)');
+    assert.equal(exitByOf(closed[0]!.why, null), 'session', 'History shows it as Session limit');
+  } finally { await closePool(); }
+});
+
+test('[critical] the early square-off and the whole one at once: never two closes on one contract', async () => {
+  const { closePool } = await import('../../src/db/pool.js');
+  try {
+    const { svc, live } = await desk(MANY, MANY_QUOTES(), { closeMs: 15 });
+    await Promise.all([svc.trimWorst(50), svc.closeAll(undefined, 'session limit square off', 'worst-first')]);
+    assert.equal(live.sameContract, 0);
+  } finally { await closePool(); }
+});

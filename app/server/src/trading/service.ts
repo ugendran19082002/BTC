@@ -27,7 +27,7 @@ import { lastPerp, onPerpPrint, perpRange } from '../market/flow.js';
 import { logTelegram } from '../notify/telegram-log.js';
 import { noteError } from '../observability/errors.js';
 import { deskLog } from '../observability/desk-log.js';
-import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, noStopBatchAlert, sessionLossAlert, sessionPauseAlert, sessionRecomputeAlert, sessionWarnAlert, slippageAlert } from '../notify/messages.js';
+import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, noStopBatchAlert, sessionLossAlert, sessionPauseAlert, sessionRecomputeAlert, sessionTrimAlert, sessionWarnAlert, slippageAlert } from '../notify/messages.js';
 import { NoStopBatch } from '../notify/no-stop-batch.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
@@ -39,7 +39,7 @@ import { FILL_WAKE_MS, FillWake, type HeardOrder } from './fill-wake.js';
 import { LEG_AUDIT_MS, LegAudit } from './leg-audit.js';
 import { OptionStopWatch, STOP_WATCH_MS, stopWatchedOf } from './stop-watch.js';
 import { GLOBAL_MAX_OPEN_KEY, globalMaxOpenOf } from '../strategy/types.js';
-import { PAUSE_RESUME_GAP_PCT, SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, type SessionNear, parseSessionLoss, sessionLossProblems, type RecomputeAnswer, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
+import { PAUSE_RESUME_GAP_PCT, SESSION_FIXED_KEY, SESSION_LOSS_KEY, SESSION_LOSS_TICK_MS, SessionLossGuard, type SessionNear, type SessionTrim, parseSessionLoss, sessionLossProblems, type RecomputeAnswer, type SessionHit, type SessionLoss, type SessionLossNow } from './session-loss.js';
 import type { ExchangeOrder, ExchangePosition, TradeState } from './types.js';
 import type { TradePlan } from './engine.js';
 
@@ -478,7 +478,20 @@ export class TradingService {
     quoteAgeMs: () => this.oldestQuoteAgeMs(),
     warned: (w) => this.sayNear('warn', w),
     entriesPaused: (p) => this.sayNear(p.on ? 'pause' : 'resume', p, p.first),
+    // The early square-off (22 Nov 2026): the worst share of the positions, once a session, at its line.
+    trim: (share) => this.trimWorst(share),
+    trimmed: (t) => this.sayTrim(t),
   });
+
+  /** An early square-off, said: the log, the error page, the phone. */
+  private sayTrim(t: SessionTrim): void {
+    const rs = (x: number) => `₹${Math.round(x).toLocaleString('en-IN')}`;
+    const message = `Session ${t.from}–${t.to}: early square-off at ${Math.floor(t.pct)}% of the limit (${rs(t.lossInr)} of ${rs(t.limitInr)}) -- `
+      + `the worst ${t.share}%: ${t.closed} of ${t.held} positions closed${t.failed ? `, ${t.failed} failed` : ''}.${t.report ? ` ${t.report}` : ''}`;
+    deskLog('warn', message, { sessionLoss: 'trim', accountId: this.currentAccountId, ...t });
+    noteError({ source: 'trading', level: 'warn', where: 'session-loss/early', message, context: { accountId: this.currentAccountId, ...t } });
+    if (this.notifier && this.alertsOn) this.notifier.notify(sessionTrimAlert(t, this.alertContext()));
+  }
 
   /** The oldest board quote among the open positions, in ms; null when one has none (`cachedQuote`, never a call). */
   private async oldestQuoteAgeMs(now = Date.now()): Promise<number | null> {
@@ -524,6 +537,8 @@ export class TradingService {
       on: v.on, sessions: v.sessions.map((s) => ({ from: s.from, to: s.to, limit: s.limit, unit: s.unit })),
       // The near-limit pause (22 Nov 2026): kept only as a number; null or absent is off.
       ...(typeof v.pauseAt === 'number' ? { pauseAt: v.pauseAt } : {}),
+      // The early square-off (22 Nov 2026): kept only as its two numbers; null or absent is off.
+      ...(v.soft && typeof v.soft === 'object' ? { soft: { at: v.soft.at, share: v.soft.share } } : {}),
     };
     // In a session the line only goes up (owner, 21 Nov 2026): a save that would lower it is refused, in words.
     const lowers = await this.sessionGuard.wouldLower(kept).catch(() => null);
@@ -980,7 +995,11 @@ export class TradingService {
    * `order`: 'worst-first' takes the trade losing most now before each close (`worst-first.ts`, the session square-off,
    * 22 Nov 2026); 'as-opened', the default, keeps the trades' own order (Close all by hand).
    */
-  async closeAll(only?: readonly string[], why = 'square off', order: 'as-opened' | 'worst-first' = 'as-opened'): Promise<{
+  /**
+   * `most` (the early square-off, 22 Nov 2026): close at most this many positions, the worst first, and pull no working
+   * entry -- only a session square-off's order takes it.
+   */
+  async closeAll(only?: readonly string[], why = 'square off', order: 'as-opened' | 'worst-first' = 'as-opened', most?: number): Promise<{
     cancelled: string[];
     closed: string[];
     failed: { tradeId: string; reason: string }[];
@@ -992,7 +1011,8 @@ export class TradingService {
     const keep = only ? new Set(only) : null;
     const open = (await this.openTrades()).filter((r) => !keep || keep.has(r.state.tradeId));
 
-    for (const rec of open.filter((r) => r.state.position === 0)) {
+    // Working entries pulled -- not by the early square-off, which closes the worst positions and nothing else.
+    for (const rec of most === undefined ? open.filter((r) => r.state.position === 0) : []) {
       try {
         await this.engine.cancelEntry(rec.state.tradeId);
         out.cancelled.push(rec.state.tradeId);
@@ -1039,11 +1059,14 @@ export class TradingService {
     const began = Date.now();
     // Each close's fill against the ask the board held as it began (22 Nov 2026): whether a contract's book was walked.
     const fills: SquareOffFill[] = [];
+    // How many may still be taken: all of them, or the early square-off's `most`.
+    let quota = most === undefined ? Infinity : Math.max(0, Math.floor(most));
     try {
-      const busy = new Set<string>();
+      // Contracts being closed by any square-off on this account now, the early one and the whole one alike.
+      const busy = this.closingContracts;
       const lossOf = (r: TradeRecord) => this.openLossUsd(r);
       const hand = async (n: number) => {
-        while (left.length) {
+        while (left.length && quota > 0) {
           const wait = this.rateLimitWaitMs();
           if (wait > 0) { await pause(Math.min(wait, SQUARE_OFF_RATE_WAIT_MAX_MS)); continue; }
           if (n > 0 && this.quotaUsedPct() >= SQUARE_OFF_PARALLEL_QUOTA_PCT) { await pause(SQUARE_OFF_IDLE_MS); continue; }
@@ -1051,6 +1074,7 @@ export class TradingService {
           if (!free.length) { await pause(SQUARE_OFF_IDLE_MS); continue; }
           const rec = free[Math.max(0, worstIndex(free, lossOf))]!;
           left.splice(left.indexOf(rec), 1);
+          quota--;
           busy.add(rec.state.symbol);
           const askAt = this.squareOffQuote(rec.state.symbol)?.ask ?? null;
           const startedAt = Date.now();
@@ -1079,6 +1103,23 @@ export class TradingService {
 
   /** A session square-off running on this account: its time steps stand aside (`StrategyExitStepper`, `paused`). */
   private squaringOff = 0;
+  /**
+   * The contracts a session square-off is closing a trade on now, shared by every one running (22 Nov 2026): the early
+   * square-off and the whole one can run at once, and two closes must never meet on one contract (`syncPosition`).
+   */
+  private readonly closingContracts = new Set<string>();
+
+  /**
+   * The early square-off (`SoftSquareOff`): the `share` per cent of the open positions losing most, bought back the
+   * session square-off's way -- worst first, a few hands, never two on one contract -- and nothing else. At least one.
+   */
+  async trimWorst(share: number): Promise<{ held: number; closed: string[]; failed: { tradeId: string; reason: string }[]; report?: string }> {
+    const held = (await this.openTrades()).filter((r) => r.state.position !== 0).length;
+    if (held === 0) return { held, closed: [], failed: [] };
+    const n = Math.max(1, Math.ceil((held * share) / 100));
+    const done = await this.closeAll(undefined, `session limit square off (early: the worst ${share}%)`, 'worst-first', n);
+    return { held, closed: done.closed, failed: done.failed, ...(done.report ? { report: done.report } : {}) };
+  }
   isSquaringOff(): boolean { return this.squaringOff > 0; }
 
   /** How long Delta has told this account's login to wait, in ms; 0 when it may call (`rateLimitWaitMs`). */

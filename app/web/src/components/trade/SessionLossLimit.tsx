@@ -47,6 +47,10 @@ const same = (a: SessionLossSetting, b: SessionLossSetting) => JSON.stringify(a)
 
 /** The near-limit pause's choices, % of a session's limit (the server takes 50-99); null is off. */
 const PAUSE_CHOICES: (number | null)[] = [null, 85, 90, 95];
+/** The early square-off's choices (the server takes 50-99% of the limit, 5-90% of the positions); null is off. */
+const SOFT_AT_CHOICES: (number | null)[] = [null, 90, 95];
+const SOFT_SHARE_CHOICES = [10, 20, 30];
+const SOFT_SHARE_DEFAULT = 20;
 /** Entries held at `pauseAt` come back this many points under it (`PAUSE_RESUME_GAP_PCT` on the server). */
 const PAUSE_RESUME_GAP = 5;
 
@@ -109,6 +113,13 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
   const paused = !!now?.entriesPaused;
   const stopped = !!data.blocked && !paused;
   const pauseAt = typeof draft.pauseAt === 'number' ? draft.pauseAt : null;
+  const soft = draft.soft ?? null;
+  // The early square-off, set or off: kept in the draft as both numbers, or not at all.
+  const setSoft = (next: { at: number; share: number } | null) => setDraft((d) => {
+    if (!d) return d;
+    const { soft: _drop, ...rest } = d;
+    return next === null ? rest : { ...rest, soft: next };
+  });
   const time = (i: number, end: 'from' | 'to', value: string) => (
     <input
       type="time" value={value} aria-label={`Session ${i + 1} ${end === 'from' ? 'from' : 'to'}`}
@@ -278,6 +289,41 @@ export function SessionLossLimit({ several = false }: { several?: boolean }) {
           {pauseAt === null
             ? 'Off: entries go on right up to the limit.'
             : `At ${pauseAt}% of a session's limit no new entry is taken; open positions are kept. Entries come back under ${pauseAt - PAUSE_RESUME_GAP}%.`}
+        </p>
+      </div>
+
+      <div className="grid gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[13px]">Close the worst early</span>
+          <div role="group" aria-label="Close the worst early, at" className="flex overflow-hidden rounded-md border border-solid border-border">
+            {SOFT_AT_CHOICES.map((c) => (
+              <button
+                key={c ?? 'off'} type="button" aria-pressed={(soft?.at ?? null) === c}
+                onClick={() => setSoft(c === null ? null : { at: c, share: soft?.share ?? SOFT_SHARE_DEFAULT })}
+                className={cn('h-9 min-w-[44px] border-0 px-2 font-[inherit] text-[13px]', (soft?.at ?? null) === c ? 'bg-[var(--accent-fill)] font-semibold text-foreground' : 'bg-transparent text-muted-foreground')}
+              >
+                {c === null ? 'Off' : `${c}%`}
+              </button>
+            ))}
+          </div>
+          {soft && (
+            <div role="group" aria-label="Close the worst early, how many" className="flex overflow-hidden rounded-md border border-solid border-border">
+              {SOFT_SHARE_CHOICES.map((c) => (
+                <button
+                  key={c} type="button" aria-pressed={soft.share === c}
+                  onClick={() => setSoft({ at: soft.at, share: c })}
+                  className={cn('h-9 min-w-[56px] border-0 px-2 font-[inherit] text-[13px]', soft.share === c ? 'bg-[var(--accent-fill)] font-semibold text-foreground' : 'bg-transparent text-muted-foreground')}
+                >
+                  worst {c}%
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+          {soft === null
+            ? 'Off: nothing is closed before the limit.'
+            : `Once a session, at ${soft.at}% of the limit (held 15 s), the ${soft.share}% of positions losing most are bought back; the rest stay. At the limit the whole account is squared off as before.`}
         </p>
       </div>
 

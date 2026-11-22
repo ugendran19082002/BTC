@@ -721,6 +721,24 @@ export function sessionPauseAlert(p: { from: string; to: string; limitInr: numbe
 }
 
 /**
+ * The early square-off (trading/session-loss.ts `SoftSquareOff`, 22 Nov 2026): the worst share of the positions bought
+ * back at its line, once a session. The rest are held; at the limit the whole account is squared off as ever.
+ */
+export function sessionTrimAlert(t: { from: string; to: string; limitInr: number; lossInr: number; pct: number; at: number; softAt: number; share: number; held: number; closed: number; failed: number }, ctx: AlertContext): Alert {
+  const rs = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+  return {
+    key: `session-trim:${ctx.account ?? ''}:${t.from}:${istDateKey(t.at)}`,
+    text: lines(
+      headline(ctx, '✂️', `EARLY SQUARE-OFF · ${escape(t.from)}–${escape(t.to)}`), '',
+      `Lost ${rs(t.lossInr)} of this session's ${rs(t.limitInr)} limit (${Math.floor(t.pct)}%, early at ${t.softAt}%).`,
+      `The worst ${t.share}% bought back: ${t.closed} of ${t.held} positions${t.failed ? ` · <b>${t.failed} could not be closed</b>` : ''}. The rest are held.`,
+      `At ${rs(t.limitInr)} the whole account is squared off and takes no new entry today.`, '',
+      `🕒 ${istTime(t.at)} IST · ${ctx.mode === 'live' ? 'LIVE' : 'PAPER'}`,
+    ),
+  };
+}
+
+/**
  * A session's limit worked out again by hand (trading/session-loss.ts `recompute`, 20 Nov 2026): from what to what, and
  * the loss so far -- so a limit that moved is never a surprise on the phone.
  */

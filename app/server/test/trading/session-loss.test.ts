@@ -379,3 +379,91 @@ test('the square-off\'s report goes on the hit\'s record', async () => {
   const hit = await r.guard.tick();
   assert.equal(hit!.detail, 'Square-off 52s, 2 closes · fills vs the ask at each close: avg +0.8%');
 });
+
+/*
+ * The early square-off (owner, 22 Nov 2026: "2, 3"): once a session, at `soft.at` per cent of the limit held for the
+ * hold, the worst `soft.share` per cent bought back; the rest held; at the limit the whole account squared off as ever.
+ */
+function trimRig(soft: { at: number; share: number } | null, release?: Promise<void>) {
+  const asked: number[] = [];
+  const told: { closed: number; held: number; share: number }[] = [];
+  const r = rig({ on: true, sessions: [S('07:00', '08:00', 1000), S('09:00', '10:00', 1000)], ...(soft ? { soft } : {}) }, {
+    baselineUsd: 20,
+    extra: {
+      trim: async (share) => { asked.push(share); if (release) await release; return { held: 10, closed: ['x', 'y'], failed: [] }; },
+      trimmed: (t) => { told.push({ closed: t.closed, held: t.held, share: t.share }); },
+    },
+  });
+  return { r, asked, told };
+}
+
+test('[critical] early square-off at 95% held 15 s: the worst 20% once a session -- nothing for a flick, nothing twice', async () => {
+  const { r, asked, told } = trimRig({ at: 95, share: 20 });
+  r.set('07:10', 960);
+  await r.guard.tick();
+  r.move(10_000);
+  await r.guard.tick();
+  assert.equal(asked.length, 0, 'not before the hold');
+  r.set('07:11', 900);
+  await r.guard.tick();
+  r.set('07:12', 960);
+  await r.guard.tick();
+  r.move(HOLD_MS - 1);
+  await r.guard.tick();
+  assert.equal(asked.length, 0, 'a dip under the line starts the hold again');
+  r.move(1);
+  await r.guard.tick();
+  await r.guard.trimDone();
+  assert.deepEqual(asked, [20]);
+  assert.deepEqual(told, [{ closed: 2, held: 10, share: 20 }]);
+  r.move(60_000);
+  await r.guard.tick();
+  await r.guard.trimDone();
+  assert.equal(asked.length, 1, 'once a session');
+  assert.equal(r.guard.entryBlock(), null, 'an early square-off does not stop the day');
+  r.set('09:10', 960);
+  await r.guard.tick();
+  r.move(HOLD_MS);
+  await r.guard.tick();
+  await r.guard.trimDone();
+  assert.equal(asked.length, 2, 'the next session its own');
+});
+
+test('[critical] the limit is still watched while the early square-off runs: the whole account squared off meanwhile', async () => {
+  let open!: () => void;
+  const release = new Promise<void>((res) => { open = res; });
+  const { r, asked } = trimRig({ at: 90, share: 20 }, release);
+  r.set('07:10', 920);
+  await r.guard.tick();
+  r.move(HOLD_MS);
+  await r.guard.tick();
+  assert.equal(asked.length, 1, 'early square-off started');
+  r.set('07:11', 1_100);
+  await r.guard.tick();
+  r.move(HOLD_MS);
+  const hit = await r.guard.tick();
+  assert.ok(hit, 'squared off at the limit while the early one is still running');
+  assert.equal(r.squared.length, 1);
+  open();
+  await r.guard.trimDone();
+});
+
+test('[critical] early square-off off (the default): nothing closed before the limit', async () => {
+  const { r, asked } = trimRig(null);
+  r.set('07:10', 990);
+  await r.guard.tick();
+  r.move(HOLD_MS * 3);
+  await r.guard.tick();
+  assert.equal(asked.length, 0);
+});
+
+test('soft: 50-99% of the limit, 5-90% of the positions, or off; kept by the parse', () => {
+  const base = { on: true, sessions: [S('07:00', '08:00', 1000)] };
+  assert.deepEqual(sessionLossProblems({ ...base, soft: { at: 95, share: 20 } }), []);
+  assert.deepEqual(sessionLossProblems({ ...base, soft: null }), []);
+  for (const bad of [{ at: 40, share: 20 }, { at: 95, share: 95 }, { at: 95 }, 'x']) {
+    assert.match(sessionLossProblems({ ...base, soft: bad }).join(' '), /Close the worst early at 50% to 99%/);
+  }
+  assert.deepEqual(parseSessionLoss(JSON.stringify({ ...base, soft: { at: 90, share: 30 } })).soft, { at: 90, share: 30 });
+  assert.equal(parseSessionLoss(JSON.stringify(base)).soft, undefined);
+});

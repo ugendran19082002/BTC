@@ -30,7 +30,14 @@ export type SessionRule = { from: string; to: string; limit: number; unit: 'inr'
  * its limit -- the positions held are left as they are -- and let go again once it is back `PAUSE_RESUME_GAP_PCT` under
  * it. Absent or null: off, the default.
  */
-export type SessionLoss = { on: boolean; sessions: SessionRule[]; pauseAt?: number | null };
+export type SessionLoss = { on: boolean; sessions: SessionRule[]; pauseAt?: number | null; soft?: SoftSquareOff | null };
+
+/**
+ * The early, partial square-off (owner, 22 Nov 2026: "2, 3"): once the session's loss has stayed at `at` per cent of its
+ * limit for the hold, the `share` per cent of the account's positions losing most are bought back -- once a session.
+ * The rest stay; at the limit the whole account is squared off as ever. Absent or null: off, the default.
+ */
+export type SoftSquareOff = { at: number; share: number };
 
 /** Where an account's sessions are kept (`accountKey`): no row, or one that will not read, is off with none. */
 export const SESSION_LOSS_KEY = 'session_loss_limit';
@@ -42,6 +49,11 @@ export const MAX_SESSIONS = 24;
 /** The most a session's limit may be, in rupees or per cent: typo guards. */
 export const MAX_SESSION_LIMIT_INR = 10_000_000;
 export const MAX_SESSION_LIMIT_PCT = 100;
+/** The early square-off's ranges: its line, per cent of the limit, and the share of positions it closes (`SoftSquareOff`). */
+export const SOFT_AT_MIN = 50;
+export const SOFT_AT_MAX = 99;
+export const SOFT_SHARE_MIN = 5;
+export const SOFT_SHARE_MAX = 90;
 /** The near-limit pause's range, per cent of the limit (`SessionLoss.pauseAt`). */
 export const PAUSE_AT_MIN = 50;
 export const PAUSE_AT_MAX = 99;
@@ -111,6 +123,14 @@ export function sessionLossProblems(x: unknown): string[] {
     && (typeof pauseAt !== 'number' || !Number.isFinite(pauseAt) || pauseAt < PAUSE_AT_MIN || pauseAt > PAUSE_AT_MAX)) {
     bad.push(`Pause new entries at ${PAUSE_AT_MIN}% to ${PAUSE_AT_MAX}% of the limit, or off.`);
   }
+  const soft = (x as { soft?: unknown }).soft;
+  if (soft !== undefined && soft !== null) {
+    const o = soft as Partial<SoftSquareOff>;
+    const num = (n: unknown, lo: number, hi: number) => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
+    if (typeof soft !== 'object' || !num(o.at, SOFT_AT_MIN, SOFT_AT_MAX) || !num(o.share, SOFT_SHARE_MIN, SOFT_SHARE_MAX)) {
+      bad.push(`Close the worst early at ${SOFT_AT_MIN}% to ${SOFT_AT_MAX}% of the limit, ${SOFT_SHARE_MIN}% to ${SOFT_SHARE_MAX}% of the positions, or off.`);
+    }
+  }
   const ok: { from: number; to: number; n: number }[] = [];
   v.sessions.forEach((s, i) => {
     const n = i + 1;
@@ -144,6 +164,7 @@ export function parseSessionLoss(raw: string | null | undefined): SessionLoss {
       on: v.on,
       sessions: [...v.sessions].sort((a, b) => minutesOf(a.from) - minutesOf(b.from)).map((s) => ({ from: s.from, to: s.to, limit: s.limit, unit: s.unit })),
       ...(typeof v.pauseAt === 'number' ? { pauseAt: v.pauseAt } : {}),
+      ...(v.soft && typeof v.soft === 'object' ? { soft: { at: v.soft.at, share: v.soft.share } } : {}),
     };
   } catch {
     return SESSION_LOSS_OFF;
@@ -181,6 +202,9 @@ export type SessionLossNow = {
 
 /** Said once a session at `WARN_AT_PCT` of its limit, and when new entries are held near it (`pauseAt`). */
 export type SessionNear = { from: string; to: string; limitInr: number; lossInr: number; pct: number; at: number };
+
+/** What the early square-off did (`SoftSquareOff`): its line, how many it closed of how many held, and its report. */
+export type SessionTrim = SessionNear & { softAt: number; share: number; held: number; closed: number; failed: number; report?: string };
 
 /**
  * Working the session's limit out again, by hand (owner, 20 Nov 2026: Low's lots went from 1 to 2 at 07:05, five minutes
@@ -237,6 +261,13 @@ export type SessionGuardDeps = {
    * the one said on the phone. Every change goes to the log.
    */
   entriesPaused?: (p: SessionNear & { on: boolean; first: boolean }) => void;
+  /**
+   * The early square-off (`SoftSquareOff`): the `share` per cent of the positions losing most bought back, the session
+   * square-off's way. Not given (a test): no early square-off.
+   */
+  trim?: (share: number) => Promise<{ held: number; closed: string[]; failed: { tradeId: string; reason: string }[]; report?: string }>;
+  /** Said once an early square-off is done: the phone, the log. */
+  trimmed?: (t: SessionTrim) => void;
 };
 
 /** Why a lower line may not be had now, in words; null when it may (`LOWER_CUSHION_INR`). A loss not read: not allowed. */
@@ -269,6 +300,12 @@ export class SessionLossGuard {
   private nearPause: { key: string; why: string } | null = null;
   /** The sessions whose pause was said on the phone: each once, however often it pauses and lets go. */
   private readonly pauseSaid = new Set<string>();
+  /** The early square-off's hold: the session it is for and since when its loss has been at the line. */
+  private softSince: { key: string; at: number } | null = null;
+  /** The sessions given their early square-off: each once. */
+  private readonly softDone = new Set<string>();
+  /** The early square-off running now, if one is: not waited on by the guard's tick, so the limit is still watched. */
+  private trimming: Promise<void> | null = null;
   private ticking = false;
 
   constructor(private readonly d: SessionGuardDeps) {}
@@ -453,7 +490,10 @@ export class SessionLossGuard {
     const lossInr = (this.baseline.usd - await this.d.netUsd()) * USDINR;
     this.last = { from: s.rule.from, to: s.rule.to, limit: s.rule.limit, unit: s.rule.unit, limitInr, lossInr, hit: false, breachSince: null };
     this.lastKey = key;
-    if (limitInr !== null && limitInr > 0) this.near(cfg, s.rule, key, limitInr, lossInr, now);
+    if (limitInr !== null && limitInr > 0) {
+      this.near(cfg, s.rule, key, limitInr, lossInr, now);
+      this.soft(cfg, s.rule, key, limitInr, lossInr, now);
+    }
     // A per cent of nothing yet (no "At most open" set, no price for the margin) is no line: nothing squared off on a guess.
     if (limitInr === null || lossInr < limitInr) { this.breachSince = null; return null; }
     this.breachSince ??= now;
@@ -484,6 +524,36 @@ export class SessionLossGuard {
     if (done.failed.length) this.owed = { ids: done.failed.some((f) => f.tradeId === '*') ? null : done.failed.map((f) => f.tradeId), nextAt: now + SQUARE_OFF_RETRY_MS, tries: 0 };
     return hit;
   }
+
+  /**
+   * The early square-off (`SoftSquareOff`, 22 Nov 2026): the loss at `soft.at` per cent of the limit for the whole hold
+   * (`HOLD_MS`, as the square-off's own -- a flick of an ask is not a reason to close anything), once a session. Run
+   * without being waited on: the guard goes on looking every 5 s, and at the limit the whole account is squared off
+   * meanwhile -- the two never close on one contract at once (`TradingService.closingContracts`).
+   */
+  private soft(cfg: SessionLoss, rule: SessionRule, key: string, limitInr: number, lossInr: number, now: number): void {
+    const soft = cfg.soft ?? null;
+    if (!soft || !this.d.trim || this.softDone.has(key)) { this.softSince = null; return; }
+    if (this.softSince && this.softSince.key !== key) this.softSince = null;
+    const pct = (lossInr / limitInr) * 100;
+    if (pct < soft.at) { this.softSince = null; return; }
+    this.softSince ??= { key, at: now };
+    if (now - this.softSince.at < HOLD_MS) return;
+    this.softDone.add(key);
+    this.softSince = null;
+    const at = { from: rule.from, to: rule.to, limitInr, lossInr, pct, at: now };
+    const run = (async () => {
+      const done = await this.d.trim!(soft.share).catch((e: Error) => ({ held: 0, closed: [] as string[], failed: [{ tradeId: '*', reason: e.message }], report: undefined as string | undefined }));
+      try {
+        this.d.trimmed?.({ ...at, softAt: soft.at, share: soft.share, held: done.held, closed: done.closed.length, failed: done.failed.length, ...(done.report ? { report: done.report } : {}) });
+      } catch { /* a message is never worth the guard */ }
+    })();
+    const p: Promise<void> = run.finally(() => { if (this.trimming === p) this.trimming = null; });
+    this.trimming = p;
+  }
+
+  /** The early square-off running now, for a test to wait on; resolved at once when none is. */
+  trimDone(): Promise<void> { return this.trimming ?? Promise.resolve(); }
 
   /** Every open position's quote fresh enough for the short hold (`FAST_QUOTE_MAX_AGE_MS`); no reader given: fresh. */
   private async boardFresh(): Promise<boolean> {

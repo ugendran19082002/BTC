@@ -224,7 +224,8 @@ export const getPriceChange = (entryMs: number | null = null, expiryTs: number |
  */
 export type SessionRule = { from: string; to: string; limit: number; unit: 'inr' | 'pct' };
 /** `pauseAt`: new entries held once the session's loss reaches this % of its limit; absent or null: off (22 Nov 2026). */
-export type SessionLossSetting = { on: boolean; sessions: SessionRule[]; pauseAt?: number | null };
+/** `soft`: once a session at `at`% of its limit, the worst `share`% of the positions bought back; absent or null: off. */
+export type SessionLossSetting = { on: boolean; sessions: SessionRule[]; pauseAt?: number | null; soft?: { at: number; share: number } | null };
 export type SessionHit = { day: string; from: string; to: string; limitInr: number; lossInr: number; at: number; closed: number; cancelled: number; failed: number; detail: string };
 export type SessionLossView = {
   setting: SessionLossSetting;

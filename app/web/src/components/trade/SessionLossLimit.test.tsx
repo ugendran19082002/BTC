@@ -142,6 +142,32 @@ describe('Session loss limit', () => {
     expect(await screen.findByText(/Square-off 52s, 40 closes · fills vs the ask/)).toBeInTheDocument();
   });
 
+  it('[critical] close the worst early: off by default; at 95%, the worst 20% unless chosen; saved with the sessions', async () => {
+    getSessionLoss.mockResolvedValue(view({ setting: { on: true, sessions: [{ from: '07:00', to: '17:00', limit: 19, unit: 'pct' }] } }));
+    render(<SessionLossLimit />);
+    const at = await screen.findByRole('group', { name: 'Close the worst early, at' });
+    expect(within(at).getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('group', { name: 'Close the worst early, how many' })).toBeNull();
+    expect(screen.getByText('Off: nothing is closed before the limit.')).toBeInTheDocument();
+    fireEvent.click(within(at).getByRole('button', { name: '95%' }));
+    const many = screen.getByRole('group', { name: 'Close the worst early, how many' });
+    expect(within(many).getByRole('button', { name: 'worst 20%' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(many).getByRole('button', { name: 'worst 30%' }));
+    expect(screen.getByText(/Once a session, at 95% of the limit \(held 15 s\), the 30% of positions losing most are bought back; the rest stay\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveSessionLoss).toHaveBeenCalled());
+    expect(saveSessionLoss.mock.calls[0]![0]).toEqual({ on: true, sessions: [{ from: '07:00', to: '17:00', limit: 19, unit: 'pct' }], soft: { at: 95, share: 30 } });
+  });
+
+  it('close the worst early back to Off: nothing to save when it was off', async () => {
+    getSessionLoss.mockResolvedValue(view({ setting: { on: true, sessions: [{ from: '07:00', to: '17:00', limit: 19, unit: 'pct' }] } }));
+    render(<SessionLossLimit />);
+    const at = await screen.findByRole('group', { name: 'Close the worst early, at' });
+    fireEvent.click(within(at).getByRole('button', { name: '90%' }));
+    fireEvent.click(within(at).getByRole('button', { name: 'Off' }));
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  });
+
   it('a % with no max open set on the account says so', async () => {
     getSessionLoss.mockResolvedValue(view({ setting: { on: false, sessions: [{ from: '07:00', to: '08:00', limit: 1, unit: 'pct' }] }, pctBase: { maxOpen: 0, perPositionUsd: 0.4, source: 'model', totalUsd: null } }));
     render(<SessionLossLimit />);
