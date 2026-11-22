@@ -19,6 +19,7 @@ import { announceOptionExit, optionExitOf } from './option-exit.js';
 import { closePriceOf, unrealisedPnlUsd } from './margin.js';
 import { fillChargesUsd } from './charges.js';
 import { midOf } from './money.js';
+import { worstIndex } from './worst-first.js';
 import { istDate, startOfDayIst } from '../strategy/schedule.js';
 import type { MtmSample } from './pnl-history.js';
 import { cachedAsks, cachedQuote, candles } from '../market/delta.js';
@@ -438,7 +439,8 @@ export class TradingService {
     netUsd: () => this.netTodayOnBoard(),
     netUsdAt: (at) => this.store.mtmNetAt(istDate(at), at, this.currentAccountId),
     // Its own words (22 Nov 2026), so the history can say "Session limit" apart from a "Close all" by hand.
-    squareOff: (only) => this.closeAll(only, 'session limit square off'),
+    // The trade losing most first (22 Nov 2026, `worst-first.ts`): the positions doing the damage go in the first seconds.
+    squareOff: (only) => this.closeAll(only, 'session limit square off', 'worst-first'),
     // The session's limit kept beside the setting, so a restart in the session reads it back (gap #2, 7 Nov 2026).
     fixedLimit: {
       get: async (key) => {
@@ -917,8 +919,12 @@ export class TradingService {
    * Orders are pulled before positions are bought back, so a target sitting on
    * the book cannot fill halfway through and leave the size wrong.
    */
-  /** `why`: the close reason each trade keeps -- "square off" for Close all, the session guard's own words for its square-off. */
-  async closeAll(only?: readonly string[], why = 'square off'): Promise<{
+  /**
+   * `why`: the close reason each trade keeps -- "square off" for Close all, the session guard's own words for its square-off.
+   * `order`: 'worst-first' takes the trade losing most now before each close (`worst-first.ts`, the session square-off,
+   * 22 Nov 2026); 'as-opened', the default, keeps the trades' own order (Close all by hand).
+   */
+  async closeAll(only?: readonly string[], why = 'square off', order: 'as-opened' | 'worst-first' = 'as-opened'): Promise<{
     cancelled: string[];
     closed: string[];
     failed: { tradeId: string; reason: string }[];
@@ -937,7 +943,11 @@ export class TradingService {
       }
     }
 
-    for (const rec of open.filter((r) => r.state.position !== 0)) {
+    // The positions to buy back; worst first, ranked again before each close off the quotes in memory (no call to Delta).
+    const left = open.filter((r) => r.state.position !== 0);
+    while (left.length) {
+      const i = order === 'worst-first' ? Math.max(0, worstIndex(left, (r) => this.openLossUsd(r))) : 0;
+      const rec = left.splice(i, 1)[0]!;
       try {
         const after = await this.engine.closeNow(rec.state.tradeId, why);
         if (after && after.position !== 0) {
@@ -950,6 +960,21 @@ export class TradingService {
       }
     }
     return out;
+  }
+
+  /** A contract's quote as the board holds it, for ranking a square-off: memory only, never a call. A test replaces it. */
+  squareOffQuote: (symbol: string) => { bid: number | null; ask: number | null; mark: number | null } | null = (symbol) => cachedQuote(symbol);
+
+  /** What an open trade has lost now in USD, bought back at the ask (`closePriceOf`); a gain is negative. Null unpriced. */
+  private openLossUsd(rec: TradeRecord): number | null {
+    const q = this.squareOffQuote(rec.state.symbol);
+    if (!q) return null;
+    const px = closePriceOf(rec.state.position, q, q.mark ?? midOf(q.bid, q.ask));
+    const pnl = unrealisedPnlUsd({
+      entryPrice: rec.state.entryAvgPrice, markPrice: px,
+      size: rec.state.position, contractValue: rec.state.contractValue, long: rec.state.position > 0,
+    });
+    return pnl === null ? null : -pnl;
   }
   reconcile(tradeId: string) { return this.engine.reconcile(tradeId); }
   /** Remembered on the way past, so the margin model has a spot to work from. */
