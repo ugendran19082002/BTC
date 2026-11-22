@@ -438,6 +438,18 @@ test('[critical] a signal entered at once is held to the same: the perp already 
 /** The entry guards of 21 Nov 2026, as they read where none was set: calls only, the 15 minutes, IV and bid off. */
 const GUARDS_OFF = { sides: 'ce', q15: { on: false, pct: 0.4 }, iv: { on: false, pts: 5 }, bid: { on: false, min: 500 } } as const;
 
+test('the phone\'s tab counts (22 Nov 2026): today\'s orders and, of them, the closed -- numbers, for every account or one', async () => {
+  const all = await api('GET', '/api/trade/tab-counts');
+  assert.equal(all.status, 200, all.text);
+  assert.equal(typeof all.body.orders, 'number');
+  assert.equal(typeof all.body.closed, 'number');
+  assert.ok(all.body.closed <= all.body.orders, 'closed are some of the orders');
+  assert.match(all.body.day, /^\d{4}-\d{2}-\d{2}$/);
+  const one = await api('GET', `/api/trade/tab-counts?account=${main}`);
+  assert.equal(one.status, 200, one.text);
+  assert.ok(one.body.orders <= all.body.orders, 'one account is part of all');
+});
+
 test('[critical] the momentum guard (30 Oct 2026): off until set; on, no call is sold after the perp rose its points in the hour -- puts go on; nonsense is refused', async () => {
   const id = await make('Momentum', main, { enterOn: 'signal' });
   const last = async () => (await runsOf(id)).at(-1)!;

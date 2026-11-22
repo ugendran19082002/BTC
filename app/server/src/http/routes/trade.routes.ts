@@ -918,6 +918,22 @@ export function registerTradeRoutes(app: FastifyInstance) {
    * the window somebody opening this screen almost always wants. `status`
    * filters to one of the four; absent means all of them.
    */
+  /**
+   * The phone's tab counts (owner, 22 Nov 2026: "a count under Orders and History, as Positions has"): today's orders --
+   * every trade the IST day touched, as the Orders screen lists them -- and of those the ones closed, as History counts
+   * the day. One count over the journal's index, nothing asked of Delta; `?account=<id>` for one account.
+   */
+  app.get('/api/trade/tab-counts', async (req) => {
+    const from = istDayStart(istToday())!, to = istDayEnd(istToday())!;
+    const r = await rows<{ orders: string; closed: string }>(
+      `SELECT count(*) AS orders,
+              count(*) FILTER (WHERE (state->>'position')::float = 0 AND (state->>'exitSize')::float > 0) AS closed
+         FROM trades WHERE updated_at >= $1 AND updated_at < $2 AND ($3::bigint IS NULL OR broker_account_id = $3)`,
+      [from, to, accountOf(req.query)],
+    );
+    return { day: istToday(), orders: Number(r[0]?.orders ?? 0), closed: Number(r[0]?.closed ?? 0) };
+  });
+
   app.get('/api/trade/history', async (req) => {
     const q = req.query as { from?: string; to?: string; status?: string; limit?: string };
     const from = istDayStart(q.from ?? istToday()) ?? istDayStart(istToday())!;

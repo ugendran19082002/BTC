@@ -5,6 +5,7 @@ import { getMe, logout, type Me } from '@/api/session';
 import { getAccounts } from '@/api/accounts';
 import { getStatusOfAccounts, getTradeStatus } from '@/api/trade';
 import { getGlance } from '@/api/glance';
+import { getTabCounts } from '@/api/phone';
 import type { TradeStatus } from '@/types/trade';
 import { LoginPage } from '@/components/desk/LoginPage';
 import { Card, CardTitle } from '@/components/ui/card';
@@ -174,6 +175,8 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
     { enabled: known, deps: [shown, trading.map((a) => a.id).join(',')] },
   );
   const glance = usePoll(getGlance, GLANCE_MS);
+  // Orders and History counts under their tabs (22 Nov 2026), as Positions has its open count: one cheap count, every 30 s.
+  const tabCounts = usePoll(() => getTabCounts(shown === 'all' ? null : shown), 30_000, { deps: [shown] });
   // What changed since the last reading, as toasts over whatever screen is open.
   const live = useTradeToasts(status.data?.open, `${shown}|${trading.map((a) => a.id).join(',')}`);
 
@@ -232,7 +235,8 @@ function Phone({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
           <nav aria-label="Screens" className="grid grid-cols-6">
             {TAB_ITEMS.map((t) => {
               const on = route.tab === t.tab;
-              const badge = t.tab === 'positions' ? (s?.open.length ?? 0) : 0;
+              const badge = t.tab === 'positions' ? (s?.open.length ?? 0)
+                : t.tab === 'orders' ? (tabCounts.data?.orders ?? 0) : t.tab === 'history' ? (tabCounts.data?.closed ?? 0) : 0;
               return (
                 <button
                   key={t.tab} type="button" aria-current={on ? 'page' : undefined} onClick={() => go({ tab: t.tab, sub: null })}

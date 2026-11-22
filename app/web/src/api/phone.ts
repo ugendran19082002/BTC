@@ -107,6 +107,10 @@ export type ClosedTrade = Pick<OrderRecord, 'tradeId' | 'symbol' | 'optionSide' 
 export const getClosed = (from: string, to: string, account: number | null) =>
   json<{ from: string; to: string; truncated: boolean; trades: ClosedTrade[] }>(withAcct(`/api/trade/closed?from=${from}&to=${to}`, account));
 
+/** The bottom tabs' counts for today (22 Nov 2026): orders the day touched, and of them the closed ones. */
+export const getTabCounts = (account: number | null) =>
+  json<{ day: string; orders: number; closed: number }>(withAcct('/api/trade/tab-counts', account));
+
 /** The order book, looking backwards, for IST days: every trade opened in them, with its status and outcome. */
 export const getOrders = (from: string, to: string, account: number | null, status: OrderStatus | null = null) =>
   json<OrderHistory>(withAcct(`/api/trade/history?from=${from}&to=${to}${status ? `&status=${status}` : ''}`, account));

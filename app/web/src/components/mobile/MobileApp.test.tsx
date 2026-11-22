@@ -39,7 +39,7 @@ vi.mock('@/api/client', async (orig) => ({
 }));
 const phone = {
   getOrders: vi.fn(), getStats: vi.fn(), getDaysFor: vi.fn(), getActivity: vi.fn(), getTradeDetail: vi.fn(),
-  getTelegramLog: vi.fn(), methodNames: vi.fn(),
+  getTelegramLog: vi.fn(), methodNames: vi.fn(), getTabCounts: vi.fn(),
 };
 vi.mock('@/api/phone', () => ({
   getOrders: (...a: unknown[]) => phone.getOrders(...a),
@@ -49,6 +49,7 @@ vi.mock('@/api/phone', () => ({
   getTradeDetail: (...a: unknown[]) => phone.getTradeDetail(...a),
   getTelegramLog: (...a: unknown[]) => phone.getTelegramLog(...a),
   methodNames: () => phone.methodNames(),
+  getTabCounts: (...a: unknown[]) => phone.getTabCounts(...a),
 }));
 
 const { default: MobileApp } = await import('@/components/mobile/MobileApp');
@@ -102,6 +103,7 @@ beforeEach(() => {
   phone.getActivity.mockResolvedValue({ today: '2026-10-06', schedulerOn: true, mode: 'live', balanceUsd: 0, spot: null, strategies: [], runs: [], signalRuns: [] });
   phone.getTelegramLog.mockResolvedValue({ configured: true, on: true, entries: [] });
   phone.methodNames.mockResolvedValue(new Map());
+  phone.getTabCounts.mockResolvedValue({ day: '2026-10-06', orders: 1921, closed: 405 });
   phone.getTradeDetail.mockResolvedValue({
     trade: trade(),
     events: [
@@ -163,6 +165,15 @@ describe('signed in', () => {
     expect(within(bar).getAllByRole('button').map((b) => b.textContent!.replace(/\d+$/, ''))).toEqual(['Home', 'P&L', 'Positions', 'Orders', 'History', 'More']);
     tab('More');
     expect(screen.queryByText('Trade history')).toBeNull();
+  });
+
+  it('[critical] the tab bar counts: open under Positions, today\'s orders under Orders, today\'s closed under History (22 Nov 2026)', async () => {
+    render(<MobileApp />);
+    const bar = await screen.findByRole('navigation', { name: 'Screens' });
+    await waitFor(() => expect(within(bar).getByRole('button', { name: /^Orders/ })).toHaveTextContent('Orders1921'));
+    expect(within(bar).getByRole('button', { name: /^History/ })).toHaveTextContent('History405');
+    expect(within(bar).getByRole('button', { name: /^Positions/ })).toHaveTextContent('Positions1');
+    expect(phone.getTabCounts).toHaveBeenCalledWith(null);  // "All accounts": every account's
   });
 
   it('[critical] no screen has a button that could change the desk', async () => {

@@ -67,6 +67,8 @@ type Item = {
   perpStop?: number; perpTarget?: number; optStop?: number; optTarget?: number;
 };
 
+/** Which option side the list shows: both, calls or puts. */
+type SideShow = 'all' | 'CE' | 'PE';
 const SHOWS: { key: Show; label: string; tone: string; test: (x: Item) => boolean }[] = [
   { key: 'all', label: 'All', tone: 'text-foreground', test: () => true },
   { key: 'win', label: 'Winning', tone: 'text-[var(--up)]', test: (x) => !x.waiting && (x.pnl ?? 0) > 0 },
@@ -105,6 +107,8 @@ export function PositionsScreen() {
   const perpMark = p.perp;
   const [show, setShow] = usePersisted<Show>('m-positions-show', 'all');
   const [sort, setSort] = usePersisted<Sort>('m-positions-sort', 'risk');
+  // CE / PE (owner, 22 Nov 2026: "shown and sort by, centre la CE PE tab ... small, user friendly"): the list and its tiles.
+  const [side, setSide] = usePersisted<SideShow>('m-positions-side', 'all');
 
   const items = useMemo((): Item[] => (s?.open ?? []).map((t) => {
     const r = positionRisk(t, { alarms: s?.alarms, perpMark });
@@ -117,12 +121,14 @@ export function PositionsScreen() {
     };
   }), [s, perpMark]);
 
+  const sideOn: SideShow = side === 'CE' || side === 'PE' ? side : 'all';
+  const sided = useMemo(() => (sideOn === 'all' ? items : items.filter((x) => x.t.optionSide === sideOn)), [items, sideOn]);
   // A remembered choice the screen no longer offers (Problems with none left) reads as All.
-  const problems = items.filter((x) => x.problem).length;
+  const problems = sided.filter((x) => x.problem).length;
   const showing = show === 'alert' && problems === 0 ? 'all' : (SHOWS.some((x) => x.key === show) ? show : 'all');
   const sorting: Sort = SORTS.some((x) => x.key === sort) ? sort : 'risk';
   const test = SHOWS.find((x) => x.key === showing)!.test;
-  const shown = useMemo(() => sortItems(items.filter(test), sorting), [items, test, sorting]);
+  const shown = useMemo(() => sortItems(sided.filter(test), sorting), [sided, test, sorting]);
 
   const running = (s?.open ?? []).filter(isRunning).length;
   const waiting = items.filter((x) => x.waiting).length;
@@ -165,7 +171,7 @@ export function PositionsScreen() {
           {/* Equal tiles, the count over the word: every one fits a 360px phone, none scrolled off the edge. */}
           <div role="group" aria-label="Show positions" className={cn('grid gap-1.5', problems > 0 ? 'grid-cols-5' : 'grid-cols-4')}>
             {SHOWS.filter((x) => x.key !== 'alert' || problems > 0).map((x) => {
-              const n = items.filter(x.test).length;
+              const n = sided.filter(x.test).length;
               const on = showing === x.key;
               return (
                 <button
@@ -183,11 +189,31 @@ export function PositionsScreen() {
               );
             })}
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-[12.5px] tabular-nums text-muted-foreground" aria-live="polite">
-              {showing === 'all' ? `${shown.length} shown` : `${shown.length} of ${items.length}`}
-              {showing !== 'all' && shown.length > 0 && <> · <span className={shownTotal > 0 ? 'text-[var(--up)]' : shownTotal < 0 ? 'text-[var(--down)]' : ''}>{signedInr(usdToInr(shownTotal))}</span></>}
+          {/* One row: how many, CE / PE in the middle, the sort -- each kept to its size so a 360px phone holds all three. */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 shrink flex-col leading-tight tabular-nums text-muted-foreground" aria-live="polite">
+              <span className="truncate text-[13.5px] font-semibold text-foreground">{showing === 'all' && sideOn === 'all' ? shown.length : `${shown.length} of ${items.length}`}</span>
+              <span className="truncate text-[11px]">
+                {(showing !== 'all' || sideOn !== 'all') && shown.length > 0
+                  ? <span className={shownTotal > 0 ? 'text-[var(--up)]' : shownTotal < 0 ? 'text-[var(--down)]' : ''}>{signedInr(usdToInr(shownTotal))}</span>
+                  : 'shown'}
+              </span>
             </span>
+            <div role="group" aria-label="Option side" className="flex h-11 shrink-0 items-center rounded-lg border border-border bg-transparent p-0.5">
+              {(['all', 'CE', 'PE'] as const).map((k) => {
+                const on = sideOn === k;
+                const n = k === 'all' ? items.length : items.filter((x) => x.t.optionSide === k).length;
+                return (
+                  <button
+                    key={k} type="button" aria-pressed={on} aria-label={`${k === 'all' ? 'Both sides' : k} ${n}`} onClick={() => setSide(k)}
+                    className={cn('h-full min-w-[38px] rounded-md border-0 px-2 font-[inherit] text-[13px] font-semibold',
+                      on ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground')}
+                  >
+                    {k === 'all' ? 'All' : k}
+                  </button>
+                );
+              })}
+            </div>
             <SortPicker value={sorting} onChange={setSort} />
           </div>
         </>
@@ -215,11 +241,11 @@ export function PositionsScreen() {
 /** "Sort by / P&L high to low": a native select under a two-line face, so the phone's own picker opens. */
 function SortPicker({ value, onChange }: { value: Sort; onChange: (v: Sort) => void }) {
   return (
-    <label className="relative flex h-11 shrink-0 items-center gap-2 rounded-lg border border-border bg-muted pl-2.5 pr-8">
+    <label className="relative flex h-11 min-w-0 shrink items-center gap-2 rounded-lg border border-border bg-muted pl-2.5 pr-8">
       <ArrowUpDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="flex flex-col leading-tight">
+      <span className="flex min-w-0 flex-col leading-tight">
         <span className="text-[11px] text-muted-foreground">Sort by</span>
-        <span className="text-[13.5px] font-semibold text-foreground">{SORTS.find((x) => x.key === value)!.label}</span>
+        <span className="truncate text-[13.5px] font-semibold text-foreground">{SORTS.find((x) => x.key === value)!.label}</span>
       </span>
       <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       {/* The select covers the face, invisible: the tap opens the phone's own list, with 16px text so iOS does not zoom. */}

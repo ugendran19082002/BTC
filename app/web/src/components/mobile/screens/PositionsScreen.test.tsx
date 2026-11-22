@@ -57,6 +57,27 @@ describe('PositionsScreen', () => {
     expect(cards()).toHaveLength(6);
   });
 
+  it('[critical] CE / PE in the middle of the row (22 Nov 2026): each with its count, the list and the tiles follow, remembered, All for both', () => {
+    const calls = [trade('c7', 3, { optionSide: 'CE', symbol: 'C-BTC-80000-091026' }), trade('c8', -2, { optionSide: 'CE', symbol: 'C-BTC-80000-091026' })];
+    const { unmount } = show([...OPEN, ...calls]);
+    const side = within(screen.getByRole('group', { name: 'Option side' }));
+    expect(side.getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Both sides 8', 'CE 2', 'PE 6']);
+    expect(side.getByRole('button', { name: /^Both sides/ })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(side.getByRole('button', { name: /^CE/ }));
+    expect(cards()).toHaveLength(2);
+    expect(screen.getByText('2 of 8')).toBeInTheDocument();
+    expect(chip(/^Winning/)).toHaveAccessibleName('Winning 1');
+    expect(chip(/^Losing/)).toHaveAccessibleName('Losing 1');
+    // remembered, and Losing on top of it narrows further
+    unmount();
+    show([...OPEN, ...calls]);
+    expect(cards()).toHaveLength(2);
+    fireEvent.click(chip(/^Losing/));
+    expect(cards()).toHaveLength(1);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Option side' })).getByRole('button', { name: /^Both sides/ }));
+    expect(cards()).toHaveLength(4);
+  });
+
   it('[critical] P&L high to low and low to high, remembered; the waiting order stays last', () => {
     const { unmount } = show();
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort positions by' }), { target: { value: 'pnl-desc' } });
