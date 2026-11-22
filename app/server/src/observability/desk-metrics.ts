@@ -23,7 +23,7 @@ export const DELTA_WINDOW_MS = 5 * 60_000;
 export const PASS_EVERY_MS = 1_000;
 
 export type DeltaOutcome = 'ok' | 'refused' | 'rate-limited' | 'failed';
-export type DeltaKind = 'place, edit or cancel' | 'order lookup' | 'order history and fills' | 'positions, balances, products' | 'other';
+export type DeltaKind = 'place, edit or cancel' | 'order lookup' | 'order history and fills' | 'prices' | 'positions, balances, products' | 'other';
 
 /** What a signed call is, and what Delta charges for it -- its documented weights, so an estimate of the bill, not the bill. */
 export function costOf(method: string, path: string): { kind: DeltaKind; units: number } {
@@ -33,7 +33,10 @@ export function costOf(method: string, path: string): { kind: DeltaKind; units: 
     if (method === 'GET') return { kind: 'order lookup', units: 3 };
     return { kind: 'place, edit or cancel', units: p.includes('/batch') ? 25 : 5 };
   }
-  if (/^\/v2\/(positions|wallet|products|tickers|l2orderbook)/.test(p)) return { kind: 'positions, balances, products', units: 3 };
+  // Prices apart from the account's own reads (22 Nov 2026), so the minute's line says how much of a login's quota the
+  // tickers take: the same weight, a different remedy.
+  if (/^\/v2\/(tickers|l2orderbook)/.test(p)) return { kind: 'prices', units: 3 };
+  if (/^\/v2\/(positions|wallet|products)/.test(p)) return { kind: 'positions, balances, products', units: 3 };
   return { kind: 'other', units: 1 };
 }
 
@@ -152,6 +155,13 @@ export function deskMetrics(now = Date.now()) {
   // Each login on its own quota; the share said is the busiest login's -- the one nearest Delta saying no.
   const byLogin = new Map<string, number>();
   for (const c of calls) byLogin.set(c.quota, (byLogin.get(c.quota) ?? 0) + c.units);
+  // Each login's units by kind (22 Nov 2026): where a login's quota goes, for the minute's line.
+  const loginKinds = new Map<string, Partial<Record<DeltaKind, number>>>();
+  for (const c of calls) {
+    const k = loginKinds.get(c.quota) ?? {};
+    k[c.kind] = (k[c.kind] ?? 0) + c.units;
+    loginKinds.set(c.quota, k);
+  }
   const busiest = Math.max(0, ...byLogin.values());
   const kinds = new Map<DeltaKind, { calls: number; units: number }>();
   for (const c of calls) {
@@ -170,7 +180,7 @@ export function deskMetrics(now = Date.now()) {
       units,
       /** The busiest login's share of its own quota (each login has its 20,000). */
       usedPct: Math.round((busiest / DELTA_QUOTA_UNITS) * 1000) / 10,
-      logins: [...byLogin.entries()].map(([quota, u]) => ({ quota, units: u, usedPct: Math.round((u / DELTA_QUOTA_UNITS) * 1000) / 10 })).sort((a, b) => b.units - a.units),
+      logins: [...byLogin.entries()].map(([quota, u]) => ({ quota, units: u, usedPct: Math.round((u / DELTA_QUOTA_UNITS) * 1000) / 10, byKind: loginKinds.get(quota) ?? {} })).sort((a, b) => b.units - a.units),
       byKind: [...kinds.entries()].map(([kind, v]) => ({ kind, ...v })).sort((a, b) => b.units - a.units),
       response: spread(calls.filter((c) => c.outcome !== 'failed').map((c) => c.ms)),
       failed: calls.filter((c) => c.outcome === 'failed').length,

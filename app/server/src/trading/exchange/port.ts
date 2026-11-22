@@ -54,6 +54,13 @@ export interface ExchangePort {
    */
   getRestingBook?(): Promise<ReadonlyMap<string, ExchangeOrder> | null>;
   /**
+   * The same shared read, with the orders this desk has edited or cancelled since it began (22 Nov 2026, for a
+   * strategy's time step: `TradeEngine.quickStep`). What it says of an order in `written` is out of date; of any other
+   * order it is what the venue held a moment ago. Null when it could not be read whole. Optional: without it every
+   * step goes the whole way (`protect`).
+   */
+  getRestingSnapshot?(): Promise<{ rows: ReadonlyMap<string, ExchangeOrder>; written: ReadonlySet<string> } | null>;
+  /**
    * By the exchange's own id, from the acknowledgement. The lookup that cannot
    * be foiled by a client-id filter: once the venue has said "order 1535451705",
    * that number finds it open or closed.

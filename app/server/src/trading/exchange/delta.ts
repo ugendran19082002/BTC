@@ -760,6 +760,20 @@ export class DeltaExchange implements ExchangePort {
     return this.sharedBook();
   }
 
+  /**
+   * The shared read and what this desk wrote since it began (`ExchangePort.getRestingSnapshot`). The written set is
+   * taken in the same turn the read is answered, and only while that read is still the current one: a newer read clears
+   * the set when it begins, and a set cleared for another read would say "unchanged" of an order edited before it.
+   */
+  async getRestingSnapshot(): Promise<{ rows: ReadonlyMap<string, ExchangeOrder>; written: ReadonlySet<string> } | null> {
+    // Fetched first, so `this.book` is the entry whose rows are awaited.
+    const pending = this.sharedBook();
+    const entry = this.book;
+    const rows = await pending;
+    if (!rows || entry === null || this.book !== entry) return null;
+    return { rows, written: new Set(this.wroteSinceBook) };
+  }
+
   /** Inside a wait Delta named nothing can be asked: answered as the searches below would be, without trying each. */
   private refuseIfHeld(): void {
     const waitMs = rateLimitWaitMs(this.creds);

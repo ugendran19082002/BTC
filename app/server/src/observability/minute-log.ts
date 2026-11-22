@@ -1,5 +1,5 @@
 import { monitorEventLoopDelay } from 'node:perf_hooks';
-import { deskMetrics, passesSince, signalRunsSince, type PassParts } from './desk-metrics.js';
+import { deskMetrics, passesSince, signalRunsSince, type DeltaKind, type PassParts } from './desk-metrics.js';
 
 /**
  * The thread, a minute at a time, in the server log (22 Oct 2026, owner: "every minute the event loop's delay and the
@@ -27,7 +27,8 @@ export type MinuteLine = {
   loop: { p50Ms: number; p99Ms: number; maxMs: number };
   stalls: { at: number; ms: number }[];
   signal: { readMs: number; calcMs: number; mainMs: number; where: 'thread' | 'here'; afterCloseMs: number | null } | null;
-  quotaPct: { login: string; usedPct: number }[];
+  /** Each login's share of its quota, and its units by kind over the same five minutes (22 Nov 2026). */
+  quotaPct: { login: string; usedPct: number; byKind?: Partial<Record<DeltaKind, number>> }[];
   /**
    * Each account's passes over its open trades in the minute (8 Nov 2026): how many, the median and the slowest, and
    * what the slowest spent its time on (`PassParts`) -- what the parallel-poll work is to be decided on.
@@ -106,7 +107,7 @@ export function startMinuteLog(o: {
         : { p50Ms: 0, p99Ms: 0, maxMs: 0 },
       stalls,
       signal: run ? { readMs: Math.round(run.readMs), calcMs: Math.round(run.calcMs), mainMs: Math.round(run.mainMs), where: run.where, afterCloseMs: run.afterCloseMs } : null,
-      quotaPct: (() => { try { return deskMetrics(now()).delta.logins.map((l) => ({ login: l.quota, usedPct: l.usedPct })); } catch { return []; } })(),
+      quotaPct: (() => { try { return deskMetrics(now()).delta.logins.map((l) => ({ login: l.quota, usedPct: l.usedPct, byKind: l.byKind })); } catch { return []; } })(),
       passes: (() => { try { return passMinutes(passesSince(from)); } catch { return []; } })(),
     };
     h.reset();

@@ -21,6 +21,8 @@ test('[critical] a call is charged Delta\'s documented weight for what it is', (
   assert.deepEqual(costOf('GET', '/v2/fills'), { kind: 'order history and fills', units: 10 });
   assert.deepEqual(costOf('GET', '/v2/positions/margined'), { kind: 'positions, balances, products', units: 3 });
   assert.deepEqual(costOf('GET', '/v2/wallet/balances'), { kind: 'positions, balances, products', units: 3 });
+  assert.deepEqual(costOf('GET', '/v2/tickers/C-BTC-80000-080926'), { kind: 'prices', units: 3 }, 'prices apart from the account\'s reads');
+  assert.deepEqual(costOf('GET', '/v2/l2orderbook/C-BTC-80000-080926'), { kind: 'prices', units: 3 });
   assert.deepEqual(costOf('GET', '/v2/profile'), { kind: 'other', units: 1 });
 });
 
@@ -107,4 +109,14 @@ test('[critical] a signed call is counted against its own login: two accounts\' 
     assert.equal(by.get(quotaKeyOf(two)), 5, 'one order of 5 on the second');
     assert.equal(by.get('none'), undefined, 'none uncounted');
   } finally { globalThis.fetch = real; }
+});
+
+test('each login\'s units by kind (22 Nov 2026): where its quota goes -- prices apart from orders and lookups', () => {
+  const a = quotaKeyOf({ key: 'kinds-one' }), b = quotaKeyOf({ key: 'kinds-two' });
+  for (let i = 0; i < 10; i++) noteDeltaCall({ method: 'GET', path: '/v2/tickers/C-BTC-80000-080926', ms: 1, outcome: 'ok', quota: a }, T + i);
+  noteDeltaCall({ method: 'PUT', path: '/v2/orders', ms: 1, outcome: 'ok', quota: a }, T + 20);
+  noteDeltaCall({ method: 'GET', path: '/v2/orders/client_order_id/x', ms: 1, outcome: 'ok', quota: b }, T + 30);
+  const by = new Map(deskMetrics(T + 1_000).delta.logins.map((l) => [l.quota, l.byKind]));
+  assert.deepEqual(by.get(a), { prices: 30, 'place, edit or cancel': 5 });
+  assert.deepEqual(by.get(b), { 'order lookup': 3 });
 });

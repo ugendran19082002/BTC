@@ -375,6 +375,12 @@ export class PaperExchange implements ExchangePort {
     return new Map(open.flatMap((o) => (o.clientOrderId ? [[o.clientOrderId, o] as const] : [])));
   }
 
+  /** Read now, so nothing in it is out of date: nothing written since (`ExchangePort.getRestingSnapshot`). */
+  async getRestingSnapshot(): Promise<{ rows: ReadonlyMap<string, ExchangeOrder>; written: ReadonlySet<string> } | null> {
+    const rows = await this.getRestingBook();
+    return rows ? { rows, written: new Set<string>() } : null;
+  }
+
   async getOpenOrders(symbol?: string): Promise<ExchangeOrder[]> {
     this.guard();
     return [...this.orders.values()]

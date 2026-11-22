@@ -256,3 +256,43 @@ test('[critical] a board that throws does not cost the trade its stop check: Del
   await r.engine.poll(plan.tradeId);
   assert.ok(asked > 0);
 });
+
+/*
+ * The shared read with what the desk wrote since it began (22 Nov 2026, `getRestingSnapshot`): what a time step edits
+ * from (`TradeEngine.quickStep`). An order edited or cancelled since the read is named as written, so the step goes the
+ * whole way for it; a newer read starts the list again, and nothing more is asked of Delta for it.
+ */
+test('[critical] the snapshot names every order edited or cancelled since its read, and asks Delta nothing more', async () => {
+  const sent = delta(() => [rowOf(0), rowOf(1), rowOf(2)]);
+  const ex = new DeltaExchange(CREDS);
+  const first = (await ex.getRestingSnapshot())!;
+  assert.equal(first.rows.size, 3);
+  assert.equal(first.written.size, 0);
+  await ex.editOrder({ orderId: '1000', productId: 7 }, { limitPrice: 4, size: 1 });
+  await ex.cancelOrder({ orderId: '1002', productId: 7 });
+  const after = (await ex.getRestingSnapshot())!;
+  assert.deepEqual([...after.written].sort(), ['1000', '1002']);
+  assert.equal(after.rows.get('c1')?.limitPrice, 5, 'an order nobody touched, as read');
+  assert.equal(count(sent, /GET \/v2\/orders$/), 1, 'one read of the book for all of it');
+});
+
+test('[critical] a newer read of the book starts the written list again, with what it read', async () => {
+  let now = 2_000_000;
+  Date.now = () => now;
+  let rows = [rowOf(0)];
+  delta(() => rows);
+  const ex = new DeltaExchange(CREDS);
+  await ex.getRestingSnapshot();
+  await ex.editOrder({ orderId: '1000', productId: 7 }, { limitPrice: 4, size: 1 });
+  assert.ok((await ex.getRestingSnapshot())!.written.has('1000'));
+  rows = [rowOf(0, { limit_price: '4' })];
+  now += BOOK_SHARE_FULL_MS + 1;
+  const next = (await ex.getRestingSnapshot())!;
+  assert.equal(next.written.size, 0);
+  assert.equal(next.rows.get('c0')?.limitPrice, 4, 'the edit as the venue now holds it');
+});
+
+test('[critical] a book that cannot be read whole: no snapshot, so the step goes the whole way', async () => {
+  globalThis.fetch = (async () => new Response('down', { status: 502 })) as unknown as typeof fetch;
+  assert.equal(await new DeltaExchange(CREDS).getRestingSnapshot(), null);
+});

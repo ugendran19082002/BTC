@@ -2621,12 +2621,97 @@ export class TradeEngine {
 
     // An explicit change is not a retry, so the backoff does not apply to it.
     this.protectAfter.delete(tradeId);
+    // A strategy's time step on a trade whose two exits rest on the shared book as recorded: edited from there
+    // (`quickStep`). Anything else -- and a move by hand from the Edit exits sheet -- goes the whole way below.
+    const quick = exitStage !== undefined ? await this.quickStep(rec) : null;
+    if (quick) {
+      await this.d.store.save(quick);
+      return quick.state;
+    }
     // protect() reconciles the book against the plan, so changing the plan and
     // asking it to run is the whole operation: it cancels what no longer
     // belongs, verifies that the cancel took, and places what is missing.
     rec = await this.protect(rec);
     await this.d.store.save(rec);
     return rec.state;
+  }
+
+  /**
+   * A time step's move, off the shared book (22 Nov 2026). At 12:03 IST that day Income's 12:00 step moved 372 targets
+   * at once, and each went through `protect()`: three fresh reads -- the account's positions, the contract's open
+   * orders, the order by id where the read missed it -- and then the one edit that moved it, ~14 of Delta's units a
+   * trade against the edit's 5. On a login already at ~68% of its quota from watching ~370 trades, Delta answered 429
+   * for sixteen seconds, and one target's cancel was refused (P-BTC-58000, back on 34 s later).
+   *
+   * What `protect()` would do here is known before it reads anything, whenever the shared book (`BOOK_SHARE_MS`, read
+   * every 2-5 s for the polls) already holds both of the trade's recorded exits, untouched by this desk since that
+   * read, unfilled, at the trade's size, with nothing else of the trade's or of no open trade's resting on the contract:
+   * the leg whose level is right is kept, and the leg whose level moved is edited in place -- the same edit, the same
+   * price, the same fields. So that is all this does. Anything else, or any edit refused or unanswered, returns null and
+   * the whole way runs as before, reading afresh: a fill in the meantime (the edit answers "already filled"), a position
+   * gone, a cancel-only venue, a target held for churn, a trade still owed protection, a partial fill, a stray.
+   *
+   * Null: not done here. Never a half-truth: a leg edited before the other was refused is found right by the whole way.
+   * `DELTA_QUICK_STEP=off` turns it off.
+   */
+  private async quickStep(recIn: TradeRecord): Promise<TradeRecord | null> {
+    if (process.env.DELTA_QUICK_STEP === 'off' || !this.exchange.getRestingSnapshot) return null;
+    const rec = anchorExits(recIn);
+    const id = rec.state.tradeId;
+    const { plan, state } = rec;
+    // A short with both exits wanted and both on the book as recorded, and nothing owed or held.
+    if (state.position >= 0 || plan.action === 'buy' || state.phase !== 'protected') return null;
+    if (plan.exitProblem || plan.takeProfitPrice === null || plan.stopPrice === null) return null;
+    const tpId = state.protection.takeProfit, slId = state.protection.stopLoss;
+    if (!tpId || !slId) return null;
+    const size = protectionSize(state);
+    if (size === 0 || state.protection.size !== size) return null;
+    if (this.protectionOwed.has(id) || this.exchange.restriction?.() || targetHoldOf(rec).until > this.now()) return null;
+
+    const snap = await this.exchange.getRestingSnapshot().catch(() => null);
+    if (!snap) return null;
+    const tp = snap.rows.get(tpId), sl = snap.rows.get(slId);
+    const asRecorded = (o: ExchangeOrder | undefined, isLeg: (o: ExchangeOrder) => boolean): o is ExchangeOrder =>
+      !!o && !snap.written.has(o.orderId) && o.symbol === plan.symbol && o.reduceOnly && o.status === 'open'
+      && o.filledSize === 0 && o.size === size && isLeg(o);
+    if (!asRecorded(tp, (o) => o.type === 'limit')) return null;
+    if (!asRecorded(sl, (o) => o.type === 'stop_market' || o.type === 'stop_limit')) return null;
+    // Nothing else `protect()` would take off: another order of this trade's, or one no open trade on the contract owns.
+    const siblings = await this.siblingsOn(rec);
+    for (const o of snap.rows.values()) {
+      if (o.symbol !== plan.symbol || !o.reduceOnly || (o.status !== 'open' && o.status !== 'partial')) continue;
+      if (o.clientOrderId === tpId || o.clientOrderId === slId) continue;
+      if (!TradeEngine.ownedByAnother(o, siblings)) return null;
+    }
+
+    // The levels exactly as `protect()` works them: the stop at its backstop through the tick, the target up to it.
+    const product = await this.exchange.getProduct(plan.symbol).catch(() => null);
+    if (!product) return null;
+    const tick = product.tickSize ?? 0.1;
+    const slAt = backstopOf(rec);
+    if (slAt === null) return null;
+    const slWant = stopPriceFor('buy', slAt, tick);
+    const tpWant = targetTickFor(plan.takeProfitPrice, tick, state.entryAvgPrice);
+    if (tpWant === null) return null;
+
+    try {
+      // The stop first, then the target, as `protect()` settles them.
+      if (sl.stopPrice !== slWant) {
+        await this.exchange.editOrder(sl, {
+          stopPrice: slWant,
+          size,
+          ...(sl.type === 'stop_limit' ? { limitPrice: stopFillLimit('buy', slWant, tick) } : {}),
+        });
+      }
+      if (tp.limitPrice !== tpWant) await this.exchange.editOrder(tp, { limitPrice: tpWant, size });
+    } catch {
+      return null;
+    }
+    // The stop's level is part of its record (`protect()`): a backstop moved is written down as moved.
+    if ((state.protection.stopAt ?? undefined) !== slAt) {
+      return this.commit(rec, { t: 'protection_placed', takeProfit: tpId, stopLoss: slId, size, stopAt: slAt, at: this.now() });
+    }
+    return rec;
   }
 
   /**
