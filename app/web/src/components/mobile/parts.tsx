@@ -44,8 +44,10 @@ export function Rows({ children }: { children: ReactNode }) {
  * A small tile: a label over a figure. Given `onOpen`, the whole tile is one tap (a chevron by the label says so) --
  * laid over it, since a button may not hold a `dt` and its `dd`.
  */
-export function Stat({ label, children, tone, onOpen, openLabel }: {
+export function Stat({ label, children, tone, onOpen, openLabel, sub }: {
   label: string; children: ReactNode; tone?: 'up' | 'down' | 'warn' | 'dim';
+  /** A small second line under the figure, inside the same box (22 Nov 2026: "no extra card"). */
+  sub?: ReactNode;
   onOpen?: () => void;
   /** What the tap does, for a screen reader: "Booked: show today's trades". */
   openLabel?: string;
@@ -66,6 +68,7 @@ export function Stat({ label, children, tone, onOpen, openLabel }: {
       )}>
         {children}
       </dd>
+      {sub != null && <dd className="m-0 truncate text-[11px] tabular-nums text-muted-foreground">{sub}</dd>}
       {onOpen && (
         <button type="button" onClick={onOpen} aria-label={openLabel ?? label} className="absolute inset-0 rounded-md border-0 bg-transparent p-0" />
       )}

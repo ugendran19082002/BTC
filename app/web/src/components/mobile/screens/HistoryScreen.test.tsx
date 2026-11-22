@@ -202,6 +202,41 @@ describe('HistoryScreen', () => {
     expect(rows()).toHaveLength(4);
   });
 
+  it('[critical] how it closed, one chip row (22 Nov 2026): a swap and a session square-off are their own, each with its count; a tap shows only those, again for all', async () => {
+    getClosed.mockResolvedValue({ from: '', to: '', truncated: false, trades: [
+      ...TRADES,
+      { ...closed('e', '5m', 'single', at('2026-10-19', '13:00'), at('2026-10-19', '13:10'), 1.5), exitBy: 'swap-every' as const },
+      { ...closed('f', '5m', 'single', at('2026-10-19', '13:20'), at('2026-10-19', '13:30'), 1.2), exitBy: 'swap-every' as const },
+      { ...closed('g', '5m', 'single', at('2026-10-19', '13:40'), at('2026-10-19', '13:50'), -4), exitBy: 'session' as const },
+    ] });
+    show();
+    await waitFor(() => expect(rows()).toHaveLength(7));
+    const row = within(screen.getByRole('group', { name: 'How it closed' }));
+    expect(row.getAllByRole('button').map((b) => b.textContent)).toEqual(['All7', 'TGT1', 'Swap2', 'Session limit1', 'Perp SL1']);
+    fireEvent.click(row.getByRole('button', { name: /^Swap/ }));
+    expect(rows()).toHaveLength(2);
+    expect(row.getByRole('button', { name: /^Swap/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Filters, 1 on' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Filters on' })).not.toBeInTheDocument();
+    fireEvent.click(row.getByRole('button', { name: /^Swap/ }));
+    expect(rows()).toHaveLength(7);
+  });
+
+  it('[critical] the boxes say the average TGT kept and SL risen, inside Avg win / Avg loss (22 Nov 2026), no card of their own', async () => {
+    getClosed.mockResolvedValue({ from: '', to: '', truncated: false, trades: [
+      { ...closed('t1', '5m', 'single', at('2026-10-19', '10:00'), at('2026-10-19', '11:00'), 2), exitBy: 'option-tgt' as const, entryAvgPrice: 50, exitAvgPrice: 2.5 },
+      { ...closed('t2', '5m', 'single', at('2026-10-19', '10:10'), at('2026-10-19', '11:10'), 2), exitBy: 'option-tgt' as const, entryAvgPrice: 40, exitAvgPrice: 4 },
+      { ...closed('s1', '5m', 'single', at('2026-10-19', '10:20'), at('2026-10-19', '11:20'), -5), exitBy: 'option-sl' as const, entryAvgPrice: 20, exitAvgPrice: 70 },
+    ] });
+    show();
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    const summary = within(screen.getByRole('region', { name: 'What these trades made' }));
+    // TGT: 95% and 90% kept -> 93% (92.5 rounded); SL: 20 -> 70 is +250%.
+    expect(summary.getByText(/TGT avg/).closest('div')).toHaveTextContent('Avg win');
+    expect(summary.getByText(/TGT avg/)).toHaveTextContent('TGT avg 93% kept');
+    expect(summary.getByText(/SL avg/)).toHaveTextContent('SL avg +250%');
+  });
+
   it('[critical] in time order the list is by day, each day with its count and money; in money order it is one list', async () => {
     show();
     await waitFor(() => expect(rows()).toHaveLength(4));

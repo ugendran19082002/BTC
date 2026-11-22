@@ -173,7 +173,7 @@ export function outcomeOf(t: SignalTrade): Outcome {
     if (o.entry === null) return { word: o.open ? 'entry working' : 'not filled', tone: o.open ? 'open' : 'quiet', at: null, price: null };
     if (o.open) return { word: 'open', tone: 'open', at: null, price: null };
     // The server names the exit (strategy/store.ts `exitByOf`); an older server, guessed from the reason.
-    const BY = { 'perp-sl': 'perp SL', 'perp-tgt': 'perp TGT', 'option-tgt': 'option TGT', 'option-sl': 'option SL', 'window-end': 'window end', manual: 'closed by hand' } as const;
+    const BY = { 'perp-sl': 'perp SL', 'perp-tgt': 'perp TGT', 'option-tgt': 'option TGT', 'option-sl': 'option SL', 'window-end': 'window end', 'swap-cap': 'swap (cap full)', 'swap-every': 'swap (new signal)', session: 'session limit', 'square-off': 'close all', manual: 'closed by hand' } as const;
     const why = o.exitBy ? BY[o.exitBy] : o.exitReason
       ? /stop/i.test(o.exitReason) ? 'perp SL' : /target/i.test(o.exitReason) ? 'perp TGT' : /window|exit time/i.test(o.exitReason) ? 'window end' : 'closed'
       : o.pnlUsd > 0 ? 'target' : 'stop / closed';

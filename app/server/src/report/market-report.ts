@@ -291,7 +291,9 @@ async function orderCells(days: readonly string[], now: number, spot: number | n
       const net = closed.netUsd;
       t.n += 1; t.net += net;
       if (net > 0) { t.wins += 1; t.won += net; } else { t.losses += 1; t.lost -= net; }
-      const exit: ExitKey = exitByOf(x.state.exitReason ?? null, x.state.exitWinner ?? null);
+      // The report's own seven kinds: swaps and square-offs (named apart since 22 Nov) stay under "manual" here, as before.
+      const how = exitByOf(x.state.exitReason ?? null, x.state.exitWinner ?? null);
+      const exit: ExitKey = how === 'swap-cap' || how === 'swap-every' || how === 'session' || how === 'square-off' ? 'manual' : how;
       const e = t.exits[exit] ?? (t.exits[exit] = { n: 0, net: 0 });
       e.n += 1; e.net += net;
     }

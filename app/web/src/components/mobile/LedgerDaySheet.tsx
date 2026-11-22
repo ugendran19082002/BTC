@@ -28,7 +28,8 @@ const SORTS: { key: Sort; label: string; by: (a: DayTrade, b: DayTrade) => numbe
 const EXIT: Record<NonNullable<DayTrade['exitBy']>, { word: string; tone: 'up' | 'down' | 'dim' }> = {
   'option-tgt': { word: 'TGT', tone: 'up' }, 'perp-tgt': { word: 'Perp TGT', tone: 'up' },
   'option-sl': { word: 'SL', tone: 'down' }, 'perp-sl': { word: 'Perp SL', tone: 'down' },
-  'window-end': { word: 'Time exit', tone: 'dim' }, manual: { word: 'By hand', tone: 'dim' },
+  'window-end': { word: 'Time exit', tone: 'dim' }, 'swap-cap': { word: 'Swap (cap)', tone: 'up' }, 'swap-every': { word: 'Swap', tone: 'up' },
+  session: { word: 'Session limit', tone: 'down' }, 'square-off': { word: 'Close all', tone: 'dim' }, manual: { word: 'By hand', tone: 'dim' },
 };
 const money = (usd: number) => signedInr(usdToInr(usd));
 const PAGE = 40;

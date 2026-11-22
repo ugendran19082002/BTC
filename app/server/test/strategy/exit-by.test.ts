@@ -19,3 +19,13 @@ test('the perp price in a reason, grouped and two decimals', () => {
   assert.equal(perpInReason("BTC perp at 84,590.50 reached the signal's stop 84,612.35"), 84_590.5);
   assert.equal(perpInReason('stop reached: the offer held at 75'), null);
 });
+
+test('[critical] swaps and square-offs are their own kinds, not "By hand" (22 Nov 2026)', () => {
+  assert.equal(exitByOf('bought back at 84% kept to make room at the cap for a new signal', 'manual'), 'swap-cap');
+  assert.equal(exitByOf('bought back at 85% kept for a new signal (swap on every signal)', 'manual'), 'swap-every');
+  assert.equal(exitByOf('session limit square off', 'manual'), 'session');
+  assert.equal(exitByOf('square off', 'manual'), 'square-off');
+  assert.equal(exitByOf('closed from the phone', 'manual'), 'manual', 'a close by hand stays by hand');
+  assert.equal(exitByOf(null, 'take_profit'), 'option-tgt', 'a target still a target');
+  assert.equal(exitByOf(null, 'stop_loss'), 'option-sl');
+});

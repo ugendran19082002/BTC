@@ -30,7 +30,8 @@ export const REPEAT_MS = 10 * 60_000;
 
 const ENDED: Record<string, string> = {
   'option-tgt': 'Target hit', 'perp-tgt': 'Target hit', 'option-sl': 'Stop hit', 'perp-sl': 'Stop hit',
-  'window-end': 'Closed at its exit time', manual: 'Closed by hand',
+  'window-end': 'Closed at its exit time', 'swap-cap': 'Swapped out (cap full)', 'swap-every': 'Swapped out for a new signal',
+  session: 'Session limit square-off', 'square-off': 'Closed by Close all', manual: 'Closed by hand',
 };
 
 /** What opened it, in a few words: the method and the strategy, or "by hand". */

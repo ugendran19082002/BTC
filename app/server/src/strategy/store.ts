@@ -437,6 +437,9 @@ export type SignalTrade = {
      *   perp-sl / perp-tgt      the signal's levels on the BTC perp, judged by the desk
      *   option-tgt / option-sl  the option's own target or stop: at Delta, or the desk's stop watch
      *   window-end              the strategy's exit time
+     *   swap-cap / swap-every   bought back by a swap: room made at the cap, or swap on every signal (22 Nov 2026)
+     *   session                 the session loss limit's square-off (22 Nov 2026)
+     *   square-off              "Close all" by hand
      *   manual                  a close by hand
      * Null while open.
      */
@@ -452,7 +455,7 @@ type SignalTradeRow = SignalRunRow & {
   tp1: number | null; tp2: number | null; tp3: number | null;
   fill_price: number | null; filled_at: string | number | null; exit_price: number | null; exit_at: string | number | null;
 };
-export type ExitBy = 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'manual';
+export type ExitBy = 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'swap-cap' | 'swap-every' | 'session' | 'square-off' | 'manual';
 
 /** Which exit closed a trade, from the desk's close reason and which order filled the close. */
 export function exitByOf(reason: string | null, winner: string | null): ExitBy {
@@ -462,6 +465,14 @@ export function exitByOf(reason: string | null, winner: string | null): ExitBy {
   if (winner === 'stop_loss') return 'option-sl';
   if (reason && /^stop/i.test(reason)) return 'option-sl';                // the desk's own option stop watch
   if (reason && /exit time|end of its window/i.test(reason)) return 'window-end';
+  // Owner, 22 Nov 2026: "By hand" was showing swaps and square-offs -- each now its own kind. The desk's words: a swap
+  // says "bought back at 84% kept to make room at the cap" or "... (swap on every signal)"; the session guard
+  // "session limit square off"; "Close all" plain "square off" (and the session guard too, before 22 Nov -- the
+  // history route tells those apart by the session hits, `sessionSquareOffs`).
+  if (reason && /^bought back at .*make room at the cap/i.test(reason)) return 'swap-cap';
+  if (reason && /^bought back at .*swap on every signal/i.test(reason)) return 'swap-every';
+  if (reason && /^session limit square off/i.test(reason)) return 'session';
+  if (reason && /^square off$/i.test(reason)) return 'square-off';
   return 'manual';
 }
 

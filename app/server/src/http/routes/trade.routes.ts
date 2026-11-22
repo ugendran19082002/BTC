@@ -20,6 +20,7 @@ import { parseAddBody, toAddRequest, type AddBody } from '../add-body.js';
 import { parseCloseBody, type CloseBody } from '../close-body.js';
 import { strategyStore } from './strategy.routes.js';
 import { exitByOf } from '../../strategy/store.js';
+import { rows } from '../../db/pool.js';
 import { perpAtMinutes } from '../../market/perp-minute.js';
 import { telegramLog } from '../../notify/telegram-log.js';
 import { brokerAccounts } from '../../delta/accounts.js';
@@ -995,8 +996,14 @@ export function registerTradeRoutes(app: FastifyInstance) {
     const owners = await journal().accountsOf(closed.filter((r) => r.plan.accountId == null).map((r) => r.state.tradeId)).catch(() => new Map<string, number>());
     const named = new Map<number, string>();
     try { for (const a of brokerAccounts().list()) named.set(a.id, a.name); } catch { /* no accounts loaded: ids alone */ }
+    // A "square off" from before 22 Nov that came with a session-limit hit on its account was the session guard's, not Close all.
+    const hits = closed.some((r) => /^square off$/i.test(r.state.exitReason ?? '')) ? await sessionHitsBetween(Math.min(from, to), Math.max(from + 86_400_000, to)) : [];
     const trades = closed.map((r) => {
       const v = tradeView(r, [], r.state.contractValue, null, svc.spot);
+      if (v.exitBy === 'square-off' && hits.length) {
+        const acct = r.plan.accountId ?? owners.get(r.state.tradeId) ?? null;
+        if (sessionSquareOff(hits, acct, r.state.updatedAt)) v.exitBy = 'session';
+      }
       const id = r.plan.accountId ?? owners.get(r.state.tradeId) ?? null;
       const sig = r.plan.signal;
       return {
@@ -1037,4 +1044,19 @@ export function roomOf(i: { trades: number[]; freeUsd: number | null; spot: numb
       lots: sellByMargin === null ? sellByLimit : Math.min(sellByLimit, sellByMargin),
     },
   };
+}
+
+/** The session-limit square-offs recorded in a span: which account, and when (`session_loss_hits`). */
+async function sessionHitsBetween(from: number, to: number): Promise<{ account: number | null; at: number }[]> {
+  const r = await rows<{ broker_account_id: string | number | null; at: string | number }>(
+    'SELECT broker_account_id, at FROM session_loss_hits WHERE at BETWEEN $1 AND $2', [from - 3_600_000, to],
+  ).catch(() => []);
+  return r.map((x) => ({ account: x.broker_account_id == null ? null : Number(x.broker_account_id), at: Number(x.at) }));
+}
+/**
+ * Whether a plain "square off" at `closedAt` was a session square-off: its account hit its session limit at most a
+ * minute before and the close came within the 15 minutes after (the guard closes one by one, and retries).
+ */
+export function sessionSquareOff(hits: readonly { account: number | null; at: number }[], account: number | null, closedAt: number): boolean {
+  return hits.some((h) => h.account === account && closedAt >= h.at - 60_000 && closedAt <= h.at + 15 * 60_000);
 }

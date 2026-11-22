@@ -54,11 +54,21 @@ const heldOf = (o: ClosedTrade) => closedAt(o) - entryAt(o);
 
 /** How a trade closed (the server's `exitBy`), in a word and a colour: a target green, a stop red, the rest grey. */
 type ExitKind = NonNullable<ClosedTrade['exitBy']>;
+// In the order the chips show them (22 Nov 2026: swaps and square-offs were all "By hand" -- each is its own now).
 const EXITS: { key: ExitKind; word: string; tone: 'up' | 'down' | 'dim' }[] = [
-  { key: 'option-tgt', word: 'TGT', tone: 'up' }, { key: 'perp-tgt', word: 'Perp TGT', tone: 'up' },
-  { key: 'option-sl', word: 'SL', tone: 'down' }, { key: 'perp-sl', word: 'Perp SL', tone: 'down' },
-  { key: 'window-end', word: 'Time exit', tone: 'dim' }, { key: 'manual', word: 'By hand', tone: 'dim' },
+  { key: 'option-tgt', word: 'TGT', tone: 'up' }, { key: 'option-sl', word: 'SL', tone: 'down' },
+  { key: 'swap-every', word: 'Swap', tone: 'up' }, { key: 'swap-cap', word: 'Swap (cap)', tone: 'up' },
+  { key: 'session', word: 'Session limit', tone: 'down' },
+  { key: 'perp-tgt', word: 'Perp TGT', tone: 'up' }, { key: 'perp-sl', word: 'Perp SL', tone: 'down' },
+  { key: 'window-end', word: 'Time exit', tone: 'dim' }, { key: 'square-off', word: 'Close all', tone: 'dim' },
+  { key: 'manual', word: 'By hand', tone: 'dim' },
 ];
+/** The share of the premium a closed trade kept (+) or lost (−): a sale 1 − out / in, a buy out / in − 1. Null without both prices. */
+const keptOf = (o: ClosedTrade): number | null => {
+  const e = o.entryAvgPrice, x = o.exitAvgPrice;
+  if (e === null || x === null || !(e > 0) || !Number.isFinite(x)) return null;
+  return isLongTrade(o) ? x / e - 1 : 1 - x / e;
+};
 const exitOf = (o: ClosedTrade) => EXITS.find((x) => x.key === o.exitBy) ?? null;
 
 /**
@@ -152,6 +162,15 @@ export function HistoryScreen() {
     && (strategy === 'all' || placedBy(o.plan).label === strategy)
     && (f.exit === 'all' || o.exitBy === f.exit));
   const shown = unsplit.filter((o) => f.result === 'all' || (f.result === 'win' ? netOf(o) > 0 : netOf(o) < 0)).sort(sort.by);
+  // How it closed, a chip each (22 Nov 2026, owner: "filter tab -- by hand, SL, TGT, session square off ... mobile friendly"):
+  // counted over every other filter, so a chip says what tapping it would show.
+  const byExit = inRange.filter((o) =>
+    (tfPicked.length === 0 || tfPicked.includes(tfOf(o) ?? ''))
+    && (f.opt === 'all' || o.optionSide === f.opt)
+    && (f.act === 'all' || (f.act === 'buy') === isLongTrade(o))
+    && (strategy === 'all' || placedBy(o.plan).label === strategy)
+    && (f.result === 'all' || (f.result === 'win' ? netOf(o) > 0 : netOf(o) < 0)));
+  const exitChips = EXITS.map((x) => ({ ...x, n: byExit.filter((o) => o.exitBy === x.key).length })).filter((x) => x.n > 0 || f.exit === x.key);
   const total = shown.reduce((n, o) => n + netOf(o), 0);
   // Forty rows at a time (10 Oct 2026): thirty days is a thousand-odd trades, drawn at once on a phone. The count and the total above are of all.
   const [limit, setLimit] = useState(PAGE);
@@ -167,6 +186,8 @@ export function HistoryScreen() {
     ...(f.exit !== 'all' ? [{ key: 'exit', label: EXITS.find((x) => x.key === f.exit)?.word ?? f.exit, off: () => set({ exit: 'all' }) }] : []),
     ...(strategy !== 'all' ? [{ key: 'strategy', label: strategy, off: () => set({ strategy: 'all' }) }] : []),
   ];
+  // The pills over the list leave out how it closed while the chip row shows it: one line, not two saying the same.
+  const pills = exitChips.length > 1 ? chosen.filter((c) => c.key !== 'exit') : chosen;
   const clearAll = () => { setTfs([]); setKept(NO_FILTERS); };
 
   // By day when the list is in time order: each day once, with how many it holds and what they made.
@@ -220,9 +241,26 @@ export function HistoryScreen() {
           <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         </span>
       </div>
-      {chosen.length > 0 && (
+      {exitChips.length > 1 && (
+        <div role="group" aria-label="How it closed" className="-mx-4 -mt-1 flex items-center gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {[{ key: 'all' as const, word: 'All', tone: 'dim' as const, n: byExit.length }, ...exitChips].map((x) => {
+            const on = f.exit === x.key;
+            return (
+              <button
+                key={x.key} type="button" aria-pressed={on} onClick={() => set({ exit: on && x.key !== 'all' ? 'all' : x.key })}
+                className={cn('inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-solid px-2.5 font-[inherit] text-[12.5px] font-medium',
+                  on ? 'border-[var(--chosen-line)] bg-[var(--chosen-soft)] text-[var(--chosen-text)]' : 'border-border bg-muted text-foreground')}
+              >
+                <span className={cn(!on && x.tone === 'up' && 'text-[var(--up)]', !on && x.tone === 'down' && 'text-[var(--down)]')}>{x.word}</span>
+                <span className="tabular-nums opacity-70">{x.n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {pills.length > 0 && (
         <div role="group" aria-label="Filters on" className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1">
-          {chosen.map((c) => (
+          {pills.map((c) => (
             <button
               key={c.key} type="button" onClick={c.off} aria-label={`Take off ${c.label}`}
               className="inline-flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-solid border-[var(--chosen-line)] bg-[var(--chosen-soft)] pl-3 pr-2 font-[inherit] text-[13px] font-medium text-[var(--chosen-text)]"
@@ -296,6 +334,9 @@ function Summary({ trades, words, filtered, split, result, onResult }: {
   const money = (usd: number | null) => (usd === null ? '—' : signedInr(usdToInr(usd)));
   const tone = (usd: number | null) => (usd === null ? undefined : usd > 0 ? 'up' as const : usd < 0 ? 'down' as const : undefined);
   const best = nets.length ? Math.max(...nets) : null, worst = nets.length ? Math.min(...nets) : null;
+  // The premium kept at a target, and the rise at a stop, on average (22 Nov 2026: "avg TGT %, avg SL %" -- in the boxes, no new card).
+  const avgOf = (kinds: readonly ExitKind[]) => avg(trades.filter((o) => o.exitBy && kinds.includes(o.exitBy)).map(keptOf).filter((k): k is number => k !== null));
+  const tgtAvg = avgOf(['option-tgt', 'perp-tgt']), slAvg = avgOf(['option-sl', 'perp-sl']);
   return (
     <Panel>
       <section aria-label="What these trades made">
@@ -308,8 +349,8 @@ function Summary({ trades, words, filtered, split, result, onResult }: {
           {trades.length} trade{trades.length === 1 ? '' : 's'}{trades.length ? ` · ${pct(won.length / trades.length, 0)} won` : ''}
         </p>
         <Stats>
-          <Stat label="Avg win" tone={won.length ? 'up' : undefined}>{money(avg(won))}</Stat>
-          <Stat label="Avg loss" tone={lost.length ? 'down' : undefined}>{money(avg(lost))}</Stat>
+          <Stat label="Avg win" tone={won.length ? 'up' : undefined} sub={tgtAvg !== null ? <>TGT avg <span className="text-[var(--up)]">{Math.round(tgtAvg * 100)}% kept</span></> : undefined}>{money(avg(won))}</Stat>
+          <Stat label="Avg loss" tone={lost.length ? 'down' : undefined} sub={slAvg !== null ? <>SL avg <span className="text-[var(--down)]">{-slAvg >= 0 ? '+' : '−'}{Math.abs(Math.round(-slAvg * 100))}%</span></> : undefined}>{money(avg(lost))}</Stat>
           <Stat label="Best" tone={tone(best)}>{money(best)}</Stat>
           <Stat label="Worst" tone={tone(worst)}>{money(worst)}</Stat>
         </Stats>

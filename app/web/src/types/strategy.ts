@@ -677,7 +677,7 @@ export type SignalTrade = {
     /** The option's own target and stop, as placed (the backstop at Delta); null when off. */
     optionTarget?: number | null; optionStop?: number | null;
     /** Which exit closed it: the perp's SL/TGT, the option's, the window's end, or by hand. Null while open. */
-    exitBy?: 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'manual' | null;
+    exitBy?: 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'swap-cap' | 'swap-every' | 'session' | 'square-off' | 'manual' | null;
     /** When the option filled in, and when it was last bought back (epoch ms). */
     entryAt?: number | null; exitAt?: number | null;
   } | null;

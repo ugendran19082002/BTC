@@ -437,7 +437,8 @@ export class TradingService {
     recomputed: (r) => this.sayRecompute(r),
     netUsd: () => this.netTodayOnBoard(),
     netUsdAt: (at) => this.store.mtmNetAt(istDate(at), at, this.currentAccountId),
-    squareOff: (only) => this.closeAll(only),
+    // Its own words (22 Nov 2026), so the history can say "Session limit" apart from a "Close all" by hand.
+    squareOff: (only) => this.closeAll(only, 'session limit square off'),
     // The session's limit kept beside the setting, so a restart in the session reads it back (gap #2, 7 Nov 2026).
     fixedLimit: {
       get: async (key) => {
@@ -916,7 +917,8 @@ export class TradingService {
    * Orders are pulled before positions are bought back, so a target sitting on
    * the book cannot fill halfway through and leave the size wrong.
    */
-  async closeAll(only?: readonly string[]): Promise<{
+  /** `why`: the close reason each trade keeps -- "square off" for Close all, the session guard's own words for its square-off. */
+  async closeAll(only?: readonly string[], why = 'square off'): Promise<{
     cancelled: string[];
     closed: string[];
     failed: { tradeId: string; reason: string }[];
@@ -937,7 +939,7 @@ export class TradingService {
 
     for (const rec of open.filter((r) => r.state.position !== 0)) {
       try {
-        const after = await this.engine.closeNow(rec.state.tradeId, 'square off');
+        const after = await this.engine.closeNow(rec.state.tradeId, why);
         if (after && after.position !== 0) {
           out.failed.push({ tradeId: rec.state.tradeId, reason: `still holding ${after.position}` });
         } else {

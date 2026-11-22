@@ -85,7 +85,7 @@ export type DayTrade = {
   tradeId: string; symbol: string; strike: number | null; optionSide: 'CE' | 'PE'; action: 'sell' | 'buy'; contracts: number;
   entryAt: number | null; exitAt: number | null; entryPrice: number | null; exitPrice: number | null;
   chargesUsd: number; grossUsd: number; netUsd: number;
-  exitBy: 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'manual' | null;
+  exitBy: 'perp-sl' | 'perp-tgt' | 'option-tgt' | 'option-sl' | 'window-end' | 'swap-cap' | 'swap-every' | 'session' | 'square-off' | 'manual' | null;
   open: boolean; spans: boolean; strategy: string | null; account: { id: number; name: string } | null; orderIds: string[];
 };
 /** A ledger day's trades, newest exit first, and the day's own figures -- the ledger row's. */
