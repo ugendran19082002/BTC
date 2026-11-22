@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ChevronDown, SlidersHorizontal, X } from 'lucide-react';
+import { SlidersHorizontal, X } from 'lucide-react';
 import { usePersisted } from '@/hooks/usePersisted';
 import { rangeMs, timeQuickPicks, timeRangeProblem, timeRangeWords, type DateTimeRange } from '@/lib/date-time-range';
 import { DateTimeRangeSheet, type RangeBy } from '@/components/mobile/DateTimeRangeSheet';
@@ -14,6 +14,7 @@ import { usePhoneData } from '@/components/mobile/phone-context';
 import { Chip, Empty, ListButton, Loading, Panel, Pill, Rupees, Segmented, Stat, Stats, When } from '@/components/mobile/parts';
 import { StrategyTag, placedBy } from '@/components/mobile/StrategyTag';
 import { GroupTag } from '@/components/strategy/GroupTag';
+import { SortSheet } from '@/components/mobile/SortSheet';
 import { WonLostView } from '@/components/mobile/WonLost';
 
 /**
@@ -101,13 +102,13 @@ const exitPctWords = (o: ClosedTrade): string | null => {
  * the worst first; by how long it was held. The ones by time are listed under their days.
  */
 type Sort = 'out-new' | 'out-old' | 'in-new' | 'net-high' | 'net-low' | 'held-long';
-const SORTS: { key: Sort; label: string; by: (a: ClosedTrade, b: ClosedTrade) => number; dayOf?: (o: ClosedTrade) => number }[] = [
-  { key: 'out-new', label: 'Newest exit', by: (a, b) => closedAt(b) - closedAt(a), dayOf: closedAt },
-  { key: 'out-old', label: 'Oldest exit', by: (a, b) => closedAt(a) - closedAt(b), dayOf: closedAt },
-  { key: 'in-new', label: 'Newest entry', by: (a, b) => entryAt(b) - entryAt(a), dayOf: entryAt },
-  { key: 'net-high', label: 'Most made', by: (a, b) => netOf(b) - netOf(a) || closedAt(b) - closedAt(a) },
-  { key: 'net-low', label: 'Most lost', by: (a, b) => netOf(a) - netOf(b) || closedAt(b) - closedAt(a) },
-  { key: 'held-long', label: 'Held longest', by: (a, b) => heldOf(b) - heldOf(a) || closedAt(b) - closedAt(a) },
+const SORTS: { key: Sort; label: string; hint: string; group: string; by: (a: ClosedTrade, b: ClosedTrade) => number; dayOf?: (o: ClosedTrade) => number }[] = [
+  { key: 'out-new', label: 'Newest exit', hint: 'Last closed on top, by day', group: 'Time', by: (a, b) => closedAt(b) - closedAt(a), dayOf: closedAt },
+  { key: 'out-old', label: 'Oldest exit', hint: 'First closed on top, by day', group: 'Time', by: (a, b) => closedAt(a) - closedAt(b), dayOf: closedAt },
+  { key: 'in-new', label: 'Newest entry', hint: 'Last entered on top, by day', group: 'Time', by: (a, b) => entryAt(b) - entryAt(a), dayOf: entryAt },
+  { key: 'net-high', label: 'Most made', hint: 'Biggest profit first', group: 'Money', by: (a, b) => netOf(b) - netOf(a) || closedAt(b) - closedAt(a) },
+  { key: 'net-low', label: 'Most lost', hint: 'Biggest loss first', group: 'Money', by: (a, b) => netOf(a) - netOf(b) || closedAt(b) - closedAt(a) },
+  { key: 'held-long', label: 'Held longest', hint: 'Longest from entry to exit first', group: 'Held', by: (a, b) => heldOf(b) - heldOf(a) || closedAt(b) - closedAt(a) },
 ];
 
 /** What the sheet chooses: kept together, so one key holds them and Clear all is one write. */
@@ -231,15 +232,7 @@ export function HistoryScreen() {
           <span className="truncate">Filters</span>
           {chosen.length > 0 && <span className="grid h-5 min-w-[20px] place-items-center rounded-full bg-[var(--chosen-text)] px-1 text-[11.5px] font-semibold text-[var(--bg)]">{chosen.length}</span>}
         </button>
-        <span className="relative min-w-0">
-          <select
-            aria-label="Sort" value={sort.key} onChange={(e) => setSortKey(e.target.value as Sort)}
-            className="h-11 w-full min-w-0 appearance-none truncate rounded-lg border border-solid border-border bg-muted pl-3 pr-8 font-[inherit] text-[14px] font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-[var(--up)]"
-          >
-            {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
-          <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        </span>
+        <SortSheet value={sort.key} choices={SORTS} onChange={setSortKey} name="Sort trades by" className="w-full" />
       </div>
       {exitChips.length > 1 && (
         <div role="group" aria-label="How it closed" className="-mx-4 -mt-1 flex items-center gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

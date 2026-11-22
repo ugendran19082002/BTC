@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { ArrowUpDown, ChevronDown } from 'lucide-react';
 import { usePhone } from '@/components/mobile/phone-context';
 import { PositionCard } from '@/components/mobile/PositionCard';
 import { SessionLossCard } from '@/components/mobile/SessionLossCard';
@@ -10,6 +9,7 @@ import { isRunning, isWaiting } from '@/lib/trade-events';
 import { usePersisted } from '@/hooks/usePersisted';
 import { pct, signedInr, usdToInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { SortSheet } from '@/components/mobile/SortSheet';
 import type { Trade } from '@/types/trade';
 
 /**
@@ -26,18 +26,18 @@ import type { Trade } from '@/types/trade';
 export type Show = 'all' | 'win' | 'loss' | 'waiting' | 'alert';
 export type Sort = 'risk' | 'pnl-desc' | 'pnl-asc' | 'new' | 'old' | 'perp-sl' | 'perp-tgt' | 'opt-sl' | 'opt-tgt';
 
-export const SORTS: { key: Sort; label: string }[] = [
-  { key: 'risk', label: 'Riskiest first' },
-  { key: 'pnl-desc', label: 'P&L high to low' },
-  { key: 'pnl-asc', label: 'P&L low to high' },
-  { key: 'new', label: 'Newest first' },
-  { key: 'old', label: 'Oldest first' },
+export const SORTS: { key: Sort; label: string; hint: string; group: string }[] = [
+  { key: 'risk', label: 'Riskiest first', hint: 'Problems, then the least room to the stop', group: 'Risk & P&L' },
+  { key: 'pnl-desc', label: 'P&L high to low', hint: 'Biggest profit first', group: 'Risk & P&L' },
+  { key: 'pnl-asc', label: 'P&L low to high', hint: 'Biggest loss first', group: 'Risk & P&L' },
+  { key: 'new', label: 'Newest first', hint: 'Latest entry on top', group: 'Time' },
+  { key: 'old', label: 'Oldest first', hint: 'Earliest entry on top', group: 'Time' },
   // Nearest exit first (owner, 9 Oct 2026). The perp's in points -- one price for every position, so points and
   // percent rank alike; the option's as a share of its own price, since a 20 and a 200 premium do not compare in points.
-  { key: 'perp-sl', label: 'Nearest perp SL' },
-  { key: 'perp-tgt', label: 'Nearest perp TGT' },
-  { key: 'opt-sl', label: 'Nearest option SL' },
-  { key: 'opt-tgt', label: 'Nearest option TGT' },
+  { key: 'perp-sl', label: 'Nearest perp SL', hint: 'BTC closest to the signal\'s stop', group: 'Nearest exit' },
+  { key: 'perp-tgt', label: 'Nearest perp TGT', hint: 'BTC closest to the signal\'s target', group: 'Nearest exit' },
+  { key: 'opt-sl', label: 'Nearest option SL', hint: 'The option closest to its stop', group: 'Nearest exit' },
+  { key: 'opt-tgt', label: 'Nearest option TGT', hint: 'The option closest to its target', group: 'Nearest exit' },
 ];
 
 const pnlOf = (t: Trade): number | null => t.live?.netIfClosedUsd ?? t.live?.unrealisedPnl ?? null;
@@ -238,21 +238,7 @@ export function PositionsScreen() {
   );
 }
 
-/** "Sort by / P&L high to low": a native select under a two-line face, so the phone's own picker opens. */
+/** "Sort by / P&L high to low": the face, opening the sort sheet (`SortSheet`, 22 Nov 2026 -- a bare select before). */
 function SortPicker({ value, onChange }: { value: Sort; onChange: (v: Sort) => void }) {
-  return (
-    <label className="relative flex h-11 min-w-0 shrink items-center gap-2 rounded-lg border border-border bg-muted pl-2.5 pr-8">
-      <ArrowUpDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="flex min-w-0 flex-col leading-tight">
-        <span className="text-[11px] text-muted-foreground">Sort by</span>
-        <span className="truncate text-[13.5px] font-semibold text-foreground">{SORTS.find((x) => x.key === value)!.label}</span>
-      </span>
-      <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      {/* The select covers the face, invisible: the tap opens the phone's own list, with 16px text so iOS does not zoom. */}
-      <select aria-label="Sort positions by" value={value} onChange={(e) => onChange(e.target.value as Sort)}
-              className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 text-[16px]">
-        {SORTS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
-      </select>
-    </label>
-  );
+  return <SortSheet value={value} choices={SORTS} onChange={onChange} name="Sort positions by" />;
 }

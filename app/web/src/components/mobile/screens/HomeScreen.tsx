@@ -121,10 +121,7 @@ export function HomeScreen() {
             <Bar value={budget.usedPct} tone={budget.usedPct >= 0.8 ? 'down' : budget.usedPct >= 0.5 ? 'warn' : 'up'} label="Daily loss limit used" />
           </div>
         )}
-        {/* Switched off on the desk's Account card (13 Oct 2026): said here, where it is read -- this screen changes nothing. */}
-        {s && !budget && s.limits?.dailyLossOn === false && (
-          <div className="mt-2.5 flex justify-between text-[12px] text-muted-foreground"><span>Daily loss limit</span><span className="font-semibold text-[var(--warn)]">Off</span></div>
-        )}
+        {/* Switched off, it says nothing here (owner, 22 Nov 2026: "remove the daily loss limit Off line"); the P&L screen still says Off. */}
       </Panel>
 
       {/* Under Today's P&L: Margin used and Available, then the positions (owner, 20 Nov 2026). */}

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context';
 import type { Trade } from '@/types/trade';
-import { PositionsScreen, sortItems, type Sort } from '@/components/mobile/screens/PositionsScreen';
+import { PositionsScreen, SORTS, sortItems, type Sort } from '@/components/mobile/screens/PositionsScreen';
 
 /**
  * Positions on the phone (owner, 9 Oct 2026: "position phone la user friendly upgrades"): three tiles on top, which
@@ -29,6 +29,11 @@ const show = (open = OPEN, extra: Partial<PhoneData['status']> = {}) => render(
   } as unknown as PhoneData}><PositionsScreen /></PhoneContext.Provider>,
 );
 const cards = () => screen.getAllByRole('button', { name: /what happened$/ });
+/** Sort through the sheet (22 Nov 2026): the face opens it, a choice sorts and closes it. */
+const sortBy = (value: Sort) => {
+  fireEvent.click(screen.getByRole('button', { name: /^Sort positions by/ }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Sort positions by' })).getByRole('radio', { name: new RegExp(`^${SORTS.find((x) => x.key === value)!.label}`) }));
+};
 const chip = (name: RegExp) => within(screen.getByRole('group', { name: 'Show positions' })).getByRole('button', { name });
 
 beforeEach(() => window.localStorage.clear());
@@ -80,7 +85,8 @@ describe('PositionsScreen', () => {
 
   it('[critical] P&L high to low and low to high, remembered; the waiting order stays last', () => {
     const { unmount } = show();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort positions by' }), { target: { value: 'pnl-desc' } });
+    sortBy('pnl-desc');
+    expect(screen.queryByRole('dialog', { name: 'Sort positions by' })).not.toBeInTheDocument();
     expect(screen.getByText('P&L high to low', { selector: 'span' })).toBeInTheDocument();
     expect(cards()).toHaveLength(6);
     expect(sortItems(OPEN.map((t) => ({ t, problem: false, room: Infinity, pnl: t.live?.netIfClosedUsd ?? null, waiting: t.position === 0 })), 'pnl-desc').map((x) => x.t.tradeId))
@@ -89,7 +95,7 @@ describe('PositionsScreen', () => {
       .toEqual(['l4', 'l3', 'l5', 'w1', 'w2', 'q6']);
     unmount();
     show();
-    expect(screen.getByRole('combobox', { name: 'Sort positions by' })).toHaveValue('pnl-desc');
+    expect(screen.getByRole('button', { name: 'Sort positions by: P&L high to low' })).toBeInTheDocument();
   });
 
   it('[critical] a position with a problem stays on top under any sort, and gets an Alerts tile', () => {
@@ -139,7 +145,7 @@ describe('PositionsScreen', () => {
       } as unknown as PhoneData}><PositionsScreen /></PhoneContext.Provider>,
     );
     const strikes = () => cards().map((c) => /(\d{2},\d{3})/.exec(c.getAttribute('aria-label') ?? '')?.[1]);
-    const pick = (value: Sort) => fireEvent.change(screen.getByRole('combobox', { name: 'Sort positions by' }), { target: { value } });
+    const pick = sortBy;
     pick('perp-sl');
     expect(screen.getByText('Nearest perp SL', { selector: 'span' })).toBeInTheDocument();
     expect(strikes()).toEqual(['80,000', '79,000', '78,000']);

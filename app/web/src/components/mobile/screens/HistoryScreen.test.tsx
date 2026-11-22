@@ -112,7 +112,10 @@ describe('HistoryScreen', () => {
     const { unmount } = show();
     await waitFor(() => expect(rows()).toHaveLength(4));
     expect(order()).toEqual(['d', 'c', 'b', 'a']);
-    const sort = screen.getByRole('combobox', { name: 'Sort' });
+    const sortTo = (label: string) => {
+      fireEvent.click(screen.getByRole('button', { name: /^Sort trades by/ }));
+      fireEvent.click(within(screen.getByRole('dialog', { name: 'Sort trades by' })).getByRole('radio', { name: new RegExp(`^${label}`) }));
+    };
     for (const [label, want] of [
       ['Oldest exit', ['a', 'b', 'c', 'd']],
       ['Newest entry', ['d', 'c', 'b', 'a']],
@@ -120,7 +123,7 @@ describe('HistoryScreen', () => {
       ['Most lost', ['b', 'c', 'a', 'd']],
       ['Held longest', ['a', 'd', 'c', 'b']],      // 3 h, 1 h, then the two half-hours newest first
     ] as const) {
-      fireEvent.change(sort, { target: { value: within(sort).getByRole('option', { name: label }).getAttribute('value') } });
+      sortTo(label);
       expect(order(), label).toEqual(want);
     }
     expect(screen.getByText(/4 trades · 3 won/)).toBeInTheDocument();      // the count is the same in any order
@@ -243,9 +246,11 @@ describe('HistoryScreen', () => {
     const heads = () => screen.queryAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(heads()).toEqual(['Today']);                          // every exit on the 19th, a's at 1:00 AM
     expect(screen.getByRole('heading', { level: 3, name: 'Today' }).nextSibling).toHaveTextContent(`4 trades · ${inr(5)}`);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'in-new' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Sort trades by/ }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Sort trades by' })).getByRole('radio', { name: /^Newest entry/ }));
     expect(heads()).toEqual(['Today', 'Yesterday']);             // a entered on the 18th
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), { target: { value: 'net-high' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Sort trades by/ }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Sort trades by' })).getByRole('radio', { name: /^Most made/ }));
     expect(heads()).toEqual([]);
   });
 
