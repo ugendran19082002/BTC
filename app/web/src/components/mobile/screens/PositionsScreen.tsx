@@ -21,9 +21,15 @@ import type { Trade } from '@/types/trade';
  * the ones with a problem when there are any), each with its count, and how to sort them. Both remembered on the
  * phone. Whatever the sort, a position with a problem (an alert) stays on top and an order still waiting goes after the
  * running ones: a sort is for reading, and must never bury the position that needs a look.
+ *
+ * The tiles add up (owner, 24 Nov 2026: "all win loss filter count thappa kaatra maari iruku ... best practice fix"):
+ * every position is in exactly one of Winning, Losing, Waiting and No price, so All is always their sum. No price is
+ * a position with no close price to read (no offer on the book, or one closing as the list catches up); it shows only
+ * when there is one. The P&L is the close price's only (`netIfClosedUsd`, the ask for a short): never the mark, which
+ * no close could print. With CE or PE picked, the All tile says which side it counts ("All CE").
  */
 
-export type Show = 'all' | 'win' | 'loss' | 'waiting' | 'alert';
+export type Show = 'all' | 'win' | 'loss' | 'waiting' | 'noprice' | 'alert';
 export type Sort = 'risk' | 'pnl-desc' | 'pnl-asc' | 'new' | 'old' | 'perp-sl' | 'perp-tgt' | 'opt-sl' | 'opt-tgt';
 
 export const SORTS: { key: Sort; label: string; hint: string; group: string }[] = [
@@ -40,7 +46,11 @@ export const SORTS: { key: Sort; label: string; hint: string; group: string }[] 
   { key: 'opt-tgt', label: 'Nearest option TGT', hint: 'The option closest to its target', group: 'Nearest exit' },
 ];
 
-const pnlOf = (t: Trade): number | null => t.live?.netIfClosedUsd ?? t.live?.unrealisedPnl ?? null;
+/** What closing it now would leave, at the close price -- never the mark (no close prints it); null with no price. */
+const pnlOf = (t: Trade): number | null => {
+  const n = t.live?.netIfClosedUsd;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+};
 /** When it was opened: its first entry fill, or its last change while it waits for one. */
 const openedAt = (t: Trade): number => {
   const entries = t.fills.filter((f) => f.role === 'entry').map((f) => f.ts);
@@ -69,13 +79,24 @@ type Item = {
 
 /** Which option side the list shows: both, calls or puts. */
 type SideShow = 'all' | 'CE' | 'PE';
-const SHOWS: { key: Show; label: string; tone: string; test: (x: Item) => boolean }[] = [
+/**
+ * Which kind each position is -- one of four, so the tiles add up to All. An exact ₹0 after every charge (rare) is
+ * not a loss, so it counts as winning.
+ */
+export type Kind = 'win' | 'loss' | 'waiting' | 'noprice';
+export const kindOf = (x: Pick<Item, 'waiting' | 'pnl'>): Kind => (x.waiting ? 'waiting' : x.pnl === null ? 'noprice' : x.pnl < 0 ? 'loss' : 'win');
+const SHOWS: { key: Show; label: string; tone: string; test: (x: Item) => boolean; optional?: boolean }[] = [
   { key: 'all', label: 'All', tone: 'text-foreground', test: () => true },
-  { key: 'win', label: 'Winning', tone: 'text-[var(--up)]', test: (x) => !x.waiting && (x.pnl ?? 0) > 0 },
-  { key: 'loss', label: 'Losing', tone: 'text-[var(--down)]', test: (x) => !x.waiting && (x.pnl ?? 0) < 0 },
-  { key: 'waiting', label: 'Waiting', tone: 'text-[var(--warn)]', test: (x) => x.waiting },
-  { key: 'alert', label: 'Alerts', tone: 'text-[var(--down)]', test: (x) => x.problem },
+  { key: 'win', label: 'Winning', tone: 'text-[var(--up)]', test: (x) => kindOf(x) === 'win' },
+  { key: 'loss', label: 'Losing', tone: 'text-[var(--down)]', test: (x) => kindOf(x) === 'loss' },
+  { key: 'waiting', label: 'Waiting', tone: 'text-[var(--warn)]', test: (x) => kindOf(x) === 'waiting' },
+  // Shown only when there is one: the tiles add up without it the rest of the time.
+  { key: 'noprice', label: 'No price', tone: 'text-muted-foreground', test: (x) => kindOf(x) === 'noprice', optional: true },
+  // Not a kind but a mark on any of them: a position with a problem is also winning, losing or waiting.
+  { key: 'alert', label: 'Alerts', tone: 'text-[var(--down)]', test: (x) => x.problem, optional: true },
 ];
+/** The tile row's columns, by how many tiles it holds (literal, so the classes are built). */
+const COLS: Record<number, string> = { 4: 'grid-cols-4', 5: 'grid-cols-5', 6: 'grid-cols-6' };
 
 /** Least room first; a position without that exit after every one with it (Infinity - Infinity would be NaN). */
 const nearest = (of: (x: Item) => number | undefined) => (a: Item, b: Item): number => {
@@ -123,15 +144,17 @@ export function PositionsScreen() {
 
   const sideOn: SideShow = side === 'CE' || side === 'PE' ? side : 'all';
   const sided = useMemo(() => (sideOn === 'all' ? items : items.filter((x) => x.t.optionSide === sideOn)), [items, sideOn]);
-  // A remembered choice the screen no longer offers (Problems with none left) reads as All.
-  const problems = sided.filter((x) => x.problem).length;
-  const showing = show === 'alert' && problems === 0 ? 'all' : (SHOWS.some((x) => x.key === show) ? show : 'all');
+  // The tiles offered: an optional one only with something in it. A remembered choice the screen no longer offers
+  // (Alerts or No price with none left) reads as All.
+  const tiles = SHOWS.filter((x) => !x.optional || sided.some(x.test));
+  const showing: Show = tiles.some((x) => x.key === show) ? show : 'all';
   const sorting: Sort = SORTS.some((x) => x.key === sort) ? sort : 'risk';
   const test = SHOWS.find((x) => x.key === showing)!.test;
   const shown = useMemo(() => sortItems(sided.filter(test), sorting), [sided, test, sorting]);
 
   const running = (s?.open ?? []).filter(isRunning).length;
   const waiting = items.filter((x) => x.waiting).length;
+  const noPrice = items.filter((x) => kindOf(x) === 'noprice').length;
   const total = items.reduce((n, x) => n + (x.pnl ?? 0), 0);
   const shownTotal = shown.reduce((n, x) => n + (x.pnl ?? 0), 0);
   const used = s?.marginUsedUsd != null && s.walletUsd ? s.marginUsedUsd / s.walletUsd : null;
@@ -150,7 +173,7 @@ export function PositionsScreen() {
             <dt className={SMALL}>Total P&amp;L</dt>
             {/* Rupees alone: with the dollars beside it, -₹3,983.20 does not fit a third of a 360px phone. */}
             <dd className={cn(MONEY, 'truncate', s && total > 0 && 'text-[var(--up)]', s && total < 0 && 'text-[var(--down)]')}>{s ? signedInr(usdToInr(total)) : '…'}</dd>
-            <dd className={SMALL}>if closed now</dd>
+            <dd className={SMALL}>{noPrice ? <span className="text-[var(--warn)]">{noPrice} with no price</span> : 'if closed now'}</dd>
           </div>
           <div className="min-w-0 pl-2.5">
             <dt className={SMALL}>Margin used</dt>
@@ -169,13 +192,15 @@ export function PositionsScreen() {
       {s && items.length > 0 && (
         <>
           {/* Equal tiles, the count over the word: every one fits a 360px phone, none scrolled off the edge. */}
-          <div role="group" aria-label="Show positions" className={cn('grid gap-1.5', problems > 0 ? 'grid-cols-5' : 'grid-cols-4')}>
-            {SHOWS.filter((x) => x.key !== 'alert' || problems > 0).map((x) => {
+          <div role="group" aria-label="Show positions" className={cn('grid gap-1.5', COLS[tiles.length] ?? 'grid-cols-6')}>
+            {tiles.map((x) => {
               const n = sided.filter(x.test).length;
               const on = showing === x.key;
+              // With CE or PE picked the counts are that side's: the All tile says so, beside a Running of both.
+              const label = x.key === 'all' && sideOn !== 'all' ? `All ${sideOn}` : x.label;
               return (
                 <button
-                  key={x.key} type="button" aria-pressed={on} aria-label={`${x.label} ${n}`}
+                  key={x.key} type="button" aria-pressed={on} aria-label={`${label} ${n}`}
                   onClick={() => setShow(on ? 'all' : x.key)}
                   className={cn(
                     'flex h-14 min-w-0 flex-col items-center justify-center rounded-lg border px-0 font-[inherit] min-[360px]:px-1',
@@ -184,7 +209,7 @@ export function PositionsScreen() {
                 >
                   <span className={cn('text-[17px] font-semibold leading-tight tabular-nums', n === 0 ? 'text-muted-foreground' : x.tone)}>{n}</span>
                   {/* 11px under 360px: five across a 320px phone leave 45px a word, and "Winning" was "Win…". */}
-                  <span className={cn('max-w-full truncate text-[11px] tracking-[-0.2px] min-[360px]:text-[12px] min-[360px]:tracking-normal', on ? 'text-foreground' : 'text-muted-foreground')}>{x.label}</span>
+                  <span className={cn('max-w-full truncate text-[11px] tracking-[-0.2px] min-[360px]:text-[12px] min-[360px]:tracking-normal', on ? 'text-foreground' : 'text-muted-foreground')}>{label}</span>
                 </button>
               );
             })}

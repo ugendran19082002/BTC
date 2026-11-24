@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { PhoneContext, type PhoneData } from '@/components/mobile/phone-context';
 import type { Trade } from '@/types/trade';
-import { PositionsScreen, SORTS, sortItems, type Sort } from '@/components/mobile/screens/PositionsScreen';
+import { PositionsScreen, SORTS, kindOf, sortItems, type Sort } from '@/components/mobile/screens/PositionsScreen';
 
 /**
  * Positions on the phone (owner, 9 Oct 2026: "position phone la user friendly upgrades"): three tiles on top, which
@@ -164,5 +164,48 @@ describe('PositionsScreen', () => {
     expect(screen.getByText(/No losing positions right now/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Show all' }));
     expect(cards()).toHaveLength(1);
+  });
+
+  it('[critical] the tiles add up to All (24 Nov 2026): a position with no close price is counted under No price, not left out', () => {
+    // No quote at all, and one Delta priced only at the mark: neither has a price it could close at.
+    const noQuote = trade('n7', null);
+    const markOnly = trade('n8', null, { live: { unrealisedPnl: 9, markPrice: 40 } as Trade['live'] });
+    show([...OPEN, noQuote, markOnly]);
+    const n = (re: RegExp) => Number(chip(re).getAttribute('aria-label')!.replace(/\D+/g, ' ').trim().split(' ').pop());
+    expect(chip(/^All/)).toHaveAccessibleName('All 8');
+    expect(chip(/^Winning/)).toHaveAccessibleName('Winning 2');
+    expect(chip(/^Losing/)).toHaveAccessibleName('Losing 3');
+    expect(chip(/^Waiting/)).toHaveAccessibleName('Waiting 1');
+    expect(chip(/^No price/)).toHaveAccessibleName('No price 2');
+    expect(n(/^Winning/) + n(/^Losing/) + n(/^Waiting/) + n(/^No price/)).toBe(n(/^All/));
+    // the total is what closing would leave: the mark-only one adds nothing, and the summary says some have no price
+    expect(screen.getByLabelText('positions summary')).toHaveTextContent('2 with no price');
+    fireEvent.click(chip(/^No price/));
+    expect(cards()).toHaveLength(2);
+  });
+
+  it('[critical] the No price tile is there only when one is: with every position priced the four tiles are the whole', () => {
+    show();
+    expect(within(screen.getByRole('group', { name: 'Show positions' })).queryByRole('button', { name: /^No price/ })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Show positions' })).getAllByRole('button')).toHaveLength(4);
+    expect(screen.getByLabelText('positions summary')).toHaveTextContent('if closed now');
+  });
+
+  it('every position is one kind: waiting, no price, losing, or winning (an exact ₹0 is not a loss)', () => {
+    expect(kindOf({ waiting: true, pnl: null })).toBe('waiting');
+    expect(kindOf({ waiting: false, pnl: null })).toBe('noprice');
+    expect(kindOf({ waiting: false, pnl: -0.01 })).toBe('loss');
+    expect(kindOf({ waiting: false, pnl: 0 })).toBe('win');
+    expect(kindOf({ waiting: false, pnl: 3 })).toBe('win');
+  });
+
+  it('[critical] with CE or PE picked the All tile names the side it counts, beside a Running of both', () => {
+    const calls = [trade('c7', 3, { optionSide: 'CE', symbol: 'C-BTC-80000-091026' }), trade('c8', -2, { optionSide: 'CE', symbol: 'C-BTC-80000-091026' })];
+    show([...OPEN, ...calls]);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Option side' })).getByRole('button', { name: /^CE/ }));
+    expect(chip(/^All/)).toHaveAccessibleName('All CE 2');
+    expect(screen.getByLabelText('positions summary')).toHaveTextContent('Running7');
+    fireEvent.click(within(screen.getByRole('group', { name: 'Option side' })).getByRole('button', { name: /^Both sides/ }));
+    expect(chip(/^All/)).toHaveAccessibleName('All 8');
   });
 });
