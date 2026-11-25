@@ -853,7 +853,7 @@ export class TradeEngine {
   /** Trades whose close has been given up on at the market, so that is said once. */
   private readonly gaveUpClosing = new Set<string>();
   /** When a shared contract's position first stopped adding up, per trade, and whether it has been said. */
-  private readonly unexplained = new Map<string, { since: number; said: boolean }>();
+  private readonly unexplained = new Map<string, { since: number; said: boolean; last: number }>();
   /** Trades with an exit not yet confirmed off the book, since when, and whether it has been said. See `cancelSiblings`. */
   private readonly leftovers = new Map<string, { since: number; said: boolean }>();
   /** When the account's book was last swept for exits no open trade owns (`sweepOrphans`). */
@@ -3060,7 +3060,12 @@ export class TradeEngine {
       if (after) rec = await this.absorb(rec, after, 'exit');
       if (rec.state.position === 0 || rec.state.phase !== 'exit_pending') return rec;
     }
-    const tries = rec.events.filter((e) => e.t === 'exit_submitted').length;
+    // This close's tries: the closes sent since the last one gave up (25 Nov 2026, 15:31 IST: a swap close of the P-58200,
+    // sent after an earlier close had given up and put its stop back, read that one's three tries as its own and gave up
+    // at its first look -- no follow-up at the market at all).
+    let lastGaveUp = -1;
+    rec.events.forEach((e, i) => { if (e.t === 'protection_failed' && e.close === true) lastGaveUp = i; });
+    const tries = rec.events.slice(lastGaveUp + 1).filter((e) => e.t === 'exit_submitted').length;
     const held = Math.abs(rec.state.position);
     if (tries >= MAX_CLOSE_TRIES) {
       /*
@@ -3489,7 +3494,15 @@ export class TradeEngine {
       // knowable from here, and a guess would rewrite a book that may be right --
       // a sibling that has not yet absorbed its own fill looks exactly like
       // this. Wait for the siblings to catch up; say so if it lasts.
-      const u = this.unexplained.get(rec.state.tradeId) ?? { since: this.now(), said: false };
+      /*
+       * A gap that lasts, not two seen far apart (25 Nov 2026, 15:30 IST: P-58000's targets filled by the dozen at the
+       * 3:30 step, and a trade read Delta's net a moment before its siblings had absorbed theirs -- "Delta holds -26
+       * across 17 trades that add up to -32" -- because its last look, long before, had seen a gap too, and the wait
+       * ran from then). A look after more than `UNEXPLAINED_ALARM_MS` without one starts the wait again.
+       */
+      const seen = this.unexplained.get(rec.state.tradeId);
+      const u = seen && this.now() - seen.last <= UNEXPLAINED_ALARM_MS ? seen : { since: this.now(), said: false, last: this.now() };
+      u.last = this.now();
       if (!u.said && this.now() - u.since >= UNEXPLAINED_ALARM_MS) {
         u.said = true;
         this.d.onAlarm?.(rec.state, `${rec.plan.symbol}: Delta holds ${net} across ${siblings.length + 1} trades that add up to `

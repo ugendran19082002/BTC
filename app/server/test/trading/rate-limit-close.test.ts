@@ -191,3 +191,22 @@ test('[critical] ... and one whose stop is really gone gets a new one at that po
   assert.equal(s?.phase, 'protected');
   assert.ok(s?.protection.stopLoss, 'a stop rests again');
 });
+
+test('[critical] a close sent after an earlier one gave up has its own tries -- not given up at its first look (25 Nov 2026, P-58200)', async () => {
+  const r = rig();
+  const plan = planFor(ceProduct(), { lots: 100 });
+  await r.engine.open(plan);
+  await r.engine.poll(plan.tradeId);
+  r.ex.configure({ slippageLadder: [{ price: 101, size: 5 }] });   // a thin book: each try fills only a little
+  await r.engine.closeNow(plan.tradeId, 'manual exit');
+  for (let i = 0; i < MAX_CLOSE_TRIES + 2; i++) { r.advance(CLOSE_FOLLOW_UP_MS); await r.engine.poll(plan.tradeId); }
+  assert.equal(r.store.peek(plan.tradeId)!.state.phase, 'protected', 'the first close gave up and its stop went back');
+  const sentBefore = r.store.peek(plan.tradeId)!.events.filter((e) => e.t === 'exit_submitted').length;
+  // A new close (a swap, say): it is followed up at the market, as any close is, before it can give up.
+  await r.engine.closeNow(plan.tradeId, 'bought back for a new signal');
+  r.advance(CLOSE_FOLLOW_UP_MS);
+  await r.engine.poll(plan.tradeId);
+  const after = r.store.peek(plan.tradeId)!;
+  assert.equal(after.events.filter((e) => e.t === 'exit_submitted').length, sentBefore + 2, 'sent, then followed up once');
+  assert.equal(after.events.filter((e) => e.t === 'protection_failed' && (e as { close?: boolean }).close).length, 1, 'not given up again at its first look');
+});

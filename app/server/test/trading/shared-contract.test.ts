@@ -200,3 +200,21 @@ test('[critical] Delta sweeps reduce-only orders after one trade\'s target fills
   assert.equal(b.filter((o) => o.type !== 'limit').length, 1, "B's stop resting again");
   assert.deepEqual(await own(r, A.tradeId), [], "nothing of A's left resting");
 });
+
+test('[critical] a gap seen once long ago and a new one now are not "lasting" -- the wait starts again (25 Nov 2026, P-58000 at the 3:30 step)', async () => {
+  const { r, A } = await both();
+  r.ex.forcePosition(CE, -250, 100);        // a gap, seen once
+  await r.engine.reconcile(A.tradeId);
+  r.ex.forcePosition(CE, -200, 100);        // gone again before A is next looked at
+  r.advance(10 * 60_000);
+  // Ten minutes on, a sibling's target fills on Delta a moment before the desk absorbs it: a new gap, a few seconds old.
+  r.ex.forcePosition(CE, -250, 100);
+  await r.engine.reconcile(A.tradeId);
+  assert.equal(r.alarms.filter((a) => /across 2 trades/.test(a.message)).length, 0, 'not said: this gap is new');
+  // One that does last is still said, after its own minute, looked at as the loop does.
+  r.advance(UNEXPLAINED_ALARM_MS / 2);
+  await r.engine.reconcile(A.tradeId);
+  r.advance(UNEXPLAINED_ALARM_MS / 2);
+  await r.engine.reconcile(A.tradeId);
+  assert.equal(r.alarms.filter((a) => /across 2 trades/.test(a.message)).length, 1, 'said once it has lasted its minute');
+});
