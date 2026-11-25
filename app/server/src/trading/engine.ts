@@ -521,6 +521,16 @@ export function addEligibility(s: TradeState, size: number): string | null {
   return null;
 }
 
+/**
+ * When a trade's entry window ends, read off its journal: the first entry it sent, plus the plan's `timeoutMs`. Undefined
+ * with no entry sent or no window -- as the in-memory deadline would be.
+ */
+export function entryDeadlineOf(rec: Pick<TradeRecord, 'events' | 'plan'>): number | undefined {
+  const sent = rec.events.find((e) => e.t === 'entry_submitted');
+  const ms = rec.plan.entry?.timeoutMs;
+  return sent && typeof ms === 'number' && Number.isFinite(ms) && ms > 0 ? sent.at + ms : undefined;
+}
+
 /** How long to wait before trying protection again after a refusal. */
 const PROTECT_RETRY_MS = 2_000;
 /**
@@ -1705,7 +1715,12 @@ export class TradeEngine {
     }
 
     // Entry timed out and is still resting: cancel what is left.
-    const deadline = this.entryDeadline.get(tradeId);
+    /*
+     * Its deadline from the journal when this process never set one (25 Nov 2026, 14:45 IST: a deploy restarted the desk
+     * in the middle of a burst of 40 entries; the deadlines lived in memory only, so none of them ever timed out and all
+     * sat "waiting" -- as four did for hours on 17 Nov). The entry's own sending time plus its window, as it was set.
+     */
+    const deadline = this.entryDeadline.get(tradeId) ?? entryDeadlineOf(rec);
     if (entry && (entry.status === 'open' || entry.status === 'partial') && deadline !== undefined && this.now() >= deadline) {
       rec = await this.commit(rec, { t: 'entry_timeout', at: this.now() });
       await this.exchange.cancelOrder(entry).catch((e) => this.note('cancel entry', entry, e));

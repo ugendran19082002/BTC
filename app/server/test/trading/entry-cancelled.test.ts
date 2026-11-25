@@ -83,3 +83,29 @@ test('an entry still resting is left to its own deadline, as before', async () =
   assert.equal(after.state.phase, 'aborted');
   assert.ok(after.events.some((e) => e.t === 'entry_timeout'), 'closed by its own deadline');
 });
+
+/*
+ * A restart in the middle of an entry's window (25 Nov 2026, 14:45 IST): a deploy restarted the desk inside a burst of
+ * 40 entries. Their five-minute deadlines lived in memory only, so the new process never timed any of them out and all
+ * sat "waiting". The deadline is read off the journal when this process did not set it.
+ */
+test('[critical] an entry resting across a restart is still cancelled at the end of its window, read off its journal', async () => {
+  const { entryDeadlineOf } = await import('../../src/trading/engine.js');
+  const r = rig({ products: [ceProduct()], quotes: [quote(CE, 15, 15.5)] });
+  const rec = await resting(r);
+  assert.equal(entryDeadlineOf(rec), rec.events.find((e) => e.t === 'entry_submitted')!.at + 300_000);
+  // The restart: the process's memory of its deadlines is gone; the journal is all there is.
+  (r.engine as unknown as { entryDeadline: Map<string, number> }).entryDeadline.clear();
+  for (let i = 0; i < 10; i++) { r.advance(5_000); await r.engine.poll('T'); }
+  assert.equal(r.store.peek('T')!.state.phase, 'entry_pending', 'inside its five minutes it still rests');
+  for (let i = 0; i < 60; i++) { r.advance(5_000); await r.engine.poll('T'); }
+  const after = r.store.peek('T')!;
+  assert.equal(after.state.phase, 'aborted', 'cancelled at the end of its window, restart or not');
+  assert.ok(after.events.some((e) => e.t === 'entry_timeout'));
+});
+
+test('an entry with no window has no deadline from the journal either', async () => {
+  const { entryDeadlineOf } = await import('../../src/trading/engine.js');
+  assert.equal(entryDeadlineOf({ events: [{ t: 'entry_submitted', at: 1, clientOrderId: 'x', size: 1 }], plan: { entry: { timeoutMs: 0 } } } as never), undefined);
+  assert.equal(entryDeadlineOf({ events: [], plan: { entry: { timeoutMs: 5_000 } } } as never), undefined);
+});
