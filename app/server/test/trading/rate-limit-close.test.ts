@@ -168,3 +168,26 @@ test('[critical] closing all by hand, one at a time, also waits a refusal out an
   assert.deepEqual([...out.closed].sort(), ['A', 'B', 'C']);
   assert.equal(tries.get('A'), 2);
 });
+
+test('[critical] a position already marked unprotected whose stop rests at Delta reads protected at its next poll -- the 29 left over from 25 Nov 14:02', async () => {
+  const { r, plan } = await opened();
+  // As those were left before the fix: the close refused, the cancels refused, marked unprotected with its stop still on.
+  const rec = r.store.peek(plan.tradeId)!;
+  await r.store.save({ ...rec, state: { ...rec.state, phase: 'unprotected', alarm: 'POSITION UNPROTECTED: btc move exit failed: Delta rate limit reached; 5s until it resets.' } } as never);
+  const s = await r.engine.poll(plan.tradeId);
+  assert.equal(s?.phase, 'protected', 'its stop is resting: covered');
+  assert.equal(s?.alarm, null);
+  assert.equal(s?.protection.stopLoss, rec.state.protection.stopLoss, 'the same stop, nothing placed again');
+});
+
+test('[critical] ... and one whose stop is really gone gets a new one at that poll', async () => {
+  const { r, plan } = await opened();
+  const rec = r.store.peek(plan.tradeId)!;
+  const stopId = rec.state.protection.stopLoss!;
+  const order = await r.ex.getOrderByClientId(stopId, CE);
+  await r.ex.cancelOrder({ orderId: order!.orderId });
+  await r.store.save({ ...rec, state: { ...rec.state, phase: 'unprotected', alarm: 'POSITION UNPROTECTED: test' } } as never);
+  const s = await r.engine.poll(plan.tradeId);
+  assert.equal(s?.phase, 'protected');
+  assert.ok(s?.protection.stopLoss, 'a stop rests again');
+});

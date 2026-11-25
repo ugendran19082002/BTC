@@ -1592,6 +1592,17 @@ export class TradeEngine {
         if (role === 'take_profit') rec = await this.noteTargetChurn(rec, o.reason ?? null);
       }
     }
+    /*
+     * Marked unprotected, its stop read resting on Delta's book (25 Nov 2026, 14:42 IST): covered, and said so. The 29
+     * positions whose BTC-move closes met the rate limit at 14:02 -- their stops' cancels refused too -- stayed
+     * "unprotected" after the fix was deployed: nothing they were polled for changed their phase, though their stops
+     * rested and their targets stepped. A stop that is not resting is put back by the rest of the poll, as before.
+     */
+    const stopSeen = found[2];
+    if (rec.state.phase === 'unprotected' && rec.state.position !== 0 && rec.state.protection.stopLoss
+        && stopSeen && (stopSeen.status === 'open' || stopSeen.status === 'partial')) {
+      rec = await this.commit(rec, { t: 'reconciled', position: rec.state.position, at: this.now(), note: 'its stop is resting at Delta' });
+    }
     const entry = found[0];
     /*
      * An entry Delta itself has cancelled or rejected (17 Nov 2026, 11:05 and 12:35 IST: four "entry pending" for hours,
