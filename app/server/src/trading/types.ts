@@ -370,7 +370,15 @@ export type TradeEvent =
    * `leg`: the one leg that failed where only one did (18 Oct 2026). A target that did not go on while the stop rests
    * is a note, not an unprotected position (`machine.ts`). Absent: the stop, both, or not said (an older record).
    */
-  | { t: 'protection_failed'; reason: string; at: number; leg?: 'take_profit' | 'stop_loss' }
+  | {
+      t: 'protection_failed'; reason: string; at: number; leg?: 'take_profit' | 'stop_loss';
+      /**
+       * A close of the desk's own that did not go out (25 Nov 2026): refused, or given up after `MAX_CLOSE_TRIES`. With
+       * the stop still resting -- its cancel never went through -- the position is covered and stays protected; with
+       * none, it is unprotected and the stop goes back on. Either way no close is working any more.
+       */
+      close?: boolean;
+    }
   | {
       t: 'exit_submitted';
       role: OrderRole | 'manual';

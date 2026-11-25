@@ -1,6 +1,6 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { costOf, deskMetrics, noteDeltaCall, notePass, noteSignalRun, quotaKeyOf, quotaUsedPctOf, resetDeskMetrics, DELTA_WINDOW_MS, QUOTA_LADDER } from '../../src/observability/desk-metrics.js';
+import { costOf, deskMetrics, endpointOf, noteDeltaCall, noteLoginAccount, notePass, noteSignalRun, quotaKeyOf, quotaUsedPctOf, resetDeskMetrics, DELTA_WINDOW_MS, QUOTA_LADDER } from '../../src/observability/desk-metrics.js';
 
 /**
  * The desk's gauges (4 Oct 2026): calls to Delta and the quota they use, how
@@ -119,4 +119,24 @@ test('each login\'s units by kind (22 Nov 2026): where its quota goes -- prices 
   const by = new Map(deskMetrics(T + 1_000).delta.logins.map((l) => [l.quota, l.byKind]));
   assert.deepEqual(by.get(a), { prices: 30, 'place, edit or cancel': 5 });
   assert.deepEqual(by.get(b), { 'order lookup': 3 });
+});
+
+test('[critical] each login says whose it is and which endpoints spend it, ids taken out (25 Nov 2026: login 6d7dfc at 90% all day)', () => {
+  assert.equal(endpointOf('GET', '/v2/orders/client_order_id/511261795592348738S0'), 'GET /v2/orders/client_order_id/:id');
+  assert.equal(endpointOf('GET', '/v2/tickers/C-BTC-60000-251126?x=1'), 'GET /v2/tickers/:symbol');
+  assert.equal(endpointOf('DELETE', '/v2/orders'), 'DELETE /v2/orders');
+  assert.equal(endpointOf('GET', '/v2/orders/1713810183'), 'GET /v2/orders/:n');
+  const now = Date.now();
+  noteLoginAccount('login-a', 4);
+  for (let i = 0; i < 5; i++) noteDeltaCall({ method: 'GET', path: `/v2/orders/client_order_id/c${i}`, ms: 50, outcome: 'ok', quota: 'login-a' }, now);
+  noteDeltaCall({ method: 'GET', path: '/v2/orders?page_size=100', ms: 80, outcome: 'ok', quota: 'login-a' }, now);
+  noteDeltaCall({ method: 'GET', path: '/v2/tickers/C-BTC-60000-251126', ms: 30, outcome: 'ok', quota: 'login-b' }, now);
+  const logins = deskMetrics(now).delta.logins;
+  const a = logins.find((l) => l.quota === 'login-a')!;
+  assert.equal(a.account, 4);
+  assert.deepEqual(a.topPaths, [
+    { path: 'GET /v2/orders/client_order_id/:id', calls: 5, units: 15 },
+    { path: 'GET /v2/orders', calls: 1, units: 3 },
+  ]);
+  assert.equal(logins.find((l) => l.quota === 'login-b')!.account, null, 'a login not yet named says so');
 });

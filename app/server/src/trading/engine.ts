@@ -11,7 +11,7 @@ import { DEFAULT_LIMITS, precheck, type Failure, type PrecheckResult, type RiskL
 import { clampLeverage, fundsRequiredPerContract, liquidationRoom, premiumUsd } from './margin.js';
 import { fillChargesUsd } from './charges.js';
 import { closeEligibility, closePreview, type ClosePreview } from './close-preview.js';
-import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, VenueRestricted, type ExchangePort } from './exchange/port.js';
+import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, VenueRestricted, isRateLimited, rateLimitedWaitMs, type ExchangePort } from './exchange/port.js';
 
 /**
  * The thing that actually trades.
@@ -2987,11 +2987,17 @@ export class TradeEngine {
       });
       rec = await this.absorb(rec, ack, 'exit');
     } catch (e) {
-      rec = await this.commit(rec, { t: 'protection_failed', reason: `${reason} failed: ${(e as Error).message}`, at: this.now() });
+      // Delta's rate limit is a refusal too (25 Nov 2026): it answered, and nothing was placed.
+      const refused = e instanceof OrderRejected || isRateLimited(e);
+      rec = await this.commit(rec, { t: 'protection_failed', reason: `${reason} failed: ${(e as Error).message}`, at: this.now(), ...(refused ? { close: true } : {}) });
       // Refused is an answer -- nothing was placed -- and the exits were taken off for it: they go back on now, not a
       // poll later (30 Oct 2026: `immediate_liquidation`, six seconds short with no stop at Delta). No answer is not
-      // one: the close may be working, and the poll reads it before anything is put beside it.
-      if (e instanceof OrderRejected && rec.state.position !== 0) rec = await this.protect(rec);
+      // one: the close may be working, and the poll reads it before anything is put beside it. Inside Delta's named wait
+      // the stop goes back on at the poll after it (`protectAfter`), not into the same refusal.
+      if (refused && rec.state.position !== 0) {
+        if (isRateLimited(e)) this.protectAfter.set(rec.state.tradeId, this.now() + rateLimitedWaitMs(e));
+        else rec = await this.protect(rec);
+      }
     }
     return rec.state;
   }
@@ -3031,11 +3037,19 @@ export class TradeEngine {
     const tries = rec.events.filter((e) => e.t === 'exit_submitted').length;
     const held = Math.abs(rec.state.position);
     if (tries >= MAX_CLOSE_TRIES) {
+      /*
+       * Given up -- and never left bare (25 Nov 2026: a cap-swap close of the P-57800 took its stop and target off at
+       * 12:09, tried three times in four seconds and stopped; it held two contracts with nothing at Delta until closed
+       * by hand two hours on, as two 58,800 PE did on 24 Nov). The close is over: its stop and target go back on, as for
+       * any refused close, and the alarm says the close did not happen.
+       */
       if (!this.gaveUpClosing.has(rec.state.tradeId)) {
         this.gaveUpClosing.add(rec.state.tradeId);
         this.d.onAlarm?.(rec.state, `Close left ${held} contracts ${rec.state.position > 0 ? 'long' : 'short'} after ${tries} tries at the market. `
-          + 'Nothing more is sent -- close the rest by hand.', rec.plan);
+          + 'Its stop and target are put back on -- close it by hand if it should go.', rec.plan);
       }
+      rec = await this.commit(rec, { t: 'protection_failed', reason: `close gave up after ${tries} tries`, at: this.now(), close: true });
+      if (rec.state.position !== 0) rec = await this.protect(rec);
       return rec;
     }
     const owed = closing.all ? undefined : closing.size - (closing.heldBefore - held);

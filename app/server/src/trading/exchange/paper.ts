@@ -13,11 +13,16 @@ import { ExchangeUnavailable, OrderGone, OrderRejected, SubmitTimeout, VenueRest
  * were not looking -- is something a test can ask for by name.
  */
 
+/** Delta's words for its rate limit, as the live exchange passes them on (`signed.ts` `RateLimited`). */
+export const PAPER_RATE_LIMITED = 'Delta rate limit reached; 5s until it resets.';
+
 export type PaperFault =
   /** The request leaves and no answer arrives. The order may still exist. */
   | { kind: 'submit_timeout'; landed: boolean }
   | { kind: 'reject'; reason: string }
-  | { kind: 'unavailable' };
+  | { kind: 'unavailable' }
+  /** Delta's rate limit (25 Nov 2026), as the live exchange reports it: an answer, nothing placed, with its wait. */
+  | { kind: 'rate_limited' };
 
 export type PaperConfig = {
   /** Contracts that fill on a marketable limit before the rest rests. */
@@ -26,6 +31,8 @@ export type PaperConfig = {
   slippageLadder?: { price: number; size: number }[];
   /** Applied to the next placeOrder only, then cleared. */
   nextFault?: PaperFault;
+  /** This many cancels refused by Delta's rate limit before they go through again (25 Nov 2026): the order stays on. */
+  rateLimitCancels?: number;
   /** With `nextFault`: only the next order of this role takes it (a stop, a target), the others go through. */
   nextFaultOn?: PlaceOrderRequest['role'];
   /**
@@ -95,6 +102,7 @@ export class PaperExchange implements ExchangePort {
       this.cfg.nextFault = undefined;
       this.cfg.nextFaultOn = undefined;
       if (fault.kind === 'unavailable') throw new ExchangeUnavailable();
+      if (fault.kind === 'rate_limited') throw new ExchangeUnavailable(PAPER_RATE_LIMITED);
       if (fault.kind === 'reject') throw new OrderRejected(fault.reason);
       if (fault.kind === 'submit_timeout') {
         // The order either landed or it did not. The caller cannot tell, and
@@ -313,6 +321,7 @@ export class PaperExchange implements ExchangePort {
 
   async cancelOrder({ orderId }: { orderId: string }): Promise<void> {
     this.guard();
+    if ((this.cfg.rateLimitCancels ?? 0) > 0) { this.cfg.rateLimitCancels!--; throw new ExchangeUnavailable(PAPER_RATE_LIMITED); }
     const o = this.orders.get(orderId);
     if (!o) return;
     if (o.status === 'filled' || o.status === 'cancelled') return;

@@ -33,9 +33,9 @@ import { alertFor, bookWentFlat, daySummaryFor, deskAlarmAlert, noStopBatchAlert
 import { NoStopBatch } from '../notify/no-stop-batch.js';
 import { TelegramNotifier } from '../notify/telegram.js';
 import { BEST_TRADE_MIN_PREMIUM_USD } from '../domain/best-trade.js';
-import type { ExchangePort } from './exchange/port.js';
+import { isRateLimited, type ExchangePort } from './exchange/port.js';
 import { UNDERLYING_WATCH_MS, UnderlyingWatch, watchedOf } from './underlying-watch.js';
-import { notePass, quotaKeyOf, quotaUsedPctOf } from '../observability/desk-metrics.js';
+import { noteLoginAccount, notePass, quotaKeyOf, quotaUsedPctOf } from '../observability/desk-metrics.js';
 import { ENTRY_WATCH_MS, EntryWatch } from './entry-watch.js';
 import { FILL_WAKE_MS, FillWake, type HeardOrder } from './fill-wake.js';
 import { LEG_AUDIT_MS, LegAudit } from './leg-audit.js';
@@ -112,6 +112,11 @@ export const SQUARE_OFF_PARALLEL_QUOTA_PCT = 60;
 export const SQUARE_OFF_IDLE_MS = 100;
 /** At most this long waited at a time inside a wait Delta named (429), before looking again. */
 export const SQUARE_OFF_RATE_WAIT_MAX_MS = 5_000;
+/**
+ * A close Delta's rate limit refused is tried again, after the wait it named, up to this many times (25 Nov 2026: the
+ * BTC-move exit's 440 closes at 14:02 IST left 37 positions open, each tried once and dropped).
+ */
+export const CLOSE_RATE_RETRIES = 6;
 const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** What the screen is told about the day's loss budget on one account. */
 export type LossLimit = { on: boolean; inForceUsd: number; defaultUsd: number; chosenUsd: number | null };
@@ -207,6 +212,7 @@ export class TradingService {
     this.live = creds ? new DeltaExchange(creds) : null;
     this.quotaKey = quotaKeyOf(creds);
     this.currentAccountId = accountId;
+    noteLoginAccount(this.quotaKey, accountId);
     this.paperExchange = new PaperExchange({ balanceUsd: 1_000 });
     // A mode chosen in the browser outlives a restart; without one, the
     // environment decides.
@@ -1073,25 +1079,40 @@ export class TradingService {
       }
     }
 
-    const closeOne = async (rec: TradeRecord): Promise<TradeState | null> => {
+    // How many times each trade's close met Delta's rate limit: tried again after its wait, up to `CLOSE_RATE_RETRIES`.
+    const limited = new Map<string, number>();
+    /** One close. `retry`: the rate limit refused it and it may be tried again -- it is counted nowhere yet. */
+    const closeOne = async (rec: TradeRecord): Promise<TradeState | null | 'retry'> => {
+      const id = rec.state.tradeId;
+      const again = () => {
+        const n = (limited.get(id) ?? 0) + 1;
+        limited.set(id, n);
+        return n <= CLOSE_RATE_RETRIES;
+      };
       try {
         // Each trade's own words where they differ (the BTC-move exit names its strike and the move, 22 Nov 2026).
-        const after = await this.engine.closeNow(rec.state.tradeId, typeof why === 'function' ? why(rec.state.tradeId) : why);
+        const after = await this.engine.closeNow(id, typeof why === 'function' ? why(id) : why);
         if (after && after.position !== 0) {
-          out.failed.push({ tradeId: rec.state.tradeId, reason: `still holding ${after.position}` });
+          // Refused by the rate limit (the engine says so on the trade, 25 Nov 2026): nothing was sent; again, after the wait.
+          if (isRateLimited(new Error(`${after.alarm ?? ''} ${after.note ?? ''}`)) && again()) return 'retry';
+          out.failed.push({ tradeId: id, reason: `still holding ${after.position}` });
         } else {
-          out.closed.push(rec.state.tradeId);
+          out.closed.push(id);
         }
         return after;
       } catch (e) {
-        out.failed.push({ tradeId: rec.state.tradeId, reason: (e as Error).message });
+        if (isRateLimited(e) && again()) return 'retry';
+        out.failed.push({ tradeId: id, reason: (e as Error).message });
         return null;
       }
     };
     const left = open.filter((r) => r.state.position !== 0);
-    // Close all by hand: one at a time, in the trades' own order, as it always was.
+    // Close all by hand: one at a time, in the trades' own order, as it always was -- a rate-limited one waited out and
+    // tried again in its place.
     if (order !== 'worst-first') {
-      for (const rec of left) await closeOne(rec);
+      for (const rec of left) {
+        while ((await closeOne(rec)) === 'retry') await pause(Math.max(this.rateLimitWaitMs(), SQUARE_OFF_IDLE_MS));
+      }
       return out;
     }
 
@@ -1133,6 +1154,8 @@ export class TradingService {
           const startedAt = Date.now();
           try {
             const after = await closeOne(rec);
+            // The rate limit refused it: back in the queue, taken again once Delta's wait is over (the loop waits it out).
+            if (after === 'retry') { left.push(rec); quota++; continue; }
             const mine = (after?.fills ?? []).filter((f) => f.side === 'buy' && f.ts >= startedAt - 1_000 && f.role !== 'entry');
             const size = mine.reduce((n, f) => n + f.size, 0);
             fills.push({

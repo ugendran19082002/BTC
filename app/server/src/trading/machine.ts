@@ -231,6 +231,11 @@ export function applyEvent(prev: TradeState, e: TradeEvent): TradeState {
       // The target alone, with the stop resting at the exchange: the position is covered, its target is not on (18 Oct 2026:
       // 49 "POSITION UNPROTECTED" alarms over positions whose stops never moved, in Delta's cancel-only half hour).
       if (e.leg === 'take_profit' && s.protection.stopLoss) return { ...s, note: `could not place the target: ${e.reason}` };
+      // A close that did not go out (25 Nov 2026, 14:02 IST: the BTC-move exit's 440 closes met Delta's rate limit, and
+      // 37 positions whose stop and target were never taken off -- their cancels refused too -- sat "unprotected" for half
+      // an hour, their targets no longer stepped): with the stop still resting the position is covered. No close works.
+      if (e.close && s.protection.stopLoss) return { ...s, phase: 'protected', closing: null, alarm: null, note: `${e.reason} -- the stop is still on` };
+      if (e.close) return { ...s, phase: 'unprotected', closing: null, alarm: `POSITION UNPROTECTED: ${e.reason}` };
       return { ...s, phase: 'unprotected', alarm: `POSITION UNPROTECTED: ${e.reason}` };
 
     case 'exit_submitted':

@@ -33,6 +33,14 @@ export const ENTRY_WATCH_PER_LOOK = 2;
  * that are due are looked at, oldest first, so this many a look is spent on those alone.
  */
 export const CLOSE_WATCH_PER_LOOK = 6;
+/**
+ * A position with no stop on (25 Nov 2026): polled ahead of the others and on up to the stops' share of the quota, as a
+ * close is -- it is a stop's business. At 14:02 IST that day 37 positions whose BTC-move closes met the rate limit sat
+ * "unprotected" for over twenty minutes: every login was past the others' 50%, so nothing looked at them but the loop.
+ * Each at most once every `BARE_RETRY_MS`, this many a look: putting a stop back is two or three calls.
+ */
+export const BARE_WATCH_PER_LOOK = 2;
+export const BARE_RETRY_MS = 2_000;
 /** Above this share of Delta's quota, the urgent polls stop and the loop alone carries on. */
 export const ENTRY_WATCH_QUOTA_PCT = QUOTA_LADDER.others;
 /** A close is a stop's own exit: polled on up to the stops' share of the quota, as the stop watch is (`QUOTA_LADDER`). */
@@ -76,6 +84,9 @@ export class EntryWatch {
   private closes = new Set<string>();
   /** Each close's next moment to be looked at: its follow-up's (`dueOf`). A close not due yet is not polled. */
   private readonly due = new Map<string, number>();
+  /** Of `ids`, the positions with no stop on (`phase` "unprotected"), and when each is next looked at. */
+  private bare = new Set<string>();
+  private readonly bareDue = new Map<string, number>();
   private readonly busy = new Set<string>();
   private next = 0;
 
@@ -89,6 +100,8 @@ export class EntryWatch {
     this.closes = new Set(closing.map((r) => r.state.tradeId));
     for (const id of [...this.due.keys()]) if (!this.closes.has(id)) this.due.delete(id);
     for (const r of closing) this.due.set(r.state.tradeId, dueOf(r.state, now));
+    this.bare = new Set(records.filter((r) => r.state.phase === 'unprotected').map((r) => r.state.tradeId));
+    for (const id of [...this.bareDue.keys()]) if (!this.bare.has(id)) this.bareDue.delete(id);
   }
 
   /**
@@ -127,11 +140,15 @@ export class EntryWatch {
               // Still working after its look: due again at its (new) follow-up's moment -- never sooner than a beat on.
               this.due.set(id, Math.max(dueOf(state, this.now()), this.now() + ENTRY_WATCH_MS));
             } else { this.closes.delete(id); this.due.delete(id); }
+            if (state.phase === 'unprotected') { this.bare.add(id); this.bareDue.set(id, this.now() + BARE_RETRY_MS); }
+            else { this.bare.delete(id); this.bareDue.delete(id); }
             return;
           }
           this.ids = this.ids.filter((x) => x !== id);
           this.closes.delete(id);
           this.due.delete(id);
+          this.bare.delete(id);
+          this.bareDue.delete(id);
           try { this.d.onSettled?.(id); } catch { /* a listener is not the watch's problem */ }
         }, () => {})
         .finally(() => { this.busy.delete(id); });
@@ -144,12 +161,17 @@ export class EntryWatch {
       .filter((id) => this.closes.has(id) && !this.busy.has(id) && (this.due.get(id) ?? now) <= now)
       .sort((a, b) => (this.due.get(a) ?? now) - (this.due.get(b) ?? now));
     for (const id of dueCloses.slice(0, CLOSE_WATCH_PER_LOOK)) look(id);
+    // Then the positions with no stop on, due ones first (`BARE_RETRY_MS`), up to the stops' share as the closes are.
+    const dueBare = this.ids
+      .filter((id) => this.bare.has(id) && !this.closes.has(id) && !this.busy.has(id) && (this.bareDue.get(id) ?? now) <= now)
+      .sort((a, b) => (this.bareDue.get(a) ?? now) - (this.bareDue.get(b) ?? now));
+    for (const id of dueBare.slice(0, BARE_WATCH_PER_LOOK)) { this.bareDue.set(id, now + BARE_RETRY_MS); look(id); }
     // The others in turn, so one slow trade cannot keep the rest from being looked at.
     const turn = this.ids.map((_, i) => this.ids[(this.next + i) % this.ids.length]!);
     let others = 0;
     for (const id of othersToo ? turn : []) {
       if (others >= ENTRY_WATCH_PER_LOOK) break;
-      if (!this.closes.has(id) && !this.busy.has(id)) { look(id); others++; }
+      if (!this.closes.has(id) && !this.bare.has(id) && !this.busy.has(id)) { look(id); others++; }
     }
     this.next = this.ids.length ? (this.next + others) % this.ids.length : 0;
     return polled;

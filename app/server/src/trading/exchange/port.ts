@@ -112,6 +112,19 @@ export class SubmitTimeout extends Error {
   }
 }
 
+/**
+ * Delta's rate limit, however it reached the desk (25 Nov 2026): `RateLimited`, or an `ExchangeUnavailable` or refusal
+ * carrying its words ("Delta rate limit reached; 5s until it resets."). An answer -- nothing was done -- with a wait.
+ */
+export function isRateLimited(e: unknown): boolean {
+  return e instanceof Error && /rate limit reached/i.test(e.message);
+}
+/** The wait Delta named in a rate-limit error, in ms; 5 s when it named none. */
+export function rateLimitedWaitMs(e: unknown): number {
+  const m = e instanceof Error ? /(\d+)s until it resets/i.exec(e.message) : null;
+  return m ? Number(m[1]) * 1_000 : 5_000;
+}
+
 /** Thrown when the exchange answered and said no. Safe to treat as "no order". */
 export class OrderRejected extends Error {
   constructor(readonly reason: string) {

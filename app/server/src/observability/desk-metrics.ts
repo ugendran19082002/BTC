@@ -40,7 +40,25 @@ export function costOf(method: string, path: string): { kind: DeltaKind; units: 
   return { kind: 'other', units: 1 };
 }
 
-type Call = { at: number; ms: number; units: number; kind: DeltaKind; outcome: DeltaOutcome; quota: string };
+type Call = { at: number; ms: number; units: number; kind: DeltaKind; outcome: DeltaOutcome; quota: string; path: string };
+
+/**
+ * A call's endpoint with its ids taken out (25 Nov 2026): "/v2/orders/client_order_id/:id", "/v2/tickers/:symbol" --
+ * so the minute's line can say which endpoint spends a login's quota, not only which kind.
+ */
+export function endpointOf(method: string, path: string): string {
+  const p = path.split('?')[0]!
+    .replace(/\/client_order_id\/[^/]+/, '/client_order_id/:id')
+    .replace(/\/(tickers|l2orderbook|products)\/[^/]+/, '/$1/:symbol')
+    .replace(/\/\d+(?=\/|$)/g, '/:n');
+  return `${method} ${p}`;
+}
+
+/** Which account each login is (25 Nov 2026): a login is named by a hash of its key; the minute's line says whose it is. */
+const loginAccount = new Map<string, number | null>();
+export function noteLoginAccount(quota: string, accountId: number | null): void {
+  try { loginAccount.set(quota, accountId); } catch { /* a gauge never stops anything */ }
+}
 
 /**
  * Whose quota a call is on (21 Oct 2026). Delta throttles "authenticated requests by user ID" -- each login its own
@@ -88,7 +106,7 @@ const keep = <T extends { at: number }>(xs: T[], now: number, ms = DELTA_WINDOW_
 export function noteDeltaCall(c: { method: string; path: string; ms: number; outcome: DeltaOutcome; quota?: string }, now = Date.now()): void {
   try {
     const { kind, units } = costOf(c.method, c.path);
-    calls.push({ at: now, ms: c.ms, units, kind, outcome: c.outcome, quota: c.quota ?? 'none' });
+    calls.push({ at: now, ms: c.ms, units, kind, outcome: c.outcome, quota: c.quota ?? 'none', path: endpointOf(c.method, c.path) });
     if (c.outcome === 'rate-limited') rateLimited = { total: rateLimited.total + 1, lastAt: now };
     if (calls.length > 512 && now - calls[0]!.at > DELTA_WINDOW_MS) calls = keep(calls, now);
   } catch { /* a gauge never stops a call */ }
@@ -148,6 +166,9 @@ export function quotaUsedPctOf(quota: string, now = Date.now()): number {
 }
 
 /** The last five minutes, as the screen shows them. */
+/** How many of a login's endpoints the minute's line names, busiest first. */
+const TOP_PATHS = 6;
+
 export function deskMetrics(now = Date.now()) {
   calls = keep(calls, now);
   passes = keep(passes, now);
@@ -162,6 +183,16 @@ export function deskMetrics(now = Date.now()) {
     k[c.kind] = (k[c.kind] ?? 0) + c.units;
     loginKinds.set(c.quota, k);
   }
+  // Each login's busiest endpoints (25 Nov 2026), units and calls over the window.
+  const loginPaths = new Map<string, Map<string, { calls: number; units: number }>>();
+  for (const c of calls) {
+    const m = loginPaths.get(c.quota) ?? new Map<string, { calls: number; units: number }>();
+    const e = m.get(c.path) ?? { calls: 0, units: 0 };
+    m.set(c.path, { calls: e.calls + 1, units: e.units + c.units });
+    loginPaths.set(c.quota, m);
+  }
+  const topPaths = (quota: string) => [...(loginPaths.get(quota) ?? new Map()).entries()]
+    .map(([path, v]) => ({ path, ...v })).sort((a, b) => b.units - a.units).slice(0, TOP_PATHS);
   const busiest = Math.max(0, ...byLogin.values());
   const kinds = new Map<DeltaKind, { calls: number; units: number }>();
   for (const c of calls) {
@@ -180,7 +211,10 @@ export function deskMetrics(now = Date.now()) {
       units,
       /** The busiest login's share of its own quota (each login has its 20,000). */
       usedPct: Math.round((busiest / DELTA_QUOTA_UNITS) * 1000) / 10,
-      logins: [...byLogin.entries()].map(([quota, u]) => ({ quota, units: u, usedPct: Math.round((u / DELTA_QUOTA_UNITS) * 1000) / 10, byKind: loginKinds.get(quota) ?? {} })).sort((a, b) => b.units - a.units),
+      logins: [...byLogin.entries()].map(([quota, u]) => ({
+        quota, account: loginAccount.get(quota) ?? null, units: u, usedPct: Math.round((u / DELTA_QUOTA_UNITS) * 1000) / 10,
+        byKind: loginKinds.get(quota) ?? {}, topPaths: topPaths(quota),
+      })).sort((a, b) => b.units - a.units),
       byKind: [...kinds.entries()].map(([kind, v]) => ({ kind, ...v })).sort((a, b) => b.units - a.units),
       response: spread(calls.filter((c) => c.outcome !== 'failed').map((c) => c.ms)),
       failed: calls.filter((c) => c.outcome === 'failed').length,
@@ -214,5 +248,6 @@ export function deskMetrics(now = Date.now()) {
 
 /** For tests. */
 export function resetDeskMetrics(): void {
+  loginAccount.clear();
   calls = []; passes = []; runs = []; rateLimited = { total: 0, lastAt: null }; loopLast = null;
 }
