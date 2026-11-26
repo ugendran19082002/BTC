@@ -1,31 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { flowsOf, recordsOf, walletOf, MONEY_TYPES, type FlowDay } from '../../src/ledger/flows.js';
+import { flowsOf, recordsOf, walletOf, DEPOSIT_WITHDRAW_TYPES, MONEY_TYPES, TRANSFER_TYPES, type FlowDay } from '../../src/ledger/flows.js';
 
 /** Money in and out of an account (owner, 20 Nov 2026: "total withdraw, total investment"), from the ledger days kept. */
 
 const day = (account: number, d: string, byType: FlowDay['byType'], closingUsd: number | null = null): FlowDay => ({ account, day: d, byType, closingUsd });
 const near = (a: number, b: number, what: string) => assert.ok(Math.abs(a - b) < 1e-9, `${what}: ${a} vs ${b}`);
 
-test('[critical] deposits and money moved in are in; withdrawals and money moved out are out; trading and charges are neither', () => {
-  const f = flowsOf([
+test('[critical] invested is deposits, withdrawn is withdrawals (26 Nov 2026: "only sum deposit & withdraw"); money moved between accounts, trading and charges are neither', () => {
+  const days = [
     day(1, '2026-11-01', { deposit: { n: 1, usd: 500 }, cashflow: { n: 40, usd: 30 }, commission: { n: 40, usd: -4 } }),
     day(1, '2026-11-05', { withdrawal: { n: 2, usd: -200 }, sub_account_transfer: { n: 1, usd: 102.68 } }),
     day(1, '2026-11-09', { sub_account_transfer: { n: 3, usd: -46.56 }, settlement: { n: 1, usd: -0.64 } }),
-  ]);
-  near(f.inUsd, 602.68, 'in: the deposit and the transfer in');
-  near(f.outUsd, 246.56, 'out: the withdrawals and the transfer out');
-  near(f.netUsd, 356.12, 'net put in');
-  assert.equal(f.moves, 7);
+  ];
+  const f = flowsOf(days);
+  near(f.inUsd, 500, 'in: the deposit alone');
+  near(f.outUsd, 200, 'out: the withdrawals alone');
+  near(f.netUsd, 300, 'net put in');
+  assert.equal(f.moves, 3);
   assert.equal(f.firstMoveDay, '2026-11-01');
-  assert.equal(f.lastMoveDay, '2026-11-09');
+  assert.equal(f.lastMoveDay, '2026-11-05');
+  // The moves between accounts, asked for apart.
+  const m = flowsOf(days, TRANSFER_TYPES);
+  near(m.inUsd, 102.68, 'moved in'); near(m.outUsd, 46.56, 'moved out'); assert.equal(m.moves, 4);
+  assert.equal(m.firstMoveDay, '2026-11-05');
 });
 
 test('[critical] a day kept since 20 Nov has both directions of one kind; an older day only the net, read by its sign', () => {
   // Two transfers in one day, 300 in and 100 out: the new day keeps both, the old one only +200.
-  const fresh = flowsOf([day(2, '2026-11-20', { sub_account_transfer: { n: 2, usd: 200, inUsd: 300, outUsd: 100 } })]);
+  const fresh = flowsOf([day(2, '2026-11-20', { sub_account_transfer: { n: 2, usd: 200, inUsd: 300, outUsd: 100 } })], TRANSFER_TYPES);
   near(fresh.inUsd, 300, 'gross in'); near(fresh.outUsd, 100, 'gross out'); near(fresh.netUsd, 200, 'net');
-  const old = flowsOf([day(2, '2026-11-10', { sub_account_transfer: { n: 2, usd: 200 } })]);
+  const old = flowsOf([day(2, '2026-11-10', { sub_account_transfer: { n: 2, usd: 200 } })], TRANSFER_TYPES);
   near(old.inUsd, 200, 'only the net, as in'); near(old.outUsd, 0, 'nothing known out'); near(old.netUsd, 200, 'the net is the same either way');
 });
 
@@ -55,24 +60,28 @@ test('[critical] the wallet: each account\'s latest day read, summed, as of the 
   assert.deepEqual(walletOf([day(1, '2026-11-18', null, null)]), { balanceUsd: null, asOf: null, accounts: 0 });
 });
 
-test('only money types count: Delta\'s deposit and withdrawal names, and transfers between accounts', () => {
+test('only money types count: Delta\'s deposit and withdrawal names, and transfers between accounts -- kept apart', () => {
   for (const t of ['deposit', 'withdrawal', 'sub_account_transfer']) assert.ok(MONEY_TYPES.includes(t), t);
+  assert.ok(!DEPOSIT_WITHDRAW_TYPES.includes('sub_account_transfer'), 'a move between accounts is not invested or withdrawn');
+  assert.deepEqual(TRANSFER_TYPES, ['sub_account_transfer']);
   for (const t of ['cashflow', 'commission', 'settlement', 'funding', 'liquidation_fee']) assert.ok(!MONEY_TYPES.includes(t), t);
 });
 
-test('[critical] the date-wise records: one a day, an account and a kind, newest first; in and out apart; trading left out', () => {
-  const r = recordsOf([
+test('[critical] the date-wise records: one a day, an account and a kind, newest first; in and out apart; trading and moves between accounts left out', () => {
+  const days = [
     day(1, '2026-11-01', { deposit: { n: 2, usd: 500 }, cashflow: { n: 40, usd: 30 } }),
     day(2, '2026-11-05', { withdrawal: { n: 1, usd: -200 } }),
     day(1, '2026-11-20', { sub_account_transfer: { n: 3, usd: 50, inUsd: 80, outUsd: 30 } }),
     day(1, '2026-11-10', { sub_account_transfer: { n: 1, usd: -46.56 } }),
-  ]);
+  ];
+  const r = recordsOf(days);
   assert.deepEqual(r.map((x) => [x.day, x.account, x.type, x.inUsd, x.outUsd]), [
-    ['2026-11-20', 1, 'sub_account_transfer', 80, 0],
-    ['2026-11-20', 1, 'sub_account_transfer', 0, 30],
-    ['2026-11-10', 1, 'sub_account_transfer', 0, 46.56],
     ['2026-11-05', 2, 'withdrawal', 0, 200],
     ['2026-11-01', 1, 'deposit', 500, 0],
+  ]);
+  // The moves, asked for by kind: each direction its own record.
+  assert.deepEqual(recordsOf(days, TRANSFER_TYPES).map((x) => [x.day, x.inUsd, x.outUsd]), [
+    ['2026-11-20', 80, 0], ['2026-11-20', 0, 30], ['2026-11-10', 0, 46.56],
   ]);
   assert.equal(r.at(-1)!.n, 2, 'how many entries made the day\'s record');
   // The records add up to the totals.

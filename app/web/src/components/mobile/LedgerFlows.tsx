@@ -25,7 +25,8 @@ export function LedgerFlows({ from, to, account, rangeWords, accounts = [], bare
   const wrap = (body: ReactNode) => (bare ? <>{body}</> : <Panel title="Money in & out">{body}</Panel>);
   if (!f) return wrap(<Loading error={error} what="money in and out" />);
   const a = f.allTime;
-  const nothing = a.moves === 0;
+  const moved = f.moved?.allTime ?? null;
+  const nothing = a.moves === 0 && !(moved && moved.moves > 0);
   // From the first money in: an account's own start, not the ledger's first day.
   const since = `Since ${a.firstMoveDay ? dayLabel(a.firstMoveDay) : f.since ? dayLabel(f.since) : 'the first ledger day'}${account === null ? ' · every account' : ''}`;
   return wrap(
@@ -47,9 +48,17 @@ export function LedgerFlows({ from, to, account, rangeWords, accounts = [], bare
               <Stat label="Net invested">{a.netUsd < 0 ? `−${rupees(a.netUsd)}` : rupees(a.netUsd)}</Stat>
               <Stat label={f.wallet.asOf ? `Wallet · ${dayLabel(f.wallet.asOf)}` : 'Wallet'}>{rupees(f.wallet.balanceUsd)}</Stat>
             </Stats>
+            {/* Money moved between the desk's own accounts (26 Nov 2026: "invest & withdraw-la move in & out sum panathe"): not
+                money put in or taken out, so not in the tiles; said here, apart, where there was any. */}
+            {moved && moved.moves > 0 && (
+              <p aria-label="Moved between accounts" className="m-0 flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[12px] tabular-nums text-muted-foreground">
+                <span>Moved between accounts · not in invested</span>
+                <span>in {rupees(moved.inUsd)} · out {rupees(moved.outUsd)}</span>
+              </p>
+            )}
             {f.profitUsd !== null && (
               <div aria-label="Made" className="flex min-w-0 items-baseline justify-between gap-2 rounded-lg bg-muted px-3 py-2">
-                <span className="min-w-0 text-[12.5px] leading-snug text-muted-foreground">Made<span className="block text-[11px]">wallet − net invested</span></span>
+                <span className="min-w-0 text-[12.5px] leading-snug text-muted-foreground">Made<span className="block text-[11px]">{moved && moved.netUsd !== 0 ? 'wallet − net invested − net moved in' : 'wallet − net invested'}</span></span>
                 <Rupees usd={f.profitUsd} signed size="lg" />
               </div>
             )}

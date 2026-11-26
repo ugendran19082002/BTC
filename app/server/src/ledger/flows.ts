@@ -11,12 +11,20 @@
  */
 import { rows } from '../db/pool.js';
 
-/** The wallet entry types that are money in or out, by Delta's names: the sign of each says which. */
-export const MONEY_TYPES: readonly string[] = [
+/**
+ * The wallet entry types that are money put in or taken out, by Delta's names: the sign of each says which. Only these
+ * are Invested and Withdrawn (owner, 26 Nov 2026: "invest & withdraw-la move in & out sum panathe, only sum deposit &
+ * withdraw"): money moved between the desk's own accounts is not money put in or taken out -- it made both totals
+ * several times what was ever deposited (all accounts, to 26 Nov: $2,008 deposited, $2,834 moved in).
+ */
+export const DEPOSIT_WITHDRAW_TYPES: readonly string[] = [
   'deposit', 'external_deposit', 'fund_deposit', 'fund_wallet_deposit',
   'withdrawal', 'withdrawal_cancellation', 'fund_withdrawal', 'fund_wallet_withdrawal',
-  'sub_account_transfer',
 ];
+/** Money moved between accounts: kept apart, said apart; still money in or out of one account, so its profit counts it. */
+export const TRANSFER_TYPES: readonly string[] = ['sub_account_transfer'];
+/** Every type that moves money in or out of an account: deposits, withdrawals and moves between accounts. */
+export const MONEY_TYPES: readonly string[] = [...DEPOSIT_WITHDRAW_TYPES, ...TRANSFER_TYPES];
 
 type TypeSum = { n: number; usd: number; inUsd?: number; outUsd?: number };
 export type FlowDay = { account: number; day: string; byType: Record<string, TypeSum> | null; closingUsd: number | null };
@@ -36,12 +44,15 @@ export type Flows = {
 
 const ZERO: Flows = { inUsd: 0, outUsd: 0, netUsd: 0, moves: 0, firstMoveDay: null, lastMoveDay: null };
 
-/** The money in and out over the days given (any accounts). Pure: what the route and the tests both run. */
-export function flowsOf(days: readonly FlowDay[]): Flows {
+/**
+ * The money in and out over the days given (any accounts), of the kinds given -- deposits and withdrawals where none are
+ * named. Pure: what the route and the tests both run.
+ */
+export function flowsOf(days: readonly FlowDay[], types: readonly string[] = DEPOSIT_WITHDRAW_TYPES): Flows {
   const out: Flows = { ...ZERO };
   for (const d of [...days].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))) {
     let moved = false;
-    for (const type of MONEY_TYPES) {
+    for (const type of types) {
       const t = d.byType?.[type];
       if (!t || !(t.n > 0)) continue;
       // Kept gross since 20 Nov 2026; before it, one net figure: its sign says which way.
@@ -69,10 +80,10 @@ export function flowsOf(days: readonly FlowDay[]): Flows {
  * kept both; a day read before 20 Nov kept only its net, one record by its sign.
  */
 export type FlowRecord = { day: string; account: number; type: string; inUsd: number; outUsd: number; n: number };
-export function recordsOf(days: readonly FlowDay[]): FlowRecord[] {
+export function recordsOf(days: readonly FlowDay[], types: readonly string[] = DEPOSIT_WITHDRAW_TYPES): FlowRecord[] {
   const out: FlowRecord[] = [];
   for (const d of days) {
-    for (const type of MONEY_TYPES) {
+    for (const type of types) {
       const t = d.byType?.[type];
       if (!t || !(t.n > 0)) continue;
       const inUsd = typeof t.inUsd === 'number' ? t.inUsd : Math.max(0, t.usd);
@@ -116,17 +127,27 @@ export async function ledgerFlows(account: number | null, from: string, to: stri
     account: Number(r.broker_account_id), day: String(r.day), byType: r.by_type,
     closingUsd: r.closing === null || r.closing === undefined ? null : Number(r.closing),
   }));
+  const inRange = days.filter((d) => d.day >= from && d.day <= to);
   const allTime = flowsOf(days);
-  const range = flowsOf(days.filter((d) => d.day >= from && d.day <= to));
+  const range = flowsOf(inRange);
+  // Money moved between accounts, apart (26 Nov 2026): not in Invested or Withdrawn, said on its own line.
+  const moved = { allTime: flowsOf(days, TRANSFER_TYPES), range: flowsOf(inRange, TRANSFER_TYPES) };
   const wallet = walletOf(days);
   const since = days.reduce<string | null>((m, d) => (m === null || d.day < m ? d.day : m), null);
   return {
     account, from, to, since, daysRead: days.length,
+    /** Deposits and withdrawals only. */
     allTime, range,
-    /** Every day's money in and out, by kind, newest first: what the Invested and Withdrawn tiles open to. */
+    /** Money moved between accounts, since the first day and over the range: apart from the two above. */
+    moved,
+    /** Every day's deposits and withdrawals, newest first: what the Invested and Withdrawn tiles open to. */
     records: recordsOf(days),
     wallet,
-    /** The wallet less what was put in net: what the money has made, as the wallet stood on `wallet.asOf`. */
-    profitUsd: wallet.balanceUsd === null ? null : wallet.balanceUsd - allTime.netUsd,
+    /**
+     * The wallet less what came in net: what the money has made, as the wallet stood on `wallet.asOf`. Money moved in from
+     * another account came in too -- one account's made would count it as profit otherwise; across every account the
+     * moves between them cancel.
+     */
+    profitUsd: wallet.balanceUsd === null ? null : wallet.balanceUsd - allTime.netUsd - moved.allTime.netUsd,
   };
 }

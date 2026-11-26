@@ -44,6 +44,27 @@ describe('Money in & out', () => {
     expect(getLedgerFlows).toHaveBeenCalledWith('2026-11-14', '2026-11-20', 3);
   });
 
+  it('[critical] money moved between accounts (26 Nov 2026: "only sum deposit & withdraw"): its own line, not in the tiles; made says it is taken off', async () => {
+    getLedgerFlows.mockResolvedValue(flows({ moved: {
+      allTime: { inUsd: 200, outUsd: 50, netUsd: 150, moves: 4, firstMoveDay: '2026-10-01', lastMoveDay: '2026-11-19' },
+      range: { inUsd: 0, outUsd: 0, netUsd: 0, moves: 0, firstMoveDay: null, lastMoveDay: null },
+    } }));
+    render(<LedgerFlows from="2026-11-14" to="2026-11-20" account={3} rangeWords="Last 7 days" />);
+    const line = await screen.findByLabelText('Moved between accounts');
+    expect(line).toHaveTextContent('not in invested');
+    expect(line).toHaveTextContent('in ₹17,000 · out ₹4,250');
+    const box = screen.getByRole('region', { name: 'Money in and out' });
+    expect(within(box).getByText('₹85,000')).toBeInTheDocument();   // Invested: the deposits alone, as sent
+    expect(screen.getByLabelText('Made')).toHaveTextContent('wallet − net invested − net moved in');
+  });
+
+  it('no moves between accounts (or a server from before them): no such line', async () => {
+    getLedgerFlows.mockResolvedValue(flows());
+    render(<LedgerFlows from="2026-11-14" to="2026-11-20" account={3} rangeWords="Last 7 days" />);
+    await screen.findByLabelText('Made');
+    expect(screen.queryByLabelText('Moved between accounts')).toBeNull();
+  });
+
   it('[critical] what the money made: the wallet less the net put in, signed', async () => {
     getLedgerFlows.mockResolvedValue(flows());
     render(<LedgerFlows from="2026-11-14" to="2026-11-20" account={3} rangeWords="Last 7 days" />);

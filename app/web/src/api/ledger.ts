@@ -50,7 +50,10 @@ export type FlowRecord = { day: string; account: number; type: string; inUsd: nu
 export type MoneyFlows = { inUsd: number; outUsd: number; netUsd: number; moves: number; firstMoveDay: string | null; lastMoveDay: string | null };
 export type LedgerFlows = {
   account: number | null; from: string; to: string; since: string | null; daysRead: number;
+  /** Deposits and withdrawals only (26 Nov 2026: "only sum deposit & withdraw"). */
   allTime: MoneyFlows; range: MoneyFlows;
+  /** Money moved between accounts, apart from the two above (26 Nov 2026). Absent from an older server. */
+  moved?: { allTime: MoneyFlows; range: MoneyFlows };
   /** Each day's money in and out by kind, newest first (20 Nov 2026): what the Invested and Withdrawn tiles open to. */
   records?: FlowRecord[];
   wallet: { balanceUsd: number | null; asOf: string | null; accounts: number };

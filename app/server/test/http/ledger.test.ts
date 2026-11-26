@@ -252,18 +252,20 @@ test('[critical] money in and out (20 Nov 2026): since the first day and over th
     assert.equal(a.status, 200);
     const f = a.body;
     assert.equal(f.since, '2026-09-01');
-    assert.deepEqual([f.allTime.inUsd, f.allTime.outUsd, f.allTime.netUsd], [580, 130, 450], 'in: 500 + 80; out: 100 + 30');
-    assert.deepEqual([f.range.inUsd, f.range.outUsd], [80, 130], 'the range: November only');
+    // Invested and withdrawn: deposits and withdrawals only (26 Nov 2026); the moves between accounts apart.
+    assert.deepEqual([f.allTime.inUsd, f.allTime.outUsd, f.allTime.netUsd], [500, 100, 400], 'in: the deposit; out: the withdrawal');
+    assert.deepEqual([f.range.inUsd, f.range.outUsd], [0, 100], 'the range: November only');
+    assert.deepEqual([f.moved.allTime.inUsd, f.moved.allTime.outUsd, f.moved.allTime.netUsd], [80, 30, 50], 'moved in and out, apart');
+    assert.deepEqual([f.moved.range.inUsd, f.moved.range.outUsd], [80, 30]);
     assert.deepEqual([f.wallet.balanceUsd, f.wallet.asOf], [520, '2026-11-19'], 'the last day read');
-    assert.equal(f.profitUsd, 70, 'the wallet 520 less 450 put in');
-    // The records the tiles open to: newest first, in and out apart.
+    assert.equal(f.profitUsd, 70, 'the wallet 520 less 400 put in and 50 moved in net: a move in is not profit');
+    // The records the tiles open to: deposits and withdrawals, newest first.
     assert.deepEqual(f.records.map((x: { day: string; type: string; inUsd: number; outUsd: number }) => [x.day, x.type, x.inUsd, x.outUsd]), [
-      ['2026-11-19', 'sub_account_transfer', 80, 0], ['2026-11-19', 'sub_account_transfer', 0, 30],
       ['2026-11-05', 'withdrawal', 0, 100], ['2026-09-01', 'deposit', 500, 0],
     ]);
 
     const both = (await call('GET', '/api/ledger/flows?from=2026-11-19&to=2026-11-19')).body;
-    assert.ok(both.allTime.inUsd >= 610, 'every account: the 30 into the second one counted too');
+    assert.ok(both.moved.allTime.inUsd >= 110, 'every account: the 30 into the second one is a move too');
     assert.equal((await call('GET', '/api/ledger/flows?from=2026-11-19&to=2026-11-01')).status, 400);
     assert.equal((await call('GET', '/api/ledger/flows?from=19-11-2026')).status, 400);
   } finally {
