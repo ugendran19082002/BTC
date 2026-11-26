@@ -25,6 +25,22 @@ handover_said() {
   [[ "$out" == *"$2"* ]]
 }
 
+# nginx in web looks the api's address up once, when it starts (26 Nov 2026): a hand-over makes a new api container with
+# a new address, and a web left running (its image unchanged, so `up -d` does not make it again) sent every /api call to
+# the container just removed -- 502 "Host is unreachable", the deploy's health wait failing until it rolled back. Told
+# to read its configuration again it looks the name up afresh, with no request dropped. Never fails the deploy: a web
+# just made again has the new address already.
+handover_reload_web() {
+  local web
+  web="$($COMPOSE ps -q web 2>/dev/null | head -1 || true)"
+  [[ -n "$web" ]] || return 0
+  if docker exec "$web" nginx -s reload >/dev/null 2>&1; then
+    say "hand-over: web told to look the api up again"
+  else
+    say "hand-over: web not reloaded (a web just started has the new address already)"
+  fi
+}
+
 handover_healthy() {
   docker exec "$1" node -e "fetch('http://127.0.0.1:8787/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1
 }
@@ -36,6 +52,7 @@ handover_up() {
   if [[ -z "$old" ]] || ! handover_said "$old" 'desk lock held'; then
     say "hand-over: no api holding the desk lock is running -- starting the plain way, stop then start"
     $COMPOSE up -d
+    handover_reload_web
     return 0
   fi
 
@@ -72,6 +89,7 @@ handover_up() {
       docker rm "$old" >/dev/null
       # The rest -- web on its new image -- with the api as it now is: same configuration, so not made again.
       $COMPOSE up -d
+      handover_reload_web
       return 0
     fi
     sleep 0.25
