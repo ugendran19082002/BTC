@@ -630,7 +630,9 @@ export type StrategyGroup = {
 
 /** A group's own values of the account's seven settings; null where it takes the account's (server `group-limits.ts`). */
 export type GroupOwn = {
-  maxOpen: number | null; ce: number | null; pe: number | null; strikeMax: number | null; strikeFull: 'next' | 'skip' | null;
+  maxOpen: number | null; ce: number | null; pe: number | null; strikeMax: number | null;
+  /** A fixed number a strike in place of the per cent (26 Nov 2026). Absent on a server from before it. */
+  strikeFixed?: number | null; strikeFull: 'next' | 'skip' | null;
   zoneFresh: Record<SignalTf, number> | null; momentum: MomentumGuard | null; reentry: Reentry | null;
 };
 
@@ -703,6 +705,8 @@ export type StrategyStatus = {
   openBySide?: { CE: number; PE: number };
   /** The most open at once on one strike, this account's (22 Oct 2026): per cent of "at most open", 10 where none is chosen. Absent on a server from before it. */
   signalStrikeMaxPct?: number;
+  /** Or a fixed number of trades a strike in its place (26 Nov 2026): null, the per cent is the limit. Absent on a server from before it. */
+  signalStrikeFixed?: number | null;
   /** At a full strike: the strategy's rule picks again further out ('next', the default), or the signal is skipped. */
   signalStrikeFull?: 'next' | 'skip';
   /** The fill window, this account's (28 Oct 2026): how late a zone fill may still be entered, seconds by time frame. Absent on an older server. */

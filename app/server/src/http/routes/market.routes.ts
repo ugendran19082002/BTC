@@ -7,7 +7,7 @@ import { rows } from '../../db/pool.js';
 import { methodsSchema } from '../../entry/catalogue.js';
 import { liveCheck, marketBreakdown, marketReport, sessionStudy, sessionStudyTrades, signalBacktest, signalBacktestTrades, volStudy, volStudyTrades, winSweep, winSweepTrades } from '../../report/backtest-run.js';
 import { cleanBlocks, cleanConfig, strategyStore } from './strategy.routes.js';
-import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, strikeFullOf, strikeMaxOf, SIGNAL_TFS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, minutesForward, minutesOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
+import { GLOBAL_MAX_OPEN_KEY, MAX_STRIKE_BLOCKS, STRIKE_FIXED_KEY, STRIKE_FULL_KEY, STRIKE_MAX_KEY, strikeFixedOf, strikeFullOf, strikeMaxOf, SIGNAL_TFS, autoMethodsProblems, SIDE_MAX_KEYS, actionOf, exitRules, globalMaxOpenOf, minutesForward, minutesOf, noEntryProblems, ruleTfs, sideMaxOf, strikeBlockProblems, validateConfig, type Strategy, type StrikeBlock } from '../../strategy/types.js';
 import { accountSetting } from '../../db/settings.js';
 import { brokerAccounts } from '../../delta/accounts.js';
 import { refuse } from '../refuse.js';
@@ -88,18 +88,21 @@ export async function backtestStrategies(): Promise<BacktestStrategy[]> {
  * Each trading account's signal strategies that sell, with its limit on open trades as it stands: the desk's side
  * of a live check (`liveCheckHere`), which works an account's strategies together under that limit.
  */
-export async function liveAccounts(): Promise<{ id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number; strikePct: number; strikeFull: 'next' | 'skip' } | null; strategies: Strategy[] }[]> {
+export async function liveAccounts(): Promise<{ id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number; strikePct: number; strikeFixed?: number; strikeFull: 'next' | 'skip' } | null; strategies: Strategy[] }[]> {
   const every = await backtestStrategies();
   const svc = tradingService();
   const nameOf = (id: number | null) => { try { return id == null ? null : brokerAccounts().get(id)?.name ?? null; } catch { return null; } };
   return [...new Set(every.map((s) => s.accountId ?? null))].map((id) => {
     const max = globalMaxOpenOf(accountSetting(svc.settings, GLOBAL_MAX_OPEN_KEY, id));
+    const fixed = strikeFixedOf(accountSetting(svc.settings, STRIKE_FIXED_KEY, id));
     return {
       id, name: nameOf(id),
       // And the most on one strike, as the account's runner holds it (22 Oct 2026).
       caps: max > 0 ? {
         deskMax: max, cePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.CE, id)), pePct: sideMaxOf(accountSetting(svc.settings, SIDE_MAX_KEYS.PE, id)),
         strikePct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, id)), strikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, id)),
+        // Or the fixed number a strike in its place (26 Nov 2026), so a live check holds the strike as the runner does.
+        ...(fixed !== null ? { strikeFixed: fixed } : {}),
       } : null,
       strategies: every.filter((s) => (s.accountId ?? null) === id),
     };

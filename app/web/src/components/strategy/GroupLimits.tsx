@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Loader2, RotateCcw, SlidersHorizontal } from 'lucide-react';
-import { setCapSwap, setSignalSwap, setMomentumGuard, setReentry, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setZoneFresh } from '@/api/strategy';
+import { setCapSwap, setSignalSwap, setMomentumGuard, setReentry, setSideMax, setSignalMaxOpen, setStrikeFixed, setStrikeFull, setStrikeMax, setZoneFresh } from '@/api/strategy';
 import { Button } from '@/components/ui/button';
 import { SideMax } from '@/components/strategy/SideMax';
 import { StrikeMax } from '@/components/strategy/StrikeMax';
@@ -15,6 +15,8 @@ import { cn } from '@/lib/utils';
 /** The account's seven, as the Signal Strategies row has them: what a group takes where it sets nothing of its own. */
 export type AccountLimits = {
   maxOpen: number; side: { CE: number; PE: number }; strikePct: number; strikeFull: 'next' | 'skip';
+  /** A fixed number a strike in place of the per cent (26 Nov 2026); null, the per cent. Absent: the per cent. */
+  strikeFixed?: number | null;
   zoneFresh: Record<SignalTf, number>; momentum: Guard; momentumNow: Parameters<typeof MomentumGuard>[0]['now']; reentry: ReentrySetting;
   /** ATM IV now and an hour ago, for the IV spike guard (21 Nov 2026). */
   ivNow?: Parameters<typeof MomentumGuard>[0]['ivNow'];
@@ -38,17 +40,20 @@ export function GroupLimits({ group, account, busy, act, onInvalid }: {
   onInvalid: (message: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const own: GroupOwn = group.own ?? { maxOpen: null, ce: null, pe: null, strikeMax: null, strikeFull: null, zoneFresh: null, momentum: null, reentry: null };
+  const own: GroupOwn = group.own ?? { maxOpen: null, ce: null, pe: null, strikeMax: null, strikeFixed: null, strikeFull: null, zoneFresh: null, momentum: null, reentry: null };
   const words = groupOwnWords(own);
   const key = (what: string) => `group-limit-${what}-${group.id}`;
   const save = (what: string, fn: () => Promise<unknown>) => act(key(what), fn);
   const cap = own.maxOpen ?? account.maxOpen;
+  // The strike rule, as the server reads it (group-limits.ts): the group's whole where it sets either half, else the account's.
+  const ownFixed = own.strikeFixed ?? null;
+  const strikeFixed = ownFixed ?? (own.strikeMax !== null ? null : account.strikeFixed ?? null);
   const used = group.openNow ?? { all: 0, CE: 0, PE: 0 };
   const allBack = () => save('all', async () => {
     if (own.maxOpen !== null) await setSignalMaxOpen(null, group.id);
     if (own.ce !== null) await setSideMax('CE', null, group.id);
     if (own.pe !== null) await setSideMax('PE', null, group.id);
-    if (own.strikeMax !== null) await setStrikeMax(null, group.id);
+    if (own.strikeMax !== null || ownFixed !== null) await setStrikeMax(null, group.id);
     if (own.strikeFull !== null) await setStrikeFull(null, group.id);
     if (own.zoneFresh !== null) await setZoneFresh(null, group.id);
     if (own.momentum !== null) await setMomentumGuard(null, group.id);
@@ -83,11 +88,12 @@ export function GroupLimits({ group, account, busy, act, onInvalid }: {
             <SideMax pct={{ CE: own.ce ?? account.side.CE, PE: own.pe ?? account.side.PE }} cap={cap} open={{ CE: used.CE, PE: used.PE }}
                      busy={busy === key('side')} onInvalid={onInvalid} onSave={(side, pct) => save('side', () => setSideMax(side, pct, group.id))} />
           </Own>
-          <Own own={own.strikeMax !== null || own.strikeFull !== null} label="Strike max" busy={busy === key('strike')}
-               onReset={() => save('strike', async () => { if (own.strikeMax !== null) await setStrikeMax(null, group.id); if (own.strikeFull !== null) await setStrikeFull(null, group.id); })}>
-            <StrikeMax pct={own.strikeMax ?? account.strikePct} cap={cap} busiest={null} full={own.strikeFull ?? account.strikeFull}
+          <Own own={own.strikeMax !== null || ownFixed !== null || own.strikeFull !== null} label="Strike max" busy={busy === key('strike')}
+               onReset={() => save('strike', async () => { if (own.strikeMax !== null || ownFixed !== null) await setStrikeMax(null, group.id); if (own.strikeFull !== null) await setStrikeFull(null, group.id); })}>
+            <StrikeMax pct={own.strikeMax ?? account.strikePct} fixed={strikeFixed} cap={cap} busiest={null} full={own.strikeFull ?? account.strikeFull}
                        busy={busy === key('strike')} onInvalid={onInvalid}
-                       onSave={(n) => save('strike', () => setStrikeMax(n, group.id))} onSaveFull={(m) => save('strike', () => setStrikeFull(m, group.id))} />
+                       onSave={(n) => save('strike', () => setStrikeMax(n, group.id))}
+                       onSaveFixed={account.strikeFixed !== undefined ? (n) => save('strike', () => setStrikeFixed(n, group.id)) : undefined} onSaveFull={(m) => save('strike', () => setStrikeFull(m, group.id))} />
           </Own>
           <Own own={own.zoneFresh !== null} label="Fill window" busy={busy === key('zone')} onReset={() => save('zone', () => setZoneFresh(null, group.id))}>
             <ZoneFresh seconds={own.zoneFresh ?? account.zoneFresh} busy={busy === key('zone')} onSave={(ch) => save('zone', () => setZoneFresh(ch ?? {}, group.id))} />

@@ -49,6 +49,13 @@ export const setSignalMaxOpen = (max: number | null, groupId?: string) =>
 export const setStrikeMax = (pct: number | null, groupId?: string) =>
   post<{ ok: true; signalStrikeMaxPct: number }>('/api/strategies/strike-max', scoped({ pct }, groupId));
 
+/**
+ * The most on one strike as a fixed number of trades (26 Nov 2026), the shown account's or a group's: 1 to 48; the per
+ * cent is kept, unused while this is set. Back to the per cent: `setStrikeMax` with a per cent, which clears this.
+ */
+export const setStrikeFixed = (fixed: number, groupId?: string) =>
+  post<{ ok: true; signalStrikeMaxPct: number; signalStrikeFixed: number | null }>('/api/strategies/strike-max', scoped({ fixed }, groupId));
+
 /** What a signal does at a full strike, the shown account's: the next strike out, or skip. */
 export const setStrikeFull = (mode: 'next' | 'skip' | null, groupId?: string) =>
   post<{ ok: true; signalStrikeFull: 'next' | 'skip' }>('/api/strategies/strike-full', scoped({ mode }, groupId));

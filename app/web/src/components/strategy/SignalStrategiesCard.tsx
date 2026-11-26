@@ -2,7 +2,7 @@ import { accountScope, canMakeForAccount } from '@/lib/account-scope';
 import { useEffect, useRef, useState } from 'react';
 import { FoldButton, useFold } from '@/components/ui/fold';
 import { AlertTriangle, Bot, CheckCircle2, Copy, CopyPlus, FolderInput, FolderPlus, Loader2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setCapSwap, setSignalSwap, setMomentumGuard, setReentry, setScheduler, setSideMax, setSignalMaxOpen, setStrikeFull, setStrikeMax, setStrategyEnabled, setZoneFresh, takeIntoGroup } from '@/api/strategy';
+import { cloneStrategy, createGroup, deleteStrategies, deleteStrategy, getStrategies, moveToGroup, orderGroups, saveStrategy, setCapSwap, setSignalSwap, setMomentumGuard, setReentry, setScheduler, setSideMax, setSignalMaxOpen, setStrikeFixed, setStrikeFull, setStrikeMax, setStrategyEnabled, setZoneFresh, takeIntoGroup } from '@/api/strategy';
 import { MAX_GLOBAL_OPEN, MAX_SIGNAL_OPEN, ruleTfWords, type Strategy, type StrategyGroup, type StrategyStatus, type VolLevelNow } from '@/types/strategy';
 import { usePoll } from '@/hooks/usePoll';
 import { Button } from '@/components/ui/button';
@@ -495,7 +495,7 @@ export function SignalStrategiesCard() {
   const accountLimits: AccountLimits | null = data && accountScope() !== null && data.signalMaxOpen !== undefined && data.signalSideMaxPct
     && data.signalStrikeMaxPct !== undefined && data.signalZoneFreshS && data.signalMomentumGuard && data.signalReentry
     ? {
-      maxOpen: data.signalMaxOpen, side: data.signalSideMaxPct, strikePct: data.signalStrikeMaxPct, strikeFull: data.signalStrikeFull ?? 'next',
+      maxOpen: data.signalMaxOpen, side: data.signalSideMaxPct, strikePct: data.signalStrikeMaxPct, strikeFixed: data.signalStrikeFixed ?? null, strikeFull: data.signalStrikeFull ?? 'next',
       // The whole guard, its unit and per cent with it: points alone read "+200" where the account's is 0.25% (16 Nov 2026).
       zoneFresh: data.signalZoneFreshS,
       // And every entry guard beside it (21 Nov 2026), not only the momentum one.
@@ -744,11 +744,14 @@ export function SignalStrategiesCard() {
           {data && data.signalStrikeMaxPct !== undefined && data.signalMaxOpen !== undefined && (
             <StrikeMax
               pct={data.signalStrikeMaxPct}
+              fixed={data.signalStrikeFixed ?? null}
               cap={data.signalMaxOpen}
               busiest={data.busiestStrike ?? null}
               full={data.signalStrikeFull}
               busy={busy === 'strike-max'}
               onSave={(n) => act('strike-max', () => setStrikeMax(n))}
+              // The fixed rule (26 Nov 2026), offered where the server says it has it.
+              onSaveFixed={data.signalStrikeFixed !== undefined ? (n) => act('strike-max', () => setStrikeFixed(n)) : undefined}
               onSaveFull={(mode) => act('strike-max', () => setStrikeFull(mode))}
               onInvalid={setFailed}
             />

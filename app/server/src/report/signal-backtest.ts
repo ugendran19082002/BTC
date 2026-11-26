@@ -14,7 +14,7 @@ import { selectLegs, type Candidate } from '../strategy/select.js';
 import { pickMethods } from '../strategy/pick-methods.js';
 import { exitMomentFor, istMinutes, istWeekday } from '../strategy/schedule.js';
 import {
-  DEFAULT_CONFIG, SIGNAL_TFS, actionOf, exitRules, exitValueAt, sideCaps, strikeCapOf, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
+  DEFAULT_CONFIG, SIGNAL_TFS, actionOf, exitRules, exitValueAt, sideCaps, strikeMostOf, maxSlPtsFor, maxTgtPtsFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, ruleTfs, strikePickAt,
   type SignalTf, type Strategy, type StrategyConfig, type StrikeBlock, volSourceOf,
 } from '../strategy/types.js';
 
@@ -75,6 +75,11 @@ export type BacktestParams = {
    * further out that are not full, never nearer the money; 'skip' skips the signal.
    */
   strikePct?: number; strikeFull?: 'next' | 'skip';
+  /**
+   * Or a fixed number a strike in place of `strikePct` (26 Nov 2026, as the live desk may hold it: `STRIKE_FIXED_KEY`),
+   * under `deskMax`. Set by a live check from the account's settings; the backtest screen does not offer it.
+   */
+  strikeFixed?: number;
   /**
    * Take a signal only if its SL and TGT are in range (13 Oct 2026, as the strategy form's): the BTC points from
    * the perp entry to the signal's SL, and to its TGT, at least the minimum and at most the maximum. 0 is off.
@@ -339,12 +344,12 @@ export type DeskCaps = {
   /** The most open on one strike (`strikePct` of `max`); null, none. And what a signal does at it. */
   strike: number | null; strikeFull: 'next' | 'skip';
 };
-export function deskCapsOf(p: Pick<BacktestParams, 'deskMax' | 'cePct' | 'pePct' | 'strikePct' | 'strikeFull'>): DeskCaps | null {
+export function deskCapsOf(p: Pick<BacktestParams, 'deskMax' | 'cePct' | 'pePct' | 'strikePct' | 'strikeFixed' | 'strikeFull'>): DeskCaps | null {
   const max = p.deskMax ?? 0;
   if (!(max > 0)) return null;
   return {
     max, side: sideCaps(max, { CE: p.cePct ?? 100, PE: p.pePct ?? 100 }),
-    strike: strikeCapOf(max, p.strikePct ?? 100), strikeFull: p.strikeFull === 'skip' ? 'skip' : 'next',
+    strike: strikeMostOf(max, p.strikePct ?? 100, p.strikeFixed ?? null), strikeFull: p.strikeFull === 'skip' ? 'skip' : 'next',
   };
 }
 /** An option is not sold for less than this, as the strategies' own floor; a backtest may set its own (`minPremium`). */
@@ -2360,7 +2365,7 @@ export function portfolioSessionStudyTradesHere(o: PortfolioSessionStudyAsk, pic
 export type LiveCheckAsk = {
   from: string; to: string; now: number;
   /** Each trading account's strategies and its limit on open trades as it stands (null: none). */
-  accounts: { id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number; strikePct?: number; strikeFull?: 'next' | 'skip' } | null; strategies: Strategy[] }[];
+  accounts: { id: number | null; name: string | null; caps: { deskMax: number; cePct: number; pePct: number; strikePct?: number; strikeFixed?: number; strikeFull?: 'next' | 'skip' } | null; strategies: Strategy[] }[];
   /**
    * Saved backtests to lay beside the desk in place of the strategies' own rules (owner, 14 Oct 2026: "check the
    * backtest and the portfolio"): the members worked as they are in a portfolio run -- under one account's limit

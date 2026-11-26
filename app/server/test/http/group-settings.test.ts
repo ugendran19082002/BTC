@@ -62,7 +62,7 @@ test('[critical] each of the seven saved for a group lands under the group\'s ke
   const made = await api('POST', '/api/strategy-groups', { name: 'Own limits', accountId: main() });
   assert.equal(made.status, 200);
   const g = made.body.group.id as string;
-  assert.deepEqual(made.body.group.own, { maxOpen: null, ce: null, pe: null, strikeMax: null, strikeFull: null, zoneFresh: null, momentum: null, reentry: null }, 'a new group: all its account\'s');
+  assert.deepEqual(made.body.group.own, { maxOpen: null, ce: null, pe: null, strikeMax: null, strikeFixed: null, strikeFull: null, zoneFresh: null, momentum: null, reentry: null }, 'a new group: all its account\'s');
   const saves: [string, object][] = [
     ['/api/strategies/side-max', { side: 'CE', pct: 60 }],
     ['/api/strategies/strike-max', { pct: 5 }],

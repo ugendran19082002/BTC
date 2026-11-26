@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { StrikeMax } from '@/components/strategy/StrikeMax';
 import { LimitsBlock } from '@/components/mobile/OpenLimits';
-import { strikeCapOf, strikeMaxProblem, strikeWords } from '@/lib/side-max';
+import { fixedFromPct, strikeCapOf, strikeFixedProblem, strikeMaxProblem, strikeMostOf, strikeWords } from '@/lib/side-max';
 
 /**
  * The most open at once on one strike (owner's list #1, 22 Oct 2026): a per cent of "at most open", as each side's
@@ -86,5 +86,64 @@ describe('StrikeMax, when a strike is full', () => {
     unmount();
     render(<StrikeMax pct={10} cap={0} busiest={null} onSave={vi.fn()} onSaveFull={onSaveFull} onInvalid={vi.fn()} />);
     expect(screen.queryByLabelText('when a strike is full')).toBeNull();
+  });
+});
+
+describe('StrikeMax, by a per cent or a fixed number (26 Nov 2026, owner: "% and fixed rendu-um venum")', () => {
+  const show = (over: Partial<Parameters<typeof StrikeMax>[0]> = {}) => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onSaveFixed = vi.fn().mockResolvedValue(true);
+    const onInvalid = vi.fn();
+    render(<StrikeMax pct={12} cap={400} busiest={null} onSave={onSave} onSaveFixed={onSaveFixed} onInvalid={onInvalid} {...over} />);
+    return { onSave, onSaveFixed, onInvalid, box: within(screen.getByRole('group', { name: 'most on one strike' })) };
+  };
+
+  it('[critical] switching to Fixed saves the number the per cent holds now -- 12% of 400 is 48: nothing moves', () => {
+    const { onSaveFixed, onSave, box } = show();
+    expect(box.getByRole('radio', { name: 'per cent of at most open' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(box.getByRole('radio', { name: 'fixed number a strike' }));
+    expect(onSaveFixed).toHaveBeenCalledWith(48);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('[critical] fixed: its numbers offered, a pick saved as a fixed number, the limit said as the number; back to % saves the per cent as it is', () => {
+    const { onSaveFixed, onSave, box } = show({ fixed: 30, busiest: { symbol: 'P-BTC-83000-221026', open: 30 } });
+    expect(box.getByRole('radio', { name: 'fixed number a strike' })).toHaveAttribute('aria-checked', 'true');
+    expect(box.getByLabelText('most on one strike')).toHaveValue('30');
+    expect(box.getAllByRole('option').map((o) => o.textContent).slice(0, 8))
+      .toEqual(['5 a strike', '10 a strike', '15 a strike', '20 a strike', '25 a strike', '30 a strike', '40 a strike', '48 a strike · Delta max']);
+    expect(box.getByLabelText('busiest strike now, of the most')).toHaveTextContent('PE 83000: 30 of 30 · full');
+    fireEvent.change(box.getByLabelText('most on one strike'), { target: { value: '20' } });
+    expect(onSaveFixed).toHaveBeenCalledWith(20);
+    fireEvent.click(box.getByRole('radio', { name: 'per cent of at most open' }));
+    expect(onSave).toHaveBeenCalledWith(12);
+  });
+
+  it('[critical] a custom fixed number is checked first: 49 refused in words, nothing saved', () => {
+    const { onSaveFixed, onInvalid, box } = show({ fixed: 30 });
+    fireEvent.change(box.getByLabelText('most on one strike'), { target: { value: 'custom' } });
+    const input = screen.getByLabelText('most on one strike, trades');
+    fireEvent.change(input, { target: { value: '49' } });
+    fireEvent.blur(input);
+    expect(onInvalid).toHaveBeenCalledWith(strikeFixedProblem(49));
+    expect(onSaveFixed).not.toHaveBeenCalled();
+    // Still open to type in, the saved number back in it.
+    const again = screen.getByLabelText('most on one strike, trades');
+    expect(again).toHaveValue('30');
+    fireEvent.change(again, { target: { value: '33' } });
+    fireEvent.blur(again);
+    expect(onSaveFixed).toHaveBeenCalledWith(33);
+  });
+
+  it('a fixed number holds with no "at most open", under the cap where there is one; a server from before it offers only the per cent', () => {
+    expect([strikeMostOf(0, 12, 30), strikeMostOf(20, 12, 30), strikeMostOf(400, 12, null), fixedFromPct(400, 100), fixedFromPct(100, 10)]).toEqual([30, 20, 48, 48, 10]);
+    render(<StrikeMax pct={12} cap={400} busiest={null} onSave={vi.fn()} onInvalid={vi.fn()} />);
+    expect(screen.queryByRole('radiogroup', { name: 'strike max by' })).toBeNull();
+  });
+
+  it('the phone: a fixed number said as one', () => {
+    render(<LimitsBlock d={{ signalMaxOpen: 400, openNow: 30, signalSideMaxPct: { CE: 80, PE: 80 }, openBySide: { CE: 0, PE: 30 }, signalStrikeMaxPct: 12, signalStrikeFixed: 30, busiestStrike: { symbol: 'P-BTC-83000-221026', open: 30 } }} />);
+    expect(screen.getByRole('progressbar', { name: 'busiest strike, of the most on one strike' })).toHaveAttribute('aria-valuemax', '30');
+    expect(screen.getByText(/PE 83000 · max 30 a strike \(fixed\), then the next out/)).toBeInTheDocument();
   });
 });

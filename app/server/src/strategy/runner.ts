@@ -9,7 +9,7 @@ import { entryDue, entrySlotDate, entryWindowEnd, exitMomentFor, graceOf, istMin
 import { describeSelection, elseWords, ruleWords, selectLegs, type Candidate } from './select.js';
 import { accountSetting, groupSetting } from '../db/settings.js';
 import { groupBlock, groupLimitsOf, groupOwnOf } from './group-limits.js';
-import { CAP_SWAP_KEY, capSwapOf, pickCapSwap, SIGNAL_SWAP_KEY, signalSwapOf, type CapSwap, type SwapCandidate, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, marketGuardWhy, bidGuardWhy, momentumGuardOf, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeCapOf, strikeFullOf, strikeMaxOf, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
+import { CAP_SWAP_KEY, capSwapOf, pickCapSwap, SIGNAL_SWAP_KEY, signalSwapOf, type CapSwap, type SwapCandidate, DEFAULT_CONFIG, GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, marketGuardWhy, bidGuardWhy, momentumGuardOf, REENTRY_KEY, reentryOf, reentryOpenAt, SIDE_MAX_KEYS, STRIKE_FIXED_KEY, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY, zoneFreshOf, actionOf, strikeFixedOf, strikeFullOf, strikeMaxOf, strikeMostOf, strikeRuleWords, sideCaps, sideMaxOf, entersOn, exitAsk, exitRules, exitValueAt, globalMaxOpenOf, legOfSignal, maxSlPtsFor, maxTgtPtsFor, minScoreFor, minSlPtsFor, minTgtPtsFor, minutesForward, minutesOf, noEntryWindowAt, noEntryWords, signalMatches, strikePickAt, time12, volSourceOf, type Strategy } from './types.js';
 import { TF_SEC, type MethodRead, type Tf } from '../entry/types.js';
 import type { SetupFill } from '../entry/paper.js';
 import type { OptionExit } from '../trading/option-exit.js';
@@ -874,7 +874,9 @@ export class StrategyRunner {
      * side's, counted over its own strategies' trades only. A group that sets none of them is held to the account's alone.
      */
     const accountStrikePct = strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, svc.accountId));
-    const groupLimits = s.groupId ? groupLimitsOf(groupOwnOf(svc.settings, s.groupId), { cap, sidePct, strikePct: accountStrikePct }) : null;
+    // Or a fixed number a strike in place of the per cent (26 Nov 2026; `STRIKE_FIXED_KEY`): null, the per cent.
+    const accountStrikeFixed = strikeFixedOf(accountSetting(svc.settings, STRIKE_FIXED_KEY, svc.accountId));
+    const groupLimits = s.groupId ? groupLimitsOf(groupOwnOf(svc.settings, s.groupId), { cap, sidePct, strikePct: accountStrikePct, strikeFixed: accountStrikeFixed }) : null;
     let ours: typeof openNow = [];
     if (groupLimits) {
       const members = await this.groupMembers(s.groupId!);
@@ -916,18 +918,18 @@ export class StrategyRunner {
      * passes, or the account says skip: skipped.
      */
     let forwarded = '';
-    // A per cent of the account's "at most open" (`cap`, above), as each side's is.
+    // A per cent of the account's "at most open" (`cap`, above), as each side's is -- or the fixed number, where one is set.
     const strikePct = accountStrikePct;
     /*
      * Held under what Delta lets one contract carry (10 Nov 2026; `CONTRACT_TRADES_MAX`): at 20% of 300 the limit was
      * 60, Delta stopped taking the account's orders on a strike at 100 -- 50 trades' targets and stops -- and the trades
      * past it were sold with no exits behind them. Whatever the per cent, 100% and none included.
      */
-    const strikeLimit = strikeLimitOf(strikeCapOf(cap, strikePct));
+    const strikeLimit = strikeLimitOf(strikeMostOf(cap, strikePct, accountStrikeFixed));
     const strikeCap = strikeLimit.most;
     const strikeWhy = strikeLimit.byDelta
       ? `Delta holds ${DELTA_ORDERS_PER_CONTRACT} of an account's orders on a contract, a target and a stop for each trade`
-      : `${strikePct}% of the ${cap}`;
+      : strikeRuleWords(cap, strikePct, accountStrikeFixed);
     // And the group's own, of the group's at most open, over the group's own trades (8 Nov 2026).
     const groupStrikeCap = groupLimits?.strikeCap ?? null;
     {
@@ -942,7 +944,7 @@ export class StrategyRunner {
         }
         const mine = groupStrikeCap !== null ? ourOnIt(c) : 0;
         if (groupStrikeCap !== null && mine >= groupStrikeCap) {
-          return { why: `the group already has ${mine} open on ${leg} ${c.strike} -- at most ${groupStrikeCap} on one strike (${groupLimits!.strikePct}% of the group's ${groupLimits!.cap})`, count: `${mine} of ${groupStrikeCap} in the group` };
+          return { why: `the group already has ${mine} open on ${leg} ${c.strike} -- at most ${groupStrikeCap} on one strike (${strikeRuleWords(groupLimits!.cap, groupLimits!.strikePct, groupLimits!.strikeFixed, "the group's")})`, count: `${mine} of ${groupStrikeCap} in the group` };
         }
         return null;
       };

@@ -890,6 +890,39 @@ export function strikeCapOf(cap: number, pct: number): number | null {
   return Math.min(cap, Math.max(1, Math.round((cap * pct) / 100)));
 }
 /**
+ * The most on one strike as a fixed number of trades instead of a per cent (owner, 26 Nov 2026: "% and fixed rendu-um
+ * venum"): "48 a strike" whatever "at most open" is. Kept apart from the per cent, so every reader of the per cent works
+ * as before and a server from before this one reads the per cent it always did. Set: it is the limit and the per cent
+ * waits unused; empty or absent: the per cent. 1 to `STRIKE_FIXED_MAX`, what Delta lets one contract carry
+ * (`CONTRACT_TRADES_MAX`, trading/contract-restrictions.ts: 100 orders a contract, a target and a stop each, four spare) --
+ * a larger figure could never bind.
+ */
+export const STRIKE_FIXED_KEY = 'signal_strike_max_fixed';
+export const STRIKE_FIXED_MAX = 48;
+/** The fixed number as stored; null where empty, absent or unreadable (the per cent is then the limit). */
+export function strikeFixedOf(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined || raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= STRIKE_FIXED_MAX ? n : null;
+}
+export function strikeFixedProblem(v: unknown): string | null {
+  if (v === null) return null;
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= STRIKE_FIXED_MAX
+    ? null : `A fixed most on one strike must be a whole number of trades, from 1 to ${STRIKE_FIXED_MAX} (what Delta lets one contract carry).`;
+}
+/**
+ * How many trades one strike may hold, by either rule: the fixed number where one is set (held under the cap, where
+ * there is one -- a strike never holds more than the account may), else the per cent of the cap (`strikeCapOf`).
+ * A fixed number needs no cap: with no "at most open" it still holds.
+ */
+export function strikeMostOf(cap: number, pct: number, fixed: number | null): number | null {
+  if (fixed !== null) return cap > 0 ? Math.min(cap, fixed) : fixed;
+  return strikeCapOf(cap, pct);
+}
+/** The strike rule in words: "a fixed 48" or "12% of the 400". */
+export const strikeRuleWords = (cap: number, pct: number, fixed: number | null, whose = 'the'): string =>
+  (fixed !== null ? `a fixed ${fixed} a strike` : `${pct}% of ${whose} ${cap}`);
+/**
  * What a signal does when its strike is at the most (owner, 22 Oct 2026: "86000CE full -- forward it: 86200CE, if every
  * condition is okay, fill that"). 'next', the default: the strategy's own strike rule picks again among the strikes
  * further out -- above a call's, below a put's -- that are not full themselves; the rule, the premium floor, the spread

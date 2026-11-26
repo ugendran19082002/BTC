@@ -131,7 +131,8 @@ export function groupOwnWords(own: GroupOwn | null | undefined): string[] {
   if (own.maxOpen !== null) w.push(`At most ${own.maxOpen}`);
   if (own.ce !== null) w.push(`CE ${own.ce}%`);
   if (own.pe !== null) w.push(`PE ${own.pe}%`);
-  if (own.strikeMax !== null) w.push(`Strike ${own.strikeMax}%`);
+  if (own.strikeFixed !== null && own.strikeFixed !== undefined) w.push(`Strike ${own.strikeFixed} fixed`);
+  else if (own.strikeMax !== null) w.push(`Strike ${own.strikeMax}%`);
   if (own.strikeFull !== null) w.push(own.strikeFull === 'skip' ? 'Full: skip' : 'Full: next strike');
   if (own.zoneFresh !== null) w.push('Fill window');
   if (own.momentum !== null) w.push(anyGuardOn(own.momentum) ? guardsLabel(own.momentum) : 'Entry guards off');

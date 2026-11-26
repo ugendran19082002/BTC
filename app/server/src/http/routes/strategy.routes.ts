@@ -8,7 +8,7 @@ import { entryDue, istDate, istMinutes, nextEntryAt } from '../../strategy/sched
 import { inSignalWindow, perpRiseNow } from '../../strategy/runner.js';
 import { atmIvNow } from '../../market/atm-iv.js';
 import { SKIP_DAYS_KEY, autoAsked, autoPick, methodRecord, runAutoMethodsAlone, skipDaysOf, skipDaysProblem, type AutoAsk, type AutoDeps } from '../../strategy/auto-methods.js';
-import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardMerged, momentumGuardProblem, CAP_SWAP_KEY, capSwapOf, capSwapProblem, SIGNAL_SWAP_KEY, signalSwapOf, signalSwapProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoExclude, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
+import { DEFAULT_CONFIG, tfLabel, GLOBAL_MAX_OPEN_KEY, SIDE_MAX_KEYS, STRIKE_MAX_KEY, strikeMaxOf, strikeMaxProblem, STRIKE_FIXED_KEY, strikeFixedOf, strikeFixedProblem, STRIKE_FULL_KEY, strikeFullOf, strikeFullProblem, ZONE_FRESH_KEY, zoneFreshOf, zoneFreshProblem, MOMENTUM_GUARD_KEY, momentumGuardOf, momentumGuardMerged, momentumGuardProblem, CAP_SWAP_KEY, capSwapOf, capSwapProblem, SIGNAL_SWAP_KEY, signalSwapOf, signalSwapProblem, REENTRY_KEY, reentryKeepingEntries, reentryOf, reentryProblem, SIGNAL_TFS, globalMaxOpenOf, globalMaxOpenProblem, noEntryWindowAt, noEntryWords, groupNameProblem, sideMaxOf, sideMaxProblem, signalEntriesAllowed, time12, validateConfig, volSourceOf, type AutoExclude, type AutoMethods, type DeltaByVol, type DeltaRule, type SlByVol, type DistanceRule, type ExitStep, type NoEntry, type NoEntryWindow, type SignalRule, type SignalTf, type Strategy, type StrategyConfig, type StrategyGroup, type StrikeBlock } from '../../strategy/types.js';
 import { journal as tradeJournal, tradingService, tradingServiceFor } from '../../trading/service.js';
 import { accountOf } from '../account-query.js';
 import { accountKey, accountSetting, groupKey } from '../../db/settings.js';
@@ -484,6 +484,8 @@ export function registerStrategyRoutes(app: FastifyInstance) {
       // The most on one strike (0: none), and the strike holding the most now -- what the next signal there meets.
       // A per cent of that cap, 10 where none is chosen; what it allows a strike is worked from the cap (`strikeCapOf`).
       signalStrikeMaxPct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, account ?? svc.accountId)),
+      // Or a fixed number a strike in its place (26 Nov 2026): null, the per cent is the limit.
+      signalStrikeFixed: strikeFixedOf(accountSetting(svc.settings, STRIKE_FIXED_KEY, account ?? svc.accountId)),
       // And what a signal does at it: the next strike out (the default), or skip.
       signalStrikeFull: strikeFullOf(accountSetting(svc.settings, STRIKE_FULL_KEY, account ?? svc.accountId)),
       // How late a zone fill may still be entered, seconds by time frame (28 Oct 2026): the account's, the default where unset.
@@ -1149,18 +1151,41 @@ export function registerStrategyRoutes(app: FastifyInstance) {
     return { ok: true, signalMaxOpen: max as number, ...groupAnswer(group) };
   });
 
-  // The most open on one strike, this account's: per cent of "at most open", 1 to 100; null is back to the default (10).
+  /*
+   * The most open on one strike, this account's (or a group's), by one of two rules (owner, 26 Nov 2026: "% and fixed"):
+   *   {pct: 12}    per cent of "at most open", 1 to 100 -- and any fixed number cleared, so the per cent is the rule;
+   *   {fixed: 48}  a fixed number of trades a strike, 1 to 48 -- the per cent kept as it was, unused while this is set;
+   *   {pct: null}  both back to none of their own: the default per cent (10), or the group takes its account's.
+   * Checked whole before anything is written: a refused ask changes nothing. The fixed number is written last when set
+   * and cleared first when going back, so a reader between the two writes sees one rule or the other, never neither.
+   */
   app.post('/api/strategies/strike-max', async (req, reply) => {
-    const body = (req.body ?? {}) as { pct?: unknown; accountId?: unknown; groupId?: unknown };
-    const { pct } = body;
+    const body = (req.body ?? {}) as { pct?: unknown; fixed?: unknown; accountId?: unknown; groupId?: unknown };
     const scope = await settingScope(body, reply);
     if ('refused' in scope) return scope.refused;
     const { account, group } = scope;
-    const most = pct === undefined ? null : pct;
-    const problem = strikeMaxProblem(most);
-    if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
-    await svc.settings.set(scope.key(STRIKE_MAX_KEY), most === null ? '' : String(most));
-    return { ok: true, signalStrikeMaxPct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, account)), ...groupAnswer(group) };
+    if (body.fixed !== undefined && body.pct !== undefined) {
+      const problem = 'Send the per cent or the fixed number, not both.';
+      return refuse(reply, 422, { error: problem, problems: [problem] });
+    }
+    if (body.fixed !== undefined && body.fixed !== null) {
+      const problem = strikeFixedProblem(body.fixed);
+      if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+      await svc.settings.set(scope.key(STRIKE_FIXED_KEY), String(body.fixed));
+    } else {
+      const most = body.pct === undefined ? null : body.pct;
+      const problem = strikeMaxProblem(most);
+      if (problem) return refuse(reply, 422, { error: problem, problems: [problem] });
+      await svc.settings.set(scope.key(STRIKE_FIXED_KEY), '');
+      // {fixed: null} alone is "back to the per cent as it is": the per cent is left as saved.
+      if (body.pct !== undefined || body.fixed === undefined) await svc.settings.set(scope.key(STRIKE_MAX_KEY), most === null ? '' : String(most));
+    }
+    return {
+      ok: true,
+      signalStrikeMaxPct: strikeMaxOf(accountSetting(svc.settings, STRIKE_MAX_KEY, account)),
+      signalStrikeFixed: strikeFixedOf(accountSetting(svc.settings, STRIKE_FIXED_KEY, account)),
+      ...groupAnswer(group),
+    };
   });
 
   // What a signal does at a full strike, this account's: 'next' (the next strike out) or 'skip'; null is back to the default.

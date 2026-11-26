@@ -1,7 +1,7 @@
 import { groupOwn, type Settings } from '../db/settings.js';
 import {
-  GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, REENTRY_KEY, SIDE_MAX_KEYS, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY,
-  globalMaxOpenOf, momentumGuardOf, reentryOf, sideCaps, sideMaxOf, strikeCapOf, strikeFullOf, strikeMaxOf, zoneFreshOf,
+  GLOBAL_MAX_OPEN_KEY, MOMENTUM_GUARD_KEY, REENTRY_KEY, SIDE_MAX_KEYS, STRIKE_FIXED_KEY, STRIKE_FULL_KEY, STRIKE_MAX_KEY, ZONE_FRESH_KEY,
+  globalMaxOpenOf, momentumGuardOf, reentryOf, sideCaps, sideMaxOf, strikeFixedOf, strikeFullOf, strikeMaxOf, strikeMostOf, zoneFreshOf,
   type MomentumGuard, type Reentry, type SignalTf, type StrikeFull,
 } from './types.js';
 
@@ -17,17 +17,19 @@ import {
  * trades than the account's, it never lets through what the account's would stop.
  */
 export const GROUP_SETTING_KEYS = {
-  maxOpen: GLOBAL_MAX_OPEN_KEY, ce: SIDE_MAX_KEYS.CE, pe: SIDE_MAX_KEYS.PE, strikeMax: STRIKE_MAX_KEY, strikeFull: STRIKE_FULL_KEY,
+  maxOpen: GLOBAL_MAX_OPEN_KEY, ce: SIDE_MAX_KEYS.CE, pe: SIDE_MAX_KEYS.PE, strikeMax: STRIKE_MAX_KEY, strikeFixed: STRIKE_FIXED_KEY, strikeFull: STRIKE_FULL_KEY,
   zoneFresh: ZONE_FRESH_KEY, momentum: MOMENTUM_GUARD_KEY, reentry: REENTRY_KEY,
 } as const;
 export type GroupSettingName = keyof typeof GROUP_SETTING_KEYS;
 
 /** A group's own values, read; null where it has none of its own and takes its account's. */
 export type GroupOwn = {
-  maxOpen: number | null; ce: number | null; pe: number | null; strikeMax: number | null; strikeFull: StrikeFull | null;
+  maxOpen: number | null; ce: number | null; pe: number | null; strikeMax: number | null;
+  /** A fixed number a strike in place of the per cent (26 Nov 2026). */
+  strikeFixed: number | null; strikeFull: StrikeFull | null;
   zoneFresh: Record<SignalTf, number> | null; momentum: MomentumGuard | null; reentry: Reentry | null;
 };
-export const NO_GROUP_OWN: GroupOwn = { maxOpen: null, ce: null, pe: null, strikeMax: null, strikeFull: null, zoneFresh: null, momentum: null, reentry: null };
+export const NO_GROUP_OWN: GroupOwn = { maxOpen: null, ce: null, pe: null, strikeMax: null, strikeFixed: null, strikeFull: null, zoneFresh: null, momentum: null, reentry: null };
 
 export function groupOwnOf(s: Settings, groupId: string | null | undefined): GroupOwn {
   if (!groupId) return NO_GROUP_OWN;
@@ -38,27 +40,32 @@ export function groupOwnOf(s: Settings, groupId: string | null | undefined): Gro
   return {
     maxOpen: maxOpen === 0 ? null : maxOpen,
     ce: read('ce', sideMaxOf), pe: read('pe', sideMaxOf), strikeMax: read('strikeMax', strikeMaxOf),
+    // A stored fixed number that will not read is none of the group's own, as an at most open is.
+    strikeFixed: read('strikeFixed', strikeFixedOf),
     strikeFull: read('strikeFull', strikeFullOf), zoneFresh: read('zoneFresh', zoneFreshOf),
     momentum: read('momentum', momentumGuardOf), reentry: read('reentry', reentryOf),
   };
 }
 
 /** Whether a group counts its own trades at all: it has its own at most open, side or strike limit. */
-export const countsOwn = (own: GroupOwn): boolean => own.maxOpen !== null || own.ce !== null || own.pe !== null || own.strikeMax !== null;
+export const countsOwn = (own: GroupOwn): boolean => own.maxOpen !== null || own.ce !== null || own.pe !== null || own.strikeMax !== null || own.strikeFixed !== null;
 
 export type GroupLimits = {
   /** The group's at most open: its own, or its account's (`own`: its own). */
   cap: number; own: boolean;
   sidePct: { CE: number; PE: number }; sides: { CE: number; PE: number } | null;
-  strikePct: number; strikeCap: number | null;
+  strikePct: number; strikeFixed: number | null; strikeCap: number | null;
 };
 /** What a group's trades are held to; null where it sets none of the counted limits (its account's alone stand). */
-export function groupLimitsOf(own: GroupOwn, account: { cap: number; sidePct: { CE: number; PE: number }; strikePct: number }): GroupLimits | null {
+export function groupLimitsOf(own: GroupOwn, account: { cap: number; sidePct: { CE: number; PE: number }; strikePct: number; strikeFixed?: number | null }): GroupLimits | null {
   if (!countsOwn(own)) return null;
   const cap = own.maxOpen ?? account.cap;
   const sidePct = { CE: own.ce ?? account.sidePct.CE, PE: own.pe ?? account.sidePct.PE };
   const strikePct = own.strikeMax ?? account.strikePct;
-  return { cap, own: own.maxOpen !== null, sidePct, sides: sideCaps(cap, sidePct), strikePct, strikeCap: strikeCapOf(cap, strikePct) };
+  // The strike rule is the group's whole where it sets either half: its fixed number; or its per cent, which a fixed number
+  // of the account's does not then override. Neither: the account's, as it stands.
+  const strikeFixed = own.strikeFixed ?? (own.strikeMax !== null ? null : account.strikeFixed ?? null);
+  return { cap, own: own.maxOpen !== null, sidePct, sides: sideCaps(cap, sidePct), strikePct, strikeFixed, strikeCap: strikeMostOf(cap, strikePct, strikeFixed) };
 }
 
 /**

@@ -42,6 +42,25 @@ export function strikeCapOf(cap: number, pct: number): number | null {
 export function strikeMaxProblem(v: number): string | null {
   return Number.isInteger(v) && v >= 1 && v <= 100 ? null : 'The most on one strike must be a whole number of per cent of "at most open", from 1 to 100.';
 }
+/**
+ * Or a fixed number of trades a strike in place of the per cent (owner, 26 Nov 2026: "% and fixed rendu-um venum"); the
+ * server's rule (strategy/types.ts `strikeMostOf`): the fixed number where set, held under "at most open" where there is
+ * one, and holding with none; 1 to 48 -- what Delta lets one contract carry, a target and a stop each.
+ */
+export const STRIKE_FIXED_MAX = 48;
+export const STRIKE_FIXED_PRESETS = [5, 10, 15, 20, 25, 30, 40, 48] as const;
+export function strikeMostOf(cap: number, pct: number, fixed: number | null | undefined): number | null {
+  if (fixed !== null && fixed !== undefined) return cap > 0 ? Math.min(cap, fixed) : fixed;
+  return strikeCapOf(cap, pct);
+}
+/** Why a fixed number cannot be saved, in the server's words; null when it can. */
+export function strikeFixedProblem(v: number): string | null {
+  return Number.isInteger(v) && v >= 1 && v <= STRIKE_FIXED_MAX
+    ? null : `A fixed most on one strike must be a whole number of trades, from 1 to ${STRIKE_FIXED_MAX} (what Delta lets one contract carry).`;
+}
+/** The fixed number that holds what the per cent holds now, for switching rule without a jump: 1 to 48. */
+export const fixedFromPct = (cap: number, pct: number): number =>
+  Math.min(STRIKE_FIXED_MAX, Math.max(1, strikeCapOf(cap, pct) ?? STRIKE_FIXED_MAX));
 /** "PE 83000" for "P-BTC-83000-221026". */
 export const strikeWords = (symbol: string): string => {
   const m = /^([CP])-BTC-(\d+)-/.exec(symbol);

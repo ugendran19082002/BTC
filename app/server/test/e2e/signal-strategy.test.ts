@@ -1875,6 +1875,48 @@ test('[critical] the most on one strike (22 Oct 2026, owner\'s list #1): a per c
   await api('POST', '/api/strategies/sig-strike/enabled', { enabled: false });
 });
 
+test('[critical] the most on one strike as a fixed number (26 Nov 2026, owner: "% and fixed"): held whatever the per cent says; back to the per cent clears it; refused whole when wrong', async () => {
+  await freshDesk();
+  const before = tradingService().settings.get('signal_strike_max_fixed');
+  for (const bad of [0, 49, 2.5, 'ten']) {
+    const r = await api('POST', '/api/strategies/strike-max', { fixed: bad });
+    assert.equal(r.status, 422, String(bad));
+    assert.match(r.body.problems[0], /from 1 to 48/);
+  }
+  assert.equal((await api('POST', '/api/strategies/strike-max', { fixed: 3, pct: 10 })).status, 422, 'both at once: refused');
+  assert.equal(tradingService().settings.get('signal_strike_max_fixed'), before, 'nothing written by a refused ask');
+  assert.equal((await api('GET', '/api/strategies')).body.signalStrikeFixed, null, 'none set: null, the per cent rules');
+
+  assert.equal((await api('POST', '/api/strategies', { name: 'Sig fixed', config: { ...config, signal: { ...config.signal, maxOpen: 20 }, liveOrders: true } })).status, 200);
+  await api('POST', '/api/strategies/sig-fixed/enabled', { enabled: true });
+  assert.equal((await api('POST', '/api/strategies/max-open', { max: 20 })).status, 200);
+  // 50% of 20 would allow ten a strike; the fixed one holds it at one.
+  assert.equal((await api('POST', '/api/strategies/strike-max', { pct: 50 })).status, 200);
+  const saved = await api('POST', '/api/strategies/strike-max', { fixed: 1 });
+  assert.deepEqual([saved.status, saved.body.signalStrikeFixed, saved.body.signalStrikeMaxPct], [200, 1, 50], 'the per cent kept, unused');
+  assert.equal((await api('GET', '/api/strategies')).body.signalStrikeFixed, 1);
+  await tradingService().settings.set('scheduler_enabled', '1');
+  clock = TEN;
+  const next = async () => { quoteBoard(); await runner.onSignal(signal()); return (await runsOf('sig-fixed')).at(-1)!; };
+  const runs = [await next(), await next()];
+  assert.deepEqual(runs.map((r) => r.status), ['placed', 'skipped'], runs.map((r) => r.detail).join(' / '));
+  assert.match(runs[1]!.detail, new RegExp(`\\| the desk already has 1 open on PE ${PUT} -- at most 1 on one strike \\(a fixed 1 a strike\\)`));
+
+  // Back to the per cent: the fixed number cleared, 50% of 20 is ten, and the next is placed on the same strike.
+  const back = await api('POST', '/api/strategies/strike-max', { pct: 50 });
+  assert.deepEqual([back.body.signalStrikeFixed, back.body.signalStrikeMaxPct], [null, 50]);
+  assert.equal(tradingService().settings.get('signal_strike_max_fixed'), '', 'cleared, not left behind');
+  const again = await next();
+  assert.equal(again.status, 'placed', again.detail);
+  // {fixed: null}: back to the per cent as saved, the per cent untouched.
+  await api('POST', '/api/strategies/strike-max', { fixed: 5 });
+  const unfixed = await api('POST', '/api/strategies/strike-max', { fixed: null });
+  assert.deepEqual([unfixed.body.signalStrikeFixed, unfixed.body.signalStrikeMaxPct], [null, 50]);
+  assert.equal((await api('POST', '/api/strategies/strike-max', { pct: null })).body.signalStrikeMaxPct, 10);
+  await api('POST', '/api/strategies/max-open', { max: 0 });
+  await api('POST', '/api/strategies/sig-fixed/enabled', { enabled: false });
+});
+
 test('[critical] a group\'s own at most open: its strategies held to it over their own trades; a strategy outside it trades on (8 Nov 2026)', async () => {
   await freshDesk();
   const restoreStrikes = extraStrikes(10);
