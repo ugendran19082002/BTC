@@ -280,17 +280,23 @@ function TimeframeSides({ rows }: { rows: TimeframeSide[] }) {
           const mine = rows.filter((r) => r.tf === tf);
           const net = mine.reduce((n, r) => n + r.netUsd, 0);
           const trades = mine.reduce((n, r) => n + r.trades, 0);
+          const wins = mine.reduce((n, r) => n + r.wins, 0);
           return (
             <li key={tf} className="py-2.5" aria-label={tf === 'chain' ? 'TF chain' : tf}>
               <span className="flex items-baseline justify-between gap-2">
                 <span className="text-[14.5px] font-semibold">{tf === 'chain' ? 'TF chain' : tf}
-                  <span className="ml-1.5 text-[12px] font-normal text-muted-foreground">{trades} trade{trades === 1 ? '' : 's'}</span>
+                  {/* The win rate beside the count (owner, 26 Nov 2026: "each time trades count pakkathula win% kudu"). */}
+                  <span className="ml-1.5 text-[12px] font-normal text-muted-foreground">{trades} trade{trades === 1 ? '' : 's'} · win {winPct(wins, trades)}</span>
                 </span>
                 <Rupees usd={net} signed size="sm" />
               </span>
               {mine.map((r) => (
                 <span key={r.side} className="mt-1.5 grid grid-cols-[2.4rem_minmax(0,1fr)] items-start gap-1.5">
-                  <span className={cn('mt-1 text-[12px] font-bold', r.side === 'CE' ? 'text-[var(--down)]' : 'text-[var(--up)]')} title={`${r.trades} trades · win ${r.trades ? Math.round((100 * r.wins) / r.trades) : 0}%`}>{r.side}</span>
+                  {/* CE / PE, and its own win rate under it: shown, not a tooltip -- a phone has no hover. */}
+                  <span className="mt-1 flex flex-col leading-tight" aria-label={`${r.side}: ${r.trades} trade${r.trades === 1 ? '' : 's'}, win ${winPct(r.wins, r.trades)}`}>
+                    <span className={cn('text-[12px] font-bold', r.side === 'CE' ? 'text-[var(--down)]' : 'text-[var(--up)]')}>{r.side}</span>
+                    <span className="text-[10.5px] tabular-nums text-muted-foreground">{winPct(r.wins, r.trades)}</span>
+                  </span>
                   <span className="grid grid-cols-2 gap-1 text-[11.5px] tabular-nums min-[360px]:grid-cols-4" aria-label={`${tf} ${r.side}`}>
                     <Fig label="Profit" value={rs(r.profitUsd)} tone={r.profitUsd > 0 ? 'up' : undefined} />
                     <Fig label="Loss" value={rs(-r.lossUsd)} tone={r.lossUsd > 0 ? 'down' : undefined} />
@@ -306,6 +312,9 @@ function TimeframeSides({ rows }: { rows: TimeframeSide[] }) {
     </Panel>
   );
 }
+
+/** Won of closed, a whole per cent ("88%"); a dash with no trade. */
+const winPct = (wins: number, trades: number): string => (trades > 0 ? `${Math.round((100 * wins) / trades)}%` : '—');
 
 /** A small figure: its label over its value, as the ledger's day shows them. */
 function Fig({ label, value, tone, strong }: { label: string; value: string; tone?: 'up' | 'down'; strong?: boolean }) {

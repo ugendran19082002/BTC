@@ -263,7 +263,11 @@ describe('PnlScreen: a range past what the server reads at once', () => {
     show();
     const list = within(await screen.findByRole('list', { name: 'By time frame, CE and PE' }));
     const tf3 = within(list.getByRole('listitem', { name: '3m' }));
-    expect(tf3.getByText('16 trades')).toBeInTheDocument();
+    // The win rate beside the count (26 Nov 2026): 14 of 16 won; and each side's own under its name.
+    expect(tf3.getByText('16 trades · win 88%')).toBeInTheDocument();
+    expect(tf3.getByLabelText('CE: 10 trades, win 80%')).toHaveTextContent('CE80%');
+    expect(tf3.getByLabelText('PE: 6 trades, win 100%')).toHaveTextContent('PE100%');
+    expect(within(list.getByRole('listitem', { name: 'TF chain' })).getByText('2 trades · win 0%')).toBeInTheDocument();
     const ce = within(tf3.getByLabelText('3m CE'));
     const fig = (w: typeof ce, label: string) => w.getByText(label).nextSibling;
     expect(fig(ce, 'Profit')).toHaveTextContent(signedInr(usdToInr(4)));
