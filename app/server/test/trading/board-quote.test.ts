@@ -91,3 +91,45 @@ test('the newer reading, either alone, the REST answer on a tie', () => {
   assert.equal(newestQuote(q(9), q(7))!.ts, 9);
   assert.equal(newestQuote(q(7, 1), q(7, 3))!.bid, 1);
 });
+
+/**
+ * A quote just past its limit asked once more (owner, 27 Nov 2026: "stale quote fix"): Delta stamps an option's ticker
+ * every 2-3 s, and when one refresh ran late the freshest answer was 5.2-6.5 s old -- 108 sales refused on 27 Nov by
+ * 12:30 that every other rule had passed. After Delta's next refresh it is asked again and the newer reading judged.
+ */
+test('[critical] an entry: the quote 5.5 s old, Delta asked again a second later and fresh -- judged on that one and sent', async () => {
+  const p = ceProduct();
+  const r = rig({ products: [p], quotes: [quote(p.symbol, 100.5, 101)] });
+  let asked = 0;
+  r.ex.getQuote = async (s: string) => {
+    asked++;
+    return asked === 1 ? quote(s, 100.5, 101, { ts: r.now() - 5_500 }) : quote(s, 100.5, 101, { ts: r.now() - 800 });
+  };
+  const ok = await r.engine.previewOpen(planFor(p, { tradeId: 'x', lots: 1 }));
+  assert.ok(ok.ok, JSON.stringify(ok));
+  assert.equal(asked, 2, 'asked once more, only because the first was past its age');
+});
+
+test('[critical] still old when asked again: refused as stale, as before; long past it: refused at once, not asked again', async () => {
+  const p = ceProduct();
+  const r = rig({ products: [p], quotes: [quote(p.symbol, 100.5, 101)] });
+  let asked = 0;
+  let age = 5_500;
+  r.ex.getQuote = async (s: string) => { asked++; return quote(s, 100.5, 101, { ts: r.now() - age }); };
+  const still = await r.engine.previewOpen(planFor(p, { tradeId: 'y', lots: 1 }));
+  assert.ok(!still.ok && still.failures.some((f) => f.code === 'STALE_QUOTE' && f.message === 'Last quote is 5.5s old.'), JSON.stringify(still));
+  assert.equal(asked, 2);
+  asked = 0; age = 20_000;
+  const dead = await r.engine.previewOpen(planFor(p, { tradeId: 'z', lots: 1 }));
+  assert.ok(!dead.ok && dead.failures.some((f) => f.code === 'STALE_QUOTE'), JSON.stringify(dead));
+  assert.equal(asked, 1, 'twenty seconds old: the feed is in trouble, no second ask');
+});
+
+test('a fresh quote: asked once, no wait, no second read', async () => {
+  const p = ceProduct();
+  const r = rig({ products: [p], quotes: [quote(p.symbol, 100.5, 101)] });
+  let asked = 0;
+  r.ex.getQuote = async (s: string) => { asked++; return quote(s, 100.5, 101, { ts: r.now() - 1_200 }); };
+  assert.ok((await r.engine.previewOpen(planFor(p, { tradeId: 'f', lots: 1 }))).ok);
+  assert.equal(asked, 1);
+});

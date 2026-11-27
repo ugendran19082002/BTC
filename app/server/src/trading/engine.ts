@@ -580,6 +580,11 @@ export const BOARD_QUOTE_FRESH_MS = 2_000;
  * while the socket's board, about a second behind Delta, carried the same contracts. Either alone when the other is
  * missing; the REST answer when they are the same age.
  */
+/** How long the gate waits before asking a just-stale quote again (`runPrecheck`): past Delta's ~2-3 s ticker refresh
+ *  being due, and past the 750 ms one answer is shared across accounts. */
+export const STALE_QUOTE_RETRY_WAIT_MS = 1_000;
+/** A quote older than this is not asked again: the feed is in trouble, and the entry is refused at once. */
+export const STALE_QUOTE_RETRY_WITHIN_MS = 15_000;
 export function newestQuote(rest: Quote | null, board: Quote | null): Quote | null {
   if (!board) return rest;
   if (!rest) return board;
@@ -1049,9 +1054,23 @@ export class TradeEngine {
       this.d.spot ? Promise.resolve(this.d.spot()) : Promise.resolve(null),
     ]);
     // The board is a second opinion: one that cannot be read is none, never a reason the gate does not answer.
-    let board: Quote | null = null;
-    try { board = this.d.boardQuote?.(plan.symbol) ?? null; } catch { board = null; }
-    const quote = newestQuote(asked, board);
+    const boardOf = (): Quote | null => { try { return this.d.boardQuote?.(plan.symbol) ?? null; } catch { return null; } };
+    let quote = newestQuote(asked, boardOf());
+    /*
+     * A quote just past its age limit is read once more (owner, 27 Nov 2026: "stale quote fix"). Delta stamps an option's
+     * ticker every 2-3 s; when one refresh is late -- the 07:00 burst above all -- the freshest answer is 5-6.5 s old and
+     * the gate refused a sale every other rule had passed: 108 of them on 27 Nov by 12:30, every one 5.2-6.5 s old. After
+     * Delta's next refresh (past the 750 ms the ticker is shared across accounts, `QUOTE_SHARE_MS`) it is asked again and
+     * the newest of the two is judged. The limit itself is unchanged: still old after that, it is refused as before; far
+     * past it (`STALE_QUOTE_RETRY_WITHIN_MS`), the feed is in trouble and it is refused at once. One more ticker read
+     * (3 quota units) only for an entry that would otherwise be refused.
+     */
+    const ageOf = (q: Quote) => this.now() - q.ts;
+    if (quote && plan.action !== 'buy' && ageOf(quote) > this.limits.maxQuoteAgeMs && ageOf(quote) <= STALE_QUOTE_RETRY_WITHIN_MS) {
+      await (this.d.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(STALE_QUOTE_RETRY_WAIT_MS);
+      const again = await this.exchange.getQuote(plan.symbol).catch(() => null);
+      quote = newestQuote(newestQuote(again, boardOf()), quote);
+    }
     const size = product ? lotsToContracts(plan.lots, product.lotSize) : plan.lots;
     const held = positions.find((p) => p.symbol === plan.symbol)?.size ?? 0;
     /*
