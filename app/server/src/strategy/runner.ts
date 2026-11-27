@@ -1,7 +1,7 @@
 import { liveChain, WHOLE_BOARD } from '../market/chain.js';
 import { scoreLegs } from '../domain/score.js';
 import { wallWithinEm } from '../http/routes/desk.routes.js';
-import { runAsDesk, tradingService, tradingServiceFor, type TradingService } from '../trading/service.js';
+import { runAsDesk, tradingService, tradingServiceFor, tradingServices, type TradingService } from '../trading/service.js';
 import { noteError } from '../observability/errors.js';
 import { DELTA_ORDERS_PER_CONTRACT, isPassedOver, strikeLimitOf } from '../trading/contract-restrictions.js';
 import { StrategyStore } from './store.js';
@@ -1026,13 +1026,21 @@ export class StrategyRunner {
        * looked for on the prices the desk already holds (nothing asked of Delta); found, the gates are asked first, as at
        * the cap, so nothing is bought back for an order they would refuse; then it is bought back and the signal sold.
        * None found, or the buy-back not gone through: the signal is sold as ever -- this never costs a signal its entry.
+       *
+       * Looked for on every account together (owner, 27 Nov 2026: "entry on the signal's account, but the swap exit --
+       * all accounts combined, the top TGT% exits"): the sale that has kept the most anywhere on the desk is bought back on
+       * its own account, and the signal is sold here, on this one. The cap swap above stays this account's own.
        */
-      const pick = await this.swapPick(openNow, null, everySwap, this.signalSwapTimes);
+      const pick = await this.swapPickDesk(everySwap);
       if (!pick.ok && pick.why === 'quota') placed = `${what} · not swapped: Delta's quota for this account is at ${pick.usedPct}%`;
       if (pick.ok) {
         const p = await svc.wouldPlace(args);
-        if (!p.ok) { await finish('refused', `${what} -- refused: ${failureText(p)} (nothing bought back)`); return; }
-        const out = await this.buyBack(openNow, pick, this.signalSwapTimes, 'for a new signal (swap on every signal)');
+        if (!p.ok) {
+          this.swapping.delete(pick.tradeId);
+          await finish('refused', `${what} -- refused: ${failureText(p)} (nothing bought back)`);
+          return;
+        }
+        const out = await this.buyBackDesk(pick, svc);
         placed = out.ok ? `${what} · swapped: ${out.words}` : `${what} · not swapped: ${out.why}`;
       }
     }
@@ -1123,6 +1131,82 @@ export class StrategyRunner {
     return pick ? { ok: true, ...pick } : { ok: false, why: 'none' };
   }
 
+  /**
+   * The sale to buy back for "swap on every signal", looked for on **every account's** desk (27 Nov 2026): the one that has
+   * kept the most of its premium anywhere -- `swap.pct` (the signal account's) or more -- priced as `swapPick` prices them,
+   * on the board the desk holds. An account whose Delta quota is at `SWAP_QUOTA_PCT` or more offers none: its buy-back
+   * would be an order on that busy login. The per-minute limit is the signal account's, as before.
+   *
+   * Claimed the moment it is picked, before any await: one signal reaches every account at once, and each account's
+   * runner then takes the next sale down -- never two buy-backs of one sale. The claim is let go by `buyBackDesk`, or by
+   * the caller when the gates refuse the signal before anything is bought back.
+   */
+  private async swapPickDesk(swap: CapSwap): Promise<
+    | { ok: true; tradeId: string; kept: number; desk: TradingService; symbol: string; soldAt: number }
+    | { ok: false; why: 'per-minute' | 'none' }
+    | { ok: false; why: 'quota'; usedPct: number }
+  > {
+    const here = tradingService();
+    const key = String(here.accountId ?? 'desk');
+    const now = this.now();
+    const recent = (this.signalSwapTimes.get(key) ?? []).filter((t) => now - t < 60_000);
+    this.signalSwapTimes.set(key, recent);
+    if (recent.length >= swap.perMin) return { ok: false, why: 'per-minute' };
+    const cands: DeskSwapCandidate[] = [];
+    let busiest: number | null = null;
+    for (const desk of tradingServices()) {
+      const used = desk.quotaUsedPct();
+      if (used >= SWAP_QUOTA_PCT) { busiest = Math.max(busiest ?? 0, used); continue; }
+      const live = desk.mode === 'live';
+      const priced = new Map<string, number | null>();
+      for (const t of await desk.openTrades()) {
+        const st = t.state;
+        if (st.position >= 0 || st.entrySize < st.requestedSize || st.closing || this.swapping.has(st.tradeId)) continue;
+        if (st.phase !== 'protected' && st.phase !== 'position_open' && st.phase !== 'unprotected') continue;
+        if (st.entryAvgPrice === null || !(st.entryAvgPrice > 0)) continue;
+        if (!priced.has(t.plan.symbol)) {
+          let q: { bid?: number | null; ask?: number | null; ts?: number } | null = cachedQuote(t.plan.symbol);
+          if (q && q.ts !== undefined && now - q.ts > CAP_SWAP_QUOTE_FRESH_MS) q = null;
+          if (!q && !live) q = await desk.quote(t.plan.symbol).catch(() => null);
+          priced.set(t.plan.symbol, closePriceOf(st.position, q, null));
+        }
+        cands.push({ tradeId: st.tradeId, side: t.plan.optionSide, soldAt: st.entryAvgPrice, askNow: priced.get(t.plan.symbol)!, desk, symbol: t.plan.symbol });
+      }
+    }
+    // Picked and claimed in one step, with nothing awaited between: another account's runner may be at this same line.
+    const pick = pickDeskSwap(cands, swap.pct, this.swapping);
+    if (!pick) return busiest !== null && !cands.length ? { ok: false, why: 'quota', usedPct: Math.round(busiest) } : { ok: false, why: 'none' };
+    this.swapping.add(pick.tradeId);
+    return { ok: true, tradeId: pick.tradeId, kept: pick.kept, desk: pick.desk, symbol: pick.symbol, soldAt: pick.soldAt };
+  }
+
+  /**
+   * Buy back the sale `swapPickDesk` picked, on its own account (27 Nov 2026), under its trade's lock, saying why -- and
+   * which account's signal it made way for when that is another's. Counted against the signal account's per-minute limit
+   * once it has gone. The claim is let go either way.
+   */
+  private async buyBackDesk(
+    pick: { tradeId: string; kept: number; desk: TradingService; symbol: string; soldAt: number },
+    signalDesk: TradingService,
+  ): Promise<{ ok: true; words: string } | { ok: false; why: string }> {
+    const keptPct = Math.round(pick.kept * 100);
+    // Another account's sale -- by its account, not the object: one account may be reached through more than one handle.
+    const elsewhere = (pick.desk.accountId ?? null) !== (signalDesk.accountId ?? null);
+    const whose = elsewhere ? `account ${pick.desk.accountId ?? '?'} ` : '';
+    const forWhom = elsewhere ? `for a new signal on account ${signalDesk.accountId ?? '?'} (swap on every signal, all accounts)` : 'for a new signal (swap on every signal)';
+    try {
+      const after = await runAsDesk(pick.desk, () => pick.desk.close(pick.tradeId, undefined, `bought back at ${keptPct}% kept ${forWhom}`)).catch(() => null);
+      if (!after || (after.position !== 0 && after.phase !== 'exit_pending')) {
+        return { ok: false, why: `the buy-back of ${whose}${pick.symbol} did not go (${after?.note ?? 'no answer'})` };
+      }
+      const key = String(signalDesk.accountId ?? 'desk');
+      this.signalSwapTimes.set(key, [...(this.signalSwapTimes.get(key) ?? []), this.now()]);
+      return { ok: true, words: `bought back ${whose}${pick.symbol} sold @ ${pick.soldAt} (${keptPct}% kept)` };
+    } finally {
+      this.swapping.delete(pick.tradeId);
+    }
+  }
+
   /** Buy the picked sale back, under its own trade's lock (`svc.close`), saying why; counted in `times` once it has gone. */
   private async buyBack(
     openNow: readonly SwapTrade[],
@@ -1158,6 +1242,20 @@ export class StrategyRunner {
 
 
 /** An open trade as the swaps weigh it (`makeRoom`, `swapPick`). */
+/** An open sale on any account's desk, as "swap on every signal" weighs it across the desk (27 Nov 2026). */
+type DeskSwapCandidate = SwapCandidate & { desk: TradingService; symbol: string };
+/**
+ * The sale "swap on every signal" buys back, across every account (owner, 27 Nov 2026: "all accounts combined, the top
+ * TGT%"): of those not already claimed by another account's runner, the one that has kept the most of its premium, at
+ * `pct` per cent or more (`pickCapSwap`'s rule, any side). Null: none far enough.
+ */
+export function pickDeskSwap<C extends SwapCandidate>(cands: readonly C[], pct: number, claimed: ReadonlySet<string>): (C & { kept: number }) | null {
+  const free = cands.filter((c) => !claimed.has(c.tradeId));
+  const pick = pickCapSwap(free, null, pct);
+  if (!pick) return null;
+  return { ...free.find((c) => c.tradeId === pick.tradeId)!, kept: pick.kept };
+}
+
 type SwapTrade = { plan: { symbol: string; optionSide: 'CE' | 'PE' }; state: { tradeId: string; phase: string; position: number; entryAvgPrice: number | null; entrySize: number; requestedSize: number; closing?: unknown } };
 
 /** Place one leg through the same service the order ticket uses. */
