@@ -28,20 +28,76 @@ const same = (a: MoveExitSetting, b: MoveExitSetting) => JSON.stringify(norm(a))
 /** "From 12:00 to the 17:30 expiry" / "All day": the hours watched, in words. */
 const hoursWords = (x: MoveExitSetting) => (!x.from && !x.to ? 'All day' : `From ${x.from ?? 'the day\'s start'} to ${x.to ?? 'the 17:30 expiry'}`);
 
-function Chips<T extends number | string | null>({ label, value, choices, word, onPick }: { label: string; value: T; choices: readonly T[]; word: (c: T) => string; onPick: (c: T) => void }) {
+/**
+ * Any number in the server's range, not only the chips (owner, 27 Nov 2026: "add custom, 0.7%"): a "Custom" chip opens a
+ * small box; a figure in range is taken on Enter or leaving the box, one out of range is said and not taken. The limits
+ * are the server's (`trading/move-exit.ts`), so nothing typed here is refused on Save.
+ */
+type Custom = { min: number; max: number; whole?: boolean; unit: string };
+export const MOVE_CUSTOM = {
+  pct: { min: 0.2, max: 5, unit: '%' },
+  minutes: { min: 1, max: 60, whole: true, unit: 'min' },
+  nearPct: { min: 0.2, max: 10, unit: '%' },
+} as const satisfies Record<string, Custom>;
+/** Why a typed figure cannot be taken, or null with the number it reads as. */
+export function customProblem(text: string, c: Custom): { why: string } | { n: number } {
+  const t = text.trim();
+  const n = t === '' ? Number.NaN : Number(t);
+  const ok = Number.isFinite(n) && n >= c.min && n <= c.max && (!c.whole || Number.isInteger(n))
+    && (c.whole || Math.round(n * 100) === n * 100);
+  return ok ? { n } : { why: `${c.whole ? 'A whole number' : 'A number'} from ${c.min} to ${c.max} ${c.unit}${c.whole ? '' : ', up to two decimals'}.` };
+}
+
+function Chips<T extends number | string | null>({ label, value, choices, word, onPick, custom }: {
+  label: string; value: T; choices: readonly T[]; word: (c: T) => string; onPick: (c: T) => void;
+  /** Numbers only: a "Custom" chip for any figure in this range. */
+  custom?: Custom;
+}) {
+  const isCustom = custom !== undefined && !choices.includes(value);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(String(value ?? ''));
+  const [why, setWhy] = useState<string | null>(null);
+  useEffect(() => { setText(String(value ?? '')); }, [value]);
+  const take = () => {
+    if (!custom) return;
+    const r = customProblem(text, custom);
+    if ('why' in r) { setWhy(r.why); return; }
+    setWhy(null); setOpen(false); onPick(r.n as T);
+  };
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="min-w-[96px] text-[13px]">{label}</span>
-      <div role="group" aria-label={label} className="flex overflow-hidden rounded-md border border-solid border-border">
+      <div role="group" aria-label={label} className="flex flex-wrap overflow-hidden rounded-md border border-solid border-border">
         {choices.map((c) => (
           <button
-            key={String(c)} type="button" aria-pressed={value === c} onClick={() => onPick(c)}
+            key={String(c)} type="button" aria-pressed={value === c} onClick={() => { setOpen(false); setWhy(null); onPick(c); }}
             className={cn('h-9 min-w-[52px] border-0 px-2 font-[inherit] text-[13px]', value === c ? 'bg-[var(--accent-fill)] font-semibold text-foreground' : 'bg-transparent text-muted-foreground')}
           >
             {word(c)}
           </button>
         ))}
+        {custom && (
+          <button
+            type="button" aria-pressed={isCustom} onClick={() => { setOpen(true); setWhy(null); }}
+            className={cn('h-9 min-w-[64px] border-0 px-2 font-[inherit] text-[13px]', isCustom ? 'bg-[var(--accent-fill)] font-semibold text-foreground' : 'bg-transparent text-muted-foreground')}
+          >
+            {isCustom ? `Custom · ${word(value)}` : 'Custom'}
+          </button>
+        )}
       </div>
+      {custom && open && (
+        <span className="flex items-center gap-1.5">
+          <input
+            aria-label={`${label}, custom`} inputMode="decimal" value={text} autoFocus
+            onChange={(e) => setText(e.target.value.replace(/[^0-9.]/g, '').slice(0, 5))}
+            onBlur={take}
+            onKeyDown={(e) => { if (e.key === 'Enter') take(); if (e.key === 'Escape') { setOpen(false); setWhy(null); setText(String(value ?? '')); } }}
+            className="m-0 h-9 w-[4.5rem] rounded-md border border-solid border-border bg-[var(--bg)] px-2 text-center font-[inherit] text-[13px] tabular-nums text-foreground"
+          />
+          <span className="text-[12px] text-muted-foreground">{custom.unit}</span>
+        </span>
+      )}
+      {why && <span role="alert" className="basis-full text-[12px] text-[var(--down)]">{why}</span>}
     </div>
   );
 }
@@ -82,9 +138,9 @@ export function MoveExitCard({ several = false }: { several?: boolean }) {
       />
       {draft.on && (
         <div className="grid gap-1.5">
-          <Chips label="BTC move" value={draft.pct} choices={MOVES} word={(c) => `${c}%`} onPick={(c) => set({ pct: c })} />
-          <Chips label="Within" value={draft.minutes} choices={WINDOWS} word={(c) => `${c} min`} onPick={(c) => set({ minutes: c })} />
-          <Chips label="Strikes near" value={draft.nearPct} choices={NEARS} word={(c) => `${c}%`} onPick={(c) => set({ nearPct: c })} />
+          <Chips label="BTC move" value={draft.pct} choices={MOVES} word={(c) => `${c}%`} onPick={(c) => set({ pct: c })} custom={MOVE_CUSTOM.pct} />
+          <Chips label="Within" value={draft.minutes} choices={WINDOWS} word={(c) => `${c} min`} onPick={(c) => set({ minutes: c })} custom={MOVE_CUSTOM.minutes} />
+          <Chips label="Strikes near" value={draft.nearPct} choices={NEARS} word={(c) => `${c}%`} onPick={(c) => set({ nearPct: c })} custom={MOVE_CUSTOM.nearPct} />
           <Chips label="From" value={draft.from ?? null} choices={FROMS} word={(c) => c ?? 'All day'} onPick={(c) => set({ from: c })} />
           <Chips label="Until" value={draft.to ?? null} choices={TOS} word={(c) => c ?? 'Expiry 17:30'} onPick={(c) => set({ to: c })} />
         </div>

@@ -94,3 +94,44 @@ describe('BTC-move exit', () => {
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
   });
 });
+
+describe('BTC-move exit, a custom figure (owner, 27 Nov 2026: "add custom, 0.7%")', () => {
+  it('[critical] Custom opens a box; 0.7 taken on Enter, shown as the custom chip, and saved as the setting', async () => {
+    getMoveExit.mockResolvedValue({ setting: { ...OFF, on: true, from: null } });
+    render(<MoveExitCard />);
+    const move = within(await screen.findByRole('group', { name: 'BTC move' }));
+    fireEvent.click(move.getByRole('button', { name: 'Custom' }));
+    const box = screen.getByLabelText('BTC move, custom');
+    fireEvent.change(box, { target: { value: '0.7' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(move.getByRole('button', { name: 'Custom · 0.7%' })).toHaveAttribute('aria-pressed', 'true');
+    expect(move.getByRole('button', { name: '0.8%' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveMoveExit).toHaveBeenCalledWith({ on: true, pct: 0.7, minutes: 10, nearPct: 1.5, from: null, to: null }));
+  });
+
+  it('[critical] out of the server\'s range: said, not taken, nothing to save', async () => {
+    getMoveExit.mockResolvedValue({ setting: { ...OFF, on: true } });
+    render(<MoveExitCard />);
+    const move = within(await screen.findByRole('group', { name: 'BTC move' }));
+    fireEvent.click(move.getByRole('button', { name: 'Custom' }));
+    const box = screen.getByLabelText('BTC move, custom');
+    fireEvent.change(box, { target: { value: '7' } });
+    fireEvent.blur(box);
+    expect(screen.getByRole('alert')).toHaveTextContent('A number from 0.2 to 5 %, up to two decimals.');
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    // The window takes whole minutes only.
+    fireEvent.click(within(screen.getByRole('group', { name: 'Within' })).getByRole('button', { name: 'Custom' }));
+    const mins = screen.getByLabelText('Within, custom');
+    fireEvent.change(mins, { target: { value: '7.5' } });
+    fireEvent.keyDown(mins, { key: 'Enter' });
+    expect(screen.getAllByRole('alert').at(-1)).toHaveTextContent('A whole number from 1 to 60 min.');
+  });
+
+  it('a kept custom figure reads back as the custom chip, the presets not pressed', async () => {
+    getMoveExit.mockResolvedValue({ setting: { ...OFF, on: true, pct: 0.7, nearPct: 1.2 } });
+    render(<MoveExitCard />);
+    expect(within(await screen.findByRole('group', { name: 'BTC move' })).getByRole('button', { name: 'Custom · 0.7%' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(screen.getByRole('group', { name: 'Strikes near' })).getByRole('button', { name: 'Custom · 1.2%' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
